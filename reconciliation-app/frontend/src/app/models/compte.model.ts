@@ -6,6 +6,7 @@ export interface Compte {
     pays: string;
     codeProprietaire?: string;
     agence?: string;
+    type?: string; // Ajouté : TOP20, B2B, G&I
 }
 
 export interface CompteCreateRequest {
@@ -14,6 +15,7 @@ export interface CompteCreateRequest {
     pays: string;
     codeProprietaire?: string;
     agence?: string;
+    type?: string; // Ajouté
 }
 
 export interface CompteUpdateRequest {
@@ -22,6 +24,7 @@ export interface CompteUpdateRequest {
     pays?: string;
     codeProprietaire?: string;
     agence?: string;
+    type?: string; // Ajouté
 }
 
 export interface CompteFilter {

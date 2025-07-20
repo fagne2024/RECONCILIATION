@@ -311,6 +311,31 @@ public class AgencySummaryController {
     }
 
     /**
+     * Enregistrer uniquement les lignes sélectionnées (agence + service)
+     */
+    @PostMapping("/save-selected")
+    @Transactional
+    public ResponseEntity<?> saveSelectedSummaries(@RequestBody List<AgencySummary> selectedSummaries) {
+        List<Map<String, Object>> results = new ArrayList<>();
+        for (AgencySummary summary : selectedSummaries) {
+            Map<String, Object> result = new HashMap<>();
+            result.put("agency", summary.getAgency());
+            result.put("service", summary.getService());
+            result.put("date", summary.getDate());
+            try {
+                // Créer l'opération à partir du résumé sélectionné
+                createOperationFromSummary(summary);
+                result.put("success", true);
+            } catch (Exception e) {
+                result.put("success", false);
+                result.put("error", e.getMessage());
+            }
+            results.add(result);
+        }
+        return ResponseEntity.ok(results);
+    }
+
+    /**
      * Méthode séparée pour créer les opérations dans une nouvelle transaction
      * Cela évite les problèmes de rollback-only
      */

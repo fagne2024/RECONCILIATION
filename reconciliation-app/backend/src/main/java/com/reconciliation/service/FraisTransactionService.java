@@ -10,6 +10,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
+import java.util.Map;
 
 @Service
 public class FraisTransactionService {
@@ -124,6 +125,23 @@ public class FraisTransactionService {
      */
     public List<String> getAllAgences() {
         return fraisTransactionRepository.findDistinctAgences();
+    }
+
+    public List<FraisTransactionEntity> filterFraisTransactions(Map<String, Object> filters) {
+        List<FraisTransactionEntity> all = fraisTransactionRepository.findAllOrderByDateModificationDesc();
+        List<String> services = (List<String>) filters.getOrDefault("services", null);
+        List<String> agences = (List<String>) filters.getOrDefault("agences", null);
+        String actifStr = filters.get("actif") != null ? filters.get("actif").toString() : null;
+        Boolean actif = (actifStr == null || actifStr.isEmpty()) ? null : Boolean.valueOf(actifStr);
+        String dateDebut = filters.get("dateDebut") != null ? filters.get("dateDebut").toString() : null;
+        String dateFin = filters.get("dateFin") != null ? filters.get("dateFin").toString() : null;
+        return all.stream()
+            .filter(f -> (services == null || services.isEmpty() || services.contains(f.getService())))
+            .filter(f -> (agences == null || agences.isEmpty() || agences.contains(f.getAgence())))
+            .filter(f -> (actif == null || f.getActif().equals(actif)))
+            .filter(f -> (dateDebut == null || dateDebut.isEmpty() || (f.getDateCreation() != null && !f.getDateCreation().toLocalDate().isBefore(java.time.LocalDate.parse(dateDebut)))))
+            .filter(f -> (dateFin == null || dateFin.isEmpty() || (f.getDateCreation() != null && !f.getDateCreation().toLocalDate().isAfter(java.time.LocalDate.parse(dateFin)))))
+            .toList();
     }
     
     /**

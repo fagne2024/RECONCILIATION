@@ -87,4 +87,9 @@ export class FraisTransactionService {
         });
         return this.http.get<any>(`${this.apiUrl}/test-calculation?${queryParams.toString()}`);
     }
+
+    // Filtrer les frais de transaction selon plusieurs critères
+    filterFraisTransactions(filters: any): Observable<FraisTransaction[]> {
+        return this.http.post<FraisTransaction[]>(`${this.apiUrl}/filter`, filters);
+    }
 } 

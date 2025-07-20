@@ -1,6 +1,12 @@
 <div class="traitement-container">
+  <button type="button" style="float:right;margin-bottom:16px; margin-left:8px; background:#1976d2; color:white;" (click)="newTraitement()">+ Nouveau traitement</button>
   <button type="button" style="float:right;margin-bottom:16px;" (click)="refreshPage()">🔄 Actualiser</button>
   <h2>Traitement de fichiers Excel</h2>
+  
+  <!-- Résumé du traitement (affichage immédiat après upload) -->
+  <div *ngIf="successMsg.upload" class="success-msg" style="background:#e6f9ea;border:1px solid #7ad07a;color:#217a21;margin-bottom:16px;">
+    <span [innerHTML]="successMsg.upload"></span>
+  </div>
   
   <!-- Barre de progression pour les fichiers volumineux -->
   <div *ngIf="isProcessing" class="processing-overlay">
@@ -128,8 +134,8 @@
       <option value="BO">BO</option>
       <option value="PART">PART</option>
     </select>
-    <label style="margin-left:16px;">Service :</label>
-    <input type="text" [(ngModel)]="exportTypeService" placeholder="Nom du service" style="width:120px; margin-left:8px;">
+    <label style="margin-left:16px;">Description :</label>
+    <input type="text" [(ngModel)]="exportTypeDescription" placeholder="Description" style="width:120px; margin-left:8px;">
     <button type="button" (click)="exportByType()" [disabled]="!exportTypeCol || exportTypeSelected.length === 0">Exporter par type</button>
     <div *ngIf="successMsg.exportType" class="success-msg">{{ successMsg.exportType }}</div>
     <div *ngIf="errorMsg.exportType" class="error-msg">{{ errorMsg.exportType }}</div>

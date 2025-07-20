@@ -61,6 +61,8 @@ export class AppStateService {
         private dataNormalizationService: DataNormalizationService
     ) {
         console.log('AppStateService initialized');
+        // Charger l'utilisateur depuis le localStorage au démarrage
+        this.loadUserFromStorage();
     }
 
     setCurrentStep(step: number) {
@@ -247,6 +249,31 @@ export class AppStateService {
     setUserRights(rights: UserRights, username?: string) {
         this.userRights = rights;
         if (username) this.username = username;
+        // Sauvegarder dans le localStorage
+        localStorage.setItem('userRights', JSON.stringify(rights));
+        if (username) localStorage.setItem('username', username);
+    }
+
+    private loadUserFromStorage() {
+        const rightsStr = localStorage.getItem('userRights');
+        const username = localStorage.getItem('username');
+        if (rightsStr && username) {
+            try {
+                this.userRights = JSON.parse(rightsStr);
+                this.username = username;
+            } catch (e) {
+                // Nettoyer si erreur de parsing
+                localStorage.removeItem('userRights');
+                localStorage.removeItem('username');
+            }
+        }
+    }
+
+    logout() {
+        this.userRights = null;
+        this.username = null;
+        localStorage.removeItem('userRights');
+        localStorage.removeItem('username');
     }
 
     getUserRights(): UserRights | null {

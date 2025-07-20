@@ -68,10 +68,46 @@ export class DashboardComponent implements OnInit, OnDestroy {
         legend: { display: true, position: 'top' },
         title: { display: true, text: '' }
         // plus de datalabels ici
+      },
+      scales: {
+        y: {
+          beginAtZero: false,
+          min: 1,
+          type: 'logarithmic',
+          ticks: {
+            callback: function(value: number) {
+              if (value === 1) return '1';
+              if (value >= 1000000) return (value/1000000) + 'M';
+              if (value >= 1000) return (value/1000) + 'k';
+              return value;
+            }
+          }
+        }
       }
     };
 
-    lineChartOptions: any = {};
+    lineChartOptions: any = {
+      responsive: true,
+      plugins: {
+        legend: { display: true, position: 'top' },
+        title: { display: true, text: '' }
+      },
+      scales: {
+        y: {
+          type: 'logarithmic',
+          beginAtZero: true,
+          min: 1,
+          ticks: {
+            callback: function(value: number) {
+              if (value === 1) return '1';
+              if (value >= 1000000) return (value/1000000) + 'M';
+              if (value >= 1000) return (value/1000) + 'k';
+              return value;
+            }
+          }
+        }
+      }
+    };
     selectedMetric: DashboardMetric = 'volume';
     agencySummaryData: any[] = [];
     allOperations: any[] = [];
@@ -116,12 +152,15 @@ export class DashboardComponent implements OnInit, OnDestroy {
       if (!start || !end) {
         return data;
       }
+      console.log('[DEBUG] filterByPeriod: start =', start, 'end =', end);
 
       return data.filter((item: any) => {
         const dateStr = item.date || item.dateOperation;
         if (!dateStr) return false;
         const date = new Date(dateStr.split('T')[0]);
-        return date >= start! && date < end!;
+        const inPeriod = date >= start! && date < end!;
+        console.log('[DEBUG] filterByPeriod: date =', date, 'inPeriod =', inPeriod, 'raw =', dateStr);
+        return inPeriod;
       });
     }
 
@@ -136,11 +175,16 @@ export class DashboardComponent implements OnInit, OnDestroy {
       // Les données sont déjà filtrées lors du chargement
       const agencySummaryFiltered = this.agencySummaryData;
       const operationsFiltered = this.allOperations;
+      const normalize = (str: string) => (str || '').toLowerCase().normalize('NFD').replace(/[ \u0300-\u036f]/g, '');
 
       if (this.selectedMetric === 'transactions') {
         // Bar chart : répartition par service
         const excludedTypes = ['annulation_bo']; // NE PAS exclure 'transaction_cree'
-        const filteredAgencySummary = agencySummaryFiltered.filter(s => !excludedTypes.includes((s.typeOperation || '').toLowerCase()));
+        // On filtre explicitement par agence (client) sélectionnée pour la courbe
+        let filteredAgencySummary = agencySummaryFiltered.filter(s => !excludedTypes.includes((s.typeOperation || '').toLowerCase()));
+        if (this.selectedAgency && this.selectedAgency.length > 0) {
+          filteredAgencySummary = filteredAgencySummary.filter(s => this.selectedAgency.map(normalize).includes(normalize(s.agency)));
+        }
         const aggregation: { [service: string]: number } = {};
         filteredAgencySummary.forEach((s: any) => {
           if (!aggregation[s.service]) aggregation[s.service] = 0;
@@ -151,34 +195,48 @@ export class DashboardComponent implements OnInit, OnDestroy {
         const barColors = barLabels.map((label, idx) =>
           (label && label.toLowerCase() === 'transaction_cree') ? randomColor() : colorList[idx % colorList.length]
         );
-        const barData = barLabels.map(service => aggregation[service]);
+        // Correction : un dataset par service
+        const barDatasets = barLabels.map((label, idx) => ({
+          label: label,
+          data: [aggregation[label]],
+          backgroundColor: barColors[idx],
+          borderRadius: 6
+        }));
         this.barChartData = {
-          labels: barLabels,
-          datasets: [{
-            data: barData,
-            backgroundColor: barColors,
-            borderRadius: 6
-          }]
+          labels: [''], // une seule barre par dataset
+          datasets: barDatasets
         };
+        this.barChartOptions.plugins.legend.display = true;
         this.barChartOptions.plugins.title.text = "Nombre de transactions par service (toutes agences)";
 
-        // Line chart : évolution par service et par date
+        // Line chart : évolution par service et par date (filtrée par agence)
         const allServices = Array.from(new Set(filteredAgencySummary.map(s => s.service)));
         const allDates = Array.from(new Set(filteredAgencySummary.map(s => s.date))).sort();
+        console.log('[DEBUG] filteredAgencySummary:', filteredAgencySummary);
+        console.log('[DEBUG] allServices:', allServices);
+        console.log('[DEBUG] allDates:', allDates);
         const datasets = allServices.map((service, idx) => {
           const data = allDates.map(date => {
             const found = filteredAgencySummary.find(s => s.service === service && s.date === date);
             return found ? Number(found.recordCount) : 0;
           });
+          const color = colorList[idx % colorList.length];
           return {
             data,
             label: service,
-            borderColor: (service && service.toLowerCase() === 'transaction_cree') ? randomColor() : colorList[idx % colorList.length],
-            backgroundColor: 'rgba(25, 118, 210, 0.1)',
-            fill: false,
+            borderColor: color,
+            backgroundColor: color + '33', // couleur semi-transparente
+            fill: true,
             tension: 0.3,
-            pointRadius: 3
+            pointRadius: 4,
+            pointBackgroundColor: color,
+            pointBorderColor: color,
+            borderWidth: 2
           };
+        });
+        console.log('[DEBUG] datasets:', datasets);
+        datasets.forEach(ds => {
+          console.log(`[DEBUG] dataset label: ${ds.label}, data:`, ds.data);
         });
         this.lineChartData = {
           labels: allDates,
@@ -193,71 +251,103 @@ export class DashboardComponent implements OnInit, OnDestroy {
         return;
       } else if (this.selectedMetric === 'revenu') {
         // Bar chart : volume des frais par service (tous les FRAIS_TRANSACTION, crédit et débit)
-        const excludedTypes = ['annulation_bo']; // NE PAS exclure 'transaction_cree'
-        const filteredOperations = operationsFiltered.filter(op => !excludedTypes.includes((op.typeOperation || '').toLowerCase()));
+        const excludedTypes = ['annulation_bo'];
+        let filteredOperations = operationsFiltered.filter(op => !excludedTypes.includes((op.typeOperation || '').toLowerCase()));
+        filteredOperations = filteredOperations.filter(op => !excludedTypes.includes((op.typeOperation || '').toLowerCase()));
+        const normalize = (str: string) => (str || '').toLowerCase().normalize('NFD').replace(/[ \u0300-\u036f]/g, '');
+        let allServices = Array.from(new Set(filteredOperations
+          .filter((op: any) => (op.typeOperation || '').toLowerCase() === 'frais_transaction' && op.service)
+          .map((op: any) => op.service)));
+        if (this.selectedService && this.selectedService.length > 0) {
+          const normalizedSelected = this.selectedService.map(normalize);
+          allServices = allServices.filter(s => normalizedSelected.includes(normalize(s)));
+        }
+        // Bar chart : somme des montants par service
         const aggregation: { [service: string]: number } = {};
-        filteredOperations
-          .filter((op: any) => op.typeOperation === 'FRAIS_TRANSACTION' && op.service)
-          .forEach((op: any) => {
+        filteredOperations.forEach((op: any) => {
+          if ((op.typeOperation || '').toLowerCase() === 'frais_transaction' && op.service) {
             if (!aggregation[op.service]) aggregation[op.service] = 0;
             aggregation[op.service] += Number(op.montant) || 0;
-          });
+          }
+        });
         const barLabels = Object.keys(aggregation);
-        const barColors = barLabels.map((label, idx) =>
-          (label && label.toLowerCase() === 'transaction_cree') ? randomColor() : colorList[idx % colorList.length]
-        );
-        const barData = barLabels.map(service => aggregation[service]);
+        const barColors = barLabels.map((label, idx) => colorList[idx % colorList.length]);
+        const barDatasets = barLabels.map((label, idx) => ({
+          label: label,
+          data: [aggregation[label]],
+          backgroundColor: barColors[idx],
+          borderRadius: 6
+        }));
         this.barChartData = {
-          labels: barLabels,
-          datasets: [{
-            data: barData,
-            backgroundColor: barColors,
-            borderRadius: 6
-          }]
+          labels: [''],
+          datasets: barDatasets
         };
-        this.barChartOptions.plugins.title.text = "Volume des revenus par service (tous frais transaction)";
+        this.barChartOptions.plugins.legend.display = true;
+        this.barChartOptions.plugins.title.text = "Volume des revenus (frais) par service";
 
-        // Line chart : évolution du volume des frais par service et par date (tous les FRAIS_TRANSACTION)
-        const allServices = Array.from(new Set(filteredOperations
-          .filter((op: any) => op.typeOperation === 'FRAIS_TRANSACTION' && op.service)
+        // Line chart : évolution du volume des revenus par service et par date
+        const allServicesLine = Array.from(new Set(filteredOperations
+          .filter((op: any) => (op.typeOperation || '').toLowerCase() === 'frais_transaction' && op.service)
           .map((op: any) => op.service)));
-        const allDates = Array.from(new Set(filteredOperations
-          .filter((op: any) => op.typeOperation === 'FRAIS_TRANSACTION' && op.dateOperation)
+        const allDatesLine = Array.from(new Set(filteredOperations
+          .filter((op: any) => (op.typeOperation || '').toLowerCase() === 'frais_transaction' && op.dateOperation)
           .map((op: any) => op.dateOperation.split('T')[0]))).sort();
-        const datasets = allServices.map((service, idx) => {
-          const data = allDates.map(date => {
-            const found = filteredOperations.find(op => op.service === service && op.typeOperation === 'FRAIS_TRANSACTION' && op.dateOperation && op.dateOperation.split('T')[0] === date);
-            return found ? Number(found.montant) : 0;
+        const datasetsLine = allServicesLine.map((service: string, idx: number) => {
+          const data = allDatesLine.map((date: string) => {
+            // Somme des montants pour ce service et cette date
+            return filteredOperations
+              .filter((op: any) => op.service === service && (op.typeOperation || '').toLowerCase() === 'frais_transaction' && op.dateOperation && op.dateOperation.split('T')[0] === date)
+              .reduce((sum, op) => sum + Number(op.montant), 0);
           });
+          const color = colorList[idx % colorList.length];
           return {
             data,
             label: service,
-            borderColor: (service && service.toLowerCase() === 'transaction_cree') ? randomColor() : colorList[idx % colorList.length],
-            backgroundColor: 'rgba(25, 118, 210, 0.1)',
-            fill: false,
+            borderColor: color,
+            backgroundColor: color + '33',
+            fill: true,
             tension: 0.3,
-            pointRadius: 3
+            pointRadius: 4,
+            pointBackgroundColor: color,
+            pointBorderColor: color,
+            borderWidth: 2
           };
         });
         this.lineChartData = {
-          labels: allDates,
-          datasets
+          labels: allDatesLine,
+          datasets: datasetsLine
         };
         if (this.selectedChartType === 'line') {
           const datasets = this.lineChartData.datasets || [];
-          this.lineChartPlugins = (datasets.length === 1) ? [ChartDataLabels] : [];
+          const visibleDatasets = datasets.filter((ds: any) => ds.data && (ds.data as number[]).some((val: number) => val !== 0));
+          this.lineChartPlugins = (visibleDatasets.length === 1) ? [ChartDataLabels] : [];
         }
         return;
       } else if (this.selectedMetric === 'volume') {
         // Bar chart : volume total par type d'opération
         if (!this.detailedMetrics?.operationStats) return;
-        const excludedTypes = ['annulation_bo']; // NE PAS exclure 'transaction_cree'
-        const filteredStats = this.detailedMetrics.operationStats.filter(s => !excludedTypes.includes((s.operationType || '').toLowerCase()));
-        // Correction : chaque type devient un dataset distinct
-        const barDatasets = filteredStats.map((s: any, idx: number) => ({
-          label: s.operationType ? s.operationType : '(Type inconnu)',
-          data: [Number(s.totalVolume) || 0],
-          backgroundColor: (s.operationType && s.operationType.toLowerCase() === 'transaction_cree') ? randomColor() : colorList[idx % colorList.length],
+        const excludedTypes2 = ['annulation_bo']; // NE PAS exclure 'transaction_cree'
+        let filteredOperations = operationsFiltered.filter(op => !excludedTypes2.includes((op.typeOperation || '').toLowerCase()));
+        // Correction : appliquer le filtre service si sélectionné
+        if (this.selectedService && this.selectedService.length > 0) {
+          const normalize = (str: string) => (str || '').toLowerCase().normalize('NFD').replace(/[ \u0300-\u036f]/g, '');
+          const normalizedSelected = this.selectedService.map(normalize);
+          filteredOperations = filteredOperations.filter(op => op.service && normalizedSelected.includes(normalize(op.service)));
+        }
+        // On n'applique plus de filtrage par client ici
+        const filteredStats = this.detailedMetrics.operationStats.filter(s => !excludedTypes2.includes((s.operationType || '').toLowerCase()));
+        // Correction : chaque type devient un dataset distinct, mais sur les opérations filtrées
+        const allTypes = Array.from(new Set(filteredOperations.map((op: any) => op.typeOperation)));
+        const allDates = Array.from(new Set(filteredOperations
+          .filter((op: any) => op.dateOperation)
+          .map((op: any) => op.dateOperation.split('T')[0]))).sort();
+        const barDatasets = allTypes.map((type: string, idx: number) => ({
+          label: type ? type : '(Type inconnu)',
+          data: [filteredOperations
+            .filter((op: any) => op.typeOperation === type)
+            .reduce((sum, op) => sum + Number(op.montant), 0)
+          ],
+          backgroundColor: (type && type.toLowerCase() === 'transaction_cree') ? randomColor() : colorList[idx % colorList.length],
           borderRadius: 6
         }));
         this.barChartData = {
@@ -268,27 +358,30 @@ export class DashboardComponent implements OnInit, OnDestroy {
         this.barChartOptions.plugins.title.text = "Volume total par type d'opération";
 
         // Line chart : évolution du volume total par type d'opération et par date
-        const filteredOperations = operationsFiltered.filter(op => !excludedTypes.includes((op.typeOperation || '').toLowerCase()));
-        const allTypes = Array.from(new Set(filteredOperations.map((op: any) => op.typeOperation)));
-        const allDates = Array.from(new Set(filteredOperations
-          .filter((op: any) => op.dateOperation)
-          .map((op: any) => op.dateOperation.split('T')[0]))).sort();
         const datasets = allTypes.map((type, idx) => {
           const data = allDates.map(date => {
-            // Correction : somme de tous les montants pour ce type et cette date
+            // Correction : somme de tous les montants pour ce type et cette date, sur les opérations filtrées
             return filteredOperations
               .filter(op => op.typeOperation === type && op.dateOperation && op.dateOperation.split('T')[0] === date)
               .reduce((sum, op) => sum + Number(op.montant), 0);
           });
+          const color = colorList[idx % colorList.length];
           return {
             data,
             label: type,
-            borderColor: (type && type.toLowerCase() === 'transaction_cree') ? randomColor() : colorList[idx % colorList.length],
-            backgroundColor: 'rgba(25, 118, 210, 0.1)',
-            fill: false,
+            borderColor: color,
+            backgroundColor: color + '33',
+            fill: true,
             tension: 0.3,
-            pointRadius: 3
+            pointRadius: 4,
+            pointBackgroundColor: color,
+            pointBorderColor: color,
+            borderWidth: 2
           };
+        });
+        console.log('[DEBUG] datasets:', datasets);
+        datasets.forEach(ds => {
+          console.log(`[DEBUG] dataset label: ${ds.label}, data:`, ds.data);
         });
         this.lineChartData = {
           labels: allDates,
@@ -375,9 +468,10 @@ export class DashboardComponent implements OnInit, OnDestroy {
         this.filteredAgencies = this.filterOptions?.agencies || [];
         this.filteredServices = this.filterOptions?.services || [];
         this.filteredCountries = this.filterOptions?.countries || [];
+        const normalize = (str: string) => (str || '').toLowerCase().normalize('NFD').replace(/[ \u0300-\u036f]/g, '');
         this.agenceSearchCtrl.valueChanges.subscribe(search => {
-          const s = (search || '').toLowerCase();
-          this.filteredAgencies = (this.filterOptions?.agencies || []).filter(a => a.toLowerCase().includes(s));
+          const s = (search || '');
+          this.filteredAgencies = (this.filterOptions?.agencies || []).filter(a => normalize(a).includes(normalize(s)));
         });
         this.serviceSearchCtrl.valueChanges.subscribe(search => {
           const s = (search || '').toLowerCase();
@@ -468,13 +562,11 @@ export class DashboardComponent implements OnInit, OnDestroy {
                 this.filteredAgencies = options.agencies || [];
                 this.filteredServices = options.services || [];
                 this.filteredCountries = options.countries || [];
-                // Forcer la valeur des contrôles de recherche à '' pour afficher toute la liste
                 setTimeout(() => {
                     this.agenceSearchCtrl.setValue('');
                     this.serviceSearchCtrl.setValue('');
                     this.paysSearchCtrl.setValue('');
                 }, 0);
-                // Initialiser les sélections à [] pour affichage automatique et choix multiple
                 this.selectedAgency = [];
                 this.selectedService = [];
                 this.selectedCountry = [];
@@ -483,13 +575,12 @@ export class DashboardComponent implements OnInit, OnDestroy {
             },
             error: (error) => {
                 console.error('Error loading filter options:', error);
-                // Fallback to default values
+                // Fallback to default values sans 'Tous'
                 this.filterOptions = {
-                    agencies: ['Toutes les agences'],
-                    services: ['Tous les services'],
-                    countries: ['Tous les pays'],
-                    // banques: ['Toutes les banques'], // supprimé
-                    timeFilters: ['Tous', 'Aujourd\'hui', 'Cette semaine', 'Ce mois', 'Personnalisé']
+                    agencies: [],
+                    services: [],
+                    countries: [],
+                    timeFilters: ['Aujourd\'hui', 'Cette semaine', 'Ce mois', 'Personnalisé']
                 };
                 this.filteredAgencies = this.filterOptions.agencies;
                 this.filteredServices = this.filterOptions.services;
@@ -721,7 +812,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
         this.selectedAgency = [];
         this.selectedService = [];
         this.selectedCountry = [];
-        this.selectedTimeFilter = 'Tous';
+        this.selectedTimeFilter = 'Ce mois'; // valeur par défaut sans 'Tous'
         this.startDate = '';
         this.endDate = '';
         this.showCustomDateInputs = false;
@@ -979,17 +1070,12 @@ export class DashboardComponent implements OnInit, OnDestroy {
       const agencies = this.selectedAgency?.length === 0 ? undefined : this.selectedAgency;
       const services = this.selectedService?.length === 0 ? undefined : this.selectedService;
       const countries = this.selectedCountry?.length === 0 ? undefined : this.selectedCountry;
-      // const banques = this.selectedBanque === 'Tous' ? undefined : [normalize(this.selectedBanque)]; // supprimé
       this.agencySummaryService.getAllSummaries().subscribe({
         next: (data: any[]) => {
-          // DEBUG : Afficher les valeurs distinctes de banque et service
-          console.log('Banques dans agencySummary:', Array.from(new Set(data.map(o => o.banque))));
-          console.log('Services dans agencySummary:', Array.from(new Set(data.map(o => o.service))));
           this.agencySummaryData = data.filter((item: any) => {
-            const agencyMatch = !agencies || agencies.includes(item.agency);
+            const agencyMatch = !agencies || agencies.map(normalize).includes(normalize(item.agency));
             const serviceMatch = !services || services.includes(item.service);
             const countryMatch = !countries || countries.includes(item.pays);
-            // const banqueMatch = !banques || banques.includes(normalize(item.banque)); // supprimé
             return agencyMatch && serviceMatch && countryMatch;
           });
           this.agencySummaryData = this.filterByPeriod(this.agencySummaryData);
@@ -1005,30 +1091,61 @@ export class DashboardComponent implements OnInit, OnDestroy {
     }
 
     loadAllOperations() {
+      console.log('[DEBUG] loadAllOperations called');
       const normalize = (str: string) => (str || '').toLowerCase().normalize('NFD').replace(/[ \u0300-\u036f]/g, '');
       const agencies = this.selectedAgency?.length === 0 ? undefined : this.selectedAgency;
       const services = this.selectedService?.length === 0 ? undefined : this.selectedService;
       const countries = this.selectedCountry?.length === 0 ? undefined : this.selectedCountry;
-      // const banques = this.selectedBanque === 'Tous' ? undefined : [normalize(this.selectedBanque)]; // supprimé
       this.operationService.getAllOperations().subscribe({
         next: (ops: any[]) => {
-          // DEBUG : Afficher les valeurs distinctes de banque et service
-          console.log('Banques dans les opérations:', Array.from(new Set(ops.map(o => o.banque))));
-          console.log('Services dans les opérations:', Array.from(new Set(ops.map(o => o.service))));
-          this.allOperations = ops.filter((item: any) => {
-            const agencyMatch = !agencies || agencies.includes(item.agence);
-            const serviceMatch = !services || services.includes(item.service);
-            const countryMatch = !countries || countries.includes(item.pays);
-            // const banqueMatch = !banques || banques.includes(normalize(item.banque)); // supprimé
-            return agencyMatch && serviceMatch && countryMatch;
-          });
-          this.allOperations = this.filterByPeriod(this.allOperations);
+          console.log('[DEBUG] allOperations from backend:', ops);
+          if (ops && ops.length > 0) {
+            console.log('[DEBUG] keys of first operation:', Object.keys(ops[0]));
+            const uniqueCodes = Array.from(new Set(ops.map(o => o.codeProprietaire)));
+            console.log('[DEBUG] codeProprietaire values in operations:', uniqueCodes);
+          }
+          console.log('[DEBUG] filterByPeriod params: selectedTimeFilter =', this.selectedTimeFilter, 'startDate =', this.startDate, 'endDate =', this.endDate);
+          console.log('[DEBUG] ops before filterByPeriod:', ops);
+          // Filtrage par client AVANT la période
+          let filteredByClient = ops;
+          if (agencies && agencies.length > 0) {
+            const normalizedAgencies = agencies.map(normalize);
+            filteredByClient = ops.filter((item: any) => normalizedAgencies.includes(normalize(item.codeProprietaire)));
+          }
+          if (filteredByClient && filteredByClient.length > 0) {
+            const types = Array.from(new Set(filteredByClient.map(op => op.typeOperation)));
+            console.log('[DEBUG] typeOperation for selected client:', types);
+            const fraisOps = filteredByClient.filter(op => (op.typeOperation || '').toLowerCase() === 'frais_transaction');
+            const servicesFrais = Array.from(new Set(fraisOps.map(op => op.service)));
+            console.log('[DEBUG] services for FRAIS_TRANSACTION:', servicesFrais);
+            const datesFrais = Array.from(new Set(fraisOps.map(op => op.dateOperation)));
+            console.log('[DEBUG] dateOperation for FRAIS_TRANSACTION:', datesFrais);
+          } else {
+            console.log('[DEBUG] No operations after client filter');
+          }
+          // Puis filtrage par période
+          this.allOperations = this.filterByPeriod(filteredByClient);
           this.updateBarChartData();
         },
         error: (err) => {
+          console.error('[DEBUG] Error in loadAllOperations:', err);
           this.allOperations = [];
           this.updateBarChartData();
         }
       });
+    }
+
+    onBarClick(event: any) {
+      if (event.active && event.active.length > 0) {
+        const chartElement = event.active[0];
+        let label = '';
+        // Pour le mode volume, chaque dataset a un label, sinon c'est dans labels
+        if (this.selectedMetric === 'volume') {
+          label = this.barChartData.datasets[chartElement.datasetIndex]?.label || '';
+        } else {
+          label = this.barChartData.labels[chartElement.index] || '';
+        }
+        alert('Vous avez cliqué sur : ' + label);
+      }
     }
 } 

@@ -1105,4 +1105,10 @@ public class FraisTransactionController {
         
         return result;
     }
+
+    @PostMapping("/filter")
+    public ResponseEntity<List<FraisTransactionEntity>> filterFraisTransactions(@RequestBody Map<String, Object> filters) {
+        List<FraisTransactionEntity> result = fraisTransactionService.filterFraisTransactions(filters);
+        return ResponseEntity.ok(result);
+    }
 } 

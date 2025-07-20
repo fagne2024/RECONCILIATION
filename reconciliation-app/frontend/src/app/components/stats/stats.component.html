@@ -69,21 +69,40 @@
                 </div>
             </div>
 
+            <!-- Boutons d'action déplacés ici -->
+            <div class="action-buttons" style="margin-bottom: 10px;">
+                <button class="new-reconciliation-btn" (click)="startNewReconciliation()" [disabled]="isLoading">
+                    🔄 Nouvelle Réconciliation
+                </button>
+                <button class="export-btn" (click)="exportStats()" [disabled]="!agencySummaries.length || isLoading">
+                    📥 Exporter le résumé
+                </button>
+                <button (click)="saveSelected()" [disabled]="selectedSummaries.length === 0 || isLoading" style="background-color: #4CAF50; color: white;">
+                  💾 Sauvegarder
+                </button>
+            </div>
+
             <div class="details-table">
                 <table>
                     <thead>
                         <tr>
-                            <th>Client</th>
+                            <th>
+                                <input type="checkbox" [checked]="allSelected" (change)="toggleSelectAll($event)">
+                            </th>
+                            <th>Agence</th>
                             <th>Service</th>
                             <th>Pays</th>
                             <th>Date</th>
                             <th>Volume Total</th>
-                            <th>Nombre de transactions</th>
+                            <th>Nombres de Transactions</th>
                             <th>Action</th>
                         </tr>
                     </thead>
                     <tbody>
                         <tr *ngFor="let summary of pagedStats">
+                            <td>
+                                <input type="checkbox" [checked]="isSelected(summary)" (change)="toggleSelection(summary, $event)">
+                            </td>
                             <td>{{summary.agency}}</td>
                             <td>{{summary.service}}</td>
                             <td>{{summary.country}}</td>
@@ -124,15 +143,5 @@
         Aucune donnée disponible
     </div>
 
-    <div class="action-buttons">
-        <button class="new-reconciliation-btn" (click)="startNewReconciliation()" [disabled]="isLoading">
-            🔄 Nouvelle Réconciliation
-        </button>
-        <button class="back-btn" (click)="goBack()" [disabled]="isLoading">
-            ← Retour aux résultats
-        </button>
-        <button class="export-btn" (click)="exportStats()" [disabled]="!agencySummaries.length || isLoading">
-            📥 Exporter les statistiques
-        </button>
-    </div>
+    <!-- Je retire les boutons d'action de la section globale en bas du fichier -->
 </div> 

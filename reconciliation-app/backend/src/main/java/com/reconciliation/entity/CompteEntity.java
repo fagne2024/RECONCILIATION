@@ -29,6 +29,9 @@ public class CompteEntity {
     @Column(name = "agence")
     private String agence;
     
+    @Column(name = "type")
+    private String type;
+    
     // Constructeurs
     public CompteEntity() {}
     
@@ -102,5 +105,12 @@ public class CompteEntity {
     
     public void setAgence(String agence) {
         this.agence = agence;
+    }
+
+    public String getType() {
+        return type;
+    }
+    public void setType(String type) {
+        this.type = type;
     }
 } 

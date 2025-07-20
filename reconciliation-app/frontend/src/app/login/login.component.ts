@@ -59,6 +59,11 @@ export class LoginComponent implements OnInit {
   }
 
   ngOnInit() {
+    // Rediriger si déjà connecté
+    if (this.appState.getUserRights() && this.appState.getUsername()) {
+      this.router.navigate(['/dashboard']);
+      return;
+    }
     // Vérifier si l'utilisateur admin existe
     this.checkAdminExists();
   }

@@ -164,26 +164,20 @@ public class StatisticsService {
         try {
             Map<String, Object> filterOptions = new HashMap<>();
             
-            // Récupérer les agences depuis les opérations et ajouter "Tous"
-            List<String> agencies = new ArrayList<>();
-            agencies.add("Tous");
-            agencies.addAll(operationRepository.findDistinctAgency());
+            // Récupérer les agences depuis les opérations (sans ajouter 'Tous')
+            List<String> agencies = new ArrayList<>(operationRepository.findDistinctAgency());
             filterOptions.put("agencies", agencies);
             
-            // Récupérer les services depuis les opérations et ajouter "Tous"
-            List<String> services = new ArrayList<>();
-            services.add("Tous");
-            services.addAll(operationRepository.findDistinctService());
+            // Récupérer les services depuis les opérations (sans ajouter 'Tous')
+            List<String> services = new ArrayList<>(operationRepository.findDistinctService());
             filterOptions.put("services", services);
             
-            // Récupérer les pays depuis les comptes et ajouter "Tous"
-            List<String> countries = new ArrayList<>();
-            countries.add("Tous");
-            countries.addAll(compteRepository.findDistinctPays());
+            // Récupérer les pays depuis les comptes (sans ajouter 'Tous')
+            List<String> countries = new ArrayList<>(compteRepository.findDistinctPays());
             filterOptions.put("countries", countries);
             
-            // Options de filtres temporels
-            List<String> timeFilters = List.of("Tous", "Aujourd'hui", "Cette semaine", "Ce mois", "Personnalisé");
+            // Options de filtres temporels (sans 'Tous')
+            List<String> timeFilters = List.of("Aujourd'hui", "Cette semaine", "Ce mois", "Personnalisé");
             filterOptions.put("timeFilters", timeFilters);
             
             logger.info("Filter options retrieved: {} agencies, {} services, {} countries", 

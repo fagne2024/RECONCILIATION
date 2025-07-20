@@ -18,6 +18,10 @@ export class AppComponent implements OnInit {
       filter((event): event is NavigationEnd => event instanceof NavigationEnd)
     ).subscribe((event) => {
       this.showSidebar = event.urlAfterRedirects !== '/login';
+      // Forcer le recalcul du layout après navigation (corrige le bug d'affichage trop large)
+      setTimeout(() => {
+        window.dispatchEvent(new Event('resize'));
+      }, 50);
     });
     // S'assurer que le scroll fonctionne
     this.enableMouseScroll();

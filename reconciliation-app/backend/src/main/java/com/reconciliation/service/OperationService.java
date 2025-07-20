@@ -1159,4 +1159,16 @@ public class OperationService {
         // Ne créer aucun frais automatique pour les opérations d'annulation
         return convertToModel(savedEntity);
     }
+
+    public Map<String, List<String>> getOperationFilterOptions() {
+        Map<String, List<String>> filterOptions = new HashMap<>();
+        filterOptions.put("typeOperations", operationRepository.findDistinctTypeOperation());
+        filterOptions.put("services", operationRepository.findDistinctService());
+        filterOptions.put("pays", operationRepository.findDistinctPays());
+        filterOptions.put("statuts", operationRepository.findDistinctStatut());
+        filterOptions.put("banques", operationRepository.findDistinctBanque());
+        filterOptions.put("codeProprietaires", operationRepository.findDistinctCodeProprietaire());
+        // Si tu as un champ nomBordereau distinct, ajoute-le ici
+        return filterOptions;
+    }
 } 

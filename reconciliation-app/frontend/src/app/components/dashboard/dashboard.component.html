@@ -55,15 +55,15 @@
     <!-- Barre récapitulative clients/services/pays -->
     <div class="dashboard-summary-bar" style="display: flex; justify-content: space-between; align-items: center; background: #1976d2; color: #fff; padding: 24px 0; margin: 24px auto; border-radius: 6px; max-width: 1200px; width: 100%;">
       <div style="flex: 1; text-align: center;">
-        <div style="font-size: 1.1rem; opacity: 0.8;">Nombre de clients</div>
+        <div style="font-size: 1.1rem; opacity: 0.8; margin-bottom: 10px;">Nombre de clients</div>
         <div style="font-size: 2.2rem; font-weight: bold;">{{ totalClientsCount }}</div>
       </div>
       <div style="flex: 1; text-align: center;">
-        <div style="font-size: 1.1rem; opacity: 0.8;">Nombre de services</div>
+        <div style="font-size: 1.1rem; opacity: 0.8; margin-bottom: 10px;">Nombre de services</div>
         <div style="font-size: 2.2rem; font-weight: bold;">{{ totalServicesCount }}</div>
       </div>
       <div style="flex: 1; text-align: center;">
-        <div style="font-size: 1.1rem; opacity: 0.8;">Nombre de pays</div>
+        <div style="font-size: 1.1rem; opacity: 0.8; margin-bottom: 10px;">Nombre de pays</div>
         <div style="font-size: 2.2rem; font-weight: bold;">{{ totalCountriesCount }}</div>
       </div>
     </div>
@@ -100,11 +100,12 @@
               <canvas *ngIf="selectedChartType === 'bar' && barChartData && barChartData.labels?.length" baseChart
                 [data]="barChartData"
                 [options]="barChartOptions"
-                [type]="'bar'">
+                [type]="'bar'"
+                (chartClick)="onBarClick($event)">
               </canvas>
               <canvas *ngIf="selectedChartType === 'line' && lineChartData && lineChartData.labels?.length" baseChart
                 [data]="lineChartData"
-                [options]="barChartOptions"
+                [options]="lineChartOptions"
                 [type]="'line'"
                 [plugins]="lineChartPlugins">
               </canvas>

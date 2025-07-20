@@ -6,9 +6,17 @@
   border-radius: 12px;
   box-shadow: 0 2px 12px rgba(0,0,0,0.08);
   padding: 24px 20px 20px 20px;
-  min-height: auto;
-  overflow-y: auto;
+  min-height: unset !important;
+  height: auto !important;
+  overflow-y: visible !important;
   box-sizing: border-box;
+}
+
+// Correctif global pour le débordement vertical
+html, body, .main-content, .app-root, .ng-star-inserted {
+  min-height: 0 !important;
+  height: auto !important;
+  overflow-y: visible !important;
 }
 body, .main-content, .app-root, .ng-star-inserted {
   background: #f4f8fb !important;

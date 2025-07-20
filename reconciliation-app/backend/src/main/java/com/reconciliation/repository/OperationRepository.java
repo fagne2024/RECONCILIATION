@@ -133,6 +133,15 @@ public interface OperationRepository extends JpaRepository<OperationEntity, Long
     @Query("SELECT DISTINCT o.codeProprietaire FROM OperationEntity o WHERE o.codeProprietaire IS NOT NULL ORDER BY o.codeProprietaire")
     List<String> findDistinctAgency();
 
+    @Query("SELECT DISTINCT o.typeOperation FROM OperationEntity o WHERE o.typeOperation IS NOT NULL AND o.typeOperation != '' ORDER BY o.typeOperation")
+    List<String> findDistinctTypeOperation();
+
+    @Query("SELECT DISTINCT o.pays FROM OperationEntity o WHERE o.pays IS NOT NULL AND o.pays != '' ORDER BY o.pays")
+    List<String> findDistinctPays();
+
+    @Query("SELECT DISTINCT o.statut FROM OperationEntity o WHERE o.statut IS NOT NULL AND o.statut != '' ORDER BY o.statut")
+    List<String> findDistinctStatut();
+
     @Query("SELECT o.typeOperation, COUNT(o), COALESCE(SUM(o.montant), 0), COALESCE(AVG(o.montant), 0) FROM OperationEntity o WHERE (:services IS NULL OR o.service IN :services) AND (:pays IS NULL OR o.pays IN :pays) AND (:startDate IS NULL OR o.dateOperation >= :startDate) AND (:endDate IS NULL OR o.dateOperation <= :endDate) AND o.typeOperation NOT IN ('annulation_total_paiement', 'annulation_total_cashin', 'annulation_annulation_bo', 'annulation_annulation_partenaire', 'annulation_FRAIS_TRANSACTION', 'annulation_compense', 'annulation_ajustement', 'annulation_approvisionnement') AND NOT (o.typeOperation IN ('total_paiement', 'total_cashin', 'compense', 'ajustement', 'approvisionnement', 'FRAIS_TRANSACTION', 'annulation_bo', 'annulation_partenaire') AND o.statut IN ('Annulée', 'Rejetée')) GROUP BY o.typeOperation")
     List<Object[]> getOperationTypeStatisticsWithDateRange(
         @Param("services") List<String> services,

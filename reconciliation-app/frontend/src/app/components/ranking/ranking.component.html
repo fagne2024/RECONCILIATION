@@ -18,7 +18,6 @@
           <mat-label>Pays</mat-label>
           <mat-select #paysSelect [(ngModel)]="selectedCountries" multiple (selectionChange)="onCountryChange()">
             <ngx-mat-select-search [formControl]="paysSearchCtrl" placeholderLabel="Rechercher un pays..." noEntriesFoundLabel="Aucun pays trouvé"></ngx-mat-select-search>
-            <mat-option value="Tous les pays">Tous les pays</mat-option>
             <mat-option *ngFor="let country of filteredCountries" [value]="country" [disabled]="country === 'Tous les pays'">
               {{ country }}
             </mat-option>
@@ -31,9 +30,9 @@
           <mat-label>Période de calcul</mat-label>
           <mat-select [(ngModel)]="selectedPeriod" (selectionChange)="onPeriodChange()">
             <mat-option value="all">Toute la période</mat-option>
-            <mat-option value="day">Par Jour</mat-option>
-            <mat-option value="week">Par Semaine</mat-option>
-            <mat-option value="month">Par Mois</mat-option>
+            <mat-option value="day">Aujourd'hui</mat-option>
+            <mat-option value="week">Cette semaine</mat-option>
+            <mat-option value="month">Ce mois</mat-option>
             <mat-option value="custom">Période personnalisée</mat-option>
           </mat-select>
         </mat-form-field>

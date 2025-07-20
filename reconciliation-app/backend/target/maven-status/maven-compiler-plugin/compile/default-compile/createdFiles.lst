@@ -1,7 +1,12 @@
 com\reconciliation\controller\AgencySummaryController.class
+com\reconciliation\model\ReconciliationProgress.class
 com\reconciliation\entity\FraisTransactionEntity.class
+com\reconciliation\repository\ModuleRepository.class
+com\reconciliation\entity\PermissionEntity.class
+com\reconciliation\entity\ProfilPermissionEntity.class
 com\reconciliation\repository\OperationRepository.class
 com\reconciliation\repository\AgencySummaryRepository.class
+com\reconciliation\repository\PermissionRepository.class
 com\reconciliation\entity\AgencySummaryEntity.class
 com\reconciliation\controller\RankingController.class
 com\reconciliation\dto\OperationCreateRequest.class
@@ -14,8 +19,10 @@ com\reconciliation\service\CsvReconciliationService.class
 com\reconciliation\entity\CompteEntity.class
 com\reconciliation\CsvReconciliationApplication.class
 com\reconciliation\repository\CompteRepository.class
+com\reconciliation\repository\ProfilRepository.class
 com\reconciliation\service\OperationService.class
 com\reconciliation\dto\FraisTransactionRequest.class
+com\reconciliation\entity\ProfilEntity.class
 com\reconciliation\dto\ReconciliationResponse$Difference.class
 com\reconciliation\controller\StatisticsController.class
 com\reconciliation\service\RankingService.class
@@ -29,9 +36,12 @@ com\reconciliation\entity\UserEntity.class
 com\reconciliation\controller\UserController.class
 com\reconciliation\dto\ColumnComparison.class
 com\reconciliation\service\OperationBusinessService.class
+com\reconciliation\service\ReconciliationProgressService.class
 com\reconciliation\model\Operation.class
 com\reconciliation\controller\FraisTransactionController.class
 com\reconciliation\controller\CompteController.class
+com\reconciliation\service\ProfilService.class
+com\reconciliation\controller\ProfilController.class
 com\reconciliation\repository\FraisTransactionRepository.class
 com\reconciliation\repository\StatisticsRepository.class
 com\reconciliation\repository\UserRepository.class

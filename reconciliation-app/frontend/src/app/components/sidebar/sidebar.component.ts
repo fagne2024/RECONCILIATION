@@ -26,15 +26,8 @@ export class SidebarComponent implements OnInit {
   }
 
   logout() {
-    this.http.post('/api/auth/logout', {}).subscribe({
-      next: () => {
-        this.router.navigate(['/login']);
-      },
-      error: () => {
-        // Même en cas d'erreur, on redirige vers login
-        this.router.navigate(['/login']);
-      }
-    });
+    this.appState.logout();
+    window.location.href = '/login';
   }
 
   isMenuAllowed(menu: string): boolean {

@@ -23,7 +23,6 @@
                         <app-autocomplete-input
                             [options]="paysList"
                             [(ngModel)]="selectedPays"
-                            (valueChange)="applyStatsFilters()"
                             placeholder="Saisir un pays..."
                             label="Pays:">
                         </app-autocomplete-input>
@@ -31,11 +30,10 @@
                     
                     <div class="filter-group">
                         <app-autocomplete-input
-                            [options]="comptesNumeros"
-                            [(ngModel)]="selectedCompteNumero"
-                            (optionSelected)="applyStatsFilters()"
-                            placeholder="Saisir un numéro de compte..."
-                            label="Compte:">
+                            [options]="codeProprietaireList"
+                            formControlName="codeProprietaire"
+                            placeholder="Saisir un code propriétaire..."
+                            label="Code propriétaire:">
                         </app-autocomplete-input>
                     </div>
                     
@@ -132,19 +130,14 @@
             <div class="form-row">
                 <div class="form-group">
                     <app-autocomplete-input
-                        [options]="comptesNumeros"
-                        formControlName="compteId"
-                        (valueChange)="onCompteChange()"
-                        placeholder="Saisir ou sélectionner un compte..."
-                        label="Compte">
+                        [options]="codeProprietaireList"
+                        formControlName="codeProprietaire"
+                        placeholder="Saisir ou sélectionner un code propriétaire..."
+                        label="Code propriétaire">
                     </app-autocomplete-input>
-                    <div *ngIf="addForm.get('compteId')?.invalid && addForm.get('compteId')?.touched" class="error-message">
-                        Le compte est requis
+                    <div *ngIf="addForm.get('codeProprietaire')?.invalid && addForm.get('codeProprietaire')?.touched" class="error-message">
+                        Le code propriétaire est requis
                     </div>
-                </div>
-                <div class="form-group">
-                    <label>Code propriétaire (automatique)</label>
-                    <input type="text" formControlName="codeProprietaire" readonly [style.background-color]="'#f5f5f5'">
                 </div>
                 <div class="form-group">
                     <label>Service</label>
@@ -193,7 +186,7 @@
             <!-- Display non-editable info -->
             <div class="form-row">
                 <div class="form-group">
-                    <label>Compte</label>
+                    <label>Code propriétaire</label>
                     <input type="text" [value]="editingOperation.codeProprietaire" readonly
                         [style.background-color]="'#f5f5f5'">
                 </div>
@@ -303,10 +296,10 @@
             <div class="form-row">
                 <div class="form-group">
                     <mat-form-field appearance="fill" class="filter-select">
-                        <mat-label>Compte</mat-label>
+                        <mat-label>Code propriétaire</mat-label>
                         <mat-select #codeProprietaireSelect formControlName="codeProprietaire" multiple (selectionChange)="onFilterChange()">
-                            <ngx-mat-select-search [formControl]="codeProprietaireSearchCtrl" placeholderLabel="Rechercher un compte..." noEntriesFoundLabel="Aucun compte trouvé"></ngx-mat-select-search>
-                            <mat-option *ngFor="let compte of filteredCodeProprietaireList" [value]="compte">{{ compte }}</mat-option>
+                            <ngx-mat-select-search [formControl]="codeProprietaireSearchCtrl" placeholderLabel="Rechercher un code propriétaire..." noEntriesFoundLabel="Aucun code trouvé"></ngx-mat-select-search>
+                            <mat-option *ngFor="let code of filteredCodeProprietaireList" [value]="code">{{ code }}</mat-option>
                         </mat-select>
                     </mat-form-field>
                 </div>
@@ -320,6 +313,17 @@
                     </mat-form-field>
                 </div>
                 <div class="form-group">
+                    <label>Période rapide</label>
+                    <select (change)="applyDatePreset($event)">
+                        <option value="">-- Choisir --</option>
+                        <option value="today">Aujourd'hui</option>
+                        <option value="7days">7 derniers jours</option>
+                        <option value="30days">30 derniers jours</option>
+                        <option value="month">Ce mois</option>
+                        <option value="custom">Personnalisé</option>
+                    </select>
+                </div>
+                <div class="form-group">
                     <label>Date début</label>
                     <input type="date" formControlName="dateDebut">
                 </div>
@@ -329,8 +333,8 @@
                 </div>
             </div>
             <div class="form-actions">
-                <button type="submit">Appliquer les filtres</button>
                 <button type="button" (click)="clearFilters()">Effacer les filtres</button>
+                <button type="submit" class="apply-btn">Appliquer les filtres</button>
             </div>
         </form>
     </div>
@@ -358,7 +362,7 @@
                     <tr>
                         <th>Date</th>
                         <th>Type</th>
-                        <th>Compte</th>
+                        <th>Code propriétaire</th>
                         <th>Service</th>
                         <th>Débit</th>
                         <th>Crédit</th>
@@ -445,6 +449,76 @@
         </div>
     </div>
 </div> 
+
+<!-- Résumé global et par type en bas de la page -->
+<style>
+  .operations-resume {
+    margin-top: 32px;
+    background: #f8fafc;
+    border-radius: 10px;
+    box-shadow: 0 2px 8px #0001;
+    padding: 24px 16px 8px 16px;
+    max-width: 900px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+  .resume-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: 1.05em;
+  }
+  .resume-table th, .resume-table td {
+    padding: 10px 8px;
+    text-align: right;
+  }
+  .resume-table th {
+    background: #e3f2fd;
+    color: #1976d2;
+    font-weight: 600;
+    border-bottom: 2px solid #bbdefb;
+    text-align: right;
+  }
+  .resume-table th:first-child, .resume-table td:first-child {
+    text-align: left;
+  }
+  .resume-table tr.global-row {
+    background: #e3f2fd;
+    font-weight: bold;
+    color: #1976d2;
+  }
+  .resume-table tr.type-row {
+    background: #f5fafd;
+    color: #333;
+    border-bottom: 1px solid #e0e0e0;
+  }
+</style>
+<div class="operations-resume">
+  <table class="resume-table">
+    <thead>
+      <tr>
+        <th>Résumé</th>
+        <th>Nombre d'opérations</th>
+        <th>Total Débit</th>
+        <th>Total Crédit</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr class="global-row">
+        <td>Global</td>
+        <td>{{ resumeGlobal.count }}</td>
+        <td>{{ resumeGlobal.totalDebit | number:'1.2-2' }}</td>
+        <td>{{ resumeGlobal.totalCredit | number:'1.2-2' }}</td>
+      </tr>
+      <tr *ngFor="let type of (resumeByType | keyvalue)" class="type-row">
+        <td>{{ type.key }}</td>
+        <td>-</td>
+        <td>{{ type.value.debit | number:'1.2-2' }}</td>
+        <td>{{ type.value.credit | number:'1.2-2' }}</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
 
 <!-- Ajout du sous-menu Log utilisateur dans les paramètres -->
 <nav class="settings-menu">

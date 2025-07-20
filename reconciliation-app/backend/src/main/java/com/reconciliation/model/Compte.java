@@ -10,6 +10,7 @@ public class Compte {
     private String pays;
     private String codeProprietaire;
     private String agence;
+    private String type;
     
     // Constructeurs
     public Compte() {}
@@ -87,6 +88,13 @@ public class Compte {
     public void setAgence(String agence) {
         this.agence = agence;
     }
+
+    public String getType() {
+        return type;
+    }
+    public void setType(String type) {
+        this.type = type;
+    }
     
     @Override
     public String toString() {
@@ -98,6 +106,7 @@ public class Compte {
                 ", pays='" + pays + '\'' +
                 ", codeProprietaire='" + codeProprietaire + '\'' +
                 ", agence='" + agence + '\'' +
+                ", type='" + type + '\'' +
                 '}';
     }
 } 

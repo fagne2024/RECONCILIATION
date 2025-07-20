@@ -105,6 +105,9 @@ export class ComptesComponent implements OnInit, OnDestroy {
     paysSearchCtrl = new FormControl('');
     codeProprietaireSearchCtrl = new FormControl('');
 
+    // Liste des types de compte
+    compteTypes: string[] = ['TOP20', 'B2B', 'G&I'];
+
     @ViewChild('paysSelect') paysSelect!: MatSelect;
     @ViewChild('codeProprietaireSelect') codeProprietaireSelect!: MatSelect;
 
@@ -117,14 +120,16 @@ export class ComptesComponent implements OnInit, OnDestroy {
             numeroCompte: ['', [Validators.required]],
             solde: [0, [Validators.required, Validators.min(0)]],
             pays: ['', [Validators.required]],
-            codeProprietaire: ['']
+            codeProprietaire: [''],
+            type: ['', [Validators.required]] // Ajouté
         });
 
         this.editForm = this.fb.group({
             numeroCompte: ['', [Validators.required]],
             solde: [0, [Validators.required]],
             pays: ['', [Validators.required]],
-            codeProprietaire: ['']
+            codeProprietaire: [''],
+            type: ['', [Validators.required]] // Ajouté
         });
 
         this.filterForm = this.fb.group({
@@ -238,7 +243,8 @@ export class ComptesComponent implements OnInit, OnDestroy {
             numeroCompte: compte.numeroCompte,
             solde: compte.solde,
             pays: compte.pays,
-            codeProprietaire: compte.codeProprietaire
+            codeProprietaire: compte.codeProprietaire,
+            type: compte.type || '' // Ajouté
         });
     }
 
@@ -1179,5 +1185,17 @@ export class ComptesComponent implements OnInit, OnDestroy {
             debit = typeof op.montant === 'number' ? op.montant : parseFloat(op.montant || '0');
         }
         return { debit, credit };
+    }
+
+    // Résumé global pour le footer (comptes filtrés)
+    get resumeGlobal() {
+      let totalSolde = 0;
+      for (const compte of this.comptes) {
+        totalSolde += compte.solde || 0;
+      }
+      return {
+        count: this.comptes.length,
+        totalSolde
+      };
     }
 } 

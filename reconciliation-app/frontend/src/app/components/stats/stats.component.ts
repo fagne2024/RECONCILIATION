@@ -52,6 +52,44 @@ export class StatsComponent implements OnInit, OnDestroy {
     @ViewChild('serviceSelect') serviceSelect!: MatSelect;
     @ViewChild('paysSelect') paysSelect!: MatSelect;
 
+    selectedSummaries: any[] = [];
+    get allSelected(): boolean {
+        return this.pagedStats.length > 0 && this.pagedStats.every(s => this.isSelected(s));
+    }
+    isSelected(summary: any): boolean {
+        return this.selectedSummaries.some(sel => sel === summary);
+    }
+    toggleSelection(summary: any, event: any): void {
+        if (event.target.checked) {
+            if (!this.isSelected(summary)) {
+                this.selectedSummaries.push(summary);
+            }
+        } else {
+            this.selectedSummaries = this.selectedSummaries.filter(sel => sel !== summary);
+        }
+    }
+    toggleSelectAll(event: any): void {
+        if (event.target.checked) {
+            this.selectedSummaries = [...this.pagedStats];
+        } else {
+            this.selectedSummaries = this.selectedSummaries.filter(sel => !this.pagedStats.includes(sel));
+        }
+    }
+    saveSelected(): void {
+        this.isLoading = true;
+        this.agencySummaryService.saveSelectedSummaries(this.selectedSummaries).subscribe({
+            next: (response) => {
+                // Gérer la réponse (succès, message, etc.)
+                this.isLoading = false;
+                // Optionnel : afficher un message de succès ou rafraîchir les données
+            },
+            error: (error) => {
+                // Gérer l’erreur
+                this.isLoading = false;
+            }
+        });
+    }
+
     constructor(
         private appStateService: AppStateService,
         private dataNormalizationService: DataNormalizationService,
@@ -479,22 +517,14 @@ export class StatsComponent implements OnInit, OnDestroy {
     }
 
     deleteSummary(summary: any) {
-        if (confirm(`Voulez-vous vraiment supprimer le résumé de l'agence "${summary.agency}" du ${this.formatDateWithTime(summary.date)} ?`)) {
-            this.isLoading = true;
-            this.agencySummaryService.deleteSummary(summary.id).subscribe({
-                next: () => {
-                    // Retirer le résumé supprimé de la liste locale
-                    this.agencySummaries = this.agencySummaries.filter(s => s.id !== summary.id);
-                    this.applyFilters();
-                    this.isLoading = false;
-                },
-                error: (error) => {
-                    console.error('Erreur lors de la suppression:', error);
-                    this.isLoading = false;
-                    alert('Erreur lors de la suppression.');
-                }
-            });
-        }
+        // Supprime toutes les lignes sources correspondant à la ligne agrégée
+        this.agencySummaries = this.agencySummaries.filter(s =>
+            !(s.agency === summary.agency &&
+              s.service === summary.service &&
+              s.country === summary.country &&
+              s.date === summary.date)
+        );
+        this.applyFilters();
     }
 
     // Méthodes utilitaires pour récupérer toutes les valeurs uniques

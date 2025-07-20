@@ -169,14 +169,22 @@ interface ApiError {
                                 <table>
                                     <thead>
                                         <tr>
+                                            <th><input type="checkbox" [checked]="allAgencySelected" (change)="toggleSelectAllAgency($event)"></th>
                                             <th>Agence</th>
-                                            <th>Volume total</th>
+                                            <th>Service</th>
+                                            <th>Pays</th>
+                                            <th>Volume Total</th>
+                                            <th>Nombres de Transactions</th>
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        <tr *ngFor="let agency of getAgencyTotalsArray()">
-                                            <td>{{agency.name}}</td>
-                                            <td>{{agency.volume | number:'1.0-0'}}</td>
+                                        <tr *ngFor="let summary of getPagedAgencySummary()">
+                                            <td><input type="checkbox" [checked]="isAgencySelected(summary)" (change)="toggleAgencySelection(summary, $event)"></td>
+                                            <td>{{summary.agency}}</td>
+                                            <td>{{summary.service}}</td>
+                                            <td>{{summary.country}}</td>
+                                            <td class="volume-cell">{{summary.totalVolume | number:'1.0-0'}}</td>
+                                            <td class="count-cell">{{summary.recordCount | number:'1.0-0'}}</td>
                                         </tr>
                                     </tbody>
                                 </table>
@@ -1264,6 +1272,40 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
     executionTime = 0;
     startTime = 0;
 
+    // Ajout pour sélection Résumé par Agence
+    selectedAgencySummaries: string[] = [];
+    get allAgencySelected(): boolean {
+        return this.getPagedAgencySummary().length > 0 && this.getPagedAgencySummary().every(s => this.isAgencySelected(s));
+    }
+    isAgencySelected(summary: any): boolean {
+        return this.selectedAgencySummaries.includes(this.getAgencyKey(summary));
+    }
+    toggleAgencySelection(summary: any, event: any): void {
+        const key = this.getAgencyKey(summary);
+        if (event.target.checked) {
+            if (!this.selectedAgencySummaries.includes(key)) {
+                this.selectedAgencySummaries.push(key);
+            }
+        } else {
+            this.selectedAgencySummaries = this.selectedAgencySummaries.filter(sel => sel !== key);
+        }
+    }
+    toggleSelectAllAgency(event: any): void {
+        const pageKeys = this.getPagedAgencySummary().map(s => this.getAgencyKey(s));
+        if (event.target.checked) {
+            this.selectedAgencySummaries = Array.from(new Set([...this.selectedAgencySummaries, ...pageKeys]));
+        } else {
+            this.selectedAgencySummaries = this.selectedAgencySummaries.filter(sel => !pageKeys.includes(sel));
+        }
+    }
+    saveSelectedAgency(): void {
+        // Récupérer tous les résumés (toutes pages si besoin)
+        const allSummaries = this.getAgencySummary();
+        const selected = allSummaries.filter(s => this.selectedAgencySummaries.includes(this.getAgencyKey(s)));
+        console.log('Lignes sélectionnées à enregistrer :', selected);
+        // Ici, tu peux appeler une API ou autre logique
+    }
+
     constructor(
         private cdr: ChangeDetectorRef, 
         private appStateService: AppStateService, 
@@ -2262,5 +2304,10 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[]): Promise<void> {
 
     getElapsedTime(): number {
         return this.startTime > 0 ? Date.now() - this.startTime : 0;
+    }
+
+    // Utilisation d'une clé unique pour chaque ligne
+    getAgencyKey(summary: any): string {
+        return `${summary.agency}__${summary.service}__${summary.country}`;
     }
 } 

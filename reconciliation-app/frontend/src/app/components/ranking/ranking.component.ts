@@ -78,7 +78,9 @@ export class RankingComponent implements OnInit {
   ngOnInit(): void {
     this.rankingService.getCountries().subscribe({
       next: (data) => {
-        this.countries = ['Tous les pays', ...data];
+        // Correction : éviter la duplication de 'Tous les pays'
+        const paysSansDoublon = data.filter((c: string) => c !== 'Tous les pays');
+        this.countries = ['Tous les pays', ...paysSansDoublon];
         this.filteredCountries = this.countries;
       },
       error: () => {
@@ -501,11 +503,12 @@ export class RankingComponent implements OnInit {
   }
 
   onCountryChange(): void {
-    // Si "Tous les pays" est sélectionné, on ne garde que cette valeur
-    if (this.selectedCountries.includes('Tous les pays')) {
-      this.selectedCountries = ['Tous les pays'];
-    } else if (this.selectedCountries.length === 0) {
-      // Si rien n'est sélectionné, on remet "Tous les pays"
+    // Si 'Tous les pays' est sélectionné avec d'autres, on ne garde que les autres
+    if (this.selectedCountries.includes('Tous les pays') && this.selectedCountries.length > 1) {
+      this.selectedCountries = this.selectedCountries.filter(c => c !== 'Tous les pays');
+    }
+    // Si rien n'est sélectionné, on remet 'Tous les pays'
+    if (this.selectedCountries.length === 0) {
       this.selectedCountries = ['Tous les pays'];
     }
     this.loadAgencyRankings();

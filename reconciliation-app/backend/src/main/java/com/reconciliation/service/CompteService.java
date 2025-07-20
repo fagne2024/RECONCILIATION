@@ -278,6 +278,7 @@ public class CompteService {
                 entity.getCodeProprietaire()
         );
         compte.setAgence(entity.getAgence());
+        compte.setType(entity.getType()); // Ajout
         return compte;
     }
     
@@ -290,6 +291,7 @@ public class CompteService {
         entity.setPays(model.getPays());
         entity.setCodeProprietaire(model.getCodeProprietaire());
         entity.setAgence(model.getAgence());
+        entity.setType(model.getType()); // Ajout
         return entity;
     }
 } 

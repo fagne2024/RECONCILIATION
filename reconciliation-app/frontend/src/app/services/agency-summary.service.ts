@@ -22,4 +22,8 @@ export class AgencySummaryService {
   deleteSummary(id: number): Observable<any> {
     return this.http.delete(`${this.apiUrl}/${id}`);
   }
+
+  saveSelectedSummaries(summaries: any[]): Observable<any> {
+    return this.http.post(`${this.apiUrl}/save-selected`, summaries);
+  }
 } 

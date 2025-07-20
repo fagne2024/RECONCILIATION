@@ -1,4 +1,4 @@
-import { Component, OnInit, ChangeDetectorRef } from '@angular/core';
+import { Component, OnInit, ChangeDetectorRef, AfterViewInit } from '@angular/core';
 import * as Papa from 'papaparse';
 import * as XLSX from 'xlsx';
 
@@ -7,7 +7,8 @@ import * as XLSX from 'xlsx';
   templateUrl: './traitement.component.html',
   styleUrls: ['./traitement.component.scss']
 })
-export class TraitementComponent implements OnInit {
+export class TraitementComponent implements OnInit, AfterViewInit {
+  readonly LOCAL_STORAGE_KEY = 'traitement_data';
   selectedFiles: File[] = [];
   combinedRows: any[] = [];
   columns: string[] = [];
@@ -59,7 +60,7 @@ export class TraitementComponent implements OnInit {
   concatSeparator: string = ' ';
 
   exportTypeSuffix: string = '';
-  exportTypeService: string = '';
+  exportTypeDescription: string = '';
 
   // --- SUPPRESSION DE CARACTÈRES ---
   removeCharPosition: 'start' | 'end' | 'specific' = 'start';
@@ -1194,11 +1195,13 @@ export class TraitementComponent implements OnInit {
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         const safeType = (type || 'vide').replace(/[^a-zA-Z0-9_-]/g, '_');
-        // Ajout du service et du suffixe si précisé
-        const service = this.exportTypeService ? `_${this.exportTypeService.replace(/[^a-zA-Z0-9_-]/g, '_')}` : '';
-        const suffix = this.exportTypeSuffix ? `_${this.exportTypeSuffix}` : '';
+        const sufixe = this.exportTypeSuffix ? this.exportTypeSuffix.replace(/[^a-zA-Z0-9_-]/g, '_') : '';
+        const description = this.exportTypeDescription ? this.exportTypeDescription.replace(/[^a-zA-Z0-9_-]/g, '_') : '';
+        let filename = safeType;
+        if (sufixe) filename += `_` + sufixe;
+        if (description) filename += `_` + description;
         a.href = url;
-        a.download = `${safeType}${service}_${dateStr}${suffix}.csv`;
+        a.download = `${filename}.csv`;
         a.click();
         URL.revokeObjectURL(url);
         exported++;
@@ -1441,27 +1444,53 @@ export class TraitementComponent implements OnInit {
   }
 
   refreshPage() {
-    // Réinitialiser l'affichage sans recharger la page
+    // Réinitialiser uniquement l'affichage, PAS les données
     this.currentPage = 1;
+    this.rowsPerPage = 100;
+    this.maxDisplayedRows = 1000;
     this.showAllRows = false;
-    
-    // Réinitialiser les messages
     this.successMsg = {};
     this.errorMsg = {};
-    
-    // Mettre à jour l'affichage
+    this.successMsg.upload = '';
+
+    // Désactiver l'overlay de progression
+    this.isProcessing = false;
+    this.processingProgress = 0;
+    this.processingMessage = '';
+
+    // Supprimer la classe dragover si présente
+    const uploadArea = document.querySelector('.upload-area');
+    if (uploadArea) {
+      uploadArea.classList.remove('dragover');
+    }
+
+    // Réappliquer la pagination et l'affichage
     this.updateDisplayedRows();
     this.updatePagination();
-    
-    // Forcer la détection de changement avec des délais pour s'assurer que le DOM est prêt
+
     setTimeout(() => {
       this.cd.detectChanges();
       setTimeout(() => {
         this.cd.detectChanges();
-        // Afficher un message de confirmation
         this.showSuccess('refresh', 'Affichage rafraîchi avec succès.');
       }, 100);
     }, 50);
+    // Forcer le recalcul du layout et reset styles globaux
+    this.resetGlobalStyles();
+  }
+
+  private resetGlobalStyles() {
+    setTimeout(() => {
+      window.dispatchEvent(new Event('resize'));
+    }, 200);
+    document.body.style.overflow = '';
+    document.body.style.height = '';
+    document.body.style.width = '';
+    document.documentElement.style.overflow = '';
+    document.documentElement.style.height = '';
+    document.documentElement.style.width = '';
+    document.body.className = '';
+    document.documentElement.className = '';
   }
 
   ngOnInit() {
@@ -1477,6 +1506,71 @@ export class TraitementComponent implements OnInit {
     
     // Forcer la détection de changement
     this.cd.detectChanges();
+    
+    // Reset styles globaux pour éviter les bugs d'affichage après login
+    this.resetGlobalStyles();
+    // Restaurer l'état si présent
+    const saved = localStorage.getItem(this.LOCAL_STORAGE_KEY);
+    if (saved) {
+      const data = JSON.parse(saved);
+      Object.assign(this, data);
+      this.updateDisplayedRows();
+    }
+  }
+
+  ngAfterViewInit() {
+    // Forcer le recalcul du layout et la détection de changement après affichage
+    setTimeout(() => {
+      window.dispatchEvent(new Event('resize'));
+      this.cd.detectChanges();
+    }, 100);
+    // Sauvegarder l'état à chaque changement de page, de fichier, ou de colonne
+    const save = () => {
+      const data = {
+        selectedFiles: this.selectedFiles,
+        combinedRows: this.combinedRows,
+        columns: this.columns,
+        dedupCols: this.dedupCols,
+        formatOptions: this.formatOptions,
+        extractCol: this.extractCol,
+        extractType: this.extractType,
+        extractCount: this.extractCount,
+        extractKey: this.extractKey,
+        extractStart: this.extractStart,
+        selectedCols: this.selectedCols,
+        successMsg: this.successMsg,
+        errorMsg: this.errorMsg,
+        selectedDateFormat: this.selectedDateFormat,
+        exportTypeCol: this.exportTypeCol,
+        exportTypeValues: this.exportTypeValues,
+        exportTypeSelected: this.exportTypeSelected,
+        allRows: this.allRows,
+        allColumns: this.allColumns,
+        originalRows: this.originalRows,
+        selectionApplied: this.selectionApplied,
+        selectedFilterColumn: this.selectedFilterColumn,
+        filterValues: this.filterValues,
+        selectedFilterValues: this.selectedFilterValues,
+        filteredRows: this.filteredRows,
+        filterApplied: this.filterApplied,
+        concatCols: this.concatCols,
+        concatNewCol: this.concatNewCol,
+        concatSeparator: this.concatSeparator,
+        exportTypeSuffix: this.exportTypeSuffix,
+        exportTypeDescription: this.exportTypeDescription,
+        removeCharPosition: this.removeCharPosition,
+        removeCharCount: this.removeCharCount,
+        removeCharSpecificPosition: this.removeCharSpecificPosition,
+        currentPage: this.currentPage,
+        rowsPerPage: this.rowsPerPage,
+        maxDisplayedRows: this.maxDisplayedRows,
+        showAllRows: this.showAllRows,
+        displayedRows: this.displayedRows
+      };
+      localStorage.setItem(this.LOCAL_STORAGE_KEY, JSON.stringify(data));
+    };
+    // Sauvegarder à chaque changement de page, de fichier, ou de colonne
+    setInterval(save, 2000);
   }
 
   // Méthode pour optimiser l'affichage initial
@@ -1489,5 +1583,65 @@ export class TraitementComponent implements OnInit {
         this.cd.detectChanges();
       }, 100);
     }, 50);
+  }
+
+  newTraitement() {
+    // Vider toutes les données et supprimer la clé locale
+    this.selectedFiles = [];
+    this.combinedRows = [];
+    this.columns = [];
+    this.dedupCols = [];
+    this.formatOptions = {
+      trimSpaces: false,
+      toLowerCase: false,
+      toUpperCase: false,
+      normalizeDates: false,
+      normalizeNumbers: false,
+      amountColumns: [],
+      numberColumns: [],
+      dateColumns: [],
+      dateFormat: 'yyyy-MM-dd',
+      removeSeparators: false,
+      dotToComma: false,
+      removeDashesAndCommas: false,
+      absoluteValue: false,
+      removeCharacters: false
+    };
+    this.extractCol = '';
+    this.extractType = '';
+    this.extractCount = 1;
+    this.extractKey = '';
+    this.extractStart = 1;
+    this.selectedCols = [];
+    this.successMsg = {};
+    this.errorMsg = {};
+    this.selectedDateFormat = 'yyyy-MM-dd';
+    this.exportTypeCol = '';
+    this.exportTypeValues = [];
+    this.exportTypeSelected = [];
+    this.allRows = [];
+    this.allColumns = [];
+    this.originalRows = [];
+    this.selectionApplied = false;
+    this.selectedFilterColumn = '';
+    this.filterValues = [];
+    this.selectedFilterValues = [];
+    this.filteredRows = [];
+    this.filterApplied = false;
+    this.concatCols = [];
+    this.concatNewCol = '';
+    this.concatSeparator = ' ';
+    this.exportTypeSuffix = '';
+    this.exportTypeDescription = '';
+    this.removeCharPosition = 'start';
+    this.removeCharCount = 1;
+    this.removeCharSpecificPosition = 1;
+    this.currentPage = 1;
+    this.rowsPerPage = 100;
+    this.maxDisplayedRows = 1000;
+    this.showAllRows = false;
+    this.displayedRows = [];
+    localStorage.removeItem(this.LOCAL_STORAGE_KEY);
+    this.updateDisplayedRows();
   }
 } 

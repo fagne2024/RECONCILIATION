@@ -54,7 +54,7 @@ export class OperationsComponent implements OnInit, OnDestroy {
     isLoadingStats = false;
     
     // Filtres pour les statistiques
-    selectedCompteNumero: string = '';
+    selectedCodeProprietaire: string = '';
     selectedCompteId: number | undefined = undefined;
     
     // Pagination des cartes de statistiques
@@ -64,7 +64,7 @@ export class OperationsComponent implements OnInit, OnDestroy {
 
     // Propriété pour les numéros de comptes (pour l'autocomplétion)
     get comptesNumeros(): string[] {
-        return this.comptes.map(c => c.numeroCompte);
+        return this.codeProprietaireList;
     }
 
     // Propriété pour les options de comptes avec ID et nom
@@ -166,6 +166,9 @@ export class OperationsComponent implements OnInit, OnDestroy {
         this.addForm.get('montant')?.valueChanges.subscribe(() => this.calculateSoldeApres());
         this.addForm.get('typeOperation')?.valueChanges.subscribe(() => this.calculateSoldeApres());
         this.addForm.get('compteId')?.valueChanges.subscribe(() => this.onCompteChange());
+
+        // Dans le constructeur, ajouter le FormControl pour l'autocomplete
+        // this.filterForm.addControl('codeProprietaireCtrl', new FormControl(''));
     }
 
     ngOnInit() {
@@ -221,7 +224,7 @@ export class OperationsComponent implements OnInit, OnDestroy {
                 this.onFilterChange();
             }
         });
-        this.filteredCodeProprietaireList = this.codeProprietaireList;
+        this.filteredCodeProprietaireList = this.codeProprietaireList.slice();
         this.codeProprietaireSearchCtrl.valueChanges.subscribe((search: string | null) => {
             const s = (search || '').toLowerCase();
             this.filteredCodeProprietaireList = this.codeProprietaireList.filter(c => c.toLowerCase().includes(s));
@@ -247,6 +250,18 @@ export class OperationsComponent implements OnInit, OnDestroy {
             console.log('filteredBanqueList:', this.filteredBanqueList);
             console.log('filteredServiceList:', this.filteredServiceList);
         }, 1000);
+        // Déclenche le filtrage automatiquement quand le code propriétaire change
+        this.filterForm.get('codeProprietaire')?.valueChanges.subscribe(() => {
+            this.applyFilters();
+        });
+
+        // Dans ngOnInit, ajouter la logique de filtrage dynamique
+        // this.filterForm.get('codeProprietaireCtrl')?.valueChanges.subscribe((search: string) => {
+        //   const s = (search || '').toLowerCase();
+        //   this.filteredCodeProprietaireList = this.codeProprietaireList.filter(c => c.toLowerCase().includes(s));
+        // });
+        // Initialiser la liste filtrée
+        // this.filteredCodeProprietaireList = this.codeProprietaireList.slice();
     }
 
     ngOnDestroy() {
@@ -263,6 +278,8 @@ export class OperationsComponent implements OnInit, OnDestroy {
                 this.filteredOperations = [...this.operations];
                 this.paysList = [...new Set(data.map(op => op.pays))].sort();
                 this.filteredPaysList = this.paysList.slice(); // <-- Correction ici
+                this.codeProprietaireList = [...new Set(data.map(op => op.codeProprietaire).filter(code => code !== undefined))] as string[];
+                this.filteredCodeProprietaireList = this.codeProprietaireList.slice();
                 this.applyFilters();
                 this.calculateStats();
                 this.isLoading = false;
@@ -302,6 +319,7 @@ export class OperationsComponent implements OnInit, OnDestroy {
             this.operationService.getDistinctCodeProprietaire().subscribe({
                 next: (codes: string[]) => {
                     this.codeProprietaireList = codes;
+                    this.filteredCodeProprietaireList = codes.slice(); // Synchronisation immédiate
                 },
                 error: (error: any) => {
                     console.error('Erreur lors du chargement de la liste des codes propriétaires:', error);
@@ -356,8 +374,8 @@ export class OperationsComponent implements OnInit, OnDestroy {
     }
 
     applyStatsFilters() {
-        if (this.selectedCompteNumero) {
-            const compte = this.comptes.find(c => c.numeroCompte === this.selectedCompteNumero);
+        if (this.selectedCodeProprietaire) {
+            const compte = this.comptes.find(c => c.numeroCompte === this.selectedCodeProprietaire);
             this.selectedCompteId = compte ? compte.id : undefined;
         } else {
             this.selectedCompteId = undefined;
@@ -996,5 +1014,81 @@ export class OperationsComponent implements OnInit, OnDestroy {
         }
 
         return { debit, credit };
+    }
+
+    applyDatePreset(event: Event) {
+        const value = (event.target as HTMLSelectElement)?.value || '';
+        const today = new Date();
+        let dateDebut = '';
+        let dateFin = '';
+        if (value === 'today') {
+            // J-1
+            const yesterday = new Date(today);
+            yesterday.setDate(today.getDate() - 1);
+            dateDebut = yesterday.toISOString().split('T')[0];
+            dateFin = yesterday.toISOString().split('T')[0];
+        } else if (value === '7days') {
+            // J-7 à J-1
+            const start = new Date(today);
+            start.setDate(today.getDate() - 7);
+            const end = new Date(today);
+            end.setDate(today.getDate() - 1);
+            dateDebut = start.toISOString().split('T')[0];
+            dateFin = end.toISOString().split('T')[0];
+        } else if (value === '30days') {
+            // J-30 à J-1
+            const start = new Date(today);
+            start.setDate(today.getDate() - 30);
+            const end = new Date(today);
+            end.setDate(today.getDate() - 1);
+            dateDebut = start.toISOString().split('T')[0];
+            dateFin = end.toISOString().split('T')[0];
+        } else if (value === 'month') {
+            // 1er du mois à J-1
+            const start = new Date(today.getFullYear(), today.getMonth(), 1);
+            const end = new Date(today);
+            end.setDate(today.getDate() - 1);
+            dateDebut = start.toISOString().split('T')[0];
+            dateFin = end.toISOString().split('T')[0];
+        } else if (value === 'custom') {
+            dateDebut = '';
+            dateFin = '';
+        }
+        this.filterForm.patchValue({ dateDebut, dateFin });
+        this.applyFilters();
+    }
+
+    // Méthode pour appliquer le filtre à la sélection
+    onCodeProprietaireSelected(value: string) {
+      this.filterForm.patchValue({ codeProprietaire: [value] });
+      this.applyFilters();
+    }
+
+    // Résumé global et par type pour le footer (sur toutes les opérations filtrées)
+    get resumeGlobal() {
+      let totalDebit = 0;
+      let totalCredit = 0;
+      for (const op of this.filteredOperations) {
+        const { debit, credit } = this.getDebitCreditForOperation(op);
+        totalDebit += debit || 0;
+        totalCredit += credit || 0;
+      }
+      return {
+        count: this.filteredOperations.length,
+        totalDebit,
+        totalCredit
+      };
+    }
+
+    get resumeByType() {
+      const result: { [type: string]: { debit: number; credit: number } } = {};
+      for (const op of this.filteredOperations) {
+        const type = op.typeOperation || 'Inconnu';
+        if (!result[type]) result[type] = { debit: 0, credit: 0 };
+        const { debit, credit } = this.getDebitCreditForOperation(op);
+        result[type].debit += debit || 0;
+        result[type].credit += credit || 0;
+      }
+      return result;
     }
 } 

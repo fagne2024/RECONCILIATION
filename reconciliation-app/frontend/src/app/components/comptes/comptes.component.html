@@ -42,6 +42,16 @@
                 </div>
             </div>
             <div class="form-field">
+                <label for="type">Type de Compte</label>
+                <select id="type" formControlName="type">
+                    <option value="" disabled>Sélectionner un type</option>
+                    <option *ngFor="let t of compteTypes" [value]="t">{{ t }}</option>
+                </select>
+                <div *ngIf="addForm.controls['type'].touched && addForm.controls['type'].errors?.['required']" class="error">
+                    Le type de compte est requis.
+                </div>
+            </div>
+            <div class="form-field">
                 <label for="codeProprietaire">Code Propriétaire</label>
                 <input id="codeProprietaire" formControlName="codeProprietaire" placeholder="Ex: PROP001">
             </div>
@@ -74,6 +84,16 @@
                   placeholder="Saisir un pays..."
                   label="Pays">
               </app-autocomplete-input>
+          </div>
+          <div class="form-field">
+              <label for="editType">Type de Compte</label>
+              <select id="editType" formControlName="type">
+                  <option value="" disabled>Sélectionner un type</option>
+                  <option *ngFor="let t of compteTypes" [value]="t">{{ t }}</option>
+              </select>
+              <div *ngIf="editForm.controls['type'].touched && editForm.controls['type'].errors?.['required']" class="error">
+                  Le type de compte est requis.
+              </div>
           </div>
           <div class="form-field">
               <label for="editCodeProprietaire">Code Propriétaire</label>
@@ -189,6 +209,7 @@
                     <th>Date Dernière MAJ</th>
                     <th>Pays</th>
                     <th>Code Propriétaire</th>
+                    <th>Type</th>
                     <th>Actions</th>
                 </tr>
             </thead>
@@ -199,6 +220,7 @@
                     <td>{{ formatDate(compte.dateDerniereMaj) }}</td>
                     <td>{{ compte.pays }}</td>
                     <td>{{ compte.codeProprietaire || '-' }}</td>
+                    <td>{{ compte.type || '-' }}</td>
                     <td class="actions-cell">
                         <button (click)="viewReleve(compte)" class="btn icon-btn" title="Voir le relevé">
                             <i class="fas fa-file-alt" style="color: blue;"></i>
@@ -302,16 +324,8 @@
                 <div class="filter-group">
                     <label>Type d'opération:</label>
                     <select [(ngModel)]="releveTypeOperation" (change)="loadReleveOperations()">
-                        <option value="">Tous les types</option>
-                        <option value="total_cashin">Total Cash-in</option>
-                        <option value="total_paiement">Total Paiement</option>
-                        <option value="approvisionnement">Approvisionnement</option>
-                        <option value="ajustement">Ajustement</option>
-                        <option value="compense">Compense</option>
-                        <option value="frais_transaction">Frais Transaction</option>
-                        <option value="annulation_partenaire">Annulation Partenaire</option>
-                        <option value="annulation_bo">Annulation BO</option>
-                        <option value="transaction_cree">Transaction créée</option>
+                        <option value="">-- Sélectionner un type --</option>
+                        <option *ngFor="let type of operationTypes" [value]="type">{{ type }}</option>
                     </select>
                 </div>
                 <button class="btn export-btn" (click)="exportReleve()" [disabled]="isExporting">
@@ -437,4 +451,60 @@
             </div>
         </div>
     </div>
+</div>
+
+<style>
+  .comptes-resume {
+    margin-top: 32px;
+    background: #f8fafc;
+    border-radius: 10px;
+    box-shadow: 0 2px 8px #0001;
+    padding: 24px 16px 8px 16px;
+    max-width: 700px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+  .resume-table-comptes {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: 1.08em;
+  }
+  .resume-table-comptes th, .resume-table-comptes td {
+    padding: 10px 8px;
+    text-align: right;
+  }
+  .resume-table-comptes th {
+    background: #e3f2fd;
+    color: #1976d2;
+    font-weight: 600;
+    border-bottom: 2px solid #bbdefb;
+    text-align: right;
+  }
+  .resume-table-comptes th:first-child, .resume-table-comptes td:first-child {
+    text-align: left;
+  }
+  .resume-table-comptes tr.global-row {
+    background: #e3f2fd;
+    font-weight: bold;
+    color: #1976d2;
+  }
+</style>
+<div class="comptes-resume">
+  <table class="resume-table-comptes">
+    <thead>
+      <tr>
+        <th>Résumé</th>
+        <th>Nombre de comptes</th>
+        <th>Solde global</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr class="global-row">
+        <td>Global</td>
+        <td>{{ resumeGlobal.count }}</td>
+        <td>{{ resumeGlobal.totalSolde | number:'1.2-2' }}</td>
+      </tr>
+    </tbody>
+  </table>
 </div>

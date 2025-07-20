@@ -106,6 +106,9 @@ public class CompteController {
             if (compteUpdate.getAgence() != null) {
                 existing.setAgence(compteUpdate.getAgence());
             }
+            if (compteUpdate.getType() != null) {
+                existing.setType(compteUpdate.getType());
+            }
             
             // Mettre à jour la date de dernière modification
             existing.setDateDerniereMaj(java.time.LocalDateTime.now());

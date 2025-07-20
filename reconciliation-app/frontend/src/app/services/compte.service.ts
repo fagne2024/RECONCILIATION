@@ -85,7 +85,7 @@ export class CompteService {
     // Filtrer les comptes avec des paramètres
     filterComptes(filter: CompteFilter): Observable<Compte[]> {
         let params = new HttpParams();
-
+        
         if (filter.pays && Array.isArray(filter.pays)) {
             filter.pays.forEach((p: string) => {
                 params = params.append('pays', p);
