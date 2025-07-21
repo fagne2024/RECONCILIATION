@@ -66,8 +66,22 @@ export class DashboardComponent implements OnInit, OnDestroy {
       responsive: true,
       plugins: {
         legend: { display: true, position: 'top' },
-        title: { display: true, text: '' }
-        // plus de datalabels ici
+        title: { display: true, text: '' },
+        datalabels: {
+          font: { weight: 'bold' },
+          color: 'black',
+          formatter: (value: any, context: any) => {
+            // Si le metric sélectionné est 'volume' ou 'revenu', formater sans décimales
+            if (context && context.chart && context.chart.config && context.chart.config._config &&
+                (context.chart.config._config.options?.plugins?.title?.text?.toLowerCase().includes('volume') ||
+                 context.chart.config._config.options?.plugins?.title?.text?.toLowerCase().includes('revenu'))
+            ) {
+              return Number(value).toLocaleString('fr-FR', { maximumFractionDigits: 0 });
+            }
+            // Sinon, séparer les milliers mais garder la valeur telle quelle
+            return Number(value).toLocaleString('fr-FR');
+          }
+        }
       },
       scales: {
         y: {
@@ -90,7 +104,8 @@ export class DashboardComponent implements OnInit, OnDestroy {
       responsive: true,
       plugins: {
         legend: { display: true, position: 'top' },
-        title: { display: true, text: '' }
+        title: { display: true, text: '' },
+        datalabels: { display: false } // Empêche l'affichage des valeurs sur les courbes
       },
       scales: {
         y: {
@@ -113,7 +128,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
     allOperations: any[] = [];
     selectedChartType: 'bar' | 'line' = 'bar';
     lineChartData: any = { labels: [], datasets: [] };
-    lineChartPlugins: any[] = [];
+    // Supprimer toute gestion de lineChartPlugins et ChartDataLabels pour les courbes
 
     totalVolume: number = 0;
     totalTransactions: number = 0;
@@ -242,12 +257,6 @@ export class DashboardComponent implements OnInit, OnDestroy {
           labels: allDates,
           datasets
         };
-        if (this.selectedChartType === 'line') {
-          const datasets = this.lineChartData.datasets || [];
-          // Correction : ne compter que les datasets réellement visibles (au moins une valeur non nulle)
-          const visibleDatasets = datasets.filter((ds: any) => ds.data && (ds.data as number[]).some((val: number) => val !== 0));
-          this.lineChartPlugins = (visibleDatasets.length === 1) ? [ChartDataLabels] : [];
-        }
         return;
       } else if (this.selectedMetric === 'revenu') {
         // Bar chart : volume des frais par service (tous les FRAIS_TRANSACTION, crédit et débit)
@@ -317,11 +326,6 @@ export class DashboardComponent implements OnInit, OnDestroy {
           labels: allDatesLine,
           datasets: datasetsLine
         };
-        if (this.selectedChartType === 'line') {
-          const datasets = this.lineChartData.datasets || [];
-          const visibleDatasets = datasets.filter((ds: any) => ds.data && (ds.data as number[]).some((val: number) => val !== 0));
-          this.lineChartPlugins = (visibleDatasets.length === 1) ? [ChartDataLabels] : [];
-        }
         return;
       } else if (this.selectedMetric === 'volume') {
         // Bar chart : volume total par type d'opération
@@ -387,10 +391,6 @@ export class DashboardComponent implements OnInit, OnDestroy {
           labels: allDates,
           datasets
         };
-        if (this.selectedChartType === 'line') {
-          const datasets = this.lineChartData.datasets || [];
-          this.lineChartPlugins = (datasets.length === 1) ? [ChartDataLabels] : [];
-        }
         return;
       }
     }

@@ -1644,4 +1644,13 @@ export class TraitementComponent implements OnInit, AfterViewInit {
     localStorage.removeItem(this.LOCAL_STORAGE_KEY);
     this.updateDisplayedRows();
   }
+
+  toggleSelectAllCols(event: Event) {
+    const input = event.target as HTMLInputElement;
+    if (input.checked) {
+      this.selectedCols = [...this.columns];
+    } else {
+      this.selectedCols = [];
+    }
+  }
 } 

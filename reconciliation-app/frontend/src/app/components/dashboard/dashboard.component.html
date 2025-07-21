@@ -101,13 +101,13 @@
                 [data]="barChartData"
                 [options]="barChartOptions"
                 [type]="'bar'"
+                [plugins]="[ChartDataLabels]"
                 (chartClick)="onBarClick($event)">
               </canvas>
               <canvas *ngIf="selectedChartType === 'line' && lineChartData && lineChartData.labels?.length" baseChart
                 [data]="lineChartData"
                 [options]="lineChartOptions"
-                [type]="'line'"
-                [plugins]="lineChartPlugins">
+                [type]="'line'">
               </canvas>
               <div *ngIf="(!barChartData || !barChartData.labels?.length) && (!lineChartData || !lineChartData.labels?.length)" class="text">Aucune donnée à afficher</div>
             </div>

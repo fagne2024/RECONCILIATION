@@ -39,6 +39,7 @@ import { LoginComponent } from './login/login.component';
 import { TraitementComponent } from './components/traitement/traitement.component';
 import { ProgressPopupComponent } from './components/shared/progress-popup.component';
 import { ProfilComponent } from './components/profil/profil.component';
+import { SoldesComponent } from './components/soldes/soldes.component';
 
 @NgModule({
     declarations: [
@@ -58,7 +59,8 @@ import { ProfilComponent } from './components/profil/profil.component';
         LoginComponent,
         TraitementComponent,
         ProgressPopupComponent,
-        ProfilComponent
+        ProfilComponent,
+        SoldesComponent
     ],
     imports: [
         BrowserModule,

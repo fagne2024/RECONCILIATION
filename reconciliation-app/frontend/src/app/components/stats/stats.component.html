@@ -86,34 +86,28 @@
                 <table>
                     <thead>
                         <tr>
-                            <th>
+                            <!-- <th>
                                 <input type="checkbox" [checked]="allSelected" (change)="toggleSelectAll($event)">
-                            </th>
+                            </th> -->
                             <th>Agence</th>
                             <th>Service</th>
                             <th>Pays</th>
                             <th>Date</th>
                             <th>Volume Total</th>
                             <th>Nombres de Transactions</th>
-                            <th>Action</th>
                         </tr>
                     </thead>
                     <tbody>
                         <tr *ngFor="let summary of pagedStats">
-                            <td>
+                            <!-- <td>
                                 <input type="checkbox" [checked]="isSelected(summary)" (change)="toggleSelection(summary, $event)">
-                            </td>
+                            </td> -->
                             <td>{{summary.agency}}</td>
                             <td>{{summary.service}}</td>
                             <td>{{summary.country}}</td>
                             <td>{{formatDateWithTime(summary.date)}}</td>
                             <td>{{summary.totalVolume | number:'1.0-0'}}</td>
                             <td>{{summary.recordCount}}</td>
-                            <td>
-                                <button (click)="deleteSummary(summary)" [disabled]="isLoading" title="Supprimer" class="btn icon-btn delete">
-                                    <i class="fas fa-trash" style="color: red;"></i>
-                                </button>
-                            </td>
                         </tr>
                     </tbody>
                 </table>

@@ -61,6 +61,8 @@ export class ComptesComponent implements OnInit, OnDestroy {
     releveTypeOperation = '';
     releveDateDebutCustom = '';
     releveDateFinCustom = '';
+    showSoldesSeulement = false; // Pour basculer la vue
+    releveSoldesJournaliers: { date: string; opening: number; closing: number }[] = [];
     
     // Pagination pour le relevé
     releveCurrentPage = 1;
@@ -670,6 +672,11 @@ export class ComptesComponent implements OnInit, OnDestroy {
         if (this.criticalPage < this.totalCriticalPages) this.criticalPage++;
     }
 
+    toggleReleveView(): void {
+        this.showSoldesSeulement = !this.showSoldesSeulement;
+        this.calculateRelevePagination();
+    }
+
     // Méthodes pour le relevé de compte
     viewReleve(compte: Compte): void {
         this.selectedCompte = compte;
@@ -681,6 +688,8 @@ export class ComptesComponent implements OnInit, OnDestroy {
         this.showReleveModal = false;
         this.selectedCompte = null;
         this.releveOperations = [];
+        this.releveSoldesJournaliers = [];
+        this.showSoldesSeulement = false;
         this.releveDateDebut = '';
         this.releveTypeOperation = '';
         this.releveDateDebutCustom = '';
@@ -729,6 +738,19 @@ export class ComptesComponent implements OnInit, OnDestroy {
             next: (operations: Operation[]) => {
                 // Garder l'ordre chronologique pour le calcul des soldes
                 this.releveOperations = operations;
+
+                // Calculer et stocker les soldes journaliers
+                const dailyBalances = this.getDailyBalances(this.releveOperations);
+                this.releveSoldesJournaliers = Object.entries(dailyBalances)
+                    .filter(([key]) => key !== '_globalOpening')
+                    .map(([date, balances]) => ({
+                        date,
+                        opening: balances.opening,
+                        closing: balances.closing
+                    }))
+                    // Trier du plus récent au plus ancien pour l'affichage
+                    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
                 this.calculateRelevePagination();
                 this.isLoadingReleve = false;
             },
@@ -741,7 +763,11 @@ export class ComptesComponent implements OnInit, OnDestroy {
 
     calculateRelevePagination(): void {
         this.releveCurrentPage = 1;
-        this.releveTotalPages = Math.ceil(this.releveOperations.length / this.relevePageSize);
+        if (this.showSoldesSeulement) {
+            this.releveTotalPages = Math.ceil(this.releveSoldesJournaliers.length / this.relevePageSize);
+        } else {
+            this.releveTotalPages = Math.ceil(this.releveOperations.length / this.relevePageSize);
+        }
     }
 
     get pagedReleveOperations(): Operation[] {
@@ -749,6 +775,12 @@ export class ComptesComponent implements OnInit, OnDestroy {
         const endIndex = startIndex + this.relevePageSize;
         // Retourner les opérations dans l'ordre inverse (du plus récent au plus ancien) pour l'affichage
         return [...this.releveOperations].reverse().slice(startIndex, endIndex);
+    }
+
+    get pagedReleveSoldes(): { date: string; opening: number; closing: number }[] {
+        const startIndex = (this.releveCurrentPage - 1) * this.relevePageSize;
+        const endIndex = startIndex + this.relevePageSize;
+        return this.releveSoldesJournaliers.slice(startIndex, endIndex);
     }
 
     prevRelevePage(): void {
@@ -819,9 +851,75 @@ export class ComptesComponent implements OnInit, OnDestroy {
     }
 
     exportReleve(): void {
-        if (!this.selectedCompte || this.releveOperations.length === 0) return;
+        if (!this.selectedCompte) return;
+        if (this.showSoldesSeulement && this.releveSoldesJournaliers.length === 0) {
+            console.log('Export annulé : aucun solde à exporter.');
+            return;
+        }
+        if (!this.showSoldesSeulement && this.releveOperations.length === 0) {
+            console.log('Export annulé : aucune opération à exporter.');
+            return;
+        }
 
         this.isExporting = true;
+        try {
+            if (this.showSoldesSeulement) {
+                this.exportReleveSoldes();
+            } else {
+                this.exportReleveComplet();
+            }
+        } catch (error) {
+            console.error("Erreur lors de l'export du relevé :", error);
+        } finally {
+            this.isExporting = false;
+        }
+    }
+
+    private exportReleveSoldes(): void {
+        if (!this.selectedCompte) return;
+    
+        const tableData = [];
+        // En-tête
+        tableData.push(['RELEVÉ DES SOLDES JOURNALIERS']);
+        tableData.push([]);
+        tableData.push(['Numéro de compte:', this.selectedCompte.numeroCompte]);
+        tableData.push(['Solde actuel:', this.formatMontant(this.selectedCompte.solde)]);
+        tableData.push([]);
+    
+        // En-tête du tableau
+        tableData.push(['Date', 'Solde d\'ouverture', 'Solde de clôture', 'Variation']);
+    
+        // Données (déjà triées du plus récent au plus ancien)
+        this.releveSoldesJournaliers.forEach(solde => {
+            const variation = solde.closing - solde.opening;
+            tableData.push([
+                this.formatDate(solde.date).split(' ')[0],
+                this.formatMontant(solde.opening),
+                this.formatMontant(solde.closing),
+                this.formatMontant(variation)
+            ]);
+        });
+    
+        const ws = XLSX.utils.aoa_to_sheet(tableData);
+    
+        // Styles et largeurs
+        ws['!cols'] = [{ wch: 15 }, { wch: 20 }, { wch: 20 }, { wch: 20 }];
+        const headerStyle = { font: { bold: true }, fill: { fgColor: { rgb: 'D9E1F2' } } };
+        ws['A6'].s = headerStyle;
+        ws['B6'].s = headerStyle;
+        ws['C6'].s = headerStyle;
+        ws['D6'].s = headerStyle;
+        ws['A1'].s = { font: { bold: true, sz: 14 } };
+
+    
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, 'Soldes Journaliers');
+        const fileName = `releve_soldes_${this.selectedCompte.numeroCompte}_${new Date().toISOString().split('T')[0]}.xlsx`;
+        XLSX.writeFile(wb, fileName);
+    }
+
+    private exportReleveComplet(): void {
+        if (!this.selectedCompte || this.releveOperations.length === 0) return;
 
         // Créer un tableau complet avec en-tête et données
         const tableData = [];
@@ -994,7 +1092,6 @@ export class ComptesComponent implements OnInit, OnDestroy {
         // Sauvegarder le fichier
         const fileName = `releve_compte_${this.selectedCompte.numeroCompte}_${new Date().toISOString().split('T')[0]}.xlsx`;
         XLSX.writeFile(wb, fileName);
-        this.isExporting = false;
     }
 
     // Ajout d'une méthode utilitaire pour grouper les opérations par date et calculer les soldes d'ouverture/clôture

@@ -44,6 +44,13 @@
   <div *ngIf="columns.length > 0" class="select-cols-section">
     <h4>Sélection des colonnes à conserver</h4>
     <div class="select-cols">
+      <label>
+        <input type="checkbox"
+               [checked]="selectedCols.length === columns.length && columns.length > 0"
+               (change)="toggleSelectAllCols($event)">
+        Tous
+      </label>
+      <!-- Colonnes individuelles -->
       <label *ngFor="let col of columns">
         <input type="checkbox" [value]="col" [checked]="selectedCols.includes(col)" (change)="onSelectColChange($event)">
         {{ col }}

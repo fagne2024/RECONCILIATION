@@ -516,17 +516,6 @@ export class StatsComponent implements OnInit, OnDestroy {
         }
     }
 
-    deleteSummary(summary: any) {
-        // Supprime toutes les lignes sources correspondant à la ligne agrégée
-        this.agencySummaries = this.agencySummaries.filter(s =>
-            !(s.agency === summary.agency &&
-              s.service === summary.service &&
-              s.country === summary.country &&
-              s.date === summary.date)
-        );
-        this.applyFilters();
-    }
-
     // Méthodes utilitaires pour récupérer toutes les valeurs uniques
     getAllAgencies(): string[] {
         return Array.from(new Set(this.agencySummaries.map(s => s.agency))).sort();

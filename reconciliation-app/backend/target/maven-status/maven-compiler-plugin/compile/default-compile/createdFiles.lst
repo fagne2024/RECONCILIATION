@@ -8,6 +8,7 @@ com\reconciliation\repository\OperationRepository.class
 com\reconciliation\repository\AgencySummaryRepository.class
 com\reconciliation\repository\PermissionRepository.class
 com\reconciliation\entity\AgencySummaryEntity.class
+com\reconciliation\repository\SoldeRepository.class
 com\reconciliation\controller\RankingController.class
 com\reconciliation\dto\OperationCreateRequest.class
 com\reconciliation\controller\ReconciliationController.class
