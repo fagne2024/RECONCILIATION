@@ -37,6 +37,13 @@
   font-style: italic;
 }
 
+.no-options-message {
+  color: #6c757d;
+  font-size: 0.8rem;
+  margin-top: 5px;
+  font-style: italic;
+}
+
 // Responsive design
 @media (max-width: 768px) {
   .autocomplete-select {

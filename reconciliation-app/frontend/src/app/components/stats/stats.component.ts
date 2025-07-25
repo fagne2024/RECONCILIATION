@@ -52,44 +52,6 @@ export class StatsComponent implements OnInit, OnDestroy {
     @ViewChild('serviceSelect') serviceSelect!: MatSelect;
     @ViewChild('paysSelect') paysSelect!: MatSelect;
 
-    selectedSummaries: any[] = [];
-    get allSelected(): boolean {
-        return this.pagedStats.length > 0 && this.pagedStats.every(s => this.isSelected(s));
-    }
-    isSelected(summary: any): boolean {
-        return this.selectedSummaries.some(sel => sel === summary);
-    }
-    toggleSelection(summary: any, event: any): void {
-        if (event.target.checked) {
-            if (!this.isSelected(summary)) {
-                this.selectedSummaries.push(summary);
-            }
-        } else {
-            this.selectedSummaries = this.selectedSummaries.filter(sel => sel !== summary);
-        }
-    }
-    toggleSelectAll(event: any): void {
-        if (event.target.checked) {
-            this.selectedSummaries = [...this.pagedStats];
-        } else {
-            this.selectedSummaries = this.selectedSummaries.filter(sel => !this.pagedStats.includes(sel));
-        }
-    }
-    saveSelected(): void {
-        this.isLoading = true;
-        this.agencySummaryService.saveSelectedSummaries(this.selectedSummaries).subscribe({
-            next: (response) => {
-                // Gérer la réponse (succès, message, etc.)
-                this.isLoading = false;
-                // Optionnel : afficher un message de succès ou rafraîchir les données
-            },
-            error: (error) => {
-                // Gérer l’erreur
-                this.isLoading = false;
-            }
-        });
-    }
-
     constructor(
         private appStateService: AppStateService,
         private dataNormalizationService: DataNormalizationService,
@@ -134,7 +96,8 @@ export class StatsComponent implements OnInit, OnDestroy {
         // Gestion de la recherche dynamique
         this.agenceSearchCtrl.valueChanges.subscribe((search: string | null) => {
             const s = (search || '').toLowerCase();
-            this.filteredAgencies = this.getAllAgencies().filter(a => a.toLowerCase().includes(s));
+            const availableAgencies = this.getFilteredAgencies();
+            this.filteredAgencies = availableAgencies.filter(a => a.toLowerCase().includes(s));
             if (this.filteredAgencies.length === 1 && !this.filterForm.value.agency.includes(this.filteredAgencies[0])) {
                 this.filterForm.controls['agency'].setValue([this.filteredAgencies[0]]);
                 if (this.agenceSelect) { this.agenceSelect.close(); }
@@ -143,7 +106,8 @@ export class StatsComponent implements OnInit, OnDestroy {
         });
         this.serviceSearchCtrl.valueChanges.subscribe((search: string | null) => {
             const s = (search || '').toLowerCase();
-            this.filteredServices = this.getAllServices().filter(a => a.toLowerCase().includes(s));
+            const availableServices = this.getFilteredServices();
+            this.filteredServices = availableServices.filter(a => a.toLowerCase().includes(s));
             if (this.filteredServices.length === 1 && !this.filterForm.value.service.includes(this.filteredServices[0])) {
                 this.filterForm.controls['service'].setValue([this.filteredServices[0]]);
                 if (this.serviceSelect) { this.serviceSelect.close(); }
@@ -152,7 +116,8 @@ export class StatsComponent implements OnInit, OnDestroy {
         });
         this.paysSearchCtrl.valueChanges.subscribe((search: string | null) => {
             const s = (search || '').toLowerCase();
-            this.filteredCountries = this.getAllCountries().filter(a => a.toLowerCase().includes(s));
+            const availableCountries = this.getFilteredCountries();
+            this.filteredCountries = availableCountries.filter(a => a.toLowerCase().includes(s));
             if (this.filteredCountries.length === 1 && !this.filterForm.value.country.includes(this.filteredCountries[0])) {
                 this.filterForm.controls['country'].setValue([this.filteredCountries[0]]);
                 if (this.paysSelect) { this.paysSelect.close(); }
@@ -171,10 +136,8 @@ export class StatsComponent implements OnInit, OnDestroy {
             next: (data) => {
                 console.log('Données reçues de l\'API agency-summary:', data);
                 this.agencySummaries = data;
-                // Initialiser les listes filtrées après chargement effectif
-                this.filteredAgencies = this.getAllAgencies();
-                this.filteredServices = this.getAllServices();
-                this.filteredCountries = this.getAllCountries();
+                // Initialiser les listes filtrées avec cloisonnement
+                this.updateFilteredLists();
                 this.applyFilters();
                 this.isLoading = false;
             },
@@ -188,11 +151,13 @@ export class StatsComponent implements OnInit, OnDestroy {
 
     getFilteredAgencies(): string[] {
         let data = this.agencySummaries;
-        if (this.filterForm.value.service) {
-            data = data.filter(s => s.service === this.filterForm.value.service);
+        // Filtrer par service si sélectionné
+        if (this.filterForm.value.service && this.filterForm.value.service.length > 0) {
+            data = data.filter(s => this.filterForm.value.service.includes(s.service));
         }
-        if (this.filterForm.value.country) {
-            data = data.filter(s => s.country === this.filterForm.value.country);
+        // Filtrer par pays si sélectionné
+        if (this.filterForm.value.country && this.filterForm.value.country.length > 0) {
+            data = data.filter(s => this.filterForm.value.country.includes(s.country));
         }
         const agencies = [...new Set(data.map(s => s.agency))];
         return agencies.sort();
@@ -200,11 +165,13 @@ export class StatsComponent implements OnInit, OnDestroy {
 
     getFilteredServices(): string[] {
         let data = this.agencySummaries;
-        if (this.filterForm.value.agency) {
-            data = data.filter(s => s.agency === this.filterForm.value.agency);
+        // Filtrer par agence si sélectionnée (cloisonnement principal)
+        if (this.filterForm.value.agency && this.filterForm.value.agency.length > 0) {
+            data = data.filter(s => this.filterForm.value.agency.includes(s.agency));
         }
-        if (this.filterForm.value.country) {
-            data = data.filter(s => s.country === this.filterForm.value.country);
+        // Filtrer par pays si sélectionné
+        if (this.filterForm.value.country && this.filterForm.value.country.length > 0) {
+            data = data.filter(s => this.filterForm.value.country.includes(s.country));
         }
         const services = [...new Set(data.map(s => s.service))];
         return services.sort();
@@ -212,11 +179,13 @@ export class StatsComponent implements OnInit, OnDestroy {
 
     getFilteredCountries(): string[] {
         let data = this.agencySummaries;
-        if (this.filterForm.value.agency) {
-            data = data.filter(s => s.agency === this.filterForm.value.agency);
+        // Filtrer par agence si sélectionnée (cloisonnement principal)
+        if (this.filterForm.value.agency && this.filterForm.value.agency.length > 0) {
+            data = data.filter(s => this.filterForm.value.agency.includes(s.agency));
         }
-        if (this.filterForm.value.service) {
-            data = data.filter(s => s.service === this.filterForm.value.service);
+        // Filtrer par service si sélectionné
+        if (this.filterForm.value.service && this.filterForm.value.service.length > 0) {
+            data = data.filter(s => this.filterForm.value.service.includes(s.service));
         }
         const countries = [...new Set(data.map(s => s.country))];
         return countries.sort();
@@ -240,7 +209,69 @@ export class StatsComponent implements OnInit, OnDestroy {
 
     // Méthode appelée lors d'un changement de filtre
     onFilterChange() {
+        // Mettre à jour les listes filtrées pour le cloisonnement
+        this.updateFilteredLists();
+        
         this.applyFilters();
+        
+        // Fermer automatiquement les dropdowns après un choix
+        setTimeout(() => {
+            if (this.agenceSelect) this.agenceSelect.close();
+            if (this.serviceSelect) this.serviceSelect.close();
+            if (this.paysSelect) this.paysSelect.close();
+        }, 100);
+    }
+
+    // Méthode pour mettre à jour les listes filtrées avec cloisonnement
+    updateFilteredLists() {
+        // Mettre à jour les services disponibles selon l'agence sélectionnée
+        this.filteredServices = this.getFilteredServices();
+        
+        // Mettre à jour les pays disponibles selon l'agence sélectionnée
+        this.filteredCountries = this.getFilteredCountries();
+        
+        // Mettre à jour les agences disponibles selon les autres filtres
+        this.filteredAgencies = this.getFilteredAgencies();
+        
+        // Nettoyer les sélections qui ne sont plus valides
+        this.cleanInvalidSelections();
+    }
+
+    // Méthode pour nettoyer les sélections invalides
+    cleanInvalidSelections() {
+        const currentAgency = this.filterForm.value.agency;
+        const currentService = this.filterForm.value.service;
+        const currentCountry = this.filterForm.value.country;
+
+        // Nettoyer les services si l'agence a changé
+        if (currentService && currentService.length > 0) {
+            const validServices = currentService.filter((service: string) => 
+                this.filteredServices.includes(service)
+            );
+            if (validServices.length !== currentService.length) {
+                this.filterForm.patchValue({ service: validServices });
+            }
+        }
+
+        // Nettoyer les pays si l'agence a changé
+        if (currentCountry && currentCountry.length > 0) {
+            const validCountries = currentCountry.filter((country: string) => 
+                this.filteredCountries.includes(country)
+            );
+            if (validCountries.length !== currentCountry.length) {
+                this.filterForm.patchValue({ country: validCountries });
+            }
+        }
+
+        // Nettoyer les agences si les autres filtres ont changé
+        if (currentAgency && currentAgency.length > 0) {
+            const validAgencies = currentAgency.filter((agency: string) => 
+                this.filteredAgencies.includes(agency)
+            );
+            if (validAgencies.length !== currentAgency.length) {
+                this.filterForm.patchValue({ agency: validAgencies });
+            }
+        }
     }
 
     /**
@@ -402,7 +433,9 @@ export class StatsComponent implements OnInit, OnDestroy {
     async exportStats() {
         this.isLoading = true;
         try {
-            const data = this.filteredData.map(item => ({
+            // Utiliser les données agrégées au lieu de filteredData
+            const aggregatedData = this.getAggregatedStats();
+            const data = aggregatedData.map(item => ({
                 Client: item.agency,
                 Service: item.service,
                 Pays: item.country,
@@ -413,6 +446,13 @@ export class StatsComponent implements OnInit, OnDestroy {
 
             if (data.length === 0) {
                 this.errorMessage = 'Aucune donnée à exporter';
+                return;
+            }
+
+            // Demander le nom du fichier à l'utilisateur
+            const fileName = await this.promptFileName();
+            if (!fileName) {
+                console.log('Export annulé par l\'utilisateur');
                 return;
             }
 
@@ -475,19 +515,45 @@ export class StatsComponent implements OnInit, OnDestroy {
             });
 
             const buffer = await workbook.xlsx.writeBuffer();
-            const agencyCode = this.filterForm.value.agency ? `_${this.filterForm.value.agency.toUpperCase().replace(/\s+/g, '')}` : '';
-            const countryCode = this.filterForm.value.country ? `_${this.filterForm.value.country.toUpperCase().replace(/\s+/g, '')}` : '';
-            const serviceCode = this.filterForm.value.service ? `_${this.filterForm.value.service.toUpperCase().replace(/\s+/g, '')}` : '';
-            FileSaver.saveAs(
-                new Blob([buffer], { type: 'application/octet-stream' }),
-                `VOLUME${agencyCode}${countryCode}${serviceCode}_${new Date().toISOString().split('T')[0].toUpperCase()}.XLSX`
-            );
+            const blob = new Blob([buffer], { 
+                type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
+            });
+            
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = fileName;
+            a.style.display = 'none';
+            document.body.appendChild(a);
+            a.click();
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            document.body.removeChild(a);
+            window.URL.revokeObjectURL(url);
+            
+            console.log(`Fichier téléchargé avec succès : ${fileName}`);
         } catch (error) {
             console.error('Erreur lors de l\'export:', error);
             this.errorMessage = 'Erreur lors de l\'export des données';
         } finally {
             this.isLoading = false;
         }
+    }
+
+    private async promptFileName(): Promise<string | null> {
+        const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
+        const defaultFileName = `statistiques_${timestamp}.xlsx`;
+        
+        const fileName = prompt(`Entrez le nom du fichier (sans l'extension .xlsx):`, defaultFileName.replace('.xlsx', ''));
+        
+        if (fileName === null) {
+            return null; // Utilisateur a annulé
+        }
+        
+        if (fileName.trim() === '') {
+            return defaultFileName;
+        }
+        
+        return fileName.trim() + '.xlsx';
     }
 
     formatDateWithTime(date: string): string {

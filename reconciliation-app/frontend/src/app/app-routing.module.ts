@@ -14,6 +14,8 @@ import { ColumnSelectionComponent } from './components/column-selection/column-s
 import { LoginComponent } from './login/login.component';
 import { TraitementComponent } from './components/traitement/traitement.component';
 import { ProfilComponent } from './components/profil/profil.component';
+import { ModulesComponent } from './components/modules/modules.component';
+import { PermissionsComponent } from './components/permissions/permissions.component';
 
 const routes: Routes = [
   { path: '', redirectTo: '/upload', pathMatch: 'full' },
@@ -30,7 +32,9 @@ const routes: Routes = [
   { path: 'ranking', component: RankingComponent },
   { path: 'login', component: LoginComponent },
   { path: 'traitement', component: TraitementComponent },
-  { path: 'profils', component: ProfilComponent }
+  { path: 'profils', component: ProfilComponent },
+  { path: 'modules', component: ModulesComponent },
+  { path: 'permissions', component: PermissionsComponent }
 ];
 
 @NgModule({

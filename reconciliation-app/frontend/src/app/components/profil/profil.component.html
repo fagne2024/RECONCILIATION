@@ -1,19 +1,151 @@
 <div class="profil-container">
-  <h2>Gestion des profils</h2>
-  <div class="profil-list">
-    <h3>Liste des profils</h3>
-    <ul>
-      <li *ngFor="let profil of profils" (click)="selectProfil(profil)" [class.selected]="selectedProfil?.id === profil.id">
-        {{ profil.nom }}
-        <button (click)="deleteProfil(profil); $event.stopPropagation()">Supprimer</button>
-      </li>
-    </ul>
-    <input [(ngModel)]="newProfilName" placeholder="Nom du nouveau profil">
-    <button (click)="createProfil()">Créer</button>
+  <div class="header">
+    <h2>Gestion des profils</h2>
+    <div class="actions">
+      <button (click)="showAddForm = !showAddForm" class="btn add-btn">
+        <i class="fas fa-plus"></i> Nouveau Profil
+      </button>
+    </div>
+  </div>
+
+  <!-- Modal d'ajout de profil -->
+  <div *ngIf="showAddForm" class="modal-overlay" (click)="closeAddModal($event)">
+    <div class="modal-container" (click)="$event.stopPropagation()">
+      <div class="modal-header">
+        <h3><i class="fas fa-plus-circle"></i> Créer un nouveau profil</h3>
+        <button type="button" class="modal-close" (click)="cancelAdd()">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+      <div class="modal-body">
+        <form [formGroup]="addForm" (ngSubmit)="createProfil()" class="add-form">
+          <div class="form-section">
+            <div class="form-group">
+              <label>Nom du profil *</label>
+              <input type="text" formControlName="nom" placeholder="Ex: Administrateur" class="text-input">
+              <div *ngIf="addForm.get('nom')?.invalid && addForm.get('nom')?.touched" class="error-message">
+                Le nom du profil est requis.
+              </div>
+            </div>
+            <div class="form-group">
+              <label>Description</label>
+              <textarea formControlName="description" placeholder="Description du profil..." class="text-input"></textarea>
+            </div>
+          </div>
+          
+          <div class="modal-footer">
+            <div class="modal-actions">
+              <button type="button" class="btn-secondary" (click)="cancelAdd()">
+                <i class="fas fa-times"></i>
+                Annuler
+              </button>
+              <button type="submit" class="btn-primary" [disabled]="!addForm.valid || isAdding">
+                <i class="fas fa-plus"></i>
+                {{ isAdding ? 'Création...' : 'Créer' }}
+              </button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal d'édition de profil -->
+  <div *ngIf="showEditForm" class="modal-overlay" (click)="cancelEdit()">
+    <div class="modal-container" (click)="$event.stopPropagation()">
+      <div class="modal-header">
+        <h3><i class="fas fa-edit"></i> Modifier le profil</h3>
+        <button type="button" class="modal-close" (click)="cancelEdit()">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+      <div class="modal-body">
+        <form [formGroup]="editForm" (ngSubmit)="updateProfil()" class="edit-form">
+          <div class="form-section">
+            <div class="form-group">
+              <label>Nom du profil *</label>
+              <input type="text" formControlName="nom" placeholder="Ex: Administrateur" class="text-input">
+              <div *ngIf="editForm.get('nom')?.invalid && editForm.get('nom')?.touched" class="error-message">
+                Le nom du profil est requis.
+              </div>
+            </div>
+            <div class="form-group">
+              <label>Description</label>
+              <textarea formControlName="description" placeholder="Description du profil..." class="text-input"></textarea>
+            </div>
+          </div>
+          
+          <div class="modal-footer">
+            <div class="modal-actions">
+              <button type="button" class="btn-secondary" (click)="cancelEdit()">
+                <i class="fas fa-times"></i>
+                Annuler
+              </button>
+              <button type="submit" class="btn-primary" [disabled]="!editForm.valid || isEditing">
+                <i class="fas fa-save"></i>
+                {{ isEditing ? 'Modification...' : 'Modifier' }}
+              </button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tableau des profils -->
+  <div class="table-container">
+    <div *ngIf="isLoading" class="loading">
+      <p>Chargement des profils...</p>
+    </div>
+
+    <div *ngIf="!isLoading && profils.length === 0" class="no-data">
+      <p>Aucun profil trouvé</p>
+    </div>
+
+    <div *ngIf="!isLoading && profils.length > 0" class="table-wrapper">
+      <table class="profils-table">
+        <thead>
+          <tr>
+            <th>Nom</th>
+            <th>Description</th>
+            <th>Modules associés</th>
+            <th>Permissions</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let profil of profils">
+            <td>
+              <span class="profil-name" (click)="selectProfil(profil)" [class.selected]="selectedProfil && selectedProfil.id === profil.id">
+                {{ profil.nom }}
+              </span>
+            </td>
+            <td>{{ profil.description || '-' }}</td>
+            <td>
+              <span class="modules-count">{{ getAssociatedModulesForProfil(profil).length }} module(s)</span>
+            </td>
+            <td>
+              <span class="permissions-count">{{ getProfilPermissionsCount(profil) }} permission(s)</span>
+            </td>
+            <td class="actions">
+              <button (click)="editProfil(profil)" [disabled]="isDeleting" class="btn icon-btn edit" title="Modifier">
+                <i class="fas fa-edit" [style.color]="isDeleting ? '#ccc' : 'green'"></i>
+              </button>
+              <button (click)="selectProfil(profil)" [disabled]="isDeleting" class="btn icon-btn view" title="Voir les droits">
+                <i class="fas fa-eye" [style.color]="isDeleting ? '#ccc' : 'blue'"></i>
+              </button>
+              <button (click)="deleteProfil(profil)" [disabled]="isDeleting" class="btn icon-btn delete" title="Supprimer">
+                <i class="fas fa-trash" [style.color]="isDeleting ? '#ccc' : 'red'"></i>
+              </button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
   </div>
 
   <div *ngIf="selectedProfil" class="profil-droits">
-    <h3>Droits du profil : {{ selectedProfil?.nom }}</h3>
+    <h3>Droits du profil : {{ selectedProfil.nom }}</h3>
     <table class="droits-table">
       <thead>
         <tr>

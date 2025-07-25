@@ -4,6 +4,8 @@ import com.reconciliation.entity.*;
 import com.reconciliation.repository.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import jakarta.persistence.EntityManager;
 import java.util.List;
 import java.util.Optional;
 
@@ -19,12 +21,57 @@ public class ProfilService {
     private ProfilPermissionRepository profilPermissionRepository;
     @Autowired
     private ModulePermissionRepository modulePermissionRepository;
+    @Autowired
+    private EntityManager entityManager;
 
     // CRUD Profil
     public List<ProfilEntity> getAllProfils() { return profilRepository.findAll(); }
     public Optional<ProfilEntity> getProfil(Long id) { return profilRepository.findById(id); }
-    public ProfilEntity createProfil(ProfilEntity profil) { return profilRepository.save(profil); }
-    public void deleteProfil(Long id) { profilRepository.deleteById(id); }
+    public ProfilEntity createProfil(ProfilEntity profil) { 
+        return profilRepository.save(profil);
+    }
+    public ProfilEntity updateProfil(ProfilEntity profil) { 
+        return profilRepository.save(profil);
+    }
+    @Transactional
+    public void deleteProfil(Long id) { 
+        System.out.println("💾 Tentative de suppression du profil ID: " + id);
+        
+        // Vérifier si le profil existe
+        if (!profilRepository.existsById(id)) {
+            System.out.println("❌ Profil non trouvé avec l'ID: " + id);
+            throw new RuntimeException("Profil non trouvé avec l'ID: " + id);
+        }
+        
+        System.out.println("✅ Profil trouvé, suppression des permissions et actions associées...");
+        
+        // Supprimer d'abord les permissions associées au profil
+        List<ProfilPermissionEntity> permissions = profilPermissionRepository.findAll().stream()
+            .filter(pp -> pp.getProfil().getId().equals(id))
+            .toList();
+        
+        System.out.println("🗑️ Suppression de " + permissions.size() + " permissions associées");
+        profilPermissionRepository.deleteAll(permissions);
+        
+        // Supprimer les actions associées au profil (table profil_action)
+        System.out.println("🗑️ Suppression des actions associées au profil");
+        try {
+            int deletedActions = entityManager.createNativeQuery("DELETE FROM profil_action WHERE profil_id = :profilId")
+                .setParameter("profilId", id)
+                .executeUpdate();
+            System.out.println("🗑️ Suppression de " + deletedActions + " actions associées");
+        } catch (Exception e) {
+            System.out.println("⚠️ Aucune action à supprimer ou table inexistante: " + e.getMessage());
+        }
+        
+        System.out.println("✅ Permissions et actions supprimées, suppression du profil...");
+        
+        // TODO: Vérifier si le profil est utilisé par des utilisateurs
+        // Si oui, empêcher la suppression
+        
+        profilRepository.deleteById(id);
+        System.out.println("✅ Profil supprimé avec succès: ID " + id);
+    }
 
     // Modules
     public List<ModuleEntity> getAllModules() { return moduleRepository.findAll(); }

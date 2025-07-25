@@ -9,7 +9,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
 
 public interface AgencySummaryRepository extends JpaRepository<AgencySummaryEntity, Long> {
-    @Query("SELECT a FROM AgencySummaryEntity a WHERE a.date = :date AND a.agency = :agency AND a.service = :service AND a.totalVolume = :totalVolume AND a.recordCount = :recordCount")
+    @Query("SELECT a FROM AgencySummaryEntity a WHERE a.date = :date AND a.agency = :agency AND a.service = :service AND a.recordCount = :recordCount AND ABS(a.totalVolume - :totalVolume) < 0.01")
     List<AgencySummaryEntity> findDuplicates(
         @Param("date") String date,
         @Param("agency") String agency,

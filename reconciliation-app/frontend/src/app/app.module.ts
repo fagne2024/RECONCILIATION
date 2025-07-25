@@ -40,6 +40,8 @@ import { TraitementComponent } from './components/traitement/traitement.componen
 import { ProgressPopupComponent } from './components/shared/progress-popup.component';
 import { ProfilComponent } from './components/profil/profil.component';
 import { SoldesComponent } from './components/soldes/soldes.component';
+import { ModulesComponent } from './components/modules/modules.component';
+import { PermissionsComponent } from './components/permissions/permissions.component';
 
 @NgModule({
     declarations: [
@@ -60,7 +62,9 @@ import { SoldesComponent } from './components/soldes/soldes.component';
         TraitementComponent,
         ProgressPopupComponent,
         ProfilComponent,
-        SoldesComponent
+        SoldesComponent,
+        ModulesComponent,
+        PermissionsComponent
     ],
     imports: [
         BrowserModule,
@@ -75,8 +79,6 @@ import { SoldesComponent } from './components/soldes/soldes.component';
         MatInputModule,
         MatTableModule,
         MatPaginatorModule,
-        ColumnSelectionComponent,
-        AgencySummaryComponent,
         AppRoutingModule,
         MatAutocompleteModule,
         ReactiveFormsModule,
@@ -84,7 +86,9 @@ import { SoldesComponent } from './components/soldes/soldes.component';
         NgChartsModule,
         MatSelectModule,
         MatOptionModule,
-        NgxMatSelectSearchModule
+        NgxMatSelectSearchModule,
+        ColumnSelectionComponent,
+        AgencySummaryComponent
     ],
     providers: [ReconciliationService],
     bootstrap: [AppComponent]

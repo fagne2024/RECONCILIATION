@@ -1,12 +1,6 @@
 <div class="traitement-container">
-  <button type="button" style="float:right;margin-bottom:16px; margin-left:8px; background:#1976d2; color:white;" (click)="newTraitement()">+ Nouveau traitement</button>
-  <button type="button" style="float:right;margin-bottom:16px;" (click)="refreshPage()">🔄 Actualiser</button>
+  <button type="button" style="float:right;margin-bottom:16px; background:#1976d2; color:white;" (click)="newTraitement()">+ Nouveau traitement</button>
   <h2>Traitement de fichiers Excel</h2>
-  
-  <!-- Résumé du traitement (affichage immédiat après upload) -->
-  <div *ngIf="successMsg.upload" class="success-msg" style="background:#e6f9ea;border:1px solid #7ad07a;color:#217a21;margin-bottom:16px;">
-    <span [innerHTML]="successMsg.upload"></span>
-  </div>
   
   <!-- Barre de progression pour les fichiers volumineux -->
   <div *ngIf="isProcessing" class="processing-overlay">
@@ -35,23 +29,58 @@
     <div *ngIf="errorMsg.upload" class="error-msg">{{ errorMsg.upload }}</div>
   </div>
   <div *ngIf="successMsg.upload" class="success-msg" [innerHTML]="successMsg.upload"></div>
+  
+  <!-- Prévisualisation CSV -->
+  <div *ngIf="showCsvPreview && csvPreviewData.length > 0" class="csv-preview-section">
+    <h4>📋 Prévisualisation du fichier CSV</h4>
+    <div class="preview-info">
+      <p><strong>Séparateur détecté :</strong> <code>{{ detectedDelimiter }}</code></p>
+      <p><strong>Colonnes :</strong> {{ csvPreviewColumns.length }}</p>
+      <p><strong>Aperçu :</strong> {{ csvPreviewData.length }} lignes</p>
+    </div>
+    
+    <div class="csv-preview-table">
+      <table>
+        <thead>
+          <tr>
+            <th *ngFor="let col of csvPreviewColumns">{{ col }}</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let row of csvPreviewData">
+            <td *ngFor="let col of csvPreviewColumns">{{ row[col] || '' }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    
+    <div class="preview-actions">
+      <button type="button" (click)="confirmCsvImport()" class="confirm-btn">
+        ✅ Confirmer l'import
+      </button>
+      <button type="button" (click)="cancelCsvPreview()" class="cancel-btn">
+        ❌ Annuler
+      </button>
+    </div>
+  </div>
+  
   <div *ngIf="selectedFiles.length > 0" class="file-list">
     <h4>Fichiers sélectionnés :</h4>
     <ul>
       <li *ngFor="let file of selectedFiles">{{ file.name }}</li>
     </ul>
   </div>
-  <div *ngIf="columns.length > 0" class="select-cols-section">
+  <div *ngIf="allColumns.length > 0" class="select-cols-section">
     <h4>Sélection des colonnes à conserver</h4>
     <div class="select-cols">
       <label>
         <input type="checkbox"
-               [checked]="selectedCols.length === columns.length && columns.length > 0"
+               [checked]="selectedCols.length === allColumns.length && allColumns.length > 0"
                (change)="toggleSelectAllCols($event)">
         Tous
       </label>
       <!-- Colonnes individuelles -->
-      <label *ngFor="let col of columns">
+      <label *ngFor="let col of allColumns">
         <input type="checkbox" [value]="col" [checked]="selectedCols.includes(col)" (change)="onSelectColChange($event)">
         {{ col }}
       </label>
@@ -85,31 +114,60 @@
   </div>
   <div *ngIf="columns.length > 0 && combinedRows.length > 0" class="filtre-section" style="margin-bottom: 24px;">
     <h4>Filtrer les lignes</h4>
-    <label>Colonne :</label>
-    <select [(ngModel)]="selectedFilterColumn" (change)="onFilterColumnChange()">
-      <option value="">-- Choisir une colonne --</option>
-      <option *ngFor="let col of columns" [value]="col">{{ col }}</option>
-    </select>
-    <label *ngIf="selectedFilterColumn">Valeur à garder :</label>
-    <select *ngIf="selectedFilterColumn" [(ngModel)]="selectedFilterValues" multiple>
-      <option *ngFor="let val of filterValues" [value]="val">{{ val || '(vide)' }}</option>
-    </select>
-    <button (click)="applyFilter()" [disabled]="!selectedFilterColumn || !selectedFilterValues.length">Appliquer le filtre</button>
-    <button (click)="resetFilter()" [disabled]="!selectedFilterColumn && !selectedFilterValues.length">Réinitialiser</button>
+    <div class="filter-controls">
+      <div class="filter-group">
+        <label>Colonne :</label>
+        <select [(ngModel)]="selectedFilterColumn" (change)="onFilterColumnChange()">
+          <option value="">-- Choisir une colonne --</option>
+          <option *ngFor="let col of columns" [value]="col">{{ col }}</option>
+        </select>
+      </div>
+      <div class="filter-group" *ngIf="selectedFilterColumn">
+        <label>Valeur à garder :</label>
+        <mat-form-field appearance="fill" class="filter-select">
+          <mat-label>Sélectionner des valeurs</mat-label>
+          <mat-select #filterValueSelect [(ngModel)]="selectedFilterValues" multiple>
+            <ngx-mat-select-search [formControl]="filterValueSearchCtrl" placeholderLabel="Rechercher une valeur..." noEntriesFoundLabel="Aucune valeur trouvée"></ngx-mat-select-search>
+            <mat-option *ngFor="let val of filteredFilterValues" [value]="val">
+              {{ val || '(vide)' }}
+            </mat-option>
+          </mat-select>
+        </mat-form-field>
+      </div>
+      <div class="filter-actions">
+        <button (click)="applyFilter()" [disabled]="!selectedFilterColumn || !selectedFilterValues.length" class="apply-btn">Appliquer le filtre</button>
+        <button (click)="resetFilter()" [disabled]="!selectedFilterColumn && !selectedFilterValues.length" class="reset-btn">Réinitialiser</button>
+      </div>
+    </div>
     <div *ngIf="successMsg.filter" class="success-msg">{{ successMsg.filter }}</div>
     <div *ngIf="errorMsg.filter" class="error-msg">{{ errorMsg.filter }}</div>
   </div>
   <div *ngIf="columns.length > 1" class="concat-section" style="margin-bottom: 24px;">
     <h4>Concaténer plusieurs colonnes</h4>
-    <label>Colonnes à concaténer :</label>
-    <select multiple [(ngModel)]="concatCols" size="4" style="min-width:180px;">
-      <option *ngFor="let col of columns" [value]="col">{{ col }}</option>
-    </select>
-    <label>Nom de la nouvelle colonne :</label>
-    <input type="text" [(ngModel)]="concatNewCol" placeholder="Nom de la colonne" style="width:180px; margin-left:8px;">
-    <label>Séparateur :</label>
-    <input type="text" [(ngModel)]="concatSeparator" placeholder="ex: espace, -, /" style="width:60px;">
-    <button (click)="applyConcat()" [disabled]="!concatCols.length || !concatNewCol">Concaténer</button>
+    <div class="filter-controls">
+      <div class="filter-group">
+        <label>Colonnes à concaténer :</label>
+        <mat-form-field appearance="fill" class="filter-select">
+          <mat-label>Sélectionner des colonnes</mat-label>
+          <mat-select [(ngModel)]="concatCols" multiple>
+            <mat-option *ngFor="let col of columns" [value]="col">
+              {{ col }}
+            </mat-option>
+          </mat-select>
+        </mat-form-field>
+      </div>
+      <div class="filter-group">
+        <label>Nom de la nouvelle colonne :</label>
+        <input type="text" [(ngModel)]="concatNewCol" placeholder="Nom de la colonne" class="filter-input">
+      </div>
+      <div class="filter-group">
+        <label>Séparateur :</label>
+        <input type="text" [(ngModel)]="concatSeparator" placeholder="ex: espace, -, /" class="filter-input">
+      </div>
+      <div class="filter-actions">
+        <button (click)="applyConcat()" [disabled]="!concatCols.length || !concatNewCol" class="apply-btn">Concaténer</button>
+      </div>
+    </div>
     <div *ngIf="successMsg.concat" class="success-msg">{{ successMsg.concat }}</div>
     <div *ngIf="errorMsg.concat" class="error-msg">{{ errorMsg.concat }}</div>
   </div>
@@ -121,29 +179,49 @@
   
   <div *ngIf="columns.length > 0 && combinedRows.length > 0" class="export-by-type-section">
     <h4>Export par type</h4>
-    <label>Colonne de tri :</label>
-    <select [(ngModel)]="exportTypeCol" (change)="onExportTypeColChange()">
-      <option *ngFor="let col of columns" [value]="col">{{ col }}</option>
-    </select>
-    <div *ngIf="exportTypeCol && exportTypeValues.length > 0" class="export-type-values">
-      <div class="export-type-controls">
-        <button type="button" (click)="selectAllExportTypes()" class="select-all-btn">Tout sélectionner</button>
-        <button type="button" (click)="deselectAllExportTypes()" class="deselect-all-btn">Tout désélectionner</button>
+    <div class="filter-controls">
+      <div class="filter-group">
+        <label>Colonne de tri :</label>
+        <mat-form-field appearance="fill" class="filter-select">
+          <mat-label>Sélectionner une colonne</mat-label>
+          <mat-select [(ngModel)]="exportTypeCol" (selectionChange)="onExportTypeColChange()">
+            <mat-option *ngFor="let col of columns" [value]="col">
+              {{ col }}
+            </mat-option>
+          </mat-select>
+        </mat-form-field>
       </div>
-      <label *ngFor="let val of exportTypeValues">
-        <input type="checkbox" [value]="val" [checked]="exportTypeSelected.includes(val)" (change)="onExportTypeValueChange($event)">
-        {{ val || '(vide)' }}
-      </label>
+      <div class="filter-group" *ngIf="exportTypeCol && exportTypeValues.length > 0">
+        <label>Valeurs à exporter :</label>
+        <div class="export-type-values">
+          <div class="export-type-controls">
+            <button type="button" (click)="selectAllExportTypes()" class="select-all-btn">Tout sélectionner</button>
+            <button type="button" (click)="deselectAllExportTypes()" class="deselect-all-btn">Tout désélectionner</button>
+          </div>
+          <div class="checkbox-group">
+            <label *ngFor="let val of exportTypeValues" class="checkbox-item">
+              <input type="checkbox" [value]="val" [checked]="exportTypeSelected.includes(val)" (change)="onExportTypeValueChange($event)">
+              {{ val || '(vide)' }}
+            </label>
+          </div>
+        </div>
+      </div>
+      <div class="filter-group">
+        <label>Suffixe du fichier :</label>
+        <select [(ngModel)]="exportTypeSuffix" class="filter-input">
+          <option value="">(aucun)</option>
+          <option value="BO">BO</option>
+          <option value="PART">PART</option>
+        </select>
+      </div>
+      <div class="filter-group">
+        <label>Description :</label>
+        <input type="text" [(ngModel)]="exportTypeDescription" placeholder="Description" class="filter-input">
+      </div>
+      <div class="filter-actions">
+        <button type="button" (click)="exportByType()" [disabled]="!exportTypeCol || exportTypeSelected.length === 0" class="apply-btn">Exporter par type</button>
+      </div>
     </div>
-    <label style="margin-left:16px;">Suffixe du fichier :</label>
-    <select [(ngModel)]="exportTypeSuffix" style="width:80px; margin-left:8px;">
-      <option value="">(aucun)</option>
-      <option value="BO">BO</option>
-      <option value="PART">PART</option>
-    </select>
-    <label style="margin-left:16px;">Description :</label>
-    <input type="text" [(ngModel)]="exportTypeDescription" placeholder="Description" style="width:120px; margin-left:8px;">
-    <button type="button" (click)="exportByType()" [disabled]="!exportTypeCol || exportTypeSelected.length === 0">Exporter par type</button>
     <div *ngIf="successMsg.exportType" class="success-msg">{{ successMsg.exportType }}</div>
     <div *ngIf="errorMsg.exportType" class="error-msg">{{ errorMsg.exportType }}</div>
   </div>
@@ -291,6 +369,76 @@
         </div>
         <button type="button" (click)="applyRemoveCharactersFormatting()" [disabled]="!formatSelections['removeCharacters'].length">Appliquer</button>
       </div>
+      
+      <!-- Option : Supprimer des caractères spécifiques -->
+      <label>
+        <input type="checkbox" [(ngModel)]="formatOptions['removeSpecificCharacters']"> Supprimer des caractères spécifiques
+      </label>
+      <div *ngIf="formatOptions['removeSpecificCharacters']" class="format-columns">
+        <label>Colonnes à traiter :</label>
+        <select multiple [(ngModel)]="formatSelections['removeSpecificCharacters']">
+          <option *ngFor="let col of columns" [value]="col">{{ col }}</option>
+        </select>
+        <div class="remove-specific-char-options">
+          <div class="option-group">
+            <label>Caractères à supprimer :</label>
+            <input type="text" [(ngModel)]="specificCharactersToRemove" 
+                   placeholder="Ex: abc123" 
+                   style="width: 200px;"
+                   title="Tapez les caractères que vous voulez supprimer">
+          </div>
+          <div class="option-group">
+            <label>
+              <input type="checkbox" [(ngModel)]="removeSpecificCharactersCaseSensitive">
+              Sensible à la casse
+            </label>
+          </div>
+          
+          <!-- Filtrage par valeur exacte -->
+          <div class="option-group">
+            <label>
+              <input type="checkbox" [(ngModel)]="filterByExactValue">
+              🔍 Appliquer seulement sur les lignes avec une valeur exacte
+            </label>
+          </div>
+          
+          <div *ngIf="filterByExactValue" class="exact-value-filter">
+            <div class="filter-row">
+              <label>Colonne à vérifier :</label>
+              <select [(ngModel)]="exactValueColumn" style="width: 200px;">
+                <option value="">-- Choisir une colonne --</option>
+                <option *ngFor="let col of allColumns" [value]="col">{{ col }}</option>
+              </select>
+            </div>
+            <div class="filter-row">
+              <label>Valeur exacte :</label>
+              <input type="text" [(ngModel)]="exactValueToFilter" 
+                     placeholder="Ex: _CM" 
+                     style="width: 200px;"
+                     title="Tapez la valeur exacte que doit contenir la colonne">
+            </div>
+            <div class="help-text">
+              <small>
+                💡 Exemple : Si vous tapez "_CM" et sélectionnez la colonne "Code", 
+                <br>la suppression se fera seulement sur les lignes où "Code" = "_CM"
+              </small>
+            </div>
+          </div>
+          
+          <div class="option-group">
+            <small class="help-text">
+              💡 Exemples : 
+              <br>• "abc" supprimera a, b, c
+              <br>• "123" supprimera 1, 2, 3
+              <br>• "éèê" supprimera é, è, ê
+            </small>
+          </div>
+        </div>
+        <button type="button" (click)="applyRemoveSpecificCharactersFormatting()" 
+                [disabled]="!formatSelections['removeSpecificCharacters'].length || !specificCharactersToRemove.trim()">
+          Appliquer
+        </button>
+      </div>
     </div>
     <div *ngIf="successMsg.format" class="success-msg">{{ successMsg.format }}</div>
     <div *ngIf="errorMsg.format" class="error-msg">{{ errorMsg.format }}</div>
@@ -298,6 +446,28 @@
   <!-- Tableau d'aperçu déplacé en bas -->
   <div *ngIf="combinedRows.length > 0" class="preview-table" style="margin-top: 32px;">
     <h4>Aperçu des données combinées :</h4>
+    
+    <!-- Contrôles de réorganisation des colonnes -->
+    <div class="column-reorder-controls" style="margin-bottom: 16px;">
+      <div class="reorder-controls">
+        <button type="button" 
+                (click)="toggleColumnReorderMode()" 
+                [class.active]="isColumnReorderMode"
+                class="reorder-btn">
+          {{ isColumnReorderMode ? '🔄 Mode réorganisation actif' : '📋 Réorganiser les colonnes' }}
+        </button>
+        
+        <div *ngIf="isColumnReorderMode" class="reorder-actions">
+          <button type="button" (click)="applyColumnReorder()" class="apply-btn">✅ Appliquer</button>
+          <button type="button" (click)="cancelColumnReorder()" class="cancel-btn">❌ Annuler</button>
+        </div>
+      </div>
+      
+      <div *ngIf="isColumnReorderMode" class="reorder-instructions">
+        <span class="instruction-text">💡 Glissez-déposez les colonnes pour les réorganiser ou utilisez les boutons ↑↓</span>
+      </div>
+    </div>
+    
     <!-- Informations sur le fichier -->
     <div class="file-info-panel" *ngIf="combinedRows.length > 1000">
       <div class="file-stats">
@@ -356,16 +526,48 @@
         <button type="button" (click)="exportCSV()">Exporter en CSV</button>
         <div *ngIf="successMsg.export" class="success-msg">{{ successMsg.export }}</div>
         <div *ngIf="errorMsg.export" class="error-msg">{{ errorMsg.export }}</div>
+        <div *ngIf="successMsg.reorder" class="success-msg">{{ successMsg.reorder }}</div>
       </div>
       <table>
         <thead>
           <tr>
-            <th *ngFor="let col of columns">{{ col }}</th>
+            <th *ngFor="let col of getDisplayColumns(); let i = index"
+                [draggable]="isColumnReorderMode"
+                (dragstart)="onColumnDragStart($event, col)"
+                (dragover)="onColumnDragOver($event, col)"
+                (drop)="onColumnDrop($event, col)"
+                (dragend)="onColumnDragEnd()"
+                [class.dragging]="isColumnDragging(col)"
+                [class.drag-over]="isColumnDragOver(col)"
+                [class.reorder-mode]="isColumnReorderMode"
+                class="column-header">
+              
+              <div class="column-content">
+                <span class="column-title">{{ col }}</span>
+                
+                <div *ngIf="isColumnReorderMode" class="column-controls">
+                  <button type="button" 
+                          (click)="moveColumnUp(col)" 
+                          [disabled]="i === 0"
+                          class="move-btn move-up"
+                          title="Déplacer vers le haut">
+                    ↑
+                  </button>
+                  <button type="button" 
+                          (click)="moveColumnDown(col)" 
+                          [disabled]="i === getDisplayColumns().length - 1"
+                          class="move-btn move-down"
+                          title="Déplacer vers le bas">
+                    ↓
+                  </button>
+                </div>
+              </div>
+            </th>
           </tr>
         </thead>
         <tbody>
           <tr *ngFor="let row of displayedRows">
-            <td *ngFor="let col of columns">{{ row[col] }}</td>
+            <td *ngFor="let col of getDisplayColumns()">{{ row[col] }}</td>
           </tr>
         </tbody>
       </table>

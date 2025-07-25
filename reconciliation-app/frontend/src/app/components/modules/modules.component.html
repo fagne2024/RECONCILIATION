@@ -1,0 +1,132 @@
+<div class="modules-container">
+  <div class="header">
+    <h2>Gestion des Modules</h2>
+    <button class="btn btn-primary" (click)="showAddForm = true">
+      <i class="fas fa-plus"></i> Nouveau Module
+    </button>
+  </div>
+
+  <div class="table-container">
+    <div *ngIf="isLoading" class="loading">
+      <i class="fas fa-spinner fa-spin"></i> Chargement...
+    </div>
+
+    <div *ngIf="!isLoading && modules.length === 0" class="no-data">
+      <i class="fas fa-info-circle"></i> Aucun module trouvé
+    </div>
+
+    <div *ngIf="!isLoading && modules.length > 0" class="table-wrapper">
+      <table class="modules-table">
+        <thead>
+          <tr>
+            <th>Nom</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let module of modules">
+            <td class="module-name">{{ module.nom }}</td>
+            <td class="actions">
+              <button class="btn icon-btn" (click)="editModule(module)" title="Modifier">
+                <i class="fas fa-edit" style="color: #28a745;"></i>
+              </button>
+              <button class="btn icon-btn" (click)="deleteModule(module)" title="Supprimer">
+                <i class="fas fa-trash" style="color: #dc3545;"></i>
+              </button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Modal d'ajout -->
+  <div *ngIf="showAddForm" class="modal-overlay" (click)="closeAddModal()">
+    <div class="modal-container" (click)="$event.stopPropagation()">
+      <div class="modal-header">
+        <h3>Nouveau Module</h3>
+        <button class="close-btn" (click)="cancelAdd()">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+      <form [formGroup]="addForm" (ngSubmit)="createModule()">
+        <div class="modal-body">
+          <div class="form-section">
+            <div class="form-group">
+              <label for="nom">Nom du module *</label>
+              <input 
+                type="text" 
+                id="nom" 
+                class="text-input" 
+                formControlName="nom" 
+                placeholder="Entrez le nom du module"
+              >
+              <div *ngIf="addForm.get('nom')?.invalid && addForm.get('nom')?.touched" class="error-message">
+                <span *ngIf="addForm.get('nom')?.errors?.['required']">Le nom est requis</span>
+                <span *ngIf="addForm.get('nom')?.errors?.['minlength']">Le nom doit contenir au moins 2 caractères</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <div class="modal-actions">
+            <button type="button" class="btn btn-secondary" (click)="cancelAdd()">
+              Annuler
+            </button>
+            <button type="submit" class="btn btn-primary" [disabled]="addForm.invalid || isAdding">
+              <span *ngIf="!isAdding">Créer</span>
+              <span *ngIf="isAdding">
+                <i class="fas fa-spinner fa-spin"></i> Création...
+              </span>
+            </button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal d'édition -->
+  <div *ngIf="showEditForm" class="modal-overlay" (click)="cancelEdit()">
+    <div class="modal-container" (click)="$event.stopPropagation()">
+      <div class="modal-header">
+        <h3>Modifier le Module</h3>
+        <button class="close-btn" (click)="cancelEdit()">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+      <form [formGroup]="editForm" (ngSubmit)="updateModule()">
+        <div class="modal-body">
+          <div class="form-section">
+            <div class="form-group">
+              <label for="edit-nom">Nom du module *</label>
+              <input 
+                type="text" 
+                id="edit-nom" 
+                class="text-input" 
+                formControlName="nom" 
+                placeholder="Entrez le nom du module"
+              >
+              <div *ngIf="editForm.get('nom')?.invalid && editForm.get('nom')?.touched" class="error-message">
+                <span *ngIf="editForm.get('nom')?.errors?.['required']">Le nom est requis</span>
+                <span *ngIf="editForm.get('nom')?.errors?.['minlength']">Le nom doit contenir au moins 2 caractères</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <div class="modal-actions">
+            <button type="button" class="btn btn-secondary" (click)="cancelEdit()">
+              Annuler
+            </button>
+            <button type="submit" class="btn btn-primary" [disabled]="editForm.invalid || isEditing">
+              <span *ngIf="!isEditing">Mettre à jour</span>
+              <span *ngIf="isEditing">
+                <i class="fas fa-spinner fa-spin"></i> Mise à jour...
+              </span>
+            </button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+</div> 

@@ -310,6 +310,70 @@ public class AgencySummaryController {
         }
     }
 
+    @PostMapping("/save-selection")
+    @Transactional
+    public ResponseEntity<?> saveSelection(@RequestBody List<AgencySummary> summaries) {
+        List<String> savedRecords = new ArrayList<>();
+        List<String> errorRecords = new ArrayList<>();
+        List<Map<String, Object>> duplicateRecords = new ArrayList<>();
+
+        for (AgencySummary summary : summaries) {
+            List<AgencySummaryEntity> existing = repository.findDuplicates(
+                summary.getDate(),
+                summary.getAgency(),
+                summary.getService(),
+                summary.getTotalVolume(),
+                summary.getRecordCount()
+            );
+
+            if (!existing.isEmpty()) {
+                Map<String, Object> duplicateInfo = new HashMap<>();
+                duplicateInfo.put("message", "Doublon détecté pour l'agence " + summary.getAgency());
+                duplicateRecords.add(duplicateInfo);
+                continue;
+            }
+
+            try {
+                AgencySummaryEntity entity = new AgencySummaryEntity();
+                entity.setAgency(summary.getAgency());
+                entity.setService(summary.getService());
+                entity.setCountry(summary.getCountry());
+                entity.setDate(summary.getDate());
+                entity.setTotalVolume(summary.getTotalVolume());
+                entity.setRecordCount(summary.getRecordCount());
+                repository.save(entity);
+                repository.flush();
+                
+                try {
+                    createOperationFromSummaryInNewTransaction(summary);
+                    savedRecords.add("Agence " + summary.getAgency() + " sauvegardée avec opérations.");
+                } catch (Exception e) {
+                    String operationErrorMessage = String.format(
+                        "L'enregistrement pour l'agence %s a été sauvegardé, mais la création des opérations a échoué: %s",
+                        summary.getAgency(),
+                        e.getMessage()
+                    );
+                    errorRecords.add(operationErrorMessage);
+                }
+            } catch (Exception e) {
+                errorRecords.add("Erreur pour l'agence " + summary.getAgency() + ": " + e.getMessage());
+            }
+        }
+
+        Map<String, Object> response = new HashMap<>();
+        if (!duplicateRecords.isEmpty() || !errorRecords.isEmpty()) {
+            response.put("message", "Opération terminée avec des erreurs ou des doublons.");
+            response.put("duplicates", duplicateRecords);
+            response.put("errors", errorRecords);
+            response.put("saved", savedRecords);
+            return ResponseEntity.ok().body(response);
+        }
+
+        response.put("message", "Toutes les sélections ont été sauvegardées.");
+        response.put("saved", savedRecords);
+        return ResponseEntity.ok(response);
+    }
+
     /**
      * Enregistrer uniquement les lignes sélectionnées (agence + service)
      */

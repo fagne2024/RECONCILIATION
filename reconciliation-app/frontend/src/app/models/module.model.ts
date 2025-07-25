@@ -1,4 +1,4 @@
-export interface ModuleMenu {
+export interface Module {
   id?: number;
   nom: string;
 } 

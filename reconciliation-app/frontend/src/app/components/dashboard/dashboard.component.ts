@@ -100,6 +100,23 @@ export class DashboardComponent implements OnInit, OnDestroy {
       }
     };
 
+    /**
+     * Filtre les types d'opérations à afficher sur les graphiques.
+     * Exclut tous les types commençant par 'annulation_' sauf 'annulation_bo'.
+     * @param typeOperation Le type d'opération à vérifier.
+     * @returns `true` si le type doit être inclus, `false` sinon.
+     */
+    private shouldIncludeOperation(typeOperation: string | null | undefined): boolean {
+        if (!typeOperation) {
+            return true; // Inclure par défaut si le type est manquant
+        }
+        const lowerCaseType = typeOperation.toLowerCase();
+        if (lowerCaseType.startsWith('annulation_')) {
+            return lowerCaseType === 'annulation_bo';
+        }
+        return true;
+    }
+
     lineChartOptions: any = {
       responsive: true,
       plugins: {
@@ -158,6 +175,12 @@ export class DashboardComponent implements OnInit, OnDestroy {
       } else if (this.selectedTimeFilter === 'Ce mois') {
         start = new Date(today.getFullYear(), today.getMonth(), 1);
         end = new Date(today.getFullYear(), today.getMonth() + 1, 1);
+      } else if (this.selectedTimeFilter === 'Cette année') {
+        start = new Date(today.getFullYear(), 0, 1); // 1er janvier de cette année
+        end = new Date(today.getFullYear(), 11, 31); // 31 décembre de cette année
+      } else if (this.selectedTimeFilter === 'Année dernière') {
+        start = new Date(today.getFullYear() - 1, 0, 1); // 1er janvier de l'année dernière
+        end = new Date(today.getFullYear() - 1, 11, 31); // 31 décembre de l'année dernière
       } else if (this.selectedTimeFilter === 'Personnalisé' && this.startDate && this.endDate) {
         start = new Date(this.startDate);
         end = new Date(this.endDate);
@@ -196,7 +219,10 @@ export class DashboardComponent implements OnInit, OnDestroy {
         // Bar chart : répartition par service
         const excludedTypes = ['annulation_bo']; // NE PAS exclure 'transaction_cree'
         // On filtre explicitement par agence (client) sélectionnée pour la courbe
-        let filteredAgencySummary = agencySummaryFiltered.filter(s => !excludedTypes.includes((s.typeOperation || '').toLowerCase()));
+        let filteredAgencySummary = agencySummaryFiltered
+            .filter(s => !excludedTypes.includes((s.typeOperation || '').toLowerCase()))
+            .filter(s => this.shouldIncludeOperation(s.typeOperation));
+
         if (this.selectedAgency && this.selectedAgency.length > 0) {
           filteredAgencySummary = filteredAgencySummary.filter(s => this.selectedAgency.map(normalize).includes(normalize(s.agency)));
         }
@@ -261,7 +287,10 @@ export class DashboardComponent implements OnInit, OnDestroy {
       } else if (this.selectedMetric === 'revenu') {
         // Bar chart : volume des frais par service (tous les FRAIS_TRANSACTION, crédit et débit)
         const excludedTypes = ['annulation_bo'];
-        let filteredOperations = operationsFiltered.filter(op => !excludedTypes.includes((op.typeOperation || '').toLowerCase()));
+        let filteredOperations = operationsFiltered
+            .filter(op => !excludedTypes.includes((op.typeOperation || '').toLowerCase()))
+            .filter(op => this.shouldIncludeOperation(op.typeOperation));
+
         filteredOperations = filteredOperations.filter(op => !excludedTypes.includes((op.typeOperation || '').toLowerCase()));
         const normalize = (str: string) => (str || '').toLowerCase().normalize('NFD').replace(/[ \u0300-\u036f]/g, '');
         let allServices = Array.from(new Set(filteredOperations
@@ -331,7 +360,10 @@ export class DashboardComponent implements OnInit, OnDestroy {
         // Bar chart : volume total par type d'opération
         if (!this.detailedMetrics?.operationStats) return;
         const excludedTypes2 = ['annulation_bo']; // NE PAS exclure 'transaction_cree'
-        let filteredOperations = operationsFiltered.filter(op => !excludedTypes2.includes((op.typeOperation || '').toLowerCase()));
+        let filteredOperations = operationsFiltered
+            .filter(op => !excludedTypes2.includes((op.typeOperation || '').toLowerCase()))
+            .filter(op => this.shouldIncludeOperation(op.typeOperation));
+            
         // Correction : appliquer le filtre service si sélectionné
         if (this.selectedService && this.selectedService.length > 0) {
           const normalize = (str: string) => (str || '').toLowerCase().normalize('NFD').replace(/[ \u0300-\u036f]/g, '');
@@ -339,7 +371,10 @@ export class DashboardComponent implements OnInit, OnDestroy {
           filteredOperations = filteredOperations.filter(op => op.service && normalizedSelected.includes(normalize(op.service)));
         }
         // On n'applique plus de filtrage par client ici
-        const filteredStats = this.detailedMetrics.operationStats.filter(s => !excludedTypes2.includes((s.operationType || '').toLowerCase()));
+        const filteredStats = this.detailedMetrics.operationStats
+            .filter(s => !excludedTypes2.includes((s.operationType || '').toLowerCase()))
+            .filter(s => this.shouldIncludeOperation(s.operationType));
+
         // Correction : chaque type devient un dataset distinct, mais sur les opérations filtrées
         const allTypes = Array.from(new Set(filteredOperations.map((op: any) => op.typeOperation)));
         const allDates = Array.from(new Set(filteredOperations
@@ -465,27 +500,27 @@ export class DashboardComponent implements OnInit, OnDestroy {
         // Gestionnaire de clic global pour fermer les dropdowns
         document.addEventListener('click', this.handleGlobalClick.bind(this));
 
-        this.filteredAgencies = this.filterOptions?.agencies || [];
-        this.filteredServices = this.filterOptions?.services || [];
-        this.filteredCountries = this.filterOptions?.countries || [];
         const normalize = (str: string) => (str || '').toLowerCase().normalize('NFD').replace(/[ \u0300-\u036f]/g, '');
         this.agenceSearchCtrl.valueChanges.subscribe(search => {
           const s = (search || '');
-          this.filteredAgencies = (this.filterOptions?.agencies || []).filter(a => normalize(a).includes(normalize(s)));
+          const availableAgencies = this.getFilteredAgencies();
+          this.filteredAgencies = availableAgencies.filter(a => normalize(a).includes(normalize(s)));
         });
         this.serviceSearchCtrl.valueChanges.subscribe(search => {
           const s = (search || '').toLowerCase();
-          this.filteredServices = (this.filterOptions?.services || []).filter(a => a.toLowerCase().includes(s));
+          const availableServices = this.getFilteredServices();
+          this.filteredServices = availableServices.filter(a => a.toLowerCase().includes(s));
         });
         this.paysSearchCtrl.valueChanges.subscribe(search => {
           const s = (search || '').toLowerCase();
-          this.filteredCountries = (this.filterOptions?.countries || []).filter(a => a.toLowerCase().includes(s));
+          const availableCountries = this.getFilteredCountries();
+          this.filteredCountries = availableCountries.filter(a => a.toLowerCase().includes(s));
         });
 
         // Sélection automatique agence si un seul résultat dans la recherche
         this.agenceSearchCtrl.valueChanges.subscribe((search: string | null) => {
-            if (!this.filterOptions?.agencies) return;
-            const filtered = this.filterOptions.agencies.filter(agency =>
+            const availableAgencies = this.getFilteredAgencies();
+            const filtered = availableAgencies.filter(agency =>
                 agency.toLowerCase().includes((search || '').toLowerCase())
             );
             // Si un seul résultat et qu'il n'est pas déjà sélectionné
@@ -497,8 +532,8 @@ export class DashboardComponent implements OnInit, OnDestroy {
         });
         // Sélection automatique service si un seul résultat dans la recherche
         this.serviceSearchCtrl.valueChanges.subscribe((search: string | null) => {
-            if (!this.filterOptions?.services) return;
-            const filtered = this.filterOptions.services.filter(service =>
+            const availableServices = this.getFilteredServices();
+            const filtered = availableServices.filter(service =>
                 service.toLowerCase().includes((search || '').toLowerCase())
             );
             if (filtered.length === 1 && !this.selectedService.includes(filtered[0])) {
@@ -507,18 +542,18 @@ export class DashboardComponent implements OnInit, OnDestroy {
                 this.onFilterChange();
             }
         });
-        // Sélection automatique pays si un seul résultat dans la recherche
-        this.paysSearchCtrl.valueChanges.subscribe((search: string | null) => {
-            if (!this.filterOptions?.countries) return;
-            const filtered = this.filterOptions.countries.filter(country =>
-                country.toLowerCase().includes((search || '').toLowerCase())
-            );
-            if (filtered.length === 1 && !this.selectedCountry.includes(filtered[0])) {
-                this.selectedCountry = [filtered[0]];
-                if (this.countrySelect) { this.countrySelect.close(); }
-                this.onFilterChange();
-            }
-        });
+        // Sélection automatique pays si un seul résultat dans la recherche (désactivée pour éviter l'auto-sélection de "CM")
+        // this.paysSearchCtrl.valueChanges.subscribe((search: string | null) => {
+        //     const availableCountries = this.getFilteredCountries();
+        //     const filtered = availableCountries.filter(country =>
+        //         country.toLowerCase().includes((search || '').toLowerCase())
+        //     );
+        //     if (filtered.length === 1 && !this.selectedCountry.includes(filtered[0])) {
+        //         this.selectedCountry = [filtered[0]];
+        //         if (this.countrySelect) { this.countrySelect.close(); }
+        //         this.onFilterChange();
+        //     }
+        // });
     }
 
     ngOnDestroy() {
@@ -559,9 +594,15 @@ export class DashboardComponent implements OnInit, OnDestroy {
         this.dashboardService.getFilterOptions().subscribe({
             next: (options: FilterOptions) => {
                 this.filterOptions = options;
+                // Initialiser immédiatement les listes filtrées avec les données disponibles
                 this.filteredAgencies = options.agencies || [];
                 this.filteredServices = options.services || [];
                 this.filteredCountries = options.countries || [];
+                
+                // Mettre à jour les listes filtrées avec cloisonnement après chargement des données
+                setTimeout(() => {
+                    this.updateFilteredLists();
+                }, 100);
                 setTimeout(() => {
                     this.agenceSearchCtrl.setValue('');
                     this.serviceSearchCtrl.setValue('');
@@ -580,11 +621,16 @@ export class DashboardComponent implements OnInit, OnDestroy {
                     agencies: [],
                     services: [],
                     countries: [],
-                    timeFilters: ['Aujourd\'hui', 'Cette semaine', 'Ce mois', 'Personnalisé']
+                    timeFilters: ['Aujourd\'hui', 'Cette semaine', 'Ce mois', 'Cette année', 'Année dernière', 'Personnalisé']
                 };
+                // Initialiser immédiatement les listes filtrées
                 this.filteredAgencies = this.filterOptions.agencies;
                 this.filteredServices = this.filterOptions.services;
                 this.filteredCountries = this.filterOptions.countries;
+                
+                setTimeout(() => {
+                    this.updateFilteredLists();
+                }, 100);
                 setTimeout(() => {
                     this.agenceSearchCtrl.setValue('');
                     this.serviceSearchCtrl.setValue('');
@@ -672,6 +718,10 @@ export class DashboardComponent implements OnInit, OnDestroy {
 
     onFilterChange() {
         console.log('onFilterChange', this.selectedCountry, this.selectedService);
+        
+        // Mettre à jour les listes filtrées pour le cloisonnement
+        this.updateFilteredLists();
+        
         this.loadAgencySummaryData();
         this.loadAllOperations();
         this.updateDashboardIndicators();
@@ -679,6 +729,131 @@ export class DashboardComponent implements OnInit, OnDestroy {
         this.loadDetailedMetrics();
         // Mettre à jour les graphiques
         this.updateBarChartData();
+        
+        // Fermer automatiquement les dropdowns après un choix
+        setTimeout(() => {
+            if (this.agencySelect) this.agencySelect.close();
+            if (this.serviceSelect) this.serviceSelect.close();
+            if (this.countrySelect) this.countrySelect.close();
+        }, 100);
+    }
+
+    // Méthode pour mettre à jour les listes filtrées avec cloisonnement
+    updateFilteredLists() {
+        // S'assurer qu'on a des données avant de filtrer
+        if (!this.agencySummaryData || this.agencySummaryData.length === 0) {
+            // Si pas de données agencySummaryData, utiliser filterOptions
+            if (this.filterOptions) {
+                this.filteredAgencies = this.filterOptions.agencies || [];
+                this.filteredServices = this.filterOptions.services || [];
+                this.filteredCountries = this.filterOptions.countries || [];
+            }
+            return;
+        }
+        
+        // Mettre à jour les services disponibles selon l'agence sélectionnée
+        this.filteredServices = this.getFilteredServices();
+        
+        // Mettre à jour les pays disponibles selon l'agence sélectionnée
+        this.filteredCountries = this.getFilteredCountries();
+        
+        // Mettre à jour les agences disponibles selon les autres filtres
+        this.filteredAgencies = this.getFilteredAgencies();
+        
+        // Nettoyer les sélections qui ne sont plus valides
+        this.cleanInvalidSelections();
+    }
+
+    // Méthode pour nettoyer les sélections invalides
+    cleanInvalidSelections() {
+        const currentAgency = this.selectedAgency;
+        const currentService = this.selectedService;
+        const currentCountry = this.selectedCountry;
+
+        // Nettoyer les services si l'agence a changé
+        if (currentService && currentService.length > 0) {
+            const validServices = currentService.filter((service: string) => 
+                this.filteredServices.includes(service)
+            );
+            if (validServices.length !== currentService.length) {
+                this.selectedService = validServices;
+            }
+        }
+
+        // Nettoyer les pays si l'agence a changé
+        if (currentCountry && currentCountry.length > 0) {
+            const validCountries = currentCountry.filter((country: string) => 
+                this.filteredCountries.includes(country)
+            );
+            if (validCountries.length !== currentCountry.length) {
+                this.selectedCountry = validCountries;
+            }
+        }
+
+        // Nettoyer les agences si les autres filtres ont changé
+        if (currentAgency && currentAgency.length > 0) {
+            const validAgencies = currentAgency.filter((agency: string) => 
+                this.filteredAgencies.includes(agency)
+            );
+            if (validAgencies.length !== currentAgency.length) {
+                this.selectedAgency = validAgencies;
+            }
+        }
+    }
+
+    // Méthodes de filtrage avec cloisonnement
+    getFilteredAgencies(): string[] {
+        // Utiliser les données disponibles : agencySummaryData ou filterOptions
+        let data = this.agencySummaryData && this.agencySummaryData.length > 0 
+            ? this.agencySummaryData 
+            : (this.filterOptions?.agencies || []).map(agency => ({ agency, service: '', country: '' }));
+        
+        // Filtrer par service si sélectionné
+        if (this.selectedService && this.selectedService.length > 0) {
+            data = data.filter(s => this.selectedService.includes(s.service));
+        }
+        // Filtrer par pays si sélectionné
+        if (this.selectedCountry && this.selectedCountry.length > 0) {
+            data = data.filter(s => this.selectedCountry.includes(s.country));
+        }
+        const agencies = [...new Set(data.map(s => s.agency))];
+        return agencies.sort();
+    }
+
+    getFilteredServices(): string[] {
+        // Utiliser les données disponibles : agencySummaryData ou filterOptions
+        let data = this.agencySummaryData && this.agencySummaryData.length > 0 
+            ? this.agencySummaryData 
+            : (this.filterOptions?.services || []).map(service => ({ agency: '', service, country: '' }));
+        
+        // Filtrer par agence si sélectionnée (cloisonnement principal)
+        if (this.selectedAgency && this.selectedAgency.length > 0) {
+            data = data.filter(s => this.selectedAgency.includes(s.agency));
+        }
+        // Filtrer par pays si sélectionné
+        if (this.selectedCountry && this.selectedCountry.length > 0) {
+            data = data.filter(s => this.selectedCountry.includes(s.country));
+        }
+        const services = [...new Set(data.map(s => s.service))];
+        return services.sort();
+    }
+
+    getFilteredCountries(): string[] {
+        // Utiliser les données disponibles : agencySummaryData ou filterOptions
+        let data = this.agencySummaryData && this.agencySummaryData.length > 0 
+            ? this.agencySummaryData 
+            : (this.filterOptions?.countries || []).map(country => ({ agency: '', service: '', country }));
+        
+        // Filtrer par agence si sélectionnée (cloisonnement principal)
+        if (this.selectedAgency && this.selectedAgency.length > 0) {
+            data = data.filter(s => this.selectedAgency.includes(s.agency));
+        }
+        // Filtrer par service si sélectionné
+        if (this.selectedService && this.selectedService.length > 0) {
+            data = data.filter(s => this.selectedService.includes(s.service));
+        }
+        const countries = [...new Set(data.map(s => s.country))];
+        return countries.sort();
     }
 
     onTimeFilterChange() {
@@ -812,7 +987,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
         this.selectedAgency = [];
         this.selectedService = [];
         this.selectedCountry = [];
-        this.selectedTimeFilter = 'Ce mois'; // valeur par défaut sans 'Tous'
+        this.selectedTimeFilter = 'Ce mois'; // valeur par défaut
         this.startDate = '';
         this.endDate = '';
         this.showCustomDateInputs = false;
@@ -1079,6 +1254,10 @@ export class DashboardComponent implements OnInit, OnDestroy {
             return agencyMatch && serviceMatch && countryMatch;
           });
           this.agencySummaryData = this.filterByPeriod(this.agencySummaryData);
+          
+          // Mettre à jour les listes filtrées avec cloisonnement après chargement des données
+          this.updateFilteredLists();
+          
           this.updateDashboardIndicators();
           this.updateBarChartData();
         },

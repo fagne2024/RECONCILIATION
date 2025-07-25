@@ -1,6 +1,7 @@
 package com.reconciliation.entity;
 
 import jakarta.persistence.*;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 
 @Entity
 @Table(name = "profil_permission")
@@ -24,6 +25,7 @@ public class ProfilPermissionEntity {
     // Getters et setters
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
+    @JsonIgnore
     public ProfilEntity getProfil() { return profil; }
     public void setProfil(ProfilEntity profil) { this.profil = profil; }
     public ModuleEntity getModule() { return module; }

@@ -10,4 +10,7 @@
       {{ option }}
     </option>
   </select>
+  <div *ngIf="options.length === 0" class="no-options-message">
+    Aucune option disponible
+  </div>
 </div> 

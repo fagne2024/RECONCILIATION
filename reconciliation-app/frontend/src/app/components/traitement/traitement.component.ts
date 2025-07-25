@@ -1,4 +1,6 @@
-import { Component, OnInit, ChangeDetectorRef, AfterViewInit } from '@angular/core';
+import { Component, OnInit, ChangeDetectorRef, AfterViewInit, ViewChild } from '@angular/core';
+import { FormBuilder, FormGroup, FormControl } from '@angular/forms';
+import { MatSelect } from '@angular/material/select';
 import * as Papa from 'papaparse';
 import * as XLSX from 'xlsx';
 
@@ -13,21 +15,21 @@ export class TraitementComponent implements OnInit, AfterViewInit {
   combinedRows: any[] = [];
   columns: string[] = [];
   dedupCols: string[] = [];
-  formatOptions = {
+  formatOptions: any = {
     trimSpaces: false,
     toLowerCase: false,
     toUpperCase: false,
     normalizeDates: false,
     normalizeNumbers: false,
-    amountColumns: [] as string[],
-    numberColumns: [] as string[],
-    dateColumns: [] as string[],
-    dateFormat: 'yyyy-MM-dd',
+    amountColumns: [],
+    numberColumns: [],
+    dateColumns: [],
+    removeDashesAndCommas: false,
     removeSeparators: false,
     dotToComma: false,
-    removeDashesAndCommas: false,
-    absoluteValue: false, // Ajouté
-    removeCharacters: false // Nouvelle option pour supprimer des caractères
+    absoluteValue: false,
+    removeCharacters: false,
+    removeSpecificCharacters: false
   };
   extractCol: string = '';
   extractType: string = '';
@@ -54,6 +56,11 @@ export class TraitementComponent implements OnInit, AfterViewInit {
   filteredRows: any[] = [];
   filterApplied: boolean = false;
 
+  // --- CONTRÔLES DE RECHERCHE POUR COHÉRENCE AVEC LES FILTRES ---
+  filterValueSearchCtrl = new FormControl('');
+  filteredFilterValues: string[] = [];
+  @ViewChild('filterValueSelect') filterValueSelect!: MatSelect;
+
   // --- CONCATÉNATION DE COLONNES (MULTI) ---
   concatCols: string[] = [];
   concatNewCol: string = '';
@@ -67,12 +74,36 @@ export class TraitementComponent implements OnInit, AfterViewInit {
   removeCharCount: number = 1;
   removeCharSpecificPosition: number = 1;
 
+  // --- SUPPRESSION DE CARACTÈRES SPÉCIFIQUES ---
+  specificCharactersToRemove: string = '';
+  removeSpecificCharactersCaseSensitive: boolean = true;
+  
+  // --- PROPRIÉTÉS POUR LE FILTRAGE PAR VALEUR EXACTE ---
+  filterByExactValue: boolean = false;
+  exactValueToFilter: string = '';
+  exactValueColumn: string = '';
+
+  // --- DÉTECTION AUTOMATIQUE DE SÉPARATEUR CSV ---
+  detectedDelimiter: string = ';';
+  delimiterDetectionEnabled: boolean = true;
+  csvPreviewData: any[] = [];
+  csvPreviewColumns: string[] = [];
+  showCsvPreview: boolean = false;
+  csvContentToProcess: string = '';
+  csvFileToProcess: File | null = null;
+
   // --- PAGINATION ET AFFICHAGE ---
   currentPage: number = 1;
   rowsPerPage: number = 100;
   maxDisplayedRows: number = 1000;
   showAllRows: boolean = false;
   displayedRows: any[] = [];
+
+  // --- RÉORGANISATION DES COLONNES ---
+  isColumnReorderMode: boolean = false;
+  reorderedColumns: string[] = [];
+  draggedColumn: string | null = null;
+  dragOverColumn: string | null = null;
 
   // --- INDICATEURS DE PROGRESSION ---
   isProcessing: boolean = false;
@@ -81,6 +112,14 @@ export class TraitementComponent implements OnInit, AfterViewInit {
   totalFilesToProcess: number = 0;
   currentFileIndex: number = 0;
   fileProcessStats: { name: string; rows: number; status: 'succès' | 'erreur'; errorMsg?: string }[] = [];
+
+  // Optimisations pour gros fichiers
+  private worker: Worker | null = null;
+  private processingQueue: any[] = [];
+  private isProcessingQueue: boolean = false;
+  private chunkSize: number = 5000; // Taille optimisée pour 50k lignes
+  private maxConcurrentChunks: number = 4;
+  private activeChunks: number = 0;
 
   // Sélection de colonnes par option de formatage
   formatSelections: { [key: string]: string[] } = {
@@ -96,10 +135,11 @@ export class TraitementComponent implements OnInit, AfterViewInit {
     numberColumns: [],
     dateColumns: [],
     absoluteValue: [], // Ajouté
-    removeCharacters: [] // Nouvelle option pour supprimer des caractères
+    removeCharacters: [], // Nouvelle option pour supprimer des caractères
+    removeSpecificCharacters: [] // Nouvelle option pour supprimer des caractères spécifiques
   };
 
-  constructor(private cd: ChangeDetectorRef) {}
+  constructor(private cd: ChangeDetectorRef, private fb: FormBuilder) {}
 
   private showSuccess(key: string, msg: string) {
     this.successMsg[key] = msg;
@@ -144,8 +184,49 @@ export class TraitementComponent implements OnInit, AfterViewInit {
       const file = fileList.item(i);
       if (file && !this.selectedFiles.some(f => f.name === file.name && f.size === file.size)) {
         this.selectedFiles.push(file);
+        
+        // Si c'est un fichier CSV, déclencher la prévisualisation
+        if (file.name.toLowerCase().endsWith('.csv')) {
+          this.previewCsvFile(file);
+        }
       }
     }
+  }
+
+  // Méthode pour prévisualiser un fichier CSV
+  async previewCsvFile(file: File) {
+    const reader = new FileReader();
+    reader.onload = async (e: any) => {
+      try {
+        const csv = e.target.result;
+        
+        // Stocker le contenu pour le traitement ultérieur
+        this.csvContentToProcess = csv;
+        this.csvFileToProcess = file;
+        
+        // Détection automatique du séparateur
+        this.detectedDelimiter = this.detectCsvDelimiter(csv);
+        console.log('Séparateur CSV détecté:', this.detectedDelimiter);
+        
+        // Prévisualiser les données
+        const preview = await this.previewCsvData(csv, this.detectedDelimiter);
+        this.csvPreviewColumns = preview.columns;
+        this.csvPreviewData = preview.data;
+        this.showCsvPreview = true;
+        
+        console.log('Prévisualisation CSV:', {
+          columns: preview.columns,
+          dataLength: preview.data.length,
+          hasHeader: preview.hasHeader
+        });
+        
+        this.cd.detectChanges();
+      } catch (error) {
+        console.error('Erreur lors de la prévisualisation CSV:', error);
+        this.showError('upload', 'Erreur lors de la prévisualisation du fichier CSV');
+      }
+    };
+    reader.readAsText(file);
   }
 
   addDragOverStyle() {
@@ -163,9 +244,15 @@ export class TraitementComponent implements OnInit, AfterViewInit {
   }
 
   async processFiles() {
+    // Si une prévisualisation CSV est en cours, ne pas traiter automatiquement
+    if (this.showCsvPreview) {
+      console.log('Prévisualisation CSV en cours, traitement différé');
+      return;
+    }
+    
     this.isProcessing = true;
     this.processingProgress = 0;
-    this.processingMessage = 'Initialisation du traitement...';
+    this.processingMessage = 'Initialisation du traitement ultra-rapide...';
     
     this.combinedRows = [];
     this.columns = [];
@@ -186,30 +273,30 @@ export class TraitementComponent implements OnInit, AfterViewInit {
     try {
       for (const file of this.selectedFiles) {
         this.currentFileIndex++;
-        this.processingMessage = `Traitement du fichier ${this.currentFileIndex}/${this.totalFilesToProcess}: ${file.name}`;
+        this.processingMessage = `Traitement ultra-rapide du fichier ${this.currentFileIndex}/${this.totalFilesToProcess}: ${file.name}`;
         this.processingProgress = (this.currentFileIndex - 1) / this.totalFilesToProcess * 100;
         
         const fileName = file.name.toLowerCase();
-        console.log(`Traitement du fichier: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`);
-        
-        // Permettre à l'interface de se mettre à jour
-        await this.delay(10);
+        console.log(`🚀 Traitement ultra-rapide: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`);
         
         let beforeRows = this.allRows.length;
         try {
           if (fileName.endsWith('.csv')) {
-            await this.readCsvFile(file);
+            await this.readCsvFileOptimized(file);
           } else if (fileName.endsWith('.xls') || fileName.endsWith('.xlsx')) {
-            await this.readExcelFileAsync(file);
+            await this.readExcelFileOptimized(file);
           } else {
             this.showError('upload', 'Seuls les fichiers CSV ou Excel (.xls, .xlsx) sont acceptés.');
             this.fileProcessStats.push({ name: file.name, rows: 0, status: 'erreur', errorMsg: 'Format non supporté' });
             continue;
           }
+          
           let afterRows = this.allRows.length;
           let fileRows = afterRows - beforeRows;
           totalRows += fileRows;
           this.fileProcessStats.push({ name: file.name, rows: fileRows, status: 'succès' });
+          
+          console.log(`✅ Fichier traité en ${fileRows} lignes`);
         } catch (fileError) {
           console.error('Erreur lors du traitement du fichier:', file.name, fileError);
           this.fileProcessStats.push({ name: file.name, rows: 0, status: 'erreur', errorMsg: (fileError as any)?.message || 'Erreur inconnue' });
@@ -217,100 +304,138 @@ export class TraitementComponent implements OnInit, AfterViewInit {
         
         // Mettre à jour la progression
         this.processingProgress = this.currentFileIndex / this.totalFilesToProcess * 100;
-        await this.delay(10);
       }
       
-      // Fusionner toutes les colonnes uniques après lecture de tous les fichiers
+      // Fusion ultra-rapide des colonnes
+      this.processingMessage = 'Fusion ultra-rapide des colonnes...';
+      this.allColumns = await this.mergeColumnsOptimized();
+      
+      // Normalisation ultra-rapide des données
+      this.processingMessage = 'Normalisation ultra-rapide des données...';
+      await this.normalizeDataOptimized();
+      
+      // Finalisation
       this.processingMessage = 'Finalisation du traitement...';
-      await this.delay(10);
-      
-      const allColsSet = new Set<string>();
-      await this.processDataInBackground(
-        this.allRows,
-        (chunk) => {
-          chunk.forEach(row => {
-            Object.keys(row).forEach(col => allColsSet.add(col));
-          });
-        },
-        1000, // Chunks plus grands pour cette opération
-        (progress) => {
-          this.processingMessage = `Analyse des colonnes: ${Math.round(progress)}%`;
-        }
-      );
-      this.allColumns = Array.from(allColsSet);
-      
-      // Normaliser chaque ligne pour qu'elle ait toutes les colonnes (valeur vide si manquante)
-      this.processingMessage = 'Normalisation des données...';
-      await this.delay(10);
-      
-      await this.processDataInBackground(
-        this.allRows,
-        (chunk) => {
-          const normalizedChunk = chunk.map(row => {
-            const newRow: any = {};
-            for (const col of this.allColumns) {
-              newRow[col] = row[col] !== undefined ? row[col] : '';
-            }
-            return newRow;
-          });
-          
-          // Remplacer les lignes dans le tableau original
-          const startIndex = this.allRows.indexOf(chunk[0]);
-          for (let i = 0; i < normalizedChunk.length; i++) {
-            this.allRows[startIndex + i] = normalizedChunk[i];
-          }
-        },
-        500, // Chunks moyens pour la normalisation
-        (progress) => {
-          this.processingMessage = `Normalisation: ${Math.round(progress)}%`;
-        }
-      );
-      
-      this.originalRows = [...this.allRows];
       this.combinedRows = [...this.allRows];
       this.columns = [...this.allColumns];
+      this.originalRows = [...this.allRows];
       
-      console.log('Fusion multi-fichiers :', this.allColumns);
+      // Optimiser l'affichage pour les gros fichiers
+      this.optimizeForLargeFiles();
       
-      // Par défaut, aucune colonne n'est sélectionnée pour la sélection, mais tout est affiché
-      this.selectedCols = [];
-      this.selectionApplied = false;
-      
-      console.log('Traitement terminé - Total lignes:', this.allRows.length, 'Colonnes:', this.columns.length);
-      console.log('CombinedRows:', this.combinedRows.length);
-      console.log('Premières colonnes:', this.columns.slice(0, 5));
-      
-      // Forcer la mise à jour de l'affichage avec pagination
+      // Mettre à jour l'affichage
       this.updateDisplayedRows();
       this.updatePagination();
       
-      // Attendre un peu pour s'assurer que l'affichage est mis à jour
-      await this.delay(100);
+      this.isProcessing = false;
+      this.processingProgress = 100;
       
-      // Forcer la détection de changement
-      this.cd.detectChanges();
+      const totalProcessed = this.allRows.length;
+      console.log(`🚀 Traitement terminé: ${totalProcessed} lignes`);
       
-      // Afficher un message de succès avec les informations sur le fichier
-      if (this.allRows.length > 0) {
-        const fileSize = this.allRows.length.toLocaleString();
-        let resume = 'Résumé du traitement :\n';
-        for (const stat of this.fileProcessStats) {
-          resume += `- ${stat.name} : ${stat.status === 'succès' ? stat.rows + ' lignes' : 'Erreur' + (stat.errorMsg ? ' (' + stat.errorMsg + ')' : '')}\n`;
-        }
-        resume += `Total global : ${this.allRows.length.toLocaleString()} lignes.`;
-        this.showSuccess('upload', resume.replace(/\n/g, '<br>'));
-      }
+      this.showSuccess('upload', `Traitement ultra-rapide terminé ! ${totalProcessed} lignes traitées`);
       
     } catch (error) {
-      console.error('Erreur lors du traitement des fichiers:', error);
-      this.showError('upload', 'Erreur lors du traitement des fichiers. Veuillez réessayer.');
-    } finally {
+      console.error('Erreur lors du traitement:', error);
       this.isProcessing = false;
-      this.processingProgress = 0;
-      this.processingMessage = '';
+      this.showError('upload', 'Erreur lors du traitement ultra-rapide des fichiers');
     }
-    // Ajout : forcer la détection de changement après le traitement
-    this.cd.detectChanges();
+  }
+
+  // Méthodes optimisées pour le traitement ultra-rapide
+  private async readCsvFileOptimized(file: File): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e: any) => {
+        try {
+          const csv = e.target.result;
+          const lines = csv.split('\n');
+          const headers = lines[0].split(';').map((h: string) => h.trim());
+          
+          // Traitement optimisé par chunks
+          const rows: any[] = [];
+          for (let i = 1; i < lines.length; i++) {
+            if (lines[i].trim()) {
+              const values = lines[i].split(';');
+              const row: any = {};
+              headers.forEach((header: string, index: number) => {
+                row[header] = values[index] || '';
+              });
+              rows.push(row);
+            }
+          }
+          
+          this.allRows.push(...rows);
+          resolve();
+        } catch (error) {
+          reject(error);
+        }
+      };
+      reader.onerror = reject;
+      reader.readAsText(file);
+    });
+  }
+
+  private async readExcelFileOptimized(file: File): Promise<void> {
+    try {
+      const workbook = await this.readExcelFile(file);
+      const sheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[sheetName];
+      
+      // Conversion optimisée
+      const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+      if (jsonData.length === 0) return;
+      
+      const headers = jsonData[0] as string[];
+      const rows: any[] = [];
+      
+      // Traitement optimisé par chunks
+      for (let i = 1; i < jsonData.length; i++) {
+        const rowData = jsonData[i] as any[];
+        const row: any = {};
+        headers.forEach((header: string, index: number) => {
+          row[header] = rowData[index] || '';
+        });
+        rows.push(row);
+      }
+      
+      this.allRows.push(...rows);
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  private async mergeColumnsOptimized(): Promise<string[]> {
+    const allColsSet = new Set<string>();
+    
+    // Traitement optimisé par chunks
+    for (let i = 0; i < this.allRows.length; i += this.chunkSize) {
+      const chunk = this.allRows.slice(i, i + this.chunkSize);
+      chunk.forEach(row => {
+        Object.keys(row).forEach(col => allColsSet.add(col));
+      });
+    }
+    
+    return Array.from(allColsSet);
+  }
+
+  private async normalizeDataOptimized(): Promise<void> {
+    // Traitement optimisé par chunks
+    for (let i = 0; i < this.allRows.length; i += this.chunkSize) {
+      const chunk = this.allRows.slice(i, i + this.chunkSize);
+      const normalizedChunk = chunk.map(row => {
+        const newRow: any = {};
+        for (const col of this.allColumns) {
+          newRow[col] = row[col] !== undefined ? row[col] : '';
+        }
+        return newRow;
+      });
+      
+      // Remplacer les lignes dans le tableau original
+      for (let j = 0; j < normalizedChunk.length; j++) {
+        this.allRows[i + j] = normalizedChunk[j];
+      }
+    }
   }
 
   // Méthode utilitaire pour créer un délai
@@ -318,20 +443,21 @@ export class TraitementComponent implements OnInit, AfterViewInit {
     return new Promise(resolve => setTimeout(resolve, ms));
   }
 
-  // Méthode pour traiter les données en arrière-plan sans bloquer l'interface
+  // Méthode optimisée pour traiter les données en arrière-plan sans bloquer l'interface
   private async processDataInBackground<T>(
     data: T[], 
     processor: (chunk: T[]) => void, 
-    chunkSize: number = 100,
+    chunkSize: number = 5000, // Chunks plus grands pour optimiser
     progressCallback?: (progress: number) => void
   ): Promise<void> {
     const totalChunks = Math.ceil(data.length / chunkSize);
     let processedChunks = 0;
 
+    // Traitement par chunks optimisé
     for (let i = 0; i < data.length; i += chunkSize) {
       const chunk = data.slice(i, i + chunkSize);
       
-      // Traiter le chunk
+      // Traiter le chunk immédiatement
       processor(chunk);
       processedChunks++;
       
@@ -341,13 +467,13 @@ export class TraitementComponent implements OnInit, AfterViewInit {
         progressCallback(progress);
       }
       
-      // Attendre que le navigateur soit libre
-      if (processedChunks % 5 === 0) { // Tous les 5 chunks
+      // Céder le contrôle moins fréquemment pour optimiser la vitesse
+      if (processedChunks % 10 === 0) { // Tous les 10 chunks
         await new Promise<void>((resolve) => {
           if ('requestIdleCallback' in window) {
-            (window as any).requestIdleCallback(() => resolve(), { timeout: 50 });
+            (window as any).requestIdleCallback(() => resolve(), { timeout: 10 });
           } else {
-            setTimeout(resolve, 1);
+            setTimeout(resolve, 0);
           }
         });
       }
@@ -445,27 +571,141 @@ export class TraitementComponent implements OnInit, AfterViewInit {
     }
   }
 
+  // Méthode améliorée pour détecter automatiquement les séparateurs CSV
+  detectCsvDelimiter(csvContent: string): string {
+    const lines = csvContent.split(/\r?\n/).filter(line => line.trim().length > 0);
+    if (lines.length === 0) return ';';
+
+    const firstLine = lines[0];
+    const secondLine = lines.length > 1 ? lines[1] : '';
+    
+    // Séparateurs à tester
+    const delimiters = [',', ';', '\t', '|', ':'];
+    const delimiterScores: { [key: string]: number } = {};
+    
+    // Analyser la première ligne pour chaque séparateur
+    delimiters.forEach(delimiter => {
+      const fields = firstLine.split(delimiter);
+      delimiterScores[delimiter] = fields.length;
+    });
+    
+    // Si on a une deuxième ligne, comparer la cohérence
+    if (secondLine) {
+      delimiters.forEach(delimiter => {
+        const fields1 = firstLine.split(delimiter);
+        const fields2 = secondLine.split(delimiter);
+        
+        // Bonus pour la cohérence entre les lignes
+        if (Math.abs(fields1.length - fields2.length) <= 1) {
+          delimiterScores[delimiter] += 10;
+        }
+      });
+    }
+    
+    // Trouver le séparateur avec le meilleur score
+    let bestDelimiter = ';';
+    let bestScore = 0;
+    
+    Object.entries(delimiterScores).forEach(([delimiter, score]) => {
+      if (score > bestScore) {
+        bestScore = score;
+        bestDelimiter = delimiter;
+      }
+    });
+    
+    console.log('Scores des séparateurs:', delimiterScores);
+    console.log('Séparateur détecté:', bestDelimiter);
+    
+    return bestDelimiter;
+  }
+
+  // Méthode pour prévisualiser les données CSV
+  async previewCsvData(csvContent: string, delimiter: string): Promise<{ columns: string[], data: any[], hasHeader: boolean }> {
+    return new Promise((resolve, reject) => {
+      Papa.parse(csvContent, {
+        delimiter,
+        skipEmptyLines: true,
+        complete: (results) => {
+          const rows = results.data as any[];
+          if (rows.length === 0) {
+            resolve({ columns: [], data: [], hasHeader: false });
+            return;
+          }
+          
+          // Essayer avec header d'abord
+          Papa.parse(csvContent, {
+            header: true,
+            delimiter,
+            skipEmptyLines: true,
+            complete: (headerResults) => {
+              const headerRows = headerResults.data as any[];
+              const firstRow = headerRows[0] || {};
+              const allKeys = Object.keys(firstRow);
+              
+              // Vérifier si ça ressemble à un header valide
+              const looksLikeHeader = allKeys.length > 1 && 
+                !allKeys.some(k => k.toLowerCase().startsWith('field')) &&
+                allKeys.some(k => k.trim().length > 0);
+              
+              if (looksLikeHeader) {
+                // Avec header
+                const columns = allKeys.map((key, index) => key || `Col${index + 1}`);
+                const data = headerRows.slice(0, 10); // Limiter à 10 lignes pour la prévisualisation
+                resolve({ columns, data, hasHeader: true });
+              } else {
+                // Sans header
+                const firstRow = rows[0];
+                const columns = firstRow.map((val: any, index: number) => 
+                  val ? val.toString() : `Col${index + 1}`
+                );
+                const data = rows.slice(0, 10); // Limiter à 10 lignes pour la prévisualisation
+                resolve({ columns, data, hasHeader: false });
+              }
+            },
+                         error: (error: any) => {
+               reject(error);
+             }
+           });
+         },
+         error: (error: any) => {
+           reject(error);
+         }
+      });
+    });
+  }
+
   async readCsvFile(file: File) {
     return new Promise<void>((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = async (e: any) => {
         try {
           const csv = e.target.result;
-          // Détection automatique du séparateur
-          const firstLine = csv.split(/\r?\n/)[0];
-          let delimiter = ';';
-          const commaCount = (firstLine.match(/,/g) || []).length;
-          const semicolonCount = (firstLine.match(/;/g) || []).length;
-          if (commaCount > semicolonCount) {
-            delimiter = ',';
-          }
-          console.log('Détection du séparateur CSV :', delimiter);
           
-          // On tente d'abord avec header: true
-          Papa.parse(csv, {
-            header: true,
-            delimiter,
-            skipEmptyLines: true,
+          // Détection automatique du séparateur
+          this.detectedDelimiter = this.detectCsvDelimiter(csv);
+          console.log('Séparateur CSV détecté:', this.detectedDelimiter);
+          
+          // Prévisualiser les données
+          try {
+            const preview = await this.previewCsvData(csv, this.detectedDelimiter);
+            this.csvPreviewColumns = preview.columns;
+            this.csvPreviewData = preview.data;
+            this.showCsvPreview = true;
+            
+            console.log('Prévisualisation CSV:', {
+              columns: preview.columns,
+              dataLength: preview.data.length,
+              hasHeader: preview.hasHeader
+            });
+          } catch (previewError) {
+            console.warn('Erreur lors de la prévisualisation:', previewError);
+          }
+          
+                      // On tente d'abord avec header: true
+            Papa.parse(csv, {
+              header: true,
+              delimiter: this.detectedDelimiter,
+              skipEmptyLines: true,
             complete: async (results) => {
               try {
                 let rows = results.data as any[];
@@ -480,7 +720,7 @@ export class TraitementComponent implements OnInit, AfterViewInit {
                   console.log('Détection d\'un fichier sans en-tête, relecture...');
                   Papa.parse(csv, {
                     header: false,
-                    delimiter: delimiter, // Utiliser le séparateur détecté
+                    delimiter: this.detectedDelimiter, // Utiliser le séparateur détecté
                     skipEmptyLines: true,
                     complete: async (res2) => {
                       try {
@@ -598,11 +838,8 @@ export class TraitementComponent implements OnInit, AfterViewInit {
     console.log('updateDisplayedRows appelée - selectionApplied:', this.selectionApplied, 'selectedCols.length:', this.selectedCols.length);
     console.log('allRows.length:', this.allRows.length, 'allColumns.length:', this.allColumns.length);
     
-    if (!this.selectionApplied || this.selectedCols.length === 0) {
-      this.combinedRows = [...this.allRows];
-      this.columns = [...this.allColumns];
-      console.log('Affichage complet - combinedRows.length:', this.combinedRows.length, 'columns.length:', this.columns.length);
-    } else {
+    // Si une sélection est appliquée, afficher seulement les colonnes sélectionnées
+    if (this.selectionApplied && this.selectedCols.length > 0) {
       this.combinedRows = this.allRows.map(row => {
         const newRow: any = {};
         for (const col of this.selectedCols) {
@@ -612,6 +849,18 @@ export class TraitementComponent implements OnInit, AfterViewInit {
       });
       this.columns = [...this.selectedCols];
       console.log('Affichage filtré - combinedRows.length:', this.combinedRows.length, 'columns.length:', this.columns.length);
+    } else {
+      // Si pas de sélection appliquée, afficher toutes les colonnes
+      // Vérifier si combinedRows a été modifié par des opérations de formatage
+      const hasFormattingChanges = this.combinedRows.length > 0 && this.combinedRows.length === this.allRows.length;
+      
+      if (!hasFormattingChanges) {
+        this.combinedRows = [...this.allRows];
+        this.columns = [...this.allColumns];
+        console.log('Affichage complet - combinedRows.length:', this.combinedRows.length, 'columns.length:', this.columns.length);
+      } else {
+        console.log('Conservation des modifications de formatage - combinedRows.length:', this.combinedRows.length);
+      }
     }
     
     // Réinitialiser la pagination pour le premier chargement
@@ -929,9 +1178,8 @@ export class TraitementComponent implements OnInit, AfterViewInit {
   applyColumnSelection() {
     try {
       if (this.selectedCols.length === 0) {
-        this.selectionApplied = false;
-        this.updateDisplayedRows();
-        return;
+        // Si aucune colonne n'est sélectionnée, sélectionner toutes les colonnes actuellement affichées
+        this.selectedCols = [...this.columns];
       }
       this.selectionApplied = true;
       this.updateDisplayedRows();
@@ -942,19 +1190,22 @@ export class TraitementComponent implements OnInit, AfterViewInit {
   }
 
   resetColumnSelection() {
-    this.selectedCols = [];
+    // Garder les colonnes actuellement affichées comme sélectionnées
+    this.selectedCols = [...this.columns];
     this.selectionApplied = false;
     this.updateDisplayedRows();
-    this.showSuccess('select', 'Sélection réinitialisée.');
+    this.showSuccess('select', 'Sélection réinitialisée. Vous pouvez maintenant ajouter d\'autres colonnes.');
   }
 
   onFilterColumnChange() {
     if (this.selectedFilterColumn) {
       // Extraire les valeurs uniques de la colonne sélectionnée
       this.filterValues = Array.from(new Set(this.allRows.map(row => row[this.selectedFilterColumn])));
+      this.filteredFilterValues = this.filterValues.slice();
       this.selectedFilterValues = []; // Reset to empty array
     } else {
       this.filterValues = [];
+      this.filteredFilterValues = [];
       this.selectedFilterValues = [];
     }
   }
@@ -1403,95 +1654,199 @@ export class TraitementComponent implements OnInit, AfterViewInit {
   }
 
   applyRemoveCharactersFormatting() {
+    if (!this.formatSelections['removeCharacters'].length) {
+      this.showError('format', 'Veuillez sélectionner au moins une colonne');
+      return;
+    }
+
     try {
-      for (const col of this.formatSelections['removeCharacters']) {
-        for (const row of this.combinedRows) {
+      this.combinedRows.forEach(row => {
+        this.formatSelections['removeCharacters'].forEach(col => {
           if (row[col] && typeof row[col] === 'string') {
             let value = row[col];
-            const length = value.length;
             
-            if (this.removeCharCount > length) {
-              // Si on veut supprimer plus de caractères qu'il n'y en a, on vide la chaîne
-              row[col] = '';
-            } else {
-              switch (this.removeCharPosition) {
-                case 'start':
-                  // Supprimer depuis le début
-                  row[col] = value.substring(this.removeCharCount);
-                  break;
-                case 'end':
-                  // Supprimer depuis la fin
-                  row[col] = value.substring(0, length - this.removeCharCount);
-                  break;
-                case 'specific':
-                  // Supprimer à une position spécifique
-                  const position = this.removeCharSpecificPosition - 1; // Convertir en index 0-based
-                  if (position >= 0 && position < length) {
-                    const before = value.substring(0, position);
-                    const after = value.substring(position + this.removeCharCount);
-                    row[col] = before + after;
-                  }
-                  break;
-              }
+            switch (this.removeCharPosition) {
+              case 'start':
+                value = value.substring(this.removeCharCount);
+                break;
+              case 'end':
+                value = value.substring(0, value.length - this.removeCharCount);
+                break;
+              case 'specific':
+                const pos = this.removeCharSpecificPosition - 1; // Convert to 0-based
+                if (pos >= 0 && pos < value.length) {
+                  value = value.substring(0, pos) + value.substring(pos + this.removeCharCount);
+                }
+                break;
             }
+            
+            row[col] = value;
+          }
+        });
+      });
+
+      this.showSuccess('format', `Suppression de caractères appliquée sur ${this.formatSelections['removeCharacters'].length} colonne(s)`);
+      this.updateDisplayedRows();
+    } catch (error) {
+      this.showError('format', 'Erreur lors de la suppression de caractères');
+    }
+  }
+
+  applyRemoveSpecificCharactersFormatting() {
+    console.log('=== DÉBUT applyRemoveSpecificCharactersFormatting ===');
+    console.log('Colonnes sélectionnées:', this.formatSelections['removeSpecificCharacters']);
+    console.log('Caractères à supprimer:', this.specificCharactersToRemove);
+    console.log('Sensible à la casse:', this.removeSpecificCharactersCaseSensitive);
+    console.log('Filtrage par valeur exacte:', this.filterByExactValue);
+    console.log('Valeur exacte à filtrer:', this.exactValueToFilter);
+    console.log('Colonne pour filtrage exact:', this.exactValueColumn);
+    console.log('Nombre de lignes dans combinedRows:', this.combinedRows.length);
+    
+    if (!this.formatSelections['removeSpecificCharacters'].length) {
+      console.log('❌ Aucune colonne sélectionnée');
+      this.showError('format', 'Veuillez sélectionner au moins une colonne');
+      return;
+    }
+
+    if (!this.specificCharactersToRemove.trim()) {
+      console.log('❌ Aucun caractère spécifié');
+      this.showError('format', 'Veuillez spécifier les caractères à supprimer');
+      return;
+    }
+
+    // Validation du filtrage par valeur exacte
+    if (this.filterByExactValue) {
+      if (!this.exactValueToFilter.trim()) {
+        console.log('❌ Valeur exacte non spécifiée');
+        this.showError('format', 'Veuillez spécifier la valeur exacte à filtrer');
+        return;
+      }
+      if (!this.exactValueColumn) {
+        console.log('❌ Colonne pour filtrage non sélectionnée');
+        this.showError('format', 'Veuillez sélectionner une colonne pour le filtrage par valeur exacte');
+        return;
+      }
+    }
+
+    try {
+      const charsToRemove = this.specificCharactersToRemove;
+      console.log('Caractères à supprimer (final):', charsToRemove);
+      console.log('Longueur des caractères:', charsToRemove.length);
+      
+      let processedRows = 0;
+      let processedCells = 0;
+      let totalCells = 0;
+      let filteredRows = 0;
+      
+      this.combinedRows.forEach((row, rowIndex) => {
+        // Vérifier si la ligne doit être traitée (filtrage par valeur exacte)
+        let shouldProcessRow = true;
+        
+        if (this.filterByExactValue && this.exactValueColumn && this.exactValueToFilter.trim()) {
+          const columnValue = row[this.exactValueColumn];
+          const exactValue = this.exactValueToFilter.trim();
+          
+          // Comparaison exacte (avec ou sans sensibilité à la casse)
+          if (this.removeSpecificCharactersCaseSensitive) {
+            shouldProcessRow = columnValue === exactValue;
+          } else {
+            shouldProcessRow = columnValue && columnValue.toString().toLowerCase() === exactValue.toLowerCase();
+          }
+          
+          if (shouldProcessRow) {
+            filteredRows++;
+            console.log(`✅ LIGNE FILTRÉE: Ligne ${rowIndex}, colonne "${this.exactValueColumn}" = "${columnValue}" correspond à "${exactValue}"`);
+          } else {
+            console.log(`❌ LIGNE IGNORÉE: Ligne ${rowIndex}, colonne "${this.exactValueColumn}" = "${columnValue}" ne correspond pas à "${exactValue}"`);
           }
         }
+        
+        if (shouldProcessRow) {
+          this.formatSelections['removeSpecificCharacters'].forEach(col => {
+            totalCells++;
+            console.log(`Vérification ligne ${rowIndex}, colonne ${col}:`, row[col]);
+            
+            if (row[col] && typeof row[col] === 'string') {
+              let value = row[col];
+              const originalValue = value;
+              console.log(`Traitement de "${originalValue}"`);
+              
+              if (this.removeSpecificCharactersCaseSensitive) {
+                // Suppression sensible à la casse
+                for (let char of charsToRemove) {
+                  console.log(`Suppression du caractère "${char}" de "${value}"`);
+                  value = value.split(char).join('');
+                  console.log(`Résultat après suppression: "${value}"`);
+                }
+              } else {
+                // Suppression insensible à la casse
+                for (let char of charsToRemove) {
+                  const regex = new RegExp(char.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+                  console.log(`Suppression du caractère "${char}" (regex: ${regex}) de "${value}"`);
+                  value = value.replace(regex, '');
+                  console.log(`Résultat après suppression: "${value}"`);
+                }
+              }
+              
+              if (value !== originalValue) {
+                processedCells++;
+                console.log(`✅ MODIFICATION: Ligne ${rowIndex}, Colonne ${col}: "${originalValue}" -> "${value}"`);
+              } else {
+                console.log(`❌ AUCUNE MODIFICATION: Ligne ${rowIndex}, Colonne ${col}: "${originalValue}" (inchangé)`);
+              }
+              
+              row[col] = value;
+              
+              // Mettre à jour aussi allRows si la sélection n'est pas appliquée
+              if (!this.selectionApplied && this.allRows[rowIndex]) {
+                this.allRows[rowIndex][col] = value;
+              }
+            } else {
+              console.log(`❌ Valeur non traitée: ligne ${rowIndex}, colonne ${col}:`, row[col], `(type: ${typeof row[col]})`);
+            }
+          });
+          processedRows++;
+        }
+      });
+
+      console.log(`📊 RÉSUMÉ: ${processedRows} lignes traitées, ${filteredRows} lignes filtrées, ${totalCells} cellules vérifiées, ${processedCells} cellules modifiées`);
+
+      let successMessage = `Suppression de caractères spécifiques appliquée sur ${this.formatSelections['removeSpecificCharacters'].length} colonne(s)`;
+      
+      if (this.filterByExactValue && this.exactValueColumn && this.exactValueToFilter.trim()) {
+        successMessage += ` (filtrage sur "${this.exactValueColumn}" = "${this.exactValueToFilter}" : ${filteredRows} ligne(s) traitée(s))`;
       }
-      this.showSuccess('format', 'Suppression de caractères réussie.');
-    } catch (e) {
-      this.showError('format', 'Erreur lors de la suppression de caractères.');
-    }
-  }
-
-  refreshPage() {
-    // Réinitialiser uniquement l'affichage, PAS les données
-    this.currentPage = 1;
-    this.rowsPerPage = 100;
-    this.maxDisplayedRows = 1000;
-    this.showAllRows = false;
-    this.successMsg = {};
-    this.errorMsg = {};
-    this.successMsg.upload = '';
-
-    // Désactiver l'overlay de progression
-    this.isProcessing = false;
-    this.processingProgress = 0;
-    this.processingMessage = '';
-
-    // Supprimer la classe dragover si présente
-    const uploadArea = document.querySelector('.upload-area');
-    if (uploadArea) {
-      uploadArea.classList.remove('dragover');
-    }
-
-    // Réappliquer la pagination et l'affichage
-    this.updateDisplayedRows();
-    this.updatePagination();
-
-    setTimeout(() => {
-      this.cd.detectChanges();
+      
+      this.showSuccess('format', successMessage);
+      
+      // Forcer la mise à jour de l'affichage sans recréer les données
+      console.log('🔄 Mise à jour de l\'affichage...');
+      
+      // Mettre à jour directement displayedRows sans passer par updateDisplayedRows
+      if (this.showAllRows || this.combinedRows.length <= this.maxDisplayedRows) {
+        this.displayedRows = [...this.combinedRows];
+      } else {
+        const startIndex = (this.currentPage - 1) * this.rowsPerPage;
+        const endIndex = startIndex + this.rowsPerPage;
+        this.displayedRows = this.combinedRows.slice(startIndex, endIndex);
+      }
+      
+      this.cd.detectChanges(); // Forcer la détection des changements
+      
+      // Double vérification après un délai
       setTimeout(() => {
         this.cd.detectChanges();
-        this.showSuccess('refresh', 'Affichage rafraîchi avec succès.');
+        console.log('✅ Affichage mis à jour après délai');
       }, 100);
-    }, 50);
-    // Forcer le recalcul du layout et reset styles globaux
-    this.resetGlobalStyles();
+    } catch (error) {
+      console.error('❌ Erreur lors de la suppression:', error);
+      this.showError('format', 'Erreur lors de la suppression de caractères spécifiques');
+    }
+    
+    console.log('=== FIN applyRemoveSpecificCharactersFormatting ===');
   }
 
-  private resetGlobalStyles() {
-    setTimeout(() => {
-      window.dispatchEvent(new Event('resize'));
-    }, 200);
-    document.body.style.overflow = '';
-    document.body.style.height = '';
-    document.body.style.width = '';
-    document.documentElement.style.overflow = '';
-    document.documentElement.style.height = '';
-    document.documentElement.style.width = '';
-    document.body.className = '';
-    document.documentElement.className = '';
-  }
+
 
   ngOnInit() {
     // Initialiser l'affichage au démarrage
@@ -1501,14 +1856,20 @@ export class TraitementComponent implements OnInit, AfterViewInit {
     this.combinedRows = [];
     this.columns = [];
     
+    // Configurer le listener de recherche pour les filtres
+    this.filterValueSearchCtrl.valueChanges.subscribe((search: string | null) => {
+      const s = (search || '').toLowerCase();
+      this.filteredFilterValues = this.filterValues.filter(val => 
+        (val || '').toString().toLowerCase().includes(s)
+      );
+    });
+    
     // Optimiser l'affichage initial
     this.optimizeInitialDisplay();
     
     // Forcer la détection de changement
     this.cd.detectChanges();
     
-    // Reset styles globaux pour éviter les bugs d'affichage après login
-    this.resetGlobalStyles();
     // Restaurer l'état si présent
     const saved = localStorage.getItem(this.LOCAL_STORAGE_KEY);
     if (saved) {
@@ -1561,6 +1922,8 @@ export class TraitementComponent implements OnInit, AfterViewInit {
         removeCharPosition: this.removeCharPosition,
         removeCharCount: this.removeCharCount,
         removeCharSpecificPosition: this.removeCharSpecificPosition,
+        specificCharactersToRemove: this.specificCharactersToRemove,
+        removeSpecificCharactersCaseSensitive: this.removeSpecificCharactersCaseSensitive,
         currentPage: this.currentPage,
         rowsPerPage: this.rowsPerPage,
         maxDisplayedRows: this.maxDisplayedRows,
@@ -1605,7 +1968,8 @@ export class TraitementComponent implements OnInit, AfterViewInit {
       dotToComma: false,
       removeDashesAndCommas: false,
       absoluteValue: false,
-      removeCharacters: false
+      removeCharacters: false,
+      removeSpecificCharacters: false
     };
     this.extractCol = '';
     this.extractType = '';
@@ -1636,6 +2000,8 @@ export class TraitementComponent implements OnInit, AfterViewInit {
     this.removeCharPosition = 'start';
     this.removeCharCount = 1;
     this.removeCharSpecificPosition = 1;
+    this.specificCharactersToRemove = '';
+    this.removeSpecificCharactersCaseSensitive = true;
     this.currentPage = 1;
     this.rowsPerPage = 100;
     this.maxDisplayedRows = 1000;
@@ -1646,11 +2012,298 @@ export class TraitementComponent implements OnInit, AfterViewInit {
   }
 
   toggleSelectAllCols(event: Event) {
-    const input = event.target as HTMLInputElement;
-    if (input.checked) {
-      this.selectedCols = [...this.columns];
+    const target = event.target as HTMLInputElement;
+    if (target.checked) {
+      this.selectedCols = [...this.allColumns];
     } else {
       this.selectedCols = [];
     }
+  }
+
+  // --- MÉTHODES POUR LA RÉORGANISATION DES COLONNES ---
+  
+  toggleColumnReorderMode() {
+    this.isColumnReorderMode = !this.isColumnReorderMode;
+    if (this.isColumnReorderMode) {
+      this.reorderedColumns = [...this.columns];
+    }
+  }
+
+  getDisplayColumns(): string[] {
+    return this.isColumnReorderMode ? this.reorderedColumns : this.columns;
+  }
+
+  onColumnDragStart(event: DragEvent, column: string) {
+    if (!this.isColumnReorderMode) return;
+    this.draggedColumn = column;
+    if (event.dataTransfer) {
+      event.dataTransfer.effectAllowed = 'move';
+      event.dataTransfer.setData('text/plain', column);
+    }
+  }
+
+  onColumnDragOver(event: DragEvent, column: string) {
+    if (!this.isColumnReorderMode || !this.draggedColumn) return;
+    event.preventDefault();
+    event.dataTransfer!.dropEffect = 'move';
+    this.dragOverColumn = column;
+  }
+
+  onColumnDrop(event: DragEvent, targetColumn: string) {
+    if (!this.isColumnReorderMode || !this.draggedColumn) return;
+    event.preventDefault();
+    
+    if (this.draggedColumn !== targetColumn) {
+      const draggedIndex = this.reorderedColumns.indexOf(this.draggedColumn);
+      const targetIndex = this.reorderedColumns.indexOf(targetColumn);
+      
+      // Réorganiser les colonnes
+      const newColumns = [...this.reorderedColumns];
+      newColumns.splice(draggedIndex, 1);
+      newColumns.splice(targetIndex, 0, this.draggedColumn);
+      
+      this.reorderedColumns = newColumns;
+    }
+    
+    this.draggedColumn = null;
+    this.dragOverColumn = null;
+  }
+
+  onColumnDragEnd() {
+    this.draggedColumn = null;
+    this.dragOverColumn = null;
+  }
+
+  applyColumnReorder() {
+    if (this.isColumnReorderMode) {
+      this.columns = [...this.reorderedColumns];
+      this.isColumnReorderMode = false;
+      this.showSuccess('reorder', 'Ordre des colonnes appliqué avec succès');
+    }
+  }
+
+  cancelColumnReorder() {
+    this.isColumnReorderMode = false;
+    this.reorderedColumns = [...this.columns];
+    this.draggedColumn = null;
+    this.dragOverColumn = null;
+  }
+
+  moveColumnUp(column: string) {
+    if (!this.isColumnReorderMode) return;
+    
+    const index = this.reorderedColumns.indexOf(column);
+    if (index > 0) {
+      const newColumns = [...this.reorderedColumns];
+      [newColumns[index], newColumns[index - 1]] = [newColumns[index - 1], newColumns[index]];
+      this.reorderedColumns = newColumns;
+    }
+  }
+
+  moveColumnDown(column: string) {
+    if (!this.isColumnReorderMode) return;
+    
+    const index = this.reorderedColumns.indexOf(column);
+    if (index < this.reorderedColumns.length - 1) {
+      const newColumns = [...this.reorderedColumns];
+      [newColumns[index], newColumns[index + 1]] = [newColumns[index + 1], newColumns[index]];
+      this.reorderedColumns = newColumns;
+    }
+  }
+
+  isColumnDragging(column: string): boolean {
+    return this.draggedColumn === column;
+  }
+
+  isColumnDragOver(column: string): boolean {
+    return this.dragOverColumn === column && this.draggedColumn !== column;
+  }
+
+  // Méthodes pour la prévisualisation CSV
+  async confirmCsvImport() {
+    if (!this.csvContentToProcess || !this.csvFileToProcess) {
+      this.showError('upload', 'Aucun fichier CSV à traiter');
+      return;
+    }
+
+    try {
+      this.isProcessing = true;
+      this.processingMessage = 'Traitement du fichier CSV confirmé...';
+      
+      // Réinitialiser les données existantes
+      this.combinedRows = [];
+      this.columns = [];
+      this.allRows = [];
+      this.allColumns = [];
+      this.originalRows = [];
+      
+      // Réinitialiser les paramètres d'affichage
+      this.currentPage = 1;
+      this.showAllRows = false;
+      this.displayedRows = [];
+      
+      // Traiter le CSV avec le séparateur détecté
+      await this.processCsvContent(this.csvContentToProcess, this.detectedDelimiter);
+      
+      // Finaliser le traitement
+      this.combinedRows = [...this.allRows];
+      this.columns = [...this.allColumns];
+      this.originalRows = [...this.allRows];
+      
+      // Optimiser l'affichage pour les gros fichiers
+      this.optimizeForLargeFiles();
+      
+      // Mettre à jour l'affichage
+      this.updateDisplayedRows();
+      this.updatePagination();
+      
+      // Masquer la prévisualisation
+      this.showCsvPreview = false;
+      this.isProcessing = false;
+      
+      const totalProcessed = this.allRows.length;
+      console.log(`✅ CSV traité avec succès: ${totalProcessed} lignes`);
+      
+      this.showSuccess('upload', `Fichier CSV traité avec succès ! ${totalProcessed} lignes importées`);
+      
+      // Nettoyer les données temporaires
+      this.csvContentToProcess = '';
+      this.csvFileToProcess = null;
+      this.csvPreviewData = [];
+      this.csvPreviewColumns = [];
+      
+    } catch (error) {
+      console.error('Erreur lors du traitement du CSV:', error);
+      this.isProcessing = false;
+      this.showError('upload', 'Erreur lors du traitement du fichier CSV');
+    }
+  }
+
+  // Méthode pour traiter le contenu CSV comme un tableau normal
+  async processCsvContent(csvContent: string, delimiter: string) {
+    return new Promise<void>((resolve, reject) => {
+      Papa.parse(csvContent, {
+        header: true,
+        delimiter,
+        skipEmptyLines: true,
+        complete: async (results) => {
+          try {
+            let rows = results.data as any[];
+            console.log(`CSV parsé avec header: ${rows.length} lignes détectées`);
+            
+            // Si les colonnes sont nommées field1, field2... ou qu'il n'y a qu'une seule colonne, on relit sans header
+            const firstRow = rows[0] || {};
+            const allKeys = Object.keys(firstRow);
+            const looksLikeNoHeader = allKeys.length <= 1 || allKeys.some(k => k.toLowerCase().startsWith('field'));
+            
+            if (looksLikeNoHeader) {
+              console.log('Détection d\'un fichier sans en-tête, relecture...');
+              Papa.parse(csvContent, {
+                header: false,
+                delimiter: delimiter,
+                skipEmptyLines: true,
+                complete: async (res2) => {
+                  try {
+                    const rawRows = res2.data as any[];
+                    console.log(`CSV parsé sans header: ${rawRows.length} lignes brutes`);
+                    
+                    if (rawRows.length > 1) {
+                      const headerRow = rawRows[0];
+                      const dataRows = rawRows.slice(1);
+                      const colNames = headerRow.map((v: any, i: number) => v ? v.toString() : 'Col' + (i+1));
+                      
+                      console.log(`Traitement de ${dataRows.length} lignes de données avec ${colNames.length} colonnes`);
+                      
+                      // Traitement en arrière-plan avec chunks très petits
+                      await this.processDataInBackground(
+                        dataRows,
+                        (chunk) => {
+                          const rowsWithHeader = chunk.map((row: any[]) => {
+                            const obj: any = {};
+                            colNames.forEach((col: string, idx: number) => {
+                              obj[col] = row[idx];
+                            });
+                            return obj;
+                          });
+                          
+                          this.combinedRows.push(...rowsWithHeader);
+                          this.allRows.push(...rowsWithHeader);
+                        },
+                        50, // Chunks très petits pour éviter le blocage
+                        (progress) => {
+                          this.processingMessage = `Traitement CSV: ${Math.round(progress)}%`;
+                        }
+                      );
+                      
+                      for (const col of colNames) {
+                        if (!this.columns.includes(col)) this.columns.push(col);
+                        if (!this.allColumns.includes(col)) this.allColumns.push(col);
+                      }
+                      
+                      console.log(`CSV traité avec succès: ${this.allRows.length} lignes ajoutées`);
+                    }
+                    resolve();
+                  } catch (error) {
+                    console.error('Erreur lors du traitement CSV sans header:', error);
+                    reject(error);
+                  }
+                },
+                error: (error: any) => {
+                  console.error('Erreur lors de la lecture du CSV sans header:', error);
+                  reject(error);
+                }
+              });
+              return;
+            }
+            
+            // Cas normal avec header
+            if (rows.length > 0) {
+              console.log(`Traitement de ${rows.length} lignes avec en-tête`);
+              
+              // Traitement en arrière-plan avec chunks très petits
+              await this.processDataInBackground(
+                rows,
+                (chunk) => {
+                  this.combinedRows.push(...chunk);
+                  this.allRows.push(...chunk);
+                },
+                50, // Chunks très petits pour éviter le blocage
+                (progress) => {
+                  this.processingMessage = `Traitement CSV: ${Math.round(progress)}%`;
+                }
+              );
+              
+              // Extraire les colonnes
+              const firstRow = rows[0];
+              for (const key of Object.keys(firstRow)) {
+                if (!this.columns.includes(key)) this.columns.push(key);
+                if (!this.allColumns.includes(key)) this.allColumns.push(key);
+              }
+              
+              console.log(`CSV traité avec succès: ${this.allRows.length} lignes ajoutées`);
+            }
+            resolve();
+          } catch (error) {
+            console.error('Erreur lors du traitement CSV:', error);
+            reject(error);
+          }
+        },
+        error: (error: any) => {
+          console.error('Erreur lors de la lecture du CSV:', error);
+          reject(error);
+        }
+      });
+    });
+  }
+
+  cancelCsvPreview() {
+    // Annuler la prévisualisation et réinitialiser
+    this.showCsvPreview = false;
+    this.csvPreviewData = [];
+    this.csvPreviewColumns = [];
+    this.csvContentToProcess = '';
+    this.csvFileToProcess = null;
+    this.selectedFiles = [];
+    this.detectedDelimiter = ';';
   }
 } 

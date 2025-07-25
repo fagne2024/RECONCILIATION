@@ -2,13 +2,13 @@ import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { Profil } from '../models/profil.model';
-import { ModuleMenu } from '../models/module.model';
+import { Module } from '../models/module.model';
 import { Permission } from '../models/permission.model';
 import { ProfilPermission } from '../models/profil-permission.model';
 
 @Injectable({ providedIn: 'root' })
 export class ProfilService {
-  private apiUrl = '/api/profils';
+  private apiUrl = 'http://localhost:8080/api/profils';
 
   constructor(private http: HttpClient) {}
 
@@ -19,16 +19,20 @@ export class ProfilService {
   createProfil(profil: Profil): Observable<Profil> {
     return this.http.post<Profil>(this.apiUrl, profil);
   }
-  deleteProfil(id: number): Observable<void> {
-    return this.http.delete<void>(`${this.apiUrl}/${id}`);
+  updateProfil(id: number, profil: Profil): Observable<Profil> {
+    return this.http.put<Profil>(`${this.apiUrl}/${id}`, profil);
+  }
+  deleteProfil(id: number): Observable<any> {
+    console.log('🚀 Envoi de la requête DELETE vers:', `${this.apiUrl}/${id}`);
+    return this.http.delete<{message: string, id: string}>(`${this.apiUrl}/${id}`);
   }
 
   // Modules
-  getModules(): Observable<ModuleMenu[]> {
-    return this.http.get<ModuleMenu[]>(`${this.apiUrl}/modules`);
+  getModules(): Observable<Module[]> {
+    return this.http.get<Module[]>(`${this.apiUrl}/modules`);
   }
-  createModule(module: ModuleMenu): Observable<ModuleMenu> {
-    return this.http.post<ModuleMenu>(`${this.apiUrl}/modules`, module);
+  createModule(module: Module): Observable<Module> {
+    return this.http.post<Module>(`${this.apiUrl}/modules`, module);
   }
 
   // Permissions

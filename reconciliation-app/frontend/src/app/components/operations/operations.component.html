@@ -97,159 +97,454 @@
     </div>
 
     <!-- Formulaire d'ajout -->
-    <div *ngIf="showAddForm" class="add-form-section">
-        <h3>Ajouter une nouvelle opération</h3>
-        <form [formGroup]="addForm" (ngSubmit)="addOperation()" class="form">
-            <div class="form-row">
-                <div class="form-group">
-                    <app-autocomplete-input
-                        [options]="typeOperations"
-                        formControlName="typeOperation"
-                        placeholder="Saisir ou sélectionner un type..."
-                        label="Type d'opération *">
-                    </app-autocomplete-input>
-                    <div *ngIf="addForm.get('typeOperation')?.invalid && addForm.get('typeOperation')?.touched" class="error-message">
-                        Le type d'opération est requis
-                    </div>
-                </div>
-                <div class="form-group">
-                    <label>Date d'opération *</label>
-                    <input type="date" formControlName="dateOperation">
-                    <div *ngIf="addForm.get('dateOperation')?.invalid && addForm.get('dateOperation')?.touched" class="error-message">
-                        La date d'opération est requise
-                    </div>
-                </div>
-                <div class="form-group">
-                    <label>Montant * <span class="help-text">(Utilisez des valeurs négatives pour les ajustements)</span></label>
-                    <input type="number" formControlName="montant" placeholder="0.00" step="0.01">
-                    <div *ngIf="addForm.get('montant')?.invalid && addForm.get('montant')?.touched" class="error-message">
-                        Le montant est requis
-                    </div>
-                </div>
-            </div>
-            <div class="form-row">
-                <div class="form-group">
-                    <app-autocomplete-input
-                        [options]="codeProprietaireList"
-                        formControlName="codeProprietaire"
-                        placeholder="Saisir ou sélectionner un code propriétaire..."
-                        label="Code propriétaire">
-                    </app-autocomplete-input>
-                    <div *ngIf="addForm.get('codeProprietaire')?.invalid && addForm.get('codeProprietaire')?.touched" class="error-message">
-                        Le code propriétaire est requis
-                    </div>
-                </div>
-                <div class="form-group">
-                    <label>Service</label>
-                    <input type="text" formControlName="service" placeholder="Ex: CASHIN, PAIEMENT">
-                </div>
-            </div>
-            <div class="form-row">
-                <div class="form-group">
-                    <label>Pays (automatique)</label>
-                    <input type="text" formControlName="pays" readonly [style.background-color]="'#f5f5f5'">
-                </div>
-            </div>
-            <div class="form-row">
-                <div class="form-group">
-                    <label>Banque</label>
-                    <input type="text" formControlName="banque" placeholder="Ex: BNP Paribas">
-                </div>
-                <div class="form-group">
-                    <label>Solde avant (automatique)</label>
-                    <input type="number" formControlName="soldeAvant" readonly [style.background-color]="'#f5f5f5'">
-                </div>
-                <div class="form-group">
-                    <label>Solde après (calculé automatiquement)</label>
-                    <input type="number" formControlName="soldeApres" readonly [style.background-color]="'#f5f5f5'">
-                </div>
-            </div>
-            <div class="form-row">
-                <div class="form-group">
-                    <label>Nom du bordereau</label>
-                    <input type="text" formControlName="nomBordereau" placeholder="Ex: Bordereau_2024_001">
-                </div>
-            </div>
-            <div class="form-actions">
-                <button type="submit" [disabled]="!addForm.valid || isAdding">
-                    {{ isAdding ? 'Ajout en cours...' : 'Ajouter' }}
+    <!-- Modal d'ajout d'opération -->
+    <div *ngIf="showAddForm" class="modal-overlay" (click)="closeAddModal($event)">
+        <div class="modal-container" (click)="$event.stopPropagation()">
+            <div class="modal-header">
+                <h3><i class="fas fa-plus-circle"></i> Ajouter une nouvelle opération</h3>
+                <button type="button" class="modal-close" (click)="cancelAdd()">
+                    <i class="fas fa-times"></i>
                 </button>
-                <button type="button" (click)="cancelAdd()">Annuler</button>
             </div>
-        </form>
+            
+            <div class="modal-body">
+                <form [formGroup]="addForm" (ngSubmit)="addOperation()" class="add-form">
+                    <!-- Informations de base -->
+                    <div class="form-section">
+                        <h4 class="section-title">
+                            <i class="fas fa-info-circle"></i> Informations de base
+                        </h4>
+                        
+                        <div class="form-row">
+                            <div class="form-group">
+                                <app-autocomplete-input
+                                    [options]="typeOperations"
+                                    formControlName="typeOperation"
+                                    placeholder="Saisir ou sélectionner un type..."
+                                    label="Type d'opération *">
+                                </app-autocomplete-input>
+                                <div *ngIf="addForm.get('typeOperation')?.invalid && addForm.get('typeOperation')?.touched" class="error-message">
+                                    <i class="fas fa-exclamation-circle"></i>
+                                    Le type d'opération est requis
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label>Date d'opération *</label>
+                                <div class="date-input-wrapper">
+                                    <input type="date" formControlName="dateOperation" [max]="maxDate" class="date-input">
+                                    <i class="fas fa-calendar-alt date-icon"></i>
+                                </div>
+                                <div *ngIf="addForm.get('dateOperation')?.invalid && addForm.get('dateOperation')?.touched" class="error-message">
+                                    <i class="fas fa-exclamation-circle"></i>
+                                    La date d'opération est requise
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <app-autocomplete-input
+                                    [options]="codeProprietaireList"
+                                    formControlName="codeProprietaire"
+                                    placeholder="Saisir ou sélectionner un code propriétaire..."
+                                    label="Code propriétaire *">
+                                </app-autocomplete-input>
+                                <div *ngIf="codeProprietaireList.length === 0" class="info-message">
+                                    <i class="fas fa-spinner fa-spin"></i>
+                                    Chargement des codes propriétaire...
+                                </div>
+                                <div *ngIf="addForm.get('codeProprietaire')?.invalid && addForm.get('codeProprietaire')?.touched" class="error-message">
+                                    <i class="fas fa-exclamation-circle"></i>
+                                    Le code propriétaire est requis
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label>Service</label>
+                                <app-autocomplete-input
+                                    [options]="serviceList"
+                                    formControlName="service"
+                                    placeholder="Ex: CASHIN, PAIEMENT..."
+                                    label="Service">
+                                </app-autocomplete-input>
+                            </div>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Banque</label>
+                                <app-autocomplete-input
+                                    [options]="banqueList"
+                                    formControlName="banque"
+                                    placeholder="Ex: ECOBANK CM, BNP Paribas..."
+                                    label="Banque">
+                                </app-autocomplete-input>
+                            </div>
+                            <div class="form-group">
+                                <label>Nom du bordereau</label>
+                                <input type="text" formControlName="nomBordereau" 
+                                    placeholder="Ex: 19S50zsyf252050003/1753" class="text-input">
+                            </div>
+                        </div>
+                    </div>
+
+
+
+                    <!-- Détails financiers -->
+                    <div class="form-section">
+                        <h4 class="section-title">
+                            <i class="fas fa-calculator"></i> Détails financiers
+                        </h4>
+                        
+                        <div class="financial-preview">
+                            <div class="preview-card">
+                                <div class="preview-header">
+                                    <h5>Aperçu de l'impact</h5>
+                                </div>
+                                <div class="preview-content">
+                                    <div class="impact-item">
+                                        <span class="impact-label">Solde avant:</span>
+                                        <span class="impact-value">{{ addForm.get('soldeAvant')?.value | currency:'XAF':'symbol':'1.0-0' }}</span>
+                                    </div>
+                                    <div class="impact-item">
+                                        <span class="impact-label">Montant:</span>
+                                        <span class="impact-value" [class.positive]="getAddImpactDirection() === 'positive'" 
+                                            [class.negative]="getAddImpactDirection() === 'negative'">
+                                            {{ getAddImpactDirection() === 'positive' ? '+' : '' }}{{ addForm.get('montant')?.value | currency:'XAF':'symbol':'1.0-0' }}
+                                        </span>
+                                    </div>
+                                    <div class="impact-item total">
+                                        <span class="impact-label">Solde après:</span>
+                                        <span class="impact-value">{{ calculateAddSoldeApres() | currency:'XAF':'symbol':'1.0-0' }}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group full-width">
+                                <label>Montant * <span class="help-text">(Utilisez des valeurs négatives pour les ajustements)</span></label>
+                                <div class="amount-input-wrapper">
+                                    <input type="number" formControlName="montant" 
+                                        placeholder="0.00" step="0.01" class="amount-input"
+                                        (input)="onAddMontantChange()">
+                                    <span class="currency-symbol">XAF</span>
+                                </div>
+                                <div *ngIf="addForm.get('montant')?.invalid && addForm.get('montant')?.touched" class="error-message">
+                                    <i class="fas fa-exclamation-circle"></i>
+                                    Le montant est requis
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Pays (automatique)</label>
+                                <div class="readonly-field">
+                                    <span>{{ addForm.get('pays')?.value || 'Non défini' }}</span>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label>Solde avant (automatique)</label>
+                                <div class="readonly-field">
+                                    <span>{{ addForm.get('soldeAvant')?.value | currency:'XAF':'symbol':'1.0-0' }}</span>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label>Solde après (calculé automatiquement)</label>
+                                <div class="readonly-field">
+                                    <span>{{ calculateAddSoldeApres() | currency:'XAF':'symbol':'1.0-0' }}</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="warning-section" *ngIf="showAddWarningMessage()">
+                            <div class="warning-card">
+                                <i class="fas fa-exclamation-triangle"></i>
+                                <div class="warning-content">
+                                    <h6>Attention</h6>
+                                    <p>{{ getAddWarningMessage() }}</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </form>
+            </div>
+
+            <div class="modal-footer">
+                <div class="modal-actions">
+                    <button type="button" class="btn-secondary" (click)="cancelAdd()">
+                        <i class="fas fa-times"></i>
+                        Annuler
+                    </button>
+                    <button type="submit" class="btn-primary" 
+                        [disabled]="!addForm.valid || isAdding"
+                        (click)="addOperation()">
+                        <i class="fas fa-plus"></i>
+                        {{ isAdding ? 'Ajout en cours...' : 'Ajouter l\'opération' }}
+                    </button>
+                </div>
+            </div>
+        </div>
     </div>
 
     <!-- Formulaire de modification -->
     <div *ngIf="showEditForm && editingOperation" class="edit-form-section">
-        <h3>Modifier l'opération #{{ editingOperation.id }}</h3>
+        <!-- Navigation par étapes -->
+        <div class="step-navigation">
+            <div class="step-item" [class.active]="currentEditStep === 1" (click)="setEditStep(1)">
+                <div class="step-number">1</div>
+                <span class="step-label">Informations de base</span>
+            </div>
+            <div class="step-item" [class.active]="currentEditStep === 2" (click)="setEditStep(2)">
+                <div class="step-number">2</div>
+                <span class="step-label">Détails financiers</span>
+            </div>
+            <div class="step-item" [class.active]="currentEditStep === 3" (click)="setEditStep(3)">
+                <div class="step-number">3</div>
+                <span class="step-label">Validation</span>
+            </div>
+        </div>
+
+        <div class="form-header">
+            <h3>Modifier l'opération #{{ editingOperation.id }}</h3>
+            <div class="operation-status">
+                <span class="status-badge" [class]="'status-' + editingOperation.statut.toLowerCase()">
+                    {{ editingOperation.statut }}
+                </span>
+            </div>
+        </div>
+
         <form [formGroup]="editForm" (ngSubmit)="updateOperation()" class="form">
-            <!-- Display non-editable info -->
-            <div class="form-row">
-                <div class="form-group">
-                    <label>Code propriétaire</label>
-                    <input type="text" [value]="editingOperation.codeProprietaire" readonly
-                        [style.background-color]="'#f5f5f5'">
-                </div>
-                <div class="form-group">
-                    <label>Pays</label>
-                    <input type="text" [value]="editingOperation.pays" readonly [style.background-color]="'#f5f5f5'">
+            <!-- Étape 1: Informations de base -->
+            <div *ngIf="currentEditStep === 1" class="form-step">
+                <div class="step-content">
+                    <h4>Informations de base</h4>
+                    
+                    <!-- Informations en lecture seule -->
+                    <div class="readonly-info">
+                        <div class="info-card">
+                            <div class="info-item">
+                                <label>Code propriétaire</label>
+                                <div class="readonly-value">{{ editingOperation.codeProprietaire }}</div>
+                            </div>
+                            <div class="info-item">
+                                <label>Pays</label>
+                                <div class="readonly-value">{{ editingOperation.pays }}</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Champs éditables -->
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Type d'opération *</label>
+                            <app-autocomplete-input
+                                [options]="typeOperations"
+                                formControlName="typeOperation"
+                                placeholder="Sélectionner un type d'opération..."
+                                label="Type d'opération">
+                            </app-autocomplete-input>
+                            <div *ngIf="editForm.get('typeOperation')?.invalid && editForm.get('typeOperation')?.touched" 
+                                class="error-message">
+                                <i class="fas fa-exclamation-circle"></i>
+                                Le type d'opération est requis
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>Date d'opération *</label>
+                            <div class="date-input-wrapper">
+                                <input type="date" formControlName="dateOperation" 
+                                    [max]="maxDate" class="date-input">
+                                <i class="fas fa-calendar-alt date-icon"></i>
+                            </div>
+                            <div *ngIf="editForm.get('dateOperation')?.invalid && editForm.get('dateOperation')?.touched" 
+                                class="error-message">
+                                <i class="fas fa-exclamation-circle"></i>
+                                La date d'opération est requise
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Banque</label>
+                            <app-autocomplete-input
+                                [options]="banqueList"
+                                formControlName="banque"
+                                placeholder="Ex: ECOBANK CM, BNP Paribas..."
+                                label="Banque">
+                            </app-autocomplete-input>
+                        </div>
+                        <div class="form-group">
+                            <label>Service</label>
+                            <app-autocomplete-input
+                                [options]="serviceList"
+                                formControlName="service"
+                                placeholder="Ex: CASHIN, PAIEMENT..."
+                                label="Service">
+                            </app-autocomplete-input>
+                        </div>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group full-width">
+                            <label>Nom du bordereau</label>
+                            <input type="text" formControlName="nomBordereau" 
+                                placeholder="Ex: 19S50zsyf252050003/1753" class="text-input">
+                        </div>
+                    </div>
                 </div>
             </div>
 
-            <!-- Editable fields -->
-            <div class="form-row">
-                <div class="form-group">
-                    <label>Type d'opération *</label>
-                    <select formControlName="typeOperation">
-                        <option value="">Sélectionner un type</option>
-                        <option *ngFor="let type of typeOperations" [value]="type">
-                            {{ getTypeDisplayName(type) }} ({{ getTypeImpact(type) }})
-                        </option>
-                    </select>
-                    <div *ngIf="editForm.get('typeOperation')?.invalid && editForm.get('typeOperation')?.touched"
-                        class="error-message">
-                        Le type d'opération est requis
+            <!-- Étape 2: Détails financiers -->
+            <div *ngIf="currentEditStep === 2" class="form-step">
+                <div class="step-content">
+                    <h4>Détails financiers</h4>
+                    
+                    <div class="financial-preview">
+                        <div class="preview-card">
+                            <div class="preview-header">
+                                <h5>Aperçu de l'impact</h5>
+                            </div>
+                            <div class="preview-content">
+                                <div class="impact-item">
+                                    <span class="impact-label">Solde avant:</span>
+                                    <span class="impact-value">{{ editingOperation.soldeAvant | currency:'XAF':'symbol':'1.0-0' }}</span>
+                                </div>
+                                <div class="impact-item">
+                                    <span class="impact-label">Montant:</span>
+                                    <span class="impact-value" [class.positive]="getImpactDirection() === 'positive'" 
+                                        [class.negative]="getImpactDirection() === 'negative'">
+                                        {{ getImpactDirection() === 'positive' ? '+' : '' }}{{ editForm.get('montant')?.value | currency:'XAF':'symbol':'1.0-0' }}
+                                    </span>
+                                </div>
+                                <div class="impact-item total">
+                                    <span class="impact-label">Solde après:</span>
+                                    <span class="impact-value">{{ calculateNewSoldeApres() | currency:'XAF':'symbol':'1.0-0' }}</span>
+                                </div>
+                            </div>
+                        </div>
                     </div>
-                </div>
-                <div class="form-group">
-                    <label>Date d'opération *</label>
-                    <input type="date" formControlName="dateOperation">
-                    <div *ngIf="editForm.get('dateOperation')?.invalid && editForm.get('dateOperation')?.touched"
-                        class="error-message">
-                        La date d'opération est requise
+
+                    <div class="form-row">
+                        <div class="form-group full-width">
+                            <label>Montant * <span class="help-text">(Utilisez des valeurs négatives pour les ajustements)</span></label>
+                            <div class="amount-input-wrapper">
+                                <input type="number" formControlName="montant" 
+                                    placeholder="0.00" step="0.01" class="amount-input"
+                                    (input)="onMontantChange()">
+                                <span class="currency-symbol">XAF</span>
+                            </div>
+                            <div *ngIf="editForm.get('montant')?.invalid && editForm.get('montant')?.touched" 
+                                class="error-message">
+                                <i class="fas fa-exclamation-circle"></i>
+                                Le montant est requis
+                            </div>
+                        </div>
                     </div>
-                </div>
-                <div class="form-group">
-                    <label>Montant * <span class="help-text">(Utilisez des valeurs négatives pour les ajustements)</span></label>
-                    <input type="number" formControlName="montant" placeholder="0.00" step="0.01">
-                    <div *ngIf="editForm.get('montant')?.invalid && editForm.get('montant')?.touched"
-                        class="error-message">
-                        Le montant est requis
+
+                    <div class="warning-section" *ngIf="showWarningMessage()">
+                        <div class="warning-card">
+                            <i class="fas fa-exclamation-triangle"></i>
+                            <div class="warning-content">
+                                <h6>Attention</h6>
+                                <p>{{ getWarningMessage() }}</p>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
-            <div class="form-row">
-                <div class="form-group">
-                    <label>Banque</label>
-                    <input type="text" formControlName="banque" placeholder="Ex: BNP Paribas">
-                </div>
-                <div class="form-group">
-                    <label>Service</label>
-                    <input type="text" formControlName="service" placeholder="Ex: CASHIN, PAIEMENT">
-                </div>
-                <div class="form-group">
-                    <label>Nom du bordereau</label>
-                    <input type="text" formControlName="nomBordereau" placeholder="Ex: Bordereau_2024_001">
+
+            <!-- Étape 3: Validation -->
+            <div *ngIf="currentEditStep === 3" class="form-step">
+                <div class="step-content">
+                    <h4>Validation des modifications</h4>
+                    
+                    <div class="validation-summary">
+                        <div class="summary-card">
+                            <h5>Récapitulatif des modifications</h5>
+                            <div class="summary-content">
+                                <div class="summary-item">
+                                    <span class="summary-label">Type d'opération:</span>
+                                    <span class="summary-value">{{ getTypeDisplayName(editForm.get('typeOperation')?.value) }}</span>
+                                </div>
+                                <div class="summary-item">
+                                    <span class="summary-label">Date d'opération:</span>
+                                    <span class="summary-value">{{ editForm.get('dateOperation')?.value | date:'dd/MM/yyyy' }}</span>
+                                </div>
+                                <div class="summary-item">
+                                    <span class="summary-label">Montant:</span>
+                                    <span class="summary-value">{{ editForm.get('montant')?.value | currency:'XAF':'symbol':'1.0-0' }}</span>
+                                </div>
+                                <div class="summary-item">
+                                    <span class="summary-label">Banque:</span>
+                                    <span class="summary-value">{{ editForm.get('banque')?.value || 'Non spécifié' }}</span>
+                                </div>
+                                <div class="summary-item">
+                                    <span class="summary-label">Service:</span>
+                                    <span class="summary-value">{{ editForm.get('service')?.value || 'Non spécifié' }}</span>
+                                </div>
+                                <div class="summary-item">
+                                    <span class="summary-label">Bordereau:</span>
+                                    <span class="summary-value">{{ editForm.get('nomBordereau')?.value || 'Non spécifié' }}</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="confirmation-section">
+                        <div class="confirmation-card">
+                            <i class="fas fa-info-circle"></i>
+                            <div class="confirmation-content">
+                                <h6>Confirmation</h6>
+                                <p>En confirmant cette modification, toutes les opérations suivantes seront recalculées automatiquement.</p>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
-            <div class="form-actions">
-                <button type="submit" [disabled]="!editForm.valid">
+
+            <!-- Navigation des étapes -->
+            <div class="step-navigation-actions">
+                <button type="button" class="btn-secondary" 
+                    (click)="previousEditStep()" 
+                    [disabled]="currentEditStep === 1">
+                    <i class="fas fa-arrow-left"></i>
+                    Précédent
+                </button>
+                
+                <div class="step-indicators">
+                    <span class="step-dot" [class.active]="currentEditStep === 1"></span>
+                    <span class="step-dot" [class.active]="currentEditStep === 2"></span>
+                    <span class="step-dot" [class.active]="currentEditStep === 3"></span>
+                </div>
+
+                <button type="button" class="btn-primary" 
+                    (click)="nextEditStep()" 
+                    [disabled]="!canProceedToNextStep()"
+                    *ngIf="currentEditStep < 3">
+                    Suivant
+                    <i class="fas fa-arrow-right"></i>
+                </button>
+                
+                <button type="submit" class="btn-success" 
+                    [disabled]="!editForm.valid || currentEditStep !== 3"
+                    *ngIf="currentEditStep === 3">
+                    <i class="fas fa-check"></i>
                     Mettre à jour
                 </button>
-                <button type="button" (click)="cancelEdit()">Annuler</button>
+            </div>
+
+            <div class="form-actions">
+                <button type="button" class="btn-cancel" (click)="cancelEdit()">
+                    <i class="fas fa-times"></i>
+                    Annuler
+                </button>
             </div>
         </form>
     </div>
+
+
 
     <!-- Filtres -->
     <div class="filters-section">
@@ -320,6 +615,8 @@
                         <option value="7days">7 derniers jours</option>
                         <option value="30days">30 derniers jours</option>
                         <option value="month">Ce mois</option>
+                        <option value="thisYear">Cette année</option>
+                        <option value="lastYear">Année dernière</option>
                         <option value="custom">Personnalisé</option>
                     </select>
                 </div>
@@ -337,6 +634,14 @@
                 <button type="submit" class="apply-btn">Appliquer les filtres</button>
             </div>
         </form>
+    </div>
+
+    <!-- Indicateur d'affichage automatique des frais -->
+    <div *ngIf="showFraisAutomatically" class="frais-auto-indicator">
+        <div class="indicator-content">
+            <i class="fas fa-info-circle"></i>
+            <span>Les frais de transaction sont automatiquement affichés pour les types d'opérations sélectionnés</span>
+        </div>
     </div>
 
     <!-- Liste des opérations -->
@@ -376,7 +681,9 @@
                     </tr>
                 </thead>
                 <tbody>
-                    <tr *ngFor="let op of pagedOperations">
+                    <tr *ngFor="let op of pagedOperations" 
+                        [class.frais-row]="op.typeOperation === 'FRAIS_TRANSACTION'"
+                        [class.has-frais]="op.typeOperation !== 'FRAIS_TRANSACTION' && hasAssociatedFrais(op)">
                         <td>{{ op.dateOperation | date:'dd/MM/yyyy HH:mm' }}</td>
                         <td>
                             <span class="badge type-{{ op.typeOperation.replace(' ', '_') | lowercase }}">

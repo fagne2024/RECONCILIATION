@@ -121,12 +121,12 @@ interface ApiError {
                     <button 
                         [class.active]="activeTab === 'boOnly'"
                         (click)="setActiveTab('boOnly')">
-                        ⚠️ Non correspondants BO ({{filteredBoOnly.length || 0}})
+                        ⚠️ ECART BO ({{filteredBoOnly.length || 0}})
                     </button>
                     <button 
                         [class.active]="activeTab === 'partnerOnly'"
                         (click)="setActiveTab('partnerOnly')">
-                        ⚠️ Non correspondants Partenaire ({{filteredPartnerOnly.length || 0}})
+                        ⚠️ ECART Partenaire ({{filteredPartnerOnly.length || 0}})
                     </button>
                     <button 
                         [class.active]="activeTab === 'agencySummary'"
@@ -206,28 +206,6 @@ interface ApiError {
                                     </tbody>
                                 </table>
                             </div>
-                        </div>
-                        <div class="summary-table">
-                            <table>
-                                <thead>
-                                    <tr>
-                                        <th>Agence</th>
-                                        <th>Service</th>
-                                        <th>Pays</th>
-                                        <th>Volume Total</th>
-                                        <th>Nombres de Transactions</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    <tr *ngFor="let summary of getPagedAgencySummary()">
-                                        <td>{{summary.agency}}</td>
-                                        <td>{{summary.service}}</td>
-                                        <td>{{summary.country}}</td>
-                                        <td class="volume-cell">{{summary.totalVolume | number:'1.0-0'}}</td>
-                                        <td class="count-cell">{{summary.recordCount | number:'1.0-0'}}</td>
-                                    </tr>
-                                </tbody>
-                            </table>
                         </div>
                         <div class="pagination-controls">
                             <button (click)="prevAgencyPage()" [disabled]="agencyPage === 1">Précédent</button>
@@ -346,7 +324,7 @@ interface ApiError {
                         </div>
                     </div>
 
-                    <!-- Non correspondants BO avec pagination -->
+                    <!-- ECART BO avec pagination -->
                     <div *ngIf="activeTab === 'boOnly'" class="bo-only-section">
                         <div class="search-section">
                             <input 
@@ -357,7 +335,7 @@ interface ApiError {
                                 class="search-input"
                             >
                             <button (click)="exportResults()" class="export-button">
-                                📥 Exporter les non correspondants BO
+                                📥 Exporter les ECART BO
                             </button>
                         </div>
                         <div class="volume-summary">
@@ -396,7 +374,7 @@ interface ApiError {
                         </div>
                     </div>
 
-                    <!-- Non correspondants Partenaire avec pagination -->
+                    <!-- ECART Partenaire avec pagination -->
                     <div *ngIf="activeTab === 'partnerOnly'" class="partner-only-section">
                         <div class="search-section">
                             <input 
@@ -407,7 +385,7 @@ interface ApiError {
                                 class="search-input"
                             >
                             <button (click)="exportResults()" class="export-button">
-                                📥 Exporter les non correspondants Partenaire
+                                📥 Exporter les ECART Partenaire
                             </button>
                         </div>
                         <div class="volume-summary">
@@ -1462,6 +1440,13 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
         this.exportProgress = 0;
         this.cdr.detectChanges();
 
+        // Demander le nom du fichier à l'utilisateur
+        const fileName = await this.promptFileName();
+        if (!fileName) {
+            console.log('Export annulé par l\'utilisateur');
+            return;
+        }
+
         // Première étape : Génération des fichiers
         console.log('Début de la génération des fichiers...');
         const workbooks = await this.generateExcelFile();
@@ -1469,7 +1454,7 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
 
         // Deuxième étape : Téléchargement
         console.log('Début du téléchargement...');
-        await this.downloadExcelFile(workbooks);
+        await this.downloadExcelFile(workbooks, fileName);
         console.log('Téléchargement terminé avec succès');
 
     } catch (error) {
@@ -1479,6 +1464,38 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
         this.exportProgress = 0;
         this.cdr.detectChanges();
     }
+}
+
+private async promptFileName(): Promise<string | null> {
+    const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
+    let defaultFileName = 'export.xlsx';
+    
+    switch (this.activeTab) {
+        case 'matches':
+            defaultFileName = `correspondances_${timestamp}.xlsx`;
+            break;
+        case 'boOnly':
+            defaultFileName = `ecart_bo_${timestamp}.xlsx`;
+            break;
+        case 'partnerOnly':
+            defaultFileName = `ecart_partenaire_${timestamp}.xlsx`;
+            break;
+        case 'agencySummary':
+            defaultFileName = `resume_par_agence_${timestamp}.xlsx`;
+            break;
+    }
+    
+    const fileName = prompt(`Entrez le nom du fichier (sans l'extension .xlsx):`, defaultFileName.replace('.xlsx', ''));
+    
+    if (fileName === null) {
+        return null; // Utilisateur a annulé
+    }
+    
+    if (fileName.trim() === '') {
+        return defaultFileName;
+    }
+    
+    return fileName.trim() + '.xlsx';
 }
 
 private async generateExcelFile(): Promise<ExcelJS.Workbook[]> {
@@ -1733,7 +1750,7 @@ private async generateExcelFile(): Promise<ExcelJS.Workbook[]> {
     return workbooks;
 }
 
-private async downloadExcelFile(workbooks: ExcelJS.Workbook[]): Promise<void> {
+private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string): Promise<void> {
     // On ne télécharge qu'un seul fichier
     if (workbooks.length === 0) return;
     const workbook = workbooks[0];
@@ -1752,23 +1769,7 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[]): Promise<void> {
         if (blob.size === 0) {
             throw new Error('Le blob créé est vide');
         }
-        // Générer un nom de fichier unique
-        const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
-        let fileName = 'export.xlsx';
-        switch (this.activeTab) {
-            case 'matches':
-                fileName = `correspondances_${timestamp}.xlsx`;
-                break;
-            case 'boOnly':
-                fileName = `bo_uniquement_${timestamp}.xlsx`;
-                break;
-            case 'partnerOnly':
-                fileName = `partenaire_uniquement_${timestamp}.xlsx`;
-                break;
-            case 'agencySummary':
-                fileName = `resume_par_agence_${timestamp}.xlsx`;
-                break;
-        }
+        
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
@@ -2164,12 +2165,34 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[]): Promise<void> {
         this.isSaving = true;
 
         try {
-            const summary = this.getAgencySummary().map(item => ({
+            const allSummaries = this.getAgencySummary();
+            const selectedSummaries = allSummaries.filter(s => this.selectedAgencySummaries.includes(this.getAgencyKey(s)));
+    
+            if (selectedSummaries.length === 0) {
+                alert('Veuillez sélectionner au moins une ligne à sauvegarder.');
+                this.isSaving = false;
+                return;
+            }
+    
+            const summaryToSave = selectedSummaries.map(item => ({
                 ...item,
                 date: this.selectedDate
             }));
-            await this.reconciliationService.saveSummary(summary).toPromise();
-            alert('Résumé sauvegardé en base avec succès !');
+            
+            const response = await this.reconciliationService.saveSelectedSummary(summaryToSave).toPromise();
+            
+            let message = response.message;
+            if (response.saved && response.saved.length > 0) {
+                message += `\nLignes sauvegardées: ${response.saved.length}`;
+            }
+            if (response.duplicates && response.duplicates.length > 0) {
+                message += `\nLignes en double (ignorées): ${response.duplicates.length}`;
+            }
+            if (response.errors && response.errors.length > 0) {
+                message += `\nErreurs: ${response.errors.length}`;
+            }
+            
+            alert(message);
             
             // Notifier le dashboard seulement quand le résumé est enregistré avec succès
             this.appStateService.notifySummarySaved();

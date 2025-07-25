@@ -105,6 +105,11 @@ export class ReconciliationService implements OnInit {
         .pipe(catchError(this.handleError));
     }
 
+    saveSelectedSummary(summary: any[]): Observable<any> {
+        return this.http.post('http://localhost:8080/api/agency-summary/save-selection', summary)
+            .pipe(catchError(this.handleError));
+    }
+
     startReconciliation(request: any): Observable<{ jobId: string }> {
         return this.http.post<{ jobId: string }>(`${this.apiUrl}/reconciliation/start`, request);
     }

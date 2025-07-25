@@ -11,59 +11,83 @@
         </div>
     </div>
 
-    <!-- Formulaire d'ajout -->
-    <div *ngIf="showAddForm" class="add-form-container card">
-        <h2>Ajouter un nouveau compte</h2>
-        <form [formGroup]="addForm" (ngSubmit)="addCompte()" class="form-grid">
-            <div class="form-field">
-                <label for="numeroCompte">Numéro de Compte</label>
-                <input id="numeroCompte" formControlName="numeroCompte" placeholder="Ex: 123456789">
-                <div *ngIf="addForm.controls['numeroCompte'].touched && addForm.controls['numeroCompte'].errors?.['required']" class="error">
-                    Le numéro de compte est requis.
-                </div>
-            </div>
-            <div class="form-field">
-                <label for="solde">Solde Initial</label>
-                <input id="solde" type="number" formControlName="solde" placeholder="0.00">
-                 <div *ngIf="addForm.controls['solde'].touched && addForm.controls['solde'].errors?.['required']" class="error">
-                    Le solde est requis.
-                </div>
-            </div>
-            <div class="form-field">
-                <label for="pays"></label>
-                <app-autocomplete-input
-                    [options]="paysList"
-                    formControlName="pays"
-                    placeholder="Saisir un pays..."
-                    label="Pays">
-                </app-autocomplete-input>
-                 <div *ngIf="addForm.controls['pays'].touched && addForm.controls['pays'].errors?.['required']" class="error">
-                    Le pays est requis.
-                </div>
-            </div>
-            <div class="form-field">
-                <label for="type">Type de Compte</label>
-                <select id="type" formControlName="type">
-                    <option value="" disabled>Sélectionner un type</option>
-                    <option *ngFor="let t of compteTypes" [value]="t">{{ t }}</option>
-                </select>
-                <div *ngIf="addForm.controls['type'].touched && addForm.controls['type'].errors?.['required']" class="error">
-                    Le type de compte est requis.
-                </div>
-            </div>
-            <div class="form-field">
-                <label for="codeProprietaire">Code Propriétaire</label>
-                <input id="codeProprietaire" formControlName="codeProprietaire" placeholder="Ex: PROP001">
-            </div>
-            <div class="form-actions">
-                <button type="submit" class="btn primary" [disabled]="isAdding || addForm.invalid">
-                    {{ isAdding ? 'Ajout...' : 'Ajouter' }}
+    <!-- Modal d'ajout de compte -->
+    <div *ngIf="showAddForm" class="modal-overlay" (click)="closeAddModal($event)">
+        <div class="modal-container" (click)="$event.stopPropagation()">
+            <div class="modal-header">
+                <h3><i class="fas fa-plus-circle"></i> Ajouter un nouveau compte</h3>
+                <button type="button" class="modal-close" (click)="cancelAdd()">
+                    <i class="fas fa-times"></i>
                 </button>
-                <button type="button" (click)="cancelAdd()" class="btn">Annuler</button>
             </div>
-        </form>
+            <div class="modal-body">
+                <form [formGroup]="addForm" (ngSubmit)="addCompte()" class="add-form">
+                    <div class="form-section">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Numéro de Compte *</label>
+                                <input type="text" formControlName="numeroCompte" placeholder="Ex: 123456789" class="text-input">
+                                <div *ngIf="addForm.get('numeroCompte')?.invalid && addForm.get('numeroCompte')?.touched" class="error-message">
+                                    Le numéro de compte est requis.
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label>Solde Initial *</label>
+                                <input type="number" formControlName="solde" placeholder="0.00" class="text-input">
+                                <div *ngIf="addForm.get('solde')?.invalid && addForm.get('solde')?.touched" class="error-message">
+                                    Le solde est requis.
+                                </div>
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Pays *</label>
+                                <app-autocomplete-input
+                                    [options]="paysList"
+                                    formControlName="pays"
+                                    placeholder="Saisir un pays..."
+                                    label="Pays">
+                                </app-autocomplete-input>
+                                <div *ngIf="addForm.get('pays')?.invalid && addForm.get('pays')?.touched" class="error-message">
+                                    Le pays est requis.
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label>Type de Compte *</label>
+                                <select formControlName="type" class="modern-select">
+                                    <option value="" disabled>Sélectionner un type</option>
+                                    <option *ngFor="let t of compteTypes" [value]="t">{{ t }}</option>
+                                </select>
+                                <div *ngIf="addForm.get('type')?.invalid && addForm.get('type')?.touched" class="error-message">
+                                    Le type de compte est requis.
+                                </div>
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group full-width">
+                                <label>Code Propriétaire</label>
+                                <input type="text" formControlName="codeProprietaire" placeholder="Ex: PROP001" class="text-input">
+                            </div>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <div class="modal-actions">
+                    <button type="button" class="btn-secondary" (click)="cancelAdd()">
+                        <i class="fas fa-times"></i>
+                        Annuler
+                    </button>
+                    <button type="submit" class="btn-primary" [disabled]="!addForm.valid || isAdding" (click)="addCompte()">
+                        <i class="fas fa-plus"></i>
+                        {{ isAdding ? 'Ajout...' : 'Ajouter' }}
+                    </button>
+                </div>
+            </div>
+        </div>
     </div>
-    
+    <!-- Fin modal d'ajout de compte -->
+
     <!-- Formulaire de modification -->
     <div *ngIf="showEditForm" class="edit-form-container card">
       <h2>Modifier le Compte</h2>
@@ -231,6 +255,9 @@
                         <button (click)="deleteCompte(compte.id!)" class="btn icon-btn delete" *ngIf="compte.id" title="Supprimer">
                             <i class="fas fa-trash"></i>
                         </button>
+                        <button (click)="openSoldeBoModal(compte)" class="btn icon-btn" title="Solde BO">
+                            <i class="fas fa-balance-scale" style="color: orange;"></i>
+                        </button>
                     </td>
                 </tr>
             </tbody>
@@ -262,8 +289,8 @@
 </div>
 
 <!-- Modal de relevé de compte -->
-<div *ngIf="showReleveModal" class="modal-overlay" (click)="closeReleveModal()">
-    <div class="modal-content" (click)="$event.stopPropagation()">
+<div *ngIf="showReleveModal" class="modal-overlay">
+    <div class="modal-content releve-modal" (click)="$event.stopPropagation()">
         <div class="modal-header">
             <h2>Relevé de compte - {{ selectedCompte?.numeroCompte }}</h2>
             <button class="modal-close" (click)="closeReleveModal()">
@@ -340,6 +367,14 @@
             <!-- Historique des opérations -->
             <div class="releve-operations">
                 <h3>{{ showSoldesSeulement ? 'Soldes Journaliers' : 'Historique des opérations' }}</h3>
+                
+                <!-- Indicateur pour l'affichage automatique des frais -->
+                <div *ngIf="showFraisAutomaticallyReleve && !showSoldesSeulement" class="frais-auto-indicator">
+                    <div class="indicator-content">
+                        <i class="fas fa-info-circle"></i>
+                        <span>Les frais de transaction sont automatiquement affichés pour le type d'opération sélectionné</span>
+                    </div>
+                </div>
                 <div *ngIf="isLoadingReleve" class="loading-releve">
                     <i class="fas fa-spinner fa-spin"></i> Chargement de l'historique...
                 </div>
@@ -383,7 +418,8 @@
                                     <td><b style="color: #1976d2;">{{ getDailyBalances(releveOperations)[getOpDate(operation)].opening | number:'1.2-2' }}</b></td>
                                     <td colspan="4"></td>
                                 </tr>
-                                <tr>
+                                <tr [class.frais-row]="operation.typeOperation === 'FRAIS_TRANSACTION'"
+                                    [class.has-frais]="operation.typeOperation !== 'FRAIS_TRANSACTION' && hasAssociatedFraisReleve(operation)">
                                     <td>{{ formatDate(operation.dateOperation) }}</td>
                                     <td>
                                         <span class="operation-type" [class]="getOperationTypeClass(operation.typeOperation)">
@@ -446,15 +482,32 @@
                                 <th>Solde d'Ouverture</th>
                                 <th>Solde de Clôture</th>
                                 <th>Variation Journalière</th>
+                                <th>Solde de Clôture BO</th>
+                                <th>ECART</th>
                             </tr>
                         </thead>
                         <tbody>
-                            <tr *ngFor="let solde of pagedReleveSoldes">
+                            <tr *ngFor="let solde of pagedReleveSoldes; let i = index">
                                 <td>{{ formatDate(solde.date).split(' ')[0] }}</td>
                                 <td class="solde-ouverture-val">{{ solde.opening | number:'1.2-2' }}</td>
-                                <td class="solde-cloture-val">{{ solde.closing | number:'1.2-2' }}</td>
+                                <td class="solde-cloture-val"
+                                    [ngClass]="solde.closingBo !== undefined && (round2(solde.closingBo) === round2(solde.closing)) ? 'solde-green' : ''">
+                                    {{ solde.closing | number:'1.2-2' }}
+                                </td>
                                 <td [ngClass]="(solde.closing - solde.opening) >= 0 ? 'variation-positive' : 'variation-negative'">
                                     {{ (solde.closing - solde.opening) | number:'1.2-2' }}
+                                </td>
+                                <td>
+                                    <span [ngClass]="
+                                        solde.closingBo !== undefined && (round2(solde.closingBo) === round2(solde.closing))
+                                            ? 'solde-green'
+                                            : (solde.closingBo !== undefined && (round2(solde.closingBo) !== round2(solde.closing)) ? 'solde-red' : '')
+                                      ">
+                                        {{ solde.closingBo !== undefined ? (solde.closingBo | number:'1.2-2') : '-' }}
+                                    </span>
+                                </td>
+                                <td [ngClass]="getEcartClass(solde)">
+                                    {{ getEcartValue(solde) | number:'1.2-2' }}
                                 </td>
                             </tr>
                         </tbody>
@@ -486,6 +539,25 @@
             </div>
         </div>
     </div>
+</div>
+
+<!-- Modale Solde BO -->
+<div class="modal-overlay" *ngIf="showSoldeBoModal">
+  <div class="modal-content">
+    <h2>Solde BO pour {{ selectedCompteForBo?.numeroCompte }}</h2>
+    <label>Date du solde :</label>
+    <input type="date" [(ngModel)]="dateSoldeBo" (change)="onDateSoldeBoChange()" style="margin-bottom: 0.7rem;" />
+    <div *ngIf="dernierSoldeBo !== null">
+      <p>Solde BO enregistré pour cette date : <b>{{ dernierSoldeBo | number:'1.2-2' }}</b></p>
+    </div>
+    <div *ngIf="dernierSoldeBo === null">
+      <p>Aucun solde BO enregistré pour cette date.</p>
+    </div>
+    <label>Nouveau solde BO :</label>
+    <input type="number" [(ngModel)]="dernierSoldeBo" />
+    <button (click)="saveSoldeBo()">Enregistrer</button>
+    <button (click)="closeSoldeBoModal()">Fermer</button>
+  </div>
 </div>
 
 <style>

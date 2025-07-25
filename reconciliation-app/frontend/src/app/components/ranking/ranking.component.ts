@@ -20,7 +20,7 @@ export class RankingComponent implements OnInit {
   serviceRankingType: 'transactions' | 'volume' | 'fees' = 'transactions';
   
   // Période de calcul
-  selectedPeriod: 'all' | 'day' | 'week' | 'month' | 'custom' = 'month';
+  selectedPeriod: 'all' | 'day' | 'week' | 'month' | 'thisYear' | 'lastYear' | 'custom' = 'month';
   
   // États de chargement
   loadingAgencies = false;
@@ -345,6 +345,14 @@ export class RankingComponent implements OnInit {
         const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
         const monthEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0);
         return `Données du ${monthStart.toLocaleDateString('fr-FR')} au ${monthEnd.toLocaleDateString('fr-FR')} (mois en cours)`;
+      case 'thisYear':
+        const yearStart = new Date(today.getFullYear(), 0, 1);
+        const yearEnd = new Date(today.getFullYear(), 11, 31);
+        return `Données du ${yearStart.toLocaleDateString('fr-FR')} au ${yearEnd.toLocaleDateString('fr-FR')} (année en cours)`;
+      case 'lastYear':
+        const lastYearStart = new Date(today.getFullYear() - 1, 0, 1);
+        const lastYearEnd = new Date(today.getFullYear() - 1, 11, 31);
+        return `Données du ${lastYearStart.toLocaleDateString('fr-FR')} au ${lastYearEnd.toLocaleDateString('fr-FR')} (année précédente)`;
       default:
         return 'Mois en cours';
     }
@@ -513,6 +521,11 @@ export class RankingComponent implements OnInit {
     }
     this.loadAgencyRankings();
     this.loadServiceRankings();
+    
+    // Fermer automatiquement le dropdown après un choix
+    setTimeout(() => {
+      if (this.paysSelect) this.paysSelect.close();
+    }, 100);
   }
 
   /**

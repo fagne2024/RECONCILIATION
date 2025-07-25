@@ -410,6 +410,33 @@ export class FraisComponent implements OnInit, OnDestroy {
         montantControl?.updateValueAndValidity();
         pourcentageControl?.updateValueAndValidity();
     }
+
+    // Méthodes pour le modal d'ajout
+    closeAddModal(event: Event) {
+        if (event.target === event.currentTarget) {
+            this.cancelAdd();
+        }
+    }
+
+    showCalculationPreview(): boolean {
+        const service = this.addForm.get('service')?.value;
+        const agence = this.addForm.get('agence')?.value;
+        const typeCalcul = this.addForm.get('typeCalcul')?.value;
+        
+        return !!(service && agence && typeCalcul);
+    }
+
+    getTypeCalculDisplayName(): string {
+        const typeCalcul = this.addForm.get('typeCalcul')?.value;
+        switch (typeCalcul) {
+            case 'NOMINAL':
+                return 'Frais fixe';
+            case 'POURCENTAGE':
+                return 'Frais en pourcentage';
+            default:
+                return 'Non défini';
+        }
+    }
     
     // Méthodes pour le test des frais
     onTestTypeChange() {
@@ -635,10 +662,20 @@ export class FraisComponent implements OnInit, OnDestroy {
     onServiceChange(event: any) {
         this.filterForm.controls['services'].setValue(event.value);
         this.applyFilters();
+        
+        // Fermer automatiquement le dropdown après un choix
+        setTimeout(() => {
+            if (this.serviceSelect) this.serviceSelect.close();
+        }, 100);
     }
     onAgenceChange(event: any) {
         this.filterForm.controls['agences'].setValue(event.value);
         this.applyFilters();
+        
+        // Fermer automatiquement le dropdown après un choix
+        setTimeout(() => {
+            if (this.agenceSelect) this.agenceSelect.close();
+        }, 100);
     }
     onDateDebutChange(event: any) {
         this.dateDebut = event.target.value;

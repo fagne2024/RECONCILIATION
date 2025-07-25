@@ -5,6 +5,7 @@ import com.reconciliation.service.ProfilService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+
 import java.util.List;
 import java.util.Map;
 import java.util.HashMap;
@@ -27,9 +28,34 @@ public class ProfilController {
         return profilService.createProfil(profil);
     }
 
+    @PutMapping("/{id}")
+    public ProfilEntity updateProfil(@PathVariable Long id, @RequestBody ProfilEntity profil) {
+        profil.setId(id);
+        return profilService.updateProfil(profil);
+    }
+
     @DeleteMapping("/{id}")
-    public void deleteProfil(@PathVariable Long id) {
-        profilService.deleteProfil(id);
+    public ResponseEntity<Map<String, String>> deleteProfil(@PathVariable Long id) {
+        System.out.println("🗑️ DELETE /api/profils/" + id + " - Requête reçue");
+        try {
+            profilService.deleteProfil(id);
+            System.out.println("✅ Profil supprimé avec succès: ID " + id);
+            Map<String, String> response = new HashMap<>();
+            response.put("message", "Profil supprimé avec succès");
+            response.put("id", id.toString());
+            return ResponseEntity.ok(response);
+        } catch (RuntimeException e) {
+            System.out.println("❌ Erreur lors de la suppression: " + e.getMessage());
+            Map<String, String> response = new HashMap<>();
+            response.put("error", e.getMessage());
+            return ResponseEntity.badRequest().body(response);
+        } catch (Exception e) {
+            System.out.println("❌ Erreur inattendue lors de la suppression: " + e.getMessage());
+            e.printStackTrace();
+            Map<String, String> response = new HashMap<>();
+            response.put("error", "Erreur lors de la suppression du profil");
+            return ResponseEntity.internalServerError().body(response);
+        }
     }
 
     // Modules

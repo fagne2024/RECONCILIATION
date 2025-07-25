@@ -77,9 +77,7 @@
                 <button class="export-btn" (click)="exportStats()" [disabled]="!agencySummaries.length || isLoading">
                     📥 Exporter le résumé
                 </button>
-                <button (click)="saveSelected()" [disabled]="selectedSummaries.length === 0 || isLoading" style="background-color: #4CAF50; color: white;">
-                  💾 Sauvegarder
-                </button>
+
             </div>
 
             <div class="details-table">

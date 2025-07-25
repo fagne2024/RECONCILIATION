@@ -62,7 +62,10 @@ export class ComptesComponent implements OnInit, OnDestroy {
     releveDateDebutCustom = '';
     releveDateFinCustom = '';
     showSoldesSeulement = false; // Pour basculer la vue
-    releveSoldesJournaliers: { date: string; opening: number; closing: number }[] = [];
+    releveSoldesJournaliers: { date: string; opening: number; closing: number; closingBo?: number }[] = [];
+    
+    // Propriété pour contrôler l'affichage automatique des frais
+    showFraisAutomaticallyReleve: boolean = false;
     
     // Pagination pour le relevé
     releveCurrentPage = 1;
@@ -95,7 +98,8 @@ export class ComptesComponent implements OnInit, OnDestroy {
         'ajustement',
         'compense',
         'FRAIS_TRANSACTION',
-        'transaction_cree'
+        'transaction_cree',
+        'annulation_bo'
     ];
 
     selectedPays: string[] = [];
@@ -112,6 +116,11 @@ export class ComptesComponent implements OnInit, OnDestroy {
 
     @ViewChild('paysSelect') paysSelect!: MatSelect;
     @ViewChild('codeProprietaireSelect') codeProprietaireSelect!: MatSelect;
+
+    selectedCompteForBo: Compte | null = null;
+    showSoldeBoModal = false;
+    dernierSoldeBo: number | null = null;
+    dateSoldeBo: string = '';
 
     constructor(
         private compteService: CompteService,
@@ -151,21 +160,29 @@ export class ComptesComponent implements OnInit, OnDestroy {
         this.filteredCodeProprietaireList = this.codeProprietaireList;
         this.paysSearchCtrl.valueChanges.subscribe((search: string | null) => {
             const s = (search || '').toLowerCase();
-            this.filteredPaysList = this.paysList.filter(p => p.toLowerCase().includes(s));
+            // Utiliser directement getFilteredPays() pour avoir les données les plus récentes
+            const availablePays = this.getFilteredPays();
+            this.filteredPaysList = availablePays.filter(p => p.toLowerCase().includes(s));
             // Sélection automatique si un seul résultat
             if (this.filteredPaysList.length === 1 && !this.selectedPays.includes(this.filteredPaysList[0])) {
                 this.selectedPays = [this.filteredPaysList[0]];
+                this.filterForm.controls['pays'].setValue(this.selectedPays);
                 if (this.paysSelect) { this.paysSelect.close(); }
+                this.updateFilteredLists();
                 this.applyFilters();
             }
         });
         this.codeProprietaireSearchCtrl.valueChanges.subscribe((search: string | null) => {
             const s = (search || '').toLowerCase();
-            this.filteredCodeProprietaireList = this.codeProprietaireList.filter(c => c.toLowerCase().includes(s));
+            // Utiliser directement getFilteredCodeProprietaire() pour avoir les données les plus récentes
+            const availableCodeProprietaire = this.getFilteredCodeProprietaire();
+            this.filteredCodeProprietaireList = availableCodeProprietaire.filter(c => c.toLowerCase().includes(s));
             // Sélection automatique si un seul résultat
             if (this.filteredCodeProprietaireList.length === 1 && !this.selectedCodesProprietaire.includes(this.filteredCodeProprietaireList[0])) {
                 this.selectedCodesProprietaire = [this.filteredCodeProprietaireList[0]];
+                this.filterForm.controls['codeProprietaire'].setValue(this.selectedCodesProprietaire);
                 if (this.codeProprietaireSelect) { this.codeProprietaireSelect.close(); }
+                this.updateFilteredLists();
                 this.applyFilters();
             }
         });
@@ -181,6 +198,10 @@ export class ComptesComponent implements OnInit, OnDestroy {
             this.compteService.getAllComptes().subscribe({
                 next: (comptes) => {
                     this.comptes = comptes;
+                    
+                    // Mettre à jour les listes filtrées avec cloisonnement après chargement des comptes
+                    this.updateFilteredLists();
+                    
                     this.updatePagedComptes();
                     this.calculateStats();
                     this.isLoading = false;
@@ -238,6 +259,12 @@ export class ComptesComponent implements OnInit, OnDestroy {
         this.addForm.reset();
     }
 
+    closeAddModal(event: Event) {
+        if (event.target === event.currentTarget) {
+            this.cancelAdd();
+        }
+    }
+
     editCompte(compte: Compte) {
         this.editingCompte = compte;
         this.showEditForm = true;
@@ -287,6 +314,10 @@ export class ComptesComponent implements OnInit, OnDestroy {
                 next: (comptes) => {
                     console.log('Résultats du filtrage:', comptes);
                     this.comptes = comptes;
+                    
+                    // Mettre à jour les listes filtrées avec cloisonnement après le filtrage
+                    this.updateFilteredLists();
+                    
                     this.updatePagedComptes();
                     this.calculateStats();
                     this.isLoading = false;
@@ -621,6 +652,10 @@ export class ComptesComponent implements OnInit, OnDestroy {
                 next: (paysList: string[]) => {
                     this.paysList = paysList;
                     this.filteredPaysList = paysList;
+                    // Mettre à jour les listes filtrées avec cloisonnement après chargement des données
+                    setTimeout(() => {
+                        this.updateFilteredLists();
+                    }, 100);
                 },
                 error: (error: any) => {
                     console.error('Erreur lors du chargement de la liste des pays:', error);
@@ -633,6 +668,10 @@ export class ComptesComponent implements OnInit, OnDestroy {
                 next: (codeProprietaireList: string[]) => {
                     this.codeProprietaireList = codeProprietaireList;
                     this.filteredCodeProprietaireList = codeProprietaireList;
+                    // Mettre à jour les listes filtrées avec cloisonnement après chargement des données
+                    setTimeout(() => {
+                        this.updateFilteredLists();
+                    }, 100);
                 },
                 error: (error: any) => {
                     console.error('Erreur lors du chargement de la liste des codes propriétaires:', error);
@@ -645,14 +684,106 @@ export class ComptesComponent implements OnInit, OnDestroy {
         this.selectedPays = event.value;
         console.log('onPaysChange called, selectedPays:', this.selectedPays, 'event:', event);
         this.filterForm.controls['pays'].setValue(this.selectedPays);
+        
+        // Mettre à jour les listes filtrées pour le cloisonnement
+        this.updateFilteredLists();
+        
         this.applyFilters();
+        
+        // Fermer automatiquement le dropdown après un choix
+        setTimeout(() => {
+            if (this.paysSelect) this.paysSelect.close();
+        }, 100);
     }
 
     onCodeProprietaireChange(event: any) {
         this.selectedCodesProprietaire = event.value;
         console.log('onCodeProprietaireChange called, selectedCodesProprietaire:', this.selectedCodesProprietaire, 'event:', event);
         this.filterForm.controls['codeProprietaire'].setValue(this.selectedCodesProprietaire);
+        
+        // Mettre à jour les listes filtrées pour le cloisonnement
+        this.updateFilteredLists();
+        
         this.applyFilters();
+        
+        // Fermer automatiquement le dropdown après un choix
+        setTimeout(() => {
+            if (this.codeProprietaireSelect) this.codeProprietaireSelect.close();
+        }, 100);
+    }
+
+    // Méthode pour mettre à jour les listes filtrées avec cloisonnement
+    updateFilteredLists() {
+        // Mettre à jour les codes propriétaires disponibles selon le pays sélectionné
+        this.filteredCodeProprietaireList = this.getFilteredCodeProprietaire();
+        
+        // Mettre à jour les pays disponibles selon le code propriétaire sélectionné
+        this.filteredPaysList = this.getFilteredPays();
+        
+        // Nettoyer les sélections qui ne sont plus valides
+        this.cleanInvalidSelections();
+        
+        console.log('updateFilteredLists - filteredPaysList:', this.filteredPaysList);
+        console.log('updateFilteredLists - filteredCodeProprietaireList:', this.filteredCodeProprietaireList);
+    }
+
+    // Méthode pour nettoyer les sélections invalides
+    cleanInvalidSelections() {
+        const currentPays = this.selectedPays;
+        const currentCodeProprietaire = this.selectedCodesProprietaire;
+
+        // Nettoyer les codes propriétaires si le pays a changé
+        if (currentCodeProprietaire && currentCodeProprietaire.length > 0) {
+            const validCodeProprietaire = currentCodeProprietaire.filter((code: string) => 
+                this.filteredCodeProprietaireList.includes(code)
+            );
+            if (validCodeProprietaire.length !== currentCodeProprietaire.length) {
+                this.selectedCodesProprietaire = validCodeProprietaire;
+                this.filterForm.controls['codeProprietaire'].setValue(validCodeProprietaire);
+            }
+        }
+
+        // Nettoyer les pays si le code propriétaire a changé
+        if (currentPays && currentPays.length > 0) {
+            const validPays = currentPays.filter((pays: string) => 
+                this.filteredPaysList.includes(pays)
+            );
+            if (validPays.length !== currentPays.length) {
+                this.selectedPays = validPays;
+                this.filterForm.controls['pays'].setValue(validPays);
+            }
+        }
+    }
+
+    // Méthodes de filtrage avec cloisonnement
+    getFilteredPays(): string[] {
+        // Si pas de données comptes, retourner la liste de base
+        if (!this.comptes || this.comptes.length === 0) {
+            return this.paysList;
+        }
+        
+        let data = this.comptes;
+        // Filtrer par code propriétaire si sélectionné
+        if (this.selectedCodesProprietaire && this.selectedCodesProprietaire.length > 0) {
+            data = data.filter(c => c.codeProprietaire && this.selectedCodesProprietaire.includes(c.codeProprietaire));
+        }
+        const pays = [...new Set(data.map(c => c.pays).filter((p): p is string => p !== undefined && p !== null))];
+        return pays.sort();
+    }
+
+    getFilteredCodeProprietaire(): string[] {
+        // Si pas de données comptes, retourner la liste de base
+        if (!this.comptes || this.comptes.length === 0) {
+            return this.codeProprietaireList;
+        }
+        
+        let data = this.comptes;
+        // Filtrer par pays si sélectionné (cloisonnement principal)
+        if (this.selectedPays && this.selectedPays.length > 0) {
+            data = data.filter(c => c.pays && this.selectedPays.includes(c.pays));
+        }
+        const codeProprietaire = [...new Set(data.map(c => c.codeProprietaire).filter((c): c is string => c !== undefined && c !== null))];
+        return codeProprietaire.sort();
     }
 
     get pagedComptesCritiques() {
@@ -728,6 +859,9 @@ export class ComptesComponent implements OnInit, OnDestroy {
             dateDebut = date.toISOString().split('T')[0];
         }
 
+        // Vérifier si on doit afficher automatiquement les frais
+        this.showFraisAutomaticallyReleve = this.shouldShowFraisAutomaticallyReleve(this.releveTypeOperation);
+
         // Appeler le service pour récupérer les opérations du compte (triées par ordre chronologique pour le calcul des soldes)
         this.operationService.getOperationsByCompteForReleve(
             this.selectedCompte.numeroCompte,
@@ -736,23 +870,42 @@ export class ComptesComponent implements OnInit, OnDestroy {
             this.releveTypeOperation || null
         ).subscribe({
             next: (operations: Operation[]) => {
-                // Garder l'ordre chronologique pour le calcul des soldes
-                this.releveOperations = operations;
-
-                // Calculer et stocker les soldes journaliers
-                const dailyBalances = this.getDailyBalances(this.releveOperations);
-                this.releveSoldesJournaliers = Object.entries(dailyBalances)
-                    .filter(([key]) => key !== '_globalOpening')
-                    .map(([date, balances]) => ({
-                        date,
-                        opening: balances.opening,
-                        closing: balances.closing
-                    }))
-                    // Trier du plus récent au plus ancien pour l'affichage
-                    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-
-                this.calculateRelevePagination();
-                this.isLoadingReleve = false;
+                // Si on doit afficher les frais automatiquement, ajouter les frais associés
+                if (this.showFraisAutomaticallyReleve) {
+                    // Récupérer d'abord toutes les opérations du compte pour trouver les frais associés
+                    this.operationService.getOperationsByCompteForReleve(
+                        this.selectedCompte!.numeroCompte,
+                        dateDebut,
+                        dateFin,
+                        null // Pas de filtre de type pour récupérer tous les frais
+                    ).subscribe({
+                        next: (allOperations: Operation[]) => {
+                            // Identifier les IDs des opérations principales filtrées
+                            const mainOperationIds = operations.map(op => op.id).filter(id => id !== undefined);
+                            
+                            // Trouver les frais associés aux opérations principales
+                            const associatedFrais = allOperations.filter(op => 
+                                op.typeOperation === 'FRAIS_TRANSACTION' && 
+                                op.parentOperationId && 
+                                mainOperationIds.includes(op.parentOperationId)
+                            );
+                            
+                            // Combiner les opérations principales avec leurs frais
+                            this.releveOperations = [...operations, ...associatedFrais];
+                            
+                            this.processReleveOperations();
+                        },
+                        error: (error: any) => {
+                            console.error('Erreur lors du chargement des frais associés:', error);
+                            this.releveOperations = operations;
+                            this.processReleveOperations();
+                        }
+                    });
+                } else {
+                    // Pas d'affichage automatique des frais
+                    this.releveOperations = operations;
+                    this.processReleveOperations();
+                }
             },
             error: (error: any) => {
                 console.error('Erreur lors du chargement des opérations:', error);
@@ -761,23 +914,140 @@ export class ComptesComponent implements OnInit, OnDestroy {
         });
     }
 
+    // Méthode pour traiter les opérations du relevé (calcul des soldes, etc.)
+    private processReleveOperations(): void {
+        // Calculer et stocker les soldes journaliers
+        const dailyBalances = this.getDailyBalances(this.releveOperations);
+        this.releveSoldesJournaliers = Object.entries(dailyBalances)
+            .filter(([key]) => key !== '_globalOpening')
+            .map(([date, balances]) => ({
+                date,
+                opening: balances.opening,
+                closing: balances.closing,
+                closingBo: undefined // valeur initiale
+            }))
+            // Trier du plus récent au plus ancien pour l'affichage
+            .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+        // Après le calcul de this.releveSoldesJournaliers dans loadReleveOperations()
+        this.releveSoldesJournaliers.forEach(solde => {
+            this.compteService.getSoldeBo(this.selectedCompte?.numeroCompte || '', solde.date)
+                .subscribe(val => {
+                    if (val !== null && val !== undefined) solde.closingBo = val;
+                });
+        });
+
+        this.calculateRelevePagination();
+        this.isLoadingReleve = false;
+    }
+
     calculateRelevePagination(): void {
         this.releveCurrentPage = 1;
         if (this.showSoldesSeulement) {
             this.releveTotalPages = Math.ceil(this.releveSoldesJournaliers.length / this.relevePageSize);
         } else {
-            this.releveTotalPages = Math.ceil(this.releveOperations.length / this.relevePageSize);
+            // Calculer la pagination basée sur les groupes d'opérations
+            const allGroupedOperations = this.getGroupedReleveOperations();
+            const allOperations = allGroupedOperations.flatMap(group => [group.main, ...group.frais]);
+            this.releveTotalPages = Math.ceil(allOperations.length / this.relevePageSize);
         }
     }
 
     get pagedReleveOperations(): Operation[] {
+        // Obtenir tous les groupes d'opérations du relevé
+        const allGroupedOperations = this.getGroupedReleveOperations();
+        
+        // Aplatir tous les groupes pour compter le nombre total de lignes
+        const allOperations = allGroupedOperations.flatMap(group => [group.main, ...group.frais]);
+        
+        // Calculer l'index de début et de fin pour la pagination des lignes
         const startIndex = (this.releveCurrentPage - 1) * this.relevePageSize;
         const endIndex = startIndex + this.relevePageSize;
-        // Retourner les opérations dans l'ordre inverse (du plus récent au plus ancien) pour l'affichage
-        return [...this.releveOperations].reverse().slice(startIndex, endIndex);
+        
+        // Extraire les lignes pour la page courante
+        return allOperations.slice(startIndex, endIndex);
     }
 
-    get pagedReleveSoldes(): { date: string; opening: number; closing: number }[] {
+    // Méthode pour grouper les opérations du relevé avec leurs frais
+    getGroupedReleveOperations(): Array<{main: Operation, frais: Operation[]}> {
+        const grouped: Array<{main: Operation, frais: Operation[]}> = [];
+        const operationsMap = new Map<number, {main: Operation | null, frais: Operation[]}>();
+        
+        // Utiliser releveOperations pour le groupement
+        const operationsToGroup = this.releveOperations;
+        
+        // Séparer les opérations principales et les frais
+        operationsToGroup.forEach(op => {
+            if (op.typeOperation === 'FRAIS_TRANSACTION') {
+                // C'est un frais, on le stocke temporairement
+                const parentId = op.parentOperationId;
+                if (parentId) {
+                    if (!operationsMap.has(parentId)) {
+                        operationsMap.set(parentId, { main: null, frais: [] });
+                    }
+                    const group = operationsMap.get(parentId);
+                    if (group) {
+                        group.frais.push(op);
+                    }
+                }
+            } else {
+                // C'est une opération principale
+                if (op.id) {
+                    if (!operationsMap.has(op.id)) {
+                        operationsMap.set(op.id, { main: op, frais: [] });
+                    } else {
+                        const group = operationsMap.get(op.id);
+                        if (group) {
+                            group.main = op;
+                        }
+                    }
+                }
+            }
+        });
+        
+        // Créer la liste finale avec les opérations principales et leurs frais
+        operationsMap.forEach((group, id) => {
+            if (group.main) {
+                grouped.push({
+                    main: group.main,
+                    frais: group.frais
+                });
+            }
+        });
+        
+        return grouped;
+    }
+
+    // Méthode pour vérifier si une opération du relevé a des frais associés
+    hasAssociatedFraisReleve(operation: Operation): boolean {
+        if (!operation.id) return false;
+        
+        // Vérifier s'il y a des frais associés à cette opération dans le relevé
+        return this.releveOperations.some(op => 
+            op.typeOperation === 'FRAIS_TRANSACTION' && 
+            op.parentOperationId === operation.id
+        );
+    }
+
+    // Méthode pour déterminer si on doit afficher automatiquement les frais dans le relevé
+    shouldShowFraisAutomaticallyReleve(selectedType: string): boolean {
+        if (!selectedType || selectedType === '') {
+            return false;
+        }
+        
+        // Types d'opérations qui doivent afficher automatiquement leurs frais
+        const typesWithFrais = [
+            'total_cashin',
+            'total_paiement', 
+            'transaction_cree',
+            'annulation_bo'
+        ];
+        
+        // Vérifier si le type sélectionné est dans la liste
+        return typesWithFrais.includes(selectedType);
+    }
+
+    get pagedReleveSoldes(): { date: string; opening: number; closing: number; closingBo?: number }[] {
         const startIndex = (this.releveCurrentPage - 1) * this.relevePageSize;
         const endIndex = startIndex + this.relevePageSize;
         return this.releveSoldesJournaliers.slice(startIndex, endIndex);
@@ -830,7 +1100,7 @@ export class ComptesComponent implements OnInit, OnDestroy {
             'frais_transaction': 'Frais Transaction',
             'annulation_partenaire': 'Annulation Partenaire',
             'annulation_bo': 'Annulation BO',
-            'transaction_cree': 'Transaction Créée'
+            'transaction_cree': 'Transaction Dénouée'
         };
         return labels[type] || type;
     }
@@ -877,45 +1147,98 @@ export class ComptesComponent implements OnInit, OnDestroy {
 
     private exportReleveSoldes(): void {
         if (!this.selectedCompte) return;
-    
-        const tableData = [];
-        // En-tête
-        tableData.push(['RELEVÉ DES SOLDES JOURNALIERS']);
-        tableData.push([]);
-        tableData.push(['Numéro de compte:', this.selectedCompte.numeroCompte]);
-        tableData.push(['Solde actuel:', this.formatMontant(this.selectedCompte.solde)]);
-        tableData.push([]);
-    
-        // En-tête du tableau
-        tableData.push(['Date', 'Solde d\'ouverture', 'Solde de clôture', 'Variation']);
-    
-        // Données (déjà triées du plus récent au plus ancien)
-        this.releveSoldesJournaliers.forEach(solde => {
-            const variation = solde.closing - solde.opening;
-            tableData.push([
-                this.formatDate(solde.date).split(' ')[0],
-                this.formatMontant(solde.opening),
-                this.formatMontant(solde.closing),
-                this.formatMontant(variation)
-            ]);
-        });
-    
-        const ws = XLSX.utils.aoa_to_sheet(tableData);
-    
-        // Styles et largeurs
-        ws['!cols'] = [{ wch: 15 }, { wch: 20 }, { wch: 20 }, { wch: 20 }];
-        const headerStyle = { font: { bold: true }, fill: { fgColor: { rgb: 'D9E1F2' } } };
-        ws['A6'].s = headerStyle;
-        ws['B6'].s = headerStyle;
-        ws['C6'].s = headerStyle;
-        ws['D6'].s = headerStyle;
-        ws['A1'].s = { font: { bold: true, sz: 14 } };
 
-    
-        const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, 'Soldes Journaliers');
-        const fileName = `releve_soldes_${this.selectedCompte.numeroCompte}_${new Date().toISOString().split('T')[0]}.xlsx`;
-        XLSX.writeFile(wb, fileName);
+        const workbook = new ExcelJS.Workbook();
+        const worksheet = workbook.addWorksheet('Soldes Journaliers');
+
+        // En-tête
+        worksheet.addRow(['Date', 'Solde d\'ouverture', 'Solde de clôture', 'Variation', 'Solde de Clôture BO', 'ECART']);
+
+        // Données
+        this.releveSoldesJournaliers.forEach(solde => {
+          const variation = solde.closing - solde.opening;
+          const ecart = this.getEcartValue(solde);
+          const row = worksheet.addRow([
+            this.formatDate(solde.date).split(' ')[0],
+            solde.opening,
+            solde.closing,
+            variation,
+            solde.closingBo !== undefined ? solde.closingBo : '',
+            ecart
+          ]);
+
+          // Appliquer les couleurs
+          if (solde.closingBo !== undefined) {
+            const closing = Math.round(solde.closing * 100) / 100;
+            const closingBo = Math.round(solde.closingBo * 100) / 100;
+            if (closing === closingBo) {
+              // Les deux en vert
+              row.getCell(3).fill = row.getCell(5).fill = {
+                type: 'pattern',
+                pattern: 'solid',
+                fgColor: { argb: 'FFD0FFD0' } // Vert clair
+              };
+              row.getCell(3).font = row.getCell(5).font = { color: { argb: 'FF2E7D32' }, bold: true };
+            } else {
+              // Clôture en noir, BO en rouge
+              row.getCell(3).font = { color: { argb: 'FF222222' }, bold: true };
+              row.getCell(5).fill = {
+                type: 'pattern',
+                pattern: 'solid',
+                fgColor: { argb: 'FFFFD0D0' } // Rouge clair
+              };
+              row.getCell(5).font = { color: { argb: 'FFC62828' }, bold: true };
+            }
+          }
+
+          // Appliquer les couleurs pour la colonne ECART
+          if (ecart === 0) {
+            row.getCell(6).fill = {
+              type: 'pattern',
+              pattern: 'solid',
+              fgColor: { argb: 'FFD0FFD0' } // Vert clair
+            };
+            row.getCell(6).font = { color: { argb: 'FF2E7D32' }, bold: true };
+          } else if (ecart > 0) {
+            row.getCell(6).fill = {
+              type: 'pattern',
+              pattern: 'solid',
+              fgColor: { argb: 'FFFFE0B2' } // Orange clair
+            };
+            row.getCell(6).font = { color: { argb: 'FFF57C00' }, bold: true };
+          } else {
+            row.getCell(6).fill = {
+              type: 'pattern',
+              pattern: 'solid',
+              fgColor: { argb: 'FFFFD0D0' } // Rouge clair
+            };
+            row.getCell(6).font = { color: { argb: 'FFC62828' }, bold: true };
+          }
+        });
+
+        // Largeurs de colonnes
+        worksheet.columns = [
+          { width: 15 },
+          { width: 20 },
+          { width: 20 },
+          { width: 20 },
+          { width: 20 },
+          { width: 20 }
+        ];
+
+        // Style de l'en-tête
+        worksheet.getRow(1).eachCell(cell => {
+          cell.font = { bold: true };
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD9E1F2' } };
+        });
+
+        workbook.xlsx.writeBuffer().then(buffer => {
+          const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+          saveAs(
+            blob,
+            `releve_soldes_${this.selectedCompte?.numeroCompte || 'compte'}_${new Date().toISOString().split('T')[0]}.xlsx`
+          );
+        });
     }
 
     private exportReleveComplet(): void {
@@ -1106,7 +1429,13 @@ export class ComptesComponent implements OnInit, OnDestroy {
         let globalOpeningSet = false;
         let globalOpening = 0;
         Object.entries(grouped).forEach(([date, ops], idx) => {
-            const sorted = ops.slice().sort((a, b) => new Date(a.dateOperation).getTime() - new Date(b.dateOperation).getTime());
+            const sorted = ops.slice().sort((a, b) => {
+                const tA = new Date(a.dateOperation).getTime();
+                const tB = new Date(b.dateOperation).getTime();
+                if (tA !== tB) return tA - tB;
+                // Si égalité stricte, trie par id (ou autre champ unique)
+                return (a.id || 0) - (b.id || 0);
+            });
             // Chercher la première opération de type total_cashin ou total_paiement
             const firstTotalOp = sorted.find(op => op.typeOperation === 'total_cashin' || op.typeOperation === 'total_paiement');
             let opening = sorted[0]?.soldeAvant ?? 0;
@@ -1294,5 +1623,75 @@ export class ComptesComponent implements OnInit, OnDestroy {
         count: this.comptes.length,
         totalSolde
       };
+    }
+
+    updateClosingBo(index: number, value: number) {
+        this.pagedReleveSoldes[index].closingBo = value;
+    }
+
+    openSoldeBoModal(compte: Compte) {
+      this.selectedCompteForBo = compte;
+      // Par défaut J-1
+      const yesterday = new Date();
+      yesterday.setDate(yesterday.getDate() - 1);
+      this.dateSoldeBo = yesterday.toISOString().split('T')[0];
+      this.showSoldeBoModal = true;
+      this.loadSoldeBoForDate();
+    }
+
+    onDateSoldeBoChange() {
+      this.loadSoldeBoForDate();
+    }
+
+    loadSoldeBoForDate() {
+      if (this.selectedCompteForBo && this.dateSoldeBo) {
+        this.compteService.getSoldeBo(this.selectedCompteForBo.numeroCompte, this.dateSoldeBo).subscribe(val => {
+          this.dernierSoldeBo = val;
+        });
+      }
+    }
+
+    closeSoldeBoModal() {
+      this.showSoldeBoModal = false;
+      this.selectedCompteForBo = null;
+      this.dernierSoldeBo = null;
+    }
+
+    saveSoldeBo() {
+      if (this.selectedCompteForBo && this.dernierSoldeBo !== null && this.dateSoldeBo) {
+        this.compteService.setSoldeBo(this.selectedCompteForBo.numeroCompte, this.dateSoldeBo, this.dernierSoldeBo)
+          .subscribe(() => {
+            alert('Solde BO enregistré !');
+            this.closeSoldeBoModal();
+          });
+      }
+    }
+
+    round2(val: any): number {
+      return Math.round(+val * 100) / 100;
+    }
+
+    // Méthode pour calculer la valeur de l'écart entre les deux soldes de clôture
+    getEcartValue(solde: { date: string; opening: number; closing: number; closingBo?: number }): number {
+      if (solde.closingBo === undefined || solde.closingBo === null) {
+        return 0; // Pas d'écart si pas de solde BO
+      }
+      return solde.closing - solde.closingBo;
+    }
+
+    // Méthode pour déterminer la classe CSS de l'écart
+    getEcartClass(solde: { date: string; opening: number; closing: number; closingBo?: number }): string {
+      if (solde.closingBo === undefined || solde.closingBo === null) {
+        return ''; // Pas de classe si pas de solde BO
+      }
+      
+      const ecart = this.getEcartValue(solde);
+      if (ecart === 0) {
+        return 'ecart-zero'; // Écart nul (vert)
+      } else if (ecart > 0) {
+        return 'ecart-positive'; // Écart positif (orange)
+      } else {
+        return 'ecart-negative'; // Écart négatif (rouge)
+      }
     }
 } 
