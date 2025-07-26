@@ -1,0 +1,109 @@
+<div class="ecart-solde-tab-container">
+  <div class="tab-header">
+    <h3>Écarts de Solde - {{ agence }}</h3>
+    <div class="tab-info">
+      <span class="date-info" *ngIf="dateTransaction">
+        Date: {{ formatDate(dateTransaction) }}
+      </span>
+      <span class="count-info">
+        {{ filteredEcartSoldes.length }} résultat(s)
+      </span>
+      <button class="btn btn-success export-btn" 
+              (click)="exportEcartSoldes()"
+              [disabled]="filteredEcartSoldes.length === 0">
+        <i class="fas fa-download"></i>
+        Exporter
+      </button>
+    </div>
+  </div>
+
+  <div class="loading-container" *ngIf="isLoading">
+    <div class="spinner"></div>
+    <p>Chargement des écarts de solde...</p>
+  </div>
+
+  <div class="error-container" *ngIf="error">
+    <div class="alert alert-danger">
+      <i class="fas fa-exclamation-triangle"></i>
+      {{ error }}
+    </div>
+  </div>
+
+  <div class="no-data-container" *ngIf="!isLoading && !error && filteredEcartSoldes.length === 0">
+    <div class="alert alert-info">
+      <i class="fas fa-info-circle"></i>
+      Aucun écart de solde trouvé pour cette agence et cette date.
+    </div>
+  </div>
+
+  <div class="table-container" *ngIf="!isLoading && !error && filteredEcartSoldes.length > 0">
+    <table class="table table-striped table-hover">
+      <thead>
+        <tr>
+          <th>ID Transaction</th>
+          <th>Téléphone Client</th>
+          <th>Montant</th>
+          <th>Service</th>
+          <th>Agence</th>
+          <th>Date Transaction</th>
+          <th>Numéro Trans GU</th>
+          <th>Pays</th>
+          <th>Statut</th>
+          <th>Frais</th>
+          <th>Commentaire</th>
+          <th>Date Import</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr *ngFor="let ecart of filteredEcartSoldes" class="data-row">
+          <td class="id-cell">{{ ecart.idTransaction }}</td>
+          <td class="phone-cell">{{ ecart.telephoneClient || '-' }}</td>
+          <td class="amount-cell">{{ formatMontant(ecart.montant) }}</td>
+          <td class="service-cell">{{ ecart.service || '-' }}</td>
+          <td class="agence-cell">{{ ecart.agence || '-' }}</td>
+          <td class="date-cell">{{ formatDate(ecart.dateTransaction) }}</td>
+          <td class="gu-cell">{{ ecart.numeroTransGu || '-' }}</td>
+          <td class="pays-cell">{{ ecart.pays || '-' }}</td>
+          <td>
+            <span class="status-badge" [ngClass]="getStatutClass(ecart.statut || '')">
+              {{ ecart.statut || 'EN_ATTENTE' }}
+            </span>
+          </td>
+          <td class="frais-cell">
+            <div *ngIf="ecart.fraisAssocie" class="frais-info">
+              <span class="frais-amount">{{ formatMontantFrais(ecart.fraisAssocie.montant) }}</span>
+              <span class="frais-type" [ngClass]="getFraisTypeClass(ecart.fraisAssocie.typeCalcul)">
+                {{ getFraisTypeLabel(ecart.fraisAssocie.typeCalcul) }}
+              </span>
+              <span *ngIf="ecart.fraisAssocie.pourcentage" class="frais-percentage">
+                ({{ ecart.fraisAssocie.pourcentage }}%)
+              </span>
+            </div>
+            <div *ngIf="!ecart.fraisAssocie" class="no-frais">
+              <span class="no-frais-text">Aucun frais</span>
+            </div>
+          </td>
+          <td class="commentaire-cell">
+            <div *ngIf="ecart.commentaire" class="commentaire-content">
+              <span class="commentaire-text">{{ ecart.commentaire }}</span>
+            </div>
+            <div *ngIf="!ecart.commentaire" class="no-commentaire">
+              <span class="no-commentaire-text">Aucun commentaire</span>
+            </div>
+          </td>
+          <td class="import-cell">{{ formatDate(ecart.dateImport || '') }}</td>
+        </tr>
+      </tbody>
+      <tfoot>
+        <tr class="total-row">
+          <td colspan="9" class="total-label">
+            <strong>ÉCART TOTAL :</strong>
+          </td>
+          <td colspan="1" class="total-amount">
+            <strong>{{ formatTotalEcart() }}</strong>
+          </td>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+</div> 

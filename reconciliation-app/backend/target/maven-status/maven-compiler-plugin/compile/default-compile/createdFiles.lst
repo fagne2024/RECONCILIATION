@@ -48,6 +48,7 @@ com\reconciliation\repository\UserRepository.class
 com\reconciliation\dto\ReconciliationResponse$Match.class
 com\reconciliation\service\StatisticsService.class
 com\reconciliation\dto\ReconciliationResponse.class
+com\reconciliation\service\EcartSoldeService$1.class
 com\reconciliation\controller\OperationController.class
 com\reconciliation\controller\AuthController.class
 com\reconciliation\dto\AgencySummarySaveRequest.class

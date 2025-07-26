@@ -16,6 +16,7 @@ import { TraitementComponent } from './components/traitement/traitement.componen
 import { ProfilComponent } from './components/profil/profil.component';
 import { ModulesComponent } from './components/modules/modules.component';
 import { PermissionsComponent } from './components/permissions/permissions.component';
+import { EcartSoldeComponent } from './components/ecart-solde/ecart-solde.component';
 
 const routes: Routes = [
   { path: '', redirectTo: '/upload', pathMatch: 'full' },
@@ -34,7 +35,8 @@ const routes: Routes = [
   { path: 'traitement', component: TraitementComponent },
   { path: 'profils', component: ProfilComponent },
   { path: 'modules', component: ModulesComponent },
-  { path: 'permissions', component: PermissionsComponent }
+  { path: 'permissions', component: PermissionsComponent },
+  { path: 'ecart-solde', component: EcartSoldeComponent }
 ];
 
 @NgModule({

@@ -323,219 +323,252 @@
                 </div>
             </div>
 
-            <!-- Filtres pour l'historique -->
-            <div class="releve-filters">
-                <div class="filter-group">
-                    <label>Période:</label>
-                    <select [(ngModel)]="releveDateDebut" (change)="onRelevePeriodChange()">
-                        <option value="">Toutes les opérations</option>
-                        <option value="7">7 derniers jours</option>
-                        <option value="30">30 derniers jours</option>
-                        <option value="90">3 derniers mois</option>
-                        <option value="custom">Période personnalisée</option>
-                    </select>
-                </div>
-                
-                <!-- Filtres de date personnalisés -->
-                <div class="filter-group custom-date-filters" *ngIf="releveDateDebut === 'custom'">
-                    <div class="date-input-group">
-                        <label>Date début:</label>
-                        <input type="date" [(ngModel)]="releveDateDebutCustom" (change)="loadReleveOperations()">
-                    </div>
-                    <div class="date-input-group">
-                        <label>Date fin:</label>
-                        <input type="date" [(ngModel)]="releveDateFinCustom" (change)="loadReleveOperations()">
-                    </div>
-                </div>
-                
-                <div class="filter-group">
-                    <label>Type d'opération:</label>
-                    <select [(ngModel)]="releveTypeOperation" (change)="loadReleveOperations()">
-                        <option value="">-- Sélectionner un type --</option>
-                        <option *ngFor="let type of operationTypes" [value]="type">{{ type }}</option>
-                    </select>
-                </div>
-                 <button class="btn view-toggle-btn" (click)="toggleReleveView()">
-                    <i class="fas" [ngClass]="showSoldesSeulement ? 'fa-list-alt' : 'fa-coins'"></i> 
-                    {{ showSoldesSeulement ? 'Afficher Opérations' : 'Afficher Soldes Seuls' }}
-                </button>
-                <button class="btn export-btn" (click)="exportReleve()" [disabled]="isExporting">
-                    <i class="fas fa-file-excel"></i> Exporter le relevé
-                </button>
-            </div>
-
-            <!-- Historique des opérations -->
-            <div class="releve-operations">
-                <h3>{{ showSoldesSeulement ? 'Soldes Journaliers' : 'Historique des opérations' }}</h3>
-                
-                <!-- Indicateur pour l'affichage automatique des frais -->
-                <div *ngIf="showFraisAutomaticallyReleve && !showSoldesSeulement" class="frais-auto-indicator">
-                    <div class="indicator-content">
-                        <i class="fas fa-info-circle"></i>
-                        <span>Les frais de transaction sont automatiquement affichés pour le type d'opération sélectionné</span>
-                    </div>
-                </div>
-                <div *ngIf="isLoadingReleve" class="loading-releve">
-                    <i class="fas fa-spinner fa-spin"></i> Chargement de l'historique...
-                </div>
-                
-                <div *ngIf="!isLoadingReleve && releveOperations.length === 0" class="no-operations">
-                    Aucune opération trouvée pour ce compte.
-                </div>
-                
-                <!-- Vue détaillée des opérations -->
-                <div *ngIf="!isLoadingReleve && releveOperations.length > 0 && !showSoldesSeulement" class="operations-table">
-                    <div class="operations-summary">
-                        <span>Total: {{ releveOperations.length }} opération(s)</span>
-                        <span *ngIf="releveOperations.length > relevePageSize">
-                            Affichage: {{ (releveCurrentPage - 1) * relevePageSize + 1 }} - {{ Math.min(releveCurrentPage * relevePageSize, releveOperations.length) }} sur {{ releveOperations.length }}
-                        </span>
-                    </div>
-                    <table class="table table-bordered table-hover table-sm">
-                        <thead>
-                            <tr>
-                                <th>Date</th>
-                                <th>Type</th>
-                                <th>Débit</th>
-                                <th>Crédit</th>
-                                <th>Solde avant</th>
-                                <th>Solde après</th>
-                                <th>Service</th>
-                                <th>Banque</th>
-                                <th>Bordereau</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr>
-                                <td colspan="8" style="text-align: left; font-weight: bold; color: #1976d2;">
-                                    Solde d'ouverture global ({{ getGlobalOpeningBalanceDate() }}): {{ getGlobalOpeningBalance() | number:'1.2-2' }}
-                                </td>
-                            </tr>
-                            <ng-container *ngFor="let operation of pagedReleveOperations; let i = index">
-                                <tr *ngIf="shouldShowOpeningBalance(operation, i)" class="solde-ouverture">
-                                    <td colspan="3"><b style="color: #1976d2;">Solde d'ouverture ({{ getOpDate(operation) }})</b></td>
-                                    <td></td>
-                                    <td><b style="color: #1976d2;">{{ getDailyBalances(releveOperations)[getOpDate(operation)].opening | number:'1.2-2' }}</b></td>
-                                    <td colspan="4"></td>
-                                </tr>
-                                <tr [class.frais-row]="operation.typeOperation === 'FRAIS_TRANSACTION'"
-                                    [class.has-frais]="operation.typeOperation !== 'FRAIS_TRANSACTION' && hasAssociatedFraisReleve(operation)">
-                                    <td>{{ formatDate(operation.dateOperation) }}</td>
-                                    <td>
-                                        <span class="operation-type" [class]="getOperationTypeClass(operation.typeOperation)">
-                                            {{ getOperationTypeLabel(operation.typeOperation) }}
-                                        </span>
-                                    </td>
-                                    <td>
-                                      <!-- Affichage correct Débit/Crédit avec logique d'annulation -->
-                                      <ng-container *ngIf="operation.typeOperation.startsWith('annulation_'); else nonAnnulationDebit">
-                                        {{ isAnnulationDebit(operation) ? (operation.montant | number:'1.2-2') : '' }}
-                                      </ng-container>
-                                      <ng-template #nonAnnulationDebit>
-                                        <ng-container *ngIf="operation.typeOperation === 'FRAIS_TRANSACTION'; else autreDebit">
-                                          {{ isFraisTransactionDebit(operation) ? (operation.montant | number:'1.2-2') : '' }}
-                                        </ng-container>
-                                        <ng-template #autreDebit>
-                                          {{ isDebitOperation(operation.typeOperation, operation.service, operation.montant) ? (operation.montant | number:'1.2-2') : '' }}
-                                        </ng-template>
-                                      </ng-template>
-                                    </td>
-                                    <td>
-                                      <ng-container *ngIf="operation.typeOperation.startsWith('annulation_'); else nonAnnulationCredit">
-                                        {{ isAnnulationCredit(operation) ? (operation.montant | number:'1.2-2') : '' }}
-                                      </ng-container>
-                                      <ng-template #nonAnnulationCredit>
-                                        <ng-container *ngIf="operation.typeOperation === 'FRAIS_TRANSACTION'; else autreCredit">
-                                          {{ isFraisTransactionCredit(operation) ? (operation.montant | number:'1.2-2') : '' }}
-                                        </ng-container>
-                                        <ng-template #autreCredit>
-                                          {{ isCreditOperation(operation.typeOperation, operation.service, operation.montant) ? (operation.montant | number:'1.2-2') : '' }}
-                                        </ng-template>
-                                      </ng-template>
-                                    </td>
-                                    <td>{{ operation.soldeAvant | number:'1.2-2' }}</td>
-                                    <td>{{ operation.soldeApres | number:'1.2-2' }}</td>
-                                    <td>{{ operation.service || '-' }}</td>
-                                    <td>{{ operation.banque || '-' }}</td>
-                                    <td>{{ operation.nomBordereau || '-' }}</td>
-                                </tr>
-                                <tr *ngIf="shouldShowClosingBalance(operation, i)" class="solde-cloture">
-                                    <td colspan="8" style="text-align: right;"><b style="color: #388e3c;">Solde de clôture ({{ getOpDate(operation) }}) : {{ getDailyBalances(releveOperations)[getOpDate(operation)].closing | number:'1.2-2' }}</b></td>
-                                </tr>
-                            </ng-container>
-                        </tbody>
-                    </table>
-                 </div>
-
-                <!-- Vue des soldes journaliers -->
-                <div *ngIf="!isLoadingReleve && releveSoldesJournaliers.length > 0 && showSoldesSeulement" class="operations-table">
-                    <div class="operations-summary">
-                        <span>Total: {{ releveSoldesJournaliers.length }} jour(s)</span>
-                        <span *ngIf="releveSoldesJournaliers.length > relevePageSize">
-                            Affichage: {{ (releveCurrentPage - 1) * relevePageSize + 1 }} - {{ Math.min(releveCurrentPage * relevePageSize, releveSoldesJournaliers.length) }} sur {{ releveSoldesJournaliers.length }}
-                        </span>
-                    </div>
-                    <table class="table table-bordered table-hover table-sm">
-                        <thead>
-                            <tr>
-                                <th>Date</th>
-                                <th>Solde d'Ouverture</th>
-                                <th>Solde de Clôture</th>
-                                <th>Variation Journalière</th>
-                                <th>Solde de Clôture BO</th>
-                                <th>ECART</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr *ngFor="let solde of pagedReleveSoldes; let i = index">
-                                <td>{{ formatDate(solde.date).split(' ')[0] }}</td>
-                                <td class="solde-ouverture-val">{{ solde.opening | number:'1.2-2' }}</td>
-                                <td class="solde-cloture-val"
-                                    [ngClass]="solde.closingBo !== undefined && (round2(solde.closingBo) === round2(solde.closing)) ? 'solde-green' : ''">
-                                    {{ solde.closing | number:'1.2-2' }}
-                                </td>
-                                <td [ngClass]="(solde.closing - solde.opening) >= 0 ? 'variation-positive' : 'variation-negative'">
-                                    {{ (solde.closing - solde.opening) | number:'1.2-2' }}
-                                </td>
-                                <td>
-                                    <span [ngClass]="
-                                        solde.closingBo !== undefined && (round2(solde.closingBo) === round2(solde.closing))
-                                            ? 'solde-green'
-                                            : (solde.closingBo !== undefined && (round2(solde.closingBo) !== round2(solde.closing)) ? 'solde-red' : '')
-                                      ">
-                                        {{ solde.closingBo !== undefined ? (solde.closingBo | number:'1.2-2') : '-' }}
-                                    </span>
-                                </td>
-                                <td [ngClass]="getEcartClass(solde)">
-                                    {{ getEcartValue(solde) | number:'1.2-2' }}
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-                    
-                <!-- Pagination pour les opérations -->
-                <div class="releve-pagination" *ngIf="releveTotalPages > 1">
-                    <button (click)="prevRelevePage()" [disabled]="releveCurrentPage === 1" class="btn pagination-btn">
-                        <i class="fas fa-chevron-left"></i> Précédent
+            <!-- Onglets -->
+            <div class="tabs-container">
+                <div class="tabs-header">
+                    <button class="tab-button" 
+                            [class.active]="activeTab === 'operations'"
+                            (click)="switchTab('operations')">
+                        <i class="fas fa-list"></i>
+                        Opérations
                     </button>
-                    
-                    <div class="pagination-indicators">
-                        <span *ngFor="let page of getVisibleRelevePages()" 
-                                class="page-indicator"
-                                [class.active]="releveCurrentPage === page"
-                                (click)="goToRelevePage(page)">
-                            {{ page }}
-                        </span>
-                    </div>
-                    
-                    <button (click)="nextRelevePage()" [disabled]="releveCurrentPage === releveTotalPages" class="btn pagination-btn">
-                        Suivant <i class="fas fa-chevron-right"></i>
+                    <button class="tab-button" 
+                            [class.active]="activeTab === 'ecart-solde'"
+                            (click)="switchTab('ecart-solde')"
+                            *ngIf="showEcartSoldeTab">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        Écarts de Solde
                     </button>
                 </div>
-            </div>
-            <div style="text-align: right; font-weight: bold; color: #388e3c; margin-top: 8px;">
-                Solde de clôture global ({{ getGlobalClosingBalanceDate() }}): {{ getGlobalClosingBalance() | number:'1.2-2' }}
+
+                <!-- Contenu de l'onglet Opérations -->
+                <div class="tab-content" *ngIf="activeTab === 'operations'">
+                    <!-- Filtres pour l'historique -->
+                    <div class="releve-filters">
+                        <div class="filter-group">
+                            <label>Période:</label>
+                            <select [(ngModel)]="releveDateDebut" (change)="onRelevePeriodChange()">
+                                <option value="">Toutes les opérations</option>
+                                <option value="7">7 derniers jours</option>
+                                <option value="30">30 derniers jours</option>
+                                <option value="90">3 derniers mois</option>
+                                <option value="custom">Période personnalisée</option>
+                            </select>
+                        </div>
+                        
+                        <!-- Filtres de date personnalisés -->
+                        <div class="filter-group custom-date-filters" *ngIf="releveDateDebut === 'custom'">
+                            <div class="date-input-group">
+                                <label>Date début:</label>
+                                <input type="date" [(ngModel)]="releveDateDebutCustom" (change)="loadReleveOperations()">
+                            </div>
+                            <div class="date-input-group">
+                                <label>Date fin:</label>
+                                <input type="date" [(ngModel)]="releveDateFinCustom" (change)="loadReleveOperations()">
+                            </div>
+                        </div>
+                        
+                        <div class="filter-group">
+                            <label>Type d'opération:</label>
+                            <select [(ngModel)]="releveTypeOperation" (change)="loadReleveOperations()">
+                                <option value="">-- Sélectionner un type --</option>
+                                <option *ngFor="let type of operationTypes" [value]="type">{{ type }}</option>
+                            </select>
+                        </div>
+                         <button class="btn view-toggle-btn" (click)="toggleReleveView()">
+                            <i class="fas" [ngClass]="showSoldesSeulement ? 'fa-list-alt' : 'fa-coins'"></i> 
+                            {{ showSoldesSeulement ? 'Afficher Opérations' : 'Afficher Soldes Seuls' }}
+                        </button>
+                        <button class="btn export-btn" (click)="exportReleve()" [disabled]="isExporting">
+                            <i class="fas fa-file-excel"></i> Exporter le relevé
+                        </button>
+                    </div>
+
+                    <!-- Historique des opérations -->
+                    <div class="releve-operations">
+                        <h3>{{ showSoldesSeulement ? 'Soldes Journaliers' : 'Historique des opérations' }}</h3>
+                        
+                        <!-- Indicateur pour l'affichage automatique des frais -->
+                        <div *ngIf="showFraisAutomaticallyReleve && !showSoldesSeulement" class="frais-auto-indicator">
+                            <div class="indicator-content">
+                                <i class="fas fa-info-circle"></i>
+                                <span>Les frais de transaction sont automatiquement affichés pour le type d'opération sélectionné</span>
+                            </div>
+                        </div>
+                        <div *ngIf="isLoadingReleve" class="loading-releve">
+                            <i class="fas fa-spinner fa-spin"></i> Chargement de l'historique...
+                        </div>
+                        
+                        <div *ngIf="!isLoadingReleve && releveOperations.length === 0" class="no-operations">
+                            Aucune opération trouvée pour ce compte.
+                        </div>
+                        
+                        <!-- Vue détaillée des opérations -->
+                        <div *ngIf="!isLoadingReleve && releveOperations.length > 0 && !showSoldesSeulement" class="operations-table">
+                            <div class="operations-summary">
+                                <span>Total: {{ releveOperations.length }} opération(s)</span>
+                                <span *ngIf="releveOperations.length > relevePageSize">
+                                    Affichage: {{ (releveCurrentPage - 1) * relevePageSize + 1 }} - {{ Math.min(releveCurrentPage * relevePageSize, releveOperations.length) }} sur {{ releveOperations.length }}
+                                </span>
+                            </div>
+                            <table class="table table-bordered table-hover table-sm">
+                                <thead>
+                                    <tr>
+                                        <th>Date</th>
+                                        <th>Type</th>
+                                        <th>Débit</th>
+                                        <th>Crédit</th>
+                                        <th>Solde avant</th>
+                                        <th>Solde après</th>
+                                        <th>Service</th>
+                                        <th>Banque</th>
+                                        <th>Bordereau</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td colspan="8" style="text-align: left; font-weight: bold; color: #1976d2;">
+                                            Solde d'ouverture global ({{ getGlobalOpeningBalanceDate() }}): {{ getGlobalOpeningBalance() | number:'1.2-2' }}
+                                        </td>
+                                    </tr>
+                                    <ng-container *ngFor="let operation of pagedReleveOperations; let i = index">
+                                        <tr *ngIf="shouldShowOpeningBalance(operation, i)" class="solde-ouverture">
+                                            <td colspan="3"><b style="color: #1976d2;">Solde d'ouverture ({{ getOpDate(operation) }})</b></td>
+                                            <td></td>
+                                            <td><b style="color: #1976d2;">{{ getDailyBalances(releveOperations)[getOpDate(operation)].opening | number:'1.2-2' }}</b></td>
+                                            <td colspan="4"></td>
+                                        </tr>
+                                        <tr [class.frais-row]="operation.typeOperation === 'FRAIS_TRANSACTION'"
+                                            [class.has-frais]="operation.typeOperation !== 'FRAIS_TRANSACTION' && hasAssociatedFraisReleve(operation)">
+                                            <td>{{ formatDate(operation.dateOperation) }}</td>
+                                            <td>
+                                                <span class="operation-type" [class]="getOperationTypeClass(operation.typeOperation)">
+                                                    {{ getOperationTypeLabel(operation.typeOperation) }}
+                                                </span>
+                                            </td>
+                                            <td>
+                                              <!-- Affichage correct Débit/Crédit avec logique d'annulation -->
+                                              <ng-container *ngIf="operation.typeOperation.startsWith('annulation_'); else nonAnnulationDebit">
+                                                {{ isAnnulationDebit(operation) ? (operation.montant | number:'1.2-2') : '' }}
+                                              </ng-container>
+                                              <ng-template #nonAnnulationDebit>
+                                                <ng-container *ngIf="operation.typeOperation === 'FRAIS_TRANSACTION'; else autreDebit">
+                                                  {{ isFraisTransactionDebit(operation) ? (operation.montant | number:'1.2-2') : '' }}
+                                                </ng-container>
+                                                <ng-template #autreDebit>
+                                                  {{ isDebitOperation(operation.typeOperation, operation.service, operation.montant) ? (operation.montant | number:'1.2-2') : '' }}
+                                                </ng-template>
+                                              </ng-template>
+                                            </td>
+                                            <td>
+                                              <ng-container *ngIf="operation.typeOperation.startsWith('annulation_'); else nonAnnulationCredit">
+                                                {{ isAnnulationCredit(operation) ? (operation.montant | number:'1.2-2') : '' }}
+                                              </ng-container>
+                                              <ng-template #nonAnnulationCredit>
+                                                <ng-container *ngIf="operation.typeOperation === 'FRAIS_TRANSACTION'; else autreCredit">
+                                                  {{ isFraisTransactionCredit(operation) ? (operation.montant | number:'1.2-2') : '' }}
+                                                </ng-container>
+                                                <ng-template #autreCredit>
+                                                  {{ isCreditOperation(operation.typeOperation, operation.service, operation.montant) ? (operation.montant | number:'1.2-2') : '' }}
+                                                </ng-template>
+                                              </ng-template>
+                                            </td>
+                                            <td>{{ operation.soldeAvant | number:'1.2-2' }}</td>
+                                            <td>{{ operation.soldeApres | number:'1.2-2' }}</td>
+                                            <td>{{ operation.service || '-' }}</td>
+                                            <td>{{ operation.banque || '-' }}</td>
+                                            <td>{{ operation.nomBordereau || '-' }}</td>
+                                        </tr>
+                                        <tr *ngIf="shouldShowClosingBalance(operation, i)" class="solde-cloture">
+                                            <td colspan="8" style="text-align: right;"><b style="color: #388e3c;">Solde de clôture ({{ getOpDate(operation) }}) : {{ getDailyBalances(releveOperations)[getOpDate(operation)].closing | number:'1.2-2' }}</b></td>
+                                        </tr>
+                                    </ng-container>
+                                </tbody>
+                            </table>
+                         </div>
+
+                        <!-- Vue des soldes journaliers -->
+                        <div *ngIf="!isLoadingReleve && releveSoldesJournaliers.length > 0 && showSoldesSeulement" class="operations-table">
+                            <div class="operations-summary">
+                                <span>Total: {{ releveSoldesJournaliers.length }} jour(s)</span>
+                                <span *ngIf="releveSoldesJournaliers.length > relevePageSize">
+                                    Affichage: {{ (releveCurrentPage - 1) * relevePageSize + 1 }} - {{ Math.min(releveCurrentPage * relevePageSize, releveSoldesJournaliers.length) }} sur {{ releveSoldesJournaliers.length }}
+                                </span>
+                            </div>
+                            <table class="table table-bordered table-hover table-sm">
+                                <thead>
+                                    <tr>
+                                        <th>Date</th>
+                                        <th>Solde d'Ouverture</th>
+                                        <th>Solde de Clôture</th>
+                                        <th>Variation Journalière</th>
+                                        <th>Solde de Clôture BO</th>
+                                        <th>ECART</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr *ngFor="let solde of pagedReleveSoldes; let i = index">
+                                        <td>{{ formatDate(solde.date).split(' ')[0] }}</td>
+                                        <td class="solde-ouverture-val">{{ solde.opening | number:'1.2-2' }}</td>
+                                        <td class="solde-cloture-val"
+                                            [ngClass]="solde.closingBo !== undefined && (round2(solde.closingBo) === round2(solde.closing)) ? 'solde-green' : ''">
+                                            {{ solde.closing | number:'1.2-2' }}
+                                        </td>
+                                        <td [ngClass]="(solde.closing - solde.opening) >= 0 ? 'variation-positive' : 'variation-negative'">
+                                            {{ (solde.closing - solde.opening) | number:'1.2-2' }}
+                                        </td>
+                                        <td>
+                                            <span [ngClass]="
+                                                solde.closingBo !== undefined && (round2(solde.closingBo) === round2(solde.closing))
+                                                    ? 'solde-green'
+                                                    : (solde.closingBo !== undefined && (round2(solde.closingBo) !== round2(solde.closing)) ? 'solde-red' : '')
+                                              ">
+                                                {{ solde.closingBo !== undefined ? (solde.closingBo | number:'1.2-2') : '-' }}
+                                            </span>
+                                        </td>
+                                        <td [ngClass]="getEcartClass(solde)" 
+                                            (click)="navigateToEcartSolde(solde)"
+                                            style="cursor: pointer; text-decoration: underline;"
+                                            title="Cliquer pour voir les écarts de solde correspondants">
+                                            {{ getEcartValue(solde) | number:'1.2-2' }}
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                            
+                        <!-- Pagination pour les opérations -->
+                        <div class="releve-pagination" *ngIf="releveTotalPages > 1">
+                            <button (click)="prevRelevePage()" [disabled]="releveCurrentPage === 1" class="btn pagination-btn">
+                                <i class="fas fa-chevron-left"></i> Précédent
+                            </button>
+                            
+                            <div class="pagination-indicators">
+                                <span *ngFor="let page of getVisibleRelevePages()" 
+                                        class="page-indicator"
+                                        [class.active]="releveCurrentPage === page"
+                                        (click)="goToRelevePage(page)">
+                                    {{ page }}
+                                </span>
+                            </div>
+                            
+                            <button (click)="nextRelevePage()" [disabled]="releveCurrentPage === releveTotalPages" class="btn pagination-btn">
+                                Suivant <i class="fas fa-chevron-right"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div style="text-align: right; font-weight: bold; color: #388e3c; margin-top: 8px;">
+                        Solde de clôture global ({{ getGlobalClosingBalanceDate() }}): {{ getGlobalClosingBalance() | number:'1.2-2' }}
+                    </div>
+                </div>
+
+                <!-- Contenu de l'onglet Écarts de Solde -->
+                <div class="tab-content" *ngIf="activeTab === 'ecart-solde'">
+                    <app-ecart-solde-tab 
+                        [agence]="ecartSoldeAgence"
+                        [dateTransaction]="ecartSoldeDateTransaction">
+                    </app-ecart-solde-tab>
+                </div>
             </div>
         </div>
     </div>

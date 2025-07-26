@@ -9,6 +9,8 @@ import { OperationService } from '../../services/operation.service';
 import { Operation } from '../../models/operation.model';
 import * as XLSX from 'xlsx';
 import { MatSelect } from '@angular/material/select';
+import { Router } from '@angular/router';
+import { EcartSoldeService } from '../../services/ecart-solde.service';
 
 @Component({
     selector: 'app-comptes',
@@ -122,10 +124,18 @@ export class ComptesComponent implements OnInit, OnDestroy {
     dernierSoldeBo: number | null = null;
     dateSoldeBo: string = '';
 
+    // Propriétés pour les onglets du relevé
+    activeTab = 'operations'; // 'operations' ou 'ecart-solde'
+    showEcartSoldeTab = false;
+    ecartSoldeAgence = '';
+    ecartSoldeDateTransaction = '';
+
     constructor(
         private compteService: CompteService,
         private operationService: OperationService,
-        private fb: FormBuilder
+        private fb: FormBuilder,
+        private router: Router,
+        private ecartSoldeService: EcartSoldeService
     ) {
         this.addForm = this.fb.group({
             numeroCompte: ['', [Validators.required]],
@@ -1008,14 +1018,22 @@ export class ComptesComponent implements OnInit, OnDestroy {
         // Créer la liste finale avec les opérations principales et leurs frais
         operationsMap.forEach((group, id) => {
             if (group.main) {
+                // Trier les frais par date d'opération du plus récent au plus ancien
+                const sortedFrais = group.frais.sort((a, b) => 
+                    new Date(b.dateOperation).getTime() - new Date(a.dateOperation).getTime()
+                );
+                
                 grouped.push({
                     main: group.main,
-                    frais: group.frais
+                    frais: sortedFrais
                 });
             }
         });
         
-        return grouped;
+        // Trier les groupes par date d'opération du plus récent au plus ancien
+        return grouped.sort((a, b) => 
+            new Date(b.main.dateOperation).getTime() - new Date(a.main.dateOperation).getTime()
+        );
     }
 
     // Méthode pour vérifier si une opération du relevé a des frais associés
@@ -1693,5 +1711,25 @@ export class ComptesComponent implements OnInit, OnDestroy {
       } else {
         return 'ecart-negative'; // Écart négatif (rouge)
       }
+    }
+
+    // Navigation vers la page ecart de solde avec filtres
+    navigateToEcartSolde(solde: { date: string; opening: number; closing: number; closingBo?: number }): void {
+        if (!this.selectedCompte) return;
+        
+        // Configurer les données pour l'onglet écart de solde
+        this.ecartSoldeAgence = this.selectedCompte.numeroCompte;
+        this.ecartSoldeDateTransaction = solde.date;
+        
+        // Basculer vers l'onglet écart de solde
+        this.activeTab = 'ecart-solde';
+        this.showEcartSoldeTab = true;
+    }
+
+    switchTab(tabName: string): void {
+        this.activeTab = tabName;
+        if (tabName === 'ecart-solde') {
+            this.showEcartSoldeTab = true;
+        }
     }
 } 

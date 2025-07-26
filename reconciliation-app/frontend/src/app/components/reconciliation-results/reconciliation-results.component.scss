@@ -155,4 +155,26 @@
         text-align: center;
         gap: 5px;
     }
+}
+
+// Styles pour les boutons
+.save-button {
+    background: #3498db;
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: background-color 0.3s;
+    margin-left: 10px;
+}
+
+.save-button:hover:not(:disabled) {
+    background: #2980b9;
+}
+
+.save-button:disabled {
+    background: #bdc3c7;
+    cursor: not-allowed;
 } 

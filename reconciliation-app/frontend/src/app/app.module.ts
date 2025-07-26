@@ -42,6 +42,8 @@ import { ProfilComponent } from './components/profil/profil.component';
 import { SoldesComponent } from './components/soldes/soldes.component';
 import { ModulesComponent } from './components/modules/modules.component';
 import { PermissionsComponent } from './components/permissions/permissions.component';
+import { EcartSoldeComponent } from './components/ecart-solde/ecart-solde.component';
+import { EcartSoldeTabComponent } from './components/comptes/ecart-solde-tab.component';
 
 @NgModule({
     declarations: [
@@ -64,7 +66,9 @@ import { PermissionsComponent } from './components/permissions/permissions.compo
         ProfilComponent,
         SoldesComponent,
         ModulesComponent,
-        PermissionsComponent
+        PermissionsComponent,
+        EcartSoldeComponent,
+        EcartSoldeTabComponent
     ],
     imports: [
         BrowserModule,

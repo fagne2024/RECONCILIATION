@@ -58,6 +58,12 @@
                 <span>Frais</span>
             </a>
         </li>
+        <li *ngIf="isMenuAllowed('Écarts de Solde')">
+            <a routerLink="/ecart-solde" routerLinkActive="active">
+                <i class="fas fa-exclamation-triangle menu-icon ecart-solde"></i>
+                <span>Écarts de Solde</span>
+            </a>
+        </li>
         <li>
             <a href="#" class="has-submenu" (click)="toggleParamSubmenu(); $event.preventDefault()">
                 <i class="fas fa-cog menu-icon parametre"></i>

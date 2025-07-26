@@ -1,0 +1,311 @@
+<div class="ecart-solde-container">
+  <div class="header">
+    <h2>Gestion des Écarts de Solde</h2>
+    <div class="header-actions">
+      <button class="btn btn-primary" (click)="loadEcartSoldes()" [disabled]="isLoading">
+        <i class="fas fa-sync-alt"></i> Actualiser
+      </button>
+    </div>
+  </div>
+
+  <!-- Section Upload -->
+  <div class="upload-section">
+    <h3>Import de fichier CSV</h3>
+    <div class="upload-form">
+      <div class="file-input-group">
+        <input 
+          type="file" 
+          class="file-input" 
+          (change)="onFileSelected($event)"
+          accept=".csv,.xlsx,.xls"
+          #fileInput>
+        <button 
+          type="button" 
+          class="btn btn-primary" 
+          (click)="validateFile()"
+          [disabled]="!selectedFile || isUploading">
+          <i class="fas fa-check"></i> Valider
+        </button>
+        <button 
+          type="button" 
+          class="btn btn-success" 
+          (click)="uploadFile()"
+          [disabled]="!selectedFile || !fileValidated || isUploading">
+          <i class="fas fa-upload"></i> 
+          {{ isUploading ? 'Upload en cours...' : 'Uploader' }}
+        </button>
+      </div>
+      
+      <div class="upload-messages" *ngIf="uploadMessage">
+        <div class="alert" [ngClass]="uploadMessage.type === 'success' ? 'alert-success' : 'alert-danger'">
+          {{ uploadMessage.text }}
+        </div>
+      </div>
+      
+      <div class="validation-info" *ngIf="validationResult">
+        <div class="alert" [ngClass]="validationResult.hasErrors ? 'alert-warning' : 'alert-info'">
+          <h6>Résultat de la validation :</h6>
+          <ul>
+            <li>Lignes valides : {{ validationResult.validLines }}</li>
+            <li>Lignes avec erreurs : {{ validationResult.errorLines }}</li>
+            <li>Doublons détectés : {{ validationResult.duplicates }}</li>
+            <li>Nouveaux enregistrements : {{ validationResult.newRecords }}</li>
+          </ul>
+        </div>
+      </div>
+      
+      <div class="upload-info">
+        <small class="text-muted">
+          Formats acceptés : CSV, XLSX, XLS. La première ligne doit contenir les en-têtes.
+        </small>
+      </div>
+    </div>
+  </div>
+
+  <!-- Filtres -->
+  <div class="filters-section">
+    <h3>Filtres</h3>
+    <form [formGroup]="filterForm" class="filter-form">
+      <div class="filter-row">
+        <div class="filter-group">
+          <label>Agence:</label>
+          <select formControlName="agence" class="form-control">
+            <option value="">Toutes les agences</option>
+            <option *ngFor="let agence of agences" [value]="agence">{{ agence }}</option>
+          </select>
+        </div>
+        
+        <div class="filter-group">
+          <label>Service:</label>
+          <select formControlName="service" class="form-control">
+            <option value="">Tous les services</option>
+            <option *ngFor="let service of services" [value]="service">{{ service }}</option>
+          </select>
+        </div>
+        
+        <div class="filter-group">
+          <label>Pays:</label>
+          <select formControlName="pays" class="form-control">
+            <option value="">Tous les pays</option>
+            <option *ngFor="let pays of pays" [value]="pays">{{ pays }}</option>
+          </select>
+        </div>
+        
+        <div class="filter-group">
+          <label>Statut:</label>
+          <select formControlName="statut" class="form-control">
+            <option value="">Tous les statuts</option>
+            <option *ngFor="let statut of statuts" [value]="statut">{{ statut }}</option>
+          </select>
+        </div>
+      </div>
+      
+      <div class="filter-row">
+        <div class="filter-group">
+          <label>Date début:</label>
+          <input type="datetime-local" formControlName="dateDebut" class="form-control">
+        </div>
+        
+        <div class="filter-group">
+          <label>Date fin:</label>
+          <input type="datetime-local" formControlName="dateFin" class="form-control">
+        </div>
+        
+        <div class="filter-actions">
+          <button type="button" class="btn btn-secondary" (click)="clearFilters()">
+            <i class="fas fa-times"></i> Effacer
+          </button>
+        </div>
+      </div>
+    </form>
+  </div>
+
+  <!-- Tableau des données -->
+  <div class="data-section">
+    <div class="table-header">
+      <h3>Écarts de Solde ({{ filteredEcartSoldes.length }} enregistrements)</h3>
+      <div class="table-actions">
+        <button class="btn btn-success export-btn" 
+                (click)="exportEcartSoldes()" 
+                [disabled]="filteredEcartSoldes.length === 0 || isLoading"
+                title="Exporter vers Excel">
+          <i class="fas fa-file-excel"></i> Exporter
+        </button>
+        <span class="loading-indicator" *ngIf="isLoading">
+          <i class="fas fa-spinner fa-spin"></i> Chargement...
+        </span>
+      </div>
+    </div>
+
+    <div class="table-container">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>ID Transaction</th>
+            <th>Téléphone Client</th>
+            <th>Montant</th>
+            <th>Service</th>
+            <th>Agence</th>
+            <th>Date Transaction</th>
+            <th>Numéro Trans GU</th>
+            <th>Pays</th>
+            <th>Statut</th>
+            <th>Frais</th>
+            <th>Commentaire</th>
+            <th>Date Import</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let ecart of pagedEcartSoldes" class="data-row">
+            <td>{{ ecart.idTransaction }}</td>
+            <td>{{ ecart.telephoneClient || '-' }}</td>
+            <td class="amount">{{ formatMontant(ecart.montant) }}</td>
+            <td>{{ ecart.service || '-' }}</td>
+            <td>{{ ecart.agence || '-' }}</td>
+            <td>{{ formatDate(ecart.dateTransaction) }}</td>
+            <td>{{ ecart.numeroTransGu || '-' }}</td>
+            <td>{{ ecart.pays || '-' }}</td>
+            <td>
+              <span class="status-badge" [ngClass]="getStatutClass(ecart.statut || '')">
+                {{ ecart.statut || 'EN_ATTENTE' }}
+              </span>
+            </td>
+            <td class="frais-cell">
+              <div *ngIf="ecart.fraisAssocie" class="frais-info">
+                <span class="frais-amount">{{ formatMontantFrais(ecart.fraisAssocie.montant) }}</span>
+                <span class="frais-type" [ngClass]="getFraisTypeClass(ecart.fraisAssocie.typeCalcul)">
+                  {{ getFraisTypeLabel(ecart.fraisAssocie.typeCalcul) }}
+                </span>
+                <span *ngIf="ecart.fraisAssocie.pourcentage" class="frais-percentage">
+                  ({{ ecart.fraisAssocie.pourcentage }}%)
+                </span>
+              </div>
+              <div *ngIf="!ecart.fraisAssocie" class="no-frais">
+                <span class="no-frais-text">Aucun frais</span>
+              </div>
+            </td>
+            <td class="commentaire-cell">
+              <div *ngIf="ecart.commentaire" class="commentaire-content">
+                <span class="commentaire-text">{{ ecart.commentaire }}</span>
+              </div>
+              <div *ngIf="!ecart.commentaire" class="no-commentaire">
+                <span class="no-commentaire-text">Aucun commentaire</span>
+              </div>
+            </td>
+            <td>{{ formatDate(ecart.dateImport || '') }}</td>
+            <td class="actions">
+              <div class="action-buttons">
+                <div class="status-change-container">
+                  <label class="status-label">Statut:</label>
+                  <select (change)="onStatutChange(ecart, $event)" 
+                          [value]="ecart.statut || 'EN_ATTENTE'"
+                          class="status-select"
+                          [ngClass]="getStatutClass(ecart.statut || '')">
+                    <option value="EN_ATTENTE">⏳ En attente</option>
+                    <option value="TRAITE">✅ Traité</option>
+                    <option value="ERREUR">❌ Erreur</option>
+                  </select>
+                </div>
+                
+                <button class="btn btn-danger btn-sm" 
+                        (click)="deleteEcartSolde(ecart.id!)"
+                        title="Supprimer">
+                  <i class="fas fa-trash"></i>
+                </button>
+              </div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Pagination -->
+    <div class="pagination" *ngIf="filteredEcartSoldes.length > 0">
+      <div class="pagination-info">
+        Affichage {{ (currentPage - 1) * pageSize + 1 }}-{{ Math.min(currentPage * pageSize, filteredEcartSoldes.length) }} 
+        sur {{ filteredEcartSoldes.length }} éléments
+      </div>
+      
+      <div class="pagination-controls">
+        <button class="btn btn-secondary" 
+                (click)="prevPage()" 
+                [disabled]="currentPage === 1">
+          <i class="fas fa-chevron-left"></i> Précédent
+        </button>
+        
+        <div class="page-numbers">
+          <button *ngFor="let page of getVisiblePages()" 
+                  class="btn" 
+                  [ngClass]="page === currentPage ? 'btn-primary' : 'btn-secondary'"
+                  (click)="goToPage(page)">
+            {{ page }}
+          </button>
+        </div>
+        
+        <button class="btn btn-secondary" 
+                (click)="nextPage()" 
+                [disabled]="currentPage === totalPages">
+          Suivant <i class="fas fa-chevron-right"></i>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal pour le commentaire -->
+<div class="modal-overlay" *ngIf="showCommentModal" (click)="closeCommentModal()">
+  <div class="modal-content" (click)="$event.stopPropagation()">
+    <div class="modal-header">
+      <h4>Changer le statut</h4>
+      <button class="modal-close" (click)="closeCommentModal()">
+        <i class="fas fa-times"></i>
+      </button>
+    </div>
+    
+    <div class="modal-body">
+      <div class="ecart-info">
+        <p><strong>ID Transaction:</strong> {{ selectedEcartSolde?.idTransaction }}</p>
+        <p><strong>Agence:</strong> {{ selectedEcartSolde?.agence }}</p>
+        <p><strong>Montant:</strong> {{ selectedEcartSolde ? formatMontant(selectedEcartSolde.montant) : '' }}</p>
+        <p><strong>Ancien statut:</strong> 
+          <span class="status-badge" [ngClass]="getStatutClass(selectedEcartSolde?.statut || '')">
+            {{ selectedEcartSolde?.statut || 'EN_ATTENTE' }}
+          </span>
+        </p>
+        <p><strong>Nouveau statut:</strong> 
+          <span class="status-badge" [ngClass]="getStatutClass(newStatut)">
+            {{ newStatut }}
+          </span>
+        </p>
+      </div>
+      
+      <form [formGroup]="commentForm" class="comment-form">
+        <div class="form-group">
+          <label for="commentaire">Commentaire *</label>
+          <textarea 
+            id="commentaire"
+            formControlName="commentaire"
+            class="form-control"
+            rows="4"
+            placeholder="Saisissez un commentaire pour justifier ce changement de statut..."
+            required></textarea>
+          <div class="error-message" *ngIf="commentForm.get('commentaire')?.invalid && commentForm.get('commentaire')?.touched">
+            Le commentaire est obligatoire
+          </div>
+        </div>
+      </form>
+    </div>
+    
+    <div class="modal-footer">
+      <button class="btn btn-secondary" (click)="closeCommentModal()">
+        <i class="fas fa-times"></i> Annuler
+      </button>
+      <button class="btn btn-primary" 
+              (click)="confirmStatutChange()"
+              [disabled]="commentForm.invalid">
+        <i class="fas fa-check"></i> Confirmer
+      </button>
+    </div>
+  </div>
+</div> 

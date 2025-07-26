@@ -3,10 +3,12 @@ import { ReconciliationResponse, Match } from '../../models/reconciliation-respo
 import { AppStateService } from '../../services/app-state.service';
 import { Router } from '@angular/router';
 import { ReconciliationService } from '../../services/reconciliation.service';
+import { EcartSoldeService } from '../../services/ecart-solde.service';
+import { EcartSolde } from '../../models/ecart-solde.model';
 import * as ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
 import { HttpClient } from '@angular/common/http';
-import { Subscription } from 'rxjs';
+import { Subscription, firstValueFrom } from 'rxjs';
 
 interface ApiError {
     error?: {
@@ -336,6 +338,9 @@ interface ApiError {
                             >
                             <button (click)="exportResults()" class="export-button">
                                 📥 Exporter les ECART BO
+                            </button>
+                            <button (click)="saveEcartBoToEcartSolde()" class="save-button" [disabled]="isSavingEcartBo">
+                                {{ isSavingEcartBo ? '💾 Sauvegarde...' : '💾 Sauvegarder dans Ecart Solde' }}
                             </button>
                         </div>
                         <div class="volume-summary">
@@ -1239,6 +1244,7 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
     selectedService: string = '';
     selectedDate: string = new Date().toISOString().split('T')[0];
     isSaving: boolean = false;
+    isSavingEcartBo: boolean = false;
     exportProgress = 0;
     isExporting = false;
     
@@ -1284,11 +1290,149 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
         // Ici, tu peux appeler une API ou autre logique
     }
 
+    async saveEcartBoToEcartSolde(): Promise<void> {
+        if (this.isSavingEcartBo) return;
+        
+        this.isSavingEcartBo = true;
+        
+        try {
+            // Récupérer toutes les données ecart_bo (pas seulement la page courante)
+            const allEcartBo = this.filteredBoOnly;
+            
+            if (allEcartBo.length === 0) {
+                alert('Aucune donnée ECART BO à sauvegarder.');
+                return;
+            }
+
+            // Convertir les données ecart_bo en format EcartSolde
+            const ecartSoldeData: EcartSolde[] = allEcartBo.map(record => {
+                // Fonction helper pour obtenir la valeur avec fallback
+                const getValueWithFallback = (keys: string[]): string => {
+                    for (const key of keys) {
+                        if (record[key] !== undefined && record[key] !== null && record[key] !== '') {
+                            return record[key];
+                        }
+                    }
+                    return '';
+                };
+
+                // Mapping avec les noms de colonnes exacts de vos données
+                const idTransaction = getValueWithFallback(['IDTransaction', 'id_transaction', 'idTransaction', 'ID_TRANSACTION', 'transaction_id', 'TransactionId']) || 'N/A';
+                const telephoneClient = getValueWithFallback(['téléphone client', 'telephone_client', 'telephoneClient', 'TELEPHONE_CLIENT', 'phone', 'Phone']) || '';
+                const montant = getValueWithFallback(['montant', 'Montant', 'MONTANT', 'amount', 'Amount', 'volume', 'Volume']) || '0';
+                const service = getValueWithFallback(['Service', 'service', 'SERVICE']) || 'N/A';
+                const agence = getValueWithFallback(['Agence', 'agence', 'AGENCE', 'agency', 'Agency']) || 'N/A';
+                const dateTransactionRaw = getValueWithFallback(['Date', 'date_transaction', 'dateTransaction', 'DATE_TRANSACTION', 'date']) || new Date().toISOString();
+                const numeroTransGu = getValueWithFallback(['Numéro Trans GU', 'numero_trans_gu', 'numeroTransGu', 'NUMERO_TRANS_GU', 'numero', 'Numero']) || '';
+                const pays = getValueWithFallback(['PAYS', 'pays', 'Pays', 'country', 'Country']) || '';
+
+                // Convertir le format de date "2025-07-25 20:58:15.0" en format ISO
+                let dateTransaction = dateTransactionRaw;
+                if (dateTransactionRaw && dateTransactionRaw.includes(' ')) {
+                    dateTransaction = dateTransactionRaw.replace(/\.0$/, '').replace(' ', 'T');
+                }
+
+                return {
+                    id: 0, // Sera généré par la base de données
+                    idTransaction: idTransaction.toString(),
+                    telephoneClient: telephoneClient.toString(),
+                    montant: parseFloat(montant.toString()) || 0,
+                    service: service.toString(),
+                    agence: agence.toString(),
+                    dateTransaction: dateTransaction,
+                    numeroTransGu: numeroTransGu.toString(),
+                    pays: pays.toString(),
+                    dateImport: new Date().toISOString(),
+                    statut: 'EN_ATTENTE',
+                    commentaire: 'Importé depuis ECART BO'
+                };
+            });
+
+            // Validation des doublons avant sauvegarde
+            console.log('🔍 Validation des doublons en cours...');
+            
+            // Créer un fichier temporaire pour la validation
+            const csvContent = this.createCsvContent(ecartSoldeData);
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const file = new File([blob], 'validation_temp.csv', { type: 'text/csv' });
+            
+            // Appeler l'endpoint de validation
+            const validationResult = await firstValueFrom(this.ecartSoldeService.validateFile(file));
+            
+            console.log('📊 Résultats de la validation:', validationResult);
+            
+            // Afficher les résultats de validation
+            let message = `📋 Résultats de la validation:\n`;
+            message += `• Lignes valides: ${validationResult.validLines}\n`;
+            message += `• Lignes avec erreurs: ${validationResult.errorLines}\n`;
+            message += `• Doublons détectés: ${validationResult.duplicates}\n`;
+            message += `• Nouveaux enregistrements: ${validationResult.newRecords}\n\n`;
+            
+            if (validationResult.hasErrors) {
+                message += `⚠️ Des erreurs ont été détectées:\n`;
+                // Vérifier si errors existe dans la réponse
+                const errors = validationResult.errors || [];
+                if (errors.length > 0) {
+                    errors.slice(0, 5).forEach((error: string) => {
+                        message += `• ${error}\n`;
+                    });
+                    if (errors.length > 5) {
+                        message += `• ... et ${errors.length - 5} autres erreurs\n`;
+                    }
+                }
+                message += `\nVoulez-vous continuer malgré les erreurs ?`;
+                
+                if (!confirm(message)) {
+                    console.log('❌ Sauvegarde annulée par l\'utilisateur');
+                    return;
+                }
+            } else {
+                message += `✅ Aucune erreur détectée.`;
+                alert(message);
+            }
+            
+            // Sauvegarder les données via le service
+            const savedCount = await this.ecartSoldeService.createMultipleEcartSoldes(ecartSoldeData);
+            
+            alert(`✅ ${savedCount} enregistrements ECART BO ont été sauvegardés avec succès dans la table Ecart Solde.`);
+            
+        } catch (error) {
+            console.error('Erreur lors de la sauvegarde des ECART BO:', error);
+            alert('❌ Erreur lors de la sauvegarde des ECART BO. Veuillez réessayer.');
+        } finally {
+            this.isSavingEcartBo = false;
+        }
+    }
+
+    // Méthode helper pour créer le contenu CSV pour la validation
+    private createCsvContent(ecartSoldeData: EcartSolde[]): string {
+        const headers = ['ID', 'IDTransaction', 'téléphone client', 'montant', 'Service', 'Agence', 'Date', 'Numéro Trans GU', 'PAYS'];
+        const csvRows = [headers.join(';')];
+        
+        ecartSoldeData.forEach((ecart, index) => {
+            const row = [
+                index + 1,
+                ecart.idTransaction,
+                ecart.telephoneClient,
+                ecart.montant,
+                ecart.service,
+                ecart.agence,
+                ecart.dateTransaction,
+                ecart.numeroTransGu,
+                ecart.pays
+            ];
+            csvRows.push(row.join(';'));
+        });
+        
+        return csvRows.join('\n');
+    }
+
     constructor(
         private cdr: ChangeDetectorRef, 
         private appStateService: AppStateService, 
         private router: Router,
         private reconciliationService: ReconciliationService,
+        private ecartSoldeService: EcartSoldeService,
         private http: HttpClient
     ) {}
 
