@@ -177,7 +177,7 @@ public class StatisticsService {
             filterOptions.put("countries", countries);
             
             // Options de filtres temporels (sans 'Tous')
-            List<String> timeFilters = List.of("Aujourd'hui", "Cette semaine", "Ce mois", "Personnalisé");
+            List<String> timeFilters = List.of("Aujourd'hui", "Cette semaine", "Ce mois", "Cette année", "Année dernière", "Personnalisé");
             filterOptions.put("timeFilters", timeFilters);
             
             logger.info("Filter options retrieved: {} agencies, {} services, {} countries", 
@@ -221,6 +221,15 @@ public class StatisticsService {
                     case "Ce mois":
                         start = today.withDayOfMonth(1).toString();
                         end = today.toString();
+                        break;
+                    case "Cette année":
+                        start = today.withDayOfYear(1).toString();
+                        end = today.withDayOfYear(today.lengthOfYear()).toString();
+                        break;
+                    case "Année dernière":
+                        LocalDate lastYear = today.minusYears(1);
+                        start = lastYear.withDayOfYear(1).toString();
+                        end = lastYear.withDayOfYear(lastYear.lengthOfYear()).toString();
                         break;
                     case "Personnalisé":
                         if (startDate != null && endDate != null) {

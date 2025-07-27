@@ -1291,114 +1291,168 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
     }
 
     async saveEcartBoToEcartSolde(): Promise<void> {
-        if (this.isSavingEcartBo) return;
-        
+        if (!this.response?.boOnly || this.response.boOnly.length === 0) {
+            alert('❌ Aucune donnée ECART BO à sauvegarder.');
+            return;
+        }
+
         this.isSavingEcartBo = true;
-        
+
         try {
-            // Récupérer toutes les données ecart_bo (pas seulement la page courante)
-            const allEcartBo = this.filteredBoOnly;
-            
-            if (allEcartBo.length === 0) {
-                alert('Aucune donnée ECART BO à sauvegarder.');
-                return;
+            console.log('🔄 Début de la sauvegarde des ECART BO...');
+            console.log('DEBUG: Nombre d\'enregistrements ECART BO:', this.response.boOnly.length);
+
+            // Debug: Afficher les colonnes disponibles dans le premier enregistrement
+            if (this.response.boOnly.length > 0) {
+                console.log('DEBUG: Colonnes disponibles dans ECART BO:', Object.keys(this.response.boOnly[0]));
+                console.log('DEBUG: Premier enregistrement ECART BO:', this.response.boOnly[0]);
             }
 
-            // Convertir les données ecart_bo en format EcartSolde
-            const ecartSoldeData: EcartSolde[] = allEcartBo.map(record => {
-                // Fonction helper pour obtenir la valeur avec fallback
+            // Convertir les données ECART BO en format EcartSolde
+            const ecartSoldeData: EcartSolde[] = this.response.boOnly.map((record, index) => {
                 const getValueWithFallback = (keys: string[]): string => {
                     for (const key of keys) {
                         if (record[key] !== undefined && record[key] !== null && record[key] !== '') {
-                            return record[key];
+                            return record[key].toString();
                         }
                     }
                     return '';
                 };
 
-                // Mapping avec les noms de colonnes exacts de vos données
-                const idTransaction = getValueWithFallback(['IDTransaction', 'id_transaction', 'idTransaction', 'ID_TRANSACTION', 'transaction_id', 'TransactionId']) || 'N/A';
-                const telephoneClient = getValueWithFallback(['téléphone client', 'telephone_client', 'telephoneClient', 'TELEPHONE_CLIENT', 'phone', 'Phone']) || '';
-                const montant = getValueWithFallback(['montant', 'Montant', 'MONTANT', 'amount', 'Amount', 'volume', 'Volume']) || '0';
-                const service = getValueWithFallback(['Service', 'service', 'SERVICE']) || 'N/A';
-                const agence = getValueWithFallback(['Agence', 'agence', 'AGENCE', 'agency', 'Agency']) || 'N/A';
-                const dateTransactionRaw = getValueWithFallback(['Date', 'date_transaction', 'dateTransaction', 'DATE_TRANSACTION', 'date']) || new Date().toISOString();
-                const numeroTransGu = getValueWithFallback(['Numéro Trans GU', 'numero_trans_gu', 'numeroTransGu', 'NUMERO_TRANS_GU', 'numero', 'Numero']) || '';
-                const pays = getValueWithFallback(['PAYS', 'pays', 'Pays', 'country', 'Country']) || '';
+                // Debug: Afficher les colonnes disponibles pour cet enregistrement
+                console.log(`DEBUG: Enregistrement ${index + 1} - Colonnes disponibles:`, Object.keys(record));
+                console.log(`DEBUG: Enregistrement ${index + 1} - Données brutes:`, record);
 
-                // Convertir le format de date "2025-07-25 20:58:15.0" en format ISO
-                let dateTransaction = dateTransactionRaw;
-                if (dateTransactionRaw && dateTransactionRaw.includes(' ')) {
-                    dateTransaction = dateTransactionRaw.replace(/\.0$/, '').replace(' ', 'T');
-                }
-
-                return {
-                    id: 0, // Sera généré par la base de données
-                    idTransaction: idTransaction.toString(),
-                    telephoneClient: telephoneClient.toString(),
-                    montant: parseFloat(montant.toString()) || 0,
-                    service: service.toString(),
-                    agence: agence.toString(),
-                    dateTransaction: dateTransaction,
-                    numeroTransGu: numeroTransGu.toString(),
-                    pays: pays.toString(),
-                    dateImport: new Date().toISOString(),
-                    statut: 'EN_ATTENTE',
-                    commentaire: 'Importé depuis ECART BO'
+                // Extraire les informations d'agence et de service
+                const agencyInfo = this.getBoOnlyAgencyAndService(record);
+                
+                // Fonction helper pour formater la date au format ISO
+                const formatDateForBackend = (dateStr: string): string => {
+                    if (!dateStr) return '';
+                    
+                    // Si la date est déjà au format ISO, la retourner
+                    if (dateStr.includes('T')) return dateStr;
+                    
+                    // Convertir le format "2025-07-09 12:40:18.0" en "2025-07-09T12:40:18"
+                    const cleanedDate = dateStr.replace(/\.\d+$/, ''); // Enlever les millisecondes
+                    return cleanedDate.replace(' ', 'T');
                 };
+
+                // Créer l'objet EcartSolde avec les données mappées
+                const ecartSolde: EcartSolde = {
+                    id: undefined, // Sera généré par la base de données
+                    idTransaction: getValueWithFallback(['IDTransaction', 'id_transaction', 'ID_TRANSACTION', 'transaction_id', 'TransactionId']),
+                    telephoneClient: getValueWithFallback(['téléphone client', 'telephone_client', 'TELEPHONE_CLIENT', 'phone', 'Phone']),
+                    montant: parseFloat(getValueWithFallback(['montant', 'Montant', 'MONTANT', 'amount', 'Amount', 'volume', 'Volume'])) || 0,
+                    service: agencyInfo.service,
+                    agence: agencyInfo.agency,
+                    dateTransaction: formatDateForBackend(agencyInfo.date),
+                    numeroTransGu: getValueWithFallback(['Numéro Trans GU', 'numero_trans_gu', 'NUMERO_TRANS_GU', 'transaction_number', 'TransactionNumber']),
+                    pays: agencyInfo.country,
+                    statut: 'EN_ATTENTE', // Statut par défaut
+                    commentaire: 'IMPACT J+1', // Commentaire par défaut
+                    dateImport: new Date().toISOString()
+                };
+
+                console.log(`DEBUG: Enregistrement ${index + 1} préparé:`, {
+                    idTransaction: ecartSolde.idTransaction,
+                    agence: ecartSolde.agence,
+                    service: ecartSolde.service,
+                    montant: ecartSolde.montant,
+                    agencyInfo: agencyInfo
+                });
+
+                return ecartSolde;
             });
 
-            // Validation des doublons avant sauvegarde
-            console.log('🔍 Validation des doublons en cours...');
+            console.log('DEBUG: Données converties en format EcartSolde:', ecartSoldeData.length, 'enregistrements');
+
+            // Validation des données avant sauvegarde
+            console.log('DEBUG: Validation des données - Nombre total d\'enregistrements:', ecartSoldeData.length);
             
-            // Créer un fichier temporaire pour la validation
-            const csvContent = this.createCsvContent(ecartSoldeData);
-            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-            const file = new File([blob], 'validation_temp.csv', { type: 'text/csv' });
-            
-            // Appeler l'endpoint de validation
-            const validationResult = await firstValueFrom(this.ecartSoldeService.validateFile(file));
-            
-            console.log('📊 Résultats de la validation:', validationResult);
-            
-            // Afficher les résultats de validation
-            let message = `📋 Résultats de la validation:\n`;
-            message += `• Lignes valides: ${validationResult.validLines}\n`;
-            message += `• Lignes avec erreurs: ${validationResult.errorLines}\n`;
-            message += `• Doublons détectés: ${validationResult.duplicates}\n`;
-            message += `• Nouveaux enregistrements: ${validationResult.newRecords}\n\n`;
-            
-            if (validationResult.hasErrors) {
-                message += `⚠️ Des erreurs ont été détectées:\n`;
-                // Vérifier si errors existe dans la réponse
-                const errors = validationResult.errors || [];
-                if (errors.length > 0) {
-                    errors.slice(0, 5).forEach((error: string) => {
-                        message += `• ${error}\n`;
-                    });
-                    if (errors.length > 5) {
-                        message += `• ... et ${errors.length - 5} autres erreurs\n`;
-                    }
-                }
-                message += `\nVoulez-vous continuer malgré les erreurs ?`;
-                
-                if (!confirm(message)) {
-                    console.log('❌ Sauvegarde annulée par l\'utilisateur');
-                    return;
-                }
-            } else {
-                message += `✅ Aucune erreur détectée.`;
-                alert(message);
+            // Log détaillé de chaque enregistrement pour le débogage
+            ecartSoldeData.forEach((record, index) => {
+                console.log(`DEBUG: Enregistrement ${index + 1} - Validation:`, {
+                    idTransaction: record.idTransaction,
+                    idTransactionValid: record.idTransaction && record.idTransaction.trim() !== '',
+                    agence: record.agence,
+                    agenceValid: record.agence && record.agence.trim() !== '',
+                    isValid: (record.idTransaction && record.idTransaction.trim() !== '') && (record.agence && record.agence.trim() !== '')
+                });
+            });
+
+            const validRecords = ecartSoldeData.filter(record => 
+                record.idTransaction && 
+                record.idTransaction.trim() !== '' && 
+                record.agence && 
+                record.agence.trim() !== ''
+            );
+
+            console.log('DEBUG: Nombre d\'enregistrements valides après filtrage:', validRecords.length);
+
+            if (validRecords.length === 0) {
+                console.error('DEBUG: Aucun enregistrement valide trouvé. Raisons possibles:');
+                console.error('- idTransaction manquant ou vide');
+                console.error('- agence manquante ou vide');
+                console.error('- Colonnes non trouvées dans les données source');
+                alert('❌ Aucune donnée valide trouvée pour la sauvegarde.');
+                return;
             }
+
+            console.log('DEBUG: Enregistrements valides pour sauvegarde:', validRecords.length);
+
+            // Créer le contenu CSV pour validation
+            const csvContent = this.createCsvContent(validRecords);
+            console.log('DEBUG: Contenu CSV généré pour validation');
+
+            // Afficher un message de confirmation avec les détails
+            const message = `📋 RÉSUMÉ DES DONNÉES À SAUVEGARDER:\n\n` +
+                `📊 Total des enregistrements ECART BO: ${this.response.boOnly.length}\n` +
+                `✅ Enregistrements valides: ${validRecords.length}\n` +
+                `❌ Enregistrements invalides: ${ecartSoldeData.length - validRecords.length}\n\n` +
+                `📝 Commentaire par défaut: "IMPACT J+1"\n` +
+                `🔄 Les doublons seront automatiquement ignorés.\n\n` +
+                `Voulez-vous continuer avec la sauvegarde ?`;
+
+            if (!confirm(message)) {
+                console.log('❌ Sauvegarde annulée par l\'utilisateur');
+                return;
+            }
+
+            console.log('✅ Confirmation utilisateur reçue, début de la sauvegarde...');
             
             // Sauvegarder les données via le service
-            const savedCount = await this.ecartSoldeService.createMultipleEcartSoldes(ecartSoldeData);
+            const result = await this.ecartSoldeService.createMultipleEcartSoldes(validRecords);
             
-            alert(`✅ ${savedCount} enregistrements ECART BO ont été sauvegardés avec succès dans la table Ecart Solde.`);
+            console.log('=== RÉSULTATS DE LA SAUVEGARDE ===');
+            console.log('DEBUG: Enregistrements reçus:', result.totalReceived);
+            console.log('DEBUG: Enregistrements créés:', result.count);
+            console.log('DEBUG: Doublons ignorés:', result.duplicates);
+            console.log('DEBUG: Message:', result.message);
             
-        } catch (error) {
-            console.error('Erreur lors de la sauvegarde des ECART BO:', error);
-            alert('❌ Erreur lors de la sauvegarde des ECART BO. Veuillez réessayer.');
+            // Afficher un message de succès détaillé
+            let successMessage = `✅ SAUVEGARDE TERMINÉE AVEC SUCCÈS!\n\n`;
+            successMessage += `📊 RÉSUMÉ:\n`;
+            successMessage += `• Enregistrements traités: ${result.totalReceived}\n`;
+            successMessage += `• Nouveaux enregistrements créés: ${result.count}\n`;
+            successMessage += `• Doublons ignorés: ${result.duplicates}\n\n`;
+            successMessage += `💾 Les données ont été sauvegardées dans la table Ecart Solde.`;
+            
+            alert(successMessage);
+            
+        } catch (error: any) {
+            console.error('❌ Erreur lors de la sauvegarde des ECART BO:', error);
+            
+            let errorMessage = '❌ Erreur lors de la sauvegarde des ECART BO.\n\n';
+            if (error.error?.error) {
+                errorMessage += `Détails: ${error.error.error}`;
+            } else if (error.message) {
+                errorMessage += `Détails: ${error.message}`;
+            } else {
+                errorMessage += 'Veuillez réessayer.';
+            }
+            
+            alert(errorMessage);
         } finally {
             this.isSavingEcartBo = false;
         }
@@ -2036,12 +2090,42 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
     }
 
     getBoOnlyAgencyAndService(record: Record<string, string>): { agency: string; service: string; volume: number; date: string; country: string } {
-        const agency = record['Agence'] || '';
-        const service = record['Service'] || '';
-        const volume = record['montant'] ? parseFloat(record['montant'].toString().replace(',', '.')) : 0;
-        const date = record['Date'] || '';
+        // Fonction helper pour trouver une valeur avec plusieurs noms de colonnes possibles
+        const getValueWithFallback = (possibleKeys: string[]): string => {
+            for (const key of possibleKeys) {
+                if (record[key] !== undefined && record[key] !== null && record[key] !== '') {
+                    return record[key].toString();
+                }
+            }
+            return '';
+        };
+
+        // Recherche d'agence avec plusieurs noms possibles
+        const agency = getValueWithFallback(['Agence', 'agence', 'AGENCE', 'agency', 'Agency', 'AGENCY']);
+        
+        // Recherche de service avec plusieurs noms possibles
+        const service = getValueWithFallback(['Service', 'service', 'SERVICE', 'serv', 'Serv']);
+        
+        // Recherche de volume/montant avec plusieurs noms possibles
+        const volumeStr = getValueWithFallback(['montant', 'Montant', 'MONTANT', 'amount', 'Amount', 'volume', 'Volume', 'VOLUME']);
+        const volume = volumeStr ? parseFloat(volumeStr.toString().replace(',', '.')) : 0;
+        
+        // Recherche de date avec plusieurs noms possibles
+        const date = getValueWithFallback(['Date', 'date', 'DATE', 'jour', 'Jour', 'JOUR', 'created', 'Created', 'CREATED']);
+        
+        // Recherche de pays
         const countryColumn = this.findCountryColumn(record);
         const country = countryColumn ? record[countryColumn] || 'Non spécifié' : 'Non spécifié';
+
+        console.log('DEBUG: getBoOnlyAgencyAndService - Valeurs extraites:', {
+            agency,
+            service,
+            volume,
+            date,
+            country,
+            availableKeys: Object.keys(record)
+        });
+
         return { agency, service, volume, date, country };
     }
 

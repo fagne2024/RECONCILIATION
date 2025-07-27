@@ -69,6 +69,36 @@ public class ProfilController {
         return profilService.createModule(module);
     }
 
+    @PutMapping("/modules/{id}")
+    public ModuleEntity updateModule(@PathVariable Long id, @RequestBody ModuleEntity module) {
+        module.setId(id);
+        return profilService.updateModule(module);
+    }
+
+    @DeleteMapping("/modules/{id}")
+    public ResponseEntity<Map<String, String>> deleteModule(@PathVariable Long id) {
+        System.out.println("🗑️ DELETE /api/profils/modules/" + id + " - Requête reçue");
+        try {
+            profilService.deleteModule(id);
+            System.out.println("✅ Module supprimé avec succès: ID " + id);
+            Map<String, String> response = new HashMap<>();
+            response.put("message", "Module supprimé avec succès");
+            response.put("id", id.toString());
+            return ResponseEntity.ok(response);
+        } catch (RuntimeException e) {
+            System.out.println("❌ Erreur lors de la suppression: " + e.getMessage());
+            Map<String, String> response = new HashMap<>();
+            response.put("error", e.getMessage());
+            return ResponseEntity.badRequest().body(response);
+        } catch (Exception e) {
+            System.out.println("❌ Erreur inattendue lors de la suppression: " + e.getMessage());
+            e.printStackTrace();
+            Map<String, String> response = new HashMap<>();
+            response.put("error", "Erreur lors de la suppression du module");
+            return ResponseEntity.internalServerError().body(response);
+        }
+    }
+
     // Permissions
     @GetMapping("/permissions")
     public List<PermissionEntity> getAllPermissions() {

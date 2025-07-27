@@ -127,14 +127,32 @@ export class EcartSoldeService {
     return this.http.post<EcartSolde>(this.apiUrl, ecartSolde);
   }
 
-  createMultipleEcartSoldes(ecartSoldes: EcartSolde[]): Promise<number> {
+  createMultipleEcartSoldes(ecartSoldes: EcartSolde[]): Promise<{
+    count: number;
+    duplicates: number;
+    totalReceived: number;
+    message: string;
+  }> {
     return new Promise((resolve, reject) => {
       this.http.post<any>(`${this.apiUrl}/batch`, ecartSoldes).subscribe({
         next: (response) => {
-          resolve(response.count || ecartSoldes.length);
+          console.log('=== RÉPONSE createMultipleEcartSoldes ===');
+          console.log('DEBUG: Réponse complète:', response);
+          console.log('DEBUG: Enregistrements créés:', response.count);
+          console.log('DEBUG: Doublons ignorés:', response.duplicates);
+          console.log('DEBUG: Total reçu:', response.totalReceived);
+          
+          resolve({
+            count: response.count || 0,
+            duplicates: response.duplicates || 0,
+            totalReceived: response.totalReceived || ecartSoldes.length,
+            message: response.message || 'Enregistrements créés avec succès'
+          });
         },
         error: (error) => {
-          console.error('Erreur lors de la sauvegarde en lot:', error);
+          console.error('=== ERREUR createMultipleEcartSoldes ===');
+          console.error('DEBUG: Erreur complète:', error);
+          console.error('DEBUG: Message d\'erreur:', error.error?.error || error.message);
           reject(error);
         }
       });

@@ -145,74 +145,291 @@
   </div>
 
   <div *ngIf="selectedProfil" class="profil-droits">
-    <h3>Droits du profil : {{ selectedProfil.nom }}</h3>
-    <table class="droits-table">
-      <thead>
-        <tr>
-          <th>Module</th>
-          <th *ngFor="let permission of permissions">{{ permission.nom }}</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr *ngFor="let module of getAssociatedModules()">
-          <td>{{ module.nom }}</td>
-          <td *ngFor="let permission of permissions">
-            <input type="checkbox"
-              [checked]="hasPermission(module, permission)"
-              (change)="togglePermission(module, permission, $event)"
-            />
-          </td>
-        </tr>
-      </tbody>
-    </table>
-  </div>
-
-  <div *ngIf="selectedProfil" class="module-action-management">
-    <h3>Choisir un menu (module)</h3>
-    <select [(ngModel)]="selectedModuleId" (change)="onModuleChange()">
-      <option value="" disabled>Choisir un menu</option>
-      <option *ngFor="let module of modules" [value]="module.id">{{ module.nom }}</option>
-    </select>
-  </div>
-
-  <div *ngIf="selectedProfil && selectedModuleId" class="permission-management">
-    <h3>Ajouter une action (permission) au menu sélectionné</h3>
-    
-    <div *ngIf="loadingModulePermissions" class="loading-message">
-      Chargement des actions disponibles...
+    <div class="droits-header">
+      <h3><i class="fas fa-shield-alt"></i> Droits du profil : {{ selectedProfil.nom }}</h3>
+      <div class="droits-summary">
+        <span class="summary-item">
+          <i class="fas fa-cube"></i> {{ getAssociatedModules().length }} module(s)
+        </span>
+        <span class="summary-item">
+          <i class="fas fa-key"></i> {{ profilPermissions.length }} permission(s)
+        </span>
+      </div>
     </div>
-    
-    <div *ngIf="!loadingModulePermissions">
-      <p class="info-message">
-        Sélectionnez une action dans la liste ci-dessous. Les actions déjà attribuées à ce profil pour ce module sont désactivées.
-      </p>
-      <select [(ngModel)]="selectedPermissionName">
-        <option value="" disabled>Choisir une action existante</option>
-        <option *ngFor="let permission of availableModulePermissions" [value]="permission.nom" [disabled]="permissionExistsForModule(permission.nom)">
-          {{ permission.nom }}{{ permissionExistsForModule(permission.nom) ? ' (déjà attribuée)' : '' }}
-        </option>
-      </select>
-      <button (click)="addExistingPermissionToModule()" [disabled]="!selectedPermissionName || permissionExistsForModule(selectedPermissionName)">Ajouter l'action sélectionnée</button>
-      <br><br>
-      <input [(ngModel)]="newPermissionName" placeholder="Nouvelle action (ex: Valider)">
-      <button (click)="createPermissionForModule()" [disabled]="!newPermissionName || permissionExistsForModule(newPermissionName)">Ajouter la nouvelle action</button>
+
+    <div *ngIf="getAssociatedModules().length === 0" class="no-modules-message">
+      <i class="fas fa-info-circle"></i>
+      <p>Aucun module associé à ce profil. Ajoutez des modules pour gérer les permissions.</p>
+    </div>
+
+    <div *ngIf="getAssociatedModules().length > 0" class="droits-content">
+      <div class="permissions-overview">
+        <h4><i class="fas fa-list"></i> Vue d'ensemble des permissions</h4>
+        <div class="permissions-grid">
+          <div *ngFor="let permission of permissions" class="permission-card">
+            <div class="permission-header">
+              <i class="fas fa-check-circle" [class.active]="getPermissionUsageCount(permission) > 0"></i>
+              <span class="permission-name">{{ permission.nom }}</span>
+              <span class="permission-count">{{ getPermissionUsageCount(permission) }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="modules-permissions">
+        <h4><i class="fas fa-table"></i> Permissions par module</h4>
+        <div class="modules-grid">
+          <div *ngFor="let module of getAssociatedModules()" class="module-card">
+            <div class="module-header">
+              <h5><i class="fas fa-folder"></i> {{ module.nom }}</h5>
+              <span class="module-permissions-count">
+                {{ getModulePermissionsCount(module) }} permission(s)
+              </span>
+            </div>
+            
+            <div class="permissions-list">
+              <div *ngFor="let permission of permissions" class="permission-item">
+                <label class="permission-checkbox">
+                  <input type="checkbox"
+                    [checked]="hasPermission(module, permission)"
+                    (change)="togglePermission(module, permission, $event)"
+                    [id]="'perm-' + module.id + '-' + permission.id"
+                  />
+                  <span class="checkmark"></span>
+                  <span class="permission-label">{{ permission.nom }}</span>
+                </label>
+              </div>
+            </div>
+
+            <div class="module-actions">
+              <button class="btn-action" (click)="selectAllPermissions(module)" 
+                      [disabled]="hasAllPermissions(module)">
+                <i class="fas fa-check-double"></i> Tout sélectionner
+              </button>
+              <button class="btn-action" (click)="deselectAllPermissions(module)"
+                      [disabled]="!hasAnyPermission(module)">
+                <i class="fas fa-times"></i> Tout désélectionner
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 
-  <div *ngIf="selectedProfil" class="module-management">
-    <h3>Gestion des menus (modules)</h3>
-    <ul>
-      <li *ngFor="let module of modules">
-        {{ module.nom }}
-        <button (click)="deleteModule(module)">Supprimer</button>
-      </li>
-    </ul>
-    <select [(ngModel)]="selectedMenuName">
-      <option value="" disabled>Choisir un menu</option>
-      <option *ngFor="let menu of appMenus" [value]="menu" [disabled]="menuExists(menu)">
-        {{ menu }}
-      </option>
-    </select>
-    <button (click)="createModule()" [disabled]="!selectedMenuName || menuExists(selectedMenuName)">Ajouter le menu</button>
+  <div *ngIf="selectedProfil" class="module-selection-section">
+    <div class="module-selection-header">
+      <h3><i class="fas fa-plus-circle"></i> Ajouter des modules au profil</h3>
+      <div class="module-selection-summary">
+        <span class="summary-item">
+          <i class="fas fa-cube"></i> {{ modules.length }} module(s) disponible(s)
+        </span>
+        <span class="summary-item">
+          <i class="fas fa-check-circle"></i> {{ getAssociatedModules().length }} module(s) associé(s)
+        </span>
+      </div>
+    </div>
+
+    <div class="module-selection-content">
+      <div class="module-selector">
+        <div class="selector-header">
+          <h4><i class="fas fa-list"></i> Sélectionner un module</h4>
+          <p class="selector-description">
+            Choisissez un module dans la liste ci-dessous pour l'ajouter au profil et gérer ses permissions.
+          </p>
+        </div>
+
+        <div class="module-dropdown-container">
+          <div class="custom-select" (click)="toggleModuleDropdown()">
+            <div class="select-display">
+              <i class="fas fa-folder"></i>
+              <span *ngIf="selectedModuleId; else noModuleSelected">
+                {{ getSelectedModuleName() }}
+              </span>
+              <ng-template #noModuleSelected>
+                <span class="placeholder">Choisir un module</span>
+              </ng-template>
+              <i class="fas fa-chevron-down dropdown-arrow" [class.rotated]="showModuleDropdown"></i>
+            </div>
+            
+            <div class="dropdown-options" *ngIf="showModuleDropdown">
+              <div *ngFor="let module of modules" 
+                   class="dropdown-option" 
+                   (click)="selectModule(module)"
+                   [class.selected]="selectedModuleId === module.id">
+                <i class="fas fa-folder"></i>
+                <span>{{ module.nom }}</span>
+                <span class="option-status" *ngIf="isModuleAssociated(module)">
+                  <i class="fas fa-check-circle"></i> Associé
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div *ngIf="selectedModuleId" class="module-actions">
+          <button class="btn-module-action" 
+                  (click)="associateModule()" 
+                  [disabled]="isModuleAssociated(getSelectedModule())"
+                  [class.disabled]="isModuleAssociated(getSelectedModule())">
+            <i class="fas fa-link"></i>
+            {{ isModuleAssociated(getSelectedModule()) ? 'Module déjà associé' : 'Associer le module' }}
+          </button>
+        </div>
+      </div>
+
+      <div *ngIf="selectedModuleId && !isModuleAssociated(getSelectedModule())" class="permission-addition">
+        <div class="permission-addition-header">
+          <h4><i class="fas fa-key"></i> Ajouter des permissions au module</h4>
+          <p class="addition-description">
+            Sélectionnez des permissions existantes ou créez de nouvelles permissions pour ce module.
+          </p>
+        </div>
+
+        <div *ngIf="loadingModulePermissions" class="loading-container">
+          <div class="loading-spinner">
+            <i class="fas fa-spinner fa-spin"></i>
+          </div>
+          <p>Chargement des permissions disponibles...</p>
+        </div>
+
+        <div *ngIf="!loadingModulePermissions" class="permission-addition-content">
+          <div class="existing-permissions">
+            <h5><i class="fas fa-list-check"></i> Permissions existantes</h5>
+            <div class="permissions-grid">
+              <div *ngFor="let permission of availableModulePermissions" 
+                   class="permission-option"
+                   [class.disabled]="permissionExistsForModule(permission.nom)">
+                <label class="permission-option-label">
+                  <input type="checkbox"
+                         [checked]="permissionExistsForModule(permission.nom)"
+                         [disabled]="permissionExistsForModule(permission.nom)"
+                         (change)="togglePermissionSelection(permission)">
+                  <span class="custom-checkbox"></span>
+                  <span class="permission-name">{{ permission.nom }}</span>
+                  <span class="permission-status" *ngIf="permissionExistsForModule(permission.nom)">
+                    <i class="fas fa-check"></i> Ajoutée
+                  </span>
+                </label>
+              </div>
+            </div>
+            
+            <div class="permission-actions">
+              <button class="btn-permission-action" 
+                      (click)="addSelectedPermissions()"
+                      [disabled]="!hasSelectedPermissions()">
+                <i class="fas fa-plus"></i>
+                Ajouter les permissions sélectionnées
+              </button>
+            </div>
+          </div>
+
+          <div class="new-permission-creation">
+            <h5><i class="fas fa-plus-circle"></i> Créer une nouvelle permission</h5>
+            <div class="new-permission-form">
+              <div class="input-group">
+                <input [(ngModel)]="newPermissionName" 
+                       placeholder="Nom de la nouvelle permission (ex: Valider)"
+                       class="permission-input"
+                       (keyup.enter)="createPermissionForModule()">
+                <button class="btn-create-permission" 
+                        (click)="createPermissionForModule()"
+                        [disabled]="!newPermissionName || permissionExistsForModule(newPermissionName)">
+                  <i class="fas fa-plus"></i>
+                  Créer
+                </button>
+              </div>
+              <p class="form-help">
+                <i class="fas fa-info-circle"></i>
+                La nouvelle permission sera automatiquement associée au module sélectionné.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div *ngIf="selectedProfil" class="module-management-section">
+    <div class="module-management-header">
+      <h3><i class="fas fa-cogs"></i> Gestion des modules</h3>
+      <div class="management-summary">
+        <span class="summary-item">
+          <i class="fas fa-folder"></i> {{ modules.length }} module(s) total
+        </span>
+        <span class="summary-item">
+          <i class="fas fa-trash"></i> {{ getDeletableModulesCount() }} supprimable(s)
+        </span>
+      </div>
+    </div>
+
+    <div class="module-management-content">
+      <div class="modules-list">
+        <div *ngFor="let module of modules" class="module-item">
+          <div class="module-info">
+            <i class="fas fa-folder"></i>
+            <span class="module-name">{{ module.nom }}</span>
+            <span class="module-status" *ngIf="isModuleAssociated(module)">
+              <i class="fas fa-link"></i> Associé au profil
+            </span>
+          </div>
+          <div class="module-actions">
+            <button class="btn-module-delete" 
+                    (click)="deleteModule(module)"
+                    [disabled]="isModuleAssociated(module)"
+                    [title]="isModuleAssociated(module) ? 'Impossible de supprimer un module associé' : 'Supprimer le module'">
+              <i class="fas fa-trash"></i>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="module-creation">
+        <h4><i class="fas fa-plus"></i> Créer un nouveau module</h4>
+        <div class="creation-form">
+          <div class="module-selector">
+            <div class="selector-header">
+              <h5>Sélectionner depuis la liste prédéfinie</h5>
+            </div>
+            <div class="module-dropdown-container">
+              <div class="custom-select" (click)="toggleMenuDropdown()">
+                <div class="select-display">
+                  <i class="fas fa-list"></i>
+                  <span *ngIf="selectedMenuName; else noMenuSelected">
+                    {{ selectedMenuName }}
+                  </span>
+                  <ng-template #noMenuSelected>
+                    <span class="placeholder">Choisir un menu</span>
+                  </ng-template>
+                  <i class="fas fa-chevron-down dropdown-arrow" [class.rotated]="showMenuDropdown"></i>
+                </div>
+                
+                <div class="dropdown-options" *ngIf="showMenuDropdown">
+                  <div *ngFor="let menu of appMenus" 
+                       class="dropdown-option" 
+                       (click)="selectMenu(menu)"
+                       [class.disabled]="menuExists(menu)">
+                    <i class="fas fa-list"></i>
+                    <span>{{ menu }}</span>
+                    <span class="option-status" *ngIf="menuExists(menu)">
+                      <i class="fas fa-check-circle"></i> Existe déjà
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            <div class="creation-actions">
+              <button class="btn-create-module" 
+                      (click)="createModule()"
+                      [disabled]="!selectedMenuName || menuExists(selectedMenuName)">
+                <i class="fas fa-plus"></i>
+                Créer le module
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </div> 

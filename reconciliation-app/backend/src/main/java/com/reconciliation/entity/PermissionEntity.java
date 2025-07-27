@@ -1,6 +1,7 @@
 package com.reconciliation.entity;
 
 import jakarta.persistence.*;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import java.util.Set;
 import com.reconciliation.entity.ProfilPermissionEntity;
 
@@ -15,6 +16,7 @@ public class PermissionEntity {
     private String nom;
 
     @OneToMany(mappedBy = "permission")
+    @JsonIgnore
     private Set<ProfilPermissionEntity> profilPermissions;
 
     // Getters et setters

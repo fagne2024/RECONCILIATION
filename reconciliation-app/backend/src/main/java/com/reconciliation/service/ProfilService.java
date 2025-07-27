@@ -76,6 +76,37 @@ public class ProfilService {
     // Modules
     public List<ModuleEntity> getAllModules() { return moduleRepository.findAll(); }
     public ModuleEntity createModule(ModuleEntity module) { return moduleRepository.save(module); }
+    public ModuleEntity updateModule(ModuleEntity module) { return moduleRepository.save(module); }
+    @Transactional
+    public void deleteModule(Long id) { 
+        System.out.println("💾 Tentative de suppression du module ID: " + id);
+        
+        // Vérifier si le module existe
+        if (!moduleRepository.existsById(id)) {
+            System.out.println("❌ Module non trouvé avec l'ID: " + id);
+            throw new RuntimeException("Module non trouvé avec l'ID: " + id);
+        }
+        
+        System.out.println("✅ Module trouvé, suppression des permissions associées...");
+        
+        // Supprimer d'abord les permissions associées au module
+        List<ProfilPermissionEntity> permissions = profilPermissionRepository.findAll().stream()
+            .filter(pp -> pp.getModule().getId().equals(id))
+            .toList();
+        
+        System.out.println("🗑️ Suppression de " + permissions.size() + " permissions associées");
+        profilPermissionRepository.deleteAll(permissions);
+        
+        // Supprimer les associations module-permission
+        List<ModulePermissionEntity> modulePermissions = modulePermissionRepository.findByModuleId(id);
+        System.out.println("🗑️ Suppression de " + modulePermissions.size() + " associations module-permission");
+        modulePermissionRepository.deleteAll(modulePermissions);
+        
+        System.out.println("✅ Permissions supprimées, suppression du module...");
+        
+        moduleRepository.deleteById(id);
+        System.out.println("✅ Module supprimé avec succès: ID " + id);
+    }
 
     // Permissions
     public List<PermissionEntity> getAllPermissions() { return permissionRepository.findAll(); }

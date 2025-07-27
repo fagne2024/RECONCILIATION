@@ -372,7 +372,7 @@
       
       <!-- Option : Supprimer des caractères spécifiques -->
       <label>
-        <input type="checkbox" [(ngModel)]="formatOptions['removeSpecificCharacters']"> Supprimer des caractères spécifiques
+        <input type="checkbox" [(ngModel)]="formatOptions['removeSpecificCharacters']"> Supprimer des chaînes de caractères
       </label>
       <div *ngIf="formatOptions['removeSpecificCharacters']" class="format-columns">
         <label>Colonnes à traiter :</label>
@@ -381,11 +381,11 @@
         </select>
         <div class="remove-specific-char-options">
           <div class="option-group">
-            <label>Caractères à supprimer :</label>
+            <label>Chaîne à supprimer :</label>
             <input type="text" [(ngModel)]="specificCharactersToRemove" 
-                   placeholder="Ex: abc123" 
+                   placeholder="Ex: _CM ou abc123" 
                    style="width: 200px;"
-                   title="Tapez les caractères que vous voulez supprimer">
+                   title="Tapez la chaîne de caractères que vous voulez supprimer">
           </div>
           <div class="option-group">
             <label>
@@ -427,10 +427,12 @@
           
           <div class="option-group">
             <small class="help-text">
-              💡 Exemples : 
-              <br>• "abc" supprimera a, b, c
-              <br>• "123" supprimera 1, 2, 3
-              <br>• "éèê" supprimera é, è, ê
+              💡 Exemples de chaînes à supprimer : 
+              <br>• "_CM" supprimera toutes les occurrences de "_CM"
+              <br>• "abc" supprimera toutes les occurrences de "abc"
+              <br>• "123" supprimera toutes les occurrences de "123"
+              <br>• "éèê" supprimera toutes les occurrences de "éèê"
+              <br>• " " supprimera tous les espaces
             </small>
           </div>
         </div>

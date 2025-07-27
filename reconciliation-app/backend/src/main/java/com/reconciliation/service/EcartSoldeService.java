@@ -107,20 +107,53 @@ public class EcartSoldeService {
     
     @Transactional
     public List<EcartSolde> createMultipleEcartSoldes(List<EcartSolde> ecartSoldes) {
-        List<EcartSoldeEntity> entities = ecartSoldes.stream()
-                .map(this::convertToEntity)
-                .collect(Collectors.toList());
+        List<EcartSoldeEntity> entitiesToSave = new ArrayList<>();
+        List<EcartSolde> savedEcartSoldes = new ArrayList<>();
+        int duplicatesCount = 0;
+        int newRecordsCount = 0;
         
-        List<EcartSoldeEntity> savedEntities = ecartSoldeRepository.saveAll(entities);
+        System.out.println("=== DÉBUT createMultipleEcartSoldes ===");
+        System.out.println("DEBUG: Nombre d'écarts de solde à traiter: " + ecartSoldes.size());
         
-        // SUPPRIMÉ: Création automatique des frais de transaction pour les écarts de solde
-        // for (EcartSoldeEntity savedEntity : savedEntities) {
-        //     createFraisTransactionForEcartSolde(savedEntity);
-        // }
+        for (EcartSolde ecartSolde : ecartSoldes) {
+            // Vérifier si c'est un doublon
+            if (ecartSolde.getIdTransaction() != null && !ecartSolde.getIdTransaction().trim().isEmpty()) {
+                if (ecartSoldeRepository.existsByIdTransaction(ecartSolde.getIdTransaction())) {
+                    System.out.println("DEBUG: Doublon détecté pour ID: " + ecartSolde.getIdTransaction());
+                    duplicatesCount++;
+                    continue; // Ignorer ce doublon
+                }
+            }
+            
+            // Ajouter le commentaire par défaut si aucun commentaire n'est défini
+            if (ecartSolde.getCommentaire() == null || ecartSolde.getCommentaire().trim().isEmpty()) {
+                ecartSolde.setCommentaire("IMPACT J+1");
+                System.out.println("DEBUG: Commentaire par défaut ajouté pour ID: " + ecartSolde.getIdTransaction());
+            }
+            
+            // Convertir en entité et ajouter à la liste à sauvegarder
+            EcartSoldeEntity entity = convertToEntity(ecartSolde);
+            entitiesToSave.add(entity);
+            newRecordsCount++;
+            System.out.println("DEBUG: Nouvel enregistrement préparé pour ID: " + ecartSolde.getIdTransaction());
+        }
         
-        return savedEntities.stream()
-                .map(this::convertToModel)
-                .collect(Collectors.toList());
+        System.out.println("DEBUG: Résultats de la vérification:");
+        System.out.println("  - Doublons ignorés: " + duplicatesCount);
+        System.out.println("  - Nouveaux enregistrements à sauvegarder: " + newRecordsCount);
+        
+        // Sauvegarder seulement les nouveaux enregistrements
+        if (!entitiesToSave.isEmpty()) {
+            List<EcartSoldeEntity> savedEntities = ecartSoldeRepository.saveAll(entitiesToSave);
+            savedEcartSoldes = savedEntities.stream()
+                    .map(this::convertToModel)
+                    .collect(Collectors.toList());
+            
+            System.out.println("DEBUG: Enregistrements sauvegardés avec succès: " + savedEcartSoldes.size());
+        }
+        
+        System.out.println("=== FIN createMultipleEcartSoldes ===");
+        return savedEcartSoldes;
     }
     
     @Transactional
@@ -224,16 +257,22 @@ public class EcartSoldeService {
         
         String fileName = file.getOriginalFilename().toLowerCase();
         
+        System.out.println("=== DÉBUT uploadCsvFile ===");
+        System.out.println("DEBUG: Nom du fichier: " + fileName);
+        
         if (fileName.endsWith(".csv")) {
             // Traitement des fichiers CSV
             try (BufferedReader br = new BufferedReader(new InputStreamReader(file.getInputStream()))) {
                 String line;
                 boolean isFirstLine = true;
+                int lineNumber = 0;
                 
                 while ((line = br.readLine()) != null) {
+                    lineNumber++;
                     if (isFirstLine) {
                         // Ignorer l'en-tête
                         isFirstLine = false;
+                        System.out.println("DEBUG: En-tête ignoré: " + line);
                         continue;
                     }
                     
@@ -242,25 +281,44 @@ public class EcartSoldeService {
                     if (values.length >= 9) {
                         try {
                             EcartSolde ecartSolde = parseEcartSoldeFromValues(values, formatter);
+                            
+                            // Ajouter le commentaire par défaut si aucun commentaire n'est défini
+                            if (ecartSolde.getCommentaire() == null || ecartSolde.getCommentaire().trim().isEmpty()) {
+                                ecartSolde.setCommentaire("IMPACT J+1");
+                                System.out.println("DEBUG: Commentaire par défaut ajouté pour ID: " + ecartSolde.getIdTransaction());
+                            }
+                            
                             ecartSoldes.add(ecartSolde);
+                            System.out.println("DEBUG: Ligne " + lineNumber + " parsée avec succès pour ID: " + ecartSolde.getIdTransaction());
                         } catch (Exception e) {
                             // Ignorer les lignes avec des erreurs de parsing
-                            System.err.println("Erreur lors du parsing de la ligne CSV: " + line + " - " + e.getMessage());
+                            System.err.println("Erreur lors du parsing de la ligne CSV " + lineNumber + ": " + line + " - " + e.getMessage());
                         }
+                    } else {
+                        System.err.println("Ligne " + lineNumber + " ignorée - nombre de colonnes insuffisant: " + values.length);
                     }
                 }
             }
-        } else if (fileName.endsWith(".xlsx") || fileName.endsWith(".xls")) {
+        } else {
             // Traitement des fichiers Excel
             try (Workbook workbook = WorkbookFactory.create(file.getInputStream())) {
                 Sheet sheet = workbook.getSheetAt(0); // Première feuille
+                System.out.println("DEBUG: Nombre de lignes dans la feuille: " + sheet.getLastRowNum());
                 
                 for (int i = 1; i <= sheet.getLastRowNum(); i++) { // Commencer à 1 pour ignorer l'en-tête
                     Row row = sheet.getRow(i);
                     if (row != null) {
                         try {
                             EcartSolde ecartSolde = parseEcartSoldeFromExcelRow(row, formatter);
+                            
+                            // Ajouter le commentaire par défaut si aucun commentaire n'est défini
+                            if (ecartSolde.getCommentaire() == null || ecartSolde.getCommentaire().trim().isEmpty()) {
+                                ecartSolde.setCommentaire("IMPACT J+1");
+                                System.out.println("DEBUG: Commentaire par défaut ajouté pour ID: " + ecartSolde.getIdTransaction());
+                            }
+                            
                             ecartSoldes.add(ecartSolde);
+                            System.out.println("DEBUG: Ligne " + (i + 1) + " parsée avec succès pour ID: " + ecartSolde.getIdTransaction());
                         } catch (Exception e) {
                             // Ignorer les lignes avec des erreurs de parsing
                             System.err.println("Erreur lors du parsing de la ligne Excel " + (i + 1) + " - " + e.getMessage());
@@ -270,21 +328,47 @@ public class EcartSoldeService {
             }
         }
         
-        // Sauvegarder tous les écarts de solde
-        List<EcartSoldeEntity> entities = ecartSoldes.stream()
-                .map(this::convertToEntity)
-                .collect(Collectors.toList());
+        System.out.println("DEBUG: Nombre total d'écarts de solde parsés: " + ecartSoldes.size());
         
-        List<EcartSoldeEntity> savedEntities = ecartSoldeRepository.saveAll(entities);
+        // Filtrer les doublons et sauvegarder
+        List<EcartSoldeEntity> entitiesToSave = new ArrayList<>();
+        int duplicatesCount = 0;
+        int newRecordsCount = 0;
         
-        // SUPPRIMÉ: Création automatique des frais de transaction pour les écarts de solde
-        // for (EcartSoldeEntity savedEntity : savedEntities) {
-        //     createFraisTransactionForEcartSolde(savedEntity);
-        // }
+        for (EcartSolde ecartSolde : ecartSoldes) {
+            // Vérifier si c'est un doublon
+            if (ecartSolde.getIdTransaction() != null && !ecartSolde.getIdTransaction().trim().isEmpty()) {
+                if (ecartSoldeRepository.existsByIdTransaction(ecartSolde.getIdTransaction())) {
+                    System.out.println("DEBUG: Doublon détecté pour ID: " + ecartSolde.getIdTransaction());
+                    duplicatesCount++;
+                    continue; // Ignorer ce doublon
+                }
+            }
+            
+            // Convertir en entité et ajouter à la liste à sauvegarder
+            EcartSoldeEntity entity = convertToEntity(ecartSolde);
+            entitiesToSave.add(entity);
+            newRecordsCount++;
+            System.out.println("DEBUG: Nouvel enregistrement préparé pour ID: " + ecartSolde.getIdTransaction());
+        }
         
-        return savedEntities.stream()
-                .map(this::convertToModel)
-                .collect(Collectors.toList());
+        System.out.println("DEBUG: Résultats de la vérification:");
+        System.out.println("  - Doublons ignorés: " + duplicatesCount);
+        System.out.println("  - Nouveaux enregistrements à sauvegarder: " + newRecordsCount);
+        
+        // Sauvegarder seulement les nouveaux enregistrements
+        List<EcartSolde> savedEcartSoldes = new ArrayList<>();
+        if (!entitiesToSave.isEmpty()) {
+            List<EcartSoldeEntity> savedEntities = ecartSoldeRepository.saveAll(entitiesToSave);
+            savedEcartSoldes = savedEntities.stream()
+                    .map(this::convertToModel)
+                    .collect(Collectors.toList());
+            
+            System.out.println("DEBUG: Enregistrements sauvegardés avec succès: " + savedEcartSoldes.size());
+        }
+        
+        System.out.println("=== FIN uploadCsvFile ===");
+        return savedEcartSoldes;
     }
     
     public Map<String, Object> validateFile(MultipartFile file) throws IOException {

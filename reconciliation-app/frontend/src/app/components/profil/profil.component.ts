@@ -381,4 +381,147 @@ export class ProfilComponent implements OnInit {
       this.loadingModulePermissions = false;
     }
   }
+
+  // Nouvelles méthodes pour améliorer la vue des droits
+  getPermissionUsageCount(permission: Permission): number {
+    return this.profilPermissions.filter(pp => pp.permission.id === permission.id).length;
+  }
+
+  getModulePermissionsCount(module: Module): number {
+    return this.profilPermissions.filter(pp => pp.module.id === module.id).length;
+  }
+
+  hasAllPermissions(module: Module): boolean {
+    return this.permissions.every(permission => this.hasPermission(module, permission));
+  }
+
+  hasAnyPermission(module: Module): boolean {
+    return this.permissions.some(permission => this.hasPermission(module, permission));
+  }
+
+  selectAllPermissions(module: Module) {
+    if (!this.selectedProfil) return;
+    
+    this.permissions.forEach(permission => {
+      if (!this.hasPermission(module, permission)) {
+        this.profilService.addPermissionToProfil(this.selectedProfil!.id!, module.id!, permission.id!).subscribe(pp => {
+          this.profilPermissions.push(pp);
+        });
+      }
+    });
+  }
+
+  deselectAllPermissions(module: Module) {
+    const modulePermissions = this.profilPermissions.filter(pp => pp.module.id === module.id);
+    
+    modulePermissions.forEach(pp => {
+      if (pp.id) {
+        this.profilService.removePermissionFromProfil(pp.id).subscribe(() => {
+          this.profilPermissions = this.profilPermissions.filter(p => p.id !== pp.id);
+        });
+      }
+    });
+  }
+
+  // Nouvelles propriétés pour les dropdowns
+  showModuleDropdown = false;
+  showMenuDropdown = false;
+  selectedPermissions: Permission[] = [];
+
+  // Nouvelles méthodes pour l'interface améliorée
+  toggleModuleDropdown() {
+    this.showModuleDropdown = !this.showModuleDropdown;
+    if (this.showModuleDropdown) {
+      this.showMenuDropdown = false;
+    }
+  }
+
+  toggleMenuDropdown() {
+    this.showMenuDropdown = !this.showMenuDropdown;
+    if (this.showMenuDropdown) {
+      this.showModuleDropdown = false;
+    }
+  }
+
+  selectModule(module: Module) {
+    this.selectedModuleId = module.id!;
+    this.showModuleDropdown = false;
+    this.onModuleChange();
+  }
+
+  selectMenu(menu: string) {
+    this.selectedMenuName = menu;
+    this.showMenuDropdown = false;
+  }
+
+  getSelectedModuleName(): string {
+    const module = this.modules.find(m => m.id === this.selectedModuleId);
+    return module ? module.nom : '';
+  }
+
+  getSelectedModule(): Module | undefined {
+    return this.modules.find(m => m.id === this.selectedModuleId);
+  }
+
+  isModuleAssociated(module: Module | undefined): boolean {
+    if (!module) return false;
+    return this.getAssociatedModules().some(m => m.id === module.id);
+  }
+
+  associateModule() {
+    if (!this.selectedProfil || !this.selectedModuleId) return;
+    
+    const module = this.getSelectedModule();
+    if (module && !this.isModuleAssociated(module)) {
+      // Associer toutes les permissions existantes à ce module pour ce profil
+      this.permissions.forEach(permission => {
+        this.profilService.addPermissionToProfil(this.selectedProfil!.id!, module.id!, permission.id!).subscribe(pp => {
+          this.profilPermissions.push(pp);
+        });
+      });
+      
+      // Recharger les données
+      this.loadProfils();
+      this.loadModules();
+    }
+  }
+
+  togglePermissionSelection(permission: Permission) {
+    const index = this.selectedPermissions.findIndex(p => p.id === permission.id);
+    if (index > -1) {
+      this.selectedPermissions.splice(index, 1);
+    } else {
+      this.selectedPermissions.push(permission);
+    }
+  }
+
+  hasSelectedPermissions(): boolean {
+    return this.selectedPermissions.length > 0;
+  }
+
+  addSelectedPermissions() {
+    if (!this.selectedProfil || !this.selectedModuleId || this.selectedPermissions.length === 0) return;
+    
+    const module = this.getSelectedModule();
+    if (module) {
+      this.selectedPermissions.forEach(permission => {
+        if (!this.permissionExistsForModule(permission.nom)) {
+          this.profilService.addPermissionToProfil(this.selectedProfil!.id!, module.id!, permission.id!).subscribe(pp => {
+            this.profilPermissions.push(pp);
+          });
+        }
+      });
+      
+      // Vider la sélection
+      this.selectedPermissions = [];
+      
+      // Recharger les données
+      this.loadProfils();
+      this.loadModules();
+    }
+  }
+
+  getDeletableModulesCount(): number {
+    return this.modules.filter(module => !this.isModuleAssociated(module)).length;
+  }
 } 

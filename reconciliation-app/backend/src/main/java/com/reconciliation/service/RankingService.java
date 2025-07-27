@@ -371,6 +371,16 @@ public class RankingService {
                     startDate = today.minusWeeks(1).with(java.time.DayOfWeek.MONDAY);
                     endDate = startDate.plusDays(6);
                     break;
+                case "thisyear":
+                    // Cette année (1er janvier au 31 décembre)
+                    startDate = today.withDayOfYear(1);
+                    endDate = today.withDayOfYear(today.lengthOfYear());
+                    break;
+                case "lastyear":
+                    // Année dernière (1er janvier au 31 décembre de l'année précédente)
+                    startDate = today.minusYears(1).withDayOfYear(1);
+                    endDate = today.minusYears(1).withDayOfYear(today.minusYears(1).lengthOfYear());
+                    break;
                 case "month":
                 default:
                     // Mois en cours
@@ -430,6 +440,16 @@ public class RankingService {
                     // Dernière semaine (lundi au dimanche)
                     startDate = today.minusWeeks(1).with(java.time.DayOfWeek.MONDAY);
                     endDate = startDate.plusDays(6);
+                    break;
+                case "thisyear":
+                    // Cette année (1er janvier au 31 décembre)
+                    startDate = today.withDayOfYear(1);
+                    endDate = today.withDayOfYear(today.lengthOfYear());
+                    break;
+                case "lastyear":
+                    // Année dernière (1er janvier au 31 décembre de l'année précédente)
+                    startDate = today.minusYears(1).withDayOfYear(1);
+                    endDate = today.minusYears(1).withDayOfYear(today.minusYears(1).lengthOfYear());
                     break;
                 case "month":
                 default:

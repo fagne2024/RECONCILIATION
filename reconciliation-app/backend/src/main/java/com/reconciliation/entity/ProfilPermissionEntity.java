@@ -28,8 +28,10 @@ public class ProfilPermissionEntity {
     @JsonIgnore
     public ProfilEntity getProfil() { return profil; }
     public void setProfil(ProfilEntity profil) { this.profil = profil; }
+    @JsonIgnore
     public ModuleEntity getModule() { return module; }
     public void setModule(ModuleEntity module) { this.module = module; }
+    @JsonIgnore
     public PermissionEntity getPermission() { return permission; }
     public void setPermission(PermissionEntity permission) { this.permission = permission; }
 } 

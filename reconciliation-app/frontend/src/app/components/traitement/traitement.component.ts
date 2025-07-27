@@ -851,10 +851,11 @@ export class TraitementComponent implements OnInit, AfterViewInit {
       console.log('Affichage filtré - combinedRows.length:', this.combinedRows.length, 'columns.length:', this.columns.length);
     } else {
       // Si pas de sélection appliquée, afficher toutes les colonnes
-      // Vérifier si combinedRows a été modifié par des opérations de formatage
-      const hasFormattingChanges = this.combinedRows.length > 0 && this.combinedRows.length === this.allRows.length;
+      // Ne pas réinitialiser combinedRows si des modifications ont été appliquées
+      const hasExistingData = this.combinedRows.length > 0;
+      const hasSameRowCount = this.combinedRows.length === this.allRows.length;
       
-      if (!hasFormattingChanges) {
+      if (!hasExistingData || !hasSameRowCount) {
         this.combinedRows = [...this.allRows];
         this.columns = [...this.allColumns];
         console.log('Affichage complet - combinedRows.length:', this.combinedRows.length, 'columns.length:', this.columns.length);
@@ -1216,7 +1217,7 @@ export class TraitementComponent implements OnInit, AfterViewInit {
       this.allRows = [...this.filteredRows];
       this.combinedRows = [...this.filteredRows];
       this.filterApplied = true;
-      this.showSuccess('filter', `Filtre appliqué sur « ${this.selectedFilterColumn} » = « ${this.selectedFilterValues.join(', ')} » (${this.combinedRows.length} lignes).`);
+      this.showSuccess('filter', `Filtre appliqué sur « ${this.selectedFilterColumn} » = « ${this.selectedFilterValues.join(', ')} » (${this.combinedRows.length} lignes).`);
       this.updateDisplayedRows();
     }
   }
@@ -1511,7 +1512,7 @@ export class TraitementComponent implements OnInit, AfterViewInit {
         this.combinedRows = [...this.originalRows];
         this.updateDisplayedRows();
       }
-      this.showSuccess('concat', `Colonne « ${this.concatNewCol} » créée par concaténation.`);
+      this.showSuccess('concat', `Colonne « ${this.concatNewCol} » créée par concaténation.`);
     } catch (e) {
       this.showError('concat', 'Erreur lors de la concaténation.');
     }
@@ -1519,136 +1520,475 @@ export class TraitementComponent implements OnInit, AfterViewInit {
 
   // Méthodes d'application pour chaque option
   applyTrimSpacesFormatting() {
+    if (!this.formatSelections['trimSpaces'].length) {
+      this.showError('format', 'Veuillez sélectionner au moins une colonne');
+      return;
+    }
+
     try {
-      for (const col of this.formatSelections['trimSpaces']) {
-        for (const row of this.combinedRows) {
+      let processedCells = 0;
+      let totalCells = 0;
+      
+      // Traiter les données affichées (combinedRows)
+      this.combinedRows.forEach((row, rowIndex) => {
+        this.formatSelections['trimSpaces'].forEach(col => {
+          totalCells++;
           if (row[col] && typeof row[col] === 'string') {
-            row[col] = row[col].replace(/\s+/g, ' ').trim();
+            const originalValue = row[col];
+            const newValue = row[col].replace(/\s+/g, ' ').trim();
+            
+            if (newValue !== originalValue) {
+              processedCells++;
+              console.log(`✅ MODIFICATION: Ligne ${rowIndex}, Colonne ${col}: "${originalValue}" -> "${newValue}"`);
+            }
+            
+            row[col] = newValue;
           }
-        }
+        });
+      });
+
+      // Mettre à jour aussi allRows si la sélection n'est pas appliquée
+      if (!this.selectionApplied) {
+        this.allRows.forEach((row, rowIndex) => {
+          this.formatSelections['trimSpaces'].forEach(col => {
+            if (row[col] && typeof row[col] === 'string') {
+              row[col] = row[col].replace(/\s+/g, ' ').trim();
+            }
+          });
+        });
       }
-      this.showSuccess('format', 'Espaces supprimés avec succès.');
-    } catch (e) {
+
+      console.log(`📊 RÉSUMÉ: ${totalCells} cellules vérifiées, ${processedCells} cellules modifiées`);
+      this.showSuccess('format', `Espaces supprimés avec succès (${processedCells} modifications)`);
+      
+      // Forcer la mise à jour de l'affichage
+      this.updateDisplayedRowsForPage();
+      this.cd.detectChanges();
+    } catch (error) {
+      console.error('❌ Erreur lors de la suppression des espaces:', error);
       this.showError('format', 'Erreur lors du formatage des espaces.');
     }
   }
+
   applyToLowerCaseFormatting() {
+    if (!this.formatSelections['toLowerCase'].length) {
+      this.showError('format', 'Veuillez sélectionner au moins une colonne');
+      return;
+    }
+
     try {
-      for (const col of this.formatSelections['toLowerCase']) {
-        for (const row of this.combinedRows) {
+      let processedCells = 0;
+      let totalCells = 0;
+      
+      // Traiter les données affichées (combinedRows)
+      this.combinedRows.forEach((row, rowIndex) => {
+        this.formatSelections['toLowerCase'].forEach(col => {
+          totalCells++;
           if (row[col] && typeof row[col] === 'string') {
-            row[col] = row[col].toLowerCase();
+            const originalValue = row[col];
+            const newValue = row[col].toLowerCase();
+            
+            if (newValue !== originalValue) {
+              processedCells++;
+              console.log(`✅ MODIFICATION: Ligne ${rowIndex}, Colonne ${col}: "${originalValue}" -> "${newValue}"`);
+            }
+            
+            row[col] = newValue;
           }
-        }
+        });
+      });
+
+      // Mettre à jour aussi allRows si la sélection n'est pas appliquée
+      if (!this.selectionApplied) {
+        this.allRows.forEach((row, rowIndex) => {
+          this.formatSelections['toLowerCase'].forEach(col => {
+            if (row[col] && typeof row[col] === 'string') {
+              row[col] = row[col].toLowerCase();
+            }
+          });
+        });
       }
-      this.showSuccess('format', 'Conversion en minuscules réussie.');
-    } catch (e) {
+
+      console.log(`📊 RÉSUMÉ: ${totalCells} cellules vérifiées, ${processedCells} cellules modifiées`);
+      this.showSuccess('format', `Conversion en minuscules réussie (${processedCells} modifications)`);
+      
+      // Forcer la mise à jour de l'affichage
+      this.updateDisplayedRowsForPage();
+      this.cd.detectChanges();
+    } catch (error) {
+      console.error('❌ Erreur lors de la conversion en minuscules:', error);
       this.showError('format', 'Erreur lors du passage en minuscules.');
     }
   }
+
   applyToUpperCaseFormatting() {
+    if (!this.formatSelections['toUpperCase'].length) {
+      this.showError('format', 'Veuillez sélectionner au moins une colonne');
+      return;
+    }
+
     try {
-      for (const col of this.formatSelections['toUpperCase']) {
-        for (const row of this.combinedRows) {
+      let processedCells = 0;
+      let totalCells = 0;
+      
+      // Traiter les données affichées (combinedRows)
+      this.combinedRows.forEach((row, rowIndex) => {
+        this.formatSelections['toUpperCase'].forEach(col => {
+          totalCells++;
           if (row[col] && typeof row[col] === 'string') {
-            row[col] = row[col].toUpperCase();
+            const originalValue = row[col];
+            const newValue = row[col].toUpperCase();
+            
+            if (newValue !== originalValue) {
+              processedCells++;
+              console.log(`✅ MODIFICATION: Ligne ${rowIndex}, Colonne ${col}: "${originalValue}" -> "${newValue}"`);
+            }
+            
+            row[col] = newValue;
           }
-        }
+        });
+      });
+
+      // Mettre à jour aussi allRows si la sélection n'est pas appliquée
+      if (!this.selectionApplied) {
+        this.allRows.forEach((row, rowIndex) => {
+          this.formatSelections['toUpperCase'].forEach(col => {
+            if (row[col] && typeof row[col] === 'string') {
+              row[col] = row[col].toUpperCase();
+            }
+          });
+        });
       }
-      this.showSuccess('format', 'Conversion en MAJUSCULES réussie.');
-    } catch (e) {
+
+      console.log(`📊 RÉSUMÉ: ${totalCells} cellules vérifiées, ${processedCells} cellules modifiées`);
+      this.showSuccess('format', `Conversion en MAJUSCULES réussie (${processedCells} modifications)`);
+      
+      // Forcer la mise à jour de l'affichage
+      this.updateDisplayedRowsForPage();
+      this.cd.detectChanges();
+    } catch (error) {
+      console.error('❌ Erreur lors de la conversion en MAJUSCULES:', error);
       this.showError('format', 'Erreur lors du passage en MAJUSCULES.');
     }
   }
+
   applyRemoveDashesAndCommasFormatting() {
+    if (!this.formatSelections['removeDashesAndCommas'].length) {
+      this.showError('format', 'Veuillez sélectionner au moins une colonne');
+      return;
+    }
+
     try {
-      for (const col of this.formatSelections['removeDashesAndCommas']) {
-        for (const row of this.combinedRows) {
+      let processedCells = 0;
+      let totalCells = 0;
+      
+      // Traiter les données affichées (combinedRows)
+      this.combinedRows.forEach((row, rowIndex) => {
+        this.formatSelections['removeDashesAndCommas'].forEach(col => {
+          totalCells++;
           if (row[col] && typeof row[col] === 'string') {
-            row[col] = row[col].replace(/[-,]/g, '');
+            const originalValue = row[col];
+            const newValue = row[col].replace(/[-,]/g, '');
+            
+            if (newValue !== originalValue) {
+              processedCells++;
+              console.log(`✅ MODIFICATION: Ligne ${rowIndex}, Colonne ${col}: "${originalValue}" -> "${newValue}"`);
+            }
+            
+            row[col] = newValue;
           }
-        }
+        });
+      });
+
+      // Mettre à jour aussi allRows si la sélection n'est pas appliquée
+      if (!this.selectionApplied) {
+        this.allRows.forEach((row, rowIndex) => {
+          this.formatSelections['removeDashesAndCommas'].forEach(col => {
+            if (row[col] && typeof row[col] === 'string') {
+              row[col] = row[col].replace(/[-,]/g, '');
+            }
+          });
+        });
       }
-      this.showSuccess('format', 'Tirets et virgules supprimés avec succès.');
-    } catch (e) {
+
+      console.log(`📊 RÉSUMÉ: ${totalCells} cellules vérifiées, ${processedCells} cellules modifiées`);
+      this.showSuccess('format', `Tirets et virgules supprimés avec succès (${processedCells} modifications)`);
+      
+      // Forcer la mise à jour de l'affichage
+      this.updateDisplayedRowsForPage();
+      this.cd.detectChanges();
+    } catch (error) {
+      console.error('❌ Erreur lors de la suppression des tirets/virgules:', error);
       this.showError('format', 'Erreur lors de la suppression des tirets/virgules.');
     }
   }
+
   applyRemoveSeparatorsFormatting() {
+    if (!this.formatSelections['removeSeparators'].length) {
+      this.showError('format', 'Veuillez sélectionner au moins une colonne');
+      return;
+    }
+
     try {
-      for (const col of this.formatSelections['removeSeparators']) {
-        for (const row of this.combinedRows) {
+      let processedCells = 0;
+      let totalCells = 0;
+      
+      // Traiter les données affichées (combinedRows)
+      this.combinedRows.forEach((row, rowIndex) => {
+        this.formatSelections['removeSeparators'].forEach(col => {
+          totalCells++;
           if (row[col] && typeof row[col] === 'string') {
-            row[col] = row[col].replace(/,/g, '');
+            const originalValue = row[col];
+            const newValue = row[col].replace(/,/g, '');
+            
+            if (newValue !== originalValue) {
+              processedCells++;
+              console.log(`✅ MODIFICATION: Ligne ${rowIndex}, Colonne ${col}: "${originalValue}" -> "${newValue}"`);
+            }
+            
+            row[col] = newValue;
           }
-        }
+        });
+      });
+
+      // Mettre à jour aussi allRows si la sélection n'est pas appliquée
+      if (!this.selectionApplied) {
+        this.allRows.forEach((row, rowIndex) => {
+          this.formatSelections['removeSeparators'].forEach(col => {
+            if (row[col] && typeof row[col] === 'string') {
+              row[col] = row[col].replace(/,/g, '');
+            }
+          });
+        });
       }
-      this.showSuccess('format', 'Séparateurs supprimés avec succès.');
-    } catch (e) {
+
+      console.log(`📊 RÉSUMÉ: ${totalCells} cellules vérifiées, ${processedCells} cellules modifiées`);
+      this.showSuccess('format', `Séparateurs supprimés avec succès (${processedCells} modifications)`);
+      
+      // Forcer la mise à jour de l'affichage
+      this.updateDisplayedRowsForPage();
+      this.cd.detectChanges();
+    } catch (error) {
+      console.error('❌ Erreur lors de la suppression des séparateurs:', error);
       this.showError('format', 'Erreur lors de la suppression des séparateurs.');
     }
   }
+
   applyDotToCommaFormatting() {
+    if (!this.formatSelections['dotToComma'].length) {
+      this.showError('format', 'Veuillez sélectionner au moins une colonne');
+      return;
+    }
+
     try {
-      for (const col of this.formatSelections['dotToComma']) {
-        for (const row of this.combinedRows) {
+      let processedCells = 0;
+      let totalCells = 0;
+      
+      // Traiter les données affichées (combinedRows)
+      this.combinedRows.forEach((row, rowIndex) => {
+        this.formatSelections['dotToComma'].forEach(col => {
+          totalCells++;
           if (row[col] && typeof row[col] === 'string') {
-            row[col] = row[col].replace(/\./g, ',');
+            const originalValue = row[col];
+            const newValue = row[col].replace(/\./g, ',');
+            
+            if (newValue !== originalValue) {
+              processedCells++;
+              console.log(`✅ MODIFICATION: Ligne ${rowIndex}, Colonne ${col}: "${originalValue}" -> "${newValue}"`);
+            }
+            
+            row[col] = newValue;
           }
-        }
+        });
+      });
+
+      // Mettre à jour aussi allRows si la sélection n'est pas appliquée
+      if (!this.selectionApplied) {
+        this.allRows.forEach((row, rowIndex) => {
+          this.formatSelections['dotToComma'].forEach(col => {
+            if (row[col] && typeof row[col] === 'string') {
+              row[col] = row[col].replace(/\./g, ',');
+            }
+          });
+        });
       }
-      this.showSuccess('format', 'Points remplacés par des virgules avec succès.');
-    } catch (e) {
+
+      console.log(`📊 RÉSUMÉ: ${totalCells} cellules vérifiées, ${processedCells} cellules modifiées`);
+      this.showSuccess('format', `Points remplacés par des virgules avec succès (${processedCells} modifications)`);
+      
+      // Forcer la mise à jour de l'affichage
+      this.updateDisplayedRowsForPage();
+      this.cd.detectChanges();
+    } catch (error) {
+      console.error('❌ Erreur lors du remplacement des points:', error);
       this.showError('format', 'Erreur lors du remplacement des points.');
     }
   }
+
   applyNormalizeDatesFormatting() {
+    if (!this.formatSelections['normalizeDates'].length) {
+      this.showError('format', 'Veuillez sélectionner au moins une colonne');
+      return;
+    }
+
     try {
-      for (const col of this.formatSelections['normalizeDates']) {
-        for (const row of this.combinedRows) {
+      let processedCells = 0;
+      let totalCells = 0;
+      
+      // Traiter les données affichées (combinedRows)
+      this.combinedRows.forEach((row, rowIndex) => {
+        this.formatSelections['normalizeDates'].forEach(col => {
+          totalCells++;
           if (row[col]) {
             let val = row[col].toString();
+            const originalValue = val;
+            
             if (val.endsWith('.0')) {
               val = val.slice(0, -2);
             }
             const d = new Date(val);
             if (!isNaN(d.getTime())) {
-              row[col] = this.formatDate(d, this.formatOptions.dateFormat);
+              const newValue = this.formatDate(d, this.formatOptions.dateFormat);
+              if (newValue !== originalValue) {
+                processedCells++;
+                console.log(`✅ MODIFICATION: Ligne ${rowIndex}, Colonne ${col}: "${originalValue}" -> "${newValue}"`);
+              }
+              row[col] = newValue;
             }
           }
-        }
+        });
+      });
+
+      // Mettre à jour aussi allRows si la sélection n'est pas appliquée
+      if (!this.selectionApplied) {
+        this.allRows.forEach((row, rowIndex) => {
+          this.formatSelections['normalizeDates'].forEach(col => {
+            if (row[col]) {
+              let val = row[col].toString();
+              if (val.endsWith('.0')) {
+                val = val.slice(0, -2);
+              }
+              const d = new Date(val);
+              if (!isNaN(d.getTime())) {
+                row[col] = this.formatDate(d, this.formatOptions.dateFormat);
+              }
+            }
+          });
+        });
       }
-      this.showSuccess('format', 'Formatage des dates réussi.');
-    } catch (e) {
+
+      console.log(`📊 RÉSUMÉ: ${totalCells} cellules vérifiées, ${processedCells} cellules modifiées`);
+      this.showSuccess('format', `Formatage des dates réussi (${processedCells} modifications)`);
+      
+      // Forcer la mise à jour de l'affichage
+      this.updateDisplayedRowsForPage();
+      this.cd.detectChanges();
+    } catch (error) {
+      console.error('❌ Erreur lors du formatage des dates:', error);
       this.showError('format', 'Erreur lors du formatage des dates.');
     }
   }
+
   applyNormalizeNumbersFormatting() {
+    if (!this.formatSelections['normalizeNumbers'].length) {
+      this.showError('format', 'Veuillez sélectionner au moins une colonne');
+      return;
+    }
+
     try {
-      for (const col of this.formatSelections['normalizeNumbers']) {
-        for (const row of this.combinedRows) {
+      let processedCells = 0;
+      let totalCells = 0;
+      
+      // Traiter les données affichées (combinedRows)
+      this.combinedRows.forEach((row, rowIndex) => {
+        this.formatSelections['normalizeNumbers'].forEach(col => {
+          totalCells++;
           if (row[col] !== undefined && row[col] !== null) {
+            const originalValue = row[col];
             const num = parseFloat(row[col].toString().replace(/\s/g, '').replace(',', '.'));
-            row[col] = isNaN(num) ? row[col] : num;
+            const newValue = isNaN(num) ? row[col] : num;
+            
+            if (newValue !== originalValue) {
+              processedCells++;
+              console.log(`✅ MODIFICATION: Ligne ${rowIndex}, Colonne ${col}: "${originalValue}" -> "${newValue}"`);
+            }
+            
+            row[col] = newValue;
           }
-        }
+        });
+      });
+
+      // Mettre à jour aussi allRows si la sélection n'est pas appliquée
+      if (!this.selectionApplied) {
+        this.allRows.forEach((row, rowIndex) => {
+          this.formatSelections['normalizeNumbers'].forEach(col => {
+            if (row[col] !== undefined && row[col] !== null) {
+              const num = parseFloat(row[col].toString().replace(/\s/g, '').replace(',', '.'));
+              row[col] = isNaN(num) ? row[col] : num;
+            }
+          });
+        });
       }
-      this.showSuccess('format', 'Conversion en nombre réussie.');
-    } catch (e) {
+
+      console.log(`📊 RÉSUMÉ: ${totalCells} cellules vérifiées, ${processedCells} cellules modifiées`);
+      this.showSuccess('format', `Conversion en nombre réussie (${processedCells} modifications)`);
+      
+      // Forcer la mise à jour de l'affichage
+      this.updateDisplayedRowsForPage();
+      this.cd.detectChanges();
+    } catch (error) {
+      console.error('❌ Erreur lors de la conversion en nombre:', error);
       this.showError('format', 'Erreur lors de la conversion en nombre.');
     }
   }
+
   applyAbsoluteValueFormatting() {
+    if (!this.formatSelections['absoluteValue'].length) {
+      this.showError('format', 'Veuillez sélectionner au moins une colonne');
+      return;
+    }
+
     try {
-      for (const col of this.formatSelections['absoluteValue']) {
-        for (const row of this.combinedRows) {
+      let processedCells = 0;
+      let totalCells = 0;
+      
+      // Traiter les données affichées (combinedRows)
+      this.combinedRows.forEach((row, rowIndex) => {
+        this.formatSelections['absoluteValue'].forEach(col => {
+          totalCells++;
           if (row[col] !== undefined && row[col] !== null && !isNaN(Number(row[col]))) {
-            row[col] = Math.abs(Number(row[col]));
+            const originalValue = row[col];
+            const newValue = Math.abs(Number(row[col]));
+            
+            if (newValue !== originalValue) {
+              processedCells++;
+              console.log(`✅ MODIFICATION: Ligne ${rowIndex}, Colonne ${col}: "${originalValue}" -> "${newValue}"`);
+            }
+            
+            row[col] = newValue;
           }
-        }
+        });
+      });
+
+      // Mettre à jour aussi allRows si la sélection n'est pas appliquée
+      if (!this.selectionApplied) {
+        this.allRows.forEach((row, rowIndex) => {
+          this.formatSelections['absoluteValue'].forEach(col => {
+            if (row[col] !== undefined && row[col] !== null && !isNaN(Number(row[col]))) {
+              row[col] = Math.abs(Number(row[col]));
+            }
+          });
+        });
       }
-      this.showSuccess('format', 'Conversion en valeur absolue réussie.');
-    } catch (e) {
+
+      console.log(`📊 RÉSUMÉ: ${totalCells} cellules vérifiées, ${processedCells} cellules modifiées`);
+      this.showSuccess('format', `Conversion en valeur absolue réussie (${processedCells} modifications)`);
+      
+      // Forcer la mise à jour de l'affichage
+      this.updateDisplayedRowsForPage();
+      this.cd.detectChanges();
+    } catch (error) {
+      console.error('❌ Erreur lors de la conversion en valeur absolue:', error);
       this.showError('format', 'Erreur lors de la conversion en valeur absolue.');
     }
   }
@@ -1660,10 +2000,16 @@ export class TraitementComponent implements OnInit, AfterViewInit {
     }
 
     try {
-      this.combinedRows.forEach(row => {
+      let processedCells = 0;
+      let totalCells = 0;
+      
+      // Traiter les données affichées (combinedRows)
+      this.combinedRows.forEach((row, rowIndex) => {
         this.formatSelections['removeCharacters'].forEach(col => {
+          totalCells++;
           if (row[col] && typeof row[col] === 'string') {
             let value = row[col];
+            const originalValue = value;
             
             switch (this.removeCharPosition) {
               case 'start':
@@ -1680,14 +2026,53 @@ export class TraitementComponent implements OnInit, AfterViewInit {
                 break;
             }
             
+            if (value !== originalValue) {
+              processedCells++;
+              console.log(`✅ MODIFICATION: Ligne ${rowIndex}, Colonne ${col}: "${originalValue}" -> "${value}"`);
+            }
+            
             row[col] = value;
           }
         });
       });
 
-      this.showSuccess('format', `Suppression de caractères appliquée sur ${this.formatSelections['removeCharacters'].length} colonne(s)`);
-      this.updateDisplayedRows();
+      // Mettre à jour aussi allRows si la sélection n'est pas appliquée
+      if (!this.selectionApplied) {
+        this.allRows.forEach((row, rowIndex) => {
+          this.formatSelections['removeCharacters'].forEach(col => {
+            if (row[col] && typeof row[col] === 'string') {
+              let value = row[col];
+              
+              switch (this.removeCharPosition) {
+                case 'start':
+                  value = value.substring(this.removeCharCount);
+                  break;
+                case 'end':
+                  value = value.substring(0, value.length - this.removeCharCount);
+                  break;
+                case 'specific':
+                  const pos = this.removeCharSpecificPosition - 1; // Convert to 0-based
+                  if (pos >= 0 && pos < value.length) {
+                    value = value.substring(0, pos) + value.substring(pos + this.removeCharCount);
+                  }
+                  break;
+              }
+              
+              row[col] = value;
+            }
+          });
+        });
+      }
+
+      console.log(`📊 RÉSUMÉ: ${totalCells} cellules vérifiées, ${processedCells} cellules modifiées`);
+
+      this.showSuccess('format', `Suppression de caractères appliquée sur ${this.formatSelections['removeCharacters'].length} colonne(s) (${processedCells} modifications)`);
+      
+      // Forcer la mise à jour de l'affichage
+      this.updateDisplayedRowsForPage();
+      this.cd.detectChanges();
     } catch (error) {
+      console.error('❌ Erreur lors de la suppression:', error);
       this.showError('format', 'Erreur lors de la suppression de caractères');
     }
   }
@@ -1695,7 +2080,7 @@ export class TraitementComponent implements OnInit, AfterViewInit {
   applyRemoveSpecificCharactersFormatting() {
     console.log('=== DÉBUT applyRemoveSpecificCharactersFormatting ===');
     console.log('Colonnes sélectionnées:', this.formatSelections['removeSpecificCharacters']);
-    console.log('Caractères à supprimer:', this.specificCharactersToRemove);
+    console.log('Chaîne à supprimer:', this.specificCharactersToRemove);
     console.log('Sensible à la casse:', this.removeSpecificCharactersCaseSensitive);
     console.log('Filtrage par valeur exacte:', this.filterByExactValue);
     console.log('Valeur exacte à filtrer:', this.exactValueToFilter);
@@ -1709,8 +2094,8 @@ export class TraitementComponent implements OnInit, AfterViewInit {
     }
 
     if (!this.specificCharactersToRemove.trim()) {
-      console.log('❌ Aucun caractère spécifié');
-      this.showError('format', 'Veuillez spécifier les caractères à supprimer');
+      console.log('❌ Aucune chaîne spécifiée');
+      this.showError('format', 'Veuillez spécifier la chaîne à supprimer');
       return;
     }
 
@@ -1729,15 +2114,16 @@ export class TraitementComponent implements OnInit, AfterViewInit {
     }
 
     try {
-      const charsToRemove = this.specificCharactersToRemove;
-      console.log('Caractères à supprimer (final):', charsToRemove);
-      console.log('Longueur des caractères:', charsToRemove.length);
+      const stringToRemove = this.specificCharactersToRemove.trim();
+      console.log('Chaîne à supprimer (final):', stringToRemove);
+      console.log('Longueur de la chaîne:', stringToRemove.length);
       
       let processedRows = 0;
       let processedCells = 0;
       let totalCells = 0;
       let filteredRows = 0;
       
+      // Traiter les données affichées (combinedRows)
       this.combinedRows.forEach((row, rowIndex) => {
         // Vérifier si la ligne doit être traitée (filtrage par valeur exacte)
         let shouldProcessRow = true;
@@ -1772,20 +2158,16 @@ export class TraitementComponent implements OnInit, AfterViewInit {
               console.log(`Traitement de "${originalValue}"`);
               
               if (this.removeSpecificCharactersCaseSensitive) {
-                // Suppression sensible à la casse
-                for (let char of charsToRemove) {
-                  console.log(`Suppression du caractère "${char}" de "${value}"`);
-                  value = value.split(char).join('');
-                  console.log(`Résultat après suppression: "${value}"`);
-                }
+                // Suppression sensible à la casse - traiter la chaîne complète
+                console.log(`Suppression de la chaîne "${stringToRemove}" de "${value}"`);
+                value = value.split(stringToRemove).join('');
+                console.log(`Résultat après suppression: "${value}"`);
               } else {
-                // Suppression insensible à la casse
-                for (let char of charsToRemove) {
-                  const regex = new RegExp(char.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
-                  console.log(`Suppression du caractère "${char}" (regex: ${regex}) de "${value}"`);
-                  value = value.replace(regex, '');
-                  console.log(`Résultat après suppression: "${value}"`);
-                }
+                // Suppression insensible à la casse - traiter la chaîne complète
+                const regex = new RegExp(stringToRemove.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+                console.log(`Suppression de la chaîne "${stringToRemove}" (regex: ${regex}) de "${value}"`);
+                value = value.replace(regex, '');
+                console.log(`Résultat après suppression: "${value}"`);
               }
               
               if (value !== originalValue) {
@@ -1796,11 +2178,6 @@ export class TraitementComponent implements OnInit, AfterViewInit {
               }
               
               row[col] = value;
-              
-              // Mettre à jour aussi allRows si la sélection n'est pas appliquée
-              if (!this.selectionApplied && this.allRows[rowIndex]) {
-                this.allRows[rowIndex][col] = value;
-              }
             } else {
               console.log(`❌ Valeur non traitée: ligne ${rowIndex}, colonne ${col}:`, row[col], `(type: ${typeof row[col]})`);
             }
@@ -1809,9 +2186,48 @@ export class TraitementComponent implements OnInit, AfterViewInit {
         }
       });
 
+      // Mettre à jour aussi allRows si la sélection n'est pas appliquée
+      if (!this.selectionApplied) {
+        this.allRows.forEach((row, rowIndex) => {
+          // Vérifier si la ligne doit être traitée (filtrage par valeur exacte)
+          let shouldProcessRow = true;
+          
+          if (this.filterByExactValue && this.exactValueColumn && this.exactValueToFilter.trim()) {
+            const columnValue = row[this.exactValueColumn];
+            const exactValue = this.exactValueToFilter.trim();
+            
+            // Comparaison exacte (avec ou sans sensibilité à la casse)
+            if (this.removeSpecificCharactersCaseSensitive) {
+              shouldProcessRow = columnValue === exactValue;
+            } else {
+              shouldProcessRow = columnValue && columnValue.toString().toLowerCase() === exactValue.toLowerCase();
+            }
+          }
+          
+          if (shouldProcessRow) {
+            this.formatSelections['removeSpecificCharacters'].forEach(col => {
+              if (row[col] && typeof row[col] === 'string') {
+                let value = row[col];
+                
+                if (this.removeSpecificCharactersCaseSensitive) {
+                  // Suppression sensible à la casse - traiter la chaîne complète
+                  value = value.split(stringToRemove).join('');
+                } else {
+                  // Suppression insensible à la casse - traiter la chaîne complète
+                  const regex = new RegExp(stringToRemove.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+                  value = value.replace(regex, '');
+                }
+                
+                row[col] = value;
+              }
+            });
+          }
+        });
+      }
+
       console.log(`📊 RÉSUMÉ: ${processedRows} lignes traitées, ${filteredRows} lignes filtrées, ${totalCells} cellules vérifiées, ${processedCells} cellules modifiées`);
 
-      let successMessage = `Suppression de caractères spécifiques appliquée sur ${this.formatSelections['removeSpecificCharacters'].length} colonne(s)`;
+      let successMessage = `Suppression de chaîne appliquée sur ${this.formatSelections['removeSpecificCharacters'].length} colonne(s) (${processedCells} modifications)`;
       
       if (this.filterByExactValue && this.exactValueColumn && this.exactValueToFilter.trim()) {
         successMessage += ` (filtrage sur "${this.exactValueColumn}" = "${this.exactValueToFilter}" : ${filteredRows} ligne(s) traitée(s))`;
@@ -1819,28 +2235,12 @@ export class TraitementComponent implements OnInit, AfterViewInit {
       
       this.showSuccess('format', successMessage);
       
-      // Forcer la mise à jour de l'affichage sans recréer les données
-      console.log('🔄 Mise à jour de l\'affichage...');
-      
-      // Mettre à jour directement displayedRows sans passer par updateDisplayedRows
-      if (this.showAllRows || this.combinedRows.length <= this.maxDisplayedRows) {
-        this.displayedRows = [...this.combinedRows];
-      } else {
-        const startIndex = (this.currentPage - 1) * this.rowsPerPage;
-        const endIndex = startIndex + this.rowsPerPage;
-        this.displayedRows = this.combinedRows.slice(startIndex, endIndex);
-      }
-      
-      this.cd.detectChanges(); // Forcer la détection des changements
-      
-      // Double vérification après un délai
-      setTimeout(() => {
-        this.cd.detectChanges();
-        console.log('✅ Affichage mis à jour après délai');
-      }, 100);
+      // Forcer la mise à jour de l'affichage
+      this.updateDisplayedRowsForPage();
+      this.cd.detectChanges();
     } catch (error) {
       console.error('❌ Erreur lors de la suppression:', error);
-      this.showError('format', 'Erreur lors de la suppression de caractères spécifiques');
+      this.showError('format', 'Erreur lors de la suppression de chaîne spécifique');
     }
     
     console.log('=== FIN applyRemoveSpecificCharactersFormatting ===');

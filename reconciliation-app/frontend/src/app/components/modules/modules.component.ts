@@ -44,7 +44,7 @@ export class ModulesComponent implements OnInit {
         this.isLoading = false;
       },
       error: (error) => {
-        console.error('Erreur lors du chargement des modules:', error);
+        console.error('❌ Erreur lors du chargement des modules:', error);
         this.isLoading = false;
       }
     });

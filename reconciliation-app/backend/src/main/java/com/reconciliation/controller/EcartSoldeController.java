@@ -93,13 +93,30 @@ public class EcartSoldeController {
     @PostMapping("/batch")
     public ResponseEntity<Map<String, Object>> createMultipleEcartSoldes(@RequestBody List<EcartSolde> ecartSoldes) {
         try {
+            System.out.println("=== DÉBUT createMultipleEcartSoldes (Controller) ===");
+            System.out.println("DEBUG: Nombre d'écarts de solde reçus: " + ecartSoldes.size());
+            
             List<EcartSolde> createdEcartSoldes = ecartSoldeService.createMultipleEcartSoldes(ecartSoldes);
+            
+            int duplicatesCount = ecartSoldes.size() - createdEcartSoldes.size();
+            
+            System.out.println("DEBUG: Résultats finaux:");
+            System.out.println("  - Enregistrements reçus: " + ecartSoldes.size());
+            System.out.println("  - Doublons ignorés: " + duplicatesCount);
+            System.out.println("  - Nouveaux enregistrements créés: " + createdEcartSoldes.size());
+            System.out.println("=== FIN createMultipleEcartSoldes (Controller) ===");
+            
             return ResponseEntity.status(HttpStatus.CREATED).body(Map.of(
                 "message", "Enregistrements créés avec succès",
                 "count", createdEcartSoldes.size(),
+                "duplicates", duplicatesCount,
+                "totalReceived", ecartSoldes.size(),
                 "data", createdEcartSoldes
             ));
         } catch (Exception e) {
+            System.err.println("=== ERREUR createMultipleEcartSoldes (Controller) ===");
+            System.err.println("DEBUG: Exception: " + e.getMessage());
+            e.printStackTrace();
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(Map.of("error", "Erreur lors de la création des enregistrements: " + e.getMessage()));
         }
@@ -239,16 +256,34 @@ public class EcartSoldeController {
         }
         
         try {
+            System.out.println("=== DÉBUT uploadCsvFile (Controller) ===");
+            System.out.println("DEBUG: Nom du fichier: " + fileName);
+            System.out.println("DEBUG: Taille du fichier: " + file.getSize() + " bytes");
+            
             List<EcartSolde> uploadedEcartSoldes = ecartSoldeService.uploadCsvFile(file);
+            
+            // Note: Le nombre de doublons est géré dans le service et affiché dans les logs
+            // Ici on retourne seulement les enregistrements effectivement sauvegardés
+            
+            System.out.println("DEBUG: Résultats finaux:");
+            System.out.println("  - Enregistrements sauvegardés: " + uploadedEcartSoldes.size());
+            System.out.println("=== FIN uploadCsvFile (Controller) ===");
+            
             return ResponseEntity.ok(Map.of(
                 "message", "Fichier uploadé avec succès",
                 "count", uploadedEcartSoldes.size(),
                 "data", uploadedEcartSoldes
             ));
         } catch (IOException e) {
+            System.err.println("=== ERREUR uploadCsvFile (Controller) - IOException ===");
+            System.err.println("DEBUG: Exception: " + e.getMessage());
+            e.printStackTrace();
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(Map.of("error", "Erreur lors de la lecture du fichier: " + e.getMessage()));
         } catch (Exception e) {
+            System.err.println("=== ERREUR uploadCsvFile (Controller) - Exception générale ===");
+            System.err.println("DEBUG: Exception: " + e.getMessage());
+            e.printStackTrace();
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(Map.of("error", "Erreur lors du traitement du fichier: " + e.getMessage()));
         }
