@@ -524,4 +524,129 @@ export class ProfilComponent implements OnInit {
   getDeletableModulesCount(): number {
     return this.modules.filter(module => !this.isModuleAssociated(module)).length;
   }
+
+  // Nouvelles méthodes pour l'interface améliorée
+  associateModuleDirectly(module: Module) {
+    if (!this.selectedProfil) return;
+    
+    // Associer toutes les permissions existantes à ce module pour ce profil
+    this.permissions.forEach(permission => {
+      this.profilService.addPermissionToProfil(this.selectedProfil!.id!, module.id!, permission.id!).subscribe(pp => {
+        this.profilPermissions.push(pp);
+      });
+    });
+    
+    // Recharger les données
+    this.loadProfils();
+    this.loadModules();
+  }
+
+  viewModulePermissions(module: Module) {
+    // Sélectionner le module pour afficher ses permissions
+    this.selectedModuleId = module.id!;
+    this.onModuleChange();
+  }
+
+  getModulePermissions(module: Module): Permission[] {
+    const modulePermissions = this.profilPermissions.filter(pp => pp.module.id === module.id);
+    return modulePermissions.map(pp => pp.permission);
+  }
+
+  manageModulePermissions(module: Module) {
+    // Sélectionner le module pour permettre la gestion des permissions
+    this.selectedModuleId = module.id!;
+    this.onModuleChange();
+  }
+
+  toggleModuleAssociation(module: Module, event: Event) {
+    if (!this.selectedProfil) return;
+    
+    const checked = (event.target as HTMLInputElement).checked;
+    console.log(`🔄 Toggle module association: ${module.nom} - ${checked ? 'activé' : 'désactivé'}`);
+    
+    if (checked) {
+      // Associer le module avec toutes les permissions existantes
+      console.log(`➕ Association du module ${module.nom} au profil ${this.selectedProfil.nom}`);
+      
+      // Vérifier si le module n'est pas déjà associé
+      if (this.isModuleAssociated(module)) {
+        console.log(`⚠️ Module ${module.nom} déjà associé`);
+        return;
+      }
+      
+      // Ajouter toutes les permissions existantes
+      let addedCount = 0;
+      this.permissions.forEach(permission => {
+        this.profilService.addPermissionToProfil(this.selectedProfil!.id!, module.id!, permission.id!).subscribe({
+          next: (pp) => {
+            this.profilPermissions.push(pp);
+            addedCount++;
+            console.log(`✅ Permission ${permission.nom} ajoutée au module ${module.nom}`);
+            
+            // Si c'est la dernière permission, recharger les données
+            if (addedCount === this.permissions.length) {
+              this.reloadProfilData();
+            }
+          },
+          error: (error) => {
+            console.error(`❌ Erreur lors de l'ajout de la permission ${permission.nom}:`, error);
+          }
+        });
+      });
+    } else {
+      // Désassocier le module en supprimant toutes ses permissions
+      console.log(`➖ Désassociation du module ${module.nom} du profil ${this.selectedProfil.nom}`);
+      
+      const modulePermissions = this.profilPermissions.filter(pp => pp.module.id === module.id);
+      console.log(`🗑️ Suppression de ${modulePermissions.length} permissions pour le module ${module.nom}`);
+      
+      if (modulePermissions.length === 0) {
+        console.log(`⚠️ Aucune permission à supprimer pour le module ${module.nom}`);
+        return;
+      }
+      
+      let removedCount = 0;
+      modulePermissions.forEach(pp => {
+        if (pp.id) {
+          this.profilService.removePermissionFromProfil(pp.id).subscribe({
+            next: () => {
+              this.profilPermissions = this.profilPermissions.filter(p => p.id !== pp.id);
+              removedCount++;
+              console.log(`✅ Permission supprimée (${removedCount}/${modulePermissions.length})`);
+              
+              // Si c'est la dernière permission supprimée, recharger les données
+              if (removedCount === modulePermissions.length) {
+                this.reloadProfilData();
+              }
+            },
+            error: (error) => {
+              console.error(`❌ Erreur lors de la suppression de la permission:`, error);
+            }
+          });
+        }
+      });
+    }
+  }
+
+  // Méthode pour recharger les données du profil
+  private reloadProfilData() {
+    console.log('🔄 Rechargement des données du profil...');
+    
+    // Recharger les permissions du profil
+    if (this.selectedProfil) {
+      this.profilService.getProfilPermissions(this.selectedProfil.id!).subscribe({
+        next: (pp) => {
+          this.profilPermissions = pp;
+          console.log(`✅ ${pp.length} permissions rechargées pour le profil ${this.selectedProfil!.nom}`);
+        },
+        error: (error) => {
+          console.error('❌ Erreur lors du rechargement des permissions:', error);
+        }
+      });
+    }
+    
+    // Recharger les profils et modules
+    this.loadProfils();
+    this.loadModules();
+  }
 } 
