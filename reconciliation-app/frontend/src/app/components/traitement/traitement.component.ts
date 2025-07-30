@@ -1211,13 +1211,33 @@ export class TraitementComponent implements OnInit, AfterViewInit {
     }
   }
 
+  selectAllFilterValues() {
+    // Si "Tous" est sélectionné, sélectionner toutes les valeurs
+    if (this.selectedFilterValues.includes('__TOUS__')) {
+      this.selectedFilterValues = ['__TOUS__', ...this.filteredFilterValues];
+    } else {
+      // Retirer "Tous" si d'autres valeurs sont sélectionnées
+      this.selectedFilterValues = this.selectedFilterValues.filter(val => val !== '__TOUS__');
+    }
+  }
+
   applyFilter() {
     if (this.selectedFilterColumn && this.selectedFilterValues && this.selectedFilterValues.length > 0) {
-      this.filteredRows = this.originalRows.filter(row => this.selectedFilterValues.includes(row[this.selectedFilterColumn]));
-      this.allRows = [...this.filteredRows];
-      this.combinedRows = [...this.filteredRows];
-      this.filterApplied = true;
-      this.showSuccess('filter', `Filtre appliqué sur « ${this.selectedFilterColumn} » = « ${this.selectedFilterValues.join(', ')} » (${this.combinedRows.length} lignes).`);
+      // Si "Tous" est sélectionné, ne pas filtrer (garder toutes les lignes)
+      if (this.selectedFilterValues.includes('__TOUS__')) {
+        this.filteredRows = [...this.originalRows];
+        this.allRows = [...this.originalRows];
+        this.combinedRows = [...this.originalRows];
+        this.filterApplied = true;
+        this.showSuccess('filter', `Aucun filtre appliqué - toutes les lignes conservées (${this.combinedRows.length} lignes).`);
+      } else {
+        // Filtrage normal
+        this.filteredRows = this.originalRows.filter(row => this.selectedFilterValues.includes(row[this.selectedFilterColumn]));
+        this.allRows = [...this.filteredRows];
+        this.combinedRows = [...this.filteredRows];
+        this.filterApplied = true;
+        this.showSuccess('filter', `Filtre appliqué sur « ${this.selectedFilterColumn} » = « ${this.selectedFilterValues.join(', ')} » (${this.combinedRows.length} lignes).`);
+      }
       this.updateDisplayedRows();
     }
   }
@@ -1226,6 +1246,7 @@ export class TraitementComponent implements OnInit, AfterViewInit {
     this.selectedFilterColumn = '';
     this.selectedFilterValues = [];
     this.filterValues = [];
+    this.filteredFilterValues = [];
     this.filterApplied = false;
     this.allRows = [...this.originalRows];
     this.combinedRows = [...this.originalRows];

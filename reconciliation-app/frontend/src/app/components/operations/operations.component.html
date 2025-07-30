@@ -185,6 +185,14 @@
                                     placeholder="Ex: 19S50zsyf252050003/1753" class="text-input">
                             </div>
                         </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Référence</label>
+                                <input type="text" formControlName="reference" 
+                                    placeholder="Ex: REF-2024-001" class="text-input">
+                            </div>
+                        </div>
                     </div>
 
 
@@ -391,6 +399,14 @@
                             <label>Nom du bordereau</label>
                             <input type="text" formControlName="nomBordereau" 
                                 placeholder="Ex: 19S50zsyf252050003/1753" class="text-input">
+                        </div>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group full-width">
+                            <label>Référence</label>
+                            <input type="text" formControlName="reference" 
+                                placeholder="Ex: REF-2024-001" class="text-input">
                         </div>
                     </div>
                 </div>
@@ -608,6 +624,15 @@
                     </mat-form-field>
                 </div>
                 <div class="form-group">
+                    <mat-form-field appearance="fill" class="filter-select">
+                        <mat-label>Référence</mat-label>
+                        <mat-select #referenceSelect formControlName="reference" multiple (selectionChange)="onFilterChange()">
+                            <ngx-mat-select-search [formControl]="referenceSearchCtrl" placeholderLabel="Rechercher une référence..." noEntriesFoundLabel="Aucune référence trouvée"></ngx-mat-select-search>
+                            <mat-option *ngFor="let reference of filteredReferenceList" [value]="reference">{{ reference }}</mat-option>
+                        </mat-select>
+                    </mat-form-field>
+                </div>
+                <div class="form-group">
                     <label>Période rapide</label>
                     <select (change)="applyDatePreset($event)">
                         <option value="">-- Choisir --</option>
@@ -677,6 +702,7 @@
                         <th>Pays</th>
                         <th>Banque</th>
                         <th>Bordereau</th>
+                        <th>Référence</th>
                         <th>Actions</th>
                     </tr>
                 </thead>
@@ -715,6 +741,7 @@
                         <td>{{ op.pays }}</td>
                         <td>{{ op.banque }}</td>
                         <td>{{ op.nomBordereau }}</td>
+                        <td>{{ op.reference || '-' }}</td>
                         <td class="actions">
                             <button (click)="editOperation(op)" class="btn icon-btn edit" title="Modifier">
                                 <i class="fas fa-edit" style="color: green;"></i>

@@ -23,6 +23,7 @@ export class OperationsComponent implements OnInit, OnDestroy {
     codeProprietaireList: string[] = [];
     banqueList: string[] = [];
     serviceList: string[] = [];
+    referenceList: string[] = [];
     statutList: string[] = [];
     
     currentPage = 1;
@@ -112,6 +113,9 @@ export class OperationsComponent implements OnInit, OnDestroy {
     serviceSearchCtrl = new FormControl('');
     selectedService: string[] = [];
     filteredServiceList: string[] = [];
+    referenceSearchCtrl = new FormControl('');
+    selectedReference: string[] = [];
+    filteredReferenceList: string[] = [];
     compteSearchCtrl = new FormControl('');
     selectedComptes: string[] = [];
     // Remplacer la logique filteredComptesList pour qu'elle soit basée sur les codeProprietaire distincts des opérations
@@ -135,6 +139,7 @@ export class OperationsComponent implements OnInit, OnDestroy {
     @ViewChild('banqueSelect') banqueSelect!: MatSelect;
     @ViewChild('codeProprietaireSelect') codeProprietaireSelect!: MatSelect;
     @ViewChild('serviceSelect') serviceSelect!: MatSelect;
+    @ViewChild('referenceSelect') referenceSelect!: MatSelect;
 
     private subscription = new Subscription();
 
@@ -150,6 +155,7 @@ export class OperationsComponent implements OnInit, OnDestroy {
             banque: [''],
             nomBordereau: [''],
             service: [''],
+            reference: [''],
             codeProprietaire: ['', [Validators.required]],
             soldeAvant: [{ value: 0, disabled: true }],
             soldeApres: [{ value: 0, disabled: true }],
@@ -163,6 +169,7 @@ export class OperationsComponent implements OnInit, OnDestroy {
             banque: [''],
             nomBordereau: [''],
             service: [''],
+            reference: [''],
             dateOperation: ['', [Validators.required]]
         });
 
@@ -173,6 +180,7 @@ export class OperationsComponent implements OnInit, OnDestroy {
             banque: [[]],
             codeProprietaire: [[]],
             service: [[]],
+            reference: [[]],
             dateDebut: [''],
             dateFin: ['']
         });
@@ -260,6 +268,16 @@ export class OperationsComponent implements OnInit, OnDestroy {
                 this.onFilterChange();
             }
         });
+        this.referenceSearchCtrl.valueChanges.subscribe((search: string | null) => {
+            const s = (search || '').toLowerCase();
+            const availableReferences = this.getFilteredReference();
+            this.filteredReferenceList = availableReferences.filter(ref => ref.toLowerCase().includes(s));
+            if (this.filteredReferenceList.length === 1 && !this.filterForm.value.reference.includes(this.filteredReferenceList[0])) {
+                this.filterForm.controls['reference'].setValue([this.filteredReferenceList[0]]);
+                if (this.referenceSelect) { this.referenceSelect.close(); }
+                this.onFilterChange();
+            }
+        });
         // Ajout des logs pour diagnostic
         setTimeout(() => {
             console.log('filteredPaysList:', this.filteredPaysList);
@@ -287,23 +305,16 @@ export class OperationsComponent implements OnInit, OnDestroy {
     loadOperations() {
         this.isLoading = true;
         this.operationService.getAllOperations().subscribe({
-            next: (data) => {
-                this.operations = data.sort((a, b) => 
-                    new Date(b.dateOperation).getTime() - new Date(a.dateOperation).getTime()
-                );
-                this.filteredOperations = [...this.operations];
-                this.paysList = [...new Set(data.map(op => op.pays))].sort();
-                this.codeProprietaireList = [...new Set(data.map(op => op.codeProprietaire).filter(code => code !== undefined))] as string[];
-                
-                // Mettre à jour les listes filtrées avec cloisonnement après chargement des opérations
-                this.updateFilteredLists();
-                
-                this.applyFilters();
+            next: (operations) => {
+                this.operations = operations;
+                this.filteredOperations = operations;
+                this.updatePagedOperations();
                 this.calculateStats();
+                this.loadReferenceListFromOperations();
                 this.isLoading = false;
             },
             error: (err) => {
-                console.error('Erreur de chargement des opérations', err);
+                console.error('Erreur lors du chargement des opérations:', err);
                 this.isLoading = false;
             }
         });
@@ -374,21 +385,24 @@ export class OperationsComponent implements OnInit, OnDestroy {
     }
 
     loadServiceListFromBackend() {
-        this.subscription.add(
-            this.operationService.getDistinctService().subscribe({
-                next: (services: string[]) => {
-                    this.serviceList = services;
-                    
-                    // Mettre à jour les listes filtrées avec cloisonnement
-                    setTimeout(() => {
-                        this.updateFilteredLists();
-                    }, 100);
-                },
-                error: (error: any) => {
-                    console.error('Erreur lors du chargement de la liste des services:', error);
-                }
-            })
-        );
+        this.operationService.getDistinctService().subscribe({
+            next: (services) => {
+                this.serviceList = services;
+                this.filteredServiceList = services;
+            },
+            error: (err) => {
+                console.error('Erreur lors du chargement des services:', err);
+                this.serviceList = [];
+                this.filteredServiceList = [];
+            }
+        });
+    }
+
+    loadReferenceListFromOperations() {
+        if (this.operations && this.operations.length > 0) {
+            this.referenceList = [...new Set(this.operations.map(op => op.reference).filter((r): r is string => r !== undefined && r !== null && r !== ''))];
+            this.filteredReferenceList = this.referenceList;
+        }
     }
 
     loadStatsByType() {
@@ -537,6 +551,7 @@ export class OperationsComponent implements OnInit, OnDestroy {
             banque: formData.banque,
             nomBordereau: formData.nomBordereau,
             service: formData.service,
+            reference: formData.reference,
             dateOperation: formData.dateOperation
         };
 
@@ -725,6 +740,7 @@ export class OperationsComponent implements OnInit, OnDestroy {
             banque: this.editForm.value.banque,
             nomBordereau: this.editForm.value.nomBordereau,
             service: this.editForm.value.service,
+            reference: this.editForm.value.reference,
             dateOperation: this.editForm.value.dateOperation
         };
 
@@ -822,12 +838,13 @@ export class OperationsComponent implements OnInit, OnDestroy {
             const banqueMatch = !filters.banque || filters.banque.length === 0 || filters.banque.includes(op.banque);
             const codeProprietaireMatch = !filters.codeProprietaire || filters.codeProprietaire.length === 0 || filters.codeProprietaire.includes(op.codeProprietaire);
             const serviceMatch = !filters.service || filters.service.length === 0 || filters.service.includes(op.service);
+            const referenceMatch = !filters.reference || filters.reference.length === 0 || filters.reference.includes(op.reference);
             // Correction ici : comparer uniquement la partie date (YYYY-MM-DD)
             const opDate = op.dateOperation ? op.dateOperation.substring(0, 10) : '';
             const dateDebutMatch = !filters.dateDebut || opDate >= filters.dateDebut;
             const dateFinMatch = !filters.dateFin || opDate <= filters.dateFin;
             
-            return typeMatch && paysMatch && statutMatch && banqueMatch && codeProprietaireMatch && serviceMatch && dateDebutMatch && dateFinMatch;
+            return typeMatch && paysMatch && statutMatch && banqueMatch && codeProprietaireMatch && serviceMatch && referenceMatch && dateDebutMatch && dateFinMatch;
         });
         
         // Si on doit afficher les frais automatiquement, ajouter les frais associés
@@ -900,6 +917,7 @@ export class OperationsComponent implements OnInit, OnDestroy {
         const currentBanque = this.filterForm.value.banque;
         const currentService = this.filterForm.value.service;
         const currentCodeProprietaire = this.filterForm.value.codeProprietaire;
+        const currentReference = this.filterForm.value.reference;
 
         // Nettoyer les pays si le code propriétaire a changé
         if (currentPays && currentPays.length > 0) {
@@ -940,6 +958,16 @@ export class OperationsComponent implements OnInit, OnDestroy {
                 this.filterForm.controls['codeProprietaire'].setValue(validCodeProprietaire);
             }
         }
+
+        // Nettoyer les références si les autres filtres ont changé
+        if (currentReference && currentReference.length > 0) {
+            const validReference = currentReference.filter((ref: string) => 
+                this.filteredOperations.some(op => op.reference === ref)
+            );
+            if (validReference.length !== currentReference.length) {
+                this.filterForm.controls['reference'].setValue(validReference);
+            }
+        }
     }
 
     // Méthodes de filtrage avec cloisonnement
@@ -961,6 +989,10 @@ export class OperationsComponent implements OnInit, OnDestroy {
         // Filtrer par service si sélectionné
         if (this.filterForm.value.service && this.filterForm.value.service.length > 0) {
             data = data.filter(op => this.filterForm.value.service.includes(op.service));
+        }
+        // Filtrer par référence
+        if (this.filterForm.value.reference && this.filterForm.value.reference.length > 0) {
+            data = data.filter(op => this.filterForm.value.reference.includes(op.reference));
         }
         const pays = [...new Set(data.map(op => op.pays).filter((p): p is string => p !== undefined && p !== null))];
         return pays.sort();
@@ -985,6 +1017,10 @@ export class OperationsComponent implements OnInit, OnDestroy {
         if (this.filterForm.value.service && this.filterForm.value.service.length > 0) {
             data = data.filter(op => this.filterForm.value.service.includes(op.service));
         }
+        // Filtrer par référence
+        if (this.filterForm.value.reference && this.filterForm.value.reference.length > 0) {
+            data = data.filter(op => this.filterForm.value.reference.includes(op.reference));
+        }
         const banques = [...new Set(data.map(op => op.banque).filter((b): b is string => b !== undefined && b !== null))];
         return banques.sort();
     }
@@ -1008,35 +1044,69 @@ export class OperationsComponent implements OnInit, OnDestroy {
         if (this.filterForm.value.banque && this.filterForm.value.banque.length > 0) {
             data = data.filter(op => this.filterForm.value.banque.includes(op.banque));
         }
+        // Filtrer par référence
+        if (this.filterForm.value.reference && this.filterForm.value.reference.length > 0) {
+            data = data.filter(op => this.filterForm.value.reference.includes(op.reference));
+        }
         const services = [...new Set(data.map(op => op.service).filter((s): s is string => s !== undefined && s !== null))];
         return services.sort();
     }
 
     getFilteredCodeProprietaire(): string[] {
-        // Si pas de données operations, retourner la liste de base
-        if (!this.operations || this.operations.length === 0) {
-            return this.codeProprietaireList;
-        }
+        let data = [...this.operations];
         
-        let data = this.operations;
-        // Filtrer par pays si sélectionné
+        // Appliquer les autres filtres
+        if (this.filterForm.value.typeOperation && this.filterForm.value.typeOperation.length > 0) {
+            data = data.filter(op => this.filterForm.value.typeOperation.includes(op.typeOperation));
+        }
         if (this.filterForm.value.pays && this.filterForm.value.pays.length > 0) {
             data = data.filter(op => this.filterForm.value.pays.includes(op.pays));
         }
-        // Filtrer par banque si sélectionnée
+        if (this.filterForm.value.statut && this.filterForm.value.statut.length > 0) {
+            data = data.filter(op => this.filterForm.value.statut.includes(op.statut));
+        }
         if (this.filterForm.value.banque && this.filterForm.value.banque.length > 0) {
             data = data.filter(op => this.filterForm.value.banque.includes(op.banque));
         }
-        // Filtrer par service si sélectionné
         if (this.filterForm.value.service && this.filterForm.value.service.length > 0) {
             data = data.filter(op => this.filterForm.value.service.includes(op.service));
+        }
+        // Filtrer par référence
+        if (this.filterForm.value.reference && this.filterForm.value.reference.length > 0) {
+            data = data.filter(op => this.filterForm.value.reference.includes(op.reference));
         }
         const codeProprietaire = [...new Set(data.map(op => op.codeProprietaire).filter((c): c is string => c !== undefined && c !== null))];
         return codeProprietaire.sort();
     }
 
+    getFilteredReference(): string[] {
+        let data = [...this.operations];
+        
+        // Appliquer les autres filtres
+        if (this.filterForm.value.typeOperation && this.filterForm.value.typeOperation.length > 0) {
+            data = data.filter(op => this.filterForm.value.typeOperation.includes(op.typeOperation));
+        }
+        if (this.filterForm.value.pays && this.filterForm.value.pays.length > 0) {
+            data = data.filter(op => this.filterForm.value.pays.includes(op.pays));
+        }
+        if (this.filterForm.value.statut && this.filterForm.value.statut.length > 0) {
+            data = data.filter(op => this.filterForm.value.statut.includes(op.statut));
+        }
+        if (this.filterForm.value.banque && this.filterForm.value.banque.length > 0) {
+            data = data.filter(op => this.filterForm.value.banque.includes(op.banque));
+        }
+        if (this.filterForm.value.codeProprietaire && this.filterForm.value.codeProprietaire.length > 0) {
+            data = data.filter(op => this.filterForm.value.codeProprietaire.includes(op.codeProprietaire));
+        }
+        if (this.filterForm.value.service && this.filterForm.value.service.length > 0) {
+            data = data.filter(op => this.filterForm.value.service.includes(op.service));
+        }
+        const reference = [...new Set(data.map(op => op.reference).filter((r): r is string => r !== undefined && r !== null && r !== ''))];
+        return reference.sort();
+    }
+
     clearFilters() {
-        this.filterForm.reset({ typeOperation: '', pays: '', statut: '', banque: '', codeProprietaire: '', service: '', dateDebut: '', dateFin: '' });
+        this.filterForm.reset({ typeOperation: '', pays: '', statut: '', banque: '', codeProprietaire: '', service: '', reference: '', dateDebut: '', dateFin: '' });
         this.applyFilters();
     }
 

@@ -564,6 +564,7 @@ public class OperationService {
                 entity.getRecordCount()
         );
         op.setParentOperationId(entity.getParentOperationId());
+        op.setReference(entity.getReference());
         return op;
     }
     
@@ -586,6 +587,7 @@ public class OperationService {
         }
         entity.setRecordCount(model.getRecordCount());
         entity.setParentOperationId(model.getParentOperationId());
+        entity.setReference(model.getReference());
         return entity;
     }
     

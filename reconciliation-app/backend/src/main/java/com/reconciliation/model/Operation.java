@@ -18,6 +18,7 @@ public class Operation {
     private Long compteId;
     private Integer recordCount;
     private Long parentOperationId;
+    private String reference;
     
     // Champs pour les frais de transaction
     private Double montantFrais;
@@ -159,6 +160,14 @@ public class Operation {
 
     public void setParentOperationId(Long parentOperationId) {
         this.parentOperationId = parentOperationId;
+    }
+    
+    public String getReference() {
+        return reference;
+    }
+    
+    public void setReference(String reference) {
+        this.reference = reference;
     }
     
     // Getters et Setters pour les frais

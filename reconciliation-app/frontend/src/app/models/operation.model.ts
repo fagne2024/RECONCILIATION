@@ -13,6 +13,7 @@ export interface Operation {
     pays: string;
     compteId?: number;
     parentOperationId?: number;
+    reference?: string;
 }
 
 export interface OperationCreateRequest {
@@ -22,6 +23,7 @@ export interface OperationCreateRequest {
     banque?: string;
     nomBordereau?: string;
     service?: string;
+    reference?: string;
     dateOperation: string;
 }
 
@@ -37,6 +39,7 @@ export interface OperationUpdateRequest {
     statut?: string;
     pays?: string;
     compteId?: number;
+    reference?: string;
     dateOperation?: string;
 }
 

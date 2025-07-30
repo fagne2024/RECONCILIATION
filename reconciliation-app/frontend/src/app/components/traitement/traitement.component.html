@@ -6,7 +6,8 @@
   <div *ngIf="isProcessing" class="processing-overlay">
     <div class="processing-container">
       <div class="processing-header">
-        <h3>🔄 Traitement en cours...</h3>
+        <div class="processing-icon">🔄</div>
+        <h3>Traitement en cours...</h3>
         <p>{{ processingMessage }}</p>
       </div>
       <div class="progress-bar-container">
@@ -128,6 +129,9 @@
           <mat-label>Sélectionner des valeurs</mat-label>
           <mat-select #filterValueSelect [(ngModel)]="selectedFilterValues" multiple>
             <ngx-mat-select-search [formControl]="filterValueSearchCtrl" placeholderLabel="Rechercher une valeur..." noEntriesFoundLabel="Aucune valeur trouvée"></ngx-mat-select-search>
+            <mat-option value="__TOUS__" (click)="selectAllFilterValues()">
+              <strong>📋 Tous</strong>
+            </mat-option>
             <mat-option *ngFor="let val of filteredFilterValues" [value]="val">
               {{ val || '(vide)' }}
             </mat-option>

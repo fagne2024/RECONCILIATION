@@ -839,7 +839,7 @@ th {
   left: 0;
   width: 100%;
   height: 100%;
-  background: rgba(0, 0, 0, 0.7);
+  background: rgba(0, 0, 0, 0.5);
   display: flex;
   justify-content: center;
   align-items: center;
@@ -860,6 +860,19 @@ th {
   // S'assurer que le conteneur ne bloque pas le scroll
   position: relative;
   margin: auto;
+  // Animation d'apparition
+  animation: modalFadeIn 0.3s ease-out;
+}
+
+@keyframes modalFadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.9) translateY(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
 }
 
 .processing-header h3 {
@@ -872,6 +885,17 @@ th {
   color: #666;
   margin-bottom: 20px;
   font-size: 0.9rem;
+}
+
+.processing-icon {
+  font-size: 2rem;
+  margin-bottom: 12px;
+  animation: spin 2s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 .progress-bar-container {

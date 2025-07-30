@@ -50,6 +50,9 @@ public class OperationEntity {
     @Column(name = "parent_operation_id")
     private Long parentOperationId;
     
+    @Column(name = "reference")
+    private String reference;
+    
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "compte_id")
     private CompteEntity compte;
@@ -185,6 +188,14 @@ public class OperationEntity {
 
     public void setParentOperationId(Long parentOperationId) {
         this.parentOperationId = parentOperationId;
+    }
+    
+    public String getReference() {
+        return reference;
+    }
+
+    public void setReference(String reference) {
+        this.reference = reference;
     }
     
     public CompteEntity getCompte() {

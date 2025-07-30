@@ -1242,7 +1242,7 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
     agencyPage = 1;
     readonly agencyPageSize = 10;
     selectedService: string = '';
-    selectedDate: string = new Date().toISOString().split('T')[0];
+    selectedDate: string = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().split('T')[0];
     isSaving: boolean = false;
     isSavingEcartBo: boolean = false;
     exportProgress = 0;
