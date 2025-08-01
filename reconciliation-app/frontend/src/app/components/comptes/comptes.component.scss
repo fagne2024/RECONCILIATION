@@ -1093,20 +1093,32 @@
 // Styles pour les écarts entre soldes de clôture
 .ecart-zero {
   color: #2e7d32 !important;
-  background: #d0ffd0 !important;
-  font-weight: bold;
+  background: #e8f5e8 !important;
+  font-weight: bold !important;
+  border: 2px solid #4caf50 !important;
+  border-radius: 4px !important;
+  padding: 4px 8px !important;
+  text-align: center !important;
 }
 
 .ecart-positive {
   color: #f57c00 !important;
-  background: #ffe0b2 !important;
-  font-weight: bold;
+  background: #fff3e0 !important;
+  font-weight: bold !important;
+  border: 1px solid #ff9800 !important;
+  border-radius: 4px !important;
+  padding: 4px 8px !important;
+  text-align: center !important;
 }
 
 .ecart-negative {
   color: #c62828 !important;
-  background: #ffd0d0 !important;
-  font-weight: bold;
+  background: #ffebee !important;
+  font-weight: bold !important;
+  border: 1px solid #f44336 !important;
+  border-radius: 4px !important;
+  padding: 4px 8px !important;
+  text-align: center !important;
 }
 
 // Styles pour le modal d'ajout de compte

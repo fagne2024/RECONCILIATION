@@ -175,6 +175,11 @@ export class DashboardComponent implements OnInit, OnDestroy {
       } else if (this.selectedTimeFilter === 'Ce mois') {
         start = new Date(today.getFullYear(), today.getMonth(), 1);
         end = new Date(today.getFullYear(), today.getMonth() + 1, 1);
+      } else if (this.selectedTimeFilter === 'Mois passé') {
+        const lastMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+        const lastMonthEnd = new Date(today.getFullYear(), today.getMonth(), 0);
+        start = new Date(lastMonth.getFullYear(), lastMonth.getMonth(), 1);
+        end = new Date(lastMonthEnd.getFullYear(), lastMonthEnd.getMonth() + 1, 1);
       } else if (this.selectedTimeFilter === 'Cette année') {
         start = new Date(today.getFullYear(), 0, 1); // 1er janvier de cette année
         end = new Date(today.getFullYear(), 11, 31); // 31 décembre de cette année

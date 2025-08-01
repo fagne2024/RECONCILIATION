@@ -1210,25 +1210,26 @@ export class ComptesComponent implements OnInit, OnDestroy {
           }
 
           // Appliquer les couleurs pour la colonne ECART
-          if (ecart === 0) {
+          const tolerance = 0.01; // 1 centime de tolérance
+          if (Math.abs(ecart) <= tolerance) {
             row.getCell(6).fill = {
               type: 'pattern',
               pattern: 'solid',
-              fgColor: { argb: 'FFD0FFD0' } // Vert clair
+              fgColor: { argb: 'FFE8F5E8' } // Vert clair amélioré
             };
             row.getCell(6).font = { color: { argb: 'FF2E7D32' }, bold: true };
           } else if (ecart > 0) {
             row.getCell(6).fill = {
               type: 'pattern',
               pattern: 'solid',
-              fgColor: { argb: 'FFFFE0B2' } // Orange clair
+              fgColor: { argb: 'FFFFF3E0' } // Orange clair amélioré
             };
             row.getCell(6).font = { color: { argb: 'FFF57C00' }, bold: true };
           } else {
             row.getCell(6).fill = {
               type: 'pattern',
               pattern: 'solid',
-              fgColor: { argb: 'FFFFD0D0' } // Rouge clair
+              fgColor: { argb: 'FFFFEBEE' } // Rouge clair amélioré
             };
             row.getCell(6).font = { color: { argb: 'FFC62828' }, bold: true };
           }
@@ -1694,7 +1695,8 @@ export class ComptesComponent implements OnInit, OnDestroy {
       if (solde.closingBo === undefined || solde.closingBo === null) {
         return 0; // Pas d'écart si pas de solde BO
       }
-      return solde.closing - solde.closingBo;
+      // Arrondir l'écart à 2 décimales
+      return Math.round((solde.closing - solde.closingBo) * 100) / 100;
     }
 
     // Méthode pour déterminer la classe CSS de l'écart
@@ -1704,7 +1706,10 @@ export class ComptesComponent implements OnInit, OnDestroy {
       }
       
       const ecart = this.getEcartValue(solde);
-      if (ecart === 0) {
+      // Utiliser une tolérance pour considérer les écarts très proches de 0 comme nuls
+      const tolerance = 0.01; // 1 centime de tolérance
+      
+      if (Math.abs(ecart) <= tolerance) {
         return 'ecart-zero'; // Écart nul (vert)
       } else if (ecart > 0) {
         return 'ecart-positive'; // Écart positif (orange)
