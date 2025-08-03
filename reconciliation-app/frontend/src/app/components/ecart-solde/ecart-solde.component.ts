@@ -110,6 +110,10 @@ export class EcartSoldeComponent implements OnInit, OnDestroy {
         next: (data) => {
           this.ecartSoldes = data;
           this.filteredEcartSoldes = [...data];
+          
+          // Trier par date décroissante (du plus récent au plus ancien)
+          this.filteredEcartSoldes.sort((a, b) => new Date(b.dateTransaction).getTime() - new Date(a.dateTransaction).getTime());
+          
           this.calculatePagination();
           this.isLoading = false;
         },
@@ -186,6 +190,9 @@ export class EcartSoldeComponent implements OnInit, OnDestroy {
       
       return match;
     });
+    
+    // Trier par date décroissante (du plus récent au plus ancien)
+    this.filteredEcartSoldes.sort((a, b) => new Date(b.dateTransaction).getTime() - new Date(a.dateTransaction).getTime());
     
     this.currentPage = 1;
     this.calculatePagination();

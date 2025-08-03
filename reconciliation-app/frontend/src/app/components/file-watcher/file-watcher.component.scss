@@ -1,0 +1,400 @@
+.file-watcher-container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+// Message d'erreur
+.error-message {
+  background: #e74c3c;
+  color: white;
+  padding: 10px 15px;
+  border-radius: 4px;
+  margin-bottom: 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+
+  .btn-close-error {
+    background: none;
+    border: none;
+    color: white;
+    font-size: 18px;
+    cursor: pointer;
+  }
+}
+
+// Indicateur de chargement
+.loading-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+
+  .loading-spinner {
+    background: white;
+    padding: 20px;
+    border-radius: 8px;
+    font-weight: bold;
+  }
+}
+
+.header {
+  text-align: center;
+  margin-bottom: 30px;
+
+  h2 {
+    color: #2c3e50;
+    margin-bottom: 10px;
+  }
+
+  p {
+    color: #666;
+    font-size: 16px;
+  }
+}
+
+.status-card {
+  background: white;
+  border-radius: 8px;
+  padding: 20px;
+  margin-bottom: 30px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  border-left: 4px solid #e74c3c;
+
+  &.active {
+    border-left-color: #27ae60;
+  }
+
+  .status-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+
+    h3 {
+      margin: 0;
+      color: #2c3e50;
+    }
+  }
+
+  .status-indicator {
+    font-weight: bold;
+    padding: 5px 10px;
+    border-radius: 4px;
+    background: #e74c3c;
+    color: white;
+
+    &.running {
+      background: #27ae60;
+    }
+  }
+
+  .status-details {
+    p {
+      margin: 5px 0;
+      color: #666;
+    }
+  }
+
+  .status-actions {
+    margin-top: 15px;
+    display: flex;
+    gap: 10px;
+  }
+}
+
+.specifications-section {
+  background: white;
+  border-radius: 8px;
+  padding: 20px;
+  margin-bottom: 30px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+
+  .section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+
+    h3 {
+      margin: 0;
+      color: #2c3e50;
+    }
+  }
+
+  .specifications-list {
+    display: grid;
+    gap: 15px;
+  }
+
+  .specification-card {
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    padding: 15px;
+    background: #f9f9f9;
+
+    &.active {
+      border-color: #27ae60;
+      background: #f0f9f0;
+    }
+
+    .spec-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+
+      h4 {
+        margin: 0;
+        color: #2c3e50;
+      }
+    }
+
+    .badge {
+      padding: 2px 8px;
+      border-radius: 12px;
+      font-size: 12px;
+      background: #95a5a6;
+      color: white;
+
+      &.active {
+        background: #27ae60;
+      }
+    }
+
+    .spec-details {
+      p {
+        margin: 5px 0;
+        font-size: 14px;
+        color: #666;
+      }
+    }
+
+    .spec-actions {
+      margin-top: 10px;
+      display: flex;
+      gap: 10px;
+    }
+  }
+
+  .empty-state {
+    text-align: center;
+    padding: 40px;
+    color: #666;
+  }
+}
+
+.form-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+
+  .form-modal {
+    background: white;
+    border-radius: 8px;
+    padding: 20px;
+    width: 90%;
+    max-width: 600px;
+    max-height: 90vh;
+    overflow-y: auto;
+
+    .form-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+
+      h3 {
+        margin: 0;
+        color: #2c3e50;
+      }
+
+      .btn-close {
+        background: none;
+        border: none;
+        font-size: 24px;
+        cursor: pointer;
+        color: #666;
+      }
+    }
+
+    .form-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 15px;
+      margin-bottom: 15px;
+    }
+
+    .form-group {
+      margin-bottom: 15px;
+
+      label {
+        display: block;
+        margin-bottom: 5px;
+        font-weight: bold;
+        color: #2c3e50;
+      }
+
+      input,
+      select {
+        width: 100%;
+        padding: 8px 12px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        font-size: 14px;
+      }
+
+      .checkbox-label {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-weight: normal;
+      }
+    }
+
+    .form-actions {
+      display: flex;
+      gap: 10px;
+      justify-content: flex-end;
+      margin-top: 20px;
+    }
+  }
+}
+
+.examples-section {
+  background: white;
+  border-radius: 8px;
+  padding: 20px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+
+  h3 {
+    margin: 0 0 15px 0;
+    color: #2c3e50;
+  }
+
+  .examples-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 15px;
+  }
+
+  .example-card {
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    padding: 15px;
+    background: #f9f9f9;
+
+    h4 {
+      margin: 0 0 10px 0;
+      color: #2c3e50;
+    }
+
+    p {
+      margin: 5px 0;
+      font-size: 14px;
+      color: #666;
+    }
+  }
+}
+
+// Boutons
+.btn {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  text-decoration: none;
+  display: inline-block;
+  transition: background-color 0.3s;
+
+  &:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  &.btn-primary {
+    background: #3498db;
+    color: white;
+
+    &:hover:not(:disabled) {
+      background: #2980b9;
+    }
+  }
+
+  &.btn-secondary {
+    background: #95a5a6;
+    color: white;
+
+    &:hover:not(:disabled) {
+      background: #7f8c8d;
+    }
+  }
+
+  &.btn-success {
+    background: #27ae60;
+    color: white;
+
+    &:hover:not(:disabled) {
+      background: #229954;
+    }
+  }
+
+  &.btn-danger {
+    background: #e74c3c;
+    color: white;
+
+    &:hover:not(:disabled) {
+      background: #c0392b;
+    }
+  }
+
+  &.btn-outline {
+    background: transparent;
+    color: #3498db;
+    border: 1px solid #3498db;
+
+    &:hover:not(:disabled) {
+      background: #3498db;
+      color: white;
+    }
+  }
+
+  &.btn-sm {
+    padding: 4px 8px;
+    font-size: 12px;
+  }
+}
+
+// Responsive
+@media (max-width: 768px) {
+  .form-row {
+    grid-template-columns: 1fr !important;
+  }
+  
+  .status-actions {
+    flex-direction: column;
+  }
+  
+  .spec-actions {
+    flex-direction: column;
+  }
+
+  .examples-grid {
+    grid-template-columns: 1fr;
+  }
+} 

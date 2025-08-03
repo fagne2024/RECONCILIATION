@@ -17,6 +17,8 @@ import { ProfilComponent } from './components/profil/profil.component';
 import { ModulesComponent } from './components/modules/modules.component';
 import { PermissionsComponent } from './components/permissions/permissions.component';
 import { EcartSoldeComponent } from './components/ecart-solde/ecart-solde.component';
+import { FileWatcherComponent } from './components/file-watcher/file-watcher.component';
+import { AutoProcessingModelsComponent } from './components/auto-processing-models/auto-processing-models.component';
 
 const routes: Routes = [
   { path: '', redirectTo: '/upload', pathMatch: 'full' },
@@ -36,7 +38,9 @@ const routes: Routes = [
   { path: 'profils', component: ProfilComponent },
   { path: 'modules', component: ModulesComponent },
   { path: 'permissions', component: PermissionsComponent },
-  { path: 'ecart-solde', component: EcartSoldeComponent }
+  { path: 'ecart-solde', component: EcartSoldeComponent },
+  { path: 'file-watcher', component: FileWatcherComponent },
+  { path: 'auto-processing-models', component: AutoProcessingModelsComponent }
 ];
 
 @NgModule({

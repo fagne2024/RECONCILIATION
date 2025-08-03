@@ -64,6 +64,18 @@
                 <span>Écarts de Solde</span>
             </a>
         </li>
+        <li *ngIf="isMenuAllowed('Surveillance')">
+            <a routerLink="/file-watcher" routerLinkActive="active">
+                <i class="fas fa-eye menu-icon surveillance"></i>
+                <span>Surveillance</span>
+            </a>
+        </li>
+        <li *ngIf="isMenuAllowed('Modèles')">
+            <a routerLink="/auto-processing-models" routerLinkActive="active">
+                <i class="fas fa-cogs menu-icon models"></i>
+                <span>Modèles de Traitement</span>
+            </a>
+        </li>
         <li>
             <a href="#" class="has-submenu" (click)="toggleParamSubmenu(); $event.preventDefault()">
                 <i class="fas fa-cog menu-icon parametre"></i>

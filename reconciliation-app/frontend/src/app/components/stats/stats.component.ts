@@ -193,6 +193,10 @@ export class StatsComponent implements OnInit, OnDestroy {
 
     // Harmonisation de la méthode de filtrage
     applyFilters() {
+        console.log('applyFilters() appelé');
+        console.log('Filtres actuels:', this.filterForm.value);
+        console.log('agencySummaries length:', this.agencySummaries.length);
+        
         const filters = this.filterForm.value;
         this.filteredData = this.agencySummaries.filter(summary => {
             const summaryDate = new Date(summary.date);
@@ -201,9 +205,27 @@ export class StatsComponent implements OnInit, OnDestroy {
             const agencyMatch = !filters.agency || filters.agency.length === 0 || filters.agency.includes(summary.agency);
             const serviceMatch = !filters.service || filters.service.length === 0 || filters.service.includes(summary.service);
             const countryMatch = !filters.country || filters.country.length === 0 || filters.country.includes(summary.country);
-            return agencyMatch && serviceMatch && countryMatch && afterStart && beforeEnd;
+            
+            const match = agencyMatch && serviceMatch && countryMatch && afterStart && beforeEnd;
+            
+            // Log pour diagnostiquer le filtrage par service
+            if (filters.service && filters.service.length > 0) {
+                console.log('Filtrage service:', {
+                    summaryService: summary.service,
+                    selectedServices: filters.service,
+                    serviceMatch,
+                    match
+                });
+            }
+            
+            return match;
         });
-        console.log('Données après filtrage:', this.filteredData);
+        
+        // Trier par date décroissante (du plus récent au plus ancien)
+        this.filteredData.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+        
+        console.log('Données après filtrage et tri:', this.filteredData.length);
+        console.log('Sample des données filtrées:', this.filteredData.slice(0, 3));
         this.totalPages = Math.ceil(this.filteredData.length / this.statsPageSize);
     }
 
@@ -278,6 +300,10 @@ export class StatsComponent implements OnInit, OnDestroy {
      * Agrège les statistiques en soustrayant les annulations des types d'origine
      */
     getAggregatedStats() {
+        console.log('getAggregatedStats() appelé');
+        console.log('filteredData length:', this.filteredData.length);
+        console.log('filteredData sample:', this.filteredData.slice(0, 3));
+        
         // Map: { [type]: { volume: number, count: number, agency, service, country, date }[] }
         const aggregation: { [key: string]: any[] } = {};
         // On regroupe par type/service/pays/agence/date
@@ -298,6 +324,9 @@ export class StatsComponent implements OnInit, OnDestroy {
                 isAnnulation
             });
         }
+        
+        console.log('Nombre de groupes d\'agrégation:', Object.keys(aggregation).length);
+        
         // Calculer les totaux corrigés
         const result: any[] = [];
         for (const key in aggregation) {
@@ -314,7 +343,10 @@ export class StatsComponent implements OnInit, OnDestroy {
                 'annulation_ajustement',
                 'annulation_approvisionnement'
             ];
-            if (excludedAnnulationTypes.includes(type)) continue;
+            if (excludedAnnulationTypes.includes(type)) {
+                console.log('Type exclu:', type);
+                continue;
+            }
             
 
             // On additionne les volumes et nombres, puis on soustrait les annulations
@@ -336,8 +368,14 @@ export class StatsComponent implements OnInit, OnDestroy {
             // On n'affiche que si le total est positif ou non nul
             if (recordCount !== 0 || totalVolume !== 0) {
                 result.push({ agency, service, country, date, totalVolume, recordCount });
+            } else {
+                console.log('Groupe exclu car total nul:', { service, agency, country, date, totalVolume, recordCount });
             }
         }
+        
+        console.log('Nombre de résultats après agrégation:', result.length);
+        console.log('Résultats sample:', result.slice(0, 3));
+        
         // Trier par date décroissante
         return result.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     }

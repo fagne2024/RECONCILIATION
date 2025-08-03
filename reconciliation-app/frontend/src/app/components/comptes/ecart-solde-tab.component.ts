@@ -83,6 +83,9 @@ export class EcartSoldeTabComponent implements OnInit, OnDestroy {
       });
     }
 
+    // Trier par date décroissante (du plus récent au plus ancien)
+    filtered.sort((a, b) => new Date(b.dateTransaction).getTime() - new Date(a.dateTransaction).getTime());
+
     this.filteredEcartSoldes = filtered;
   }
 

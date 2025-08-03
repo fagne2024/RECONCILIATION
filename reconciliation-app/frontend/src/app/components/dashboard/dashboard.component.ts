@@ -1260,6 +1260,9 @@ export class DashboardComponent implements OnInit, OnDestroy {
           });
           this.agencySummaryData = this.filterByPeriod(this.agencySummaryData);
           
+          // Trier par date décroissante (du plus récent au plus ancien)
+          this.agencySummaryData.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+          
           // Mettre à jour les listes filtrées avec cloisonnement après chargement des données
           this.updateFilteredLists();
           

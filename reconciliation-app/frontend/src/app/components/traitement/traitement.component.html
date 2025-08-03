@@ -445,6 +445,76 @@
           Appliquer
         </button>
       </div>
+      
+      <!-- Option : Nettoyer les montants -->
+      <label>
+        <input type="checkbox" [(ngModel)]="formatOptions['cleanAmounts']"> Nettoyer les montants (enlever espaces et ,00)
+      </label>
+      <div *ngIf="formatOptions['cleanAmounts']" class="format-columns">
+        <label>Colonnes à traiter :</label>
+        <select multiple [(ngModel)]="formatSelections['cleanAmounts']">
+          <option *ngFor="let col of columns" [value]="col">{{ col }}</option>
+        </select>
+        <div class="clean-amounts-help">
+          <small class="help-text">
+            💡 Cette option va :
+            <br>• Enlever tous les espaces (ex: "100 000,00" → "100000,00")
+            <br>• Enlever ",00" à la fin (ex: "100000,00" → "100000")
+            <br>• Enlever ",0" à la fin (ex: "100000,0" → "100000")
+            <br>• Convertir les nombres entiers (ex: 100000.0 → 100000)
+          </small>
+        </div>
+        <button type="button" (click)="applyCleanAmountsFormatting()" 
+                [disabled]="!formatSelections['cleanAmounts'].length">
+          Appliquer
+        </button>
+      </div>
+      
+      <!-- Option : Insérer des caractères -->
+      <label>
+        <input type="checkbox" [(ngModel)]="formatOptions['insertCharacters']"> Insérer des caractères
+      </label>
+      <div *ngIf="formatOptions['insertCharacters']" class="format-columns">
+        <label>Colonnes à traiter :</label>
+        <select multiple [(ngModel)]="formatSelections['insertCharacters']">
+          <option *ngFor="let col of columns" [value]="col">{{ col }}</option>
+        </select>
+        <div class="insert-char-options">
+          <div class="option-group">
+            <label>Caractères à insérer :</label>
+            <input type="text" [(ngModel)]="charactersToInsert" 
+                   placeholder="Ex: _CM ou 123" 
+                   style="width: 200px;"
+                   title="Tapez les caractères que vous voulez insérer">
+          </div>
+          <div class="option-group">
+            <label>Position :</label>
+            <select [(ngModel)]="insertPosition">
+              <option value="start">Au début</option>
+              <option value="end">À la fin</option>
+              <option value="specific">Position spécifique</option>
+            </select>
+          </div>
+          <div class="option-group" *ngIf="insertPosition === 'specific'">
+            <label>Position (1-based) :</label>
+            <input type="number" [(ngModel)]="insertSpecificPosition" min="1" style="width: 80px;">
+          </div>
+          <div class="option-group">
+            <small class="help-text">
+              💡 Exemples d'insertion :
+              <br>• Au début : "ABC" + "123" = "ABC123"
+              <br>• À la fin : "123" + "XYZ" = "123XYZ"
+              <br>• Position 2 : "123" → "1ABC23" (position 2)
+              <br>• Position 1 : "123" → "ABC123" (position 1)
+              <br><strong>🛡️ Protection anti-doublons :</strong> Les caractères ne sont ajoutés qu'une seule fois
+            </small>
+          </div>
+        </div>
+        <button type="button" (click)="applyInsertCharactersFormatting()" 
+                [disabled]="!formatSelections['insertCharacters'].length || !charactersToInsert.trim()">
+          Appliquer
+        </button>
+      </div>
     </div>
     <div *ngIf="successMsg.format" class="success-msg">{{ successMsg.format }}</div>
     <div *ngIf="errorMsg.format" class="error-msg">{{ errorMsg.format }}</div>

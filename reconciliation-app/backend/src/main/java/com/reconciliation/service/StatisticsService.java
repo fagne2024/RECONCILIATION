@@ -393,15 +393,15 @@ public class StatisticsService {
                 .distinct()
                 .count();
             
-            if (daysWithFees > 0) {
+            if (daysWithFees > 0 && totalFees != null) {
                 averageFeesPerDay = totalFees / daysWithFees;
-            } else if (start != null && end != null) {
+            } else if (start != null && end != null && totalFees != null) {
                 // Si pas de frais dans la période, calculer sur la période complète
                 java.time.LocalDate startDateLocal = java.time.LocalDate.parse(start);
                 java.time.LocalDate endDateLocal = java.time.LocalDate.parse(end);
                 long totalDays = java.time.temporal.ChronoUnit.DAYS.between(startDateLocal, endDateLocal) + 1;
                 averageFeesPerDay = totalDays > 0 ? (totalFees / totalDays) : 0.0;
-            } else {
+            } else if (totalFees != null) {
                 // Si pas de filtres de dates, calculer sur toute la période disponible
                 String minDateStr = agencySummaryRepository.findMinDate();
                 String maxDateStr = agencySummaryRepository.findMaxDate();
@@ -411,6 +411,9 @@ public class StatisticsService {
                     long totalDays = java.time.temporal.ChronoUnit.DAYS.between(minDate, maxDate) + 1;
                     averageFeesPerDay = totalDays > 0 ? (totalFees / totalDays) : 0.0;
                 }
+            } else {
+                // Si totalFees est null, définir averageFeesPerDay à 0.0
+                averageFeesPerDay = 0.0;
             }
             metrics.put("averageFeesPerDay", averageFeesPerDay);
             

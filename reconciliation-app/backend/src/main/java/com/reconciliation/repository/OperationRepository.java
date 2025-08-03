@@ -178,4 +178,20 @@ public interface OperationRepository extends JpaRepository<OperationEntity, Long
         @Param("startDate") LocalDateTime startDate,
         @Param("endDate") LocalDateTime endDate
     );
+
+    @Query("SELECT COUNT(o) FROM OperationEntity o WHERE o.typeOperation = 'compense' " +
+           "AND o.codeProprietaire = :codeProprietaire " +
+           "AND DATE(o.dateOperation) = DATE(:dateOperation)")
+    Long countCompenseOperationsByCodeProprietaireAndDate(
+        @Param("codeProprietaire") String codeProprietaire,
+        @Param("dateOperation") LocalDateTime dateOperation
+    );
+
+    @Query("SELECT COUNT(o) FROM OperationEntity o WHERE o.typeOperation = 'approvisionnement' " +
+           "AND o.codeProprietaire = :codeProprietaire " +
+           "AND DATE(o.dateOperation) = DATE(:dateOperation)")
+    Long countApprovisionnementOperationsByCodeProprietaireAndDate(
+        @Param("codeProprietaire") String codeProprietaire,
+        @Param("dateOperation") LocalDateTime dateOperation
+    );
 } 
