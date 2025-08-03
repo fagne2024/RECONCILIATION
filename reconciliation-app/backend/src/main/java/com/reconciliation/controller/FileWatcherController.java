@@ -11,6 +11,9 @@ import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import org.apache.poi.ss.usermodel.*;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.apache.poi.hssf.usermodel.HSSFWorkbook;
 
 @RestController
 @RequestMapping("/api/file-watcher")
@@ -176,6 +179,8 @@ public class FileWatcherController {
         try {
             if (file.getName().toLowerCase().endsWith(".csv")) {
                 return readCsvColumns(file);
+            } else if (file.getName().toLowerCase().endsWith(".xls") || file.getName().toLowerCase().endsWith(".xlsx")) {
+                return readExcelColumns(file);
             } else {
                 // Pour les autres types de fichiers, retourner des colonnes par défaut
                 return List.of("date", "montant", "description", "reference");
@@ -190,6 +195,8 @@ public class FileWatcherController {
         try {
             if (file.getName().toLowerCase().endsWith(".csv")) {
                 return readCsvSampleData(file);
+            } else if (file.getName().toLowerCase().endsWith(".xls") || file.getName().toLowerCase().endsWith(".xlsx")) {
+                return readExcelSampleData(file);
             } else {
                 // Pour les autres types de fichiers, retourner des données d'exemple
                 return List.of(
@@ -397,5 +404,256 @@ public class FileWatcherController {
         }
         // Soustraire 1 pour l'en-tête
         return Math.max(0, lineCount - 1);
+    }
+
+    // Méthode pour lire les colonnes Excel avec détection intelligente des en-têtes
+    private List<String> readExcelColumns(File file) throws IOException {
+        try {
+            // Utiliser Apache POI pour lire les fichiers Excel
+            Workbook workbook;
+            if (file.getName().toLowerCase().endsWith(".xlsx")) {
+                workbook = new XSSFWorkbook(new FileInputStream(file));
+            } else {
+                workbook = new HSSFWorkbook(new FileInputStream(file));
+            }
+            
+            Sheet sheet = workbook.getSheetAt(0);
+            List<String> headers = new ArrayList<>();
+            
+            // Analyser les premières 200 lignes pour trouver les en-têtes
+            int maxRowsToCheck = Math.min(200, sheet.getLastRowNum());
+            
+            for (int i = 0; i <= maxRowsToCheck; i++) {
+                Row row = sheet.getRow(i);
+                if (row == null) continue;
+                
+                List<String> rowData = new ArrayList<>();
+                for (int j = 0; j < row.getLastCellNum(); j++) {
+                    Cell cell = row.getCell(j);
+                    String cellValue = (cell != null) ? cell.toString().trim() : "";
+                    rowData.add(cellValue);
+                }
+                
+                // Vérifier si cette ligne contient les en-têtes Orange Money
+                if (isOrangeMoneyHeaderRow(rowData)) {
+                    headers = rowData;
+                    System.out.println("✅ En-têtes Orange Money détectés à la ligne " + i);
+                    break;
+                }
+            }
+            
+            workbook.close();
+            
+            if (headers.isEmpty()) {
+                // Fallback : utiliser la première ligne non vide
+                for (int i = 0; i <= sheet.getLastRowNum(); i++) {
+                    Row row = sheet.getRow(i);
+                    if (row != null) {
+                        List<String> rowData = new ArrayList<>();
+                        for (int j = 0; j < row.getLastCellNum(); j++) {
+                            Cell cell = row.getCell(j);
+                            String cellValue = (cell != null) ? cell.toString().trim() : "";
+                            rowData.add(cellValue);
+                        }
+                        
+                        if (rowData.stream().anyMatch(s -> !s.isEmpty())) {
+                            headers = rowData;
+                            break;
+                        }
+                    }
+                }
+            }
+            
+            return headers;
+        } catch (Exception e) {
+            System.err.println("❌ Erreur lors de la lecture Excel: " + e.getMessage());
+            return List.of("date", "montant", "description", "reference");
+        }
+    }
+    
+    // Méthode pour détecter si une ligne contient les en-têtes Orange Money
+    private boolean isOrangeMoneyHeaderRow(List<String> rowData) {
+        List<String> orangeMoneyHeaders = List.of(
+            "N°", "Date", "Heure", "Référence", "Service", "Paiement", 
+            "Statut", "Mode", "N° de Compte", "Wallet", "N° Pseudo", 
+            "Débit", "Crédit", "Compte:", "Sous-réseau"
+        );
+        
+        int matchingHeaders = 0;
+        for (String header : orangeMoneyHeaders) {
+            if (rowData.stream().anyMatch(cell -> cell.contains(header))) {
+                matchingHeaders++;
+            }
+        }
+        
+        // Retourner true si au moins 8 en-têtes Orange Money sont trouvés
+        return matchingHeaders >= 8;
+    }
+
+    // Méthode pour lire les données d'exemple des fichiers Excel
+    private List<Map<String, Object>> readExcelSampleData(File file) throws IOException {
+        try {
+            // Utiliser Apache POI pour lire les fichiers Excel
+            Workbook workbook;
+            if (file.getName().toLowerCase().endsWith(".xlsx")) {
+                workbook = new XSSFWorkbook(new FileInputStream(file));
+            } else {
+                workbook = new HSSFWorkbook(new FileInputStream(file));
+            }
+            
+            Sheet sheet = workbook.getSheetAt(0);
+            List<Map<String, Object>> sampleData = new ArrayList<>();
+            List<String> headers = new ArrayList<>();
+            int headerRowIndex = -1;
+            
+            // Analyser les premières 200 lignes pour trouver les en-têtes
+            int maxRowsToCheck = Math.min(200, sheet.getLastRowNum());
+            System.out.println("🔍 Recherche des en-têtes dans les " + maxRowsToCheck + " premières lignes...");
+            
+            // Trouver la ligne d'en-têtes
+            for (int i = 0; i <= maxRowsToCheck; i++) {
+                Row row = sheet.getRow(i);
+                if (row == null) continue;
+                
+                List<String> rowData = new ArrayList<>();
+                for (int j = 0; j < row.getLastCellNum(); j++) {
+                    Cell cell = row.getCell(j);
+                    String cellValue = (cell != null) ? cell.toString().trim() : "";
+                    rowData.add(cellValue);
+                }
+                
+                // Vérifier si cette ligne contient les en-têtes Orange Money
+                if (isOrangeMoneyHeaderRow(rowData)) {
+                    headers = rowData;
+                    headerRowIndex = i;
+                    System.out.println("✅ En-têtes Orange Money détectés à la ligne " + i);
+                    System.out.println("📊 En-têtes détectés: " + headers);
+                    break;
+                }
+            }
+            
+            // Si aucun en-tête Orange Money n'est trouvé, utiliser la première ligne non vide
+            if (headers.isEmpty()) {
+                for (int i = 0; i <= sheet.getLastRowNum(); i++) {
+                    Row row = sheet.getRow(i);
+                    if (row != null) {
+                        List<String> rowData = new ArrayList<>();
+                        for (int j = 0; j < row.getLastCellNum(); j++) {
+                            Cell cell = row.getCell(j);
+                            String cellValue = (cell != null) ? cell.toString().trim() : "";
+                            rowData.add(cellValue);
+                        }
+                        
+                        if (rowData.stream().anyMatch(s -> !s.isEmpty())) {
+                            headers = rowData;
+                            headerRowIndex = i;
+                            break;
+                        }
+                    }
+                }
+            }
+            
+                         // Lire les données d'exemple (recherche agressive dans tout le fichier)
+             if (!headers.isEmpty() && headerRowIndex >= 0) {
+                 System.out.println("🔍 Recherche de données valides dans tout le fichier...");
+                 
+                 // Parcourir tout le fichier pour trouver des données valides
+                 for (int i = headerRowIndex + 1; i <= sheet.getLastRowNum(); i++) {
+                     Row row = sheet.getRow(i);
+                     if (row == null) continue;
+                     
+                     Map<String, Object> rowData = new java.util.HashMap<>();
+                     boolean hasData = false;
+                     boolean hasNonEmptyValues = false;
+                     boolean hasStatutValue = false;
+                     
+                     for (int j = 0; j < headers.size() && j < row.getLastCellNum(); j++) {
+                         Cell cell = row.getCell(j);
+                         String cellValue = (cell != null) ? cell.toString().trim() : "";
+                         
+                         if (!cellValue.isEmpty()) {
+                             hasData = true;
+                             
+                             // Vérifier spécifiquement si la colonne Statut a une valeur
+                             if (j < headers.size() && headers.get(j).equals("Statut") && !cellValue.isEmpty()) {
+                                 hasStatutValue = true;
+                                 System.out.println("🎯 Valeur Statut trouvée: " + cellValue);
+                             }
+                         }
+                         
+                         rowData.put(headers.get(j), cellValue);
+                     }
+                     
+                     // Vérifier si cette ligne n'est pas la ligne d'en-têtes elle-même
+                     boolean isHeaderRow = false;
+                     for (Object value : rowData.values()) {
+                         if (value != null && headers.contains(value.toString())) {
+                             isHeaderRow = true;
+                             break;
+                         }
+                     }
+                     
+                     // Ajouter les lignes qui contiennent des données significatives
+                     if (hasData && !isHeaderRow) { // Suppression de la vérification hasNonEmptyValues
+                         sampleData.add(rowData);
+                         System.out.println("✅ Ligne " + i + " ajoutée avec des données valides: " + rowData);
+                         
+                         // Si on a trouvé une ligne avec une valeur Statut, c'est encore mieux
+                         if (hasStatutValue) {
+                             System.out.println("🎯 Ligne " + i + " contient une valeur Statut!");
+                         }
+                         
+                         // Arrêter après avoir trouvé 10 lignes valides (augmenté)
+                         if (sampleData.size() >= 10) break;
+                     } else if (isHeaderRow) {
+                         System.out.println("⚠️ Ligne " + i + " ignorée car c'est la ligne d'en-têtes: " + rowData);
+                     } else {
+                         System.out.println("⚠️ Ligne " + i + " ignorée car pas de données valides: " + rowData);
+                     }
+                 }
+                 
+                 // Si toujours aucune ligne valide, essayer une approche plus permissive
+                 if (sampleData.isEmpty()) {
+                     System.out.println("⚠️ Aucune ligne valide trouvée, essai avec critères plus permissifs...");
+                     for (int i = headerRowIndex + 1; i <= Math.min(headerRowIndex + 1000, sheet.getLastRowNum()); i++) {
+                         Row row = sheet.getRow(i);
+                         if (row == null) continue;
+                         
+                         Map<String, Object> rowData = new java.util.HashMap<>();
+                         boolean hasAnyData = false;
+                         
+                         for (int j = 0; j < headers.size() && j < row.getLastCellNum(); j++) {
+                             Cell cell = row.getCell(j);
+                             String cellValue = (cell != null) ? cell.toString().trim() : "";
+                             
+                             if (!cellValue.isEmpty()) {
+                                 hasAnyData = true;
+                             }
+                             
+                             rowData.put(headers.get(j), cellValue);
+                         }
+                         
+                         // Ajouter toute ligne qui a au moins une donnée
+                         if (hasAnyData) {
+                             sampleData.add(rowData);
+                             System.out.println("✅ Ligne " + i + " ajoutée (critères permissifs): " + rowData);
+                             if (sampleData.size() >= 10) break; // Augmenté à 10
+                         }
+                     }
+                 }
+             }
+            
+            workbook.close();
+            System.out.println("📊 Données d'exemple Excel: " + sampleData.size() + " lignes avec " + headers.size() + " colonnes");
+            return sampleData;
+            
+        } catch (Exception e) {
+            System.err.println("❌ Erreur lors de la lecture des données Excel: " + e.getMessage());
+            e.printStackTrace();
+            return List.of(
+                Map.of("date", "2025-08-01", "montant", "1000.00", "description", "Transaction 1", "reference", "REF001"),
+                Map.of("date", "2025-08-02", "montant", "2000.00", "description", "Transaction 2", "reference", "REF002")
+            );
+        }
     }
 } 

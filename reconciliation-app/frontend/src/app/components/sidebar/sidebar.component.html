@@ -64,12 +64,13 @@
                 <span>Écarts de Solde</span>
             </a>
         </li>
-        <li *ngIf="isMenuAllowed('Surveillance')">
-            <a routerLink="/file-watcher" routerLinkActive="active">
-                <i class="fas fa-eye menu-icon surveillance"></i>
-                <span>Surveillance</span>
+        <li *ngIf="isMenuAllowed('BANQUE')">
+            <a routerLink="/banque" routerLinkActive="active">
+                <i class="fas fa-university menu-icon banque"></i>
+                <span>BANQUE</span>
             </a>
         </li>
+
         <li *ngIf="isMenuAllowed('Modèles')">
             <a routerLink="/auto-processing-models" routerLinkActive="active">
                 <i class="fas fa-cogs menu-icon models"></i>

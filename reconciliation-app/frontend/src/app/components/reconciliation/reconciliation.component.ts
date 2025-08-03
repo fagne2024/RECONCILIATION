@@ -3,6 +3,7 @@ import { ReconciliationRequest } from '../../models/reconciliation-request.model
 import { ReconciliationResponse } from '../../models/reconciliation-response.model';
 import { ReconciliationService } from '../../services/reconciliation.service';
 import { AppStateService } from '../../services/app-state.service';
+import { OrangeMoneyUtilsService } from '../../services/orange-money-utils.service';
 
 @Component({
     selector: 'app-reconciliation',
@@ -31,7 +32,8 @@ export class ReconciliationComponent implements OnInit {
 
     constructor(
         private reconciliationService: ReconciliationService,
-        private appStateService: AppStateService
+        private appStateService: AppStateService,
+        private orangeMoneyUtilsService: OrangeMoneyUtilsService
     ) {}
 
     ngOnInit(): void {
@@ -123,5 +125,12 @@ export class ReconciliationComponent implements OnInit {
 
     getSafeValue(value: number | null | undefined): number {
         return value || 0;
+    }
+
+    /**
+     * Obtient les valeurs spécifiques pour un champ donné, en tenant compte du type de fichier
+     */
+    getFieldValues(fieldName: string, fileName?: string): string[] {
+        return this.orangeMoneyUtilsService.getFieldValues(fieldName, fileName);
     }
 } 

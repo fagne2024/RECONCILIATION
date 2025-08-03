@@ -50,6 +50,360 @@
         color: #2c3e50;
         margin: 0;
       }
+
+      .header-actions {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+
+        .btn {
+          display: flex;
+          align-items: center;
+          gap: 5px;
+          
+          &.active {
+            background-color: #17a2b8;
+            border-color: #17a2b8;
+          }
+        }
+      }
+    }
+
+    // --- SECTION DE FILTRAGE DES MODÈLES PARTENAIRES ---
+    .partner-filter-section {
+      background: #f8f9fa;
+      border: 1px solid #e9ecef;
+      border-radius: 8px;
+      padding: 20px;
+      margin-bottom: 20px;
+
+      h4 {
+        color: #2c3e50;
+        margin-bottom: 15px;
+        font-size: 16px;
+        font-weight: 600;
+      }
+
+      .filter-controls {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 15px;
+        align-items: flex-end;
+
+        .filter-group {
+          display: flex;
+          flex-direction: column;
+          gap: 5px;
+
+          label {
+            font-weight: 500;
+            color: #495057;
+          }
+
+          select, input {
+            padding: 8px 12px;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
+            font-size: 14px;
+            min-width: 200px;
+
+            &:focus {
+              outline: none;
+              border-color: #007bff;
+              box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25);
+            }
+          }
+        }
+
+        .btn {
+          padding: 8px 16px;
+          font-size: 14px;
+          border-radius: 4px;
+          cursor: pointer;
+          transition: all 0.2s;
+
+          &.btn-primary {
+            background-color: #007bff;
+            border-color: #007bff;
+            color: white;
+
+            &:hover {
+              background-color: #0056b3;
+              border-color: #0056b3;
+            }
+
+            &:disabled {
+              background-color: #6c757d;
+              border-color: #6c757d;
+              cursor: not-allowed;
+            }
+          }
+
+          &.btn-secondary {
+            background-color: #6c757d;
+            border-color: #6c757d;
+            color: white;
+
+            &:hover {
+              background-color: #545b62;
+              border-color: #545b62;
+            }
+          }
+        }
+      }
+
+      .filter-results {
+        margin-top: 15px;
+        padding: 15px;
+        background: white;
+        border: 1px solid #dee2e6;
+        border-radius: 6px;
+
+        .results-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 10px;
+
+          .results-count {
+            font-weight: 500;
+            color: #495057;
+          }
+
+          .clear-filter {
+            font-size: 12px;
+            color: #6c757d;
+            cursor: pointer;
+            text-decoration: underline;
+
+            &:hover {
+              color: #495057;
+            }
+          }
+        }
+
+        .filtered-models {
+          display: grid;
+          grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+          gap: 15px;
+        }
+      }
+    }
+
+    // --- STYLES POUR LES VALEURS DISPONIBLES ---
+    .available-values-container {
+      border: 1px solid #dee2e6;
+      border-radius: 6px;
+      background: white;
+      max-height: 200px;
+      overflow-y: auto;
+
+      .values-list {
+        padding: 10px;
+
+        .value-item {
+          padding: 8px 12px;
+          margin: 2px 0;
+          border-radius: 4px;
+          cursor: pointer;
+          transition: all 0.2s;
+          border: 1px solid transparent;
+
+          &:hover {
+            background-color: #f8f9fa;
+            border-color: #dee2e6;
+          }
+
+          &.selected {
+            background-color: #007bff;
+            color: white;
+            border-color: #007bff;
+
+            &:hover {
+              background-color: #0056b3;
+              border-color: #0056b3;
+            }
+          }
+        }
+      }
+
+      .no-values {
+        padding: 20px;
+        text-align: center;
+        color: #6c757d;
+        font-style: italic;
+      }
+    }
+
+        .help-info {
+      margin-top: 10px;
+      padding: 10px;
+      background-color: #e3f2fd;
+      border: 1px solid #bbdefb;
+      border-radius: 4px;
+
+      .text-info {
+        color: #1976d2;
+        font-size: 12px;
+      }
+
+      .available-columns {
+        font-weight: 500;
+        color: #0d47a1;
+      }
+    }
+  }
+
+  .selected-values {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 10px;
+    background: #f8f9fa;
+    border-radius: 4px;
+    border: 1px solid #dee2e6;
+
+    .selected-value {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 4px 8px;
+      background: #007bff;
+      color: white;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: 500;
+
+      .remove-value {
+        background: none;
+        border: none;
+        color: white;
+        font-size: 14px;
+        cursor: pointer;
+        padding: 0;
+        margin-left: 4px;
+        line-height: 1;
+
+        &:hover {
+          opacity: 0.8;
+        }
+      }
+    }
+  }
+
+    // --- SECTION DE FILTRAGE GÉNÉRAL DES MODÈLES ---
+    .model-filter-section {
+      background: #e8f5e8;
+      border: 1px solid #c3e6c3;
+      border-radius: 8px;
+      padding: 20px;
+      margin-bottom: 20px;
+
+      h4 {
+        color: #2c3e50;
+        margin-bottom: 15px;
+        font-size: 16px;
+        font-weight: 600;
+      }
+
+      .filter-controls {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 15px;
+        align-items: flex-end;
+
+        .filter-group {
+          display: flex;
+          flex-direction: column;
+          gap: 5px;
+
+          label {
+            font-weight: 500;
+            color: #495057;
+            font-size: 14px;
+          }
+
+          select {
+            padding: 8px 12px;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
+            font-size: 14px;
+            min-width: 200px;
+            
+            &:focus {
+              outline: none;
+              border-color: #007bff;
+              box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25);
+            }
+          }
+
+          .filter-select {
+            min-width: 250px;
+            
+            ::ng-deep .mat-form-field-wrapper {
+              padding-bottom: 0;
+            }
+          }
+        }
+
+        .filter-actions {
+          display: flex;
+          gap: 10px;
+
+          .apply-btn, .reset-btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 4px;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.2s;
+
+            &:disabled {
+              opacity: 0.6;
+              cursor: not-allowed;
+            }
+          }
+
+          .apply-btn {
+            background-color: #28a745;
+            color: white;
+
+            &:hover:not(:disabled) {
+              background-color: #218838;
+            }
+          }
+
+          .reset-btn {
+            background-color: #6c757d;
+            color: white;
+
+            &:hover:not(:disabled) {
+              background-color: #5a6268;
+            }
+          }
+        }
+      }
+
+      .filter-status {
+        margin-top: 15px;
+        padding: 10px;
+        background: #d4edda;
+        border: 1px solid #c3e6c3;
+        border-radius: 4px;
+
+        .filter-badge {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          color: #155724;
+          font-weight: 500;
+          font-size: 14px;
+
+          i {
+            color: #155724;
+          }
+        }
+      }
     }
 
     .models-grid {
@@ -442,7 +796,6 @@
       }
     }
   }
-}
 
 // Styles pour les boutons
 .btn {
@@ -566,6 +919,45 @@
           border-color: #007bff;
           outline: none;
           box-shadow: 0 0 0 2px rgba(0,123,255,0.25);
+        }
+
+        // Styles pour mettre en évidence les options sélectionnées
+        option:checked {
+          background: linear-gradient(45deg, #28a745, #20c997);
+          color: white;
+          font-weight: bold;
+        }
+
+        option:hover {
+          background: #e9ecef;
+        }
+      }
+
+      // Indicateur visuel pour les clés sélectionnées
+      .selected-keys-indicator {
+        margin-top: 10px;
+        padding: 8px 12px;
+        background: #d4edda;
+        border: 1px solid #c3e6cb;
+        border-radius: 4px;
+        
+        .selected-keys-list {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 5px;
+          
+          .selected-key {
+            background: #28a745;
+            color: white;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 500;
+            
+            &::before {
+              content: "✓ ";
+            }
+          }
         }
       }
 
@@ -780,6 +1172,193 @@
 
       @media (max-width: 768px) {
         grid-template-columns: 1fr;
+      }
+    }
+  }
+} 
+
+.filter-badge {
+  background-color: #007bff;
+  color: white;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 0.8em;
+  margin-left: 8px;
+}
+
+// Styles pour le filtrage dynamique des colonnes BO
+.bo-column-filter-section {
+  margin-top: 20px;
+  padding: 15px;
+  background-color: #f8f9fa;
+  border: 1px solid #dee2e6;
+  border-radius: 8px;
+
+  .section-header {
+    margin-bottom: 15px;
+
+    h5 {
+      color: #495057;
+      margin-bottom: 5px;
+      font-size: 1.1em;
+    }
+
+    .section-description {
+      color: #6c757d;
+      font-size: 0.9em;
+      margin: 0;
+    }
+  }
+
+  .filter-controls {
+    .form-row {
+      margin-bottom: 15px;
+    }
+
+    .filter-search {
+      margin-bottom: 10px;
+
+      input {
+        border: 1px solid #ced4da;
+        border-radius: 4px;
+        padding: 8px 12px;
+        font-size: 0.9em;
+
+        &:focus {
+          border-color: #80bdff;
+          box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
+        }
+      }
+    }
+
+    select[multiple] {
+      border: 1px solid #ced4da;
+      border-radius: 4px;
+      padding: 8px;
+      font-size: 0.9em;
+      min-height: 120px;
+
+      option {
+        padding: 4px 8px;
+        margin: 1px 0;
+
+        &:hover {
+          background-color: #e9ecef;
+        }
+
+        &:checked {
+          background-color: #007bff;
+          color: white;
+        }
+      }
+    }
+
+    .filter-actions {
+      margin-top: 15px;
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+
+      .btn {
+        font-size: 0.85em;
+        padding: 6px 12px;
+
+        &.btn-secondary {
+          background-color: #6c757d;
+          border-color: #6c757d;
+
+          &:hover {
+            background-color: #5a6268;
+            border-color: #545b62;
+          }
+        }
+
+        &.btn-success {
+          background-color: #28a745;
+          border-color: #28a745;
+
+          &:hover {
+            background-color: #218838;
+            border-color: #1e7e34;
+          }
+
+          &:disabled {
+            background-color: #6c757d;
+            border-color: #6c757d;
+            opacity: 0.65;
+          }
+        }
+
+        &.btn-warning {
+          background-color: #ffc107;
+          border-color: #ffc107;
+          color: #212529;
+
+          &:hover {
+            background-color: #e0a800;
+            border-color: #d39e00;
+          }
+        }
+      }
+    }
+
+    .filter-status {
+      margin-top: 15px;
+
+      .alert {
+        padding: 10px 15px;
+        border-radius: 4px;
+        font-size: 0.9em;
+
+        &.alert-info {
+          background-color: #d1ecf1;
+          border: 1px solid #bee5eb;
+          color: #0c5460;
+
+          i {
+            margin-right: 5px;
+          }
+        }
+      }
+    }
+  }
+}
+
+.applied-filters {
+  margin-top: 15px;
+  padding: 15px;
+  background-color: #f8f9fa;
+  border-radius: 5px;
+  border: 1px solid #dee2e6;
+
+  h6 {
+    margin-bottom: 10px;
+    color: #495057;
+  }
+
+  .filter-list {
+    .filter-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 12px;
+      margin-bottom: 8px;
+      background-color: white;
+      border-radius: 4px;
+      border: 1px solid #ced4da;
+
+      .filter-info {
+        flex: 1;
+        
+        small {
+          color: #6c757d;
+        }
+      }
+
+      .btn-danger {
+        margin-left: 10px;
+        padding: 4px 8px;
+        font-size: 12px;
       }
     }
   }

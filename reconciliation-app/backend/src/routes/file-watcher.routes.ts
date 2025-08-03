@@ -23,6 +23,12 @@ router.delete('/specifications/:id', fileWatcherController.deleteSpecification);
 // Routes pour le traitement manuel
 router.post('/process-file', fileWatcherController.processFile);
 
+// Route pour analyser un fichier
+router.post('/analyze-file', fileWatcherController.analyzeFile);
+
+// Route pour obtenir les fichiers disponibles
+router.get('/available-files', fileWatcherController.getAvailableFiles);
+
 // Routes pour les exemples
 router.get('/examples', fileWatcherController.getExampleSpecifications);
 

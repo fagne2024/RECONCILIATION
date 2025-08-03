@@ -78,6 +78,39 @@ button:hover {
   margin-bottom: 16px;
 }
 
+// Styles pour l'indicateur Orange Money
+.orange-money-indicator {
+  margin: 16px 0;
+  padding: 12px 16px;
+  background: linear-gradient(135deg, #ff9800, #ff5722);
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(255, 152, 0, 0.3);
+}
+
+.orange-money-badge {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: white;
+  font-weight: 500;
+}
+
+.orange-money-badge i {
+  font-size: 1.2rem;
+  color: #fff;
+}
+
+.orange-money-badge span {
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.orange-money-badge small {
+  font-size: 0.85rem;
+  opacity: 0.9;
+  font-weight: 400;
+}
+
 .filter-group {
   display: flex;
   flex-direction: column;

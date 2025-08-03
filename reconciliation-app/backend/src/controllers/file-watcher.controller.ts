@@ -332,4 +332,53 @@ export class FileWatcherController {
       examples
     });
   };
+
+  // Analyser un fichier pour obtenir ses colonnes et données d'exemple
+  public analyzeFile = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { filePath } = req.body;
+      
+      if (!filePath) {
+        res.status(400).json({
+          success: false,
+          message: 'Le chemin du fichier est requis'
+        });
+        return;
+      }
+
+      console.log(`🔍 Demande d'analyse du fichier: ${filePath}`);
+      
+      const fileModel = await this.fileWatcherService.analyzeFile(filePath);
+      
+      res.json({
+        success: true,
+        ...fileModel
+      });
+    } catch (error) {
+      console.error('❌ Erreur lors de l\'analyse du fichier:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Erreur lors de l\'analyse du fichier',
+        error: error instanceof Error ? error.message : String(error)
+      });
+    }
+  };
+
+  // Obtenir la liste des fichiers disponibles avec leurs colonnes
+  public getAvailableFiles = async (req: Request, res: Response): Promise<void> => {
+    try {
+      console.log('🔍 Demande de récupération des fichiers disponibles');
+      
+      const availableFiles = await this.fileWatcherService.getAvailableFiles();
+      
+      res.json(availableFiles);
+    } catch (error) {
+      console.error('❌ Erreur lors de la récupération des fichiers disponibles:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Erreur lors de la récupération des fichiers disponibles',
+        error: error instanceof Error ? error.message : String(error)
+      });
+    }
+  };
 } 

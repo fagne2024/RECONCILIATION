@@ -1,6 +1,8 @@
 import { Component, OnInit } from '@angular/core';
-import { FormBuilder, FormGroup, Validators, FormArray } from '@angular/forms';
+import { FormBuilder, FormGroup, Validators, FormArray, FormControl } from '@angular/forms';
 import { AutoProcessingService, AutoProcessingModel, ProcessingStep, FileModel } from '../../services/auto-processing.service';
+import { OrangeMoneyUtilsService } from '../../services/orange-money-utils.service';
+import * as XLSX from 'xlsx';
 
 @Component({
   selector: 'app-auto-processing-models',
@@ -19,6 +21,26 @@ export class AutoProcessingModelsComponent implements OnInit {
   selectedFileModel: FileModel | null = null;
   availableColumns: string[] = [];
 
+  // --- FILTRAGE DES MODÈLES PARTENAIRES ---
+  showPartnerFilter = false;
+  selectedPartnerFilterColumn: string = '';
+  partnerFilterValues: string[] = [];
+  selectedPartnerFilterValues: string[] = [];
+  filteredPartnerModels: AutoProcessingModel[] = [];
+  partnerFilterApplied: boolean = false;
+  partnerFilterValueSearchCtrl = new FormControl('');
+
+  // --- FILTRAGE GÉNÉRAL DES MODÈLES (BO + PARTENAIRES) ---
+  showModelFilter = false;
+  selectedModelFilterColumn: string = '';
+  modelFilterValues: string[] = [];
+  selectedModelFilterValues: string[] = [];
+  filteredModels: AutoProcessingModel[] = [];
+  modelFilterApplied: boolean = false;
+  modelFilterValueSearchCtrl = new FormControl('');
+
+
+
   // Types d'étapes disponibles
   stepTypes = [
     { value: 'format', label: 'Formatage' },
@@ -27,7 +49,9 @@ export class AutoProcessingModelsComponent implements OnInit {
     { value: 'filter', label: 'Filtrage' },
     { value: 'calculate', label: 'Calcul' },
     { value: 'select', label: 'Sélection colonnes' },
-    { value: 'deduplicate', label: 'Suppression doublons' }
+    { value: 'deduplicate', label: 'Suppression doublons' },
+    { value: 'extract', label: 'Extraction de données' },
+    { value: 'export', label: 'Export par type' }
   ];
 
   // Actions disponibles par type
@@ -67,7 +91,9 @@ export class AutoProcessingModelsComponent implements OnInit {
       { value: 'removeEmpty', label: 'Supprimer lignes vides' },
       { value: 'keepMatching', label: 'Garder lignes correspondantes' },
       { value: 'filterByValue', label: 'Filtrer par valeur' },
-      { value: 'filterByExactValue', label: 'Filtrer par valeur exacte' }
+      { value: 'filterByExactValue', label: 'Filtrer par valeur exacte' },
+      { value: 'filterByColumn', label: 'Filtrer par colonne' },
+      { value: 'filterByMultipleValues', label: 'Filtrer par valeurs multiples' }
     ],
     calculate: [
       { value: 'sum', label: 'Somme' },
@@ -80,11 +106,24 @@ export class AutoProcessingModelsComponent implements OnInit {
     ],
     deduplicate: [
       { value: 'removeDuplicates', label: 'Supprimer doublons' }
+    ],
+    extract: [
+      { value: 'extractFirst', label: 'Extraire premiers caractères' },
+      { value: 'extractLast', label: 'Extraire derniers caractères' },
+      { value: 'extractFrom', label: 'Extraire à partir de' },
+      { value: 'extractBetween', label: 'Extraire entre deux caractères' },
+      { value: 'extractAfterKey', label: 'Extraire après une clé' }
+    ],
+    export: [
+      { value: 'exportByType', label: 'Export par type' },
+      { value: 'exportByColumn', label: 'Export par colonne' },
+      { value: 'exportByValue', label: 'Export par valeur' }
     ]
   };
 
   constructor(
     private autoProcessingService: AutoProcessingService,
+    private orangeMoneyUtilsService: OrangeMoneyUtilsService,
     private fb: FormBuilder
   ) {
     this.modelForm = this.fb.group({
@@ -177,6 +216,8 @@ export class AutoProcessingModelsComponent implements OnInit {
       extractStart: [1],
       startChar: [''],
       endChar: [''],
+      searchKey: [''],
+      sourceColumn: [''],
       // Paramètres de concaténation
       newColumn: ['concatenated'],
       separator: [' '],
@@ -184,6 +225,13 @@ export class AutoProcessingModelsComponent implements OnInit {
       pattern: ['.*'],
       values: [''],
       value: [''],
+      filterColumn: [''],
+      filterValues: [''],
+      // Paramètres d'export
+      exportColumn: [''],
+      exportValues: [''],
+      exportSuffix: ['_export'],
+      exportDescription: ['Export par type'],
       // Paramètres de validation
       required: [false],
       email: [false],
@@ -221,7 +269,9 @@ export class AutoProcessingModelsComponent implements OnInit {
       { value: 'filter', label: 'Filtrage' },
       { value: 'calculate', label: 'Calcul' },
       { value: 'select', label: 'Sélection colonnes' },
-      { value: 'deduplicate', label: 'Suppression doublons' }
+      { value: 'deduplicate', label: 'Suppression doublons' },
+      { value: 'extract', label: 'Extraction de données' },
+      { value: 'export', label: 'Export par type' }
     ];
   }
 
@@ -408,67 +458,112 @@ export class AutoProcessingModelsComponent implements OnInit {
       console.log('  - Raison: fileType !== "partner" ou boModels manquant');
     }
 
-    // Charger les colonnes si un fichier modèle est défini
+    // Charger les données du fichier modèle si défini
     if (model.templateFile) {
+      console.log('🔄 Chargement des données du fichier modèle:', model.templateFile);
+      
+      // Charger les colonnes
       this.autoProcessingService.getFileColumns(model.templateFile).subscribe({
         next: (columns) => {
           this.availableColumns = columns;
+          console.log('✅ Colonnes chargées:', columns);
         },
         error: (error) => {
           console.error('Erreur lors du chargement des colonnes:', error);
         }
       });
+
+      // Charger les données complètes du fichier pour avoir accès aux valeurs
+      this.autoProcessingService.analyzeFileModel(model.templateFile).subscribe({
+        next: (fileModel) => {
+          console.log('✅ Données du fichier modèle chargées:', fileModel);
+          
+          // Mettre à jour selectedFileModel avec les données du fichier modèle
+          this.selectedFileModel = fileModel;
+          
+          // Mettre à jour availableFiles si le fichier n'y est pas déjà
+          const existingFile = this.availableFiles.find(f => f.fileName === model.templateFile);
+          if (!existingFile) {
+            this.availableFiles.push(fileModel);
+          }
+          
+          console.log('✅ selectedFileModel mis à jour avec les vraies données');
+        },
+        error: (error) => {
+          console.error('Erreur lors du chargement des données du fichier:', error);
+        }
+      });
     }
 
-    // Réinitialiser les étapes
+    // Réinitialiser les étapes - s'assurer qu'il n'y a pas de duplication
     this.processingStepsFormArray.clear();
-    model.processingSteps.forEach(step => {
-      const stepForm = this.fb.group({
-        name: [step.name, Validators.required],
-        type: [step.type, Validators.required],
-        field: [Array.isArray(step.field) ? step.field : [step.field], Validators.required], // Gérer les champs multiples
-        action: [step.action, Validators.required],
-        description: [step.description, Validators.required],
-        // Patch des paramètres spécifiques
-        locale: [step.params?.locale || 'fr-FR'],
-        currency: [step.params?.currency || 'EUR'],
-        dateFormat: [step.params?.format || 'yyyy-MM-dd'],
-        position: [step.params?.position || 'start'],
-        count: [step.params?.count || 1],
-        characters: [step.params?.characters || ''],
-        caseSensitive: [step.params?.caseSensitive !== false],
-        extractType: [step.params?.extractType || 'first'],
-        extractCount: [step.params?.extractCount || 5],
-        extractKey: [step.params?.extractKey || ''],
-        extractStart: [step.params?.extractStart || 1],
-        columns: [step.params?.columns?.join(',') || ''],
-        newColumn: [step.params?.newColumn || 'concatenated'],
-        separator: [step.params?.separator || ' '],
-        pattern: [step.params?.pattern || '.*'],
-        values: [step.params?.values?.join(',') || ''],
-        value: [step.params?.value || ''],
-        startChar: [step.params?.startChar || ''],
-        endChar: [step.params?.endChar || '']
+    
+    // Vérifier que les étapes ne sont pas vides ou dupliquées
+    if (model.processingSteps && model.processingSteps.length > 0) {
+      console.log(`🔧 Chargement de ${model.processingSteps.length} étapes pour l'édition`);
+      
+      // Créer un Set pour éviter les doublons basés sur le nom et le type
+      const uniqueSteps = new Set<string>();
+      
+      model.processingSteps.forEach((step, index) => {
+        const stepKey = `${step.name}_${step.type}_${step.action}`;
+        
+        // Vérifier si cette étape n'a pas déjà été ajoutée
+        if (uniqueSteps.has(stepKey)) {
+          console.log(`⚠️ Étape dupliquée détectée et ignorée: ${step.name} (${step.type})`);
+          return;
+        }
+        
+        uniqueSteps.add(stepKey);
+        console.log(`🔧 Étape ${index + 1}: ${step.name} (${step.type})`);
+        
+        const stepForm = this.fb.group({
+          name: [step.name, Validators.required],
+          type: [step.type, Validators.required],
+          field: [Array.isArray(step.field) ? step.field : [step.field], Validators.required], // Gérer les champs multiples
+          action: [step.action, Validators.required],
+          description: [step.description, Validators.required],
+          // Patch des paramètres spécifiques
+          locale: [step.params?.locale || 'fr-FR'],
+          currency: [step.params?.currency || 'EUR'],
+          dateFormat: [step.params?.format || 'yyyy-MM-dd'],
+          position: [step.params?.position || 'start'],
+          count: [step.params?.count || 1],
+          characters: [step.params?.characters || ''],
+          caseSensitive: [step.params?.caseSensitive !== false],
+          extractType: [step.params?.extractType || 'first'],
+          extractCount: [step.params?.extractCount || 5],
+          extractKey: [step.params?.extractKey || ''],
+          extractStart: [step.params?.extractStart || 1],
+          columns: [step.params?.columns?.join(',') || ''],
+          newColumn: [step.params?.newColumn || 'concatenated'],
+          separator: [step.params?.separator || ' '],
+          pattern: [step.params?.pattern || '.*'],
+          values: [step.params?.values?.join(',') || ''],
+          value: [step.params?.value || ''],
+          startChar: [step.params?.startChar || ''],
+          endChar: [step.params?.endChar || '']
+        });
+        
+        this.processingStepsFormArray.push(stepForm);
       });
-      this.processingStepsFormArray.push(stepForm);
-    });
+      
+      console.log(`✅ ${this.processingStepsFormArray.length} étapes uniques chargées dans le formulaire`);
+    } else {
+      console.log('⚠️ Aucune étape trouvée dans le modèle à éditer');
+    }
 
     this.showCreateForm = true;
     
-         // Forcer la réinitialisation des contrôles BO après un délai
-     setTimeout(() => {
-       this.initializeBOModelKeys();
-       
-       // Initialiser les traitements BO si c'est un modèle partenaire
-       if (model.fileType === 'partner' && model.reconciliationKeys?.boModels) {
-         model.reconciliationKeys.boModels.forEach(boModelId => {
-           this.initializeBOTreatments(boModelId);
-         });
-       }
-       
-       // Note: onBOModelsChange() sera appelé automatiquement par le template
-       // quand les modèles BO sont sélectionnés, donc pas besoin de l'appeler ici
-     }, 500);
+    // Initialiser les contrôles BO immédiatement (sans setTimeout)
+    this.initializeBOModelKeys();
+    
+    // Initialiser les traitements BO si c'est un modèle partenaire
+    if (model.fileType === 'partner' && model.reconciliationKeys?.boModels) {
+      model.reconciliationKeys.boModels.forEach(boModelId => {
+        this.initializeBOTreatments(boModelId);
+      });
+    }
   }
   
   // Méthode pour initialiser les contrôles BO
@@ -573,303 +668,169 @@ export class AutoProcessingModelsComponent implements OnInit {
   saveModel(): void {
     if (this.modelForm.valid) {
       this.loading = true;
+      this.errorMessage = '';
+
       const formValue = this.modelForm.value;
-
-      const processingSteps: ProcessingStep[] = formValue.processingSteps.map((step: any, index: number) => {
-        // Construire les paramètres selon l'action
-        let params: any = {};
-
-        switch (step.action) {
-          // Formatage
-          case 'currency':
-            params = { locale: step.locale, currency: step.currency };
-            break;
-          case 'normalizeDates':
-            params = { format: step.dateFormat };
-            break;
-          case 'removeCharacters':
-            params = { 
-              position: step.position, 
-              count: step.count,
-              specificPosition: step.specificPosition 
-            };
-            break;
-          case 'removeSpecificCharacters':
-            params = { 
-              characters: step.characters, 
-              caseSensitive: step.caseSensitive 
-            };
-            break;
-          case 'insertCharacters':
-            params = { 
-              characters: step.characters, 
-              position: step.position,
-              specificPosition: step.specificPosition 
-            };
-            break;
-          case 'trimSpaces':
-          case 'toLowerCase':
-          case 'toUpperCase':
-          case 'removeDashesAndCommas':
-          case 'removeSeparators':
-          case 'dotToComma':
-          case 'normalizeNumbers':
-          case 'absoluteValue':
-          case 'cleanAmounts':
-            // Ces actions n'ont pas de paramètres spécifiques
-            params = {};
-            break;
-          
-          // Extraction
-          case 'extract':
-            params = {
-              extractType: step.extractType,
-              extractCount: step.extractCount,
-              extractKey: step.extractKey,
-              extractStart: step.extractStart,
-              startChar: step.startChar,
-              endChar: step.endChar
-            };
-            break;
-          
-          // Concaténation
-          case 'concat':
-            params = {
-              columns: Array.isArray(step.field) ? step.field : [step.field],
-              newColumn: step.newColumn,
-              separator: step.separator
-            };
-            break;
-          
-          // Filtrage
-          case 'keepMatching':
-            params = { pattern: step.pattern };
-            break;
-          case 'filterByValue':
-            params = { values: step.values.split(',').map((v: string) => v.trim()) };
-            break;
-          case 'filterByExactValue':
-            params = { value: step.value };
-            break;
-          
-          // Sélection de colonnes
-          case 'keepColumns':
-          case 'removeColumns':
-            params = { columns: Array.isArray(step.field) ? step.field : [step.field] };
-            break;
-          case 'removeDuplicates':
-            params = { columns: Array.isArray(step.field) ? step.field : [step.field] };
-            break;
-          
-          // Validation
-          case 'required':
-          case 'email':
-          case 'dateFormat':
-            params = { format: step.validationDateFormat };
-            break;
-        }
-
-        return {
-          id: `step_${index}`,
-          name: step.name,
-          type: step.type,
-          field: Array.isArray(step.field) ? step.field : [step.field], // S'assurer que field est un tableau
-          action: step.action,
-          params,
-          description: step.description
-        };
-      });
-
-             // Préparer les clés de réconciliation selon le type de modèle
-       let reconciliationKeys: any = {};
-       
-       if (formValue.fileType === 'partner') {
-         // Pour les modèles partenaire : clés partenaire + modèles BO sélectionnés avec leurs clés
-         const selectedBOModels = this.getSelectedBOModels();
-         const boModelKeys: any = {};
-         
-             console.log('🔍 Configuration des clés de réconciliation pour modèle partenaire:');
-    console.log('  - Modèles BO sélectionnés:', selectedBOModels);
-    console.log('  - formValue.reconciliationKeys:', formValue.reconciliationKeys);
-    
-    // Log de l'état complet du formulaire
-    const boModelKeysGroup = this.modelForm.get('reconciliationKeys.boModelKeys') as FormGroup;
-    console.log('  - Contrôles boModelKeys:', Object.keys(boModelKeysGroup.controls));
-    Object.keys(boModelKeysGroup.controls).forEach(key => {
-      const control = boModelKeysGroup.get(key);
-      console.log(`  - Contrôle ${key}:`, control?.value);
-    });
-         
-         // Sauvegarder les clés et traitements pour chaque modèle BO
-         const boTreatments: any = {};
-         
-         selectedBOModels.forEach(boModel => {
-           const keys = this.getBOModelKeys(boModel.id);
-           console.log(`  - Clés pour modèle BO ${boModel.id}:`, keys);
-           console.log(`  - Contrôle form pour ${boModel.id}:`, this.modelForm.get(`reconciliationKeys.boModelKeys.boKeys_${boModel.id}`)?.value);
-           
-           // Toujours sauvegarder les clés, même si elles sont vides (pour permettre la suppression)
-           boModelKeys[boModel.id] = keys;
-           console.log(`  - Clés sauvegardées pour ${boModel.id}:`, boModelKeys[boModel.id]);
-           
-           // Sauvegarder les traitements BO
-           const treatmentArray = this.getBOTreatmentSteps(boModel.id);
-           const treatments: ProcessingStep[] = treatmentArray.controls.map((control: any, index: number) => {
-             const step = control.value;
-             let params: any = {};
-
-             switch (step.action) {
-               // Formatage
-               case 'currency':
-                 params = { locale: step.locale, currency: step.currency };
-                 break;
-               case 'normalizeDates':
-                 params = { format: step.dateFormat };
-                 break;
-               case 'removeCharacters':
-                 params = { 
-                   position: step.position, 
-                   count: step.count,
-                   specificPosition: step.specificPosition 
-                 };
-                 break;
-               case 'removeSpecificCharacters':
-                 params = { 
-                   characters: step.characters, 
-                   caseSensitive: step.caseSensitive 
-                 };
-                 break;
-               case 'insertCharacters':
-                 params = { 
-                   characters: step.characters, 
-                   position: step.position,
-                   specificPosition: step.specificPosition 
-                 };
-                 break;
-               case 'trimSpaces':
-               case 'toLowerCase':
-               case 'toUpperCase':
-               case 'removeDashesAndCommas':
-               case 'removeSeparators':
-               case 'dotToComma':
-               case 'normalizeNumbers':
-               case 'absoluteValue':
-               case 'cleanAmounts':
-                 params = {};
-                 break;
-               
-               // Concaténation
-               case 'concat':
-                 params = {
-                   columns: Array.isArray(step.field) ? step.field : [step.field],
-                   newColumn: step.newColumn,
-                   separator: step.separator
-                 };
-                 break;
-               
-               // Filtrage
-               case 'keepMatching':
-                 params = { pattern: step.pattern };
-                 break;
-               case 'filterByValue':
-                 params = { values: step.values.split(',').map((v: string) => v.trim()) };
-                 break;
-               case 'filterByExactValue':
-                 params = { value: step.value };
-                 break;
-               
-               // Sélection de colonnes
-               case 'keepColumns':
-               case 'removeColumns':
-                 params = { columns: Array.isArray(step.field) ? step.field : [step.field] };
-                 break;
-               case 'removeDuplicates':
-                 params = { columns: Array.isArray(step.field) ? step.field : [step.field] };
-                 break;
-             }
-
-             return {
-               id: `bo_treatment_${boModel.id}_${index}`,
-               name: step.name,
-               type: step.type,
-               field: Array.isArray(step.field) ? step.field : [step.field],
-               action: step.action,
-               params,
-               description: step.description
-             };
-           });
-           
-           boTreatments[boModel.id] = treatments;
-           console.log(`  - Traitements sauvegardés pour ${boModel.id}:`, treatments);
-         });
-         
-         reconciliationKeys = {
-           partnerKeys: formValue.reconciliationKeys.partnerKeys,
-           boModels: formValue.reconciliationKeys.boModels,
-           boModelKeys: boModelKeys,
-           boTreatments: boTreatments
-         };
-         
-         console.log('  - reconciliationKeys final:', reconciliationKeys);
-         console.log('  - boModelKeys détaillé:', JSON.stringify(boModelKeys, null, 2));
-       } else {
-         // Pour les modèles BO et "both" : pas de configuration des clés
-         reconciliationKeys = {};
-       }
-
-      const modelData = {
-        name: formValue.name,
-        filePattern: formValue.filePattern,
-        fileType: formValue.fileType,
-        autoApply: formValue.autoApply,
-        templateFile: formValue.templateFile,
-        processingSteps,
-        reconciliationKeys: reconciliationKeys
-      };
-
-      console.log('💾 Données du modèle à sauvegarder:', modelData);
-      console.log('🔧 Étapes de traitement à sauvegarder:', processingSteps);
-      processingSteps.forEach((step, index) => {
-        console.log(`🔧 Étape ${index + 1} à sauvegarder:`, {
+      
+      // Récupérer les étapes de traitement
+      console.log('🔧 saveModel() - Nombre d\'étapes dans le formulaire:', this.processingStepsFormArray.length);
+      console.log('🔧 saveModel() - Valeurs des étapes:', this.processingStepsFormArray.value);
+      
+      const processingSteps = this.processingStepsFormArray.value.map((step: any, index: number) => {
+        console.log(`🔧 saveModel() - Traitement de l'étape ${index + 1}:`, step);
+        
+        const stepData = {
           name: step.name,
           type: step.type,
           action: step.action,
           field: step.field,
-          params: step.params
-        });
+          description: step.description, // Ajouter la description
+          params: {}
+        };
+
+        // Ajouter les paramètres selon le type d'action
+        if (step.action === 'removeSpecificCharacters') {
+          stepData.params = {
+            characters: step.characters || '',
+            position: step.position || 'anywhere'
+          };
+        } else if (step.action === 'formatAmount') {
+          stepData.params = {
+            decimalPlaces: step.decimalPlaces || 2,
+            currency: step.currency || 'XOF'
+          };
+        } else if (step.action === 'extractFirst') {
+          stepData.params = {
+            searchKey: step.searchKey || '',
+            sourceColumn: step.sourceColumn || ''
+          };
+        } else if (step.action === 'extractAfterKey') {
+          stepData.params = {
+            searchKey: step.searchKey || '',
+            sourceColumn: step.sourceColumn || ''
+          };
+        } else if (step.action === 'filterByColumn') {
+          stepData.params = {
+            filterColumn: step.filterColumn || '',
+            filterValues: step.filterValues || []
+          };
+        } else if (step.action === 'filterByMultipleValues') {
+          stepData.params = {
+            filterColumn: step.filterColumn || '',
+            filterValues: step.filterValues || []
+          };
+        } else if (step.action === 'exportByType') {
+          stepData.params = {
+            exportColumn: step.exportColumn || '',
+            exportValues: step.exportValues || [],
+            exportSuffix: step.exportSuffix || '',
+            exportDescription: step.exportDescription || ''
+          };
+        } else if (step.action === 'filterByValue') {
+          stepData.params = {
+            values: step.params?.values || []
+          };
+        }
+
+        return stepData;
       });
 
-      if (this.editingModel) {
-        // Mise à jour
-        this.autoProcessingService.updateModel(this.editingModel.id, modelData).subscribe({
-          next: (updatedModel) => {
-            if (updatedModel) {
-              this.loadModels();
-              this.closeForm();
-            }
-            this.loading = false;
-          },
-          error: (error) => {
-            console.error('Erreur lors de la mise à jour du modèle:', error);
-            this.errorMessage = 'Erreur lors de la mise à jour du modèle';
-            this.loading = false;
+      // Vérifier et supprimer les doublons dans les étapes
+      const uniqueSteps: any[] = [];
+      const seenSteps = new Set();
+      
+      processingSteps.forEach((step: any) => {
+        const stepKey = `${step.name}_${step.type}_${step.action}`;
+        if (!seenSteps.has(stepKey)) {
+          seenSteps.add(stepKey);
+          uniqueSteps.push(step);
+        } else {
+          console.log(`⚠️ saveModel() - Étape dupliquée détectée et supprimée: ${step.name}`);
+        }
+      });
+      
+      console.log(`🔧 saveModel() - Étapes uniques à sauvegarder: ${uniqueSteps.length}`);
+
+      // Configuration des clés de réconciliation pour modèle partenaire
+      let reconciliationKeys: any = null;
+       if (formValue.fileType === 'partner') {
+         const selectedBOModels = this.getSelectedBOModels();
+
+        reconciliationKeys = {
+          partnerKeys: formValue.reconciliationKeys?.partnerKeys || [],
+          boModels: selectedBOModels.map(m => m.id),
+          boModelKeys: {},
+          boTreatments: {}
+        };
+
+        // Récupérer les clés pour chaque modèle BO
+        const boModelKeysControls = formValue.reconciliationKeys?.boModelKeys || {};
+         
+         selectedBOModels.forEach(boModel => {
+          const controlKey = `boKeys_${boModel.id}`;
+          const control = boModelKeysControls[controlKey];
+
+          if (control && Array.isArray(control)) {
+            const keys = control;
+            reconciliationKeys.boModelKeys[boModel.id] = keys;
+
+            // Récupérer les traitements BO
+            const boTreatments = this.getBOTreatmentSteps(boModel.id.toString()).value;
+            reconciliationKeys.boTreatments[boModel.id] = boTreatments;
           }
+        });
+       }
+
+      const modelData = {
+        ...formValue,
+        processingSteps: uniqueSteps, // Utiliser les étapes uniques
+        reconciliationKeys
+      };
+
+      console.log('💾 Données du modèle à sauvegarder:', modelData);
+      console.log('🔧 Étapes de traitement à sauvegarder:', processingSteps);
+      console.log('🔍 Filtres BO dans reconciliationKeys:', reconciliationKeys?.boColumnFilters);
+      console.log('🔍 Nombre de filtres BO:', reconciliationKeys?.boColumnFilters?.length || 0);
+      
+      if (reconciliationKeys?.boColumnFilters && reconciliationKeys.boColumnFilters.length > 0) {
+        console.log('✅ Filtres BO trouvés dans le modèle:');
+        reconciliationKeys.boColumnFilters.forEach((filter: any, index: number) => {
+          console.log(`  - Filtre ${index + 1}:`, filter);
         });
       } else {
-        // Création
-        this.autoProcessingService.createModel(modelData).subscribe({
-          next: (newModel) => {
-            this.loadModels();
-            this.closeForm();
-            this.loading = false;
-          },
-          error: (error) => {
-            console.error('Erreur lors de la création du modèle:', error);
-            this.errorMessage = 'Erreur lors de la création du modèle';
-            this.loading = false;
-          }
-        });
+        console.log('❌ Aucun filtre BO trouvé dans le modèle');
       }
+
+      const operation = this.editingModel 
+        ? this.autoProcessingService.updateModel(this.editingModel.id, modelData)
+        : this.autoProcessingService.createModel(modelData);
+
+      operation.subscribe({
+        next: (response: any) => {
+          this.loading = false;
+          
+          // Vérifier si la réponse contient un ID (succès) ou une propriété success
+          const isSuccess = response && (response.id || response.success);
+          
+          if (isSuccess) {
+            this.showAlert(
+              this.editingModel 
+                ? 'Modèle mis à jour avec succès !' 
+                : 'Modèle créé avec succès !', 
+              'success'
+            );
+            this.closeForm();
+            this.loadModels();
+          } else {
+            this.errorMessage = (response && response.message) || 'Erreur lors de la sauvegarde';
+          }
+        },
+        error: (error) => {
+          this.loading = false;
+          console.error('Erreur lors de la sauvegarde:', error);
+          this.errorMessage = 'Erreur lors de la sauvegarde du modèle';
+        }
+      });
     }
   }
 
@@ -892,15 +853,35 @@ export class AutoProcessingModelsComponent implements OnInit {
   }
 
   closeForm(): void {
+    console.log('🔧 closeForm() appelé - réinitialisation complète du formulaire');
+    
     this.showCreateForm = false;
     this.editingModel = null;
+    
+    // Réinitialiser complètement le formulaire
     this.modelForm.reset({
       fileType: 'bo',
       autoApply: true,
       processingSteps: []
     });
+    
+    // S'assurer que le FormArray des étapes est complètement vidé
     this.processingStepsFormArray.clear();
+    
+    // Nettoyer les traitements BO si présents
+    const boTreatmentsGroup = this.modelForm.get('reconciliationKeys.boTreatments') as FormGroup;
+    if (boTreatmentsGroup) {
+      Object.keys(boTreatmentsGroup.controls).forEach(key => {
+        const treatmentArray = boTreatmentsGroup.get(key) as FormArray;
+        if (treatmentArray) {
+          treatmentArray.clear();
+        }
+      });
+    }
+    
     this.selectedFileModel = null;
+    
+    console.log('✅ Formulaire complètement réinitialisé');
     // Ne pas vider availableColumns pour maintenir les colonnes disponibles
     // this.availableColumns = [];
   }
@@ -1259,15 +1240,46 @@ export class AutoProcessingModelsComponent implements OnInit {
 
   // Créer un modèle BO par défaut
   createDefaultBOModel(): void {
+    console.log('🔧 createDefaultBOModel() appelé');
     this.autoProcessingService.createDefaultBOModel().subscribe({
-      next: (response: any) => {
-        console.log('✅ Modèle BO par défaut créé:', response);
+      next: (model) => {
+        console.log('✅ Modèle BO créé avec succès:', model);
+        this.showAlert('Modèle BO TRXBO créé avec succès', 'success');
         this.loadModels();
-        this.showAlert('Modèle BO par défaut créé avec succès!', 'success');
       },
-      error: (error: any) => {
+      error: (error) => {
         console.error('❌ Erreur lors de la création du modèle BO:', error);
         this.showAlert('Erreur lors de la création du modèle BO', 'danger');
+      }
+    });
+  }
+
+  createDefaultOrangeMoneyModel(): void {
+    console.log('🔧 createDefaultOrangeMoneyModel() appelé');
+    this.autoProcessingService.createDefaultOrangeMoneyModel().subscribe({
+      next: (model) => {
+        console.log('✅ Modèle Orange Money créé avec succès:', model);
+        this.showAlert('Modèle Orange Money créé avec succès', 'success');
+        this.loadModels();
+      },
+      error: (error) => {
+        console.error('❌ Erreur lors de la création du modèle Orange Money:', error);
+        this.showAlert('Erreur lors de la création du modèle Orange Money', 'danger');
+      }
+    });
+  }
+
+  createExtendedCIOMModel(): void {
+    console.log('🔧 createExtendedCIOMModel() appelé');
+    this.autoProcessingService.createExtendedCIOMModel().subscribe({
+      next: (model) => {
+        console.log('✅ Modèle CIOM/PMOM étendu créé avec succès:', model);
+        this.showAlert('Modèle CIOM/PMOM étendu créé avec succès', 'success');
+        this.loadModels();
+      },
+      error: (error) => {
+        console.error('❌ Erreur lors de la création du modèle CIOM/PMOM étendu:', error);
+        this.showAlert('Erreur lors de la création du modèle CIOM/PMOM étendu', 'danger');
       }
     });
   }
@@ -1288,8 +1300,806 @@ export class AutoProcessingModelsComponent implements OnInit {
 
   showAlert(message: string, type: 'success' | 'danger' | 'warning' | 'info'): void {
     // Implémentation simple d'alerte - vous pouvez l'améliorer selon vos besoins
-    console.log(`${type.toUpperCase()}: ${message}`);
-    // Ici vous pourriez utiliser un service d'alerte ou une notification toast
+    alert(`${type.toUpperCase()}: ${message}`);
   }
+
+  // --- MÉTHODES DE FILTRAGE DES MODÈLES PARTENAIRES ---
+
+  // Obtenir les modèles partenaires
+  getPartnerModels(): AutoProcessingModel[] {
+    return this.models.filter(model => model.fileType === 'partner' || model.fileType === 'both');
+  }
+
+  // Obtenir les modèles partenaires filtrés
+  getDisplayedPartnerModels(): AutoProcessingModel[] {
+    if (this.partnerFilterApplied) {
+      return this.filteredPartnerModels;
+    }
+    return this.getPartnerModels();
+  }
+
+  // Basculer l'affichage du filtre
+  togglePartnerFilter(): void {
+    this.showPartnerFilter = !this.showPartnerFilter;
+    if (!this.showPartnerFilter) {
+      this.resetPartnerFilter();
+    }
+  }
+
+  // Changer la colonne de filtre
+  onPartnerFilterColumnChange(): void {
+    this.selectedPartnerFilterValues = [];
+    this.partnerFilterValues = [];
+    
+    if (this.selectedPartnerFilterColumn) {
+      // Extraire les valeurs uniques de la colonne sélectionnée
+      const partnerModels = this.getPartnerModels();
+      const values = new Set<string>();
+      
+      partnerModels.forEach(model => {
+        const value = this.getModelValueByColumn(model, this.selectedPartnerFilterColumn);
+        if (value !== undefined && value !== null) {
+          values.add(String(value));
+        }
+      });
+      
+      this.partnerFilterValues = Array.from(values).sort();
+      this.partnerFilterValueSearchCtrl.setValue('');
+    }
+  }
+
+  // Obtenir la valeur d'un modèle selon la colonne
+  getModelValueByColumn(model: AutoProcessingModel, column: string): any {
+    switch (column) {
+      case 'name':
+        return model.name;
+      case 'filePattern':
+        return model.filePattern;
+      case 'fileType':
+        return model.fileType;
+      case 'autoApply':
+        return model.autoApply ? 'Oui' : 'Non';
+      case 'templateFile':
+        return model.templateFile || '';
+      case 'stepsCount':
+        return model.processingSteps.length;
+      default:
+        return '';
+    }
+  }
+
+  // Sélectionner toutes les valeurs de filtre
+  selectAllPartnerFilterValues(): void {
+    this.selectedPartnerFilterValues = [...this.partnerFilterValues];
+  }
+
+  // Appliquer le filtre
+  applyPartnerFilter(): void {
+    if (!this.selectedPartnerFilterColumn || this.selectedPartnerFilterValues.length === 0) {
+      return;
+    }
+
+    const partnerModels = this.getPartnerModels();
+    this.filteredPartnerModels = partnerModels.filter(model => {
+      const modelValue = this.getModelValueByColumn(model, this.selectedPartnerFilterColumn);
+      return this.selectedPartnerFilterValues.includes(String(modelValue));
+    });
+
+    this.partnerFilterApplied = true;
+  }
+
+  // Réinitialiser le filtre
+  resetPartnerFilter(): void {
+    this.selectedPartnerFilterColumn = '';
+    this.selectedPartnerFilterValues = [];
+    this.partnerFilterValues = [];
+    this.filteredPartnerModels = [];
+    this.partnerFilterApplied = false;
+    this.partnerFilterValueSearchCtrl.setValue('');
+  }
+
+  // Obtenir les valeurs filtrées pour la recherche
+  get filteredPartnerFilterValues(): string[] {
+    const searchTerm = this.partnerFilterValueSearchCtrl.value?.toLowerCase() || '';
+    if (!searchTerm) {
+      return this.partnerFilterValues;
+    }
+    return this.partnerFilterValues.filter(value => 
+      value.toLowerCase().includes(searchTerm)
+    );
+  }
+
+  // Obtenir les colonnes disponibles pour le filtrage
+  getPartnerFilterColumns(): { value: string; label: string }[] {
+    return [
+      { value: 'name', label: 'Nom du modèle' },
+      { value: 'filePattern', label: 'Pattern de fichier' },
+      { value: 'fileType', label: 'Type de fichier' },
+      { value: 'autoApply', label: 'Auto-appliqué' },
+      { value: 'templateFile', label: 'Fichier modèle' },
+      { value: 'stepsCount', label: 'Nombre d\'étapes' }
+    ];
+  }
+
+  // --- MÉTHODES DE FILTRAGE GÉNÉRAL (TOUS LES MODÈLES) ---
+
+  // Basculer l'affichage du filtre général
+  toggleModelFilter(): void {
+    this.showModelFilter = !this.showModelFilter;
+    if (!this.showModelFilter) {
+      this.resetModelFilter();
+    }
+  }
+
+  // Changer la colonne de filtre général
+  onModelFilterColumnChange(): void {
+    this.selectedModelFilterValues = [];
+    this.modelFilterValues = [];
+    
+    if (this.selectedModelFilterColumn) {
+      // Extraire les valeurs uniques de la colonne sélectionnée
+      const values = new Set<string>();
+      
+      this.models.forEach(model => {
+        const value = this.getModelValueByColumn(model, this.selectedModelFilterColumn);
+        if (value !== undefined && value !== null) {
+          values.add(String(value));
+        }
+      });
+      
+      this.modelFilterValues = Array.from(values).sort();
+      this.modelFilterValueSearchCtrl.setValue('');
+    }
+  }
+
+  // Sélectionner toutes les valeurs de filtre général
+  selectAllModelFilterValues(): void {
+    this.selectedModelFilterValues = [...this.modelFilterValues];
+  }
+
+  // Appliquer le filtre général
+  applyModelFilter(): void {
+    if (!this.selectedModelFilterColumn || this.selectedModelFilterValues.length === 0) {
+      return;
+    }
+
+    this.filteredModels = this.models.filter(model => {
+      const modelValue = this.getModelValueByColumn(model, this.selectedModelFilterColumn);
+      return this.selectedModelFilterValues.includes(String(modelValue));
+    });
+
+    this.modelFilterApplied = true;
+  }
+
+  // Réinitialiser le filtre général
+  resetModelFilter(): void {
+    this.selectedModelFilterColumn = '';
+    this.selectedModelFilterValues = [];
+    this.modelFilterValues = [];
+    this.filteredModels = [];
+    this.modelFilterApplied = false;
+    this.modelFilterValueSearchCtrl.setValue('');
+  }
+
+  // Obtenir les valeurs filtrées pour la recherche générale
+  get filteredModelFilterValues(): string[] {
+    const searchTerm = this.modelFilterValueSearchCtrl.value?.toLowerCase() || '';
+    if (!searchTerm) {
+      return this.modelFilterValues;
+    }
+    return this.modelFilterValues.filter(value => 
+      value.toLowerCase().includes(searchTerm)
+    );
+  }
+
+  // Obtenir les modèles affichés (avec ou sans filtre)
+  getDisplayedModels(): AutoProcessingModel[] {
+    if (this.modelFilterApplied) {
+      return this.filteredModels;
+    }
+    return this.models;
+  }
+
+  // Obtenir les colonnes disponibles pour le filtrage général
+  getModelFilterColumns(): { value: string; label: string }[] {
+    return [
+      { value: 'name', label: 'Nom du modèle' },
+      { value: 'filePattern', label: 'Pattern de fichier' },
+      { value: 'fileType', label: 'Type de fichier' },
+      { value: 'autoApply', label: 'Application automatique' },
+      { value: 'templateFile', label: 'Fichier template' },
+      { value: 'stepsCount', label: 'Nombre d\'étapes' }
+    ];
+  }
+
+  // --- MÉTHODES POUR LE FILTRAGE DYNAMIQUE DES COLONNES BO ---
+
+  // Méthode pour récupérer les valeurs uniques d'une colonne BO
+  getBOColumnValues(boModelId: string, columnName: string): string[] {
+    if (!boModelId || !columnName) {
+      return [];
+    }
+    
+    // Trouver le modèle BO
+    const boModel = this.models.find(m => m.id.toString() === boModelId);
+    if (!boModel) {
+      return [];
+    }
+    
+    // Si le modèle a un templateFile, utiliser ses données
+    if (boModel.templateFile) {
+      const fileModel = this.availableFiles.find(f => f.fileName === boModel.templateFile);
+      
+      if (fileModel && fileModel.sampleData) {
+        // Extraire les valeurs uniques de la colonne
+        const uniqueValues = new Set<string>();
+        
+        fileModel.sampleData.forEach((row) => {
+          const value = row[columnName];
+          if (value) {
+            uniqueValues.add(value.toString());
+          }
+        });
+        
+        const result = Array.from(uniqueValues).sort();
+        return result;
+      }
+    }
+    
+    // Fallback vers les données mockées
+    return this.getMockColumnValues(columnName);
+  }
+
+  // Méthode pour obtenir des valeurs simulées selon la colonne
+  private getMockColumnValues(columnName: string): string[] {
+    const fileName = this.selectedFileModel?.fileName || this.editingModel?.templateFile;
+    return this.orangeMoneyUtilsService.getFieldValues(columnName, fileName);
+  }
+
+
+
+  // Méthode pour gérer le changement de champ dans le filtrage par valeur
+  async onFilterFieldChange(stepIndex: number): Promise<void> {
+    console.log('🔍 onFilterFieldChange appelée pour stepIndex:', stepIndex);
+    
+    const step = this.processingStepsFormArray.at(stepIndex);
+    const fieldName = step.get('field')?.value;
+    
+    console.log('🔍 fieldName sélectionné:', fieldName);
+    console.log('🔍 availableColumnsForTemplate:', this.availableColumnsForTemplate);
+    console.log('🔍 selectedFileModel:', this.selectedFileModel);
+    console.log('🔍 editingModel:', this.editingModel);
+    
+    if (fieldName) {
+      // Initialiser les valeurs sélectionnées pour cette étape
+      this.initializeSelectedValuesForStep(stepIndex);
+      
+      // Si on n'a pas de données du fichier, essayer de les charger
+      if (!this.selectedFileModel?.sampleData && this.editingModel?.templateFile) {
+        console.log('🔄 Chargement des données du fichier pour obtenir les vraies valeurs');
+        await this.loadFileDataForField(fieldName);
+      } else if (this.selectedFileModel?.sampleData) {
+        console.log('✅ Données déjà disponibles dans selectedFileModel');
+        console.log('✅ sampleData length:', this.selectedFileModel.sampleData.length);
+      } else {
+        console.log('❌ Aucune donnée disponible');
+      }
+      
+      // Forcer la détection des changements pour mettre à jour l'interface
+      setTimeout(() => {
+        console.log('🔄 Mise à jour de l\'interface après changement de champ');
+        console.log('🔍 selectedFileModel après délai:', this.selectedFileModel);
+        console.log('🔍 Valeurs disponibles maintenant:', this.getAvailableValuesForField(fieldName));
+      }, 500); // Augmenté le délai pour s'assurer que les données sont chargées
+    }
+  }
+
+  // Méthode synchrone pour le template (utilise les données en cache)
+  getAvailableValuesForField(fieldName: string): string[] {
+    // Normaliser le fieldName (gérer les tableaux)
+    let normalizedFieldName = fieldName;
+    if (Array.isArray(fieldName)) {
+      normalizedFieldName = fieldName[0] || '';
+    }
+    
+    if (!normalizedFieldName || normalizedFieldName === '' || normalizedFieldName === '[]') {
+      return [];
+    }
+
+    // Utiliser les données en cache si disponibles
+    if (this.selectedFileModel?.sampleData) {
+      console.log('🔍 Utilisation des données en cache pour:', normalizedFieldName);
+      console.log('🔍 sampleData length:', this.selectedFileModel.sampleData.length);
+      console.log('🔍 Première ligne sampleData:', this.selectedFileModel.sampleData[0]);
+      
+      const uniqueValues = new Set<string>();
+      
+      this.selectedFileModel.sampleData.forEach((row: any, index: number) => {
+        console.log(`🔍 Ligne ${index}:`, row);
+        console.log(`🔍 Valeur pour ${normalizedFieldName}:`, row[normalizedFieldName]);
+        
+        if (row && typeof row === 'object' && row[normalizedFieldName] && row[normalizedFieldName] !== '') {
+          uniqueValues.add(row[normalizedFieldName].toString());
+          console.log(`✅ Valeur ajoutée: ${row[normalizedFieldName]}`);
+        } else {
+          console.log(`❌ Valeur ignorée pour ${normalizedFieldName}:`, row[normalizedFieldName]);
+        }
+      });
+      
+      const result = Array.from(uniqueValues).sort();
+      console.log('🔍 Valeurs uniques trouvées:', result);
+      
+      if (result.length > 0) {
+        console.log('✅ Retour des vraies valeurs:', result);
+        return result;
+      } else {
+        console.log('❌ Aucune vraie valeur trouvée, utilisation des valeurs mockées');
+      }
+    }
+
+    // Fallback vers les valeurs mockées
+    return this.getMockColumnValues(normalizedFieldName);
+  }
+
+  // Méthode asynchrone pour obtenir les valeurs disponibles pour un champ (avec lecture directe)
+  async getAvailableValuesForFieldAsync(fieldName: string): Promise<string[]> {
+    console.log('🔍 getAvailableValuesForField appelée avec fieldName:', fieldName);
+    console.log('🔍 selectedFileModel:', this.selectedFileModel);
+    console.log('🔍 editingModel:', this.editingModel);
+    console.log('🔍 availableFiles:', this.availableFiles);
+    console.log('🔍 availableFiles.length:', this.availableFiles.length);
+    
+    // Normaliser le fieldName (gérer les tableaux)
+    let normalizedFieldName = fieldName;
+    if (Array.isArray(fieldName)) {
+      normalizedFieldName = fieldName[0] || '';
+      console.log('🔄 fieldName normalisé de tableau vers chaîne:', normalizedFieldName);
+    }
+    
+    if (!normalizedFieldName || normalizedFieldName === '' || normalizedFieldName === '[]') {
+      console.log('❌ fieldName est vide ou invalide:', normalizedFieldName);
+      return [];
+    }
+
+    // Priorité 1: Utiliser les données du fichier sélectionné
+    if (this.selectedFileModel?.sampleData) {
+      console.log('✅ Utilisation des données du fichier sélectionné');
+      console.log('📊 sampleData length:', this.selectedFileModel.sampleData.length);
+      console.log('📊 Colonnes du fichier:', this.selectedFileModel.columns);
+      console.log('📊 Champ recherché:', normalizedFieldName);
+      console.log('📊 Champ existe dans les colonnes?', this.selectedFileModel.columns.includes(normalizedFieldName));
+      
+      const uniqueValues = new Set<string>();
+      
+      this.selectedFileModel.sampleData.forEach((row: any, index: number) => {
+        console.log(`🔍 Ligne ${index} complète:`, row);
+        
+        // Essayer différentes façons d'accéder à la valeur
+        let value = null;
+        
+        // Méthode 1: Accès direct par nom de champ
+        if (row && typeof row === 'object') {
+          value = row[normalizedFieldName];
+          console.log(`📋 Méthode 1 - ${normalizedFieldName}:`, value);
+        }
+        
+        // Méthode 2: Si c'est un tableau, essayer l'index
+        if (value === undefined && Array.isArray(row) && this.selectedFileModel?.columns) {
+          const columnIndex = this.selectedFileModel.columns.indexOf(normalizedFieldName);
+          if (columnIndex >= 0) {
+            value = row[columnIndex];
+            console.log(`📋 Méthode 2 - Index ${columnIndex}:`, value);
+          }
+        }
+        
+        // Méthode 3: Recherche insensible à la casse
+        if (value === undefined && row && typeof row === 'object') {
+          const keys = Object.keys(row);
+          const matchingKey = keys.find(key => key.toLowerCase() === normalizedFieldName.toLowerCase());
+          if (matchingKey) {
+            value = row[matchingKey];
+            console.log(`📋 Méthode 3 - Clé trouvée ${matchingKey}:`, value);
+          }
+        }
+        
+        console.log(`📋 Valeur finale pour ${normalizedFieldName}:`, value);
+        
+        if (value !== null && value !== undefined && value !== '') {
+          uniqueValues.add(value.toString());
+        }
+      });
+      
+      const result = Array.from(uniqueValues).sort();
+      console.log('✅ Valeurs uniques trouvées:', result);
+      
+      // Si aucune valeur trouvée, essayer avec les valeurs mockées
+      if (result.length === 0) {
+        console.log('⚠️ Aucune valeur trouvée, utilisation des valeurs mockées');
+        console.log('⚠️ Le champ', normalizedFieldName, 'n\'existe pas dans les colonnes:', this.selectedFileModel.columns);
+        const mockValues = this.getMockColumnValues(normalizedFieldName);
+        console.log('✅ Valeurs mockées utilisées:', mockValues);
+        return mockValues;
+      }
+      
+      return result;
+    }
+
+    // Priorité 2: Utiliser les données du modèle en édition
+    if (this.editingModel && this.editingModel.templateFile) {
+      console.log('🔍 Recherche du fichier modèle dans availableFiles');
+      const fileModel = this.availableFiles.find(f => f.fileName === this.editingModel?.templateFile);
+      
+      if (fileModel && fileModel.sampleData) {
+        console.log('✅ Utilisation des données du fichier modèle en édition');
+        console.log('📊 sampleData length:', fileModel.sampleData.length);
+        
+        const uniqueValues = new Set<string>();
+        
+        console.log('🔍 Structure des données sampleData:', fileModel.sampleData);
+        console.log('🔍 Première ligne complète:', fileModel.sampleData[0]);
+        console.log('🔍 Colonnes disponibles dans la première ligne:', Object.keys(fileModel.sampleData[0] || {}));
+        console.log('🔍 Colonnes du fichier modèle:', fileModel.columns);
+        console.log('🔍 Champ recherché:', normalizedFieldName);
+        console.log('🔍 Champ existe dans les colonnes?', fileModel.columns.includes(normalizedFieldName));
+        
+        fileModel.sampleData.forEach((row: any, index: number) => {
+          console.log(`🔍 Ligne ${index} complète:`, row);
+          
+          // Essayer différentes façons d'accéder à la valeur
+          let value = null;
+          
+          // Méthode 1: Accès direct par nom de champ
+          if (row && typeof row === 'object') {
+            value = row[normalizedFieldName];
+            console.log(`📋 Méthode 1 - ${normalizedFieldName}:`, value);
+          }
+          
+          // Méthode 2: Si c'est un tableau, essayer l'index
+          if (value === undefined && Array.isArray(row)) {
+            const columnIndex = fileModel.columns.indexOf(normalizedFieldName);
+            if (columnIndex >= 0) {
+              value = row[columnIndex];
+              console.log(`📋 Méthode 2 - Index ${columnIndex}:`, value);
+            }
+          }
+          
+          // Méthode 3: Recherche insensible à la casse
+          if (value === undefined && row && typeof row === 'object') {
+            const keys = Object.keys(row);
+            const matchingKey = keys.find(key => key.toLowerCase() === normalizedFieldName.toLowerCase());
+            if (matchingKey) {
+              value = row[matchingKey];
+              console.log(`📋 Méthode 3 - Clé trouvée ${matchingKey}:`, value);
+            }
+          }
+          
+          console.log(`📋 Valeur finale pour ${normalizedFieldName}:`, value);
+          
+          if (value !== null && value !== undefined && value !== '') {
+            uniqueValues.add(value.toString());
+          }
+        });
+        
+        const result = Array.from(uniqueValues).sort();
+        console.log('✅ Valeurs uniques trouvées:', result);
+        
+        // Si aucune valeur trouvée, essayer avec les valeurs mockées
+        if (result.length === 0) {
+          console.log('⚠️ Aucune valeur trouvée, utilisation des valeurs mockées');
+          console.log('⚠️ Le champ', normalizedFieldName, 'n\'existe pas dans les colonnes:', fileModel.columns);
+          const mockValues = this.getMockColumnValues(normalizedFieldName);
+          console.log('✅ Valeurs mockées utilisées:', mockValues);
+          return mockValues;
+        }
+        
+        return result;
+      }
+    }
+
+    // Priorité 3: Essayer de lire directement le fichier Excel si c'est un fichier Excel
+    if (this.selectedFileModel && this.selectedFileModel.fileName.toLowerCase().endsWith('.xls')) {
+      console.log('🔄 Tentative de lecture directe du fichier Excel:', this.selectedFileModel.fileName);
+      
+      try {
+        // Créer un objet File à partir du chemin du fichier
+        const filePath = this.selectedFileModel.filePath;
+        const fileName = this.selectedFileModel.fileName;
+        
+        // Essayer de récupérer le fichier depuis le dossier watch-folder
+        const response = await fetch(`/api/file-watcher/analyze-file`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ filePath })
+        });
+        
+        if (response.ok) {
+          const fileData = await response.json();
+          console.log('📊 Données du fichier récupérées:', fileData);
+          
+          // Si les données contiennent des vraies valeurs, les utiliser
+          if (fileData.sampleData && fileData.sampleData.length > 0) {
+            const uniqueValues = new Set<string>();
+            
+            fileData.sampleData.forEach((row: any) => {
+              if (row && row[normalizedFieldName] && row[normalizedFieldName] !== '') {
+                uniqueValues.add(row[normalizedFieldName].toString());
+              }
+            });
+            
+            const result = Array.from(uniqueValues).sort();
+            if (result.length > 0) {
+              console.log('✅ Valeurs trouvées dans le fichier Excel:', result);
+              return result;
+            }
+          }
+        }
+      } catch (error) {
+        console.error('❌ Erreur lors de la lecture directe du fichier Excel:', error);
+      }
+    }
+
+    // Fallback vers les données mockées
+    console.log('🔄 Utilisation des données mockées pour:', normalizedFieldName);
+    const mockValues = this.getMockColumnValues(normalizedFieldName);
+    console.log('✅ Valeurs mockées:', mockValues);
+    return mockValues;
+  }
+
+  // Méthode pour lire directement un fichier Excel et extraire les vraies données
+  async readExcelFileDirectly(file: File): Promise<{ columns: string[], sampleData: any[] }> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = async (e: any) => {
+        try {
+          const data = new Uint8Array(e.target.result);
+          const workbook = XLSX.read(data, { type: 'array' });
+          const sheetName = workbook.SheetNames[0];
+          const worksheet = workbook.Sheets[sheetName];
+          
+          // Convertir en JSON pour faciliter le traitement
+          const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+          
+          console.log('📊 Fichier Excel lu directement:', {
+            sheetName,
+            totalRows: jsonData.length,
+            firstRow: jsonData[0]
+          });
+          
+          // Détecter les en-têtes Orange Money
+          let headerRowIndex = -1;
+          let headerRow: string[] = [];
+          
+          // Chercher la ligne d'en-têtes Orange Money
+          for (let i = 0; i < Math.min(50, jsonData.length); i++) {
+            const row = jsonData[i] as any[];
+            if (!row) continue;
+            
+            const rowStrings = row.map(cell => cell ? cell.toString().trim() : '');
+            
+            // Vérifier si c'est une ligne d'en-têtes Orange Money
+            const orangeMoneyHeaders = ['N°', 'Date', 'Heure', 'Référence', 'Service', 'Paiement', 'Statut', 'Mode'];
+            const matchingHeaders = orangeMoneyHeaders.filter(header => 
+              rowStrings.some(cell => cell.includes(header))
+            );
+            
+            if (matchingHeaders.length >= 4) {
+              headerRowIndex = i;
+              headerRow = rowStrings;
+              console.log(`✅ En-têtes Orange Money détectés à la ligne ${i}:`, headerRow);
+              break;
+            }
+          }
+          
+          if (headerRowIndex === -1) {
+            // Fallback : utiliser la première ligne non vide
+            for (let i = 0; i < jsonData.length; i++) {
+              const row = jsonData[i] as any[];
+              if (row && row.some(cell => cell && cell.toString().trim())) {
+                headerRowIndex = i;
+                headerRow = row.map(cell => cell ? cell.toString().trim() : '');
+                console.log(`📋 En-têtes de fallback à la ligne ${i}:`, headerRow);
+                break;
+              }
+            }
+          }
+          
+          if (headerRowIndex === -1) {
+            reject(new Error('Aucune ligne d\'en-têtes trouvée'));
+            return;
+          }
+          
+          // Extraire les données d'exemple (max 10 lignes après l'en-tête)
+          const sampleData: any[] = [];
+          const maxSampleRows = Math.min(10, jsonData.length - headerRowIndex - 1);
+          
+          for (let i = headerRowIndex + 1; i <= headerRowIndex + maxSampleRows; i++) {
+            const row = jsonData[i] as any[];
+            if (!row) continue;
+            
+            const rowData: any = {};
+            let hasData = false;
+            
+            headerRow.forEach((header, index) => {
+              const value = row[index] ? row[index].toString().trim() : '';
+              rowData[header] = value;
+              if (value) hasData = true;
+            });
+            
+            // Ajouter seulement les lignes qui contiennent des données
+            if (hasData) {
+              sampleData.push(rowData);
+            }
+          }
+          
+          console.log(`📊 Données d'exemple extraites: ${sampleData.length} lignes`);
+          console.log('📊 Première ligne d\'exemple:', sampleData[0]);
+          
+          resolve({
+            columns: headerRow,
+            sampleData: sampleData
+          });
+          
+        } catch (error) {
+          console.error('❌ Erreur lors de la lecture du fichier Excel:', error);
+          reject(error);
+        }
+      };
+      
+      reader.onerror = () => {
+        reject(new Error('Erreur lors de la lecture du fichier'));
+      };
+      
+      reader.readAsArrayBuffer(file);
+    });
+  }
+
+  // Méthode pour charger les données du fichier pour un champ spécifique
+  private async loadFileDataForField(fieldName: string): Promise<void> {
+    console.log('🔄 loadFileDataForField appelée pour:', fieldName);
+    console.log('🔄 editingModel:', this.editingModel);
+    console.log('🔄 selectedFileModel:', this.selectedFileModel);
+    
+    // Si on a un modèle en édition avec un fichier template
+    if (this.editingModel?.templateFile) {
+      console.log('🔄 Recherche du fichier template:', this.editingModel.templateFile);
+      
+      // Chercher le fichier dans availableFiles
+      const fileModel = this.availableFiles.find(f => f.fileName === this.editingModel?.templateFile);
+      
+      if (fileModel) {
+        console.log('✅ Fichier trouvé dans availableFiles:', fileModel.fileName);
+        
+        // Si c'est un fichier Excel, essayer de lire directement
+        if (fileModel.fileName.toLowerCase().endsWith('.xls')) {
+          console.log('🔄 Chargement des données Excel pour:', fieldName);
+          
+          try {
+            const response = await fetch(`/api/file-watcher/analyze-file`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({ filePath: fileModel.filePath })
+            });
+            
+            if (response.ok) {
+              const fileData = await response.json();
+              console.log('📊 Données Excel récupérées:', fileData);
+              console.log('📊 sampleData length:', fileData.sampleData?.length);
+              console.log('📊 Première ligne sampleData:', fileData.sampleData?.[0]);
+              
+              // Mettre à jour les données en cache
+              if (fileData.sampleData && fileData.sampleData.length > 0) {
+                fileModel.sampleData = fileData.sampleData;
+                fileModel.columns = fileData.columns;
+                this.selectedFileModel = fileModel;
+                console.log('✅ Données mises à jour en cache');
+                console.log('✅ Nouvelle première ligne:', this.selectedFileModel.sampleData[0]);
+              } else {
+                console.log('❌ Aucune donnée sampleData trouvée dans la réponse');
+              }
+            } else {
+              console.log('❌ Réponse non-OK du backend:', response.status);
+            }
+          } catch (error) {
+            console.error('❌ Erreur lors du chargement des données Excel:', error);
+          }
+        } else {
+          // Pour les fichiers non-Excel, utiliser les données existantes
+          this.selectedFileModel = fileModel;
+          console.log('✅ Fichier non-Excel, utilisation des données existantes');
+        }
+      } else {
+        console.log('❌ Fichier template non trouvé dans availableFiles');
+      }
+    }
+  }
+
+  // Méthode pour initialiser les valeurs sélectionnées pour une étape
+  private initializeSelectedValuesForStep(stepIndex: number): void {
+    const step = this.processingStepsFormArray.at(stepIndex) as FormGroup;
+    const currentValues = step.get('params')?.get('values')?.value || [];
+    
+    // Stocker les valeurs sélectionnées dans le formulaire
+    if (!step.get('params')) {
+      step.addControl('params', this.fb.group({
+        values: [currentValues]
+      }));
+    } else if (!step.get('params.values')) {
+      (step.get('params') as FormGroup)?.addControl('values', this.fb.control(currentValues));
+    }
+  }
+
+  // Méthode pour basculer la sélection d'une valeur
+  toggleValueSelection(stepIndex: number, value: string): void {
+    const step = this.processingStepsFormArray.at(stepIndex);
+    const currentValues = this.getSelectedValuesForField(stepIndex);
+    
+    if (currentValues.includes(value)) {
+      this.removeValueSelection(stepIndex, value);
+    } else {
+      this.addValueSelection(stepIndex, value);
+    }
+  }
+
+  // Méthode pour ajouter une valeur à la sélection
+  addValueSelection(stepIndex: number, value: string): void {
+    const step = this.processingStepsFormArray.at(stepIndex);
+    const currentValues = this.getSelectedValuesForField(stepIndex);
+    
+    if (!currentValues.includes(value)) {
+      const newValues = [...currentValues, value];
+      this.updateSelectedValuesForField(stepIndex, newValues);
+    }
+  }
+
+  // Méthode pour supprimer une valeur de la sélection
+  removeValueSelection(stepIndex: number, value: string): void {
+    const step = this.processingStepsFormArray.at(stepIndex);
+    const currentValues = this.getSelectedValuesForField(stepIndex);
+    
+    const newValues = currentValues.filter(v => v !== value);
+    this.updateSelectedValuesForField(stepIndex, newValues);
+  }
+
+  // Méthode pour vérifier si une valeur est sélectionnée
+  isValueSelected(stepIndex: number, value: string): boolean {
+    const selectedValues = this.getSelectedValuesForField(stepIndex);
+    return selectedValues.includes(value);
+  }
+
+  // Méthode pour obtenir les valeurs sélectionnées pour un champ
+  getSelectedValuesForField(stepIndex: number): string[] {
+    const step = this.processingStepsFormArray.at(stepIndex);
+    const params = step.get('params');
+    
+    if (params && params.get('values')) {
+      return params.get('values')?.value || [];
+    }
+    
+    return [];
+  }
+
+  // Méthode pour mettre à jour les valeurs sélectionnées
+  private updateSelectedValuesForField(stepIndex: number, values: string[]): void {
+    const step = this.processingStepsFormArray.at(stepIndex) as FormGroup;
+    
+    if (!step.get('params')) {
+      step.addControl('params', this.fb.group({
+        values: [values]
+      }));
+    } else if (!step.get('params.values')) {
+      (step.get('params') as FormGroup)?.addControl('values', this.fb.control(values));
+    } else {
+      step.get('params.values')?.setValue(values);
+    }
+  }
+
+
+
+
+
 
 } 

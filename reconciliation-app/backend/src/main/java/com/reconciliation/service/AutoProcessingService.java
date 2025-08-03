@@ -7,6 +7,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -60,23 +61,48 @@ public class AutoProcessingService {
             existing.setReconciliationKeys(model.getReconciliationKeys());
             existing.setUpdatedAt(LocalDateTime.now());
             
-            // Gérer les ProcessingStep
+            // Gérer les ProcessingStep - éviter la duplication
             if (model.getProcessingSteps() != null) {
-                // Supprimer les anciennes étapes
+                // Supprimer complètement les anciennes étapes de la base de données
                 if (existing.getProcessingSteps() != null) {
+                    // Supprimer physiquement les étapes de la base de données
+                    for (ProcessingStep oldStep : existing.getProcessingSteps()) {
+                        // Marquer pour suppression
+                        oldStep.setModel(null);
+                    }
                     existing.getProcessingSteps().clear();
                 }
                 
+                // Créer une nouvelle liste d'étapes pour éviter les références
+                List<ProcessingStep> newSteps = new ArrayList<>();
+                
                 // Ajouter les nouvelles étapes
                 for (ProcessingStep step : model.getProcessingSteps()) {
+                    ProcessingStep newStep = new ProcessingStep();
+                    
+                    // Générer un nouvel ID si nécessaire
                     if (step.getStepId() == null || step.getStepId().isEmpty()) {
-                        step.setStepId("step_" + UUID.randomUUID().toString());
+                        newStep.setStepId("step_" + UUID.randomUUID().toString());
+                    } else {
+                        newStep.setStepId(step.getStepId());
                     }
-                    step.setModel(existing);
-                    step.setCreatedAt(LocalDateTime.now());
-                    step.setUpdatedAt(LocalDateTime.now());
-                    existing.getProcessingSteps().add(step);
+                    
+                    // Copier les propriétés
+                    newStep.setName(step.getName());
+                    newStep.setType(step.getType());
+                    newStep.setAction(step.getAction());
+                    newStep.setField(step.getField());
+                    newStep.setDescription(step.getDescription());
+                    newStep.setParams(step.getParams());
+                    newStep.setModel(existing);
+                    newStep.setCreatedAt(LocalDateTime.now());
+                    newStep.setUpdatedAt(LocalDateTime.now());
+                    
+                    newSteps.add(newStep);
                 }
+                
+                // Remplacer complètement la liste d'étapes
+                existing.setProcessingSteps(newSteps);
             }
             
             return autoProcessingModelRepository.save(existing);
@@ -96,23 +122,48 @@ public class AutoProcessingService {
             existing.setReconciliationKeys(model.getReconciliationKeys());
             existing.setUpdatedAt(LocalDateTime.now());
             
-            // Gérer les ProcessingStep
+            // Gérer les ProcessingStep - éviter la duplication
             if (model.getProcessingSteps() != null) {
-                // Supprimer les anciennes étapes
+                // Supprimer complètement les anciennes étapes de la base de données
                 if (existing.getProcessingSteps() != null) {
+                    // Supprimer physiquement les étapes de la base de données
+                    for (ProcessingStep oldStep : existing.getProcessingSteps()) {
+                        // Marquer pour suppression
+                        oldStep.setModel(null);
+                    }
                     existing.getProcessingSteps().clear();
                 }
                 
+                // Créer une nouvelle liste d'étapes pour éviter les références
+                List<ProcessingStep> newSteps = new ArrayList<>();
+                
                 // Ajouter les nouvelles étapes
                 for (ProcessingStep step : model.getProcessingSteps()) {
+                    ProcessingStep newStep = new ProcessingStep();
+                    
+                    // Générer un nouvel ID si nécessaire
                     if (step.getStepId() == null || step.getStepId().isEmpty()) {
-                        step.setStepId("step_" + UUID.randomUUID().toString());
+                        newStep.setStepId("step_" + UUID.randomUUID().toString());
+                    } else {
+                        newStep.setStepId(step.getStepId());
                     }
-                    step.setModel(existing);
-                    step.setCreatedAt(LocalDateTime.now());
-                    step.setUpdatedAt(LocalDateTime.now());
-                    existing.getProcessingSteps().add(step);
+                    
+                    // Copier les propriétés
+                    newStep.setName(step.getName());
+                    newStep.setType(step.getType());
+                    newStep.setAction(step.getAction());
+                    newStep.setField(step.getField());
+                    newStep.setDescription(step.getDescription());
+                    newStep.setParams(step.getParams());
+                    newStep.setModel(existing);
+                    newStep.setCreatedAt(LocalDateTime.now());
+                    newStep.setUpdatedAt(LocalDateTime.now());
+                    
+                    newSteps.add(newStep);
                 }
+                
+                // Remplacer complètement la liste d'étapes
+                existing.setProcessingSteps(newSteps);
             }
             
             return autoProcessingModelRepository.save(existing);

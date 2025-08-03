@@ -8,4 +8,15 @@ export interface ReconciliationRequest {
         partnerColumn: string;
     }[];
     selectedService?: string;
+    
+    // Filtres BO pour la réconciliation
+    boColumnFilters?: BOColumnFilter[];
+}
+
+export interface BOColumnFilter {
+    modelId: string;
+    modelName: string;
+    columnName: string;
+    selectedValues: string[];
+    appliedAt: string;
 } 

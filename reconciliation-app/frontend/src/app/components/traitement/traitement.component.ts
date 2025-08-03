@@ -1,6 +1,7 @@
 import { Component, OnInit, ChangeDetectorRef, AfterViewInit, ViewChild } from '@angular/core';
 import { FormBuilder, FormGroup, FormControl } from '@angular/forms';
 import { MatSelect } from '@angular/material/select';
+import { OrangeMoneyUtilsService } from '../../services/orange-money-utils.service';
 import * as Papa from 'papaparse';
 import * as XLSX from 'xlsx';
 
@@ -99,6 +100,10 @@ export class TraitementComponent implements OnInit, AfterViewInit {
   csvContentToProcess: string = '';
   csvFileToProcess: File | null = null;
 
+  // --- DÉTECTION FICHIERS ORANGE MONEY ---
+  isOrangeMoneyFile: boolean = false;
+  orangeMoneyHeaderRowIndex: number = -1;
+
   // --- PAGINATION ET AFFICHAGE ---
   currentPage: number = 1;
   rowsPerPage: number = 100;
@@ -145,7 +150,11 @@ export class TraitementComponent implements OnInit, AfterViewInit {
     insertCharacters: []
   };
 
-  constructor(private cd: ChangeDetectorRef, private fb: FormBuilder) {}
+  constructor(
+    private cd: ChangeDetectorRef, 
+    private fb: FormBuilder,
+    private orangeMoneyUtilsService: OrangeMoneyUtilsService
+  ) {}
 
   private showSuccess(key: string, msg: string) {
     this.successMsg[key] = msg;
@@ -382,31 +391,388 @@ export class TraitementComponent implements OnInit, AfterViewInit {
     });
   }
 
+  // Nouvelle méthode pour détecter les en-têtes dans les fichiers Excel
+  private detectExcelHeaders(jsonData: any[][]): { headerRowIndex: number; headerRow: string[] } {
+    console.log('🔄 VERSION AMÉLIORÉE - Détection des en-têtes Excel avec analyse étendue');
+    
+    // Mots-clés pour identifier les en-têtes
+    const headerKeywords = [
+      'N°', 'Date', 'Heure', 'Référence', 'Service', 'Paiement', 'Statut', 'Mode',
+      'Compte', 'Wallet', 'Pseudo', 'Débit', 'Crédit', 'Montant', 'Commissions',
+      'Opération', 'Agent', 'Correspondant', 'Sous-réseau', 'Transaction'
+    ];
+    
+    let bestHeaderRowIndex = 0;
+    let bestScore = 0;
+    let bestHeaderRow: string[] = [];
+    
+    // Analyser plus de lignes pour trouver le meilleur candidat (jusqu'à 200 lignes)
+    const maxRowsToCheck = Math.min(200, jsonData.length);
+    
+    console.log(`🔍 Analyse de ${maxRowsToCheck} lignes sur ${jsonData.length} lignes totales`);
+    
+    let emptyRowCount = 0;
+    let consecutiveEmptyRows = 0;
+    
+    for (let i = 0; i < maxRowsToCheck; i++) {
+      try {
+        console.log(`🔍 === DÉBUT ANALYSE LIGNE ${i} ===`);
+        const row = jsonData[i] as any[];
+        if (!row || row.length === 0) {
+          emptyRowCount++;
+          consecutiveEmptyRows++;
+          console.log(`🔍 Ligne ${i}: ligne vide ou null, ignorée (total vide: ${emptyRowCount}, consécutives: ${consecutiveEmptyRows})`);
+          continue;
+        }
+      
+      // Réinitialiser le compteur de lignes vides consécutives
+      consecutiveEmptyRows = 0;
+      
+      // Convertir la ligne en chaînes et nettoyer
+      const rowStrings = row.map((cell: any) => {
+        if (cell === null || cell === undefined) return '';
+        return String(cell).trim();
+      });
+      
+      console.log(`🔍 Ligne ${i} - Nombre de cellules: ${rowStrings.length}, Cellules non vides: ${rowStrings.filter(cell => cell !== '').length}`);
+      
+      // Ignorer les lignes qui sont clairement des en-têtes de document
+      const documentHeaders = [
+        'Relevé de vos opérations', 'Application :', 'Compte Orange Money :', 'Début de Période :', 
+        'Fin de Période :', 'Réseau :', 'Cameroon', 'Transactions réussies',
+        'Wallet commission', 'Total', 'Total activités'
+      ];
+      const isDocumentHeader = documentHeaders.some(header => 
+        rowStrings.some(cell => cell.includes(header))
+      );
+      
+      if (isDocumentHeader) {
+        console.log(`🔍 Ligne ${i} ignorée (en-tête de document):`, rowStrings.filter(cell => cell !== ''));
+        continue;
+      }
+      
+      // Ignorer les lignes qui contiennent principalement des données numériques (pas des en-têtes)
+      const numericCells = rowStrings.filter(cell => {
+        if (cell === '') return false;
+        return !isNaN(Number(cell)) && cell.length > 0;
+      });
+      
+      if (numericCells.length > rowStrings.filter(cell => cell !== '').length * 0.7) {
+        console.log(`🔍 Ligne ${i} ignorée (données numériques):`, rowStrings.filter(cell => cell !== ''));
+        continue;
+      }
+      
+      // Log pour voir toutes les lignes analysées
+      console.log(`🔍 Analyse ligne ${i}:`, rowStrings.filter(cell => cell !== ''));
+      
+      // Afficher aussi les lignes suivantes pour voir la structure
+      if (i < maxRowsToCheck - 1) {
+        const nextRow = jsonData[i + 1] as any[];
+        if (nextRow && nextRow.length > 0) {
+          const nextRowStrings = nextRow.map((cell: any) => {
+            if (cell === null || cell === undefined) return '';
+            return String(cell).trim();
+          });
+          console.log(`🔍 Ligne suivante ${i + 1}:`, nextRowStrings.filter(cell => cell !== ''));
+        }
+      }
+      
+      // Calculer le score pour cette ligne
+      let score = 0;
+      let hasNumberColumn = false;
+      let nonEmptyColumns = 0;
+      let hasHeaderKeywords = false;
+      let keywordMatches = 0;
+      
+      for (let j = 0; j < rowStrings.length; j++) {
+        const cell = rowStrings[j];
+        if (cell === '') continue;
+        
+        nonEmptyColumns++;
+        
+        // Vérifier si c'est une colonne "N°"
+        if (cell.startsWith('N°') || cell === 'N' || cell.includes('N°')) {
+          hasNumberColumn = true;
+          score += 25; // Bonus important pour "N°"
+        }
+        
+        // Vérifier les mots-clés d'en-tête
+        for (const keyword of headerKeywords) {
+          if (cell.toLowerCase().includes(keyword.toLowerCase())) {
+            score += 8;
+            hasHeaderKeywords = true;
+            keywordMatches++;
+          }
+        }
+        
+        // Bonus spécial pour les lignes avec plusieurs colonnes "N°"
+        if (cell.includes('N°')) {
+          score += 5; // Bonus supplémentaire pour chaque colonne "N°"
+        }
+        
+        // Bonus pour les colonnes qui ressemblent à des en-têtes
+        if (cell.length > 0 && cell.length < 50 && 
+            (cell.includes(' ') || cell.includes('(') || cell.includes(')') || 
+             cell.includes(':') || cell.includes('-') || cell.includes('_'))) {
+          score += 3;
+        }
+        
+        // Bonus pour les colonnes avec des caractères spéciaux (typiques des en-têtes)
+        if (cell.includes('é') || cell.includes('è') || cell.includes('à') || 
+            cell.includes('ç') || cell.includes('ù') || cell.includes('ô')) {
+          score += 4;
+        }
+      }
+      
+              // Bonus pour avoir une colonne "N°" et plusieurs colonnes non vides
+        if (hasNumberColumn && nonEmptyColumns >= 3) {
+          score += 30;
+        }
+      
+      // Bonus pour avoir des mots-clés d'en-tête
+      if (hasHeaderKeywords && nonEmptyColumns >= 2) {
+        score += 15;
+      }
+      
+      // Bonus pour avoir plusieurs mots-clés
+      if (keywordMatches >= 3) {
+        score += 20;
+      }
+      
+      // Score de base pour les lignes avec plusieurs colonnes non vides
+      if (nonEmptyColumns >= 3) {
+        score += 8;
+      }
+      
+      // Pénalité réduite pour les lignes avec peu de colonnes non vides
+      if (nonEmptyColumns < 2) {
+        score -= 3; // Réduit encore plus
+      }
+      
+              console.log(`🔍 Ligne ${i}: score=${score}, colonnes=${nonEmptyColumns}, hasNumberColumn=${hasNumberColumn}, hasHeaderKeywords=${hasHeaderKeywords}, keywordMatches=${keywordMatches}`);
+        
+        // Log spécial pour les lignes avec beaucoup de colonnes non vides
+        if (nonEmptyColumns >= 5) {
+          console.log(`🔍 LIGNE INTÉRESSANTE ${i}: ${nonEmptyColumns} colonnes non vides:`, rowStrings.filter(cell => cell !== ''));
+        }
+        
+        if (score > bestScore) {
+          bestScore = score;
+          bestHeaderRowIndex = i;
+          bestHeaderRow = [...rowStrings];
+          console.log(`🔍 ⭐ Nouveau meilleur en-tête trouvé à la ligne ${i} avec score ${score}`);
+        }
+        
+                // Continuer l'analyse même après avoir trouvé un en-tête valide
+        if (score > 0) {
+          console.log(`🔍 En-tête potentiel à la ligne ${i} avec score ${score}`);
+        }
+        
+        console.log(`🔍 === FIN ANALYSE LIGNE ${i} ===`);
+      } catch (error) {
+        console.error(`❌ Erreur lors de l'analyse de la ligne ${i}:`, error);
+        continue;
+      }
+    }
+    
+    console.log(`🔍 Meilleur en-tête trouvé à la ligne ${bestHeaderRowIndex} avec score ${bestScore}`);
+    console.log(`🔍 En-tête détecté:`, bestHeaderRow);
+    
+    // Fallback : si aucun en-tête valide n'est trouvé, utiliser la première ligne non vide
+    if (bestScore <= 0) {
+      console.log('⚠️ Aucun en-tête valide détecté, utilisation de la première ligne non vide');
+      for (let i = 0; i < jsonData.length; i++) {
+        const row = jsonData[i] as any[];
+        if (row && row.length > 0) {
+          const rowStrings = row.map((cell: any) => {
+            if (cell === null || cell === undefined) return '';
+            return String(cell).trim();
+          });
+          
+          const nonEmptyCount = rowStrings.filter(cell => cell !== '').length;
+          if (nonEmptyCount >= 2) {
+            console.log(`🔍 Fallback: utilisation de la ligne ${i} avec ${nonEmptyCount} colonnes non vides`);
+            return {
+              headerRowIndex: i,
+              headerRow: rowStrings
+            };
+          }
+        }
+      }
+    }
+    
+    return {
+      headerRowIndex: bestHeaderRowIndex,
+      headerRow: bestHeaderRow
+    };
+  }
+
+    // Méthode pour corriger les caractères spéciaux dans les en-têtes Excel
+    private fixExcelColumnNames(columns: string[]): string[] {
+      return columns.map((col: string) => {
+        if (!col) return col;
+        
+        // Corrections spécifiques pour les fichiers Excel
+        let corrected = col;
+        
+        // Corriger "Opration" -> "Opération"
+        if (corrected.includes('Opration')) {
+          corrected = corrected.replace(/Opration/g, 'Opération');
+        }
+        
+        // Corriger "Montant (XAF)" -> "Montant (XAF)"
+        if (corrected.includes('Montant') && corrected.includes('XAF')) {
+          corrected = corrected.replace(/Montant\s*\(XAF\)/g, 'Montant (XAF)');
+        }
+        
+        // Corriger "Commissions (XAF)" -> "Commissions (XAF)"
+        if (corrected.includes('Commissions') && corrected.includes('XAF')) {
+          corrected = corrected.replace(/Commissions\s*\(XAF\)/g, 'Commissions (XAF)');
+        }
+        
+        // Corriger "N° de Compte" -> "N° de Compte"
+        if (corrected.includes('N°') && corrected.includes('Compte')) {
+          corrected = corrected.replace(/N°\s*de\s*Compte/g, 'N° de Compte');
+        }
+        
+        // Corriger "N° Pseudo" -> "N° Pseudo"
+        if (corrected.includes('N°') && corrected.includes('Pseudo')) {
+          corrected = corrected.replace(/N°\s*Pseudo/g, 'N° Pseudo');
+        }
+        
+        return corrected;
+    });
+  }
+
   private async readExcelFileOptimized(file: File): Promise<void> {
     try {
+      console.log('🔄 VERSION AMÉLIORÉE - Début lecture fichier Excel avec détection d\'en-têtes étendue');
       const workbook = await this.readExcelFile(file);
       const sheetName = workbook.SheetNames[0];
       const worksheet = workbook.Sheets[sheetName];
       
-      // Conversion optimisée
-      const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
-      if (jsonData.length === 0) return;
+      // Conversion en tableau de tableaux pour analyse
+      const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
+      if (jsonData.length === 0) {
+        console.log('❌ Fichier Excel vide');
+        return;
+      }
       
-      const headers = jsonData[0] as string[];
+      console.log(`📊 Données Excel brutes: ${jsonData.length} lignes`);
+      
+      // Détecter les en-têtes
+      const headerDetection = this.detectExcelHeaders(jsonData);
+      const headers = headerDetection.headerRow;
+      const headerRowIndex = headerDetection.headerRowIndex;
+      
+      console.log(`✅ En-têtes détectés à la ligne ${headerRowIndex}:`, headers);
+      
+      // Vérifier si des en-têtes valides ont été trouvés
+      if (!headers || headers.length === 0 || headers.every(h => !h || h.trim() === '')) {
+        console.log('⚠️ Aucun en-tête valide détecté, tentative de fallback');
+        // Essayer de trouver la première ligne avec des données
+        for (let i = 0; i < Math.min(200, jsonData.length); i++) {
+          const row = jsonData[i] as any[];
+          if (row && row.length > 0) {
+            const rowStrings = row.map((cell: any) => {
+              if (cell === null || cell === undefined) return '';
+              return String(cell).trim();
+            });
+            
+            const nonEmptyCount = rowStrings.filter(cell => cell !== '').length;
+            if (nonEmptyCount >= 2) {
+              console.log(`🔍 Fallback: utilisation de la ligne ${i} avec ${nonEmptyCount} colonnes non vides`);
+              const fallbackHeaders = rowStrings.map((h, idx) => h || `Col${idx + 1}`);
+              const correctedHeaders = this.fixExcelColumnNames(fallbackHeaders);
+              
+              // Créer les lignes de données
+              const rows: any[] = [];
+              for (let j = i + 1; j < jsonData.length; j++) {
+                const rowData = jsonData[j] as any[];
+                if (!rowData || rowData.length === 0) continue;
+                
+                const row: any = {};
+                correctedHeaders.forEach((header: string, index: number) => {
+                  const value = rowData[index];
+                  row[header] = value !== undefined && value !== null ? value : '';
+                });
+                rows.push(row);
+              }
+              
+              console.log(`📊 Lignes de données créées (fallback): ${rows.length}`);
+              
+              // Mettre à jour les propriétés du composant
+              this.allRows.push(...rows);
+              this.allColumns = [...correctedHeaders];
+              this.columns = [...correctedHeaders];
+              
+              console.log(`✅ Fichier Excel traité (fallback): ${rows.length} lignes, ${correctedHeaders.length} colonnes`);
+              
+              // Vérifier si c'est un fichier Orange Money et appliquer le filtre automatique
+              const fileName = this.selectedFiles.length > 0 ? this.selectedFiles[0].name : '';
+              const isOrangeMoneyFile = this.orangeMoneyUtilsService.isOrangeMoneyFile(fileName);
+              
+              if (isOrangeMoneyFile) {
+                console.log('🎯 Fichier Orange Money détecté dans le traitement Excel (fallback)');
+                // Appliquer le filtre automatique après un délai pour s'assurer que les données sont bien chargées
+                setTimeout(() => {
+                  this.applyAutomaticOrangeMoneyFilter();
+                }, 500);
+              }
+              
+              return;
+            }
+          }
+        }
+        
+        console.log('❌ Impossible de trouver des en-têtes valides dans le fichier Excel');
+        return;
+      }
+      
+      // Corriger les caractères spéciaux dans les en-têtes
+      const correctedHeaders = this.fixExcelColumnNames(headers);
+      console.log(`🔧 En-têtes Excel corrigés:`, correctedHeaders);
+      
+      // Créer les lignes de données en commençant après la ligne d'en-tête
       const rows: any[] = [];
       
       // Traitement optimisé par chunks
-      for (let i = 1; i < jsonData.length; i++) {
+      for (let i = headerRowIndex + 1; i < jsonData.length; i++) {
         const rowData = jsonData[i] as any[];
+        if (!rowData || rowData.length === 0) continue;
+        
         const row: any = {};
-        headers.forEach((header: string, index: number) => {
-          row[header] = rowData[index] || '';
+        correctedHeaders.forEach((header: string, index: number) => {
+          const value = rowData[index];
+          row[header] = value !== undefined && value !== null ? value : '';
         });
         rows.push(row);
       }
       
+      console.log(`📊 Lignes de données créées: ${rows.length}`);
+      
+      // Mettre à jour les propriétés du composant
       this.allRows.push(...rows);
+      this.allColumns = [...correctedHeaders];
+      this.columns = [...correctedHeaders];
+      
+      console.log(`✅ Fichier Excel traité: ${rows.length} lignes, ${correctedHeaders.length} colonnes`);
+      console.log(`📋 Colonnes détectées:`, this.allColumns);
+      
+      // Vérifier si c'est un fichier Orange Money et appliquer le filtre automatique
+      const fileName = this.selectedFiles.length > 0 ? this.selectedFiles[0].name : '';
+      const isOrangeMoneyFile = this.orangeMoneyUtilsService.isOrangeMoneyFile(fileName);
+      
+      if (isOrangeMoneyFile) {
+        console.log('🎯 Fichier Orange Money détecté dans le traitement Excel');
+        // Appliquer le filtre automatique après un délai pour s'assurer que les données sont bien chargées
+        setTimeout(() => {
+          this.applyAutomaticOrangeMoneyFilter();
+        }, 500);
+      }
+      
     } catch (error) {
+      console.error('❌ Erreur lors de la lecture du fichier Excel:', error);
       throw error;
     }
   }
@@ -628,6 +994,58 @@ export class TraitementComponent implements OnInit, AfterViewInit {
   // Méthode pour prévisualiser les données CSV
   async previewCsvData(csvContent: string, delimiter: string): Promise<{ columns: string[], data: any[], hasHeader: boolean }> {
     return new Promise((resolve, reject) => {
+      // Détecter si c'est un fichier Orange Money AVANT le parsing
+      const orangeMoneyDetection = this.detectOrangeMoneyFile(csvContent, delimiter);
+      this.isOrangeMoneyFile = orangeMoneyDetection.isOrangeMoney;
+      this.orangeMoneyHeaderRowIndex = orangeMoneyDetection.headerRowIndex;
+      
+      if (orangeMoneyDetection.isOrangeMoney) {
+        console.log(`🟠 Fichier Orange Money détecté - Utilisation des colonnes détectées`);
+        
+        // Parser sans header pour avoir toutes les lignes
+        Papa.parse(csvContent, {
+          header: false,
+          delimiter,
+          skipEmptyLines: true,
+          complete: (results) => {
+            const rawRows = results.data as any[];
+            console.log(`📊 Lignes brutes parsées: ${rawRows.length}`);
+            
+            if (rawRows.length > orangeMoneyDetection.headerRowIndex) {
+              // Utiliser les colonnes détectées
+              const headerRow = orangeMoneyDetection.headerRow;
+              const columns = headerRow.map((col, index) => col || `Col${index + 1}`);
+              
+              // Extraire les données à partir de la ligne après l'en-tête
+              const dataRows = rawRows.slice(orangeMoneyDetection.headerRowIndex + 1, orangeMoneyDetection.headerRowIndex + 11);
+              const data = dataRows.map((row: any[]) => {
+                const obj: any = {};
+                columns.forEach((col, idx) => {
+                  obj[col] = row[idx] || '';
+                });
+                return obj;
+              });
+              
+              console.log(`📊 Prévisualisation Orange Money: ${columns.length} colonnes, ${data.length} lignes`);
+              console.log(`📊 En-tête détecté:`, columns);
+              console.log(`📊 Données d'exemple:`, data.slice(0, 2));
+              
+              // Mettre à jour l'interface avec les colonnes détectées
+              this.updateOrangeMoneyDisplay(columns);
+              
+              resolve({ columns, data, hasHeader: true });
+            } else {
+              resolve({ columns: [], data: [], hasHeader: false });
+            }
+          },
+          error: (error: any) => {
+            reject(error);
+          }
+        });
+        return;
+      }
+      
+      // Traitement normal pour les autres fichiers
       Papa.parse(csvContent, {
         delimiter,
         skipEmptyLines: true,
@@ -691,12 +1109,37 @@ export class TraitementComponent implements OnInit, AfterViewInit {
           this.detectedDelimiter = this.detectCsvDelimiter(csv);
           console.log('Séparateur CSV détecté:', this.detectedDelimiter);
           
+          // Détecter si c'est un fichier Orange Money AVANT la prévisualisation
+          const orangeMoneyDetection = this.detectOrangeMoneyFile(csv, this.detectedDelimiter);
+          this.isOrangeMoneyFile = orangeMoneyDetection.isOrangeMoney;
+          this.orangeMoneyHeaderRowIndex = orangeMoneyDetection.headerRowIndex;
+          
+          console.log(`🟠 Détection Orange Money - isOrangeMoneyFile: ${this.isOrangeMoneyFile}`);
+          
           // Prévisualiser les données
           try {
+            console.log('🔄 DÉBUT PRÉVISUALISATION - Vérification du rechargement du code');
             const preview = await this.previewCsvData(csv, this.detectedDelimiter);
             this.csvPreviewColumns = preview.columns;
             this.csvPreviewData = preview.data;
             this.showCsvPreview = true;
+            
+            // Si c'est un fichier Orange Money, utiliser les colonnes détectées
+            console.log(`🔄 PRÉVISUALISATION - isOrangeMoneyFile: ${this.isOrangeMoneyFile}`);
+            console.log(`🔄 PRÉVISUALISATION - preview.columns:`, preview.columns);
+            console.log(`🔄 PRÉVISUALISATION - orangeMoneyDetection.headerRow:`, orangeMoneyDetection.headerRow);
+            
+            if (this.isOrangeMoneyFile) {
+              console.log(`🟠 Prévisualisation - isOrangeMoneyFile: ${this.isOrangeMoneyFile}`);
+              console.log(`🟠 Prévisualisation - preview.columns:`, preview.columns);
+              console.log(`🟠 Prévisualisation - orangeMoneyDetection.headerRow:`, orangeMoneyDetection.headerRow);
+              
+              // Utiliser les colonnes détectées au lieu des colonnes de prévisualisation
+              this.updateOrangeMoneyDisplay(orangeMoneyDetection.headerRow);
+              console.log(`🟠 Interface mise à jour avec les colonnes Orange Money:`, orangeMoneyDetection.headerRow);
+            } else {
+              console.log(`❌ Prévisualisation - isOrangeMoneyFile: ${this.isOrangeMoneyFile}`);
+            }
             
             console.log('Prévisualisation CSV:', {
               columns: preview.columns,
@@ -705,6 +1148,74 @@ export class TraitementComponent implements OnInit, AfterViewInit {
             });
           } catch (previewError) {
             console.warn('Erreur lors de la prévisualisation:', previewError);
+          }
+          
+          if (orangeMoneyDetection.isOrangeMoney) {
+            // Traitement spécial pour les fichiers Orange Money
+            console.log('🟠 Traitement fichier Orange Money détecté');
+            
+            // Mettre à jour l'interface immédiatement avec les colonnes détectées
+            this.updateOrangeMoneyDisplay(orangeMoneyDetection.headerRow);
+            
+            Papa.parse(csv, {
+              header: false,
+              delimiter: this.detectedDelimiter,
+              skipEmptyLines: true,
+              complete: async (results) => {
+                try {
+                  const rawRows = results.data as any[];
+                  console.log(`CSV Orange Money parsé: ${rawRows.length} lignes brutes`);
+                  
+                  if (rawRows.length > orangeMoneyDetection.headerRowIndex) {
+                    const headerRow = orangeMoneyDetection.headerRow;
+                    const dataRows = rawRows.slice(orangeMoneyDetection.headerRowIndex + 1);
+                    const colNames = headerRow.map((v: any, i: number) => v ? v.toString() : 'Col' + (i+1));
+                    
+                    console.log(`Traitement Orange Money: ${dataRows.length} lignes de données avec ${colNames.length} colonnes`);
+                    console.log(`Colonnes détectées:`, colNames);
+                    
+                    // Traitement en arrière-plan avec chunks très petits
+                    await this.processDataInBackground(
+                      dataRows,
+                      (chunk) => {
+                        const rowsWithHeader = chunk.map((row: any[]) => {
+                          const obj: any = {};
+                          colNames.forEach((col: string, idx: number) => {
+                            obj[col] = row[idx];
+                          });
+                          return obj;
+                        });
+                        
+                        this.combinedRows.push(...rowsWithHeader);
+                        this.allRows.push(...rowsWithHeader);
+                      },
+                      50, // Chunks très petits pour éviter le blocage
+                      (progress) => {
+                        this.processingMessage = `Traitement Orange Money: ${Math.round(progress)}%`;
+                      }
+                    );
+                    
+                    for (const col of colNames) {
+                      if (!this.columns.includes(col)) this.columns.push(col);
+                      if (!this.allColumns.includes(col)) this.allColumns.push(col);
+                    }
+                    
+                    console.log(`Orange Money traité avec succès: ${this.allRows.length} lignes ajoutées`);
+                  }
+                  this.cd.detectChanges();
+                  resolve();
+                } catch (error) {
+                  console.error('Erreur lors du traitement Orange Money:', error);
+                  reject(error);
+                }
+              },
+              error: (err) => {
+                console.error('Erreur lors de la lecture du CSV Orange Money:', err);
+                this.showError('upload', 'Erreur lors de la lecture du fichier Orange Money.');
+                reject(err);
+              }
+            });
+            return;
           }
           
                       // On tente d'abord avec header: true
@@ -843,6 +1354,12 @@ export class TraitementComponent implements OnInit, AfterViewInit {
   updateDisplayedRows() {
     console.log('updateDisplayedRows appelée - selectionApplied:', this.selectionApplied, 'selectedCols.length:', this.selectedCols.length);
     console.log('allRows.length:', this.allRows.length, 'allColumns.length:', this.allColumns.length);
+    
+    // Vérification spéciale pour Orange Money
+    if (this.isOrangeMoneyFile) {
+      console.log(`🟠 Vérification Orange Money - allColumns:`, this.allColumns);
+      console.log(`🟠 Vérification Orange Money - columns:`, this.columns);
+    }
     
     // Si une sélection est appliquée, afficher seulement les colonnes sélectionnées
     if (this.selectionApplied && this.selectedCols.length > 0) {
@@ -1206,10 +1723,23 @@ export class TraitementComponent implements OnInit, AfterViewInit {
 
   onFilterColumnChange() {
     if (this.selectedFilterColumn) {
-      // Extraire les valeurs uniques de la colonne sélectionnée
+      // Vérifier si c'est un fichier Orange Money et si la colonne est "Statut"
+      const fileName = this.selectedFiles.length > 0 ? this.selectedFiles[0].name : '';
+      const isOrangeMoneyFile = this.orangeMoneyUtilsService.isOrangeMoneyFile(fileName);
+      const isStatutColumn = this.selectedFilterColumn.toLowerCase().includes('statut');
+      
+      if (isOrangeMoneyFile && isStatutColumn) {
+        // Pour les fichiers Orange Money, utiliser les valeurs spécifiques pour "Statut"
+        console.log('🎯 Fichier Orange Money détecté, utilisation des valeurs spécifiques pour Statut');
+        this.filterValues = this.orangeMoneyUtilsService.getOrangeMoneyFieldValues('Statut');
+        this.filteredFilterValues = this.filterValues.slice();
+        this.selectedFilterValues = [];
+      } else {
+        // Extraire les valeurs uniques de la colonne sélectionnée (comportement normal)
       this.filterValues = Array.from(new Set(this.allRows.map(row => row[this.selectedFilterColumn])));
       this.filteredFilterValues = this.filterValues.slice();
-      this.selectedFilterValues = []; // Reset to empty array
+        this.selectedFilterValues = [];
+      }
     } else {
       this.filterValues = [];
       this.filteredFilterValues = [];
@@ -1237,12 +1767,29 @@ export class TraitementComponent implements OnInit, AfterViewInit {
         this.filterApplied = true;
         this.showSuccess('filter', `Aucun filtre appliqué - toutes les lignes conservées (${this.combinedRows.length} lignes).`);
       } else {
+        // Vérifier si c'est un fichier Orange Money et si la colonne est "Statut"
+        const fileName = this.selectedFiles.length > 0 ? this.selectedFiles[0].name : '';
+        const isOrangeMoneyFile = this.orangeMoneyUtilsService.isOrangeMoneyFile(fileName);
+        const isStatutColumn = this.selectedFilterColumn.toLowerCase().includes('statut');
+        
+        if (isOrangeMoneyFile && isStatutColumn) {
+          // Pour les fichiers Orange Money, filtrer sur toutes les lignes qui ont "Succès"
+          this.filteredRows = this.originalRows.filter(row => {
+            const statutValue = row[this.selectedFilterColumn];
+            return statutValue && statutValue.toString().toLowerCase().includes('succès');
+          });
+          this.allRows = [...this.filteredRows];
+          this.combinedRows = [...this.filteredRows];
+          this.filterApplied = true;
+          this.showSuccess('filter', `Filtre Orange Money appliqué sur « ${this.selectedFilterColumn} » = « Succès » (${this.combinedRows.length} lignes).`);
+      } else {
         // Filtrage normal
         this.filteredRows = this.originalRows.filter(row => this.selectedFilterValues.includes(row[this.selectedFilterColumn]));
         this.allRows = [...this.filteredRows];
         this.combinedRows = [...this.filteredRows];
         this.filterApplied = true;
         this.showSuccess('filter', `Filtre appliqué sur « ${this.selectedFilterColumn} » = « ${this.selectedFilterValues.join(', ')} » (${this.combinedRows.length} lignes).`);
+        }
       }
       this.updateDisplayedRows();
     }
@@ -1287,6 +1834,9 @@ export class TraitementComponent implements OnInit, AfterViewInit {
     });
   }
 
+  // Propriété pour le nom du fichier d'export
+  exportFileName: string = 'resultat.csv';
+
   exportCSV() {
     try {
       if (this.combinedRows.length === 0) return;
@@ -1308,10 +1858,16 @@ export class TraitementComponent implements OnInit, AfterViewInit {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'resultat.csv';
+      
+      // Utiliser le nom personnalisé ou le nom par défaut
+      const fileName = this.exportFileName.trim() || 'resultat.csv';
+      // S'assurer que le fichier a l'extension .csv
+      const finalFileName = fileName.endsWith('.csv') ? fileName : fileName + '.csv';
+      
+      a.download = finalFileName;
       a.click();
       URL.revokeObjectURL(url);
-      this.showSuccess('export', 'Export CSV réussi.');
+      this.showSuccess('export', `Export CSV réussi: ${finalFileName}`);
     } catch (e) {
       this.showError('export', 'Erreur lors de l\'export CSV.');
     }
@@ -2121,6 +2677,15 @@ export class TraitementComponent implements OnInit, AfterViewInit {
       const charsToRemove = this.specificCharactersToRemove.trim();
       const isCaseSensitive = this.removeSpecificCharactersCaseSensitive;
       
+      // Liste des chaînes autorisées pour la suppression
+      const allowedStrings = ['_CM', '_ML', '_GN', '_CI', '_BF', '_KE', '_SN', '_KN', '_BJ', '_GB'];
+      
+      // Vérifier si la chaîne à supprimer est dans la liste autorisée
+      if (!allowedStrings.includes(charsToRemove)) {
+        this.showError('format', `La chaîne "${charsToRemove}" n'est pas autorisée. Chaînes autorisées: ${allowedStrings.join(', ')}`);
+        return;
+      }
+      
       // Traiter les données affichées (combinedRows)
       this.combinedRows.forEach((row, rowIndex) => {
         this.formatSelections['removeSpecificCharacters'].forEach(col => {
@@ -2140,11 +2705,26 @@ export class TraitementComponent implements OnInit, AfterViewInit {
             if (shouldProcess) {
               let newValue = originalValue;
               
+              // Logique de suppression de chaînes complètes : supprimer la chaîne spécifiée partout où elle apparaît
+              console.log(`🔍 DEBUG: Suppression de "${charsToRemove}" dans "${originalValue}"`);
+              console.log(`🔍 DEBUG: Chaîne à supprimer: "${charsToRemove}"`);
+              console.log(`🔍 DEBUG: Sensible à la casse: ${isCaseSensitive}`);
+              
               if (isCaseSensitive) {
-                newValue = originalValue.replace(new RegExp(this.escapeRegExp(charsToRemove), 'g'), '');
+                // Suppression sensible à la casse de la chaîne complète partout où elle apparaît
+                const escapedPattern = this.escapeRegExp(charsToRemove);
+                const regex = new RegExp(escapedPattern, 'g');
+                console.log(`🔍 DEBUG: Pattern regex: ${regex}`);
+                newValue = originalValue.replace(regex, '');
               } else {
-                newValue = originalValue.replace(new RegExp(this.escapeRegExp(charsToRemove), 'gi'), '');
+                // Suppression insensible à la casse de la chaîne complète partout où elle apparaît
+                const escapedPattern = this.escapeRegExp(charsToRemove);
+                const regex = new RegExp(escapedPattern, 'gi');
+                console.log(`🔍 DEBUG: Pattern regex: ${regex}`);
+                newValue = originalValue.replace(regex, '');
               }
+              
+              console.log(`🔍 DEBUG: Résultat: "${originalValue}" -> "${newValue}"`);
               
               if (newValue !== originalValue) {
                 processedCells++;
@@ -2176,11 +2756,22 @@ export class TraitementComponent implements OnInit, AfterViewInit {
               if (shouldProcess) {
                 let newValue = originalValue;
                 
+                // Logique de suppression de chaînes complètes : supprimer la chaîne spécifiée partout où elle apparaît
+                console.log(`🔍 DEBUG (allRows): Suppression de "${charsToRemove}" dans "${originalValue}"`);
+                
                 if (isCaseSensitive) {
-                  newValue = originalValue.replace(new RegExp(this.escapeRegExp(charsToRemove), 'g'), '');
+                  // Suppression sensible à la casse de la chaîne complète partout où elle apparaît
+                  const escapedPattern = this.escapeRegExp(charsToRemove);
+                  const regex = new RegExp(escapedPattern, 'g');
+                  newValue = originalValue.replace(regex, '');
                 } else {
-                  newValue = originalValue.replace(new RegExp(this.escapeRegExp(charsToRemove), 'gi'), '');
+                  // Suppression insensible à la casse de la chaîne complète partout où elle apparaît
+                  const escapedPattern = this.escapeRegExp(charsToRemove);
+                  const regex = new RegExp(escapedPattern, 'gi');
+                  newValue = originalValue.replace(regex, '');
                 }
+                
+                console.log(`🔍 DEBUG (allRows): Résultat: "${originalValue}" -> "${newValue}"`);
                 
                 row[col] = newValue;
               }
@@ -2190,7 +2781,7 @@ export class TraitementComponent implements OnInit, AfterViewInit {
       }
 
       console.log(`📊 RÉSUMÉ: ${totalCells} cellules vérifiées, ${processedCells} cellules modifiées`);
-      this.showSuccess('format', `Caractères supprimés avec succès (${processedCells} modifications)`);
+      this.showSuccess('format', `Chaînes supprimées avec succès (${processedCells} modifications)`);
       
       // Forcer la mise à jour de l'affichage
       this.updateDisplayedRowsForPage();
@@ -2887,5 +3478,254 @@ export class TraitementComponent implements OnInit, AfterViewInit {
 
   escapeRegExp(string: string): string {
     return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
+  /**
+   * Obtient les valeurs spécifiques pour un champ donné, en tenant compte du type de fichier
+   */
+  getFieldValues(fieldName: string): string[] {
+    // Utiliser le nom du premier fichier sélectionné pour détecter le type
+    const fileName = this.selectedFiles.length > 0 ? this.selectedFiles[0].name : '';
+    return this.orangeMoneyUtilsService.getFieldValues(fieldName, fileName);
+  }
+
+  // Méthode pour détecter les fichiers Orange Money et trouver la ligne d'en-tête
+  private detectOrangeMoneyFile(csvContent: string, delimiter: string): { isOrangeMoney: boolean; headerRowIndex: number; headerRow: string[] } {
+    const lines = csvContent.split('\n').filter((line: string) => line.trim());
+    let headerRowIndex = -1;
+    let headerRow: string[] = [];
+
+    // Parcourir les lignes pour trouver la première colonne commençant par "N°"
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const columns = line.split(delimiter).map((col: string) => col.trim());
+      
+      // Vérifier si la première colonne commence par "N°"
+      if (columns.length > 0 && columns[0].startsWith('N°')) {
+        headerRowIndex = i;
+        headerRow = columns;
+        console.log(`🔍 Fichier Orange Money détecté - Ligne d'en-tête trouvée à l'index ${i}:`, columns);
+        break;
+      }
+      
+      // Vérifier si "N°" est présent dans n'importe quelle colonne (détection plus flexible)
+      if (columns.some((col: string) => col.startsWith('N°'))) {
+        headerRowIndex = i;
+        headerRow = columns;
+        console.log(`🔍 Fichier Orange Money détecté (flexible) - Ligne d'en-tête trouvée à l'index ${i}:`, columns);
+        break;
+      }
+      
+      // Vérifier les patterns Orange Money typiques
+      const orangeMoneyPatterns = [
+        'Orange Money',
+        'Relevé de vos opérations',
+        'Application:',
+        'Réseau:',
+        'Début de Période:',
+        'Fin de Période:',
+        'Type de rapport:',
+        'Généré le:'
+      ];
+      
+      const hasOrangeMoneyPattern = orangeMoneyPatterns.some(pattern => 
+        columns.some((col: string) => col.includes(pattern))
+      );
+      
+      if (hasOrangeMoneyPattern) {
+        console.log(`🔍 Pattern Orange Money détecté à la ligne ${i}:`, columns);
+        // Continuer à chercher la ligne avec "N°"
+      }
+    }
+
+    const isOrangeMoney = headerRowIndex !== -1;
+    
+    if (isOrangeMoney) {
+      console.log(`📊 Fichier Orange Money détecté - Ignorer les lignes 0 à ${headerRowIndex - 1}`);
+    } else {
+      console.log(`❌ Fichier Orange Money non détecté - Vérification des patterns...`);
+      // Vérifier si c'est un fichier Orange Money même sans "N°" visible
+      const allContent = csvContent.toLowerCase();
+      if (allContent.includes('orange money') || allContent.includes('relevé de vos opérations')) {
+        console.log(`🟠 Pattern Orange Money détecté dans le contenu, mais pas de ligne "N°" trouvée`);
+        // Chercher la première ligne qui ressemble à un en-tête de données
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i];
+          const columns = line.split(delimiter).map((col: string) => col.trim());
+          
+          // Chercher des patterns d'en-tête de données
+          const dataHeaderPatterns = [
+            'date', 'heure', 'référence', 'service', 'paiement', 'statut', 'mode',
+            'agent', 'correspondant', 'montant', 'commissions', 'débit', 'crédit'
+          ];
+          
+          const hasDataHeader = dataHeaderPatterns.some(pattern => 
+            columns.some((col: string) => col.toLowerCase().includes(pattern))
+          );
+          
+          if (hasDataHeader && columns.length >= 5) {
+            headerRowIndex = i;
+            headerRow = columns;
+            console.log(`🔍 En-tête de données Orange Money détecté à l'index ${i}:`, columns);
+            break;
+          }
+        }
+      }
+    }
+
+    // Si on n'a pas trouvé d'en-tête mais qu'on a des colonnes génériques, chercher la ligne suivante
+    if (headerRowIndex === -1 && lines.length > 1) {
+      const firstLine = lines[0];
+      const firstColumns = firstLine.split(delimiter).map((col: string) => col.trim());
+      
+      // Vérifier si la première ligne contient des colonnes génériques (Col1, Col2, etc.)
+      const hasGenericColumns = firstColumns.some((col: string) => 
+        col.toLowerCase().startsWith('col') || col.toLowerCase().startsWith('_')
+      );
+      
+      if (hasGenericColumns && lines.length > 1) {
+        // Chercher dans la deuxième ligne et suivantes
+        for (let i = 1; i < lines.length; i++) {
+          const line = lines[i];
+          const columns = line.split(delimiter).map((col: string) => col.trim());
+          
+          // Vérifier si cette ligne contient "N°" ou des en-têtes de données
+          if (columns.some((col: string) => col.startsWith('N°')) || 
+              columns.some((col: string) => col.toLowerCase().includes('date')) ||
+              columns.some((col: string) => col.toLowerCase().includes('heure')) ||
+              columns.some((col: string) => col.toLowerCase().includes('référence'))) {
+            headerRowIndex = i;
+            headerRow = columns;
+            console.log(`🔍 En-tête Orange Money trouvé à l'index ${i} (après colonnes génériques):`, columns);
+            break;
+          }
+        }
+      }
+    }
+
+    // Si toujours pas trouvé, chercher des patterns plus spécifiques
+    if (headerRowIndex === -1) {
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        const columns = line.split(delimiter).map((col: string) => col.trim());
+        
+        // Chercher des patterns très spécifiques à Orange Money
+        const orangeMoneySpecificPatterns = [
+          'opération', 'agent', 'correspondant', 'montant (xaf)', 'commissions (xaf)',
+          'débit', 'crédit', 'compte:', 'sous-réseau'
+        ];
+        
+        const hasSpecificPattern = orangeMoneySpecificPatterns.some(pattern => 
+          columns.some((col: string) => col.toLowerCase().includes(pattern))
+        );
+        
+        if (hasSpecificPattern && columns.length >= 10) {
+          headerRowIndex = i;
+          headerRow = columns;
+          console.log(`🔍 En-tête Orange Money spécifique trouvé à l'index ${i}:`, columns);
+          break;
+        }
+      }
+    }
+
+    // Corriger les caractères spéciaux dans les colonnes détectées
+    if (headerRowIndex !== -1) {
+      headerRow = this.fixOrangeMoneyColumnNames(headerRow);
+      console.log(`🔧 Colonnes Orange Money corrigées:`, headerRow);
+    }
+
+    return { isOrangeMoney: headerRowIndex !== -1, headerRowIndex, headerRow };
+  }
+
+  // Méthode pour forcer la mise à jour de l'affichage après détection Orange Money
+  private updateOrangeMoneyDisplay(columns: string[]): void {
+    console.log(`🟠 updateOrangeMoneyDisplay appelée avec:`, columns);
+    console.log(`🟠 updateOrangeMoneyDisplay - allColumns avant:`, this.allColumns);
+    
+    // Vider les anciennes colonnes
+    this.allColumns = [];
+    this.columns = [];
+    this.selectedCols = [];
+    
+    // Mettre à jour avec les nouvelles colonnes
+    this.allColumns = [...columns];
+    this.columns = [...columns];
+    this.selectedCols = [...columns]; // Sélectionner toutes les colonnes par défaut
+    
+    console.log(`🟠 Affichage Orange Money mis à jour:`, this.allColumns);
+    console.log(`🟠 updateOrangeMoneyDisplay - allColumns après:`, this.allColumns);
+    
+    // Forcer la détection des changements
+    this.cd.detectChanges();
+    
+    // Attendre un peu puis forcer à nouveau
+    setTimeout(() => {
+      this.cd.detectChanges();
+      console.log(`🟠 Détection des changements forcée - allColumns:`, this.allColumns.length);
+      
+      // Appliquer automatiquement le filtre "Succès" sur la colonne "Statut"
+      this.applyAutomaticOrangeMoneyFilter();
+    }, 100);
+  }
+
+  // Méthode pour corriger les caractères spéciaux dans les colonnes Orange Money
+  private fixOrangeMoneyColumnNames(columns: string[]): string[] {
+    return columns.map(col => {
+      if (!col) return col;
+      
+      // Corrections spécifiques pour les caractères corrompus
+      let corrected = col
+        .replace(/Opration/g, 'Opération')
+        .replace(/Rfrence/g, 'Référence')
+        .replace(/N/g, 'N°')
+        .replace(/Tte/g, 'Tête')
+        .replace(/rseau/g, 'réseau')
+        .replace(/Compte :/g, 'Compte:')
+        .replace(/Montant \(XAF\)/g, 'Montant (XAF)')
+        .replace(/Commissions \(XAF\)/g, 'Commissions (XAF)')
+        .replace(/Crdit/g, 'Crédit')
+        .replace(/Dbit/g, 'Débit')
+        .replace(/Sous-rseau/g, 'Sous-réseau');
+      
+      return corrected;
+    });
+  }
+
+  // Méthode pour appliquer automatiquement le filtre "Succès" sur les fichiers Orange Money
+  private applyAutomaticOrangeMoneyFilter(): void {
+    console.log('🎯 Application automatique du filtre Orange Money...');
+    
+    // Chercher la colonne "Statut" dans les colonnes disponibles
+    const statutColumn = this.allColumns.find(col => 
+      col.toLowerCase().includes('statut') || 
+      col.toLowerCase().includes('status')
+    );
+    
+    if (statutColumn && this.allRows.length > 0) {
+      console.log('✅ Colonne Statut trouvée:', statutColumn);
+      
+      // Appliquer le filtre automatiquement
+      this.selectedFilterColumn = statutColumn;
+      this.selectedFilterValues = ['Succès'];
+      
+      // Filtrer les données
+      this.filteredRows = this.allRows.filter(row => {
+        const statutValue = row[statutColumn];
+        return statutValue && statutValue.toString().toLowerCase().includes('succès');
+      });
+      
+      // Mettre à jour les données affichées
+      this.allRows = [...this.filteredRows];
+      this.combinedRows = [...this.filteredRows];
+      this.filterApplied = true;
+      
+      // Mettre à jour l'affichage
+      this.updateDisplayedRows();
+      
+      console.log(`✅ Filtre automatique appliqué: ${this.filteredRows.length} lignes avec "Succès" affichées`);
+      this.showSuccess('filter', `Filtre automatique Orange Money appliqué: ${this.filteredRows.length} lignes avec "Succès" affichées.`);
+    } else {
+      console.log('⚠️ Colonne Statut non trouvée ou aucune donnée disponible');
+    }
   }
 } 

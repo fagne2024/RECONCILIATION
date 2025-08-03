@@ -11,4 +11,16 @@ public class ReconciliationRequest {
     private String boKeyColumn;
     private String partnerKeyColumn;
     private List<ColumnComparison> comparisonColumns;
+    
+    // Filtres BO pour la réconciliation
+    private List<BOColumnFilter> boColumnFilters;
+    
+    @Data
+    public static class BOColumnFilter {
+        private String modelId;
+        private String modelName;
+        private String columnName;
+        private List<String> selectedValues;
+        private String appliedAt;
+    }
 } 

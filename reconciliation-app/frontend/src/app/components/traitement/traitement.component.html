@@ -1,6 +1,6 @@
 <div class="traitement-container">
   <button type="button" style="float:right;margin-bottom:16px; background:#1976d2; color:white;" (click)="newTraitement()">+ Nouveau traitement</button>
-  <h2>Traitement de fichiers Excel</h2>
+  <h2>Traitement de fichiers (CSV, XLS, XLSX)</h2>
   
   <!-- Barre de progression pour les fichiers volumineux -->
   <div *ngIf="isProcessing" class="processing-overlay">
@@ -24,9 +24,9 @@
   </div>
   
   <div class="upload-area" (drop)="onDrop($event)" (dragover)="onDragOver($event)">
-    <p>Glissez-déposez vos fichiers Excel ici ou</p>
+    <p>Glissez-déposez vos fichiers (CSV, XLS, XLSX) ici ou</p>
     <input type="file" multiple accept=".csv,.xls,.xlsx,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" (change)="onFileSelected($event)" id="fileInput" hidden />
-    <button type="button" (click)="triggerFileInput()" [disabled]="isProcessing">Sélectionner des fichiers Excel ou CSV</button>
+    <button type="button" (click)="triggerFileInput()" [disabled]="isProcessing">Sélectionner des fichiers (CSV, XLS, XLSX)</button>
     <div *ngIf="errorMsg.upload" class="error-msg">{{ errorMsg.upload }}</div>
   </div>
   <div *ngIf="successMsg.upload" class="success-msg" [innerHTML]="successMsg.upload"></div>
@@ -71,6 +71,16 @@
       <li *ngFor="let file of selectedFiles">{{ file.name }}</li>
     </ul>
   </div>
+  
+  <!-- Indication Orange Money -->
+  <div *ngIf="isOrangeMoneyFile" class="orange-money-indicator">
+    <div class="orange-money-badge">
+      <i class="fas fa-mobile-alt"></i>
+      <span>Fichier Orange Money détecté</span>
+      <small>Les lignes au-dessus de la première colonne "N°" seront ignorées</small>
+    </div>
+  </div>
+  
   <div *ngIf="allColumns.length > 0" class="select-cols-section">
     <h4>Sélection des colonnes à conserver</h4>
     <div class="select-cols">
@@ -429,16 +439,15 @@
             </div>
           </div>
           
-          <div class="option-group">
-            <small class="help-text">
-              💡 Exemples de chaînes à supprimer : 
-              <br>• "_CM" supprimera toutes les occurrences de "_CM"
-              <br>• "abc" supprimera toutes les occurrences de "abc"
-              <br>• "123" supprimera toutes les occurrences de "123"
-              <br>• "éèê" supprimera toutes les occurrences de "éèê"
-              <br>• " " supprimera tous les espaces
-            </small>
-          </div>
+                                            <div class="option-group">
+               <small class="help-text">
+                 💡 Suppression de chaînes spécifiques autorisées : 
+                 <br>• Seules les chaînes suivantes sont autorisées : _CM, _ML, _GN, _CI, _BF, _KE, _SN, _KN, _BJ, _GB
+                 <br>• Exemple : "_CM" supprimera "_CM" dans "ID_CM_123" → "ID_123"
+                 <br>• Exemple : "_ML" supprimera "_ML" dans "REF_ML_456" → "REF_456"
+                 <br>⚠️ Note : Les caractères individuels (C, M, P, etc.) ne sont pas autorisés
+               </small>
+             </div>
         </div>
         <button type="button" (click)="applyRemoveSpecificCharactersFormatting()" 
                 [disabled]="!formatSelections['removeSpecificCharacters'].length || !specificCharactersToRemove.trim()">
@@ -599,7 +608,17 @@
     </div>
     <div class="table-responsive">
       <div class="export-csv-bar" style="margin-bottom: 8px; display: flex; align-items: center; gap: 16px;">
-        <button type="button" (click)="exportCSV()">Exporter en CSV</button>
+        <div class="export-controls" style="display: flex; align-items: center; gap: 8px;">
+          <label for="exportFileName" style="font-weight: 500; color: #333;">Nom du fichier:</label>
+          <input 
+            type="text" 
+            id="exportFileName"
+            [(ngModel)]="exportFileName" 
+            placeholder="resultat.csv"
+            style="padding: 4px 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; min-width: 150px;"
+            title="Entrez le nom du fichier CSV (l'extension .csv sera ajoutée automatiquement si nécessaire)">
+        </div>
+        <button type="button" (click)="exportCSV()" style="background: #007bff; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer;">Exporter en CSV</button>
         <div *ngIf="successMsg.export" class="success-msg">{{ successMsg.export }}</div>
         <div *ngIf="errorMsg.export" class="error-msg">{{ errorMsg.export }}</div>
         <div *ngIf="successMsg.reorder" class="success-msg">{{ successMsg.reorder }}</div>

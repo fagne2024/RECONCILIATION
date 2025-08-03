@@ -44,8 +44,9 @@ import { ModulesComponent } from './components/modules/modules.component';
 import { PermissionsComponent } from './components/permissions/permissions.component';
 import { EcartSoldeComponent } from './components/ecart-solde/ecart-solde.component';
 import { EcartSoldeTabComponent } from './components/comptes/ecart-solde-tab.component';
-import { FileWatcherComponent } from './components/file-watcher/file-watcher.component';
+
 import { AutoProcessingModelsComponent } from './components/auto-processing-models/auto-processing-models.component';
+import { BanqueComponent } from './components/banque/banque.component';
 
 @NgModule({
     declarations: [
@@ -71,8 +72,9 @@ import { AutoProcessingModelsComponent } from './components/auto-processing-mode
         PermissionsComponent,
                         EcartSoldeComponent,
                 EcartSoldeTabComponent,
-                FileWatcherComponent,
-                AutoProcessingModelsComponent
+
+                AutoProcessingModelsComponent,
+                BanqueComponent
     ],
     imports: [
         BrowserModule,

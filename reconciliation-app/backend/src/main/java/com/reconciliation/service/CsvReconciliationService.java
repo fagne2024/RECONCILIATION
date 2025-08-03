@@ -25,6 +25,10 @@ public class CsvReconciliationService {
             logger.info("Nombre d'enregistrements BO: {}", request.getBoFileContent().size());
             logger.info("Nombre d'enregistrements Partenaire: {}", request.getPartnerFileContent().size());
             
+            // Appliquer les filtres BO si présents
+            List<Map<String, String>> filteredBoRecords = applyBOFilters(request.getBoFileContent(), request.getBoColumnFilters());
+            logger.info("Nombre d'enregistrements BO après filtrage: {}", filteredBoRecords.size());
+            
             // Initialise la réponse
             ReconciliationResponse response = new ReconciliationResponse();
             response.setMatches(new ArrayList<>());
@@ -47,15 +51,14 @@ public class CsvReconciliationService {
             
             logger.info("Index partenaire créé avec {} clés", partnerMap.size());
 
-            // Traite les enregistrements BO par lots
-            List<Map<String, String>> boRecords = request.getBoFileContent();
+            // Traite les enregistrements BO filtrés par lots
             Set<String> processedBoKeys = new HashSet<>();
-            int totalRecords = boRecords.size();
+            int totalRecords = filteredBoRecords.size();
             int processedRecords = 0;
             
-            for (int i = 0; i < boRecords.size(); i += BATCH_SIZE) {
-                int endIndex = Math.min(i + BATCH_SIZE, boRecords.size());
-                List<Map<String, String>> batch = boRecords.subList(i, endIndex);
+            for (int i = 0; i < filteredBoRecords.size(); i += BATCH_SIZE) {
+                int endIndex = Math.min(i + BATCH_SIZE, filteredBoRecords.size());
+                List<Map<String, String>> batch = filteredBoRecords.subList(i, endIndex);
                 
                 processBatch(batch, partnerMap, request, response, processedBoKeys);
                 processedRecords += batch.size();
@@ -92,7 +95,7 @@ public class CsvReconciliationService {
             logger.info("Nombre total d'enregistrements uniquement partenaire: {}", partnerOnlyCount);
 
             // Calcule les totaux
-            response.setTotalBoRecords(boRecords.size());
+            response.setTotalBoRecords(filteredBoRecords.size());
             response.setTotalPartnerRecords(request.getPartnerFileContent().size());
             response.setTotalMatches(response.getMatches().size());
             response.setTotalMismatches(response.getMismatches().size());
@@ -206,5 +209,55 @@ public class CsvReconciliationService {
 
     public void removeProgress(String jobId) {
         progressMap.remove(jobId);
+    }
+
+    /**
+     * Applique les filtres BO sur les enregistrements BO
+     */
+    private List<Map<String, String>> applyBOFilters(List<Map<String, String>> boRecords, 
+                                                    List<ReconciliationRequest.BOColumnFilter> filters) {
+        if (filters == null || filters.isEmpty()) {
+            logger.info("Aucun filtre BO à appliquer");
+            return boRecords;
+        }
+        
+        logger.info("Application de {} filtres BO", filters.size());
+        for (ReconciliationRequest.BOColumnFilter filter : filters) {
+            logger.info("Filtre: colonne='{}', valeurs sélectionnées={}", 
+                filter.getColumnName(), filter.getSelectedValues());
+        }
+        
+        List<Map<String, String>> filteredRecords = new ArrayList<>();
+        int excludedCount = 0;
+        
+        for (Map<String, String> record : boRecords) {
+            boolean shouldInclude = true;
+            
+            for (ReconciliationRequest.BOColumnFilter filter : filters) {
+                String columnValue = record.get(filter.getColumnName());
+                
+                if (columnValue == null || !filter.getSelectedValues().contains(columnValue)) {
+                    shouldInclude = false;
+                    logger.debug("Enregistrement exclu par le filtre {}: valeur '{}' non trouvée dans {}", 
+                        filter.getColumnName(), columnValue, filter.getSelectedValues());
+                    excludedCount++;
+                    break;
+                }
+            }
+            
+            if (shouldInclude) {
+                filteredRecords.add(record);
+            }
+        }
+        
+        logger.info("Filtrage terminé: {} enregistrements conservés sur {} ({} exclus)", 
+            filteredRecords.size(), boRecords.size(), excludedCount);
+        
+        // Log quelques exemples d'enregistrements conservés
+        if (!filteredRecords.isEmpty()) {
+            logger.info("Exemple d'enregistrement conservé: {}", filteredRecords.get(0));
+        }
+        
+        return filteredRecords;
     }
 } 

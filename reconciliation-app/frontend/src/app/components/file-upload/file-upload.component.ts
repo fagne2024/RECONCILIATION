@@ -1,6 +1,7 @@
 import { Component, EventEmitter, Output } from '@angular/core';
 import { ReconciliationService } from '../../services/reconciliation.service';
 import { AutoProcessingService, ProcessingResult } from '../../services/auto-processing.service';
+import { OrangeMoneyUtilsService } from '../../services/orange-money-utils.service';
 import * as Papa from 'papaparse';
 import * as XLSX from 'xlsx';
 import { Router } from '@angular/router';
@@ -39,7 +40,7 @@ import { forkJoin } from 'rxjs';
                 <div class="file-input-container" (click)="boFileInput.click()" [class.has-file]="boFile">
                     <div class="file-icon">🏢</div>
                     <h4>BO (Back Office)</h4>
-                    <p>Cliquez pour sélectionner le fichier CSV du BO</p>
+                    <p>Cliquez pour sélectionner le fichier BO (CSV, XLS, XLSX)</p>
                     <input #boFileInput type="file" (change)="onBoFileSelected($event)" accept=".csv, .xls, .xlsx, .xlsm, .xlsb" style="display: none">
                     <div class="file-info" [class.loaded]="boFile">
                         {{ boFile ? boFile.name : 'Aucun fichier sélectionné' }}
@@ -49,7 +50,7 @@ import { forkJoin } from 'rxjs';
                 <div class="file-input-container" (click)="partnerFileInput.click()" [class.has-file]="partnerFile">
                     <div class="file-icon">🤝</div>
                     <h4>Partenaire</h4>
-                    <p>Cliquez pour sélectionner le fichier CSV du partenaire</p>
+                    <p>Cliquez pour sélectionner le fichier Partenaire (CSV, XLS, XLSX)</p>
                     <input #partnerFileInput type="file" (change)="onPartnerFileSelected($event)" accept=".csv, .xls, .xlsx, .xlsm, .xlsb" style="display: none">
                     <div class="file-info" [class.loaded]="partnerFile">
                         {{ partnerFile ? partnerFile.name : 'Aucun fichier sélectionné' }}
@@ -63,7 +64,7 @@ import { forkJoin } from 'rxjs';
                     <div class="file-input-container" (click)="autoBoFileInput.click()" [class.has-file]="autoBoFile">
                         <div class="file-icon">🏢</div>
                         <h4>BO (Back Office)</h4>
-                        <p>Cliquez pour sélectionner le fichier CSV du BO</p>
+                        <p>Cliquez pour sélectionner le fichier BO (CSV, XLS, XLSX)</p>
                         <input #autoBoFileInput type="file" (change)="onAutoBoFileSelected($event)" accept=".csv, .xls, .xlsx, .xlsm, .xlsb" style="display: none">
                         <div class="file-info" [class.loaded]="autoBoFile">
                             {{ autoBoFile ? autoBoFile.name : 'Aucun fichier sélectionné' }}
@@ -73,7 +74,7 @@ import { forkJoin } from 'rxjs';
                     <div class="file-input-container" (click)="autoPartnerFileInput.click()" [class.has-file]="autoPartnerFile">
                         <div class="file-icon">🤝</div>
                         <h4>Partenaire</h4>
-                        <p>Cliquez pour sélectionner le fichier CSV du partenaire</p>
+                        <p>Cliquez pour sélectionner le fichier Partenaire (CSV, XLS, XLSX)</p>
                         <input #autoPartnerFileInput type="file" (change)="onAutoPartnerFileSelected($event)" accept=".csv, .xls, .xlsx, .xlsm, .xlsb" style="display: none">
                         <div class="file-info" [class.loaded]="autoPartnerFile">
                             {{ autoPartnerFile ? autoPartnerFile.name : 'Aucun fichier sélectionné' }}
@@ -137,6 +138,64 @@ import { forkJoin } from 'rxjs';
                         <button class="btn stats-btn" (click)="goToStats()">
                             📊 Statistiques
                         </button>
+                    </div>
+                </div>
+
+                <!-- Sélection des services pour TRXBO -->
+                <div class="service-selection-overlay" *ngIf="showServiceSelection">
+                    <div class="service-selection-modal">
+                        <div class="service-selection-header">
+                            <h3>🔍 Sélection des Services TRXBO</h3>
+                            <p>Fichier TRXBO détecté. Veuillez sélectionner les services à inclure dans la réconciliation :</p>
+                        </div>
+                        
+                        <div class="service-selection-content">
+                            <div class="service-stats">
+                                <div class="stat-item">
+                                    <span class="stat-label">📊 Total de lignes :</span>
+                                    <span class="stat-value">{{ serviceSelectionData.length }}</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-label">🔧 Services disponibles :</span>
+                                    <span class="stat-value">{{ availableServices.length }}</span>
+                                </div>
+                            </div>
+                            
+                            <div class="service-controls">
+                                <button class="btn select-all-btn" (click)="selectAllServices()">
+                                    ✅ Tout sélectionner
+                                </button>
+                                <button class="btn deselect-all-btn" (click)="deselectAllServices()">
+                                    ❌ Tout désélectionner
+                                </button>
+                            </div>
+                            
+                            <div class="service-list">
+                                <div class="service-item" *ngFor="let service of availableServices">
+                                    <label class="service-checkbox">
+                                        <input type="checkbox" 
+                                               [value]="service" 
+                                               [checked]="selectedServices.includes(service)"
+                                               (change)="onServiceSelectionChange($event, service)">
+                                        <span class="service-name">{{ service }}</span>
+                                        <span class="service-count">
+                                            ({{ getServiceCount(service) }} lignes)
+                                        </span>
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="service-selection-actions">
+                            <button class="btn cancel-btn" (click)="cancelServiceSelection()">
+                                ❌ Annuler
+                            </button>
+                            <button class="btn confirm-btn" 
+                                    [disabled]="selectedServices.length === 0"
+                                    (click)="confirmServiceSelection()">
+                                ✅ Confirmer la sélection
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -666,10 +725,17 @@ export class FileUploadComponent {
     loading = false;
     errorMessage = '';
     successMessage = '';
+    
+    // Propriétés pour la sélection des services
+    showServiceSelection = false;
+    availableServices: string[] = [];
+    selectedServices: string[] = [];
+    serviceSelectionData: Record<string, string>[] = [];
 
     constructor(
         private reconciliationService: ReconciliationService, 
         private autoProcessingService: AutoProcessingService,
+        private orangeMoneyUtilsService: OrangeMoneyUtilsService,
         private router: Router, 
         private appStateService: AppStateService
     ) {}
@@ -803,8 +869,6 @@ export class FileUploadComponent {
 
     // Méthode pour afficher les résultats de la réconciliation automatique
     private displayAutoReconciliationResults(result: any): void {
-        // Ici vous pouvez implémenter l'affichage des résultats
-        // Par exemple, ouvrir une modal avec les résultats détaillés
         console.log('📊 Résultats de la réconciliation automatique:');
         console.log('   - Fichier traité:', result.fileName);
         console.log('   - Modèle utilisé:', result.modelId);
@@ -812,6 +876,9 @@ export class FileUploadComponent {
         console.log('   - Temps de réconciliation:', result.reconciliationTime, 'ms');
         console.log('   - Étapes appliquées:', result.appliedSteps.length);
         console.log('   - Résultat de réconciliation:', result.reconciliationResult);
+        
+        // Appliquer le filtrage automatique Orange Money si nécessaire
+        this.applyAutomaticOrangeMoneyFilterForReconciliation(result);
         
         // Vous pouvez ajouter ici la logique pour afficher les résultats dans l'UI
         // Par exemple, stocker les résultats dans une propriété du composant
@@ -841,14 +908,142 @@ export class FileUploadComponent {
         });
     }
 
+    // Méthode pour appliquer le filtrage automatique Orange Money dans la réconciliation
+    private applyAutomaticOrangeMoneyFilterForReconciliation(result: any): void {
+        console.log('🎯 Vérification du filtrage automatique Orange Money pour la réconciliation...');
+        
+        // Vérifier si le fichier traité est un fichier Orange Money
+        const fileName = result.fileName || '';
+        const isOrangeMoneyFile = this.orangeMoneyUtilsService.isOrangeMoneyFile(fileName);
+        
+        if (isOrangeMoneyFile) {
+            console.log('🎯 Fichier Orange Money détecté dans la réconciliation automatique');
+            
+            // Vérifier si le modèle utilisé est un modèle Orange Money
+            const modelId = result.modelId || '';
+            const isOrangeMoneyModel = modelId.toLowerCase().includes('orange') || 
+                                     modelId.toLowerCase().includes('ciomcm') ||
+                                     modelId.toLowerCase().includes('orange money');
+            
+            if (isOrangeMoneyModel) {
+                console.log('✅ Modèle Orange Money détecté, application du filtrage automatique');
+                
+                // Appliquer le filtrage sur les données traitées
+                if (result.processedData && result.processedData.length > 0) {
+                    const filteredData = this.filterOrangeMoneyData(result.processedData);
+                    
+                    console.log(`✅ Filtrage Orange Money appliqué: ${filteredData.length} lignes avec "Succès" sur ${result.processedData.length} lignes totales`);
+                    
+                    // Mettre à jour les résultats avec les données filtrées
+                    result.processedData = filteredData;
+                    result.orangeMoneyFilterApplied = true;
+                    result.filteredRowsCount = filteredData.length;
+                    
+                    // Afficher une notification
+                    this.showOrangeMoneyFilterNotification(result);
+                }
+            } else {
+                console.log('⚠️ Modèle non-Orange Money détecté, pas de filtrage automatique');
+            }
+        } else {
+            console.log('⚠️ Fichier non-Orange Money détecté, pas de filtrage automatique');
+        }
+    }
+
+    // Méthode pour filtrer les données Orange Money
+    private filterOrangeMoneyData(data: any[]): any[] {
+        return data.filter(row => {
+            // Chercher la colonne "Statut" dans les données
+            const statutColumn = Object.keys(row).find(key => 
+                key.toLowerCase().includes('statut') || 
+                key.toLowerCase().includes('status')
+            );
+            
+            if (statutColumn) {
+                const statutValue = row[statutColumn];
+                return statutValue && statutValue.toString().toLowerCase().includes('succès');
+            }
+            
+            return true; // Si pas de colonne Statut, garder toutes les lignes
+        });
+    }
+
+    // Méthode pour afficher une notification de filtrage Orange Money
+    private showOrangeMoneyFilterNotification(result: any): void {
+        const message = `🎯 Filtrage Orange Money automatique appliqué!\n\n` +
+                       `📁 Fichier: ${result.fileName}\n` +
+                       `🤖 Modèle: ${result.modelId}\n` +
+                       `✅ Lignes avec "Succès": ${result.filteredRowsCount}\n` +
+                       `📊 Total initial: ${result.processedData.length + (result.totalRowsCount - result.filteredRowsCount)} lignes\n\n` +
+                       `Seules les lignes avec le statut "Succès" ont été conservées pour la réconciliation.`;
+        
+        console.log('🎯 Notification Orange Money:', message);
+        // Vous pouvez remplacer alert par une notification plus élégante
+        alert(message);
+    }
+
+    // Méthode pour appliquer le filtrage automatique Orange Money dans le file upload
+    private applyAutomaticOrangeMoneyFilterForFileUpload(fileName: string, isBo: boolean): void {
+        console.log('🎯 Vérification du filtrage automatique Orange Money pour le file upload...');
+        console.log('🔍 Nom du fichier:', fileName);
+        console.log('🔍 Type de fichier (isBo):', isBo);
+        
+        // Vérifier si le fichier traité est un fichier Orange Money
+        const isOrangeMoneyFile = this.orangeMoneyUtilsService.isOrangeMoneyFile(fileName);
+        console.log('🔍 Est-ce un fichier Orange Money?', isOrangeMoneyFile);
+        
+        if (isOrangeMoneyFile) {
+            console.log('🎯 Fichier Orange Money détecté dans le file upload');
+            console.log('🔍 autoBoData.length:', this.autoBoData.length);
+            console.log('🔍 autoPartnerData.length:', this.autoPartnerData.length);
+            
+            // Appliquer le filtrage sur les données appropriées
+            if (isBo && this.autoBoData.length > 0) {
+                const originalCount = this.autoBoData.length;
+                this.autoBoData = this.filterOrangeMoneyData(this.autoBoData);
+                const filteredCount = this.autoBoData.length;
+                
+                console.log(`✅ Filtrage Orange Money appliqué sur BO: ${filteredCount} lignes avec "Succès" sur ${originalCount} lignes totales`);
+                this.showOrangeMoneyFilterNotificationForFileUpload(fileName, 'BO', originalCount, filteredCount);
+            } else if (!isBo && this.autoPartnerData.length > 0) {
+                const originalCount = this.autoPartnerData.length;
+                this.autoPartnerData = this.filterOrangeMoneyData(this.autoPartnerData);
+                const filteredCount = this.autoPartnerData.length;
+                
+                console.log(`✅ Filtrage Orange Money appliqué sur Partenaire: ${filteredCount} lignes avec "Succès" sur ${originalCount} lignes totales`);
+                this.showOrangeMoneyFilterNotificationForFileUpload(fileName, 'Partenaire', originalCount, filteredCount);
+            } else {
+                console.log('⚠️ Aucune donnée disponible pour le filtrage (isBo:', isBo, ', autoBoData.length:', this.autoBoData.length, ', autoPartnerData.length:', this.autoPartnerData.length, ')');
+            }
+        } else {
+            console.log('⚠️ Fichier non-Orange Money détecté, pas de filtrage automatique');
+            console.log('🔍 Clés de détection utilisées: ciomcm, orange, orange money');
+            console.log('🔍 Nom du fichier en minuscules:', fileName.toLowerCase());
+        }
+    }
+
+    // Méthode pour afficher une notification de filtrage Orange Money pour le file upload
+    private showOrangeMoneyFilterNotificationForFileUpload(fileName: string, fileType: string, originalCount: number, filteredCount: number): void {
+        const message = `🎯 Filtrage Orange Money automatique appliqué!\n\n` +
+                       `📁 Fichier: ${fileName}\n` +
+                       `📂 Type: ${fileType}\n` +
+                       `✅ Lignes avec "Succès": ${filteredCount}\n` +
+                       `📊 Total initial: ${originalCount} lignes\n\n` +
+                       `Seules les lignes avec le statut "Succès" ont été conservées.`;
+        
+        console.log('🎯 Notification Orange Money (File Upload):', message);
+        // Vous pouvez remplacer alert par une notification plus élégante
+        alert(message);
+    }
+
     private parseFile(file: File, isBo: boolean): void {
         const fileName = file.name.toLowerCase();
         if (fileName.endsWith('.csv')) {
             this.parseCSV(file, isBo);
-        } else if (fileName.endsWith('.xlsx')) {
+        } else if (fileName.endsWith('.xlsx') || fileName.endsWith('.xls')) {
             this.parseXLSX(file, isBo);
         } else {
-            alert('Format de fichier non supporté. Veuillez choisir un fichier .csv ou .xlsx');
+            alert('Format de fichier non supporté. Veuillez choisir un fichier .csv, .xls ou .xlsx');
         }
     }
 
@@ -890,19 +1085,91 @@ export class FileUploadComponent {
     private parseXLSX(file: File, isBo: boolean): void {
         const reader = new FileReader();
         reader.onload = (e: ProgressEvent<FileReader>) => {
+            try {
+                console.log('🔄 Début lecture fichier Excel pour réconciliation');
             const data = new Uint8Array(e.target?.result as ArrayBuffer);
             const workbook = XLSX.read(data, { type: 'array' });
             const firstSheetName = workbook.SheetNames[0];
             const worksheet = workbook.Sheets[firstSheetName];
-            const jsonData = XLSX.utils.sheet_to_json<Record<string, any>>(worksheet, { defval: '' });
+                
+                // Conversion en tableau de tableaux pour analyse
+                const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
+                if (jsonData.length === 0) {
+                    console.log('❌ Fichier Excel vide');
+                    return;
+                }
+                
+                console.log(`📊 Données Excel brutes: ${jsonData.length} lignes`);
+                
+                // Détecter les en-têtes
+                const headerDetection = this.detectExcelHeaders(jsonData);
+                const headers = headerDetection.headerRow;
+                const headerRowIndex = headerDetection.headerRowIndex;
+                
+                console.log(`✅ En-têtes détectés à la ligne ${headerRowIndex}:`, headers);
+                
+                // Vérifier si des en-têtes valides ont été trouvés
+                if (!headers || headers.length === 0 || headers.every(h => !h || h.trim() === '')) {
+                    console.log('⚠️ Aucun en-tête valide détecté, utilisation de la première ligne');
+                    const fallbackHeaders = jsonData[0]?.map((h, idx) => h || `Col${idx + 1}`) || [];
+                    const correctedHeaders = this.fixExcelColumnNames(fallbackHeaders);
+                    
+                    // Créer les lignes de données
+                    const rows: any[] = [];
+                    for (let i = 1; i < jsonData.length; i++) {
+                        const rowData = jsonData[i] as any[];
+                        if (!rowData || rowData.length === 0) continue;
+                        
+                        const row: any = {};
+                        correctedHeaders.forEach((header: string, index: number) => {
+                            const value = rowData[index];
+                            row[header] = value !== undefined && value !== null ? value : '';
+                        });
+                        rows.push(row);
+                    }
+                    
             if (isBo) {
-                this.boData = jsonData;
+                        this.boData = rows;
             } else {
-                this.partnerData = this.convertDebitCreditToNumber(jsonData);
-            }
+                        this.partnerData = this.convertDebitCreditToNumber(rows);
+                    }
+                } else {
+                    // Corriger les caractères spéciaux dans les en-têtes
+                    const correctedHeaders = this.fixExcelColumnNames(headers);
+                    console.log(`🔧 En-têtes Excel corrigés:`, correctedHeaders);
+                    
+                    // Créer les lignes de données en commençant après la ligne d'en-tête
+                    const rows: any[] = [];
+                    for (let i = headerRowIndex + 1; i < jsonData.length; i++) {
+                        const rowData = jsonData[i] as any[];
+                        if (!rowData || rowData.length === 0) continue;
+                        
+                        const row: any = {};
+                        correctedHeaders.forEach((header: string, index: number) => {
+                            const value = rowData[index];
+                            row[header] = value !== undefined && value !== null ? value : '';
+                        });
+                        rows.push(row);
+                    }
+                    
+                    console.log(`📊 Lignes de données créées: ${rows.length}`);
+                    
+                    if (isBo) {
+                        this.boData = rows;
+                    } else {
+                        this.partnerData = this.convertDebitCreditToNumber(rows);
+                    }
+                }
+                
+                console.log(`✅ Fichier Excel traité: ${isBo ? this.boData.length : this.partnerData.length} lignes`);
+                
             // Mettre à jour l'estimation seulement si les deux fichiers sont chargés
             if (this.boFile && this.partnerFile) {
                 this.updateEstimatedTime();
+                }
+                
+            } catch (error) {
+                console.error('❌ Erreur lors de la lecture du fichier Excel:', error);
             }
         };
         reader.onerror = (e) => {
@@ -967,14 +1234,144 @@ export class FileUploadComponent {
         }
     }
 
+    // Méthode pour détecter si le fichier est TRXBO et extraire les services
+    private detectTRXBOAndExtractServices(data: Record<string, string>[]): boolean {
+        if (!data || data.length === 0) return false;
+        
+        const firstRow = data[0];
+        const columns = Object.keys(firstRow);
+        
+        // Vérifier si c'est un fichier TRXBO (contient une colonne "Service" ou "service")
+        const hasServiceColumn = columns.some(col => 
+            col.toLowerCase().includes('service') || 
+            col.toLowerCase().includes('serv')
+        );
+        
+        if (hasServiceColumn) {
+            console.log('🔍 Fichier TRXBO détecté, extraction des services...');
+            
+            // Trouver la colonne service
+            const serviceColumn = columns.find(col => 
+                col.toLowerCase().includes('service') || 
+                col.toLowerCase().includes('serv')
+            );
+            
+            if (serviceColumn) {
+                // Extraire tous les services uniques
+                const services = [...new Set(data.map(row => row[serviceColumn]).filter(service => service && service.trim()))];
+                this.availableServices = services.sort();
+                this.serviceSelectionData = data;
+                
+                console.log('📋 Services disponibles:', this.availableServices);
+                console.log('📊 Nombre total de lignes:', data.length);
+                
+                return true;
+            }
+        }
+        
+        return false;
+    }
+
+    // Méthode pour afficher la sélection des services
+    private showServiceSelectionStep(): void {
+        this.showServiceSelection = true;
+        this.selectedServices = [...this.availableServices]; // Sélectionner tous par défaut
+    }
+
+    // Méthode pour confirmer la sélection des services
+    confirmServiceSelection(): void {
+        if (this.selectedServices.length === 0) {
+            this.errorMessage = 'Veuillez sélectionner au moins un service.';
+            return;
+        }
+
+        console.log('✅ Services sélectionnés:', this.selectedServices);
+        
+        // Filtrer les données pour ne garder que les lignes des services sélectionnés
+        const serviceColumn = Object.keys(this.serviceSelectionData[0]).find(col => 
+            col.toLowerCase().includes('service') || 
+            col.toLowerCase().includes('serv')
+        );
+        
+        if (serviceColumn) {
+            const filteredData = this.serviceSelectionData.filter(row => 
+                this.selectedServices.includes(row[serviceColumn])
+            );
+            
+            console.log('📊 Données filtrées:', filteredData.length, 'lignes sur', this.serviceSelectionData.length, 'originales');
+            
+            // Mettre à jour les données BO avec les données filtrées
+            this.autoBoData = filteredData;
+            
+            // Masquer la sélection des services
+            this.showServiceSelection = false;
+            
+            // Continuer avec la réconciliation automatique
+            this.continueWithAutoReconciliation();
+        }
+    }
+
+    // Méthode pour annuler la sélection des services
+    cancelServiceSelection(): void {
+        this.showServiceSelection = false;
+        this.availableServices = [];
+        this.selectedServices = [];
+        this.serviceSelectionData = [];
+    }
+
+    // Méthode pour continuer avec la réconciliation automatique après sélection des services
+    private continueWithAutoReconciliation(): void {
+        // Cette méthode sera appelée après la sélection des services
+        // Elle contiendra la logique de réconciliation automatique
+        this.onAutoProceed();
+    }
+
+    // Méthode pour gérer le changement de sélection des services
+    onServiceSelectionChange(event: Event, service: string): void {
+        const checkbox = event.target as HTMLInputElement;
+        if (checkbox.checked) {
+            if (!this.selectedServices.includes(service)) {
+                this.selectedServices.push(service);
+            }
+        } else {
+            this.selectedServices = this.selectedServices.filter(s => s !== service);
+        }
+    }
+
+    // Méthode pour compter le nombre de lignes par service
+    getServiceCount(service: string): number {
+        if (!this.serviceSelectionData || this.serviceSelectionData.length === 0) return 0;
+        
+        const serviceColumn = Object.keys(this.serviceSelectionData[0]).find(col => 
+            col.toLowerCase().includes('service') || 
+            col.toLowerCase().includes('serv')
+        );
+        
+        if (serviceColumn) {
+            return this.serviceSelectionData.filter(row => row[serviceColumn] === service).length;
+        }
+        
+        return 0;
+    }
+
+    // Méthode pour sélectionner tous les services
+    selectAllServices(): void {
+        this.selectedServices = [...this.availableServices];
+    }
+
+    // Méthode pour désélectionner tous les services
+    deselectAllServices(): void {
+        this.selectedServices = [];
+    }
+
     private parseAutoFile(file: File, isBo: boolean): void {
         const fileName = file.name.toLowerCase();
         if (fileName.endsWith('.csv')) {
             this.parseAutoCSV(file, isBo);
-        } else if (fileName.endsWith('.xlsx')) {
+        } else if (fileName.endsWith('.xlsx') || fileName.endsWith('.xls')) {
             this.parseAutoXLSX(file, isBo);
         } else {
-            alert('Format de fichier non supporté. Veuillez choisir un fichier .csv ou .xlsx');
+            alert('Format de fichier non supporté. Veuillez choisir un fichier .csv, .xls ou .xlsx');
         }
     }
 
@@ -1005,6 +1402,11 @@ export class FileUploadComponent {
                         console.log('Première ligne lue:', results.data[0]);
                         if (isBo) {
                             this.autoBoData = results.data as Record<string, string>[];
+                            
+                            // Vérifier si c'est un fichier TRXBO et déclencher la sélection des services
+                            if (this.detectTRXBOAndExtractServices(this.autoBoData)) {
+                                this.showServiceSelectionStep();
+                            }
                         } else {
                             this.autoPartnerData = this.convertDebitCreditToNumber(results.data as Record<string, string>[]);
                         }
@@ -1024,21 +1426,353 @@ export class FileUploadComponent {
     private parseAutoXLSX(file: File, isBo: boolean): void {
         const reader = new FileReader();
         reader.onload = (e: ProgressEvent<FileReader>) => {
+            try {
+                console.log('🔄 Début lecture fichier Excel automatique pour réconciliation');
             const data = new Uint8Array(e.target?.result as ArrayBuffer);
             const workbook = XLSX.read(data, { type: 'array' });
             const firstSheetName = workbook.SheetNames[0];
             const worksheet = workbook.Sheets[firstSheetName];
-            const jsonData = XLSX.utils.sheet_to_json<Record<string, any>>(worksheet, { defval: '' });
+                
+                // Conversion en tableau de tableaux pour analyse
+                const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
+                if (jsonData.length === 0) {
+                    console.log('❌ Fichier Excel vide');
+                    return;
+                }
+                
+                console.log(`📊 Données Excel brutes: ${jsonData.length} lignes`);
+                
+                // Détecter les en-têtes
+                const headerDetection = this.detectExcelHeaders(jsonData);
+                const headers = headerDetection.headerRow;
+                const headerRowIndex = headerDetection.headerRowIndex;
+                
+                console.log(`✅ En-têtes détectés à la ligne ${headerRowIndex}:`, headers);
+                
+                // Vérifier si des en-têtes valides ont été trouvés
+                if (!headers || headers.length === 0 || headers.every(h => !h || h.trim() === '')) {
+                    console.log('⚠️ Aucun en-tête valide détecté, utilisation de la première ligne');
+                    const fallbackHeaders = jsonData[0]?.map((h, idx) => h || `Col${idx + 1}`) || [];
+                    const correctedHeaders = this.fixExcelColumnNames(fallbackHeaders);
+                    
+                    // Créer les lignes de données
+                    const rows: any[] = [];
+                    for (let i = 1; i < jsonData.length; i++) {
+                        const rowData = jsonData[i] as any[];
+                        if (!rowData || rowData.length === 0) continue;
+                        
+                        const row: any = {};
+                        correctedHeaders.forEach((header: string, index: number) => {
+                            const value = rowData[index];
+                            row[header] = value !== undefined && value !== null ? value : '';
+                        });
+                        rows.push(row);
+                    }
+                    
             if (isBo) {
-                this.autoBoData = jsonData;
+                        this.autoBoData = rows;
             } else {
-                this.autoPartnerData = this.convertDebitCreditToNumber(jsonData);
+                        this.autoPartnerData = this.convertDebitCreditToNumber(rows);
+                    }
+                } else {
+                    // Corriger les caractères spéciaux dans les en-têtes
+                    const correctedHeaders = this.fixExcelColumnNames(headers);
+                    console.log(`🔧 En-têtes Excel corrigés:`, correctedHeaders);
+                    
+                    // Créer les lignes de données en commençant après la ligne d'en-tête
+                    const rows: any[] = [];
+                    for (let i = headerRowIndex + 1; i < jsonData.length; i++) {
+                        const rowData = jsonData[i] as any[];
+                        if (!rowData || rowData.length === 0) continue;
+                        
+                        const row: any = {};
+                        correctedHeaders.forEach((header: string, index: number) => {
+                            const value = rowData[index];
+                            row[header] = value !== undefined && value !== null ? value : '';
+                        });
+                        rows.push(row);
+                    }
+                    
+                    console.log(`📊 Lignes de données créées: ${rows.length}`);
+                    
+                    if (isBo) {
+                        this.autoBoData = rows;
+                        
+                        // Vérifier si c'est un fichier TRXBO et déclencher la sélection des services
+                        if (this.detectTRXBOAndExtractServices(this.autoBoData)) {
+                            this.showServiceSelectionStep();
+                        }
+                    } else {
+                        this.autoPartnerData = this.convertDebitCreditToNumber(rows);
+                    }
+                }
+                
+                console.log(`✅ Fichier Excel traité: ${isBo ? this.autoBoData.length : this.autoPartnerData.length} lignes`);
+                
+                // Appliquer le filtrage automatique Orange Money si nécessaire
+                this.applyAutomaticOrangeMoneyFilterForFileUpload(file.name, isBo);
+                
+            } catch (error) {
+                console.error('❌ Erreur lors de la lecture du fichier Excel:', error);
             }
         };
         reader.onerror = (e) => {
             console.error('Erreur lors de la lecture du fichier (FileReader):', e);
         };
         reader.readAsArrayBuffer(file);
+    }
+
+    // Méthode pour détecter les en-têtes dans les fichiers Excel
+    private detectExcelHeaders(jsonData: any[][]): { headerRowIndex: number; headerRow: string[] } {
+        console.log('🔄 Détection des en-têtes Excel pour réconciliation');
+        
+        // Mots-clés pour identifier les en-têtes
+        const headerKeywords = [
+            'N°', 'Date', 'Heure', 'Référence', 'Service', 'Paiement', 'Statut', 'Mode',
+            'Compte', 'Wallet', 'Pseudo', 'Débit', 'Crédit', 'Montant', 'Commissions',
+            'Opération', 'Agent', 'Correspondant', 'Sous-réseau', 'Transaction'
+        ];
+        
+        let bestHeaderRowIndex = 0;
+        let bestScore = 0;
+        let bestHeaderRow: string[] = [];
+        
+        // Analyser plus de lignes pour trouver le meilleur candidat (jusqu'à 200 lignes)
+        const maxRowsToCheck = Math.min(200, jsonData.length);
+        
+        console.log(`🔍 Analyse de ${maxRowsToCheck} lignes sur ${jsonData.length} lignes totales`);
+        
+        let emptyRowCount = 0;
+        let consecutiveEmptyRows = 0;
+        
+        for (let i = 0; i < maxRowsToCheck; i++) {
+            try {
+                console.log(`🔍 === DÉBUT ANALYSE LIGNE ${i} ===`);
+                const row = jsonData[i] as any[];
+                if (!row || row.length === 0) {
+                    emptyRowCount++;
+                    consecutiveEmptyRows++;
+                    console.log(`🔍 Ligne ${i}: ligne vide ou null, ignorée (total vide: ${emptyRowCount}, consécutives: ${consecutiveEmptyRows})`);
+                    continue;
+                }
+                
+                // Réinitialiser le compteur de lignes vides consécutives
+                consecutiveEmptyRows = 0;
+                
+                // Convertir la ligne en chaînes et nettoyer
+                const rowStrings = row.map((cell: any) => {
+                    if (cell === null || cell === undefined) return '';
+                    return String(cell).trim();
+                });
+                
+                console.log(`🔍 Ligne ${i} - Nombre de cellules: ${rowStrings.length}, Cellules non vides: ${rowStrings.filter(cell => cell !== '').length}`);
+                
+                // Ignorer les lignes qui sont clairement des en-têtes de document
+                const documentHeaders = [
+                    'Relevé de vos opérations', 'Application :', 'Compte Orange Money :', 'Début de Période :', 
+                    'Fin de Période :', 'Réseau :', 'Cameroon', 'Transactions réussies',
+                    'Wallet commission', 'Total', 'Total activités'
+                ];
+                const isDocumentHeader = documentHeaders.some(header => 
+                    rowStrings.some(cell => cell.includes(header))
+                );
+                
+                if (isDocumentHeader) {
+                    console.log(`🔍 Ligne ${i} ignorée (en-tête de document):`, rowStrings.filter(cell => cell !== ''));
+                    continue;
+                }
+                
+                // Ignorer les lignes qui contiennent principalement des données numériques (pas des en-têtes)
+                const numericCells = rowStrings.filter(cell => {
+                    if (cell === '') return false;
+                    return !isNaN(Number(cell)) && cell.length > 0;
+                });
+                
+                if (numericCells.length > rowStrings.filter(cell => cell !== '').length * 0.7) {
+                    console.log(`🔍 Ligne ${i} ignorée (données numériques):`, rowStrings.filter(cell => cell !== ''));
+                    continue;
+                }
+                
+                // Log pour voir toutes les lignes analysées
+                console.log(`🔍 Analyse ligne ${i}:`, rowStrings.filter(cell => cell !== ''));
+                
+                // Afficher aussi les lignes suivantes pour voir la structure
+                if (i < maxRowsToCheck - 1) {
+                    const nextRow = jsonData[i + 1] as any[];
+                    if (nextRow && nextRow.length > 0) {
+                        const nextRowStrings = nextRow.map((cell: any) => {
+                            if (cell === null || cell === undefined) return '';
+                            return String(cell).trim();
+                        });
+                        console.log(`🔍 Ligne suivante ${i + 1}:`, nextRowStrings.filter(cell => cell !== ''));
+                    }
+                }
+                
+                // Calculer le score pour cette ligne
+                let score = 0;
+                let hasNumberColumn = false;
+                let nonEmptyColumns = 0;
+                let hasHeaderKeywords = false;
+                let keywordMatches = 0;
+                
+                for (let j = 0; j < rowStrings.length; j++) {
+                    const cell = rowStrings[j];
+                    if (cell === '') continue;
+                    
+                    nonEmptyColumns++;
+                    
+                    // Vérifier si c'est une colonne "N°"
+                    if (cell.startsWith('N°') || cell === 'N' || cell.includes('N°')) {
+                        hasNumberColumn = true;
+                        score += 25; // Bonus important pour "N°"
+                    }
+                    
+                    // Vérifier les mots-clés d'en-tête
+                    for (const keyword of headerKeywords) {
+                        if (cell.toLowerCase().includes(keyword.toLowerCase())) {
+                            score += 8;
+                            hasHeaderKeywords = true;
+                            keywordMatches++;
+                        }
+                    }
+                    
+                    // Bonus spécial pour les lignes avec plusieurs colonnes "N°"
+                    if (cell.includes('N°')) {
+                        score += 5; // Bonus supplémentaire pour chaque colonne "N°"
+                    }
+                    
+                    // Bonus pour les colonnes qui ressemblent à des en-têtes
+                    if (cell.length > 0 && cell.length < 50 && 
+                        (cell.includes(' ') || cell.includes('(') || cell.includes(')') || 
+                         cell.includes(':') || cell.includes('-') || cell.includes('_'))) {
+                        score += 3;
+                    }
+                    
+                    // Bonus pour les colonnes avec des caractères spéciaux (typiques des en-têtes)
+                    if (cell.includes('é') || cell.includes('è') || cell.includes('à') || 
+                        cell.includes('ç') || cell.includes('ù') || cell.includes('ô')) {
+                        score += 4;
+                    }
+                }
+                
+                // Bonus pour avoir une colonne "N°" et plusieurs colonnes non vides
+                if (hasNumberColumn && nonEmptyColumns >= 3) {
+                    score += 30;
+                }
+                
+                // Bonus pour avoir des mots-clés d'en-tête
+                if (hasHeaderKeywords && nonEmptyColumns >= 2) {
+                    score += 15;
+                }
+                
+                // Bonus pour avoir plusieurs mots-clés
+                if (keywordMatches >= 3) {
+                    score += 20;
+                }
+                
+                // Score de base pour les lignes avec plusieurs colonnes non vides
+                if (nonEmptyColumns >= 3) {
+                    score += 8;
+                }
+                
+                // Pénalité réduite pour les lignes avec peu de colonnes non vides
+                if (nonEmptyColumns < 2) {
+                    score -= 3; // Réduit encore plus
+                }
+                
+                console.log(`🔍 Ligne ${i}: score=${score}, colonnes=${nonEmptyColumns}, hasNumberColumn=${hasNumberColumn}, hasHeaderKeywords=${hasHeaderKeywords}, keywordMatches=${keywordMatches}`);
+                
+                // Log spécial pour les lignes avec beaucoup de colonnes non vides
+                if (nonEmptyColumns >= 5) {
+                    console.log(`🔍 LIGNE INTÉRESSANTE ${i}: ${nonEmptyColumns} colonnes non vides:`, rowStrings.filter(cell => cell !== ''));
+                }
+                
+                if (score > bestScore) {
+                    bestScore = score;
+                    bestHeaderRowIndex = i;
+                    bestHeaderRow = [...rowStrings];
+                    console.log(`🔍 ⭐ Nouveau meilleur en-tête trouvé à la ligne ${i} avec score ${score}`);
+                }
+                
+                // Continuer l'analyse même après avoir trouvé un en-tête valide
+                if (score > 0) {
+                    console.log(`🔍 En-tête potentiel à la ligne ${i} avec score ${score}`);
+                }
+                
+                console.log(`🔍 === FIN ANALYSE LIGNE ${i} ===`);
+            } catch (error) {
+                console.error(`❌ Erreur lors de l'analyse de la ligne ${i}:`, error);
+                continue;
+            }
+        }
+        
+        console.log(`🔍 Meilleur en-tête trouvé à la ligne ${bestHeaderRowIndex} avec score ${bestScore}`);
+        console.log(`🔍 En-tête détecté:`, bestHeaderRow);
+        
+        // Fallback : si aucun en-tête valide n'est trouvé, utiliser la première ligne non vide
+        if (bestScore <= 0) {
+            console.log('⚠️ Aucun en-tête valide détecté, utilisation de la première ligne non vide');
+            for (let i = 0; i < jsonData.length; i++) {
+                const row = jsonData[i] as any[];
+                if (row && row.length > 0) {
+                    const rowStrings = row.map((cell: any) => {
+                        if (cell === null || cell === undefined) return '';
+                        return String(cell).trim();
+                    });
+                    
+                    const nonEmptyCount = rowStrings.filter(cell => cell !== '').length;
+                    if (nonEmptyCount >= 2) {
+                        console.log(`🔍 Fallback: utilisation de la ligne ${i} avec ${nonEmptyCount} colonnes non vides`);
+                        return {
+                            headerRowIndex: i,
+                            headerRow: rowStrings
+                        };
+                    }
+                }
+            }
+        }
+        
+        return {
+            headerRowIndex: bestHeaderRowIndex,
+            headerRow: bestHeaderRow
+        };
+    }
+
+    // Méthode pour corriger les caractères spéciaux dans les en-têtes Excel
+    private fixExcelColumnNames(columns: string[]): string[] {
+        return columns.map((col: string) => {
+            if (!col) return col;
+            
+            // Corrections spécifiques pour les fichiers Excel
+            let corrected = col;
+            
+            // Corriger "Opration" -> "Opération"
+            if (corrected.includes('Opration')) {
+                corrected = corrected.replace(/Opration/g, 'Opération');
+            }
+            
+            // Corriger "Montant (XAF)" -> "Montant (XAF)"
+            if (corrected.includes('Montant') && corrected.includes('XAF')) {
+                corrected = corrected.replace(/Montant\s*\(XAF\)/g, 'Montant (XAF)');
+            }
+            
+            // Corriger "Commissions (XAF)" -> "Commissions (XAF)"
+            if (corrected.includes('Commissions') && corrected.includes('XAF')) {
+                corrected = corrected.replace(/Commissions\s*\(XAF\)/g, 'Commissions (XAF)');
+            }
+            
+            // Corriger "N° de Compte" -> "N° de Compte"
+            if (corrected.includes('N°') && corrected.includes('Compte')) {
+                corrected = corrected.replace(/N°\s*de\s*Compte/g, 'N° de Compte');
+            }
+            
+            // Corriger "N° Pseudo" -> "N° Pseudo"
+            if (corrected.includes('N°') && corrected.includes('Pseudo')) {
+                corrected = corrected.replace(/N°\s*Pseudo/g, 'N° Pseudo');
+            }
+            
+            return corrected;
+        });
     }
 
     canProceedAuto(): boolean {
@@ -1305,12 +2039,24 @@ export class FileUploadComponent {
                         partnerFileContent: processedPartnerData,
                         boKeyColumn: finalBoKeyColumn,
                         partnerKeyColumn: finalPartnerKeyColumn,
-                        comparisonColumns: comparisonColumns
+                        comparisonColumns: comparisonColumns,
+                        // Inclure les filtres BO si présents dans le modèle partenaire
+                        boColumnFilters: models.partnerModel?.reconciliationKeys?.boColumnFilters || []
                     };
 
                     console.log('🔄 Lancement de la réconciliation avec les données traitées...');
                     console.log('🔑 Clé BO finale utilisée:', finalBoKeyColumn);
                     console.log('🔑 Clé Partenaire finale utilisée:', finalPartnerKeyColumn);
+                    console.log('🔍 Filtres BO inclus:', models.partnerModel?.reconciliationKeys?.boColumnFilters);
+                    
+                    if (models.partnerModel?.reconciliationKeys?.boColumnFilters) {
+                        console.log('✅ Filtres BO trouvés dans la requête:');
+                        models.partnerModel.reconciliationKeys.boColumnFilters.forEach((filter: any, index: number) => {
+                            console.log(`  - Filtre ${index + 1}:`, filter);
+                        });
+                    } else {
+                        console.log('❌ Aucun filtre BO trouvé dans la requête');
+                    }
 
                     // Lancer la réconciliation
                     this.reconciliationService.reconcile(reconciliationRequest).subscribe({

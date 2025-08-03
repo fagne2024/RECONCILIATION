@@ -9,6 +9,12 @@
       <button (click)="createDefaultBOModel()" class="btn btn-secondary">
         <i class="fas fa-magic"></i> Créer modèle BO TRXBO
       </button>
+      <button (click)="createDefaultOrangeMoneyModel()" class="btn btn-info">
+        <i class="fas fa-mobile-alt"></i> Créer modèle Orange Money
+      </button>
+      <button (click)="createExtendedCIOMModel()" class="btn btn-info">
+        <i class="fas fa-expand"></i> Créer modèle CIOM/PMOM étendu
+      </button>
       <button class="btn btn-success me-2" (click)="fixReconciliationKeys()">
         <i class="fas fa-wrench"></i> Corriger clés réconciliation
       </button>
@@ -25,13 +31,137 @@
   <div class="models-section">
     <div class="section-header">
       <h3>Modèles existants</h3>
-      <button (click)="createModel()" class="btn btn-primary">
-        <i class="fas fa-plus"></i> Nouveau modèle
-      </button>
+      <div class="header-actions">
+        <button (click)="toggleModelFilter()" class="btn btn-info me-2" 
+                [class.active]="showModelFilter">
+          <i class="fas fa-filter"></i> 
+          {{ showModelFilter ? 'Masquer' : 'Afficher' }} filtres modèles
+        </button>
+        <button (click)="togglePartnerFilter()" class="btn btn-warning me-2" 
+                [class.active]="showPartnerFilter">
+          <i class="fas fa-filter"></i> 
+          {{ showPartnerFilter ? 'Masquer' : 'Afficher' }} filtres partenaires
+        </button>
+        <button (click)="createModel()" class="btn btn-primary">
+          <i class="fas fa-plus"></i> Nouveau modèle
+        </button>
+      </div>
+    </div>
+
+    <!-- Section de filtrage général des modèles -->
+    <div *ngIf="showModelFilter && models.length > 0" class="model-filter-section">
+      <h4>🔍 Filtrer tous les modèles</h4>
+      <div class="filter-controls">
+        <div class="filter-group">
+          <label>Colonne :</label>
+          <select [(ngModel)]="selectedModelFilterColumn" (change)="onModelFilterColumnChange()">
+            <option value="">-- Choisir une colonne --</option>
+            <option *ngFor="let col of getModelFilterColumns()" [value]="col.value">
+              {{ col.label }}
+            </option>
+          </select>
+        </div>
+        
+        <div class="filter-group" *ngIf="selectedModelFilterColumn && modelFilterValues.length > 0">
+          <label>Valeur à garder :</label>
+          <mat-form-field appearance="fill" class="filter-select">
+            <mat-label>Sélectionner des valeurs</mat-label>
+            <mat-select [(ngModel)]="selectedModelFilterValues" multiple>
+              <ngx-mat-select-search [formControl]="modelFilterValueSearchCtrl" 
+                                   placeholderLabel="Rechercher une valeur..." 
+                                   noEntriesFoundLabel="Aucune valeur trouvée">
+              </ngx-mat-select-search>
+              <mat-option value="__TOUS__" (click)="selectAllModelFilterValues()">
+                <strong>📋 Tous</strong>
+              </mat-option>
+              <mat-option *ngFor="let val of filteredModelFilterValues" [value]="val">
+                {{ val || '(vide)' }}
+              </mat-option>
+            </mat-select>
+          </mat-form-field>
+        </div>
+        
+        <div class="filter-actions">
+          <button (click)="applyModelFilter()" 
+                  [disabled]="!selectedModelFilterColumn || !selectedModelFilterValues.length" 
+                  class="apply-btn">
+            Appliquer le filtre
+          </button>
+          <button (click)="resetModelFilter()" 
+                  [disabled]="!selectedModelFilterColumn && !selectedModelFilterValues.length" 
+                  class="reset-btn">
+            Réinitialiser
+          </button>
+        </div>
+      </div>
+      
+      <!-- Indicateur de filtre appliqué -->
+      <div *ngIf="modelFilterApplied" class="filter-status">
+        <span class="filter-badge">
+          <i class="fas fa-filter"></i>
+          Filtre appliqué: {{ filteredModels.length }} modèle(s) sur {{ models.length }}
+        </span>
+      </div>
+    </div>
+
+    <!-- Section de filtrage des modèles partenaires -->
+    <div *ngIf="showPartnerFilter && getPartnerModels().length > 0" class="partner-filter-section">
+      <h4>🔍 Filtrer les modèles partenaires</h4>
+      <div class="filter-controls">
+        <div class="filter-group">
+          <label>Colonne :</label>
+          <select [(ngModel)]="selectedPartnerFilterColumn" (change)="onPartnerFilterColumnChange()">
+            <option value="">-- Choisir une colonne --</option>
+            <option *ngFor="let col of getPartnerFilterColumns()" [value]="col.value">
+              {{ col.label }}
+            </option>
+          </select>
+        </div>
+        
+        <div class="filter-group" *ngIf="selectedPartnerFilterColumn && partnerFilterValues.length > 0">
+          <label>Valeur à garder :</label>
+          <mat-form-field appearance="fill" class="filter-select">
+            <mat-label>Sélectionner des valeurs</mat-label>
+            <mat-select [(ngModel)]="selectedPartnerFilterValues" multiple>
+              <ngx-mat-select-search [formControl]="partnerFilterValueSearchCtrl" 
+                                   placeholderLabel="Rechercher une valeur..." 
+                                   noEntriesFoundLabel="Aucune valeur trouvée">
+              </ngx-mat-select-search>
+              <mat-option value="__TOUS__" (click)="selectAllPartnerFilterValues()">
+                <strong>📋 Tous</strong>
+              </mat-option>
+              <mat-option *ngFor="let val of filteredPartnerFilterValues" [value]="val">
+                {{ val || '(vide)' }}
+              </mat-option>
+            </mat-select>
+          </mat-form-field>
+        </div>
+        
+        <div class="filter-actions">
+          <button (click)="applyPartnerFilter()" 
+                  [disabled]="!selectedPartnerFilterColumn || !selectedPartnerFilterValues.length" 
+                  class="apply-btn">
+            Appliquer le filtre
+          </button>
+          <button (click)="resetPartnerFilter()" 
+                  [disabled]="!selectedPartnerFilterColumn && !selectedPartnerFilterValues.length" 
+                  class="reset-btn">
+            Réinitialiser
+          </button>
+        </div>
+      </div>
+      
+      <!-- Indicateur de filtre appliqué -->
+      <div *ngIf="partnerFilterApplied" class="filter-status">
+        <span class="filter-badge">
+          <i class="fas fa-filter"></i>
+          Filtre appliqué: {{ filteredPartnerModels.length }} modèle(s) sur {{ getPartnerModels().length }}
+        </span>
+      </div>
     </div>
 
     <div class="models-grid" *ngIf="models.length > 0; else noModels">
-      <div class="model-card" *ngFor="let model of models">
+      <div class="model-card" *ngFor="let model of getDisplayedModels()">
         <div class="model-header">
           <h4>{{ model.name }}</h4>
           <div class="model-actions">
@@ -409,6 +539,176 @@
                   </div>
                 </div>
 
+                <!-- Paramètres pour extraction de données -->
+                <div class="param-group" *ngIf="['extractFirst', 'extractLast', 'extractFrom', 'extractBetween', 'extractAfterKey'].includes(step.get('action')?.value)">
+                  <div class="form-row">
+                    <div class="form-group">
+                      <label>Colonne source *</label>
+                      <select formControlName="sourceColumn" class="form-control">
+                        <option value="">-- Choisir une colonne --</option>
+                        <option *ngFor="let col of availableColumnsForTemplate" [value]="col">
+                          {{ col }}
+                        </option>
+                      </select>
+                    </div>
+                    <div class="form-group">
+                      <label>Nouvelle colonne</label>
+                      <input type="text" formControlName="newColumn" class="form-control" 
+                             placeholder="colonne_extraite">
+                    </div>
+                  </div>
+                  
+                  <!-- Paramètres spécifiques selon le type d'extraction -->
+                  <div class="form-row" *ngIf="['extractFirst', 'extractLast'].includes(step.get('action')?.value)">
+                    <div class="form-group">
+                      <label>Nombre de caractères</label>
+                      <input type="number" formControlName="extractCount" class="form-control" min="1" value="1">
+                    </div>
+                  </div>
+                  
+                  <div class="form-row" *ngIf="step.get('action')?.value === 'extractFrom'">
+                    <div class="form-group">
+                      <label>Position de départ</label>
+                      <input type="number" formControlName="extractStart" class="form-control" min="1" value="1">
+                    </div>
+                    <div class="form-group">
+                      <label>Nombre de caractères</label>
+                      <input type="number" formControlName="extractCount" class="form-control" min="1" value="1">
+                    </div>
+                  </div>
+                  
+                  <div class="form-row" *ngIf="step.get('action')?.value === 'extractBetween'">
+                    <div class="form-group">
+                      <label>Caractère de début</label>
+                      <input type="text" formControlName="startChar" class="form-control" placeholder="(">
+                    </div>
+                    <div class="form-group">
+                      <label>Caractère de fin</label>
+                      <input type="text" formControlName="endChar" class="form-control" placeholder=")">
+                    </div>
+                  </div>
+                  
+                  <div class="form-row" *ngIf="step.get('action')?.value === 'extractAfterKey'">
+                    <div class="form-group">
+                      <label>Clé de recherche</label>
+                      <input type="text" formControlName="searchKey" class="form-control" placeholder="ID:">
+                    </div>
+                    <div class="form-group">
+                      <label>Nombre de caractères après la clé</label>
+                      <input type="number" formControlName="extractCount" class="form-control" min="1" value="1">
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Paramètres pour filtrage par colonne -->
+                <div class="param-group" *ngIf="['filterByColumn', 'filterByMultipleValues'].includes(step.get('action')?.value)">
+                  <div class="form-row">
+                    <div class="form-group">
+                      <label>Colonne de filtrage *</label>
+                      <select formControlName="filterColumn" class="form-control">
+                        <option value="">-- Choisir une colonne --</option>
+                        <option *ngFor="let col of availableColumnsForTemplate" [value]="col">
+                          {{ col }}
+                        </option>
+                      </select>
+                    </div>
+                    <div class="form-group">
+                      <label>Valeurs à garder</label>
+                      <input type="text" formControlName="filterValues" class="form-control" 
+                             placeholder="valeur1,valeur2,valeur3">
+                      <small class="form-text text-muted">
+                        Séparez les valeurs par des virgules
+                      </small>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Paramètres pour filtrage par valeur -->
+                <div class="param-group" *ngIf="step.get('action')?.value === 'filterByValue'">
+                  <div class="form-row">
+                    <div class="form-group">
+                      <label>Champ à filtrer *</label>
+                      <select formControlName="field" class="form-control" (change)="onFilterFieldChange(i)">
+                        <option value="">-- Choisir un champ --</option>
+                        <option *ngFor="let col of availableColumnsForTemplate" [value]="col">
+                          {{ col }}
+                        </option>
+                      </select>
+                    </div>
+                    <div class="form-group">
+                      <label>Valeurs disponibles</label>
+                      <div class="available-values-container">
+                        <div class="values-list" *ngIf="getAvailableValuesForField(step.get('field')?.value).length > 0">
+                          <div class="value-item" *ngFor="let value of getAvailableValuesForField(step.get('field')?.value)" 
+                               (click)="toggleValueSelection(i, value)"
+                               [class.selected]="isValueSelected(i, value)">
+                            {{ value }}
+                          </div>
+                        </div>
+                        <div class="no-values" *ngIf="getAvailableValuesForField(step.get('field')?.value).length === 0">
+                          <small class="text-muted">Aucune valeur disponible pour ce champ</small>
+                        </div>
+                      </div>
+                      <small class="form-text text-muted">
+                        Cliquez sur les valeurs pour les sélectionner/désélectionner
+                      </small>
+                      <div class="help-info" *ngIf="step.get('field')?.value">
+                        <small class="text-info">
+                          <strong>💡 Aide :</strong> Colonnes disponibles dans votre fichier : 
+                          <span class="available-columns">{{ availableColumnsForTemplate.join(', ') }}</span>
+                        </small>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="form-row" *ngIf="getSelectedValuesForField(i).length > 0">
+                    <div class="form-group">
+                      <label>Valeurs sélectionnées</label>
+                      <div class="selected-values">
+                        <span class="selected-value" *ngFor="let value of getSelectedValuesForField(i)">
+                          {{ value }}
+                          <button type="button" class="remove-value" (click)="removeValueSelection(i, value)">×</button>
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Paramètres pour export par type -->
+                <div class="param-group" *ngIf="['exportByType', 'exportByColumn', 'exportByValue'].includes(step.get('action')?.value)">
+                  <div class="form-row">
+                    <div class="form-group">
+                      <label>Colonne de tri *</label>
+                      <select formControlName="exportColumn" class="form-control">
+                        <option value="">-- Choisir une colonne --</option>
+                        <option *ngFor="let col of availableColumnsForTemplate" [value]="col">
+                          {{ col }}
+                        </option>
+                      </select>
+                    </div>
+                    <div class="form-group">
+                      <label>Valeurs à exporter</label>
+                      <input type="text" formControlName="exportValues" class="form-control" 
+                             placeholder="valeur1,valeur2,valeur3">
+                      <small class="form-text text-muted">
+                        Séparez les valeurs par des virgules. Laissez vide pour toutes les valeurs.
+                      </small>
+                    </div>
+                  </div>
+                  
+                  <div class="form-row">
+                    <div class="form-group">
+                      <label>Suffixe du fichier</label>
+                      <input type="text" formControlName="exportSuffix" class="form-control" 
+                             placeholder="_export">
+                    </div>
+                    <div class="form-group">
+                      <label>Description</label>
+                      <input type="text" formControlName="exportDescription" class="form-control" 
+                             placeholder="Export par type">
+                    </div>
+                  </div>
+                </div>
+
               </div>
             </div>
           </div>
@@ -437,6 +737,16 @@
               <small class="form-text text-muted">
                 Sélectionnez les colonnes qui serviront de clés de réconciliation côté partenaire
               </small>
+              
+              <!-- Indicateur des clés partenaires sélectionnées -->
+              <div class="selected-keys-indicator" *ngIf="modelForm.get('reconciliationKeys.partnerKeys')?.value?.length > 0">
+                <strong>Clés partenaires sélectionnées :</strong>
+                <div class="selected-keys-list">
+                  <span class="selected-key" *ngFor="let key of modelForm.get('reconciliationKeys.partnerKeys')?.value">
+                    {{ key }}
+                  </span>
+                </div>
+              </div>
             </div>
 
             <div class="form-group">
@@ -473,290 +783,60 @@
                   <small class="form-text text-muted">
                     Clés de réconciliation pour ce modèle BO
                   </small>
+                  
+                  <!-- Indicateur des clés sélectionnées -->
+                  <div class="selected-keys-indicator" *ngIf="getBOModelKeys(boModel.id).length > 0">
+                    <strong>Clés sélectionnées :</strong>
+                    <div class="selected-keys-list">
+                      <span class="selected-key" *ngFor="let key of getBOModelKeys(boModel.id)">
+                        {{ key }}
+                      </span>
+                    </div>
+                  </div>
                 </div>
-              </div>
 
-              <!-- Configuration des traitements BO -->
-              <div class="bo-treatments-section">
-                <h6>Traitements à appliquer sur {{ boModel.name }}</h6>
-                <div class="treatments-container">
-                  <div class="treatment-steps" [formGroupName]="'boTreatments_' + boModel.id">
-                    <div class="treatment-step" *ngFor="let step of getBOTreatmentStepsArray(boModel.id); let i = index" [formGroupName]="i">
-                      <div class="step-header">
-                        <h6>Étape {{ i + 1 }}</h6>
+                <!-- Configuration des traitements BO -->
+                <div class="form-group">
+                  <label>Traitements pour {{ boModel.name }}</label>
+                  <div class="bo-treatments">
+                    <div class="treatment-step" *ngFor="let treatmentStep of getBOTreatmentStepsArray(boModel.id); let i = index">
+                      <div class="treatment-header">
+                        <span>Traitement {{ i + 1 }}</span>
                         <button type="button" class="btn btn-sm btn-danger" (click)="removeBOTreatmentStep(boModel.id, i)">
                           <i class="fas fa-trash"></i>
                         </button>
                       </div>
-                      
-                      <div class="form-row">
-                        <div class="form-group">
-                          <label>Type de traitement</label>
-                          <select formControlName="type" class="form-control" (change)="onBOTreatmentTypeChange(boModel.id, i)">
-                            <option value="">-- Choisir un type --</option>
-                            <option *ngFor="let stepType of getStepTypesArray()" [value]="stepType.value">
-                              {{ stepType.label }}
-                            </option>
-                          </select>
-                        </div>
-                        
-                        <div class="form-group" *ngIf="getBOTreatmentType(boModel.id, i)">
-                          <label>Action</label>
-                          <select formControlName="action" class="form-control">
-                            <option value="">-- Choisir une action --</option>
-                            <option *ngFor="let action of getBOTreatmentActions(boModel.id, i)" [value]="action.value">
-                              {{ action.label }}
-                            </option>
-                          </select>
-                        </div>
-                      </div>
-
-                      <div class="form-row" *ngIf="getBOTreatmentStep(boModel.id, i)?.get('action')?.value">
-                        <div class="form-group">
-                          <label>Champ(s) à traiter</label>
-                          <select formControlName="field" class="form-control" multiple size="3">
-                            <option *ngFor="let col of getBOModelColumnsForTemplate()[boModel.id]" [value]="col">
-                              {{ col }}
-                            </option>
-                          </select>
-                          <small class="form-text text-muted">
-                            Sélectionnez les colonnes à traiter
-                          </small>
-                        </div>
-                      </div>
-
-                      <!-- Paramètres spécifiques selon l'action -->
-                      <div class="treatment-params" *ngIf="getBOTreatmentStep(boModel.id, i)?.get('action')?.value">
-                        <!-- Paramètres pour formatage -->
-                        <div class="format-params" *ngIf="getBOTreatmentStep(boModel.id, i)?.get('action')?.value === 'currency'">
-                          <div class="form-row">
-                            <div class="form-group">
-                              <label>Locale</label>
-                              <select formControlName="locale" class="form-control">
-                                <option value="fr-FR">Français (France)</option>
-                                <option value="en-US">Anglais (États-Unis)</option>
-                                <option value="en-GB">Anglais (Royaume-Uni)</option>
-                                <option value="de-DE">Allemand</option>
-                                <option value="es-ES">Espagnol</option>
-                              </select>
-                            </div>
-                            <div class="form-group">
-                              <label>Devise</label>
-                              <select formControlName="currency" class="form-control">
-                                <option value="EUR">EUR (€)</option>
-                                <option value="USD">USD ($)</option>
-                                <option value="GBP">GBP (£)</option>
-                                <option value="CHF">CHF (Fr)</option>
-                              </select>
-                            </div>
-                          </div>
-                        </div>
-
-                        <div class="format-params" *ngIf="getBOTreatmentStep(boModel.id, i)?.get('action')?.value === 'normalizeDates'">
+                      <div class="treatment-content">
+                        <div class="form-row">
                           <div class="form-group">
-                            <label>Format de date</label>
-                            <select formControlName="dateFormat" class="form-control">
-                              <option value="yyyy-MM-dd">yyyy-MM-dd</option>
-                              <option value="dd/MM/yyyy">dd/MM/yyyy</option>
-                              <option value="MM/dd/yyyy">MM/dd/yyyy</option>
-                              <option value="yyyy/MM/dd">yyyy/MM/dd</option>
+                            <label>Type</label>
+                            <select [formControlName]="'type'" class="form-control" (change)="onBOTreatmentTypeChange(boModel.id, i)">
+                              <option *ngFor="let stepType of getStepTypesArray()" [value]="stepType.value">
+                                {{ stepType.label }}
+                              </option>
                             </select>
                           </div>
-                        </div>
-
-                        <div class="format-params" *ngIf="getBOTreatmentStep(boModel.id, i)?.get('action')?.value === 'removeCharacters'">
-                          <div class="form-row">
-                            <div class="form-group">
-                              <label>Position</label>
-                              <select formControlName="position" class="form-control">
-                                <option value="start">Depuis le début</option>
-                                <option value="end">Depuis la fin</option>
-                                <option value="specific">Position spécifique</option>
-                              </select>
-                            </div>
-                            <div class="form-group">
-                              <label>Nombre de caractères</label>
-                              <input type="number" formControlName="count" class="form-control" min="1" value="1">
-                            </div>
-                            <div class="form-group" *ngIf="getBOTreatmentStep(boModel.id, i)?.get('position')?.value === 'specific'">
-                              <label>Position spécifique (1-based)</label>
-                              <input type="number" formControlName="specificPosition" class="form-control" min="1" value="1">
-                            </div>
-                          </div>
-                        </div>
-
-                        <div class="format-params" *ngIf="getBOTreatmentStep(boModel.id, i)?.get('action')?.value === 'removeSpecificCharacters'">
-                          <div class="form-row">
-                            <div class="form-group">
-                              <label>Caractères à supprimer</label>
-                              <input type="text" formControlName="characters" class="form-control" 
-                                     placeholder="Ex: _CM ou abc123">
-                            </div>
-                            <div class="form-group">
-                              <label>
-                                <input type="checkbox" formControlName="caseSensitive">
-                                Sensible à la casse
-                              </label>
-                            </div>
-                          </div>
-                        </div>
-
-                        <div class="format-params" *ngIf="getBOTreatmentStep(boModel.id, i)?.get('action')?.value === 'insertCharacters'">
-                          <div class="form-row">
-                            <div class="form-group">
-                              <label>Caractères à insérer</label>
-                              <input type="text" formControlName="characters" class="form-control" 
-                                     placeholder="Ex: _CM ou 123">
-                            </div>
-                            <div class="form-group">
-                              <label>Position</label>
-                              <select formControlName="position" class="form-control">
-                                <option value="start">Au début</option>
-                                <option value="end">À la fin</option>
-                                <option value="specific">Position spécifique</option>
-                              </select>
-                            </div>
-                            <div class="form-group" *ngIf="getBOTreatmentStep(boModel.id, i)?.get('position')?.value === 'specific'">
-                              <label>Position spécifique (1-based)</label>
-                              <input type="number" formControlName="specificPosition" class="form-control" min="1" value="1">
-                            </div>
-                          </div>
-                        </div>
-
-                        <!-- Paramètres pour concaténation -->
-                        <div class="concat-params" *ngIf="getBOTreatmentStep(boModel.id, i)?.get('action')?.value === 'concat'">
-                          <div class="form-row">
-                            <div class="form-group">
-                              <label>Nouvelle colonne</label>
-                              <input type="text" formControlName="newColumn" class="form-control" 
-                                     placeholder="Nom de la nouvelle colonne">
-                            </div>
-                            <div class="form-group">
-                              <label>Séparateur</label>
-                              <input type="text" formControlName="separator" class="form-control" 
-                                     placeholder="Ex: - ou _ ou espace" value=" ">
-                            </div>
-                          </div>
-                        </div>
-
-                        <!-- Paramètres pour filtrage -->
-                        <div class="filter-params" *ngIf="getBOTreatmentStep(boModel.id, i)?.get('action')?.value === 'keepMatching'">
                           <div class="form-group">
-                            <label>Pattern (regex)</label>
-                            <input type="text" formControlName="pattern" class="form-control" 
-                                   placeholder="Ex: ^[A-Z]{2}[0-9]{6}$">
-                          </div>
-                        </div>
-
-                        <div class="filter-params" *ngIf="getBOTreatmentStep(boModel.id, i)?.get('action')?.value === 'filterByValue'">
-                          <div class="form-group">
-                            <label>Valeurs (séparées par des virgules)</label>
-                            <input type="text" formControlName="values" class="form-control" 
-                                   placeholder="Ex: valeur1,valeur2,valeur3">
-                          </div>
-                        </div>
-
-                        <div class="filter-params" *ngIf="getBOTreatmentStep(boModel.id, i)?.get('action')?.value === 'filterByExactValue'">
-                          <div class="form-group">
-                            <label>Valeur exacte</label>
-                            <input type="text" formControlName="value" class="form-control" 
-                                   placeholder="Valeur exacte à filtrer">
-                          </div>
-                        </div>
-
-                        <!-- Paramètres pour validation -->
-                        <div class="validation-params" *ngIf="getBOTreatmentStep(boModel.id, i)?.get('action')?.value === 'dateFormat'">
-                          <div class="form-group">
-                            <label>Format de date</label>
-                            <select formControlName="validationDateFormat" class="form-control">
-                              <option value="yyyy-MM-dd">yyyy-MM-dd</option>
-                              <option value="dd/MM/yyyy">dd/MM/yyyy</option>
-                              <option value="MM/dd/yyyy">MM/dd/yyyy</option>
-                              <option value="yyyy/MM/dd">yyyy/MM/dd</option>
+                            <label>Action</label>
+                            <select [formControlName]="'action'" class="form-control">
+                              <option *ngFor="let action of getBOTreatmentActions(boModel.id, i)" [value]="action.value">
+                                {{ action.label }}
+                              </option>
                             </select>
-                          </div>
-                        </div>
-
-                        <!-- Paramètres pour transformation -->
-                        <div class="transform-params" *ngIf="getBOTreatmentStep(boModel.id, i)?.get('action')?.value === 'extract'">
-                          <div class="form-row">
-                            <div class="form-group">
-                              <label>Type d'extraction</label>
-                              <select formControlName="extractType" class="form-control">
-                                <option value="first">Premiers caractères</option>
-                                <option value="last">Derniers caractères</option>
-                                <option value="from">Depuis une position</option>
-                                <option value="between">Entre deux caractères</option>
-                                <option value="key">Après une clé</option>
-                              </select>
-                            </div>
-                            <div class="form-group">
-                              <label>Nombre de caractères</label>
-                              <input type="number" formControlName="extractCount" class="form-control" min="1" value="5">
-                            </div>
-                          </div>
-                          <div class="form-row" *ngIf="getBOTreatmentStep(boModel.id, i)?.get('extractType')?.value === 'from'">
-                            <div class="form-group">
-                              <label>Position de départ</label>
-                              <input type="number" formControlName="extractStart" class="form-control" min="1" value="1">
-                            </div>
-                          </div>
-                          <div class="form-row" *ngIf="getBOTreatmentStep(boModel.id, i)?.get('extractType')?.value === 'key'">
-                            <div class="form-group">
-                              <label>Clé de recherche</label>
-                              <input type="text" formControlName="extractKey" class="form-control" 
-                                     placeholder="Clé à rechercher">
-                            </div>
-                          </div>
-                          <div class="form-row" *ngIf="getBOTreatmentStep(boModel.id, i)?.get('extractType')?.value === 'between'">
-                            <div class="form-group">
-                              <label>Caractère de début</label>
-                              <input type="text" formControlName="startChar" class="form-control" 
-                                     placeholder="Caractère de début">
-                            </div>
-                            <div class="form-group">
-                              <label>Caractère de fin</label>
-                              <input type="text" formControlName="endChar" class="form-control" 
-                                     placeholder="Caractère de fin">
-                            </div>
-                          </div>
-                        </div>
-
-                        <!-- Paramètres pour calcul -->
-                        <div class="calculate-params" *ngIf="getBOTreatmentStep(boModel.id, i)?.get('action')?.value === 'sum'">
-                          <div class="form-group">
-                            <label>Champs à additionner (séparés par des virgules)</label>
-                            <input type="text" formControlName="fields" class="form-control" 
-                                   placeholder="Ex: montant1,montant2,montant3">
-                          </div>
-                        </div>
-
-                        <div class="calculate-params" *ngIf="getBOTreatmentStep(boModel.id, i)?.get('action')?.value === 'average'">
-                          <div class="form-group">
-                            <label>Champ pour la moyenne</label>
-                            <input type="text" formControlName="field" class="form-control" 
-                                   placeholder="Nom du champ">
-                          </div>
-                        </div>
-
-                        <div class="calculate-params" *ngIf="getBOTreatmentStep(boModel.id, i)?.get('action')?.value === 'count'">
-                          <div class="form-group">
-                            <label>Champ à compter</label>
-                            <input type="text" formControlName="field" class="form-control" 
-                                   placeholder="Nom du champ">
                           </div>
                         </div>
                       </div>
                     </div>
+                    <button type="button" class="btn btn-sm btn-primary" (click)="addBOTreatmentStep(boModel.id)">
+                      <i class="fas fa-plus"></i> Ajouter un traitement
+                    </button>
                   </div>
-                  
-                  <button type="button" class="btn btn-sm btn-success" (click)="addBOTreatmentStep(boModel.id)">
-                    <i class="fas fa-plus"></i> Ajouter un traitement
-                  </button>
                 </div>
               </div>
             </div>
           </div>
+
+
         </div>
 
                  <!-- Configuration pour les modèles BO et "both" -->
