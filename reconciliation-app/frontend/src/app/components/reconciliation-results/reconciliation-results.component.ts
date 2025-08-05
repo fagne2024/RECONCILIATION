@@ -103,7 +103,7 @@ interface ApiError {
                         <div class="stat-label">Transactions correspondantes</div>
                     </div>
                     <div class="stat-card">
-                        <div class="stat-value">{{filteredBoOnly.length || 0}}</div>
+                        <div class="stat-value">{{(response?.mismatches?.length || 0) + (response?.boOnly?.length || 0)}}</div>
                         <div class="stat-label">Transactions non correspondantes BO</div>
                     </div>
                     <div class="stat-card">
@@ -123,7 +123,7 @@ interface ApiError {
                     <button 
                         [class.active]="activeTab === 'boOnly'"
                         (click)="setActiveTab('boOnly')">
-                        ⚠️ ECART BO ({{filteredBoOnly.length || 0}})
+                        ⚠️ ECART BO ({{(response?.mismatches?.length || 0) + (response?.boOnly?.length || 0)}})
                     </button>
                     <button 
                         [class.active]="activeTab === 'partnerOnly'"
@@ -1245,6 +1245,7 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
     selectedDate: string = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().split('T')[0];
     isSaving: boolean = false;
     isSavingEcartBo: boolean = false;
+    isSavingEcartPartner: boolean = false;
     exportProgress = 0;
     isExporting = false;
     
@@ -1481,6 +1482,174 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
         return csvRows.join('\n');
     }
 
+    async saveEcartPartnerToEcartSolde(): Promise<void> {
+        if (!this.response?.partnerOnly || this.response.partnerOnly.length === 0) {
+            alert('❌ Aucune donnée ECART Partenaire à sauvegarder.');
+            return;
+        }
+
+        this.isSavingEcartPartner = true;
+
+        try {
+            console.log('🔄 Début de la sauvegarde des ECART Partenaire...');
+            console.log('DEBUG: Nombre d\'enregistrements ECART Partenaire:', this.response.partnerOnly.length);
+
+            // Debug: Afficher les colonnes disponibles dans le premier enregistrement
+            if (this.response.partnerOnly.length > 0) {
+                console.log('DEBUG: Colonnes disponibles dans ECART Partenaire:', Object.keys(this.response.partnerOnly[0]));
+                console.log('DEBUG: Premier enregistrement ECART Partenaire:', this.response.partnerOnly[0]);
+            }
+
+            // Convertir les données ECART Partenaire en format EcartSolde
+            const ecartSoldeData: EcartSolde[] = this.response.partnerOnly.map((record, index) => {
+                const getValueWithFallback = (keys: string[]): string => {
+                    for (const key of keys) {
+                        if (record[key] !== undefined && record[key] !== null && record[key] !== '') {
+                            return record[key].toString();
+                        }
+                    }
+                    return '';
+                };
+
+                // Debug: Afficher les colonnes disponibles pour cet enregistrement
+                console.log(`DEBUG: Enregistrement ${index + 1} - Colonnes disponibles:`, Object.keys(record));
+                console.log(`DEBUG: Enregistrement ${index + 1} - Données brutes:`, record);
+
+                // Extraire les informations d'agence et de service
+                const agencyInfo = this.getPartnerOnlyAgencyAndService(record);
+                
+                // Fonction helper pour formater la date au format ISO
+                const formatDateForBackend = (dateStr: string): string => {
+                    if (!dateStr) return '';
+                    
+                    // Si la date est déjà au format ISO, la retourner
+                    if (dateStr.includes('T')) return dateStr;
+                    
+                    // Convertir le format "2025-07-09 12:40:18.0" en "2025-07-09T12:40:18"
+                    const cleanedDate = dateStr.replace(/\.\d+$/, ''); // Enlever les millisecondes
+                    return cleanedDate.replace(' ', 'T');
+                };
+
+                // Créer l'objet EcartSolde avec les données mappées
+                const ecartSolde: EcartSolde = {
+                    id: undefined, // Sera généré par la base de données
+                    idTransaction: getValueWithFallback(['IDTransaction', 'id_transaction', 'ID_TRANSACTION', 'transaction_id', 'TransactionId']),
+                    telephoneClient: getValueWithFallback(['téléphone client', 'telephone_client', 'TELEPHONE_CLIENT', 'phone', 'Phone']),
+                    montant: parseFloat(getValueWithFallback(['montant', 'Montant', 'MONTANT', 'amount', 'Amount', 'volume', 'Volume'])) || 0,
+                    service: agencyInfo.service,
+                    agence: agencyInfo.agency,
+                    dateTransaction: formatDateForBackend(agencyInfo.date),
+                    numeroTransGu: getValueWithFallback(['Numéro Trans GU', 'numero_trans_gu', 'NUMERO_TRANS_GU', 'transaction_number', 'TransactionNumber']),
+                    pays: agencyInfo.country,
+                    statut: 'EN_ATTENTE', // Statut par défaut
+                    commentaire: 'IMPACT PARTENAIRE', // Commentaire spécifique pour les partenaires
+                    dateImport: new Date().toISOString()
+                };
+
+                console.log(`DEBUG: Enregistrement ${index + 1} préparé:`, {
+                    idTransaction: ecartSolde.idTransaction,
+                    agence: ecartSolde.agence,
+                    service: ecartSolde.service,
+                    montant: ecartSolde.montant,
+                    agencyInfo: agencyInfo
+                });
+
+                return ecartSolde;
+            });
+
+            console.log('DEBUG: Données converties en format EcartSolde:', ecartSoldeData.length, 'enregistrements');
+
+            // Validation des données avant sauvegarde
+            console.log('DEBUG: Validation des données - Nombre total d\'enregistrements:', ecartSoldeData.length);
+            
+            // Log détaillé de chaque enregistrement pour le débogage
+            ecartSoldeData.forEach((record, index) => {
+                console.log(`DEBUG: Enregistrement ${index + 1} - Validation:`, {
+                    idTransaction: record.idTransaction,
+                    idTransactionValid: record.idTransaction && record.idTransaction.trim() !== '',
+                    agence: record.agence,
+                    agenceValid: record.agence && record.agence.trim() !== '',
+                    isValid: (record.idTransaction && record.idTransaction.trim() !== '') && (record.agence && record.agence.trim() !== '')
+                });
+            });
+
+            const validRecords = ecartSoldeData.filter(record => 
+                record.idTransaction && 
+                record.idTransaction.trim() !== '' && 
+                record.agence && 
+                record.agence.trim() !== ''
+            );
+
+            console.log('DEBUG: Nombre d\'enregistrements valides après filtrage:', validRecords.length);
+
+            if (validRecords.length === 0) {
+                console.error('DEBUG: Aucun enregistrement valide trouvé. Raisons possibles:');
+                console.error('- idTransaction manquant ou vide');
+                console.error('- agence manquante ou vide');
+                console.error('- Colonnes non trouvées dans les données source');
+                alert('❌ Aucune donnée valide trouvée pour la sauvegarde.');
+                return;
+            }
+
+            console.log('DEBUG: Enregistrements valides pour sauvegarde:', validRecords.length);
+
+            // Créer le contenu CSV pour validation
+            const csvContent = this.createCsvContent(validRecords);
+            console.log('DEBUG: Contenu CSV généré pour validation');
+
+            // Afficher un message de confirmation avec les détails
+            const message = `📋 RÉSUMÉ DES DONNÉES À SAUVEGARDER:\n\n` +
+                `📊 Total des enregistrements ECART Partenaire: ${this.response.partnerOnly.length}\n` +
+                `✅ Enregistrements valides: ${validRecords.length}\n` +
+                `❌ Enregistrements invalides: ${ecartSoldeData.length - validRecords.length}\n\n` +
+                `📝 Commentaire par défaut: "IMPACT PARTENAIRE"\n` +
+                `🔄 Les doublons seront automatiquement ignorés.\n\n` +
+                `Voulez-vous continuer avec la sauvegarde ?`;
+
+            if (!confirm(message)) {
+                console.log('❌ Sauvegarde annulée par l\'utilisateur');
+                return;
+            }
+
+            console.log('✅ Confirmation utilisateur reçue, début de la sauvegarde...');
+            
+            // Sauvegarder les données via le service
+            const result = await this.ecartSoldeService.createMultipleEcartSoldes(validRecords);
+            
+            console.log('=== RÉSULTATS DE LA SAUVEGARDE ===');
+            console.log('DEBUG: Enregistrements reçus:', result.totalReceived);
+            console.log('DEBUG: Enregistrements créés:', result.count);
+            console.log('DEBUG: Doublons ignorés:', result.duplicates);
+            console.log('DEBUG: Message:', result.message);
+            
+            // Afficher un message de succès détaillé
+            let successMessage = `✅ SAUVEGARDE TERMINÉE AVEC SUCCÈS!\n\n`;
+            successMessage += `📊 RÉSUMÉ:\n`;
+            successMessage += `• Enregistrements traités: ${result.totalReceived}\n`;
+            successMessage += `• Nouveaux enregistrements créés: ${result.count}\n`;
+            successMessage += `• Doublons ignorés: ${result.duplicates}\n\n`;
+            successMessage += `💾 Les données ont été sauvegardées dans la table Ecart Solde.`;
+            
+            alert(successMessage);
+            
+        } catch (error: any) {
+            console.error('❌ Erreur lors de la sauvegarde des ECART Partenaire:', error);
+            
+            let errorMessage = '❌ Erreur lors de la sauvegarde des ECART Partenaire.\n\n';
+            if (error.error?.error) {
+                errorMessage += `Détails: ${error.error.error}`;
+            } else if (error.message) {
+                errorMessage += `Détails: ${error.message}`;
+            } else {
+                errorMessage += 'Veuillez réessayer.';
+            }
+            
+            alert(errorMessage);
+        } finally {
+            this.isSavingEcartPartner = false;
+        }
+    }
+
     constructor(
         private cdr: ChangeDetectorRef, 
         private appStateService: AppStateService, 
@@ -1550,7 +1719,12 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
             );
             this.matchesPage = 1;
         } else if (this.activeTab === 'boOnly') {
-            this.filteredBoOnly = (this.response?.boOnly || []).filter(record => 
+            // Pour TRXBO/OPPART, utiliser mismatches au lieu de boOnly
+            const mismatches = this.response?.mismatches || [];
+            const boOnly = this.response?.boOnly || [];
+            const allMismatches = [...mismatches, ...boOnly];
+            
+            this.filteredBoOnly = allMismatches.filter(record => 
                 Object.values(record).some(value => 
                     value.toString().toLowerCase().includes(searchTerm)
                 )
@@ -2129,6 +2303,46 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
         return { agency, service, volume, date, country };
     }
 
+    getPartnerOnlyAgencyAndService(record: Record<string, string>): { agency: string; service: string; volume: number; date: string; country: string } {
+        // Fonction helper pour trouver une valeur avec plusieurs noms de colonnes possibles
+        const getValueWithFallback = (possibleKeys: string[]): string => {
+            for (const key of possibleKeys) {
+                if (record[key] !== undefined && record[key] !== null && record[key] !== '') {
+                    return record[key].toString();
+                }
+            }
+            return '';
+        };
+
+        // Recherche d'agence avec plusieurs noms possibles
+        const agency = getValueWithFallback(['Agence', 'agence', 'AGENCE', 'agency', 'Agency', 'AGENCY']);
+        
+        // Recherche de service avec plusieurs noms possibles
+        const service = getValueWithFallback(['Service', 'service', 'SERVICE', 'serv', 'Serv']);
+        
+        // Recherche de volume/montant avec plusieurs noms possibles
+        const volumeStr = getValueWithFallback(['montant', 'Montant', 'MONTANT', 'amount', 'Amount', 'volume', 'Volume', 'VOLUME']);
+        const volume = volumeStr ? parseFloat(volumeStr.toString().replace(',', '.')) : 0;
+        
+        // Recherche de date avec plusieurs noms possibles
+        const date = getValueWithFallback(['Date', 'date', 'DATE', 'jour', 'Jour', 'JOUR', 'created', 'Created', 'CREATED']);
+        
+        // Recherche de pays
+        const countryColumn = this.findCountryColumn(record);
+        const country = countryColumn ? record[countryColumn] || 'Non spécifié' : 'Non spécifié';
+
+        console.log('DEBUG: getPartnerOnlyAgencyAndService - Valeurs extraites:', {
+            agency,
+            service,
+            volume,
+            date,
+            country,
+            availableKeys: Object.keys(record)
+        });
+
+        return { agency, service, volume, date, country };
+    }
+
     getPartnerOnlyDate(record: Record<string, string>): string {
         const dateColumn = this.findDateColumn(record);
         return dateColumn ? record[dateColumn] || 'Non spécifié' : 'Non spécifié';
@@ -2350,9 +2564,15 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
     }
 
     private getFilteredBoOnly(): Record<string, string>[] {
+        // Pour TRXBO/OPPART, utiliser mismatches au lieu de boOnly
+        const mismatches = this.response?.mismatches || [];
         const boOnly = this.response?.boOnly || [];
-        if (!this.selectedService) return boOnly;
-        return boOnly.filter(record => (record['Service'] || '') === this.selectedService);
+        
+        // Combiner mismatches et boOnly pour l'affichage des écarts
+        const allMismatches = [...mismatches, ...boOnly];
+        
+        if (!this.selectedService) return allMismatches;
+        return allMismatches.filter(record => (record['Service'] || '') === this.selectedService);
     }
 
     private getFilteredPartnerOnly(): Record<string, string>[] {
