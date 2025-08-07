@@ -339,6 +339,20 @@
                         <i class="fas fa-exclamation-triangle"></i>
                         Écarts de Solde
                     </button>
+                    <button class="tab-button" 
+                            [class.active]="activeTab === 'impact-op'"
+                            (click)="switchTab('impact-op')"
+                            *ngIf="showImpactOPTab">
+                        <i class="fas fa-chart-line"></i>
+                        Impact OP
+                    </button>
+                    <button class="tab-button" 
+                            [class.active]="activeTab === 'revenu-journalier'"
+                            (click)="switchTab('revenu-journalier')"
+                            *ngIf="showRevenuJournalierTab">
+                        <i class="fas fa-money-bill-wave"></i>
+                        Revenu Journalier
+                    </button>
                 </div>
 
                 <!-- Contenu de l'onglet Opérations -->
@@ -503,7 +517,8 @@
                                         <th>Solde de Clôture</th>
                                         <th>Variation Journalière</th>
                                         <th>Solde de Clôture BO</th>
-                                        <th>ECART</th>
+                                        <th>TSOP</th>
+                                        <th>Impact OP</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -531,6 +546,12 @@
                                             style="cursor: pointer; text-decoration: underline; font-weight: bold;"
                                             title="Cliquer pour voir les écarts de solde correspondants">
                                             {{ getEcartValue(solde) | number:'1.2-2' }}
+                                        </td>
+                                        <td [ngClass]="getImpactOPClass(solde)" 
+                                            (click)="navigateToImpactOP(solde)"
+                                            style="cursor: pointer; text-decoration: underline; font-weight: bold;"
+                                            title="Cliquer pour voir les impacts OP correspondants">
+                                            {{ getImpactOPValue(solde) | number:'1.2-2' }}
                                         </td>
                                     </tr>
                                 </tbody>
@@ -568,6 +589,189 @@
                         [agence]="ecartSoldeAgence"
                         [dateTransaction]="ecartSoldeDateTransaction">
                     </app-ecart-solde-tab>
+                </div>
+
+                <!-- Contenu de l'onglet Impact OP -->
+                <div class="tab-content" *ngIf="activeTab === 'impact-op'">
+                    <app-impact-op-tab 
+                        [agence]="impactOPAgence"
+                        [dateTransaction]="impactOPDateTransaction">
+                    </app-impact-op-tab>
+                </div>
+
+                <!-- Contenu de l'onglet Revenu Journalier -->
+                <div class="tab-content" *ngIf="activeTab === 'revenu-journalier'">
+                    <div class="revenu-journalier-container">
+                        <h3>Revenu Journalier - {{ selectedCompte?.numeroCompte }}</h3>
+                        
+                        <!-- Filtres pour le revenu journalier -->
+                        <div class="revenu-filters" *ngIf="!isLoadingRevenuJournalier && revenuJournalierData.length > 0">
+                            <div class="filter-row">
+                                <div class="filter-group">
+                                    <label for="revenuDateDebut">Date début :</label>
+                                    <input 
+                                        type="date" 
+                                        id="revenuDateDebut"
+                                        [(ngModel)]="revenuJournalierDateDebut" 
+                                        (change)="onRevenuJournalierFiltersChange()"
+                                        class="filter-input">
+                                </div>
+                                <div class="filter-group">
+                                    <label for="revenuDateFin">Date fin :</label>
+                                    <input 
+                                        type="date" 
+                                        id="revenuDateFin"
+                                        [(ngModel)]="revenuJournalierDateFin" 
+                                        (change)="onRevenuJournalierFiltersChange()"
+                                        class="filter-input">
+                                </div>
+                                <div class="filter-group">
+                                    <label for="revenuTypeRevenu">Type de revenu :</label>
+                                    <select 
+                                        id="revenuTypeRevenu"
+                                        [(ngModel)]="revenuJournalierTypeRevenu" 
+                                        (change)="onRevenuJournalierFiltersChange()"
+                                        class="filter-select">
+                                        <option value="">Tous les revenus</option>
+                                        <option value="cashin">Frais Cashin</option>
+                                        <option value="paiement">Frais Paiement</option>
+                                        <option value="total">Revenu Total</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="filter-row">
+                                <div class="filter-group">
+                                    <label for="revenuMontantMin">Montant min :</label>
+                                    <input 
+                                        type="number" 
+                                        id="revenuMontantMin"
+                                        [(ngModel)]="revenuJournalierMontantMin" 
+                                        (input)="onRevenuJournalierFiltersChange()"
+                                        placeholder="0.00"
+                                        step="0.01"
+                                        min="0"
+                                        class="filter-input">
+                                </div>
+                                <div class="filter-group">
+                                    <label for="revenuMontantMax">Montant max :</label>
+                                    <input 
+                                        type="number" 
+                                        id="revenuMontantMax"
+                                        [(ngModel)]="revenuJournalierMontantMax" 
+                                        (input)="onRevenuJournalierFiltersChange()"
+                                        placeholder="0.00"
+                                        step="0.01"
+                                        min="0"
+                                        class="filter-input">
+                                </div>
+                                <div class="filter-group filter-actions">
+                                    <button 
+                                        class="btn filter-clear-btn" 
+                                        (click)="clearRevenuJournalierFilters()"
+                                        title="Réinitialiser les filtres">
+                                        <i class="fas fa-times"></i> Réinitialiser
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div *ngIf="isLoadingRevenuJournalier" class="loading-releve">
+                            <i class="fas fa-spinner fa-spin"></i> Chargement des revenus journaliers...
+                        </div>
+                        
+                        <div *ngIf="!isLoadingRevenuJournalier && revenuJournalierData.length === 0" class="no-operations">
+                            Aucune donnée de revenu trouvée pour ce compte.
+                        </div>
+                        
+                        <div *ngIf="!isLoadingRevenuJournalier && revenuJournalierData.length > 0 && revenuJournalierDataFiltered.length === 0" class="no-operations">
+                            Aucune donnée ne correspond aux filtres sélectionnés.
+                        </div>
+                        
+                        <div *ngIf="!isLoadingRevenuJournalier && revenuJournalierData.length > 0 && revenuJournalierDataFiltered.length > 0" class="revenu-journalier-content">
+                            <!-- Résumé des totaux -->
+                            <div class="revenu-summary">
+                                <div class="summary-card">
+                                    <div class="summary-title">Total Cashin</div>
+                                    <div class="summary-value">{{ getTotalCashinJournalier() | number:'1.2-2' }}</div>
+                                </div>
+                                <div class="summary-card">
+                                    <div class="summary-title">Total Paiement</div>
+                                    <div class="summary-value">{{ getTotalPaiementJournalier() | number:'1.2-2' }}</div>
+                                </div>
+                                <div class="summary-card">
+                                    <div class="summary-title">Frais Cashin</div>
+                                    <div class="summary-value">{{ getTotalFraisCashinJournalier() | number:'1.2-2' }}</div>
+                                </div>
+                                <div class="summary-card">
+                                    <div class="summary-title">Frais Paiement</div>
+                                    <div class="summary-value">{{ getTotalFraisPaiementJournalier() | number:'1.2-2' }}</div>
+                                </div>
+                                <div class="summary-card total-revenu">
+                                    <div class="summary-title">Revenu attendu</div>
+                                    <div class="summary-value">{{ getTotalRevenuJournalier() | number:'1.2-2' }}</div>
+                                </div>
+                                <div class="summary-card ecart-frais">
+                                    <div class="summary-title">Ecart frais</div>
+                                    <div class="summary-value">{{ getTotalEcartFraisJournalier() | number:'1.2-2' }}</div>
+                                </div>
+                            </div>
+
+                            <!-- Informations de débogage -->
+                            <div class="debug-info" *ngIf="revenuJournalierDebugInfo" style="background: #f0f8ff; padding: 10px; margin: 10px 0; border-radius: 5px; font-size: 12px; color: #666;">
+                                <strong>Informations de débogage :</strong> {{ revenuJournalierDebugInfo }}
+                            </div>
+
+                            <!-- Tableau des revenus journaliers -->
+                            <div class="revenu-table-container">
+                                <table class="table table-bordered table-hover table-sm">
+                                    <thead>
+                                        <tr>
+                                            <th>Date</th>
+                                            <th>Total Cashin</th>
+                                            <th>Total Paiement</th>
+                                            <th>Frais Cashin</th>
+                                            <th>Frais Paiement</th>
+                                            <th>Revenu attendu</th>
+                                            <th>Ecart frais</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr *ngFor="let revenu of pagedRevenuJournalierData">
+                                            <td>{{ formatDate(revenu.date) }}</td>
+                                            <td class="cashin-amount">{{ revenu.totalCashin | number:'1.2-2' }}</td>
+                                            <td class="paiement-amount">{{ revenu.totalPaiement | number:'1.2-2' }}</td>
+                                            <td class="frais-cashin">{{ revenu.fraisCashin | number:'1.2-2' }}</td>
+                                            <td class="frais-paiement">{{ revenu.fraisPaiement | number:'1.2-2' }}</td>
+                                            <td class="revenu-total">{{ revenu.revenuTotal | number:'1.2-2' }}</td>
+                                            <td class="ecart-frais" [ngClass]="{'negative': revenu.ecartFrais < 0, 'positive': revenu.ecartFrais > 0}">
+                                                {{ revenu.ecartFrais | number:'1.2-2' }}
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            <!-- Pagination pour le revenu journalier -->
+                            <div class="releve-pagination" *ngIf="revenuJournalierTotalPages > 1">
+                                <button (click)="prevRevenuJournalierPage()" [disabled]="revenuJournalierCurrentPage === 1" class="btn pagination-btn">
+                                    <i class="fas fa-chevron-left"></i> Précédent
+                                </button>
+                                
+                                <div class="pagination-indicators">
+                                    <span *ngFor="let page of getVisibleRevenuJournalierPages()" 
+                                            class="page-indicator"
+                                            [class.active]="revenuJournalierCurrentPage === page"
+                                            (click)="goToRevenuJournalierPage(page)">
+                                        {{ page }}
+                                    </span>
+                                </div>
+                                
+                                <button (click)="nextRevenuJournalierPage()" [disabled]="revenuJournalierCurrentPage === revenuJournalierTotalPages" class="btn pagination-btn">
+                                    Suivant <i class="fas fa-chevron-right"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -628,6 +832,81 @@
     background: #e3f2fd;
     font-weight: bold;
     color: #1976d2;
+  }
+
+  /* Styles pour les filtres du revenu journalier */
+  .revenu-filters {
+    background: #f8fafc;
+    border-radius: 8px;
+    padding: 16px;
+    margin-bottom: 20px;
+    border: 1px solid #e2e8f0;
+  }
+
+  .filter-row {
+    display: flex;
+    gap: 16px;
+    margin-bottom: 12px;
+    align-items: end;
+    flex-wrap: wrap;
+  }
+
+  .filter-row:last-child {
+    margin-bottom: 0;
+  }
+
+  .filter-group {
+    display: flex;
+    flex-direction: column;
+    min-width: 150px;
+  }
+
+  .filter-group label {
+    font-size: 12px;
+    font-weight: 600;
+    color: #64748b;
+    margin-bottom: 4px;
+  }
+
+  .filter-input, .filter-select {
+    padding: 8px 12px;
+    border: 1px solid #cbd5e1;
+    border-radius: 4px;
+    font-size: 14px;
+    background: white;
+    transition: border-color 0.2s;
+  }
+
+  .filter-input:focus, .filter-select:focus {
+    outline: none;
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+  }
+
+  .filter-actions {
+    justify-content: center;
+  }
+
+  .filter-clear-btn {
+    background: #ef4444;
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 4px;
+    font-size: 14px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    transition: background-color 0.2s;
+  }
+
+  .filter-clear-btn:hover {
+    background: #dc2626;
+  }
+
+  .filter-clear-btn i {
+    font-size: 12px;
   }
 </style>
 <div class="comptes-resume">

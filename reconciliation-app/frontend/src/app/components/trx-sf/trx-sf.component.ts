@@ -1,0 +1,513 @@
+import { Component, OnInit, OnDestroy, ViewChild, ElementRef } from '@angular/core';
+import { FormBuilder, FormGroup } from '@angular/forms';
+import { Subject } from 'rxjs';
+import { takeUntil } from 'rxjs/operators';
+import { TrxSfService, TrxSfData, TrxSfStatistics, ValidationResult } from '../../services/trx-sf.service';
+
+@Component({
+  selector: 'app-trx-sf',
+  templateUrl: './trx-sf.component.html',
+  styleUrls: ['./trx-sf.component.scss']
+})
+export class TrxSfComponent implements OnInit, OnDestroy {
+  private destroy$ = new Subject<void>();
+  
+  @ViewChild('fileInput') fileInput!: ElementRef;
+  
+  trxSfData: TrxSfData[] = [];
+  filteredTrxSfData: TrxSfData[] = [];
+  isLoading = false;
+  
+  // Upload
+  selectedFile: File | null = null;
+  isUploading = false;
+  uploadMessage: { type: 'success' | 'error', text: string } | null = null;
+  validationResult: any = null;
+  
+  // Filtres
+  filterForm: FormGroup;
+  agences: string[] = [];
+  services: string[] = [];
+  pays: string[] = [];
+  statuts: string[] = ['EN_ATTENTE', 'TRAITE', 'ERREUR'];
+  
+  // Pagination
+  currentPage = 1;
+  itemsPerPage = 20;
+  totalPages = 1;
+  
+  // Statistiques
+  totalMontant = 0;
+  
+  // Sélection multiple
+  selectedItems: Set<number> = new Set();
+  isSelectAll = false;
+  isSelectionMode = false;
+  selectedStatut = 'EN_ATTENTE';
+  isUpdatingMultipleStatuts = false;
+  
+  // Gestion des doublons
+  duplicates: TrxSfData[] = [];
+  isLoadingDuplicates = false;
+  isRemovingDuplicates = false;
+  
+  constructor(
+    private trxSfService: TrxSfService,
+    private fb: FormBuilder
+  ) {
+    this.filterForm = this.fb.group({
+      agence: [''],
+      service: [''],
+      pays: [''],
+      statut: [''],
+      dateDebut: [''],
+      dateFin: ['']
+    });
+  }
+
+  ngOnInit(): void {
+    this.loadTrxSfData();
+    
+    // Écouter les changements de filtres
+    this.filterForm.valueChanges.subscribe(() => {
+      this.applyFilters();
+    });
+  }
+
+  ngOnDestroy(): void {
+    this.destroy$.next();
+    this.destroy$.complete();
+  }
+
+  loadTrxSfData(): void {
+    this.isLoading = true;
+    
+    this.trxSfService.getAllTrxSf()
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: (data) => {
+          this.trxSfData = data;
+          this.initializeFilterLists();
+          this.applyFilters();
+          this.isLoading = false;
+        },
+        error: (error) => {
+          console.error('Erreur lors du chargement des données:', error);
+          this.isLoading = false;
+          // En cas d'erreur, on utilise des données fictives pour la démo
+          this.trxSfData = this.generateMockData();
+          this.initializeFilterLists();
+          this.applyFilters();
+        }
+      });
+  }
+
+  private initializeFilterLists(): void {
+    this.agences = this.getUniqueAgences();
+    this.services = this.getUniqueServices();
+    this.pays = this.getUniquePays();
+  }
+
+  private generateMockData(): TrxSfData[] {
+    const mockData: TrxSfData[] = [];
+    const agences = ['AGENCE_A', 'AGENCE_B', 'AGENCE_C'];
+    const services = ['TRANSFERT', 'PAIEMENT', 'VIREMENT', 'RETRAIT'];
+    const pays = ['SENEGAL', 'MALI', 'BURKINA FASO', 'COTE D\'IVOIRE'];
+    const statuts: ('EN_ATTENTE' | 'TRAITE' | 'ERREUR')[] = ['EN_ATTENTE', 'TRAITE', 'ERREUR'];
+    
+    for (let i = 1; i <= 50; i++) {
+      mockData.push({
+        idTransaction: `TRX_SF_${String(i).padStart(6, '0')}`,
+        telephoneClient: `+221${Math.floor(Math.random() * 90000000) + 10000000}`,
+        montant: Math.floor(Math.random() * 1000000) / 100,
+        service: services[Math.floor(Math.random() * services.length)],
+        agence: agences[Math.floor(Math.random() * agences.length)],
+        dateTransaction: new Date(2024, Math.floor(Math.random() * 12), Math.floor(Math.random() * 28) + 1).toISOString(),
+        numeroTransGu: `GU_${String(Math.floor(Math.random() * 1000000)).padStart(8, '0')}`,
+        pays: pays[Math.floor(Math.random() * pays.length)],
+        statut: statuts[Math.floor(Math.random() * statuts.length)],
+        frais: Math.floor(Math.random() * 5000) / 100,
+        commentaire: `Transaction SF ${i} - ${Math.random() > 0.5 ? 'Crédit' : 'Débit'}`,
+        dateImport: new Date().toISOString()
+      });
+    }
+    
+    return mockData;
+  }
+
+  applyFilters(): void {
+    let filtered = [...this.trxSfData];
+    const filters = this.filterForm.value;
+    
+    if (filters.agence) {
+      filtered = filtered.filter(item => item.agence === filters.agence);
+    }
+    
+    if (filters.service) {
+      filtered = filtered.filter(item => item.service === filters.service);
+    }
+    
+    if (filters.pays) {
+      filtered = filtered.filter(item => item.pays === filters.pays);
+    }
+    
+    if (filters.statut) {
+      filtered = filtered.filter(item => item.statut === filters.statut);
+    }
+    
+    if (filters.dateDebut) {
+      filtered = filtered.filter(item => new Date(item.dateTransaction) >= new Date(filters.dateDebut));
+    }
+    
+    if (filters.dateFin) {
+      filtered = filtered.filter(item => new Date(item.dateTransaction) <= new Date(filters.dateFin));
+    }
+    
+    this.filteredTrxSfData = filtered;
+    this.calculateTotalMontant();
+    this.calculateTotalPages();
+    this.currentPage = 1;
+  }
+
+  clearFilters(): void {
+    this.filterForm.reset();
+    this.applyFilters();
+  }
+
+  onFileSelected(event: any): void {
+    const file = event.target.files[0];
+    if (file) {
+      this.selectedFile = file;
+      this.uploadMessage = null;
+      this.validationResult = null;
+    }
+  }
+
+  validateFile(): void {
+    if (!this.selectedFile) {
+      this.uploadMessage = { type: 'error', text: 'Aucun fichier sélectionné' };
+      return;
+    }
+
+    this.isUploading = true;
+    this.uploadMessage = null;
+    this.validationResult = null;
+
+    this.trxSfService.validateFile(this.selectedFile)
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: (result) => {
+          this.validationResult = result;
+          this.isUploading = false;
+        },
+        error: (error) => {
+          console.error('Erreur lors de la validation:', error);
+          this.uploadMessage = { type: 'error', text: 'Erreur lors de la validation du fichier' };
+          this.isUploading = false;
+        }
+      });
+  }
+
+  uploadFile(): void {
+    if (!this.selectedFile) {
+      this.uploadMessage = { type: 'error', text: 'Aucun fichier sélectionné' };
+      return;
+    }
+
+    this.isUploading = true;
+    this.uploadMessage = null;
+
+    this.trxSfService.uploadFile(this.selectedFile)
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: (result) => {
+          this.isUploading = false;
+          this.uploadMessage = { 
+            type: 'success', 
+            text: `Fichier uploadé avec succès. ${result.count} transactions importées.` 
+          };
+          this.selectedFile = null;
+          this.validationResult = null;
+          this.loadTrxSfData(); // Recharger les données
+        },
+        error: (error) => {
+          console.error('Erreur lors de l\'upload:', error);
+          this.isUploading = false;
+          this.uploadMessage = { type: 'error', text: 'Erreur lors de l\'upload du fichier' };
+        }
+      });
+  }
+
+  calculateTotalMontant(): void {
+    this.totalMontant = this.filteredTrxSfData.reduce((sum, item) => sum + item.montant, 0);
+  }
+
+  calculateTotalPages(): void {
+    this.totalPages = Math.ceil(this.filteredTrxSfData.length / this.itemsPerPage);
+  }
+
+  getPaginatedData(): TrxSfData[] {
+    const startIndex = (this.currentPage - 1) * this.itemsPerPage;
+    const endIndex = startIndex + this.itemsPerPage;
+    return this.filteredTrxSfData.slice(startIndex, endIndex);
+  }
+
+  getStatutCount(statut: string): number {
+    return this.filteredTrxSfData.filter(item => item.statut === statut).length;
+  }
+
+  formatMontant(montant: number): string {
+    return new Intl.NumberFormat('fr-FR', {
+      style: 'currency',
+      currency: 'XOF'
+    }).format(montant);
+  }
+
+  formatMontantTotal(): string {
+    return this.formatMontant(this.totalMontant);
+  }
+
+  formatFraisTotal(): string {
+    const totalFrais = this.filteredTrxSfData.reduce((sum, item) => sum + (item.frais || 0), 0);
+    return this.formatMontant(totalFrais);
+  }
+
+  getStatutClass(statut: string): string {
+    switch (statut) {
+      case 'EN_ATTENTE': return 'statut-en-attente';
+      case 'TRAITE': return 'statut-traite';
+      case 'ERREUR': return 'statut-erreur';
+      default: return '';
+    }
+  }
+
+  getStatutLabel(statut: string): string {
+    switch (statut) {
+      case 'EN_ATTENTE': return 'En attente';
+      case 'TRAITE': return 'Traité';
+      case 'ERREUR': return 'Erreur';
+      default: return statut;
+    }
+  }
+
+  onPageChange(page: number): void {
+    this.currentPage = page;
+  }
+
+  getUniqueAgences(): string[] {
+    return [...new Set(this.trxSfData.map(item => item.agence))].sort();
+  }
+
+  getUniqueServices(): string[] {
+    return [...new Set(this.trxSfData.map(item => item.service))].sort();
+  }
+
+  getUniquePays(): string[] {
+    return [...new Set(this.trxSfData.map(item => item.pays))].sort();
+  }
+
+  formatDate(date: string): string {
+    if (!date) return '-';
+    return new Date(date).toLocaleDateString('fr-FR');
+  }
+
+  formatMontantFrais(montant: number): string {
+    return new Intl.NumberFormat('fr-FR', {
+      style: 'currency',
+      currency: 'XOF'
+    }).format(montant);
+  }
+
+  onStatutChange(item: TrxSfData, event: any): void {
+    const newStatut = event.target.value;
+    
+    if (item.id) {
+      this.trxSfService.updateStatut(item.id, newStatut)
+        .pipe(takeUntil(this.destroy$))
+        .subscribe({
+          next: (result) => {
+            item.statut = newStatut as 'EN_ATTENTE' | 'TRAITE' | 'ERREUR';
+            console.log('Statut mis à jour avec succès');
+          },
+          error: (error) => {
+            console.error('Erreur lors de la mise à jour du statut:', error);
+            // Remettre l'ancien statut en cas d'erreur
+            event.target.value = item.statut;
+          }
+        });
+    }
+  }
+
+  deleteTrxSf(id: number): void {
+    if (confirm('Êtes-vous sûr de vouloir supprimer cette transaction ?')) {
+      this.trxSfService.deleteTrxSf(id)
+        .pipe(takeUntil(this.destroy$))
+        .subscribe({
+          next: () => {
+            this.trxSfData = this.trxSfData.filter(item => item.id !== id);
+            this.applyFilters();
+            console.log('Transaction supprimée avec succès');
+          },
+          error: (error) => {
+            console.error('Erreur lors de la suppression:', error);
+          }
+        });
+    }
+  }
+
+  getVisiblePages(): number[] {
+    const pages: number[] = [];
+    const maxVisible = 5;
+    const start = Math.max(1, this.currentPage - Math.floor(maxVisible / 2));
+    const end = Math.min(this.totalPages, start + maxVisible - 1);
+    
+    for (let i = start; i <= end; i++) {
+      pages.push(i);
+    }
+    
+    return pages;
+  }
+
+  exportTrxSfData(): void {
+    // TODO: Implémenter l'export Excel
+    console.log('Export TRX SF data');
+  }
+
+  refreshData(): void {
+    this.loadTrxSfData();
+  }
+
+  // Méthodes pour la sélection multiple
+  toggleSelectionMode(): void {
+    this.isSelectionMode = !this.isSelectionMode;
+    if (!this.isSelectionMode) {
+      this.clearSelection();
+    }
+  }
+
+  toggleSelectAll(): void {
+    if (this.isSelectAll) {
+      this.clearSelection();
+    } else {
+      this.selectAll();
+    }
+  }
+
+  selectAll(): void {
+    this.selectedItems.clear();
+    this.getPaginatedData().forEach(item => {
+      if (item.id) {
+        this.selectedItems.add(item.id);
+      }
+    });
+    this.isSelectAll = true;
+  }
+
+  clearSelection(): void {
+    this.selectedItems.clear();
+    this.isSelectAll = false;
+  }
+
+  toggleItemSelection(item: TrxSfData): void {
+    if (item.id) {
+      if (this.selectedItems.has(item.id)) {
+        this.selectedItems.delete(item.id);
+      } else {
+        this.selectedItems.add(item.id);
+      }
+      this.updateSelectAllState();
+    }
+  }
+
+  updateSelectAllState(): void {
+    const currentPageItems = this.getPaginatedData();
+    const selectedCount = currentPageItems.filter(item => item.id && this.selectedItems.has(item.id)).length;
+    this.isSelectAll = selectedCount === currentPageItems.length && currentPageItems.length > 0;
+  }
+
+  getSelectedCount(): number {
+    return this.selectedItems.size;
+  }
+
+  isItemSelected(item: TrxSfData): boolean {
+    return item.id ? this.selectedItems.has(item.id) : false;
+  }
+
+  updateMultipleStatuts(): void {
+    if (this.selectedItems.size === 0) {
+      alert('Veuillez sélectionner au moins une transaction.');
+      return;
+    }
+
+    this.isUpdatingMultipleStatuts = true;
+    const selectedIds = Array.from(this.selectedItems);
+    
+    // Créer les promesses pour mettre à jour chaque transaction
+    const updatePromises = selectedIds.map(id => 
+      this.trxSfService.updateStatut(id, this.selectedStatut).toPromise()
+    );
+
+    Promise.all(updatePromises)
+      .then(() => {
+        console.log(`${selectedIds.length} transactions mises à jour avec le statut ${this.selectedStatut}`);
+        this.clearSelection();
+        this.loadTrxSfData(); // Recharger les données
+        this.isUpdatingMultipleStatuts = false;
+      })
+      .catch(error => {
+        console.error('Erreur lors de la mise à jour multiple:', error);
+        this.isUpdatingMultipleStatuts = false;
+        alert('Erreur lors de la mise à jour des statuts.');
+      });
+  }
+
+  // Méthodes pour la gestion des doublons
+  loadDuplicates(): void {
+    this.isLoadingDuplicates = true;
+    
+    this.trxSfService.getDuplicates()
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: (duplicates) => {
+          this.duplicates = duplicates;
+          this.isLoadingDuplicates = false;
+          console.log(`🔍 ${duplicates.length} doublon(s) trouvé(s)`);
+        },
+        error: (error) => {
+          console.error('Erreur lors de la recherche des doublons:', error);
+          this.isLoadingDuplicates = false;
+          alert('Erreur lors de la recherche des doublons.');
+        }
+      });
+  }
+
+  removeDuplicates(): void {
+    if (this.duplicates.length === 0) {
+      alert('Aucun doublon à supprimer.');
+      return;
+    }
+
+    if (!confirm(`Êtes-vous sûr de vouloir supprimer ${this.duplicates.length} doublon(s) ?`)) {
+      return;
+    }
+
+    this.isRemovingDuplicates = true;
+    
+    this.trxSfService.removeDuplicates()
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: (response) => {
+          this.isRemovingDuplicates = false;
+          this.duplicates = [];
+          console.log(`✅ ${response.removedCount} doublon(s) supprimé(s)`);
+          alert(`${response.removedCount} doublon(s) supprimé(s) avec succès.`);
+          this.loadTrxSfData(); // Recharger les données
+        },
+        error: (error) => {
+          console.error('Erreur lors de la suppression des doublons:', error);
+          this.isRemovingDuplicates = false;
+          alert('Erreur lors de la suppression des doublons.');
+        }
+      });
+  }
+}

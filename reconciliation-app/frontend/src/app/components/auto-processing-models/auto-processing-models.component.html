@@ -108,6 +108,7 @@
     <div *ngIf="showPartnerFilter && getPartnerModels().length > 0" class="partner-filter-section">
       <h4>🔍 Filtrer les modèles partenaires</h4>
       <div class="filter-controls">
+        <!-- Filtre par colonne existant -->
         <div class="filter-group">
           <label>Colonne :</label>
           <select [(ngModel)]="selectedPartnerFilterColumn" (change)="onPartnerFilterColumnChange()">
@@ -136,6 +137,29 @@
             </mat-select>
           </mat-form-field>
         </div>
+
+        <!-- Nouveau filtre par pays -->
+        <div class="filter-group">
+          <label>Pays (2 dernières lettres) :</label>
+          <mat-form-field appearance="fill" class="filter-select">
+            <mat-label>Sélectionner des pays</mat-label>
+            <mat-select [(ngModel)]="selectedPartnerCountries" multiple (selectionChange)="onPartnerCountryChange()">
+              <ngx-mat-select-search [formControl]="partnerCountrySearchCtrl" 
+                                   placeholderLabel="Rechercher un pays..." 
+                                   noEntriesFoundLabel="Aucun pays trouvé">
+              </ngx-mat-select-search>
+              <mat-option value="__TOUS__" (click)="selectAllPartnerCountries()">
+                <strong>🌍 Tous les pays</strong>
+              </mat-option>
+              <mat-option *ngFor="let country of filteredPartnerCountries" [value]="country">
+                <span class="country-option">
+                  <span class="country-code">{{ country }}</span>
+                  <span class="country-example">(ex: CIOM{{ country }})</span>
+                </span>
+              </mat-option>
+            </mat-select>
+          </mat-form-field>
+        </div>
         
         <div class="filter-actions">
           <button (click)="applyPartnerFilter()" 
@@ -144,7 +168,7 @@
             Appliquer le filtre
           </button>
           <button (click)="resetPartnerFilter()" 
-                  [disabled]="!selectedPartnerFilterColumn && !selectedPartnerFilterValues.length" 
+                  [disabled]="!selectedPartnerFilterColumn && !selectedPartnerFilterValues.length && !selectedPartnerCountries.length" 
                   class="reset-btn">
             Réinitialiser
           </button>
@@ -324,17 +348,6 @@
                 
                 <!-- Paramètres pour formatage -->
                 <div class="param-group" *ngIf="step.get('type')?.value === 'format'">
-                  <div class="form-group">
-                    <label>Champ à traiter *</label>
-                    <select formControlName="field" class="form-control" multiple size="4">
-                      <option *ngFor="let col of availableColumnsForTemplate" [value]="col">
-                        {{ col }}
-                      </option>
-                    </select>
-                    <small class="form-text text-muted">
-                      Sélectionnez les colonnes à formater (sélection multiple possible)
-                    </small>
-                  </div>
 
                   <!-- Paramètres spécifiques selon l'action -->
                   <div class="format-params" *ngIf="step.get('action')?.value === 'currency'">
@@ -526,17 +539,7 @@
 
                 <!-- Paramètres pour sélection de colonnes -->
                 <div class="param-group" *ngIf="['keepColumns', 'removeColumns', 'removeDuplicates'].includes(step.get('action')?.value)">
-                  <div class="form-group">
-                    <label>Champ à traiter *</label>
-                    <select formControlName="field" class="form-control" multiple size="4">
-                      <option *ngFor="let col of availableColumnsForTemplate" [value]="col">
-                        {{ col }}
-                      </option>
-                    </select>
-                    <small class="form-text text-muted">
-                      Sélectionnez les colonnes à traiter (sélection multiple possible)
-                    </small>
-                  </div>
+                  <!-- Le champ "Champ à traiter" est déjà défini dans la section principale de l'étape -->
                 </div>
 
                 <!-- Paramètres pour extraction de données -->
@@ -785,10 +788,10 @@
                   </small>
                   
                   <!-- Indicateur des clés sélectionnées -->
-                  <div class="selected-keys-indicator" *ngIf="getBOModelKeys(boModel.id).length > 0">
+                  <div class="selected-keys-indicator" *ngIf="getSelectedKeysForModel(boModel.id).length > 0">
                     <strong>Clés sélectionnées :</strong>
                     <div class="selected-keys-list">
-                      <span class="selected-key" *ngFor="let key of getBOModelKeys(boModel.id)">
+                      <span class="selected-key" *ngFor="let key of getSelectedKeysForModel(boModel.id)">
                         {{ key }}
                       </span>
                     </div>
@@ -870,6 +873,30 @@
       </div>
 
       <div class="modal-body">
+        <!-- Barre de recherche -->
+        <div *ngIf="!loading && availableFiles.length > 0" class="search-section">
+          <div class="search-input-container">
+            <i class="fas fa-search search-icon"></i>
+            <input 
+              type="text" 
+              [(ngModel)]="fileSearchTerm" 
+              (ngModelChange)="onFileSearchChange()"
+              placeholder="Rechercher un fichier par nom, type ou colonnes..."
+              class="search-input"
+            >
+            <button 
+              *ngIf="fileSearchTerm" 
+              (click)="clearFileSearch()" 
+              class="clear-search-btn"
+              title="Effacer la recherche">
+              <i class="fas fa-times"></i>
+            </button>
+          </div>
+          <div class="search-stats" *ngIf="fileSearchTerm">
+            <span>{{ filteredFiles.length }} fichier(s) trouvé(s) sur {{ availableFiles.length }}</span>
+          </div>
+        </div>
+
         <div *ngIf="loading" class="loading">
           <i class="fas fa-spinner fa-spin"></i> Chargement des fichiers...
         </div>
@@ -879,8 +906,16 @@
           <p>Placez des fichiers CSV, Excel ou JSON dans le dossier pour les voir ici.</p>
         </div>
 
-        <div *ngIf="!loading && availableFiles.length > 0" class="files-list">
-          <div class="file-item" *ngFor="let file of availableFiles" (click)="selectFileModel(file)">
+        <div *ngIf="!loading && availableFiles.length > 0 && filteredFiles.length === 0 && fileSearchTerm" class="no-results">
+          <i class="fas fa-search"></i>
+          <p>Aucun fichier ne correspond à votre recherche : "{{ fileSearchTerm }}"</p>
+          <button (click)="clearFileSearch()" class="btn btn-secondary">
+            <i class="fas fa-times"></i> Effacer la recherche
+          </button>
+        </div>
+
+        <div *ngIf="!loading && availableFiles.length > 0 && filteredFiles.length > 0" class="files-list">
+          <div class="file-item" *ngFor="let file of filteredFiles" (click)="selectFileModel(file)">
             <div class="file-info">
               <i class="fas fa-file" [class.fa-file-csv]="file.fileType === 'csv'"
                  [class.fa-file-excel]="file.fileType === 'excel'"

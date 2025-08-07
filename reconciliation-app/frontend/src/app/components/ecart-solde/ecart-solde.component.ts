@@ -657,4 +657,14 @@ export class EcartSoldeComponent implements OnInit, OnDestroy {
     link.click();
     document.body.removeChild(link);
   }
+
+  // Méthodes pour les statistiques
+  getStatutCount(statut: string): number {
+    return this.filteredEcartSoldes.filter(ecart => ecart.statut === statut).length;
+  }
+
+  formatMontantTotal(): string {
+    const total = this.filteredEcartSoldes.reduce((sum, ecart) => sum + ecart.montant, 0);
+    return this.formatMontant(total);
+  }
 } 

@@ -35,6 +35,51 @@ import { forkJoin } from 'rxjs';
                 </div>
             </div>
 
+            <!-- Indicateur de progression pour gros fichiers -->
+            <div class="large-file-progress" *ngIf="isProcessingLargeFile">
+                <div class="progress-container">
+                    <div class="progress-header">
+                        <h4>🔄 Traitement en cours...</h4>
+                        <div class="processing-info">
+                            <span class="processing-mode" *ngIf="processingMode">
+                                <i class="fas fa-microchip"></i>
+                                {{ processingMode }}
+                            </span>
+                            <button class="cancel-btn" (click)="cancelProcessing()" [disabled]="processingCancelled">
+                                <i class="fas fa-times"></i>
+                                Annuler
+                            </button>
+                        </div>
+                    </div>
+                    <div class="progress-bar">
+                        <div class="progress-fill" [style.width.%]="processingProgress"></div>
+                    </div>
+                    <div class="progress-text">{{ processingMessage }}</div>
+                    <div class="progress-percentage">{{ processingProgress }}%</div>
+                    <div class="progress-details" *ngIf="processingDetails">
+                        <div class="detail-item">
+                            <span class="detail-label">Mode:</span>
+                            <span class="detail-value">{{ processingDetails.mode }}</span>
+                        </div>
+                        <div class="detail-item" *ngIf="processingDetails.chunks">
+                            <span class="detail-label">Chunks:</span>
+                            <span class="detail-value">{{ processingDetails.chunks }}</span>
+                        </div>
+                        <div class="detail-item" *ngIf="processingDetails.workers">
+                            <span class="detail-label">Workers:</span>
+                            <span class="detail-value">{{ processingDetails.workers }}</span>
+                        </div>
+                        <div class="detail-item" *ngIf="processingDetails.memory">
+                            <span class="detail-label">Mémoire:</span>
+                            <span class="detail-value">{{ processingDetails.memory }}</span>
+                        </div>
+                    </div>
+                    <div class="progress-status" *ngIf="processingCancelled">
+                        <span class="cancelled-status">⏹️ Traitement annulé</span>
+                    </div>
+                </div>
+            </div>
+
             <!-- Mode Manuel -->
             <div class="file-upload-area" *ngIf="reconciliationMode === 'manual'">
                 <div class="file-input-container" (click)="boFileInput.click()" [class.has-file]="boFile">
@@ -226,8 +271,11 @@ import { forkJoin } from 'rxjs';
 
             <!-- Boutons pour le mode manuel -->
             <div class="button-container" *ngIf="reconciliationMode === 'manual'">
-                <button class="btn proceed-btn" [disabled]="!canProceed()" (click)="onProceed()">
-                    Continuer
+                <div class="debug-info" style="background: #f0f0f0; padding: 10px; margin: 10px 0; border-radius: 5px; font-size: 12px;">
+                    <strong>Debug:</strong> BO: {{ boData.length }} lignes | Partenaire: {{ partnerData.length }} lignes | Bouton actif: {{ canProceed() ? 'Oui' : 'Non' }}
+                </div>
+                <button class="btn proceed-btn" [disabled]="!canProceed()" (click)="onProceed()" style="background-color: #4CAF50; color: white; padding: 15px 30px; border: none; border-radius: 5px; cursor: pointer; font-size: 16px; margin: 10px;">
+                    🚀 Lancer la Réconciliation Manuelle
                 </button>
                 <div class="action-buttons">
                     <button class="btn dashboard-btn" (click)="goToDashboard()">
@@ -704,11 +752,10 @@ import { forkJoin } from 'rxjs';
 })
 export class FileUploadComponent {
     @Output() filesLoaded = new EventEmitter<{
-        boData: Record<string, string>[],
-        partnerData: Record<string, string>[]
+        boData: Record<string, string>[];
+        partnerData: Record<string, string>[];
     }>();
 
-    // Mode de réconciliation
     reconciliationMode: 'manual' | 'automatic' = 'manual';
 
     boFile: File | null = null;
@@ -717,20 +764,48 @@ export class FileUploadComponent {
     partnerData: Record<string, string>[] = [];
     estimatedTime: string = '';
 
-    // Propriétés pour le mode automatique
+    // Fichiers pour le mode automatique
     autoBoFile: File | null = null;
     autoPartnerFile: File | null = null;
     autoBoData: Record<string, string>[] = [];
     autoPartnerData: Record<string, string>[] = [];
+
     loading = false;
     errorMessage = '';
     successMessage = '';
-    
-    // Propriétés pour la sélection des services
+
+    // Variables pour le traitement des gros fichiers
+    isProcessingLargeFile = false;
+    processingProgress = 0;
+    processingMessage = '';
+    processingCancelled = false;
+    processingAbortController: AbortController | null = null;
+    processingMode: string = '';
+    processingDetails: {
+        mode: string;
+        chunks?: number;
+        workers?: number;
+        memory?: string;
+    } | null = null;
+
+    // Sélection de services pour TRXBO
     showServiceSelection = false;
     availableServices: string[] = [];
     selectedServices: string[] = [];
     serviceSelectionData: Record<string, string>[] = [];
+
+    // Sélection manuelle de services
+    showManualServiceSelection = false;
+    manualAvailableServices: string[] = [];
+    manualSelectedServices: string[] = [];
+    manualServiceSelectionData: Record<string, string>[] = [];
+
+    // Configuration des formats supportés
+    supportedFormats = [
+        { name: 'CSV', extensions: ['.csv'], mimeType: 'text/csv' },
+        { name: 'Excel', extensions: ['.xlsx', '.xls'], mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' },
+        { name: 'JSON', extensions: ['.json'], mimeType: 'application/json' }
+    ];
 
     constructor(
         private reconciliationService: ReconciliationService, 
@@ -767,28 +842,73 @@ export class FileUploadComponent {
     }
 
     onBoFileSelected(event: Event): void {
+        console.log('🎯 onBoFileSelected() appelé');
         const input = event.target as HTMLInputElement;
         if (input.files?.length) {
             this.boFile = input.files[0];
+            console.log('📁 Fichier BO sélectionné:', this.boFile.name, 'Taille:', this.boFile.size);
             this.processFileWithAutoProcessing(this.boFile, 'bo');
         }
     }
 
     onPartnerFileSelected(event: Event): void {
+        console.log('🎯 onPartnerFileSelected() appelé');
         const input = event.target as HTMLInputElement;
         if (input.files?.length) {
             this.partnerFile = input.files[0];
+            console.log('📁 Fichier Partenaire sélectionné:', this.partnerFile.name, 'Taille:', this.partnerFile.size);
             this.processFileWithAutoProcessing(this.partnerFile, 'partner');
         }
     }
 
-    // Nouvelle méthode pour le traitement automatique
+    // Nouvelle méthode pour le traitement automatique optimisé
     private processFileWithAutoProcessing(file: File, fileType: 'bo' | 'partner'): void {
         console.log(`🔍 Vérification des modèles automatiques pour ${file.name} (${fileType})`);
         
+        // Détecter si c'est un gros fichier (> 50MB)
+        const isLargeFile = file.size > 50 * 1024 * 1024; // 50MB
+        if (isLargeFile) {
+            this.isProcessingLargeFile = true;
+            this.processingProgress = 0;
+            this.processingMessage = `Analyse du fichier ${file.name}...`;
+            this.processingCancelled = false;
+            this.processingAbortController = new AbortController();
+            
+            // Déterminer le mode de traitement
+            const totalRows = Math.ceil(file.size / 100); // Estimation approximative
+            if (totalRows > 100000) {
+                this.processingMode = 'Web Workers';
+                this.processingDetails = {
+                    mode: 'Parallèle',
+                    workers: navigator.hardwareConcurrency || 4,
+                    chunks: Math.ceil(totalRows / 15000)
+                };
+            } else if (totalRows > 50000) {
+                this.processingMode = 'Chunks';
+                this.processingDetails = {
+                    mode: 'Séquentiel',
+                    chunks: Math.ceil(totalRows / 10000)
+                };
+            } else {
+                this.processingMode = 'Standard';
+                this.processingDetails = {
+                    mode: 'Direct'
+                };
+            }
+        }
+        
         // Vérifier s'il y a un modèle de traitement automatique
-        this.autoProcessingService.processFile(file, fileType).subscribe({
+        const abortController = isLargeFile && this.processingAbortController ? this.processingAbortController : undefined;
+        
+        // Configurer le callback de progression
+        this.autoProcessingService.setProgressCallback((progress: number, message: string) => {
+            this.updateProcessingProgress(progress, message);
+        });
+        
+        this.autoProcessingService.processFile(file, fileType, abortController).subscribe({
             next: (result: ProcessingResult) => {
+                console.log(`📊 Résultat du traitement automatique pour ${file.name}:`, result);
+                
                 if (result.success) {
                     console.log(`✅ Traitement automatique appliqué pour ${file.name}:`, result);
                     console.log(`📊 Modèle utilisé: ${result.modelId}`);
@@ -798,8 +918,10 @@ export class FileUploadComponent {
                     // Utiliser les données traitées
                     if (fileType === 'bo') {
                         this.boData = result.processedData;
+                        console.log(`✅ Données BO mises à jour: ${this.boData.length} lignes`);
                     } else {
                         this.partnerData = result.processedData;
+                        console.log(`✅ Données Partenaire mises à jour: ${this.partnerData.length} lignes`);
                     }
                     
                     // Afficher une notification de succès
@@ -816,19 +938,66 @@ export class FileUploadComponent {
                 if (this.boFile && this.partnerFile) {
                     this.updateEstimatedTime();
                 }
+                
+                // Réinitialiser les indicateurs de traitement
+                this.isProcessingLargeFile = false;
+                this.processingProgress = 0;
+                this.processingMessage = '';
+                this.processingAbortController = null;
+                
+                // Vérifier l'état après traitement
+                console.log(`🔍 État après traitement de ${file.name}:`, {
+                    boDataLength: this.boData.length,
+                    partnerDataLength: this.partnerData.length,
+                    canProceed: this.canProceed()
+                });
             },
             error: (error) => {
                 console.error('❌ Erreur lors du traitement automatique:', error);
-                console.log(`🔄 Fallback vers le traitement standard pour ${file.name}`);
                 
-                // Fallback vers le traitement standard
-                this.parseFile(file, fileType === 'bo');
-                
-                if (this.boFile && this.partnerFile) {
-                    this.updateEstimatedTime();
+                if (this.processingCancelled) {
+                    console.log('🛑 Traitement annulé par l\'utilisateur');
+                    this.processingMessage = 'Traitement annulé';
+                } else {
+                    console.log(`🔄 Fallback vers le traitement standard pour ${file.name}`);
+                    
+                    // Fallback vers le traitement standard
+                    this.parseFile(file, fileType === 'bo');
+                    
+                    if (this.boFile && this.partnerFile) {
+                        this.updateEstimatedTime();
+                    }
                 }
+                
+                // Réinitialiser les indicateurs de traitement
+                this.isProcessingLargeFile = false;
+                this.processingProgress = 0;
+                this.processingMessage = '';
+                this.processingAbortController = null;
+                
+                // Vérifier l'état après fallback
+                console.log(`🔍 État après fallback pour ${file.name}:`, {
+                    boDataLength: this.boData.length,
+                    partnerDataLength: this.partnerData.length,
+                    canProceed: this.canProceed()
+                });
             }
         });
+    }
+
+    // Méthode pour annuler le traitement
+    cancelProcessing(): void {
+        if (this.processingAbortController) {
+            this.processingCancelled = true;
+            this.processingAbortController.abort();
+            this.processingMessage = 'Annulation en cours...';
+        }
+    }
+
+    // Méthode pour mettre à jour la progression
+    updateProcessingProgress(progress: number, message: string): void {
+        this.processingProgress = progress;
+        this.processingMessage = message;
     }
 
     // Nouvelle méthode pour la réconciliation automatique
@@ -1037,14 +1206,36 @@ export class FileUploadComponent {
     }
 
     private parseFile(file: File, isBo: boolean): void {
+        console.log(`🔧 parseFile() appelé pour ${file.name} (isBo: ${isBo})`);
+        
         const fileName = file.name.toLowerCase();
         if (fileName.endsWith('.csv')) {
+            console.log(`📄 Parsing CSV: ${file.name}`);
             this.parseCSV(file, isBo);
-        } else if (fileName.endsWith('.xlsx') || fileName.endsWith('.xls')) {
+        } else if (this.isExcelFile(fileName)) {
+            console.log(`📄 Parsing Excel: ${file.name}`);
             this.parseXLSX(file, isBo);
         } else {
-            alert('Format de fichier non supporté. Veuillez choisir un fichier .csv, .xls ou .xlsx');
+            console.error(`❌ Format de fichier non supporté: ${file.name}`);
+            this.errorMessage = `Format de fichier non supporté: ${file.name}. Formats supportés: CSV, XLS, XLSX, XLSM, XLSB, XLT, XLTX, XLTM`;
         }
+    }
+
+    /**
+     * Vérifie si le fichier est un fichier Excel (tous formats)
+     */
+    private isExcelFile(fileName: string): boolean {
+        const excelExtensions = [
+            '.xls',    // Excel 97-2003
+            '.xlsx',   // Excel 2007+
+            '.xlsm',   // Excel avec macros
+            '.xlsb',   // Excel binaire
+            '.xlt',    // Template Excel 97-2003
+            '.xltx',   // Template Excel 2007+
+            '.xltm'    // Template Excel avec macros
+        ];
+        
+        return excelExtensions.some(ext => fileName.endsWith(ext));
     }
 
     private parseCSV(file: File, isBo: boolean): void {
@@ -1055,26 +1246,38 @@ export class FileUploadComponent {
             if (text.charCodeAt(0) === 0xFEFF) {
                 text = text.slice(1);
             }
-            Papa.parse(text, {
-                header: true,
-                delimiter: ';',
-                skipEmptyLines: true,
-                complete: (results) => {
-                    console.log('Première ligne lue:', results.data[0]);
-                    if (isBo) {
-                        this.boData = results.data as Record<string, string>[];
-                    } else {
-                        this.partnerData = this.convertDebitCreditToNumber(results.data as Record<string, string>[]);
+            
+            // Optimisation pour gros fichiers : parsing par chunks
+            const lines = text.split('\n');
+            console.log(`📊 Fichier ${file.name}: ${lines.length} lignes détectées`);
+            
+            // Pour les gros fichiers (>50k lignes), utiliser un parsing optimisé
+            if (lines.length > 50000) {
+                console.log(`🚀 Traitement optimisé pour gros fichier: ${lines.length} lignes`);
+                this.parseLargeCSV(lines, isBo);
+            } else {
+                // Parsing normal pour petits fichiers
+                Papa.parse(text, {
+                    header: true,
+                    delimiter: ';',
+                    skipEmptyLines: true,
+                    complete: (results) => {
+                        console.log('Première ligne lue:', results.data[0]);
+                        if (isBo) {
+                            this.boData = results.data as Record<string, string>[];
+                        } else {
+                            this.partnerData = this.convertDebitCreditToNumber(results.data as Record<string, string>[]);
+                        }
+                        // Mettre à jour l'estimation seulement si les deux fichiers sont chargés
+                        if (this.boFile && this.partnerFile) {
+                            this.updateEstimatedTime();
+                        }
+                    },
+                    error: (error: any) => {
+                        console.error('Erreur lors de la lecture du fichier CSV:', error);
                     }
-                    // Mettre à jour l'estimation seulement si les deux fichiers sont chargés
-                    if (this.boFile && this.partnerFile) {
-                        this.updateEstimatedTime();
-                    }
-                },
-                error: (error: any) => {
-                    console.error('Erreur lors de la lecture du fichier CSV:', error);
-                }
-            });
+                });
+            }
         };
         reader.onerror = (e) => {
             console.error('Erreur lors de la lecture du fichier (FileReader):', e);
@@ -1082,20 +1285,105 @@ export class FileUploadComponent {
         reader.readAsText(file, 'utf-8');
     }
 
+    private parseLargeCSV(lines: string[], isBo: boolean): void {
+        const CHUNK_SIZE = 10000;
+        const data: Record<string, string>[] = [];
+        
+        // Activer l'indicateur de progression
+        this.isProcessingLargeFile = true;
+        this.processingMessage = 'Traitement du fichier volumineux...';
+        this.processingProgress = 0;
+        
+        // Détecter le délimiteur et les en-têtes
+        const firstLine = lines[0];
+        const delimiter = this.detectDelimiter(firstLine);
+        const headers = firstLine.split(delimiter);
+        
+        console.log(`🔧 Parsing optimisé: délimiteur "${delimiter}", ${headers.length} colonnes`);
+        
+        // Traitement par chunks
+        for (let i = 1; i < lines.length; i += CHUNK_SIZE) {
+            const chunk = lines.slice(i, i + CHUNK_SIZE);
+            const chunkData: Record<string, string>[] = [];
+            
+            for (const line of chunk) {
+                if (line.trim() === '') continue;
+                
+                const values = line.split(delimiter);
+                const row: Record<string, string> = {};
+                
+                headers.forEach((header, index) => {
+                    row[header] = values[index] || '';
+                });
+                
+                chunkData.push(row);
+            }
+            
+            data.push(...chunkData);
+            
+            // Mettre à jour la progression
+            const progress = Math.min(100, (i / lines.length) * 100);
+            this.processingProgress = Math.round(progress);
+            this.processingMessage = `Traitement: ${data.length} lignes traitées sur ${lines.length - 1}`;
+            
+            console.log(`📊 Progression parsing: ${Math.round(progress)}% (${data.length} lignes traitées)`);
+            
+            // Petite pause pour permettre l'affichage de la progression
+            setTimeout(() => {}, 10);
+        }
+        
+        console.log(`✅ Parsing terminé: ${data.length} lignes traitées`);
+        
+        // Désactiver l'indicateur de progression
+        this.isProcessingLargeFile = false;
+        this.processingProgress = 0;
+        this.processingMessage = '';
+        
+        if (isBo) {
+            this.boData = data;
+        } else {
+            this.partnerData = this.convertDebitCreditToNumber(data);
+        }
+        
+        // Mettre à jour l'estimation seulement si les deux fichiers sont chargés
+        if (this.boFile && this.partnerFile) {
+            this.updateEstimatedTime();
+        }
+    }
+
+    private detectDelimiter(line: string): string {
+        const delimiters = [';', ',', '\t', '|'];
+        for (const delimiter of delimiters) {
+            if (line.includes(delimiter)) {
+                return delimiter;
+            }
+        }
+        return ';'; // Délimiteur par défaut
+    }
+
     private parseXLSX(file: File, isBo: boolean): void {
         const reader = new FileReader();
         reader.onload = (e: ProgressEvent<FileReader>) => {
             try {
-                console.log('🔄 Début lecture fichier Excel pour réconciliation');
-            const data = new Uint8Array(e.target?.result as ArrayBuffer);
-            const workbook = XLSX.read(data, { type: 'array' });
-            const firstSheetName = workbook.SheetNames[0];
-            const worksheet = workbook.Sheets[firstSheetName];
+                console.log(`🔄 Début lecture fichier Excel: ${file.name}`);
+                console.log(`📄 Format détecté: ${this.getExcelFormat(file.name)}`);
+                
+                const data = new Uint8Array(e.target?.result as ArrayBuffer);
+                const workbook = XLSX.read(data, { type: 'array' });
+                
+                console.log(`📊 Fichier Excel: ${workbook.SheetNames.length} feuilles détectées`);
+                console.log(`📋 Feuilles disponibles: ${workbook.SheetNames.join(', ')}`);
+                
+                const firstSheetName = workbook.SheetNames[0];
+                const worksheet = workbook.Sheets[firstSheetName];
+                
+                console.log(`📄 Utilisation de la feuille: ${firstSheetName}`);
                 
                 // Conversion en tableau de tableaux pour analyse
                 const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
                 if (jsonData.length === 0) {
                     console.log('❌ Fichier Excel vide');
+                    this.errorMessage = 'Le fichier Excel est vide ou ne contient pas de données';
                     return;
                 }
                 
@@ -1128,9 +1416,9 @@ export class FileUploadComponent {
                         rows.push(row);
                     }
                     
-            if (isBo) {
+                    if (isBo) {
                         this.boData = rows;
-            } else {
+                    } else {
                         this.partnerData = this.convertDebitCreditToNumber(rows);
                     }
                 } else {
@@ -1163,28 +1451,58 @@ export class FileUploadComponent {
                 
                 console.log(`✅ Fichier Excel traité: ${isBo ? this.boData.length : this.partnerData.length} lignes`);
                 
-            // Mettre à jour l'estimation seulement si les deux fichiers sont chargés
-            if (this.boFile && this.partnerFile) {
-                this.updateEstimatedTime();
+                // Mettre à jour l'estimation seulement si les deux fichiers sont chargés
+                if (this.boFile && this.partnerFile) {
+                    this.updateEstimatedTime();
                 }
                 
             } catch (error) {
                 console.error('❌ Erreur lors de la lecture du fichier Excel:', error);
+                this.errorMessage = `Erreur lors de la lecture du fichier Excel: ${error}`;
             }
         };
         reader.onerror = (e) => {
             console.error('Erreur lors de la lecture du fichier (FileReader):', e);
+            this.errorMessage = 'Erreur lors de la lecture du fichier';
         };
         reader.readAsArrayBuffer(file);
     }
 
+    /**
+     * Détermine le format Excel du fichier
+     */
+    private getExcelFormat(fileName: string): string {
+        const fileNameLower = fileName.toLowerCase();
+        if (fileNameLower.endsWith('.xls')) return 'Excel 97-2003 (.xls)';
+        if (fileNameLower.endsWith('.xlsx')) return 'Excel 2007+ (.xlsx)';
+        if (fileNameLower.endsWith('.xlsm')) return 'Excel avec macros (.xlsm)';
+        if (fileNameLower.endsWith('.xlsb')) return 'Excel binaire (.xlsb)';
+        if (fileNameLower.endsWith('.xlt')) return 'Template Excel 97-2003 (.xlt)';
+        if (fileNameLower.endsWith('.xltx')) return 'Template Excel 2007+ (.xltx)';
+        if (fileNameLower.endsWith('.xltm')) return 'Template Excel avec macros (.xltm)';
+        return 'Format Excel inconnu';
+    }
+
     canProceed(): boolean {
-        return this.boData.length > 0 && this.partnerData.length > 0;
+        const canProceed = this.boData.length > 0 && this.partnerData.length > 0;
+        console.log('🔍 canProceed() appelé:', {
+            boDataLength: this.boData.length,
+            partnerDataLength: this.partnerData.length,
+            canProceed: canProceed
+        });
+        return canProceed;
     }
 
     onProceed(): void {
+        console.log('🎯 onProceed() appelé');
+        console.log('🔍 État des données:', {
+            boDataLength: this.boData.length,
+            partnerDataLength: this.partnerData.length,
+            canProceed: this.canProceed()
+        });
+        
         if (this.canProceed()) {
-            console.log('Navigation vers la sélection des colonnes...');
+            console.log('✅ Navigation vers la sélection des colonnes...');
             console.log('Données BO:', this.boData.length, 'lignes');
             console.log('Données Partenaire:', this.partnerData.length, 'lignes');
             
@@ -1194,6 +1512,8 @@ export class FileUploadComponent {
             
             // Naviguer vers la page de sélection des colonnes
             this.router.navigate(['/column-selection']);
+        } else {
+            console.log('❌ onProceed() - Conditions non remplies');
         }
     }
 
@@ -1368,10 +1688,10 @@ export class FileUploadComponent {
         const fileName = file.name.toLowerCase();
         if (fileName.endsWith('.csv')) {
             this.parseAutoCSV(file, isBo);
-        } else if (fileName.endsWith('.xlsx') || fileName.endsWith('.xls')) {
+        } else if (this.isExcelFile(fileName)) {
             this.parseAutoXLSX(file, isBo);
         } else {
-            alert('Format de fichier non supporté. Veuillez choisir un fichier .csv, .xls ou .xlsx');
+            alert('Format de fichier non supporté. Veuillez choisir un fichier CSV ou Excel (.xls, .xlsx, .xlsm, .xlsb, .xlt, .xltx, .xltm)');
         }
     }
 
@@ -2088,5 +2408,134 @@ export class FileUploadComponent {
                 }
             });
         }
+    }
+
+    // Méthodes pour la sélection de service en mode manuel
+    private detectTRXBOForManualMode(data: Record<string, string>[]): boolean {
+        if (!data || data.length === 0) return false;
+        
+        const firstRow = data[0];
+        const columns = Object.keys(firstRow);
+        
+        // Vérifier si c'est un fichier TRXBO (contient une colonne "Service" ou "service")
+        const hasServiceColumn = columns.some(col => 
+            col.toLowerCase().includes('service') || 
+            col.toLowerCase().includes('serv')
+        );
+        
+        if (hasServiceColumn) {
+            console.log('🔍 Fichier TRXBO détecté en mode manuel, extraction des services...');
+            
+            // Trouver la colonne service
+            const serviceColumn = columns.find(col => 
+                col.toLowerCase().includes('service') || 
+                col.toLowerCase().includes('serv')
+            );
+            
+            if (serviceColumn) {
+                // Extraire tous les services uniques
+                const services = [...new Set(data.map(row => row[serviceColumn]).filter(service => service && service.trim()))];
+                this.manualAvailableServices = services.sort();
+                this.manualServiceSelectionData = data;
+                
+                console.log('📋 Services disponibles (mode manuel):', this.manualAvailableServices);
+                console.log('📊 Nombre total de lignes (mode manuel):', data.length);
+                
+                return true;
+            }
+        }
+        
+        return false;
+    }
+
+    private showManualServiceSelectionStep(): void {
+        this.showManualServiceSelection = true;
+        this.manualSelectedServices = [...this.manualAvailableServices]; // Sélectionner tous par défaut
+    }
+
+    confirmManualServiceSelection(): void {
+        if (this.manualSelectedServices.length === 0) {
+            this.errorMessage = 'Veuillez sélectionner au moins un service.';
+            return;
+        }
+
+        console.log('✅ Services sélectionnés (mode manuel):', this.manualSelectedServices);
+        
+        // Filtrer les données pour ne garder que les lignes des services sélectionnés
+        const serviceColumn = Object.keys(this.manualServiceSelectionData[0]).find(col => 
+            col.toLowerCase().includes('service') || 
+            col.toLowerCase().includes('serv')
+        );
+        
+        if (serviceColumn) {
+            const filteredData = this.manualServiceSelectionData.filter(row => 
+                this.manualSelectedServices.includes(row[serviceColumn])
+            );
+            
+            console.log('📊 Données filtrées (mode manuel):', filteredData.length, 'lignes sur', this.manualServiceSelectionData.length, 'originales');
+            
+            // Mettre à jour les données BO avec les données filtrées
+            this.boData = filteredData;
+            
+            // Masquer la sélection des services
+            this.showManualServiceSelection = false;
+            
+            // Continuer avec la réconciliation manuelle
+            this.continueWithManualReconciliation();
+        }
+    }
+
+    cancelManualServiceSelection(): void {
+        this.showManualServiceSelection = false;
+        this.manualAvailableServices = [];
+        this.manualSelectedServices = [];
+        this.manualServiceSelectionData = [];
+    }
+
+    private continueWithManualReconciliation(): void {
+        console.log('✅ Navigation vers la sélection des colonnes après sélection de service...');
+        console.log('Données BO filtrées:', this.boData.length, 'lignes');
+        console.log('Données Partenaire:', this.partnerData.length, 'lignes');
+        
+        // Sauvegarder les données dans le service d'état
+        this.appStateService.setReconciliationData(this.boData, this.partnerData);
+        this.appStateService.setCurrentStep(2);
+        
+        // Naviguer vers la page de sélection des colonnes
+        this.router.navigate(['/column-selection']);
+    }
+
+    onManualServiceSelectionChange(event: Event, service: string): void {
+        const checkbox = event.target as HTMLInputElement;
+        if (checkbox.checked) {
+            if (!this.manualSelectedServices.includes(service)) {
+                this.manualSelectedServices.push(service);
+            }
+        } else {
+            this.manualSelectedServices = this.manualSelectedServices.filter(s => s !== service);
+        }
+    }
+
+    getManualServiceCount(service: string): number {
+        if (!this.manualServiceSelectionData || this.manualServiceSelectionData.length === 0) return 0;
+        
+        const serviceColumn = Object.keys(this.manualServiceSelectionData[0]).find(col => 
+            col.toLowerCase().includes('service') || 
+            col.toLowerCase().includes('serv')
+        );
+        
+        if (serviceColumn) {
+            return this.manualServiceSelectionData.filter(row => row[serviceColumn] === service).length;
+        }
+        
+        return 0;
+    }
+
+    selectAllManualServices(): void {
+        this.manualSelectedServices = [...this.manualAvailableServices];
+    }
+
+    deselectAllManualServices(): void {
+        this.manualSelectedServices = [];
     }
 } 

@@ -1,0 +1,72 @@
+            <!-- Section d'optimisation des données -->
+            <div class="optimization-status" *ngIf="!dataLoaded || loadingInProgress" 
+                 style="margin: 20px 0; padding: 20px; background: #e3f2fd; border-radius: 10px; border: 2px solid #2196f3;">
+                <div class="optimization-container">
+                    <div class="optimization-header">
+                        <h3>⚡ Optimisation des données en cours...</h3>
+                        <div class="optimization-indicator">
+                            <div class="spinner"></div>
+                            <span>Chargement optimisé</span>
+                        </div>
+                    </div>
+                    <div class="optimization-details">
+                        <div class="detail-item">
+                            <span class="detail-label">État:</span>
+                            <span class="detail-value" [class.loading]="loadingInProgress" [class.loaded]="dataLoaded">
+                                {{ loadingInProgress ? 'Traitement en cours...' : (dataLoaded ? 'Optimisé' : 'Initialisation...') }}
+                            </span>
+                        </div>
+                        <div class="detail-item" *ngIf="dataLoaded">
+                            <span class="detail-label">Mode:</span>
+                            <span class="detail-value">Échantillonnage intelligent</span>
+                        </div>
+                        <div class="detail-item" *ngIf="compressedBoData.length > 0">
+                            <span class="detail-label">Compression:</span>
+                            <span class="detail-value">{{ compressedBoData.length }} lignes optimisées</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Debug info -->
+            <div class="debug-info" style="background: #f0f0f0; padding: 10px; margin: 10px 0; border-radius: 5px; font-size: 12px;">
+                <strong>Debug Progression:</strong> 
+                isReconciliationInProgress: {{ isReconciliationInProgress }} | 
+                Progress: {{ reconciliationProgress }}% | 
+                Status: {{ reconciliationStatus }}
+                <button (click)="testProgressBar()" style="margin-left: 10px; padding: 5px 10px; background: #007bff; color: white; border: none; border-radius: 3px; cursor: pointer;">
+                    🧪 Test Barre
+                </button>
+            </div>
+
+            <!-- Barre de progression pour la réconciliation -->
+            <div class="reconciliation-progress" *ngIf="isReconciliationInProgress" 
+                 style="margin: 20px 0; padding: 20px; background: #f8f9fa; border-radius: 10px; border: 2px solid #28a745; display: block !important;">
+                <div class="progress-container">
+                    <div class="progress-header">
+                        <h3>🔄 Réconciliation en cours...</h3>
+                        <span class="progress-percentage">{{ reconciliationProgress }}%</span>
+                    </div>
+                    <div class="progress-bar" style="width: 100%; height: 20px; background: #e9ecef; border-radius: 10px; overflow: hidden; margin-bottom: 10px;">
+                        <div class="progress-fill" [style.width.%]="reconciliationProgress" 
+                             style="height: 100%; background: linear-gradient(90deg, #28a745, #20c997); border-radius: 10px; transition: width 0.3s ease;"></div>
+                    </div>
+                    <div class="progress-status">
+                        <span class="status-text">{{ reconciliationStatus }}</span>
+                        <span class="status-time" *ngIf="reconciliationStartTime">
+                            Temps écoulé: {{ getElapsedTime() }}
+                        </span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Bouton pour lancer la réconciliation -->
+            <div class="button-container">
+                <button class="btn proceed-btn" 
+                        [disabled]="!isValid || isReconciliationInProgress" 
+                        (click)="proceedWithReconciliation()"
+                        [class.processing]="isReconciliationInProgress">
+                    <span *ngIf="!isReconciliationInProgress">🚀 Lancer la Réconciliation</span>
+                    <span *ngIf="isReconciliationInProgress">⏳ Réconciliation en cours...</span>
+                </button>
+            </div> 

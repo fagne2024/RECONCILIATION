@@ -7,6 +7,7 @@ com\reconciliation\entity\ProfilPermissionEntity.class
 com\reconciliation\repository\OperationRepository.class
 com\reconciliation\repository\AgencySummaryRepository.class
 com\reconciliation\entity\AgencySummaryEntity.class
+com\reconciliation\controller\ImpactOPController.class
 com\reconciliation\controller\RankingController.class
 com\reconciliation\dto\OperationCreateRequest.class
 com\reconciliation\controller\ReconciliationController.class
@@ -14,15 +15,20 @@ com\reconciliation\entity\AutoProcessingModel.class
 com\reconciliation\config\DatabaseInitializer.class
 com\reconciliation\model\Statistics.class
 com\reconciliation\dto\ReconciliationRequest.class
+com\reconciliation\service\TrxSfService$1.class
 com\reconciliation\entity\ModuleEntity.class
 com\reconciliation\entity\EcartSoldeEntity.class
+com\reconciliation\repository\ImpactOPRepository.class
 com\reconciliation\entity\ProfilEntity.class
 com\reconciliation\entity\CompteSoldeBoEntity.class
 com\reconciliation\controller\StatisticsController.class
 com\reconciliation\service\CompteSoldeBoService.class
+com\reconciliation\service\ReconciliationBatchResult.class
 com\reconciliation\service\RankingService.class
+com\reconciliation\dto\ReconciliationRequest$BOColumnFilter.class
 com\reconciliation\model\AgencySummary.class
 com\reconciliation\controller\CompteSoldeBoController.class
+com\reconciliation\entity\ImpactOPEntity$Statut.class
 com\reconciliation\service\AutoProcessingService.class
 com\reconciliation\repository\EcartSoldeRepository.class
 com\reconciliation\entity\ProcessingStep.class
@@ -31,6 +37,7 @@ com\reconciliation\entity\FileTypeDeserializer.class
 com\reconciliation\model\Operation.class
 com\reconciliation\controller\FraisTransactionController.class
 com\reconciliation\service\ProfilService.class
+com\reconciliation\service\ImpactOPService.class
 com\reconciliation\repository\FraisTransactionRepository.class
 com\reconciliation\entity\JsonConverter$1.class
 com\reconciliation\repository\StatisticsRepository.class
@@ -50,6 +57,7 @@ com\reconciliation\controller\EcartSoldeController.class
 com\reconciliation\entity\ProcessingStep$StepType.class
 com\reconciliation\repository\PermissionRepository.class
 com\reconciliation\service\UserProfilService.class
+com\reconciliation\entity\ImpactOPEntity.class
 com\reconciliation\entity\ModulePermissionEntity.class
 com\reconciliation\config\WebConfig.class
 com\reconciliation\service\CsvReconciliationService.class
@@ -64,6 +72,7 @@ com\reconciliation\entity\JsonConverter.class
 com\reconciliation\dto\ReconciliationResponse$Difference.class
 com\reconciliation\controller\AutoProcessingController.class
 com\reconciliation\service\FraisTransactionService.class
+com\reconciliation\service\ImpactOPService$1.class
 com\reconciliation\service\CompteService.class
 com\reconciliation\controller\FileWatcherController.class
 com\reconciliation\dto\OperationUpdateRequest.class

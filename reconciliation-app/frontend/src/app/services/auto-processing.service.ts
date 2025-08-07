@@ -6,6 +6,9 @@ import { map, switchMap, catchError } from 'rxjs/operators';
 import { HttpClient } from '@angular/common/http'; // Added for new methods
 import { environment } from '../../environments/environment'; // Added for new methods
 import { BOColumnFilter } from '../models/reconciliation-request.model';
+import { FieldTypeDetectionService, ColumnAnalysis } from './field-type-detection.service';
+import { ExcelTypeDetectionService, ExcelFileAnalysis } from './excel-type-detection.service';
+import { SpecialFileDetectionService, FileAnalysisResult } from './special-file-detection.service';
 import * as Papa from 'papaparse'; // Added for CSV parsing
 import * as XLSX from 'xlsx'; // Added for Excel parsing
 
@@ -90,6 +93,9 @@ export class AutoProcessingService {
   constructor(
     private fileWatcherService: FileWatcherService,
     private reconciliationService: ReconciliationService,
+    private fieldTypeDetectionService: FieldTypeDetectionService,
+    private excelTypeDetectionService: ExcelTypeDetectionService,
+    private specialFileDetectionService: SpecialFileDetectionService,
     private http: HttpClient // Added for new methods
   ) {
     this.loadDefaultModels();
@@ -173,62 +179,24 @@ export class AutoProcessingService {
   // Récupérer tous les fichiers disponibles dans watch-folder
   getAvailableFileModels(): Observable<FileModel[]> {
     console.log('🔍 Appel de getAvailableFileModels()');
-    return this.fileWatcherService.getStatus().pipe(
-      switchMap(status => {
-        console.log('📊 Statut du service:', status);
-        const url = `${this.apiUrl}/file-watcher/available-files`;
-        console.log('🌐 URL de requête:', url);
-        return this.http.get<FileModel[]>(url).pipe(
-          map(files => {
-            console.log('📄 Fichiers récupérés:', files);
-            files.forEach(file => {
-              console.log(`   - ${file.fileName}: ${file.columns.length} colonnes`);
-            });
-            return files;
-          }),
-          catchError(error => {
-            console.error('❌ Erreur lors de la récupération des fichiers:', error);
-            // Retourner des données de test en cas d'erreur
-            console.log('🔄 Utilisation des données de test');
-            return of(this.getTestFileModels());
-          })
-        );
+    const url = `${this.apiUrl}/file-watcher/available-files`;
+    console.log('🌐 URL de requête:', url);
+    
+    return this.http.get<FileModel[]>(url).pipe(
+      map(files => {
+        console.log('📄 Fichiers récupérés depuis l\'API:', files);
+        files.forEach(file => {
+          console.log(`   - ${file.fileName}: ${file.columns.length} colonnes`);
+          console.log(`     Colonnes: ${file.columns.join(', ')}`);
+        });
+        return files;
       }),
       catchError(error => {
-        console.error('❌ Erreur lors de la récupération du statut:', error);
-        // Retourner des données de test en cas d'erreur
-        console.log('🔄 Utilisation des données de test');
-        return of(this.getTestFileModels());
+        console.error('❌ Erreur lors de la récupération des fichiers:', error);
+        console.log('🔄 Retour d\'un tableau vide en cas d\'erreur');
+        return of([]);
       })
     );
-  }
-
-  // Méthode pour retourner des données de test
-  private getTestFileModels(): FileModel[] {
-    return [
-      {
-        fileName: 'CIMTNCM.csv',
-        filePath: 'watch-folder/CIMTNCM.csv',
-        columns: ['date', 'montant', 'description', 'reference', 'compte'],
-        sampleData: [
-          { date: '2025-08-01', montant: '1000.00', description: 'Transaction 1', reference: 'REF001', compte: 'CELCM001' },
-          { date: '2025-08-02', montant: '2000.00', description: 'Transaction 2', reference: 'REF002', compte: 'CELCM002' }
-        ],
-        fileType: 'csv',
-        recordCount: 100
-      },
-      {
-        fileName: 'PMMTNCM.csv',
-        filePath: 'watch-folder/PMMTNCM.csv',
-        columns: ['date', 'montant', 'description', 'reference', 'partenaire'],
-        sampleData: [
-          { date: '2025-08-01', montant: '1500.00', description: 'Paiement 1', reference: 'PAY001', partenaire: 'PART001' },
-          { date: '2025-08-02', montant: '2500.00', description: 'Paiement 2', reference: 'PAY002', partenaire: 'PART002' }
-        ],
-        fileType: 'csv',
-        recordCount: 50
-      }
-    ];
   }
 
   // Analyser un fichier pour extraire ses colonnes et données d'exemple
@@ -457,6 +425,186 @@ export class AutoProcessingService {
     return this.createModel(defaultBOModel);
   }
 
+  // Méthode pour créer un modèle TRXBO avec configuration complète
+  createTRXBOModel(): Observable<AutoProcessingModel> {
+    const trxboModel = {
+      name: 'Modèle TRXBO - Colonnes Corrigées',
+      filePattern: '*TRXBO*.csv',
+      fileType: 'bo' as const,
+      autoApply: true,
+      templateFile: 'TRXBO.csv',
+      processingSteps: [
+        {
+          id: 'step_keep_essential_columns',
+          name: 'GARDER_COLONNES_ESSENTIELLES',
+          type: 'select' as const,
+          action: 'keepColumns',
+          field: ['ID', 'IDTransaction', 'téléphone client', 'montant', 'Service', 'Agence', 'Date', 'Numéro Trans GU', 'Statut'],
+          params: {},
+          description: 'Garder seulement les colonnes essentielles pour la réconciliation'
+        }
+      ],
+      reconciliationKeys: {
+        boKeys: ['ID', 'IDTransaction', 'Numéro Trans GU', 'montant', 'Date'],
+        partnerKeys: ['External id', 'Transaction ID', 'Amount', 'Date']
+      }
+    };
+
+    console.log('🔧 Création du modèle TRXBO corrigé:', trxboModel);
+    return this.createModel(trxboModel);
+  }
+
+  // Méthode pour créer un modèle OPPART avec configuration complète
+  createOPPARTModel(): Observable<AutoProcessingModel> {
+    const oppartModel = {
+      name: 'Modèle OPPART - Configuration Complète',
+      filePattern: '*OPPART*.csv',
+      fileType: 'partner' as const,
+      autoApply: true,
+      templateFile: 'OPPART.csv',
+      processingSteps: [
+        {
+          id: 'step_normalize_headers',
+          name: 'NORMALISATION_ENTETES_OPPART',
+          type: 'format' as const,
+          action: 'normalizeHeaders',
+          field: ['ID Opération', 'Type Opération', 'Montant', 'Solde avant', 'Solde aprés', 'Code propriétaire', 'Téléphone', 'Statut', 'ID Transaction', 'Num bordereau', 'Date opération', 'Date de versement', 'Banque appro', 'Login demandeur Appro', 'Login valideur Appro', 'Motif rejet', 'Frais connexion', 'Numéro Trans GU', 'Agent', 'Motif régularisation', 'groupe de réseau'],
+          params: {},
+          description: 'Normalisation des en-têtes OPPART'
+        },
+        {
+          id: 'step_fix_special_chars',
+          name: 'CORRECTION_CARACTERES_SPECIAUX_OPPART',
+          type: 'format' as const,
+          action: 'fixSpecialCharacters',
+          field: ['ID Opération', 'Type Opération', 'Montant', 'Solde avant', 'Solde aprés', 'Code propriétaire', 'Téléphone', 'Statut', 'ID Transaction', 'Num bordereau', 'Date opération', 'Date de versement', 'Banque appro', 'Login demandeur Appro', 'Login valideur Appro', 'Motif rejet', 'Frais connexion', 'Numéro Trans GU', 'Agent', 'Motif régularisation', 'groupe de réseau'],
+          params: {},
+          description: 'Correction des caractères spéciaux OPPART'
+        },
+        {
+          id: 'step_clean_data',
+          name: 'NETTOYAGE_DONNEES_OPPART',
+          type: 'format' as const,
+          action: 'cleanText',
+          field: ['ID Opération', 'Type Opération', 'Montant', 'Solde avant', 'Solde aprés', 'Code propriétaire', 'Téléphone', 'Statut', 'ID Transaction', 'Num bordereau', 'Date opération', 'Date de versement', 'Banque appro', 'Login demandeur Appro', 'Login valideur Appro', 'Motif rejet', 'Frais connexion', 'Numéro Trans GU', 'Agent', 'Motif régularisation', 'groupe de réseau'],
+          params: {},
+          description: 'Nettoyage des données OPPART'
+        },
+        {
+          id: 'step_format_to_number',
+          name: 'FORMATAGE_NOMBRE_OPPART',
+          type: 'format' as const,
+          action: 'formatToNumber',
+          field: ['Montant', 'Solde avant', 'Solde aprés', 'Frais connexion'],
+          params: {},
+          description: 'Formatage en nombre des montants OPPART'
+        },
+        {
+          id: 'step_format_amount',
+          name: 'FORMATAGE_MONTANT_OPPART',
+          type: 'format' as const,
+          action: 'formatCurrency',
+          field: ['Montant', 'Solde avant', 'Solde aprés', 'Frais connexion'],
+          params: { currency: 'XOF', locale: 'fr-FR' },
+          description: 'Formatage des montants OPPART'
+        },
+        {
+          id: 'step_format_date',
+          name: 'FORMATAGE_DATE_OPPART',
+          type: 'format' as const,
+          action: 'formatDate',
+          field: ['Date opération', 'Date de versement'],
+          params: { format: 'YYYY-MM-DD' },
+          description: 'Formatage des dates OPPART'
+        }
+      ],
+      reconciliationKeys: {
+        partnerKeys: ['Numéro Trans GU'],
+        boModels: ['9'],
+        boModelKeys: {
+          '9': ['Numéro Trans GU']
+        }
+      }
+    };
+
+    console.log('🔧 Création du modèle OPPART complet:', oppartModel);
+    return this.createModel(oppartModel);
+  }
+
+  // Méthode pour créer un modèle USSDPART avec configuration complète
+  createUSSDPARTModel(): Observable<AutoProcessingModel> {
+    const ussdpartModel = {
+      name: 'Modèle USSDPART - Configuration Complète',
+      filePattern: '*USSDPART*.csv',
+      fileType: 'bo' as const,
+      autoApply: true,
+      templateFile: 'USSDPART.csv',
+      processingSteps: [
+        {
+          id: 'step_normalize_headers',
+          name: 'NORMALISATION_ENTETES_USSDPART',
+          type: 'format' as const,
+          action: 'normalizeHeaders',
+          field: ['ID', 'Groupe Réseaux', 'Code réseau', 'Agence', 'Code PIXI', 'Code de Proxy', 'Code service', 'Numéro Trans GU', 'Déstinataire', 'Login agent', 'Type agent', 'date de création', 'Date d\'envoi vers part', 'Etat', 'Type', 'Token', 'SMS', 'Action faite', 'Statut', 'Utilisateur', 'Montant', 'Latitude', 'Longitude', 'Partenaire dist ID', 'Agence SC', 'Groupe reseau SC', 'Agent SC', 'PDA SC', 'Date dernier traitement'],
+          params: {},
+          description: 'Normalisation des en-têtes USSDPART'
+        },
+        {
+          id: 'step_fix_special_chars',
+          name: 'CORRECTION_CARACTERES_SPECIAUX_USSDPART',
+          type: 'format' as const,
+          action: 'fixSpecialCharacters',
+          field: ['ID', 'Groupe Réseaux', 'Code réseau', 'Agence', 'Code PIXI', 'Code de Proxy', 'Code service', 'Numéro Trans GU', 'Déstinataire', 'Login agent', 'Type agent', 'date de création', 'Date d\'envoi vers part', 'Etat', 'Type', 'Token', 'SMS', 'Action faite', 'Statut', 'Utilisateur', 'Montant', 'Latitude', 'Longitude', 'Partenaire dist ID', 'Agence SC', 'Groupe reseau SC', 'Agent SC', 'PDA SC', 'Date dernier traitement'],
+          params: {},
+          description: 'Correction des caractères spéciaux USSDPART'
+        },
+        {
+          id: 'step_clean_data',
+          name: 'NETTOYAGE_DONNEES_USSDPART',
+          type: 'format' as const,
+          action: 'cleanText',
+          field: ['ID', 'Groupe Réseaux', 'Code réseau', 'Agence', 'Code PIXI', 'Code de Proxy', 'Code service', 'Numéro Trans GU', 'Déstinataire', 'Login agent', 'Type agent', 'date de création', 'Date d\'envoi vers part', 'Etat', 'Type', 'Token', 'SMS', 'Action faite', 'Statut', 'Utilisateur', 'Montant', 'Latitude', 'Longitude', 'Partenaire dist ID', 'Agence SC', 'Groupe reseau SC', 'Agent SC', 'PDA SC', 'Date dernier traitement'],
+          params: {},
+          description: 'Nettoyage des données USSDPART'
+        },
+        {
+          id: 'step_format_to_number',
+          name: 'FORMATAGE_NOMBRE_USSDPART',
+          type: 'format' as const,
+          action: 'formatToNumber',
+          field: ['Montant'],
+          params: {},
+          description: 'Formatage en nombre des montants USSDPART'
+        },
+        {
+          id: 'step_format_amount',
+          name: 'FORMATAGE_MONTANT_USSDPART',
+          type: 'format' as const,
+          action: 'formatCurrency',
+          field: ['Montant'],
+          params: { currency: 'XOF', locale: 'fr-FR' },
+          description: 'Formatage des montants USSDPART'
+        },
+        {
+          id: 'step_format_date',
+          name: 'FORMATAGE_DATE_USSDPART',
+          type: 'format' as const,
+          action: 'formatDate',
+          field: ['date de création', 'Date d\'envoi vers part', 'Date dernier traitement'],
+          params: { format: 'YYYY-MM-DD' },
+          description: 'Formatage des dates USSDPART'
+        }
+      ],
+      reconciliationKeys: {
+        boKeys: ['ID', 'Numéro Trans GU', 'Montant', 'date de création'],
+        partnerKeys: ['Transaction ID', 'External ID', 'Amount', 'Date']
+      }
+    };
+
+    console.log('🔧 Création du modèle USSDPART:', ussdpartModel);
+    return this.createModel(ussdpartModel);
+  }
+
   fixReconciliationKeys(): Observable<any> {
     return this.http.post<any>(`${environment.apiUrl}/auto-processing/models/fix-reconciliation-keys`, {}).pipe(
       catchError(error => {
@@ -550,7 +698,7 @@ export class AutoProcessingService {
   }
 
   // Traiter automatiquement un fichier
-  processFile(file: File, fileType: 'bo' | 'partner'): Observable<ProcessingResult> {
+  processFile(file: File, fileType: 'bo' | 'partner', abortController?: AbortController): Observable<ProcessingResult> {
     return this.findBestMatchingModel(file.name, fileType).pipe(
       switchMap(matchingModel => {
         if (!matchingModel) {
@@ -567,17 +715,21 @@ export class AutoProcessingService {
           });
         }
 
-        return this.parseFile(file).pipe(
+        return this.parseFile(file, abortController).pipe(
           map(data => {
+            // Normaliser les caractères spéciaux dans les données
+            const normalizedData = this.normalizeFileData(data);
+            console.log(`📊 Données normalisées: ${normalizedData.length} lignes`);
+            
             const startTime = Date.now();
-            const result = this.applyProcessingSteps(data, matchingModel.processingSteps);
+            const result = this.applyProcessingSteps(normalizedData, matchingModel.processingSteps);
             const processingTime = Date.now() - startTime;
 
             return {
               success: result.errors.length === 0,
               fileName: file.name,
               modelId: matchingModel.id,
-              originalData: data,
+              originalData: normalizedData,
               processedData: result.processedData,
               appliedSteps: matchingModel.processingSteps,
               errors: result.errors,
@@ -617,8 +769,12 @@ export class AutoProcessingService {
         
         return this.parseFile(file).pipe(
           switchMap(data => {
+            // Normaliser les caractères spéciaux dans les données
+            const normalizedData = this.normalizeFileData(data);
+            console.log(`📊 Données normalisées pour réconciliation: ${normalizedData.length} lignes`);
+            
             const processingStartTime = Date.now();
-            const processingResult = this.applyProcessingSteps(data, matchingModel.processingSteps);
+            const processingResult = this.applyProcessingSteps(normalizedData, matchingModel.processingSteps);
             const processingTime = Date.now() - processingStartTime;
 
             if (processingResult.errors.length > 0) {
@@ -640,41 +796,66 @@ export class AutoProcessingService {
             // Si le traitement a réussi, lancer automatiquement la réconciliation
             const reconciliationStartTime = Date.now();
             
+            // Obtenir les colonnes disponibles après traitement
+            const availableColumns = processingResult.processedData.length > 0 
+              ? Object.keys(processingResult.processedData[0]) 
+              : [];
+            
+            console.log('📋 Colonnes disponibles après traitement:', availableColumns);
+            
+            // Filtrer les clés de réconciliation en fonction des colonnes disponibles
+            const filteredReconciliationKeys = matchingModel.reconciliationKeys 
+              ? this.filterReconciliationKeys(availableColumns, matchingModel.reconciliationKeys)
+              : null;
+            
+            console.log('🔍 Clés de réconciliation originales:', matchingModel.reconciliationKeys);
+            console.log('🔍 Clés de réconciliation filtrées:', filteredReconciliationKeys);
+            
             // Préparer les données pour la réconciliation selon le type de fichier
             let reconciliationRequest: any;
             
             if (fileType === 'partner') {
-              // Pour un fichier partenaire, on a besoin des données BO correspondantes
+              // Pour un fichier partenaire, utiliser les clés partenaires configurées
+              const partnerKeys = filteredReconciliationKeys?.partnerKeys || [];
+              const boKeys = filteredReconciliationKeys?.boKeys || [];
+              
               reconciliationRequest = {
                 boFileContent: [], // Sera rempli par le service de réconciliation
                 partnerFileContent: processingResult.processedData,
-                boKeyColumn: matchingModel.reconciliationKeys?.partnerKeys?.[0] || '',
-                partnerKeyColumn: matchingModel.reconciliationKeys?.partnerKeys?.[0] || '',
-                comparisonColumns: matchingModel.reconciliationKeys?.partnerKeys?.map(key => ({
-                  boColumn: key,
-                  partnerColumn: key
+                boKeyColumn: boKeys[0] || '',
+                partnerKeyColumn: partnerKeys[0] || '',
+                comparisonColumns: partnerKeys.map((partnerKey: string, index: number) => ({
+                  boColumn: boKeys[index] || partnerKey,
+                  partnerColumn: partnerKey
                 })) || [],
                 // Inclure les filtres BO si présents
-                boColumnFilters: matchingModel.reconciliationKeys?.boColumnFilters || []
+                boColumnFilters: filteredReconciliationKeys?.boColumnFilters || []
               };
               
               console.log('🔍 Requête de réconciliation partenaire:', reconciliationRequest);
+              console.log('📋 Colonnes partenaires configurées:', partnerKeys);
+              console.log('📋 Colonnes BO configurées:', boKeys);
             } else if (fileType === 'bo') {
-              // Pour un fichier BO, on a besoin des données partenaire correspondantes
+              // Pour un fichier BO, utiliser les clés BO configurées
+              const boKeys = filteredReconciliationKeys?.boKeys || [];
+              const partnerKeys = filteredReconciliationKeys?.partnerKeys || [];
+              
               reconciliationRequest = {
                 boFileContent: processingResult.processedData,
                 partnerFileContent: [], // Sera rempli par le service de réconciliation
-                boKeyColumn: matchingModel.reconciliationKeys?.boKeys?.[0] || '',
-                partnerKeyColumn: matchingModel.reconciliationKeys?.boKeys?.[0] || '',
-                comparisonColumns: matchingModel.reconciliationKeys?.boKeys?.map(key => ({
-                  boColumn: key,
-                  partnerColumn: key
+                boKeyColumn: boKeys[0] || '',
+                partnerKeyColumn: partnerKeys[0] || '',
+                comparisonColumns: boKeys.map((boKey: string, index: number) => ({
+                  boColumn: boKey,
+                  partnerColumn: partnerKeys[index] || boKey
                 })) || [],
                 // Inclure les filtres BO si présents
-                boColumnFilters: matchingModel.reconciliationKeys?.boColumnFilters || []
+                boColumnFilters: filteredReconciliationKeys?.boColumnFilters || []
               };
               
               console.log('🔍 Requête de réconciliation BO:', reconciliationRequest);
+              console.log('📋 Colonnes BO configurées:', boKeys);
+              console.log('📋 Colonnes partenaires configurées:', partnerKeys);
             }
 
             return this.reconciliationService.reconcile(reconciliationRequest).pipe(
@@ -703,9 +884,15 @@ export class AutoProcessingService {
   }
 
   // Parser un fichier (CSV ou Excel)
-  private parseFile(file: File): Observable<any[]> {
+  private parseFile(file: File, abortController?: AbortController): Observable<any[]> {
     return new Observable(observer => {
       const reader = new FileReader();
+      
+      // Vérifier si l'annulation a été demandée
+      if (abortController?.signal.aborted) {
+        observer.error(new Error('Traitement annulé'));
+        return;
+      }
       
       reader.onload = (e: any) => {
         try {
@@ -714,6 +901,9 @@ export class AutoProcessingService {
           if (file.name.toLowerCase().endsWith('.csv')) {
             // Détecter le délimiteur
             const delimiter = content.includes(';') ? ';' : ',';
+            
+            // Vérification des fichiers spéciaux
+            const specialFileType = this.specialFileDetectionService.detectSpecialFile(file.name);
             
             // Détecter si c'est un fichier Orange Money
             const orangeMoneyDetection = this.detectOrangeMoneyFile(content, delimiter);
@@ -742,13 +932,100 @@ export class AutoProcessingService {
               return;
             }
             
+            // Traitement spécial pour les fichiers TRXBO, OPPART, USSDPART
+            if (specialFileType) {
+              console.log(`🔍 Fichier spécial détecté: ${specialFileType}`);
+              
+              // Lire le fichier ligne par ligne pour un meilleur contrôle
+              const lines = content.split('\n').filter((line: string) => line.trim());
+              if (lines.length === 0) {
+                observer.error(new Error('Fichier vide'));
+                return;
+              }
+              
+              // Analyser la première ligne pour détecter les en-têtes
+              const headerLine = lines[0];
+              const headers = headerLine.split(delimiter).map((col: string) => col.trim());
+              
+              console.log(`📋 En-têtes détectés pour ${specialFileType}:`, headers);
+              console.log(`📊 Nombre de colonnes: ${headers.length}`);
+              
+              // Vérifier si toutes les colonnes attendues sont présentes
+              const config = this.specialFileDetectionService.getSpecialFileConfig(specialFileType);
+              if (config) {
+                const missingColumns = config.expectedColumns.filter((col: string) => !headers.includes(col));
+                const extraColumns = headers.filter((col: string) => !config.expectedColumns.includes(col));
+                
+                console.log(`📋 Colonnes attendues pour ${specialFileType}:`, config.expectedColumns);
+                if (missingColumns.length > 0) {
+                  console.log(`⚠️ Colonnes manquantes: ${missingColumns.join(', ')}`);
+                }
+                if (extraColumns.length > 0) {
+                  console.log(`📋 Colonnes supplémentaires: ${extraColumns.join(', ')}`);
+                }
+              }
+              
+              // Traiter les données en commençant après l'en-tête avec optimisation pour gros fichiers
+              const dataRows = lines.slice(1);
+              const isLargeFile = dataRows.length > 100000; // Plus de 100k lignes
+              
+              if (isLargeFile && abortController) {
+                // Traitement par chunks pour les gros fichiers
+                this.processLargeFileInChunks(dataRows, headers, delimiter, abortController, observer);
+                return;
+              } else {
+                // Traitement normal pour les petits fichiers
+                const processedData = dataRows.map((line: string) => {
+                  const values = line.split(delimiter);
+                  const obj: any = {};
+                  headers.forEach((header: string, idx: number) => {
+                    obj[header] = values[idx] || '';
+                  });
+                  return obj;
+                });
+                
+                console.log(`✅ Fichier ${specialFileType} parsé: ${processedData.length} lignes`);
+                console.log(`📊 Colonnes disponibles dans les données:`, Object.keys(processedData[0] || {}));
+                
+                // Appliquer le formatage spécial
+                const analysis = this.specialFileDetectionService.analyzeSpecialFile(file.name, processedData);
+                console.log('📋 Analyse du fichier spécial:', analysis);
+                
+                if (analysis.detectedFormat !== 'unknown') {
+                  const formattedData = this.specialFileDetectionService.applySpecialFormatting(processedData, specialFileType);
+                  console.log('✅ Formatage spécial appliqué pour', specialFileType);
+                  console.log(`📊 Colonnes après formatage:`, Object.keys(formattedData[0] || {}));
+                  observer.next(formattedData);
+                } else {
+                  observer.next(processedData);
+                }
+                observer.complete();
+                return;
+              }
+            }
+            
             // Traitement normal pour les autres fichiers CSV
             Papa.parse(content, {
               header: true,
               delimiter,
               skipEmptyLines: true,
               complete: (results) => {
-                observer.next(results.data);
+                let processedData = results.data;
+                
+                // Analyse spéciale pour les fichiers TRXBO, OPPART, USSDPART
+                if (specialFileType) {
+                  console.log(`🔍 Fichier spécial détecté: ${specialFileType}`);
+                  const analysis = this.specialFileDetectionService.analyzeSpecialFile(file.name, processedData);
+                  console.log('📋 Analyse du fichier spécial:', analysis);
+                  
+                  if (analysis.detectedFormat !== 'unknown') {
+                    // Application du formatage spécial
+                    processedData = this.specialFileDetectionService.applySpecialFormatting(processedData, specialFileType);
+                    console.log('✅ Formatage spécial appliqué pour', specialFileType);
+                  }
+                }
+                
+                observer.next(processedData);
                 observer.complete();
               },
               error: (error) => {
@@ -756,8 +1033,8 @@ export class AutoProcessingService {
               }
             });
           } else if (file.name.toLowerCase().endsWith('.xlsx') || file.name.toLowerCase().endsWith('.xls')) {
-            // Traitement Excel avec détection d'en-têtes
-            console.log('🔄 Début lecture fichier Excel pour modèles de traitement');
+            // Traitement Excel amélioré avec détection avancée des types
+            console.log('🔄 Début lecture fichier Excel avec détection avancée des types');
             const workbook = XLSX.read(content, { type: 'binary' });
             const sheetName = workbook.SheetNames[0];
             const worksheet = workbook.Sheets[sheetName];
@@ -772,7 +1049,7 @@ export class AutoProcessingService {
             
             console.log(`📊 Données Excel brutes: ${jsonData.length} lignes`);
             
-            // Détecter les en-têtes
+            // Détecter les en-têtes avec amélioration
             const headerDetection = this.detectExcelHeaders(jsonData);
             const headers = headerDetection.headerRow;
             const headerRowIndex = headerDetection.headerRowIndex;
@@ -785,9 +1062,9 @@ export class AutoProcessingService {
               const fallbackHeaders = jsonData[0]?.map((h, idx) => h || `Col${idx + 1}`) || [];
               const correctedHeaders = this.fixExcelColumnNames(fallbackHeaders);
               
-              // Créer les lignes de données
-              const rows: any[] = [];
-              for (let i = 1; i < jsonData.length; i++) {
+              // Créer les lignes de données en commençant après la ligne d'en-tête
+              let rows: any[] = [];
+              for (let i = headerRowIndex + 1; i < jsonData.length; i++) {
                 const rowData = jsonData[i] as any[];
                 if (!rowData || rowData.length === 0) continue;
                 
@@ -800,15 +1077,37 @@ export class AutoProcessingService {
               }
               
               console.log(`✅ Fichier Excel traité (fallback): ${rows.length} lignes`);
+              
+              // Analyse avancée des types Excel
+              const excelAnalysis = this.excelTypeDetectionService.analyzeExcelFile(rows, file.name);
+              console.log('🔍 Analyse Excel avancée:', excelAnalysis);
+              
+              // Appliquer les recommandations de formatage automatiquement
+              this.applyExcelFormattingRecommendations(rows, excelAnalysis.recommendations);
+              
+              // Vérification des fichiers spéciaux Excel
+              const specialFileType = this.specialFileDetectionService.detectSpecialFile(file.name);
+              if (specialFileType) {
+                console.log(`🔍 Fichier Excel spécial détecté: ${specialFileType}`);
+                const analysis = this.specialFileDetectionService.analyzeSpecialFile(file.name, rows);
+                console.log('📋 Analyse du fichier Excel spécial:', analysis);
+                
+                if (analysis.detectedFormat !== 'unknown') {
+                  // Application du formatage spécial
+                  rows = this.specialFileDetectionService.applySpecialFormatting(rows, specialFileType);
+                  console.log('✅ Formatage spécial appliqué pour', specialFileType);
+                }
+              }
+              
               observer.next(rows);
               observer.complete();
-          } else {
+            } else {
               // Corriger les caractères spéciaux dans les en-têtes
               const correctedHeaders = this.fixExcelColumnNames(headers);
               console.log(`🔧 En-têtes Excel corrigés:`, correctedHeaders);
               
               // Créer les lignes de données en commençant après la ligne d'en-tête
-              const rows: any[] = [];
+              let rows: any[] = [];
               for (let i = headerRowIndex + 1; i < jsonData.length; i++) {
                 const rowData = jsonData[i] as any[];
                 if (!rowData || rowData.length === 0) continue;
@@ -824,8 +1123,29 @@ export class AutoProcessingService {
               console.log(`📊 Lignes de données créées: ${rows.length}`);
               console.log(`✅ Fichier Excel traité: ${rows.length} lignes`);
               
+              // Analyse avancée des types Excel avec détection automatique
+              const excelAnalysis = this.excelTypeDetectionService.analyzeExcelFile(rows, file.name);
+              console.log('🔍 Analyse Excel avancée:', excelAnalysis);
+              
+              // Appliquer les recommandations de formatage automatiquement
+              this.applyExcelFormattingRecommendations(rows, excelAnalysis.recommendations);
+              
+              // Vérification des fichiers spéciaux Excel
+              const specialFileType = this.specialFileDetectionService.detectSpecialFile(file.name);
+              if (specialFileType) {
+                console.log(`🔍 Fichier Excel spécial détecté: ${specialFileType}`);
+                const analysis = this.specialFileDetectionService.analyzeSpecialFile(file.name, rows);
+                console.log('📋 Analyse du fichier Excel spécial:', analysis);
+                
+                if (analysis.detectedFormat !== 'unknown') {
+                  // Application du formatage spécial
+                  rows = this.specialFileDetectionService.applySpecialFormatting(rows, specialFileType);
+                  console.log('✅ Formatage spécial appliqué pour', specialFileType);
+                }
+              }
+              
               observer.next(rows);
-          observer.complete();
+              observer.complete();
             }
           } else {
             observer.error(new Error('Format de fichier non supporté'));
@@ -857,38 +1177,41 @@ export class AutoProcessingService {
       try {
         console.log(`🔧 Application de l'étape ${index + 1}: ${step.name} (${step.type})`);
         
-        switch (step.type) {
+        // Corriger automatiquement les noms de colonnes dans l'étape
+        const correctedStep = this.correctProcessingStepColumns(step);
+        
+        switch (correctedStep.type) {
           case 'format':
-            processedData = this.applyFormatStep(processedData, step);
+            processedData = this.applyFormatStep(processedData, correctedStep);
             break;
           case 'validate':
-            processedData = this.applyValidateStep(processedData, step);
+            processedData = this.applyValidateStep(processedData, correctedStep);
             break;
           case 'transform':
-            if (step.action === 'detectOrangeMoneyHeader') {
-              processedData = this.applyOrangeMoneyDetectionStep(processedData, step);
-            } else if (step.action === 'extract') {
-              processedData = this.applyExtractionStep(processedData, step);
-            } else if (step.action === 'concat') {
-              processedData = this.applyConcatStep(processedData, step);
+            if (correctedStep.action === 'detectOrangeMoneyHeader') {
+              processedData = this.applyOrangeMoneyDetectionStep(processedData, correctedStep);
+            } else if (correctedStep.action === 'extract') {
+              processedData = this.applyExtractionStep(processedData, correctedStep);
+            } else if (correctedStep.action === 'concat') {
+              processedData = this.applyConcatStep(processedData, correctedStep);
             } else {
-              processedData = this.applyTransformStep(processedData, step);
+              processedData = this.applyTransformStep(processedData, correctedStep);
             }
             break;
           case 'filter':
-            processedData = this.applyFilterStep(processedData, step);
+            processedData = this.applyFilterStep(processedData, correctedStep);
             break;
           case 'calculate':
-            processedData = this.applyCalculateStep(processedData, step);
+            processedData = this.applyCalculateStep(processedData, correctedStep);
             break;
           case 'select':
-            processedData = this.applySelectStep(processedData, step);
+            processedData = this.applySelectStep(processedData, correctedStep);
             break;
           case 'deduplicate':
-            processedData = this.applyDeduplicateStep(processedData, step);
+            processedData = this.applyDeduplicateStep(processedData, correctedStep);
             break;
           default:
-            warnings.push(`Type d'étape non reconnu: ${step.type}`);
+            warnings.push(`Type d'étape non reconnu: ${correctedStep.type}`);
         }
         
         console.log(`✅ Étape ${index + 1} appliquée avec succès - ${processedData.length} lignes`);
@@ -1106,13 +1429,35 @@ export class AutoProcessingService {
         return data;
       }
       
-      console.log('🔧 Colonnes à conserver finales:', columnsToKeep);
+      // Normaliser les noms de colonnes pour gérer les caractères spéciaux corrompus
+      const normalizedColumnsToKeep = columnsToKeep.map(col => this.normalizeColumnName(col));
+      console.log('🔧 Colonnes à conserver normalisées:', normalizedColumnsToKeep);
+      
+      // Créer un mapping entre les noms normalisés et les noms originaux dans les données
+      const availableColumns = Object.keys(data[0] || {});
+      const columnMapping: { [normalized: string]: string } = {};
+      
+      normalizedColumnsToKeep.forEach(normalizedCol => {
+        // Chercher la colonne correspondante dans les données disponibles
+        const matchingColumn = availableColumns.find(availableCol => 
+          this.normalizeColumnName(availableCol) === normalizedCol
+        );
+        if (matchingColumn) {
+          columnMapping[normalizedCol] = matchingColumn;
+        }
+      });
+      
+      console.log('🔧 Mapping des colonnes:', columnMapping);
+      console.log('🔧 Colonnes disponibles dans les données:', availableColumns);
       
       return data.map(row => {
         const newRow: any = {};
-        columnsToKeep.forEach((col: string) => {
-          if (row.hasOwnProperty(col)) {
-            newRow[col] = row[col];
+        normalizedColumnsToKeep.forEach((normalizedCol: string) => {
+          const originalCol = columnMapping[normalizedCol];
+          if (originalCol && row.hasOwnProperty(originalCol)) {
+            newRow[normalizedCol] = row[originalCol];
+          } else {
+            console.log(`⚠️ Colonne non trouvée: ${normalizedCol} (original: ${originalCol})`);
           }
         });
         return newRow;
@@ -1134,12 +1479,33 @@ export class AutoProcessingService {
         return data;
       }
       
-      console.log('🔧 Colonnes à supprimer finales:', columnsToRemove);
+      // Normaliser les noms de colonnes pour gérer les caractères spéciaux corrompus
+      const normalizedColumnsToRemove = columnsToRemove.map(col => this.normalizeColumnName(col));
+      console.log('🔧 Colonnes à supprimer normalisées:', normalizedColumnsToRemove);
+      
+      // Créer un mapping entre les noms normalisés et les noms originaux dans les données
+      const availableColumns = Object.keys(data[0] || {});
+      const columnMapping: { [normalized: string]: string } = {};
+      
+      normalizedColumnsToRemove.forEach(normalizedCol => {
+        // Chercher la colonne correspondante dans les données disponibles
+        const matchingColumn = availableColumns.find(availableCol => 
+          this.normalizeColumnName(availableCol) === normalizedCol
+        );
+        if (matchingColumn) {
+          columnMapping[normalizedCol] = matchingColumn;
+        }
+      });
+      
+      console.log('🔧 Mapping des colonnes à supprimer:', columnMapping);
       
       return data.map(row => {
         const newRow = { ...row };
-        columnsToRemove.forEach((col: string) => {
-          delete newRow[col];
+        normalizedColumnsToRemove.forEach((normalizedCol: string) => {
+          const originalCol = columnMapping[normalizedCol];
+          if (originalCol && newRow.hasOwnProperty(originalCol)) {
+            delete newRow[originalCol];
+          }
         });
         return newRow;
       });
@@ -1323,6 +1689,37 @@ export class AutoProcessingService {
             return result;
         }
         
+      // Nouvelles actions pour le traitement des caractères spéciaux des en-têtes
+      case 'normalizeHeaders':
+        return this.normalizeColumnName(result);
+        
+      case 'fixSpecialCharacters':
+        return this.normalizeSpecialCharacters(result);
+        
+      case 'removeAccents':
+        return result.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+        
+      case 'standardizeHeaders':
+        // Remplacer les espaces par des underscores et supprimer les caractères spéciaux
+        return result.replace(/\s+/g, '_').replace(/[^\w_]/g, '');
+        
+      // Nouvelle action pour le formatage en nombre
+      case 'formatToNumber':
+        // Nettoyer la valeur (supprimer espaces, caractères spéciaux)
+        let cleanValue = result.trim().replace(/[^\d.,-]/g, '');
+        
+        // Remplacer la virgule par un point pour la conversion
+        cleanValue = cleanValue.replace(',', '.');
+        
+        // Convertir en nombre
+        const numberValue = parseFloat(cleanValue);
+        
+        if (!isNaN(numberValue)) {
+          return numberValue; // Retourner le nombre directement
+        } else {
+          return result; // Garder la valeur originale si la conversion échoue
+        }
+        
       default:
         return result;
     }
@@ -1331,6 +1728,230 @@ export class AutoProcessingService {
   // Échapper les caractères spéciaux pour les expressions régulières
   private escapeRegExp(string: string): string {
     return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
+  // Normaliser le nom d'une colonne (gérer les caractères spéciaux corrompus)
+  private normalizeColumnName(columnName: string): string {
+    if (!columnName) return columnName;
+    
+    let normalizedName = columnName;
+    
+    // 1. Normalisation universelle des caractères spéciaux français
+    const frenchCharReplacements: { [key: string]: string } = {
+      // Caractères corrompus spécifiques aux colonnes
+      'tlphone': 'téléphone',
+      'Numro': 'Numéro',
+      'Solde aprs': 'Solde après',
+      'Code proprietaire': 'Code propriétaire',
+      'groupe de rseau': 'groupe de réseau',
+      'Code rseau': 'Code réseau',
+      'date de cration': 'date de création',
+      'Motif rgularisation': 'Motif régularisation',
+      'Dstinataire': 'Destinataire',
+      'Login demandeur Appro': 'Login demandeur Appro',
+      'Login valideur Appro': 'Login valideur Appro',
+      'Motif rejet': 'Motif rejet',
+      'Frais connexion': 'Frais connexion',
+      'Login agent': 'Login agent',
+      'Type agent': 'Type agent',
+      'Date d\'envoi vers part': 'Date d\'envoi vers part',
+      'Action faite': 'Action faite',
+      'Partenaire dist ID': 'Partenaire dist ID',
+      'Agence SC': 'Agence SC',
+      'Groupe reseau SC': 'Groupe reseau SC',
+      'Agent SC': 'Agent SC',
+      'PDA SC': 'PDA SC',
+      'Date dernier traitement': 'Date dernier traitement',
+      
+      // Corrections spécifiques pour les fichiers Excel
+      'Opration': 'Opération',
+      'Montant (XAF)': 'Montant (XAF)',
+      'Commissions (XAF)': 'Commissions (XAF)',
+      'N° de Compte': 'N° de Compte',
+      'N° Pseudo': 'N° Pseudo',
+      
+      // Corrections spécifiques pour TRXBO
+      'tÃ©lÃ©phone client': 'téléphone client',
+      'NumÃ©ro Trans GU': 'Numéro Trans GU',
+      'tÃ©lÃ©phone': 'téléphone',
+      'NumÃ©ro': 'Numéro'
+    };
+
+    // 2. Appliquer les remplacements de caractères spéciaux
+    for (const [corrupted, correct] of Object.entries(frenchCharReplacements)) {
+      if (normalizedName.includes(corrupted)) {
+        normalizedName = normalizedName.replace(new RegExp(this.escapeRegExp(corrupted), 'g'), correct);
+      }
+    }
+
+    // 3. Normalisation spécifique pour les cas de corruption avancés
+    const advancedReplacements: { [key: string]: string } = {
+      'tlphone client': 'téléphone client',
+      'Numro Trans GU': 'Numéro Trans GU',
+      'Solde aprs': 'Solde après',
+      'Code proprietaire': 'Code propriétaire',
+      'groupe de rseau': 'groupe de réseau',
+      'Code rseau': 'Code réseau',
+      'date de cration': 'date de création',
+      'Motif rgularisation': 'Motif régularisation',
+      'Dstinataire': 'Destinataire',
+      'Login demandeur Appro': 'Login demandeur Appro',
+      'Login valideur Appro': 'Login valideur Appro',
+      'Motif rejet': 'Motif rejet',
+      'Frais connexion': 'Frais connexion',
+      'Login agent': 'Login agent',
+      'Type agent': 'Type agent',
+      'Date d\'envoi vers part': 'Date d\'envoi vers part',
+      'Action faite': 'Action faite',
+      'Partenaire dist ID': 'Partenaire dist ID',
+      'Agence SC': 'Agence SC',
+      'Groupe reseau SC': 'Groupe reseau SC',
+      'Agent SC': 'Agent SC',
+      'PDA SC': 'PDA SC',
+      'Date dernier traitement': 'Date dernier traitement'
+    };
+
+    // Appliquer les remplacements avancés
+    for (const [corrupted, correct] of Object.entries(advancedReplacements)) {
+      if (normalizedName.includes(corrupted)) {
+        normalizedName = normalizedName.replace(new RegExp(this.escapeRegExp(corrupted), 'g'), correct);
+      }
+    }
+
+    // 4. Normalisation des espaces multiples et caractères invisibles
+    normalizedName = normalizedName
+      .replace(/\s+/g, ' ')  // Espaces multiples -> un seul espace
+      .replace(/[\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]/g, ' ')  // Caractères invisibles -> espace
+      .trim();
+
+    // 5. Normalisation de la casse pour les mots-clés spécifiques
+    const keywordsToNormalize = [
+      'téléphone', 'numéro', 'propriétaire', 'réseau', 'création', 
+      'régularisation', 'destinataire', 'connexion', 'opération'
+    ];
+    
+    keywordsToNormalize.forEach(keyword => {
+      const regex = new RegExp(this.escapeRegExp(keyword), 'gi');
+      normalizedName = normalizedName.replace(regex, keyword);
+    });
+
+    return normalizedName;
+  }
+
+  // Méthode universelle pour normaliser les caractères spéciaux dans les valeurs
+  private normalizeSpecialCharacters(value: any): any {
+    if (value === null || value === undefined) return value;
+    
+    let normalizedValue = String(value);
+    
+    // Normalisation des caractères spéciaux français
+    const charMap: { [key: string]: string } = {
+      'é': 'é', 'è': 'è', 'ê': 'ê', 'ë': 'ë',
+      'à': 'à', 'â': 'â', 'ä': 'ä',
+      'ç': 'ç',
+      'ù': 'ù', 'û': 'û', 'ü': 'ü',
+      'ï': 'ï', 'î': 'î',
+      'ô': 'ô', 'ö': 'ö',
+      'ÿ': 'ÿ',
+      'É': 'É', 'È': 'È', 'Ê': 'Ê', 'Ë': 'Ë',
+      'À': 'À', 'Â': 'Â', 'Ä': 'Ä',
+      'Ç': 'Ç',
+      'Ù': 'Ù', 'Û': 'Û', 'Ü': 'Ü',
+      'Ï': 'Ï', 'Î': 'Î',
+      'Ô': 'Ô', 'Ö': 'Ö',
+      'Ÿ': 'Ÿ'
+    };
+
+    // Appliquer les remplacements
+    for (const [corrupted, correct] of Object.entries(charMap)) {
+      if (normalizedValue.includes(corrupted)) {
+        normalizedValue = normalizedValue.replace(new RegExp(this.escapeRegExp(corrupted), 'g'), correct);
+      }
+    }
+
+    // Normalisation des espaces et caractères invisibles
+    normalizedValue = normalizedValue
+      .replace(/\s+/g, ' ')
+      .replace(/[\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]/g, ' ')
+      .trim();
+
+    return normalizedValue;
+  }
+
+  // Méthode pour normaliser les données d'un fichier complet
+  private normalizeFileData(data: any[]): any[] {
+    if (!data || data.length === 0) return data;
+
+    return data.map(row => {
+      const normalizedRow: any = {};
+      
+      // Normaliser les clés (noms de colonnes)
+      Object.keys(row).forEach(key => {
+        const normalizedKey = this.normalizeColumnName(key);
+        const normalizedValue = this.normalizeSpecialCharacters(row[key]);
+        normalizedRow[normalizedKey] = normalizedValue;
+      });
+      
+      return normalizedRow;
+    });
+  }
+
+  // Méthode pour corriger automatiquement les noms de colonnes dans les étapes de traitement
+  private correctProcessingStepColumns(step: ProcessingStep): ProcessingStep {
+    const correctedStep = { ...step };
+    
+    // Corriger les colonnes dans step.field
+    if (step.field && Array.isArray(step.field)) {
+      correctedStep.field = step.field.map(field => this.normalizeColumnName(field));
+    }
+    
+    // Corriger les colonnes dans step.params.columns
+    if (step.params && step.params.columns && Array.isArray(step.params.columns)) {
+      correctedStep.params = { ...step.params };
+      correctedStep.params.columns = step.params.columns.map((col: string) => this.normalizeColumnName(col));
+    }
+    
+    return correctedStep;
+  }
+
+  // Méthode pour filtrer les clés de réconciliation en fonction des colonnes disponibles
+  private filterReconciliationKeys(availableColumns: string[], reconciliationKeys: any): any {
+    const filteredKeys = { ...reconciliationKeys };
+    
+    // Normaliser les colonnes disponibles
+    const normalizedAvailableColumns = availableColumns.map(col => this.normalizeColumnName(col));
+    
+    // Filtrer les clés BO
+    if (filteredKeys.boKeys && Array.isArray(filteredKeys.boKeys)) {
+      filteredKeys.boKeys = filteredKeys.boKeys.filter((key: string) => {
+        const normalizedKey = this.normalizeColumnName(key);
+        return normalizedAvailableColumns.includes(normalizedKey);
+      });
+    }
+    
+    // Filtrer les clés partenaires
+    if (filteredKeys.partnerKeys && Array.isArray(filteredKeys.partnerKeys)) {
+      filteredKeys.partnerKeys = filteredKeys.partnerKeys.filter((key: string) => {
+        const normalizedKey = this.normalizeColumnName(key);
+        return normalizedAvailableColumns.includes(normalizedKey);
+      });
+    }
+    
+    // Filtrer les clés de modèles BO
+    if (filteredKeys.boModelKeys) {
+      const filteredBoModelKeys: { [modelId: string]: string[] } = {};
+      for (const [modelId, keys] of Object.entries(filteredKeys.boModelKeys)) {
+        if (Array.isArray(keys)) {
+          filteredBoModelKeys[modelId] = keys.filter(key => {
+            const normalizedKey = this.normalizeColumnName(key);
+            return normalizedAvailableColumns.includes(normalizedKey);
+          });
+        }
+      }
+      filteredKeys.boModelKeys = filteredBoModelKeys;
+    }
+    
+    return filteredKeys;
   }
 
   // Normaliser une date
@@ -1779,5 +2400,542 @@ export class AutoProcessingService {
       
       return corrected;
     });
+  }
+
+  /**
+   * Applique les recommandations de formatage Excel automatiquement
+   */
+  private applyExcelFormattingRecommendations(data: any[], recommendations: any[]): void {
+    try {
+      console.log('🔧 Application des recommandations de formatage Excel:', recommendations.length, 'recommandations');
+      
+      if (data.length === 0 || recommendations.length === 0) {
+        console.log('⚠️ Aucune donnée ou recommandation à traiter');
+        return;
+      }
+
+      let processedData = [...data];
+      let appliedCount = 0;
+
+      for (const recommendation of recommendations) {
+        if (recommendation.confidence > 0.7) { // Seuil de confiance élevé
+          try {
+            console.log(`🔧 Application de la recommandation: ${recommendation.action} sur ${recommendation.columnName}`);
+            
+            switch (recommendation.action) {
+              case 'normalizeDates':
+                processedData = this.applyDateNormalization(processedData, recommendation.columnName, recommendation.params);
+                appliedCount++;
+                break;
+                
+              case 'formatCurrency':
+                processedData = this.applyCurrencyFormatting(processedData, recommendation.columnName, recommendation.params);
+                appliedCount++;
+                break;
+                
+              case 'normalizeNumbers':
+                processedData = this.applyNumberNormalization(processedData, recommendation.columnName, recommendation.params);
+                appliedCount++;
+                break;
+                
+              case 'trimSpaces':
+                processedData = this.applyTextCleaning(processedData, recommendation.columnName);
+                appliedCount++;
+                break;
+                
+              case 'fixExcelErrors':
+                processedData = this.applyExcelErrorFixing(processedData, recommendation.columnName);
+                appliedCount++;
+                break;
+                
+              case 'evaluateFormulas':
+                processedData = this.applyFormulaEvaluation(processedData, recommendation.columnName);
+                appliedCount++;
+                break;
+            }
+          } catch (error) {
+            console.error(`❌ Erreur lors de l'application de la recommandation ${recommendation.action}:`, error);
+          }
+        }
+      }
+
+      console.log(`✅ Formatage Excel appliqué: ${appliedCount} recommandations traitées`);
+      
+      // Mettre à jour les données originales
+      data.splice(0, data.length, ...processedData);
+      
+    } catch (error) {
+      console.error('❌ Erreur lors de l\'application des recommandations Excel:', error);
+    }
+  }
+
+  /**
+   * Applique la normalisation des dates
+   */
+  private applyDateNormalization(data: any[], columnName: string, params: any): any[] {
+    return data.map(row => {
+      if (row[columnName]) {
+        const dateValue = row[columnName];
+        const normalizedDate = this.normalizeExcelDate(dateValue, params?.format || 'DD/MM/YYYY');
+        row[columnName] = normalizedDate;
+      }
+      return row;
+    });
+  }
+
+  /**
+   * Applique le formatage des devises
+   */
+  private applyCurrencyFormatting(data: any[], columnName: string, params: any): any[] {
+    return data.map(row => {
+      if (row[columnName]) {
+        const amountValue = row[columnName];
+        const formattedAmount = this.formatExcelCurrency(amountValue, params?.currency || 'XAF', params?.locale || 'fr-FR');
+        row[columnName] = formattedAmount;
+      }
+      return row;
+    });
+  }
+
+  /**
+   * Applique la normalisation des nombres
+   */
+  private applyNumberNormalization(data: any[], columnName: string, params: any): any[] {
+    return data.map(row => {
+      if (row[columnName]) {
+        const numberValue = row[columnName];
+        const normalizedNumber = this.normalizeExcelNumber(numberValue, params?.decimalPlaces || 2);
+        row[columnName] = normalizedNumber;
+      }
+      return row;
+    });
+  }
+
+  /**
+   * Applique le nettoyage du texte
+   */
+  private applyTextCleaning(data: any[], columnName: string): any[] {
+    return data.map(row => {
+      if (row[columnName]) {
+        const textValue = row[columnName];
+        const cleanedText = this.cleanExcelText(textValue);
+        row[columnName] = cleanedText;
+      }
+      return row;
+    });
+  }
+
+  /**
+   * Applique la correction des erreurs Excel
+   */
+  private applyExcelErrorFixing(data: any[], columnName: string): any[] {
+    return data.map(row => {
+      if (row[columnName]) {
+        const value = row[columnName];
+        const fixedValue = this.fixExcelError(value);
+        row[columnName] = fixedValue;
+      }
+      return row;
+    });
+  }
+
+  /**
+   * Applique l'évaluation des formules Excel
+   */
+  private applyFormulaEvaluation(data: any[], columnName: string): any[] {
+    return data.map(row => {
+      if (row[columnName]) {
+        const formulaValue = row[columnName];
+        const evaluatedValue = this.evaluateExcelFormula(formulaValue);
+        row[columnName] = evaluatedValue;
+      }
+      return row;
+    });
+  }
+
+  /**
+   * Normalise une date Excel
+   */
+  private normalizeExcelDate(dateValue: any, format: string): string {
+    if (!dateValue) return '';
+    
+    try {
+      const date = new Date(dateValue);
+      if (isNaN(date.getTime())) return String(dateValue);
+      
+      // Formatage selon le format spécifié
+      switch (format) {
+        case 'DD/MM/YYYY':
+          return date.toLocaleDateString('fr-FR');
+        case 'YYYY-MM-DD':
+          return date.toISOString().split('T')[0];
+        case 'DD-MM-YYYY':
+          const day = date.getDate().toString().padStart(2, '0');
+          const month = (date.getMonth() + 1).toString().padStart(2, '0');
+          const year = date.getFullYear();
+          return `${day}-${month}-${year}`;
+        default:
+          return date.toLocaleDateString('fr-FR');
+      }
+    } catch (error) {
+      return String(dateValue);
+    }
+  }
+
+  /**
+   * Formate une devise Excel
+   */
+  private formatExcelCurrency(amountValue: any, currency: string, locale: string): string {
+    if (!amountValue) return '';
+    
+    try {
+      const amount = this.parseExcelNumber(String(amountValue));
+      if (isNaN(amount)) return String(amountValue);
+      
+      return new Intl.NumberFormat(locale, {
+        style: 'currency',
+        currency: currency
+      }).format(amount);
+    } catch (error) {
+      return String(amountValue);
+    }
+  }
+
+  /**
+   * Normalise un nombre Excel
+   */
+  private normalizeExcelNumber(numberValue: any, decimalPlaces: number): string {
+    if (!numberValue) return '';
+    
+    try {
+      const number = this.parseExcelNumber(String(numberValue));
+      if (isNaN(number)) return String(numberValue);
+      
+      return number.toFixed(decimalPlaces);
+    } catch (error) {
+      return String(numberValue);
+    }
+  }
+
+  /**
+   * Nettoie un texte Excel
+   */
+  private cleanExcelText(textValue: any): string {
+    if (!textValue) return '';
+    
+    return String(textValue)
+      .trim()
+      .replace(/\s+/g, ' ') // Remplacer les espaces multiples par un seul
+      .replace(/[\u0000-\u001F\u007F-\u009F]/g, ''); // Supprimer les caractères de contrôle
+  }
+
+  /**
+   * Corrige une erreur Excel
+   */
+  private fixExcelError(value: any): any {
+    if (!value) return '';
+    
+    const stringValue = String(value);
+    
+    // Remplacer les erreurs Excel par des valeurs par défaut
+    if (stringValue.includes('#N/A')) return '';
+    if (stringValue.includes('#VALUE!')) return '';
+    if (stringValue.includes('#REF!')) return '';
+    if (stringValue.includes('#DIV/0!')) return 0;
+    if (stringValue.includes('#NUM!')) return '';
+    if (stringValue.includes('#NAME?')) return '';
+    if (stringValue.includes('#NULL!')) return '';
+    
+    return value;
+  }
+
+  /**
+   * Évalue une formule Excel (simulation)
+   */
+  private evaluateExcelFormula(formulaValue: any): any {
+    if (!formulaValue) return '';
+    
+    const stringValue = String(formulaValue);
+    
+    // Pour l'instant, on supprime simplement le signe = et on retourne la valeur
+    // Dans une implémentation complète, il faudrait un moteur d'évaluation de formules
+    if (stringValue.startsWith('=')) {
+      return stringValue.substring(1);
+    }
+    
+    return formulaValue;
+  }
+
+  /**
+   * Parse un nombre Excel avec gestion des formats
+   */
+  private parseExcelNumber(value: string): number {
+    let cleanValue = value.replace(/[^\d.,\-\s]/g, '');
+    
+    const hasComma = cleanValue.includes(',');
+    const hasDot = cleanValue.includes('.');
+    
+    if (hasComma && hasDot) {
+      cleanValue = cleanValue.replace(/\./g, '').replace(',', '.');
+    } else if (hasComma && !hasDot) {
+      cleanValue = cleanValue.replace(',', '.');
+    }
+    
+    return parseFloat(cleanValue);
+  }
+
+  /**
+   * Traite un gros fichier par chunks pour éviter le blocage de l'interface
+   */
+  private processLargeFileInChunks(
+    dataRows: string[], 
+    headers: string[], 
+    delimiter: string, 
+    abortController: AbortController, 
+    observer: any
+  ): void {
+    const chunkSize = 10000; // Traiter 10k lignes à la fois
+    const totalRows = dataRows.length;
+    let processedData: any[] = [];
+    let currentIndex = 0;
+
+    // Vérifier si Web Workers sont supportés
+    if (typeof Worker !== 'undefined' && this.shouldUseWebWorkers(totalRows)) {
+      this.processWithWebWorkers(dataRows, headers, delimiter, abortController, observer);
+      return;
+    }
+
+    const processChunk = () => {
+      // Vérifier si l'annulation a été demandée
+      if (abortController.signal.aborted) {
+        observer.error(new Error('Traitement annulé'));
+        return;
+      }
+
+      const endIndex = Math.min(currentIndex + chunkSize, totalRows);
+      const chunk = dataRows.slice(currentIndex, endIndex);
+
+      // Traiter le chunk
+      const chunkData = chunk.map((line: string) => {
+        const values = line.split(delimiter);
+        const obj: any = {};
+        headers.forEach((header: string, idx: number) => {
+          obj[header] = values[idx] || '';
+        });
+        return obj;
+      });
+
+      processedData = processedData.concat(chunkData);
+      currentIndex = endIndex;
+
+      // Calculer la progression
+      const progress = Math.round((currentIndex / totalRows) * 100);
+      console.log(`📊 Progression du traitement: ${progress}% (${currentIndex}/${totalRows} lignes)`);
+
+      // Émettre la progression si un callback est disponible
+      if (this.progressCallback) {
+        this.progressCallback(progress, `Traitement de ${currentIndex}/${totalRows} lignes...`);
+      }
+
+      if (currentIndex < totalRows) {
+        // Continuer avec le prochain chunk après un délai pour éviter le blocage
+        setTimeout(processChunk, 10);
+      } else {
+        // Traitement terminé
+        console.log(`✅ Fichier volumineux traité: ${processedData.length} lignes`);
+        observer.next(processedData);
+        observer.complete();
+      }
+    };
+
+    // Démarrer le traitement par chunks
+    processChunk();
+  }
+
+  /**
+   * Détermine si on doit utiliser les Web Workers
+   */
+  private shouldUseWebWorkers(totalRows: number): boolean {
+    return totalRows > 50000; // Utiliser Web Workers pour les fichiers > 50k lignes
+  }
+
+  /**
+   * Traite avec Web Workers pour les très gros fichiers
+   */
+  private processWithWebWorkers(
+    dataRows: string[], 
+    headers: string[], 
+    delimiter: string, 
+    abortController: AbortController, 
+    observer: any
+  ): void {
+    const chunkSize = 15000; // Chunks plus gros pour les Web Workers
+    const totalRows = dataRows.length;
+    const chunks: string[][] = [];
+    
+    // Diviser en chunks
+    for (let i = 0; i < totalRows; i += chunkSize) {
+      chunks.push(dataRows.slice(i, i + chunkSize));
+    }
+
+    console.log(`🔄 Traitement avec Web Workers: ${chunks.length} chunks de ${chunkSize} lignes`);
+    
+    let processedChunks = 0;
+    let allProcessedData: any[] = [];
+    let activeWorkers = 0;
+    const maxWorkers = navigator.hardwareConcurrency || 4;
+
+    const processNextChunk = () => {
+      if (processedChunks >= chunks.length) {
+        // Tous les chunks sont traités
+        console.log(`✅ Traitement Web Workers terminé: ${allProcessedData.length} lignes`);
+        observer.next(allProcessedData);
+        observer.complete();
+        return;
+      }
+
+      if (abortController.signal.aborted) {
+        observer.error(new Error('Traitement annulé'));
+        return;
+      }
+
+      const chunk = chunks[processedChunks];
+      processedChunks++;
+
+      // Créer un worker pour traiter ce chunk
+      const worker = new Worker(URL.createObjectURL(new Blob([`
+        self.onmessage = function(e) {
+          const { chunk, headers, delimiter } = e.data;
+          const processedData = chunk.map(line => {
+            const values = line.split(delimiter);
+            const obj = {};
+            headers.forEach((header, idx) => {
+              obj[header] = values[idx] || '';
+            });
+            return obj;
+          });
+          self.postMessage({ processedData, chunkIndex: e.data.chunkIndex });
+        };
+      `], { type: 'application/javascript' })));
+
+      worker.onmessage = (e) => {
+        const { processedData, chunkIndex } = e.data;
+        allProcessedData = allProcessedData.concat(processedData);
+        
+        // Calculer la progression
+        const progress = Math.round((processedChunks / chunks.length) * 100);
+        console.log(`📊 Progression Web Workers: ${progress}% (${processedChunks}/${chunks.length} chunks)`);
+        
+        if (this.progressCallback) {
+          this.progressCallback(progress, `Traitement parallèle: ${processedChunks}/${chunks.length} chunks...`);
+        }
+
+        worker.terminate();
+        activeWorkers--;
+        
+        // Traiter le prochain chunk
+        setTimeout(processNextChunk, 5);
+      };
+
+      worker.postMessage({ chunk, headers, delimiter, chunkIndex: processedChunks - 1 });
+      activeWorkers++;
+
+      // Limiter le nombre de workers simultanés
+      if (activeWorkers < maxWorkers && processedChunks < chunks.length) {
+        setTimeout(processNextChunk, 10);
+      }
+    };
+
+    // Démarrer le traitement parallèle
+    for (let i = 0; i < Math.min(maxWorkers, chunks.length); i++) {
+      setTimeout(processNextChunk, i * 50);
+    }
+  }
+
+  // Callback pour la progression (sera défini par le composant)
+  private progressCallback?: (progress: number, message: string) => void;
+
+  /**
+   * Définit le callback pour la progression
+   */
+  setProgressCallback(callback: (progress: number, message: string) => void): void {
+    this.progressCallback = callback;
+  }
+
+  // Cache pour les données traitées
+  private dataCache = new Map<string, { data: any[]; timestamp: number }>();
+  private cacheExpiry = 5 * 60 * 1000; // 5 minutes
+
+  /**
+   * Compresse les données pour économiser la mémoire
+   */
+  private compressData(data: any[]): any[] {
+    if (data.length === 0) return data;
+
+    const sample = data[0];
+    const keys = Object.keys(sample);
+    
+    // Créer un mapping des clés pour réduire la taille
+    const keyMap = keys.reduce((acc, key, index) => {
+      acc[key] = index;
+      return acc;
+    }, {} as any);
+
+    // Compresser les données
+    return data.map(row => {
+      const compressed: any = {};
+      keys.forEach(key => {
+        const value = row[key];
+        // Supprimer les valeurs vides pour économiser l'espace
+        if (value !== null && value !== undefined && value !== '') {
+          compressed[keyMap[key]] = value;
+        }
+      });
+      return compressed;
+    });
+  }
+
+  /**
+   * Décompresse les données
+   */
+  private decompressData(compressedData: any[], keyMap: any): any[] {
+    const reverseKeyMap = Object.keys(keyMap).reduce((acc, key) => {
+      acc[keyMap[key]] = key;
+      return acc;
+    }, {} as any);
+
+    return compressedData.map(row => {
+      const decompressed: any = {};
+      Object.keys(row).forEach(index => {
+        const key = reverseKeyMap[index];
+        if (key) {
+          decompressed[key] = row[index];
+        }
+      });
+      return decompressed;
+    });
+  }
+
+  /**
+   * Génère une clé de cache basée sur le contenu
+   */
+  private generateCacheKey(fileName: string, fileSize: number, headers: string[]): string {
+    const headerHash = headers.join('|').split('').reduce((a, b) => {
+      a = ((a << 5) - a) + b.charCodeAt(0);
+      return a & a;
+    }, 0);
+    return `${fileName}_${fileSize}_${headerHash}`;
+  }
+
+  /**
+   * Nettoie le cache expiré
+   */
+  private cleanupCache(): void {
+    const now = Date.now();
+    for (const [key, value] of this.dataCache.entries()) {
+      if (now - value.timestamp > this.cacheExpiry) {
+        this.dataCache.delete(key);
+      }
+    }
   }
 } 

@@ -58,11 +58,17 @@
                 <span>Frais</span>
             </a>
         </li>
-        <li *ngIf="isMenuAllowed('Écarts de Solde')">
-            <a routerLink="/ecart-solde" routerLinkActive="active">
-                <i class="fas fa-exclamation-triangle menu-icon ecart-solde"></i>
-                <span>Écarts de Solde</span>
+        <li *ngIf="isMenuAllowed('TSOP') || isMenuAllowed('Impact OP') || isMenuAllowed('TRX SF')">
+            <a href="#" class="has-submenu" (click)="toggleSuiviEcartsSubmenu(); $event.preventDefault()">
+                <i class="fas fa-chart-line menu-icon suivi-ecarts"></i>
+                <span>Suivi des écarts</span>
+                <span class="submenu-arrow">{{ showSuiviEcartsSubmenu ? '▲' : '▼' }}</span>
             </a>
+            <ul class="submenu" *ngIf="showSuiviEcartsSubmenu">
+                <li *ngIf="isMenuAllowed('TSOP')"><a routerLink="/ecart-solde"><i class="fas fa-exclamation-triangle menu-icon ecart-solde"></i> TSOP</a></li>
+                <li *ngIf="isMenuAllowed('Impact OP')"><a routerLink="/impact-op"><i class="fas fa-chart-line menu-icon impact-op"></i> Impact OP</a></li>
+                <li *ngIf="isMenuAllowed('TRX SF')"><a routerLink="/trx-sf"><i class="fas fa-exchange-alt menu-icon trx-sf"></i> TRX SF</a></li>
+            </ul>
         </li>
         <li *ngIf="isMenuAllowed('BANQUE')">
             <a routerLink="/banque" routerLinkActive="active">

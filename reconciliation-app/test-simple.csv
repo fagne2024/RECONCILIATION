@@ -1,0 +1,2 @@
+ID Transaction;Téléphone Client;Montant;Service;Agence;Date Transaction;Numéro Trans GU;Pays;Frais;Commentaire
+TRX_SF_SIMPLE;+22112345678;1000;TRANSFERT;AGENCE_A;2024-01-15 10:30:00;GU_12345678;SENEGAL;100;Test simple

@@ -1,0 +1,89 @@
+<div class="impact-op-tab">
+  <div class="tab-header">
+    <h3>Impacts OP pour {{ agence }} - {{ formatDate(dateTransaction) }}</h3>
+    <div class="tab-summary">
+      <span>Total: {{ impactOPs.length }} impact(s)</span>
+      <span *ngIf="impactOPs.length > pageSize">
+        Affichage: {{ (currentPage - 1) * pageSize + 1 }} - {{ Math.min(currentPage * pageSize, impactOPs.length) }} sur {{ impactOPs.length }}
+      </span>
+    </div>
+  </div>
+
+  <div *ngIf="isLoading" class="loading">
+    <i class="fas fa-spinner fa-spin"></i> Chargement des impacts OP...
+  </div>
+
+  <div *ngIf="!isLoading && impactOPs.length === 0" class="no-data">
+    <i class="fas fa-info-circle"></i>
+    <span>Aucun impact OP trouvé pour cette date et ce compte.</span>
+  </div>
+
+  <div *ngIf="!isLoading && impactOPs.length > 0" class="impact-op-content">
+    <table class="table table-bordered table-hover table-sm">
+      <thead>
+        <tr>
+          <th>Type d'opération</th>
+          <th>Montant</th>
+          <th>Solde avant</th>
+          <th>Solde après</th>
+          <th>Code propriétaire</th>
+          <th>Date opération</th>
+          <th>Numéro Trans GU</th>
+          <th>Groupe réseau</th>
+          <th>Statut</th>
+          <th>Commentaire</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr *ngFor="let impact of pagedImpactOPs">
+          <td>{{ impact.typeOperation }}</td>
+          <td [ngClass]="impact.montant >= 0 ? 'montant-positif' : 'montant-negatif'">
+            {{ formatMontant(impact.montant) }}
+          </td>
+          <td>{{ formatMontant(impact.soldeAvant) }}</td>
+          <td>{{ formatMontant(impact.soldeApres) }}</td>
+          <td>{{ impact.codeProprietaire }}</td>
+          <td>{{ formatDate(impact.dateOperation) }}</td>
+          <td>{{ impact.numeroTransGU }}</td>
+          <td>{{ impact.groupeReseau }}</td>
+          <td>
+            <span class="statut-badge" [ngClass]="getStatutClass(impact.statut || 'EN_ATTENTE')">
+              {{ getStatutLabel(impact.statut || 'EN_ATTENTE') }}
+            </span>
+          </td>
+          <td>{{ impact.commentaire || '-' }}</td>
+        </tr>
+      </tbody>
+      <tfoot>
+        <tr class="total-row">
+          <td colspan="9" class="total-label">
+            <strong>MONTANT TOTAL :</strong>
+          </td>
+          <td colspan="1" class="total-amount">
+            <strong>{{ formatTotalMontant() }}</strong>
+          </td>
+        </tr>
+      </tfoot>
+    </table>
+
+    <!-- Pagination -->
+    <div class="pagination" *ngIf="totalPages > 1">
+      <button (click)="prevPage()" [disabled]="currentPage === 1" class="btn pagination-btn">
+        <i class="fas fa-chevron-left"></i> Précédent
+      </button>
+      
+      <div class="pagination-indicators">
+        <span *ngFor="let page of getVisiblePages()" 
+              class="page-indicator"
+              [class.active]="currentPage === page"
+              (click)="goToPage(page)">
+          {{ page }}
+        </span>
+      </div>
+      
+      <button (click)="nextPage()" [disabled]="currentPage === totalPages" class="btn pagination-btn">
+        Suivant <i class="fas fa-chevron-right"></i>
+      </button>
+    </div>
+  </div>
+</div> 

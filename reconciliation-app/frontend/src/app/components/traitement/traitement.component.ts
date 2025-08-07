@@ -2,6 +2,7 @@ import { Component, OnInit, ChangeDetectorRef, AfterViewInit, ViewChild } from '
 import { FormBuilder, FormGroup, FormControl } from '@angular/forms';
 import { MatSelect } from '@angular/material/select';
 import { OrangeMoneyUtilsService } from '../../services/orange-money-utils.service';
+import { FieldTypeDetectionService, ColumnAnalysis } from '../../services/field-type-detection.service';
 import * as Papa from 'papaparse';
 import * as XLSX from 'xlsx';
 
@@ -32,7 +33,15 @@ export class TraitementComponent implements OnInit, AfterViewInit {
     removeCharacters: false,
     removeSpecificCharacters: false,
     cleanAmounts: false,
-    insertCharacters: false
+    insertCharacters: false,
+    // Nouvelles options pour le traitement des caractères spéciaux des en-têtes
+    normalizeHeaders: false,
+    fixSpecialCharacters: false,
+    removeAccents: false,
+    standardizeHeaders: false,
+    // Nouvelle option pour formater en nombre
+    formatToNumber: false,
+    numberFormatColumns: []
   };
   extractCol: string = '';
   extractType: string = '';
@@ -98,6 +107,12 @@ export class TraitementComponent implements OnInit, AfterViewInit {
   csvPreviewColumns: string[] = [];
   showCsvPreview: boolean = false;
   csvContentToProcess: string = '';
+
+  // --- DÉTECTION AUTOMATIQUE DES TYPES DE CHAMPS ---
+  fieldTypeAnalysis: ColumnAnalysis[] = [];
+  showFieldTypeAnalysis: boolean = false;
+  autoFormattingEnabled: boolean = true;
+  formattingRecommendations: any[] = [];
   csvFileToProcess: File | null = null;
 
   // --- DÉTECTION FICHIERS ORANGE MONEY ---
@@ -147,13 +162,19 @@ export class TraitementComponent implements OnInit, AfterViewInit {
     removeCharacters: [],
     removeSpecificCharacters: [],
     cleanAmounts: [],
-    insertCharacters: []
+    insertCharacters: [],
+    formatToNumber: [],
+    normalizeHeaders: [],
+    fixSpecialCharacters: [],
+    removeAccents: [],
+    standardizeHeaders: []
   };
 
   constructor(
     private cd: ChangeDetectorRef, 
     private fb: FormBuilder,
-    private orangeMoneyUtilsService: OrangeMoneyUtilsService
+    private orangeMoneyUtilsService: OrangeMoneyUtilsService,
+    private fieldTypeDetectionService: FieldTypeDetectionService
   ) {}
 
   private showSuccess(key: string, msg: string) {
@@ -770,6 +791,9 @@ export class TraitementComponent implements OnInit, AfterViewInit {
           this.applyAutomaticOrangeMoneyFilter();
         }, 500);
       }
+      
+      // Détection automatique des types de champs
+      this.performFieldTypeAnalysis();
       
     } catch (error) {
       console.error('❌ Erreur lors de la lecture du fichier Excel:', error);
@@ -1586,13 +1610,29 @@ export class TraitementComponent implements OnInit, AfterViewInit {
 
   hasFormattingOption(): boolean {
     // On ne vérifie plus textColumns
-    const { trimSpaces, toLowerCase, toUpperCase, normalizeDates, normalizeNumbers, amountColumns, numberColumns, dateColumns, absoluteValue } = this.formatOptions;
-    return trimSpaces || toLowerCase || toUpperCase || normalizeDates || normalizeNumbers || amountColumns.length > 0 || numberColumns.length > 0 || dateColumns.length > 0 || absoluteValue;
+    const { trimSpaces, toLowerCase, toUpperCase, normalizeDates, normalizeNumbers, amountColumns, numberColumns, dateColumns, absoluteValue, 
+            normalizeHeaders, fixSpecialCharacters, removeAccents, standardizeHeaders, formatToNumber } = this.formatOptions;
+    
+    // Options pour le traitement des données
+    const dataFormattingOptions = trimSpaces || toLowerCase || toUpperCase || normalizeDates || normalizeNumbers || 
+                                 amountColumns.length > 0 || numberColumns.length > 0 || dateColumns.length > 0 || absoluteValue || formatToNumber;
+    
+    // Options pour le traitement des en-têtes uniquement
+    const headerFormattingOptions = normalizeHeaders || fixSpecialCharacters || removeAccents || standardizeHeaders;
+    
+    return dataFormattingOptions || headerFormattingOptions;
   }
 
   applyFormatting() {
     try {
       if (!this.hasFormattingOption()) return;
+      
+      // Traitement des en-têtes de colonnes si activé
+      if (this.formatOptions.normalizeHeaders || this.formatOptions.fixSpecialCharacters || 
+          this.formatOptions.removeAccents || this.formatOptions.standardizeHeaders) {
+        this.normalizeColumnHeaders();
+      }
+      
       this.combinedRows = this.combinedRows.map(row => {
         const newRow: any = {};
         for (const col of this.columns) {
@@ -1616,6 +1656,7 @@ export class TraitementComponent implements OnInit, AfterViewInit {
             if (this.formatOptions.removeDashesAndCommas) {
               value = value.replace(/-/g, '').replace(/,/g, '');
             }
+            // Note: removeAccents n'est PAS appliqué ici car il ne doit affecter que les en-têtes
           }
           // Normalisation des dates (format ISO)
           if (this.formatOptions.normalizeDates && value && typeof value === 'string') {
@@ -1635,10 +1676,184 @@ export class TraitementComponent implements OnInit, AfterViewInit {
         }
         return newRow;
       });
-      this.showSuccess('format', 'Formatage appliqué avec succès.');
+      // Vérifier que les données n'ont pas été perdues
+      if (this.combinedRows.length > 0 && this.columns.length > 0) {
+        console.log('✅ Formatage réussi - Données préservées');
+        this.showSuccess('format', 'Formatage appliqué avec succès.');
+      } else {
+        console.error('❌ Erreur - Données perdues après formatage');
+        this.showError('format', 'Erreur lors du formatage - données perdues.');
+      }
     } catch (e) {
       this.showError('format', 'Erreur lors du formatage.');
     }
+  }
+
+  // Méthode pour normaliser les en-têtes de colonnes
+  private normalizeColumnHeaders() {
+    const oldToNewColumnMap: { [key: string]: string } = {};
+    
+    // Créer une copie des colonnes actuelles pour éviter les problèmes de référence
+    const currentColumns = [...this.columns];
+    
+    // Traiter chaque colonne
+    this.columns = currentColumns.map(columnName => {
+      let normalizedName = columnName;
+      
+      // Correction des caractères spéciaux corrompus
+      if (this.formatOptions.fixSpecialCharacters) {
+        normalizedName = this.fixSpecialCharacters(normalizedName);
+      }
+      
+      // Suppression des accents
+      if (this.formatOptions.removeAccents) {
+        normalizedName = this.removeAccents(normalizedName);
+      }
+      
+      // Standardisation des en-têtes
+      if (this.formatOptions.standardizeHeaders) {
+        normalizedName = this.standardizeHeader(normalizedName);
+      }
+      
+      // Normalisation générale
+      if (this.formatOptions.normalizeHeaders) {
+        normalizedName = this.normalizeHeader(normalizedName);
+      }
+      
+      // Mapper l'ancien nom vers le nouveau nom
+      if (normalizedName !== columnName) {
+        oldToNewColumnMap[columnName] = normalizedName;
+      }
+      
+      return normalizedName;
+    });
+    
+    // Mettre à jour les données avec les nouveaux noms de colonnes
+    if (Object.keys(oldToNewColumnMap).length > 0) {
+      console.log('🔄 Mise à jour des noms de colonnes:', oldToNewColumnMap);
+      
+      this.combinedRows = this.combinedRows.map(row => {
+        const newRow: any = {};
+        // Parcourir les anciennes colonnes pour créer le nouveau mapping
+        for (const oldCol of currentColumns) {
+          const newCol = oldToNewColumnMap[oldCol] || oldCol;
+          newRow[newCol] = row[oldCol];
+        }
+        return newRow;
+      });
+      
+      // Mettre à jour aussi allColumns si nécessaire
+      this.allColumns = this.allColumns.map(col => oldToNewColumnMap[col] || col);
+      
+      // Forcer la mise à jour de l'affichage
+      this.updateDisplayedRows();
+      
+      console.log('✅ Colonnes mises à jour:', this.columns);
+      console.log('✅ Données mises à jour:', this.combinedRows.length, 'lignes');
+    }
+  }
+
+  // Méthode pour corriger les caractères spéciaux corrompus
+  private fixSpecialCharacters(text: string): string {
+    const frenchCharReplacements: { [key: string]: string } = {
+      // Caractères corrompus courants
+      'é': 'é', 'è': 'è', 'ê': 'ê', 'ë': 'ë',
+      'à': 'à', 'â': 'â', 'ä': 'ä',
+      'ç': 'ç',
+      'ù': 'ù', 'û': 'û', 'ü': 'ü',
+      'ï': 'ï', 'î': 'î',
+      'ô': 'ô', 'ö': 'ö',
+      'ÿ': 'ÿ',
+      
+      // Caractères corrompus spécifiques aux colonnes
+      'tlphone': 'téléphone',
+      'Numro': 'Numéro',
+      'Solde aprs': 'Solde après',
+      'Code proprietaire': 'Code propriétaire',
+      'groupe de rseau': 'groupe de réseau',
+      'Code rseau': 'Code réseau',
+      'date de cration': 'date de création',
+      'Motif rgularisation': 'Motif régularisation',
+      'Dstinataire': 'Destinataire',
+      'Login demandeur Appro': 'Login demandeur Appro',
+      'Login valideur Appro': 'Login valideur Appro',
+      'Motif rejet': 'Motif rejet',
+      'Frais connexion': 'Frais connexion',
+      'Code de Proxy': 'Code de Proxy',
+      'Code service': 'Code service',
+      'Login agent': 'Login agent',
+      'Type agent': 'Type agent',
+      'Date denvoi vers part': 'Date d\'envoi vers part',
+      'Etat': 'Etat',
+      'Type': 'Type',
+      'Token': 'Token',
+      'SMS': 'SMS',
+      'Action faite': 'Action faite',
+      'Statut': 'Statut',
+      'Utilisateur': 'Utilisateur',
+      'Montant': 'Montant',
+      'Latitude': 'Latitude',
+      'Longitude': 'Longitude',
+      'Partenaire dist ID': 'Partenaire dist ID',
+      'Agence SC': 'Agence SC',
+      'Groupe reseau SC': 'Groupe reseau SC',
+      'Agent SC': 'Agent SC',
+      'PDA SC': 'PDA SC',
+      'Date dernier traitement': 'Date dernier traitement',
+      
+      // Corrections spécifiques pour TRXBO
+      'tÃ©lÃ©phone client': 'téléphone client',
+      'NumÃ©ro Trans GU': 'Numéro Trans GU',
+      'tÃ©lÃ©phone': 'téléphone',
+      'NumÃ©ro': 'Numéro'
+    };
+    
+    let normalizedText = text;
+    
+    // Appliquer les remplacements
+    for (const [corrupted, correct] of Object.entries(frenchCharReplacements)) {
+      normalizedText = normalizedText.replace(new RegExp(corrupted, 'gi'), correct);
+    }
+    
+    // Nettoyer les espaces multiples et caractères invisibles
+    normalizedText = normalizedText.replace(/\s+/g, ' ').trim();
+    
+    return normalizedText;
+  }
+
+  // Méthode pour supprimer les accents
+  private removeAccents(text: string): string {
+    return text.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  }
+
+  // Méthode pour standardiser les en-têtes
+  private standardizeHeader(text: string): string {
+    // Remplacer les espaces par des underscores
+    let standardized = text.replace(/\s+/g, '_');
+    
+    // Supprimer les caractères spéciaux non alphanumériques
+    standardized = standardized.replace(/[^a-zA-Z0-9_]/g, '');
+    
+    // Première lettre en majuscule
+    if (standardized.length > 0) {
+      standardized = standardized.charAt(0).toUpperCase() + standardized.slice(1);
+    }
+    
+    return standardized;
+  }
+
+  // Méthode pour normaliser les en-têtes
+  private normalizeHeader(text: string): string {
+    // Normaliser les espaces
+    let normalized = text.replace(/\s+/g, ' ').trim();
+    
+    // Première lettre de chaque mot en majuscule
+    normalized = normalized.replace(/\b\w/g, l => l.toUpperCase());
+    
+    // Supprimer les caractères de contrôle
+    normalized = normalized.replace(/[\x00-\x1F\x7F]/g, '');
+    
+    return normalized;
   }
 
   applyExtraction() {
@@ -1723,23 +1938,28 @@ export class TraitementComponent implements OnInit, AfterViewInit {
 
   onFilterColumnChange() {
     if (this.selectedFilterColumn) {
-      // Vérifier si c'est un fichier Orange Money et si la colonne est "Statut"
-      const fileName = this.selectedFiles.length > 0 ? this.selectedFiles[0].name : '';
-      const isOrangeMoneyFile = this.orangeMoneyUtilsService.isOrangeMoneyFile(fileName);
-      const isStatutColumn = this.selectedFilterColumn.toLowerCase().includes('statut');
+      // Extraire les valeurs uniques de la colonne sélectionnée (comportement normal)
+      console.log('🔍 Extraction des valeurs pour la colonne:', this.selectedFilterColumn);
+      console.log('📊 Nombre total de lignes:', this.allRows.length);
+      console.log('📋 Colonnes disponibles:', this.columns);
+      console.log('📋 Toutes les colonnes:', this.allColumns);
       
-      if (isOrangeMoneyFile && isStatutColumn) {
-        // Pour les fichiers Orange Money, utiliser les valeurs spécifiques pour "Statut"
-        console.log('🎯 Fichier Orange Money détecté, utilisation des valeurs spécifiques pour Statut');
-        this.filterValues = this.orangeMoneyUtilsService.getOrangeMoneyFieldValues('Statut');
-        this.filteredFilterValues = this.filterValues.slice();
-        this.selectedFilterValues = [];
-      } else {
-        // Extraire les valeurs uniques de la colonne sélectionnée (comportement normal)
-      this.filterValues = Array.from(new Set(this.allRows.map(row => row[this.selectedFilterColumn])));
-      this.filteredFilterValues = this.filterValues.slice();
-        this.selectedFilterValues = [];
+      // Vérifier si la colonne existe dans les données
+      if (this.allRows.length > 0) {
+        const firstRow = this.allRows[0];
+        console.log('🔍 Première ligne de données:', firstRow);
+        console.log('🔍 Clés de la première ligne:', Object.keys(firstRow));
+        console.log('🔍 La colonne sélectionnée existe-t-elle?', this.selectedFilterColumn in firstRow);
       }
+      
+      // Extraire toutes les valeurs uniques de la colonne sélectionnée depuis allRows (données originales)
+      const uniqueValues = Array.from(new Set(this.allRows.map(row => row[this.selectedFilterColumn])));
+      console.log('🔍 Valeurs uniques trouvées:', uniqueValues);
+      console.log('🔍 Nombre de valeurs uniques:', uniqueValues.length);
+      
+      this.filterValues = uniqueValues;
+      this.filteredFilterValues = this.filterValues.slice();
+      this.selectedFilterValues = [];
     } else {
       this.filterValues = [];
       this.filteredFilterValues = [];
@@ -1767,29 +1987,12 @@ export class TraitementComponent implements OnInit, AfterViewInit {
         this.filterApplied = true;
         this.showSuccess('filter', `Aucun filtre appliqué - toutes les lignes conservées (${this.combinedRows.length} lignes).`);
       } else {
-        // Vérifier si c'est un fichier Orange Money et si la colonne est "Statut"
-        const fileName = this.selectedFiles.length > 0 ? this.selectedFiles[0].name : '';
-        const isOrangeMoneyFile = this.orangeMoneyUtilsService.isOrangeMoneyFile(fileName);
-        const isStatutColumn = this.selectedFilterColumn.toLowerCase().includes('statut');
-        
-        if (isOrangeMoneyFile && isStatutColumn) {
-          // Pour les fichiers Orange Money, filtrer sur toutes les lignes qui ont "Succès"
-          this.filteredRows = this.originalRows.filter(row => {
-            const statutValue = row[this.selectedFilterColumn];
-            return statutValue && statutValue.toString().toLowerCase().includes('succès');
-          });
-          this.allRows = [...this.filteredRows];
-          this.combinedRows = [...this.filteredRows];
-          this.filterApplied = true;
-          this.showSuccess('filter', `Filtre Orange Money appliqué sur « ${this.selectedFilterColumn} » = « Succès » (${this.combinedRows.length} lignes).`);
-      } else {
-        // Filtrage normal
+        // Filtrage normal basé sur les valeurs sélectionnées
         this.filteredRows = this.originalRows.filter(row => this.selectedFilterValues.includes(row[this.selectedFilterColumn]));
         this.allRows = [...this.filteredRows];
         this.combinedRows = [...this.filteredRows];
         this.filterApplied = true;
         this.showSuccess('filter', `Filtre appliqué sur « ${this.selectedFilterColumn} » = « ${this.selectedFilterValues.join(', ')} » (${this.combinedRows.length} lignes).`);
-        }
       }
       this.updateDisplayedRows();
     }
@@ -3016,6 +3219,323 @@ export class TraitementComponent implements OnInit, AfterViewInit {
     }
   }
 
+  // Méthode pour formater les colonnes en nombre
+  applyNumberFormatting() {
+    if (!this.formatSelections['formatToNumber'].length) {
+      this.showError('format', 'Veuillez sélectionner au moins une colonne à formater en nombre.');
+      return;
+    }
+
+    try {
+      let processedCells = 0;
+      let errorCells = 0;
+      let totalCells = 0;
+
+      // Traiter les données affichées (combinedRows)
+      this.combinedRows.forEach((row, rowIndex) => {
+        this.formatSelections['formatToNumber'].forEach(col => {
+          totalCells++;
+          if (row[col] !== undefined && row[col] !== null && row[col] !== '') {
+            const originalValue = row[col];
+            let newValue: number | string = originalValue;
+            
+            // Convertir en chaîne si ce n'est pas déjà le cas
+            if (typeof originalValue !== 'string') {
+              newValue = originalValue.toString();
+            }
+            
+            // Nettoyer la valeur (supprimer espaces, caractères spéciaux)
+            let cleanValue = String(newValue).trim().replace(/[^\d.,-]/g, '');
+            
+            // Remplacer la virgule par un point pour la conversion
+            cleanValue = cleanValue.replace(',', '.');
+            
+            // Convertir en nombre
+            const numberValue = parseFloat(cleanValue);
+            
+            if (!isNaN(numberValue)) {
+              row[col] = numberValue;
+              processedCells++;
+              console.log(`✅ CONVERSION: Ligne ${rowIndex}, Colonne ${col}: "${originalValue}" -> ${numberValue}`);
+            } else {
+              // Garder la valeur originale si la conversion échoue
+              console.warn(`⚠️ IMPOSSIBLE DE CONVERTIR: Ligne ${rowIndex}, Colonne ${col}: "${originalValue}"`);
+              errorCells++;
+            }
+          }
+        });
+      });
+
+      // Mettre à jour aussi allRows si la sélection n'est pas appliquée
+      if (!this.selectionApplied) {
+        this.allRows.forEach((row, rowIndex) => {
+          this.formatSelections['formatToNumber'].forEach(col => {
+            if (row[col] !== undefined && row[col] !== null && row[col] !== '') {
+              const originalValue = row[col];
+              let newValue: number | string = originalValue;
+              
+              // Convertir en chaîne si ce n'est pas déjà le cas
+              if (typeof originalValue !== 'string') {
+                newValue = originalValue.toString();
+              }
+              
+              // Nettoyer la valeur (supprimer espaces, caractères spéciaux)
+              let cleanValue = String(newValue).trim().replace(/[^\d.,-]/g, '');
+              
+              // Remplacer la virgule par un point pour la conversion
+              cleanValue = cleanValue.replace(',', '.');
+              
+              // Convertir en nombre
+              const numberValue = parseFloat(cleanValue);
+              
+              if (!isNaN(numberValue)) {
+                row[col] = numberValue;
+              }
+            }
+          });
+        });
+      }
+
+      // Afficher le résultat
+      if (errorCells > 0) {
+        this.showError('format', `Formatage terminé avec ${errorCells} erreur(s). ${processedCells} valeurs converties en nombre.`);
+      } else {
+        this.showSuccess('format', `${processedCells} valeurs converties en nombre avec succès.`);
+      }
+      
+      // Forcer la mise à jour de l'affichage
+      this.updateDisplayedRowsForPage();
+      this.cd.detectChanges();
+    } catch (error) {
+      console.error('❌ Erreur lors du formatage en nombre:', error);
+      this.showError('format', 'Erreur lors du formatage en nombre.');
+    }
+  }
+
+  // Méthode pour normaliser les en-têtes
+  applyNormalizeHeadersFormatting() {
+    if (!this.formatSelections['normalizeHeaders'].length) {
+      this.showError('format', 'Veuillez sélectionner au moins une colonne à normaliser.');
+      return;
+    }
+
+    try {
+      let processedCells = 0;
+      let totalCells = 0;
+
+      // Traiter les données affichées (combinedRows)
+      this.combinedRows.forEach((row, rowIndex) => {
+        this.formatSelections['normalizeHeaders'].forEach(col => {
+          totalCells++;
+          if (row[col] !== undefined && row[col] !== null && row[col] !== '') {
+            const originalValue = row[col];
+            let newValue = String(originalValue);
+            
+            // Normaliser les en-têtes (espaces + première lettre majuscule)
+            newValue = this.normalizeHeader(newValue);
+            
+            if (newValue !== originalValue) {
+              row[col] = newValue;
+              processedCells++;
+              console.log(`✅ NORMALISATION: Ligne ${rowIndex}, Colonne ${col}: "${originalValue}" -> "${newValue}"`);
+            }
+          }
+        });
+      });
+
+      // Mettre à jour aussi allRows si la sélection n'est pas appliquée
+      if (!this.selectionApplied) {
+        this.allRows.forEach((row, rowIndex) => {
+          this.formatSelections['normalizeHeaders'].forEach(col => {
+            if (row[col] !== undefined && row[col] !== null && row[col] !== '') {
+              const originalValue = row[col];
+              let newValue = String(originalValue);
+              newValue = this.normalizeHeader(newValue);
+              row[col] = newValue;
+            }
+          });
+        });
+      }
+
+      this.showSuccess('format', `${processedCells} valeurs normalisées avec succès.`);
+      
+      // Forcer la mise à jour de l'affichage
+      this.updateDisplayedRowsForPage();
+      this.cd.detectChanges();
+    } catch (error) {
+      console.error('❌ Erreur lors de la normalisation des en-têtes:', error);
+      this.showError('format', 'Erreur lors de la normalisation des en-têtes.');
+    }
+  }
+
+  // Méthode pour corriger les caractères spéciaux
+  applyFixSpecialCharactersFormatting() {
+    if (!this.formatSelections['fixSpecialCharacters'].length) {
+      this.showError('format', 'Veuillez sélectionner au moins une colonne à corriger.');
+      return;
+    }
+
+    try {
+      let processedCells = 0;
+      let totalCells = 0;
+
+      // Traiter les données affichées (combinedRows)
+      this.combinedRows.forEach((row, rowIndex) => {
+        this.formatSelections['fixSpecialCharacters'].forEach(col => {
+          totalCells++;
+          if (row[col] !== undefined && row[col] !== null && row[col] !== '') {
+            const originalValue = row[col];
+            let newValue = String(originalValue);
+            
+            // Corriger les caractères spéciaux
+            newValue = this.fixSpecialCharacters(newValue);
+            
+            if (newValue !== originalValue) {
+              row[col] = newValue;
+              processedCells++;
+              console.log(`✅ CORRECTION: Ligne ${rowIndex}, Colonne ${col}: "${originalValue}" -> "${newValue}"`);
+            }
+          }
+        });
+      });
+
+      // Mettre à jour aussi allRows si la sélection n'est pas appliquée
+      if (!this.selectionApplied) {
+        this.allRows.forEach((row, rowIndex) => {
+          this.formatSelections['fixSpecialCharacters'].forEach(col => {
+            if (row[col] !== undefined && row[col] !== null && row[col] !== '') {
+              const originalValue = row[col];
+              let newValue = String(originalValue);
+              newValue = this.fixSpecialCharacters(newValue);
+              row[col] = newValue;
+            }
+          });
+        });
+      }
+
+      this.showSuccess('format', `${processedCells} valeurs corrigées avec succès.`);
+      
+      // Forcer la mise à jour de l'affichage
+      this.updateDisplayedRowsForPage();
+      this.cd.detectChanges();
+    } catch (error) {
+      console.error('❌ Erreur lors de la correction des caractères spéciaux:', error);
+      this.showError('format', 'Erreur lors de la correction des caractères spéciaux.');
+    }
+  }
+
+  // Méthode pour supprimer les accents
+  applyRemoveAccentsFormatting() {
+    if (!this.formatSelections['removeAccents'].length) {
+      this.showError('format', 'Veuillez sélectionner au moins une colonne à traiter.');
+      return;
+    }
+
+    try {
+      let processedCells = 0;
+      let totalCells = 0;
+
+      // Traiter les données affichées (combinedRows)
+      this.combinedRows.forEach((row, rowIndex) => {
+        this.formatSelections['removeAccents'].forEach(col => {
+          totalCells++;
+          if (row[col] !== undefined && row[col] !== null && row[col] !== '') {
+            const originalValue = row[col];
+            let newValue = String(originalValue);
+            
+            // Supprimer les accents
+            newValue = this.removeAccents(newValue);
+            
+            if (newValue !== originalValue) {
+              row[col] = newValue;
+              processedCells++;
+              console.log(`✅ SUPPRESSION ACCENTS: Ligne ${rowIndex}, Colonne ${col}: "${originalValue}" -> "${newValue}"`);
+            }
+          }
+        });
+      });
+
+      // Mettre à jour aussi allRows si la sélection n'est pas appliquée
+      if (!this.selectionApplied) {
+        this.allRows.forEach((row, rowIndex) => {
+          this.formatSelections['removeAccents'].forEach(col => {
+            if (row[col] !== undefined && row[col] !== null && row[col] !== '') {
+              const originalValue = row[col];
+              let newValue = String(originalValue);
+              newValue = this.removeAccents(newValue);
+              row[col] = newValue;
+            }
+          });
+        });
+      }
+
+      this.showSuccess('format', `${processedCells} valeurs traitées avec succès.`);
+      
+      // Forcer la mise à jour de l'affichage
+      this.updateDisplayedRowsForPage();
+      this.cd.detectChanges();
+    } catch (error) {
+      console.error('❌ Erreur lors de la suppression des accents:', error);
+      this.showError('format', 'Erreur lors de la suppression des accents.');
+    }
+  }
+
+  // Méthode pour standardiser les en-têtes
+  applyStandardizeHeadersFormatting() {
+    if (!this.formatSelections['standardizeHeaders'].length) {
+      this.showError('format', 'Veuillez sélectionner au moins une colonne à standardiser.');
+      return;
+    }
+
+    try {
+      let processedCells = 0;
+      let totalCells = 0;
+
+      // Traiter les données affichées (combinedRows)
+      this.combinedRows.forEach((row, rowIndex) => {
+        this.formatSelections['standardizeHeaders'].forEach(col => {
+          totalCells++;
+          if (row[col] !== undefined && row[col] !== null && row[col] !== '') {
+            const originalValue = row[col];
+            let newValue = String(originalValue);
+            
+            // Standardiser les en-têtes
+            newValue = this.standardizeHeader(newValue);
+            
+            if (newValue !== originalValue) {
+              row[col] = newValue;
+              processedCells++;
+              console.log(`✅ STANDARDISATION: Ligne ${rowIndex}, Colonne ${col}: "${originalValue}" -> "${newValue}"`);
+            }
+          }
+        });
+      });
+
+      // Mettre à jour aussi allRows si la sélection n'est pas appliquée
+      if (!this.selectionApplied) {
+        this.allRows.forEach((row, rowIndex) => {
+          this.formatSelections['standardizeHeaders'].forEach(col => {
+            if (row[col] !== undefined && row[col] !== null && row[col] !== '') {
+              const originalValue = row[col];
+              let newValue = String(originalValue);
+              newValue = this.standardizeHeader(newValue);
+              row[col] = newValue;
+            }
+          });
+        });
+      }
+
+      this.showSuccess('format', `${processedCells} valeurs standardisées avec succès.`);
+      
+      // Forcer la mise à jour de l'affichage
+      this.updateDisplayedRowsForPage();
+      this.cd.detectChanges();
+    } catch (error) {
+      console.error('❌ Erreur lors de la standardisation des en-têtes:', error);
+      this.showError('format', 'Erreur lors de la standardisation des en-têtes.');
+    }
+  }
+
   ngOnInit() {
     // Initialiser l'affichage au démarrage
     this.currentPage = 1;
@@ -3404,10 +3924,12 @@ export class TraitementComponent implements OnInit, AfterViewInit {
                         }
                       );
                       
+                      console.log('🔍 Colonnes extraites sans en-tête:', colNames);
                       for (const col of colNames) {
                         if (!this.columns.includes(col)) this.columns.push(col);
                         if (!this.allColumns.includes(col)) this.allColumns.push(col);
                       }
+                      console.log('🔍 Colonnes finales après traitement sans en-tête:', this.columns);
                       
                       console.log(`CSV traité avec succès: ${this.allRows.length} lignes ajoutées`);
                     }
@@ -3444,10 +3966,16 @@ export class TraitementComponent implements OnInit, AfterViewInit {
               
               // Extraire les colonnes
               const firstRow = rows[0];
+              console.log('🔍 Extraction des colonnes depuis la première ligne:', firstRow);
+              console.log('🔍 Clés de la première ligne:', Object.keys(firstRow));
+              
               for (const key of Object.keys(firstRow)) {
                 if (!this.columns.includes(key)) this.columns.push(key);
                 if (!this.allColumns.includes(key)) this.allColumns.push(key);
               }
+              
+              console.log('🔍 Colonnes extraites:', this.columns);
+              console.log('🔍 Toutes les colonnes:', this.allColumns);
               
               console.log(`CSV traité avec succès: ${this.allRows.length} lignes ajoutées`);
             }
@@ -3727,5 +4255,152 @@ export class TraitementComponent implements OnInit, AfterViewInit {
     } else {
       console.log('⚠️ Colonne Statut non trouvée ou aucune donnée disponible');
     }
+  }
+
+  /**
+   * Effectue l'analyse automatique des types de champs
+   */
+  private performFieldTypeAnalysis(): void {
+    try {
+      console.log('🔍 Début de l\'analyse automatique des types de champs');
+      
+      if (this.allRows.length === 0) {
+        console.log('⚠️ Aucune donnée à analyser');
+        return;
+      }
+
+      // Analyser toutes les colonnes
+      this.fieldTypeAnalysis = this.fieldTypeDetectionService.analyzeDataset(this.allRows);
+      
+      // Générer les recommandations de formatage
+      this.formattingRecommendations = this.fieldTypeDetectionService.generateFormattingRecommendations(this.fieldTypeAnalysis);
+      
+      console.log('✅ Analyse des types de champs terminée:', this.fieldTypeAnalysis.length, 'colonnes analysées');
+      console.log('📋 Recommandations de formatage:', this.formattingRecommendations.length, 'recommandations');
+      
+      // Appliquer automatiquement les formatages si activé
+      if (this.autoFormattingEnabled && this.formattingRecommendations.length > 0) {
+        this.applyAutomaticFormatting();
+      }
+      
+      // Afficher l'analyse si des types intéressants sont détectés
+      const interestingTypes = this.fieldTypeAnalysis.filter(a => 
+        a.typeInfo.type === 'date' || 
+        a.typeInfo.type === 'amount' || 
+        a.typeInfo.type === 'number'
+      );
+      
+      if (interestingTypes.length > 0) {
+        this.showFieldTypeAnalysis = true;
+        console.log('📊 Types de champs détectés:', interestingTypes.map(a => ({
+          column: a.columnName,
+          type: a.typeInfo.type,
+          confidence: a.typeInfo.confidence
+        })));
+      }
+      
+    } catch (error) {
+      console.error('❌ Erreur lors de l\'analyse des types de champs:', error);
+    }
+  }
+
+  /**
+   * Applique automatiquement les formatages recommandés
+   */
+  private applyAutomaticFormatting(): void {
+    try {
+      console.log('🔄 Application automatique des formatages recommandés');
+      
+      for (const recommendation of this.formattingRecommendations) {
+        if (recommendation.confidence > 0.7) {
+          console.log(`📋 Application du formatage pour ${recommendation.column} (${recommendation.type})`);
+          
+          switch (recommendation.type) {
+            case 'date':
+              this.formatOptions.normalizeDates = true;
+              break;
+            case 'amount':
+              this.formatOptions.cleanAmounts = true;
+              this.formatOptions.normalizeNumbers = true;
+              break;
+            case 'number':
+              this.formatOptions.normalizeNumbers = true;
+              break;
+            case 'text':
+              this.formatOptions.trimSpaces = true;
+              break;
+          }
+        }
+      }
+      
+      // Appliquer le formatage si des options ont été activées
+      if (this.hasFormattingOption()) {
+        this.applyFormatting();
+        console.log('✅ Formatage automatique appliqué');
+      }
+      
+    } catch (error) {
+      console.error('❌ Erreur lors de l\'application automatique du formatage:', error);
+    }
+  }
+
+  /**
+   * Affiche l'analyse des types de champs
+   */
+  toggleFieldTypeAnalysis(): void {
+    this.showFieldTypeAnalysis = !this.showFieldTypeAnalysis;
+  }
+
+  /**
+   * Applique un formatage spécifique basé sur l'analyse
+   */
+  applySpecificFormatting(column: string, type: string): void {
+    try {
+      console.log(`🔄 Application du formatage spécifique pour ${column} (${type})`);
+      
+      switch (type) {
+        case 'date':
+          this.formatOptions.normalizeDates = true;
+          this.selectedDateFormat = 'yyyy-MM-dd';
+          break;
+        case 'amount':
+          this.formatOptions.cleanAmounts = true;
+          this.formatOptions.normalizeNumbers = true;
+          break;
+        case 'number':
+          this.formatOptions.normalizeNumbers = true;
+          break;
+        case 'text':
+          this.formatOptions.trimSpaces = true;
+          break;
+      }
+      
+      this.applyFormatting();
+      this.showSuccess('format', `Formatage appliqué pour ${column} (${type})`);
+      
+    } catch (error) {
+      console.error('❌ Erreur lors de l\'application du formatage spécifique:', error);
+      this.showError('format', 'Erreur lors de l\'application du formatage');
+    }
+  }
+
+  /**
+   * Obtient les statistiques d'une colonne
+   */
+  getColumnStats(columnName: string): any {
+    const analysis = this.fieldTypeAnalysis.find(a => a.columnName === columnName);
+    if (!analysis) return null;
+    
+    return {
+      type: analysis.typeInfo.type,
+      confidence: analysis.typeInfo.confidence,
+      nullCount: analysis.nullCount,
+      uniqueCount: analysis.uniqueCount,
+      totalCount: analysis.totalCount,
+      minValue: analysis.minValue,
+      maxValue: analysis.maxValue,
+      averageValue: analysis.averageValue,
+      sampleValues: analysis.sampleValues
+    };
   }
 } 

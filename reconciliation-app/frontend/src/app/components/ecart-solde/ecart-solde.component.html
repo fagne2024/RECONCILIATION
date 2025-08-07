@@ -1,10 +1,39 @@
 <div class="ecart-solde-container">
   <div class="header">
-    <h2>Gestion des Écarts de Solde</h2>
+    <h2>Gestion des Écarts de Solde (TSOP)</h2>
     <div class="header-actions">
       <button class="btn btn-primary" (click)="loadEcartSoldes()" [disabled]="isLoading">
         <i class="fas fa-sync-alt"></i> Actualiser
       </button>
+      <button class="btn btn-success" (click)="exportEcartSoldes()" [disabled]="filteredEcartSoldes.length === 0 || isLoading">
+        <i class="fas fa-file-excel"></i> Exporter
+      </button>
+    </div>
+  </div>
+
+  <!-- Section Statistiques -->
+  <div class="stats-section">
+    <div class="stats-grid">
+      <div class="stat-card stat-total">
+        <div class="stat-value">{{ filteredEcartSoldes.length }}</div>
+        <div class="stat-label">TOTAL</div>
+      </div>
+      <div class="stat-card stat-en-attente">
+        <div class="stat-value">{{ getStatutCount('EN_ATTENTE') }}</div>
+        <div class="stat-label">EN ATTENTE</div>
+      </div>
+      <div class="stat-card stat-traite">
+        <div class="stat-value">{{ getStatutCount('TRAITE') }}</div>
+        <div class="stat-label">TRAITÉ</div>
+      </div>
+      <div class="stat-card stat-erreur">
+        <div class="stat-value">{{ getStatutCount('ERREUR') }}</div>
+        <div class="stat-label">ERREUR</div>
+      </div>
+      <div class="stat-card stat-montant">
+        <div class="stat-value">{{ formatMontantTotal() }}</div>
+        <div class="stat-label">MONTANT TOTAL</div>
+      </div>
     </div>
   </div>
 
@@ -30,7 +59,7 @@
           type="button" 
           class="btn btn-success" 
           (click)="uploadFile()"
-          [disabled]="!selectedFile || !fileValidated || isUploading">
+          [disabled]="!selectedFile || isUploading">
           <i class="fas fa-upload"></i> 
           {{ isUploading ? 'Upload en cours...' : 'Uploader' }}
         </button>
@@ -121,19 +150,11 @@
   </div>
 
   <!-- Tableau des données -->
-  <div class="data-section">
+  <div class="table-section">
     <div class="table-header">
       <h3>Écarts de Solde ({{ filteredEcartSoldes.length }} enregistrements)</h3>
-      <div class="table-actions">
-        <button class="btn btn-success export-btn" 
-                (click)="exportEcartSoldes()" 
-                [disabled]="filteredEcartSoldes.length === 0 || isLoading"
-                title="Exporter vers Excel">
-          <i class="fas fa-file-excel"></i> Exporter
-        </button>
-        <span class="loading-indicator" *ngIf="isLoading">
-          <i class="fas fa-spinner fa-spin"></i> Chargement...
-        </span>
+      <div class="table-info">
+        Affichage des écarts de solde filtrés
       </div>
     </div>
 
@@ -221,91 +242,29 @@
     </div>
 
     <!-- Pagination -->
-    <div class="pagination" *ngIf="filteredEcartSoldes.length > 0">
-      <div class="pagination-info">
-        Affichage {{ (currentPage - 1) * pageSize + 1 }}-{{ Math.min(currentPage * pageSize, filteredEcartSoldes.length) }} 
-        sur {{ filteredEcartSoldes.length }} éléments
+    <div class="pagination" *ngIf="totalPages > 1">
+      <button class="pagination-btn" 
+              (click)="prevPage()" 
+              [disabled]="currentPage === 1">
+        <i class="fas fa-chevron-left"></i> Précédent
+      </button>
+      
+      <div class="pagination-indicators">
+        <span class="page-indicator" 
+              *ngFor="let page of getVisiblePages()" 
+              [ngClass]="{'active': page === currentPage}"
+              (click)="goToPage(page)">
+          {{ page }}
+        </span>
       </div>
       
-      <div class="pagination-controls">
-        <button class="btn btn-secondary" 
-                (click)="prevPage()" 
-                [disabled]="currentPage === 1">
-          <i class="fas fa-chevron-left"></i> Précédent
-        </button>
-        
-        <div class="page-numbers">
-          <button *ngFor="let page of getVisiblePages()" 
-                  class="btn" 
-                  [ngClass]="page === currentPage ? 'btn-primary' : 'btn-secondary'"
-                  (click)="goToPage(page)">
-            {{ page }}
-          </button>
-        </div>
-        
-        <button class="btn btn-secondary" 
-                (click)="nextPage()" 
-                [disabled]="currentPage === totalPages">
-          Suivant <i class="fas fa-chevron-right"></i>
-        </button>
-      </div>
+      <button class="pagination-btn" 
+              (click)="nextPage()" 
+              [disabled]="currentPage === totalPages">
+        Suivant <i class="fas fa-chevron-right"></i>
+      </button>
     </div>
   </div>
 </div>
 
-<!-- Modal pour le commentaire -->
-<div class="modal-overlay" *ngIf="showCommentModal" (click)="closeCommentModal()">
-  <div class="modal-content" (click)="$event.stopPropagation()">
-    <div class="modal-header">
-      <h4>Changer le statut</h4>
-      <button class="modal-close" (click)="closeCommentModal()">
-        <i class="fas fa-times"></i>
-      </button>
-    </div>
-    
-    <div class="modal-body">
-      <div class="ecart-info">
-        <p><strong>ID Transaction:</strong> {{ selectedEcartSolde?.idTransaction }}</p>
-        <p><strong>Agence:</strong> {{ selectedEcartSolde?.agence }}</p>
-        <p><strong>Montant:</strong> {{ selectedEcartSolde ? formatMontant(selectedEcartSolde.montant) : '' }}</p>
-        <p><strong>Ancien statut:</strong> 
-          <span class="status-badge" [ngClass]="getStatutClass(selectedEcartSolde?.statut || '')">
-            {{ selectedEcartSolde?.statut || 'EN_ATTENTE' }}
-          </span>
-        </p>
-        <p><strong>Nouveau statut:</strong> 
-          <span class="status-badge" [ngClass]="getStatutClass(newStatut)">
-            {{ newStatut }}
-          </span>
-        </p>
-      </div>
-      
-      <form [formGroup]="commentForm" class="comment-form">
-        <div class="form-group">
-          <label for="commentaire">Commentaire *</label>
-          <textarea 
-            id="commentaire"
-            formControlName="commentaire"
-            class="form-control"
-            rows="4"
-            placeholder="Saisissez un commentaire pour justifier ce changement de statut..."
-            required></textarea>
-          <div class="error-message" *ngIf="commentForm.get('commentaire')?.invalid && commentForm.get('commentaire')?.touched">
-            Le commentaire est obligatoire
-          </div>
-        </div>
-      </form>
-    </div>
-    
-    <div class="modal-footer">
-      <button class="btn btn-secondary" (click)="closeCommentModal()">
-        <i class="fas fa-times"></i> Annuler
-      </button>
-      <button class="btn btn-primary" 
-              (click)="confirmStatutChange()"
-              [disabled]="commentForm.invalid">
-        <i class="fas fa-check"></i> Confirmer
-      </button>
-    </div>
-  </div>
-</div> 
+ 

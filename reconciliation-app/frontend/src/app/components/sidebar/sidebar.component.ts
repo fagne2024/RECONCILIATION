@@ -11,6 +11,7 @@ import { AppStateService } from '../../services/app-state.service';
 export class SidebarComponent implements OnInit {
 
   showParamSubmenu = false;
+  showSuiviEcartsSubmenu = false;
 
   constructor(
     private http: HttpClient,
@@ -23,6 +24,10 @@ export class SidebarComponent implements OnInit {
 
   toggleParamSubmenu() {
     this.showParamSubmenu = !this.showParamSubmenu;
+  }
+
+  toggleSuiviEcartsSubmenu() {
+    this.showSuiviEcartsSubmenu = !this.showSuiviEcartsSubmenu;
   }
 
   logout() {

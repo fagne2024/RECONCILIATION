@@ -1,6 +1,5 @@
 package com.reconciliation.controller;
 
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -14,6 +13,7 @@ import java.util.Map;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.apache.poi.hssf.usermodel.HSSFWorkbook;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/file-watcher")
@@ -38,7 +38,12 @@ public class FileWatcherController {
                 File[] files = watchPath.toFile().listFiles((dir, name) -> 
                     name.toLowerCase().endsWith(".csv") || 
                     name.toLowerCase().endsWith(".xlsx") || 
-                    name.toLowerCase().endsWith(".xls")
+                    name.toLowerCase().endsWith(".xls") ||
+                    name.toLowerCase().endsWith(".xlsm") ||
+                    name.toLowerCase().endsWith(".xlsb") ||
+                    name.toLowerCase().endsWith(".xlt") ||
+                    name.toLowerCase().endsWith(".xltx") ||
+                    name.toLowerCase().endsWith(".xltm")
                 );
                 queueLength = files != null ? files.length : 0;
                 System.out.println("📄 Nombre de fichiers trouvés: " + queueLength);
@@ -70,26 +75,56 @@ public class FileWatcherController {
             System.out.println("📁 Chemin du dossier watch: " + watchPath.toAbsolutePath());
             
             if (Files.exists(watchPath)) {
+                // Lister TOUS les fichiers dans le dossier
+                File[] allFiles = watchPath.toFile().listFiles();
+                System.out.println("📄 Tous les fichiers dans le dossier: " + (allFiles != null ? allFiles.length : 0));
+                if (allFiles != null) {
+                    for (File file : allFiles) {
+                        System.out.println("   - " + file.getName() + " (taille: " + file.length() + " bytes)");
+                    }
+                }
+                
                 File[] fileList = watchPath.toFile().listFiles((dir, name) -> 
                     name.toLowerCase().endsWith(".csv") || 
                     name.toLowerCase().endsWith(".xlsx") || 
-                    name.toLowerCase().endsWith(".xls")
+                    name.toLowerCase().endsWith(".xls") ||
+                    name.toLowerCase().endsWith(".xlsm") ||
+                    name.toLowerCase().endsWith(".xlsb") ||
+                    name.toLowerCase().endsWith(".xlt") ||
+                    name.toLowerCase().endsWith(".xltx") ||
+                    name.toLowerCase().endsWith(".xltm")
                 );
                 
-                System.out.println("📄 Fichiers trouvés: " + (fileList != null ? fileList.length : 0));
+                System.out.println("📄 Fichiers filtrés trouvés: " + (fileList != null ? fileList.length : 0));
+                if (fileList != null) {
+                    for (File file : fileList) {
+                        System.out.println("   ✅ Fichier accepté: " + file.getName());
+                    }
+                }
                 
                 if (fileList != null) {
                     for (File file : fileList) {
                         System.out.println("📄 Traitement du fichier: " + file.getName());
+                        
+                        // Lire les vraies colonnes
+                        List<String> columns = getFileColumns(file);
+                        System.out.println("📋 Colonnes lues pour " + file.getName() + ": " + columns);
+                        
+                        // Lire les vraies données d'exemple
+                        List<Map<String, Object>> sampleData = getSampleData(file);
+                        System.out.println("📊 Données d'exemple lues pour " + file.getName() + ": " + sampleData.size() + " lignes");
+                        
                         Map<String, Object> fileInfo = Map.of(
                             "fileName", file.getName(),
                             "filePath", file.getAbsolutePath(),
-                            "columns", getFileColumns(file),
-                            "sampleData", getSampleData(file),
+                            "columns", columns,
+                            "sampleData", sampleData,
                             "fileType", getFileType(file.getName()),
                             "recordCount", getRecordCount(file)
                         );
                         files.add(fileInfo);
+                        
+                        System.out.println("✅ Fichier " + file.getName() + " traité avec succès");
                     }
                 }
             } else {
@@ -177,27 +212,46 @@ public class FileWatcherController {
     // Méthodes utilitaires améliorées
     private List<String> getFileColumns(File file) {
         try {
+            System.out.println("🔍 getFileColumns() appelé pour: " + file.getName());
+            System.out.println("📁 Chemin absolu: " + file.getAbsolutePath());
+            System.out.println("✅ Fichier existe: " + file.exists());
+            
+            List<String> columns;
             if (file.getName().toLowerCase().endsWith(".csv")) {
-                return readCsvColumns(file);
-            } else if (file.getName().toLowerCase().endsWith(".xls") || file.getName().toLowerCase().endsWith(".xlsx")) {
-                return readExcelColumns(file);
+                System.out.println("📄 Lecture des colonnes CSV");
+                columns = readCsvColumns(file);
             } else {
-                // Pour les autres types de fichiers, retourner des colonnes par défaut
-                return List.of("date", "montant", "description", "reference");
+                System.out.println("📄 Lecture des colonnes Excel");
+                columns = readExcelColumns(file);
             }
+            
+            System.out.println("📋 Colonnes détectées pour " + file.getName() + ": " + columns);
+            return columns;
         } catch (Exception e) {
-            System.err.println("❌ Erreur lors de la lecture des colonnes: " + e.getMessage());
+            System.err.println("❌ Erreur dans getFileColumns() pour " + file.getName() + ": " + e.getMessage());
+            e.printStackTrace();
             return List.of("date", "montant", "description", "reference");
         }
     }
 
     private List<Map<String, Object>> getSampleData(File file) {
         try {
+            System.out.println("🔍 getSampleData() appelé pour: " + file.getName());
+            
             if (file.getName().toLowerCase().endsWith(".csv")) {
+                System.out.println("📄 Lecture des données d'exemple CSV");
                 return readCsvSampleData(file);
-            } else if (file.getName().toLowerCase().endsWith(".xls") || file.getName().toLowerCase().endsWith(".xlsx")) {
+            } else if (file.getName().toLowerCase().endsWith(".xls") || 
+                       file.getName().toLowerCase().endsWith(".xlsx") ||
+                       file.getName().toLowerCase().endsWith(".xlsm") ||
+                       file.getName().toLowerCase().endsWith(".xlsb") ||
+                       file.getName().toLowerCase().endsWith(".xlt") ||
+                       file.getName().toLowerCase().endsWith(".xltx") ||
+                       file.getName().toLowerCase().endsWith(".xltm")) {
+                System.out.println("📄 Lecture des données d'exemple Excel");
                 return readExcelSampleData(file);
             } else {
+                System.out.println("⚠️ Type de fichier non supporté, utilisation de données par défaut");
                 // Pour les autres types de fichiers, retourner des données d'exemple
                 return List.of(
                     Map.of("date", "2025-08-01", "montant", "1000.00", "description", "Transaction 1", "reference", "REF001"),
@@ -205,7 +259,9 @@ public class FileWatcherController {
                 );
             }
         } catch (Exception e) {
-            System.err.println("❌ Erreur lors de la lecture des données: " + e.getMessage());
+            System.err.println("❌ Erreur dans getSampleData() pour " + file.getName() + ": " + e.getMessage());
+            e.printStackTrace();
+            System.out.println("🔄 Utilisation de données par défaut en cas d'erreur");
             return List.of(
                 Map.of("date", "2025-08-01", "montant", "1000.00", "description", "Transaction 1", "reference", "REF001"),
                 Map.of("date", "2025-08-02", "montant", "2000.00", "description", "Transaction 2", "reference", "REF002")
@@ -378,7 +434,13 @@ public class FileWatcherController {
     private String getFileType(String fileName) {
         String lowerName = fileName.toLowerCase();
         if (lowerName.endsWith(".csv")) return "csv";
-        if (lowerName.endsWith(".xlsx") || lowerName.endsWith(".xls")) return "excel";
+        if (lowerName.endsWith(".xlsx") || 
+            lowerName.endsWith(".xls") ||
+            lowerName.endsWith(".xlsm") ||
+            lowerName.endsWith(".xlsb") ||
+            lowerName.endsWith(".xlt") ||
+            lowerName.endsWith(".xltx") ||
+            lowerName.endsWith(".xltm")) return "excel";
         return "unknown";
     }
 
@@ -406,22 +468,36 @@ public class FileWatcherController {
         return Math.max(0, lineCount - 1);
     }
 
-    // Méthode pour lire les colonnes Excel avec détection intelligente des en-têtes
+    // Méthode pour lire les colonnes Excel avec détection intelligente des en-têtes et types
     private List<String> readExcelColumns(File file) throws IOException {
+        System.out.println("🔵 [readExcelColumns] Appelée pour: " + file.getName());
         try {
             // Utiliser Apache POI pour lire les fichiers Excel
             Workbook workbook;
-            if (file.getName().toLowerCase().endsWith(".xlsx")) {
+            if (file.getName().toLowerCase().endsWith(".xlsx") || 
+                file.getName().toLowerCase().endsWith(".xlsm") ||
+                file.getName().toLowerCase().endsWith(".xltx") ||
+                file.getName().toLowerCase().endsWith(".xltm")) {
                 workbook = new XSSFWorkbook(new FileInputStream(file));
+                System.out.println("📄 Format Excel détecté: XLSX (2007+)");
             } else {
                 workbook = new HSSFWorkbook(new FileInputStream(file));
+                System.out.println("📄 Format Excel détecté: XLS (97-2003)");
             }
             
             Sheet sheet = workbook.getSheetAt(0);
+            System.out.println("📋 Nombre de feuilles: " + workbook.getNumberOfSheets());
+            System.out.println("📄 Nombre de lignes dans la première feuille: " + sheet.getLastRowNum());
+            
             List<String> headers = new ArrayList<>();
             
-            // Analyser les premières 200 lignes pour trouver les en-têtes
+            // Analyser les premières 200 lignes pour trouver les en-têtes avec détection avancée
             int maxRowsToCheck = Math.min(200, sheet.getLastRowNum());
+            System.out.println("🔍 Analyse avancée des " + maxRowsToCheck + " premières lignes");
+            
+            int bestHeaderRowIndex = 0;
+            int bestScore = 0;
+            List<String> bestHeaders = new ArrayList<>();
             
             for (int i = 0; i <= maxRowsToCheck; i++) {
                 Row row = sheet.getRow(i);
@@ -434,6 +510,17 @@ public class FileWatcherController {
                     rowData.add(cellValue);
                 }
                 
+                // Analyser la qualité de cette ligne comme en-tête
+                int score = analyzeHeaderRowQuality(rowData, i);
+                System.out.println("📋 Ligne " + i + " - Score: " + score + " - Contenu: " + rowData);
+                
+                if (score > bestScore) {
+                    bestScore = score;
+                    bestHeaderRowIndex = i;
+                    bestHeaders = new ArrayList<>(rowData);
+                    System.out.println("⭐ Nouveau meilleur en-tête trouvé à la ligne " + i + " avec score " + score);
+                }
+                
                 // Vérifier si cette ligne contient les en-têtes Orange Money
                 if (isOrangeMoneyHeaderRow(rowData)) {
                     headers = rowData;
@@ -442,9 +529,16 @@ public class FileWatcherController {
                 }
             }
             
+            // Si aucun en-tête Orange Money n'est trouvé, utiliser le meilleur en-tête détecté
+            if (headers.isEmpty() && bestScore > 0) {
+                headers = bestHeaders;
+                System.out.println("✅ Meilleur en-tête détecté à la ligne " + bestHeaderRowIndex + " avec score " + bestScore);
+            }
+            
             workbook.close();
             
             if (headers.isEmpty()) {
+                System.err.println("⚠️ [readExcelColumns] Fallback sur colonnes par défaut pour " + file.getName());
                 // Fallback : utiliser la première ligne non vide
                 for (int i = 0; i <= sheet.getLastRowNum(); i++) {
                     Row row = sheet.getRow(i);
@@ -458,17 +552,148 @@ public class FileWatcherController {
                         
                         if (rowData.stream().anyMatch(s -> !s.isEmpty())) {
                             headers = rowData;
+                            System.out.println("✅ En-têtes de fallback à la ligne " + i + ": " + headers);
                             break;
                         }
                     }
                 }
             }
             
+            // Nettoyer et corriger les en-têtes
+            headers = cleanAndCorrectHeaders(headers);
+            
+            System.out.println("📋 Colonnes finales nettoyées et corrigées: " + headers);
             return headers;
         } catch (Exception e) {
-            System.err.println("❌ Erreur lors de la lecture Excel: " + e.getMessage());
+            System.err.println("❌ [readExcelColumns] Erreur lors de la lecture Excel pour " + file.getName() + ": " + e.getMessage());
+            e.printStackTrace();
+            System.err.println("⚠️ [readExcelColumns] Fallback sur colonnes par défaut pour " + file.getName());
             return List.of("date", "montant", "description", "reference");
         }
+    }
+
+    // Méthode pour analyser la qualité d'une ligne comme en-tête
+    private int analyzeHeaderRowQuality(List<String> rowData, int rowIndex) {
+        if (rowData.isEmpty()) return 0;
+        
+        int score = 0;
+        int nonEmptyColumns = 0;
+        boolean hasNumberColumn = false;
+        boolean hasDateColumn = false;
+        boolean hasAmountColumn = false;
+        int keywordMatches = 0;
+        
+        // Mots-clés pour identifier les en-têtes
+        List<String> headerKeywords = List.of(
+            "N°", "Date", "Heure", "Référence", "Service", "Paiement", 
+            "Statut", "Mode", "Compte", "Wallet", "Pseudo", "Débit", 
+            "Crédit", "Montant", "Commissions", "Opération", "Agent", 
+            "Correspondant", "Sous-réseau", "Transaction", "Description",
+            "Prix", "Coût", "Tarif", "Somme", "Total", "Reste", "Balance",
+            "Solde", "Commission", "Frais", "Code", "ID", "Numéro"
+        );
+        
+        for (String cell : rowData) {
+            if (cell.isEmpty()) continue;
+            
+            nonEmptyColumns++;
+            
+            // Vérifier si c'est une colonne "N°"
+            if (cell.startsWith("N°") || cell.equals("N") || cell.contains("N°")) {
+                hasNumberColumn = true;
+                score += 25;
+            }
+            
+            // Vérifier les mots-clés d'en-tête
+            for (String keyword : headerKeywords) {
+                if (cell.toLowerCase().contains(keyword.toLowerCase())) {
+                    score += 8;
+                    keywordMatches++;
+                    
+                    // Bonus pour les types spécifiques
+                    if (keyword.equals("Date") || keyword.equals("Heure")) {
+                        hasDateColumn = true;
+                    }
+                    if (keyword.equals("Montant") || keyword.equals("Prix") || keyword.equals("Coût")) {
+                        hasAmountColumn = true;
+                    }
+                }
+            }
+            
+            // Bonus pour les colonnes qui ressemblent à des en-têtes
+            if (cell.length() > 0 && cell.length() < 50 && 
+                (cell.contains(" ") || cell.contains("(") || cell.contains(")") || 
+                 cell.contains(":") || cell.contains("-") || cell.contains("_"))) {
+                score += 3;
+            }
+            
+            // Bonus pour les colonnes avec des caractères spéciaux (typiques des en-têtes)
+            if (cell.contains("é") || cell.contains("è") || cell.contains("à") || 
+                cell.contains("ç") || cell.contains("ù") || cell.contains("ô")) {
+                score += 4;
+            }
+        }
+        
+        // Bonus pour avoir une colonne "N°" et plusieurs colonnes non vides
+        if (hasNumberColumn && nonEmptyColumns >= 3) {
+            score += 30;
+        }
+        
+        // Bonus pour avoir des mots-clés d'en-tête
+        if (keywordMatches >= 3) {
+            score += 20;
+        }
+        
+        // Bonus pour avoir des types de colonnes spécifiques
+        if (hasDateColumn) score += 10;
+        if (hasAmountColumn) score += 10;
+        
+        // Score de base pour les lignes avec plusieurs colonnes non vides
+        if (nonEmptyColumns >= 3) {
+            score += 8;
+        }
+        
+        // Pénalité pour les lignes avec peu de colonnes non vides
+        if (nonEmptyColumns < 2) {
+            score -= 5;
+        }
+        
+        return score;
+    }
+
+    // Méthode pour nettoyer et corriger les en-têtes
+    private List<String> cleanAndCorrectHeaders(List<String> headers) {
+        return headers.stream()
+            .map(header -> {
+                if (header == null) return "";
+                
+                String cleaned = header.trim();
+                
+                // Corrections spécifiques pour les fichiers Excel
+                if (cleaned.contains("Opration")) {
+                    cleaned = cleaned.replace("Opration", "Opération");
+                }
+                
+                if (cleaned.contains("Montant") && cleaned.contains("XAF")) {
+                    cleaned = cleaned.replaceAll("Montant\\s*\\(XAF\\)", "Montant (XAF)");
+                }
+                
+                if (cleaned.contains("Commissions") && cleaned.contains("XAF")) {
+                    cleaned = cleaned.replaceAll("Commissions\\s*\\(XAF\\)", "Commissions (XAF)");
+                }
+                
+                if (cleaned.contains("N°") && cleaned.contains("Compte")) {
+                    cleaned = cleaned.replaceAll("N°\\s*de\\s*Compte", "N° de Compte");
+                }
+                
+                if (cleaned.contains("N°") && cleaned.contains("Pseudo")) {
+                    cleaned = cleaned.replaceAll("N°\\s*Pseudo", "N° Pseudo");
+                }
+                
+                return cleaned;
+            })
+            .filter(header -> !header.isEmpty())
+            .collect(Collectors.toList());
     }
     
     // Méthode pour détecter si une ligne contient les en-têtes Orange Money

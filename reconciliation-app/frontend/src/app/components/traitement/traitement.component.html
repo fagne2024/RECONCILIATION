@@ -130,7 +130,7 @@
         <label>Colonne :</label>
         <select [(ngModel)]="selectedFilterColumn" (change)="onFilterColumnChange()">
           <option value="">-- Choisir une colonne --</option>
-          <option *ngFor="let col of columns" [value]="col">{{ col }}</option>
+          <option *ngFor="let col of allColumns" [value]="col">{{ col }}</option>
         </select>
       </div>
       <div class="filter-group" *ngIf="selectedFilterColumn">
@@ -523,6 +523,199 @@
                 [disabled]="!formatSelections['insertCharacters'].length || !charactersToInsert.trim()">
           Appliquer
         </button>
+      </div>
+      
+      <!-- Option : Formater en nombre -->
+      <label>
+        <input type="checkbox" [(ngModel)]="formatOptions['formatToNumber']"> Formater en nombre
+      </label>
+      <div *ngIf="formatOptions['formatToNumber']" class="format-columns">
+        <label>Colonnes à traiter :</label>
+        <select multiple [(ngModel)]="formatSelections['formatToNumber']">
+          <option *ngFor="let col of columns" [value]="col">{{ col }}</option>
+        </select>
+        <div class="format-number-help">
+          <small class="help-text">
+            💡 Cette option va :
+            <br>• Nettoyer les valeurs (supprimer espaces, caractères spéciaux)
+            <br>• Remplacer les virgules par des points (ex: "1,234" → "1.234")
+            <br>• Convertir en nombre JavaScript (ex: "1.234" → 1234)
+            <br>• Garder la valeur originale si la conversion échoue
+            <br>• Exemples : "1 234,56" → 1234.56, "abc123" → 123, "text" → "text" (inchangé)
+          </small>
+        </div>
+        <button type="button" (click)="applyNumberFormatting()" 
+                [disabled]="!formatSelections['formatToNumber'].length">
+          Appliquer
+        </button>
+      </div>
+      
+      <!-- Option : Normaliser les en-têtes -->
+      <label>
+        <input type="checkbox" [(ngModel)]="formatOptions['normalizeHeaders']"> Normaliser les en-têtes
+      </label>
+      <div *ngIf="formatOptions['normalizeHeaders']" class="format-columns">
+        <label>Colonnes à traiter :</label>
+        <select multiple [(ngModel)]="formatSelections['normalizeHeaders']">
+          <option *ngFor="let col of columns" [value]="col">{{ col }}</option>
+        </select>
+        <div class="format-help">
+          <small class="help-text">
+            💡 Normalise les espaces et met la première lettre de chaque mot en majuscule
+            <br>Exemple : "  code proprietaire  " → "Code Proprietaire"
+          </small>
+        </div>
+        <button type="button" (click)="applyNormalizeHeadersFormatting()" 
+                [disabled]="!formatSelections['normalizeHeaders'].length">
+          Appliquer
+        </button>
+      </div>
+      
+      <!-- Option : Corriger les caractères spéciaux -->
+      <label>
+        <input type="checkbox" [(ngModel)]="formatOptions['fixSpecialCharacters']"> Corriger les caractères spéciaux
+      </label>
+      <div *ngIf="formatOptions['fixSpecialCharacters']" class="format-columns">
+        <label>Colonnes à traiter :</label>
+        <select multiple [(ngModel)]="formatSelections['fixSpecialCharacters']">
+          <option *ngFor="let col of columns" [value]="col">{{ col }}</option>
+        </select>
+        <div class="format-help">
+          <small class="help-text">
+            💡 Corrige les caractères spéciaux français corrompus
+            <br>Exemples : "tlphone" → "téléphone", "Numro" → "Numéro"
+          </small>
+        </div>
+        <button type="button" (click)="applyFixSpecialCharactersFormatting()" 
+                [disabled]="!formatSelections['fixSpecialCharacters'].length">
+          Appliquer
+        </button>
+      </div>
+      
+      <!-- Option : Supprimer les accents -->
+      <label>
+        <input type="checkbox" [(ngModel)]="formatOptions['removeAccents']"> Supprimer les accents
+      </label>
+      <div *ngIf="formatOptions['removeAccents']" class="format-columns">
+        <label>Colonnes à traiter :</label>
+        <select multiple [(ngModel)]="formatSelections['removeAccents']">
+          <option *ngFor="let col of columns" [value]="col">{{ col }}</option>
+        </select>
+        <div class="format-help">
+          <small class="help-text">
+            💡 Supprime tous les accents des valeurs
+            <br>Exemple : "Téléphone" → "Telephone", "Numéro" → "Numero"
+          </small>
+        </div>
+        <button type="button" (click)="applyRemoveAccentsFormatting()" 
+                [disabled]="!formatSelections['removeAccents'].length">
+          Appliquer
+        </button>
+      </div>
+      
+      <!-- Option : Standardiser les en-têtes -->
+      <label>
+        <input type="checkbox" [(ngModel)]="formatOptions['standardizeHeaders']"> Standardiser les en-têtes
+      </label>
+      <div *ngIf="formatOptions['standardizeHeaders']" class="format-columns">
+        <label>Colonnes à traiter :</label>
+        <select multiple [(ngModel)]="formatSelections['standardizeHeaders']">
+          <option *ngFor="let col of columns" [value]="col">{{ col }}</option>
+        </select>
+        <div class="format-help">
+          <small class="help-text">
+            💡 Convertit en format standard (underscores, alphanumérique)
+            <br>Exemple : "Code propriétaire" → "Code_proprietaire"
+          </small>
+        </div>
+        <button type="button" (click)="applyStandardizeHeadersFormatting()" 
+                [disabled]="!formatSelections['standardizeHeaders'].length">
+          Appliquer
+        </button>
+      </div>
+    </div>
+
+    <!-- Traitement des caractères spéciaux des en-têtes -->
+    <div class="format-section">
+      <h4>🔧 Traitement des en-têtes de colonnes</h4>
+      <div class="format-options">
+        
+        <!-- Normalisation des en-têtes -->
+        <div class="format-option">
+          <input type="checkbox" [(ngModel)]="formatOptions['normalizeHeaders']"> Normaliser les en-têtes
+          <div *ngIf="formatOptions['normalizeHeaders']" class="format-description">
+            <small class="help-text">
+              💡 Normalise les espaces, met la première lettre de chaque mot en majuscule
+              <br>Exemple : "  code proprietaire  " → "Code Proprietaire"
+              <br>⚠️ <strong>Note :</strong> N'affecte que les en-têtes, pas les données
+            </small>
+          </div>
+        </div>
+
+        <!-- Correction des caractères spéciaux -->
+        <div class="format-option">
+          <input type="checkbox" [(ngModel)]="formatOptions['fixSpecialCharacters']"> Corriger les caractères spéciaux
+          <div *ngIf="formatOptions['fixSpecialCharacters']" class="format-description">
+            <small class="help-text">
+              💡 Corrige les caractères spéciaux français corrompus
+              <br>Exemples : "tlphone" → "téléphone", "Numro" → "Numéro", "Code proprietaire" → "Code propriétaire"
+              <br>⚠️ <strong>Note :</strong> N'affecte que les en-têtes, pas les données
+            </small>
+          </div>
+        </div>
+
+        <!-- Suppression des accents -->
+        <div class="format-option">
+          <input type="checkbox" [(ngModel)]="formatOptions['removeAccents']"> Supprimer les accents des en-têtes
+          <div *ngIf="formatOptions['removeAccents']" class="format-description">
+            <small class="help-text">
+              💡 Supprime tous les accents des noms de colonnes uniquement
+              <br>Exemple : "Téléphone" → "Telephone", "Numéro" → "Numero"
+              <br>⚠️ <strong>Note :</strong> N'affecte que les en-têtes, pas les données
+            </small>
+          </div>
+        </div>
+
+        <!-- Standardisation des en-têtes -->
+        <div class="format-option">
+          <input type="checkbox" [(ngModel)]="formatOptions['standardizeHeaders']"> Standardiser les en-têtes
+          <div *ngIf="formatOptions['standardizeHeaders']" class="format-description">
+            <small class="help-text">
+              💡 Convertit en format standard (underscores, alphanumérique)
+              <br>Exemple : "Code propriétaire" → "Code_proprietaire"
+              <br>⚠️ <strong>Note :</strong> N'affecte que les en-têtes, pas les données
+            </small>
+          </div>
+        </div>
+
+        <div class="format-info">
+          <div class="info-box">
+            <strong>📋 Traitement des en-têtes :</strong>
+            <ul>
+              <li><strong>Normalisation :</strong> Espaces propres + première lettre majuscule</li>
+              <li><strong>Correction caractères :</strong> Réparation des caractères français corrompus</li>
+              <li><strong>Suppression accents :</strong> Enlève tous les accents (é, è, à, ç, etc.)</li>
+              <li><strong>Standardisation :</strong> Format compatible base de données (underscores)</li>
+            </ul>
+            <div class="warning-box">
+              ⚠️ <strong>Attention :</strong> Le traitement des en-têtes modifie les noms de colonnes. 
+              Assurez-vous que vos données sont sauvegardées avant application.
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Bouton principal pour appliquer le formatage -->
+      <div class="format-actions">
+        <button type="button" 
+                (click)="applyFormatting()" 
+                [disabled]="!hasFormattingOption()"
+                class="apply-formatting-btn">
+          🔧 Appliquer le formatage
+        </button>
+        <small class="help-text">
+          💡 Ce bouton applique tous les formatages sélectionnés (données et en-têtes)
+        </small>
       </div>
     </div>
     <div *ngIf="successMsg.format" class="success-msg">{{ successMsg.format }}</div>

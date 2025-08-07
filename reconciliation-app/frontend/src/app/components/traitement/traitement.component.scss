@@ -69,6 +69,50 @@ button:hover {
   background: #0d47a1;
 }
 
+// Styles pour le bouton principal de formatage
+.format-actions {
+  margin-top: 20px;
+  text-align: center;
+  padding: 16px;
+  background: #f8f9fa;
+  border-radius: 8px;
+  border: 1px solid #e9ecef;
+}
+
+.apply-formatting-btn {
+  background: linear-gradient(135deg, #2196F3, #1976D2);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  padding: 12px 24px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 8px rgba(33, 150, 243, 0.3);
+  margin-bottom: 8px;
+}
+
+.apply-formatting-btn:hover {
+  background: linear-gradient(135deg, #1976D2, #1565C0);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(33, 150, 243, 0.4);
+}
+
+.apply-formatting-btn:disabled {
+  background: #ccc;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.format-actions .help-text {
+  color: #666;
+  font-size: 0.9rem;
+  display: block;
+  margin-top: 8px;
+}
+
 // Styles pour les filtres cohérents avec les autres composants
 .filter-controls {
   display: flex;

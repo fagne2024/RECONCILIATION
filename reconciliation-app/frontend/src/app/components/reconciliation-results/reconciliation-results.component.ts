@@ -5,6 +5,7 @@ import { Router } from '@angular/router';
 import { ReconciliationService } from '../../services/reconciliation.service';
 import { EcartSoldeService } from '../../services/ecart-solde.service';
 import { EcartSolde } from '../../models/ecart-solde.model';
+import { TrxSfService } from '../../services/trx-sf.service';
 import * as ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
 import { HttpClient } from '@angular/common/http';
@@ -341,6 +342,9 @@ interface ApiError {
                             </button>
                             <button (click)="saveEcartBoToEcartSolde()" class="save-button" [disabled]="isSavingEcartBo">
                                 {{ isSavingEcartBo ? '💾 Sauvegarde...' : '💾 Sauvegarder dans Ecart Solde' }}
+                            </button>
+                            <button (click)="saveEcartBoToTrxSf()" class="save-button" [disabled]="isSavingEcartBoToTrxSf">
+                                {{ isSavingEcartBoToTrxSf ? '💾 Sauvegarde...' : '💾 Sauvegarder dans TRX SF' }}
                             </button>
                         </div>
                         <div class="volume-summary">
@@ -1225,6 +1229,37 @@ interface ApiError {
             font-size: 14px;
             color: #666;
         }
+
+        /* Styles pour les doublons TSOP */
+        .tsop-duplicate {
+            background-color: #ff4444 !important;
+            color: white !important;
+            font-weight: bold;
+        }
+
+        .tsop-duplicate td {
+            background-color: #ff4444 !important;
+            color: white !important;
+            border-color: #ff2222 !important;
+        }
+
+        /* Styles pour IMPACT sans FRAIS */
+        .tsop-sans-frais {
+            background-color: #ffeb3b !important;
+            color: #333 !important;
+            font-weight: bold;
+        }
+
+        .tsop-sans-frais td {
+            background-color: #ffeb3b !important;
+            color: #333 !important;
+            border-color: #ffc107 !important;
+        }
+
+        .tsop-comment {
+            font-weight: bold;
+            text-align: center;
+        }
     `]
 })
 export class ReconciliationResultsComponent implements OnInit, OnDestroy {
@@ -1246,6 +1281,7 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
     isSaving: boolean = false;
     isSavingEcartBo: boolean = false;
     isSavingEcartPartner: boolean = false;
+    isSavingEcartBoToTrxSf: boolean = false;
     exportProgress = 0;
     isExporting = false;
     
@@ -1459,6 +1495,156 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
         }
     }
 
+    async saveEcartBoToTrxSf(): Promise<void> {
+        if (!this.response?.boOnly || this.response.boOnly.length === 0) {
+            alert('❌ Aucune donnée ECART BO à sauvegarder dans TRX SF.');
+            return;
+        }
+
+        this.isSavingEcartBoToTrxSf = true;
+
+        try {
+            console.log('🔄 Début de la sauvegarde des ECART BO dans TRX SF...');
+            console.log('DEBUG: Nombre d\'enregistrements ECART BO:', this.response.boOnly.length);
+
+            // Convertir les données ECART BO en format TrxSfData avec récupération des frais
+            const trxSfDataPromises = this.response.boOnly.map(async (record, index) => {
+                const getValueWithFallback = (keys: string[]): string => {
+                    for (const key of keys) {
+                        if (record[key] !== undefined && record[key] !== null && record[key] !== '') {
+                            return record[key].toString();
+                        }
+                    }
+                    return '';
+                };
+
+                // Extraire les informations d'agence et de service
+                const agencyInfo = this.getBoOnlyAgencyAndService(record);
+                
+                // Fonction helper pour formater la date au format ISO
+                const formatDateForBackend = (dateStr: string): string => {
+                    if (!dateStr) return '';
+                    
+                    // Si la date est déjà au format ISO, la retourner
+                    if (dateStr.includes('T')) return dateStr;
+                    
+                    // Convertir le format "2025-07-09 12:40:18.0" en "2025-07-09T12:40:18"
+                    const cleanedDate = dateStr.replace(/\.\d+$/, ''); // Enlever les millisecondes
+                    return cleanedDate.replace(' ', 'T');
+                };
+
+                // Calculer automatiquement les frais selon la configuration du service
+                let frais = 0;
+                try {
+                    // Récupérer la configuration des frais pour le service
+                    const fraisConfigResponse = await this.trxSfService.getFraisConfigByService(agencyInfo.service).toPromise();
+                    const fraisConfig = fraisConfigResponse;
+                    
+                    if (fraisConfig && fraisConfig.typeFrais) {
+                        if (fraisConfig.typeFrais === 'NOMINAL' || fraisConfig.typeFrais === 'FIXE') {
+                            // Frais fixe : on prend le montant configuré
+                            frais = fraisConfig.montant || 0;
+                            console.log(`💰 Frais fixe configuré pour ${agencyInfo.service}: ${frais}`);
+                        } else if (fraisConfig.typeFrais === 'POURCENTAGE') {
+                            // Frais en pourcentage : on applique le pourcentage sur le montant
+                            const pourcentage = fraisConfig.pourcentage || 0;
+                            frais = (agencyInfo.volume * pourcentage) / 100;
+                            console.log(`📊 Frais pourcentage configuré pour ${agencyInfo.service}: ${pourcentage}% sur ${agencyInfo.volume} = ${frais}`);
+                        }
+                    } else {
+                        // Pas de configuration, frais à 0 par défaut
+                        frais = 0;
+                        console.log(`⚠️ Pas de configuration de frais pour ${agencyInfo.service}, frais à 0`);
+                    }
+                    
+                    console.log(`✅ Frais calculés pour ${agencyInfo.agency}:`);
+                    console.log(`   - Service: ${agencyInfo.service}`);
+                    console.log(`   - Montant transaction: ${agencyInfo.volume}`);
+                    console.log(`   - Frais calculés: ${frais}`);
+                    console.log(`   - Configuration:`, fraisConfig);
+                } catch (configError) {
+                    console.warn(`⚠️ Erreur lors de la récupération de la config des frais pour ${agencyInfo.service}:`, configError);
+                    frais = 0; // Frais par défaut en cas d'erreur
+                }
+
+                // Créer l'objet TrxSfData avec les données mappées
+                const trxSf: any = {
+                    idTransaction: getValueWithFallback(['IDTransaction', 'id_transaction', 'ID_TRANSACTION', 'transaction_id', 'TransactionId']),
+                    telephoneClient: getValueWithFallback(['téléphone client', 'telephone_client', 'TELEPHONE_CLIENT', 'phone', 'Phone']),
+                    montant: parseFloat(getValueWithFallback(['montant', 'Montant', 'MONTANT', 'amount', 'Amount', 'volume', 'Volume'])) || 0,
+                    service: agencyInfo.service,
+                    agence: agencyInfo.agency,
+                    dateTransaction: formatDateForBackend(agencyInfo.date),
+                    numeroTransGu: getValueWithFallback(['Numéro Trans GU', 'numero_trans_gu', 'NUMERO_TRANS_GU', 'transaction_number', 'TransactionNumber']),
+                    pays: agencyInfo.country,
+                    statut: 'EN_ATTENTE',
+                    frais: frais, // Frais récupérés depuis l'API
+                    commentaire: 'ECART BO - Importé depuis la réconciliation avec frais TSOP',
+                    dateImport: new Date().toISOString()
+                };
+
+                console.log(`DEBUG: Enregistrement ${index + 1} préparé pour TRX SF:`, {
+                    idTransaction: trxSf.idTransaction,
+                    agence: trxSf.agence,
+                    service: trxSf.service,
+                    montant: trxSf.montant,
+                    frais: trxSf.frais,
+                    agencyInfo: agencyInfo
+                });
+
+                return trxSf;
+            });
+
+            // Attendre que toutes les promesses soient résolues
+            const trxSfData = await Promise.all(trxSfDataPromises);
+
+            console.log('DEBUG: Données converties en format TrxSfData avec frais:', trxSfData.length, 'enregistrements');
+
+            // Validation des données avant sauvegarde
+            const validRecords = trxSfData.filter(record => 
+                record.idTransaction && 
+                record.idTransaction.trim() !== '' && 
+                record.agence && 
+                record.agence.trim() !== ''
+            );
+
+            console.log('DEBUG: Nombre d\'enregistrements valides après filtrage:', validRecords.length);
+
+            if (validRecords.length === 0) {
+                alert('❌ Aucun enregistrement valide trouvé pour la sauvegarde dans TRX SF.');
+                return;
+            }
+
+            // Sauvegarder les données dans TRX SF
+            console.log('🔄 Sauvegarde des données dans TRX SF avec frais TSOP...');
+            
+            // Appeler le service pour sauvegarder les données
+            const result = await this.trxSfService.createMultipleTrxSf(validRecords).toPromise();
+            
+            console.log('✅ Sauvegarde dans TRX SF terminée avec succès:', result);
+            
+            // Afficher un message de succès
+            alert(`✅ ${validRecords.length} enregistrements ECART BO ont été sauvegardés dans TRX SF avec frais TSOP !`);
+
+        } catch (error) {
+            console.error('❌ Erreur lors de la sauvegarde dans TRX SF:', error);
+            
+            let errorMessage = 'Erreur lors de la sauvegarde dans TRX SF';
+            if (error && typeof error === 'object') {
+                const errorObj = error as any;
+                if (errorObj.error && typeof errorObj.error === 'object') {
+                    errorMessage = errorObj.error.message || errorObj.error.details || errorMessage;
+                } else if (errorObj.message) {
+                    errorMessage = errorObj.message;
+                }
+            }
+            
+            alert(`❌ ${errorMessage}`);
+        } finally {
+            this.isSavingEcartBoToTrxSf = false;
+        }
+    }
+
     // Méthode helper pour créer le contenu CSV pour la validation
     private createCsvContent(ecartSoldeData: EcartSolde[]): string {
         const headers = ['ID', 'IDTransaction', 'téléphone client', 'montant', 'Service', 'Agence', 'Date', 'Numéro Trans GU', 'PAYS'];
@@ -1480,6 +1666,45 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
         });
         
         return csvRows.join('\n');
+    }
+
+    /**
+     * Détermine la nature de l'écart partenaire
+     */
+    private determineEcartNature(record: Record<string, string>): string {
+        // Vérifier s'il y a des frais
+        const fraisKeys = ['Frais connexion', 'frais_connexion', 'FRAIS_CONNEXION', 'frais', 'Frais'];
+        const hasFrais = fraisKeys.some(key => {
+            const value = record[key];
+            return value !== undefined && value !== null && value !== '' && parseFloat(value) > 0;
+        });
+
+        // Vérifier s'il y a une transaction
+        const transactionKeys = ['ID Transaction', 'id_transaction', 'ID_TRANSACTION', 'transaction_id', 'TransactionId'];
+        const hasTransaction = transactionKeys.some(key => {
+            const value = record[key];
+            return value !== undefined && value !== null && value !== '';
+        });
+
+        // Vérifier s'il y a un montant
+        const montantKeys = ['Montant', 'montant', 'MONTANT', 'amount', 'Amount', 'volume', 'Volume'];
+        const hasMontant = montantKeys.some(key => {
+            const value = record[key];
+            return value !== undefined && value !== null && value !== '' && parseFloat(value) > 0;
+        });
+
+        // Déterminer la nature de l'écart
+        if (!hasTransaction && !hasMontant) {
+            return 'Ligne partenaire sans transaction ni montant';
+        } else if (!hasTransaction) {
+            return 'Ligne partenaire sans transaction';
+        } else if (!hasFrais && hasMontant) {
+            return 'Ligne partenaire sans frais';
+        } else if (!hasMontant) {
+            return 'Ligne partenaire sans montant';
+        } else {
+            return 'Ligne partenaire avec écart non spécifié';
+        }
     }
 
     async saveEcartPartnerToEcartSolde(): Promise<void> {
@@ -1518,6 +1743,9 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                 // Extraire les informations d'agence et de service
                 const agencyInfo = this.getPartnerOnlyAgencyAndService(record);
                 
+                // Déterminer la nature de l'écart
+                const ecartNature = this.determineEcartNature(record);
+                
                 // Fonction helper pour formater la date au format ISO
                 const formatDateForBackend = (dateStr: string): string => {
                     if (!dateStr) return '';
@@ -1542,7 +1770,7 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                     numeroTransGu: getValueWithFallback(['Numéro Trans GU', 'numero_trans_gu', 'NUMERO_TRANS_GU', 'transaction_number', 'TransactionNumber']),
                     pays: agencyInfo.country,
                     statut: 'EN_ATTENTE', // Statut par défaut
-                    commentaire: 'IMPACT PARTENAIRE', // Commentaire spécifique pour les partenaires
+                    commentaire: `IMPACT PARTENAIRE - ${ecartNature}`, // Commentaire avec nature de l'écart
                     dateImport: new Date().toISOString()
                 };
 
@@ -1593,16 +1821,29 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
 
             console.log('DEBUG: Enregistrements valides pour sauvegarde:', validRecords.length);
 
+            // Analyser les types d'écarts
+            const ecartTypes = new Map<string, number>();
+            this.response.partnerOnly.forEach(record => {
+                const ecartNature = this.determineEcartNature(record);
+                ecartTypes.set(ecartNature, (ecartTypes.get(ecartNature) || 0) + 1);
+            });
+
             // Créer le contenu CSV pour validation
             const csvContent = this.createCsvContent(validRecords);
             console.log('DEBUG: Contenu CSV généré pour validation');
 
             // Afficher un message de confirmation avec les détails
-            const message = `📋 RÉSUMÉ DES DONNÉES À SAUVEGARDER:\n\n` +
+            let message = `📋 RÉSUMÉ DES DONNÉES À SAUVEGARDER:\n\n` +
                 `📊 Total des enregistrements ECART Partenaire: ${this.response.partnerOnly.length}\n` +
                 `✅ Enregistrements valides: ${validRecords.length}\n` +
                 `❌ Enregistrements invalides: ${ecartSoldeData.length - validRecords.length}\n\n` +
-                `📝 Commentaire par défaut: "IMPACT PARTENAIRE"\n` +
+                `🔍 RÉPARTITION DES TYPES D'ÉCARTS:\n`;
+            
+            ecartTypes.forEach((count, type) => {
+                message += `• ${type}: ${count} enregistrement(s)\n`;
+            });
+            
+            message += `\n📝 Commentaire: "IMPACT PARTENAIRE - [Nature de l'écart]"\n` +
                 `🔄 Les doublons seront automatiquement ignorés.\n\n` +
                 `Voulez-vous continuer avec la sauvegarde ?`;
 
@@ -1656,6 +1897,7 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
         private router: Router,
         private reconciliationService: ReconciliationService,
         private ecartSoldeService: EcartSoldeService,
+        private trxSfService: TrxSfService,
         private http: HttpClient
     ) {}
 
@@ -1797,6 +2039,182 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
 
     getRecordKeys(record: Record<string, string>): string[] {
         return Object.keys(record);
+    }
+
+    /**
+     * Détecter les doublons de clé de réconciliation avec types d'opération spécifiques
+     */
+    detectTSOPDuplicates(data: any[]): Map<string, any[]> {
+        console.log('🔍 DÉBUT detectTSOPDuplicates - Nombre d\'enregistrements:', data.length);
+        
+        if (data.length > 0) {
+            console.log('🔍 Premier enregistrement (colonnes disponibles):', Object.keys(data[0]));
+            console.log('🔍 Premier enregistrement (données):', data[0]);
+        }
+
+        const duplicatesMap = new Map<string, any[]>();
+        const keyCount = new Map<string, any[]>();
+
+        // Grouper les enregistrements par clé de réconciliation
+        data.forEach((record, index) => {
+            // Essayer différents noms de colonnes pour la clé de réconciliation
+            const reconciliationKey = this.getReconciliationKey(record);
+            const typeOperation = this.getTypeOperation(record);
+
+            console.log(`🔍 Enregistrement ${index + 1}:`, {
+                reconciliationKey: reconciliationKey,
+                typeOperation: typeOperation,
+                colonnesDisponibles: Object.keys(record)
+            });
+
+            if (reconciliationKey && typeOperation) {
+                if (!keyCount.has(reconciliationKey)) {
+                    keyCount.set(reconciliationKey, []);
+                }
+                keyCount.get(reconciliationKey)!.push({
+                    record: record,
+                    typeOperation: typeOperation
+                });
+                console.log(`✅ Ajouté à keyCount: ${reconciliationKey} -> ${typeOperation}`);
+            } else {
+                console.log(`❌ Ignoré (clé: "${reconciliationKey}", type: "${typeOperation}")`);
+            }
+        });
+
+        console.log('🔍 keyCount après groupement:', Array.from(keyCount.entries()));
+
+        // Identifier les doublons avec les types d'opération spécifiques
+        keyCount.forEach((records, key) => {
+            const types = records.map(r => r.typeOperation);
+            console.log(`🔍 Clé ${key} a ${records.length} enregistrements avec types:`, types);
+            
+            // Vérifier si on a les deux types spécifiques
+            const hasImpactCompte = types.includes('IMPACT_COMPTIMPACT-COMPTE-GENERAL');
+            const hasFraisTransaction = types.includes('FRAIS_TRANSACTION');
+
+            console.log(`🔍 Pour clé ${key}:`, {
+                hasImpactCompte,
+                hasFraisTransaction,
+                types,
+                recordCount: records.length
+            });
+
+            if (records.length >= 2 && hasImpactCompte && hasFraisTransaction) {
+                // Cas 1: Doublon TSOP complet (IMPACT + FRAIS)
+                duplicatesMap.set(key, records.map(r => ({ ...r, tsopType: 'COMPLETE' })));
+                console.log(`🎯 TSOP Duplicate COMPLET détecté pour clé ${key}:`, types);
+            } else if (records.length === 1 && hasImpactCompte && !hasFraisTransaction) {
+                // Cas 2: IMPACT seul sans FRAIS (SANS FRAIS)
+                duplicatesMap.set(key, records.map(r => ({ ...r, tsopType: 'SANS_FRAIS' })));
+                console.log(`🟡 IMPACT SANS FRAIS détecté pour clé ${key}:`, types);
+            } else {
+                console.log(`❌ Pas de doublon TSOP pour clé ${key} (ne correspond à aucun cas)`);
+            }
+        });
+
+        console.log('🔍 FIN detectTSOPDuplicates - Nombre de doublons TSOP trouvés:', duplicatesMap.size);
+        return duplicatesMap;
+    }
+
+    /**
+     * Extraire la clé de réconciliation d'un enregistrement
+     */
+    private getReconciliationKey(record: any): string {
+        const possibleKeys = [
+            'CLE',
+            'clé de réconciliation',
+            'cle_reconciliation', 
+            'reconciliation_key',
+            'RECONCILIATION_KEY',
+            'Key',
+            'key',
+            'ID',
+            'id'
+        ];
+
+        for (const key of possibleKeys) {
+            if (record[key] !== undefined && record[key] !== null && record[key] !== '') {
+                console.log(`🔍 Clé de réconciliation trouvée: "${key}" = "${record[key]}"`);
+                return record[key].toString();
+            }
+        }
+        console.log('❌ Aucune clé de réconciliation trouvée dans:', Object.keys(record));
+        return '';
+    }
+
+    /**
+     * Extraire le type d'opération d'un enregistrement
+     */
+    private getTypeOperation(record: any): string {
+        const possibleKeys = [
+            'Type Opération',
+            'Type Op�ration', // Avec caractères d'encodage
+            'type operation',
+            'type_operation',
+            'typeOperation',
+            'TYPE_OPERATION',
+            'TypeOperation',
+            'Operation',
+            'operation'
+        ];
+
+        for (const key of possibleKeys) {
+            if (record[key] !== undefined && record[key] !== null && record[key] !== '') {
+                console.log(`🔍 Type d'opération trouvé: "${key}" = "${record[key]}"`);
+                return record[key].toString();
+            }
+        }
+        console.log('❌ Aucun type d\'opération trouvé dans:', Object.keys(record));
+        return '';
+    }
+
+    /**
+     * Vérifier si un enregistrement est un doublon TSOP
+     */
+    isTSOPDuplicate(record: any, duplicatesMap: Map<string, any[]>): boolean {
+        const reconciliationKey = this.getReconciliationKey(record);
+        return reconciliationKey !== '' && duplicatesMap.has(reconciliationKey);
+    }
+
+    /**
+     * Obtenir la map des doublons TSOP pour l'affichage
+     */
+    getTSOPDuplicatesMap(): Map<string, any[]> {
+        if (!this.response?.partnerOnly) return new Map();
+        return this.detectTSOPDuplicates(this.filteredPartnerOnly);
+    }
+
+    /**
+     * Obtenir le commentaire TSOP pour un enregistrement
+     */
+    getTSOPComment(record: any): string {
+        const duplicatesMap = this.getTSOPDuplicatesMap();
+        const reconciliationKey = this.getReconciliationKey(record);
+        
+        if (reconciliationKey && duplicatesMap.has(reconciliationKey)) {
+            const duplicateRecords = duplicatesMap.get(reconciliationKey);
+            if (duplicateRecords && duplicateRecords.length > 0) {
+                const tsopType = duplicateRecords[0].tsopType;
+                return tsopType === 'COMPLETE' ? 'TSOP' : 'SANS FRAIS';
+            }
+        }
+        return '';
+    }
+
+    /**
+     * Obtenir le type TSOP pour un enregistrement (pour le style CSS)
+     */
+    getTSOPType(record: any): string {
+        const duplicatesMap = this.getTSOPDuplicatesMap();
+        const reconciliationKey = this.getReconciliationKey(record);
+        
+        if (reconciliationKey && duplicatesMap.has(reconciliationKey)) {
+            const duplicateRecords = duplicatesMap.get(reconciliationKey);
+            if (duplicateRecords && duplicateRecords.length > 0) {
+                return duplicateRecords[0].tsopType || 'COMPLETE';
+            }
+        }
+        return '';
     }
 
     hasDifferences(match: Match): boolean {
@@ -2035,6 +2453,10 @@ private async generateExcelFile(): Promise<ExcelJS.Workbook[]> {
             const workbook = new ExcelJS.Workbook();
             const worksheet = workbook.addWorksheet('Partenaire Uniquement');
             
+            // Détecter les doublons TSOP
+            const duplicatesMap = this.detectTSOPDuplicates(filteredPartnerOnly);
+            console.log('🔍 Doublons TSOP détectés:', duplicatesMap.size);
+            
             // Récupérer toutes les clés
             const allKeys = new Set<string>();
             filteredPartnerOnly.forEach(record => {
@@ -2042,20 +2464,97 @@ private async generateExcelFile(): Promise<ExcelJS.Workbook[]> {
             });
             const keysArray = Array.from(allKeys);
             
+            // Ajouter la colonne commentaire si elle n'existe pas
+            if (!keysArray.includes('Commentaire TSOP')) {
+                keysArray.push('Commentaire TSOP');
+            }
+            
             // Définir les colonnes
             const columns = keysArray.map(key => ({ header: key, key: key, width: 15 }));
             worksheet.columns = columns;
             
+            // Styles Excel
+            const headerStyle = {
+                font: { bold: true, color: { argb: 'FFFFFFFF' } },
+                fill: { type: 'pattern' as const, pattern: 'solid' as const, fgColor: { argb: 'FF4472C4' } },
+                alignment: { vertical: 'middle' as const, horizontal: 'center' as const },
+                border: {
+                    top: { style: 'thin' as const },
+                    left: { style: 'thin' as const },
+                    bottom: { style: 'thin' as const },
+                    right: { style: 'thin' as const }
+                }
+            };
+
+            const tsorDuplicateStyle = {
+                fill: { type: 'pattern' as const, pattern: 'solid' as const, fgColor: { argb: 'FFFF0000' } }, // Rouge
+                font: { color: { argb: 'FFFFFFFF' }, bold: true },
+                border: {
+                    top: { style: 'thin' as const },
+                    left: { style: 'thin' as const },
+                    bottom: { style: 'thin' as const },
+                    right: { style: 'thin' as const }
+                }
+            };
+
+            const tsorSansFraisStyle = {
+                fill: { type: 'pattern' as const, pattern: 'solid' as const, fgColor: { argb: 'FFFFFF00' } }, // Jaune
+                font: { color: { argb: 'FF000000' }, bold: true },
+                border: {
+                    top: { style: 'thin' as const },
+                    left: { style: 'thin' as const },
+                    bottom: { style: 'thin' as const },
+                    right: { style: 'thin' as const }
+                }
+            };
+
+            const dataStyle = {
+                border: {
+                    top: { style: 'thin' as const },
+                    left: { style: 'thin' as const },
+                    bottom: { style: 'thin' as const },
+                    right: { style: 'thin' as const }
+                }
+            };
+            
             // Ajouter les données
-            filteredPartnerOnly.forEach(record => {
+            filteredPartnerOnly.forEach((record, index) => {
                 const rowData: any = {};
+                const tsopType = this.getTSOPType(record);
+                const tsopComment = this.getTSOPComment(record);
+                
                 keysArray.forEach(key => {
-                    rowData[key] = record[key] || '';
+                    if (key === 'Commentaire TSOP') {
+                        // Ajouter le commentaire approprié
+                        rowData[key] = tsopComment;
+                    } else {
+                        rowData[key] = record[key] || '';
+                    }
                 });
-                worksheet.addRow(rowData);
+                const row = worksheet.addRow(rowData);
+                
+                // Appliquer le style selon le type TSOP
+                if (tsopType === 'COMPLETE') {
+                    // Style rouge pour TSOP complet
+                    row.eachCell(cell => {
+                        cell.style = tsorDuplicateStyle;
+                    });
+                    console.log(`🟥 Ligne ${index + 2} colorée en rouge (TSOP complet)`);
+                } else if (tsopType === 'SANS_FRAIS') {
+                    // Style jaune pour IMPACT sans FRAIS
+                    row.eachCell(cell => {
+                        cell.style = tsorSansFraisStyle;
+                    });
+                    console.log(`🟡 Ligne ${index + 2} colorée en jaune (SANS FRAIS)`);
+                } else {
+                    // Style normal
+                    row.eachCell(cell => {
+                        cell.style = dataStyle;
+                    });
+                }
             });
             
-            // Appliquer les styles
+            // Appliquer les styles d'en-tête
             worksheet.getRow(1).eachCell(cell => {
                 cell.style = {
                     font: { bold: true, color: { argb: 'FFFFFFFF' } },

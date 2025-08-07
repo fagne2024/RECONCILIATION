@@ -1,6 +1,6 @@
 import { Injectable, OnInit } from '@angular/core';
-import { HttpClient, HttpErrorResponse } from '@angular/common/http';
-import { Observable, throwError, BehaviorSubject } from 'rxjs';
+import { HttpClient, HttpErrorResponse, HttpHeaders } from '@angular/common/http';
+import { Observable, throwError, BehaviorSubject, timeout } from 'rxjs';
 import { catchError, tap, map, finalize } from 'rxjs/operators';
 import { ReconciliationRequest } from '../models/reconciliation-request.model';
 import { ReconciliationResponse } from '../models/reconciliation-response.model';
@@ -60,34 +60,216 @@ export class ReconciliationService implements OnInit {
             .pipe(catchError(this.handleError));
     }
 
+    /**
+     * Normalise une valeur de clé pour la réconciliation avec une logique intelligente
+     */
+    private normalizeKeyValue(value: any): string {
+        if (value === null || value === undefined) {
+            return '';
+        }
+        
+        let normalized = value.toString().trim();
+        
+        // 1. Supprimer les espaces multiples et en début/fin
+        normalized = normalized.replace(/\s+/g, ' ').trim();
+        
+        // 2. Supprimer les préfixes courants (CI, PM, etc.) - optimisé
+        const commonPrefixes = ['ci', 'pm', 'om', 'trx', 'tx'];
+        for (const prefix of commonPrefixes) {
+            if (normalized.toLowerCase().startsWith(prefix.toLowerCase())) {
+                normalized = normalized.substring(prefix.length);
+                break;
+            }
+        }
+        
+        // 3. Supprimer les caractères spéciaux courants (points, tirets, etc.)
+        normalized = normalized.replace(/[.\-_]/g, '');
+        
+        // 4. Extraire uniquement les chiffres et lettres (supprimer les caractères spéciaux restants)
+        normalized = normalized.replace(/[^\w]/g, '');
+        
+        // 5. Si la valeur ne contient que des chiffres, la garder telle quelle
+        if (/^\d+$/.test(normalized)) {
+            return normalized;
+        }
+        
+        // 6. Pour les autres cas, convertir en minuscules
+        normalized = normalized.toLowerCase();
+        
+        // 7. Si la valeur est vide après normalisation, essayer d'extraire des chiffres
+        if (normalized === '') {
+            const numbers = value.toString().match(/\d+/g);
+            if (numbers && numbers.length > 0) {
+                normalized = numbers.join('');
+            }
+        }
+        
+        return normalized;
+    }
+
+    /**
+     * Normalise les données de réconciliation en appliquant des transformations sur les clés
+     */
+    private normalizeReconciliationData(request: ReconciliationRequest): ReconciliationRequest {
+        const normalizedRequest = { ...request };
+        
+        // Normaliser les données BO
+        if (normalizedRequest.boFileContent && normalizedRequest.boKeyColumn) {
+            normalizedRequest.boFileContent = normalizedRequest.boFileContent.map(row => {
+                const normalizedRow = { ...row };
+                if (normalizedRow[normalizedRequest.boKeyColumn]) {
+                    normalizedRow[normalizedRequest.boKeyColumn] = this.normalizeKeyValue(normalizedRow[normalizedRequest.boKeyColumn]);
+                }
+                return normalizedRow;
+            });
+        }
+        
+        // Normaliser les clés supplémentaires BO
+        if (normalizedRequest.additionalKeys && normalizedRequest.boFileContent) {
+            normalizedRequest.additionalKeys.forEach((keyPair) => {
+                normalizedRequest.boFileContent = normalizedRequest.boFileContent.map(row => {
+                    const normalizedRow = { ...row };
+                    if (normalizedRow[keyPair.boColumn]) {
+                        normalizedRow[keyPair.boColumn] = this.normalizeKeyValue(normalizedRow[keyPair.boColumn]);
+                    }
+                    return normalizedRow;
+                });
+            });
+        }
+        
+        // Normaliser les données Partner
+        if (normalizedRequest.partnerFileContent && normalizedRequest.partnerKeyColumn) {
+            normalizedRequest.partnerFileContent = normalizedRequest.partnerFileContent.map(row => {
+                const normalizedRow = { ...row };
+                if (normalizedRow[normalizedRequest.partnerKeyColumn]) {
+                    normalizedRow[normalizedRequest.partnerKeyColumn] = this.normalizeKeyValue(normalizedRow[normalizedRequest.partnerKeyColumn]);
+                }
+                return normalizedRow;
+            });
+        }
+        
+        // Normaliser les clés supplémentaires Partner
+        if (normalizedRequest.additionalKeys && normalizedRequest.partnerFileContent) {
+            normalizedRequest.additionalKeys.forEach((keyPair) => {
+                normalizedRequest.partnerFileContent = normalizedRequest.partnerFileContent.map(row => {
+                    const normalizedRow = { ...row };
+                    if (normalizedRow[keyPair.partnerColumn]) {
+                        normalizedRow[keyPair.partnerColumn] = this.normalizeKeyValue(normalizedRow[keyPair.partnerColumn]);
+                    }
+                    return normalizedRow;
+                });
+            });
+        }
+        
+        return normalizedRequest;
+    }
+
+    /**
+     * Détecte si la normalisation est nécessaire en analysant un échantillon des données
+     */
+    private isNormalizationNeeded(request: ReconciliationRequest): boolean {
+        // Échantillon de 100 enregistrements pour détecter les patterns
+        const sampleSize = Math.min(100, Math.min(
+            request.boFileContent?.length || 0,
+            request.partnerFileContent?.length || 0
+        ));
+        
+        if (sampleSize === 0) return false;
+        
+        // Vérifier les clés BO
+        for (let i = 0; i < sampleSize; i++) {
+            const boRecord = request.boFileContent[i];
+            const boKey = boRecord[request.boKeyColumn];
+            
+            if (boKey && (boKey.includes(' ') || boKey.includes('.') || boKey.includes('-') || boKey.includes('_'))) {
+                return true; // Normalisation nécessaire
+            }
+        }
+        
+        // Vérifier les clés Partner
+        for (let i = 0; i < sampleSize; i++) {
+            const partnerRecord = request.partnerFileContent[i];
+            const partnerKey = partnerRecord[request.partnerKeyColumn];
+            
+            if (partnerKey && (partnerKey.includes(' ') || partnerKey.includes('.') || partnerKey.includes('-') || partnerKey.includes('_'))) {
+                return true; // Normalisation nécessaire
+            }
+        }
+        
+        return false; // Pas de normalisation nécessaire
+    }
+
     reconcile(request: ReconciliationRequest): Observable<ReconciliationResponse> {
         this.ensureInitialized();
-        console.log('Sending reconciliation request:', request);
+        
+        console.log('🚀 Début de la réconciliation...');
+        console.log('📊 Données de la requête:', {
+            boDataLength: request.boFileContent?.length || 0,
+            partnerDataLength: request.partnerFileContent?.length || 0,
+            boKeyColumn: request.boKeyColumn,
+            partnerKeyColumn: request.partnerKeyColumn,
+            additionalKeys: request.additionalKeys?.length || 0
+        });
+        
+        // Détecter si la normalisation est nécessaire
+        const needsNormalization = this.isNormalizationNeeded(request);
+        console.log(`🔧 Normalisation nécessaire: ${needsNormalization ? 'Oui' : 'Non'}`);
+        
+        // Normaliser les données avant la réconciliation (seulement si nécessaire)
+        const normalizedRequest = needsNormalization ? this.normalizeReconciliationData(request) : request;
+        
+        console.log('📤 Envoi de la requête de réconciliation...');
+        console.log('🔗 URL:', `${this.apiUrl}/reconcile`);
         
         // Utiliser la méthode sécurisée
         const progressSubject = this.getProgressSubject();
         
         // Commencer la progression avant l'envoi de la requête
         progressSubject.next(10);
+        console.log('📈 Progression initialisée à 10%');
         
         // Créer un intervalle pour mettre à jour la progression pendant le traitement
         const progressInterval = setInterval(() => {
             const currentProgress = progressSubject.value;
             if (currentProgress < 90) {
-                progressSubject.next(currentProgress + 10);
+                // Progression plus réaliste basée sur la taille des données
+                const dataSize = (request.boFileContent?.length || 0) + (request.partnerFileContent?.length || 0);
+                const progressIncrement = dataSize > 100000 ? 2 : 5; // Plus lent pour gros fichiers
+                progressSubject.next(Math.min(90, currentProgress + progressIncrement));
+                console.log(`📈 Progression mise à jour: ${Math.min(90, currentProgress + progressIncrement)}%`);
             }
         }, 1000);
 
-        return this.http.post<ReconciliationResponse>(`${this.apiUrl}/reconcile`, request)
+        return this.http.post<ReconciliationResponse>(`${this.apiUrl}/reconcile`, normalizedRequest, {
+            headers: new HttpHeaders({
+                'Content-Type': 'application/json'
+            })
+        })
             .pipe(
+                timeout(600000), // Timeout de 10 minutes
                 tap(response => {
-                    console.log('Received reconciliation response:', response);
+                    console.log('✅ Réponse de réconciliation reçue:', response);
+                    console.log('📊 Résultats:', {
+                        matches: response.matches?.length || 0,
+                        boOnly: response.boOnly?.length || 0,
+                        partnerOnly: response.partnerOnly?.length || 0,
+                        mismatches: response.mismatches?.length || 0
+                    });
                 }),
                 finalize(() => {
+                    console.log('🏁 Finalisation de la réconciliation...');
                     clearInterval(progressInterval);
                     progressSubject.next(100);
+                    console.log('✅ Réconciliation terminée avec succès');
                 }),
                 catchError(error => {
+                    console.error('❌ Erreur lors de la réconciliation:', error);
+                    console.error('🔍 Détails de l\'erreur:', {
+                        status: error.status,
+                        statusText: error.statusText,
+                        message: error.message,
+                        error: error.error
+                    });
                     clearInterval(progressInterval);
                     progressSubject.next(0);
                     return this.handleError(error);

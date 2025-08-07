@@ -1,0 +1,300 @@
+<div class="impact-op-container">
+  <div class="header">
+    <h2>Gestion des Impacts OP (Écarts Partenaires)</h2>
+    <div class="header-actions">
+      <button class="btn btn-primary" (click)="loadImpactOPs()" [disabled]="isLoading">
+        <i class="fas fa-sync-alt"></i> Actualiser
+      </button>
+      <button class="btn btn-success" (click)="exportImpactOPs()">
+        <i class="fas fa-download"></i> Exporter
+      </button>
+    </div>
+  </div>
+
+  <!-- Statistiques -->
+  <div class="stats-section">
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-value">{{ stats.total }}</div>
+        <div class="stat-label">Total</div>
+      </div>
+      <div class="stat-card stat-en-attente">
+        <div class="stat-value">{{ stats.enAttente }}</div>
+        <div class="stat-label">En attente</div>
+      </div>
+      <div class="stat-card stat-traite">
+        <div class="stat-value">{{ stats.traite }}</div>
+        <div class="stat-label">Traité</div>
+      </div>
+      <div class="stat-card stat-erreur">
+        <div class="stat-value">{{ stats.erreur }}</div>
+        <div class="stat-label">Erreur</div>
+      </div>
+      <div class="stat-card stat-montant">
+        <div class="stat-value">{{ formatMontant(stats.montantTotal) }}</div>
+        <div class="stat-label">Montant total</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Section Upload -->
+  <div class="upload-section">
+    <h3>Import de fichier (CSV, XLS, XLSX)</h3>
+    <div class="upload-form">
+      <div class="file-input-group">
+        <input 
+          type="file" 
+          class="file-input" 
+          (change)="onFileSelected($event)"
+          accept=".csv,.xlsx,.xls"
+          #fileInput>
+        <button 
+          type="button" 
+          class="btn btn-primary" 
+          (click)="validateFile()"
+          [disabled]="!selectedFile || isUploading">
+          <i class="fas fa-check"></i> Valider
+        </button>
+        <button 
+          type="button" 
+          class="btn btn-success" 
+          (click)="uploadFile()"
+          [disabled]="!selectedFile || isUploading">
+          <i class="fas fa-upload"></i> 
+          {{ isUploading ? 'Upload en cours...' : 'Uploader' }}
+        </button>
+      </div>
+      
+      <div class="upload-messages" *ngIf="uploadMessage">
+        <div class="alert" [ngClass]="uploadMessage.type === 'success' ? 'alert-success' : 'alert-danger'">
+          {{ uploadMessage.text }}
+        </div>
+      </div>
+      
+      <div class="validation-info" *ngIf="validationResult">
+        <div class="alert" [ngClass]="validationResult.hasErrors ? 'alert-warning' : 'alert-info'">
+          <h6>Résultat de la validation :</h6>
+          <ul>
+            <li>Lignes valides : {{ validationResult.validLines }}</li>
+            <li>Lignes avec erreurs : {{ validationResult.errorLines }}</li>
+            <li>Doublons détectés : {{ validationResult.duplicates }}</li>
+            <li>Nouveaux enregistrements : {{ validationResult.newRecords }}</li>
+          </ul>
+        </div>
+      </div>
+      
+      <div class="upload-info">
+        <small class="text-muted">
+          Formats acceptés : CSV, XLS, XLSX. Colonnes attendues : Type Opération, Montant, Solde avant, Solde après, Code propriétaire, Date opération, Numéro Trans GU, groupe de réseau
+        </small>
+      </div>
+    </div>
+  </div>
+
+  <!-- Filtres -->
+  <div class="filters-section">
+    <h3>Filtres</h3>
+    <form [formGroup]="filterForm" class="filter-form">
+      <div class="filter-row">
+        <div class="filter-group">
+          <label>Code Propriétaire:</label>
+          <select formControlName="codeProprietaire" class="form-control">
+            <option value="">Tous les codes</option>
+            <option *ngFor="let code of codeProprietaires" [value]="code">{{ code }}</option>
+          </select>
+        </div>
+        
+        <div class="filter-group">
+          <label>Type Opération:</label>
+          <select formControlName="typeOperation" class="form-control">
+            <option value="">Tous les types</option>
+            <option *ngFor="let type of typeOperations" [value]="type">{{ type }}</option>
+          </select>
+        </div>
+        
+        <div class="filter-group">
+          <label>Groupe Réseau:</label>
+          <select formControlName="groupeReseau" class="form-control">
+            <option value="">Tous les groupes</option>
+            <option *ngFor="let groupe of groupeReseaux" [value]="groupe">{{ groupe }}</option>
+          </select>
+        </div>
+        
+        <div class="filter-group">
+          <label>Statut:</label>
+          <select formControlName="statut" class="form-control">
+            <option value="">Tous les statuts</option>
+            <option *ngFor="let statut of statuts" [value]="statut">{{ getStatutLabel(statut) }}</option>
+          </select>
+        </div>
+      </div>
+      
+      <div class="filter-row">
+        <div class="filter-group">
+          <label>Date début:</label>
+          <input type="datetime-local" formControlName="dateDebut" class="form-control">
+        </div>
+        
+        <div class="filter-group">
+          <label>Date fin:</label>
+          <input type="datetime-local" formControlName="dateFin" class="form-control">
+        </div>
+        
+        <div class="filter-group">
+          <label>Montant min:</label>
+          <input type="number" formControlName="montantMin" class="form-control" step="0.01">
+        </div>
+        
+        <div class="filter-group">
+          <label>Montant max:</label>
+          <input type="number" formControlName="montantMax" class="form-control" step="0.01">
+        </div>
+      </div>
+      
+      <div class="filter-actions">
+        <button type="button" class="btn btn-secondary" (click)="clearFilters()">
+          <i class="fas fa-times"></i> Effacer les filtres
+        </button>
+      </div>
+    </form>
+  </div>
+
+  <!-- Tableau des impacts OP -->
+  <div class="table-section">
+    <div class="table-header">
+      <h3>Liste des Impacts OP</h3>
+      <div class="table-info">
+        Affichage {{ (currentPage - 1) * pageSize + 1 }} - {{ Math.min(currentPage * pageSize, filteredImpactOPs.length) }} 
+        sur {{ filteredImpactOPs.length }} impacts
+      </div>
+    </div>
+
+    <div class="table-container" *ngIf="!isLoading">
+      <table class="impact-op-table">
+        <thead>
+          <tr>
+            <th>Type Opération</th>
+            <th>Montant</th>
+            <th>Solde avant</th>
+            <th>Solde après</th>
+            <th>Code propriétaire</th>
+            <th>Date opération</th>
+            <th>Numéro Trans GU</th>
+            <th>Groupe de réseau</th>
+            <th>Statut</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let impact of pagedImpactOPs" [ngClass]="getStatutClass(impact.statut || 'EN_ATTENTE')">
+            <td>{{ impact.typeOperation }}</td>
+            <td [ngClass]="impact.montant < 0 ? 'montant-negatif' : 'montant-positif'">
+              {{ formatMontant(impact.montant) }}
+            </td>
+            <td>{{ formatMontant(impact.soldeAvant) }}</td>
+            <td>{{ formatMontant(impact.soldeApres) }}</td>
+            <td>{{ impact.codeProprietaire }}</td>
+            <td>{{ formatDate(impact.dateOperation) }}</td>
+            <td>{{ impact.numeroTransGU }}</td>
+            <td>{{ impact.groupeReseau }}</td>
+            <td>
+              <select 
+                [value]="impact.statut || 'EN_ATTENTE'"
+                (change)="onStatutChange(impact, $event)"
+                class="statut-select"
+                [ngClass]="getStatutClass(impact.statut || 'EN_ATTENTE')">
+                <option value="EN_ATTENTE">En attente</option>
+                <option value="TRAITE">Traité</option>
+                <option value="ERREUR">Erreur</option>
+              </select>
+            </td>
+            <td>
+              <div class="action-buttons">
+                <button class="btn btn-sm btn-success" (click)="saveImpactOP(impact)" title="Enregistrer">
+                  <i class="fas fa-save"></i>
+                </button>
+                <button class="btn btn-sm btn-danger" (click)="deleteImpactOP(impact.id!)" title="Supprimer">
+                  <i class="fas fa-trash"></i>
+                </button>
+              </div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Loading -->
+    <div class="loading-container" *ngIf="isLoading">
+      <div class="loading-spinner">
+        <i class="fas fa-spinner fa-spin"></i>
+        <span>Chargement en cours...</span>
+      </div>
+    </div>
+
+    <!-- Pagination -->
+    <div class="pagination" *ngIf="totalPages > 1">
+      <button (click)="prevPage()" [disabled]="currentPage === 1" class="btn pagination-btn">
+        <i class="fas fa-chevron-left"></i> Précédent
+      </button>
+      
+      <div class="pagination-indicators">
+        <span *ngFor="let page of getVisiblePages()" 
+              class="page-indicator"
+              [class.active]="currentPage === page"
+              (click)="goToPage(page)">
+          {{ page }}
+        </span>
+      </div>
+      
+      <button (click)="nextPage()" [disabled]="currentPage === totalPages" class="btn pagination-btn">
+        Suivant <i class="fas fa-chevron-right"></i>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal de commentaire -->
+<div class="modal-overlay" *ngIf="showCommentModal">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h4>Modifier le statut</h4>
+      <button class="close-btn" (click)="closeCommentModal()">
+        <i class="fas fa-times"></i>
+      </button>
+    </div>
+    
+    <div class="modal-body">
+      <form [formGroup]="commentForm">
+        <div class="form-group">
+          <label>Nouveau statut:</label>
+          <div class="statut-display" [ngClass]="getStatutClass(newStatut)">
+            {{ getStatutLabel(newStatut) }}
+          </div>
+        </div>
+        
+        <div class="form-group">
+          <label for="commentaire">Commentaire (obligatoire):</label>
+          <textarea 
+            id="commentaire"
+            formControlName="commentaire" 
+            class="form-control" 
+            rows="4"
+            placeholder="Veuillez saisir un commentaire...">
+          </textarea>
+        </div>
+      </form>
+    </div>
+    
+    <div class="modal-footer">
+      <button class="btn btn-secondary" (click)="closeCommentModal()">
+        Annuler
+      </button>
+      <button 
+        class="btn btn-primary" 
+        (click)="confirmStatutChange()"
+        [disabled]="!commentForm.valid">
+        Confirmer
+      </button>
+    </div>
+  </div>
+</div> 

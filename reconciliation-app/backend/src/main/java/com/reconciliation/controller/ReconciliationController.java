@@ -37,28 +37,51 @@ public class ReconciliationController {
 
     @PostMapping("/reconcile")
     public ResponseEntity<ReconciliationResponse> reconcile(@RequestBody ReconciliationRequest request, HttpServletRequest httpRequest) {
+        long startTime = System.currentTimeMillis();
         try {
-            log.info("=== REQUÊTE REÇUE ===");
-            log.info("Method: {}", httpRequest.getMethod());
-            log.info("Origin: {}", httpRequest.getHeader("Origin"));
-            log.info("Content-Type: {}", httpRequest.getHeader("Content-Type"));
+            log.info("🚀 === REQUÊTE DE RÉCONCILIATION REÇUE ===");
+            log.info("📊 Method: {}", httpRequest.getMethod());
+            log.info("🌐 Origin: {}", httpRequest.getHeader("Origin"));
+            log.info("📄 Content-Type: {}", httpRequest.getHeader("Content-Type"));
+            log.info("⏱️  Timeout configuré: 10 minutes");
             
             // Journalisation optimisée des détails de la requête
             if (request != null) {
-                log.info("Nombre d'enregistrements BO: {}", 
+                log.info("📈 Nombre d'enregistrements BO: {}", 
                     request.getBoFileContent() != null ? request.getBoFileContent().size() : 0);
-                log.info("Nombre d'enregistrements Partenaire: {}", 
+                log.info("📈 Nombre d'enregistrements Partenaire: {}", 
                     request.getPartnerFileContent() != null ? request.getPartnerFileContent().size() : 0);
-                log.info("Colonne clé BO: {}", request.getBoKeyColumn());
-                log.info("Colonne clé Partenaire: {}", request.getPartnerKeyColumn());
+                log.info("🔑 Colonne clé BO: {}", request.getBoKeyColumn());
+                log.info("🔑 Colonne clé Partenaire: {}", request.getPartnerKeyColumn());
+                
+                // Vérification de la taille des données
+                long boSize = request.getBoFileContent() != null ? request.getBoFileContent().size() : 0;
+                long partnerSize = request.getPartnerFileContent() != null ? request.getPartnerFileContent().size() : 0;
+                long totalSize = boSize + partnerSize;
+                
+                log.info("💾 Taille totale des données: {} enregistrements", totalSize);
+                
+                if (totalSize > 100000) {
+                    log.warn("⚠️  GROS FICHIER DÉTECTÉ - Optimisations activées");
+                    log.warn("📊 Taille: {} enregistrements ({} MB estimés)", totalSize, totalSize * 0.001);
+                }
             }
             
+            log.info("🔄 Début du traitement de la réconciliation...");
             ReconciliationResponse response = reconciliationService.reconcile(request);
-            log.info("Réconciliation terminée avec succès");
+            
+            long totalTime = System.currentTimeMillis() - startTime;
+            log.info("✅ Réconciliation terminée avec succès en {} ms ({:.2f} secondes)", totalTime, totalTime / 1000.0);
+            log.info("📊 Résultats: {} correspondances, {} BO uniquement, {} Partenaire uniquement", 
+                response.getMatches() != null ? response.getMatches().size() : 0,
+                response.getBoOnly() != null ? response.getBoOnly().size() : 0,
+                response.getPartnerOnly() != null ? response.getPartnerOnly().size() : 0);
             
             return ResponseEntity.ok(response);
         } catch (Exception e) {
-            log.error("Erreur lors de la réconciliation: {}", e.getMessage());
+            long totalTime = System.currentTimeMillis() - startTime;
+            log.error("❌ Erreur lors de la réconciliation après {} ms: {}", totalTime, e.getMessage());
+            log.error("🔍 Stack trace:", e);
             throw e;
         }
     }

@@ -3,6 +3,11 @@ export interface ReconciliationRequest {
     partnerFileContent: Record<string, string>[];
     boKeyColumn: string;
     partnerKeyColumn: string;
+    // Support pour plusieurs clés de réconciliation
+    additionalKeys?: {
+        boColumn: string;
+        partnerColumn: string;
+    }[];
     comparisonColumns: {
         boColumn: string;
         partnerColumn: string;

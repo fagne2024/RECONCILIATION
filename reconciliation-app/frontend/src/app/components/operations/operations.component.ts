@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy, ViewChild } from '@angular/core';
+import { Component, OnInit, OnDestroy, ViewChild, ChangeDetectorRef } from '@angular/core';
 import { FormBuilder, FormGroup, Validators, FormControl } from '@angular/forms';
 import { Subscription } from 'rxjs';
 import { OperationService } from '../../services/operation.service';
@@ -56,6 +56,7 @@ export class OperationsComponent implements OnInit, OnDestroy {
     isLoadingStats = false;
     
     // Filtres pour les statistiques
+    selectedPays: string[] = [];
     selectedCodeProprietaire: string = '';
     selectedCompteId: number | undefined = undefined;
     
@@ -94,12 +95,12 @@ export class OperationsComponent implements OnInit, OnDestroy {
         { value: 'transaction_cree', label: 'Transaction Créée' }
     ];
 
-    // Ajout des contrôles de recherche et des variables de sélection
+        // Ajout des contrôles de recherche et des variables de sélection
     typeOperationSearchCtrl = new FormControl('');
     selectedTypesOperation: string[] = [];
     filteredTypeOperationList: { value: string, label: string }[] = [];
+
     paysSearchCtrl = new FormControl('');
-    selectedPays: string[] = [];
     filteredPaysList: string[] = [];
     statutSearchCtrl = new FormControl('');
     selectedStatut: string[] = [];
@@ -118,6 +119,10 @@ export class OperationsComponent implements OnInit, OnDestroy {
     filteredReferenceList: string[] = [];
     compteSearchCtrl = new FormControl('');
     selectedComptes: string[] = [];
+
+    // ViewChild pour les selects des filtres
+    @ViewChild('paysSelect') paysSelect!: MatSelect;
+    @ViewChild('codeProprietaireSelect') codeProprietaireSelect!: MatSelect;
     // Remplacer la logique filteredComptesList pour qu'elle soit basée sur les codeProprietaire distincts des opérations
     get filteredComptesList(): string[] {
         return Array.from(new Set(this.operations.map(op => op.codeProprietaire).filter(c => !!c)));
@@ -133,20 +138,13 @@ export class OperationsComponent implements OnInit, OnDestroy {
     // Propriété pour gérer l'affichage automatique des frais
     showFraisAutomatically: boolean = false;
 
-    @ViewChild('typeOperationSelect') typeOperationSelect!: MatSelect;
-    @ViewChild('paysSelect') paysSelect!: MatSelect;
-    @ViewChild('statutSelect') statutSelect!: MatSelect;
-    @ViewChild('banqueSelect') banqueSelect!: MatSelect;
-    @ViewChild('codeProprietaireSelect') codeProprietaireSelect!: MatSelect;
-    @ViewChild('serviceSelect') serviceSelect!: MatSelect;
-    @ViewChild('referenceSelect') referenceSelect!: MatSelect;
-
     private subscription = new Subscription();
 
     constructor(
         private operationService: OperationService,
         private compteService: CompteService,
-        private fb: FormBuilder
+        private fb: FormBuilder,
+        private cdr: ChangeDetectorRef
     ) {
         this.addForm = this.fb.group({
             typeOperation: ['', [Validators.required]],
@@ -196,11 +194,9 @@ export class OperationsComponent implements OnInit, OnDestroy {
     ngOnInit() {
         this.loadOperations();
         this.loadComptes();
-        this.loadPaysList();
         this.loadCodeProprietaireListFromBackend();
         this.loadBanqueListFromBackend();
         this.loadServiceListFromBackend();
-        this.loadStatsByType();
         this.initializeStatutList();
         
         // Ajouter un délai pour vérifier l'état des listes
@@ -209,13 +205,13 @@ export class OperationsComponent implements OnInit, OnDestroy {
             console.log('codeProprietaireList:', this.codeProprietaireList);
             console.log('filteredCodeProprietaireList:', this.filteredCodeProprietaireList);
         }, 2000);
+        
         this.filteredTypeOperationList = this.filterTypeOptions;
         this.typeOperationSearchCtrl.valueChanges.subscribe((search: string | null) => {
             const s = (search || '').toLowerCase();
             this.filteredTypeOperationList = this.filterTypeOptions.filter(opt => opt.label.toLowerCase().includes(s));
             if (this.filteredTypeOperationList.length === 1 && !this.filterForm.value.typeOperation.includes(this.filteredTypeOperationList[0].value)) {
                 this.filterForm.controls['typeOperation'].setValue([this.filteredTypeOperationList[0].value]);
-                if (this.typeOperationSelect) { this.typeOperationSelect.close(); }
                 this.onFilterChange();
             }
         });
@@ -225,7 +221,6 @@ export class OperationsComponent implements OnInit, OnDestroy {
             this.filteredPaysList = availablePays.filter(p => p.toLowerCase().includes(s));
             if (this.filteredPaysList.length === 1 && !this.filterForm.value.pays.includes(this.filteredPaysList[0])) {
                 this.filterForm.controls['pays'].setValue([this.filteredPaysList[0]]);
-                if (this.paysSelect) { this.paysSelect.close(); }
                 this.onFilterChange();
             }
         });
@@ -234,7 +229,6 @@ export class OperationsComponent implements OnInit, OnDestroy {
             this.filteredStatutList = this.statutList.filter(st => st.toLowerCase().includes(s));
             if (this.filteredStatutList.length === 1 && !this.filterForm.value.statut.includes(this.filteredStatutList[0])) {
                 this.filterForm.controls['statut'].setValue([this.filteredStatutList[0]]);
-                if (this.statutSelect) { this.statutSelect.close(); }
                 this.onFilterChange();
             }
         });
@@ -244,27 +238,24 @@ export class OperationsComponent implements OnInit, OnDestroy {
             this.filteredBanqueList = availableBanques.filter(b => b.toLowerCase().includes(s));
             if (this.filteredBanqueList.length === 1 && !this.filterForm.value.banque.includes(this.filteredBanqueList[0])) {
                 this.filterForm.controls['banque'].setValue([this.filteredBanqueList[0]]);
-                if (this.banqueSelect) { this.banqueSelect.close(); }
                 this.onFilterChange();
             }
         });
         this.codeProprietaireSearchCtrl.valueChanges.subscribe((search: string | null) => {
             const s = (search || '').toLowerCase();
-            const availableCodeProprietaire = this.getFilteredCodeProprietaire();
-            this.filteredCodeProprietaireList = availableCodeProprietaire.filter(c => c.toLowerCase().includes(s));
+            const availableCodes = this.getFilteredCodeProprietaire();
+            this.filteredCodeProprietaireList = availableCodes.filter(c => c.toLowerCase().includes(s));
             if (this.filteredCodeProprietaireList.length === 1 && !this.filterForm.value.codeProprietaire.includes(this.filteredCodeProprietaireList[0])) {
                 this.filterForm.controls['codeProprietaire'].setValue([this.filteredCodeProprietaireList[0]]);
-                if (this.codeProprietaireSelect) { this.codeProprietaireSelect.close(); }
                 this.onFilterChange();
             }
         });
         this.serviceSearchCtrl.valueChanges.subscribe((search: string | null) => {
             const s = (search || '').toLowerCase();
             const availableServices = this.getFilteredServices();
-            this.filteredServiceList = availableServices.filter(sv => sv.toLowerCase().includes(s));
+            this.filteredServiceList = availableServices.filter(serv => serv.toLowerCase().includes(s));
             if (this.filteredServiceList.length === 1 && !this.filterForm.value.service.includes(this.filteredServiceList[0])) {
                 this.filterForm.controls['service'].setValue([this.filteredServiceList[0]]);
-                if (this.serviceSelect) { this.serviceSelect.close(); }
                 this.onFilterChange();
             }
         });
@@ -274,28 +265,9 @@ export class OperationsComponent implements OnInit, OnDestroy {
             this.filteredReferenceList = availableReferences.filter(ref => ref.toLowerCase().includes(s));
             if (this.filteredReferenceList.length === 1 && !this.filterForm.value.reference.includes(this.filteredReferenceList[0])) {
                 this.filterForm.controls['reference'].setValue([this.filteredReferenceList[0]]);
-                if (this.referenceSelect) { this.referenceSelect.close(); }
                 this.onFilterChange();
             }
         });
-        // Ajout des logs pour diagnostic
-        setTimeout(() => {
-            console.log('filteredPaysList:', this.filteredPaysList);
-            console.log('filteredBanqueList:', this.filteredBanqueList);
-            console.log('filteredServiceList:', this.filteredServiceList);
-        }, 1000);
-        // Déclenche le filtrage automatiquement quand le code propriétaire change
-        this.filterForm.get('codeProprietaire')?.valueChanges.subscribe(() => {
-            this.applyFilters();
-        });
-
-        // Dans ngOnInit, ajouter la logique de filtrage dynamique
-        // this.filterForm.get('codeProprietaireCtrl')?.valueChanges.subscribe((search: string) => {
-        //   const s = (search || '').toLowerCase();
-        //   this.filteredCodeProprietaireList = this.codeProprietaireList.filter(c => c.toLowerCase().includes(s));
-        // });
-        // Initialiser la liste filtrée
-        // this.filteredCodeProprietaireList = this.codeProprietaireList.slice();
     }
 
     ngOnDestroy() {
@@ -311,13 +283,117 @@ export class OperationsComponent implements OnInit, OnDestroy {
                 this.updatePagedOperations();
                 this.calculateStats();
                 this.loadReferenceListFromOperations();
+                
+                // Charger les listes pour les filtres
+                this.loadPaysList();
+                this.loadCodeProprietaireList();
+                this.loadBanqueList();
+                this.loadServiceList();
+                
+                // Initialiser les listes filtrées après avoir chargé toutes les données
+                this.initializeFilteredLists();
                 this.isLoading = false;
+                
+                console.log(`Opérations chargées: ${operations.length} opérations`);
+                console.log('Listes chargées:', {
+                    paysList: this.paysList.length,
+                    codeProprietaireList: this.codeProprietaireList.length
+                });
             },
             error: (err) => {
                 console.error('Erreur lors du chargement des opérations:', err);
                 this.isLoading = false;
             }
         });
+    }
+
+    refreshData() {
+        this.loadOperations();
+        this.initializeFilteredLists();
+    }
+
+    // Méthodes pour les filtres améliorés
+    hasActiveFilters(): boolean {
+        const formValue = this.filterForm.value;
+        return Object.values(formValue).some(value => 
+            Array.isArray(value) ? value.length > 0 : !!value
+        );
+    }
+
+    getActiveFiltersCount(): number {
+        const formValue = this.filterForm.value;
+        let count = 0;
+        Object.values(formValue).forEach(value => {
+            if (Array.isArray(value) && value.length > 0) {
+                count += value.length;
+            } else if (value && !Array.isArray(value)) {
+                count++;
+            }
+        });
+        return count;
+    }
+
+    getSelectedCount(fieldName: string): number {
+        const field = this.filterForm.get(fieldName);
+        if (field && Array.isArray(field.value)) {
+            return field.value.length;
+        }
+        return 0;
+    }
+
+    // Propriété pour afficher les champs de date personnalisés
+    get showCustomDateInputs(): boolean {
+        return this.filterForm.get('dateDebut')?.value || this.filterForm.get('dateFin')?.value;
+    }
+
+    // Propriétés pour le tri
+    sortField: string = 'dateOperation';
+    sortDirection: 'asc' | 'desc' = 'desc';
+    selectedOperation: Operation | null = null;
+
+    // Méthodes pour le tri et la sélection
+    sortBy(field: string) {
+        if (this.sortField === field) {
+            this.sortDirection = this.sortDirection === 'asc' ? 'desc' : 'asc';
+        } else {
+            this.sortField = field;
+            this.sortDirection = 'asc';
+        }
+        this.applySorting();
+    }
+
+    applySorting() {
+        this.filteredOperations.sort((a, b) => {
+            let aValue = a[this.sortField as keyof Operation];
+            let bValue = b[this.sortField as keyof Operation];
+
+            if (aValue === null || aValue === undefined) aValue = '';
+            if (bValue === null || bValue === undefined) bValue = '';
+
+            if (typeof aValue === 'string' && typeof bValue === 'string') {
+                aValue = aValue.toLowerCase();
+                bValue = bValue.toLowerCase();
+            }
+
+            if (aValue < bValue) return this.sortDirection === 'asc' ? -1 : 1;
+            if (aValue > bValue) return this.sortDirection === 'asc' ? 1 : -1;
+            return 0;
+        });
+
+        this.updatePagedOperations();
+    }
+
+    selectOperation(operation: Operation) {
+        this.selectedOperation = this.selectedOperation?.id === operation.id ? null : operation;
+    }
+
+    viewOperationDetails(operation: Operation) {
+        // TODO: Implémenter la vue détaillée
+        console.log('Voir les détails de l\'opération:', operation);
+    }
+
+    trackByOperation(index: number, operation: Operation): number {
+        return operation.id || index;
     }
 
     loadComptes() {
@@ -407,33 +483,41 @@ export class OperationsComponent implements OnInit, OnDestroy {
 
     loadStatsByType() {
         this.isLoadingStats = true;
-        this.currentStatsPage = 1;
-        this.subscription.add(
-            this.operationService.getOperationsStatsByTypeWithFilters(this.selectedPays.length > 0 ? this.selectedPays[0] : '', this.selectedCompteId).subscribe({
-                next: (stats) => {
-                    this.statsByType = stats;
-                    this.isLoadingStats = false;
-                },
-                error: (error) => {
-                    console.error('Erreur lors du chargement des statistiques par type:', error);
-                    this.isLoadingStats = false;
-                }
-            })
-        );
+        
+        // Calculer les statistiques basées sur les opérations filtrées
+        const stats: any = {};
+        
+        this.filteredOperations.forEach(op => {
+            const type = op.typeOperation || 'Inconnu';
+            if (!stats[type]) {
+                stats[type] = { count: 0, totalAmount: 0 };
+            }
+            
+            stats[type].count++;
+            stats[type].totalAmount += op.montant || 0;
+        });
+        
+        this.statsByType = stats;
+        this.isLoadingStats = false;
+        
+        // Recalculer la pagination des cartes de statistiques
+        this.totalStatsPages = Math.ceil(this.getOperationTypes().length / this.statsCardsPerPage);
+        if (this.currentStatsPage > this.totalStatsPages) {
+            this.currentStatsPage = 1;
+        }
+        
+        console.log('Statistiques par type calculées:', this.statsByType);
     }
 
     applyStatsFilters() {
-        if (this.selectedCodeProprietaire) {
-            const compte = this.comptes.find(c => c.numeroCompte === this.selectedCodeProprietaire);
-            this.selectedCompteId = compte ? compte.id : undefined;
-        } else {
-            this.selectedCompteId = undefined;
-        }
+        // Appliquer les filtres aux statistiques
         this.loadStatsByType();
     }
 
     clearStatsFilters() {
+        // Effacer les filtres de statistiques
         this.selectedPays = [];
+        this.selectedCodeProprietaire = '';
         this.selectedCompteId = undefined;
         this.loadStatsByType();
     }
@@ -817,81 +901,94 @@ export class OperationsComponent implements OnInit, OnDestroy {
 
     // Harmonisation de la méthode de filtrage
     applyFilters() {
-        const filters = this.filterForm.value;
-        // DEBUG : Afficher toutes les valeurs sélectionnées et présentes
-        console.log('filters:', filters);
-        console.log('Tous les typeOperation:', Array.from(new Set(this.operations.map(op => op.typeOperation))));
-        console.log('Tous les pays:', Array.from(new Set(this.operations.map(op => op.pays))));
-        console.log('Tous les statut:', Array.from(new Set(this.operations.map(op => op.statut))));
-        console.log('Toutes les banques:', Array.from(new Set(this.operations.map(op => op.banque))));
-        console.log('Tous les services:', Array.from(new Set(this.operations.map(op => op.service))));
-        console.log('Tous les codeProprietaire:', this.operations.map(op => op.codeProprietaire));
+        console.log('=== DÉBUT applyFilters() ===');
+        console.log('selectedPays:', this.selectedPays);
+        console.log('selectedCodesProprietaire:', this.selectedCodesProprietaire);
+        console.log('filterForm.value:', this.filterForm.value);
+        console.log('Opérations totales avant filtrage:', this.operations.length);
         
-        // Vérifier si on doit afficher automatiquement les frais
-        this.showFraisAutomatically = this.shouldShowFraisAutomatically(filters.typeOperation);
-        
-        // Filtrer d'abord les opérations principales
-        const mainOperations = this.operations.filter(op => {
-            const typeMatch = !filters.typeOperation || filters.typeOperation.length === 0 || filters.typeOperation.includes(op.typeOperation);
-            const paysMatch = !filters.pays || filters.pays.length === 0 || filters.pays.includes(op.pays);
-            const statutMatch = !filters.statut || filters.statut.length === 0 || filters.statut.includes(op.statut);
-            const banqueMatch = !filters.banque || filters.banque.length === 0 || filters.banque.includes(op.banque);
-            const codeProprietaireMatch = !filters.codeProprietaire || filters.codeProprietaire.length === 0 || filters.codeProprietaire.includes(op.codeProprietaire);
-            const serviceMatch = !filters.service || filters.service.length === 0 || filters.service.includes(op.service);
-            const referenceMatch = !filters.reference || filters.reference.length === 0 || filters.reference.includes(op.reference);
-            // Correction ici : comparer uniquement la partie date (YYYY-MM-DD)
-            const opDate = op.dateOperation ? op.dateOperation.substring(0, 10) : '';
-            const dateDebutMatch = !filters.dateDebut || opDate >= filters.dateDebut;
-            const dateFinMatch = !filters.dateFin || opDate <= filters.dateFin;
+        // Filtrer les opérations
+        this.filteredOperations = this.operations.filter(op => {
+            let keepOperation = true;
             
-            return typeMatch && paysMatch && statutMatch && banqueMatch && codeProprietaireMatch && serviceMatch && referenceMatch && dateDebutMatch && dateFinMatch;
+            // Filtre par pays
+            if (this.selectedPays && this.selectedPays.length > 0) {
+                if (!this.selectedPays.includes(op.pays)) {
+                    console.log(`Opération ${op.id} exclue: pays ${op.pays} pas dans ${this.selectedPays}`);
+                    return false;
+                }
+            }
+            
+            // Filtre par code propriétaire
+            if (this.selectedCodesProprietaire && this.selectedCodesProprietaire.length > 0) {
+                if (!this.selectedCodesProprietaire.includes(op.codeProprietaire)) {
+                    console.log(`Opération ${op.id} exclue: codeProprietaire ${op.codeProprietaire} pas dans ${this.selectedCodesProprietaire}`);
+                    return false;
+                }
+            }
+            
+            // Filtre par date
+            const formValue = this.filterForm.value;
+            if (formValue.dateDebut && op.dateOperation) {
+                const opDate = new Date(op.dateOperation);
+                const debutDate = new Date(formValue.dateDebut);
+                if (opDate < debutDate) {
+                    console.log(`Opération ${op.id} exclue: date ${op.dateOperation} avant ${formValue.dateDebut}`);
+                    return false;
+                }
+            }
+            
+            if (formValue.dateFin && op.dateOperation) {
+                const opDate = new Date(op.dateOperation);
+                const finDate = new Date(formValue.dateFin);
+                if (opDate > finDate) {
+                    console.log(`Opération ${op.id} exclue: date ${op.dateOperation} après ${formValue.dateFin}`);
+                    return false;
+                }
+            }
+            
+            return true;
         });
         
-        // Si on doit afficher les frais automatiquement, ajouter les frais associés
-        if (this.showFraisAutomatically) {
-            const mainOperationIds = mainOperations.map(op => op.id).filter(id => id !== undefined);
-            const associatedFrais = this.operations.filter(op => 
-                op.typeOperation === 'FRAIS_TRANSACTION' && 
-                op.parentOperationId && 
-                mainOperationIds.includes(op.parentOperationId)
-            );
-            
-            // Combiner les opérations principales avec leurs frais
-            this.filteredOperations = [...mainOperations, ...associatedFrais];
-        } else {
-            this.filteredOperations = mainOperations;
-        }
+        console.log('Opérations filtrées:', this.filteredOperations.length);
+        console.log('Premières opérations filtrées:', this.filteredOperations.slice(0, 3));
         
-        // Trier par date décroissante
-        this.filteredOperations.sort((a, b) => new Date(b.dateOperation).getTime() - new Date(a.dateOperation).getTime());
+        // Appliquer le tri
+        this.applySorting();
         
-        // Réinitialiser la pagination
+        // Mettre à jour la pagination
         this.currentPage = 1;
         this.updatePagedOperations();
+        
+        // Mettre à jour les statistiques
         this.calculateStats();
         
-        console.log(`Filtres appliqués: ${this.filteredOperations.length} opérations filtrées`);
+        // Forcer la détection de changement
+        this.cdr.markForCheck();
+        
+        console.log(`Filtres appliqués: ${this.filteredOperations.length} opérations trouvées`);
+        console.log('=== FIN applyFilters() ===');
     }
 
     // Méthode appelée lors d'un changement de filtre
     onFilterChange() {
-        console.log('onFilterChange', this.filterForm.value);
+        console.log('=== DÉBUT onFilterChange() ===');
+        console.log('selectedPays:', this.selectedPays);
+        console.log('selectedCodesProprietaire:', this.selectedCodesProprietaire);
         
-        // Mettre à jour les listes filtrées pour le cloisonnement
-        this.updateFilteredLists();
+        // Synchroniser les champs du formulaire avec les sélections UI
+        this.filterForm.controls['pays'].setValue(this.selectedPays);
+        this.filterForm.controls['codeProprietaire'].setValue(this.selectedCodesProprietaire);
         
+        console.log('filterForm après synchronisation:', this.filterForm.value);
+        
+        // Appliquer les filtres directement
         this.applyFilters();
         
-        // Fermer automatiquement les dropdowns après un choix
-        setTimeout(() => {
-            if (this.typeOperationSelect) this.typeOperationSelect.close();
-            if (this.paysSelect) this.paysSelect.close();
-            if (this.statutSelect) this.statutSelect.close();
-            if (this.banqueSelect) this.banqueSelect.close();
-            if (this.codeProprietaireSelect) this.codeProprietaireSelect.close();
-            if (this.serviceSelect) this.serviceSelect.close();
-        }, 100);
+        console.log('=== FIN onFilterChange() ===');
     }
+
+
 
     // Méthode pour mettre à jour les listes filtrées avec cloisonnement
     updateFilteredLists() {
@@ -1106,45 +1203,43 @@ export class OperationsComponent implements OnInit, OnDestroy {
     }
 
     clearFilters() {
-        this.filterForm.reset({ typeOperation: '', pays: '', statut: '', banque: '', codeProprietaire: '', service: '', reference: '', dateDebut: '', dateFin: '' });
-        this.applyFilters();
+        this.filterForm.reset();
+        this.selectedPays = [];
+        this.selectedCodesProprietaire = [];
+        this.filteredOperations = [...this.operations];
+        this.currentPage = 1;
+        this.updatePagedOperations();
+        this.calculateStats();
+        console.log('Filtres effacés, toutes les opérations affichées');
     }
 
     updatePagedOperations() {
-        // Obtenir tous les groupes d'opérations
-        const allGroupedOperations = this.getGroupedOperations();
+        console.log('=== DÉBUT updatePagedOperations() ===');
+        console.log('currentPage:', this.currentPage);
+        console.log('pageSize:', this.pageSize);
+        console.log('filteredOperations.length:', this.filteredOperations.length);
         
-        // Gérer le cas où il n'y a pas d'opérations
-        if (allGroupedOperations.length === 0) {
-            this.totalPages = 1;
-            this.currentPage = 1;
-            this.pagedOperations = [];
-            console.log('Aucune opération à afficher');
-            return;
-        }
+        const startIndex = (this.currentPage - 1) * this.pageSize;
+        const endIndex = startIndex + this.pageSize;
+        console.log('startIndex:', startIndex, 'endIndex:', endIndex);
         
-        // Aplatir tous les groupes pour compter le nombre total de lignes
-        const allOperations = allGroupedOperations.flatMap(group => [group.main, ...group.frais]);
+        this.pagedOperations = this.filteredOperations.slice(startIndex, endIndex);
+        this.totalPages = Math.ceil(this.filteredOperations.length / this.pageSize);
         
-        // Calculer le nombre total de pages basé sur les lignes individuelles (max 10 par page)
-        this.totalPages = Math.ceil(allOperations.length / this.pageSize);
+        console.log('pagedOperations.length:', this.pagedOperations.length);
+        console.log('totalPages:', this.totalPages);
+        console.log('Premières opérations paginées:', this.pagedOperations.slice(0, 2));
         
         // S'assurer que la page courante est valide
         if (this.currentPage > this.totalPages && this.totalPages > 0) {
             this.currentPage = this.totalPages;
-        }
-        if (this.currentPage < 1) {
-            this.currentPage = 1;
+            this.updatePagedOperations();
         }
         
-        // Calculer l'index de début et de fin pour la pagination des lignes
-        const startIndex = (this.currentPage - 1) * this.pageSize;
-        const endIndex = startIndex + this.pageSize;
+        // Forcer la détection de changement
+        this.cdr.markForCheck();
         
-        // Extraire les lignes pour la page courante
-        this.pagedOperations = allOperations.slice(startIndex, endIndex);
-        
-        console.log(`Page ${this.currentPage}/${this.totalPages}, Lignes: ${startIndex}-${endIndex}, Total lignes: ${allOperations.length}, Lignes affichées: ${this.pagedOperations.length}`);
+        console.log('=== FIN updatePagedOperations() ===');
     }
 
     nextPage() {
@@ -1164,25 +1259,28 @@ export class OperationsComponent implements OnInit, OnDestroy {
     calculateStats() {
         // Calculer les statistiques basées sur les opérations filtrées
         this.totalOperations = this.filteredOperations.length;
-        this.totalMontant = this.filteredOperations.reduce((sum, op) => sum + op.montant, 0);
+        this.totalMontant = this.filteredOperations.reduce((sum, op) => sum + (op.montant || 0), 0);
         this.montantMoyen = this.totalOperations > 0 ? this.totalMontant / this.totalOperations : 0;
         this.operationsValidees = this.filteredOperations.filter(op => op.statut === 'Validée').length;
+        
+        // Mettre à jour les statistiques par type
+        this.loadStatsByType();
         
         // Log pour debug
         console.log(`Stats calculées: ${this.totalOperations} opérations, ${this.totalMontant} montant total, ${this.operationsValidees} validées`);
     }
 
     getOperationTypes(): string[] {
-        // Récupérer tous les types d'opération disponibles
-        const allTypes = Object.values(TypeOperation);
+        // Récupérer tous les types d'opération disponibles dans les données filtrées
+        const types = Array.from(new Set(this.filteredOperations.map(op => op.typeOperation).filter(type => type)));
         
         // Si nous avons des statistiques, retourner les types qui ont des données
         if (this.statsByType && Object.keys(this.statsByType).length > 0) {
             return Object.keys(this.statsByType);
         }
         
-        // Sinon, retourner tous les types disponibles
-        return allTypes;
+        // Sinon, retourner les types trouvés dans les données
+        return types.length > 0 ? types : Object.values(TypeOperation);
     }
 
     getPagedOperationTypes(): string[] {
@@ -1380,6 +1478,19 @@ export class OperationsComponent implements OnInit, OnDestroy {
     initializeStatutList() {
         // Initialiser avec les statuts standards
         this.statutList = ['Validée', 'En attente', 'Rejetée', 'Annulée', 'En cours'];
+    }
+
+    initializeFilteredLists() {
+        // Initialiser les listes filtrées avec toutes les valeurs disponibles
+        this.filteredTypeOperationList = this.filterTypeOptions;
+        this.filteredPaysList = this.getFilteredPays();
+        this.filteredStatutList = this.statutList;
+        this.filteredBanqueList = this.getFilteredBanques();
+        this.filteredCodeProprietaireList = this.getFilteredCodeProprietaire();
+        this.filteredServiceList = this.getFilteredServices();
+        this.filteredReferenceList = this.getFilteredReference();
+        
+        console.log('Listes filtrées initialisées');
     }
 
     // Détermine si une opération est un débit
@@ -1819,5 +1930,34 @@ export class OperationsComponent implements OnInit, OnDestroy {
             op.typeOperation === 'FRAIS_TRANSACTION' && 
             op.parentOperationId === operation.id
         );
+    }
+
+    getStatutClassForOperation(statut: string): string {
+        switch (statut) {
+            case 'EN_ATTENTE':
+                return 'statut-en-attente';
+            case 'TRAITE':
+                return 'statut-traite';
+            case 'ERREUR':
+                return 'statut-erreur';
+            default:
+                return 'statut-en-attente';
+        }
+    }
+
+    onStatutChange(operation: Operation, event: Event) {
+        const target = event.target as HTMLSelectElement;
+        const newStatut = target.value;
+        
+        // Mettre à jour le statut de l'opération
+        operation.statut = newStatut;
+        
+        // Ici vous pouvez ajouter la logique pour sauvegarder le changement
+        console.log(`Statut changé pour l'opération ${operation.id}: ${newStatut}`);
+    }
+
+    // Méthode pour remplacer Math.min dans le template
+    getMin(a: number, b: number): number {
+        return Math.min(a, b);
     }
 } 

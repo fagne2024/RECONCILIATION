@@ -17,6 +17,9 @@ import { ProfilComponent } from './components/profil/profil.component';
 import { ModulesComponent } from './components/modules/modules.component';
 import { PermissionsComponent } from './components/permissions/permissions.component';
 import { EcartSoldeComponent } from './components/ecart-solde/ecart-solde.component';
+import { ImpactOPComponent } from './components/impact-op/impact-op.component';
+import { TrxSfComponent } from './components/trx-sf/trx-sf.component';
+
 
 import { AutoProcessingModelsComponent } from './components/auto-processing-models/auto-processing-models.component';
 import { BanqueComponent } from './components/banque/banque.component';
@@ -40,6 +43,8 @@ const routes: Routes = [
   { path: 'modules', component: ModulesComponent },
   { path: 'permissions', component: PermissionsComponent },
   { path: 'ecart-solde', component: EcartSoldeComponent },
+  { path: 'trx-sf', component: TrxSfComponent },
+  { path: 'impact-op', component: ImpactOPComponent },
 
   { path: 'auto-processing-models', component: AutoProcessingModelsComponent },
   { path: 'banque', component: BanqueComponent }

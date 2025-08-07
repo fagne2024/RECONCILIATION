@@ -1,0 +1,3 @@
+ID Transaction;Téléphone Client;Montant;Service;Agence;Date Transaction;Numéro Trans GU;Pays;Frais;Commentaire
+TRX_SF_NEW_001;+22123456789;2500;PAIEMENT;AGENCE_B;2024-01-16 14:30:00;GU_23456789;MALI;250;Test nouveau 1
+TRX_SF_NEW_002;+22134567890;1800;VIREMENT;AGENCE_C;2024-01-16 15:45:00;GU_34567890;BURKINA FASO;180;Test nouveau 2

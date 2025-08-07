@@ -11,6 +11,8 @@ import * as XLSX from 'xlsx';
 import { MatSelect } from '@angular/material/select';
 import { Router } from '@angular/router';
 import { EcartSoldeService } from '../../services/ecart-solde.service';
+import { ImpactOPService } from '../../services/impact-op.service';
+import { TrxSfService } from '../../services/trx-sf.service';
 
 @Component({
     selector: 'app-comptes',
@@ -130,12 +132,43 @@ export class ComptesComponent implements OnInit, OnDestroy {
     ecartSoldeAgence = '';
     ecartSoldeDateTransaction = '';
 
+    // Cache pour les sommes des impacts OP par date
+    impactOPSums: { [date: string]: number } = {};
+
+    // Propriétés pour l'onglet Impact OP
+    showImpactOPTab = false;
+    impactOPAgence = '';
+    impactOPDateTransaction = '';
+
+    // Propriétés pour l'onglet Revenu Journalier
+    showRevenuJournalierTab = false;
+    revenuJournalierData: { date: string; totalCashin: number; totalPaiement: number; fraisCashin: number; fraisPaiement: number; revenuTotal: number; ecartFrais: number }[] = [];
+    isLoadingRevenuJournalier = false;
+    
+    // Pagination pour le revenu journalier
+    revenuJournalierCurrentPage = 1;
+    revenuJournalierPageSize = 10;
+    revenuJournalierTotalPages = 1;
+
+    // Filtres pour le revenu journalier
+    revenuJournalierDateDebut = '';
+    revenuJournalierDateFin = '';
+    revenuJournalierMontantMin: number | null = null;
+    revenuJournalierMontantMax: number | null = null;
+    revenuJournalierTypeRevenu = ''; // 'cashin', 'paiement', 'total', ou ''
+    revenuJournalierDataFiltered: { date: string; totalCashin: number; totalPaiement: number; fraisCashin: number; fraisPaiement: number; revenuTotal: number; ecartFrais: number }[] = [];
+    
+    // Informations de débogage pour le revenu journalier
+    revenuJournalierDebugInfo: string = '';
+
     constructor(
         private compteService: CompteService,
         private operationService: OperationService,
         private fb: FormBuilder,
         private router: Router,
-        private ecartSoldeService: EcartSoldeService
+        private ecartSoldeService: EcartSoldeService,
+        private impactOPService: ImpactOPService,
+        private trxSfService: TrxSfService
     ) {
         this.addForm = this.fb.group({
             numeroCompte: ['', [Validators.required]],
@@ -588,9 +621,9 @@ export class ComptesComponent implements OnInit, OnDestroy {
             // Ajouter un résumé
             const summaryRow = worksheet.addRow([]);
             const summaryRow2 = worksheet.addRow(['Résumé:', '', '', '', '', '', '', '']);
-            const summaryRow3 = worksheet.addRow(['Total comptes critiques:', this.comptesCritiques.length, '', '', '', '', '', '']);
-            const summaryRow4 = worksheet.addRow(['Période analysée:', `${this.periodeJours} jours`, '', '', '', '', '', '']);
-            const summaryRow5 = worksheet.addRow(['Date d\'export:', new Date().toLocaleDateString('fr-FR'), '', '', '', '', '', '']);
+            const summaryRow3 = worksheet.addRow(['Total comptes critiques:', this.comptesCritiques.length, '', '', '', '', '', '', '']);
+            const summaryRow4 = worksheet.addRow(['Période analysée:', `${this.periodeJours} jours`, '', '', '', '', '', '', '']);
+            const summaryRow5 = worksheet.addRow(['Date d\'export:', new Date().toLocaleDateString('fr-FR'), '', '', '', '', '', '', '']);
 
             // Style du résumé
             [summaryRow2, summaryRow3, summaryRow4, summaryRow5].forEach(row => {
@@ -822,6 +855,7 @@ export class ComptesComponent implements OnInit, OnDestroy {
     viewReleve(compte: Compte): void {
         this.selectedCompte = compte;
         this.showReleveModal = true;
+        this.showRevenuJournalierTab = true; // Activer l'onglet revenu journalier
         this.loadReleveOperations();
     }
 
@@ -852,75 +886,66 @@ export class ComptesComponent implements OnInit, OnDestroy {
         if (!this.selectedCompte) return;
 
         this.isLoadingReleve = true;
-        
-        // Calculer les dates selon le type de filtre
+        this.releveOperations = [];
+        this.releveSoldesJournaliers = [];
+
+        // Construire les paramètres de filtrage
         let dateDebut: string | null = null;
         let dateFin: string | null = null;
-        
+
+        // Ajouter les filtres de date
         if (this.releveDateDebut === 'custom') {
-            // Utiliser les dates personnalisées
             dateDebut = this.releveDateDebutCustom || null;
             dateFin = this.releveDateFinCustom || null;
         } else if (this.releveDateDebut) {
-            // Calculer la date de début si une période prédéfinie est sélectionnée
             const jours = parseInt(this.releveDateDebut);
-            const date = new Date();
-            date.setDate(date.getDate() - jours);
-            dateDebut = date.toISOString().split('T')[0];
+            const dateFinObj = new Date();
+            const dateDebutObj = new Date();
+            dateDebutObj.setDate(dateDebutObj.getDate() - jours);
+            dateDebut = dateDebutObj.toISOString().split('T')[0];
+            dateFin = dateFinObj.toISOString().split('T')[0];
         }
 
-        // Vérifier si on doit afficher automatiquement les frais
-        this.showFraisAutomaticallyReleve = this.shouldShowFraisAutomaticallyReleve(this.releveTypeOperation);
-
-        // Appeler le service pour récupérer les opérations du compte (triées par ordre chronologique pour le calcul des soldes)
         this.operationService.getOperationsByCompteForReleve(
             this.selectedCompte.numeroCompte,
             dateDebut,
             dateFin,
             this.releveTypeOperation || null
         ).subscribe({
-            next: (operations: Operation[]) => {
-                // Si on doit afficher les frais automatiquement, ajouter les frais associés
-                if (this.showFraisAutomaticallyReleve) {
-                    // Récupérer d'abord toutes les opérations du compte pour trouver les frais associés
-                    this.operationService.getOperationsByCompteForReleve(
-                        this.selectedCompte!.numeroCompte,
-                        dateDebut,
-                        dateFin,
-                        null // Pas de filtre de type pour récupérer tous les frais
-                    ).subscribe({
-                        next: (allOperations: Operation[]) => {
-                            // Identifier les IDs des opérations principales filtrées
-                            const mainOperationIds = operations.map(op => op.id).filter(id => id !== undefined);
-                            
-                            // Trouver les frais associés aux opérations principales
-                            const associatedFrais = allOperations.filter(op => 
-                                op.typeOperation === 'FRAIS_TRANSACTION' && 
-                                op.parentOperationId && 
-                                mainOperationIds.includes(op.parentOperationId)
-                            );
-                            
-                            // Combiner les opérations principales avec leurs frais
-                            this.releveOperations = [...operations, ...associatedFrais];
-                            
-                            this.processReleveOperations();
-                        },
-                        error: (error: any) => {
-                            console.error('Erreur lors du chargement des frais associés:', error);
-                            this.releveOperations = operations;
-                            this.processReleveOperations();
-                        }
-                    });
-                } else {
-                    // Pas d'affichage automatique des frais
-                    this.releveOperations = operations;
-                    this.processReleveOperations();
-                }
+            next: (operations: any[]) => {
+                this.releveOperations = operations;
+                this.processReleveOperations();
+                this.calculateRelevePagination();
+                this.isLoadingReleve = false;
+                
+                // Charger les sommes des impacts OP après avoir chargé les opérations
+                this.loadImpactOPSums();
             },
             error: (error: any) => {
-                console.error('Erreur lors du chargement des opérations:', error);
+                console.error('Erreur lors du chargement du relevé:', error);
                 this.isLoadingReleve = false;
             }
+        });
+    }
+
+    // Méthode pour charger les sommes des impacts OP
+    loadImpactOPSums(): void {
+        if (!this.selectedCompte || this.releveSoldesJournaliers.length === 0) return;
+
+        // Vider le cache
+        this.impactOPSums = {};
+
+        // Charger les sommes pour chaque date
+        this.releveSoldesJournaliers.forEach(solde => {
+            this.impactOPService.getImpactOPSumForDate(solde.date, this.selectedCompte!.numeroCompte).subscribe({
+                next: (sum) => {
+                    this.impactOPSums[solde.date] = sum;
+                },
+                error: (error) => {
+                    console.error('Erreur lors du chargement de la somme Impact OP pour la date:', solde.date, error);
+                    this.impactOPSums[solde.date] = 0;
+                }
+            });
         });
     }
 
@@ -1170,19 +1195,21 @@ export class ComptesComponent implements OnInit, OnDestroy {
         const worksheet = workbook.addWorksheet('Soldes Journaliers');
 
         // En-tête
-        worksheet.addRow(['Date', 'Solde d\'ouverture', 'Solde de clôture', 'Variation', 'Solde de Clôture BO', 'ECART']);
+        worksheet.addRow(['Date', 'Solde d\'ouverture', 'Solde de clôture', 'Variation', 'Solde de Clôture BO', 'TSOP', 'Impact OP']);
 
         // Données
         this.releveSoldesJournaliers.forEach(solde => {
           const variation = solde.closing - solde.opening;
           const ecart = this.getEcartValue(solde);
+          const impactOP = this.getImpactOPValue(solde);
           const row = worksheet.addRow([
             this.formatDate(solde.date).split(' ')[0],
             solde.opening,
             solde.closing,
             variation,
             solde.closingBo !== undefined ? solde.closingBo : '',
-            ecart
+            ecart,
+            impactOP
           ]);
 
           // Appliquer les couleurs
@@ -1209,7 +1236,7 @@ export class ComptesComponent implements OnInit, OnDestroy {
             }
           }
 
-          // Appliquer les couleurs pour la colonne ECART
+          // Appliquer les couleurs pour la colonne TSOP
           const tolerance = 0.01; // 1 centime de tolérance
           if (Math.abs(ecart) <= tolerance) {
             row.getCell(6).fill = {
@@ -1233,11 +1260,36 @@ export class ComptesComponent implements OnInit, OnDestroy {
             };
             row.getCell(6).font = { color: { argb: 'FFC62828' }, bold: true };
           }
+
+          // Appliquer les couleurs pour la colonne Impact OP
+          if (Math.abs(impactOP) <= tolerance) {
+            row.getCell(7).fill = {
+              type: 'pattern',
+              pattern: 'solid',
+              fgColor: { argb: 'FFE8F5E8' } // Vert clair amélioré
+            };
+            row.getCell(7).font = { color: { argb: 'FF2E7D32' }, bold: true };
+          } else if (impactOP > 0) {
+            row.getCell(7).fill = {
+              type: 'pattern',
+              pattern: 'solid',
+              fgColor: { argb: 'FFFFF3E0' } // Orange clair amélioré
+            };
+            row.getCell(7).font = { color: { argb: 'FFF57C00' }, bold: true };
+          } else {
+            row.getCell(7).fill = {
+              type: 'pattern',
+              pattern: 'solid',
+              fgColor: { argb: 'FFFFEBEE' } // Rouge clair amélioré
+            };
+            row.getCell(7).font = { color: { argb: 'FFC62828' }, bold: true };
+          }
         });
 
         // Largeurs de colonnes
         worksheet.columns = [
           { width: 15 },
+          { width: 20 },
           { width: 20 },
           { width: 20 },
           { width: 20 },
@@ -1731,10 +1783,316 @@ export class ComptesComponent implements OnInit, OnDestroy {
         this.showEcartSoldeTab = true;
     }
 
+    // Méthode pour calculer la valeur de l'Impact OP
+    getImpactOPValue(solde: { date: string; opening: number; closing: number; closingBo?: number }): number {
+        // Utiliser le cache si disponible
+        if (this.impactOPSums[solde.date] !== undefined) {
+            // Inverser le signe : positif devient négatif, négatif devient positif
+            return -this.impactOPSums[solde.date];
+        }
+        
+        // Si pas dans le cache, retourner 0 pour l'instant
+        // TODO: Implémenter la récupération depuis le backend
+        return 0;
+    }
+
+    // Méthode pour déterminer la classe CSS de l'Impact OP
+    getImpactOPClass(solde: { date: string; opening: number; closing: number; closingBo?: number }): string {
+        const impactOP = this.getImpactOPValue(solde);
+        const tolerance = 0.01; // 1 centime de tolérance
+        
+        if (Math.abs(impactOP) <= tolerance) {
+            return 'impact-op-zero'; // Impact OP nul (vert)
+        } else if (impactOP > 0) {
+            return 'impact-op-positive'; // Impact OP positif (orange)
+        } else {
+            return 'impact-op-negative'; // Impact OP négatif (rouge)
+        }
+    }
+
+    // Navigation vers la page Impact OP avec filtres
+    navigateToImpactOP(solde: { date: string; opening: number; closing: number; closingBo?: number }): void {
+        if (!this.selectedCompte) return;
+        
+        // Configurer les données pour l'onglet Impact OP
+        this.impactOPAgence = this.selectedCompte.numeroCompte;
+        this.impactOPDateTransaction = solde.date;
+        
+        // Basculer vers l'onglet Impact OP
+        this.activeTab = 'impact-op';
+        this.showImpactOPTab = true;
+    }
+
     switchTab(tabName: string): void {
         this.activeTab = tabName;
         if (tabName === 'ecart-solde') {
             this.showEcartSoldeTab = true;
+        } else if (tabName === 'impact-op') {
+            this.showImpactOPTab = true;
+        } else if (tabName === 'revenu-journalier') {
+            this.showRevenuJournalierTab = true;
+            this.loadRevenuJournalier();
         }
+    }
+
+    // Méthodes pour l'onglet Revenu Journalier
+    loadRevenuJournalier(): void {
+        if (!this.selectedCompte || this.releveOperations.length === 0) return;
+
+        this.isLoadingRevenuJournalier = true;
+        this.revenuJournalierData = [];
+
+        // Grouper les opérations par date
+        const operationsByDate: { [date: string]: Operation[] } = {};
+        this.releveOperations.forEach(op => {
+            const date = op.dateOperation ? op.dateOperation.split('T')[0] : '';
+            if (!operationsByDate[date]) {
+                operationsByDate[date] = [];
+            }
+            operationsByDate[date].push(op);
+        });
+
+        // Calculer les revenus par jour
+        const promises: Promise<void>[] = [];
+        
+        Object.entries(operationsByDate).forEach(([date, operations]) => {
+            let totalCashin = 0;
+            let totalPaiement = 0;
+            let fraisCashin = 0;
+            let fraisPaiement = 0;
+
+            operations.forEach(op => {
+                if (op.typeOperation === 'total_cashin') {
+                    totalCashin += op.montant || 0;
+                } else if (op.typeOperation === 'total_paiement') {
+                    totalPaiement += op.montant || 0;
+                } else if (op.typeOperation === 'FRAIS_TRANSACTION') {
+                    // Déterminer si c'est un frais de cashin ou paiement basé sur le service
+                    const service = op.service?.toUpperCase() || '';
+                    if (service.includes('CASHIN')) {
+                        fraisCashin += op.montant || 0;
+                    } else if (service.includes('PAIEMENT')) {
+                        fraisPaiement += op.montant || 0;
+                    }
+                }
+            });
+
+            // Calculer le revenu attendu (frais uniquement)
+            const revenuTotal = fraisCashin + fraisPaiement;
+
+            // Récupérer les frais SF pour cette agence et cette date
+            // Utiliser le numeroCompte comme agence (correspondance avec trx_sf)
+            const agence = this.selectedCompte?.numeroCompte || '';
+            console.log(`Recherche des frais SF pour agence: ${agence}, date: ${date}`);
+            
+            // Vérifier que l'agence est définie
+            if (!agence) {
+                console.warn(`Aucune agence définie pour le compte ${this.selectedCompte?.numeroCompte}, impossible de récupérer les frais SF`);
+                this.revenuJournalierData.push({
+                    date,
+                    totalCashin,
+                    totalPaiement,
+                    fraisCashin,
+                    fraisPaiement,
+                    revenuTotal,
+                    ecartFrais: 0
+                });
+                // Ajouter une promesse résolue pour maintenir la cohérence
+                promises.push(Promise.resolve());
+            } else {
+                const promise = this.trxSfService.getFraisByAgenceAndDateEnAttente(agence, date).toPromise()
+                    .then((response: any) => {
+                        const fraisSf = response?.frais || 0;
+                        console.log(`Frais SF EN_ATTENTE trouvés pour ${agence} le ${date}: ${fraisSf}`);
+                        
+                        this.revenuJournalierData.push({
+                            date,
+                            totalCashin,
+                            totalPaiement,
+                            fraisCashin,
+                            fraisPaiement,
+                            revenuTotal,
+                            ecartFrais: fraisSf
+                        });
+                    })
+                    .catch((error: any) => {
+                        console.error(`Erreur lors de la récupération des frais SF pour ${agence} le ${date}:`, error);
+                        this.revenuJournalierData.push({
+                            date,
+                            totalCashin,
+                            totalPaiement,
+                            fraisCashin,
+                            fraisPaiement,
+                            revenuTotal,
+                            ecartFrais: 0
+                        });
+                    });
+                
+                promises.push(promise);
+            }
+        });
+
+        // Attendre que tous les appels soient terminés
+        Promise.all(promises).then(() => {
+            // Trier par date (du plus récent au plus ancien)
+            this.revenuJournalierData.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+            // Appliquer les filtres
+            this.applyRevenuJournalierFilters();
+
+            this.isLoadingRevenuJournalier = false;
+        });
+    }
+
+    // Méthodes utilitaires pour l'onglet revenu journalier
+    getTotalRevenuJournalier(): number {
+        return this.revenuJournalierDataFiltered.reduce((total, item) => total + item.revenuTotal, 0);
+    }
+
+    getTotalCashinJournalier(): number {
+        return this.revenuJournalierDataFiltered.reduce((total, item) => total + item.totalCashin, 0);
+    }
+
+    getTotalPaiementJournalier(): number {
+        return this.revenuJournalierDataFiltered.reduce((total, item) => total + item.totalPaiement, 0);
+    }
+
+    getTotalFraisCashinJournalier(): number {
+        return this.revenuJournalierDataFiltered.reduce((total, item) => total + item.fraisCashin, 0);
+    }
+
+    getTotalFraisPaiementJournalier(): number {
+        return this.revenuJournalierDataFiltered.reduce((total, item) => total + item.fraisPaiement, 0);
+    }
+
+    getTotalEcartFraisJournalier(): number {
+        return this.revenuJournalierDataFiltered.reduce((total, item) => total + item.ecartFrais, 0);
+    }
+
+    // Méthodes de pagination pour le revenu journalier
+    calculateRevenuJournalierPagination(): void {
+        this.revenuJournalierCurrentPage = 1;
+        this.revenuJournalierTotalPages = Math.ceil(this.revenuJournalierDataFiltered.length / this.revenuJournalierPageSize);
+    }
+
+    get pagedRevenuJournalierData(): { date: string; totalCashin: number; totalPaiement: number; fraisCashin: number; fraisPaiement: number; revenuTotal: number; ecartFrais: number }[] {
+        const startIndex = (this.revenuJournalierCurrentPage - 1) * this.revenuJournalierPageSize;
+        const endIndex = startIndex + this.revenuJournalierPageSize;
+        return this.revenuJournalierDataFiltered.slice(startIndex, endIndex);
+    }
+
+    prevRevenuJournalierPage(): void {
+        if (this.revenuJournalierCurrentPage > 1) {
+            this.revenuJournalierCurrentPage--;
+        }
+    }
+
+    nextRevenuJournalierPage(): void {
+        if (this.revenuJournalierCurrentPage < this.revenuJournalierTotalPages) {
+            this.revenuJournalierCurrentPage++;
+        }
+    }
+
+    goToRevenuJournalierPage(page: number): void {
+        if (page >= 1 && page <= this.revenuJournalierTotalPages) {
+            this.revenuJournalierCurrentPage = page;
+        }
+    }
+
+    getVisibleRevenuJournalierPages(): number[] {
+        const totalPages = this.revenuJournalierTotalPages;
+        const currentPage = this.revenuJournalierCurrentPage;
+        const maxVisible = 5;
+        
+        if (totalPages <= maxVisible) {
+            return Array.from({length: totalPages}, (_, i) => i + 1);
+        }
+        
+        let start = Math.max(1, currentPage - Math.floor(maxVisible / 2));
+        let end = Math.min(totalPages, start + maxVisible - 1);
+        
+        if (end - start + 1 < maxVisible) {
+            start = Math.max(1, end - maxVisible + 1);
+        }
+        
+        return Array.from({length: end - start + 1}, (_, i) => start + i);
+    }
+
+    // Méthodes de filtrage pour le revenu journalier
+    applyRevenuJournalierFilters(): void {
+        let filteredData = [...this.revenuJournalierData];
+
+        // Filtrage par date de début
+        if (this.revenuJournalierDateDebut) {
+            filteredData = filteredData.filter(item => item.date >= this.revenuJournalierDateDebut);
+        }
+
+        // Filtrage par date de fin
+        if (this.revenuJournalierDateFin) {
+            filteredData = filteredData.filter(item => item.date <= this.revenuJournalierDateFin);
+        }
+
+        // Filtrage par montant minimum
+        if (this.revenuJournalierMontantMin !== null && this.revenuJournalierMontantMin >= 0) {
+            filteredData = filteredData.filter(item => {
+                const montantToCheck = this.getMontantForFilter(item);
+                return montantToCheck >= this.revenuJournalierMontantMin!;
+            });
+        }
+
+        // Filtrage par montant maximum
+        if (this.revenuJournalierMontantMax !== null && this.revenuJournalierMontantMax >= 0) {
+            filteredData = filteredData.filter(item => {
+                const montantToCheck = this.getMontantForFilter(item);
+                return montantToCheck <= this.revenuJournalierMontantMax!;
+            });
+        }
+
+        this.revenuJournalierDataFiltered = filteredData;
+        this.calculateRevenuJournalierPagination();
+        
+        // Mettre à jour les informations de débogage
+        this.updateRevenuJournalierDebugInfo();
+    }
+
+    private getMontantForFilter(item: any): number {
+        switch (this.revenuJournalierTypeRevenu) {
+            case 'cashin':
+                return item.fraisCashin;
+            case 'paiement':
+                return item.fraisPaiement;
+            case 'total':
+                return item.revenuTotal;
+            default:
+                return item.revenuTotal; // Par défaut, filtrer sur le revenu total
+        }
+    }
+
+    onRevenuJournalierFiltersChange(): void {
+        this.applyRevenuJournalierFilters();
+    }
+
+    clearRevenuJournalierFilters(): void {
+        this.revenuJournalierDateDebut = '';
+        this.revenuJournalierDateFin = '';
+        this.revenuJournalierMontantMin = null;
+        this.revenuJournalierMontantMax = null;
+        this.revenuJournalierTypeRevenu = '';
+        this.applyRevenuJournalierFilters();
+    }
+
+    // Méthode pour mettre à jour les informations de débogage
+    updateRevenuJournalierDebugInfo(): void {
+        const agence = this.selectedCompte?.agence || this.selectedCompte?.numeroCompte || 'Non définie';
+        const compte = this.selectedCompte?.numeroCompte || 'Non défini';
+        const totalLignes = this.revenuJournalierData.length;
+        const totalEcart = this.getTotalEcartFraisJournalier();
+        
+        this.revenuJournalierDebugInfo = `
+            Compte: ${compte} | 
+            Agence utilisée: ${agence} | 
+            Lignes: ${totalLignes} | 
+            Total écart: ${totalEcart.toFixed(2)} FCFA
+        `;
     }
 } 

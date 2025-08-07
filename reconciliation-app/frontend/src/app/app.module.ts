@@ -44,9 +44,14 @@ import { ModulesComponent } from './components/modules/modules.component';
 import { PermissionsComponent } from './components/permissions/permissions.component';
 import { EcartSoldeComponent } from './components/ecart-solde/ecart-solde.component';
 import { EcartSoldeTabComponent } from './components/comptes/ecart-solde-tab.component';
+import { ImpactOPComponent } from './components/impact-op/impact-op.component';
+import { ImpactOPTabComponent } from './components/comptes/impact-op-tab.component';
+import { TrxSfComponent } from './components/trx-sf/trx-sf.component';
+
 
 import { AutoProcessingModelsComponent } from './components/auto-processing-models/auto-processing-models.component';
 import { BanqueComponent } from './components/banque/banque.component';
+import { ExcelAnalysisComponent } from './components/excel-analysis/excel-analysis.component';
 
 @NgModule({
     declarations: [
@@ -72,9 +77,14 @@ import { BanqueComponent } from './components/banque/banque.component';
         PermissionsComponent,
                         EcartSoldeComponent,
                 EcartSoldeTabComponent,
+                ImpactOPComponent,
+                ImpactOPTabComponent,
+                TrxSfComponent,
+
 
                 AutoProcessingModelsComponent,
-                BanqueComponent
+                BanqueComponent,
+                ExcelAnalysisComponent
     ],
     imports: [
         BrowserModule,
