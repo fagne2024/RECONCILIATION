@@ -86,43 +86,43 @@ export class OperationsComponent implements OnInit, OnDestroy {
         { value: '', label: 'Tous' },
         { value: 'total_cashin', label: 'Total Cash-in' },
         { value: 'total_paiement', label: 'Total Paiement' },
-        { value: 'approvisionnement', label: 'Approvisionnement' },
+        { value: 'Appro_client', label: 'Appro_client' },
+        { value: 'Appro_fournisseur', label: 'Appro_fournisseur' },
         { value: 'ajustement', label: 'Ajustement' },
-        { value: 'compense', label: 'Compense' },
+        { value: 'Compense_client', label: 'Compense_client' },
+        { value: 'Compense_fournisseur', label: 'Compense_fournisseur' },
+        { value: 'nivellement', label: 'Nivellement' },
+        { value: 'régularisation_solde', label: 'Régularisation Solde' },
         { value: 'FRAIS_TRANSACTION', label: 'Frais Transaction' },
         { value: 'annulation_partenaire', label: 'Annulation Partenaire' },
         { value: 'annulation_bo', label: 'Annulation BO' },
         { value: 'transaction_cree', label: 'Transaction Créée' }
     ];
 
-        // Ajout des contrôles de recherche et des variables de sélection
+        // Ajout des contrôles de recherche
     typeOperationSearchCtrl = new FormControl('');
-    selectedTypesOperation: string[] = [];
     filteredTypeOperationList: { value: string, label: string }[] = [];
-
     paysSearchCtrl = new FormControl('');
     filteredPaysList: string[] = [];
     statutSearchCtrl = new FormControl('');
-    selectedStatut: string[] = [];
     filteredStatutList: string[] = [];
     banqueSearchCtrl = new FormControl('');
-    selectedBanque: string[] = [];
     filteredBanqueList: string[] = [];
     codeProprietaireSearchCtrl = new FormControl('');
-    selectedCodesProprietaire: string[] = [];
     filteredCodeProprietaireList: string[] = [];
     serviceSearchCtrl = new FormControl('');
-    selectedService: string[] = [];
     filteredServiceList: string[] = [];
     referenceSearchCtrl = new FormControl('');
-    selectedReference: string[] = [];
     filteredReferenceList: string[] = [];
     compteSearchCtrl = new FormControl('');
-    selectedComptes: string[] = [];
 
     // ViewChild pour les selects des filtres
     @ViewChild('paysSelect') paysSelect!: MatSelect;
     @ViewChild('codeProprietaireSelect') codeProprietaireSelect!: MatSelect;
+    @ViewChild('typeOperationSelect') typeOperationSelect!: MatSelect;
+    @ViewChild('serviceSelect') serviceSelect!: MatSelect;
+    @ViewChild('statutSelect') statutSelect!: MatSelect;
+    @ViewChild('referenceSelect') referenceSelect!: MatSelect;
     // Remplacer la logique filteredComptesList pour qu'elle soit basée sur les codeProprietaire distincts des opérations
     get filteredComptesList(): string[] {
         return Array.from(new Set(this.operations.map(op => op.codeProprietaire).filter(c => !!c)));
@@ -590,8 +590,18 @@ export class OperationsComponent implements OnInit, OnDestroy {
             soldeApres = soldeAvant - montant;
         } else if (typeOperation === 'total_paiement') {
             soldeApres = soldeAvant + montant;
-        } else if (typeOperation === 'approvisionnement') {
+        } else if (typeOperation === 'Appro_client') {
             soldeApres = soldeAvant + montant;
+        } else if (typeOperation === 'Appro_fournisseur') {
+            soldeApres = soldeAvant + montant;
+        } else if (typeOperation === 'Compense_client') {
+            soldeApres = soldeAvant - montant;
+        } else if (typeOperation === 'Compense_fournisseur') {
+            soldeApres = soldeAvant - montant;
+        } else if (typeOperation === 'nivellement') {
+            soldeApres = soldeAvant + montant; // Nivellement peut être positif ou négatif selon le montant
+        } else if (typeOperation === 'régularisation_solde') {
+            soldeApres = soldeAvant + montant; // Régularisation peut être positif ou négatif selon le montant
         } else if (typeOperation === 'ajustement') {
             soldeApres = soldeAvant + montant;
         } else if (typeOperation === 'annulation_partenaire' || typeOperation === 'annulation_bo' || typeOperation === 'transaction_cree') {
@@ -704,9 +714,9 @@ export class OperationsComponent implements OnInit, OnDestroy {
         const montant = this.editForm.get('montant')?.value || 0;
         const typeOperation = this.editForm.get('typeOperation')?.value;
         
-        if (typeOperation === 'approvisionnement' || typeOperation === 'total_paiement') {
+        if (typeOperation === 'Appro_client' || typeOperation === 'Appro_fournisseur' || typeOperation === 'total_paiement') {
             return montant >= 0 ? 'positive' : 'negative';
-        } else if (typeOperation === 'total_cashin' || typeOperation === 'annulation_partenaire' || 
+        } else if (typeOperation === 'total_cashin' || typeOperation === 'Compense_client' || typeOperation === 'Compense_fournisseur' || typeOperation === 'annulation_partenaire' || 
                    typeOperation === 'annulation_bo' || typeOperation === 'transaction_cree') {
             return montant <= 0 ? 'positive' : 'negative';
         } else {
@@ -720,13 +730,13 @@ export class OperationsComponent implements OnInit, OnDestroy {
         const typeOperation = this.editForm.get('typeOperation')?.value;
         
         let impact = 0;
-        if (typeOperation === 'approvisionnement' || typeOperation === 'total_paiement') {
+        if (typeOperation === 'Appro_client' || typeOperation === 'Appro_fournisseur' || typeOperation === 'total_paiement') {
             impact = montant;
-        } else if (typeOperation === 'total_cashin' || typeOperation === 'annulation_partenaire' || 
+        } else if (typeOperation === 'total_cashin' || typeOperation === 'Compense_client' || typeOperation === 'Compense_fournisseur' || typeOperation === 'annulation_partenaire' || 
                    typeOperation === 'annulation_bo' || typeOperation === 'transaction_cree') {
             impact = -Math.abs(montant);
         } else {
-            impact = montant; // Ajustement
+            impact = montant; // Ajustement, nivellement, régularisation_solde
         }
         
         return soldeAvant + impact;
@@ -761,9 +771,9 @@ export class OperationsComponent implements OnInit, OnDestroy {
         const montant = this.addForm.get('montant')?.value || 0;
         const typeOperation = this.addForm.get('typeOperation')?.value;
         
-        if (typeOperation === 'approvisionnement' || typeOperation === 'total_paiement') {
+        if (typeOperation === 'Appro_client' || typeOperation === 'Appro_fournisseur' || typeOperation === 'total_paiement') {
             return montant >= 0 ? 'positive' : 'negative';
-        } else if (typeOperation === 'total_cashin' || typeOperation === 'annulation_partenaire' || 
+        } else if (typeOperation === 'total_cashin' || typeOperation === 'Compense_client' || typeOperation === 'Compense_fournisseur' || typeOperation === 'annulation_partenaire' || 
                    typeOperation === 'annulation_bo' || typeOperation === 'transaction_cree') {
             return montant <= 0 ? 'positive' : 'negative';
         } else {
@@ -777,13 +787,13 @@ export class OperationsComponent implements OnInit, OnDestroy {
         const typeOperation = this.addForm.get('typeOperation')?.value;
         
         let impact = 0;
-        if (typeOperation === 'approvisionnement' || typeOperation === 'total_paiement') {
+        if (typeOperation === 'Appro_client' || typeOperation === 'Appro_fournisseur' || typeOperation === 'total_paiement') {
             impact = montant;
-        } else if (typeOperation === 'total_cashin' || typeOperation === 'annulation_partenaire' || 
+        } else if (typeOperation === 'total_cashin' || typeOperation === 'Compense_client' || typeOperation === 'Compense_fournisseur' || typeOperation === 'annulation_partenaire' || 
                    typeOperation === 'annulation_bo' || typeOperation === 'transaction_cree') {
             impact = -Math.abs(montant);
         } else {
-            impact = montant; // Ajustement
+            impact = montant; // Ajustement, nivellement, régularisation_solde
         }
         
         return soldeAvant + impact;
@@ -902,27 +912,66 @@ export class OperationsComponent implements OnInit, OnDestroy {
     // Harmonisation de la méthode de filtrage
     applyFilters() {
         console.log('=== DÉBUT applyFilters() ===');
-        console.log('selectedPays:', this.selectedPays);
-        console.log('selectedCodesProprietaire:', this.selectedCodesProprietaire);
         console.log('filterForm.value:', this.filterForm.value);
         console.log('Opérations totales avant filtrage:', this.operations.length);
+        
+        // Récupérer les valeurs du formulaire
+        const formValue = this.filterForm.value;
+        const selectedTypesOperation = formValue.typeOperation || [];
+        const selectedService = formValue.service || [];
+        const selectedStatut = formValue.statut || [];
+        const selectedReference = formValue.reference || [];
+        const selectedPays = formValue.pays || [];
+        const selectedCodesProprietaire = formValue.codeProprietaire || [];
         
         // Filtrer les opérations
         this.filteredOperations = this.operations.filter(op => {
             let keepOperation = true;
             
+            // Filtre par type d'opération
+            if (selectedTypesOperation && selectedTypesOperation.length > 0) {
+                if (!selectedTypesOperation.includes(op.typeOperation)) {
+                    console.log(`Opération ${op.id} exclue: type ${op.typeOperation} pas dans ${selectedTypesOperation}`);
+                    return false;
+                }
+            }
+            
+            // Filtre par service
+            if (selectedService && selectedService.length > 0) {
+                if (!op.service || !selectedService.includes(op.service)) {
+                    console.log(`Opération ${op.id} exclue: service ${op.service} pas dans ${selectedService}`);
+                    return false;
+                }
+            }
+            
+            // Filtre par statut
+            if (selectedStatut && selectedStatut.length > 0) {
+                if (!selectedStatut.includes(op.statut)) {
+                    console.log(`Opération ${op.id} exclue: statut ${op.statut} pas dans ${selectedStatut}`);
+                    return false;
+                }
+            }
+            
+            // Filtre par référence
+            if (selectedReference && selectedReference.length > 0) {
+                if (!op.reference || !selectedReference.includes(op.reference)) {
+                    console.log(`Opération ${op.id} exclue: référence ${op.reference} pas dans ${selectedReference}`);
+                    return false;
+                }
+            }
+            
             // Filtre par pays
-            if (this.selectedPays && this.selectedPays.length > 0) {
-                if (!this.selectedPays.includes(op.pays)) {
-                    console.log(`Opération ${op.id} exclue: pays ${op.pays} pas dans ${this.selectedPays}`);
+            if (selectedPays && selectedPays.length > 0) {
+                if (!selectedPays.includes(op.pays)) {
+                    console.log(`Opération ${op.id} exclue: pays ${op.pays} pas dans ${selectedPays}`);
                     return false;
                 }
             }
             
             // Filtre par code propriétaire
-            if (this.selectedCodesProprietaire && this.selectedCodesProprietaire.length > 0) {
-                if (!this.selectedCodesProprietaire.includes(op.codeProprietaire)) {
-                    console.log(`Opération ${op.id} exclue: codeProprietaire ${op.codeProprietaire} pas dans ${this.selectedCodesProprietaire}`);
+            if (selectedCodesProprietaire && selectedCodesProprietaire.length > 0) {
+                if (!selectedCodesProprietaire.includes(op.codeProprietaire)) {
+                    console.log(`Opération ${op.id} exclue: codeProprietaire ${op.codeProprietaire} pas dans ${selectedCodesProprietaire}`);
                     return false;
                 }
             }
@@ -973,17 +1022,26 @@ export class OperationsComponent implements OnInit, OnDestroy {
     // Méthode appelée lors d'un changement de filtre
     onFilterChange() {
         console.log('=== DÉBUT onFilterChange() ===');
-        console.log('selectedPays:', this.selectedPays);
-        console.log('selectedCodesProprietaire:', this.selectedCodesProprietaire);
+        console.log('filterForm.value:', this.filterForm.value);
         
-        // Synchroniser les champs du formulaire avec les sélections UI
-        this.filterForm.controls['pays'].setValue(this.selectedPays);
-        this.filterForm.controls['codeProprietaire'].setValue(this.selectedCodesProprietaire);
-        
-        console.log('filterForm après synchronisation:', this.filterForm.value);
+        // Mettre à jour les listes filtrées avec cloisonnement
+        this.updateFilteredLists();
         
         // Appliquer les filtres directement
         this.applyFilters();
+        
+        // Forcer la détection de changement pour mettre à jour l'interface
+        this.cdr.detectChanges();
+        
+        // Fermer les popups après un délai pour permettre la sélection multiple
+        setTimeout(() => {
+            if (this.typeOperationSelect) this.typeOperationSelect.close();
+            if (this.serviceSelect) this.serviceSelect.close();
+            if (this.statutSelect) this.statutSelect.close();
+            if (this.referenceSelect) this.referenceSelect.close();
+            if (this.paysSelect) this.paysSelect.close();
+            if (this.codeProprietaireSelect) this.codeProprietaireSelect.close();
+        }, 100);
         
         console.log('=== FIN onFilterChange() ===');
     }
@@ -1001,6 +1059,12 @@ export class OperationsComponent implements OnInit, OnDestroy {
         // Mettre à jour les services disponibles selon le code propriétaire sélectionné
         this.filteredServiceList = this.getFilteredServices();
         
+        // Mettre à jour les références disponibles selon les autres filtres
+        this.filteredReferenceList = this.getFilteredReference();
+        
+        // Mettre à jour les statuts disponibles selon les autres filtres
+        this.filteredStatutList = this.getFilteredStatut();
+        
         // Mettre à jour les codes propriétaires disponibles selon les autres filtres
         this.filteredCodeProprietaireList = this.getFilteredCodeProprietaire();
         
@@ -1015,6 +1079,8 @@ export class OperationsComponent implements OnInit, OnDestroy {
         const currentService = this.filterForm.value.service;
         const currentCodeProprietaire = this.filterForm.value.codeProprietaire;
         const currentReference = this.filterForm.value.reference;
+        const currentStatut = this.filterForm.value.statut;
+        const currentTypeOperation = this.filterForm.value.typeOperation;
 
         // Nettoyer les pays si le code propriétaire a changé
         if (currentPays && currentPays.length > 0) {
@@ -1046,6 +1112,36 @@ export class OperationsComponent implements OnInit, OnDestroy {
             }
         }
 
+        // Nettoyer les références si les autres filtres ont changé
+        if (currentReference && currentReference.length > 0) {
+            const validReference = currentReference.filter((ref: string) => 
+                this.filteredReferenceList.includes(ref)
+            );
+            if (validReference.length !== currentReference.length) {
+                this.filterForm.controls['reference'].setValue(validReference);
+            }
+        }
+
+        // Nettoyer les statuts si les autres filtres ont changé
+        if (currentStatut && currentStatut.length > 0) {
+            const validStatut = currentStatut.filter((statut: string) => 
+                this.filteredStatutList.includes(statut)
+            );
+            if (validStatut.length !== currentStatut.length) {
+                this.filterForm.controls['statut'].setValue(validStatut);
+            }
+        }
+
+        // Nettoyer les types d'opération si les autres filtres ont changé
+        if (currentTypeOperation && currentTypeOperation.length > 0) {
+            const validTypeOperation = currentTypeOperation.filter((type: string) => 
+                this.filteredTypeOperationList.some(opt => opt.value === type)
+            );
+            if (validTypeOperation.length !== currentTypeOperation.length) {
+                this.filterForm.controls['typeOperation'].setValue(validTypeOperation);
+            }
+        }
+
         // Nettoyer les codes propriétaires si les autres filtres ont changé
         if (currentCodeProprietaire && currentCodeProprietaire.length > 0) {
             const validCodeProprietaire = currentCodeProprietaire.filter((code: string) => 
@@ -1053,16 +1149,6 @@ export class OperationsComponent implements OnInit, OnDestroy {
             );
             if (validCodeProprietaire.length !== currentCodeProprietaire.length) {
                 this.filterForm.controls['codeProprietaire'].setValue(validCodeProprietaire);
-            }
-        }
-
-        // Nettoyer les références si les autres filtres ont changé
-        if (currentReference && currentReference.length > 0) {
-            const validReference = currentReference.filter((ref: string) => 
-                this.filteredOperations.some(op => op.reference === ref)
-            );
-            if (validReference.length !== currentReference.length) {
-                this.filterForm.controls['reference'].setValue(validReference);
             }
         }
     }
@@ -1202,10 +1288,34 @@ export class OperationsComponent implements OnInit, OnDestroy {
         return reference.sort();
     }
 
+    getFilteredStatut(): string[] {
+        let data = [...this.operations];
+        
+        // Appliquer les autres filtres
+        if (this.filterForm.value.typeOperation && this.filterForm.value.typeOperation.length > 0) {
+            data = data.filter(op => this.filterForm.value.typeOperation.includes(op.typeOperation));
+        }
+        if (this.filterForm.value.pays && this.filterForm.value.pays.length > 0) {
+            data = data.filter(op => this.filterForm.value.pays.includes(op.pays));
+        }
+        if (this.filterForm.value.banque && this.filterForm.value.banque.length > 0) {
+            data = data.filter(op => this.filterForm.value.banque.includes(op.banque));
+        }
+        if (this.filterForm.value.codeProprietaire && this.filterForm.value.codeProprietaire.length > 0) {
+            data = data.filter(op => this.filterForm.value.codeProprietaire.includes(op.codeProprietaire));
+        }
+        if (this.filterForm.value.service && this.filterForm.value.service.length > 0) {
+            data = data.filter(op => this.filterForm.value.service.includes(op.service));
+        }
+        if (this.filterForm.value.reference && this.filterForm.value.reference.length > 0) {
+            data = data.filter(op => this.filterForm.value.reference.includes(op.reference));
+        }
+        const statut = [...new Set(data.map(op => op.statut).filter((s): s is string => s !== undefined && s !== null))];
+        return statut.sort();
+    }
+
     clearFilters() {
         this.filterForm.reset();
-        this.selectedPays = [];
-        this.selectedCodesProprietaire = [];
         this.filteredOperations = [...this.operations];
         this.currentPage = 1;
         this.updatePagedOperations();
@@ -1313,9 +1423,13 @@ export class OperationsComponent implements OnInit, OnDestroy {
         const typeNames: { [key: string]: string } = {
             'total_cashin': 'Total Cash-in',
             'total_paiement': 'Total Paiement',
-            'approvisionnement': 'Approvisionnement',
+            'Appro_client': 'Appro_client',
+            'Appro_fournisseur': 'Appro_fournisseur',
             'ajustement': 'Ajustement',
-            'compense': 'Compense',
+            'Compense_client': 'Compense_client',
+            'Compense_fournisseur': 'Compense_fournisseur',
+            'nivellement': 'Nivellement',
+            'régularisation_solde': 'Régularisation Solde',
             'FRAIS_TRANSACTION': 'Frais Transaction',
             'annulation_partenaire': 'Annulation Partenaire',
             'annulation_bo': 'Annulation BO',
@@ -1328,9 +1442,13 @@ export class OperationsComponent implements OnInit, OnDestroy {
         const impacts: { [key: string]: string } = {
             'total_cashin': 'Débite le compte',
             'total_paiement': 'Crédite le compte',
-            'approvisionnement': 'Crédite le compte',
+            'Appro_client': 'Crédite le compte',
+            'Appro_fournisseur': 'Crédite le compte',
             'ajustement': 'Impact variable (+/-)',
-            'compense': 'Débite le compte',
+            'Compense_client': 'Débite le compte',
+            'Compense_fournisseur': 'Débite le compte',
+            'nivellement': 'Impact variable (+/-)',
+            'régularisation_solde': 'Impact variable (+/-)',
             'FRAIS_TRANSACTION': 'Débite le compte',
             'annulation_partenaire': 'Débite le compte',
             'annulation_bo': 'Débite le compte'
@@ -1484,7 +1602,7 @@ export class OperationsComponent implements OnInit, OnDestroy {
         // Initialiser les listes filtrées avec toutes les valeurs disponibles
         this.filteredTypeOperationList = this.filterTypeOptions;
         this.filteredPaysList = this.getFilteredPays();
-        this.filteredStatutList = this.statutList;
+        this.filteredStatutList = this.getFilteredStatut();
         this.filteredBanqueList = this.getFilteredBanques();
         this.filteredCodeProprietaireList = this.getFilteredCodeProprietaire();
         this.filteredServiceList = this.getFilteredServices();
@@ -1498,7 +1616,8 @@ export class OperationsComponent implements OnInit, OnDestroy {
         return [
             'total_paiement',
             'ajustement',
-            'compense',
+            'Compense_client',
+            'Compense_fournisseur',
             'FRAIS_TRANSACTION',
             'annulation_partenaire',
             'annulation_bo',
@@ -1510,7 +1629,10 @@ export class OperationsComponent implements OnInit, OnDestroy {
     isCreditOperation(type: string): boolean {
         return [
             'total_cashin',
-            'approvisionnement'
+            'Appro_client',
+            'Appro_fournisseur',
+            'nivellement',
+            'régularisation_solde'
         ].includes(type);
     }
 
@@ -1549,7 +1671,12 @@ export class OperationsComponent implements OnInit, OnDestroy {
                     debit = montant;
                     credit = frais;
                     break;
-                case 'approvisionnement':
+                case 'Appro_client':
+                    // L'opération d'origine était en crédit, l'annulation est en débit
+                    debit = montant;
+                    credit = 0;
+                    break;
+                case 'Appro_fournisseur':
                     // L'opération d'origine était en crédit, l'annulation est en débit
                     debit = montant;
                     credit = 0;
@@ -1564,10 +1691,35 @@ export class OperationsComponent implements OnInit, OnDestroy {
                         credit = -montant;
                     }
                     break;
-                case 'compense':
+                case 'Compense_client':
                     // L'opération d'origine était en débit, l'annulation est en crédit
                     credit = montant;
                     debit = 0;
+                    break;
+                case 'Compense_fournisseur':
+                    // L'opération d'origine était en débit, l'annulation est en crédit
+                    credit = montant;
+                    debit = 0;
+                    break;
+                case 'nivellement':
+                    // L'opération d'origine dépendait du signe, l'annulation inverse
+                    if (montant >= 0) {
+                        debit = montant;
+                        credit = 0;
+                    } else {
+                        debit = 0;
+                        credit = -montant;
+                    }
+                    break;
+                case 'régularisation_solde':
+                    // L'opération d'origine dépendait du signe, l'annulation inverse
+                    if (montant >= 0) {
+                        debit = 0;
+                        credit = montant;
+                    } else {
+                        debit = -montant;
+                        credit = 0;
+                    }
                     break;
                 case 'frais_transaction':
                     // L'opération d'origine était en débit, l'annulation est en crédit
@@ -1623,6 +1775,22 @@ export class OperationsComponent implements OnInit, OnDestroy {
                 debit = 0;
                 credit = montant;
                 break;
+            case 'Appro_client':
+                debit = 0;
+                credit = montant;
+                break;
+            case 'appro_client':
+                debit = 0;
+                credit = montant;
+                break;
+            case 'Appro_fournisseur':
+                debit = 0;
+                credit = montant;
+                break;
+            case 'appro_fournisseur':
+                debit = 0;
+                credit = montant;
+                break;
             case 'ajustement':
                 if (montant >= 0) {
                     debit = 0;
@@ -1632,10 +1800,31 @@ export class OperationsComponent implements OnInit, OnDestroy {
                     credit = 0;
                 }
                 break;
-            case 'compense':
+            case 'Compense_client':
+            case 'compense_client':
+            case 'Compense_fournisseur':
+            case 'compense_fournisseur':
             case 'frais_transaction':
                 debit = montant;
                 credit = 0;
+                break;
+            case 'nivellement':
+                if (montant >= 0) {
+                    debit = 0;
+                    credit = montant;
+                } else {
+                    debit = -montant;
+                    credit = 0;
+                }
+                break;
+            case 'régularisation_solde':
+                if (montant >= 0) {
+                    debit = 0;
+                    credit = montant;
+                } else {
+                    debit = -montant;
+                    credit = 0;
+                }
                 break;
             case 'transaction_cree':
                 if (service.includes('cashin')) {

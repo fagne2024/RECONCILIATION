@@ -68,9 +68,13 @@ public class AgencySummaryController {
         List<String> excludedStatusTypes = Arrays.asList(
             "total_paiement",
             "total_cashin",
-            "compense",
+            "Compense_client",
+            "Compense_fournisseur",
             "ajustement",
-            "approvisionnement",
+            "Appro_client",
+            "Appro_fournisseur",
+            "nivellement",
+            "régularisation_solde",
             "FRAIS_TRANSACTION",
             "annulation_bo",
             "annulation_partenaire"

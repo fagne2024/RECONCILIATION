@@ -455,7 +455,8 @@ public class OperationService {
      */
     private boolean isDebitOperation(String typeOperation) {
         return "total_cashin".equals(typeOperation) || 
-               "compense".equals(typeOperation) || 
+               "Compense_client".equals(typeOperation) || 
+               "Compense_fournisseur".equals(typeOperation) ||
                "FRAIS_TRANSACTION".equals(typeOperation) ||
                "annulation_partenaire".equals(typeOperation) ||
                "annulation_bo".equals(typeOperation) ||
@@ -467,14 +468,17 @@ public class OperationService {
      */
     private boolean isCreditOperation(String typeOperation) {
         return "total_paiement".equals(typeOperation) || 
-               "approvisionnement".equals(typeOperation);
+               "Appro_client".equals(typeOperation) ||
+               "Appro_fournisseur".equals(typeOperation);
     }
     
     /**
      * Détermine si une opération est un ajustement (peut être positif ou négatif)
      */
     private boolean isAjustementOperation(String typeOperation) {
-        return "ajustement".equals(typeOperation);
+        return "ajustement".equals(typeOperation) ||
+               "nivellement".equals(typeOperation) ||
+               "régularisation_solde".equals(typeOperation);
     }
     
     private double calculateImpact(String typeOperation, double montant, String service) {
@@ -493,14 +497,26 @@ public class OperationService {
             } else if ("total_cashin".equals(typeOrigine)) {
                 // total_cashin est un débit, donc l'annulation est un crédit
                 return montant; // crédit (positif)
-            } else if ("approvisionnement".equals(typeOrigine)) {
-                // approvisionnement est un crédit, donc l'annulation est un débit
+            } else if ("Appro_client".equals(typeOrigine)) {
+                // Appro_client est un crédit, donc l'annulation est un débit
                 return -montant; // débit (négatif)
-            } else if ("compense".equals(typeOrigine)) {
-                // compense est un débit, donc l'annulation est un crédit
+            } else if ("Appro_fournisseur".equals(typeOrigine)) {
+                // Appro_fournisseur est un crédit, donc l'annulation est un débit
+                return -montant; // débit (négatif)
+            } else if ("Compense_client".equals(typeOrigine)) {
+                // Compense_client est un débit, donc l'annulation est un crédit
+                return montant; // crédit (positif)
+            } else if ("Compense_fournisseur".equals(typeOrigine)) {
+                // Compense_fournisseur est un débit, donc l'annulation est un crédit
                 return montant; // crédit (positif)
             } else if ("ajustement".equals(typeOrigine)) {
                 // ajustement peut être positif ou négatif, l'annulation inverse le signe
+                return -montant; // inverse du montant
+            } else if ("nivellement".equals(typeOrigine)) {
+                // nivellement peut être positif ou négatif, l'annulation inverse le signe
+                return -montant; // inverse du montant
+            } else if ("régularisation_solde".equals(typeOrigine)) {
+                // régularisation_solde peut être positif ou négatif, l'annulation inverse le signe
                 return -montant; // inverse du montant
             } else {
                 // Pour les autres types, utiliser la logique par défaut
@@ -604,18 +620,18 @@ public class OperationService {
             "annulation_annulation_bo",
             "annulation_annulation_partenaire",
             "annulation_FRAIS_TRANSACTION",
-            "annulation_compense",
+            "annulation_Compense_client",
             "annulation_ajustement",
-            "annulation_approvisionnement"
+            "annulation_Appro_client"
         );
         
         // Types d'opérations à exclure si statut "Annulé" ou "Rejeté"
         List<String> excludedStatusTypes = Arrays.asList(
             "total_paiement",
             "total_cashin",
-            "compense",
+            "Compense_client",
             "ajustement",
-            "approvisionnement",
+            "Appro_client",
             "FRAIS_TRANSACTION",
             "annulation_bo",
             "annulation_partenaire"
@@ -659,18 +675,18 @@ public class OperationService {
             "annulation_annulation_bo",
             "annulation_annulation_partenaire",
             "annulation_FRAIS_TRANSACTION",
-            "annulation_compense",
+            "annulation_Compense_client",
             "annulation_ajustement",
-            "annulation_approvisionnement"
+            "annulation_Appro_client"
         );
         
         // Types d'opérations à exclure si statut "Annulé" ou "Rejeté"
         List<String> excludedStatusTypes = Arrays.asList(
             "total_paiement",
             "total_cashin",
-            "compense",
+            "Compense_client",
             "ajustement",
-            "approvisionnement",
+            "Appro_client",
             "FRAIS_TRANSACTION",
             "annulation_bo",
             "annulation_partenaire"

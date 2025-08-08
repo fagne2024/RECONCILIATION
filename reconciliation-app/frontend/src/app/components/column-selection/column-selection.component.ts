@@ -758,6 +758,11 @@ export class ColumnSelectionComponent implements OnDestroy, OnChanges, OnInit {
         this.reconciliationProgress = 0;
         this.reconciliationStatus = 'Initialisation...';
         this.reconciliationStartTime = Date.now();
+        
+        // Déclencher l'affichage de la progression globale
+        console.log('📈 Déclenchement de la progression globale dans appStateService');
+        this.appStateService.setReconciliationProgress(true);
+        
         console.log('✅ État de progression:', {
             isReconciliationInProgress: this.isReconciliationInProgress,
             reconciliationProgress: this.reconciliationProgress,
@@ -808,6 +813,10 @@ export class ColumnSelectionComponent implements OnDestroy, OnChanges, OnInit {
         // Ne pas masquer immédiatement la barre
         // this.isReconciliationInProgress = false;
         console.log('✅ Progression terminée');
+        
+        // Arrêter la progression globale
+        console.log('📈 Arrêt de la progression globale dans appStateService');
+        this.appStateService.setReconciliationProgress(false);
         
         // Forcer la détection de changement
         this.cdr.detectChanges();

@@ -646,4 +646,87 @@
       }
     }
   }
+}
+
+// Styles pour la sélection multiple
+.selection-controls {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1rem;
+  padding: 1rem;
+  background-color: #f8f9fa;
+  border-radius: 8px;
+  border: 1px solid #dee2e6;
+
+  .selection-info {
+    .selected-count {
+      font-weight: 600;
+      color: #007bff;
+    }
+  }
+
+  .selection-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+
+    .status-select {
+      min-width: 150px;
+    }
+  }
+}
+
+.table-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+
+  .btn {
+    &.active {
+      background-color: #007bff;
+      color: white;
+    }
+  }
+}
+
+.checkbox-header {
+  width: 40px;
+  text-align: center;
+
+  .select-all-checkbox {
+    cursor: pointer;
+  }
+}
+
+.checkbox-cell {
+  width: 40px;
+  text-align: center;
+
+  .item-checkbox {
+    cursor: pointer;
+  }
+}
+
+.impact-op-table tbody tr {
+  &.selected {
+    background-color: #e3f2fd !important;
+    border-left: 4px solid #007bff;
+  }
+
+  &:hover {
+    background-color: #f5f5f5;
+  }
+
+  &.selected:hover {
+    background-color: #bbdefb !important;
+  }
+}
+
+// Amélioration des styles existants pour la sélection multiple
+.impact-op-table {
+  .checkbox-header, .checkbox-cell {
+    padding: 0.5rem;
+    text-align: center;
+  }
 } 

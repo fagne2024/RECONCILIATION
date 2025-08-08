@@ -142,7 +142,7 @@ public interface OperationRepository extends JpaRepository<OperationEntity, Long
     @Query("SELECT DISTINCT o.statut FROM OperationEntity o WHERE o.statut IS NOT NULL AND o.statut != '' ORDER BY o.statut")
     List<String> findDistinctStatut();
 
-    @Query("SELECT o.typeOperation, COUNT(o), COALESCE(SUM(o.montant), 0), COALESCE(AVG(o.montant), 0) FROM OperationEntity o WHERE (:services IS NULL OR o.service IN :services) AND (:pays IS NULL OR o.pays IN :pays) AND (:startDate IS NULL OR o.dateOperation >= :startDate) AND (:endDate IS NULL OR o.dateOperation <= :endDate) AND o.typeOperation NOT IN ('annulation_total_paiement', 'annulation_total_cashin', 'annulation_annulation_bo', 'annulation_annulation_partenaire', 'annulation_FRAIS_TRANSACTION', 'annulation_compense', 'annulation_ajustement', 'annulation_approvisionnement') AND NOT (o.typeOperation IN ('total_paiement', 'total_cashin', 'compense', 'ajustement', 'approvisionnement', 'FRAIS_TRANSACTION', 'annulation_bo', 'annulation_partenaire') AND o.statut IN ('Annulée', 'Rejetée')) GROUP BY o.typeOperation")
+    @Query("SELECT o.typeOperation, COUNT(o), COALESCE(SUM(o.montant), 0), COALESCE(AVG(o.montant), 0) FROM OperationEntity o WHERE (:services IS NULL OR o.service IN :services) AND (:pays IS NULL OR o.pays IN :pays) AND (:startDate IS NULL OR o.dateOperation >= :startDate) AND (:endDate IS NULL OR o.dateOperation <= :endDate) AND o.typeOperation NOT IN ('annulation_total_paiement', 'annulation_total_cashin', 'annulation_annulation_bo', 'annulation_annulation_partenaire', 'annulation_FRAIS_TRANSACTION', 'annulation_Compense_client', 'annulation_Compense_fournisseur', 'annulation_ajustement', 'annulation_Appro_client', 'annulation_Appro_fournisseur', 'annulation_nivellement', 'annulation_régularisation_solde') AND NOT (o.typeOperation IN ('total_paiement', 'total_cashin', 'Compense_client', 'Compense_fournisseur', 'ajustement', 'Appro_client', 'Appro_fournisseur', 'nivellement', 'régularisation_solde', 'FRAIS_TRANSACTION', 'annulation_bo', 'annulation_partenaire') AND o.statut IN ('Annulée', 'Rejetée')) GROUP BY o.typeOperation")
     List<Object[]> getOperationTypeStatisticsWithDateRange(
         @Param("services") List<String> services,
         @Param("pays") List<String> pays,
@@ -150,7 +150,7 @@ public interface OperationRepository extends JpaRepository<OperationEntity, Long
         @Param("endDate") LocalDateTime endDate
     );
 
-    @Query("SELECT o.typeOperation, COUNT(o) FROM OperationEntity o WHERE (:services IS NULL OR o.service IN :services) AND (:pays IS NULL OR o.pays IN :pays) AND (:startDate IS NULL OR o.dateOperation >= :startDate) AND (:endDate IS NULL OR o.dateOperation <= :endDate) AND o.typeOperation NOT IN ('annulation_total_paiement', 'annulation_total_cashin', 'annulation_annulation_bo', 'annulation_annulation_partenaire', 'annulation_FRAIS_TRANSACTION', 'annulation_compense', 'annulation_ajustement', 'annulation_approvisionnement') AND NOT (o.typeOperation IN ('total_paiement', 'total_cashin', 'compense', 'ajustement', 'approvisionnement', 'FRAIS_TRANSACTION', 'annulation_bo', 'annulation_partenaire') AND o.statut IN ('Annulée', 'Rejetée')) GROUP BY o.typeOperation ORDER BY COUNT(o) DESC")
+    @Query("SELECT o.typeOperation, COUNT(o) FROM OperationEntity o WHERE (:services IS NULL OR o.service IN :services) AND (:pays IS NULL OR o.pays IN :pays) AND (:startDate IS NULL OR o.dateOperation >= :startDate) AND (:endDate IS NULL OR o.dateOperation <= :endDate) AND o.typeOperation NOT IN ('annulation_total_paiement', 'annulation_total_cashin', 'annulation_annulation_bo', 'annulation_annulation_partenaire', 'annulation_FRAIS_TRANSACTION', 'annulation_Compense_client', 'annulation_Compense_fournisseur', 'annulation_ajustement', 'annulation_Appro_client', 'annulation_Appro_fournisseur', 'annulation_nivellement', 'annulation_régularisation_solde') AND NOT (o.typeOperation IN ('total_paiement', 'total_cashin', 'Compense_client', 'Compense_fournisseur', 'ajustement', 'Appro_client', 'Appro_fournisseur', 'nivellement', 'régularisation_solde', 'FRAIS_TRANSACTION', 'annulation_bo', 'annulation_partenaire') AND o.statut IN ('Annulée', 'Rejetée')) GROUP BY o.typeOperation ORDER BY COUNT(o) DESC")
     List<Object[]> getOperationFrequencyWithDateRange(
         @Param("services") List<String> services,
         @Param("pays") List<String> pays,
@@ -179,7 +179,7 @@ public interface OperationRepository extends JpaRepository<OperationEntity, Long
         @Param("endDate") LocalDateTime endDate
     );
 
-    @Query("SELECT COUNT(o) FROM OperationEntity o WHERE o.typeOperation = 'compense' " +
+    @Query("SELECT COUNT(o) FROM OperationEntity o WHERE o.typeOperation = 'Compense_client' " +
            "AND o.codeProprietaire = :codeProprietaire " +
            "AND DATE(o.dateOperation) = DATE(:dateOperation)")
     Long countCompenseOperationsByCodeProprietaireAndDate(
@@ -187,7 +187,7 @@ public interface OperationRepository extends JpaRepository<OperationEntity, Long
         @Param("dateOperation") LocalDateTime dateOperation
     );
 
-    @Query("SELECT COUNT(o) FROM OperationEntity o WHERE o.typeOperation = 'approvisionnement' " +
+    @Query("SELECT COUNT(o) FROM OperationEntity o WHERE o.typeOperation = 'Appro_client' " +
            "AND o.codeProprietaire = :codeProprietaire " +
            "AND DATE(o.dateOperation) = DATE(:dateOperation)")
     Long countApprovisionnementOperationsByCodeProprietaireAndDate(

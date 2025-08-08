@@ -339,9 +339,13 @@ export class StatsComponent implements OnInit, OnDestroy {
                 'annulation_annulation_bo',
                 'annulation_annulation_partenaire',
                 'annulation_FRAIS_TRANSACTION',
-                'annulation_compense',
+                'annulation_Compense_client',
+                'annulation_Compense_fournisseur',
                 'annulation_ajustement',
-                'annulation_approvisionnement'
+                'annulation_Appro_client',
+                'annulation_Appro_fournisseur',
+                'annulation_nivellement',
+                'annulation_régularisation_solde'
             ];
             if (excludedAnnulationTypes.includes(type)) {
                 console.log('Type exclu:', type);

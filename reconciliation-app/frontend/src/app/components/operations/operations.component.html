@@ -61,7 +61,7 @@
             <div *ngIf="getOperationTypes().length === 0" class="no-stats-message">
                 <i class="fas fa-info-circle"></i>
                 <p>Aucune opération trouvée avec les filtres actuels.</p>
-                <p>Les types d'opérations disponibles incluent : Total Cash-in, Total Paiement, Approvisionnement, Ajustement, Compense, et Frais Transaction.</p>
+                <p>Les types d'opérations disponibles incluent : Total Cash-in, Total Paiement, Appro_client, Appro_fournisseur, Ajustement, Compense_client, Compense_fournisseur, Nivellement, Régularisation Solde, et Frais Transaction.</p>
             </div>
             
             <div *ngIf="getOperationTypes().length > 0" class="stats-grid">
@@ -608,24 +608,68 @@
         <form [formGroup]="filterForm" (ngSubmit)="applyFilters()" class="form-grid">
             <div class="form-field">
                 <mat-form-field appearance="fill" class="filter-select">
+                    <mat-label>Type d'opération</mat-label>
+                                    <mat-select #typeOperationSelect formControlName="typeOperation" multiple (selectionChange)="onFilterChange()">
+                    <ngx-mat-select-search [formControl]="typeOperationSearchCtrl" placeholderLabel="Rechercher un type..." noEntriesFoundLabel="Aucun type trouvé"></ngx-mat-select-search>
+                    <mat-option *ngFor="let type of filteredTypeOperationList" [value]="type.value">
+                        {{ type.label }}
+                    </mat-option>
+                </mat-select>
+                </mat-form-field>
+            </div>
+            <div class="form-field">
+                <mat-form-field appearance="fill" class="filter-select">
+                    <mat-label>Service</mat-label>
+                                    <mat-select #serviceSelect formControlName="service" multiple (selectionChange)="onFilterChange()">
+                    <ngx-mat-select-search [formControl]="serviceSearchCtrl" placeholderLabel="Rechercher un service..." noEntriesFoundLabel="Aucun service trouvé"></ngx-mat-select-search>
+                    <mat-option *ngFor="let service of filteredServiceList" [value]="service">
+                        {{ service }}
+                    </mat-option>
+                </mat-select>
+                </mat-form-field>
+            </div>
+            <div class="form-field">
+                <mat-form-field appearance="fill" class="filter-select">
+                    <mat-label>Statut</mat-label>
+                                    <mat-select #statutSelect formControlName="statut" multiple (selectionChange)="onFilterChange()">
+                    <ngx-mat-select-search [formControl]="statutSearchCtrl" placeholderLabel="Rechercher un statut..." noEntriesFoundLabel="Aucun statut trouvé"></ngx-mat-select-search>
+                    <mat-option *ngFor="let statut of filteredStatutList" [value]="statut">
+                        {{ statut }}
+                    </mat-option>
+                </mat-select>
+                </mat-form-field>
+            </div>
+            <div class="form-field">
+                <mat-form-field appearance="fill" class="filter-select">
+                    <mat-label>Référence</mat-label>
+                                    <mat-select #referenceSelect formControlName="reference" multiple (selectionChange)="onFilterChange()">
+                    <ngx-mat-select-search [formControl]="referenceSearchCtrl" placeholderLabel="Rechercher une référence..." noEntriesFoundLabel="Aucune référence trouvée"></ngx-mat-select-search>
+                    <mat-option *ngFor="let reference of filteredReferenceList" [value]="reference">
+                        {{ reference }}
+                    </mat-option>
+                </mat-select>
+                </mat-form-field>
+            </div>
+            <div class="form-field">
+                <mat-form-field appearance="fill" class="filter-select">
                     <mat-label>Pays</mat-label>
-                    <mat-select #paysSelect [(ngModel)]="selectedPays" multiple (selectionChange)="onFilterChange()">
-                        <ngx-mat-select-search [formControl]="paysSearchCtrl" placeholderLabel="Rechercher un pays..." noEntriesFoundLabel="Aucun pays trouvé"></ngx-mat-select-search>
-                        <mat-option *ngFor="let pays of filteredPaysList" [value]="pays">
-                            {{ pays }}
-                        </mat-option>
-                    </mat-select>
+                                    <mat-select #paysSelect formControlName="pays" multiple (selectionChange)="onFilterChange()">
+                    <ngx-mat-select-search [formControl]="paysSearchCtrl" placeholderLabel="Rechercher un pays..." noEntriesFoundLabel="Aucun pays trouvé"></ngx-mat-select-search>
+                    <mat-option *ngFor="let pays of filteredPaysList" [value]="pays">
+                        {{ pays }}
+                    </mat-option>
+                </mat-select>
                 </mat-form-field>
             </div>
             <div class="form-field">
                 <mat-form-field appearance="fill" class="filter-select">
                     <mat-label>Code Propriétaire</mat-label>
-                    <mat-select #codeProprietaireSelect [(ngModel)]="selectedCodesProprietaire" multiple (selectionChange)="onFilterChange()">
-                        <ngx-mat-select-search [formControl]="codeProprietaireSearchCtrl" placeholderLabel="Rechercher un code..." noEntriesFoundLabel="Aucun code trouvé"></ngx-mat-select-search>
-                        <mat-option *ngFor="let code of filteredCodeProprietaireList" [value]="code">
-                            {{ code }}
-                        </mat-option>
-                    </mat-select>
+                                    <mat-select #codeProprietaireSelect formControlName="codeProprietaire" multiple (selectionChange)="onFilterChange()">
+                    <ngx-mat-select-search [formControl]="codeProprietaireSearchCtrl" placeholderLabel="Rechercher un code..." noEntriesFoundLabel="Aucun code trouvé"></ngx-mat-select-search>
+                    <mat-option *ngFor="let code of filteredCodeProprietaireList" [value]="code">
+                        {{ code }}
+                    </mat-option>
+                </mat-select>
                 </mat-form-field>
             </div>
             <div class="form-field">

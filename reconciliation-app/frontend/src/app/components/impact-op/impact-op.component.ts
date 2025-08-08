@@ -1,6 +1,6 @@
 import { Component, OnInit, OnDestroy } from '@angular/core';
 import { FormBuilder, FormGroup, Validators } from '@angular/forms';
-import { Subscription } from 'rxjs';
+import { Subscription, forkJoin, concatMap, delay, of } from 'rxjs';
 import { ActivatedRoute } from '@angular/router';
 import { ImpactOP, ImpactOPFilter, ImpactOPValidationResult } from '../../models/impact-op.model';
 import { ImpactOPService } from '../../services/impact-op.service';
@@ -34,6 +34,13 @@ export class ImpactOPComponent implements OnInit, OnDestroy {
   fileValidated = false;
   validationResult: ImpactOPValidationResult | null = null;
   uploadError = '';
+  
+  // Sélection multiple
+  selectedItems: Set<number> = new Set();
+  isSelectAll = false;
+  isSelectionMode = false;
+  selectedStatut = 'EN_ATTENTE';
+  isUpdatingMultipleStatuts = false;
   
   // Propriétés pour le modal de commentaire
   showCommentModal = false;
@@ -79,6 +86,9 @@ export class ImpactOPComponent implements OnInit, OnDestroy {
     this.loadFilterOptions();
     this.loadStats();
     this.setupFilterListener();
+    
+    // Test de connectivité API
+    this.testApiConnectivity();
     
     // Lire les paramètres de l'URL pour appliquer les filtres automatiquement
     this.subscription.add(
@@ -366,11 +376,66 @@ export class ImpactOPComponent implements OnInit, OnDestroy {
   }
 
   onStatutChange(impactOP: ImpactOP, event: Event) {
-    const newStatut = (event.target as HTMLSelectElement).value;
-    if (newStatut === 'TRAITE' || newStatut === 'ERREUR') {
-      this.openCommentModal(impactOP, newStatut);
-    } else {
-      this.updateStatut(impactOP, newStatut);
+    const target = event.target as HTMLSelectElement;
+    const newStatut = target.value;
+    
+    if (newStatut && newStatut !== impactOP.statut && impactOP.id) {
+      // Sauvegarder l'ancien statut pour pouvoir le restaurer en cas d'erreur
+      const oldStatut = impactOP.statut;
+      
+      // Mettre à jour immédiatement l'interface pour une meilleure UX
+      impactOP.statut = newStatut as 'EN_ATTENTE' | 'TRAITE' | 'ERREUR';
+
+      console.log(`🔄 Tentative de mise à jour du statut Impact OP: ID=${impactOP.id}, ${oldStatut} → ${newStatut}`);
+      
+      this.subscription.add(
+        this.impactOPService.updateImpactOPStatut(impactOP.id, newStatut).subscribe({
+          next: (updatedImpactOP) => {
+            // Mettre à jour l'impact OP dans la liste
+            const index = this.impactOPs.findIndex(op => op.id === impactOP.id);
+            if (index !== -1) {
+              this.impactOPs[index] = updatedImpactOP;
+            }
+            
+            const indexFiltered = this.filteredImpactOPs.findIndex(op => op.id === impactOP.id);
+            if (indexFiltered !== -1) {
+              this.filteredImpactOPs[indexFiltered] = updatedImpactOP;
+            }
+
+            console.log(`✅ Statut Impact OP mis à jour avec succès: ${oldStatut} → ${newStatut}`, updatedImpactOP);
+            this.showTemporaryMessage('success', `Statut mis à jour: ${newStatut}`);
+            this.loadStats();
+          },
+          error: (error) => {
+            console.error('❌ Erreur détaillée lors de la mise à jour du statut Impact OP:', error);
+            console.error('Détails de l\'erreur:', {
+              status: error.status,
+              statusText: error.statusText,
+              message: error.message,
+              error: error.error,
+              url: error.url
+            });
+            
+            // Restaurer l'ancien statut en cas d'erreur
+            impactOP.statut = oldStatut;
+            target.value = oldStatut || 'EN_ATTENTE';
+            
+            // Message d'erreur plus détaillé
+            let errorMessage = 'Erreur lors de la mise à jour du statut';
+            if (error.status === 404) {
+              errorMessage = 'Impact OP non trouvé';
+            } else if (error.status === 400) {
+              errorMessage = 'Données invalides';
+            } else if (error.status === 500) {
+              errorMessage = 'Erreur serveur';
+            } else if (error.error?.message) {
+              errorMessage = error.error.message;
+            }
+            
+            this.showTemporaryMessage('error', errorMessage);
+          }
+        })
+      );
     }
   }
 
@@ -565,6 +630,150 @@ export class ImpactOPComponent implements OnInit, OnDestroy {
         error: (error) => {
           console.error('Erreur lors de l\'export:', error);
           this.showTemporaryMessage('error', 'Erreur lors de l\'export');
+        }
+      })
+    );
+  }
+
+  // Méthodes pour la sélection multiple
+  toggleSelectionMode(): void {
+    this.isSelectionMode = !this.isSelectionMode;
+    if (!this.isSelectionMode) {
+      this.clearSelection();
+    }
+  }
+
+  toggleSelectAll(): void {
+    if (this.isSelectAll) {
+      this.clearSelection();
+    } else {
+      this.selectAll();
+    }
+  }
+
+  selectAll(): void {
+    this.selectedItems.clear();
+    // Sélectionner TOUTES les lignes filtrées, pas seulement celles de la page courante
+    this.filteredImpactOPs.forEach(item => {
+      if (item.id) {
+        this.selectedItems.add(item.id);
+      }
+    });
+    this.isSelectAll = true;
+  }
+
+  clearSelection(): void {
+    this.selectedItems.clear();
+    this.isSelectAll = false;
+  }
+
+  toggleItemSelection(item: ImpactOP): void {
+    if (item.id) {
+      if (this.selectedItems.has(item.id)) {
+        this.selectedItems.delete(item.id);
+      } else {
+        this.selectedItems.add(item.id);
+      }
+      this.updateSelectAllState();
+    }
+  }
+
+  updateSelectAllState(): void {
+    // Vérifier si TOUTES les lignes filtrées sont sélectionnées, pas seulement la page courante
+    const allFilteredItems = this.filteredImpactOPs;
+    const selectedCount = allFilteredItems.filter(item => item.id && this.selectedItems.has(item.id)).length;
+    this.isSelectAll = selectedCount === allFilteredItems.length && allFilteredItems.length > 0;
+  }
+
+  getSelectedCount(): number {
+    return this.selectedItems.size;
+  }
+
+  isItemSelected(item: ImpactOP): boolean {
+    return item.id ? this.selectedItems.has(item.id) : false;
+  }
+
+  updateMultipleStatuts(): void {
+    if (this.selectedItems.size === 0) {
+      alert('Veuillez sélectionner au moins un impact OP.');
+      return;
+    }
+
+    this.isUpdatingMultipleStatuts = true;
+    const selectedIds = Array.from(this.selectedItems);
+    
+    // Mise à jour séquentielle simple avec setTimeout
+    console.log(`🚀 Début mise à jour SÉQUENTIELLE SIMPLE: ${selectedIds.length} impacts OP vers statut ${this.selectedStatut}`);
+    
+    let processedCount = 0;
+    const results: ImpactOP[] = [];
+
+    const processNextId = (index: number) => {
+      if (index >= selectedIds.length) {
+        // Tous traités avec succès
+        console.log(`🎉 SUCCÈS COMPLET: ${selectedIds.length} impacts OP mis à jour avec le statut ${this.selectedStatut}`, results);
+        this.clearSelection();
+        this.loadStats();
+        this.isUpdatingMultipleStatuts = false;
+        this.showTemporaryMessage('success', `${selectedIds.length} impact(s) OP mis à jour avec succès`);
+        return;
+      }
+
+      const id = selectedIds[index];
+      console.log(`📤 [${index + 1}/${selectedIds.length}] Traitement Impact OP ID: ${id}`);
+      
+      this.subscription.add(
+        this.impactOPService.updateImpactOPStatut(id, this.selectedStatut).subscribe({
+          next: (result) => {
+            processedCount++;
+            results.push(result);
+            console.log(`✅ [${processedCount}/${selectedIds.length}] Succès pour ID ${id}:`, result);
+            
+            // Mettre à jour immédiatement dans la liste
+            const mainIndex = this.impactOPs.findIndex(op => op.id === id);
+            if (mainIndex !== -1) {
+              this.impactOPs[mainIndex] = result;
+            }
+            
+            const filteredIndex = this.filteredImpactOPs.findIndex(op => op.id === id);
+            if (filteredIndex !== -1) {
+              this.filteredImpactOPs[filteredIndex] = result;
+            }
+            
+            // Passer au suivant après un délai
+            setTimeout(() => {
+              processNextId(index + 1);
+            }, 300);
+          },
+          error: (error) => {
+            console.error(`❌ [${index + 1}/${selectedIds.length}] Erreur pour ID ${id}:`, error);
+            this.isUpdatingMultipleStatuts = false;
+            this.showTemporaryMessage('error', `Erreur lors de la mise à jour (${processedCount}/${selectedIds.length} traités): ${error.message || error.statusText || 'Erreur inconnue'}`);
+          }
+        })
+      );
+    };
+
+    // Démarrer le traitement
+    processNextId(0);
+  }
+
+  // Test de connectivité API
+  testApiConnectivity() {
+    console.log('🧪 Test de connectivité API Impact OP...');
+    this.subscription.add(
+      this.impactOPService.getImpactOPStats().subscribe({
+        next: (stats) => {
+          console.log('✅ API Impact OP accessible - Stats récupérées:', stats);
+        },
+        error: (error) => {
+          console.error('❌ API Impact OP inaccessible:', error);
+          console.error('Détails de l\'erreur de connectivité:', {
+            status: error.status,
+            statusText: error.statusText,
+            url: error.url,
+            message: error.message
+          });
         }
       })
     );

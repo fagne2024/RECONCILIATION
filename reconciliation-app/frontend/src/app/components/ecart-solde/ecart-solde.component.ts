@@ -41,6 +41,13 @@ export class EcartSoldeComponent implements OnInit, OnDestroy {
   } | null = null;
   uploadError = '';
   
+  // Sélection multiple
+  selectedItems: Set<number> = new Set();
+  isSelectAll = false;
+  isSelectionMode = false;
+  selectedStatut = 'EN_ATTENTE';
+  isUpdatingMultipleStatuts = false;
+  
   // Propriétés pour le modal de commentaire
   showCommentModal = false;
   selectedEcartSolde: EcartSolde | null = null;
@@ -391,10 +398,32 @@ export class EcartSoldeComponent implements OnInit, OnDestroy {
 
   onStatutChange(ecartSolde: EcartSolde, event: Event) {
     const target = event.target as HTMLSelectElement;
-    if (target && target.value && target.value !== ecartSolde.statut) {
-      this.openCommentModal(ecartSolde, target.value);
-      // Remettre l'ancienne valeur dans le select
-      target.value = ecartSolde.statut || 'EN_ATTENTE';
+    const newStatut = target.value;
+    
+    if (newStatut && newStatut !== ecartSolde.statut && ecartSolde.id) {
+      // Sauvegarder l'ancien statut pour pouvoir le restaurer en cas d'erreur
+      const oldStatut = ecartSolde.statut;
+      
+      // Mettre à jour immédiatement l'interface pour une meilleure UX
+      ecartSolde.statut = newStatut;
+
+      this.subscription.add(
+        this.ecartSoldeService.updateStatut(ecartSolde.id, newStatut).subscribe({
+          next: (response) => {
+            console.log(`Statut mis à jour avec succès: ${oldStatut} → ${newStatut}`, response);
+            this.showTemporaryMessage('success', `Statut mis à jour: ${newStatut}`);
+          },
+          error: (error) => {
+            console.error('Erreur lors de la mise à jour du statut:', error);
+            
+            // Restaurer l'ancien statut en cas d'erreur
+            ecartSolde.statut = oldStatut;
+            target.value = oldStatut || 'EN_ATTENTE';
+            
+            this.showTemporaryMessage('error', 'Erreur lors de la mise à jour du statut');
+          }
+        })
+      );
     }
   }
 
@@ -666,5 +695,92 @@ export class EcartSoldeComponent implements OnInit, OnDestroy {
   formatMontantTotal(): string {
     const total = this.filteredEcartSoldes.reduce((sum, ecart) => sum + ecart.montant, 0);
     return this.formatMontant(total);
+  }
+
+  // Méthodes pour la sélection multiple
+  toggleSelectionMode(): void {
+    this.isSelectionMode = !this.isSelectionMode;
+    if (!this.isSelectionMode) {
+      this.clearSelection();
+    }
+  }
+
+  toggleSelectAll(): void {
+    if (this.isSelectAll) {
+      this.clearSelection();
+    } else {
+      this.selectAll();
+    }
+  }
+
+  selectAll(): void {
+    this.selectedItems.clear();
+    // Sélectionner TOUTES les lignes filtrées, pas seulement celles de la page courante
+    this.filteredEcartSoldes.forEach(item => {
+      if (item.id) {
+        this.selectedItems.add(item.id);
+      }
+    });
+    this.isSelectAll = true;
+  }
+
+  clearSelection(): void {
+    this.selectedItems.clear();
+    this.isSelectAll = false;
+  }
+
+  toggleItemSelection(item: EcartSolde): void {
+    if (item.id) {
+      if (this.selectedItems.has(item.id)) {
+        this.selectedItems.delete(item.id);
+      } else {
+        this.selectedItems.add(item.id);
+      }
+      this.updateSelectAllState();
+    }
+  }
+
+  updateSelectAllState(): void {
+    // Vérifier si TOUTES les lignes filtrées sont sélectionnées, pas seulement la page courante
+    const allFilteredItems = this.filteredEcartSoldes;
+    const selectedCount = allFilteredItems.filter(item => item.id && this.selectedItems.has(item.id)).length;
+    this.isSelectAll = selectedCount === allFilteredItems.length && allFilteredItems.length > 0;
+  }
+
+  getSelectedCount(): number {
+    return this.selectedItems.size;
+  }
+
+  isItemSelected(item: EcartSolde): boolean {
+    return item.id ? this.selectedItems.has(item.id) : false;
+  }
+
+  updateMultipleStatuts(): void {
+    if (this.selectedItems.size === 0) {
+      alert('Veuillez sélectionner au moins un écart de solde.');
+      return;
+    }
+
+    this.isUpdatingMultipleStatuts = true;
+    const selectedIds = Array.from(this.selectedItems);
+    
+    // Créer les promesses pour mettre à jour chaque écart de solde
+    const updatePromises = selectedIds.map(id => 
+      this.ecartSoldeService.updateStatut(id, this.selectedStatut).toPromise()
+    );
+
+    Promise.all(updatePromises)
+      .then(() => {
+        console.log(`${selectedIds.length} écarts de solde mis à jour avec le statut ${this.selectedStatut}`);
+        this.clearSelection();
+        this.loadEcartSoldes(); // Recharger les données
+        this.isUpdatingMultipleStatuts = false;
+        this.showTemporaryMessage('success', `${selectedIds.length} écart(s) de solde mis à jour avec succès`);
+      })
+      .catch(error => {
+        console.error('Erreur lors de la mise à jour multiple:', error);
+        this.isUpdatingMultipleStatuts = false;
+        this.showTemporaryMessage('error', 'Erreur lors de la mise à jour des statuts.');
+      });
   }
 } 

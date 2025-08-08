@@ -167,12 +167,47 @@
         Affichage {{ (currentPage - 1) * pageSize + 1 }} - {{ Math.min(currentPage * pageSize, filteredImpactOPs.length) }} 
         sur {{ filteredImpactOPs.length }} impacts
       </div>
+      
+      <!-- Contrôles de sélection multiple -->
+      <div class="selection-controls" *ngIf="isSelectionMode">
+        <div class="selection-info">
+          <span class="selected-count">{{ getSelectedCount() }} sélectionné(s)</span>
+        </div>
+        <div class="selection-actions">
+          <select [(ngModel)]="selectedStatut" class="form-control status-select">
+            <option value="EN_ATTENTE">En attente</option>
+            <option value="TRAITE">Traité</option>
+            <option value="ERREUR">Erreur</option>
+          </select>
+          <button class="btn btn-primary" 
+                  (click)="updateMultipleStatuts()" 
+                  [disabled]="getSelectedCount() === 0 || isUpdatingMultipleStatuts">
+            <i class="fas fa-save"></i>
+            {{ isUpdatingMultipleStatuts ? 'Mise à jour...' : 'Mettre à jour' }}
+          </button>
+        </div>
+      </div>
+      
+      <div class="table-actions">
+        <button class="btn" 
+                [class.active]="isSelectionMode"
+                (click)="toggleSelectionMode()">
+          <i class="fas fa-check-square"></i>
+          {{ isSelectionMode ? 'Mode sélection' : 'Sélection multiple' }}
+        </button>
+      </div>
     </div>
 
     <div class="table-container" *ngIf="!isLoading">
       <table class="impact-op-table">
         <thead>
           <tr>
+            <th *ngIf="isSelectionMode" class="checkbox-header">
+              <input type="checkbox" 
+                     [checked]="isSelectAll" 
+                     (change)="toggleSelectAll()"
+                     class="select-all-checkbox">
+            </th>
             <th>Type Opération</th>
             <th>Montant</th>
             <th>Solde avant</th>
@@ -186,7 +221,13 @@
           </tr>
         </thead>
         <tbody>
-          <tr *ngFor="let impact of pagedImpactOPs" [ngClass]="getStatutClass(impact.statut || 'EN_ATTENTE')">
+          <tr *ngFor="let impact of pagedImpactOPs" [ngClass]="getStatutClass(impact.statut || 'EN_ATTENTE')" [class.selected]="isItemSelected(impact)">
+            <td *ngIf="isSelectionMode" class="checkbox-cell">
+              <input type="checkbox" 
+                     [checked]="isItemSelected(impact)" 
+                     (change)="toggleItemSelection(impact)"
+                     class="item-checkbox">
+            </td>
             <td>{{ impact.typeOperation }}</td>
             <td [ngClass]="impact.montant < 0 ? 'montant-negatif' : 'montant-positif'">
               {{ formatMontant(impact.montant) }}

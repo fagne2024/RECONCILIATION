@@ -863,7 +863,7 @@
 
 .filters-section .form-grid {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 1rem;
 }
 
@@ -1465,7 +1465,7 @@
   
   /* Responsive pour les filtres */
   .filters-section .form-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, 1fr);
     gap: 0.75rem;
   }
   
@@ -1551,6 +1551,11 @@
 }
 
 @media (max-width: 480px) {
+  .filters-section .form-grid {
+    grid-template-columns: 1fr;
+    gap: 0.5rem;
+  }
+  
   .header h1 {
     font-size: 24px;
   }

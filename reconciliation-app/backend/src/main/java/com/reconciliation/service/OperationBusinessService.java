@@ -135,7 +135,8 @@ public class OperationBusinessService {
     public boolean isDebitOperation(String typeOperation) {
         return "total_paiement".equals(typeOperation) || 
                "ajustement".equals(typeOperation) ||
-               "compense".equals(typeOperation) || 
+               "Compense_client".equals(typeOperation) || 
+               "Compense_fournisseur".equals(typeOperation) ||
                "FRAIS_TRANSACTION".equals(typeOperation) ||
                "annulation_partenaire".equals(typeOperation) ||
                "annulation_bo".equals(typeOperation) ||
@@ -147,14 +148,17 @@ public class OperationBusinessService {
      */
     public boolean isCreditOperation(String typeOperation) {
         return "total_cashin".equals(typeOperation) || 
-               "approvisionnement".equals(typeOperation);
+               "Appro_client".equals(typeOperation) ||
+               "Appro_fournisseur".equals(typeOperation);
     }
     
     /**
      * Détermine si une opération est un ajustement (peut être positif ou négatif)
      */
     public boolean isAjustementOperation(String typeOperation) {
-        return "ajustement".equals(typeOperation);
+        return "ajustement".equals(typeOperation) ||
+               "nivellement".equals(typeOperation) ||
+               "régularisation_solde".equals(typeOperation);
     }
     
     /**

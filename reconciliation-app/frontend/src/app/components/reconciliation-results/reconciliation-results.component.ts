@@ -6,6 +6,8 @@ import { ReconciliationService } from '../../services/reconciliation.service';
 import { EcartSoldeService } from '../../services/ecart-solde.service';
 import { EcartSolde } from '../../models/ecart-solde.model';
 import { TrxSfService } from '../../services/trx-sf.service';
+import { ImpactOPService } from '../../services/impact-op.service';
+import { ImpactOP } from '../../models/impact-op.model';
 import * as ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
 import { HttpClient } from '@angular/common/http';
@@ -37,18 +39,26 @@ interface ApiError {
                         <div class="progress-fill" [style.width.%]="progressPercentage"></div>
                     </div>
                     <div class="progress-text">
-                        {{ progressPercentage | number:'1.0-1' }}% terminé
+                        {{ progressPercentage | number:'1.0-0' }}% terminé
                     </div>
                 </div>
                 
                 <div class="progress-details">
                     <div class="detail-item">
-                        <span class="label">Enregistrements traités:</span>
+                        <span class="label">📊 Enregistrements traités:</span>
                         <span class="value">{{ processedRecords | number }} / {{ totalRecords | number }}</span>
                     </div>
                     <div class="detail-item">
-                        <span class="label">Temps écoulé:</span>
+                        <span class="label">⏱️ Temps écoulé:</span>
                         <span class="value">{{ formatTime(getElapsedTime()) }}</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="label">🚀 Vitesse:</span>
+                        <span class="value">{{ getProcessingSpeed() }} rec/s</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="label">📈 Statut:</span>
+                        <span class="value">{{ getProgressStatus() }}</span>
                     </div>
                 </div>
             </div>
@@ -395,6 +405,9 @@ interface ApiError {
                             >
                             <button (click)="exportResults()" class="export-button">
                                 📥 Exporter les ECART Partenaire
+                            </button>
+                            <button (click)="saveEcartPartnerToImpactOP()" class="save-button" [disabled]="isSavingEcartPartnerToImpactOP">
+                                {{ isSavingEcartPartnerToImpactOP ? '💾 Sauvegarde...' : '💾 Sauvegarder dans Import OP' }}
                             </button>
                         </div>
                         <div class="volume-summary">
@@ -1282,6 +1295,8 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
     isSavingEcartBo: boolean = false;
     isSavingEcartPartner: boolean = false;
     isSavingEcartBoToTrxSf: boolean = false;
+    isSavingEcartPartnerToTrxSf: boolean = false;
+    isSavingEcartPartnerToImpactOP: boolean = false;
     exportProgress = 0;
     isExporting = false;
     
@@ -1645,6 +1660,156 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
         }
     }
 
+    async saveEcartPartnerToTrxSf(): Promise<void> {
+        if (!this.response?.partnerOnly || this.response.partnerOnly.length === 0) {
+            alert('❌ Aucune donnée ECART Partenaire à sauvegarder dans TRX SF.');
+            return;
+        }
+
+        this.isSavingEcartPartnerToTrxSf = true;
+
+        try {
+            console.log('🔄 Début de la sauvegarde des ECART Partenaire dans TRX SF...');
+            console.log('DEBUG: Nombre d\'enregistrements ECART Partenaire:', this.response.partnerOnly.length);
+
+            // Convertir les données ECART Partenaire en format TrxSfData avec récupération des frais
+            const trxSfDataPromises = this.response.partnerOnly.map(async (record, index) => {
+                const getValueWithFallback = (keys: string[]): string => {
+                    for (const key of keys) {
+                        if (record[key] !== undefined && record[key] !== null && record[key] !== '') {
+                            return record[key].toString();
+                        }
+                    }
+                    return '';
+                };
+
+                // Extraire les informations d'agence et de service
+                const agencyInfo = this.getPartnerOnlyAgencyAndService(record);
+                
+                // Fonction helper pour formater la date au format ISO
+                const formatDateForBackend = (dateStr: string): string => {
+                    if (!dateStr) return '';
+                    
+                    // Si la date est déjà au format ISO, la retourner
+                    if (dateStr.includes('T')) return dateStr;
+                    
+                    // Convertir le format "2025-07-09 12:40:18.0" en "2025-07-09T12:40:18"
+                    const cleanedDate = dateStr.replace(/\.\d+$/, ''); // Enlever les millisecondes
+                    return cleanedDate.replace(' ', 'T');
+                };
+
+                // Calculer automatiquement les frais selon la configuration du service
+                let frais = 0;
+                try {
+                    // Récupérer la configuration des frais pour le service
+                    const fraisConfigResponse = await this.trxSfService.getFraisConfigByService(agencyInfo.service).toPromise();
+                    const fraisConfig = fraisConfigResponse;
+                    
+                    if (fraisConfig && fraisConfig.typeFrais) {
+                        if (fraisConfig.typeFrais === 'NOMINAL' || fraisConfig.typeFrais === 'FIXE') {
+                            // Frais fixe : on prend le montant configuré
+                            frais = fraisConfig.montant || 0;
+                            console.log(`💰 Frais fixe configuré pour ${agencyInfo.service}: ${frais}`);
+                        } else if (fraisConfig.typeFrais === 'POURCENTAGE') {
+                            // Frais en pourcentage : on applique le pourcentage sur le montant
+                            const pourcentage = fraisConfig.pourcentage || 0;
+                            frais = (agencyInfo.volume * pourcentage) / 100;
+                            console.log(`📊 Frais pourcentage configuré pour ${agencyInfo.service}: ${pourcentage}% sur ${agencyInfo.volume} = ${frais}`);
+                        }
+                    } else {
+                        // Pas de configuration, frais à 0 par défaut
+                        frais = 0;
+                        console.log(`⚠️ Pas de configuration de frais pour ${agencyInfo.service}, frais à 0`);
+                    }
+                    
+                    console.log(`✅ Frais calculés pour ${agencyInfo.agency}:`);
+                    console.log(`   - Service: ${agencyInfo.service}`);
+                    console.log(`   - Montant transaction: ${agencyInfo.volume}`);
+                    console.log(`   - Frais calculés: ${frais}`);
+                    console.log(`   - Configuration:`, fraisConfig);
+                } catch (configError) {
+                    console.warn(`⚠️ Erreur lors de la récupération de la config des frais pour ${agencyInfo.service}:`, configError);
+                    frais = 0; // Frais par défaut en cas d'erreur
+                }
+
+                // Créer l'objet TrxSfData avec les données mappées
+                const trxSf: any = {
+                    idTransaction: getValueWithFallback(['IDTransaction', 'id_transaction', 'ID_TRANSACTION', 'transaction_id', 'TransactionId']),
+                    telephoneClient: getValueWithFallback(['téléphone client', 'telephone_client', 'TELEPHONE_CLIENT', 'phone', 'Phone']),
+                    montant: parseFloat(getValueWithFallback(['montant', 'Montant', 'MONTANT', 'amount', 'Amount', 'volume', 'Volume'])) || 0,
+                    service: agencyInfo.service,
+                    agence: agencyInfo.agency,
+                    dateTransaction: formatDateForBackend(agencyInfo.date),
+                    numeroTransGu: getValueWithFallback(['Numéro Trans GU', 'numero_trans_gu', 'NUMERO_TRANS_GU', 'transaction_number', 'TransactionNumber']),
+                    pays: agencyInfo.country,
+                    statut: 'EN_ATTENTE',
+                    frais: frais, // Frais récupérés depuis l'API
+                    commentaire: 'ECART PARTENAIRE - Importé depuis la réconciliation avec frais TSOP',
+                    dateImport: new Date().toISOString()
+                };
+
+                console.log(`DEBUG: Enregistrement ${index + 1} préparé pour TRX SF:`, {
+                    idTransaction: trxSf.idTransaction,
+                    agence: trxSf.agence,
+                    service: trxSf.service,
+                    montant: trxSf.montant,
+                    frais: trxSf.frais,
+                    agencyInfo: agencyInfo
+                });
+
+                return trxSf;
+            });
+
+            // Attendre que toutes les promesses soient résolues
+            const trxSfData = await Promise.all(trxSfDataPromises);
+
+            console.log('DEBUG: Données converties en format TrxSfData avec frais:', trxSfData.length, 'enregistrements');
+
+            // Validation des données avant sauvegarde
+            const validRecords = trxSfData.filter(record => 
+                record.idTransaction && 
+                record.idTransaction.trim() !== '' && 
+                record.agence && 
+                record.agence.trim() !== ''
+            );
+
+            console.log('DEBUG: Nombre d\'enregistrements valides après filtrage:', validRecords.length);
+
+            if (validRecords.length === 0) {
+                alert('❌ Aucun enregistrement valide trouvé pour la sauvegarde dans TRX SF.');
+                return;
+            }
+
+            // Sauvegarder les données dans TRX SF
+            console.log('🔄 Sauvegarde des données dans TRX SF avec frais TSOP...');
+            
+            // Appeler le service pour sauvegarder les données
+            const result = await this.trxSfService.createMultipleTrxSf(validRecords).toPromise();
+            
+            console.log('✅ Sauvegarde dans TRX SF terminée avec succès:', result);
+            
+            // Afficher un message de succès
+            alert(`✅ ${validRecords.length} enregistrements ECART Partenaire ont été sauvegardés dans TRX SF avec frais TSOP !`);
+
+        } catch (error) {
+            console.error('❌ Erreur lors de la sauvegarde dans TRX SF:', error);
+            
+            let errorMessage = 'Erreur lors de la sauvegarde dans TRX SF';
+            if (error && typeof error === 'object') {
+                const errorObj = error as any;
+                if (errorObj.error && typeof errorObj.error === 'object') {
+                    errorMessage = errorObj.error.message || errorObj.error.details || errorMessage;
+                } else if (errorObj.message) {
+                    errorMessage = errorObj.message;
+                }
+            }
+            
+            alert(`❌ ${errorMessage}`);
+        } finally {
+            this.isSavingEcartPartnerToTrxSf = false;
+        }
+    }
+
     // Méthode helper pour créer le contenu CSV pour la validation
     private createCsvContent(ecartSoldeData: EcartSolde[]): string {
         const headers = ['ID', 'IDTransaction', 'téléphone client', 'montant', 'Service', 'Agence', 'Date', 'Numéro Trans GU', 'PAYS'];
@@ -1891,6 +2056,115 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
         }
     }
 
+    async saveEcartPartnerToImpactOP(): Promise<void> {
+        if (!this.response?.partnerOnly || this.response.partnerOnly.length === 0) {
+            alert('❌ Aucune donnée ECART Partenaire à sauvegarder dans Import OP.');
+            return;
+        }
+
+        this.isSavingEcartPartnerToImpactOP = true;
+
+        try {
+            console.log('🔄 Début de la sauvegarde des ECART Partenaire dans Import OP...');
+            console.log('DEBUG: Nombre d\'enregistrements ECART Partenaire:', this.response.partnerOnly.length);
+
+            // Convertir les données ECART Partenaire en format ImpactOP
+            const impactOPData: ImpactOP[] = this.response.partnerOnly.map((record, index) => {
+                const getValueWithFallback = (keys: string[]): string => {
+                    for (const key of keys) {
+                        if (record[key] !== undefined && record[key] !== null && record[key] !== '') {
+                            return record[key].toString();
+                        }
+                    }
+                    return '';
+                };
+
+                const getNumberWithFallback = (keys: string[]): number => {
+                    const value = getValueWithFallback(keys);
+                    const parsed = parseFloat(value.replace(/[^\d.-]/g, ''));
+                    return isNaN(parsed) ? 0 : parsed;
+                };
+
+                // Construire la date d'opération au format LocalDateTime
+                const dateOperationStr = getValueWithFallback(['Date opération', 'dateOperation', 'date_operation']);
+                const dateOperation = dateOperationStr ? 
+                    new Date(dateOperationStr).toISOString() : 
+                    new Date().toISOString();
+
+                return {
+                    id: undefined, // Sera assigné par le backend
+                    typeOperation: getValueWithFallback(['Type Opération', 'typeOperation', 'type_operation']) || 'DEPOT',
+                    montant: getNumberWithFallback(['Montant', 'montant', 'amount']),
+                    soldeAvant: getNumberWithFallback(['Solde avant', 'soldeAvant', 'solde_avant', 'Solde_avant']),
+                    soldeApres: getNumberWithFallback(['Solde aprés', 'Solde après', 'soldeApres', 'solde_apres']),
+                    codeProprietaire: getValueWithFallback(['Code propriétaire', 'Code proprietaire', 'codeProprietaire', 'code_proprietaire']) || 'UNKNOWN',
+                    dateOperation: dateOperation,
+                    numeroTransGU: getValueWithFallback(['Numéro Trans GU', 'numeroTransGU', 'numero_trans_gu']) || `GU-${Date.now()}-${index}`,
+                    groupeReseau: (getValueWithFallback(['groupe de réseau', 'groupeReseau', 'groupe_reseau']) || 'DEFAULT').substring(0, 10),
+                    statut: 'EN_ATTENTE',
+                    commentaire: `Importé depuis ECART Partenaire - ${new Date().toLocaleString('fr-FR')}`,
+                    createdAt: new Date().toISOString(),
+                    updatedAt: new Date().toISOString()
+                } as ImpactOP;
+            });
+
+            console.log('DEBUG: Données converties pour Import OP:', impactOPData.slice(0, 2));
+
+            // Sauvegarder via le service Impact OP
+            let successCount = 0;
+            let errorCount = 0;
+
+            for (const [index, impactOP] of impactOPData.entries()) {
+                try {
+                    console.log(`🔄 [${index + 1}/${impactOPData.length}] Tentative de création Impact OP:`, impactOP);
+                    const result = await firstValueFrom(this.impactOPService.createImpactOP(impactOP));
+                    successCount++;
+                    console.log(`✅ [${index + 1}/${impactOPData.length}] Import OP créé avec succès:`, result);
+                } catch (error: any) {
+                    errorCount++;
+                    console.error(`❌ [${index + 1}/${impactOPData.length}] Erreur détaillée lors de la création de l'Import OP:`, {
+                        error,
+                        status: error?.status,
+                        statusText: error?.statusText,
+                        message: error?.message,
+                        errorDetails: error?.error,
+                        impactOPData: impactOP
+                    });
+                }
+            }
+
+            if (successCount > 0) {
+                alert(`✅ Sauvegarde réussie !\n\n📊 Résumé:\n• ${successCount} Import OP créés avec succès\n• ${errorCount} erreurs\n\n💾 Les données ECART Partenaire ont été sauvegardées dans Import OP.`);
+            } else {
+                alert(`❌ Échec de la sauvegarde !\n\nAucun Import OP n'a pu être créé.\nVeuillez vérifier les logs de la console pour plus de détails.`);
+            }
+
+        } catch (error) {
+            console.error('❌ Erreur lors de la sauvegarde ECART Partenaire vers Import OP:', error);
+            
+            let errorMessage = '❌ Erreur lors de la sauvegarde dans Import OP.\n\n';
+            
+            if (error && typeof error === 'object') {
+                const apiError = error as ApiError;
+                if (apiError.error?.message) {
+                    errorMessage += `Détails: ${apiError.error.message}`;
+                } else if (apiError.message) {
+                    errorMessage += `Détails: ${apiError.message}`;
+                } else {
+                    errorMessage += 'Erreur de communication avec le serveur.';
+                }
+            } else {
+                errorMessage += 'Erreur inconnue.';
+            }
+            
+            errorMessage += '\n\nVeuillez réessayer.';
+            
+            alert(errorMessage);
+        } finally {
+            this.isSavingEcartPartnerToImpactOP = false;
+        }
+    }
+
     constructor(
         private cdr: ChangeDetectorRef, 
         private appStateService: AppStateService, 
@@ -1898,6 +2172,7 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
         private reconciliationService: ReconciliationService,
         private ecartSoldeService: EcartSoldeService,
         private trxSfService: TrxSfService,
+        private impactOPService: ImpactOPService,
         private http: HttpClient
     ) {}
 
@@ -1920,7 +2195,16 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                     }
                     
                     // Calculer le total des enregistrements
-                    this.totalRecords = response.totalBoRecords + response.totalPartnerRecords;
+                    this.totalRecords = (response.totalBoRecords || 0) + (response.totalPartnerRecords || 0);
+                    
+                    // Si nous n'avons pas encore de totalRecords et que nous avons des données, les calculer
+                    if (this.totalRecords === 0 && this.response) {
+                        const boCount = this.response.boOnly ? this.response.boOnly.length : 0;
+                        const partnerCount = this.response.partnerOnly ? this.response.partnerOnly.length : 0;
+                        const matchesCount = this.response.matches ? this.response.matches.length : 0;
+                        this.totalRecords = boCount + partnerCount + matchesCount;
+                        console.log('📊 Calcul automatique du totalRecords:', this.totalRecords);
+                    }
                     
                     this.cdr.detectChanges();
                 }
@@ -1935,7 +2219,7 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                     this.startTime = this.appStateService.getReconciliationStartTime();
                     this.progressPercentage = 0;
                     this.processedRecords = 0;
-                    this.simulateProgress();
+                    this.listenToRealProgress();
                 }
                 this.cdr.detectChanges();
             })
@@ -2010,9 +2294,26 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
     }
 
     setActiveTab(tab: 'matches' | 'boOnly' | 'partnerOnly' | 'agencySummary') {
+        console.log('🔄 setActiveTab appelé avec:', tab);
+        console.log('🔄 activeTab avant:', this.activeTab);
         this.activeTab = tab;
+        console.log('🔄 activeTab après:', this.activeTab);
         this.agencyPage = 1;
-        this.cdr.detectChanges();
+        
+        // Forcer la détection des changements
+        setTimeout(() => {
+            this.cdr.detectChanges();
+            console.log('✅ Détection des changements forcée pour:', tab);
+        }, 0);
+        
+        // Forcer un rechargement complet
+        setTimeout(() => {
+            this.cdr.markForCheck();
+            this.cdr.detectChanges();
+            console.log('✅ Rechargement complet forcé pour:', tab);
+        }, 100);
+        
+        console.log('✅ setActiveTab terminé pour:', tab);
     }
 
     nextPage(type: 'matches' | 'boOnly' | 'partnerOnly') {
@@ -3199,7 +3500,59 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
         }
     }
 
+    getElapsedTime(): number {
+        if (this.startTime > 0) {
+            return Date.now() - this.startTime;
+        }
+        return 0;
+    }
+
+    getProcessingSpeed(): string {
+        const elapsedTime = this.getElapsedTime();
+        if (elapsedTime > 0 && this.processedRecords > 0) {
+            const speed = Math.round((this.processedRecords / elapsedTime) * 1000);
+            return speed.toString();
+        }
+        return '0';
+    }
+
+    getProgressStatus(): string {
+        if (this.progressPercentage < 10) {
+            return 'Initialisation...';
+        } else if (this.progressPercentage < 30) {
+            return 'Chargement des fichiers...';
+        } else if (this.progressPercentage < 60) {
+            return 'Traitement des données...';
+        } else if (this.progressPercentage < 90) {
+            return 'Réconciliation en cours...';
+        } else if (this.progressPercentage < 100) {
+            return 'Finalisation...';
+        } else {
+            return 'Terminé !';
+        }
+    }
+
+    private listenToRealProgress() {
+        console.log('🎯 Écoute de la progression réelle de la réconciliation...');
+        
+        this.subscription.add(
+            this.reconciliationService.progress$.subscribe((progress: number) => {
+                console.log(`📈 Progression reçue du service: ${progress}%`);
+                this.progressPercentage = progress;
+                
+                // Calculer les enregistrements traités basé sur la progression
+                if (this.totalRecords > 0) {
+                    this.processedRecords = Math.floor((progress / 100) * this.totalRecords);
+                }
+                
+                // Forcer la détection des changements pour mettre à jour l'interface
+                this.cdr.detectChanges();
+            })
+        );
+    }
+
     private simulateProgress() {
+        // Méthode de fallback si la progression réelle n'est pas disponible
         const interval = setInterval(() => {
             if (this.progressPercentage < 90 && this.showProgress) {
                 this.progressPercentage += Math.random() * 10;
@@ -3272,9 +3625,7 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
         });
     }
 
-    getElapsedTime(): number {
-        return this.startTime > 0 ? Date.now() - this.startTime : 0;
-    }
+
 
     // Utilisation d'une clé unique pour chaque ligne
     getAgencyKey(summary: any): string {

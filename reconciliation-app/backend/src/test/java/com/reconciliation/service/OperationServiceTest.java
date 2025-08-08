@@ -71,7 +71,7 @@ public class OperationServiceTest {
 
         OperationCreateRequest request = new OperationCreateRequest();
         request.setCompteId(1L);
-        request.setTypeOperation("compense");
+        request.setTypeOperation("Compense_client");
         request.setMontant(100.0);
         request.setBanque("Test Bank");
         request.setService("Test Service");
@@ -84,7 +84,7 @@ public class OperationServiceTest {
         assertNotNull(result.getReference());
         assertTrue(result.getReference().startsWith(codeProprietaire + "-"));
         assertTrue(result.getReference().contains("CP1"));
-        assertEquals("compense", result.getTypeOperation());
+        assertEquals("Compense_client", result.getTypeOperation());
     }
 
     @Test
@@ -111,7 +111,7 @@ public class OperationServiceTest {
 
         OperationCreateRequest request = new OperationCreateRequest();
         request.setCompteId(1L);
-        request.setTypeOperation("compense");
+        request.setTypeOperation("Compense_client");
         request.setMontant(100.0);
         request.setBanque("Test Bank");
         request.setService("Test Service");
@@ -124,7 +124,7 @@ public class OperationServiceTest {
         assertNotNull(result.getReference());
         assertTrue(result.getReference().startsWith(codeProprietaire + "-"));
         assertTrue(result.getReference().contains("CP2"));
-        assertEquals("compense", result.getTypeOperation());
+        assertEquals("Compense_client", result.getTypeOperation());
     }
 
     @Test
@@ -200,8 +200,8 @@ public class OperationServiceTest {
         assertTrue(result2.getReference().contains("CP1"));
         
         // Les deux doivent avoir CP1 car c'est la première compense de chaque propriétaire
-        assertEquals("compense", result1.getTypeOperation());
-        assertEquals("compense", result2.getTypeOperation());
+        assertEquals("Compense_client", result1.getTypeOperation());
+        assertEquals("Compense_client", result2.getTypeOperation());
     }
 
     @Test
@@ -228,7 +228,7 @@ public class OperationServiceTest {
 
         OperationCreateRequest request = new OperationCreateRequest();
         request.setCompteId(1L);
-        request.setTypeOperation("approvisionnement");
+        request.setTypeOperation("Appro_client");
         request.setMontant(100.0);
         request.setBanque("Test Bank");
         request.setService("Test Service");
@@ -241,7 +241,7 @@ public class OperationServiceTest {
         assertNotNull(result.getReference());
         assertTrue(result.getReference().startsWith(codeProprietaire + "-"));
         assertTrue(result.getReference().contains("AP1"));
-        assertEquals("approvisionnement", result.getTypeOperation());
+        assertEquals("Appro_client", result.getTypeOperation());
     }
 
     @Test
@@ -268,7 +268,7 @@ public class OperationServiceTest {
 
         OperationCreateRequest request = new OperationCreateRequest();
         request.setCompteId(1L);
-        request.setTypeOperation("approvisionnement");
+        request.setTypeOperation("Appro_client");
         request.setMontant(100.0);
         request.setBanque("Test Bank");
         request.setService("Test Service");
@@ -281,7 +281,7 @@ public class OperationServiceTest {
         assertNotNull(result.getReference());
         assertTrue(result.getReference().startsWith(codeProprietaire + "-"));
         assertTrue(result.getReference().contains("AP2"));
-        assertEquals("approvisionnement", result.getTypeOperation());
+        assertEquals("Appro_client", result.getTypeOperation());
     }
 
     @Test
@@ -308,7 +308,7 @@ public class OperationServiceTest {
 
         OperationCreateRequest request1 = new OperationCreateRequest();
         request1.setCompteId(1L);
-        request1.setTypeOperation("approvisionnement");
+        request1.setTypeOperation("Appro_client");
         request1.setMontant(100.0);
         request1.setBanque("Test Bank");
         request1.setService("Test Service");
@@ -337,7 +337,7 @@ public class OperationServiceTest {
 
         OperationCreateRequest request2 = new OperationCreateRequest();
         request2.setCompteId(2L);
-        request2.setTypeOperation("approvisionnement");
+        request2.setTypeOperation("Appro_client");
         request2.setMontant(200.0);
         request2.setBanque("Test Bank");
         request2.setService("Test Service");
@@ -357,7 +357,7 @@ public class OperationServiceTest {
         assertTrue(result2.getReference().contains("AP1"));
         
         // Les deux doivent avoir AP1 car c'est le premier approvisionnement de chaque propriétaire
-        assertEquals("approvisionnement", result1.getTypeOperation());
-        assertEquals("approvisionnement", result2.getTypeOperation());
+        assertEquals("Appro_client", result1.getTypeOperation());
+        assertEquals("Appro_client", result2.getTypeOperation());
     }
 } 

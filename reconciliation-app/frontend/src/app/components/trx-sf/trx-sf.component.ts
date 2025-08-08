@@ -319,20 +319,31 @@ export class TrxSfComponent implements OnInit, OnDestroy {
   }
 
   onStatutChange(item: TrxSfData, event: any): void {
-    const newStatut = event.target.value;
+    const target = event.target as HTMLSelectElement;
+    const newStatut = target.value;
     
-    if (item.id) {
+    if (newStatut && newStatut !== item.statut && item.id) {
+      // Sauvegarder l'ancien statut pour pouvoir le restaurer en cas d'erreur
+      const oldStatut = item.statut;
+      
+      // Mettre à jour immédiatement l'interface pour une meilleure UX
+      item.statut = newStatut as 'EN_ATTENTE' | 'TRAITE' | 'ERREUR';
+
       this.trxSfService.updateStatut(item.id, newStatut)
         .pipe(takeUntil(this.destroy$))
         .subscribe({
           next: (result) => {
-            item.statut = newStatut as 'EN_ATTENTE' | 'TRAITE' | 'ERREUR';
-            console.log('Statut mis à jour avec succès');
+            console.log(`Statut mis à jour avec succès: ${oldStatut} → ${newStatut}`, result);
+            this.showTemporaryMessage('success', `Statut mis à jour: ${newStatut}`);
           },
           error: (error) => {
             console.error('Erreur lors de la mise à jour du statut:', error);
-            // Remettre l'ancien statut en cas d'erreur
-            event.target.value = item.statut;
+            
+            // Restaurer l'ancien statut en cas d'erreur
+            item.statut = oldStatut;
+            target.value = oldStatut || 'EN_ATTENTE';
+            
+            this.showTemporaryMessage('error', 'Erreur lors de la mise à jour du statut');
           }
         });
     }
@@ -395,7 +406,8 @@ export class TrxSfComponent implements OnInit, OnDestroy {
 
   selectAll(): void {
     this.selectedItems.clear();
-    this.getPaginatedData().forEach(item => {
+    // Sélectionner TOUTES les lignes filtrées, pas seulement celles de la page courante
+    this.filteredTrxSfData.forEach(item => {
       if (item.id) {
         this.selectedItems.add(item.id);
       }
@@ -420,9 +432,10 @@ export class TrxSfComponent implements OnInit, OnDestroy {
   }
 
   updateSelectAllState(): void {
-    const currentPageItems = this.getPaginatedData();
-    const selectedCount = currentPageItems.filter(item => item.id && this.selectedItems.has(item.id)).length;
-    this.isSelectAll = selectedCount === currentPageItems.length && currentPageItems.length > 0;
+    // Vérifier si TOUTES les lignes filtrées sont sélectionnées, pas seulement la page courante
+    const allFilteredItems = this.filteredTrxSfData;
+    const selectedCount = allFilteredItems.filter(item => item.id && this.selectedItems.has(item.id)).length;
+    this.isSelectAll = selectedCount === allFilteredItems.length && allFilteredItems.length > 0;
   }
 
   getSelectedCount(): number {
@@ -509,5 +522,33 @@ export class TrxSfComponent implements OnInit, OnDestroy {
           alert('Erreur lors de la suppression des doublons.');
         }
       });
+  }
+
+  // Méthode helper pour afficher des messages temporaires
+  private showTemporaryMessage(type: 'success' | 'error', message: string) {
+    // Créer un élément de message temporaire
+    const messageElement = document.createElement('div');
+    messageElement.className = `temp-message ${type}`;
+    messageElement.textContent = message;
+    messageElement.style.cssText = `
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      padding: 10px 15px;
+      border-radius: 4px;
+      color: white;
+      font-weight: bold;
+      z-index: 1000;
+      ${type === 'success' ? 'background-color: #28a745;' : 'background-color: #dc3545;'}
+    `;
+    
+    document.body.appendChild(messageElement);
+    
+    // Supprimer le message après 3 secondes
+    setTimeout(() => {
+      if (document.body.contains(messageElement)) {
+        document.body.removeChild(messageElement);
+      }
+    }, 3000);
   }
 }

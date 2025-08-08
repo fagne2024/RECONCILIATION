@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
-import { HttpClient, HttpParams } from '@angular/common/http';
+import { HttpClient, HttpParams, HttpHeaders } from '@angular/common/http';
 import { Observable, of } from 'rxjs';
-import { map, catchError } from 'rxjs/operators';
+import { map, catchError, concatMap, timeout } from 'rxjs/operators';
 import { environment } from '../../environments/environment';
 import { ImpactOP, ImpactOPFilter, ImpactOPValidationResult, ImpactOPUploadResult } from '../models/impact-op.model';
 
@@ -90,10 +90,76 @@ export class ImpactOPService {
 
   // Mettre à jour le statut d'un impact OP
   updateImpactOPStatut(id: number, statut: string, commentaire?: string): Observable<ImpactOP> {
-    return this.http.patch<ImpactOP>(`${this.apiUrl}/impact-op/${id}/statut`, {
+    const body = {
       statut,
-      commentaire
+      commentaire: commentaire || null
+    };
+    
+    const headers = new HttpHeaders({
+      'Content-Type': 'application/json',
+      'Accept': 'application/json'
     });
+    
+    const url = `${this.apiUrl}/impact-op/${id}/statut`;
+    console.log('🔍 Appel API Impact OP avec headers explicites:', {
+      url,
+      method: 'PATCH',
+      id,
+      statut,
+      commentaire,
+      body,
+      headers: headers.keys()
+    });
+    
+    return this.http.patch<ImpactOP>(url, body, { 
+      headers
+    }).pipe(
+      timeout(30000), // 30 secondes de timeout
+      map(response => {
+        console.log('✅ Réponse API Impact OP réussie:', response);
+        return response;
+      }),
+      catchError(error => {
+        console.error('❌ Erreur API Impact OP détaillée:', {
+          error,
+          url,
+          status: error.status,
+          statusText: error.statusText,
+          message: error.message,
+          body: error.error,
+          headers: error.headers
+        });
+        
+        // Test de connectivité et fallback vers PUT si PATCH échoue
+        console.log('🔄 Test de connectivité suite à erreur...');
+        if (error.status === 0 || error.status === 405) {
+          console.log('🔄 Tentative de fallback avec PUT au lieu de PATCH...');
+          return this.http.get(`${this.apiUrl}/impact-op/${id}`).pipe(
+            concatMap(existingImpact => {
+              // Utiliser PUT avec l'objet complet
+              const updatedImpact = { ...existingImpact, statut, commentaire };
+              console.log('📤 Fallback PUT avec objet complet:', updatedImpact);
+              return this.http.put<ImpactOP>(`${this.apiUrl}/impact-op/${id}`, updatedImpact, { headers });
+            }),
+            catchError(putError => {
+              console.error('❌ Échec du fallback PUT:', putError);
+              throw error; // Re-lancer l'erreur PATCH originale
+            })
+          );
+        }
+        
+        return this.http.get(`${this.apiUrl}/impact-op/${id}`).pipe(
+          map(() => {
+            console.log('✅ Connectivité OK, problème spécifique au PATCH');
+            throw error; // Re-lancer l'erreur originale
+          }),
+          catchError(connectError => {
+            console.error('❌ Problème de connectivité générale:', connectError);
+            throw error; // Re-lancer l'erreur originale
+          })
+        );
+      })
+    );
   }
 
   // Récupérer les options de filtres

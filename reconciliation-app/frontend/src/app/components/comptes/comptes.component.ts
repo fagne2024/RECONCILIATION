@@ -98,9 +98,9 @@ export class ComptesComponent implements OnInit, OnDestroy {
     operationTypes: string[] = [
         'total_cashin',
         'total_paiement',
-        'approvisionnement',
+        'Appro_client',
         'ajustement',
-        'compense',
+        'Compense_client',
         'FRAIS_TRANSACTION',
         'transaction_cree',
         'annulation_bo'
@@ -478,8 +478,9 @@ export class ComptesComponent implements OnInit, OnDestroy {
         // Calcul dynamique de la moyenne du volume journalier sur la période choisie pour chaque compte
         const jours = this.periodeJours;
         this.comptesCritiques = this.comptes.map(c => {
-            // Regrouper les opérations par jour, uniquement type 'total_cashin'
-            const opsCompte = this.operations.filter(op => op.compteId === c.id && op.typeOperation === 'total_cashin');
+            // Regrouper les opérations par jour, types 'total_cashin', 'Compense_client' et 'Compense_fournisseur' (débits)
+            const opsCompte = this.operations.filter(op => op.compteId === c.id && 
+                (op.typeOperation === 'total_cashin' || op.typeOperation === 'Compense_client' || op.typeOperation === 'Compense_fournisseur'));
             const volumesParJour: { [date: string]: number } = {};
             opsCompte.forEach(op => {
                 const d = new Date(op.dateOperation);
@@ -1137,9 +1138,9 @@ export class ComptesComponent implements OnInit, OnDestroy {
         const labels: { [key: string]: string } = {
             'total_cashin': 'Total Cash-in',
             'total_paiement': 'Total Paiement',
-            'approvisionnement': 'Approvisionnement',
+            'Appro_client': 'Appro_client',
             'ajustement': 'Ajustement',
-            'compense': 'Compense',
+            'Compense_client': 'Compense_client',
             'frais_transaction': 'Frais Transaction',
             'annulation_partenaire': 'Annulation Partenaire',
             'annulation_bo': 'Annulation BO',
@@ -1152,9 +1153,9 @@ export class ComptesComponent implements OnInit, OnDestroy {
         const classes: { [key: string]: string } = {
             'total_cashin': 'type-cashin',
             'total_paiement': 'type-paiement',
-            'approvisionnement': 'type-appro',
+            'Appro_client': 'type-appro',
             'ajustement': 'type-ajustement',
-            'compense': 'type-compense',
+            'Compense_client': 'type-compense',
             'frais_transaction': 'type-frais',
             'annulation_partenaire': 'type-annulation',
             'annulation_bo': 'type-annulation-bo',
@@ -1550,8 +1551,11 @@ export class ComptesComponent implements OnInit, OnDestroy {
             if (service && service.toLowerCase().includes('cashin')) return true;
             if (service && service.toLowerCase().includes('paiement')) return false;
         }
-        if (type === 'compense') return true;
+        if (type === 'Compense_client') return true;
+        if (type === 'Compense_fournisseur') return true;
         if (type === 'ajustement') return montant !== undefined && montant < 0;
+        if (type === 'nivellement') return montant !== undefined && montant < 0;
+        if (type === 'régularisation_solde') return montant !== undefined && montant < 0;
         if (type === 'bo') {
             // Pour les opérations BO, la logique dépend du service
             if (service && service.toLowerCase().includes('cashin')) return true;
@@ -1575,8 +1579,11 @@ export class ComptesComponent implements OnInit, OnDestroy {
             if (service && service.toLowerCase().includes('paiement')) return true;
             if (service && service.toLowerCase().includes('cashin')) return false;
         }
-        if (type === 'approvisionnement') return true;
+        if (type === 'Appro_client') return true;
+        if (type === 'Appro_fournisseur') return true;
         if (type === 'ajustement') return montant !== undefined && montant >= 0;
+        if (type === 'nivellement') return montant !== undefined && montant >= 0;
+        if (type === 'régularisation_solde') return montant !== undefined && montant >= 0;
         if (type === 'bo') {
             // Pour les opérations BO, la logique dépend du service
             if (service && service.toLowerCase().includes('paiement')) return true;
