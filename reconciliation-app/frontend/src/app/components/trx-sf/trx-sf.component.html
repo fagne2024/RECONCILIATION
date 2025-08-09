@@ -8,6 +8,10 @@
       <button class="btn btn-success" (click)="exportTrxSfData()" [disabled]="filteredTrxSfData.length === 0 || isLoading">
         <i class="fas fa-file-excel"></i> Exporter
       </button>
+      <button class="btn btn-warning" (click)="verifierFrais()" [disabled]="filteredTrxSfData.length === 0 || isLoading || isVerifyingFrais">
+        <i class="fas fa-file-upload"></i> 
+        {{ isVerifyingFrais ? 'Traitement...' : 'Importer Statuts' }}
+      </button>
     </div>
   </div>
 

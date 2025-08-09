@@ -46,6 +46,9 @@ export class TrxSfComponent implements OnInit, OnDestroy {
   selectedStatut = 'EN_ATTENTE';
   isUpdatingMultipleStatuts = false;
   
+  // Vérification FRAIS
+  isVerifyingFrais = false;
+  
   // Gestion des doublons
   duplicates: TrxSfData[] = [];
   isLoadingDuplicates = false;
@@ -550,5 +553,239 @@ export class TrxSfComponent implements OnInit, OnDestroy {
         document.body.removeChild(messageElement);
       }
     }, 3000);
+  }
+
+  verifierFrais(): void {
+    // Créer un input file invisible pour sélectionner le fichier
+    const fileInput = document.createElement('input');
+    fileInput.type = 'file';
+    fileInput.accept = '.csv,.xlsx,.xls';
+    fileInput.style.display = 'none';
+    
+    fileInput.onchange = (event: any) => {
+      const file = event.target.files[0];
+      if (file) {
+        this.traiterFichierFrais(file);
+      }
+    };
+    
+    document.body.appendChild(fileInput);
+    fileInput.click();
+    document.body.removeChild(fileInput);
+  }
+
+  private traiterFichierFrais(file: File): void {
+    if (this.filteredTrxSfData.length === 0) {
+      alert('❌ Aucune transaction TRX SF chargée.');
+      return;
+    }
+
+    this.isVerifyingFrais = true;
+
+    try {
+      console.log('🔄 Début du traitement du fichier de vérification FRAIS...', file.name);
+
+      const reader = new FileReader();
+      reader.onload = (e: any) => {
+        try {
+          let donneesFichier: any[] = [];
+
+          if (file.name.toLowerCase().endsWith('.csv')) {
+            // Traitement fichier CSV
+            const csvText = e.target.result;
+            const lignes = csvText.split('\n').filter((ligne: string) => ligne.trim());
+            
+            if (lignes.length < 2) {
+              throw new Error('Le fichier CSV doit contenir au moins un en-tête et une ligne de données');
+            }
+
+            const entetes = lignes[0].split(';').map((h: string) => h.trim().toLowerCase());
+            console.log('📋 En-têtes CSV détectés:', entetes);
+
+            // Vérifier les colonnes requises
+            const colonneRequises = ['type operation', 'code proprietaire', 'numero trans gu'];
+            const colonnesManquantes = colonneRequises.filter(col => !entetes.includes(col));
+            
+            if (colonnesManquantes.length > 0) {
+              throw new Error(`Colonnes manquantes dans le fichier: ${colonnesManquantes.join(', ')}\nColonnes attendues: ${colonneRequises.join(', ')}`);
+            }
+
+            // Traiter les données
+            for (let i = 1; i < lignes.length; i++) {
+              const valeurs = lignes[i].split(';').map((v: string) => v.trim());
+              if (valeurs.length >= entetes.length) {
+                const ligne: any = {};
+                entetes.forEach((entete: string, index: number) => {
+                  ligne[entete] = valeurs[index] || '';
+                });
+                donneesFichier.push(ligne);
+              }
+            }
+
+          } else if (file.name.toLowerCase().endsWith('.xlsx') || file.name.toLowerCase().endsWith('.xls')) {
+            // Pour les fichiers Excel, on doit utiliser une bibliothèque comme SheetJS
+            alert('❌ Les fichiers Excel ne sont pas encore supportés. Veuillez utiliser un fichier CSV avec des séparateurs point-virgule (;)');
+            this.isVerifyingFrais = false;
+            return;
+          }
+
+          console.log(`📊 ${donneesFichier.length} lignes trouvées dans le fichier`);
+          this.verifierEtMettreAJourStatuts(donneesFichier);
+
+        } catch (error) {
+          console.error('❌ Erreur lors du parsing du fichier:', error);
+          alert(`❌ Erreur lors du traitement du fichier:\n${error}`);
+          this.isVerifyingFrais = false;
+        }
+      };
+
+      reader.onerror = () => {
+        alert('❌ Erreur lors de la lecture du fichier');
+        this.isVerifyingFrais = false;
+      };
+
+      reader.readAsText(file, 'UTF-8');
+
+    } catch (error) {
+      console.error('❌ Erreur lors du traitement du fichier:', error);
+      alert(`❌ Erreur lors du traitement du fichier: ${error}`);
+      this.isVerifyingFrais = false;
+    }
+  }
+
+  private verifierEtMettreAJourStatuts(donneesFichier: any[]): void {
+    try {
+      console.log('🔄 Début de la vérification et mise à jour des statuts...');
+
+      let transactionsTrouvees = 0;
+      let transactionsNonTrouvees = 0;
+      let transactionsMisesAJour = 0;
+      let transactionsErreur = 0;
+      const detailsNonTrouvees: string[] = [];
+      const detailsErreurs: string[] = [];
+
+      // Créer un index des transactions TRX SF par numeroTransGu
+      const indexTrxSf = new Map<string, TrxSfData>();
+      this.filteredTrxSfData.forEach(trx => {
+        if (trx.numeroTransGu) {
+          indexTrxSf.set(trx.numeroTransGu.trim().toLowerCase(), trx);
+        }
+      });
+
+      console.log(`📋 Index créé avec ${indexTrxSf.size} transactions TRX SF`);
+
+      // Vérifier chaque ligne du fichier
+      donneesFichier.forEach((ligne, index) => {
+        const numeroTransGu = ligne['numero trans gu']?.trim();
+        const typeOperation = ligne['type operation']?.trim();
+        const codeProprietaire = ligne['code proprietaire']?.trim();
+
+        console.log(`🔍 [${index + 1}] Recherche: ${numeroTransGu} | Type: ${typeOperation} | Code: ${codeProprietaire}`);
+
+        if (!numeroTransGu) {
+          console.warn(`⚠️ [${index + 1}] Numero Trans GU manquant`);
+          return;
+        }
+
+        // Chercher la transaction correspondante
+        const transactionTrxSf = indexTrxSf.get(numeroTransGu.toLowerCase());
+
+        if (transactionTrxSf) {
+          transactionsTrouvees++;
+          console.log(`✅ [${index + 1}] Transaction trouvée: ID ${transactionTrxSf.id}`);
+
+          // Mettre à jour le statut à TRAITE
+          if (transactionTrxSf.statut !== 'TRAITE') {
+            try {
+              // Mise à jour via le service
+              this.trxSfService.updateStatut(transactionTrxSf.id!, 'TRAITE')
+                .pipe(takeUntil(this.destroy$))
+                .subscribe({
+                  next: (result) => {
+                    transactionTrxSf.statut = 'TRAITE';
+                    transactionsMisesAJour++;
+                    console.log(`✅ Statut mis à jour pour ID ${transactionTrxSf.id}: ${result?.statut || 'TRAITE'}`);
+                  },
+                  error: (error) => {
+                    transactionsErreur++;
+                    const msgErreur = `ID ${transactionTrxSf.id}: ${error.message || 'Erreur inconnue'}`;
+                    detailsErreurs.push(msgErreur);
+                    console.error(`❌ Erreur mise à jour ID ${transactionTrxSf.id}:`, error);
+                  }
+                });
+            } catch (error) {
+              transactionsErreur++;
+              const msgErreur = `ID ${transactionTrxSf.id}: ${error}`;
+              detailsErreurs.push(msgErreur);
+              console.error(`❌ Erreur lors de la mise à jour ID ${transactionTrxSf.id}:`, error);
+            }
+          } else {
+            console.log(`ℹ️ [${index + 1}] Transaction déjà TRAITE: ID ${transactionTrxSf.id}`);
+          }
+        } else {
+          transactionsNonTrouvees++;
+          const detail = `${numeroTransGu} | ${typeOperation} | ${codeProprietaire}`;
+          detailsNonTrouvees.push(detail);
+          console.warn(`❌ [${index + 1}] Transaction NON trouvée: ${detail}`);
+        }
+      });
+
+      // Attendre un peu pour les mises à jour asynchrones
+      setTimeout(() => {
+        // Générer le rapport
+        let rapport = `📊 RAPPORT DE VÉRIFICATION ET MISE À JOUR\n\n`;
+        rapport += `📋 Fichier traité: ${donneesFichier.length} lignes\n`;
+        rapport += `✅ Transactions trouvées: ${transactionsTrouvees}\n`;
+        rapport += `❌ Transactions non trouvées: ${transactionsNonTrouvees}\n`;
+        rapport += `🔄 Transactions mises à jour: ${transactionsMisesAJour}\n`;
+        rapport += `⚠️ Erreurs de mise à jour: ${transactionsErreur}\n\n`;
+
+        if (detailsNonTrouvees.length > 0) {
+          rapport += `📋 DÉTAILS - Transactions non trouvées:\n`;
+          detailsNonTrouvees.slice(0, 10).forEach((detail, i) => {
+            rapport += `${i + 1}. ${detail}\n`;
+          });
+          if (detailsNonTrouvees.length > 10) {
+            rapport += `... et ${detailsNonTrouvees.length - 10} autre(s)\n`;
+          }
+          rapport += `\n`;
+        }
+
+        if (detailsErreurs.length > 0) {
+          rapport += `⚠️ DÉTAILS - Erreurs de mise à jour:\n`;
+          detailsErreurs.slice(0, 5).forEach((erreur, i) => {
+            rapport += `${i + 1}. ${erreur}\n`;
+          });
+          if (detailsErreurs.length > 5) {
+            rapport += `... et ${detailsErreurs.length - 5} autre(s)\n`;
+          }
+        }
+
+        alert(rapport);
+
+        // Log complet dans la console
+        console.log('📊 Rapport complet:', {
+          fichierLignes: donneesFichier.length,
+          transactionsTrouvees,
+          transactionsNonTrouvees,
+          transactionsMisesAJour,
+          transactionsErreur,
+          detailsNonTrouvees,
+          detailsErreurs
+        });
+
+        this.showTemporaryMessage('success', `Traitement terminé: ${transactionsMisesAJour} statut(s) mis à jour`);
+        
+        // Recharger les données pour refléter les changements
+        this.loadTrxSfData();
+        
+        this.isVerifyingFrais = false;
+      }, 2000); // Attendre 2 secondes pour les mises à jour asynchrones
+
+    } catch (error) {
+      console.error('❌ Erreur lors de la vérification:', error);
+      alert(`❌ Erreur lors de la vérification: ${error}`);
+      this.isVerifyingFrais = false;
+    }
   }
 }

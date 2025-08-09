@@ -1837,6 +1837,15 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
      * Détermine la nature de l'écart partenaire
      */
     private determineEcartNature(record: Record<string, string>): string {
+        // Vérifier le type d'opération
+        const typeOperationKeys = ['Type Opération', 'Type opération', 'type_operation', 'TYPE_OPERATION', 'typeOperation'];
+        const typeOperation = typeOperationKeys.find(key => {
+            const value = record[key];
+            return value !== undefined && value !== null && value !== '';
+        });
+        
+        const typeOperationValue = typeOperation ? record[typeOperation] : '';
+        
         // Vérifier s'il y a des frais
         const fraisKeys = ['Frais connexion', 'frais_connexion', 'FRAIS_CONNEXION', 'frais', 'Frais'];
         const hasFrais = fraisKeys.some(key => {
@@ -1858,13 +1867,23 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
             return value !== undefined && value !== null && value !== '' && parseFloat(value) > 0;
         });
 
-        // Déterminer la nature de l'écart
+        // Logique spéciale pour les cas de correspondance unique (écart partenaire)
+        // Si une seule correspondance et type d'opération FRAIS_TRANSACTION -> "Régularisation FRAIS"
+        // Si une seule correspondance avec autre type d'opération -> "SANS FRAIS"
+        if (typeOperationValue && typeOperationValue.includes('FRAIS_TRANSACTION')) {
+            console.log(`DEBUG: Type d'opération FRAIS_TRANSACTION détecté - Commentaire: "Régularisation FRAIS"`);
+            return 'Régularisation FRAIS';
+        }
+        
+        // Déterminer la nature de l'écart selon la logique standard
         if (!hasTransaction && !hasMontant) {
             return 'Ligne partenaire sans transaction ni montant';
         } else if (!hasTransaction) {
             return 'Ligne partenaire sans transaction';
         } else if (!hasFrais && hasMontant) {
-            return 'Ligne partenaire sans frais';
+            // Cas général avec une seule correspondance -> SANS FRAIS
+            console.log(`DEBUG: Cas général sans frais détecté - Commentaire: "SANS FRAIS" - Type opération: ${typeOperationValue}`);
+            return 'SANS FRAIS';
         } else if (!hasMontant) {
             return 'Ligne partenaire sans montant';
         } else {
@@ -2408,6 +2427,10 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                 // Cas 2: IMPACT seul sans FRAIS (SANS FRAIS)
                 duplicatesMap.set(key, records.map(r => ({ ...r, tsopType: 'SANS_FRAIS' })));
                 console.log(`🟡 IMPACT SANS FRAIS détecté pour clé ${key}:`, types);
+            } else if (records.length === 1 && hasFraisTransaction && !hasImpactCompte) {
+                // Cas 3: FRAIS_TRANSACTION seul (Régularisation FRAIS)
+                duplicatesMap.set(key, records.map(r => ({ ...r, tsopType: 'REGULARISATION_FRAIS' })));
+                console.log(`🟠 FRAIS_TRANSACTION seul détecté pour clé ${key}:`, types);
             } else {
                 console.log(`❌ Pas de doublon TSOP pour clé ${key} (ne correspond à aucun cas)`);
             }
@@ -2496,7 +2519,13 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
             const duplicateRecords = duplicatesMap.get(reconciliationKey);
             if (duplicateRecords && duplicateRecords.length > 0) {
                 const tsopType = duplicateRecords[0].tsopType;
-                return tsopType === 'COMPLETE' ? 'TSOP' : 'SANS FRAIS';
+                if (tsopType === 'COMPLETE') {
+                    return 'TSOP';
+                } else if (tsopType === 'REGULARISATION_FRAIS') {
+                    return 'Régularisation FRAIS';
+                } else {
+                    return 'SANS FRAIS';
+                }
             }
         }
         return '';
@@ -2809,6 +2838,17 @@ private async generateExcelFile(): Promise<ExcelJS.Workbook[]> {
                 }
             };
 
+            const regularisationFraisStyle = {
+                fill: { type: 'pattern' as const, pattern: 'solid' as const, fgColor: { argb: 'FFFFA500' } }, // Orange
+                font: { color: { argb: 'FFFFFFFF' }, bold: true },
+                border: {
+                    top: { style: 'thin' as const },
+                    left: { style: 'thin' as const },
+                    bottom: { style: 'thin' as const },
+                    right: { style: 'thin' as const }
+                }
+            };
+
             const dataStyle = {
                 border: {
                     top: { style: 'thin' as const },
@@ -2847,6 +2887,12 @@ private async generateExcelFile(): Promise<ExcelJS.Workbook[]> {
                         cell.style = tsorSansFraisStyle;
                     });
                     console.log(`🟡 Ligne ${index + 2} colorée en jaune (SANS FRAIS)`);
+                } else if (tsopType === 'REGULARISATION_FRAIS') {
+                    // Style orange pour FRAIS_TRANSACTION seul
+                    row.eachCell(cell => {
+                        cell.style = regularisationFraisStyle;
+                    });
+                    console.log(`🟠 Ligne ${index + 2} colorée en orange (Régularisation FRAIS)`);
                 } else {
                     // Style normal
                     row.eachCell(cell => {

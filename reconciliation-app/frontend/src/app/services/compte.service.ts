@@ -133,10 +133,10 @@ export class CompteService {
 
     // Solde de clôture BO historique
     setSoldeBo(numeroCompte: string, dateSolde: string, soldeBo: number) {
-        return this.http.post('/api/compte-solde-bo/set', { numeroCompte, dateSolde, soldeBo });
+        return this.http.post(`${environment.apiUrl}/compte-solde-bo/set`, { numeroCompte, dateSolde, soldeBo });
     }
 
     getSoldeBo(numeroCompte: string, dateSolde: string) {
-        return this.http.get<number>('/api/compte-solde-bo/get', { params: { numeroCompte, dateSolde } });
+        return this.http.get<number>(`${environment.apiUrl}/compte-solde-bo/get`, { params: { numeroCompte, dateSolde } });
     }
 } 

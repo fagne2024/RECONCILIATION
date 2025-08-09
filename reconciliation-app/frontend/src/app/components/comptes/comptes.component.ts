@@ -1737,11 +1737,31 @@ export class ComptesComponent implements OnInit, OnDestroy {
 
     saveSoldeBo() {
       if (this.selectedCompteForBo && this.dernierSoldeBo !== null && this.dateSoldeBo) {
+        console.log('🔄 Enregistrement du solde BO...', {
+          numeroCompte: this.selectedCompteForBo.numeroCompte,
+          dateSolde: this.dateSoldeBo,
+          soldeBo: this.dernierSoldeBo
+        });
+        
         this.compteService.setSoldeBo(this.selectedCompteForBo.numeroCompte, this.dateSoldeBo, this.dernierSoldeBo)
-          .subscribe(() => {
-            alert('Solde BO enregistré !');
-            this.closeSoldeBoModal();
+          .subscribe({
+            next: (response) => {
+              console.log('✅ Solde BO enregistré avec succès:', response);
+              alert('Solde BO enregistré !');
+              this.closeSoldeBoModal();
+            },
+            error: (error) => {
+              console.error('❌ Erreur lors de l\'enregistrement du solde BO:', error);
+              alert(`Erreur lors de l'enregistrement : ${error.message || error.error?.message || 'Erreur inconnue'}`);
+            }
           });
+      } else {
+        console.warn('⚠️ Données manquantes pour l\'enregistrement du solde BO:', {
+          selectedCompteForBo: this.selectedCompteForBo,
+          dernierSoldeBo: this.dernierSoldeBo,
+          dateSoldeBo: this.dateSoldeBo
+        });
+        alert('Veuillez remplir tous les champs requis');
       }
     }
 
