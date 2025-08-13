@@ -115,6 +115,36 @@ public class TrxSfController {
         );
         return ResponseEntity.ok(response);
     }
+
+    @GetMapping("/frais/{agence}/{date}/{service}")
+    public ResponseEntity<Map<String, Object>> getFraisByAgenceAndDateAndService(
+            @PathVariable String agence,
+            @PathVariable String date,
+            @PathVariable String service) {
+        Double frais = trxSfService.getFraisByAgenceAndDateAndService(agence, date, service);
+        Map<String, Object> response = Map.of(
+            "agence", agence,
+            "date", date,
+            "service", service,
+            "frais", frais
+        );
+        return ResponseEntity.ok(response);
+    }
+
+    @GetMapping("/frais-en-attente/{agence}/{date}/{service}")
+    public ResponseEntity<Map<String, Object>> getFraisByAgenceAndDateAndServiceEnAttente(
+            @PathVariable String agence,
+            @PathVariable String date,
+            @PathVariable String service) {
+        Double frais = trxSfService.getFraisByAgenceAndDateAndServiceEnAttente(agence, date, service);
+        Map<String, Object> response = Map.of(
+            "agence", agence,
+            "date", date,
+            "service", service,
+            "frais", frais
+        );
+        return ResponseEntity.ok(response);
+    }
     
     @GetMapping("/frais-config/{service}")
     public ResponseEntity<Map<String, Object>> getFraisConfigByService(@PathVariable String service) {

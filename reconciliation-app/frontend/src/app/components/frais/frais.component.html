@@ -263,7 +263,9 @@
                     <mat-form-field appearance="fill" class="filter-select">
                         <mat-label>Service</mat-label>
                         <mat-select #serviceSelect formControlName="services" multiple (selectionChange)="onServiceChange($event)">
-                            <ngx-mat-select-search [formControl]="serviceSearchCtrl" placeholderLabel="Rechercher un service..." noEntriesFoundLabel="Aucun service trouvé"></ngx-mat-select-search>
+                            <mat-option>
+                                <ngx-mat-select-search [formControl]="serviceSearchCtrl" placeholderLabel="Rechercher un service..." noEntriesFoundLabel="Aucun service trouvé"></ngx-mat-select-search>
+                            </mat-option>
                             <mat-option *ngFor="let service of filteredServicesList" [value]="service">
                                 {{ service }}
                             </mat-option>
@@ -275,7 +277,9 @@
                     <mat-form-field appearance="fill" class="filter-select">
                         <mat-label>Client</mat-label>
                         <mat-select #agenceSelect formControlName="agences" multiple (selectionChange)="onAgenceChange($event)">
-                            <ngx-mat-select-search [formControl]="agenceSearchCtrl" placeholderLabel="Rechercher un client..." noEntriesFoundLabel="Aucun client trouvé"></ngx-mat-select-search>
+                            <mat-option>
+                                <ngx-mat-select-search [formControl]="agenceSearchCtrl" placeholderLabel="Rechercher un client..." noEntriesFoundLabel="Aucun client trouvé"></ngx-mat-select-search>
+                            </mat-option>
                             <mat-option *ngFor="let agence of filteredAgencesList" [value]="agence">
                                 {{ agence }}
                             </mat-option>

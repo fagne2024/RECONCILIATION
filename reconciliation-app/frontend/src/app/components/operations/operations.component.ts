@@ -69,6 +69,10 @@ export class OperationsComponent implements OnInit, OnDestroy {
     currentEditStep = 1;
     maxDate = new Date().toISOString().split('T')[0];
     
+    // Propriétés pour le modal de détails d'opération
+    showOperationDetailsModal = false;
+    modalSelectedOperation: Operation | null = null;
+    
     // Propriété pour les numéros de comptes (pour l'autocomplétion)
     get comptesNumeros(): string[] {
         return this.codeProprietaireList;
@@ -211,8 +215,10 @@ export class OperationsComponent implements OnInit, OnDestroy {
             const s = (search || '').toLowerCase();
             this.filteredTypeOperationList = this.filterTypeOptions.filter(opt => opt.label.toLowerCase().includes(s));
             if (this.filteredTypeOperationList.length === 1 && !this.filterForm.value.typeOperation.includes(this.filteredTypeOperationList[0].value)) {
+                setTimeout(() => {
                 this.filterForm.controls['typeOperation'].setValue([this.filteredTypeOperationList[0].value]);
                 this.onFilterChange();
+                }, 100);
             }
         });
         this.paysSearchCtrl.valueChanges.subscribe((search: string | null) => {
@@ -220,16 +226,20 @@ export class OperationsComponent implements OnInit, OnDestroy {
             const availablePays = this.getFilteredPays();
             this.filteredPaysList = availablePays.filter(p => p.toLowerCase().includes(s));
             if (this.filteredPaysList.length === 1 && !this.filterForm.value.pays.includes(this.filteredPaysList[0])) {
+                setTimeout(() => {
                 this.filterForm.controls['pays'].setValue([this.filteredPaysList[0]]);
                 this.onFilterChange();
+                }, 100);
             }
         });
         this.statutSearchCtrl.valueChanges.subscribe((search: string | null) => {
             const s = (search || '').toLowerCase();
             this.filteredStatutList = this.statutList.filter(st => st.toLowerCase().includes(s));
             if (this.filteredStatutList.length === 1 && !this.filterForm.value.statut.includes(this.filteredStatutList[0])) {
+                setTimeout(() => {
                 this.filterForm.controls['statut'].setValue([this.filteredStatutList[0]]);
                 this.onFilterChange();
+                }, 100);
             }
         });
         this.banqueSearchCtrl.valueChanges.subscribe((search: string | null) => {
@@ -237,8 +247,10 @@ export class OperationsComponent implements OnInit, OnDestroy {
             const availableBanques = this.getFilteredBanques();
             this.filteredBanqueList = availableBanques.filter(b => b.toLowerCase().includes(s));
             if (this.filteredBanqueList.length === 1 && !this.filterForm.value.banque.includes(this.filteredBanqueList[0])) {
+                setTimeout(() => {
                 this.filterForm.controls['banque'].setValue([this.filteredBanqueList[0]]);
                 this.onFilterChange();
+                }, 100);
             }
         });
         this.codeProprietaireSearchCtrl.valueChanges.subscribe((search: string | null) => {
@@ -246,8 +258,10 @@ export class OperationsComponent implements OnInit, OnDestroy {
             const availableCodes = this.getFilteredCodeProprietaire();
             this.filteredCodeProprietaireList = availableCodes.filter(c => c.toLowerCase().includes(s));
             if (this.filteredCodeProprietaireList.length === 1 && !this.filterForm.value.codeProprietaire.includes(this.filteredCodeProprietaireList[0])) {
+                setTimeout(() => {
                 this.filterForm.controls['codeProprietaire'].setValue([this.filteredCodeProprietaireList[0]]);
                 this.onFilterChange();
+                }, 100);
             }
         });
         this.serviceSearchCtrl.valueChanges.subscribe((search: string | null) => {
@@ -255,8 +269,10 @@ export class OperationsComponent implements OnInit, OnDestroy {
             const availableServices = this.getFilteredServices();
             this.filteredServiceList = availableServices.filter(serv => serv.toLowerCase().includes(s));
             if (this.filteredServiceList.length === 1 && !this.filterForm.value.service.includes(this.filteredServiceList[0])) {
+                setTimeout(() => {
                 this.filterForm.controls['service'].setValue([this.filteredServiceList[0]]);
                 this.onFilterChange();
+                }, 100);
             }
         });
         this.referenceSearchCtrl.valueChanges.subscribe((search: string | null) => {
@@ -264,8 +280,10 @@ export class OperationsComponent implements OnInit, OnDestroy {
             const availableReferences = this.getFilteredReference();
             this.filteredReferenceList = availableReferences.filter(ref => ref.toLowerCase().includes(s));
             if (this.filteredReferenceList.length === 1 && !this.filterForm.value.reference.includes(this.filteredReferenceList[0])) {
+                setTimeout(() => {
                 this.filterForm.controls['reference'].setValue([this.filteredReferenceList[0]]);
                 this.onFilterChange();
+                }, 100);
             }
         });
     }
@@ -278,6 +296,7 @@ export class OperationsComponent implements OnInit, OnDestroy {
         this.isLoading = true;
         this.operationService.getAllOperations().subscribe({
             next: (operations) => {
+                setTimeout(() => {
                 this.operations = operations;
                 this.filteredOperations = operations;
                 this.updatePagedOperations();
@@ -299,6 +318,7 @@ export class OperationsComponent implements OnInit, OnDestroy {
                     paysList: this.paysList.length,
                     codeProprietaireList: this.codeProprietaireList.length
                 });
+                }, 100);
             },
             error: (err) => {
                 console.error('Erreur lors du chargement des opérations:', err);
@@ -388,8 +408,157 @@ export class OperationsComponent implements OnInit, OnDestroy {
     }
 
     viewOperationDetails(operation: Operation) {
-        // TODO: Implémenter la vue détaillée
-        console.log('Voir les détails de l\'opération:', operation);
+        this.modalSelectedOperation = operation;
+        this.showOperationDetailsModal = true;
+    }
+
+    closeOperationDetailsModal(): void {
+        this.showOperationDetailsModal = false;
+        this.modalSelectedOperation = null;
+    }
+
+    // Méthodes utilitaires pour le modal de détails
+    formatDate(date: string): string {
+        if (!date) return 'Non spécifiée';
+        return new Date(date).toLocaleDateString('fr-FR');
+    }
+
+    getStatusClass(statut: string): string {
+        switch (statut) {
+            case 'Validée': return 'validated';
+            case 'En attente': return 'pending';
+            case 'Rejetée': return 'rejected';
+            case 'Annulée': return 'cancelled';
+            case 'En cours': return 'in-progress';
+            default: return 'default';
+        }
+    }
+
+    getAmountClass(montant: number): string {
+        return montant > 0 ? 'positive' : montant < 0 ? 'negative' : 'neutral';
+    }
+
+    getVariationClass(variation: number): string {
+        return variation > 0 ? 'positive' : variation < 0 ? 'negative' : 'neutral';
+    }
+
+    getOperationTypeClass(type: string): string {
+        switch (type) {
+            case 'total_cashin': return 'cashin';
+            case 'total_paiement': return 'paiement';
+            case 'Appro_client': return 'appro-client';
+            case 'Appro_fournisseur': return 'appro-fournisseur';
+            case 'ajustement': return 'ajustement';
+            case 'Compense_client': return 'compense-client';
+            case 'Compense_fournisseur': return 'compense-fournisseur';
+            case 'nivellement': return 'nivellement';
+            case 'régularisation_solde': return 'regularisation';
+            case 'FRAIS_TRANSACTION': return 'frais';
+            case 'annulation_partenaire': return 'annulation-partenaire';
+            case 'annulation_bo': return 'annulation-bo';
+            case 'transaction_cree': return 'transaction-cree';
+            default: return 'default';
+        }
+    }
+
+    getOperationTypeIcon(type: string): string {
+        switch (type) {
+            case 'total_cashin': return 'fa-money-bill-wave';
+            case 'total_paiement': return 'fa-credit-card';
+            case 'Appro_client': return 'fa-user-plus';
+            case 'Appro_fournisseur': return 'fa-truck';
+            case 'ajustement': return 'fa-balance-scale';
+            case 'Compense_client': return 'fa-exchange-alt';
+            case 'Compense_fournisseur': return 'fa-exchange-alt';
+            case 'nivellement': return 'fa-level-up-alt';
+            case 'régularisation_solde': return 'fa-calculator';
+            case 'FRAIS_TRANSACTION': return 'fa-percentage';
+            case 'annulation_partenaire': return 'fa-times-circle';
+            case 'annulation_bo': return 'fa-ban';
+            case 'transaction_cree': return 'fa-plus-circle';
+            default: return 'fa-cog';
+        }
+    }
+
+    getOperationTypeLabel(type: string): string {
+        switch (type) {
+            case 'total_cashin': return 'Total Cash-in';
+            case 'total_paiement': return 'Total Paiement';
+            case 'Appro_client': return 'Approvisionnement Client';
+            case 'Appro_fournisseur': return 'Approvisionnement Fournisseur';
+            case 'ajustement': return 'Ajustement';
+            case 'Compense_client': return 'Compensation Client';
+            case 'Compense_fournisseur': return 'Compensation Fournisseur';
+            case 'nivellement': return 'Nivellement';
+            case 'régularisation_solde': return 'Régularisation de Solde';
+            case 'FRAIS_TRANSACTION': return 'Frais de Transaction';
+            case 'annulation_partenaire': return 'Annulation Partenaire';
+            case 'annulation_bo': return 'Annulation BO';
+            case 'transaction_cree': return 'Transaction Créée';
+            default: return type;
+        }
+    }
+
+    getOperationTypeDescription(type: string): string {
+        switch (type) {
+            case 'total_cashin': return 'Opération de versement d\'argent sur le compte';
+            case 'total_paiement': return 'Opération de paiement ou retrait d\'argent';
+            case 'Appro_client': return 'Approvisionnement du compte client';
+            case 'Appro_fournisseur': return 'Approvisionnement du compte fournisseur';
+            case 'ajustement': return 'Ajustement manuel du solde';
+            case 'Compense_client': return 'Compensation entre comptes clients';
+            case 'Compense_fournisseur': return 'Compensation entre comptes fournisseurs';
+            case 'nivellement': return 'Nivellement de solde entre comptes';
+            case 'régularisation_solde': return 'Régularisation automatique du solde';
+            case 'FRAIS_TRANSACTION': return 'Application de frais de transaction';
+            case 'annulation_partenaire': return 'Annulation d\'opération partenaire';
+            case 'annulation_bo': return 'Annulation de bordereau';
+            case 'transaction_cree': return 'Nouvelle transaction créée';
+            default: return 'Type d\'opération non spécifié';
+        }
+    }
+
+    exportOperationDetails(operation: Operation): void {
+        try {
+            const data = {
+                'ID': operation.id,
+                'Type d\'Opération': this.getOperationTypeLabel(operation.typeOperation),
+                'Date d\'Opération': this.formatDate(operation.dateOperation),
+                'Statut': operation.statut,
+                'Montant': operation.montant.toFixed(2),
+                'Solde Avant': operation.soldeAvant.toFixed(2),
+                'Solde Après': operation.soldeApres.toFixed(2),
+                'Variation de Solde': (operation.soldeApres - operation.soldeAvant).toFixed(2),
+                'Code Propriétaire': operation.codeProprietaire,
+                'Pays': operation.pays,
+                'Service': operation.service || 'Non spécifié',
+                'Banque': operation.banque || 'Non spécifiée',
+                'Nom Bordereau': operation.nomBordereau || 'Non spécifié',
+                'Référence': operation.reference || 'Non spécifiée',
+                'ID Compte': operation.compteId || 'Non spécifié',
+                'ID Opération Parent': operation.parentOperationId || 'Non spécifié'
+            };
+
+            const csvContent = Object.entries(data)
+                .map(([key, value]) => `${key};${value}`)
+                .join('\n');
+
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            const url = URL.createObjectURL(blob);
+            link.setAttribute('href', url);
+            link.setAttribute('download', `operation_details_${operation.id}_${new Date().toISOString().slice(0, 10)}.csv`);
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+
+            alert('Export terminé avec succès !');
+        } catch (error) {
+            console.error('Erreur lors de l\'export:', error);
+            alert('Erreur lors de l\'export des données');
+        }
     }
 
     trackByOperation(index: number, operation: Operation): number {
@@ -403,20 +572,28 @@ export class OperationsComponent implements OnInit, OnDestroy {
     }
 
     loadPaysList() {
+        setTimeout(() => {
         this.paysList = [...new Set(this.operations.map(op => op.pays))].sort();
         this.filteredPaysList = this.paysList.slice();
+        }, 100);
     }
 
     loadCodeProprietaireList() {
+        setTimeout(() => {
         this.codeProprietaireList = [...new Set(this.operations.map(op => op.codeProprietaire).filter(code => code !== undefined))] as string[];
+        }, 100);
     }
 
     loadBanqueList() {
+        setTimeout(() => {
         this.banqueList = [...new Set(this.operations.map(op => op.banque).filter(banque => banque !== undefined))] as string[];
+        }, 100);
     }
 
     loadServiceList() {
+        setTimeout(() => {
         this.serviceList = [...new Set(this.operations.map(op => op.service).filter(service => service !== undefined))] as string[];
+        }, 100);
     }
 
     loadCodeProprietaireListFromBackend() {
@@ -476,8 +653,10 @@ export class OperationsComponent implements OnInit, OnDestroy {
 
     loadReferenceListFromOperations() {
         if (this.operations && this.operations.length > 0) {
+            setTimeout(() => {
             this.referenceList = [...new Set(this.operations.map(op => op.reference).filter((r): r is string => r !== undefined && r !== null && r !== ''))];
             this.filteredReferenceList = this.referenceList;
+            }, 100);
         }
     }
 
@@ -891,12 +1070,12 @@ export class OperationsComponent implements OnInit, OnDestroy {
     }
 
     annulerOperation(id: number) {
-        if (confirm('Voulez-vous vraiment annuler cette opération ?')) {
-            this.operationService.updateOperationStatut(id, 'Annulée').subscribe({
+        if (confirm('Êtes-vous sûr de vouloir annuler cette opération ? Cette action changera le statut à "Annulée" et préfixera le type avec "annulation_".')) {
+            this.operationService.cancelOperation(id).subscribe({
                 next: (success) => {
                     if (success) {
                         this.loadOperations();
-                        alert('Opération annulée avec succès.');
+                        alert('Opération annulée avec succès. Le statut a été changé à "Annulée".');
                     } else {
                         alert('Impossible d\'annuler cette opération.');
                     }
@@ -1050,6 +1229,7 @@ export class OperationsComponent implements OnInit, OnDestroy {
 
     // Méthode pour mettre à jour les listes filtrées avec cloisonnement
     updateFilteredLists() {
+        setTimeout(() => {
         // Mettre à jour les pays disponibles selon le code propriétaire sélectionné
         this.filteredPaysList = this.getFilteredPays();
         
@@ -1070,10 +1250,12 @@ export class OperationsComponent implements OnInit, OnDestroy {
         
         // Nettoyer les sélections qui ne sont plus valides
         this.cleanInvalidSelections();
+        }, 100);
     }
 
     // Méthode pour nettoyer les sélections invalides
     cleanInvalidSelections() {
+        setTimeout(() => {
         const currentPays = this.filterForm.value.pays;
         const currentBanque = this.filterForm.value.banque;
         const currentService = this.filterForm.value.service;
@@ -1151,6 +1333,7 @@ export class OperationsComponent implements OnInit, OnDestroy {
                 this.filterForm.controls['codeProprietaire'].setValue(validCodeProprietaire);
             }
         }
+        }, 100);
     }
 
     // Méthodes de filtrage avec cloisonnement
@@ -1600,6 +1783,7 @@ export class OperationsComponent implements OnInit, OnDestroy {
 
     initializeFilteredLists() {
         // Initialiser les listes filtrées avec toutes les valeurs disponibles
+        setTimeout(() => {
         this.filteredTypeOperationList = this.filterTypeOptions;
         this.filteredPaysList = this.getFilteredPays();
         this.filteredStatutList = this.getFilteredStatut();
@@ -1609,6 +1793,7 @@ export class OperationsComponent implements OnInit, OnDestroy {
         this.filteredReferenceList = this.getFilteredReference();
         
         console.log('Listes filtrées initialisées');
+        }, 100);
     }
 
     // Détermine si une opération est un débit
@@ -2129,8 +2314,29 @@ export class OperationsComponent implements OnInit, OnDestroy {
                 return 'statut-traite';
             case 'ERREUR':
                 return 'statut-erreur';
+            case 'Validée':
+                return 'statut-validee';
+            case 'Annulée':
+                return 'statut-annulee';
             default:
                 return 'statut-en-attente';
+        }
+    }
+
+    getStatutDisplayName(statut: string): string {
+        switch (statut) {
+            case 'EN_ATTENTE':
+                return 'En attente';
+            case 'TRAITE':
+                return 'Traité';
+            case 'ERREUR':
+                return 'Erreur';
+            case 'Validée':
+                return 'Validée';
+            case 'Annulée':
+                return 'Annulée';
+            default:
+                return 'En attente';
         }
     }
 

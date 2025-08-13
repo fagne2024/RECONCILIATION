@@ -26,8 +26,6 @@ export class StatsComponent implements OnInit, OnDestroy {
     statsPage: number = 1;
     statsPageSize: number = 10;
     isLoading: boolean = false;
-    // Supprimer la propriété pagedStats et la méthode updatePagedStats
-    totalPages: number = 1;
     errorMessage: string | null = null;
 
     private cache: {
@@ -226,7 +224,7 @@ export class StatsComponent implements OnInit, OnDestroy {
         
         console.log('Données après filtrage et tri:', this.filteredData.length);
         console.log('Sample des données filtrées:', this.filteredData.slice(0, 3));
-        this.totalPages = Math.ceil(this.filteredData.length / this.statsPageSize);
+        // totalPages est maintenant un getter, pas besoin de l'assigner manuellement
     }
 
     // Méthode appelée lors d'un changement de filtre
@@ -332,22 +330,8 @@ export class StatsComponent implements OnInit, OnDestroy {
         for (const key in aggregation) {
             const group = aggregation[key];
             const type = group[0].service;
-            // Exclure les annulations des types spécifiques
-            const excludedAnnulationTypes = [
-                'annulation_total_paiement',
-                'annulation_total_cashin',
-                'annulation_annulation_bo',
-                'annulation_annulation_partenaire',
-                'annulation_FRAIS_TRANSACTION',
-                'annulation_Compense_client',
-                'annulation_Compense_fournisseur',
-                'annulation_ajustement',
-                'annulation_Appro_client',
-                'annulation_Appro_fournisseur',
-                'annulation_nivellement',
-                'annulation_régularisation_solde'
-            ];
-            if (excludedAnnulationTypes.includes(type)) {
+            // Exclure toutes les annulations sauf annulation_bo
+            if (type && type.startsWith('annulation_') && type !== 'annulation_bo') {
                 console.log('Type exclu:', type);
                 continue;
             }
@@ -390,6 +374,12 @@ export class StatsComponent implements OnInit, OnDestroy {
         const start = (this.statsPage - 1) * this.statsPageSize;
         const end = start + this.statsPageSize;
         return aggregated.slice(start, end);
+    }
+
+    // Calculer le nombre total de pages
+    get totalPages(): number {
+        const aggregated = this.getAggregatedStats();
+        return Math.ceil(aggregated.length / this.statsPageSize);
     }
 
     // Adapter les totaux globaux

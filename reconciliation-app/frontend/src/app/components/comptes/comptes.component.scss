@@ -1507,6 +1507,21 @@
                 }
             }
 
+            &.revenu-reel {
+                background: linear-gradient(135deg, #007bff, #0056b3);
+                color: white;
+                border-color: #007bff;
+
+                .summary-title {
+                    color: rgba(255,255,255,0.9);
+                }
+
+                .summary-value {
+                    color: white;
+                    font-weight: bold;
+                }
+            }
+
             .summary-title {
                 font-size: 0.8rem;
                 color: #666;
@@ -1632,4 +1647,765 @@
         color: #666;
         font-style: italic;
     }
+}
+
+/* Styles pour l'onglet Control Revenu */
+.control-revenu-container {
+  .control-revenu-filters {
+    background: #f8fafc;
+    border-radius: 8px;
+    padding: 16px;
+    margin-bottom: 20px;
+    border: 1px solid #e2e8f0;
+  }
+
+  .control-revenu-summary {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 16px;
+    margin-bottom: 20px;
+
+    .summary-card {
+      background: white;
+      border-radius: 8px;
+      padding: 16px;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+      text-align: center;
+
+      .summary-title {
+        font-size: 14px;
+        color: #64748b;
+        margin-bottom: 8px;
+        font-weight: 600;
+      }
+
+      .summary-value {
+        font-size: 24px;
+        font-weight: bold;
+        color: #1e293b;
+
+        &.anomaly {
+          color: #f59e0b;
+        }
+
+        &.normal {
+          color: #10b981;
+        }
+
+        &.critical {
+          color: #ef4444;
+        }
+
+        &.compliance {
+          color: #3b82f6;
+        }
+
+        &.volume {
+          color: #17a2b8;
+        }
+
+        &.nombre-trx {
+          color: #6f42c1;
+        }
+      }
+    }
+  }
+
+  .control-revenu-table-container {
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    overflow-x: auto;
+    overflow-y: hidden;
+
+    table {
+      width: 100%;
+      min-width: 1000px;
+      border-collapse: collapse;
+      font-size: 0.9rem;
+
+      th {
+        background: #f8f9fa;
+        color: #495057;
+        font-weight: 600;
+        padding: 0.75rem 0.5rem;
+        text-align: center;
+        border-bottom: 2px solid #dee2e6;
+        white-space: nowrap;
+      }
+
+      td {
+        padding: 0.5rem;
+        text-align: center;
+        border-bottom: 1px solid #dee2e6;
+        vertical-align: middle;
+        white-space: nowrap;
+
+        &:first-child {
+          text-align: left;
+          font-weight: 500;
+        }
+      }
+
+      tbody tr {
+        transition: background-color 0.2s ease;
+
+        &:hover {
+          background-color: #f8f9fa;
+        }
+
+        &:last-child {
+          border-bottom: none;
+        }
+
+        &.row-critical {
+          background-color: #fef2f2;
+          border-left: 4px solid #ef4444;
+        }
+
+        &.row-warning {
+          background-color: #fffbeb;
+          border-left: 4px solid #f59e0b;
+        }
+
+        &.row-normal {
+          background-color: #f0fdf4;
+          border-left: 4px solid #10b981;
+        }
+      }
+
+      .status-badge {
+        padding: 4px 8px;
+        border-radius: 4px;
+        font-size: 12px;
+        font-weight: 600;
+        text-transform: uppercase;
+
+        &.status-critical {
+          background-color: #fef2f2;
+          color: #ef4444;
+        }
+
+        &.status-warning {
+          background-color: #fffbeb;
+          color: #f59e0b;
+        }
+
+        &.status-normal {
+          background-color: #f0fdf4;
+          color: #10b981;
+        }
+      }
+
+      .volume {
+        color: #17a2b8;
+        font-weight: 500;
+      }
+
+      .nombre-trx {
+        color: #6f42c1;
+        font-weight: 500;
+      }
+
+      .service {
+        color: #6c757d;
+        font-weight: 500;
+        font-size: 0.9em;
+      }
+
+      .revenu-attendu {
+        color: #28a745;
+        font-weight: 500;
+      }
+
+      .frais-trx-sf {
+        color: #e91e63;
+        font-weight: 500;
+      }
+
+      .revenu-reel {
+        color: #007bff;
+        font-weight: 500;
+      }
+
+      .mag {
+        font-weight: 500;
+        
+        &.negative {
+          color: #dc3545;
+        }
+        
+        &.positive {
+          color: #28a745;
+        }
+      }
+
+      .ecart {
+        font-weight: 500;
+        
+        &.negative {
+          color: #dc3545;
+        }
+        
+        &.positive {
+          color: #28a745;
+        }
+      }
+
+      .btn-sm {
+        padding: 4px 8px;
+        font-size: 12px;
+        margin-right: 4px;
+
+        &.btn-info {
+          background-color: #3b82f6;
+          color: white;
+          border: none;
+          border-radius: 4px;
+
+          &:hover {
+            background-color: #2563eb;
+          }
+        }
+
+        &.btn-warning {
+          background-color: #f59e0b;
+          color: white;
+          border: none;
+          border-radius: 4px;
+
+          &:hover {
+            background-color: #d97706;
+          }
+        }
+      }
+    }
+
+    .control-revenu-actions {
+      margin: 20px 0;
+      text-align: right;
+
+      .btn-success {
+        background-color: #28a745;
+        color: white;
+        border: none;
+        padding: 8px 16px;
+        border-radius: 4px;
+        font-size: 14px;
+        font-weight: 500;
+
+        &:hover {
+          background-color: #218838;
+        }
+
+        &:disabled {
+          background-color: #6c757d;
+          cursor: not-allowed;
+        }
+
+        i {
+          margin-right: 8px;
+        }
+      }
+    }
+  }
+}
+
+// Styles pour le modal de contrôle revenu
+.control-revenu-modal {
+  max-width: 800px;
+  
+  .modal-header {
+    background: linear-gradient(135deg, #007bff, #0056b3);
+    color: white;
+    
+    h4 {
+      color: white;
+      margin: 0;
+      font-size: 1.3rem;
+    }
+    
+    .close-btn {
+      background: none;
+      border: none;
+      color: white;
+      font-size: 1.2rem;
+      cursor: pointer;
+      padding: 5px;
+      border-radius: 4px;
+      transition: background-color 0.2s;
+      
+      &:hover {
+        background-color: rgba(255, 255, 255, 0.2);
+      }
+    }
+  }
+  
+  .modal-body {
+    .detail-section {
+      margin-bottom: 25px;
+      
+      h5 {
+        color: #333;
+        font-size: 1.1rem;
+        margin-bottom: 15px;
+        padding-bottom: 8px;
+        border-bottom: 2px solid #e0e0e0;
+      }
+      
+      .detail-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+        gap: 15px;
+        
+        .detail-item {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          padding: 12px 15px;
+          background: #f8f9fa;
+          border-radius: 6px;
+          border-left: 4px solid #007bff;
+          
+          label {
+            font-weight: 600;
+            color: #555;
+            margin: 0;
+          }
+          
+          span {
+            color: #333;
+            font-weight: 500;
+            
+            &.amount {
+              font-weight: 600;
+              font-size: 1.05rem;
+            }
+            
+            &.revenu-attendu {
+              color: #28a745;
+            }
+            
+            &.frais-trx-sf {
+              color: #e91e63;
+            }
+            
+            &.revenu-reel {
+              color: #007bff;
+            }
+            
+            &.mag {
+              &.negative {
+                color: #dc3545;
+              }
+              
+              &.positive {
+                color: #28a745;
+              }
+            }
+          }
+          
+          .status-badge {
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            
+            &.normal {
+              background-color: #d4edda;
+              color: #155724;
+            }
+            
+            &.anomalie {
+              background-color: #fff3cd;
+              color: #856404;
+            }
+            
+            &.critique {
+              background-color: #f8d7da;
+              color: #721c24;
+            }
+          }
+        }
+      }
+      
+      .ecart-analysis {
+        .ecart-info {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          padding: 15px;
+          border-radius: 6px;
+          font-weight: 500;
+          
+          &.negative {
+            background-color: #f8d7da;
+            color: #721c24;
+            border-left: 4px solid #dc3545;
+          }
+          
+          &.positive {
+            background-color: #d4edda;
+            color: #155724;
+            border-left: 4px solid #28a745;
+          }
+          
+          i {
+            font-size: 1.1rem;
+          }
+        }
+      }
+    }
+  }
+  
+  .modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    padding: 20px;
+    border-top: 1px solid #e0e0e0;
+    background: #f8f9fa;
+    
+    .btn {
+      padding: 8px 16px;
+      border-radius: 4px;
+      font-size: 14px;
+      font-weight: 500;
+      border: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: background-color 0.2s;
+      
+      &.btn-secondary {
+        background-color: #6c757d;
+        color: white;
+        
+        &:hover {
+          background-color: #5a6268;
+        }
+      }
+      
+      &.btn-info {
+        background-color: #17a2b8;
+        color: white;
+        
+        &:hover {
+          background-color: #138496;
+        }
+      }
+      
+      i {
+        font-size: 12px;
+      }
+    }
+  }
+}
+
+// Styles pour le modal de visualisation par date
+.date-view-modal {
+  max-width: 1200px;
+  
+  .modal-header {
+    background: linear-gradient(135deg, #28a745, #20c997);
+    color: white;
+    
+    h4 {
+      color: white;
+      margin: 0;
+      font-size: 1.3rem;
+    }
+    
+    .close-btn {
+      background: none;
+      border: none;
+      color: white;
+      font-size: 1.2rem;
+      cursor: pointer;
+      padding: 5px;
+      border-radius: 4px;
+      transition: background-color 0.2s;
+      
+      &:hover {
+        background-color: rgba(255, 255, 255, 0.2);
+      }
+    }
+  }
+  
+  .modal-body {
+    .date-summary {
+      margin-bottom: 25px;
+      
+      .summary-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 15px;
+        
+        .summary-item {
+          background: #f8f9fa;
+          padding: 15px;
+          border-radius: 8px;
+          border-left: 4px solid #28a745;
+          text-align: center;
+          
+          label {
+            display: block;
+            font-size: 0.85rem;
+            color: #666;
+            margin-bottom: 8px;
+            font-weight: 600;
+          }
+          
+          span {
+            display: block;
+            font-size: 1.2rem;
+            font-weight: bold;
+            color: #333;
+            
+            &.revenu-attendu {
+              color: #28a745;
+            }
+            
+            &.revenu-reel {
+              color: #007bff;
+            }
+            
+            &.frais-trx-sf {
+              color: #e91e63;
+            }
+            
+            &.mag {
+              &.negative {
+                color: #dc3545;
+              }
+              
+              &.positive {
+                color: #28a745;
+              }
+            }
+          }
+        }
+      }
+    }
+    
+    .loading-container {
+      text-align: center;
+      padding: 40px;
+      color: #666;
+      
+      i {
+        font-size: 2rem;
+        margin-bottom: 15px;
+        color: #007bff;
+      }
+      
+      span {
+        display: block;
+        font-size: 1.1rem;
+      }
+    }
+    
+    .no-data {
+      text-align: center;
+      padding: 40px;
+      color: #666;
+      
+      i {
+        font-size: 2rem;
+        margin-bottom: 15px;
+        color: #ffc107;
+      }
+      
+      span {
+        display: block;
+        font-size: 1.1rem;
+      }
+    }
+    
+    .services-table-container {
+      h5 {
+        color: #333;
+        font-size: 1.1rem;
+        margin-bottom: 15px;
+        padding-bottom: 8px;
+        border-bottom: 2px solid #e0e0e0;
+      }
+      
+      .table-responsive {
+        overflow-x: auto;
+        
+        table {
+          width: 100%;
+          min-width: 800px;
+          border-collapse: collapse;
+          font-size: 0.9rem;
+          
+          th {
+            background: #f8f9fa;
+            color: #495057;
+            font-weight: 600;
+            padding: 12px 8px;
+            text-align: center;
+            border-bottom: 2px solid #dee2e6;
+            white-space: nowrap;
+          }
+          
+          td {
+            padding: 10px 8px;
+            text-align: center;
+            border-bottom: 1px solid #dee2e6;
+            vertical-align: middle;
+            white-space: nowrap;
+            
+            &.service-name {
+              text-align: left;
+              font-weight: 500;
+              color: #333;
+            }
+            
+            &.volume {
+              color: #495057;
+              font-weight: 500;
+            }
+            
+            &.nombre-trx {
+              color: #495057;
+              font-weight: 500;
+            }
+            
+            &.revenu-attendu {
+              color: #28a745;
+              font-weight: 500;
+            }
+            
+            &.frais-trx-sf {
+              color: #e91e63;
+              font-weight: 500;
+            }
+            
+            &.revenu-reel {
+              color: #007bff;
+              font-weight: 500;
+            }
+            
+            &.mag {
+              font-weight: 500;
+              
+              &.negative {
+                color: #dc3545;
+              }
+              
+              &.positive {
+                color: #28a745;
+              }
+            }
+            
+            &.nombre-controles {
+              color: #495057;
+              font-weight: 500;
+            }
+          }
+          
+          tbody tr {
+            transition: background-color 0.2s ease;
+            
+            &:hover {
+              background-color: #f8f9fa;
+            }
+            
+            &.critical-row {
+              background-color: #f8d7da;
+              
+              &:hover {
+                background-color: #f5c6cb;
+              }
+            }
+            
+            &.anomaly-row {
+              background-color: #fff3cd;
+              
+              &:hover {
+                background-color: #ffeaa7;
+              }
+            }
+            
+            &.normal-row {
+              background-color: #d4edda;
+              
+              &:hover {
+                background-color: #c3e6cb;
+              }
+            }
+          }
+          
+          .status-badge {
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            
+            &.normal {
+              background-color: #d4edda;
+              color: #155724;
+            }
+            
+            &.anomalie {
+              background-color: #fff3cd;
+              color: #856404;
+            }
+            
+            &.critique {
+              background-color: #f8d7da;
+              color: #721c24;
+            }
+          }
+        }
+      }
+    }
+  }
+  
+  .modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    padding: 20px;
+    border-top: 1px solid #e0e0e0;
+    background: #f8f9fa;
+    
+    .btn {
+      padding: 8px 16px;
+      border-radius: 4px;
+      font-size: 14px;
+      font-weight: 500;
+      border: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: background-color 0.2s;
+      
+      &.btn-secondary {
+        background-color: #6c757d;
+        color: white;
+        
+        &:hover {
+          background-color: #5a6268;
+        }
+      }
+      
+      &.btn-success {
+        background-color: #28a745;
+        color: white;
+        
+        &:hover {
+          background-color: #218838;
+        }
+      }
+      
+      i {
+        font-size: 12px;
+      }
+    }
+  }
 }

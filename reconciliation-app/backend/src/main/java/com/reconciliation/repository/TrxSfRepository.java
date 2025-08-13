@@ -80,6 +80,12 @@ public interface TrxSfRepository extends JpaRepository<TrxSfEntity, Long> {
     
     @Query(value = "SELECT SUM(frais) FROM trx_sf WHERE agence = :agence AND DATE(date_transaction) = :date AND statut = 'EN_ATTENTE'", nativeQuery = true)
     Double sumFraisByAgenceAndDateAndStatutEnAttente(@Param("agence") String agence, @Param("date") String date);
+
+    @Query(value = "SELECT SUM(frais) FROM trx_sf WHERE agence = :agence AND DATE(date_transaction) = :date AND service = :service", nativeQuery = true)
+    Double sumFraisByAgenceAndDateAndService(@Param("agence") String agence, @Param("date") String date, @Param("service") String service);
+
+    @Query(value = "SELECT SUM(frais) FROM trx_sf WHERE agence = :agence AND DATE(date_transaction) = :date AND service = :service AND statut = 'EN_ATTENTE'", nativeQuery = true)
+    Double sumFraisByAgenceAndDateAndServiceAndStatutEnAttente(@Param("agence") String agence, @Param("date") String date, @Param("service") String service);
     
     /**
      * Vérifier si une transaction existe déjà

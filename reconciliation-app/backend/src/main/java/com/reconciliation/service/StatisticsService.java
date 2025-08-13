@@ -273,7 +273,7 @@ public class StatisticsService {
             List<Map<String, Object>> operationStats = new ArrayList<>();
             
             // Types de transaction à exclure de l'affichage
-            List<String> excludedTypes = List.of("transaction_cree", "annulation_bo", "annulation_partenaire");
+            List<String> excludedTypes = List.of("transaction_cree", "annulation_partenaire");
             
             for (Object[] row : operationStatsRaw) {
                 String operationType = (String) row[0];

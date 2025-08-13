@@ -15,6 +15,14 @@
     </div>
   </div>
 
+  <!-- Message informatif pour les utilisateurs non-admin -->
+  <div class="info-message" *ngIf="!isAdminUser">
+    <div class="alert alert-info">
+      <i class="fas fa-info-circle"></i>
+      Vous visualisez uniquement les données de votre agence : <strong>{{ userAgency }}</strong>
+    </div>
+  </div>
+
   <!-- Section Statistiques -->
   <div class="stats-section">
     <div class="stats-grid">

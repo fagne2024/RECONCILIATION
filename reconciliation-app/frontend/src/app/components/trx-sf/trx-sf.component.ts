@@ -3,6 +3,7 @@ import { FormBuilder, FormGroup } from '@angular/forms';
 import { Subject } from 'rxjs';
 import { takeUntil } from 'rxjs/operators';
 import { TrxSfService, TrxSfData, TrxSfStatistics, ValidationResult } from '../../services/trx-sf.service';
+import { AppStateService } from '../../services/app-state.service';
 
 @Component({
   selector: 'app-trx-sf',
@@ -54,9 +55,14 @@ export class TrxSfComponent implements OnInit, OnDestroy {
   isLoadingDuplicates = false;
   isRemovingDuplicates = false;
   
+  // Informations utilisateur
+  isAdminUser = false;
+  userAgency = '';
+  
   constructor(
     private trxSfService: TrxSfService,
-    private fb: FormBuilder
+    private fb: FormBuilder,
+    private appState: AppStateService
   ) {
     this.filterForm = this.fb.group({
       agence: [''],
@@ -85,24 +91,64 @@ export class TrxSfComponent implements OnInit, OnDestroy {
   loadTrxSfData(): void {
     this.isLoading = true;
     
-    this.trxSfService.getAllTrxSf()
-      .pipe(takeUntil(this.destroy$))
-      .subscribe({
-        next: (data) => {
-          this.trxSfData = data;
-          this.initializeFilterLists();
-          this.applyFilters();
-          this.isLoading = false;
-        },
-        error: (error) => {
-          console.error('Erreur lors du chargement des données:', error);
-          this.isLoading = false;
-          // En cas d'erreur, on utilise des données fictives pour la démo
+    // Vérifier si l'utilisateur est admin ou a une agence spécifique
+    const username = this.appState.getUsername();
+    const isAdmin = this.appState.isAdmin();
+    
+    // Mettre à jour les propriétés pour l'affichage
+    this.isAdminUser = isAdmin;
+    this.userAgency = username || '';
+    
+    if (isAdmin) {
+      // Admin : charger toutes les données
+      this.trxSfService.getAllTrxSf()
+        .pipe(takeUntil(this.destroy$))
+        .subscribe({
+          next: (data) => {
+            this.trxSfData = data;
+            this.initializeFilterLists();
+            this.applyFilters();
+            this.isLoading = false;
+          },
+          error: (error) => {
+            console.error('Erreur lors du chargement des données:', error);
+            this.isLoading = false;
+            // En cas d'erreur, on utilise des données fictives pour la démo
           this.trxSfData = this.generateMockData();
           this.initializeFilterLists();
           this.applyFilters();
         }
       });
+    } else {
+      // Utilisateur non-admin : utiliser l'username comme agence
+      const userAgency = username;
+      if (userAgency) {
+        this.trxSfService.getTrxSfByAgence(userAgency)
+          .pipe(takeUntil(this.destroy$))
+          .subscribe({
+            next: (data) => {
+              this.trxSfData = data;
+              this.initializeFilterLists();
+              this.applyFilters();
+              this.isLoading = false;
+            },
+            error: (error) => {
+              console.error(`Erreur lors du chargement des données pour l'agence ${userAgency}:`, error);
+              this.isLoading = false;
+              // En cas d'erreur, on utilise des données fictives pour la démo
+              this.trxSfData = this.generateMockData().filter(item => item.agence === userAgency);
+              this.initializeFilterLists();
+              this.applyFilters();
+            }
+          });
+      } else {
+        // Pas d'agence définie, charger des données vides
+        this.trxSfData = [];
+        this.initializeFilterLists();
+        this.applyFilters();
+        this.isLoading = false;
+      }
+    }
   }
 
   private initializeFilterLists(): void {

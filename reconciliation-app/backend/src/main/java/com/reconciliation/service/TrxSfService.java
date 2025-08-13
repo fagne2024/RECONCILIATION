@@ -368,6 +368,22 @@ public class TrxSfService {
     }
 
     /**
+     * Récupérer la somme des frais par agence, date et service
+     */
+    public Double getFraisByAgenceAndDateAndService(String agence, String date, String service) {
+        Double frais = trxSfRepository.sumFraisByAgenceAndDateAndService(agence, date, service);
+        return frais != null ? frais : 0.0;
+    }
+
+    /**
+     * Récupérer la somme des frais par agence, date et service, uniquement pour les transactions EN_ATTENTE
+     */
+    public Double getFraisByAgenceAndDateAndServiceEnAttente(String agence, String date, String service) {
+        Double frais = trxSfRepository.sumFraisByAgenceAndDateAndServiceAndStatutEnAttente(agence, date, service);
+        return frais != null ? frais : 0.0;
+    }
+
+    /**
      * Récupérer la configuration des frais par service
      */
     public Map<String, Object> getFraisConfigByService(String service) {

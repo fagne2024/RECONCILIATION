@@ -15,6 +15,7 @@
     "@swimlane/ngx-charts": "^23.0.0-alpha.0",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.3",
+    "axios": "^1.11.0",
     "bootstrap": "^5.3.5",
     "chart.js": "^3.9.1",
     "chokidar": "^3.5.3",

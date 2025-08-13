@@ -141,8 +141,10 @@
                 <div class="form-field">
                     <mat-form-field appearance="fill" class="filter-select">
                         <mat-label>Pays</mat-label>
-                        <mat-select #paysSelect [(ngModel)]="selectedPays" multiple (selectionChange)="onPaysChange($event)">
-                            <ngx-mat-select-search [formControl]="paysSearchCtrl" placeholderLabel="Rechercher un pays..." noEntriesFoundLabel="Aucun pays trouvé"></ngx-mat-select-search>
+                        <mat-select #paysSelect formControlName="pays" multiple (selectionChange)="onPaysChange($event)">
+                            <mat-option>
+                                <ngx-mat-select-search [formControl]="paysSearchCtrl" placeholderLabel="Rechercher un pays..." noEntriesFoundLabel="Aucun pays trouvé"></ngx-mat-select-search>
+                            </mat-option>
                             <mat-option *ngFor="let pays of filteredPaysList" [value]="pays">
                                 {{ pays }}
                             </mat-option>
@@ -152,8 +154,10 @@
                 <div class="form-field">
                     <mat-form-field appearance="fill" class="filter-select">
                         <mat-label>Code Propriétaire</mat-label>
-                        <mat-select #codeProprietaireSelect [(ngModel)]="selectedCodesProprietaire" multiple (selectionChange)="onCodeProprietaireChange($event)">
-                            <ngx-mat-select-search [formControl]="codeProprietaireSearchCtrl" placeholderLabel="Rechercher un code..." noEntriesFoundLabel="Aucun code trouvé"></ngx-mat-select-search>
+                        <mat-select #codeProprietaireSelect formControlName="codeProprietaire" multiple (selectionChange)="onCodeProprietaireChange($event)">
+                            <mat-option>
+                                <ngx-mat-select-search [formControl]="codeProprietaireSearchCtrl" placeholderLabel="Rechercher un code..." noEntriesFoundLabel="Aucun code trouvé"></ngx-mat-select-search>
+                            </mat-option>
                             <mat-option *ngFor="let code of filteredCodeProprietaireList" [value]="code">
                                 {{ code }}
                             </mat-option>
@@ -352,6 +356,13 @@
                             *ngIf="showRevenuJournalierTab">
                         <i class="fas fa-money-bill-wave"></i>
                         Revenu Journalier
+                    </button>
+                    <button class="tab-button" 
+                            [class.active]="activeTab === 'control-revenu'"
+                            (click)="switchTab('control-revenu')"
+                            *ngIf="showControlRevenuTab">
+                        <i class="fas fa-chart-bar"></i>
+                        Control Revenu
                     </button>
                 </div>
 
@@ -773,6 +784,216 @@
                         </div>
                     </div>
                 </div>
+
+                <!-- Contenu de l'onglet Control Revenu -->
+                <div class="tab-content" *ngIf="activeTab === 'control-revenu'">
+                    <div class="control-revenu-container">
+                        <h3>Control Revenu{{ selectedCompte ? ' - ' + selectedCompte.numeroCompte : '' }}</h3>
+                        
+                        <!-- Filtres pour le control revenu -->
+                        <div class="control-revenu-filters" *ngIf="!isLoadingControlRevenu && controlRevenuData.length > 0">
+                            <div class="filter-row">
+                                <div class="filter-group">
+                                    <label for="controlRevenuDateDebut">Date début :</label>
+                                    <input 
+                                        type="date" 
+                                        id="controlRevenuDateDebut"
+                                        [(ngModel)]="controlRevenuDateDebut" 
+                                        (change)="onControlRevenuFiltersChange()"
+                                        class="filter-input">
+                                </div>
+                                <div class="filter-group">
+                                    <label for="controlRevenuDateFin">Date fin :</label>
+                                    <input 
+                                        type="date" 
+                                        id="controlRevenuDateFin"
+                                        [(ngModel)]="controlRevenuDateFin" 
+                                        (change)="onControlRevenuFiltersChange()"
+                                        class="filter-input">
+                                </div>
+                                <div class="filter-group">
+                                    <label for="controlRevenuService">Service :</label>
+                                    <select 
+                                        id="controlRevenuService"
+                                        [(ngModel)]="controlRevenuService" 
+                                        (change)="onControlRevenuFiltersChange()"
+                                        class="filter-select">
+                                        <option value="">Tous les services</option>
+                                        <option *ngFor="let service of getUniqueServicesControlRevenu()" [value]="service">
+                                            {{ service }}
+                                        </option>
+                                    </select>
+                                </div>
+                                <div class="filter-group">
+                                    <label for="controlRevenuType">Type de contrôle :</label>
+                                    <select 
+                                        id="controlRevenuType"
+                                        [(ngModel)]="controlRevenuType" 
+                                        (change)="onControlRevenuFiltersChange()"
+                                        class="filter-select">
+                                        <option value="">Tous les contrôles</option>
+                                        <option value="anomalie">Anomalies détectées</option>
+                                        <option value="normal">Contrôles normaux</option>
+                                        <option value="critique">Contrôles critiques</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="filter-row">
+                                <div class="filter-group">
+                                    <label for="controlRevenuSeuil">Seuil d'alerte :</label>
+                                    <input 
+                                        type="number" 
+                                        id="controlRevenuSeuil"
+                                        [(ngModel)]="controlRevenuSeuil" 
+                                        (input)="onControlRevenuFiltersChange()"
+                                        placeholder="0.00"
+                                        step="0.01"
+                                        min="0"
+                                        class="filter-input">
+                                </div>
+                                <div class="filter-group filter-actions">
+                                    <button 
+                                        class="btn filter-clear-btn" 
+                                        (click)="clearControlRevenuFilters()"
+                                        title="Réinitialiser les filtres">
+                                        <i class="fas fa-times"></i> Réinitialiser
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div *ngIf="isLoadingControlRevenu" class="loading-releve">
+                            <i class="fas fa-spinner fa-spin"></i> Chargement du contrôle revenu...
+                        </div>
+                        
+                        <div *ngIf="!isLoadingControlRevenu && controlRevenuData.length === 0" class="no-operations">
+                            Aucune donnée de contrôle revenu trouvée pour ce compte.
+                        </div>
+                        
+                        <div *ngIf="!isLoadingControlRevenu && controlRevenuData.length > 0 && controlRevenuDataFiltered.length === 0" class="no-operations">
+                            Aucune donnée ne correspond aux filtres sélectionnés.
+                        </div>
+                        
+                        <div *ngIf="!isLoadingControlRevenu && controlRevenuData.length > 0 && controlRevenuDataFiltered.length > 0" class="control-revenu-content">
+                            <!-- Résumé des contrôles -->
+                            <div class="control-revenu-summary">
+                                <div class="summary-card">
+                                    <div class="summary-title">Total Contrôles</div>
+                                    <div class="summary-value">{{ getTotalControlRevenu() }}</div>
+                                </div>
+                                <div class="summary-card">
+                                    <div class="summary-title">Volume Total</div>
+                                    <div class="summary-value volume">{{ getTotalVolumeControlRevenu() | number:'1.2-2' }}</div>
+                                </div>
+                                <div class="summary-card">
+                                    <div class="summary-title">Total Transactions</div>
+                                    <div class="summary-value nombre-trx">{{ getTotalNombreTrxControlRevenu() | number:'1.0-0' }}</div>
+                                </div>
+                                <div class="summary-card">
+                                    <div class="summary-title">Anomalies</div>
+                                    <div class="summary-value anomaly">{{ getTotalAnomaliesControlRevenu() }}</div>
+                                </div>
+                                <div class="summary-card">
+                                    <div class="summary-title">Contrôles Normaux</div>
+                                    <div class="summary-value normal">{{ getTotalNormauxControlRevenu() }}</div>
+                                </div>
+                                <div class="summary-card">
+                                    <div class="summary-title">Contrôles Critiques</div>
+                                    <div class="summary-value critical">{{ getTotalCritiquesControlRevenu() }}</div>
+                                </div>
+                                <div class="summary-card">
+                                    <div class="summary-title">Taux de Conformité</div>
+                                    <div class="summary-value compliance">{{ getTauxConformiteControlRevenu() | number:'1.1-1' }}%</div>
+                                </div>
+                                <div class="summary-card">
+                                    <div class="summary-title">Total MàG</div>
+                                    <div class="summary-value mag">{{ getTotalMagControlRevenu() | number:'1.2-2' }}</div>
+                                </div>
+                                <div class="summary-card">
+                                    <div class="summary-title">Total Revenu Réel</div>
+                                    <div class="summary-value revenu-reel">{{ getTotalRevenuReelControlRevenu() | number:'1.2-2' }}</div>
+                                </div>
+                            </div>
+
+                            <!-- Tableau des contrôles revenu -->
+                            <div class="control-revenu-table-container">
+                                <table class="table table-bordered table-hover table-sm">
+                                    <thead>
+                                        <tr>
+                                            <th>Date</th>
+                                            <th>Service</th>
+                                            <th>Type de Contrôle</th>
+                                            <th>Volume</th>
+                                            <th>Nombre de Trx</th>
+                                            <th>Revenu Attendu</th>
+                                            <th>Frais TRX SF</th>
+                                            <th>Revenu Réel</th>
+                                            <th>MàG</th>
+                                            <th>Statut</th>
+                                            <th>Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr *ngFor="let controle of pagedControlRevenuData" 
+                                            [ngClass]="getControlRevenuRowClass(controle)">
+                                            <td>{{ formatDate(controle.date) }}</td>
+                                            <td class="service">{{ controle.service }}</td>
+                                            <td>{{ controle.typeControle }}</td>
+                                            <td class="volume">{{ controle.volume | number:'1.2-2' }}</td>
+                                            <td class="nombre-trx">{{ controle.nombreTrx | number:'1.0-0' }}</td>
+                                            <td class="revenu-attendu">{{ controle.revenuAttendu | number:'1.2-2' }}</td>
+                                            <td class="frais-trx-sf">{{ controle.totalFraisTrxSf | number:'1.2-2' }}</td>
+                                            <td class="revenu-reel">{{ controle.revenuReel | number:'1.2-2' }}</td>
+                                            <td class="mag" [ngClass]="{'negative': controle.ecart < 0, 'positive': controle.ecart > 0}">
+                                                {{ controle.ecart | number:'1.2-2' }}
+                                            </td>
+                                            <td>
+                                                <span class="status-badge" [ngClass]="getControlRevenuStatusClass(controle)">
+                                                    {{ getControlRevenuStatusLabel(controle) }}
+                                                </span>
+                                            </td>
+                                            <td>
+                                                <button class="btn btn-sm btn-info" (click)="viewControlRevenuDetails(controle)" title="Voir les détails">
+                                                    <i class="fas fa-eye"></i>
+                                                </button>
+                                                <button class="btn btn-sm btn-warning" (click)="exportControlRevenu(controle)" title="Exporter">
+                                                    <i class="fas fa-file-excel"></i>
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            <!-- Actions pour le control revenu -->
+                            <div class="control-revenu-actions">
+                                <button class="btn btn-success" (click)="exportControlRevenuData()" [disabled]="controlRevenuDataFiltered.length === 0">
+                                    <i class="fas fa-file-excel"></i> Exporter Control Revenu
+                                </button>
+                            </div>
+
+                            <!-- Pagination pour le control revenu -->
+                            <div class="releve-pagination" *ngIf="controlRevenuTotalPages > 1">
+                                <button (click)="prevControlRevenuPage()" [disabled]="controlRevenuCurrentPage === 1" class="btn pagination-btn">
+                                    <i class="fas fa-chevron-left"></i> Précédent
+                                </button>
+                                
+                                <div class="pagination-indicators">
+                                    <span *ngFor="let page of getVisibleControlRevenuPages()" 
+                                            class="page-indicator"
+                                            [class.active]="controlRevenuCurrentPage === page"
+                                            (click)="goToControlRevenuPage(page)">
+                                        {{ page }}
+                                    </span>
+                                </div>
+                                
+                                <button (click)="nextControlRevenuPage()" [disabled]="controlRevenuCurrentPage === controlRevenuTotalPages" class="btn pagination-btn">
+                                    Suivant <i class="fas fa-chevron-right"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -926,4 +1147,208 @@
       </tr>
     </tbody>
   </table>
+</div>
+
+<!-- Modal pour les détails du contrôle revenu -->
+<div *ngIf="showControlRevenuModal" class="modal-overlay">
+  <div class="modal-content control-revenu-modal">
+    <div class="modal-header">
+      <h4>Détails du Contrôle Revenu</h4>
+      <button type="button" class="close-btn" (click)="closeControlRevenuModal()">
+        <i class="fas fa-times"></i>
+      </button>
+    </div>
+    
+    <div class="modal-body" *ngIf="selectedControlRevenu">
+      <div class="detail-section">
+        <h5>Informations Générales</h5>
+        <div class="detail-grid">
+          <div class="detail-item">
+            <label>Date :</label>
+            <span>{{ formatDate(selectedControlRevenu.date) }}</span>
+          </div>
+          <div class="detail-item">
+            <label>Service :</label>
+            <span>{{ selectedControlRevenu.service }}</span>
+          </div>
+          <div class="detail-item">
+            <label>Type de Contrôle :</label>
+            <span>{{ selectedControlRevenu.typeControle }}</span>
+          </div>
+          <div class="detail-item">
+            <label>Statut :</label>
+            <span class="status-badge" [ngClass]="getControlRevenuStatusClass(selectedControlRevenu)">
+              {{ getControlRevenuStatusLabel(selectedControlRevenu) }}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <div class="detail-section">
+        <h5>Données Financières</h5>
+        <div class="detail-grid">
+          <div class="detail-item">
+            <label>Volume :</label>
+            <span class="amount">{{ selectedControlRevenu.volume | number:'1.2-2' }}</span>
+          </div>
+          <div class="detail-item">
+            <label>Nombre de Transactions :</label>
+            <span>{{ selectedControlRevenu.nombreTrx | number:'1.0-0' }}</span>
+          </div>
+          <div class="detail-item">
+            <label>Revenu Attendu :</label>
+            <span class="amount revenu-attendu">{{ selectedControlRevenu.revenuAttendu | number:'1.2-2' }}</span>
+          </div>
+          <div class="detail-item">
+            <label>Frais TRX SF :</label>
+            <span class="amount frais-trx-sf">{{ (selectedControlRevenu.totalFraisTrxSf || 0) | number:'1.2-2' }}</span>
+          </div>
+          <div class="detail-item">
+            <label>Revenu Réel :</label>
+            <span class="amount revenu-reel">{{ selectedControlRevenu.revenuReel | number:'1.2-2' }}</span>
+          </div>
+          <div class="detail-item">
+            <label>MàG :</label>
+            <span class="amount mag" [ngClass]="{'negative': selectedControlRevenu.ecart < 0, 'positive': selectedControlRevenu.ecart > 0}">
+              {{ selectedControlRevenu.ecart | number:'1.2-2' }}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <div class="detail-section" *ngIf="selectedControlRevenu.ecart !== 0">
+        <h5>Analyse de l'Écart</h5>
+        <div class="ecart-analysis">
+          <div class="ecart-info" [ngClass]="{'negative': selectedControlRevenu.ecart < 0, 'positive': selectedControlRevenu.ecart > 0}">
+            <i class="fas" [ngClass]="selectedControlRevenu.ecart < 0 ? 'fa-arrow-down' : 'fa-arrow-up'"></i>
+            <span>
+              {{ selectedControlRevenu.ecart < 0 ? 'Écart négatif' : 'Écart positif' }} de 
+              {{ getAbsValue(selectedControlRevenu.ecart) | number:'1.2-2' }}
+              ({{ getEcartPercentage(selectedControlRevenu.ecart, selectedControlRevenu.revenuAttendu) | number:'1.1-1' }}% du revenu attendu)
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-footer">
+      <button type="button" class="btn btn-secondary" (click)="closeControlRevenuModal()">
+        <i class="fas fa-times"></i> Fermer
+      </button>
+      <button type="button" class="btn btn-primary" (click)="openDateViewModal(selectedControlRevenu.date)" *ngIf="selectedControlRevenu">
+        <i class="fas fa-calendar-alt"></i> Voir par Date
+      </button>
+      <button type="button" class="btn btn-info" (click)="exportControlRevenu(selectedControlRevenu)" *ngIf="selectedControlRevenu">
+        <i class="fas fa-file-excel"></i> Exporter
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal pour la visualisation par date -->
+<div *ngIf="showDateViewModal" class="modal-overlay">
+  <div class="modal-content date-view-modal">
+    <div class="modal-header">
+      <h4>Visualisation par Date - {{ formatDate(selectedDate) }}</h4>
+      <button type="button" class="close-btn" (click)="closeDateViewModal()">
+        <i class="fas fa-times"></i>
+      </button>
+    </div>
+    
+    <div class="modal-body">
+      <!-- Résumé de la date -->
+      <div class="date-summary" *ngIf="!isLoadingDateView && dateViewData.length > 0">
+        <div class="summary-grid">
+          <div class="summary-item">
+            <label>Services</label>
+            <span>{{ dateViewData.length }}</span>
+          </div>
+          <div class="summary-item">
+            <label>Volume Total</label>
+            <span>{{ getDateViewTotalVolume() | number:'1.2-2' }}</span>
+          </div>
+          <div class="summary-item">
+            <label>Revenu Attendu</label>
+            <span class="revenu-attendu">{{ getDateViewTotalRevenuAttendu() | number:'1.2-2' }}</span>
+          </div>
+          <div class="summary-item">
+            <label>Revenu Réel</label>
+            <span class="revenu-reel">{{ getDateViewTotalRevenuReel() | number:'1.2-2' }}</span>
+          </div>
+          <div class="summary-item">
+            <label>Frais TRX SF</label>
+            <span class="frais-trx-sf">{{ getDateViewTotalFraisTrxSf() | number:'1.2-2' }}</span>
+          </div>
+          <div class="summary-item">
+            <label>MàG Total</label>
+            <span class="mag" [ngClass]="{'negative': getDateViewTotalEcart() < 0, 'positive': getDateViewTotalEcart() > 0}">
+              {{ getDateViewTotalEcart() | number:'1.2-2' }}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Loading -->
+      <div *ngIf="isLoadingDateView" class="loading-container">
+        <i class="fas fa-spinner fa-spin"></i>
+        <span>Chargement des données...</span>
+      </div>
+
+      <!-- Aucune donnée -->
+      <div *ngIf="!isLoadingDateView && dateViewData.length === 0" class="no-data">
+        <i class="fas fa-info-circle"></i>
+        <span>Aucune donnée trouvée pour cette date.</span>
+      </div>
+
+      <!-- Tableau des services -->
+      <div *ngIf="!isLoadingDateView && dateViewData.length > 0" class="services-table-container">
+        <h5>Détail par Service</h5>
+        <div class="table-responsive">
+          <table class="table table-bordered table-hover">
+            <thead>
+              <tr>
+                <th>Service</th>
+                <th>Volume</th>
+                <th>Nombre Trx</th>
+                <th>Revenu Attendu</th>
+                <th>Frais TRX SF</th>
+                <th>Revenu Réel</th>
+                <th>MàG</th>
+                <th>Statut</th>
+                <th>Contrôles</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let service of dateViewData" [ngClass]="getServiceRowClass(service)">
+                <td class="service-name">{{ service.service }}</td>
+                <td class="volume">{{ service.volume | number:'1.2-2' }}</td>
+                <td class="nombre-trx">{{ service.nombreTrx | number:'1.0-0' }}</td>
+                <td class="revenu-attendu">{{ service.revenuAttendu | number:'1.2-2' }}</td>
+                <td class="frais-trx-sf">{{ service.fraisTrxSf | number:'1.2-2' }}</td>
+                <td class="revenu-reel">{{ service.revenuReel | number:'1.2-2' }}</td>
+                <td class="mag" [ngClass]="{'negative': service.ecart < 0, 'positive': service.ecart > 0}">
+                  {{ service.ecart | number:'1.2-2' }}
+                </td>
+                <td>
+                  <span class="status-badge" [ngClass]="getControlRevenuStatusClass(service)">
+                    {{ getControlRevenuStatusLabel(service) }}
+                  </span>
+                </td>
+                <td class="nombre-controles">{{ service.nombreControles }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-footer">
+      <button type="button" class="btn btn-secondary" (click)="closeDateViewModal()">
+        <i class="fas fa-times"></i> Fermer
+      </button>
+      <button type="button" class="btn btn-success" (click)="exportDateViewData()" *ngIf="dateViewData.length > 0">
+        <i class="fas fa-file-excel"></i> Exporter
+      </button>
+    </div>
+  </div>
 </div>

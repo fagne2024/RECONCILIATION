@@ -16,6 +16,7 @@ com\reconciliation\config\DatabaseInitializer.class
 com\reconciliation\model\Statistics.class
 com\reconciliation\dto\ReconciliationRequest.class
 com\reconciliation\service\TrxSfService$1.class
+com\reconciliation\service\TrxSfService.class
 com\reconciliation\entity\ModuleEntity.class
 com\reconciliation\entity\EcartSoldeEntity.class
 com\reconciliation\repository\ImpactOPRepository.class
@@ -31,6 +32,7 @@ com\reconciliation\controller\CompteSoldeBoController.class
 com\reconciliation\entity\ImpactOPEntity$Statut.class
 com\reconciliation\service\AutoProcessingService.class
 com\reconciliation\repository\EcartSoldeRepository.class
+com\reconciliation\repository\TrxSfRepository.class
 com\reconciliation\entity\ProcessingStep.class
 com\reconciliation\repository\ModulePermissionRepository.class
 com\reconciliation\entity\FileTypeDeserializer.class
@@ -68,8 +70,10 @@ com\reconciliation\repository\CompteRepository.class
 com\reconciliation\repository\ProfilRepository.class
 com\reconciliation\service\OperationService.class
 com\reconciliation\dto\FraisTransactionRequest.class
+com\reconciliation\entity\TrxSfEntity.class
 com\reconciliation\entity\JsonConverter.class
 com\reconciliation\dto\ReconciliationResponse$Difference.class
+com\reconciliation\controller\TrxSfController.class
 com\reconciliation\controller\AutoProcessingController.class
 com\reconciliation\service\FraisTransactionService.class
 com\reconciliation\service\ImpactOPService$1.class

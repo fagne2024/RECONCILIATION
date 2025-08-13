@@ -237,6 +237,12 @@ public class OperationController {
         return rejected ? ResponseEntity.ok(true) : ResponseEntity.notFound().build();
     }
     
+    @PutMapping("/{id}/cancel")
+    public ResponseEntity<Boolean> cancelOperation(@PathVariable Long id) {
+        boolean cancelled = operationBusinessService.cancelOperation(id);
+        return cancelled ? ResponseEntity.ok(true) : ResponseEntity.notFound().build();
+    }
+    
     @DeleteMapping("/{id}")
     public ResponseEntity<Boolean> deleteOperation(@PathVariable Long id) {
         boolean deleted = operationService.deleteOperation(id);
@@ -394,4 +400,6 @@ public class OperationController {
             return ResponseEntity.badRequest().build();
         }
     }
+    
+
 } 

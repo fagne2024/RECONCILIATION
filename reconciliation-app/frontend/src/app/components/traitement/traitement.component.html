@@ -138,7 +138,9 @@
         <mat-form-field appearance="fill" class="filter-select">
           <mat-label>Sélectionner des valeurs</mat-label>
           <mat-select #filterValueSelect [(ngModel)]="selectedFilterValues" multiple>
-            <ngx-mat-select-search [formControl]="filterValueSearchCtrl" placeholderLabel="Rechercher une valeur..." noEntriesFoundLabel="Aucune valeur trouvée"></ngx-mat-select-search>
+            <mat-option>
+              <ngx-mat-select-search [formControl]="filterValueSearchCtrl" placeholderLabel="Rechercher une valeur..." noEntriesFoundLabel="Aucune valeur trouvée"></ngx-mat-select-search>
+            </mat-option>
             <mat-option value="__TOUS__" (click)="selectAllFilterValues()">
               <strong>📋 Tous</strong>
             </mat-option>

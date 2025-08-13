@@ -1846,6 +1846,21 @@ export class FileUploadComponent {
     private detectExcelHeaders(jsonData: any[][]): { headerRowIndex: number; headerRow: string[] } {
         console.log('🔄 Détection des en-têtes Excel pour réconciliation');
         
+        // Fonction utilitaire pour vérifier si une chaîne est valide
+        const isValidString = (str: any): str is string => {
+            return typeof str === 'string' && str !== null && str !== undefined;
+        };
+        
+        // Fonction utilitaire pour vérifier si une chaîne contient un motif de manière sécurisée
+        const safeIncludes = (str: any, pattern: string): boolean => {
+            return isValidString(str) && str.includes(pattern);
+        };
+        
+        // Fonction utilitaire pour vérifier si une chaîne commence par un motif de manière sécurisée
+        const safeStartsWith = (str: any, pattern: string): boolean => {
+            return isValidString(str) && str.startsWith(pattern);
+        };
+        
         // Mots-clés pour identifier les en-têtes
         const headerKeywords = [
             'N°', 'Date', 'Heure', 'Référence', 'Service', 'Paiement', 'Statut', 'Mode',
@@ -1882,7 +1897,13 @@ export class FileUploadComponent {
                 // Convertir la ligne en chaînes et nettoyer
                 const rowStrings = row.map((cell: any) => {
                     if (cell === null || cell === undefined) return '';
-                    return String(cell).trim();
+                    try {
+                        const cellString = String(cell).trim();
+                        return cellString;
+                    } catch (error) {
+                        console.warn(`⚠️ Erreur lors de la conversion de la cellule:`, cell, error);
+                        return '';
+                    }
                 });
                 
                 console.log(`🔍 Ligne ${i} - Nombre de cellules: ${rowStrings.length}, Cellules non vides: ${rowStrings.filter(cell => cell !== '').length}`);
@@ -1894,7 +1915,7 @@ export class FileUploadComponent {
                     'Wallet commission', 'Total', 'Total activités'
                 ];
                 const isDocumentHeader = documentHeaders.some(header => 
-                    rowStrings.some(cell => cell.includes(header))
+                    rowStrings.some(cell => safeIncludes(cell, header))
                 );
                 
                 if (isDocumentHeader) {
@@ -1922,7 +1943,13 @@ export class FileUploadComponent {
                     if (nextRow && nextRow.length > 0) {
                         const nextRowStrings = nextRow.map((cell: any) => {
                             if (cell === null || cell === undefined) return '';
-                            return String(cell).trim();
+                            try {
+                                const cellString = String(cell).trim();
+                                return cellString;
+                            } catch (error) {
+                                console.warn(`⚠️ Erreur lors de la conversion de la cellule suivante:`, cell, error);
+                                return '';
+                            }
                         });
                         console.log(`🔍 Ligne suivante ${i + 1}:`, nextRowStrings.filter(cell => cell !== ''));
                     }
@@ -1937,19 +1964,22 @@ export class FileUploadComponent {
                 
                 for (let j = 0; j < rowStrings.length; j++) {
                     const cell = rowStrings[j];
-                    if (cell === '') continue;
+                    if (cell === '' || cell === null || cell === undefined) continue;
+                    
+                    // Vérification supplémentaire pour s'assurer que cell est une chaîne valide
+                    if (!isValidString(cell)) continue;
                     
                     nonEmptyColumns++;
                     
                     // Vérifier si c'est une colonne "N°"
-                    if (cell.startsWith('N°') || cell === 'N' || cell.includes('N°')) {
+                    if (safeStartsWith(cell, 'N°') || cell === 'N' || safeIncludes(cell, 'N°')) {
                         hasNumberColumn = true;
                         score += 25; // Bonus important pour "N°"
                     }
                     
                     // Vérifier les mots-clés d'en-tête
                     for (const keyword of headerKeywords) {
-                        if (cell.toLowerCase().includes(keyword.toLowerCase())) {
+                        if (safeIncludes(cell.toLowerCase(), keyword.toLowerCase())) {
                             score += 8;
                             hasHeaderKeywords = true;
                             keywordMatches++;
@@ -1957,20 +1987,20 @@ export class FileUploadComponent {
                     }
                     
                     // Bonus spécial pour les lignes avec plusieurs colonnes "N°"
-                    if (cell.includes('N°')) {
+                    if (safeIncludes(cell, 'N°')) {
                         score += 5; // Bonus supplémentaire pour chaque colonne "N°"
                     }
                     
                     // Bonus pour les colonnes qui ressemblent à des en-têtes
                     if (cell.length > 0 && cell.length < 50 && 
-                        (cell.includes(' ') || cell.includes('(') || cell.includes(')') || 
-                         cell.includes(':') || cell.includes('-') || cell.includes('_'))) {
+                        (safeIncludes(cell, ' ') || safeIncludes(cell, '(') || safeIncludes(cell, ')') || 
+                         safeIncludes(cell, ':') || safeIncludes(cell, '-') || safeIncludes(cell, '_'))) {
                         score += 3;
                     }
                     
                     // Bonus pour les colonnes avec des caractères spéciaux (typiques des en-têtes)
-                    if (cell.includes('é') || cell.includes('è') || cell.includes('à') || 
-                        cell.includes('ç') || cell.includes('ù') || cell.includes('ô')) {
+                    if (safeIncludes(cell, 'é') || safeIncludes(cell, 'è') || safeIncludes(cell, 'à') || 
+                        safeIncludes(cell, 'ç') || safeIncludes(cell, 'ù') || safeIncludes(cell, 'ô')) {
                         score += 4;
                     }
                 }

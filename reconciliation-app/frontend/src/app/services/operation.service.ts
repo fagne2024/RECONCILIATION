@@ -131,6 +131,11 @@ export class OperationService {
         return this.http.put<boolean>(`${this.apiUrl}/${id}/reject`, {});
     }
 
+    // Annuler une opération
+    cancelOperation(id: number): Observable<boolean> {
+        return this.http.put<boolean>(`${this.apiUrl}/${id}/cancel`, {});
+    }
+
     // Supprimer une opération
     deleteOperation(id: number): Observable<boolean> {
         return this.http.delete<boolean>(`${this.apiUrl}/${id}`);

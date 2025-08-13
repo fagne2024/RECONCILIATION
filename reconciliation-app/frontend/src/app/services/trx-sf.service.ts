@@ -158,6 +158,16 @@ export class TrxSfService {
     return this.http.get<any>(`${this.baseUrl}/frais-en-attente/${agence}/${date}`);
   }
 
+  // Récupérer les frais par agence, date et service
+  getFraisByAgenceAndDateAndService(agence: string, date: string, service: string): Observable<any> {
+    return this.http.get<any>(`${this.baseUrl}/frais/${agence}/${date}/${service}`);
+  }
+
+  // Récupérer les frais par agence, date et service, uniquement pour les transactions EN_ATTENTE
+  getFraisByAgenceAndDateAndServiceEnAttente(agence: string, date: string, service: string): Observable<any> {
+    return this.http.get<any>(`${this.baseUrl}/frais-en-attente/${agence}/${date}/${service}`);
+  }
+
   // Récupérer la configuration des frais par service
   getFraisConfigByService(service: string): Observable<any> {
     return this.http.get<any>(`${this.baseUrl}/frais-config/${service}`);

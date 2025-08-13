@@ -13,6 +13,11 @@ import { Router } from '@angular/router';
 import { EcartSoldeService } from '../../services/ecart-solde.service';
 import { ImpactOPService } from '../../services/impact-op.service';
 import { TrxSfService } from '../../services/trx-sf.service';
+import { DashboardService } from '../../services/dashboard.service';
+import { StatisticsService, Statistics } from '../../services/statistics.service';
+import { AgencySummaryService } from '../../services/agency-summary.service';
+import { FraisTransactionService } from '../../services/frais-transaction.service';
+import { FraisTransaction } from '../../models/frais-transaction.model';
 
 @Component({
     selector: 'app-comptes',
@@ -144,6 +149,21 @@ export class ComptesComponent implements OnInit, OnDestroy {
     showRevenuJournalierTab = false;
     revenuJournalierData: { date: string; totalCashin: number; totalPaiement: number; fraisCashin: number; fraisPaiement: number; revenuTotal: number; ecartFrais: number }[] = [];
     isLoadingRevenuJournalier = false;
+
+    // Propriétés pour l'onglet Control Revenu
+    showControlRevenuTab = true;
+    controlRevenuData: { date: string; service: string; typeControle: string; revenuAttendu: number; revenuReel: number; ecart: number; statut: string; volume: number; nombreTrx: number; totalFraisTrxSf?: number }[] = [];
+    
+    // Propriétés pour le modal de détails
+    showControlRevenuModal = false;
+    selectedControlRevenu: any = null;
+    
+    // Propriétés pour la visualisation par date
+    showDateViewModal = false;
+    selectedDate = '';
+    dateViewData: any[] = [];
+    isLoadingDateView = false;
+    isLoadingControlRevenu = false;
     
     // Pagination pour le revenu journalier
     revenuJournalierCurrentPage = 1;
@@ -161,9 +181,27 @@ export class ComptesComponent implements OnInit, OnDestroy {
     // Informations de débogage pour le revenu journalier
     revenuJournalierDebugInfo: string = '';
 
+    // Pagination et filtres pour le control revenu
+    controlRevenuCurrentPage = 1;
+    controlRevenuPageSize = 10;
+    controlRevenuTotalPages = 1;
+    controlRevenuDateDebut = '';
+    controlRevenuDateFin = '';
+    controlRevenuService = '';
+    controlRevenuType = '';
+    controlRevenuSeuil: number | null = null;
+    controlRevenuDataFiltered: { date: string; service: string; typeControle: string; revenuAttendu: number; revenuReel: number; ecart: number; statut: string; volume: number; nombreTrx: number; totalFraisTrxSf?: number }[] = [];
+    
+    // Propriété pour stocker les frais paramétrés
+    fraisParametres: FraisTransaction[] = [];
+
     constructor(
         private compteService: CompteService,
         private operationService: OperationService,
+        private dashboardService: DashboardService,
+        private statisticsService: StatisticsService,
+        private agencySummaryService: AgencySummaryService,
+        private fraisTransactionService: FraisTransactionService,
         private fb: FormBuilder,
         private router: Router,
         private ecartSoldeService: EcartSoldeService,
@@ -228,6 +266,15 @@ export class ComptesComponent implements OnInit, OnDestroy {
                 this.updateFilteredLists();
                 this.applyFilters();
             }
+        });
+
+        // Synchroniser les valeurs du formulaire vers les variables locales
+        this.filterForm.controls['pays'].valueChanges.subscribe((value: string[]) => {
+            this.selectedPays = value || [];
+        });
+
+        this.filterForm.controls['codeProprietaire'].valueChanges.subscribe((value: string[]) => {
+            this.selectedCodesProprietaire = value || [];
         });
     }
 
@@ -375,6 +422,8 @@ export class ComptesComponent implements OnInit, OnDestroy {
 
     clearFilters() {
         this.filterForm.reset();
+        this.selectedPays = [];
+        this.selectedCodesProprietaire = [];
         this.loadComptes();
     }
 
@@ -857,6 +906,7 @@ export class ComptesComponent implements OnInit, OnDestroy {
         this.selectedCompte = compte;
         this.showReleveModal = true;
         this.showRevenuJournalierTab = true; // Activer l'onglet revenu journalier
+        this.showControlRevenuTab = true; // Activer l'onglet Control revenu
         this.loadReleveOperations();
     }
 
@@ -1859,6 +1909,9 @@ export class ComptesComponent implements OnInit, OnDestroy {
         } else if (tabName === 'revenu-journalier') {
             this.showRevenuJournalierTab = true;
             this.loadRevenuJournalier();
+        } else if (tabName === 'control-revenu') {
+            this.showControlRevenuTab = true;
+            this.loadControlRevenu();
         }
     }
 
@@ -2121,5 +2174,746 @@ export class ComptesComponent implements OnInit, OnDestroy {
             Lignes: ${totalLignes} | 
             Total écart: ${totalEcart.toFixed(2)} FCFA
         `;
+    }
+
+    // ===== MÉTHODES POUR L'ONGLET CONTROL REVENU =====
+
+    // Méthode pour charger les données de contrôle revenu
+    loadControlRevenu(): void {
+        this.isLoadingControlRevenu = true;
+        this.showControlRevenuTab = true;
+
+        // Charger les frais paramétrés en premier
+        this.fraisTransactionService.getAllFraisTransactionsActifs().subscribe({
+            next: (frais) => {
+                this.fraisParametres = frais;
+                console.log('Frais paramétrés chargés:', frais);
+                
+                // Ensuite charger les données AgencySummary
+                this.loadAgencySummaryData(agency, service);
+            },
+            error: (error) => {
+                console.error('Erreur lors du chargement des frais paramétrés:', error);
+                this.fraisParametres = [];
+                // Continuer avec les données AgencySummary même sans frais
+                this.loadAgencySummaryData(agency, service);
+            }
+        });
+
+        // Déterminer l'agence et le service à filtrer
+        let agency: string | undefined = undefined;
+        let service: string | undefined = undefined;
+        
+        if (this.selectedCompte) {
+            // Récupérer les données de statistiques pour le compte sélectionné
+            const numeroCompte = this.selectedCompte.numeroCompte;
+            console.log('Numéro de compte:', numeroCompte);
+            
+            // Essayer de parser l'agence et le service depuis le numéro de compte
+            agency = numeroCompte;
+            
+            if (numeroCompte.includes('_')) {
+                const parts = numeroCompte.split('_');
+                agency = parts[0];
+                service = parts[1];
+            } else {
+                // Si pas de underscore, utiliser le numéro de compte complet comme agence
+                agency = numeroCompte;
+            }
+        } else {
+            console.log('Aucun compte sélectionné, affichage de toutes les données');
+        }
+        
+        // Cette méthode sera appelée après le chargement des frais paramétrés
+    }
+
+    private loadAgencySummaryData(agency: string | undefined, service: string | undefined): void {
+        // Utiliser le service AgencySummary pour récupérer les données directement
+        this.agencySummaryService.getAllSummaries().subscribe({
+            next: (allSummaries) => {
+                console.log('Données AgencySummary récupérées:', allSummaries);
+                console.log('Agence recherchée:', agency);
+                console.log('Service recherché:', service);
+                console.log('Premiers enregistrements:', allSummaries.slice(0, 5));
+                
+                // Filtrer les données selon l'agence et le service
+                const filteredSummaries = allSummaries.filter((summary: any) => {
+                    const matchesAgency = agency ? summary.agency === agency : true; // Si pas d'agence, accepter toutes les agences
+                    const matchesService = service ? summary.service === service : true; // Si pas de service, accepter tous les services
+                    const matchesDateRange = !this.controlRevenuDateDebut || !this.controlRevenuDateFin || 
+                        (summary.date >= this.controlRevenuDateDebut && summary.date <= this.controlRevenuDateFin);
+                    
+                    // Debug: afficher les correspondances pour les premiers enregistrements
+                    if (allSummaries.indexOf(summary) < 3) {
+                        console.log('Debug filtrage:', {
+                            summaryAgency: summary.agency,
+                            summaryService: summary.service,
+                            searchedAgency: agency,
+                            searchedService: service,
+                            matchesAgency,
+                            matchesService,
+                            matchesDateRange
+                        });
+                    }
+                    
+                    return matchesAgency && matchesService && matchesDateRange;
+                });
+                
+                console.log('Statistiques filtrées pour le contrôle revenu:', filteredSummaries);
+                
+                // Transformer les données de statistiques en format Control Revenu (maintenant asynchrone)
+                this.transformStatisticsToControlRevenu(filteredSummaries, service || '').then(controlRevenuData => {
+                    this.controlRevenuData = controlRevenuData;
+                    this.controlRevenuDataFiltered = [...this.controlRevenuData];
+                    this.calculateControlRevenuPagination();
+                    this.isLoadingControlRevenu = false;
+                }).catch(error => {
+                    console.error('Erreur lors de la transformation des données:', error);
+                    this.isLoadingControlRevenu = false;
+                });
+            },
+            error: (error) => {
+                console.error('Erreur lors du chargement des données de contrôle revenu:', error);
+                
+                // En cas d'erreur, utiliser des données de test
+                this.loadTestControlRevenuData();
+                this.isLoadingControlRevenu = false;
+            }
+        });
+    }
+
+    private async transformStatisticsToControlRevenu(statistics: Statistics[], service: string): Promise<any[]> {
+        const data: any[] = [];
+        
+        // Traiter chaque enregistrement de statistiques
+        for (const stat of statistics) {
+            // Utiliser les données réelles des statistiques
+            const volume = stat.totalVolume || 0;
+            const nombreTrx = stat.recordCount || 0;
+            
+            // Calculer le revenu attendu basé sur les frais paramétrés
+            const revenuAttendu = this.calculateRevenuAttendu(stat.service, stat.agency, volume, nombreTrx);
+            
+            // Récupérer les frais TRX SF pour cette agence, date et service (uniquement EN_ATTENTE)
+            let totalFraisTrxSf = 0;
+            try {
+                const fraisResponse = await this.trxSfService.getFraisByAgenceAndDateAndServiceEnAttente(stat.agency, stat.date, stat.service).toPromise();
+                totalFraisTrxSf = fraisResponse?.frais || 0;
+                console.log(`Frais TRX SF (EN_ATTENTE) pour ${stat.agency} le ${stat.date} service ${stat.service}: ${totalFraisTrxSf}`);
+            } catch (error) {
+                console.warn(`Erreur lors de la récupération des frais TRX SF (EN_ATTENTE) pour ${stat.agency} le ${stat.date} service ${stat.service}:`, error);
+                totalFraisTrxSf = 0;
+            }
+            
+            // Calculer le revenu réel selon la formule : Revenu attendu - Total frais TRX SF
+            const revenuReel = revenuAttendu - totalFraisTrxSf;
+            const ecart = revenuReel - revenuAttendu;
+            
+            // Le statut sera déterminé après avoir analysé tous les services
+            let statut = 'normal';
+            
+            data.push({
+                date: stat.date,
+                service: stat.service,
+                typeControle: 'Contrôle journalier',
+                revenuAttendu: revenuAttendu,
+                revenuReel: revenuReel,
+                ecart: ecart,
+                statut: statut,
+                volume: volume,
+                nombreTrx: nombreTrx,
+                totalFraisTrxSf: totalFraisTrxSf // Ajouter les frais TRX SF pour debug
+            });
+        }
+        
+        // Analyser les anomalies par service selon les nouveaux critères
+        this.analyzeAnomaliesByService(data);
+        
+        // Trier par date décroissante (du plus récent au plus ancien)
+        data.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+        
+        return data;
+    }
+
+    private calculateRevenuAttendu(service: string, agence: string, volume: number, nombreTrx: number): number {
+        // Chercher le frais paramétré pour ce service et cette agence
+        const frais = this.fraisParametres.find(f => 
+            f.service === service && 
+            f.agence === agence && 
+            f.actif
+        );
+        
+        if (!frais) {
+            console.warn(`Aucun frais paramétré trouvé pour service: ${service}, agence: ${agence}`);
+            return volume * 0.01; // Fallback à 1% si pas de frais paramétré
+        }
+        
+        // Calculer le revenu attendu selon le type de calcul
+        if (frais.typeCalcul === 'POURCENTAGE' && frais.pourcentage) {
+            // Calcul par pourcentage du volume
+            return volume * (frais.pourcentage / 100);
+        } else {
+            // Calcul nominal (montant fixe par transaction)
+            return frais.montantFrais * nombreTrx;
+        }
+    }
+
+    private loadTestControlRevenuData(): void {
+        // Données de test pour l'onglet Control Revenu basées sur des statistiques réelles
+        this.controlRevenuData = [
+            {
+                date: '2025-08-09',
+                service: 'CM_PAIEMENTMARCHAND_OM_TP',
+                typeControle: 'Contrôle journalier',
+                revenuAttendu: 2500.00,
+                revenuReel: 2475.00,
+                ecart: -25.00,
+                statut: 'anomalie',
+                volume: 250000.00,
+                nombreTrx: 45
+            },
+            {
+                date: '2025-08-08',
+                service: 'CM_PAIEMENTMARCHAND_OM_TP',
+                typeControle: 'Contrôle journalier',
+                revenuAttendu: 1800.00,
+                revenuReel: 1800.00,
+                ecart: 0.00,
+                statut: 'normal',
+                volume: 180000.00,
+                nombreTrx: 32
+            },
+            {
+                date: '2025-08-07',
+                service: 'CM_PAIEMENTMARCHAND_OM_TP',
+                typeControle: 'Contrôle journalier',
+                revenuAttendu: 3200.00,
+                revenuReel: 3040.00,
+                ecart: -160.00,
+                statut: 'critique',
+                volume: 320000.00,
+                nombreTrx: 58
+            },
+            {
+                date: '2025-08-06',
+                service: 'CM_PAIEMENTMARCHAND_OM_TP',
+                typeControle: 'Contrôle journalier',
+                revenuAttendu: 1500.00,
+                revenuReel: 1500.00,
+                ecart: 0.00,
+                statut: 'normal',
+                volume: 150000.00,
+                nombreTrx: 28
+            },
+            {
+                date: '2025-08-05',
+                service: 'CM_PAIEMENTMARCHAND_OM_TP',
+                typeControle: 'Contrôle journalier',
+                revenuAttendu: 2200.00,
+                revenuReel: 2090.00,
+                ecart: -110.00,
+                statut: 'anomalie',
+                volume: 220000.00,
+                nombreTrx: 41
+            }
+        ];
+        
+        this.controlRevenuDataFiltered = [...this.controlRevenuData];
+        this.calculateControlRevenuPagination();
+    }
+
+    // Méthodes de calcul pour le control revenu
+    getTotalControlRevenu(): number {
+        return this.controlRevenuDataFiltered.length;
+    }
+
+    getTotalAnomaliesControlRevenu(): number {
+        return this.controlRevenuDataFiltered.filter(item => item.statut === 'anomalie').length;
+    }
+
+    getTotalNormauxControlRevenu(): number {
+        return this.controlRevenuDataFiltered.filter(item => item.statut === 'normal').length;
+    }
+
+    getTotalCritiquesControlRevenu(): number {
+        return this.controlRevenuDataFiltered.filter(item => item.statut === 'critique').length;
+    }
+
+    getTauxConformiteControlRevenu(): number {
+        const total = this.getTotalControlRevenu();
+        if (total === 0) return 0;
+        const normaux = this.getTotalNormauxControlRevenu();
+        return (normaux / total) * 100;
+    }
+
+    getTotalVolumeControlRevenu(): number {
+        return this.controlRevenuDataFiltered.reduce((total, item) => total + item.volume, 0);
+    }
+
+    getTotalNombreTrxControlRevenu(): number {
+        return this.controlRevenuDataFiltered.reduce((total, item) => total + item.nombreTrx, 0);
+    }
+
+    getTotalMagControlRevenu(): number {
+        return this.controlRevenuDataFiltered.reduce((total, item) => total + item.ecart, 0);
+    }
+
+    getTotalRevenuReelControlRevenu(): number {
+        return this.controlRevenuDataFiltered.reduce((total, item) => total + item.revenuReel, 0);
+    }
+
+    getUniqueServicesControlRevenu(): string[] {
+        const services = [...new Set(this.controlRevenuData.map(item => item.service))];
+        return services.sort();
+    }
+
+    private analyzeAnomaliesByService(data: any[]): void {
+        // Grouper les données par service
+        const serviceGroups = new Map<string, any[]>();
+        
+        data.forEach(item => {
+            if (!serviceGroups.has(item.service)) {
+                serviceGroups.set(item.service, []);
+            }
+            serviceGroups.get(item.service)!.push(item);
+        });
+
+        // Analyser chaque service
+        serviceGroups.forEach((serviceData, serviceName) => {
+            // Compter les lignes avec MàG négatif
+            const negativeMagCount = serviceData.filter(item => item.ecart < 0).length;
+            
+            // Déterminer le statut selon les critères
+            let serviceStatus = 'normal';
+            if (negativeMagCount >= 5 && negativeMagCount <= 10) {
+                serviceStatus = 'anomalie';
+            } else if (negativeMagCount > 10) {
+                serviceStatus = 'critique';
+            }
+
+            // Appliquer le statut à toutes les lignes du service
+            serviceData.forEach(item => {
+                item.statut = serviceStatus;
+            });
+
+            console.log(`Service ${serviceName}: ${negativeMagCount} lignes MàG négatif -> Statut: ${serviceStatus}`);
+        });
+    }
+
+    // Méthodes de pagination pour le control revenu
+    calculateControlRevenuPagination(): void {
+        this.controlRevenuTotalPages = Math.ceil(this.controlRevenuDataFiltered.length / this.controlRevenuPageSize);
+        this.controlRevenuCurrentPage = 1;
+    }
+
+    get pagedControlRevenuData(): { date: string; service: string; typeControle: string; revenuAttendu: number; revenuReel: number; ecart: number; statut: string; volume: number; nombreTrx: number; totalFraisTrxSf?: number }[] {
+        const startIndex = (this.controlRevenuCurrentPage - 1) * this.controlRevenuPageSize;
+        const endIndex = startIndex + this.controlRevenuPageSize;
+        return this.controlRevenuDataFiltered.slice(startIndex, endIndex);
+    }
+
+    prevControlRevenuPage(): void {
+        if (this.controlRevenuCurrentPage > 1) {
+            this.controlRevenuCurrentPage--;
+        }
+    }
+
+    nextControlRevenuPage(): void {
+        if (this.controlRevenuCurrentPage < this.controlRevenuTotalPages) {
+            this.controlRevenuCurrentPage++;
+        }
+    }
+
+    goToControlRevenuPage(page: number): void {
+        if (page >= 1 && page <= this.controlRevenuTotalPages) {
+            this.controlRevenuCurrentPage = page;
+        }
+    }
+
+    getVisibleControlRevenuPages(): number[] {
+        const totalPages = this.controlRevenuTotalPages;
+        const currentPage = this.controlRevenuCurrentPage;
+        const maxVisible = 5;
+        
+        if (totalPages <= maxVisible) {
+            return Array.from({length: totalPages}, (_, i) => i + 1);
+        }
+        
+        let start = Math.max(1, currentPage - Math.floor(maxVisible / 2));
+        let end = Math.min(totalPages, start + maxVisible - 1);
+        
+        if (end - start + 1 < maxVisible) {
+            start = Math.max(1, end - maxVisible + 1);
+        }
+        
+        return Array.from({length: end - start + 1}, (_, i) => start + i);
+    }
+
+    // Méthodes de filtrage pour le control revenu
+    applyControlRevenuFilters(): void {
+        let filteredData = [...this.controlRevenuData];
+
+        // Filtrage par date de début
+        if (this.controlRevenuDateDebut) {
+            filteredData = filteredData.filter(item => item.date >= this.controlRevenuDateDebut);
+        }
+
+        // Filtrage par date de fin
+        if (this.controlRevenuDateFin) {
+            filteredData = filteredData.filter(item => item.date <= this.controlRevenuDateFin);
+        }
+
+        // Filtrage par service
+        if (this.controlRevenuService) {
+            filteredData = filteredData.filter(item => item.service === this.controlRevenuService);
+        }
+
+        // Filtrage par type de contrôle
+        if (this.controlRevenuType) {
+            filteredData = filteredData.filter(item => item.statut === this.controlRevenuType);
+        }
+
+        // Filtrage par seuil d'alerte
+        if (this.controlRevenuSeuil !== null && this.controlRevenuSeuil >= 0) {
+            filteredData = filteredData.filter(item => Math.abs(item.ecart) >= this.controlRevenuSeuil!);
+        }
+
+        this.controlRevenuDataFiltered = filteredData;
+        this.calculateControlRevenuPagination();
+    }
+
+    onControlRevenuFiltersChange(): void {
+        this.applyControlRevenuFilters();
+    }
+
+    clearControlRevenuFilters(): void {
+        this.controlRevenuDateDebut = '';
+        this.controlRevenuDateFin = '';
+        this.controlRevenuService = '';
+        this.controlRevenuType = '';
+        this.controlRevenuSeuil = null;
+        this.applyControlRevenuFilters();
+    }
+
+    // Méthodes d'affichage pour le control revenu
+    getControlRevenuRowClass(controle: any): string {
+        switch (controle.statut) {
+            case 'critique':
+                return 'row-critical';
+            case 'anomalie':
+                return 'row-warning';
+            case 'normal':
+                return 'row-normal';
+            default:
+                return '';
+        }
+    }
+
+    getControlRevenuStatusClass(controle: any): string {
+        switch (controle.statut) {
+            case 'critique':
+                return 'status-critical';
+            case 'anomalie':
+                return 'status-warning';
+            case 'normal':
+                return 'status-normal';
+            default:
+                return '';
+        }
+    }
+
+    getControlRevenuStatusLabel(controle: any): string {
+        switch (controle.statut) {
+            case 'critique':
+                return 'Critique';
+            case 'anomalie':
+                return 'Anomalie';
+            case 'normal':
+                return 'Normal';
+            default:
+                return 'Inconnu';
+        }
+    }
+
+    // Méthodes d'action pour le control revenu
+    viewControlRevenuDetails(controle: any): void {
+        this.selectedControlRevenu = controle;
+        this.showControlRevenuModal = true;
+    }
+
+    closeControlRevenuModal(): void {
+        this.showControlRevenuModal = false;
+        this.selectedControlRevenu = null;
+    }
+
+    getAbsValue(value: number): number {
+        return Math.abs(value);
+    }
+
+    getEcartPercentage(ecart: number, revenuAttendu: number): number {
+        if (revenuAttendu === 0) return 0;
+        return (Math.abs(ecart) / revenuAttendu) * 100;
+    }
+
+    // Méthodes pour la visualisation par date
+    openDateViewModal(date: string): void {
+        this.selectedDate = date;
+        this.showDateViewModal = true;
+        this.loadDateViewData(date);
+    }
+
+    closeDateViewModal(): void {
+        this.showDateViewModal = false;
+        this.selectedDate = '';
+        this.dateViewData = [];
+    }
+
+    loadDateViewData(date: string): void {
+        this.isLoadingDateView = true;
+        
+        // Filtrer les données pour la date sélectionnée
+        const dataForDate = this.controlRevenuData.filter(item => item.date === date);
+        
+        // Grouper par service et calculer les totaux
+        const serviceGroups = new Map<string, any>();
+        
+        dataForDate.forEach(item => {
+            if (!serviceGroups.has(item.service)) {
+                serviceGroups.set(item.service, {
+                    service: item.service,
+                    date: item.date,
+                    volume: 0,
+                    nombreTrx: 0,
+                    revenuAttendu: 0,
+                    revenuReel: 0,
+                    fraisTrxSf: 0,
+                    ecart: 0,
+                    statut: 'normal',
+                    nombreControles: 0
+                });
+            }
+            
+            const group = serviceGroups.get(item.service)!;
+            group.volume += item.volume;
+            group.nombreTrx += item.nombreTrx;
+            group.revenuAttendu += item.revenuAttendu;
+            group.revenuReel += item.revenuReel;
+            group.fraisTrxSf += (item.totalFraisTrxSf || 0);
+            group.ecart += item.ecart;
+            group.nombreControles += 1;
+            
+            // Déterminer le statut global du service
+            if (item.statut === 'critique') {
+                group.statut = 'critique';
+            } else if (item.statut === 'anomalie' && group.statut !== 'critique') {
+                group.statut = 'anomalie';
+            }
+        });
+        
+        this.dateViewData = Array.from(serviceGroups.values());
+        this.isLoadingDateView = false;
+    }
+
+    getDateViewTotalVolume(): number {
+        return this.dateViewData.reduce((total, item) => total + item.volume, 0);
+    }
+
+    getDateViewTotalRevenuAttendu(): number {
+        return this.dateViewData.reduce((total, item) => total + item.revenuAttendu, 0);
+    }
+
+    getDateViewTotalRevenuReel(): number {
+        return this.dateViewData.reduce((total, item) => total + item.revenuReel, 0);
+    }
+
+    getDateViewTotalEcart(): number {
+        return this.dateViewData.reduce((total, item) => total + item.ecart, 0);
+    }
+
+    getDateViewTotalFraisTrxSf(): number {
+        return this.dateViewData.reduce((total, item) => total + item.fraisTrxSf, 0);
+    }
+
+    getServiceRowClass(service: any): string {
+        if (service.statut === 'critique') return 'critical-row';
+        if (service.statut === 'anomalie') return 'anomaly-row';
+        return 'normal-row';
+    }
+
+    exportDateViewData(): void {
+        if (this.dateViewData.length === 0) {
+            alert('Aucune donnée à exporter');
+            return;
+        }
+
+        try {
+            // Fonction pour formater les montants
+            const formatMontant = (montant: number): string => {
+                const parts = montant.toFixed(2).split('.');
+                const integerPart = parts[0];
+                const decimalPart = parts[1];
+                const formattedInteger = integerPart.replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+                return `${formattedInteger},${decimalPart}`;
+            };
+
+            // Fonction pour échapper les caractères spéciaux
+            const escapeCsvValue = (value: string): string => {
+                if (value.includes(';') || value.includes('"') || value.includes('\n')) {
+                    return `"${value.replace(/"/g, '""')}"`;
+                }
+                return value;
+            };
+
+            // Préparer les données pour l'export
+            const exportData = this.dateViewData.map(service => ({
+                'Service': service.service,
+                'Volume': formatMontant(service.volume),
+                'Nombre de Transactions': service.nombreTrx.toString(),
+                'Revenu Attendu': formatMontant(service.revenuAttendu),
+                'Frais TRX SF': formatMontant(service.fraisTrxSf),
+                'Revenu Reel': formatMontant(service.revenuReel),
+                'MaG': formatMontant(service.ecart),
+                'Statut': this.getControlRevenuStatusLabel(service),
+                'Nombre de Controles': service.nombreControles.toString()
+            }));
+
+            // Créer le contenu CSV
+            const headers = Object.keys(exportData[0]);
+            const csvContent = [
+                headers.map(header => escapeCsvValue(header)).join(';'),
+                ...exportData.map(row => 
+                    headers.map(header => {
+                        const value = row[header as keyof typeof row];
+                        return escapeCsvValue(value.toString());
+                    }).join(';')
+                )
+            ].join('\n');
+
+            // Ajouter les métadonnées
+            const metadata = [
+                `Export Visualisation par Date - ${this.formatDate(this.selectedDate)}`,
+                `Date: ${this.formatDate(this.selectedDate)}`,
+                `Nombre de Services: ${this.dateViewData.length}`,
+                `Volume Total: ${formatMontant(this.getDateViewTotalVolume())}`,
+                `Revenu Attendu Total: ${formatMontant(this.getDateViewTotalRevenuAttendu())}`,
+                `Revenu Reel Total: ${formatMontant(this.getDateViewTotalRevenuReel())}`,
+                `Frais TRX SF Total: ${formatMontant(this.getDateViewTotalFraisTrxSf())}`,
+                `MaG Total: ${formatMontant(this.getDateViewTotalEcart())}`,
+                '',
+                csvContent
+            ].join('\n');
+
+            // Créer et télécharger le fichier
+            const BOM = '\uFEFF';
+            const blob = new Blob([BOM + metadata], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            const url = URL.createObjectURL(blob);
+            link.setAttribute('href', url);
+            link.setAttribute('download', `visualisation_date_${this.selectedDate.replace(/-/g, '_')}_${new Date().toISOString().slice(0, 10)}.csv`);
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+
+            alert('Export terminé avec succès !');
+        } catch (error) {
+            console.error('Erreur lors de l\'export:', error);
+            alert('Erreur lors de l\'export des données');
+        }
+    }
+
+    exportControlRevenu(controle: any): void {
+        // TODO: Implémenter l'export du contrôle
+        console.log('Exporter le contrôle:', controle);
+        alert(`Export du contrôle du ${controle.date} en cours...`);
+    }
+
+    exportControlRevenuData(): void {
+        if (this.controlRevenuDataFiltered.length === 0) {
+            alert('Aucune donnée à exporter');
+            return;
+        }
+
+        try {
+            // Fonction pour formater les montants sans devise avec séparateurs de milliers
+            const formatMontant = (montant: number): string => {
+                // Formater avec séparateurs de milliers et virgule décimale
+                const parts = montant.toFixed(2).split('.');
+                const integerPart = parts[0];
+                const decimalPart = parts[1];
+                
+                // Ajouter les séparateurs de milliers
+                const formattedInteger = integerPart.replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+                
+                return `${formattedInteger},${decimalPart}`;
+            };
+
+            // Fonction pour échapper les caractères spéciaux dans les chaînes CSV
+            const escapeCsvValue = (value: string): string => {
+                if (value.includes(';') || value.includes('"') || value.includes('\n')) {
+                    return `"${value.replace(/"/g, '""')}"`;
+                }
+                return value;
+            };
+
+            // Préparer les données pour l'export
+            const exportData = this.controlRevenuDataFiltered.map(controle => ({
+                'Date': this.formatDate(controle.date),
+                'Service': controle.service,
+                'Type de Controle': controle.typeControle,
+                'Volume': formatMontant(controle.volume),
+                'Nombre de Transactions': controle.nombreTrx.toString(),
+                'Revenu Attendu': formatMontant(controle.revenuAttendu),
+                'Frais TRX SF': formatMontant(controle.totalFraisTrxSf || 0),
+                'Revenu Reel': formatMontant(controle.revenuReel),
+                'MaG': formatMontant(controle.ecart),
+                'Statut': this.getControlRevenuStatusLabel(controle)
+            }));
+
+            // Créer le contenu CSV avec échappement des caractères spéciaux
+            const headers = Object.keys(exportData[0]);
+            const csvContent = [
+                headers.map(header => escapeCsvValue(header)).join(';'),
+                ...exportData.map(row => 
+                    headers.map(header => {
+                        const value = row[header as keyof typeof row];
+                        return escapeCsvValue(value.toString());
+                    }).join(';')
+                )
+            ].join('\n');
+
+            // Ajouter les métadonnées avec formatage des montants
+            const metadata = [
+                `Export Control Revenu - ${new Date().toLocaleDateString('fr-FR')}`,
+                `Total Controles: ${this.getTotalControlRevenu()}`,
+                `Volume Total: ${formatMontant(this.getTotalVolumeControlRevenu())}`,
+                `Total Transactions: ${this.getTotalNombreTrxControlRevenu().toString()}`,
+                `Total MaG: ${formatMontant(this.getTotalMagControlRevenu())}`,
+                `Anomalies: ${this.getTotalAnomaliesControlRevenu()}`,
+                `Controles Normaux: ${this.getTotalNormauxControlRevenu()}`,
+                `Controles Critiques: ${this.getTotalCritiquesControlRevenu()}`,
+                `Taux de Conformite: ${this.getTauxConformiteControlRevenu().toFixed(1)}%`,
+                '',
+                csvContent
+            ].join('\n');
+
+            // Créer et télécharger le fichier avec BOM pour Excel
+            const BOM = '\uFEFF';
+            const blob = new Blob([BOM + metadata], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            const url = URL.createObjectURL(blob);
+            link.setAttribute('href', url);
+            link.setAttribute('download', `control-revenu-${new Date().toISOString().split('T')[0]}.csv`);
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+
+            console.log('Export Control Revenu réussi:', exportData.length, 'lignes exportées');
+        } catch (error) {
+            console.error('Erreur lors de l\'export Control Revenu:', error);
+            alert('Erreur lors de l\'export. Veuillez réessayer.');
+        }
     }
 } 

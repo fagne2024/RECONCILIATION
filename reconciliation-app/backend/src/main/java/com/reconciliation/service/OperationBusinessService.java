@@ -67,7 +67,7 @@ public class OperationBusinessService {
     }
     
     /**
-     * Annule une opération et restaure le solde précédent
+     * Annule une opération : garde la ligne, change le statut à "Annulée" et préfixe le type avec "annulation_"
      */
     @Transactional
     public boolean cancelOperation(Long operationId) {
@@ -85,7 +85,12 @@ public class OperationBusinessService {
                 compteRepository.save(compte);
             }
             
-            operationRepository.deleteById(operationId);
+            // Garder la ligne, changer le statut à "Annulée" et préfixer le type avec "annulation_"
+            operation.setStatut("Annulée");
+            if (!operation.getTypeOperation().startsWith("annulation_")) {
+                operation.setTypeOperation("annulation_" + operation.getTypeOperation());
+            }
+            operationRepository.save(operation);
             return true;
         }
         return false;
