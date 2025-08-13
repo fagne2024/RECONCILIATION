@@ -194,15 +194,10 @@
 
                         <div class="form-row">
                             <div class="form-group">
-                                <mat-form-field appearance="fill">
-                                    <mat-label>Banque</mat-label>
-                                    <mat-select formControlName="banque">
-                                        <mat-option value="">Sélectionner une banque...</mat-option>
-                                        <mat-option *ngFor="let banque of banqueList" [value]="banque">
-                                            {{ banque }}
-                                        </mat-option>
-                                    </mat-select>
-                                </mat-form-field>
+                                <label>Banque</label>
+                                <input type="text" formControlName="banque" 
+                                    placeholder="Ex: MTN, Orange, SYSTEM, etc." class="text-input">
+                                <div class="help-text">Vous pouvez saisir librement le nom de la banque</div>
                             </div>
                             <div class="form-group">
                                 <label>Nom du bordereau</label>
@@ -402,15 +397,10 @@
 
                     <div class="form-row">
                         <div class="form-group">
-                            <mat-form-field appearance="fill">
-                                <mat-label>Banque</mat-label>
-                                <mat-select formControlName="banque">
-                                    <mat-option value="">Sélectionner une banque...</mat-option>
-                                    <mat-option *ngFor="let banque of banqueList" [value]="banque">
-                                        {{ banque }}
-                                    </mat-option>
-                                </mat-select>
-                            </mat-form-field>
+                            <label>Banque</label>
+                            <input type="text" formControlName="banque" 
+                                placeholder="Ex: MTN, Orange, SYSTEM, etc." class="text-input">
+                            <div class="help-text">Vous pouvez saisir librement le nom de la banque</div>
                         </div>
                         <div class="form-group">
                             <mat-form-field appearance="fill">
@@ -610,66 +600,78 @@
                 <mat-form-field appearance="fill" class="filter-select">
                     <mat-label>Type d'opération</mat-label>
                                     <mat-select #typeOperationSelect formControlName="typeOperation" multiple (selectionChange)="onFilterChange()">
-                    <ngx-mat-select-search [formControl]="typeOperationSearchCtrl" placeholderLabel="Rechercher un type..." noEntriesFoundLabel="Aucun type trouvé"></ngx-mat-select-search>
-                    <mat-option *ngFor="let type of filteredTypeOperationList" [value]="type.value">
-                        {{ type.label }}
-                    </mat-option>
-                </mat-select>
+                        <mat-option>
+                            <ngx-mat-select-search [formControl]="typeOperationSearchCtrl" placeholderLabel="Rechercher un type..." noEntriesFoundLabel="Aucun type trouvé"></ngx-mat-select-search>
+                        </mat-option>
+                        <mat-option *ngFor="let type of filteredTypeOperationList" [value]="type.value">
+                            {{ type.label }}
+                        </mat-option>
+                    </mat-select>
                 </mat-form-field>
             </div>
             <div class="form-field">
                 <mat-form-field appearance="fill" class="filter-select">
                     <mat-label>Service</mat-label>
                                     <mat-select #serviceSelect formControlName="service" multiple (selectionChange)="onFilterChange()">
-                    <ngx-mat-select-search [formControl]="serviceSearchCtrl" placeholderLabel="Rechercher un service..." noEntriesFoundLabel="Aucun service trouvé"></ngx-mat-select-search>
-                    <mat-option *ngFor="let service of filteredServiceList" [value]="service">
-                        {{ service }}
-                    </mat-option>
-                </mat-select>
+                        <mat-option>
+                            <ngx-mat-select-search [formControl]="serviceSearchCtrl" placeholderLabel="Rechercher un service..." noEntriesFoundLabel="Aucun service trouvé"></ngx-mat-select-search>
+                        </mat-option>
+                        <mat-option *ngFor="let service of filteredServiceList" [value]="service">
+                            {{ service }}
+                        </mat-option>
+                    </mat-select>
                 </mat-form-field>
             </div>
             <div class="form-field">
                 <mat-form-field appearance="fill" class="filter-select">
                     <mat-label>Statut</mat-label>
                                     <mat-select #statutSelect formControlName="statut" multiple (selectionChange)="onFilterChange()">
-                    <ngx-mat-select-search [formControl]="statutSearchCtrl" placeholderLabel="Rechercher un statut..." noEntriesFoundLabel="Aucun statut trouvé"></ngx-mat-select-search>
-                    <mat-option *ngFor="let statut of filteredStatutList" [value]="statut">
-                        {{ statut }}
-                    </mat-option>
-                </mat-select>
+                        <mat-option>
+                            <ngx-mat-select-search [formControl]="statutSearchCtrl" placeholderLabel="Rechercher un statut..." noEntriesFoundLabel="Aucun statut trouvé"></ngx-mat-select-search>
+                        </mat-option>
+                        <mat-option *ngFor="let statut of filteredStatutList" [value]="statut">
+                            {{ statut }}
+                        </mat-option>
+                    </mat-select>
                 </mat-form-field>
             </div>
             <div class="form-field">
                 <mat-form-field appearance="fill" class="filter-select">
                     <mat-label>Référence</mat-label>
                                     <mat-select #referenceSelect formControlName="reference" multiple (selectionChange)="onFilterChange()">
-                    <ngx-mat-select-search [formControl]="referenceSearchCtrl" placeholderLabel="Rechercher une référence..." noEntriesFoundLabel="Aucune référence trouvée"></ngx-mat-select-search>
-                    <mat-option *ngFor="let reference of filteredReferenceList" [value]="reference">
-                        {{ reference }}
-                    </mat-option>
-                </mat-select>
+                        <mat-option>
+                            <ngx-mat-select-search [formControl]="referenceSearchCtrl" placeholderLabel="Rechercher une référence..." noEntriesFoundLabel="Aucune référence trouvée"></ngx-mat-select-search>
+                        </mat-option>
+                        <mat-option *ngFor="let reference of filteredReferenceList" [value]="reference">
+                            {{ reference }}
+                        </mat-option>
+                    </mat-select>
                 </mat-form-field>
             </div>
             <div class="form-field">
                 <mat-form-field appearance="fill" class="filter-select">
                     <mat-label>Pays</mat-label>
                                     <mat-select #paysSelect formControlName="pays" multiple (selectionChange)="onFilterChange()">
-                    <ngx-mat-select-search [formControl]="paysSearchCtrl" placeholderLabel="Rechercher un pays..." noEntriesFoundLabel="Aucun pays trouvé"></ngx-mat-select-search>
-                    <mat-option *ngFor="let pays of filteredPaysList" [value]="pays">
-                        {{ pays }}
-                    </mat-option>
-                </mat-select>
+                        <mat-option>
+                            <ngx-mat-select-search [formControl]="paysSearchCtrl" placeholderLabel="Rechercher un pays..." noEntriesFoundLabel="Aucun pays trouvé"></ngx-mat-select-search>
+                        </mat-option>
+                        <mat-option *ngFor="let pays of filteredPaysList" [value]="pays">
+                            {{ pays }}
+                        </mat-option>
+                    </mat-select>
                 </mat-form-field>
             </div>
             <div class="form-field">
                 <mat-form-field appearance="fill" class="filter-select">
                     <mat-label>Code Propriétaire</mat-label>
                                     <mat-select #codeProprietaireSelect formControlName="codeProprietaire" multiple (selectionChange)="onFilterChange()">
-                    <ngx-mat-select-search [formControl]="codeProprietaireSearchCtrl" placeholderLabel="Rechercher un code..." noEntriesFoundLabel="Aucun code trouvé"></ngx-mat-select-search>
-                    <mat-option *ngFor="let code of filteredCodeProprietaireList" [value]="code">
-                        {{ code }}
-                    </mat-option>
-                </mat-select>
+                        <mat-option>
+                            <ngx-mat-select-search [formControl]="codeProprietaireSearchCtrl" placeholderLabel="Rechercher un code..." noEntriesFoundLabel="Aucun code trouvé"></ngx-mat-select-search>
+                        </mat-option>
+                        <mat-option *ngFor="let code of filteredCodeProprietaireList" [value]="code">
+                            {{ code }}
+                        </mat-option>
+                    </mat-select>
                 </mat-form-field>
             </div>
             <div class="form-field">
@@ -862,16 +864,10 @@
                         </td>
                         
                         <td class="status-cell">
-                            <select 
-                                [value]="op.statut || 'EN_ATTENTE'"
-                                (change)="onStatutChange(op, $event)"
-                                class="statut-select"
-                                [ngClass]="getStatutClassForOperation(op.statut || 'EN_ATTENTE')"
-                                (click)="$event.stopPropagation()">
-                                <option value="EN_ATTENTE">En attente</option>
-                                <option value="TRAITE">Traité</option>
-                                <option value="ERREUR">Erreur</option>
-                            </select>
+                            <span class="statut-badge"
+                                  [ngClass]="getStatutClassForOperation(op.statut || 'EN_ATTENTE')">
+                                {{ getStatutDisplayName(op.statut || 'EN_ATTENTE') }}
+                            </span>
                         </td>
                         
                         <td class="country-cell">
@@ -899,6 +895,11 @@
                                         (click)="editOperation(op); $event.stopPropagation()" 
                                         title="Modifier l'opération">
                                     <i class="fas fa-edit"></i>
+                                </button>
+                                <button class="btn btn-sm btn-warning" 
+                                        (click)="annulerOperation(op.id!); $event.stopPropagation()" 
+                                        title="Annuler l'opération">
+                                    <i class="fas fa-times"></i>
                                 </button>
                                 <button class="btn btn-sm btn-danger" 
                                         (click)="deleteOperation(op.id!); $event.stopPropagation()" 
@@ -1023,3 +1024,149 @@
     <li><a routerLink="/settings/log-utilisateur">Log utilisateur</a></li>
   </ul>
 </nav> 
+
+<!-- Modal pour les détails d'opération -->
+<div *ngIf="showOperationDetailsModal" class="modal-overlay">
+  <div class="modal-content operation-details-modal">
+    <div class="modal-header">
+      <h4>Détails de l'Opération</h4>
+      <button type="button" class="close-btn" (click)="closeOperationDetailsModal()">
+        <i class="fas fa-times"></i>
+      </button>
+    </div>
+    
+    <div class="modal-body" *ngIf="modalSelectedOperation">
+      <!-- Informations générales -->
+      <div class="detail-section">
+        <h5>Informations Générales</h5>
+        <div class="detail-grid">
+          <div class="detail-item">
+            <label>ID :</label>
+            <span>{{ modalSelectedOperation.id }}</span>
+          </div>
+          <div class="detail-item">
+            <label>Type d'Opération :</label>
+            <span class="type-operation">{{ modalSelectedOperation.typeOperation }}</span>
+          </div>
+          <div class="detail-item">
+            <label>Date d'Opération :</label>
+            <span>{{ formatDate(modalSelectedOperation.dateOperation || '') }}</span>
+          </div>
+          <div class="detail-item">
+            <label>Statut :</label>
+            <span class="status-badge" [ngClass]="getStatusClass(modalSelectedOperation.statut || '')">
+              {{ modalSelectedOperation.statut }}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Informations financières -->
+      <div class="detail-section">
+        <h5>Informations Financières</h5>
+        <div class="detail-grid">
+          <div class="detail-item">
+            <label>Montant :</label>
+            <span class="amount" [ngClass]="getAmountClass(modalSelectedOperation.montant || 0)">
+              {{ modalSelectedOperation.montant | number:'1.2-2' }}
+            </span>
+          </div>
+          <div class="detail-item">
+            <label>Solde Avant :</label>
+            <span class="amount">{{ modalSelectedOperation.soldeAvant | number:'1.2-2' }}</span>
+          </div>
+          <div class="detail-item">
+            <label>Solde Après :</label>
+            <span class="amount">{{ modalSelectedOperation.soldeApres | number:'1.2-2' }}</span>
+          </div>
+          <div class="detail-item">
+            <label>Variation de Solde :</label>
+            <span class="amount" [ngClass]="getVariationClass((modalSelectedOperation.soldeApres || 0) - (modalSelectedOperation.soldeAvant || 0))">
+              {{ ((modalSelectedOperation.soldeApres || 0) - (modalSelectedOperation.soldeAvant || 0)) | number:'1.2-2' }}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Informations de référence -->
+      <div class="detail-section">
+        <h5>Informations de Référence</h5>
+        <div class="detail-grid">
+                     <div class="detail-item">
+             <label>Code Propriétaire :</label>
+             <span>{{ modalSelectedOperation.codeProprietaire }}</span>
+           </div>
+           <div class="detail-item">
+             <label>Pays :</label>
+             <span>{{ modalSelectedOperation.pays }}</span>
+           </div>
+           <div class="detail-item">
+             <label>Service :</label>
+             <span>{{ modalSelectedOperation.service || 'Non spécifié' }}</span>
+           </div>
+           <div class="detail-item">
+             <label>Banque :</label>
+             <span>{{ modalSelectedOperation.banque || 'Non spécifiée' }}</span>
+           </div>
+           <div class="detail-item">
+             <label>Nom Bordereau :</label>
+             <span>{{ modalSelectedOperation.nomBordereau || 'Non spécifié' }}</span>
+           </div>
+           <div class="detail-item">
+             <label>Référence :</label>
+             <span>{{ modalSelectedOperation.reference || 'Non spécifiée' }}</span>
+           </div>
+        </div>
+      </div>
+
+             <!-- Informations de liaison -->
+       <div class="detail-section" *ngIf="modalSelectedOperation.compteId || modalSelectedOperation.parentOperationId">
+         <h5>Informations de Liaison</h5>
+         <div class="detail-grid">
+           <div class="detail-item" *ngIf="modalSelectedOperation.compteId">
+             <label>ID Compte :</label>
+             <span>{{ modalSelectedOperation.compteId }}</span>
+           </div>
+           <div class="detail-item" *ngIf="modalSelectedOperation.parentOperationId">
+             <label>ID Opération Parent :</label>
+             <span>{{ modalSelectedOperation.parentOperationId }}</span>
+           </div>
+         </div>
+       </div>
+
+       <!-- Analyse de l'opération -->
+       <div class="detail-section">
+         <h5>Analyse de l'Opération</h5>
+         <div class="operation-analysis">
+           <div class="analysis-item" [ngClass]="getOperationTypeClass(modalSelectedOperation.typeOperation || '')">
+             <i class="fas" [ngClass]="getOperationTypeIcon(modalSelectedOperation.typeOperation || '')"></i>
+             <div class="analysis-content">
+               <h6>{{ getOperationTypeLabel(modalSelectedOperation.typeOperation || '') }}</h6>
+               <p>{{ getOperationTypeDescription(modalSelectedOperation.typeOperation || '') }}</p>
+             </div>
+           </div>
+           
+                        <div class="analysis-item" *ngIf="modalSelectedOperation.montant !== 0">
+                           <i class="fas" [ngClass]="(modalSelectedOperation.montant || 0) > 0 ? 'fa-arrow-up text-success' : 'fa-arrow-down text-danger'"></i>
+             <div class="analysis-content">
+               <h6>{{ (modalSelectedOperation.montant || 0) > 0 ? 'Opération Crédit' : 'Opération Débit' }}</h6>
+               <p>Impact sur le solde : {{ (modalSelectedOperation.montant || 0) > 0 ? 'Augmentation' : 'Diminution' }}</p>
+             </div>
+           </div>
+         </div>
+       </div>
+    </div>
+
+    <div class="modal-footer">
+      <button type="button" class="btn btn-secondary" (click)="closeOperationDetailsModal()">
+        <i class="fas fa-times"></i> Fermer
+      </button>
+      <button type="button" class="btn btn-primary" (click)="editOperation(modalSelectedOperation!)" *ngIf="modalSelectedOperation">
+        <i class="fas fa-edit"></i> Modifier
+      </button>
+      <button type="button" class="btn btn-info" (click)="exportOperationDetails(modalSelectedOperation!)" *ngIf="modalSelectedOperation">
+        <i class="fas fa-file-excel"></i> Exporter
+      </button>
+    </div>
+  </div>
+</div> 
