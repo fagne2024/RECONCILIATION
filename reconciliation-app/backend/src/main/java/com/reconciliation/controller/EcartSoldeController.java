@@ -1,6 +1,7 @@
 package com.reconciliation.controller;
 
 import com.reconciliation.model.EcartSolde;
+import com.reconciliation.entity.EcartSoldeEntity;
 import com.reconciliation.service.EcartSoldeService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -22,9 +23,22 @@ public class EcartSoldeController {
     private EcartSoldeService ecartSoldeService;
     
     @GetMapping
-    public ResponseEntity<List<EcartSolde>> getAllEcartSoldes() {
-        List<EcartSolde> ecartSoldes = ecartSoldeService.getAllEcartSoldes();
-        return ResponseEntity.ok(ecartSoldes);
+    public ResponseEntity<List<EcartSoldeEntity>> getEcartSoldes(
+            @RequestParam(required = false) String agence,
+            @RequestParam(required = false) String service,
+            @RequestParam(required = false) String pays,
+            @RequestParam(required = false) String numeroTransGu,
+            @RequestParam(required = false) String statut,
+            @RequestParam(required = false) String dateDebut,
+            @RequestParam(required = false) String dateFin) {
+        
+        try {
+            List<EcartSoldeEntity> ecartSoldes = ecartSoldeService.getEcartSoldes(
+                agence, service, pays, numeroTransGu, statut, dateDebut, dateFin);
+            return ResponseEntity.ok(ecartSoldes);
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().build();
+        }
     }
     
     @GetMapping("/{id}")
@@ -82,6 +96,12 @@ public class EcartSoldeController {
     public ResponseEntity<List<String>> getDistinctPays() {
         List<String> pays = ecartSoldeService.getDistinctPays();
         return ResponseEntity.ok(pays);
+    }
+    
+    @GetMapping("/numero-trans-gu")
+    public ResponseEntity<List<String>> getDistinctNumeroTransGu() {
+        List<String> numeroTransGu = ecartSoldeService.getDistinctNumeroTransGu();
+        return ResponseEntity.ok(numeroTransGu);
     }
     
     @PostMapping

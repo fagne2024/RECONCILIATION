@@ -34,6 +34,7 @@ export interface EcartSoldeFilter {
     agence?: string;
     service?: string;
     pays?: string;
+    numeroTransGu?: string;
     statut?: string;
     dateDebut?: string;
     dateFin?: string;

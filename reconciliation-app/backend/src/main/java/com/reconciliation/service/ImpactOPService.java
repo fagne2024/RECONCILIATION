@@ -28,7 +28,7 @@ public class ImpactOPService {
      * Récupérer tous les impacts OP avec filtres
      */
     public List<ImpactOPEntity> getImpactOPs(String codeProprietaire, String typeOperation, 
-                                            String groupeReseau, String statut, String dateDebut, 
+                                            String groupeReseau, String numeroTransGU, String statut, String dateDebut, 
                                             String dateFin, Double montantMin, Double montantMax) {
         
         ImpactOPEntity.Statut statutEnum = null;
@@ -81,7 +81,7 @@ public class ImpactOPService {
         System.out.println("  dateFin: " + dateFin + " -> " + dateFinParsed);
 
         List<ImpactOPEntity> results = impactOPRepository.findWithFilters(
-            codeProprietaire, typeOperation, groupeReseau, statutEnum,
+            codeProprietaire, typeOperation, groupeReseau, numeroTransGU, statutEnum,
             dateDebutParsed, dateFinParsed, montantMin, montantMax);
         
         System.out.println("Résultats trouvés: " + results.size());
@@ -266,38 +266,84 @@ public class ImpactOPService {
         int totalReceived = 0;
         int excludedLines = 0; // Compteur pour les lignes exclues
 
+        System.out.println("=== DÉBUT uploadFile Impact OP ===");
+        System.out.println("DEBUG: Nom du fichier: " + (file.getOriginalFilename() != null ? file.getOriginalFilename() : "unknown"));
+        System.out.println("DEBUG: Taille du fichier: " + file.getSize() + " bytes");
+        System.out.println("DEBUG: Type MIME: " + file.getContentType());
+
         try {
             List<Map<String, String>> data = parseFile(file);
             totalReceived = data.size();
+            System.out.println("DEBUG: Nombre total de lignes parsées: " + totalReceived);
             
-            for (Map<String, String> row : data) {
+            if (!data.isEmpty()) {
+                System.out.println("DEBUG: En-têtes trouvés: " + data.get(0).keySet());
+                System.out.println("DEBUG: Première ligne: " + data.get(0));
+            }
+            
+            for (int i = 0; i < data.size(); i++) {
+                Map<String, String> row = data.get(i);
+                int lineNumber = i + 2; // +2 car l'index commence à 0 et on a un header
+                
+                System.out.println("DEBUG: Traitement ligne " + lineNumber + "/" + data.size() + " - Progression: " + Math.round((i * 100.0) / data.size()) + "%");
+                System.out.println("DEBUG: Ligne " + lineNumber + " - Contenu: " + row);
+                
                 try {
                     // Vérifier si le type d'opération doit être exclu
                     String typeOperationField = findFieldIgnoreAccents(row, "Type Opération");
+                    System.out.println("DEBUG: Ligne " + lineNumber + " - Champ Type Opération trouvé: " + typeOperationField);
+                    
+                    if (typeOperationField == null) {
+                        System.out.println("DEBUG: Ligne " + lineNumber + " - ERREUR: Champ 'Type Opération' non trouvé");
+                        errors.add("Ligne " + lineNumber + ": Champ 'Type Opération' non trouvé");
+                        continue;
+                    }
+                    
                     String typeOperation = row.get(typeOperationField);
+                    System.out.println("DEBUG: Ligne " + lineNumber + " - Type d'opération: " + typeOperation);
                     
                     if (shouldExcludeTypeOperation(typeOperation)) {
-                        System.out.println("Ligne EXCLUE lors de l'import - Type d'opération: " + typeOperation);
+                        System.out.println("DEBUG: Ligne " + lineNumber + " - EXCLUE - Type d'opération: " + typeOperation);
                         excludedLines++;
                         continue; // Passer à la ligne suivante
                     }
                     
+                    System.out.println("DEBUG: Ligne " + lineNumber + " - Création de l'entité...");
                     ImpactOPEntity impact = createImpactFromRow(row);
+                    System.out.println("DEBUG: Ligne " + lineNumber + " - Entité créée avec succès - ID: " + impact.getId());
                     
                     // Vérifier les doublons
+                    System.out.println("DEBUG: Ligne " + lineNumber + " - Vérification des doublons...");
                     if (!isDuplicate(row)) {
+                        System.out.println("DEBUG: Ligne " + lineNumber + " - Pas de doublon, sauvegarde...");
                         impactOPRepository.save(impact);
                         count++;
+                        System.out.println("DEBUG: Ligne " + lineNumber + " - Sauvegardé avec succès");
                     } else {
+                        System.out.println("DEBUG: Ligne " + lineNumber + " - DOUBLON DÉTECTÉ, ignoré");
                         duplicates++;
                     }
                 } catch (Exception e) {
-                    errors.add("Erreur lors de l'import: " + e.getMessage());
+                    System.out.println("DEBUG: Ligne " + lineNumber + " - ERREUR: " + e.getMessage());
+                    System.out.println("DEBUG: Stack trace:");
+                    e.printStackTrace();
+                    errors.add("Ligne " + lineNumber + ": " + e.getMessage());
                 }
             }
         } catch (Exception e) {
+            System.out.println("DEBUG: ERREUR CRITIQUE lors de la lecture du fichier: " + e.getMessage());
+            System.out.println("DEBUG: Stack trace:");
+            e.printStackTrace();
             errors.add("Erreur lors de la lecture du fichier: " + e.getMessage());
         }
+
+        System.out.println("DEBUG: === RÉSUMÉ DU TRAITEMENT ===");
+        System.out.println("DEBUG: Total de lignes reçues: " + totalReceived);
+        System.out.println("DEBUG: Lignes traitées avec succès: " + count);
+        System.out.println("DEBUG: Doublons détectés: " + duplicates);
+        System.out.println("DEBUG: Lignes exclues: " + excludedLines);
+        System.out.println("DEBUG: Erreurs: " + errors.size());
+        System.out.println("DEBUG: === FIN RÉSUMÉ ===");
 
         String message = errors.isEmpty() ? 
             "✅ " + count + " enregistrements importés avec succès" + 
@@ -311,6 +357,7 @@ public class ImpactOPService {
         result.put("totalReceived", totalReceived);
         result.put("excludedLines", excludedLines); // Ajouter le compteur des lignes exclues
 
+        System.out.println("=== FIN uploadFile Impact OP ===");
         return result;
     }
 
@@ -342,6 +389,7 @@ public class ImpactOPService {
         options.put("codeProprietaires", impactOPRepository.findDistinctCodeProprietaires());
         options.put("typeOperations", impactOPRepository.findDistinctTypeOperations());
         options.put("groupeReseaux", impactOPRepository.findDistinctGroupeReseaux());
+        options.put("numeroTransGUs", impactOPRepository.findDistinctNumeroTransGU());
         return options;
     }
 
@@ -349,11 +397,11 @@ public class ImpactOPService {
      * Exporter les impacts OP en Excel
      */
     public byte[] exportToExcel(String codeProprietaire, String typeOperation, 
-                               String groupeReseau, String statut, String dateDebut, 
+                               String groupeReseau, String numeroTransGu, String statut, String dateDebut, 
                                String dateFin, Double montantMin, Double montantMax) throws IOException {
         
         List<ImpactOPEntity> impacts = getImpactOPs(codeProprietaire, typeOperation, 
-                                                   groupeReseau, statut, dateDebut, 
+                                                   groupeReseau, numeroTransGu, statut, dateDebut, 
                                                    dateFin, montantMin, montantMax);
 
         try (Workbook workbook = new XSSFWorkbook()) {
@@ -498,12 +546,23 @@ public class ImpactOPService {
         String content = new String(file.getBytes(), "UTF-8");
         String[] lines = content.split("\n");
         
+        System.out.println("DEBUG: === DÉBUT parseCsvFile ===");
+        System.out.println("DEBUG: Nombre total de lignes dans le fichier: " + lines.length);
+        System.out.println("DEBUG: Première ligne (en-tête): '" + lines[0] + "'");
+        
         if (lines.length < 2) {
             throw new RuntimeException("Fichier vide ou format invalide");
         }
 
+        // Détecter automatiquement le séparateur
+        String separator = detectSeparator(lines[0]);
+        System.out.println("DEBUG: Séparateur détecté: '" + separator + "'");
+
         // En-têtes - nettoyer les espaces et corriger les accents
-        String[] headers = lines[0].split(",");
+        String[] headers = lines[0].split(separator);
+        System.out.println("DEBUG: Nombre d'en-têtes trouvés: " + headers.length);
+        System.out.println("DEBUG: En-têtes bruts: " + Arrays.toString(headers));
+        
         for (int i = 0; i < headers.length; i++) {
             headers[i] = headers[i].trim();
             // Corriger les accents courants
@@ -512,16 +571,36 @@ public class ImpactOPService {
                                   .replace("groupe de réseau", "Groupe de réseau");
         }
         
+        System.out.println("DEBUG: En-têtes nettoyés: " + Arrays.toString(headers));
+        
         for (int i = 1; i < lines.length; i++) {
-            String[] values = lines[i].split(",");
+            String line = lines[i].trim();
+            if (line.isEmpty()) {
+                System.out.println("DEBUG: Ligne " + (i+1) + " vide, ignorée");
+                continue;
+            }
+            
+            System.out.println("DEBUG: Traitement ligne " + (i+1) + ": '" + line + "'");
+            String[] values = line.split(separator);
+            System.out.println("DEBUG: Ligne " + (i+1) + " - Nombre de valeurs: " + values.length);
+            
             if (values.length == headers.length) {
                 Map<String, String> row = new HashMap<>();
                 for (int j = 0; j < headers.length; j++) {
-                    row.put(headers[j], values[j].trim());
+                    String value = values[j].trim();
+                    row.put(headers[j], value);
+                    System.out.println("DEBUG: Ligne " + (i+1) + " - " + headers[j] + ": '" + value + "'");
                 }
                 data.add(row);
+                System.out.println("DEBUG: Ligne " + (i+1) + " ajoutée avec succès");
+            } else {
+                System.out.println("DEBUG: Ligne " + (i+1) + " - ERREUR: Nombre de valeurs (" + values.length + ") != nombre d'en-têtes (" + headers.length + ")");
+                System.out.println("DEBUG: Valeurs trouvées: " + Arrays.toString(values));
             }
         }
+        
+        System.out.println("DEBUG: Nombre total de lignes parsées: " + data.size());
+        System.out.println("DEBUG: === FIN parseCsvFile ===");
         
         return data;
     }
@@ -663,9 +742,33 @@ public class ImpactOPService {
     }
 
     /**
+     * Détecter automatiquement le séparateur CSV
+     */
+    private String detectSeparator(String headerLine) {
+        // Compter les occurrences de chaque séparateur possible
+        int commaCount = headerLine.length() - headerLine.replace(",", "").length();
+        int semicolonCount = headerLine.length() - headerLine.replace(";", "").length();
+        int tabCount = headerLine.length() - headerLine.replace("\t", "").length();
+        
+        System.out.println("DEBUG: Détection séparateur - Virgules: " + commaCount + ", Point-virgules: " + semicolonCount + ", Tabs: " + tabCount);
+        
+        // Retourner le séparateur le plus fréquent
+        if (semicolonCount >= commaCount && semicolonCount >= tabCount) {
+            return ";";
+        } else if (tabCount >= commaCount && tabCount >= semicolonCount) {
+            return "\t";
+        } else {
+            return ",";
+        }
+    }
+
+    /**
      * Créer un ImpactOPEntity à partir d'une ligne de données
      */
     private ImpactOPEntity createImpactFromRow(Map<String, String> row) {
+        System.out.println("DEBUG: === DÉBUT createImpactFromRow ===");
+        System.out.println("DEBUG: En-têtes disponibles: " + row.keySet());
+        
         String montantField = findFieldIgnoreAccents(row, "Montant");
         String soldeAvantField = findFieldIgnoreAccents(row, "Solde avant");
         String soldeApresField = findFieldIgnoreAccents(row, "Solde après");
@@ -675,19 +778,43 @@ public class ImpactOPService {
         String numeroTransGUField = findFieldIgnoreAccents(row, "Numéro Trans GU");
         String groupeReseauField = findFieldIgnoreAccents(row, "Groupe de réseau");
         
+        System.out.println("DEBUG: Champs trouvés:");
+        System.out.println("  - Montant: " + montantField + " -> " + (montantField != null ? row.get(montantField) : "NULL"));
+        System.out.println("  - Solde avant: " + soldeAvantField + " -> " + (soldeAvantField != null ? row.get(soldeAvantField) : "NULL"));
+        System.out.println("  - Solde après: " + soldeApresField + " -> " + (soldeApresField != null ? row.get(soldeApresField) : "NULL"));
+        System.out.println("  - Date opération: " + dateField + " -> " + (dateField != null ? row.get(dateField) : "NULL"));
+        System.out.println("  - Type Opération: " + typeOperationField + " -> " + (typeOperationField != null ? row.get(typeOperationField) : "NULL"));
+        System.out.println("  - Code propriétaire: " + codeProprietaireField + " -> " + (codeProprietaireField != null ? row.get(codeProprietaireField) : "NULL"));
+        System.out.println("  - Numéro Trans GU: " + numeroTransGUField + " -> " + (numeroTransGUField != null ? row.get(numeroTransGUField) : "NULL"));
+        System.out.println("  - Groupe de réseau: " + groupeReseauField + " -> " + (groupeReseauField != null ? row.get(groupeReseauField) : "NULL"));
+        
+        // Vérifier que tous les champs requis sont présents
+        if (montantField == null) throw new RuntimeException("Champ 'Montant' non trouvé");
+        if (soldeAvantField == null) throw new RuntimeException("Champ 'Solde avant' non trouvé");
+        if (soldeApresField == null) throw new RuntimeException("Champ 'Solde après' non trouvé");
+        if (dateField == null) throw new RuntimeException("Champ 'Date opération' non trouvé");
+        if (typeOperationField == null) throw new RuntimeException("Champ 'Type Opération' non trouvé");
+        if (codeProprietaireField == null) throw new RuntimeException("Champ 'Code propriétaire' non trouvé");
+        if (numeroTransGUField == null) throw new RuntimeException("Champ 'Numéro Trans GU' non trouvé");
+        if (groupeReseauField == null) throw new RuntimeException("Champ 'Groupe de réseau' non trouvé");
+        
         BigDecimal montant = new BigDecimal(row.get(montantField).replace(",", ""));
         BigDecimal soldeAvant = new BigDecimal(row.get(soldeAvantField).replace(",", ""));
         BigDecimal soldeApres = new BigDecimal(row.get(soldeApresField).replace(",", ""));
         
         // Parser la date selon le format
         String dateStr = row.get(dateField);
+        System.out.println("DEBUG: Date brute: '" + dateStr + "'");
         LocalDateTime dateOperation;
         if (dateStr.contains("T")) {
             dateOperation = LocalDateTime.parse(dateStr); // Format ISO
+            System.out.println("DEBUG: Date parsée (ISO): " + dateOperation);
         } else if (dateStr.contains(".")) {
             dateOperation = LocalDateTime.parse(dateStr, DATE_FORMATTER_WITH_MS); // Format avec millisecondes
+            System.out.println("DEBUG: Date parsée (avec ms): " + dateOperation);
         } else {
             dateOperation = LocalDateTime.parse(dateStr, DATE_FORMATTER); // Format avec espace
+            System.out.println("DEBUG: Date parsée (standard): " + dateOperation);
         }
 
         // Créer l'entité avec le commentaire par défaut selon le type d'opération
@@ -709,6 +836,9 @@ public class ImpactOPService {
         } else {
             impact.setCommentaire("IMPACT J+1");
         }
+        
+        System.out.println("DEBUG: Entité créée avec succès");
+        System.out.println("DEBUG: === FIN createImpactFromRow ===");
         
         return impact;
     }

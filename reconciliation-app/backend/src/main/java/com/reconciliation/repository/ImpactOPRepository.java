@@ -19,6 +19,7 @@ public interface ImpactOPRepository extends JpaRepository<ImpactOPEntity, Long> 
            "(:codeProprietaire IS NULL OR i.codeProprietaire = :codeProprietaire) AND " +
            "(:typeOperation IS NULL OR i.typeOperation = :typeOperation) AND " +
            "(:groupeReseau IS NULL OR i.groupeReseau = :groupeReseau) AND " +
+           "(:numeroTransGU IS NULL OR i.numeroTransGU = :numeroTransGU) AND " +
            "(:statut IS NULL OR i.statut = :statut) AND " +
            "(:dateDebut IS NULL OR i.dateOperation >= :dateDebut) AND " +
            "(:dateFin IS NULL OR i.dateOperation <= :dateFin) AND " +
@@ -29,6 +30,7 @@ public interface ImpactOPRepository extends JpaRepository<ImpactOPEntity, Long> 
             @Param("codeProprietaire") String codeProprietaire,
             @Param("typeOperation") String typeOperation,
             @Param("groupeReseau") String groupeReseau,
+            @Param("numeroTransGU") String numeroTransGU,
             @Param("statut") ImpactOPEntity.Statut statut,
             @Param("dateDebut") LocalDateTime dateDebut,
             @Param("dateFin") LocalDateTime dateFin,
@@ -82,6 +84,12 @@ public interface ImpactOPRepository extends JpaRepository<ImpactOPEntity, Long> 
      */
     @Query("SELECT DISTINCT i.groupeReseau FROM ImpactOPEntity i ORDER BY i.groupeReseau")
     List<String> findDistinctGroupeReseaux();
+    
+    /**
+     * Trouver les numéros de transaction GU distincts
+     */
+    @Query("SELECT DISTINCT i.numeroTransGU FROM ImpactOPEntity i WHERE i.numeroTransGU IS NOT NULL AND i.numeroTransGU != '' ORDER BY i.numeroTransGU")
+    List<String> findDistinctNumeroTransGU();
 
     /**
      * Calculer la somme des montants par statut

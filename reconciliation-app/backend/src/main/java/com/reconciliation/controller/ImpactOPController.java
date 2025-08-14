@@ -29,6 +29,7 @@ public class ImpactOPController {
             @RequestParam(required = false) String codeProprietaire,
             @RequestParam(required = false) String typeOperation,
             @RequestParam(required = false) String groupeReseau,
+            @RequestParam(required = false) String numeroTransGu,
             @RequestParam(required = false) String statut,
             @RequestParam(required = false) String dateDebut,
             @RequestParam(required = false) String dateFin,
@@ -37,7 +38,7 @@ public class ImpactOPController {
         
         try {
             List<ImpactOPEntity> impacts = impactOPService.getImpactOPs(
-                codeProprietaire, typeOperation, groupeReseau, statut,
+                codeProprietaire, typeOperation, groupeReseau, numeroTransGu, statut,
                 dateDebut, dateFin, montantMin, montantMax);
             return ResponseEntity.ok(impacts);
         } catch (Exception e) {
@@ -171,6 +172,7 @@ public class ImpactOPController {
             @RequestParam(required = false) String codeProprietaire,
             @RequestParam(required = false) String typeOperation,
             @RequestParam(required = false) String groupeReseau,
+            @RequestParam(required = false) String numeroTransGu,
             @RequestParam(required = false) String statut,
             @RequestParam(required = false) String dateDebut,
             @RequestParam(required = false) String dateFin,
@@ -179,7 +181,7 @@ public class ImpactOPController {
         
         try {
             byte[] excelData = impactOPService.exportToExcel(
-                codeProprietaire, typeOperation, groupeReseau, statut,
+                codeProprietaire, typeOperation, groupeReseau, numeroTransGu, statut,
                 dateDebut, dateFin, montantMin, montantMax);
             
             ByteArrayResource resource = new ByteArrayResource(excelData);

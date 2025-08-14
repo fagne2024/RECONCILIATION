@@ -122,9 +122,39 @@
     .upload-form {
       .file-input-group {
         display: flex;
+        flex-direction: column;
         gap: 10px;
-        align-items: center;
         margin-bottom: 15px;
+
+        .file-type-indicator {
+          margin: 10px 0;
+          
+          .badge {
+            padding: 8px 12px;
+            font-size: 12px;
+            border-radius: 4px;
+            
+            &.badge-primary {
+              background-color: #007bff;
+              color: white;
+            }
+            
+            &.badge-info {
+              background-color: #17a2b8;
+              color: white;
+            }
+            
+            i {
+              margin-right: 5px;
+            }
+          }
+        }
+
+        .button-group {
+          display: flex;
+          gap: 10px;
+          align-items: center;
+        }
 
         .file-input {
           flex: 1;

@@ -21,7 +21,9 @@ export class TrxSfComponent implements OnInit, OnDestroy {
   
   // Upload
   selectedFile: File | null = null;
+  fileType: 'full' | 'statut' | null = null; // 'full' = 9 colonnes, 'statut' = 2 colonnes
   isUploading = false;
+  isChangingStatut = false;
   uploadMessage: { type: 'success' | 'error', text: string } | null = null;
   validationResult: any = null;
   
@@ -30,6 +32,7 @@ export class TrxSfComponent implements OnInit, OnDestroy {
   agences: string[] = [];
   services: string[] = [];
   pays: string[] = [];
+  numeroTransGUs: string[] = [];
   statuts: string[] = ['EN_ATTENTE', 'TRAITE', 'ERREUR'];
   
   // Pagination
@@ -68,6 +71,7 @@ export class TrxSfComponent implements OnInit, OnDestroy {
       agence: [''],
       service: [''],
       pays: [''],
+      numeroTransGu: [''],
       statut: [''],
       dateDebut: [''],
       dateFin: ['']
@@ -101,7 +105,7 @@ export class TrxSfComponent implements OnInit, OnDestroy {
     
     if (isAdmin) {
       // Admin : charger toutes les données
-      this.trxSfService.getAllTrxSf()
+      this.trxSfService.getTrxSfs()
         .pipe(takeUntil(this.destroy$))
         .subscribe({
           next: (data) => {
@@ -151,10 +155,11 @@ export class TrxSfComponent implements OnInit, OnDestroy {
     }
   }
 
-  private initializeFilterLists(): void {
+  private   initializeFilterLists(): void {
     this.agences = this.getUniqueAgences();
     this.services = this.getUniqueServices();
     this.pays = this.getUniquePays();
+    this.numeroTransGUs = this.getUniqueNumeroTransGUs();
   }
 
   private generateMockData(): TrxSfData[] {
@@ -200,6 +205,10 @@ export class TrxSfComponent implements OnInit, OnDestroy {
       filtered = filtered.filter(item => item.pays === filters.pays);
     }
     
+    if (filters.numeroTransGu) {
+      filtered = filtered.filter(item => item.numeroTransGu === filters.numeroTransGu);
+    }
+    
     if (filters.statut) {
       filtered = filtered.filter(item => item.statut === filters.statut);
     }
@@ -229,7 +238,43 @@ export class TrxSfComponent implements OnInit, OnDestroy {
       this.selectedFile = file;
       this.uploadMessage = null;
       this.validationResult = null;
+      this.fileType = null;
+      
+      // Détecter automatiquement le type de fichier
+      this.detectFileType(file);
     }
+  }
+  
+  private detectFileType(file: File): void {
+    const reader = new FileReader();
+    reader.onload = (e: any) => {
+      const content = e.target.result;
+      const lines = content.split('\n');
+      
+      if (lines.length > 0) {
+        const firstLine = lines[0];
+        const columns = firstLine.split(/[,;]/); // Détecter le séparateur
+        
+        console.log('🔍 Détection du type de fichier:');
+        console.log('   - Nombre de colonnes détectées:', columns.length);
+        console.log('   - Première ligne:', firstLine);
+        
+        if (columns.length >= 8 && columns.length <= 10) {
+          // Fichier complet (9 colonnes ± 1)
+          this.fileType = 'full';
+          console.log('✅ Type détecté: Fichier complet (9 colonnes)');
+        } else if (columns.length >= 2 && columns.length <= 4) {
+          // Fichier de statut (2 colonnes ± 2)
+          this.fileType = 'statut';
+          console.log('✅ Type détecté: Fichier de statut (2 colonnes)');
+        } else {
+          // Type indéterminé
+          this.fileType = null;
+          console.log('❓ Type indéterminé, nombre de colonnes:', columns.length);
+        }
+      }
+    };
+    reader.readAsText(file);
   }
 
   validateFile(): void {
@@ -283,6 +328,51 @@ export class TrxSfComponent implements OnInit, OnDestroy {
           console.error('Erreur lors de l\'upload:', error);
           this.isUploading = false;
           this.uploadMessage = { type: 'error', text: 'Erreur lors de l\'upload du fichier' };
+        }
+      });
+  }
+  
+  changeStatutFile(): void {
+    if (!this.selectedFile) {
+      this.uploadMessage = { type: 'error', text: 'Aucun fichier sélectionné' };
+      return;
+    }
+
+    this.isChangingStatut = true;
+    this.uploadMessage = null;
+    this.validationResult = null;
+
+    this.trxSfService.changeStatutFromFile(this.selectedFile)
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: (response) => {
+          this.isChangingStatut = false;
+          
+          let message = `Changement de statut terminé - `;
+          message += `Total: ${response.totalLines}, `;
+          message += `Traitées: ${response.processedLines}, `;
+          message += `Mises à jour: ${response.updatedLines}`;
+          
+          if (response.errorLines > 0) {
+            message += `, Erreurs: ${response.errorLines}`;
+          }
+          
+          this.uploadMessage = { 
+            type: response.success ? 'success' : 'error', 
+            text: message 
+          };
+          
+          this.selectedFile = null;
+          this.validationResult = null;
+          this.loadTrxSfData(); // Recharger les données
+        },
+        error: (error) => {
+          console.error('Erreur lors du changement de statut:', error);
+          this.isChangingStatut = false;
+          this.uploadMessage = { 
+            type: 'error', 
+            text: error.error?.error || error.error?.message || 'Erreur lors du changement de statut' 
+          };
         }
       });
   }
@@ -353,6 +443,10 @@ export class TrxSfComponent implements OnInit, OnDestroy {
 
   getUniquePays(): string[] {
     return [...new Set(this.trxSfData.map(item => item.pays))].sort();
+  }
+
+  getUniqueNumeroTransGUs(): string[] {
+    return [...new Set(this.trxSfData.map(item => item.numeroTransGu))].sort();
   }
 
   formatDate(date: string): string {

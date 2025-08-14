@@ -45,8 +45,34 @@ export class TrxSfService {
   constructor(private http: HttpClient) { }
 
   // Récupérer toutes les transactions SF
-  getAllTrxSf(): Observable<TrxSfData[]> {
-    return this.http.get<TrxSfData[]>(this.baseUrl);
+  getTrxSfs(filter?: any): Observable<TrxSfData[]> {
+    let params = new HttpParams();
+    
+    if (filter) {
+      if (filter.agence) {
+        params = params.set('agence', filter.agence);
+      }
+      if (filter.service) {
+        params = params.set('service', filter.service);
+      }
+      if (filter.pays) {
+        params = params.set('pays', filter.pays);
+      }
+      if (filter.numeroTransGu) {
+        params = params.set('numeroTransGu', filter.numeroTransGu);
+      }
+      if (filter.statut) {
+        params = params.set('statut', filter.statut);
+      }
+      if (filter.dateDebut) {
+        params = params.set('dateDebut', filter.dateDebut);
+      }
+      if (filter.dateFin) {
+        params = params.set('dateFin', filter.dateFin);
+      }
+    }
+
+    return this.http.get<TrxSfData[]>(this.baseUrl, { params });
   }
 
   // Récupérer une transaction par ID
@@ -118,6 +144,17 @@ export class TrxSfService {
   // Récupérer les pays distincts
   getDistinctPays(): Observable<string[]> {
     return this.http.get<string[]>(`${this.baseUrl}/pays`);
+  }
+
+  // Récupérer les numéros Trans GU distincts
+  getDistinctNumeroTransGu(): Observable<string[]> {
+    return this.http.get<string[]>(`${this.baseUrl}/numero-trans-gu`);
+  }
+  
+  changeStatutFromFile(file: File): Observable<any> {
+    const formData = new FormData();
+    formData.append('file', file);
+    return this.http.post<any>(`${this.baseUrl}/change-statut`, formData);
   }
 
   // Filtrer par agence

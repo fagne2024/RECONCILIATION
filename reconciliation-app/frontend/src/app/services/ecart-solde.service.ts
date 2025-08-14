@@ -14,9 +14,35 @@ export class EcartSoldeService {
 
   constructor(private http: HttpClient) { }
 
-  getAllEcartSoldes(): Observable<EcartSolde[]> {
+  getEcartSoldes(filter?: EcartSoldeFilter): Observable<EcartSolde[]> {
+    let params = new HttpParams();
+    
+    if (filter) {
+      if (filter.agence) {
+        params = params.set('agence', filter.agence);
+      }
+      if (filter.service) {
+        params = params.set('service', filter.service);
+      }
+      if (filter.pays) {
+        params = params.set('pays', filter.pays);
+      }
+      if (filter.numeroTransGu) {
+        params = params.set('numeroTransGu', filter.numeroTransGu);
+      }
+      if (filter.statut) {
+        params = params.set('statut', filter.statut);
+      }
+      if (filter.dateDebut) {
+        params = params.set('dateDebut', filter.dateDebut);
+      }
+      if (filter.dateFin) {
+        params = params.set('dateFin', filter.dateFin);
+      }
+    }
+
     return forkJoin({
-      ecartSoldes: this.http.get<EcartSolde[]>(this.apiUrl),
+      ecartSoldes: this.http.get<EcartSolde[]>(this.apiUrl, { params }),
       fraisTransactions: this.http.get<any[]>(this.fraisTransactionUrl)
     }).pipe(
       map(result => {
@@ -121,6 +147,10 @@ export class EcartSoldeService {
 
   getDistinctPays(): Observable<string[]> {
     return this.http.get<string[]>(`${this.apiUrl}/pays`);
+  }
+
+  getDistinctNumeroTransGu(): Observable<string[]> {
+    return this.http.get<string[]>(`${this.apiUrl}/numero-trans-gu`);
   }
 
   createEcartSolde(ecartSolde: EcartSolde): Observable<EcartSolde> {

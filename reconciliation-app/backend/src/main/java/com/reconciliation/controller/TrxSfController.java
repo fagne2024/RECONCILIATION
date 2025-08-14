@@ -13,6 +13,8 @@ import java.io.IOException;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.HashMap;
+import java.util.Arrays;
 
 @RestController
 @RequestMapping("/api/trx-sf")
@@ -22,9 +24,22 @@ public class TrxSfController {
     private TrxSfService trxSfService;
     
     @GetMapping
-    public ResponseEntity<List<TrxSfEntity>> getAllTrxSf() {
-        List<TrxSfEntity> trxSfList = trxSfService.getAllTrxSf();
-        return ResponseEntity.ok(trxSfList);
+    public ResponseEntity<List<TrxSfEntity>> getTrxSfs(
+            @RequestParam(required = false) String agence,
+            @RequestParam(required = false) String service,
+            @RequestParam(required = false) String pays,
+            @RequestParam(required = false) String numeroTransGu,
+            @RequestParam(required = false) String statut,
+            @RequestParam(required = false) String dateDebut,
+            @RequestParam(required = false) String dateFin) {
+        
+        try {
+            List<TrxSfEntity> trxSfList = trxSfService.getTrxSfs(
+                agence, service, pays, numeroTransGu, statut, dateDebut, dateFin);
+            return ResponseEntity.ok(trxSfList);
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().build();
+        }
     }
     
     @GetMapping("/{id}")
@@ -82,6 +97,32 @@ public class TrxSfController {
     public ResponseEntity<List<String>> getDistinctPays() {
         List<String> pays = trxSfService.getDistinctPays();
         return ResponseEntity.ok(pays);
+    }
+    
+    @GetMapping("/numero-trans-gu")
+    public ResponseEntity<List<String>> getDistinctNumeroTransGu() {
+        List<String> numeroTransGu = trxSfService.getDistinctNumeroTransGu();
+        return ResponseEntity.ok(numeroTransGu);
+    }
+    
+    @PostMapping("/change-statut")
+    public ResponseEntity<Map<String, Object>> changeStatutFromFile(@RequestParam("file") MultipartFile file) {
+        try {
+            Map<String, Object> result = trxSfService.processStatutChangeFile(file);
+            return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            Map<String, Object> errorResult = new HashMap<>();
+            errorResult.put("success", false);
+            errorResult.put("error", e.getMessage());
+            errorResult.put("totalLines", 0);
+            errorResult.put("processedLines", 0);
+            errorResult.put("updatedLines", 0);
+            errorResult.put("errorLines", 1);
+            errorResult.put("errors", Arrays.asList(e.getMessage()));
+            
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(errorResult);
+        }
     }
     
     @GetMapping("/statistics")

@@ -83,8 +83,9 @@
   padding: 20px;
   min-height: 200px;
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
 }
 
 .ranking-table {
@@ -94,6 +95,7 @@
   border-radius: 8px;
   overflow: hidden;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  margin-bottom: 0;
   
   thead {
     background: #f8f9fa;
@@ -356,7 +358,10 @@
   justify-content: center;
   align-items: center;
   gap: 6px;
-  margin: 18px 0 0 0;
+  margin: 20px 0 0 0;
+  padding: 15px 0;
+  border-top: 1px solid #e9ecef;
+  width: 100%;
   button {
     background: #f1f1f1;
     border: none;

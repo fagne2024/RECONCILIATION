@@ -26,6 +26,7 @@ export class ImpactOPComponent implements OnInit, OnDestroy {
   codeProprietaires: string[] = [];
   typeOperations: string[] = [];
   groupeReseaux: string[] = [];
+  numeroTransGUs: string[] = [];
   statuts = ['EN_ATTENTE', 'TRAITE', 'ERREUR'];
   
   // Upload
@@ -69,6 +70,7 @@ export class ImpactOPComponent implements OnInit, OnDestroy {
       codeProprietaire: [''],
       typeOperation: [''],
       groupeReseau: [''],
+      numeroTransGu: [''],
       statut: [''],
       dateDebut: [''],
       dateFin: [''],
@@ -147,6 +149,7 @@ export class ImpactOPComponent implements OnInit, OnDestroy {
           this.codeProprietaires = data.codeProprietaires;
           this.typeOperations = data.typeOperations;
           this.groupeReseaux = data.groupeReseaux;
+          this.numeroTransGUs = data.numeroTransGUs;
         },
         error: (error) => {
           console.error('Erreur lors du chargement des options de filtres:', error);
@@ -189,6 +192,9 @@ export class ImpactOPComponent implements OnInit, OnDestroy {
     }
     if (filterValue.groupeReseau) {
       filter.groupeReseau = filterValue.groupeReseau;
+    }
+    if (filterValue.numeroTransGu) {
+      filter.numeroTransGu = filterValue.numeroTransGu;
     }
     if (filterValue.statut) {
       filter.statut = filterValue.statut;

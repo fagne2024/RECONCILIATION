@@ -1,10 +1,10 @@
 # Application de Réconciliation
 
-Une application complète de réconciliation bancaire développée avec Angular (frontend) et Spring Boot (backend).
+Une application complète de réconciliation  développée avec Angular (frontend) et Spring Boot (backend).
 
 ## 🚀 Description
 
-Cette application permet de gérer et réconcilier les transactions bancaires, les comptes, les opérations et les frais. Elle offre une interface utilisateur moderne pour visualiser et traiter les données de réconciliation.
+Cette application permet de gérer et réconcilier les transactions , les comptes, les opérations et les frais. Elle offre une interface utilisateur moderne pour visualiser et traiter les données de réconciliation.
 
 ## 🛠️ Technologies Utilisées
 

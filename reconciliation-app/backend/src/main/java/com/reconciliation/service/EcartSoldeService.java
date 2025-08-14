@@ -94,6 +94,54 @@ public class EcartSoldeService {
         return ecartSoldeRepository.findDistinctPays();
     }
     
+    public List<String> getDistinctNumeroTransGu() {
+        return ecartSoldeRepository.findDistinctNumeroTransGu();
+    }
+    
+    /**
+     * Récupérer tous les écarts de solde avec filtres
+     */
+    public List<EcartSoldeEntity> getEcartSoldes(String agence, String service, String pays, 
+                                                 String numeroTransGu, String statut, String dateDebut, 
+                                                 String dateFin) {
+        
+        LocalDateTime dateDebutParsed = null;
+        LocalDateTime dateFinParsed = null;
+        
+        if (dateDebut != null && !dateDebut.isEmpty()) {
+            try {
+                // Gérer différents formats de date
+                if (dateDebut.contains("T")) {
+                    dateDebutParsed = LocalDateTime.parse(dateDebut.replace("T", " "));
+                } else {
+                    // Format "YYYY-MM-DD HH:mm:ss"
+                    dateDebutParsed = LocalDateTime.parse(dateDebut, DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+                }
+            } catch (Exception e) {
+                // Date invalide, on ignore le filtre
+            }
+        }
+        
+        if (dateFin != null && !dateFin.isEmpty()) {
+            try {
+                // Gérer différents formats de date
+                if (dateFin.contains("T")) {
+                    dateFinParsed = LocalDateTime.parse(dateFin.replace("T", " "));
+                } else {
+                    // Format "YYYY-MM-DD HH:mm:ss"
+                    dateFinParsed = LocalDateTime.parse(dateFin, DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+                }
+            } catch (Exception e) {
+                // Date invalide, on ignore le filtre
+            }
+        }
+
+        List<EcartSoldeEntity> results = ecartSoldeRepository.findWithFilters(
+            agence, service, pays, numeroTransGu, statut, dateDebutParsed, dateFinParsed);
+        
+        return results;
+    }
+    
     @Transactional
     public EcartSolde createEcartSolde(EcartSolde ecartSolde) {
         EcartSoldeEntity entity = convertToEntity(ecartSolde);
@@ -406,6 +454,11 @@ public class EcartSoldeService {
                         try {
                             String[] values = line.split(";");
                             System.out.println("DEBUG: Ligne " + lineNumber + " - Colonnes: " + values.length);
+                            System.out.println("DEBUG: Ligne " + lineNumber + " - Contenu brut: '" + line + "'");
+                            System.out.println("DEBUG: Ligne " + lineNumber + " - Valeurs parsées:");
+                            for (int i = 0; i < Math.min(values.length, 10); i++) {
+                                System.out.println("  [" + i + "] = '" + values[i] + "'");
+                            }
                             
                             if (values.length >= 9) {
                                 EcartSolde ecartSolde = parseEcartSoldeFromValues(values, formatter);
@@ -516,45 +569,77 @@ public class EcartSoldeService {
         try {
             EcartSolde ecartSolde = new EcartSolde();
             
+            System.out.println("DEBUG: === DÉBUT parseEcartSoldeFromValues ===");
+            System.out.println("DEBUG: Nombre de colonnes reçues: " + values.length);
+            
             // Vérifier que nous avons assez de colonnes
             if (values.length < 9) {
                 throw new IllegalArgumentException("Nombre de colonnes insuffisant: " + values.length + " (attendu: 9)");
             }
             
+            System.out.println("DEBUG: Mapping des colonnes:");
+            System.out.println("  [1] IDTransaction = '" + values[1] + "'");
+            System.out.println("  [2] Téléphone = '" + values[2] + "'");
+            System.out.println("  [3] Service = '" + values[3] + "'");
+            System.out.println("  [4] Agence = '" + values[4] + "'");
+            System.out.println("  [5] Date = '" + values[5] + "'");
+            System.out.println("  [6] Numéro Trans GU = '" + values[6] + "'");
+            System.out.println("  [7] Pays = '" + values[7] + "'");
+            System.out.println("  [8] Statut = '" + values[8] + "'");
+            
             ecartSolde.setIdTransaction(values[1] != null ? values[1].trim() : "");
             ecartSolde.setTelephoneClient(values[2] != null ? values[2].trim() : "");
             
-            // Parser le montant
-            if (values[3] != null && !values[3].trim().isEmpty()) {
-                try {
-                    ecartSolde.setMontant(Double.parseDouble(values[3].trim()));
-                } catch (NumberFormatException e) {
-                    throw new IllegalArgumentException("Montant invalide: " + values[3]);
-                }
-            } else {
-                ecartSolde.setMontant(0.0);
-            }
+            // Le montant n'est pas dans ce fichier, on le définit à 0.0
+            ecartSolde.setMontant(0.0);
+            System.out.println("DEBUG: Montant non disponible dans ce fichier, défini à 0.0");
             
-            ecartSolde.setService(values[4] != null ? values[4].trim() : "");
-            ecartSolde.setAgence(values[5] != null ? values[5].trim() : "");
+            ecartSolde.setService(values[3] != null ? values[3].trim() : "");
+            ecartSolde.setAgence(values[4] != null ? values[4].trim() : "");
             
             // Parser la date
-            if (values[6] != null && !values[6].trim().isEmpty()) {
+            if (values[5] != null && !values[5].trim().isEmpty()) {
                 try {
-                    String dateStr = values[6].trim();
-                    LocalDateTime dateTransaction = LocalDateTime.parse(dateStr, formatter);
+                    String dateStr = values[5].trim();
+                    LocalDateTime dateTransaction;
+                    
+                    // Gérer le format avec .0 à la fin
+                    if (dateStr.endsWith(".0")) {
+                        dateStr = dateStr.substring(0, dateStr.length() - 2);
+                        // Utiliser le formatter sans millisecondes
+                        DateTimeFormatter formatterWithoutMs = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+                        dateTransaction = LocalDateTime.parse(dateStr, formatterWithoutMs);
+                    } else {
+                        // Utiliser le formatter avec millisecondes
+                        dateTransaction = LocalDateTime.parse(dateStr, formatter);
+                    }
+                    
                     ecartSolde.setDateTransaction(dateTransaction);
+                    System.out.println("DEBUG: Date parsée avec succès: " + dateTransaction);
                 } catch (Exception e) {
-                    throw new IllegalArgumentException("Date invalide: " + values[6] + " - " + e.getMessage());
+                    System.out.println("DEBUG: ERREUR parsing date - Valeur: '" + values[5] + "' - Exception: " + e.getMessage());
+                    throw new IllegalArgumentException("Date invalide: " + values[5] + " - " + e.getMessage());
                 }
             } else {
                 ecartSolde.setDateTransaction(LocalDateTime.now());
+                System.out.println("DEBUG: Date vide, définie à maintenant");
             }
             
-            ecartSolde.setNumeroTransGu(values[7] != null ? values[7].trim() : "");
-            ecartSolde.setPays(values[8] != null ? values[8].trim() : "");
+            ecartSolde.setNumeroTransGu(values[6] != null ? values[6].trim() : "");
+            ecartSolde.setPays(values[7] != null ? values[7].trim() : "");
             ecartSolde.setStatut("EN_ATTENTE");
             ecartSolde.setDateImport(LocalDateTime.now());
+            
+            System.out.println("DEBUG: Entité EcartSolde créée avec succès:");
+            System.out.println("  - IDTransaction: " + ecartSolde.getIdTransaction());
+            System.out.println("  - Téléphone: " + ecartSolde.getTelephoneClient());
+            System.out.println("  - Montant: " + ecartSolde.getMontant());
+            System.out.println("  - Service: " + ecartSolde.getService());
+            System.out.println("  - Agence: " + ecartSolde.getAgence());
+            System.out.println("  - Date: " + ecartSolde.getDateTransaction());
+            System.out.println("  - Numéro Trans GU: " + ecartSolde.getNumeroTransGu());
+            System.out.println("  - Pays: " + ecartSolde.getPays());
+            System.out.println("DEBUG: === FIN parseEcartSoldeFromValues ===");
             
             return ecartSolde;
         } catch (Exception e) {

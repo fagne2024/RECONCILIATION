@@ -2547,6 +2547,48 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
         return '';
     }
 
+    /**
+     * Obtenir le commentaire pour un enregistrement ECART BO
+     */
+    getBoOnlyComment(record: any): string {
+        // Pour ECART BO, on utilise la même logique que ECART Partenaire
+        // car ce sont les mêmes lignes sur les deux exports
+        const duplicatesMap = this.getTSOPDuplicatesMap();
+        const reconciliationKey = this.getReconciliationKey(record);
+        
+        if (reconciliationKey && duplicatesMap.has(reconciliationKey)) {
+            const duplicateRecords = duplicatesMap.get(reconciliationKey);
+            if (duplicateRecords && duplicateRecords.length > 0) {
+                const tsopType = duplicateRecords[0].tsopType;
+                if (tsopType === 'COMPLETE') {
+                    return 'TSOP';
+                } else if (tsopType === 'REGULARISATION_FRAIS') {
+                    return 'Régularisation FRAIS';
+                } else {
+                    return 'SANS FRAIS';
+                }
+            }
+        }
+        return '';
+    }
+
+    /**
+     * Obtenir le type pour un enregistrement ECART BO (pour le style CSS)
+     */
+    getBoOnlyType(record: any): string {
+        // Pour ECART BO, on utilise la même logique que ECART Partenaire
+        const duplicatesMap = this.getTSOPDuplicatesMap();
+        const reconciliationKey = this.getReconciliationKey(record);
+        
+        if (reconciliationKey && duplicatesMap.has(reconciliationKey)) {
+            const duplicateRecords = duplicatesMap.get(reconciliationKey);
+            if (duplicateRecords && duplicateRecords.length > 0) {
+                return duplicateRecords[0].tsopType || 'COMPLETE';
+            }
+        }
+        return '';
+    }
+
     hasDifferences(match: Match): boolean {
         return match.differences && match.differences.length > 0;
     }
@@ -2743,6 +2785,10 @@ private async generateExcelFile(): Promise<ExcelJS.Workbook[]> {
             const workbook = new ExcelJS.Workbook();
             const worksheet = workbook.addWorksheet('BO Uniquement');
             
+            // Détecter les doublons TSOP
+            const duplicatesMap = this.detectTSOPDuplicates(filteredBoOnly);
+            console.log('🔍 Doublons TSOP détectés pour ECART BO:', duplicatesMap.size);
+            
             // Récupérer toutes les clés
             const allKeys = new Set<string>();
             filteredBoOnly.forEach(record => {
@@ -2750,26 +2796,116 @@ private async generateExcelFile(): Promise<ExcelJS.Workbook[]> {
             });
             const keysArray = Array.from(allKeys);
             
+            // Ajouter la colonne commentaire si elle n'existe pas
+            if (!keysArray.includes('Commentaire')) {
+                keysArray.push('Commentaire');
+            }
+            
             // Définir les colonnes
             const columns = keysArray.map(key => ({ header: key, key: key, width: 15 }));
             worksheet.columns = columns;
             
+            // Styles Excel
+            const headerStyle = {
+                font: { bold: true, color: { argb: 'FFFFFFFF' } },
+                fill: { type: 'pattern' as const, pattern: 'solid' as const, fgColor: { argb: 'FF4472C4' } },
+                alignment: { vertical: 'middle' as const, horizontal: 'center' as const },
+                border: {
+                    top: { style: 'thin' as const },
+                    left: { style: 'thin' as const },
+                    bottom: { style: 'thin' as const },
+                    right: { style: 'thin' as const }
+                }
+            };
+
+            const tsorDuplicateStyle = {
+                fill: { type: 'pattern' as const, pattern: 'solid' as const, fgColor: { argb: 'FFFF0000' } }, // Rouge
+                font: { color: { argb: 'FFFFFFFF' }, bold: true },
+                border: {
+                    top: { style: 'thin' as const },
+                    left: { style: 'thin' as const },
+                    bottom: { style: 'thin' as const },
+                    right: { style: 'thin' as const }
+                }
+            };
+
+            const tsorSansFraisStyle = {
+                fill: { type: 'pattern' as const, pattern: 'solid' as const, fgColor: { argb: 'FFFFFF00' } }, // Jaune
+                font: { color: { argb: 'FF000000' }, bold: true },
+                border: {
+                    top: { style: 'thin' as const },
+                    left: { style: 'thin' as const },
+                    bottom: { style: 'thin' as const },
+                    right: { style: 'thin' as const }
+                }
+            };
+
+            const regularisationFraisStyle = {
+                fill: { type: 'pattern' as const, pattern: 'solid' as const, fgColor: { argb: 'FFFFA500' } }, // Orange
+                font: { color: { argb: 'FFFFFFFF' }, bold: true },
+                border: {
+                    top: { style: 'thin' as const },
+                    left: { style: 'thin' as const },
+                    bottom: { style: 'thin' as const },
+                    right: { style: 'thin' as const }
+                }
+            };
+
+            const dataStyle = {
+                border: {
+                    top: { style: 'thin' as const },
+                    left: { style: 'thin' as const },
+                    bottom: { style: 'thin' as const },
+                    right: { style: 'thin' as const }
+                }
+            };
+            
             // Ajouter les données
-            filteredBoOnly.forEach(record => {
+            filteredBoOnly.forEach((record, index) => {
                 const rowData: any = {};
+                const boOnlyType = this.getBoOnlyType(record);
+                const boOnlyComment = this.getBoOnlyComment(record);
+                
                 keysArray.forEach(key => {
-                    rowData[key] = record[key] || '';
+                    if (key === 'Commentaire') {
+                        // Ajouter le commentaire approprié
+                        rowData[key] = boOnlyComment;
+                    } else {
+                        rowData[key] = record[key] || '';
+                    }
                 });
-                worksheet.addRow(rowData);
+                const row = worksheet.addRow(rowData);
+                
+                // Appliquer le style selon le type
+                if (boOnlyType === 'COMPLETE') {
+                    // Style rouge pour TSOP complet
+                    row.eachCell(cell => {
+                        cell.style = tsorDuplicateStyle;
+                    });
+                    console.log(`🟥 Ligne ECART BO ${index + 2} colorée en rouge (TSOP complet)`);
+                } else if (boOnlyType === 'SANS_FRAIS') {
+                    // Style jaune pour IMPACT sans FRAIS
+                    row.eachCell(cell => {
+                        cell.style = tsorSansFraisStyle;
+                    });
+                    console.log(`🟡 Ligne ECART BO ${index + 2} colorée en jaune (SANS FRAIS)`);
+                } else if (boOnlyType === 'REGULARISATION_FRAIS') {
+                    // Style orange pour FRAIS_TRANSACTION seul
+                    row.eachCell(cell => {
+                        cell.style = regularisationFraisStyle;
+                    });
+                    console.log(`🟠 Ligne ECART BO ${index + 2} colorée en orange (Régularisation FRAIS)`);
+                } else {
+                    // Style normal
+                    row.eachCell(cell => {
+                        cell.style = dataStyle;
+                    });
+                }
             });
             
-            // Appliquer les styles
+            // Appliquer les styles d'en-tête
             worksheet.getRow(1).eachCell(cell => {
-                cell.style = {
-                    font: { bold: true, color: { argb: 'FFFFFFFF' } },
-                    fill: { type: 'pattern' as const, pattern: 'solid' as const, fgColor: { argb: 'FF4472C4' } },
-                    alignment: { vertical: 'middle' as const, horizontal: 'center' as const }
-                };
+                cell.style = headerStyle;
             });
             
             workbooks.push(workbook);

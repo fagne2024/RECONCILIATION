@@ -40,13 +40,13 @@ export class EcartSoldeTabComponent implements OnInit, OnDestroy {
     this.error = null;
 
     this.subscription.add(
-      this.ecartSoldeService.getAllEcartSoldes().subscribe({
-        next: (ecartSoldes) => {
+      this.ecartSoldeService.getEcartSoldes().subscribe({
+        next: (ecartSoldes: EcartSolde[]) => {
           this.ecartSoldes = ecartSoldes;
           this.filterEcartSoldes();
           this.isLoading = false;
         },
-        error: (err) => {
+        error: (err: any) => {
           this.error = 'Erreur lors du chargement des écarts de solde: ' + err.message;
           this.isLoading = false;
         }

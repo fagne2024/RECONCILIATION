@@ -18,6 +18,7 @@ export interface ImpactOPFilter {
   codeProprietaire?: string;
   typeOperation?: string;
   groupeReseau?: string;
+  numeroTransGu?: string;
   statut?: string;
   dateDebut?: string;
   dateFin?: string;

@@ -58,6 +58,15 @@ public interface TrxSfRepository extends JpaRepository<TrxSfEntity, Long> {
     @Query("SELECT DISTINCT t.pays FROM TrxSfEntity t WHERE t.pays IS NOT NULL AND t.pays != '' ORDER BY t.pays")
     List<String> findDistinctPays();
     
+    @Query("SELECT DISTINCT t.numeroTransGu FROM TrxSfEntity t WHERE t.numeroTransGu IS NOT NULL AND t.numeroTransGu != '' ORDER BY t.numeroTransGu")
+    List<String> findDistinctNumeroTransGu();
+    
+    /**
+     * Rechercher les transactions par agence et numéro Trans GU
+     */
+    @Query("SELECT t FROM TrxSfEntity t WHERE t.agence = :agence AND t.numeroTransGu = :numeroTransGu")
+    List<TrxSfEntity> findByAgenceAndNumeroTransGu(@Param("agence") String agence, @Param("numeroTransGu") String numeroTransGu);
+    
     @Query("SELECT t FROM TrxSfEntity t ORDER BY t.dateTransaction DESC")
     List<TrxSfEntity> findAllOrderByDateTransactionDesc();
     
@@ -88,10 +97,31 @@ public interface TrxSfRepository extends JpaRepository<TrxSfEntity, Long> {
     Double sumFraisByAgenceAndDateAndServiceAndStatutEnAttente(@Param("agence") String agence, @Param("date") String date, @Param("service") String service);
     
     /**
+     * Rechercher les transactions SF avec filtres
+     */
+    @Query("SELECT t FROM TrxSfEntity t WHERE " +
+           "(:agence IS NULL OR t.agence = :agence) AND " +
+           "(:service IS NULL OR t.service = :service) AND " +
+           "(:pays IS NULL OR t.pays = :pays) AND " +
+           "(:numeroTransGu IS NULL OR t.numeroTransGu = :numeroTransGu) AND " +
+           "(:statut IS NULL OR t.statut = :statut) AND " +
+           "(:dateDebut IS NULL OR t.dateTransaction >= :dateDebut) AND " +
+           "(:dateFin IS NULL OR t.dateTransaction <= :dateFin) " +
+           "ORDER BY t.dateTransaction DESC")
+    List<TrxSfEntity> findWithFilters(
+            @Param("agence") String agence,
+            @Param("service") String service,
+            @Param("pays") String pays,
+            @Param("numeroTransGu") String numeroTransGu,
+            @Param("statut") String statut,
+            @Param("dateDebut") LocalDateTime dateDebut,
+            @Param("dateFin") LocalDateTime dateFin);
+    
+    /**
      * Vérifier si une transaction existe déjà
      */
-    @Query(value = "SELECT COUNT(*) > 0 FROM trx_sf WHERE id_transaction = :idTransaction AND agence = :agence AND DATE(date_transaction) = DATE(:dateTransaction)", nativeQuery = true)
-    boolean existsByTransactionDetails(@Param("idTransaction") String idTransaction, @Param("agence") String agence, @Param("dateTransaction") String dateTransaction);
+    @Query(value = "SELECT COUNT(*) FROM trx_sf WHERE id_transaction = :idTransaction AND agence = :agence AND DATE(date_transaction) = DATE(:dateTransaction)", nativeQuery = true)
+    Long countByTransactionDetails(@Param("idTransaction") String idTransaction, @Param("agence") String agence, @Param("dateTransaction") String dateTransaction);
     
     /**
      * Trouver les transactions en doublon

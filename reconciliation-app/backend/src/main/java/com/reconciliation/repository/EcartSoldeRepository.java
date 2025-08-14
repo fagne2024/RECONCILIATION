@@ -57,11 +57,35 @@ public interface EcartSoldeRepository extends JpaRepository<EcartSoldeEntity, Lo
     @Query("SELECT DISTINCT e.pays FROM EcartSoldeEntity e WHERE e.pays IS NOT NULL AND e.pays != '' ORDER BY e.pays")
     List<String> findDistinctPays();
     
+    @Query("SELECT DISTINCT e.numeroTransGu FROM EcartSoldeEntity e WHERE e.numeroTransGu IS NOT NULL AND e.numeroTransGu != '' ORDER BY e.numeroTransGu")
+    List<String> findDistinctNumeroTransGu();
+    
     @Query("SELECT e FROM EcartSoldeEntity e ORDER BY e.dateTransaction DESC")
     List<EcartSoldeEntity> findAllOrderByDateTransactionDesc();
     
     @Query("SELECT e FROM EcartSoldeEntity e ORDER BY e.dateImport DESC")
     List<EcartSoldeEntity> findAllOrderByDateImportDesc();
+    
+    /**
+     * Rechercher les écarts de solde avec filtres
+     */
+    @Query("SELECT e FROM EcartSoldeEntity e WHERE " +
+           "(:agence IS NULL OR e.agence = :agence) AND " +
+           "(:service IS NULL OR e.service = :service) AND " +
+           "(:pays IS NULL OR e.pays = :pays) AND " +
+           "(:numeroTransGu IS NULL OR e.numeroTransGu = :numeroTransGu) AND " +
+           "(:statut IS NULL OR e.statut = :statut) AND " +
+           "(:dateDebut IS NULL OR e.dateTransaction >= :dateDebut) AND " +
+           "(:dateFin IS NULL OR e.dateTransaction <= :dateFin) " +
+           "ORDER BY e.dateTransaction DESC")
+    List<EcartSoldeEntity> findWithFilters(
+            @Param("agence") String agence,
+            @Param("service") String service,
+            @Param("pays") String pays,
+            @Param("numeroTransGu") String numeroTransGu,
+            @Param("statut") String statut,
+            @Param("dateDebut") LocalDateTime dateDebut,
+            @Param("dateFin") LocalDateTime dateFin);
     
     boolean existsByIdTransaction(String idTransaction);
 } 

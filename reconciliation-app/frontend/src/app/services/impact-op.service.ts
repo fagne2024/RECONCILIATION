@@ -27,6 +27,9 @@ export class ImpactOPService {
       if (filter.groupeReseau) {
         params = params.set('groupeReseau', filter.groupeReseau);
       }
+      if (filter.numeroTransGu) {
+        params = params.set('numeroTransGu', filter.numeroTransGu);
+      }
       if (filter.statut) {
         params = params.set('statut', filter.statut);
       }
@@ -167,11 +170,13 @@ export class ImpactOPService {
     codeProprietaires: string[];
     typeOperations: string[];
     groupeReseaux: string[];
+    numeroTransGUs: string[];
   }> {
     return this.http.get<{
       codeProprietaires: string[];
       typeOperations: string[];
       groupeReseaux: string[];
+      numeroTransGUs: string[];
     }>(`${this.apiUrl}/impact-op/filter-options`);
   }
 
@@ -188,6 +193,9 @@ export class ImpactOPService {
       }
       if (filter.groupeReseau) {
         params = params.set('groupeReseau', filter.groupeReseau);
+      }
+      if (filter.numeroTransGu) {
+        params = params.set('numeroTransGu', filter.numeroTransGu);
       }
       if (filter.statut) {
         params = params.set('statut', filter.statut);

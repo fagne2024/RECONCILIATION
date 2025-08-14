@@ -56,30 +56,69 @@
   <!-- Section Upload -->
   <div class="upload-section">
     <h3>Import de fichier (CSV, XLS, XLSX)</h3>
-    <div class="upload-form">
-      <div class="file-input-group">
-        <input 
-          type="file" 
-          class="file-input" 
-          (change)="onFileSelected($event)"
-          accept=".csv,.xlsx,.xls"
-          #fileInput>
-        <button 
-          type="button" 
-          class="btn btn-primary" 
-          (click)="validateFile()"
-          [disabled]="!selectedFile || isUploading">
-          <i class="fas fa-check"></i> Valider
-        </button>
-        <button 
-          type="button" 
-          class="btn btn-success" 
-          (click)="uploadFile()"
-          [disabled]="!selectedFile || isUploading">
-          <i class="fas fa-upload"></i> 
-          {{ isUploading ? 'Upload en cours...' : 'Uploader' }}
-        </button>
+    <div class="file-types-help">
+      <div class="alert alert-info">
+        <h6><i class="fas fa-info-circle"></i> Types de fichiers supportés :</h6>
+        <ul>
+          <li><strong>Fichier complet (9 colonnes)</strong> : Utilisez "Valider" puis "Uploader" pour importer de nouvelles transactions</li>
+          <li><strong>Fichier de statut (2 colonnes : Agence + Numero Trans GU)</strong> : Utilisez "Change Statut" pour mettre à jour le statut des transactions existantes</li>
+        </ul>
       </div>
+    </div>
+    <div class="upload-form">
+              <div class="file-input-group">
+          <input 
+            type="file" 
+            class="file-input" 
+            (change)="onFileSelected($event)"
+            accept=".csv,.xlsx,.xls"
+            #fileInput>
+          
+          <!-- Indicateur de type de fichier -->
+          <div class="file-type-indicator" *ngIf="fileType">
+            <span class="badge" [ngClass]="fileType === 'full' ? 'badge-primary' : 'badge-info'">
+              <i class="fas" [ngClass]="fileType === 'full' ? 'fa-file-csv' : 'fa-exchange-alt'"></i>
+              {{ fileType === 'full' ? 'Fichier complet (9 colonnes)' : 'Fichier de statut (2 colonnes)' }}
+            </span>
+          </div>
+          
+          <!-- Boutons pour fichier complet -->
+          <div class="button-group" *ngIf="fileType === 'full'">
+            <button 
+              type="button" 
+              class="btn btn-primary" 
+              (click)="validateFile()"
+              [disabled]="!selectedFile || isUploading">
+              <i class="fas fa-check"></i> Valider
+            </button>
+            <button 
+              type="button" 
+              class="btn btn-success" 
+              (click)="uploadFile()"
+              [disabled]="!selectedFile || !validationResult || isUploading">
+              <i class="fas fa-upload"></i> 
+              {{ isUploading ? 'Upload en cours...' : 'Uploader' }}
+            </button>
+          </div>
+          
+          <!-- Boutons pour fichier de statut -->
+          <div class="button-group" *ngIf="fileType === 'statut'">
+            <button 
+              type="button" 
+              class="btn btn-info" 
+              (click)="changeStatutFile()"
+              [disabled]="!selectedFile || isChangingStatut">
+              <i class="fas fa-exchange-alt"></i> 
+              {{ isChangingStatut ? 'Traitement...' : 'Change Statut' }}
+            </button>
+          </div>
+          
+          <!-- Message si type indéterminé -->
+          <div class="alert alert-warning" *ngIf="selectedFile && !fileType">
+            <i class="fas fa-exclamation-triangle"></i>
+            Type de fichier non reconnu. Assurez-vous que le fichier contient soit 9 colonnes (fichier complet) soit 2 colonnes (fichier de statut).
+          </div>
+        </div>
       
       <div class="upload-messages" *ngIf="uploadMessage">
         <div class="alert" [ngClass]="uploadMessage.type === 'success' ? 'alert-success' : 'alert-danger'">
@@ -185,6 +224,11 @@
             <option value="">Tous les pays</option>
             <option *ngFor="let pays of getUniquePays()" [value]="pays">{{ pays }}</option>
           </select>
+        </div>
+        
+        <div class="filter-group">
+          <label>Numéro Trans GU:</label>
+          <input type="text" formControlName="numeroTransGu" class="form-control" placeholder="Tapez un numéro Trans GU...">
         </div>
         
         <div class="filter-group">

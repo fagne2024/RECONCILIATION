@@ -26,6 +26,7 @@ export class EcartSoldeComponent implements OnInit, OnDestroy {
   agences: string[] = [];
   services: string[] = [];
   pays: string[] = [];
+  numeroTransGUs: string[] = [];
   statuts = ['EN_ATTENTE', 'TRAITE', 'ERREUR'];
   
   // Upload
@@ -66,6 +67,7 @@ export class EcartSoldeComponent implements OnInit, OnDestroy {
       agence: [''],
       service: [''],
       pays: [''],
+      numeroTransGu: [''],
       statut: [''],
       dateDebut: [''],
       dateFin: ['']
@@ -113,7 +115,7 @@ export class EcartSoldeComponent implements OnInit, OnDestroy {
   loadEcartSoldes() {
     this.isLoading = true;
     this.subscription.add(
-      this.ecartSoldeService.getAllEcartSoldes().subscribe({
+      this.ecartSoldeService.getEcartSoldes().subscribe({
         next: (data) => {
           this.ecartSoldes = data;
           this.filteredEcartSoldes = [...data];
@@ -156,6 +158,14 @@ export class EcartSoldeComponent implements OnInit, OnDestroy {
         error: (err) => console.error('Erreur de chargement des pays', err)
       })
     );
+
+    // Charger les numéros Trans GU
+    this.subscription.add(
+      this.ecartSoldeService.getDistinctNumeroTransGu().subscribe({
+        next: (numeroTransGUs) => this.numeroTransGUs = numeroTransGUs,
+        error: (err) => console.error('Erreur de chargement des numéros Trans GU', err)
+      })
+    );
   }
 
   setupFilterListener() {
@@ -180,6 +190,10 @@ export class EcartSoldeComponent implements OnInit, OnDestroy {
       }
       
       if (filters.pays && ecart.pays !== filters.pays) {
+        match = false;
+      }
+      
+      if (filters.numeroTransGu && ecart.numeroTransGu !== filters.numeroTransGu) {
         match = false;
       }
       
