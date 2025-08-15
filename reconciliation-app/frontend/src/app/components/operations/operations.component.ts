@@ -946,6 +946,13 @@ export class OperationsComponent implements OnInit, OnDestroy {
         }
     }
 
+    // Méthodes pour le modal de modification
+    closeEditModal(event: Event) {
+        if (event.target === event.currentTarget) {
+            this.cancelEdit();
+        }
+    }
+
     getAddImpactDirection(): 'positive' | 'negative' {
         const montant = this.addForm.get('montant')?.value || 0;
         const typeOperation = this.addForm.get('typeOperation')?.value;

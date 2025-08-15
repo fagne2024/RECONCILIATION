@@ -40,7 +40,7 @@
           <h3>Gestion des Comptes</h3>
           <p>Créer et gérer les comptes bancaires</p>
         </div>
-        <div class="feature-card">
+        <div class="feature-card" (click)="showOperationsTable()">
           <div class="feature-icon">💸</div>
           <h3>Opérations</h3>
           <p>Effectuer des virements et paiements</p>
@@ -63,6 +63,138 @@
       <div class="banque-info">
         <p>Ce module est en cours de développement.</p>
         <p>Les fonctionnalités bancaires seront bientôt disponibles.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tableau des opérations bancaires -->
+  <div class="banque-section operations-section" *ngIf="showOperations">
+    <div class="operations-header">
+      <h2>📋 Opérations Bancaires</h2>
+      <button class="btn-back" (click)="hideOperationsTable()">
+        <i class="fas fa-arrow-left"></i>
+        Retour
+      </button>
+    </div>
+
+    <div class="operations-table-container">
+      <!-- Filtres -->
+      <div class="table-filters">
+        <div class="filter-group">
+          <label>Pays</label>
+          <select [(ngModel)]="filters.pays" (change)="applyFilters()">
+            <option value="">Tous les pays</option>
+            <option *ngFor="let pays of paysList" [value]="pays">{{ pays }}</option>
+          </select>
+        </div>
+        <div class="filter-group">
+          <label>Type d'opération</label>
+          <select [(ngModel)]="filters.typeOperation" (change)="applyFilters()">
+            <option value="">Tous les types</option>
+            <option *ngFor="let type of typesOperation" [value]="type">{{ type }}</option>
+          </select>
+        </div>
+        <div class="filter-group">
+          <label>Statut</label>
+          <select [(ngModel)]="filters.statut" (change)="applyFilters()">
+            <option value="">Tous les statuts</option>
+            <option *ngFor="let statut of statutsList" [value]="statut">{{ statut }}</option>
+          </select>
+        </div>
+        <div class="filter-group">
+          <label>Date début</label>
+          <input type="date" [(ngModel)]="filters.dateDebut" (change)="applyFilters()">
+        </div>
+        <div class="filter-group">
+          <label>Date fin</label>
+          <input type="date" [(ngModel)]="filters.dateFin" (change)="applyFilters()">
+        </div>
+        <button class="btn-clear-filters" (click)="clearFilters()">
+          <i class="fas fa-times"></i>
+          Effacer
+        </button>
+      </div>
+
+      <!-- Tableau -->
+      <div class="table-container">
+        <table class="operations-table">
+          <thead>
+            <tr>
+              <th>Pays</th>
+              <th>Code Pays</th>
+              <th>Mois</th>
+              <th>Date Opération</th>
+              <th>Agence</th>
+              <th>Type Opération</th>
+              <th>Nom du Bénéficiaire</th>
+              <th>Compte à Débiter</th>
+              <th>Montant</th>
+              <th>Mode de Paiement</th>
+              <th>Référence</th>
+              <th>ID GLPI</th>
+              <th>BO</th>
+              <th>Statut</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let operation of pagedOperations">
+              <td>{{ operation.pays }}</td>
+              <td>{{ operation.codePays }}</td>
+              <td>{{ operation.mois }}</td>
+              <td>{{ operation.dateOperation | date:'dd/MM/yyyy' }}</td>
+              <td>{{ operation.agence }}</td>
+              <td>
+                <span class="badge type-{{ operation.typeOperation.toLowerCase() }}">
+                  {{ operation.typeOperation }}
+                </span>
+              </td>
+              <td>{{ operation.nomBeneficiaire }}</td>
+              <td>{{ operation.compteADebiter }}</td>
+              <td>{{ operation.montant | currency:'XAF':'symbol':'1.0-0' }}</td>
+              <td>{{ operation.modePaiement }}</td>
+              <td>{{ operation.reference }}</td>
+              <td>{{ operation.idGlpi }}</td>
+              <td>{{ operation.bo }}</td>
+              <td>
+                <span class="badge status-{{ operation.statut.toLowerCase() }}">
+                  {{ operation.statut }}
+                </span>
+              </td>
+              <td class="actions">
+                <button class="btn-icon" (click)="viewOperation(operation)" title="Voir">
+                  <i class="fas fa-eye"></i>
+                </button>
+                <button class="btn-icon" (click)="editOperation(operation)" title="Modifier">
+                  <i class="fas fa-edit"></i>
+                </button>
+                <button class="btn-icon btn-danger" (click)="deleteOperation(operation.id)" title="Supprimer">
+                  <i class="fas fa-trash"></i>
+                </button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Pagination -->
+      <div class="pagination" *ngIf="totalPages > 1">
+        <button (click)="prevPage()" [disabled]="currentPage === 1">
+          <i class="fas fa-chevron-left"></i> Précédent
+        </button>
+        
+        <div class="pagination-indicators">
+          <span *ngFor="let page of getVisiblePages()" 
+                class="page-indicator"
+                [class.active]="currentPage === page"
+                (click)="goToPage(page)">
+            {{ page }}
+          </span>
+        </div>
+        
+        <button (click)="nextPage()" [disabled]="currentPage === totalPages">
+          Suivant <i class="fas fa-chevron-right"></i>
+        </button>
       </div>
     </div>
   </div>

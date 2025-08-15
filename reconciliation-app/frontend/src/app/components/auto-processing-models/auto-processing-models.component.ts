@@ -1740,6 +1740,15 @@ export class AutoProcessingModelsComponent implements OnInit {
     return this.models;
   }
 
+  // Méthodes de détection pour la coloration des modèles
+  isCIModel(model: AutoProcessingModel): boolean {
+    return Boolean(model.name && model.name.toUpperCase().startsWith('CI'));
+  }
+
+  isPMModel(model: AutoProcessingModel): boolean {
+    return Boolean(model.name && model.name.toUpperCase().startsWith('PM'));
+  }
+
   // Obtenir les colonnes disponibles pour le filtrage général
   getModelFilterColumns(): { value: string; label: string }[] {
     return [

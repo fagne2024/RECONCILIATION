@@ -1,7 +1,11 @@
 .auto-processing-models-container {
   padding: 20px;
-  max-width: 1200px;
-  margin: 0 auto;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
 
   .header {
     text-align: center;
@@ -39,12 +43,31 @@
 
   .models-section {
     margin-bottom: 30px;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+
+    // Style global pour tous les contrôles de filtres
+    .filter-controls {
+      width: 100%;
+      justify-content: space-between;
+    }
+
+    // Style global pour tous les groupes de filtres
+    .filter-group {
+      flex: 1;
+      min-width: 200px;
+      max-width: 300px;
+    }
 
     .section-header {
       display: flex;
       justify-content: space-between;
       align-items: center;
       margin-bottom: 20px;
+      width: 100%;
+      flex-shrink: 0;
 
       h3 {
         color: #2c3e50;
@@ -76,6 +99,8 @@
       border-radius: 8px;
       padding: 20px;
       margin-bottom: 20px;
+      width: 100%;
+      box-sizing: border-box;
 
       h4 {
         color: #2c3e50;
@@ -298,6 +323,8 @@
       border-radius: 8px;
       padding: 20px;
       margin-bottom: 20px;
+      width: 100%;
+      box-sizing: border-box;
 
       h4 {
         color: #2c3e50;
@@ -349,6 +376,8 @@
         .filter-actions {
           display: flex;
           gap: 10px;
+          width: 100%;
+          justify-content: flex-end;
 
           .apply-btn, .reset-btn {
             padding: 8px 16px;
@@ -410,6 +439,7 @@
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
       gap: 20px;
+      width: 100%;
 
       .model-card {
         background: white;
@@ -424,15 +454,127 @@
           box-shadow: 0 4px 8px rgba(0,0,0,0.15);
         }
 
+        // Coloration pour les modèles CI (vert)
+        &.model-ci {
+          border-left: 4px solid #28a745 !important;
+          background: linear-gradient(135deg, #f8fff9 0%, #ffffff 100%) !important;
+          position: relative;
+          
+          &::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 0;
+            bottom: 0;
+            width: 4px;
+            background: #28a745;
+            border-radius: 4px 0 0 4px;
+          }
+          
+          // Les titres sont maintenant gérés par les classes title-ci et title-pm
+          
+          &:hover {
+            box-shadow: 0 4px 8px rgba(40, 167, 69, 0.2) !important;
+            transform: translateY(-2px);
+          }
+        }
+
+        // Coloration pour les modèles PM (rouge)
+        &.model-pm {
+          border-left: 4px solid #dc3545 !important;
+          background: linear-gradient(135deg, #fff8f8 0%, #ffffff 100%) !important;
+          position: relative;
+          
+          &::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 0;
+            bottom: 0;
+            width: 4px;
+            background: #dc3545;
+            border-radius: 4px 0 0 4px;
+          }
+          
+          // Les titres sont maintenant gérés par les classes title-ci et title-pm
+          
+          &:hover {
+            box-shadow: 0 4px 8px rgba(220, 53, 69, 0.2) !important;
+            transform: translateY(-2px);
+          }
+        }
+
         .model-header {
           display: flex;
           justify-content: space-between;
-          align-items: center;
+          align-items: flex-start;
           margin-bottom: 15px;
 
-          h4 {
-            color: #2c3e50;
-            margin: 0;
+          .model-title-section {
+            flex: 1;
+            margin-right: 10px;
+
+            h4 {
+              color: #2c3e50;
+              margin: 0 0 8px 0;
+              font-weight: 600;
+              transition: color 0.3s ease;
+
+              &.title-ci {
+                color: #28a745 !important;
+                text-shadow: 0 1px 2px rgba(40, 167, 69, 0.1);
+              }
+
+              &.title-pm {
+                color: #dc3545 !important;
+                text-shadow: 0 1px 2px rgba(220, 53, 69, 0.1);
+              }
+            }
+
+            .model-badges {
+              display: flex;
+              gap: 8px;
+              flex-wrap: wrap;
+
+              .badge {
+                padding: 4px 8px;
+                border-radius: 12px;
+                font-size: 11px;
+                font-weight: 600;
+                text-transform: uppercase;
+                letter-spacing: 0.5px;
+                display: flex;
+                align-items: center;
+                gap: 4px;
+                box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+                position: relative;
+                z-index: 10;
+
+                &.badge-ci {
+                  background: #d4edda !important;
+                  color: #155724 !important;
+                  border: 1px solid #c3e6cb !important;
+                  font-weight: 700;
+
+                  i {
+                    color: #28a745 !important;
+                    font-size: 12px;
+                  }
+                }
+
+                &.badge-pm {
+                  background: #f8d7da !important;
+                  color: #721c24 !important;
+                  border: 1px solid #f5c6cb !important;
+                  font-weight: 700;
+
+                  i {
+                    color: #dc3545 !important;
+                    font-size: 12px;
+                  }
+                }
+              }
+            }
           }
 
           .model-actions {

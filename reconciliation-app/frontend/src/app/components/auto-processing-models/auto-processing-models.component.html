@@ -191,9 +191,27 @@
     </div>
 
     <div class="models-grid" *ngIf="models.length > 0; else noModels">
-      <div class="model-card" *ngFor="let model of getDisplayedModels()">
+      <div class="model-card" 
+           [ngClass]="{
+             'model-ci': isCIModel(model),
+             'model-pm': isPMModel(model)
+           }"
+           *ngFor="let model of getDisplayedModels()">
         <div class="model-header">
-          <h4>{{ model.name }}</h4>
+          <div class="model-title-section">
+            <h4 [ngClass]="{
+              'title-ci': isCIModel(model),
+              'title-pm': isPMModel(model)
+            }">{{ model.name }}</h4>
+            <div class="model-badges">
+              <span *ngIf="isCIModel(model)" class="badge badge-ci">
+                <i class="fas fa-check-circle"></i> CI
+              </span>
+              <span *ngIf="isPMModel(model)" class="badge badge-pm">
+                <i class="fas fa-exclamation-circle"></i> PM
+              </span>
+            </div>
+          </div>
           <div class="model-actions">
             <button (click)="editModel(model)" class="btn btn-sm btn-edit" title="Modifier">
               <i class="fas fa-edit"></i>
