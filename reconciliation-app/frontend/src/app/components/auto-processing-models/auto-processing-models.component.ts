@@ -1742,11 +1742,19 @@ export class AutoProcessingModelsComponent implements OnInit {
 
   // Méthodes de détection pour la coloration des modèles
   isCIModel(model: AutoProcessingModel): boolean {
-    return Boolean(model.name && model.name.toUpperCase().startsWith('CI'));
+    const name = model.name || '';
+    const upperName = name.toUpperCase();
+    const result = upperName.includes('CI') || upperName.includes('CIOM');
+    console.log(`🔍 isCIModel - Nom: "${name}", Upper: "${upperName}", Résultat: ${result}`);
+    return result;
   }
 
   isPMModel(model: AutoProcessingModel): boolean {
-    return Boolean(model.name && model.name.toUpperCase().startsWith('PM'));
+    const name = model.name || '';
+    const upperName = name.toUpperCase();
+    const result = upperName.includes('PM') || upperName.includes('PMOM');
+    console.log(`🔍 isPMModel - Nom: "${name}", Upper: "${upperName}", Résultat: ${result}`);
+    return result;
   }
 
   // Obtenir les colonnes disponibles pour le filtrage général
