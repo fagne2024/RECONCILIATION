@@ -42,7 +42,7 @@
           <i class="fas fa-filter"></i> 
           {{ showPartnerFilter ? 'Masquer' : 'Afficher' }} filtres partenaires
         </button>
-        <button (click)="createModel()" class="btn btn-primary">
+        <button (click)="createNewModel()" class="btn btn-primary">
           <i class="fas fa-plus"></i> Nouveau modèle
         </button>
       </div>
@@ -190,18 +190,32 @@
       </div>
     </div>
 
-    <div class="models-grid" *ngIf="models.length > 0; else noModels">
-      <div class="model-card" 
-           [ngClass]="{
-             'model-ci': isCIModel(model),
-             'model-pm': isPMModel(model)
-           }"
-           *ngFor="let model of getDisplayedModels()">
+    <div class="models-grid" *ngIf="models.length > 0">
+      <!-- Séparateur pour les modèles CI (verts) -->
+      <div class="color-separator ci-separator" *ngIf="hasCIModels()">
+        <div class="separator-line"></div>
+        <div class="separator-text">
+          <i class="fas fa-check-circle"></i>
+          Modèles CI
+        </div>
+        <div class="separator-line"></div>
+      </div>
+      
+      <!-- Modèles CI -->
+      <div class="model-cards-section">
+        <div class="model-card" 
+             [ngClass]="{
+               'model-ci': isCIModel(model),
+               'model-pm': isPMModel(model),
+               'model-other': !isCIModel(model) && !isPMModel(model)
+             }"
+             *ngFor="let model of getCIModels()">
         <div class="model-header">
           <div class="model-title-section">
             <h4 [ngClass]="{
               'title-ci': isCIModel(model),
-              'title-pm': isPMModel(model)
+              'title-pm': isPMModel(model),
+              'title-other': !isCIModel(model) && !isPMModel(model)
             }">{{ model.name }}</h4>
             <div class="model-badges">
               <span *ngIf="isCIModel(model)" class="badge badge-ci">
@@ -209,6 +223,9 @@
               </span>
               <span *ngIf="isPMModel(model)" class="badge badge-pm">
                 <i class="fas fa-exclamation-circle"></i> PM
+              </span>
+              <span *ngIf="!isCIModel(model) && !isPMModel(model)" class="badge badge-other">
+                <i class="fas fa-cog"></i> AUTRE
               </span>
             </div>
           </div>
@@ -237,20 +254,152 @@
           </ul>
         </div>
       </div>
+      </div>
+
+      <!-- Séparateur pour les modèles PM (rouges) -->
+      <div class="color-separator pm-separator" *ngIf="hasPMModels()">
+        <div class="separator-line"></div>
+        <div class="separator-text">
+          <i class="fas fa-exclamation-circle"></i>
+          Modèles PM
+        </div>
+        <div class="separator-line"></div>
+      </div>
+      
+      <!-- Modèles PM -->
+      <div class="model-cards-section">
+        <div class="model-card" 
+             [ngClass]="{
+               'model-ci': isCIModel(model),
+               'model-pm': isPMModel(model),
+               'model-other': !isCIModel(model) && !isPMModel(model)
+             }"
+             *ngFor="let model of getPMModels()">
+        <div class="model-header">
+          <div class="model-title-section">
+            <h4 [ngClass]="{
+              'title-ci': isCIModel(model),
+              'title-pm': isPMModel(model),
+              'title-other': !isCIModel(model) && !isPMModel(model)
+            }">{{ model.name }}</h4>
+            <div class="model-badges">
+              <span *ngIf="isCIModel(model)" class="badge badge-ci">
+                <i class="fas fa-check-circle"></i> CI
+              </span>
+              <span *ngIf="isPMModel(model)" class="badge badge-pm">
+                <i class="fas fa-exclamation-circle"></i> PM
+              </span>
+              <span *ngIf="!isCIModel(model) && !isPMModel(model)" class="badge badge-other">
+                <i class="fas fa-cog"></i> AUTRE
+              </span>
+            </div>
+          </div>
+          <div class="model-actions">
+            <button (click)="editModel(model)" class="btn btn-sm btn-edit" title="Modifier">
+              <i class="fas fa-edit"></i>
+            </button>
+            <button (click)="deleteModel(model.id)" class="btn btn-sm btn-delete" title="Supprimer">
+              <i class="fas fa-trash"></i>
+            </button>
+          </div>
+        </div>
+        
+        <div class="model-info">
+          <p><strong>Pattern:</strong> {{ model.filePattern }}</p>
+          <p><strong>Type:</strong> {{ model.fileType }}</p>
+          <p><strong>Étapes:</strong> {{ getStepCount(model) }}</p>
+          <p><strong>Auto-appliqué:</strong> {{ model.autoApply ? 'Oui' : 'Non' }}</p>
+          <p *ngIf="model.templateFile"><strong>Fichier modèle:</strong> {{ model.templateFile }}</p>
+        </div>
+
+        <div class="model-steps" *ngIf="model.processingSteps.length > 0">
+          <h5>Étapes de traitement:</h5>
+          <ul>
+            <li *ngFor="let step of model.processingSteps">{{ step.name }}</li>
+          </ul>
+        </div>
+      </div>
+      </div>
+
+      <!-- Séparateur pour les autres modèles (jaunes) -->
+      <div class="color-separator other-separator" *ngIf="hasOtherModels()">
+        <div class="separator-line"></div>
+        <div class="separator-text">
+          <i class="fas fa-cog"></i>
+          Autres modèles
+        </div>
+        <div class="separator-line"></div>
+      </div>
+      
+      <!-- Autres modèles -->
+      <div class="model-cards-section">
+        <div class="model-card" 
+             [ngClass]="{
+               'model-ci': isCIModel(model),
+               'model-pm': isPMModel(model),
+               'model-other': !isCIModel(model) && !isPMModel(model)
+             }"
+             *ngFor="let model of getOtherModels()">
+        <div class="model-header">
+          <div class="model-title-section">
+            <h4 [ngClass]="{
+              'title-ci': isCIModel(model),
+              'title-pm': isPMModel(model),
+              'title-other': !isCIModel(model) && !isPMModel(model)
+            }">{{ model.name }}</h4>
+            <div class="model-badges">
+              <span *ngIf="isCIModel(model)" class="badge badge-ci">
+                <i class="fas fa-check-circle"></i> CI
+              </span>
+              <span *ngIf="isPMModel(model)" class="badge badge-pm">
+                <i class="fas fa-exclamation-circle"></i> PM
+              </span>
+              <span *ngIf="!isCIModel(model) && !isPMModel(model)" class="badge badge-other">
+                <i class="fas fa-cog"></i> AUTRE
+              </span>
+            </div>
+          </div>
+          <div class="model-actions">
+            <button (click)="editModel(model)" class="btn btn-sm btn-edit" title="Modifier">
+              <i class="fas fa-edit"></i>
+            </button>
+            <button (click)="deleteModel(model.id)" class="btn btn-sm btn-delete" title="Supprimer">
+              <i class="fas fa-trash"></i>
+            </button>
+          </div>
+        </div>
+        
+        <div class="model-info">
+          <p><strong>Pattern:</strong> {{ model.filePattern }}</p>
+          <p><strong>Type:</strong> {{ model.fileType }}</p>
+          <p><strong>Étapes:</strong> {{ getStepCount(model) }}</p>
+          <p><strong>Auto-appliqué:</strong> {{ model.autoApply ? 'Oui' : 'Non' }}</p>
+          <p *ngIf="model.templateFile"><strong>Fichier modèle:</strong> {{ model.templateFile }}</p>
+        </div>
+
+        <div class="model-steps" *ngIf="model.processingSteps.length > 0">
+          <h5>Étapes de traitement:</h5>
+          <ul>
+            <li *ngFor="let step of model.processingSteps">{{ step.name }}</li>
+          </ul>
+        </div>
+
+      </div>
     </div>
 
-    <ng-template #noModels>
-      <div class="no-models">
-        <p>Aucun modèle de traitement automatique créé.</p>
-        <button (click)="createModel()" class="btn btn-primary">
+        <div class="no-models" *ngIf="models.length === 0">
+      <p>Aucun modèle de traitement automatique créé.</p>
+              <button (click)="createNewModel()" class="btn btn-primary">
           <i class="fas fa-plus"></i> Créer le premier modèle
         </button>
-      </div>
-    </ng-template>
-  </div>
+        <button (click)="testScroll()" class="btn btn-info ml-2">
+          <i class="fas fa-arrow-down"></i> Test Scroll
+        </button>
+          </div>
+    </div>
 
   <!-- Formulaire de création/édition -->
-  <div class="form-section" *ngIf="showCreateForm">
+  <div class="form-section" id="model-form" *ngIf="showCreateForm">
     <div class="form-header">
       <h3>{{ editingModel ? 'Modifier le modèle' : 'Créer un nouveau modèle' }}</h3>
       <button (click)="closeForm()" class="btn btn-secondary">
@@ -258,7 +407,7 @@
       </button>
     </div>
 
-    <form [formGroup]="modelForm" (ngSubmit)="saveModel()" class="model-form">
+    <form [formGroup]="modelForm" (ngSubmit)="saveModel()" class="model-form create-model-form" id="create-model-form">
       <div class="form-row">
         <div class="form-group">
           <label for="name">Nom du modèle *</label>
@@ -268,7 +417,7 @@
 
         <div class="form-group">
           <label for="fileType">Type de fichier *</label>
-          <select id="fileType" formControlName="fileType" class="form-control">
+                      <select id="fileType" formControlName="fileType" class="form-control" (change)="onFileTypeChange()">
             <option value="bo">Back Office</option>
             <option value="partner">Partenaire</option>
             <option value="both">Les deux</option>
@@ -756,7 +905,7 @@
           <div class="form-row">
             <div class="form-group">
               <label>Clés côté partenaire *</label>
-              <select formControlName="partnerKeys" class="form-control" multiple size="4">
+              <select formControlName="partnerKeys" class="form-control" multiple size="4" (change)="onPartnerKeysChange()">
                 <option *ngFor="let col of availableColumnsForTemplate" [value]="col">
                   {{ col }}
                 </option>
@@ -766,10 +915,10 @@
               </small>
               
               <!-- Indicateur des clés partenaires sélectionnées -->
-              <div class="selected-keys-indicator" *ngIf="modelForm.get('reconciliationKeys.partnerKeys')?.value?.length > 0">
+              <div class="selected-keys-indicator" *ngIf="getSelectedPartnerKeys().length > 0">
                 <strong>Clés partenaires sélectionnées :</strong>
                 <div class="selected-keys-list">
-                  <span class="selected-key" *ngFor="let key of modelForm.get('reconciliationKeys.partnerKeys')?.value">
+                  <span class="selected-key" *ngFor="let key of getSelectedPartnerKeys()">
                     {{ key }}
                   </span>
                 </div>
@@ -802,13 +951,21 @@
               <div class="form-row">
                 <div class="form-group">
                   <label>Clés de réconciliation pour {{ boModel.name }}</label>
-                  <select [formControlName]="'boKeys_' + boModel.id" class="form-control" multiple size="3" (change)="onBOKeysChange(boModel.id, $event)">
-                    <option *ngFor="let col of getBOModelColumnsForTemplate()[boModel.id]" [value]="col">
+                  <div class="column-loading-indicator" *ngIf="getBOModelColumns(boModel).length === 0">
+                    <small class="text-warning">
+                      <i class="fas fa-spinner fa-spin"></i> Chargement des colonnes...
+                    </small>
+                    <button type="button" class="btn btn-sm btn-outline-primary ml-2" (click)="reloadBOModelColumns(boModel)">
+                      <i class="fas fa-sync-alt"></i> Recharger
+                    </button>
+                  </div>
+                  <select [formControlName]="'boModelKeys.boKeys_' + boModel.id" class="form-control" multiple size="3" (change)="onBOKeysChange(boModel.id, $event)">
+                    <option *ngFor="let col of getBOModelColumns(boModel)" [value]="col">
                       {{ col }}
                     </option>
                   </select>
                   <small class="form-text text-muted">
-                    Clés de réconciliation pour ce modèle BO
+                    Clés de réconciliation pour ce modèle BO ({{ getBOModelColumns(boModel).length }} colonnes disponibles)
                   </small>
                   
                   <!-- Indicateur des clés sélectionnées -->

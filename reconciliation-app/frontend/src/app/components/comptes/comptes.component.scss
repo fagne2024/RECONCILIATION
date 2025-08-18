@@ -2409,3 +2409,61 @@
     }
   }
 }
+
+// Styles pour le formulaire d'édition
+.edit-form {
+    .form-section {
+        margin-bottom: 0;
+    }
+    .form-row {
+        display: flex;
+        gap: 20px;
+        margin-bottom: 18px;
+        @media (max-width: 600px) {
+            flex-direction: column;
+            gap: 10px;
+        }
+    }
+    .form-group {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        label {
+            font-weight: 600;
+            color: #495057;
+            margin-bottom: 6px;
+            font-size: 0.97rem;
+        }
+        .text-input, input, select {
+            padding: 12px 14px;
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+            font-size: 1rem;
+            background: #fff;
+            transition: border-color 0.3s;
+            &:focus {
+                outline: none;
+                border-color: #007bff;
+                box-shadow: 0 0 0 2px rgba(0,123,255,0.08);
+            }
+        }
+        .modern-select {
+            padding: 12px 14px;
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+            font-size: 1rem;
+            background: #fff;
+        }
+        .error-message {
+            color: #f44336;
+            font-size: 0.88rem;
+            margin-top: 4px;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+    }
+    .full-width {
+        width: 100%;
+    }
+}

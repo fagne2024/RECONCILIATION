@@ -182,75 +182,184 @@
         </div>
     </div>
 
-    <!-- Formulaire de modification -->
-    <div *ngIf="showEditForm && editingFrais" class="edit-form-section">
-        <h3>Modifier le frais</h3>
-        <form [formGroup]="editForm" (ngSubmit)="updateFraisTransaction()" class="form">
-            <div class="form-row">
-                <div class="form-group">
-                    <label>Service *</label>
-                    <input type="text" formControlName="service" 
-                        placeholder="Saisir le nom du service..." class="text-input">
-                    <div *ngIf="editForm.get('service')?.invalid && editForm.get('service')?.touched" class="error-message">
-                        Le service est requis
-                    </div>
+    <!-- Modal de modification de frais de transaction -->
+    <div *ngIf="showEditForm && editingFrais" class="modal-overlay" (click)="closeEditModal($event)">
+        <div class="modal-container edit-modal" (click)="$event.stopPropagation()">
+            <div class="modal-header">
+                <h3><i class="fas fa-edit"></i> Modifier le frais de transaction #{{ editingFrais.id }}</h3>
+                <div class="frais-status">
+                    <span class="status-badge" [class]="'status-' + (editingFrais.actif ? 'actif' : 'inactif')">
+                        {{ editingFrais.actif ? 'Actif' : 'Inactif' }}
+                    </span>
                 </div>
-                <div class="form-group">
-                    <label>Client *</label>
-                    <input type="text" formControlName="agence" 
-                        placeholder="Saisir le nom du client..." class="text-input">
-                    <div *ngIf="editForm.get('agence')?.invalid && editForm.get('agence')?.touched" class="error-message">
-                        Le client est requis
-                    </div>
-                </div>
-            </div>
-            <div class="form-row">
-                <div class="form-group">
-                    <label>Type de calcul *</label>
-                    <select formControlName="typeCalcul" (change)="onTypeCalculChange()">
-                        <option value="NOMINAL">Frais fixe</option>
-                        <option value="POURCENTAGE">Frais en pourcentage</option>
-                    </select>
-                    <div *ngIf="editForm.get('typeCalcul')?.invalid && editForm.get('typeCalcul')?.touched" class="error-message">
-                        Le type de calcul est requis
-                    </div>
-                </div>
-                <div class="form-group" *ngIf="editForm.get('typeCalcul')?.value === 'NOMINAL'">
-                    <label>Montant du frais (FCFA) *</label>
-                    <input type="number" formControlName="montantFrais" placeholder="0.00" step="0.01" min="0">
-                    <div *ngIf="editForm.get('montantFrais')?.invalid && editForm.get('montantFrais')?.touched" class="error-message">
-                        Le montant est requis et doit être positif
-                    </div>
-                </div>
-                <div class="form-group" *ngIf="editForm.get('typeCalcul')?.value === 'POURCENTAGE'">
-                    <label>Pourcentage (%) *</label>
-                    <input type="number" formControlName="pourcentage" placeholder="0.00" step="0.01" min="0" max="100">
-                    <div *ngIf="editForm.get('pourcentage')?.invalid && editForm.get('pourcentage')?.touched" class="error-message">
-                        Le pourcentage est requis et doit être entre 0 et 100
-                    </div>
-                </div>
-            </div>
-            <div class="form-row">
-                <div class="form-group">
-                    <label>Description</label>
-                    <input type="text" formControlName="description" placeholder="Description du frais">
-                </div>
-            </div>
-            <div class="form-row">
-                <div class="form-group">
-                    <label>
-                        <input type="checkbox" formControlName="actif">
-                        Actif
-                    </label>
-                </div>
-            </div>
-            <div class="form-actions">
-                <button type="submit" [disabled]="!editForm.valid">
-                    Mettre à jour
+                <button type="button" class="modal-close" (click)="cancelEdit()">
+                    <i class="fas fa-times"></i>
                 </button>
-                <button type="button" (click)="cancelEdit()">Annuler</button>
             </div>
-        </form>
+            
+            <div class="modal-body">
+                <form [formGroup]="editForm" (ngSubmit)="updateFraisTransaction()" class="edit-form">
+                    <!-- Informations de base -->
+                    <div class="form-section">
+                        <h4 class="section-title">
+                            <i class="fas fa-info-circle"></i> Informations de base
+                        </h4>
+                        
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Service *</label>
+                                <input type="text" formControlName="service" 
+                                    placeholder="Saisir le nom du service..." class="text-input">
+                                <div *ngIf="editForm.get('service')?.invalid && editForm.get('service')?.touched" class="error-message">
+                                    <i class="fas fa-exclamation-circle"></i>
+                                    Le service est requis
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label>Client *</label>
+                                <input type="text" formControlName="agence" 
+                                    placeholder="Saisir le nom du client..." class="text-input">
+                                <div *ngIf="editForm.get('agence')?.invalid && editForm.get('agence')?.touched" class="error-message">
+                                    <i class="fas fa-exclamation-circle"></i>
+                                    Le client est requis
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Configuration des frais -->
+                    <div class="form-section">
+                        <h4 class="section-title">
+                            <i class="fas fa-calculator"></i> Configuration des frais
+                        </h4>
+                        
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Type de calcul *</label>
+                                <div class="select-wrapper">
+                                    <select formControlName="typeCalcul" (change)="onTypeCalculChange()" class="modern-select">
+                                        <option value="NOMINAL">Frais fixe</option>
+                                        <option value="POURCENTAGE">Frais en pourcentage</option>
+                                    </select>
+                                    <i class="fas fa-chevron-down select-arrow"></i>
+                                </div>
+                                <div *ngIf="editForm.get('typeCalcul')?.invalid && editForm.get('typeCalcul')?.touched" class="error-message">
+                                    <i class="fas fa-exclamation-circle"></i>
+                                    Le type de calcul est requis
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="form-row" *ngIf="editForm.get('typeCalcul')?.value === 'NOMINAL'">
+                            <div class="form-group full-width">
+                                <label>Montant du frais (FCFA) *</label>
+                                <div class="amount-input-wrapper">
+                                    <input type="number" formControlName="montantFrais" 
+                                        placeholder="0.00" step="0.01" min="0" class="amount-input">
+                                    <span class="currency-symbol">FCFA</span>
+                                </div>
+                                <div *ngIf="editForm.get('montantFrais')?.invalid && editForm.get('montantFrais')?.touched" class="error-message">
+                                    <i class="fas fa-exclamation-circle"></i>
+                                    Le montant est requis et doit être positif
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="form-row" *ngIf="editForm.get('typeCalcul')?.value === 'POURCENTAGE'">
+                            <div class="form-group full-width">
+                                <label>Pourcentage (%) *</label>
+                                <div class="percentage-input-wrapper">
+                                    <input type="number" formControlName="pourcentage" 
+                                        placeholder="0.00" step="0.01" min="0" max="100" class="percentage-input">
+                                    <span class="percentage-symbol">%</span>
+                                </div>
+                                <div *ngIf="editForm.get('pourcentage')?.invalid && editForm.get('pourcentage')?.touched" class="error-message">
+                                    <i class="fas fa-exclamation-circle"></i>
+                                    Le pourcentage est requis et doit être entre 0 et 100
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Aperçu du calcul -->
+                        <div class="calculation-preview" *ngIf="showEditCalculationPreview()">
+                            <div class="preview-card">
+                                <div class="preview-header">
+                                    <h5>Aperçu du calcul</h5>
+                                </div>
+                                <div class="preview-content">
+                                    <div class="preview-item">
+                                        <span class="preview-label">Type:</span>
+                                        <span class="preview-value">{{ getEditTypeCalculDisplayName() }}</span>
+                                    </div>
+                                    <div class="preview-item" *ngIf="editForm.get('typeCalcul')?.value === 'NOMINAL'">
+                                        <span class="preview-label">Montant fixe:</span>
+                                        <span class="preview-value">{{ editForm.get('montantFrais')?.value | currency:'XAF':'symbol':'1.0-0' }}</span>
+                                    </div>
+                                    <div class="preview-item" *ngIf="editForm.get('typeCalcul')?.value === 'POURCENTAGE'">
+                                        <span class="preview-label">Pourcentage:</span>
+                                        <span class="preview-value">{{ editForm.get('pourcentage')?.value }}%</span>
+                                    </div>
+                                    <div class="preview-item">
+                                        <span class="preview-label">Service:</span>
+                                        <span class="preview-value">{{ editForm.get('service')?.value || 'Non défini' }}</span>
+                                    </div>
+                                    <div class="preview-item">
+                                        <span class="preview-label">Client:</span>
+                                        <span class="preview-value">{{ editForm.get('agence')?.value || 'Non défini' }}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Détails supplémentaires -->
+                    <div class="form-section">
+                        <h4 class="section-title">
+                            <i class="fas fa-cog"></i> Détails supplémentaires
+                        </h4>
+                        
+                        <div class="form-row">
+                            <div class="form-group full-width">
+                                <label>Description</label>
+                                <input type="text" formControlName="description" 
+                                    placeholder="Description du frais (optionnel)" class="text-input">
+                            </div>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <div class="checkbox-wrapper">
+                                    <label class="checkbox-label">
+                                        <input type="checkbox" formControlName="actif" class="modern-checkbox">
+                                        <span class="checkmark"></span>
+                                        Actif
+                                    </label>
+                                    <div class="checkbox-help">
+                                        <i class="fas fa-info-circle"></i>
+                                        Les frais inactifs ne seront pas appliqués automatiquement
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </form>
+            </div>
+
+            <div class="modal-footer">
+                <div class="modal-actions">
+                    <button type="button" class="btn-secondary" (click)="cancelEdit()">
+                        <i class="fas fa-times"></i>
+                        Annuler
+                    </button>
+                    <button type="submit" class="btn-primary" 
+                        [disabled]="!editForm.valid || isEditing"
+                        (click)="updateFraisTransaction()">
+                        <i class="fas fa-check"></i>
+                        {{ isEditing ? 'Mise à jour...' : 'Mettre à jour' }}
+                    </button>
+                </div>
+            </div>
+        </div>
     </div>
 
     <!-- Filtres -->

@@ -1,7 +1,10 @@
 .banque-container {
   padding: 24px;
-  max-width: 1200px;
-  margin: 0 auto;
+  width: 100%;
+  height: 100%;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
 }
 
 .banque-header {
@@ -30,6 +33,8 @@
   display: flex;
   flex-direction: column;
   gap: 32px;
+  flex: 1;
+  width: 100%;
 }
 
 .banque-section {
@@ -37,6 +42,7 @@
   border-radius: 12px;
   padding: 24px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  width: 100%;
 
   h2 {
     color: #2e7d32;
@@ -48,8 +54,9 @@
 
 .banque-stats {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-  gap: 20px;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 24px;
+  width: 100%;
 }
 
 .stat-card {
@@ -90,8 +97,9 @@
 
 .banque-features {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 20px;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 24px;
+  width: 100%;
 }
 
 .feature-card {
@@ -101,6 +109,7 @@
   text-align: center;
   transition: transform 0.2s, box-shadow 0.2s;
   border: 1px solid #e9ecef;
+  cursor: pointer;
 
   &:hover {
     transform: translateY(-4px);
@@ -147,6 +156,7 @@
 @media (max-width: 768px) {
   .banque-container {
     padding: 16px;
+    min-height: auto;
   }
 
   .banque-header {
@@ -163,10 +173,12 @@
 
   .banque-stats {
     grid-template-columns: 1fr;
+    gap: 16px;
   }
 
   .banque-features {
     grid-template-columns: 1fr;
+    gap: 16px;
   }
 
   .stat-card {
@@ -188,4 +200,290 @@
       font-size: 2.5rem;
     }
   }
-} 
+}
+
+// Styles pour le tableau des opérations bancaires
+.operations-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+
+  h2 {
+    margin: 0;
+    color: #2e7d32;
+    font-size: 1.8rem;
+    font-weight: 600;
+  }
+
+  .btn-back {
+    background: #6c757d;
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    transition: background-color 0.3s;
+
+    &:hover {
+      background: #5a6268;
+    }
+  }
+}
+
+.operations-table-container {
+  .table-filters {
+    display: flex;
+    gap: 16px;
+    margin-bottom: 24px;
+    flex-wrap: wrap;
+    align-items: end;
+
+    .filter-group {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+
+      label {
+        font-size: 12px;
+        font-weight: 600;
+        color: #495057;
+      }
+
+      select, input {
+        padding: 8px 12px;
+        border: 1px solid #ced4da;
+        border-radius: 4px;
+        font-size: 14px;
+        min-width: 120px;
+
+        &:focus {
+          outline: none;
+          border-color: #2e7d32;
+          box-shadow: 0 0 0 2px rgba(46, 125, 50, 0.1);
+        }
+      }
+    }
+
+    .btn-clear-filters {
+      background: #dc3545;
+      color: white;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: background-color 0.3s;
+
+      &:hover {
+        background: #c82333;
+      }
+    }
+  }
+
+  .table-container {
+    overflow-x: auto;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+
+    .operations-table {
+      width: 100%;
+      border-collapse: collapse;
+      background: white;
+
+      th, td {
+        padding: 12px;
+        text-align: left;
+        border-bottom: 1px solid #dee2e6;
+      }
+
+      th {
+        background: #f8f9fa;
+        font-weight: 600;
+        color: #495057;
+        font-size: 14px;
+        position: sticky;
+        top: 0;
+        z-index: 10;
+      }
+
+      td {
+        vertical-align: middle;
+        font-size: 14px;
+      }
+
+      .badge {
+        padding: 4px 8px;
+        border-radius: 12px;
+        font-size: 12px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+
+        &.type-virement {
+          background: #e3f2fd;
+          color: #1976d2;
+        }
+
+        &.type-paiement {
+          background: #f3e5f5;
+          color: #7b1fa2;
+        }
+
+        &.type-retrait {
+          background: #fff3e0;
+          color: #f57c00;
+        }
+
+        &.status-validée {
+          background: #e8f5e8;
+          color: #388e3c;
+        }
+
+        &.status-en_attente {
+          background: #fff3e0;
+          color: #f57c00;
+        }
+
+        &.status-rejetée {
+          background: #ffebee;
+          color: #d32f2f;
+        }
+      }
+
+      .actions {
+        display: flex;
+        gap: 4px;
+
+        .btn-icon {
+          background: none;
+          border: none;
+          cursor: pointer;
+          padding: 6px;
+          border-radius: 4px;
+          transition: background-color 0.3s;
+          color: #6c757d;
+
+          &:hover {
+            background: #f8f9fa;
+          }
+
+          &.btn-danger:hover {
+            background: #f8d7da;
+            color: #721c24;
+          }
+        }
+      }
+    }
+  }
+
+  .pagination {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    margin-top: 24px;
+    gap: 16px;
+
+    button {
+      background: #2e7d32;
+      color: white;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: background-color 0.3s;
+
+      &:hover:not(:disabled) {
+        background: #1b5e20;
+      }
+
+      &:disabled {
+        background: #adb5bd;
+        cursor: not-allowed;
+      }
+    }
+
+    .pagination-indicators {
+      display: flex;
+      gap: 4px;
+
+      .page-indicator {
+        padding: 8px 12px;
+        border: 1px solid #dee2e6;
+        border-radius: 4px;
+        cursor: pointer;
+        transition: all 0.3s;
+        font-size: 14px;
+
+        &:hover {
+          background: #f8f9fa;
+        }
+
+        &.active {
+          background: #2e7d32;
+          color: white;
+          border-color: #2e7d32;
+        }
+      }
+    }
+  }
+}
+
+// Responsive design pour le tableau
+@media (max-width: 768px) {
+  .operations-header {
+    flex-direction: column;
+    gap: 16px;
+    align-items: flex-start;
+
+    h2 {
+      font-size: 1.5rem;
+    }
+  }
+
+  .operations-table-container {
+    .table-filters {
+      flex-direction: column;
+      gap: 12px;
+
+      .filter-group {
+        width: 100%;
+
+        select, input {
+          width: 100%;
+        }
+      }
+
+      .btn-clear-filters {
+        width: 100%;
+        justify-content: center;
+      }
+    }
+
+    .table-container {
+      .operations-table {
+        font-size: 12px;
+
+        th, td {
+          padding: 8px 4px;
+        }
+      }
+    }
+
+    .pagination {
+      flex-direction: column;
+      gap: 12px;
+    }
+  }
+}

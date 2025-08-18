@@ -355,6 +355,12 @@ export class ComptesComponent implements OnInit, OnDestroy {
         }
     }
 
+    closeEditModal(event: Event) {
+        if (event.target === event.currentTarget) {
+            this.cancelEdit();
+        }
+    }
+
     editCompte(compte: Compte) {
         this.editingCompte = compte;
         this.showEditForm = true;

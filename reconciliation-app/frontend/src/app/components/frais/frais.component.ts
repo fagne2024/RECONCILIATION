@@ -687,4 +687,32 @@ export class FraisComponent implements OnInit, OnDestroy {
         this.filterForm.controls['dateFin'].setValue(this.dateFin);
         this.applyFilters();
     }
+
+    // Méthodes pour le modal de modification
+    closeEditModal(event: Event) {
+        if (event.target === event.currentTarget) {
+            this.cancelEdit();
+        }
+    }
+
+    showEditCalculationPreview(): boolean {
+        const typeCalcul = this.editForm.get('typeCalcul')?.value;
+        const service = this.editForm.get('service')?.value;
+        const agence = this.editForm.get('agence')?.value;
+        
+        if (typeCalcul === 'NOMINAL') {
+            const montant = this.editForm.get('montantFrais')?.value;
+            return service && agence && montant && montant > 0;
+        } else if (typeCalcul === 'POURCENTAGE') {
+            const pourcentage = this.editForm.get('pourcentage')?.value;
+            return service && agence && pourcentage && pourcentage > 0;
+        }
+        
+        return false;
+    }
+
+    getEditTypeCalculDisplayName(): string {
+        const typeCalcul = this.editForm.get('typeCalcul')?.value;
+        return typeCalcul === 'POURCENTAGE' ? 'Frais en pourcentage' : 'Frais fixe';
+    }
 } 

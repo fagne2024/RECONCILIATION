@@ -88,48 +88,80 @@
     </div>
     <!-- Fin modal d'ajout de compte -->
 
-    <!-- Formulaire de modification -->
-    <div *ngIf="showEditForm" class="edit-form-container card">
-      <h2>Modifier le Compte</h2>
-      <form [formGroup]="editForm" (ngSubmit)="updateCompte()" class="form-grid">
-          <div class="form-field">
-              <label for="editNumeroCompte">Numéro de Compte</label>
-              <input id="editNumeroCompte" formControlName="numeroCompte" placeholder="Ex: 123456789">
-          </div>
-          <div class="form-field">
-              <label for="editSolde">Solde</label>
-              <input id="editSolde" type="number" formControlName="solde" placeholder="0.00">
-          </div>
-          <div class="form-field">
-              <label for="editPays">Pays</label>
-              <app-autocomplete-input
-                  [options]="paysList"
-                  formControlName="pays"
-                  placeholder="Saisir un pays..."
-                  label="Pays">
-              </app-autocomplete-input>
-          </div>
-          <div class="form-field">
-              <label for="editType">Type de Compte</label>
-              <select id="editType" formControlName="type">
-                  <option value="" disabled>Sélectionner un type</option>
-                  <option *ngFor="let t of compteTypes" [value]="t">{{ t }}</option>
-              </select>
-              <div *ngIf="editForm.controls['type'].touched && editForm.controls['type'].errors?.['required']" class="error">
-                  Le type de compte est requis.
-              </div>
-          </div>
-          <div class="form-field">
-              <label for="editCodeProprietaire">Code Propriétaire</label>
-              <input id="editCodeProprietaire" formControlName="codeProprietaire" placeholder="Ex: PROP001">
-          </div>
-          <div class="form-actions">
-              <button type="submit" class="btn primary" [disabled]="isEditing || editForm.invalid">
-                  {{ isEditing ? 'Mise à jour...' : 'Mettre à jour' }}
-              </button>
-              <button type="button" (click)="cancelEdit()" class="btn">Annuler</button>
-          </div>
-      </form>
+    <!-- Modal de modification de compte -->
+    <div *ngIf="showEditForm" class="modal-overlay" (click)="closeEditModal($event)">
+        <div class="modal-container" (click)="$event.stopPropagation()">
+            <div class="modal-header">
+                <h3><i class="fas fa-edit"></i> Modifier le compte</h3>
+                <button type="button" class="modal-close" (click)="cancelEdit()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <form [formGroup]="editForm" (ngSubmit)="updateCompte()" class="edit-form">
+                    <div class="form-section">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Numéro de Compte *</label>
+                                <input type="text" formControlName="numeroCompte" placeholder="Ex: 123456789" class="text-input">
+                                <div *ngIf="editForm.get('numeroCompte')?.invalid && editForm.get('numeroCompte')?.touched" class="error-message">
+                                    Le numéro de compte est requis.
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label>Solde *</label>
+                                <input type="number" formControlName="solde" placeholder="0.00" class="text-input">
+                                <div *ngIf="editForm.get('solde')?.invalid && editForm.get('solde')?.touched" class="error-message">
+                                    Le solde est requis.
+                                </div>
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Pays *</label>
+                                <app-autocomplete-input
+                                    [options]="paysList"
+                                    formControlName="pays"
+                                    placeholder="Saisir un pays..."
+                                    label="Pays">
+                                </app-autocomplete-input>
+                                <div *ngIf="editForm.get('pays')?.invalid && editForm.get('pays')?.touched" class="error-message">
+                                    Le pays est requis.
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label>Type de Compte *</label>
+                                <select formControlName="type" class="modern-select">
+                                    <option value="" disabled>Sélectionner un type</option>
+                                    <option *ngFor="let t of compteTypes" [value]="t">{{ t }}</option>
+                                </select>
+                                <div *ngIf="editForm.get('type')?.invalid && editForm.get('type')?.touched" class="error-message">
+                                    Le type de compte est requis.
+                                </div>
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group full-width">
+                                <label>Code Propriétaire</label>
+                                <input type="text" formControlName="codeProprietaire" placeholder="Ex: PROP001" class="text-input">
+                            </div>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <div class="modal-actions">
+                    <button type="button" class="btn-secondary" (click)="cancelEdit()">
+                        <i class="fas fa-times"></i>
+                        Annuler
+                    </button>
+                    <button type="submit" class="btn-primary" [disabled]="!editForm.valid || isEditing" (click)="updateCompte()">
+                        <i class="fas fa-save"></i>
+                        {{ isEditing ? 'Mise à jour...' : 'Mettre à jour' }}
+                    </button>
+                </div>
+            </div>
+        </div>
     </div>
 
 

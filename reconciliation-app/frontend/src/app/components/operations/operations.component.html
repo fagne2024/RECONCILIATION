@@ -315,8 +315,22 @@
         </div>
     </div>
 
-    <!-- Formulaire de modification -->
-    <div *ngIf="showEditForm && editingOperation" class="edit-form-section">
+    <!-- Modal de modification d'opération -->
+    <div *ngIf="showEditForm && editingOperation" class="modal-overlay" (click)="closeEditModal($event)">
+        <div class="modal-container edit-modal" (click)="$event.stopPropagation()">
+            <div class="modal-header">
+                <h3><i class="fas fa-edit"></i> Modifier l'opération #{{ editingOperation.id }}</h3>
+                <div class="operation-status">
+                    <span class="status-badge" [class]="'status-' + editingOperation.statut.toLowerCase()">
+                        {{ editingOperation.statut }}
+                    </span>
+                </div>
+                <button type="button" class="modal-close" (click)="cancelEdit()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            
+            <div class="modal-body">
         <!-- Navigation par étapes -->
         <div class="step-navigation">
             <div class="step-item" [class.active]="currentEditStep === 1" (click)="setEditStep(1)">
@@ -333,20 +347,11 @@
             </div>
         </div>
 
-        <div class="form-header">
-            <h3>Modifier l'opération #{{ editingOperation.id }}</h3>
-            <div class="operation-status">
-                <span class="status-badge" [class]="'status-' + editingOperation.statut.toLowerCase()">
-                    {{ editingOperation.statut }}
-                </span>
-            </div>
-        </div>
-
-        <form [formGroup]="editForm" (ngSubmit)="updateOperation()" class="form">
+                <form [formGroup]="editForm" (ngSubmit)="updateOperation()" class="edit-form">
             <!-- Étape 1: Informations de base -->
             <div *ngIf="currentEditStep === 1" class="form-step">
                 <div class="step-content">
-                    <h4>Informations de base</h4>
+                            <h4><i class="fas fa-info-circle"></i> Informations de base</h4>
                     
                     <!-- Informations en lecture seule -->
                     <div class="readonly-info">
@@ -373,12 +378,12 @@
                                         {{ type }}
                                     </mat-option>
                                 </mat-select>
+                                    </mat-form-field>
                                 <div *ngIf="editForm.get('typeOperation')?.invalid && editForm.get('typeOperation')?.touched" 
                                     class="error-message">
                                     <i class="fas fa-exclamation-circle"></i>
                                     Le type d'opération est requis
                                 </div>
-                            </mat-form-field>
                         </div>
                         <div class="form-group">
                             <label>Date d'opération *</label>
@@ -436,7 +441,7 @@
             <!-- Étape 2: Détails financiers -->
             <div *ngIf="currentEditStep === 2" class="form-step">
                 <div class="step-content">
-                    <h4>Détails financiers</h4>
+                            <h4><i class="fas fa-calculator"></i> Détails financiers</h4>
                     
                     <div class="financial-preview">
                         <div class="preview-card">
@@ -495,7 +500,7 @@
             <!-- Étape 3: Validation -->
             <div *ngIf="currentEditStep === 3" class="form-step">
                 <div class="step-content">
-                    <h4>Validation des modifications</h4>
+                            <h4><i class="fas fa-check-circle"></i> Validation des modifications</h4>
                     
                     <div class="validation-summary">
                         <div class="summary-card">
@@ -539,8 +544,12 @@
                         </div>
                     </div>
                 </div>
+                    </div>
+                </form>
             </div>
 
+            <div class="modal-footer">
+                <div class="modal-actions">
             <!-- Navigation des étapes -->
             <div class="step-navigation-actions">
                 <button type="button" class="btn-secondary" 
@@ -548,6 +557,11 @@
                     [disabled]="currentEditStep === 1">
                     <i class="fas fa-arrow-left"></i>
                     Précédent
+                </button>
+                        
+                        <button type="button" class="btn-secondary" (click)="cancelEdit()">
+                            <i class="fas fa-times"></i>
+                            Annuler
                 </button>
                 
                 <div class="step-indicators">
@@ -565,20 +579,16 @@
                 </button>
                 
                 <button type="submit" class="btn-success" 
-                    [disabled]="!editForm.valid || currentEditStep !== 3"
+                            [disabled]="!editForm.valid || currentEditStep !== 3 || isUpdating"
+                            (click)="updateOperation()"
                     *ngIf="currentEditStep === 3">
                     <i class="fas fa-check"></i>
-                    Mettre à jour
+                            {{ isUpdating ? 'Mise à jour...' : 'Mettre à jour' }}
                 </button>
             </div>
-
-            <div class="form-actions">
-                <button type="button" class="btn-cancel" (click)="cancelEdit()">
-                    <i class="fas fa-times"></i>
-                    Annuler
-                </button>
             </div>
-        </form>
+            </div>
+        </div>
     </div>
 
 
