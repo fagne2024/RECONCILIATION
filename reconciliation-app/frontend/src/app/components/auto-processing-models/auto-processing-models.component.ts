@@ -1,4 +1,4 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, ChangeDetectorRef } from '@angular/core';
 import { FormBuilder, FormGroup, Validators, FormArray, FormControl } from '@angular/forms';
 import { AutoProcessingService, AutoProcessingModel, ProcessingStep, FileModel } from '../../services/auto-processing.service';
 import { OrangeMoneyUtilsService } from '../../services/orange-money-utils.service';
@@ -20,6 +20,8 @@ export class AutoProcessingModelsComponent implements OnInit {
   showFileSelector = false;
   selectedFileModel: FileModel | null = null;
   availableColumns: string[] = [];
+  
+
 
   // --- FILTRAGE DES MODÈLES PARTENAIRES ---
   showPartnerFilter = false;
@@ -132,7 +134,8 @@ export class AutoProcessingModelsComponent implements OnInit {
   constructor(
     private autoProcessingService: AutoProcessingService,
     private orangeMoneyUtilsService: OrangeMoneyUtilsService,
-    private fb: FormBuilder
+    private fb: FormBuilder,
+    private cdr: ChangeDetectorRef
   ) {
     this.modelForm = this.fb.group({
       name: ['', Validators.required],
@@ -153,7 +156,17 @@ export class AutoProcessingModelsComponent implements OnInit {
 
     // Écouter les changements de type de fichier
     this.modelForm.get('fileType')?.valueChanges.subscribe(fileType => {
+      console.log('🔄 Changement de type de fichier détecté:', fileType);
       this.updateReconciliationKeysValidation(fileType);
+      
+      // Charger automatiquement les colonnes appropriées selon le type
+      if (fileType === 'partner' && this.availableColumnsForTemplate.length === 0) {
+        console.log('🔄 Chargement automatique des colonnes pour le type partenaire');
+        this.loadColumnsForPartnerType();
+      } else if (fileType === 'bo' && this.availableColumnsForTemplate.length === 0) {
+        console.log('🔄 Chargement automatique des colonnes pour le type BO');
+        this.loadColumnsForBOType();
+      }
     });
 
     // Écouter les changements de sélection des modèles BO
@@ -163,14 +176,34 @@ export class AutoProcessingModelsComponent implements OnInit {
   }
 
   ngOnInit(): void {
-    this.loadModels();
-    this.loadAvailableFiles();
+    // Charger d'abord les fichiers disponibles, puis les modèles
+    this.loadAvailableFiles().then(() => {
+      this.loadModels();
+      
+      // Charger automatiquement les colonnes du premier fichier disponible
+      if (this.availableFiles.length > 0 && this.availableColumns.length === 0) {
+        console.log('🔄 Chargement automatique des colonnes au démarrage');
+        const firstFile = this.availableFiles[0];
+        
+        if (firstFile.columns && firstFile.columns.length > 0) {
+          this.availableColumns = firstFile.columns.map(col => this.normalizeColumnName(col));
+          console.log('✅ Colonnes chargées au démarrage:', this.availableColumns);
+          
+          // Forcer la mise à jour de l'affichage
+          this.modelForm.updateValueAndValidity();
+        }
+      }
+    });
   }
 
   loadModels(): void {
     this.autoProcessingService.getModels().subscribe({
       next: (models) => {
         this.models = models;
+        console.log('✅ Modèles chargés:', models.length);
+        
+        // Charger automatiquement les colonnes des modèles BO
+        this.preloadBOModelColumns();
       },
       error: (error) => {
         console.error('Erreur lors du chargement des modèles:', error);
@@ -179,28 +212,54 @@ export class AutoProcessingModelsComponent implements OnInit {
     });
   }
 
-  loadAvailableFiles(): void {
+  // Méthode pour précharger les colonnes des modèles BO
+  private preloadBOModelColumns(): void {
+    console.log('🔄 preloadBOModelColumns() appelé');
+    const boModels = this.getAvailableBOModels();
+    console.log(`  - Modèles BO trouvés: ${boModels.length}`);
+    
+    boModels.forEach(model => {
+      console.log(`  - Vérification des colonnes pour ${model.name} (${model.templateFile})`);
+      if (model.templateFile) {
+        // Vérifier si le fichier est déjà disponible
+        const existingFile = this.availableFiles.find(f => f.fileName === model.templateFile);
+        if (existingFile && existingFile.columns && existingFile.columns.length > 0) {
+          console.log(`  - ✅ Fichier ${model.templateFile} déjà disponible avec ${existingFile.columns.length} colonnes`);
+        } else {
+          console.log(`  - 🔄 Chargement des colonnes pour ${model.name}`);
+          this.loadBOModelColumns(model);
+        }
+      }
+    });
+  }
+
+  loadAvailableFiles(): Promise<void> {
     console.log('🚀 loadAvailableFiles() appelé');
     this.loading = true;
-    this.autoProcessingService.getAvailableFileModels().subscribe({
-      next: (files) => {
-        console.log('✅ Fichiers chargés avec succès:', files);
-        
-        // Corriger les noms de colonnes corrompus dans tous les fichiers
-        this.availableFiles = files.map(file => ({
-          ...file,
-          columns: file.columns.map(col => this.normalizeColumnName(col))
-        }));
-        
-        this.filteredFiles = [...this.availableFiles]; // Initialiser filteredFiles avec tous les fichiers corrigés
-        console.log('✅ Colonnes corrigées dans les fichiers:', this.availableFiles.map(f => ({ fileName: f.fileName, columns: f.columns })));
-        this.loading = false;
-      },
-      error: (error) => {
-        console.error('❌ Erreur lors du chargement des fichiers:', error);
-        this.errorMessage = 'Erreur lors du chargement des fichiers disponibles';
-        this.loading = false;
-      }
+    
+    return new Promise((resolve, reject) => {
+      this.autoProcessingService.getAvailableFileModels().subscribe({
+        next: (files) => {
+          console.log('✅ Fichiers chargés avec succès:', files);
+          
+          // Corriger les noms de colonnes corrompus dans tous les fichiers
+          this.availableFiles = files.map(file => ({
+            ...file,
+            columns: file.columns.map(col => this.normalizeColumnName(col))
+          }));
+          
+          this.filteredFiles = [...this.availableFiles]; // Initialiser filteredFiles avec tous les fichiers corrigés
+          console.log('✅ Colonnes corrigées dans les fichiers:', this.availableFiles.map(f => ({ fileName: f.fileName, columns: f.columns })));
+          this.loading = false;
+          resolve();
+        },
+        error: (error) => {
+          console.error('❌ Erreur lors du chargement des fichiers:', error);
+          this.errorMessage = 'Erreur lors du chargement des fichiers disponibles';
+          this.loading = false;
+          reject(error);
+        }
+      });
     });
   }
 
@@ -402,30 +461,32 @@ export class AutoProcessingModelsComponent implements OnInit {
     });
   }
 
-  // Propriété calculée pour les colonnes disponibles (évite les appels répétés)
+  // Propriété pour les colonnes disponibles pour le template
   get availableColumnsForTemplate(): string[] {
     // Priorité 1: Colonnes du fichier sélectionné
-    if (this.selectedFileModel && this.selectedFileModel.columns.length > 0) {
+    if (this.selectedFileModel && this.selectedFileModel.columns && this.selectedFileModel.columns.length > 0) {
       return this.selectedFileModel.columns;
     }
     
-    // Priorité 2: Colonnes disponibles dans le composant
+    // Priorité 2: Colonnes déjà chargées dans le composant
     if (this.availableColumns && this.availableColumns.length > 0) {
       return this.availableColumns;
     }
     
-    // Priorité 3: Colonnes du modèle en édition - chercher dans les fichiers disponibles
-    if (this.editingModel?.templateFile) {
-      const fileModel = this.availableFiles.find(f => f.fileName === this.editingModel?.templateFile);
-      if (fileModel && fileModel.columns.length > 0) {
-        return fileModel.columns;
-      }
-    }
+         // Priorité 3: Colonnes du modèle en édition
+     if (this.editingModel && this.editingModel.templateFile) {
+       const fileModel = this.availableFiles.find(f => f.fileName === this.editingModel!.templateFile);
+       if (fileModel && fileModel.columns && fileModel.columns.length > 0) {
+         return fileModel.columns;
+       }
+     }
     
-    // Priorité 4: Colonnes du premier fichier disponible (pour création de nouveau modèle)
+    // Priorité 4: Colonnes du premier fichier disponible
     if (this.availableFiles.length > 0) {
       const firstFile = this.availableFiles[0];
-      if (firstFile.columns.length > 0) {
+      if (firstFile.columns && firstFile.columns.length > 0) {
+        // Mettre à jour this.availableColumns pour les prochaines fois
+        this.availableColumns = firstFile.columns;
         return firstFile.columns;
       }
     }
@@ -501,16 +562,73 @@ export class AutoProcessingModelsComponent implements OnInit {
 
   // Création/édition de modèle
   createModel(): void {
-    this.editingModel = null;
-    this.modelForm.reset({
-      fileType: 'bo',
-      autoApply: true,
-      processingSteps: []
+    console.log('🔧 createModel() appelé');
+    console.log('🔧 État du formulaire:', this.modelForm.value);
+    
+    if (this.modelForm.valid) {
+      this.loading = true;
+      this.errorMessage = '';
+      
+      const modelData = this.modelForm.value;
+      console.log('🔧 Données du modèle à créer:', modelData);
+      
+      // Charger automatiquement les colonnes si elles ne sont pas disponibles
+      if (this.availableFiles.length > 0 && this.availableColumns.length === 0) {
+        console.log('🔄 Chargement automatique des colonnes lors de la création');
+        const firstFile = this.availableFiles[0];
+        
+        // Utiliser directement les colonnes du fichier si disponibles
+        if (firstFile.columns && firstFile.columns.length > 0) {
+          this.availableColumns = firstFile.columns.map(col => this.normalizeColumnName(col));
+          console.log('✅ Colonnes chargées depuis le fichier disponible:', this.availableColumns);
+        } else {
+          // Essayer de charger depuis le service seulement si nécessaire
+          this.autoProcessingService.getFileColumns(firstFile.fileName).subscribe({
+            next: (columns) => {
+              this.availableColumns = columns.map(col => this.normalizeColumnName(col));
+              console.log('✅ Colonnes chargées pour la création:', this.availableColumns);
+              
+              // Continuer avec la création du modèle
+              this.proceedWithModelCreation(modelData);
+            },
+            error: (error) => {
+              console.error('❌ Erreur lors du chargement des colonnes:', error);
+              // Continuer quand même avec la création du modèle
+              this.proceedWithModelCreation(modelData);
+            }
+          });
+          return; // Sortir pour éviter la double création
+        }
+      }
+      
+      // Procéder directement si les colonnes sont déjà disponibles
+      this.proceedWithModelCreation(modelData);
+    } else {
+      console.error('❌ Formulaire invalide:', this.modelForm.errors);
+      this.errorMessage = 'Veuillez corriger les erreurs dans le formulaire';
+    }
+  }
+
+  private proceedWithModelCreation(modelData: any): void {
+    console.log('🔧 proceedWithModelCreation() appelé avec:', modelData);
+    
+    this.autoProcessingService.createModel(modelData).subscribe({
+      next: (newModel) => {
+        console.log('✅ Modèle créé avec succès:', newModel);
+        this.models.push(newModel);
+        this.showCreateForm = false;
+        this.modelForm.reset();
+        this.loading = false;
+        
+        // Recharger les modèles pour s'assurer que tout est à jour
+        this.loadModels();
+      },
+      error: (error) => {
+        console.error('❌ Erreur lors de la création du modèle:', error);
+        this.errorMessage = 'Erreur lors de la création du modèle: ' + (error.error?.message || error.message || 'Erreur inconnue');
+        this.loading = false;
+      }
     });
-    this.showCreateForm = true;
-    this.selectedFileModel = null;
-    // Ne pas vider availableColumns pour permettre l'utilisation des colonnes des fichiers disponibles
-    // this.availableColumns = [];
   }
 
   editModel(model: AutoProcessingModel): void {
@@ -520,6 +638,7 @@ export class AutoProcessingModelsComponent implements OnInit {
     console.log('🔧 État actuel du formulaire:', this.modelForm.value);
     
     this.editingModel = model;
+    this.showCreateForm = true;
     this.modelForm.patchValue({
       name: model.name,
       filePattern: model.filePattern,
@@ -530,7 +649,8 @@ export class AutoProcessingModelsComponent implements OnInit {
         partnerKeys: model.reconciliationKeys?.partnerKeys || [],
         boKeys: model.reconciliationKeys?.boKeys || [],
         boModels: model.reconciliationKeys?.boModels || [],
-        boModelKeys: model.reconciliationKeys?.boModelKeys || {}
+        boModelKeys: model.reconciliationKeys?.boModelKeys || {},
+        boTreatments: model.reconciliationKeys?.boTreatments || {}
       }
     });
 
@@ -671,6 +791,11 @@ export class AutoProcessingModelsComponent implements OnInit {
     }
 
     this.showCreateForm = true;
+    
+    // Scroll automatique vers le formulaire après un court délai
+    setTimeout(() => {
+      this.scrollToForm();
+    }, 100);
     
     // Initialiser les contrôles BO immédiatement (sans setTimeout)
     this.initializeBOModelKeys();
@@ -877,7 +1002,7 @@ export class AutoProcessingModelsComponent implements OnInit {
          const selectedBOModels = this.getSelectedBOModels();
 
         reconciliationKeys = {
-          partnerKeys: formValue.reconciliationKeys?.partnerKeys || [],
+          partnerKeys: formValue.partnerKeys || [],
           boModels: selectedBOModels.map(m => m.id),
           boModelKeys: {},
           boTreatments: {}
@@ -995,7 +1120,14 @@ export class AutoProcessingModelsComponent implements OnInit {
     this.modelForm.reset({
       fileType: 'bo',
       autoApply: true,
-      processingSteps: []
+      processingSteps: [],
+      reconciliationKeys: {
+        partnerKeys: [],
+        boKeys: [],
+        boModels: [],
+        boModelKeys: {},
+        boTreatments: {}
+      }
     });
     
     // S'assurer que le FormArray des étapes est complètement vidé
@@ -1022,6 +1154,32 @@ export class AutoProcessingModelsComponent implements OnInit {
     // this.availableColumns = [];
   }
 
+
+
+  onSubmit(): void {
+    if (this.modelForm.valid) {
+      this.saveModel();
+    } else {
+      console.log('❌ Formulaire invalide:', this.modelForm.errors);
+      this.markFormGroupTouched();
+    }
+  }
+
+  markFormGroupTouched(): void {
+    Object.keys(this.modelForm.controls).forEach(key => {
+      const control = this.modelForm.get(key);
+      if (control instanceof FormGroup) {
+        this.markFormGroupTouched();
+      } else {
+        control?.markAsTouched();
+      }
+    });
+  }
+
+  isFormValid(): boolean {
+    return this.modelForm.valid;
+  }
+
   clearError(): void {
     this.errorMessage = '';
   }
@@ -1044,134 +1202,276 @@ export class AutoProcessingModelsComponent implements OnInit {
 
   // Nouvelles méthodes pour la configuration des modèles BO
   getAvailableBOModels(): AutoProcessingModel[] {
-    return this.models.filter(model => model.fileType === 'bo');
+    const availableModels = this.models.filter(model => model.fileType === 'bo');
+    
+    // Si aucun modèle BO n'existe, créer un modèle par défaut
+    if (availableModels.length === 0) {
+      this.createDefaultBOModelIfNeeded();
+      return [];
+    }
+    
+    // Filtrer pour ne garder que les modèles avec un ID valide
+    return availableModels.filter(model => model.id);
+  }
+
+  // Méthode pour créer un modèle BO par défaut si nécessaire
+  private createDefaultBOModelIfNeeded(): void {
+    console.log('🔧 createDefaultBOModelIfNeeded() appelé');
+    
+    // Vérifier si on a déjà des fichiers BO disponibles
+    const boFiles = this.availableFiles.filter(file => 
+      file.fileName.toLowerCase().includes('trxbo') || 
+      file.fileName.toLowerCase().includes('bo')
+    );
+    
+    if (boFiles.length > 0) {
+      const boFile = boFiles[0];
+      console.log('✅ Fichier BO trouvé:', boFile.fileName);
+      
+      this.autoProcessingService.createDefaultBOModel().subscribe({
+        next: (newModel) => {
+          console.log('✅ Modèle BO par défaut créé:', newModel);
+          this.models.push(newModel);
+          
+          // Forcer la mise à jour de l'affichage
+          this.modelForm.updateValueAndValidity();
+          
+          // Forcer une nouvelle détection de changement après un court délai
+          setTimeout(() => {
+            this.modelForm.markAsTouched();
+            this.modelForm.markAsDirty();
+            this.modelForm.updateValueAndValidity();
+            console.log('✅ Affichage mis à jour après création du modèle BO');
+          }, 100);
+        },
+        error: (error) => {
+          console.error('❌ Erreur lors de la création du modèle BO par défaut:', error);
+        }
+      });
+    } else {
+      console.log('⚠️ Aucun fichier BO trouvé pour créer un modèle par défaut');
+    }
   }
 
   getSelectedBOModels(): AutoProcessingModel[] {
     const selectedIds = this.modelForm.get('reconciliationKeys.boModels')?.value || [];
-    return this.getAvailableBOModels().filter(model => selectedIds.includes(model.id));
+    const availableModels = this.getAvailableBOModels();
+    
+    return availableModels.filter(model => selectedIds.includes(model.id));
   }
 
   getBOModelColumns(boModel: AutoProcessingModel): string[] {
+    console.log(`🔍 getBOModelColumns() appelé pour ${boModel.name}`);
+    console.log(`  - templateFile: ${boModel.templateFile}`);
+    console.log(`  - availableFiles count: ${this.availableFiles.length}`);
+    console.log(`  - availableFiles:`, this.availableFiles.map(f => f.fileName));
+    
     // Retourner les colonnes du modèle BO basées sur son templateFile
     if (boModel.templateFile) {
-      const fileModel = this.availableFiles.find(f => f.fileName === boModel.templateFile);
-      const columns = fileModel?.columns || [];
-      return columns;
+      // Recherche exacte d'abord
+      let fileModel = this.availableFiles.find(f => f.fileName === boModel.templateFile);
+      
+      // Si pas trouvé, recherche flexible par nom de fichier
+      if (!fileModel) {
+        const templateFileName = boModel.templateFile.toLowerCase();
+        fileModel = this.availableFiles.find(f => 
+          f.fileName.toLowerCase().includes(templateFileName) ||
+          templateFileName.includes(f.fileName.toLowerCase())
+        );
+        console.log(`  - Recherche flexible pour ${boModel.templateFile}`);
+      }
+      
+      console.log(`  - fileModel trouvé: ${!!fileModel}`);
+      console.log(`  - fileModel fileName: ${fileModel?.fileName}`);
+      console.log(`  - fileModel columns count: ${fileModel?.columns?.length || 0}`);
+      
+      if (fileModel) {
+        const columns = fileModel.columns || [];
+        // Corriger les noms de colonnes corrompus
+        const normalizedColumns = columns.map(col => this.normalizeColumnName(col));
+        console.log(`  - ✅ Colonnes normalisées:`, normalizedColumns);
+        return normalizedColumns;
+      } else {
+        console.log(`  - ❌ Fichier ${boModel.templateFile} non trouvé dans availableFiles`);
+        console.log(`  - Fichiers disponibles:`, this.availableFiles.map(f => f.fileName));
+        
+        // Essayer de charger le fichier depuis le service
+        this.loadBOModelColumns(boModel);
+        return [];
+      }
     }
+    
+    console.log(`  - ❌ Aucun templateFile défini pour ${boModel.name}`);
     return [];
+  }
+
+  // Méthode publique pour recharger les colonnes d'un modèle BO
+  reloadBOModelColumns(boModel: AutoProcessingModel): void {
+    console.log(`🔄 reloadBOModelColumns() appelé pour ${boModel.name}`);
+    this.loadBOModelColumns(boModel);
+  }
+
+  // Méthode pour charger les colonnes d'un modèle BO depuis le service
+  private loadBOModelColumns(boModel: AutoProcessingModel): void {
+    console.log(`🔄 loadBOModelColumns() appelé pour ${boModel.name}`);
+    
+    if (boModel.templateFile) {
+      // Vérifier d'abord si le fichier est déjà disponible dans availableFiles
+      const existingFile = this.availableFiles.find(f => f.fileName === boModel.templateFile);
+      
+      if (existingFile && existingFile.columns && existingFile.columns.length > 0) {
+        console.log(`✅ Fichier ${boModel.templateFile} déjà disponible avec ${existingFile.columns.length} colonnes`);
+        // Forcer la mise à jour de l'affichage
+        this.modelForm.updateValueAndValidity();
+        return;
+      }
+      
+      console.log(`  - Tentative de chargement depuis: ${boModel.templateFile}`);
+      
+      this.autoProcessingService.getFileColumns(boModel.templateFile).subscribe({
+        next: (columns) => {
+          console.log(`✅ Colonnes chargées pour ${boModel.name}:`, columns);
+          
+          // Normaliser les colonnes
+          const normalizedColumns = columns.map(col => this.normalizeColumnName(col));
+          
+          // Ajouter le fichier à availableFiles s'il n'y est pas déjà
+          const existingFile = this.availableFiles.find(f => f.fileName === boModel.templateFile);
+          if (!existingFile && boModel.templateFile) {
+            const newFileModel: FileModel = {
+              fileName: boModel.templateFile,
+              filePath: '',
+              fileType: 'csv',
+              recordCount: 0,
+              columns: normalizedColumns,
+              sampleData: []
+            };
+            this.availableFiles.push(newFileModel);
+            console.log(`✅ Fichier ${boModel.templateFile} ajouté à availableFiles`);
+          } else if (existingFile) {
+            // Mettre à jour les colonnes du fichier existant
+            existingFile.columns = normalizedColumns;
+            console.log(`✅ Colonnes mises à jour pour ${boModel.templateFile}`);
+          }
+          
+          // Forcer la mise à jour de l'affichage
+          this.modelForm.updateValueAndValidity();
+          
+          // Forcer une nouvelle détection de changement après un court délai
+          setTimeout(() => {
+            this.modelForm.updateValueAndValidity();
+            console.log(`🔄 Mise à jour forcée de l'affichage pour ${boModel.name}`);
+          }, 100);
+        },
+        error: (error) => {
+          console.error(`❌ Erreur lors du chargement des colonnes pour ${boModel.name}:`, error);
+          
+          // En cas d'erreur, essayer avec un nom de fichier modifié
+          if (boModel.templateFile && !boModel.templateFile.includes('.')) {
+            const modifiedFileName = boModel.templateFile + '.csv';
+            console.log(`🔄 Tentative avec nom modifié: ${modifiedFileName}`);
+            
+            this.autoProcessingService.getFileColumns(modifiedFileName).subscribe({
+              next: (columns) => {
+                console.log(`✅ Colonnes chargées avec nom modifié pour ${boModel.name}:`, columns);
+                // Traiter les colonnes comme précédemment
+                const normalizedColumns = columns.map(col => this.normalizeColumnName(col));
+                
+                const newFileModel: FileModel = {
+                  fileName: boModel.templateFile!, // Garder le nom original
+                  filePath: '',
+                  fileType: 'csv',
+                  recordCount: 0,
+                  columns: normalizedColumns,
+                  sampleData: []
+                };
+                this.availableFiles.push(newFileModel);
+                this.modelForm.updateValueAndValidity();
+              },
+              error: (retryError) => {
+                console.error(`❌ Échec de la tentative avec nom modifié pour ${boModel.name}:`, retryError);
+              }
+            });
+          }
+        }
+      });
+    }
   }
 
   // Propriété calculée pour éviter les appels répétés dans le template
   getBOModelColumnsForTemplate(): { [key: string]: string[] } {
+    console.log('🔍 getBOModelColumnsForTemplate() appelé');
     const result: { [key: string]: string[] } = {};
-    this.getAvailableBOModels().forEach(boModel => {
-      result[boModel.id] = this.getBOModelColumns(boModel);
+    const availableBOModels = this.getAvailableBOModels();
+    console.log(`  - Modèles BO disponibles: ${availableBOModels.length}`);
+    
+    availableBOModels.forEach(boModel => {
+      const columns = this.getBOModelColumns(boModel);
+      result[boModel.id] = columns;
+      console.log(`  - ${boModel.name} (${boModel.id}): ${columns.length} colonnes`);
     });
+    
+    console.log('  - Résultat final:', result);
     return result;
   }
 
-  // Méthode pour gérer les changements de sélection des modèles BO
+  // Méthode pour gérer les changements dans la sélection des modèles BO
   onBOModelsChange(): void {
-    console.log('🔄 onBOModelsChange() appelé');
-    const selectedModels = this.getSelectedBOModels();
+    // Protection contre les boucles infinies
+    if (this.isUpdatingBOModels) {
+      return;
+    }
+    
+    this.isUpdatingBOModels = true;
+    
+    const control = this.modelForm.get('reconciliationKeys.boModels') as FormControl;
+    const selectedModelIds = control.value || [];
+    
+    console.log('🔄 onBOModelsChange() - Modèles BO sélectionnés:', selectedModelIds);
+    
+    // Mettre à jour la validation conditionnelle
+    if (selectedModelIds.length > 0) {
+      control.setValidators([Validators.required]);
+    } else {
+      control.clearValidators();
+    }
+    
+    // Forcer la mise à jour
+    control.markAsDirty();
+    control.markAsTouched();
+    control.updateValueAndValidity({ emitEvent: false }); // Ne pas émettre d'événements
+    
+    // Gérer les contrôles dynamiques pour les clés des modèles BO
     const boModelKeysGroup = this.modelForm.get('reconciliationKeys.boModelKeys') as FormGroup;
     
-    console.log('  - Modèles BO sélectionnés:', selectedModels);
-    console.log('  - Contrôles existants:', Object.keys(boModelKeysGroup.controls));
-    
-    // Sauvegarder les valeurs existantes avant de modifier les contrôles
-    const existingValues: { [key: string]: string[] } = {};
+    // Supprimer tous les contrôles existants
     Object.keys(boModelKeysGroup.controls).forEach(key => {
-      const control = boModelKeysGroup.get(key);
-      if (control) {
-        existingValues[key] = control.value || [];
-        console.log(`  - Sauvegarde de ${key}:`, existingValues[key]);
-      }
+      boModelKeysGroup.removeControl(key);
     });
     
-    // Obtenir les IDs des contrôles actuels
-    const currentControlIds = new Set(Object.keys(boModelKeysGroup.controls).map(key => key.replace('boKeys_', '')));
-    const newSelectedModelIds = new Set(selectedModels.map(model => model.id));
-    
-    // Supprimer les contrôles pour les modèles désélectionnés
-    currentControlIds.forEach(controlId => {
-      if (!newSelectedModelIds.has(controlId)) {
-        boModelKeysGroup.removeControl(`boKeys_${controlId}`);
-        console.log(`  - Contrôle supprimé: boKeys_${controlId}`);
-      }
-    });
-    
-    // Ajouter les contrôles pour les nouveaux modèles sélectionnés ou mettre à jour les existants
-    selectedModels.forEach(model => {
-      const controlKey = `boKeys_${model.id}`;
-      if (!boModelKeysGroup.contains(controlKey)) {
-        // Récupérer les valeurs existantes depuis plusieurs sources
-        let existingKeys: string[] = [];
-        
-        // 1. Depuis les valeurs sauvegardées du formulaire
-        if (existingValues[controlKey]) {
-          existingKeys = existingValues[controlKey];
-          console.log(`  - Valeurs récupérées du formulaire pour ${model.id}:`, existingKeys);
-        }
-        // 2. Depuis le modèle en édition
-        else if (this.editingModel?.reconciliationKeys?.boModelKeys?.[model.id]) {
-          existingKeys = this.editingModel.reconciliationKeys.boModelKeys[model.id];
-          console.log(`  - Valeurs récupérées du modèle en édition pour ${model.id}:`, existingKeys);
-        }
-        
-        const control = this.fb.control(existingKeys);
-        boModelKeysGroup.addControl(controlKey, control);
-        console.log(`  - Contrôle ajouté: ${controlKey} avec valeurs:`, existingKeys);
-        console.log(`  - Contrôle créé:`, control);
-        console.log(`  - Contrôle dans le FormGroup:`, boModelKeysGroup.get(controlKey));
-        
-        // Ajouter un listener pour détecter les changements immédiatement
-        const attachedControl = boModelKeysGroup.get(controlKey);
-        if (attachedControl) {
-          attachedControl.valueChanges.subscribe(value => {
-            console.log(`🔄 Changement détecté pour ${controlKey}:`, value);
-            console.log(`  - Type de valeur:`, typeof value);
-            console.log(`  - Longueur du tableau:`, Array.isArray(value) ? value.length : 'N/A');
-          });
-          console.log(`  - Listener attaché immédiatement pour ${controlKey}`);
-          console.log(`  - Valeur initiale du contrôle:`, attachedControl.value);
-        } else {
-          console.log(`  - ❌ Contrôle non trouvé immédiatement: ${controlKey}`);
-        }
-      }
+    // Ajouter les contrôles pour les modèles sélectionnés
+    selectedModelIds.forEach((modelId: string) => {
+      const controlName = `boKeys_${modelId}`;
+      const newControl = new FormControl([]);
       
-      // Initialiser les traitements BO si nécessaire
-      this.initializeBOTreatments(model.id);
-    });
-    
-    console.log('  - Contrôles après mise à jour:', Object.keys(boModelKeysGroup.controls));
-    
-    // Forcer la mise à jour du formulaire pour s'assurer que les contrôles sont bien attachés
-    this.modelForm.updateValueAndValidity();
-    console.log('  - Formulaire mis à jour');
-    
-    // Forcer la détection des changements
-    this.modelForm.markAsTouched();
-    this.modelForm.markAsDirty();
-    
-    // Mettre à jour la carte des clés BO
-    this.updateBOModelKeysMap();
-    
-    // Log de l'état final du FormGroup boModelKeys
-    console.log('  - État final du FormGroup boModelKeys:');
-    Object.keys(boModelKeysGroup.controls).forEach(key => {
-      const control = boModelKeysGroup.get(key);
-      console.log(`    - ${key}:`, control?.value);
-    });
-    
-    // Vérification supplémentaire après un court délai
-    setTimeout(() => {
-      console.log('  - Vérification finale des contrôles:');
-      Object.keys(boModelKeysGroup.controls).forEach(key => {
-        const control = boModelKeysGroup.get(key);
-        console.log(`    - ${key}:`, control?.value);
+      // Ajouter un listener pour les changements de valeur
+      newControl.valueChanges.subscribe(value => {
+        this.boModelKeysMap[modelId] = value || [];
+        
+        // Forcer la mise à jour de l'affichage sans émettre d'événements
+        setTimeout(() => {
+          this.modelForm.updateValueAndValidity({ emitEvent: false });
+        }, 50);
       });
+      
+      boModelKeysGroup.addControl(controlName, newControl);
+    });
+    
+    // Forcer la mise à jour de l'affichage
+    setTimeout(() => {
+      this.modelForm.updateValueAndValidity({ emitEvent: false });
+      console.log('✅ Affichage mis à jour après sélection des modèles BO');
+      this.isUpdatingBOModels = false; // Réactiver les mises à jour
     }, 100);
   }
 
@@ -1201,180 +1501,332 @@ export class AutoProcessingModelsComponent implements OnInit {
 
   // Méthode pour obtenir les clés sélectionnées pour un modèle spécifique
   getSelectedKeysForModel(modelId: string): string[] {
+    const boModelKeysGroup = this.modelForm.get('reconciliationKeys.boModelKeys') as FormGroup;
+    const controlKey = `boKeys_${modelId}`;
+    const control = boModelKeysGroup.get(controlKey);
+    
+    if (control) {
+      return control.value || [];
+    }
+    
+    // Si le contrôle n'existe pas encore, vérifier dans la carte des clés
     return this.boModelKeysMap[modelId] || [];
   }
 
      // Méthode pour mettre à jour la validation des clés de réconciliation selon le type
    updateReconciliationKeysValidation(fileType: string): void {
+     console.log('🔄 updateReconciliationKeysValidation() appelé pour fileType:', fileType);
+     
      const reconciliationKeysGroup = this.modelForm.get('reconciliationKeys') as FormGroup;
+     if (!reconciliationKeysGroup) {
+       console.error('❌ reconciliationKeys group manquant dans updateReconciliationKeysValidation');
+       return;
+     }
+     
      const partnerKeysControl = reconciliationKeysGroup.get('partnerKeys');
      const boModelsControl = reconciliationKeysGroup.get('boModels');
-
-     // Réinitialiser les validations
-     partnerKeysControl?.clearValidators();
-     boModelsControl?.clearValidators();
-
-     // Appliquer les validations uniquement pour les modèles partenaire
-     if (fileType === 'partner') {
-       partnerKeysControl?.setValidators([Validators.required]);
-       boModelsControl?.setValidators([Validators.required]);
+     
+     if (!partnerKeysControl || !boModelsControl) {
+       console.error('❌ Contrôles partnerKeys ou boModels manquants');
+       return;
      }
 
-     // Mettre à jour les contrôles
-     partnerKeysControl?.updateValueAndValidity();
-     boModelsControl?.updateValueAndValidity();
+     // Réinitialiser les validations
+     partnerKeysControl.clearValidators();
+     boModelsControl.clearValidators();
+
+     // Appliquer les validations selon le type de fichier
+     if (fileType === 'partner') {
+       // Ne pas exiger les clés partenaire et modèles BO par défaut
+       // L'utilisateur doit les sélectionner manuellement
+       console.log('  - Type partenaire détecté - validation optionnelle pour permettre la sélection manuelle');
+       
+       // Charger automatiquement les colonnes si elles ne sont pas encore disponibles
+       if (this.availableColumnsForTemplate.length === 0) {
+         console.log('🔄 Chargement automatique des colonnes pour le type partenaire');
+         this.loadColumnsForPartnerType();
+       }
+       
+       // S'assurer que les modèles BO sont disponibles (mais ne pas les sélectionner automatiquement)
+       const availableBOModels = this.getAvailableBOModels();
+       console.log('  - Modèles BO disponibles pour le type partenaire:', availableBOModels.length);
+       
+       // Ne pas sélectionner automatiquement - laisser l'utilisateur choisir
+       console.log('  - Aucune sélection automatique - l\'utilisateur doit choisir manuellement');
+     } else if (fileType === 'bo') {
+       // Pour les modèles BO, les champs name et filePattern ne sont pas requis
+       // car ils seront générés automatiquement
+       console.log('  - Type BO détecté - validation adaptée pour les modèles BO');
+     }
+
+     // Mettre à jour les contrôles sans émettre d'événements
+     partnerKeysControl.updateValueAndValidity({ emitEvent: false });
+     boModelsControl.updateValueAndValidity({ emitEvent: false });
+     
+     // Forcer la détection de changement pour mettre à jour l'affichage
+     this.modelForm.updateValueAndValidity({ emitEvent: false });
+     
+     // Forcer une nouvelle mise à jour après un court délai
+     setTimeout(() => {
+       this.modelForm.markAsTouched();
+       this.modelForm.markAsDirty();
+       this.modelForm.updateValueAndValidity({ emitEvent: false });
+       console.log('✅ Affichage mis à jour après changement de type de fichier');
+     }, 100);
    }
 
+   // Méthode pour charger automatiquement les colonnes pour le type BO
+   private loadColumnsForBOType(): void {
+     console.log('🔄 loadColumnsForBOType() appelé');
+     
+     // Si on a des fichiers disponibles, utiliser le premier fichier BO
+     const boFiles = this.availableFiles.filter(file => 
+       file.fileName.toLowerCase().includes('trxbo') || 
+       file.fileName.toLowerCase().includes('bo') ||
+       file.fileName.toLowerCase().includes('xls')
+     );
+     
+     if (boFiles.length > 0) {
+       const firstBOFile = boFiles[0];
+       console.log('✅ Fichier BO trouvé:', firstBOFile.fileName);
+       
+       // Charger les colonnes de ce fichier
+       this.autoProcessingService.getFileColumns(firstBOFile.fileName).subscribe({
+         next: (columns) => {
+           this.availableColumns = columns.map(col => this.normalizeColumnName(col));
+           console.log('✅ Colonnes chargées pour le type BO:', this.availableColumns);
+           
+           // Forcer la mise à jour de l'affichage
+           this.modelForm.updateValueAndValidity();
+         },
+         error: (error) => {
+           console.error('❌ Erreur lors du chargement des colonnes BO:', error);
+         }
+       });
+     } else {
+       console.log('⚠️ Aucun fichier BO trouvé, utilisation du premier fichier disponible');
+       
+       if (this.availableFiles.length > 0) {
+         const firstFile = this.availableFiles[0];
+         this.autoProcessingService.getFileColumns(firstFile.fileName).subscribe({
+           next: (columns) => {
+             this.availableColumns = columns.map(col => this.normalizeColumnName(col));
+             console.log('✅ Colonnes chargées du premier fichier:', this.availableColumns);
+             
+             // Forcer la mise à jour de l'affichage
+             this.modelForm.updateValueAndValidity();
+           },
+           error: (error) => {
+             console.error('❌ Erreur lors du chargement des colonnes:', error);
+           }
+         });
+       }
+     }
+   }
 
+   // Méthode pour charger automatiquement les colonnes pour le type partenaire
+   private loadColumnsForPartnerType(): void {
+     console.log('🔄 loadColumnsForPartnerType() appelé');
+     
+     // Si on a des fichiers disponibles, utiliser le premier fichier partenaire
+     const partnerFiles = this.availableFiles.filter(file => 
+       file.fileName.toLowerCase().includes('oppart') || 
+       file.fileName.toLowerCase().includes('partner') ||
+       file.fileName.toLowerCase().includes('csv')
+     );
+     
+     if (partnerFiles.length > 0) {
+       const firstPartnerFile = partnerFiles[0];
+       console.log('✅ Fichier partenaire trouvé:', firstPartnerFile.fileName);
+       
+       // Charger les colonnes de ce fichier
+       this.autoProcessingService.getFileColumns(firstPartnerFile.fileName).subscribe({
+         next: (columns) => {
+           this.availableColumns = columns.map(col => this.normalizeColumnName(col));
+           console.log('✅ Colonnes chargées pour le type partenaire:', this.availableColumns);
+           
+           // Forcer la mise à jour de l'affichage
+           this.modelForm.updateValueAndValidity();
+         },
+         error: (error) => {
+           console.error('❌ Erreur lors du chargement des colonnes partenaire:', error);
+         }
+       });
+     } else {
+       console.log('⚠️ Aucun fichier partenaire trouvé, utilisation du premier fichier disponible');
+       
+       if (this.availableFiles.length > 0) {
+         const firstFile = this.availableFiles[0];
+         this.autoProcessingService.getFileColumns(firstFile.fileName).subscribe({
+           next: (columns) => {
+             this.availableColumns = columns.map(col => this.normalizeColumnName(col));
+             console.log('✅ Colonnes chargées du premier fichier:', this.availableColumns);
+             
+             // Forcer la mise à jour de l'affichage
+             this.modelForm.updateValueAndValidity();
+           },
+           error: (error) => {
+             console.error('❌ Erreur lors du chargement des colonnes:', error);
+           }
+         });
+       }
+     }
+   }
+
+  // Méthode pour détecter les changements de sélection des clés partenaires
+  onPartnerKeysChange(): void {
+    // Protection contre les boucles infinies
+    if (this.isUpdatingPartnerKeys) {
+      return;
+    }
+    
+    this.isUpdatingPartnerKeys = true;
+    
+    const control = this.modelForm.get('reconciliationKeys.partnerKeys') as FormControl;
+    const selectedKeys = control.value || [];
+    
+    console.log('🔄 onPartnerKeysChange() - Clés partenaire sélectionnées:', selectedKeys);
+    
+    // Mettre à jour la validation conditionnelle
+    if (selectedKeys.length > 0) {
+      control.setValidators([Validators.required]);
+    } else {
+      control.clearValidators();
+    }
+    
+    // Forcer la mise à jour
+    control.markAsDirty();
+    control.markAsTouched();
+    control.updateValueAndValidity({ emitEvent: false }); // Ne pas émettre d'événements
+    
+    // Forcer la mise à jour de l'affichage
+    setTimeout(() => {
+      this.modelForm.updateValueAndValidity({ emitEvent: false });
+      console.log('✅ Affichage mis à jour après sélection des clés partenaire');
+      this.isUpdatingPartnerKeys = false; // Réactiver les mises à jour
+    }, 50);
+  }
+
+  // Méthode pour obtenir les clés partenaires sélectionnées
+  getSelectedPartnerKeys(): string[] {
+    const partnerKeysControl = this.modelForm.get('reconciliationKeys.partnerKeys');
+    return partnerKeysControl?.value || [];
+  }
 
      // Méthode pour détecter les changements de sélection des clés BO
   onBOKeysChange(modelId: string, event: any): void {
-    console.log('🎯 onBOKeysChange() appelé pour:', modelId);
-    console.log('  - Événement:', event);
-    console.log('  - Target:', event.target);
-    console.log('  - Selected options:', event.target.selectedOptions);
+    const control = this.modelForm.get(`reconciliationKeys.boModelKeys.boKeys_${modelId}`) as FormControl;
+    const selectedKeys = control.value || [];
     
-    const selectedOptions = Array.from(event.target.selectedOptions).map((option: any) => {
-      // Nettoyer la valeur si elle contient des informations supplémentaires
-      let value = option.value;
-      console.log(`  - Option value brute: "${value}"`);
-      if (value.includes(": '") && value.includes("'")) {
-        // Extraire la valeur entre les guillemets
-        const match = value.match(/: '([^']+)'/);
-        if (match) {
-          value = match[1];
-          console.log(`  - Valeur nettoyée: "${value}"`);
-        }
-      }
-      return value;
+    console.log(`�� onBOKeysChange() - Clés BO sélectionnées pour le modèle ${modelId}:`, selectedKeys);
+    
+    // Mettre à jour la carte des clés BO
+    this.boModelKeysMap[modelId] = selectedKeys;
+    
+    // Forcer la mise à jour immédiate
+    control.markAsDirty();
+    control.markAsTouched();
+    control.updateValueAndValidity({ emitEvent: false });
+    
+    // Forcer la mise à jour de l'affichage pour que les indicateurs soient visibles
+    setTimeout(() => {
+      this.modelForm.updateValueAndValidity({ emitEvent: false });
+      console.log(`✅ Affichage mis à jour pour les clés BO du modèle ${modelId}`);
+    }, 50);
+    
+    // Forcer une nouvelle mise à jour après un délai plus long pour s'assurer que les animations sont visibles
+    setTimeout(() => {
+      this.modelForm.updateValueAndValidity({ emitEvent: false });
+      console.log(`✅ Vérification finale de l'affichage pour le modèle ${modelId}`);
+    }, 200);
+  }
+
+  // Méthodes pour les traitements BO
+  getBOTreatmentSteps(modelId: string): FormArray {
+    const boTreatmentsGroup = this.modelForm.get('reconciliationKeys.boTreatments') as FormGroup;
+    const treatmentKey = `boTreatments_${modelId}`;
+    let treatmentArray = boTreatmentsGroup.get(treatmentKey) as FormArray;
+    
+    if (!treatmentArray) {
+      treatmentArray = this.fb.array([]);
+      boTreatmentsGroup.addControl(treatmentKey, treatmentArray);
+    }
+    
+    return treatmentArray;
+  }
+
+  getBOTreatmentStepsArray(modelId: string): any[] {
+    return this.getBOTreatmentSteps(modelId).controls;
+  }
+
+  getBOTreatmentStep(modelId: string, index: number): FormGroup | null {
+    const treatmentArray = this.getBOTreatmentSteps(modelId);
+    return treatmentArray.at(index) as FormGroup;
+  }
+
+  addBOTreatmentStep(modelId: string): void {
+    const treatmentArray = this.getBOTreatmentSteps(modelId);
+    const stepForm = this.fb.group({
+      name: ['', Validators.required],
+      type: ['format', Validators.required],
+      field: [[], Validators.required],
+      action: ['', Validators.required],
+      description: ['', Validators.required],
+      // Paramètres de formatage
+      locale: ['fr-FR'],
+      currency: ['EUR'],
+      dateFormat: ['yyyy-MM-dd'],
+      position: ['start'],
+      count: [1],
+      characters: [''],
+      caseSensitive: [true],
+      specificPosition: [1],
+      // Paramètres d'extraction
+      extractType: ['first'],
+      extractCount: [5],
+      extractKey: [''],
+      extractStart: [1],
+      startChar: [''],
+      endChar: [''],
+      // Paramètres de concaténation
+      newColumn: ['concatenated'],
+      separator: [' '],
+      // Paramètres de filtrage
+      pattern: ['.*'],
+      values: [''],
+      value: [''],
+      // Paramètres de validation
+      validationDateFormat: ['yyyy-MM-dd']
     });
-    console.log('  - Valeurs sélectionnées (nettoyées):', selectedOptions);
     
-    // Mettre à jour le contrôle du formulaire
-    const boModelKeysGroup = this.modelForm.get('reconciliationKeys.boModelKeys') as FormGroup;
-    const controlKey = `boKeys_${modelId}`;
-    const control = boModelKeysGroup.get(controlKey);
-    
-    console.log('  - État du FormGroup boModelKeys:', {
-      controls: Object.keys(boModelKeysGroup.controls),
-      controlKey: controlKey,
-      controlExists: !!control,
-      controlValue: control?.value
-    });
-    
-    if (control) {
-      console.log('  - Contrôle trouvé, mise à jour de la valeur');
-      console.log('  - Valeur avant mise à jour:', control.value);
-      control.setValue(selectedOptions);
-      console.log('  - Valeur du contrôle après mise à jour:', control.value);
+    treatmentArray.push(stepForm);
+  }
+
+  removeBOTreatmentStep(modelId: string, index: number): void {
+    const treatmentArray = this.getBOTreatmentSteps(modelId);
+    treatmentArray.removeAt(index);
+  }
+
+  onBOTreatmentTypeChange(modelId: string, index: number): void {
+    const step = this.getBOTreatmentStep(modelId, index);
+    if (step) {
+      // Réinitialiser l'action quand le type change
+      step.get('action')?.setValue('');
       
-      // Mettre à jour la carte des clés BO
-      this.updateBOModelKeysMap();
+      // Forcer la détection de changement d'Angular
+      step.markAsTouched();
+      step.updateValueAndValidity();
       
-      // Vérifier que la valeur a bien été mise à jour
-      setTimeout(() => {
-        const updatedControl = boModelKeysGroup.get(controlKey);
-        console.log('  - Vérification après timeout - Valeur du contrôle:', updatedControl?.value);
-        console.log('  - État final du FormGroup:', {
-          controls: Object.keys(boModelKeysGroup.controls),
-          values: Object.keys(boModelKeysGroup.controls).map(key => ({
-            key: key,
-            value: boModelKeysGroup.get(key)?.value
-           }))
-         });
-       }, 50);
-     } else {
-       console.log('  - ❌ Contrôle non trouvé!');
-       console.log('  - Contrôles disponibles:', Object.keys(boModelKeysGroup.controls));
-     }
-   }
+      // Forcer la détection de changement du formulaire parent
+      this.modelForm.updateValueAndValidity();
+    }
+  }
 
-   // Méthodes pour les traitements BO
-   getBOTreatmentSteps(modelId: string): FormArray {
-     const boTreatmentsGroup = this.modelForm.get('reconciliationKeys.boTreatments') as FormGroup;
-     const treatmentKey = `boTreatments_${modelId}`;
-     let treatmentArray = boTreatmentsGroup.get(treatmentKey) as FormArray;
-     
-     if (!treatmentArray) {
-       treatmentArray = this.fb.array([]);
-       boTreatmentsGroup.addControl(treatmentKey, treatmentArray);
-     }
-     
-     return treatmentArray;
-   }
-
-   getBOTreatmentStepsArray(modelId: string): any[] {
-     return this.getBOTreatmentSteps(modelId).controls;
-   }
-
-   getBOTreatmentStep(modelId: string, index: number): FormGroup | null {
-     const treatmentArray = this.getBOTreatmentSteps(modelId);
-     return treatmentArray.at(index) as FormGroup;
-   }
-
-   addBOTreatmentStep(modelId: string): void {
-     const treatmentArray = this.getBOTreatmentSteps(modelId);
-     const stepForm = this.fb.group({
-       name: ['', Validators.required],
-       type: ['format', Validators.required],
-       field: [[], Validators.required],
-       action: ['', Validators.required],
-       description: ['', Validators.required],
-       // Paramètres de formatage
-       locale: ['fr-FR'],
-       currency: ['EUR'],
-       dateFormat: ['yyyy-MM-dd'],
-       position: ['start'],
-       count: [1],
-       characters: [''],
-       caseSensitive: [true],
-       specificPosition: [1],
-       // Paramètres d'extraction
-       extractType: ['first'],
-       extractCount: [5],
-       extractKey: [''],
-       extractStart: [1],
-       startChar: [''],
-       endChar: [''],
-       // Paramètres de concaténation
-       newColumn: ['concatenated'],
-       separator: [' '],
-       // Paramètres de filtrage
-       pattern: ['.*'],
-       values: [''],
-       value: [''],
-       // Paramètres de validation
-       validationDateFormat: ['yyyy-MM-dd']
-     });
-     
-     treatmentArray.push(stepForm);
-   }
-
-   removeBOTreatmentStep(modelId: string, index: number): void {
-     const treatmentArray = this.getBOTreatmentSteps(modelId);
-     treatmentArray.removeAt(index);
-   }
-
-   onBOTreatmentTypeChange(modelId: string, index: number): void {
-     const step = this.getBOTreatmentStep(modelId, index);
-     if (step) {
-       // Réinitialiser l'action quand le type change
-       step.get('action')?.setValue('');
-       
-       // Forcer la détection de changement d'Angular
-       step.markAsTouched();
-       step.updateValueAndValidity();
-       
-       // Forcer la détection de changement du formulaire parent
-       this.modelForm.updateValueAndValidity();
-     }
-   }
-
-   // Méthode pour obtenir le type sélectionné d'un traitement BO
-   getBOTreatmentType(modelId: string, index: number): string {
-     const step = this.getBOTreatmentStep(modelId, index);
-     return step?.get('type')?.value || '';
-   }
+  // Méthode pour obtenir le type sélectionné d'un traitement BO
+  getBOTreatmentType(modelId: string, index: number): string {
+    const step = this.getBOTreatmentStep(modelId, index);
+    return step?.get('type')?.value || '';
+  }
 
      // Méthode pour obtenir les actions d'un traitement BO
   getBOTreatmentActions(modelId: string, index: number): any[] {
@@ -1732,29 +2184,76 @@ export class AutoProcessingModelsComponent implements OnInit {
     );
   }
 
-  // Obtenir les modèles affichés (avec ou sans filtre)
+  // Obtenir les modèles affichés (avec ou sans filtre) - triés par couleur
   getDisplayedModels(): AutoProcessingModel[] {
+    let modelsToDisplay: AutoProcessingModel[] = [];
+    
     if (this.modelFilterApplied) {
-      return this.filteredModels;
+      modelsToDisplay = this.filteredModels;
+    } else {
+      modelsToDisplay = this.models;
     }
-    return this.models;
+    
+    // Trier les modèles par couleur : CI (vert) -> PM (rouge) -> Autres (jaune)
+    return modelsToDisplay.sort((a, b) => {
+      const aIsCI = this.isCIModel(a);
+      const aIsPM = this.isPMModel(a);
+      const bIsCI = this.isCIModel(b);
+      const bIsPM = this.isPMModel(b);
+      
+      // CI (vert) en premier
+      if (aIsCI && !bIsCI) return -1;
+      if (!aIsCI && bIsCI) return 1;
+      
+      // PM (rouge) en deuxième
+      if (aIsPM && !bIsPM && !bIsCI) return -1;
+      if (!aIsPM && bIsPM && !aIsCI) return 1;
+      
+      // Autres (jaune) en dernier
+      return 0;
+    });
   }
 
   // Méthodes de détection pour la coloration des modèles
   isCIModel(model: AutoProcessingModel): boolean {
     const name = model.name || '';
     const upperName = name.toUpperCase();
-    const result = upperName.includes('CI') || upperName.includes('CIOM');
-    console.log(`🔍 isCIModel - Nom: "${name}", Upper: "${upperName}", Résultat: ${result}`);
-    return result;
+    return upperName.includes('CI') || upperName.includes('CIOM');
   }
 
   isPMModel(model: AutoProcessingModel): boolean {
     const name = model.name || '';
     const upperName = name.toUpperCase();
-    const result = upperName.includes('PM') || upperName.includes('PMOM');
-    console.log(`🔍 isPMModel - Nom: "${name}", Upper: "${upperName}", Résultat: ${result}`);
-    return result;
+    return upperName.includes('PM') || upperName.includes('PMOM');
+  }
+
+  // Méthodes pour obtenir les modèles par catégorie
+  getCIModels(): AutoProcessingModel[] {
+    const modelsToDisplay = this.modelFilterApplied ? this.filteredModels : this.models;
+    return modelsToDisplay.filter(model => this.isCIModel(model));
+  }
+
+  getPMModels(): AutoProcessingModel[] {
+    const modelsToDisplay = this.modelFilterApplied ? this.filteredModels : this.models;
+    return modelsToDisplay.filter(model => this.isPMModel(model));
+  }
+
+  getOtherModels(): AutoProcessingModel[] {
+    const modelsToDisplay = this.modelFilterApplied ? this.filteredModels : this.models;
+    return modelsToDisplay.filter(model => !this.isCIModel(model) && !this.isPMModel(model));
+  }
+
+  // Méthodes pour vérifier l'existence de modèles par catégorie
+  hasCIModels(): boolean {
+    return this.getCIModels().length > 0;
+  }
+
+  hasPMModels(): boolean {
+    return this.getPMModels().length > 0;
+  }
+
+  hasOtherModels(): boolean {
+    return this.getOtherModels().length > 0;
   }
 
   // Obtenir les colonnes disponibles pour le filtrage général
@@ -2354,9 +2853,281 @@ export class AutoProcessingModelsComponent implements OnInit {
     }
   }
 
+  // Méthode pour ajouter une étape
+  addStep(): void {
+    const stepForm = this.fb.group({
+      name: ['', Validators.required],
+      type: ['', Validators.required],
+      action: ['', Validators.required],
+      field: ['*'],
+      description: [''],
+      params: this.fb.group({})
+    });
+    this.processingStepsFormArray.push(stepForm);
+  }
 
+  // Méthode pour supprimer une étape
+  removeStep(index: number): void {
+    this.processingStepsFormArray.removeAt(index);
+  }
 
+  // Méthode pour changer le type de fichier en "partner"
+  setFileTypeToPartner(): void {
+    this.modelForm.patchValue({
+      fileType: 'partner'
+    });
+  }
 
+  // Méthode pour créer des modèles BO par défaut
+  createDefaultBOModels(): void {
+    this.createDefaultBOModel();
+  }
 
+  // Méthode pour faire défiler automatiquement vers le formulaire
+  private scrollToForm(): void {
+    const formElement = document.getElementById('model-form');
+    if (formElement) {
+      formElement.scrollIntoView({ 
+        behavior: 'smooth', 
+        block: 'start' 
+      });
+    }
+  }
+
+  // Méthode pour créer un nouveau modèle (bouton "Créer un nouveau modèle")
+  createNewModel(): void {
+    console.log('🔄 createNewModel() appelé');
+    
+    // Réinitialiser le formulaire avec la structure complète
+    this.modelForm.reset({
+      name: '',
+      filePattern: '',
+      fileType: 'bo',
+      autoApply: true,
+      templateFile: '',
+      processingSteps: [],
+      reconciliationKeys: {
+        partnerKeys: [],
+        boKeys: [],
+        boModels: [],
+        boModelKeys: {},
+        boTreatments: {}
+      }
+    });
+    
+    // Afficher le formulaire immédiatement
+    this.showCreateForm = true;
+    
+    // Forcer la détection de changement pour s'assurer que le formulaire est rendu
+    this.cdr.detectChanges();
+    
+    // Définir les valeurs par défaut selon le type de fichier
+    const fileType = this.modelForm.get('fileType')?.value;
+    
+    if (fileType === 'bo') {
+      // Pour les modèles BO, générer des valeurs par défaut
+      const defaultName = 'Modèle BO automatique';
+      const defaultPattern = '*BO*.csv';
+      
+      this.modelForm.patchValue({
+        name: defaultName,
+        filePattern: defaultPattern,
+        fileType: 'bo',
+        autoApply: true
+      }, { emitEvent: false }); // Ne pas émettre d'événements
+      
+      console.log('  - Valeurs par défaut définies pour le type BO');
+    } else if (fileType === 'partner') {
+      // Pour les modèles partenaire, utiliser le fichier sélectionné
+      if (this.selectedFileModel) {
+        const defaultName = `Modèle basé sur ${this.selectedFileModel.fileName}`;
+        const defaultPattern = `*${this.selectedFileModel.fileName.split('.')[0]}*.${this.selectedFileModel.fileType}`;
+        
+        this.modelForm.patchValue({
+          name: defaultName,
+          filePattern: defaultPattern,
+          fileType: 'partner',
+          templateFile: this.selectedFileModel.fileName,
+          autoApply: true
+        }, { emitEvent: false }); // Ne pas émettre d'événements
+        
+        console.log('  - Valeurs par défaut définies pour le type partenaire');
+      }
+    }
+    
+    // Charger les colonnes disponibles
+    if (this.availableColumnsForTemplate.length === 0) {
+      console.log('  - Chargement des colonnes depuis les fichiers disponibles');
+      // Essayer de charger depuis availableFiles d'abord
+      if (this.availableFiles.length > 0) {
+        const firstFile = this.availableFiles[0];
+        if (firstFile.columns && firstFile.columns.length > 0) {
+          this.availableColumns = firstFile.columns;
+          console.log('  - Colonnes chargées depuis le premier fichier disponible');
+        }
+      }
+    }
+    
+    // Forcer la mise à jour de l'affichage et scroll automatique amélioré
+    setTimeout(() => {
+      this.modelForm.updateValueAndValidity({ emitEvent: false });
+      console.log('✅ Formulaire initialisé pour création de nouveau modèle');
+      
+      // Scroll automatique amélioré avec animation
+      this.scrollToCreateForm();
+    }, 300); // Délai plus long pour s'assurer que le DOM est complètement mis à jour
+  }
+
+  // Méthode pour scroll automatique vers le formulaire de création
+  private scrollToCreateForm(): void {
+    console.log('🔄 scrollToCreateForm() appelé');
+    
+    // Attendre un peu plus longtemps pour s'assurer que le DOM est mis à jour
+    setTimeout(() => {
+      // Méthode 1: Essayer avec l'ID du formulaire
+      let formElement = document.getElementById('create-model-form') as HTMLElement;
+      
+      if (!formElement) {
+        // Méthode 2: Essayer avec la classe
+        formElement = document.querySelector('.create-model-form') as HTMLElement;
+        console.log('  - Formulaire trouvé via classe .create-model-form');
+      }
+      
+      if (!formElement) {
+        // Méthode 3: Essayer avec le sélecteur générique
+        formElement = document.querySelector('form') as HTMLElement;
+        console.log('  - Formulaire trouvé via sélecteur générique');
+      }
+      
+      if (!formElement) {
+        // Méthode 4: Essayer de trouver le formulaire par son contenu
+        const forms = document.querySelectorAll('form');
+        for (let i = 0; i < forms.length; i++) {
+          const form = forms[i] as HTMLElement;
+          if (form.querySelector('input[name="name"]') || form.querySelector('[formControlName="name"]')) {
+            formElement = form;
+            console.log(`  - Formulaire trouvé via recherche par contenu (form ${i})`);
+            break;
+          }
+        }
+      }
+      
+      if (formElement) {
+        console.log('  - Élément formulaire trouvé:', formElement);
+        console.log('  - ID de l\'élément:', formElement.id);
+        console.log('  - Classes de l\'élément:', formElement.className);
+        
+        // Ajouter la classe d'animation
+        formElement.classList.add('scroll-highlight');
+        
+        // Méthode 1: Utiliser scrollIntoView avec options
+        try {
+          formElement.scrollIntoView({
+            behavior: 'smooth',
+            block: 'start',
+            inline: 'nearest'
+          });
+          console.log('✅ Scroll automatique via scrollIntoView effectué');
+        } catch (error) {
+          console.warn('⚠️ scrollIntoView a échoué, tentative avec window.scrollTo');
+          
+          // Méthode 2: Calculer la position et utiliser window.scrollTo
+          const rect = formElement.getBoundingClientRect();
+          const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+          const targetPosition = rect.top + scrollTop - 120; // Offset de 120px
+          
+          console.log('  - Position calculée:', {
+            rectTop: rect.top,
+            scrollTop,
+            targetPosition
+          });
+          
+          window.scrollTo({
+            top: targetPosition,
+            behavior: 'smooth'
+          });
+          console.log('✅ Scroll automatique via window.scrollTo effectué');
+        }
+        
+        // Supprimer la classe d'animation après l'animation
+        setTimeout(() => {
+          formElement.classList.remove('scroll-highlight');
+        }, 600);
+        
+      } else {
+        console.error('❌ Aucun élément formulaire trouvé pour le scroll automatique');
+        
+        // Fallback : scroll vers le bas de la page
+        console.log('  - Utilisation du fallback : scroll vers le bas');
+        window.scrollTo({
+          top: document.body.scrollHeight,
+          behavior: 'smooth'
+        });
+      }
+    }, 500); // Délai plus long pour s'assurer que le DOM est complètement mis à jour
+  }
+
+  // Méthode pour gérer les changements de type de fichier
+  onFileTypeChange(): void {
+    const fileType = this.modelForm.get('fileType')?.value;
+    console.log('🔄 Changement de type de fichier détecté:', fileType);
+    
+    // S'assurer que la structure du formulaire est correcte
+    const reconciliationKeysGroup = this.modelForm.get('reconciliationKeys') as FormGroup;
+    if (!reconciliationKeysGroup) {
+      console.error('❌ reconciliationKeys group manquant');
+      return;
+    }
+    
+    // Mettre à jour la validation des clés de réconciliation
+    this.updateReconciliationKeysValidation(fileType);
+    
+    // Définir les valeurs par défaut selon le type
+    if (fileType === 'bo') {
+      // Pour les modèles BO, générer des valeurs par défaut
+      const defaultName = 'Modèle BO automatique';
+      const defaultPattern = '*BO*.csv';
+      
+      this.modelForm.patchValue({
+        name: defaultName,
+        filePattern: defaultPattern
+      }, { emitEvent: false }); // Ne pas émettre d'événements
+      
+      console.log('  - Valeurs par défaut définies pour le type BO');
+    } else if (fileType === 'partner') {
+      // Pour les modèles partenaire, utiliser le fichier sélectionné si disponible
+      if (this.selectedFileModel) {
+        const defaultName = `Modèle basé sur ${this.selectedFileModel.fileName}`;
+        const defaultPattern = `*${this.selectedFileModel.fileName.split('.')[0]}*.${this.selectedFileModel.fileType}`;
+        
+        this.modelForm.patchValue({
+          name: defaultName,
+          filePattern: defaultPattern,
+          templateFile: this.selectedFileModel.fileName
+        }, { emitEvent: false }); // Ne pas émettre d'événements
+        
+        console.log('  - Valeurs par défaut définies pour le type partenaire');
+      }
+    }
+  }
+
+  // Propriété pour éviter les boucles infinies
+  private isUpdatingBOModels = false;
+
+  // Propriété pour éviter les boucles infinies
+  private isUpdatingPartnerKeys = false;
+
+  // Méthode de test pour vérifier le scroll
+  testScroll(): void {
+    console.log('�� Test de scroll appelé');
+    
+    // Tester le scroll vers le bas de la page
+    window.scrollTo({
+      top: document.body.scrollHeight,
+      behavior: 'smooth'
+    });
+    
+    console.log('✅ Test de scroll vers le bas effectué');
+  }
 
 } 

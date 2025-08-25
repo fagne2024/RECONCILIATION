@@ -3,21 +3,21 @@
   <h2>Traitement de fichiers (CSV, XLS, XLSX)</h2>
   
   <!-- Barre de progression pour les fichiers volumineux -->
-  <div *ngIf="isProcessing" class="processing-overlay">
+  <div *ngIf="dataProcessingService.isProcessing$ | async" class="processing-overlay">
     <div class="processing-container">
       <div class="processing-header">
         <div class="processing-icon">🔄</div>
         <h3>Traitement en cours...</h3>
-        <p>{{ processingMessage }}</p>
+        <p>{{ dataProcessingService.processingMessage$ | async }}</p>
       </div>
       <div class="progress-bar-container">
         <div class="progress-bar">
-          <div class="progress-fill" [style.width.%]="processingProgress"></div>
+          <div class="progress-fill" [style.width.%]="(dataProcessingService.processingProgress$ | async)?.percentage || 0"></div>
         </div>
-        <div class="progress-text">{{ processingProgress.toFixed(1) }}%</div>
+        <div class="progress-text">{{ (dataProcessingService.processingProgress$ | async)?.percentage?.toFixed(1) || 0 }}%</div>
       </div>
       <div class="processing-info">
-        <p>Fichier {{ currentFileIndex }}/{{ totalFilesToProcess }}</p>
+        <p>{{ (dataProcessingService.processingProgress$ | async)?.message || 'Traitement en cours...' }}</p>
         <p class="processing-tip">Veuillez patienter, le traitement peut prendre quelques minutes pour les fichiers volumineux...</p>
       </div>
     </div>
@@ -30,6 +30,12 @@
     <div *ngIf="errorMsg.upload" class="error-msg">{{ errorMsg.upload }}</div>
   </div>
   <div *ngIf="successMsg.upload" class="success-msg" [innerHTML]="successMsg.upload"></div>
+  
+  <!-- Affichage des erreurs du service -->
+  <div *ngIf="dataProcessingService.error$ | async as error" class="error-msg">
+    <strong>Erreur de traitement:</strong> {{ error?.message }}
+    <span *ngIf="error?.file"> ({{ error?.file }})</span>
+  </div>
   
   <!-- Prévisualisation CSV -->
   <div *ngIf="showCsvPreview && csvPreviewData.length > 0" class="csv-preview-section">
@@ -102,26 +108,151 @@
     <div *ngIf="errorMsg.select" class="error-msg">{{ errorMsg.select }}</div>
   </div>
   <div *ngIf="columns.length > 0" class="extract-section">
-    <h4>Extraction de données</h4>
-    <label>Colonne à extraire :</label>
-    <select [(ngModel)]="extractCol">
-      <option *ngFor="let col of columns" [value]="col">{{ col }}</option>
-    </select>
-    <label>Type d'extraction :</label>
-    <select [(ngModel)]="extractType">
-      <option value="emailDomain">Domaine email</option>
-      <option value="firstChars">Gauche (n caractères)</option>
-      <option value="lastChars">Droite (n caractères)</option>
-    </select>
-    <label>Nom de la nouvelle colonne :</label>
-    <input type="text" [(ngModel)]="extractKey" placeholder="Nom de la colonne" style="width:180px; margin-left:8px;">
-    <label *ngIf="extractType === 'firstChars' || extractType === 'lastChars'">Position de départ :</label>
-    <input *ngIf="extractType === 'firstChars' || extractType === 'lastChars'" type="number" [(ngModel)]="extractStart" min="1" style="width:60px;">
-    <label *ngIf="extractType === 'firstChars' || extractType === 'lastChars'">Nombre de caractères :</label>
-    <input *ngIf="extractType === 'firstChars' || extractType === 'lastChars'" type="number" [(ngModel)]="extractCount" min="1" style="width:60px;">
-    <button type="button" (click)="applyExtraction()" [disabled]="!extractCol || !extractType || (extractType !== 'emailDomain' && !extractCount)">Extraire</button>
-    <div *ngIf="successMsg.extract" class="success-msg">{{ successMsg.extract }}</div>
-    <div *ngIf="errorMsg.extract" class="error-msg">{{ errorMsg.extract }}</div>
+    <div class="section-header">
+      <h4>🔍 Extraction de données</h4>
+      <p class="section-description">Extrayez des informations spécifiques d'une colonne pour créer une nouvelle colonne</p>
+    </div>
+    
+    <div class="extract-controls">
+      <!-- Sélection de la colonne source -->
+      <div class="extract-group">
+        <label class="extract-label">
+          <i class="fas fa-columns"></i>
+          Colonne source :
+        </label>
+        <mat-form-field appearance="outline" class="extract-select">
+          <mat-label>Sélectionner une colonne</mat-label>
+          <mat-select [(ngModel)]="extractCol">
+            <mat-option *ngFor="let col of columns" [value]="col">
+              {{ col }}
+            </mat-option>
+          </mat-select>
+        </mat-form-field>
+      </div>
+
+      <!-- Type d'extraction -->
+      <div class="extract-group">
+        <label class="extract-label">
+          <i class="fas fa-cut"></i>
+          Type d'extraction :
+        </label>
+        <mat-form-field appearance="outline" class="extract-select">
+          <mat-label>Choisir le type d'extraction</mat-label>
+          <mat-select [(ngModel)]="extractType">
+            <mat-option value="emailDomain">
+              <span class="option-content">
+                <i class="fas fa-envelope"></i>
+                <span>Domaine email</span>
+                <small>Extrait le domaine d'une adresse email</small>
+              </span>
+            </mat-option>
+            <mat-option value="firstChars">
+              <span class="option-content">
+                <i class="fas fa-align-left"></i>
+                <span>Gauche (n caractères)</span>
+                <small>Extrait les n premiers caractères</small>
+              </span>
+            </mat-option>
+            <mat-option value="lastChars">
+              <span class="option-content">
+                <i class="fas fa-align-right"></i>
+                <span>Droite (n caractères)</span>
+                <small>Extrait les n derniers caractères</small>
+              </span>
+            </mat-option>
+          </mat-select>
+        </mat-form-field>
+      </div>
+
+      <!-- Nom de la nouvelle colonne -->
+      <div class="extract-group">
+        <label class="extract-label">
+          <i class="fas fa-tag"></i>
+          Nom de la nouvelle colonne :
+        </label>
+        <mat-form-field appearance="outline" class="extract-input">
+          <mat-label>Ex: Domaine, Code, etc.</mat-label>
+          <input matInput [(ngModel)]="extractKey" placeholder="Nom de la colonne">
+          <mat-hint>Nom de la colonne qui contiendra les données extraites</mat-hint>
+        </mat-form-field>
+      </div>
+
+      <!-- Paramètres spécifiques pour les caractères -->
+      <div *ngIf="extractType === 'firstChars' || extractType === 'lastChars'" class="extract-params">
+        <div class="extract-group">
+          <label class="extract-label">
+            <i class="fas fa-map-marker-alt"></i>
+            Position de départ :
+          </label>
+          <mat-form-field appearance="outline" class="extract-number">
+            <mat-label>Position</mat-label>
+            <input matInput type="number" [(ngModel)]="extractStart" min="1" placeholder="1">
+            <mat-hint>Position de départ (1 = début)</mat-hint>
+          </mat-form-field>
+        </div>
+
+        <div class="extract-group">
+          <label class="extract-label">
+            <i class="fas fa-hashtag"></i>
+            Nombre de caractères :
+          </label>
+          <mat-form-field appearance="outline" class="extract-number">
+            <mat-label>Nombre</mat-label>
+            <input matInput type="number" [(ngModel)]="extractCount" min="1" placeholder="5">
+            <mat-hint>Nombre de caractères à extraire</mat-hint>
+          </mat-form-field>
+        </div>
+      </div>
+
+      <!-- Aperçu de l'extraction -->
+      <div *ngIf="extractCol && extractType && extractKey" class="extract-preview">
+        <div class="preview-header">
+          <i class="fas fa-eye"></i>
+          <span>Aperçu de l'extraction</span>
+        </div>
+        <div class="preview-content">
+          <p><strong>Source :</strong> {{ extractCol }}</p>
+          <p><strong>Type :</strong> 
+            <span *ngIf="extractType === 'emailDomain'">Domaine email</span>
+            <span *ngIf="extractType === 'firstChars'">Gauche ({{ extractCount }} caractères)</span>
+            <span *ngIf="extractType === 'lastChars'">Droite ({{ extractCount }} caractères)</span>
+          </p>
+          <p><strong>Nouvelle colonne :</strong> {{ extractKey }}</p>
+          <p *ngIf="extractType === 'firstChars' || extractType === 'lastChars'">
+            <strong>Paramètres :</strong> Position {{ extractStart }}, {{ extractCount }} caractères
+          </p>
+        </div>
+      </div>
+
+      <!-- Bouton d'extraction -->
+      <div class="extract-actions">
+        <button mat-raised-button 
+                color="primary" 
+                (click)="applyExtraction()" 
+                [disabled]="!extractCol || !extractType || !extractKey || (extractType !== 'emailDomain' && !extractCount)"
+                class="extract-btn">
+          <i class="fas fa-magic"></i>
+          Extraire les données
+        </button>
+        
+        <button mat-stroked-button 
+                (click)="resetExtraction()" 
+                class="reset-btn">
+          <i class="fas fa-undo"></i>
+          Réinitialiser
+        </button>
+      </div>
+    </div>
+
+    <!-- Messages de succès et d'erreur -->
+    <div *ngIf="successMsg.extract" class="success-msg extract-success">
+      <i class="fas fa-check-circle"></i>
+      {{ successMsg.extract }}
+    </div>
+    <div *ngIf="errorMsg.extract" class="error-msg extract-error">
+      <i class="fas fa-exclamation-triangle"></i>
+      {{ errorMsg.extract }}
+    </div>
   </div>
   <div *ngIf="columns.length > 0 && combinedRows.length > 0" class="filtre-section" style="margin-bottom: 24px;">
     <h4>Filtrer les lignes</h4>

@@ -1,285 +1,352 @@
-import { Injectable, OnInit } from '@angular/core';
+import { Injectable, OnInit, OnDestroy } from '@angular/core';
 import { HttpClient, HttpErrorResponse, HttpHeaders } from '@angular/common/http';
-import { Observable, throwError, BehaviorSubject, timeout } from 'rxjs';
-import { catchError, tap, map, finalize } from 'rxjs/operators';
+import { Observable, throwError, BehaviorSubject, Subject, timer } from 'rxjs';
+import { catchError, tap, map, finalize, retry, takeUntil } from 'rxjs/operators';
+import { webSocket, WebSocketSubject } from 'rxjs/webSocket';
 import { ReconciliationRequest } from '../models/reconciliation-request.model';
 import { ReconciliationResponse } from '../models/reconciliation-response.model';
+
+export interface ReconciliationConfig {
+    boFile: File;
+    partnerFile: File;
+    boReconciliationKey: string;
+    partnerReconciliationKey: string;
+    additionalKeys?: Array<{ boColumn: string; partnerColumn: string }>;
+    tolerance?: number;
+}
+
+export interface WebSocketMessage {
+    type: 'PROGRESS_UPDATE' | 'RECONCILIATION_COMPLETE' | 'RECONCILIATION_ERROR' | 'CONNECTION_STATUS';
+    payload: any;
+    timestamp: number;
+}
+
+export interface ProgressUpdate {
+    percentage: number;
+    processed: number;
+    total: number;
+    step: string;
+    currentFile?: number;
+    totalFiles?: number;
+    estimatedTimeRemaining?: number;
+}
 
 @Injectable({
     providedIn: 'root'
 })
-export class ReconciliationService implements OnInit {
+export class ReconciliationService implements OnInit, OnDestroy {
     private apiUrl = 'http://localhost:8080/api/reconciliation';
-    private progressSubject: BehaviorSubject<number> | null = null;
-    public progress$!: Observable<number>;
-    private isInitialized = false;
+    private wsUrl = 'ws://localhost:8080/ws/reconciliation';
+    
+    // WebSocket management
+    private wsConnection: WebSocketSubject<WebSocketMessage> | null = null;
+    private isConnected = false;
+    private reconnectAttempts = 0;
+    private maxReconnectAttempts = 5;
+    private reconnectDelay = 2000;
+    
+    // Progress management
+    private progressSubject = new BehaviorSubject<ProgressUpdate>({
+        percentage: 0,
+        processed: 0,
+        total: 0,
+        step: 'Initialisation...'
+    });
+    public progress$ = this.progressSubject.asObservable();
+    
+    // Connection status
+    private connectionStatusSubject = new BehaviorSubject<boolean>(false);
+    public connectionStatus$ = this.connectionStatusSubject.asObservable();
+    
+    // Messages from WebSocket
+    private messageSubject = new Subject<WebSocketMessage>();
+    public messages$ = this.messageSubject.asObservable();
+    
+    // Cleanup
+    private destroy$ = new Subject<void>();
 
     constructor(private http: HttpClient) {
-        console.log('ReconciliationService constructor called');
-        this.initializeProgressSubject();
+        console.log('🚀 ReconciliationService initialisé');
+        // Désactiver temporairement les WebSockets en attendant le backend
+        this.initializeWebSocket();
+        console.log('🔌 WebSockets activés - mode temps réel');
     }
 
     ngOnInit(): void {
-        // Cette méthode sera appelée automatiquement par Angular
-        console.log('ReconciliationService ngOnInit called');
-        this.ensureInitialized();
+        console.log('🔄 ReconciliationService ngOnInit');
     }
 
-    private ensureInitialized(): void {
-        if (!this.isInitialized) {
-            console.log('Ensuring service is initialized');
-            this.initializeProgressSubject();
-            this.isInitialized = true;
+    ngOnDestroy(): void {
+        console.log('🧹 Nettoyage du ReconciliationService');
+        this.disconnect();
+        this.destroy$.next();
+        this.destroy$.complete();
+    }
+
+    /**
+     * Initialise la connexion WebSocket avec gestion automatique de reconnexion
+     */
+    private initializeWebSocket(): void {
+        if (this.wsConnection) {
+            this.wsConnection.complete();
+        }
+
+        console.log('🔌 Tentative de connexion WebSocket...');
+        
+        this.wsConnection = webSocket<WebSocketMessage>({
+            url: this.wsUrl,
+            openObserver: {
+                next: () => {
+                    console.log('✅ Connexion WebSocket établie');
+                    this.isConnected = true;
+                    this.connectionStatusSubject.next(true);
+                    this.reconnectAttempts = 0;
+                    
+                    // Envoyer un message de statut de connexion
+                    this.sendMessage({
+                        type: 'CONNECTION_STATUS',
+                        payload: { status: 'connected', clientId: this.generateClientId() },
+                        timestamp: Date.now()
+                    });
+                }
+            },
+            closeObserver: {
+                next: () => {
+                    console.log('❌ Connexion WebSocket fermée');
+                    this.isConnected = false;
+                    this.connectionStatusSubject.next(false);
+                    this.handleReconnection();
+                }
+            }
+        });
+
+        // Écouter les messages entrants
+        this.wsConnection.pipe(
+            takeUntil(this.destroy$),
+            retry({ count: this.maxReconnectAttempts, delay: this.reconnectDelay })
+        ).subscribe({
+            next: (message: WebSocketMessage) => {
+                console.log('📨 Message WebSocket reçu:', message);
+                this.handleWebSocketMessage(message);
+            },
+            error: (error) => {
+                console.error('❌ Erreur WebSocket:', error);
+                this.isConnected = false;
+                this.connectionStatusSubject.next(false);
+                this.handleReconnection();
+            }
+        });
+    }
+
+    /**
+     * Gère la reconnexion automatique
+     */
+    private handleReconnection(): void {
+        if (this.reconnectAttempts < this.maxReconnectAttempts) {
+            this.reconnectAttempts++;
+            console.log(`🔄 Tentative de reconnexion ${this.reconnectAttempts}/${this.maxReconnectAttempts}`);
+            
+            timer(this.reconnectDelay * this.reconnectAttempts).pipe(
+                takeUntil(this.destroy$)
+            ).subscribe(() => {
+                this.initializeWebSocket();
+            });
+        } else {
+            console.error('❌ Nombre maximum de tentatives de reconnexion atteint');
         }
     }
 
-    private initializeProgressSubject(): void {
-        if (!this.progressSubject) {
-            console.log('Initializing progressSubject');
-            this.progressSubject = new BehaviorSubject<number>(0);
-            this.progress$ = this.progressSubject.asObservable();
+    /**
+     * Traite les messages WebSocket reçus
+     */
+    private handleWebSocketMessage(message: WebSocketMessage): void {
+        switch (message.type) {
+            case 'PROGRESS_UPDATE':
+                this.progressSubject.next(message.payload);
+                break;
+                
+            case 'RECONCILIATION_COMPLETE':
+                console.log('✅ Réconciliation terminée:', message.payload);
+                break;
+                
+            case 'RECONCILIATION_ERROR':
+                console.error('❌ Erreur de réconciliation:', message.payload);
+                break;
+                
+            case 'CONNECTION_STATUS':
+                console.log('📡 Statut de connexion:', message.payload);
+                break;
+                
+            default:
+                console.warn('⚠️ Type de message inconnu:', message.type);
+        }
+        
+        // Transmettre le message aux observateurs
+        this.messageSubject.next(message);
+    }
+
+    /**
+     * Envoie un message via WebSocket
+     */
+    private sendMessage(message: WebSocketMessage): void {
+        if (this.wsConnection && this.isConnected) {
+            this.wsConnection.next(message);
+        } else {
+            console.warn('⚠️ Impossible d\'envoyer le message: WebSocket non connecté');
         }
     }
 
-    // Méthode sécurisée pour accéder au progressSubject
-    private getProgressSubject(): BehaviorSubject<number> {
-        this.ensureInitialized();
-        if (!this.progressSubject) {
-            console.warn('progressSubject was undefined, creating new instance');
-            this.initializeProgressSubject();
-        }
-        return this.progressSubject!;
+    /**
+     * Génère un ID client unique
+     */
+    private generateClientId(): string {
+        return `client_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     }
 
+    /**
+     * Démarre la réconciliation avec upload des fichiers et communication WebSocket
+     * Version temporaire qui utilise l'API existante en attendant le backend WebSocket
+     */
+    startReconciliation(config: ReconciliationConfig): Observable<{ jobId: string; status: string }> {
+        console.log('🚀 Démarrage de la réconciliation avec config:', config);
+        
+        // Réinitialiser la progression
+        this.progressSubject.next({
+            percentage: 0,
+            processed: 0,
+            total: 0,
+            step: 'Préparation des fichiers...'
+        });
+
+        // Version temporaire : utiliser l'API existante
+        // TODO: Remplacer par l'API WebSocket quand le backend sera prêt
+        return new Observable(observer => {
+            // Simuler un jobId
+            const jobId = `job_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+            
+            console.log('📤 Utilisation de l\'API existante (mode temporaire)');
+            
+            // Mettre à jour la progression
+            this.progressSubject.next({
+                percentage: 10,
+                processed: 0,
+                total: 0,
+                step: 'Préparation des fichiers...'
+            });
+
+            // Retourner le jobId immédiatement
+            observer.next({ jobId, status: 'prepared' });
+            observer.complete();
+        });
+    }
+
+    /**
+     * Obtient les mises à jour de réconciliation en temps réel
+     */
+    getReconciliationUpdates(): Observable<WebSocketMessage> {
+        return this.messages$;
+    }
+
+    /**
+     * Obtient la progression actuelle
+     */
+    getProgress(): Observable<ProgressUpdate> {
+        return this.progress$;
+    }
+
+    /**
+     * Obtient le statut de connexion
+     */
+    getConnectionStatus(): Observable<boolean> {
+        return this.connectionStatus$;
+    }
+
+    /**
+     * Se connecte explicitement au WebSocket
+     */
+    connect(): void {
+        if (!this.isConnected) {
+            this.initializeWebSocket();
+        }
+    }
+
+    /**
+     * Se déconnecte du WebSocket
+     */
+    disconnect(): void {
+        console.log('🔌 Déconnexion WebSocket...');
+        if (this.wsConnection) {
+            this.wsConnection.complete();
+            this.wsConnection = null;
+        }
+        this.isConnected = false;
+        this.connectionStatusSubject.next(false);
+    }
+
+    /**
+     * Annule une réconciliation en cours
+     */
+    cancelReconciliation(jobId: string): Observable<{ status: string }> {
+        return this.http.post<{ status: string }>(`${this.apiUrl}/cancel`, { jobId })
+            .pipe(
+                tap(response => {
+                    console.log('❌ Réconciliation annulée:', response);
+                    this.sendMessage({
+                        type: 'CONNECTION_STATUS',
+                        payload: { action: 'CANCEL_RECONCILIATION', jobId },
+                        timestamp: Date.now()
+                    });
+                }),
+                catchError(this.handleError)
+            );
+    }
+
+    /**
+     * Récupère le statut d'un job de réconciliation
+     */
+    getJobStatus(jobId: string): Observable<{ status: string; progress?: ProgressUpdate; result?: ReconciliationResponse }> {
+        return this.http.get<{ status: string; progress?: ProgressUpdate; result?: ReconciliationResponse }>(`${this.apiUrl}/status/${jobId}`)
+            .pipe(catchError(this.handleError));
+    }
+
+    // Méthodes utilitaires conservées pour compatibilité
     uploadFile(file: File): Observable<string> {
-        this.ensureInitialized();
         const formData = new FormData();
         formData.append('file', file);
-
         return this.http.post<string>(`${this.apiUrl}/upload`, formData)
             .pipe(catchError(this.handleError));
     }
 
     /**
-     * Normalise une valeur de clé pour la réconciliation avec une logique intelligente
+     * Méthode de compatibilité pour l'ancienne API
+     * Utilise l'API existante du backend
      */
-    private normalizeKeyValue(value: any): string {
-        if (value === null || value === undefined) {
-            return '';
-        }
-        
-        let normalized = value.toString().trim();
-        
-        // 1. Supprimer les espaces multiples et en début/fin
-        normalized = normalized.replace(/\s+/g, ' ').trim();
-        
-        // 2. Supprimer les préfixes courants (CI, PM, etc.) - optimisé
-        const commonPrefixes = ['ci', 'pm', 'om', 'trx', 'tx'];
-        for (const prefix of commonPrefixes) {
-            if (normalized.toLowerCase().startsWith(prefix.toLowerCase())) {
-                normalized = normalized.substring(prefix.length);
-                break;
-            }
-        }
-        
-        // 3. Supprimer les caractères spéciaux courants (points, tirets, etc.)
-        normalized = normalized.replace(/[.\-_]/g, '');
-        
-        // 4. Extraire uniquement les chiffres et lettres (supprimer les caractères spéciaux restants)
-        normalized = normalized.replace(/[^\w]/g, '');
-        
-        // 5. Si la valeur ne contient que des chiffres, la garder telle quelle
-        if (/^\d+$/.test(normalized)) {
-            return normalized;
-        }
-        
-        // 6. Pour les autres cas, convertir en minuscules
-        normalized = normalized.toLowerCase();
-        
-        // 7. Si la valeur est vide après normalisation, essayer d'extraire des chiffres
-        if (normalized === '') {
-            const numbers = value.toString().match(/\d+/g);
-            if (numbers && numbers.length > 0) {
-                normalized = numbers.join('');
-            }
-        }
-        
-        return normalized;
-    }
-
-    /**
-     * Normalise les données de réconciliation en appliquant des transformations sur les clés
-     */
-    private normalizeReconciliationData(request: ReconciliationRequest): ReconciliationRequest {
-        const normalizedRequest = { ...request };
-        
-        // Normaliser les données BO
-        if (normalizedRequest.boFileContent && normalizedRequest.boKeyColumn) {
-            normalizedRequest.boFileContent = normalizedRequest.boFileContent.map(row => {
-                const normalizedRow = { ...row };
-                if (normalizedRow[normalizedRequest.boKeyColumn]) {
-                    normalizedRow[normalizedRequest.boKeyColumn] = this.normalizeKeyValue(normalizedRow[normalizedRequest.boKeyColumn]);
-                }
-                return normalizedRow;
-            });
-        }
-        
-        // Normaliser les clés supplémentaires BO
-        if (normalizedRequest.additionalKeys && normalizedRequest.boFileContent) {
-            normalizedRequest.additionalKeys.forEach((keyPair) => {
-                normalizedRequest.boFileContent = normalizedRequest.boFileContent.map(row => {
-                    const normalizedRow = { ...row };
-                    if (normalizedRow[keyPair.boColumn]) {
-                        normalizedRow[keyPair.boColumn] = this.normalizeKeyValue(normalizedRow[keyPair.boColumn]);
-                    }
-                    return normalizedRow;
-                });
-            });
-        }
-        
-        // Normaliser les données Partner
-        if (normalizedRequest.partnerFileContent && normalizedRequest.partnerKeyColumn) {
-            normalizedRequest.partnerFileContent = normalizedRequest.partnerFileContent.map(row => {
-                const normalizedRow = { ...row };
-                if (normalizedRow[normalizedRequest.partnerKeyColumn]) {
-                    normalizedRow[normalizedRequest.partnerKeyColumn] = this.normalizeKeyValue(normalizedRow[normalizedRequest.partnerKeyColumn]);
-                }
-                return normalizedRow;
-            });
-        }
-        
-        // Normaliser les clés supplémentaires Partner
-        if (normalizedRequest.additionalKeys && normalizedRequest.partnerFileContent) {
-            normalizedRequest.additionalKeys.forEach((keyPair) => {
-                normalizedRequest.partnerFileContent = normalizedRequest.partnerFileContent.map(row => {
-                    const normalizedRow = { ...row };
-                    if (normalizedRow[keyPair.partnerColumn]) {
-                        normalizedRow[keyPair.partnerColumn] = this.normalizeKeyValue(normalizedRow[keyPair.partnerColumn]);
-                    }
-                    return normalizedRow;
-                });
-            });
-        }
-        
-        return normalizedRequest;
-    }
-
-    /**
-     * Détecte si la normalisation est nécessaire en analysant un échantillon des données
-     */
-    private isNormalizationNeeded(request: ReconciliationRequest): boolean {
-        // Échantillon de 100 enregistrements pour détecter les patterns
-        const sampleSize = Math.min(100, Math.min(
-            request.boFileContent?.length || 0,
-            request.partnerFileContent?.length || 0
-        ));
-        
-        if (sampleSize === 0) return false;
-        
-        // Vérifier les clés BO
-        for (let i = 0; i < sampleSize; i++) {
-            const boRecord = request.boFileContent[i];
-            const boKey = boRecord[request.boKeyColumn];
-            
-            if (boKey && (boKey.includes(' ') || boKey.includes('.') || boKey.includes('-') || boKey.includes('_'))) {
-                return true; // Normalisation nécessaire
-            }
-        }
-        
-        // Vérifier les clés Partner
-        for (let i = 0; i < sampleSize; i++) {
-            const partnerRecord = request.partnerFileContent[i];
-            const partnerKey = partnerRecord[request.partnerKeyColumn];
-            
-            if (partnerKey && (partnerKey.includes(' ') || partnerKey.includes('.') || partnerKey.includes('-') || partnerKey.includes('_'))) {
-                return true; // Normalisation nécessaire
-            }
-        }
-        
-        return false; // Pas de normalisation nécessaire
-    }
-
     reconcile(request: ReconciliationRequest): Observable<ReconciliationResponse> {
-        this.ensureInitialized();
+        console.log('🔄 Utilisation de l\'API reconcile existante');
         
-        console.log('🚀 Début de la réconciliation...');
-        console.log('📊 Données de la requête:', {
-            boDataLength: request.boFileContent?.length || 0,
-            partnerDataLength: request.partnerFileContent?.length || 0,
-            boKeyColumn: request.boKeyColumn,
-            partnerKeyColumn: request.partnerKeyColumn,
-            additionalKeys: request.additionalKeys?.length || 0
-        });
-        
-        // Détecter si la normalisation est nécessaire
-        const needsNormalization = this.isNormalizationNeeded(request);
-        console.log(`🔧 Normalisation nécessaire: ${needsNormalization ? 'Oui' : 'Non'}`);
-        
-        // Normaliser les données avant la réconciliation (seulement si nécessaire)
-        const normalizedRequest = needsNormalization ? this.normalizeReconciliationData(request) : request;
-        
-        console.log('📤 Envoi de la requête de réconciliation...');
-        console.log('🔗 URL:', `${this.apiUrl}/reconcile`);
-        
-        // Utiliser la méthode sécurisée
-        const progressSubject = this.getProgressSubject();
-        
-        // Commencer la progression avant l'envoi de la requête
-        progressSubject.next(10);
-        console.log('📈 Progression initialisée à 10%');
-        
-        // Créer un intervalle pour mettre à jour la progression pendant le traitement
-        const progressInterval = setInterval(() => {
-            const currentProgress = progressSubject.value;
-            if (currentProgress < 90) {
-                // Progression plus réaliste basée sur la taille des données
-                const dataSize = (request.boFileContent?.length || 0) + (request.partnerFileContent?.length || 0);
-                const progressIncrement = dataSize > 100000 ? 2 : 5; // Plus lent pour gros fichiers
-                progressSubject.next(Math.min(90, currentProgress + progressIncrement));
-                console.log(`📈 Progression mise à jour: ${Math.min(90, currentProgress + progressIncrement)}%`);
-            }
-        }, 1000);
-
-        return this.http.post<ReconciliationResponse>(`${this.apiUrl}/reconcile`, normalizedRequest, {
+        // Utiliser l'API existante du backend
+        return this.http.post<ReconciliationResponse>(`${this.apiUrl}/reconcile`, request, {
             headers: new HttpHeaders({
                 'Content-Type': 'application/json'
             })
         })
-            .pipe(
-                timeout(600000), // Timeout de 10 minutes
-                tap(response => {
-                    console.log('✅ Réponse de réconciliation reçue:', response);
-                    console.log('📊 Résultats:', {
-                        matches: response.matches?.length || 0,
-                        boOnly: response.boOnly?.length || 0,
-                        partnerOnly: response.partnerOnly?.length || 0,
-                        mismatches: response.mismatches?.length || 0
-                    });
-                }),
-                finalize(() => {
-                    console.log('🏁 Finalisation de la réconciliation...');
-                    clearInterval(progressInterval);
-                    progressSubject.next(100);
-                    console.log('✅ Réconciliation terminée avec succès');
-                }),
-                catchError(error => {
-                    console.error('❌ Erreur lors de la réconciliation:', error);
-                    console.error('🔍 Détails de l\'erreur:', {
-                        status: error.status,
-                        statusText: error.statusText,
-                        message: error.message,
-                        error: error.error
-                    });
-                    clearInterval(progressInterval);
-                    progressSubject.next(0);
-                    return this.handleError(error);
-                })
-            );
+        .pipe(
+            tap(response => {
+                console.log('✅ Réconciliation terminée via API existante:', response);
+                
+                // Mettre à jour la progression à 100%
+                this.progressSubject.next({
+                    percentage: 100,
+                    processed: response.processedRecords || 0,
+                    total: (response.totalBoRecords || 0) + (response.totalPartnerRecords || 0),
+                    step: 'Réconciliation terminée'
+                });
+            }),
+            catchError(this.handleError)
+        );
     }
 
     saveSummary(summary: any[]): Observable<any> {
-        this.ensureInitialized();
-        // Correction de l'URL pour correspondre à la route backend
         return this.http.post('http://localhost:8080/api/agency-summary/save', {
             summary,
             timestamp: new Date().toISOString()
@@ -292,25 +359,14 @@ export class ReconciliationService implements OnInit {
             .pipe(catchError(this.handleError));
     }
 
-    startReconciliation(request: any): Observable<{ jobId: string }> {
-        return this.http.post<{ jobId: string }>(`${this.apiUrl}/reconciliation/start`, request);
-    }
-
-    getProgress(jobId: string): Observable<{ progress: number }> {
-        return this.http.get<{ progress: number }>(`${this.apiUrl}/reconciliation/progress`, { params: { jobId } });
-    }
-
     private handleError(error: HttpErrorResponse) {
         let errorMessage = 'Une erreur est survenue';
         
         if (error.error instanceof ErrorEvent) {
-            // Erreur côté client
             errorMessage = `Erreur: ${error.error.message}`;
         } else if (error.status === 0) {
-            // Erreur de connexion au serveur
             errorMessage = 'Impossible de se connecter au serveur. Veuillez vérifier que le serveur est en cours d\'exécution.';
         } else {
-            // Erreur côté serveur
             errorMessage = `Code d'erreur: ${error.status}\nMessage: ${error.message}`;
             if (error.error && error.error.message) {
                 errorMessage += `\nDétails: ${error.error.message}`;
@@ -318,13 +374,6 @@ export class ReconciliationService implements OnInit {
         }
         
         console.error('Erreur complète:', error);
-        // Réinitialiser la progression en cas d'erreur
-        try {
-            const progressSubject = this.getProgressSubject();
-            progressSubject.next(0);
-        } catch (e) {
-            console.error('Erreur lors de la réinitialisation de la progression:', e);
-        }
         return throwError(() => new Error(errorMessage));
     }
 } 

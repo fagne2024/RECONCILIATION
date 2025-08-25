@@ -3,6 +3,7 @@ import { FormBuilder, FormGroup, FormControl } from '@angular/forms';
 import { MatSelect } from '@angular/material/select';
 import { OrangeMoneyUtilsService } from '../../services/orange-money-utils.service';
 import { FieldTypeDetectionService, ColumnAnalysis } from '../../services/field-type-detection.service';
+import { DataProcessingService } from '../../services/data-processing.service';
 import * as Papa from 'papaparse';
 import * as XLSX from 'xlsx';
 
@@ -174,7 +175,8 @@ export class TraitementComponent implements OnInit, AfterViewInit {
     private cd: ChangeDetectorRef, 
     private fb: FormBuilder,
     private orangeMoneyUtilsService: OrangeMoneyUtilsService,
-    private fieldTypeDetectionService: FieldTypeDetectionService
+    private fieldTypeDetectionService: FieldTypeDetectionService,
+    public dataProcessingService: DataProcessingService
   ) {}
 
   private showSuccess(key: string, msg: string) {
@@ -382,34 +384,78 @@ export class TraitementComponent implements OnInit, AfterViewInit {
   private async readCsvFileOptimized(file: File): Promise<void> {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
-      reader.onload = (e: any) => {
+      reader.onload = async (e: any) => {
         try {
           const csv = e.target.result;
           const lines = csv.split('\n');
-          const headers = lines[0].split(';').map((h: string) => h.trim());
           
-          // Traitement optimisé par chunks
-          const rows: any[] = [];
-          for (let i = 1; i < lines.length; i++) {
-            if (lines[i].trim()) {
-              const values = lines[i].split(';');
-              const row: any = {};
-              headers.forEach((header: string, index: number) => {
-                row[header] = values[index] || '';
-              });
-              rows.push(row);
+          if (lines.length === 0) {
+            resolve();
+            return;
+          }
+          
+          // Détecter le séparateur
+          const firstLine = lines[0];
+          const delimiter = this.detectDelimiter(firstLine);
+          
+          // Extraire les en-têtes
+          const headers = firstLine.split(delimiter).map((h: string) => h.trim());
+          
+          // Traitement par chunks pour éviter le débordement de pile
+          const chunkSize = 1000; // Traiter 1000 lignes à la fois
+          const totalLines = lines.length - 1; // Exclure l'en-tête
+          
+          console.log(`📊 Traitement par chunks: ${totalLines} lignes, chunks de ${chunkSize}`);
+          
+          for (let i = 1; i < lines.length; i += chunkSize) {
+            const chunkEnd = Math.min(i + chunkSize, lines.length);
+            const chunkLines = lines.slice(i, chunkEnd);
+            
+            const chunkRows: any[] = [];
+            for (const line of chunkLines) {
+              if (line.trim()) {
+                const values = line.split(delimiter);
+                const row: any = {};
+                headers.forEach((header: string, index: number) => {
+                  row[header] = values[index] || '';
+                });
+                chunkRows.push(row);
+              }
+            }
+            
+            // Ajouter le chunk aux données
+            this.allRows.push(...chunkRows);
+            
+            // Permettre à l'interface de respirer
+            if (i % (chunkSize * 5) === 0) {
+              await new Promise(resolve => setTimeout(resolve, 1));
             }
           }
           
-          this.allRows.push(...rows);
+          console.log(`✅ Traitement terminé: ${this.allRows.length} lignes`);
           resolve();
         } catch (error) {
+          console.error('❌ Erreur lors du traitement optimisé:', error);
           reject(error);
         }
       };
       reader.onerror = reject;
       reader.readAsText(file);
     });
+  }
+  
+  // Méthode pour détecter le délimiteur
+  private detectDelimiter(line: string): string {
+    const delimiters = [';', ',', '\t', '|'];
+    const scores: { [key: string]: number } = {};
+    
+    delimiters.forEach(delimiter => {
+      const parts = line.split(delimiter);
+      scores[delimiter] = parts.length;
+    });
+    
+    // Retourner le délimiteur qui donne le plus de colonnes
+    return Object.keys(scores).reduce((a, b) => scores[a] > scores[b] ? a : b);
   }
 
   // Nouvelle méthode pour détecter les en-têtes dans les fichiers Excel
@@ -1901,6 +1947,16 @@ export class TraitementComponent implements OnInit, AfterViewInit {
       return this.extractCol + '_fin_' + this.extractCount;
     }
     return this.extractCol + '_extrait';
+  }
+
+  resetExtraction() {
+    this.extractCol = '';
+    this.extractType = '';
+    this.extractKey = '';
+    this.extractStart = 1;
+    this.extractCount = 1;
+    this.successMsg.extract = '';
+    this.errorMsg.extract = '';
   }
 
   onSelectColChange(event: Event) {
@@ -3573,55 +3629,72 @@ export class TraitementComponent implements OnInit, AfterViewInit {
       window.dispatchEvent(new Event('resize'));
       this.cd.detectChanges();
     }, 100);
-    // Sauvegarder l'état à chaque changement de page, de fichier, ou de colonne
+    
+    // Sauvegarder l'état seulement pour les petits fichiers (éviter le quota localStorage)
     const save = () => {
-      const data = {
-        selectedFiles: this.selectedFiles,
-        combinedRows: this.combinedRows,
-        columns: this.columns,
-        dedupCols: this.dedupCols,
-        formatOptions: this.formatOptions,
-        extractCol: this.extractCol,
-        extractType: this.extractType,
-        extractCount: this.extractCount,
-        extractKey: this.extractKey,
-        extractStart: this.extractStart,
-        selectedCols: this.selectedCols,
-        successMsg: this.successMsg,
-        errorMsg: this.errorMsg,
-        selectedDateFormat: this.selectedDateFormat,
-        exportTypeCol: this.exportTypeCol,
-        exportTypeValues: this.exportTypeValues,
-        exportTypeSelected: this.exportTypeSelected,
-        allRows: this.allRows,
-        allColumns: this.allColumns,
-        originalRows: this.originalRows,
-        selectionApplied: this.selectionApplied,
-        selectedFilterColumn: this.selectedFilterColumn,
-        filterValues: this.filterValues,
-        selectedFilterValues: this.selectedFilterValues,
-        filteredRows: this.filteredRows,
-        filterApplied: this.filterApplied,
-        concatCols: this.concatCols,
-        concatNewCol: this.concatNewCol,
-        concatSeparator: this.concatSeparator,
-        exportTypeSuffix: this.exportTypeSuffix,
-        exportTypeDescription: this.exportTypeDescription,
-        removeCharPosition: this.removeCharPosition,
-        removeCharCount: this.removeCharCount,
-        removeCharSpecificPosition: this.removeCharSpecificPosition,
-        specificCharactersToRemove: this.specificCharactersToRemove,
-        removeSpecificCharactersCaseSensitive: this.removeSpecificCharactersCaseSensitive,
-        currentPage: this.currentPage,
-        rowsPerPage: this.rowsPerPage,
-        maxDisplayedRows: this.maxDisplayedRows,
-        showAllRows: this.showAllRows,
-        displayedRows: this.displayedRows
-      };
-      localStorage.setItem(this.LOCAL_STORAGE_KEY, JSON.stringify(data));
+      try {
+        // Vérifier la taille des données avant de sauvegarder
+        const dataToSave = {
+          selectedFiles: this.selectedFiles.map(f => ({ name: f.name, size: f.size })),
+          columns: this.columns,
+          dedupCols: this.dedupCols,
+          formatOptions: this.formatOptions,
+          extractCol: this.extractCol,
+          extractType: this.extractType,
+          extractCount: this.extractCount,
+          extractKey: this.extractKey,
+          extractStart: this.extractStart,
+          selectedCols: this.selectedCols,
+          successMsg: this.successMsg,
+          errorMsg: this.errorMsg,
+          selectedDateFormat: this.selectedDateFormat,
+          exportTypeCol: this.exportTypeCol,
+          exportTypeValues: this.exportTypeValues,
+          exportTypeSelected: this.exportTypeSelected,
+          allColumns: this.allColumns,
+          selectionApplied: this.selectionApplied,
+          selectedFilterColumn: this.selectedFilterColumn,
+          filterValues: this.filterValues,
+          selectedFilterValues: this.selectedFilterValues,
+          filterApplied: this.filterApplied,
+          concatCols: this.concatCols,
+          concatNewCol: this.concatNewCol,
+          concatSeparator: this.concatSeparator,
+          exportTypeSuffix: this.exportTypeSuffix,
+          exportTypeDescription: this.exportTypeDescription,
+          removeCharPosition: this.removeCharPosition,
+          removeCharCount: this.removeCharCount,
+          removeCharSpecificPosition: this.removeCharSpecificPosition,
+          specificCharactersToRemove: this.specificCharactersToRemove,
+          removeSpecificCharactersCaseSensitive: this.removeSpecificCharactersCaseSensitive,
+          currentPage: this.currentPage,
+          rowsPerPage: this.rowsPerPage,
+          maxDisplayedRows: this.maxDisplayedRows,
+          showAllRows: this.showAllRows
+        };
+        
+        // Ne pas sauvegarder les données volumineuses (allRows, combinedRows, etc.)
+        const dataString = JSON.stringify(dataToSave);
+        
+        // Vérifier si la taille est raisonnable (< 1MB)
+        if (dataString.length < 1024 * 1024) {
+          localStorage.setItem(this.LOCAL_STORAGE_KEY, dataString);
+        } else {
+          console.log('⚠️ Données trop volumineuses pour localStorage, sauvegarde ignorée');
+          // Nettoyer l'ancienne sauvegarde si elle existe
+          localStorage.removeItem(this.LOCAL_STORAGE_KEY);
+        }
+      } catch (error) {
+        console.warn('⚠️ Erreur lors de la sauvegarde localStorage:', error);
+        // Nettoyer en cas d'erreur
+        localStorage.removeItem(this.LOCAL_STORAGE_KEY);
+      }
     };
-    // Sauvegarder à chaque changement de page, de fichier, ou de colonne
-    setInterval(save, 2000);
+    
+    // Sauvegarder seulement pour les petits fichiers
+    if (this.allRows.length < 10000) { // Seulement pour les fichiers < 10k lignes
+      setInterval(save, 5000); // Sauvegarde moins fréquente
+    }
   }
 
   // Méthode pour optimiser l'affichage initial

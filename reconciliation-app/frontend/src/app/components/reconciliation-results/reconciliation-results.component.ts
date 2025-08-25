@@ -3718,14 +3718,11 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
         console.log('🎯 Écoute de la progression réelle de la réconciliation...');
         
         this.subscription.add(
-            this.reconciliationService.progress$.subscribe((progress: number) => {
-                console.log(`📈 Progression reçue du service: ${progress}%`);
-                this.progressPercentage = progress;
-                
-                // Calculer les enregistrements traités basé sur la progression
-                if (this.totalRecords > 0) {
-                    this.processedRecords = Math.floor((progress / 100) * this.totalRecords);
-                }
+            this.reconciliationService.getProgress().subscribe((progress) => {
+                console.log(`📈 Progression reçue du service: ${progress.percentage}% - ${progress.step}`);
+                this.progressPercentage = progress.percentage;
+                this.processedRecords = progress.processed;
+                this.totalRecords = progress.total;
                 
                 // Forcer la détection des changements pour mettre à jour l'interface
                 this.cdr.detectChanges();
