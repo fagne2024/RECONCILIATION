@@ -120,10 +120,9 @@ export class ReconciliationService implements OnInit, OnDestroy {
             }
         });
 
-        // Écouter les messages entrants
+        // Écouter les messages entrants sans retry automatique
         this.wsConnection.pipe(
-            takeUntil(this.destroy$),
-            retry({ count: this.maxReconnectAttempts, delay: this.reconnectDelay })
+            takeUntil(this.destroy$)
         ).subscribe({
             next: (message: WebSocketMessage) => {
                 console.log('📨 Message WebSocket reçu:', message);
@@ -131,6 +130,12 @@ export class ReconciliationService implements OnInit, OnDestroy {
             },
             error: (error) => {
                 console.error('❌ Erreur WebSocket:', error);
+                this.isConnected = false;
+                this.connectionStatusSubject.next(false);
+                this.handleReconnection();
+            },
+            complete: () => {
+                console.log('🔌 WebSocket fermé');
                 this.isConnected = false;
                 this.connectionStatusSubject.next(false);
                 this.handleReconnection();
@@ -146,13 +151,22 @@ export class ReconciliationService implements OnInit, OnDestroy {
             this.reconnectAttempts++;
             console.log(`🔄 Tentative de reconnexion ${this.reconnectAttempts}/${this.maxReconnectAttempts}`);
             
-            timer(this.reconnectDelay * this.reconnectAttempts).pipe(
+            // Délai progressif pour éviter de surcharger le serveur
+            const delay = this.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1);
+            
+            timer(delay).pipe(
                 takeUntil(this.destroy$)
             ).subscribe(() => {
+                console.log(`🔄 Tentative de reconnexion après ${delay}ms`);
                 this.initializeWebSocket();
             });
         } else {
             console.error('❌ Nombre maximum de tentatives de reconnexion atteint');
+            // Réinitialiser le compteur après un délai plus long
+            timer(30000).pipe(takeUntil(this.destroy$)).subscribe(() => {
+                this.reconnectAttempts = 0;
+                console.log('🔄 Réinitialisation du compteur de reconnexion');
+            });
         }
     }
 

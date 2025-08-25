@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test WebSocket</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .log { background: #f5f5f5; padding: 10px; border-radius: 5px; margin: 10px 0; }
+        .success { color: green; }
+        .error { color: red; }
+        .info { color: blue; }
+    </style>
+</head>
+<body>
+    <h1>Test WebSocket Connection</h1>
+    <button onclick="connectWebSocket()">Connecter WebSocket</button>
+    <button onclick="disconnectWebSocket()">Déconnecter</button>
+    <button onclick="sendTestMessage()">Envoyer Message Test</button>
+    <div id="log"></div>
+
+    <script>
+        let ws = null;
+        const logDiv = document.getElementById('log');
+
+        function log(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const logEntry = document.createElement('div');
+            logEntry.className = `log ${type}`;
+            logEntry.innerHTML = `[${timestamp}] ${message}`;
+            logDiv.appendChild(logEntry);
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+
+        function connectWebSocket() {
+            try {
+                log('Tentative de connexion WebSocket...', 'info');
+                ws = new WebSocket('ws://localhost:8080/ws/reconciliation');
+
+                ws.onopen = function(event) {
+                    log('✅ Connexion WebSocket établie!', 'success');
+                    
+                    // Envoyer un message de statut de connexion
+                    const message = {
+                        type: 'CONNECTION_STATUS',
+                        payload: { 
+                            status: 'connected', 
+                            clientId: 'test-client-' + Date.now() 
+                        },
+                        timestamp: Date.now()
+                    };
+                    ws.send(JSON.stringify(message));
+                    log('📤 Message de statut envoyé', 'info');
+                };
+
+                ws.onmessage = function(event) {
+                    try {
+                        const message = JSON.parse(event.data);
+                        log(`📨 Message reçu: ${JSON.stringify(message, null, 2)}`, 'info');
+                    } catch (e) {
+                        log(`📨 Message brut reçu: ${event.data}`, 'info');
+                    }
+                };
+
+                ws.onclose = function(event) {
+                    log(`❌ Connexion WebSocket fermée. Code: ${event.code}, Raison: ${event.reason}`, 'error');
+                };
+
+                ws.onerror = function(error) {
+                    log(`❌ Erreur WebSocket: ${error}`, 'error');
+                };
+
+            } catch (error) {
+                log(`❌ Erreur lors de la création de la connexion: ${error}`, 'error');
+            }
+        }
+
+        function disconnectWebSocket() {
+            if (ws) {
+                ws.close();
+                ws = null;
+                log('🔌 WebSocket déconnecté', 'info');
+            }
+        }
+
+        function sendTestMessage() {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                const message = {
+                    type: 'START_RECONCILIATION',
+                    payload: {
+                        jobId: 'test-job-' + Date.now(),
+                        clientId: 'test-client'
+                    },
+                    timestamp: Date.now()
+                };
+                ws.send(JSON.stringify(message));
+                log('📤 Message de test envoyé', 'info');
+            } else {
+                log('❌ WebSocket non connecté', 'error');
+            }
+        }
+
+        // Test automatique au chargement
+        window.onload = function() {
+            log('Page chargée, test automatique dans 2 secondes...', 'info');
+            setTimeout(connectWebSocket, 2000);
+        };
+    </script>
+</body>
+</html>
