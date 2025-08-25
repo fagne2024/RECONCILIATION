@@ -9,6 +9,7 @@ import { BOColumnFilter } from '../models/reconciliation-request.model';
 import { FieldTypeDetectionService, ColumnAnalysis } from './field-type-detection.service';
 import { ExcelTypeDetectionService, ExcelFileAnalysis } from './excel-type-detection.service';
 import { SpecialFileDetectionService, FileAnalysisResult } from './special-file-detection.service';
+import { fixGarbledCharacters } from '../utils/encoding-fixer';
 import * as Papa from 'papaparse'; // Added for CSV parsing
 import * as XLSX from 'xlsx'; // Added for Excel parsing
 

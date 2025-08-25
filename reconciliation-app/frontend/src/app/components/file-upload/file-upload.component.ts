@@ -2,6 +2,7 @@ import { Component, EventEmitter, Output } from '@angular/core';
 import { ReconciliationService } from '../../services/reconciliation.service';
 import { AutoProcessingService, ProcessingResult } from '../../services/auto-processing.service';
 import { OrangeMoneyUtilsService } from '../../services/orange-money-utils.service';
+import { fixGarbledCharacters } from '../../utils/encoding-fixer';
 import * as Papa from 'papaparse';
 import * as XLSX from 'xlsx';
 import { Router } from '@angular/router';

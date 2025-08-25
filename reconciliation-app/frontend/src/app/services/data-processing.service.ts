@@ -1,5 +1,6 @@
 import { Injectable } from '@angular/core';
 import { BehaviorSubject, Observable, Subject } from 'rxjs';
+import { fixGarbledCharacters } from '../utils/encoding-fixer';
 import { 
   ProcessingProgress, 
   DataChunk, 
@@ -292,7 +293,7 @@ export class DataProcessingService {
       };
       
       reader.onerror = reject;
-      reader.readAsText(file);
+      reader.readAsText(file, 'UTF-8');
     });
   }
   

@@ -7,6 +7,46 @@ declare const postMessage: any;
 declare const addEventListener: any;
 declare const removeEventListener: any;
 
+// Fonction de réparation des caractères spéciaux
+const characterMap: { [key: string]: string } = {
+  'Ã©': 'é',
+  'Ã¨': 'è',
+  'Ãª': 'ê',
+  'Ã«': 'ë',
+  'Ã ': 'à',
+  'Ã¢': 'â',
+  'Ã¤': 'ä',
+  'Ã§': 'ç',
+  'Ã´': 'ô',
+  'Ã¶': 'ö',
+  'Ã¹': 'ù',
+  'Ã»': 'û',
+  'Ã¼': 'ü',
+  'Ã®': 'î',
+  'Ã¯': 'ï',
+  'tï¿½lï¿½phone': 'téléphone',
+  'Numï¿½ro': 'Numéro',
+  'Opï¿½ration': 'Opération',
+  'aprï¿½s': 'après',
+  'rï¿½fï¿½rence': 'référence',
+  'crï¿½dit': 'crédit',
+  'dï¿½bit': 'débit'
+};
+
+function fixGarbledCharacters(text: string | null | undefined): string {
+  if (!text) {
+    return '';
+  }
+
+  let fixedText = text;
+  for (const [garbled, correct] of Object.entries(characterMap)) {
+    const regex = new RegExp(garbled, 'g');
+    fixedText = fixedText.replace(regex, correct);
+  }
+
+  return fixedText;
+}
+
 import { 
   WorkerMessage, 
   ProcessingProgress, 
@@ -144,7 +184,7 @@ async function processCsvFile(file: File, options: ProcessingOptions): Promise<v
     };
     
     reader.onerror = reject;
-    reader.readAsText(file);
+    reader.readAsText(file, 'UTF-8');
   });
 }
 
@@ -314,7 +354,7 @@ async function processExcelContent(data: Uint8Array, XLSX: any, options: Process
  * Détecte les en-têtes CSV
  */
 function detectCsvHeaders(headerLine: string): string[] {
-  const headers = headerLine.split(';').map((h: string) => h.trim());
+  const headers = headerLine.split(';').map((h: string) => fixGarbledCharacters(h.trim()));
   
   // Nettoyer et valider les en-têtes
   return headers.map((header, index) => {
@@ -358,7 +398,7 @@ function parseCsvLine(line: string, headers: string[]): any {
   const row: any = {};
   
   headers.forEach((header, index) => {
-    row[header] = values[index] || '';
+    row[header] = fixGarbledCharacters(values[index] || '');
   });
   
   return row;

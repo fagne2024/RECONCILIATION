@@ -4,6 +4,7 @@ import { MatSelect } from '@angular/material/select';
 import { OrangeMoneyUtilsService } from '../../services/orange-money-utils.service';
 import { FieldTypeDetectionService, ColumnAnalysis } from '../../services/field-type-detection.service';
 import { DataProcessingService } from '../../services/data-processing.service';
+import { fixGarbledCharacters } from '../../utils/encoding-fixer';
 import * as Papa from 'papaparse';
 import * as XLSX from 'xlsx';
 
@@ -264,7 +265,7 @@ export class TraitementComponent implements OnInit, AfterViewInit {
         this.showError('upload', 'Erreur lors de la prévisualisation du fichier CSV');
       }
     };
-    reader.readAsText(file);
+    reader.readAsText(file, 'UTF-8');
   }
 
   addDragOverStyle() {
@@ -398,8 +399,8 @@ export class TraitementComponent implements OnInit, AfterViewInit {
           const firstLine = lines[0];
           const delimiter = this.detectDelimiter(firstLine);
           
-          // Extraire les en-têtes
-          const headers = firstLine.split(delimiter).map((h: string) => h.trim());
+          // Extraire les en-têtes avec correction des caractères spéciaux
+          const headers = firstLine.split(delimiter).map((h: string) => fixGarbledCharacters(h.trim()));
           
           // Traitement par chunks pour éviter le débordement de pile
           const chunkSize = 1000; // Traiter 1000 lignes à la fois
@@ -417,7 +418,7 @@ export class TraitementComponent implements OnInit, AfterViewInit {
                 const values = line.split(delimiter);
                 const row: any = {};
                 headers.forEach((header: string, index: number) => {
-                  row[header] = values[index] || '';
+                  row[header] = fixGarbledCharacters(values[index] || '');
                 });
                 chunkRows.push(row);
               }
@@ -440,7 +441,7 @@ export class TraitementComponent implements OnInit, AfterViewInit {
         }
       };
       reader.onerror = reject;
-      reader.readAsText(file);
+      reader.readAsText(file, 'UTF-8');
     });
   }
   
@@ -498,7 +499,7 @@ export class TraitementComponent implements OnInit, AfterViewInit {
       // Convertir la ligne en chaînes et nettoyer
       const rowStrings = row.map((cell: any) => {
         if (cell === null || cell === undefined) return '';
-        return String(cell).trim();
+        return fixGarbledCharacters(String(cell).trim());
       });
       
       console.log(`🔍 Ligne ${i} - Nombre de cellules: ${rowStrings.length}, Cellules non vides: ${rowStrings.filter(cell => cell !== '').length}`);

@@ -1,6 +1,8 @@
 <div class="traitement-container">
-  <button type="button" style="float:right;margin-bottom:16px; background:#1976d2; color:white;" (click)="newTraitement()">+ Nouveau traitement</button>
-  <h2>Traitement de fichiers (CSV, XLS, XLSX)</h2>
+  <div class="header-section">
+    <h2>Traitement de fichiers (CSV, XLS, XLSX)</h2>
+    <button type="button" class="new-treatment-btn" (click)="newTraitement()">+ Nouveau traitement</button>
+  </div>
   
   <!-- Barre de progression pour les fichiers volumineux -->
   <div *ngIf="dataProcessingService.isProcessing$ | async" class="processing-overlay">
@@ -102,8 +104,10 @@
         {{ col }}
       </label>
     </div>
-    <button type="button" (click)="applyColumnSelection()" [disabled]="selectedCols.length === 0">Appliquer la sélection</button>
-    <button type="button" (click)="resetColumnSelection()" style="margin-left:12px;">Réinitialiser la sélection</button>
+    <div class="select-cols-actions">
+      <button type="button" class="select-cols-btn apply-btn" (click)="applyColumnSelection()" [disabled]="selectedCols.length === 0">Appliquer la sélection</button>
+      <button type="button" class="select-cols-btn reset-btn" (click)="resetColumnSelection()">Réinitialiser la sélection</button>
+    </div>
     <div *ngIf="successMsg.select" class="success-msg">{{ successMsg.select }}</div>
     <div *ngIf="errorMsg.select" class="error-msg">{{ errorMsg.select }}</div>
   </div>
@@ -113,96 +117,101 @@
       <p class="section-description">Extrayez des informations spécifiques d'une colonne pour créer une nouvelle colonne</p>
     </div>
     
-    <div class="extract-controls">
-      <!-- Sélection de la colonne source -->
-      <div class="extract-group">
-        <label class="extract-label">
-          <i class="fas fa-columns"></i>
-          Colonne source :
-        </label>
-        <mat-form-field appearance="outline" class="extract-select">
-          <mat-label>Sélectionner une colonne</mat-label>
-          <mat-select [(ngModel)]="extractCol">
-            <mat-option *ngFor="let col of columns" [value]="col">
-              {{ col }}
-            </mat-option>
-          </mat-select>
-        </mat-form-field>
-      </div>
+          <div class="extract-controls">
+        <!-- Ligne principale avec les 3 champs principaux -->
+        <div class="extract-main-row">
+          <!-- Sélection de la colonne source -->
+          <div class="extract-group">
+            <label class="extract-label">
+              <i class="fas fa-columns"></i>
+              Colonne source :
+            </label>
+            <mat-form-field appearance="outline" class="extract-select">
+              <mat-label>Sélectionner une colonne</mat-label>
+              <mat-select [(ngModel)]="extractCol">
+                <mat-option *ngFor="let col of columns" [value]="col">
+                  {{ col }}
+                </mat-option>
+              </mat-select>
+            </mat-form-field>
+          </div>
 
-      <!-- Type d'extraction -->
-      <div class="extract-group">
-        <label class="extract-label">
-          <i class="fas fa-cut"></i>
-          Type d'extraction :
-        </label>
-        <mat-form-field appearance="outline" class="extract-select">
-          <mat-label>Choisir le type d'extraction</mat-label>
-          <mat-select [(ngModel)]="extractType">
-            <mat-option value="emailDomain">
-              <span class="option-content">
-                <i class="fas fa-envelope"></i>
-                <span>Domaine email</span>
-                <small>Extrait le domaine d'une adresse email</small>
-              </span>
-            </mat-option>
-            <mat-option value="firstChars">
-              <span class="option-content">
-                <i class="fas fa-align-left"></i>
-                <span>Gauche (n caractères)</span>
-                <small>Extrait les n premiers caractères</small>
-              </span>
-            </mat-option>
-            <mat-option value="lastChars">
-              <span class="option-content">
-                <i class="fas fa-align-right"></i>
-                <span>Droite (n caractères)</span>
-                <small>Extrait les n derniers caractères</small>
-              </span>
-            </mat-option>
-          </mat-select>
-        </mat-form-field>
-      </div>
+          <!-- Type d'extraction -->
+          <div class="extract-group">
+            <label class="extract-label">
+              <i class="fas fa-cut"></i>
+              Type d'extraction :
+            </label>
+            <mat-form-field appearance="outline" class="extract-select">
+              <mat-label>Choisir le type d'extraction</mat-label>
+              <mat-select [(ngModel)]="extractType">
+                <mat-option value="emailDomain">
+                  <span class="option-content">
+                    <i class="fas fa-envelope"></i>
+                    <span>Domaine email</span>
+                    <small>Extrait le domaine d'une adresse email</small>
+                  </span>
+                </mat-option>
+                <mat-option value="firstChars">
+                  <span class="option-content">
+                    <i class="fas fa-align-left"></i>
+                    <span>Gauche (n caractères)</span>
+                    <small>Extrait les n premiers caractères</small>
+                  </span>
+                </mat-option>
+                <mat-option value="lastChars">
+                  <span class="option-content">
+                    <i class="fas fa-align-right"></i>
+                    <span>Droite (n caractères)</span>
+                    <small>Extrait les n derniers caractères</small>
+                  </span>
+                </mat-option>
+              </mat-select>
+            </mat-form-field>
+          </div>
 
-      <!-- Nom de la nouvelle colonne -->
-      <div class="extract-group">
-        <label class="extract-label">
-          <i class="fas fa-tag"></i>
-          Nom de la nouvelle colonne :
-        </label>
-        <mat-form-field appearance="outline" class="extract-input">
-          <mat-label>Ex: Domaine, Code, etc.</mat-label>
-          <input matInput [(ngModel)]="extractKey" placeholder="Nom de la colonne">
-          <mat-hint>Nom de la colonne qui contiendra les données extraites</mat-hint>
-        </mat-form-field>
-      </div>
-
-      <!-- Paramètres spécifiques pour les caractères -->
-      <div *ngIf="extractType === 'firstChars' || extractType === 'lastChars'" class="extract-params">
-        <div class="extract-group">
-          <label class="extract-label">
-            <i class="fas fa-map-marker-alt"></i>
-            Position de départ :
-          </label>
-          <mat-form-field appearance="outline" class="extract-number">
-            <mat-label>Position</mat-label>
-            <input matInput type="number" [(ngModel)]="extractStart" min="1" placeholder="1">
-            <mat-hint>Position de départ (1 = début)</mat-hint>
-          </mat-form-field>
+          <!-- Nom de la nouvelle colonne -->
+          <div class="extract-group">
+            <label class="extract-label">
+              <i class="fas fa-tag"></i>
+              Nom de la nouvelle colonne :
+            </label>
+            <mat-form-field appearance="outline" class="extract-input">
+              <mat-label>Ex: Domaine, Code, etc.</mat-label>
+              <input matInput [(ngModel)]="extractKey" placeholder="Nom de la colonne">
+              <mat-hint>Nom de la colonne qui contiendra les données extraites</mat-hint>
+            </mat-form-field>
+          </div>
         </div>
 
-        <div class="extract-group">
-          <label class="extract-label">
-            <i class="fas fa-hashtag"></i>
-            Nombre de caractères :
-          </label>
-          <mat-form-field appearance="outline" class="extract-number">
-            <mat-label>Nombre</mat-label>
-            <input matInput type="number" [(ngModel)]="extractCount" min="1" placeholder="5">
-            <mat-hint>Nombre de caractères à extraire</mat-hint>
-          </mat-form-field>
+              <!-- Paramètres spécifiques pour les caractères -->
+        <div *ngIf="extractType === 'firstChars' || extractType === 'lastChars'" class="extract-params">
+          <div class="extract-params-row">
+            <div class="extract-group">
+              <label class="extract-label">
+                <i class="fas fa-map-marker-alt"></i>
+                Position de départ :
+              </label>
+              <mat-form-field appearance="outline" class="extract-number">
+                <mat-label>Position</mat-label>
+                <input matInput type="number" [(ngModel)]="extractStart" min="1" placeholder="1">
+                <mat-hint>Position de départ (1 = début)</mat-hint>
+              </mat-form-field>
+            </div>
+
+            <div class="extract-group">
+              <label class="extract-label">
+                <i class="fas fa-hashtag"></i>
+                Nombre de caractères :
+              </label>
+              <mat-form-field appearance="outline" class="extract-number">
+                <mat-label>Nombre</mat-label>
+                <input matInput type="number" [(ngModel)]="extractCount" min="1" placeholder="5">
+                <mat-hint>Nombre de caractères à extraire</mat-hint>
+              </mat-form-field>
+            </div>
+          </div>
         </div>
-      </div>
 
       <!-- Aperçu de l'extraction -->
       <div *ngIf="extractCol && extractType && extractKey" class="extract-preview">
