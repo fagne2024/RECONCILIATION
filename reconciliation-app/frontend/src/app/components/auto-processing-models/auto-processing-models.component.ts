@@ -494,17 +494,22 @@ export class AutoProcessingModelsComponent implements OnInit {
     return [];
   }
 
-  // Méthode pour corriger les noms de colonnes corrompus
+  // Méthode pour corriger les noms de colonnes corrompus de manière intelligente
   private normalizeColumnName(columnName: string): string {
-    // Remplacer les caractères spéciaux corrompus
-    const replacements: { [key: string]: string } = {
+    // Détection et correction automatique des problèmes d'encodage UTF-8 mal interprété
+    // Typiquement quand une chaîne UTF-8 a été mal interprétée en tant que CP-1252/Latin-1
+    
+    let normalizedName = columnName;
+    
+    // Corrections spécifiques pour les cas particuliers
+    const specificReplacements: { [key: string]: string } = {
       'tlphone client': 'téléphone client',
       'Numro Trans GU': 'Numéro Trans GU',
-      'Solde aprs': 'Solde aprés',
+      'Solde aprs': 'Solde après',
       'Code proprietaire': 'Code propriétaire',
       'groupe de rseau': 'groupe de réseau',
       'Code rseau': 'Code réseau',
-      'Dstinataire': 'Déstinataire',
+      'Dstinataire': 'Destinataire',
       'date de cration': 'date de création',
       'Motif rgularisation': 'Motif régularisation',
       'Login demandeur Appro': 'Login demandeur Appro',
@@ -520,22 +525,21 @@ export class AutoProcessingModelsComponent implements OnInit {
       'Groupe reseau SC': 'Groupe reseau SC',
       'Agent SC': 'Agent SC',
       'PDA SC': 'PDA SC',
-      'Date dernier traitement': 'Date dernier traitement',
-      
-      // Corrections spécifiques pour TRXBO
-      'tÃ©lÃ©phone client': 'téléphone client',
-      'NumÃ©ro Trans GU': 'Numéro Trans GU',
-      'tÃ©lÃ©phone': 'téléphone',
-      'NumÃ©ro': 'Numéro'
+      'Date dernier traitement': 'Date dernier traitement'
     };
 
-    // Appliquer les remplacements
-    let normalizedName = columnName;
-    for (const [corrupted, correct] of Object.entries(replacements)) {
+    // Appliquer les remplacements spécifiques
+    for (const [corrupted, correct] of Object.entries(specificReplacements)) {
       if (normalizedName.includes(corrupted)) {
         normalizedName = normalizedName.replace(new RegExp(corrupted, 'g'), correct);
       }
     }
+
+    // Nettoyage final : supprimer les caractères de contrôle et normaliser les espaces
+    normalizedName = normalizedName
+      .replace(/[\x00-\x1F\x7F]/g, '') // Supprimer les caractères de contrôle
+      .replace(/\s+/g, ' ') // Normaliser les espaces multiples
+      .trim(); // Supprimer les espaces en début et fin
 
     return normalizedName;
   }
@@ -639,6 +643,80 @@ export class AutoProcessingModelsComponent implements OnInit {
     
     this.editingModel = model;
     this.showCreateForm = true;
+    
+    // Initialiser les contrôles dynamiques de manière asynchrone pour éviter les conflits
+    if (model.fileType === 'partner' && model.reconciliationKeys?.boModels) {
+      console.log('✅ Conditions remplies, initialisation des contrôles BO');
+      
+      // Utiliser setTimeout pour s'assurer que le cycle de détection de changement est terminé
+      setTimeout(() => {
+        const boModelKeysGroup = this.modelForm.get('reconciliationKeys.boModelKeys') as FormGroup;
+        
+        console.log('🔧 Contrôles existants avant suppression:', Object.keys(boModelKeysGroup.controls));
+        
+        // Supprimer les contrôles existants
+        Object.keys(boModelKeysGroup.controls).forEach(key => {
+          boModelKeysGroup.removeControl(key);
+        });
+        
+        // Nettoyer les modèles BO sélectionnés pour ne garder que ceux avec des fichiers valides
+        const validBoModels = model.reconciliationKeys.boModels.filter(boModelId => {
+          const boModel = this.models.find(m => m.id === boModelId);
+          if (!boModel || !boModel.templateFile) {
+            console.log(`⚠️ Suppression du modèle BO ${boModelId} - pas de fichier template`);
+            return false;
+          }
+          
+          const fileExists = this.availableFiles.some(f => f.fileName === boModel.templateFile);
+          if (!fileExists) {
+            console.log(`⚠️ Suppression du modèle BO ${boModelId} - fichier ${boModel.templateFile} non trouvé`);
+            return false;
+          }
+          
+          return true;
+        });
+        
+        // Mettre à jour la liste des modèles BO sélectionnés
+        if (validBoModels.length !== model.reconciliationKeys.boModels.length) {
+          console.log(`🔧 Nettoyage des modèles BO: ${model.reconciliationKeys.boModels.length} → ${validBoModels.length}`);
+          model.reconciliationKeys.boModels = validBoModels;
+        }
+        
+        // Ajouter les contrôles pour chaque modèle BO configuré (déjà nettoyé)
+        validBoModels.forEach(boModelId => {
+          const keys = model.reconciliationKeys?.boModelKeys?.[boModelId] || [];
+          const control = this.fb.control(keys);
+          boModelKeysGroup.addControl(`boKeys_${boModelId}`, control);
+          console.log(`🔧 Contrôle BO initialisé: boKeys_${boModelId} =`, keys);
+          console.log(`🔧 Contrôle créé:`, control);
+          
+          // Ajouter un listener pour détecter les changements
+          control.valueChanges.subscribe(value => {
+            console.log(`🔄 Changement détecté dans editModel pour boKeys_${boModelId}:`, value);
+          });
+        });
+        
+        console.log('🔧 Contrôles BO initialisés:', Object.keys(boModelKeysGroup.controls));
+        console.log('🔧 Valeurs des contrôles:', Object.keys(boModelKeysGroup.controls).map(key => ({
+          control: key,
+          value: boModelKeysGroup.get(key)?.value
+        })));
+        
+        // Forcer la mise à jour de l'affichage
+        this.cdr.detectChanges();
+      }, 0);
+    } else {
+      console.log('❌ Conditions non remplies pour l\'initialisation des contrôles BO');
+      console.log('  - Raison: fileType !== "partner" ou boModels manquant');
+    }
+    
+    // Maintenant patcher les valeurs après avoir créé les contrôles
+    console.log('🔧 editModel() - Données du modèle à charger:', {
+      name: model.name,
+      fileType: model.fileType,
+      reconciliationKeys: model.reconciliationKeys
+    });
+
     this.modelForm.patchValue({
       name: model.name,
       filePattern: model.filePattern,
@@ -648,51 +726,16 @@ export class AutoProcessingModelsComponent implements OnInit {
       reconciliationKeys: {
         partnerKeys: model.reconciliationKeys?.partnerKeys || [],
         boKeys: model.reconciliationKeys?.boKeys || [],
-        boModels: model.reconciliationKeys?.boModels || [],
+        boModels: model.reconciliationKeys?.boModels || [], // Utilise la liste nettoyée
         boModelKeys: model.reconciliationKeys?.boModelKeys || {},
         boTreatments: model.reconciliationKeys?.boTreatments || {}
       }
     });
 
-    // Initialiser les contrôles dynamiques pour les clés BO si c'est un modèle partenaire
-    console.log('🔧 Vérification des conditions pour initialiser les contrôles BO:');
-    console.log('  - model.fileType === "partner":', model.fileType === 'partner');
-    console.log('  - model.reconciliationKeys?.boModels:', model.reconciliationKeys?.boModels);
-    
-    if (model.fileType === 'partner' && model.reconciliationKeys?.boModels) {
-      console.log('✅ Conditions remplies, initialisation des contrôles BO');
-      const boModelKeysGroup = this.modelForm.get('reconciliationKeys.boModelKeys') as FormGroup;
-      
-      console.log('🔧 Contrôles existants avant suppression:', Object.keys(boModelKeysGroup.controls));
-      
-      // Supprimer les contrôles existants
-      Object.keys(boModelKeysGroup.controls).forEach(key => {
-        boModelKeysGroup.removeControl(key);
-      });
-      
-                      // Ajouter les contrôles pour chaque modèle BO configuré
-                model.reconciliationKeys.boModels.forEach(boModelId => {
-                  const keys = model.reconciliationKeys?.boModelKeys?.[boModelId] || [];
-                  const control = this.fb.control(keys);
-                  boModelKeysGroup.addControl(`boKeys_${boModelId}`, control);
-                  console.log(`🔧 Contrôle BO initialisé: boKeys_${boModelId} =`, keys);
-                  console.log(`🔧 Contrôle créé:`, control);
-                  
-                  // Ajouter un listener pour détecter les changements
-                  control.valueChanges.subscribe(value => {
-                    console.log(`🔄 Changement détecté dans editModel pour boKeys_${boModelId}:`, value);
-                  });
-                });
-      
-      console.log('🔧 Contrôles BO initialisés:', Object.keys(boModelKeysGroup.controls));
-      console.log('🔧 Valeurs des contrôles:', Object.keys(boModelKeysGroup.controls).map(key => ({
-        control: key,
-        value: boModelKeysGroup.get(key)?.value
-      })));
-    } else {
-      console.log('❌ Conditions non remplies pour l\'initialisation des contrôles BO');
-      console.log('  - Raison: fileType !== "partner" ou boModels manquant');
-    }
+    console.log('🔧 editModel() - Formulaire patché avec les valeurs');
+    console.log('  - partnerKeys chargées:', this.modelForm.get('reconciliationKeys.partnerKeys')?.value);
+    console.log('  - boModels chargés:', this.modelForm.get('reconciliationKeys.boModels')?.value);
+    console.log('  - boModelKeys chargés:', this.modelForm.get('reconciliationKeys.boModelKeys')?.value);
 
     // Charger les données du fichier modèle si défini
     if (model.templateFile) {
@@ -797,9 +840,6 @@ export class AutoProcessingModelsComponent implements OnInit {
       this.scrollToForm();
     }, 100);
     
-    // Initialiser les contrôles BO immédiatement (sans setTimeout)
-    this.initializeBOModelKeys();
-    
     // Initialiser les traitements BO si c'est un modèle partenaire
     if (model.fileType === 'partner' && model.reconciliationKeys?.boModels) {
       model.reconciliationKeys.boModels.forEach(boModelId => {
@@ -809,47 +849,15 @@ export class AutoProcessingModelsComponent implements OnInit {
     
     // Mettre à jour la carte des clés BO
     this.updateBOModelKeysMap();
+    
+    // Forcer la mise à jour de l'affichage après un court délai pour s'assurer que les contrôles sont créés
+    setTimeout(() => {
+      this.modelForm.updateValueAndValidity();
+      this.cdr.detectChanges();
+    }, 100);
   }
   
-  // Méthode pour initialiser les contrôles BO
-  private initializeBOModelKeys(): void {
-    console.log('🔧 initializeBOModelKeys() appelé');
-    
-    if (this.editingModel?.fileType === 'partner' && this.editingModel?.reconciliationKeys?.boModels) {
-      console.log('✅ Conditions remplies pour initialiser les contrôles BO');
-      const boModelKeysGroup = this.modelForm.get('reconciliationKeys.boModelKeys') as FormGroup;
-      
-      console.log('🔧 Contrôles existants avant suppression:', Object.keys(boModelKeysGroup.controls));
-      
-      // Supprimer les contrôles existants
-      Object.keys(boModelKeysGroup.controls).forEach(key => {
-        boModelKeysGroup.removeControl(key);
-      });
-      
-      // Ajouter les contrôles pour chaque modèle BO configuré
-      this.editingModel!.reconciliationKeys!.boModels.forEach(boModelId => {
-        const keys = this.editingModel!.reconciliationKeys?.boModelKeys?.[boModelId] || [];
-        const control = this.fb.control(keys);
-        boModelKeysGroup.addControl(`boKeys_${boModelId}`, control);
-        console.log(`🔧 Contrôle BO initialisé: boKeys_${boModelId} =`, keys);
-        console.log(`🔧 Contrôle créé:`, control);
-        
-        // Ajouter un listener pour détecter les changements
-        control.valueChanges.subscribe(value => {
-          console.log(`🔄 Changement détecté dans initializeBOModelKeys pour boKeys_${boModelId}:`, value);
-        });
-      });
-      
-      console.log('🔧 Contrôles BO initialisés:', Object.keys(boModelKeysGroup.controls));
-      console.log('🔧 Valeurs des contrôles:', Object.keys(boModelKeysGroup.controls).map(key => ({
-        control: key,
-        value: boModelKeysGroup.get(key)?.value
-      })));
-    } else {
-      console.log('❌ Conditions non remplies pour l\'initialisation des contrôles BO');
-      console.log('  - Raison: fileType !== "partner" ou boModels manquant');
-    }
-  }
+
 
   private initializeBOTreatments(modelId: string): void {
     console.log(`🔧 initializeBOTreatments() appelé pour ${modelId}`);
@@ -1001,41 +1009,50 @@ export class AutoProcessingModelsComponent implements OnInit {
        if (formValue.fileType === 'partner') {
          const selectedBOModels = this.getSelectedBOModels();
 
+        // Récupérer les clés partenaires directement depuis le FormGroup
+        const partnerKeysControl = this.modelForm.get('reconciliationKeys.partnerKeys');
+        const partnerKeys = partnerKeysControl?.value || [];
+
         reconciliationKeys = {
-          partnerKeys: formValue.partnerKeys || [],
+          partnerKeys: partnerKeys,
           boModels: selectedBOModels.map(m => m.id),
           boModelKeys: {},
           boTreatments: {}
         };
 
-        // Récupérer les clés pour chaque modèle BO
-        const boModelKeysControls = formValue.reconciliationKeys?.boModelKeys || {};
+        console.log('🔧 saveModel() - Configuration initiale:');
+        console.log('  - partnerKeys (depuis FormControl):', partnerKeys);
+        console.log('  - partnerKeys (depuis formValue):', formValue.partnerKeys);
+        console.log('  - boModels:', reconciliationKeys.boModels);
+
+        // Récupérer les clés pour chaque modèle BO directement depuis le FormGroup
+        const boModelKeysGroup = this.modelForm.get('reconciliationKeys.boModelKeys') as FormGroup;
         
         console.log('🔧 saveModel() - Récupération des clés BO:');
-        console.log('  - boModelKeysControls:', boModelKeysControls);
+        console.log('  - boModelKeysGroup controls:', Object.keys(boModelKeysGroup.controls));
         console.log('  - selectedBOModels:', selectedBOModels.map(m => ({ id: m.id, name: m.name })));
          
         selectedBOModels.forEach(boModel => {
           const controlKey = `boKeys_${boModel.id}`;
-          const control = boModelKeysControls[controlKey];
+          const formControl = boModelKeysGroup.get(controlKey);
 
           console.log(`  - Traitement du modèle BO ${boModel.name} (${boModel.id}):`);
           console.log(`    - controlKey: ${controlKey}`);
-          console.log(`    - control trouvé: ${!!control}`);
-          console.log(`    - control value:`, control);
+          console.log(`    - formControl trouvé: ${!!formControl}`);
+          console.log(`    - formControl value:`, formControl?.value);
 
-          if (control && Array.isArray(control)) {
-            const keys = control;
+          if (formControl) {
+            const keys = formControl.value || [];
             reconciliationKeys.boModelKeys[boModel.id] = keys;
             console.log(`    - ✅ Clés sauvegardées pour ${boModel.name}:`, keys);
-
-            // Récupérer les traitements BO
-            const boTreatments = this.getBOTreatmentSteps(boModel.id.toString()).value;
-            reconciliationKeys.boTreatments[boModel.id] = boTreatments;
-            console.log(`    - ✅ Traitements sauvegardés pour ${boModel.name}:`, boTreatments);
           } else {
-            console.log(`    - ⚠️ Aucune clé trouvée pour ${boModel.name}`);
+            console.log(`    - ⚠️ Aucune clé trouvée pour ${boModel.name} - contrôle manquant`);
           }
+
+          // Récupérer les traitements BO
+          const boTreatments = this.getBOTreatmentSteps(boModel.id.toString()).value;
+          reconciliationKeys.boTreatments[boModel.id] = boTreatments;
+          console.log(`    - ✅ Traitements sauvegardés pour ${boModel.name}:`, boTreatments);
         });
        }
 
@@ -1047,6 +1064,12 @@ export class AutoProcessingModelsComponent implements OnInit {
 
       console.log('💾 Données du modèle à sauvegarder:', modelData);
       console.log('🔧 Étapes de traitement à sauvegarder:', processingSteps);
+      console.log('🔍 Structure finale de reconciliationKeys:', {
+        partnerKeys: reconciliationKeys?.partnerKeys,
+        boModels: reconciliationKeys?.boModels,
+        boModelKeys: reconciliationKeys?.boModelKeys,
+        boTreatments: reconciliationKeys?.boTreatments
+      });
       console.log('🔍 Filtres BO dans reconciliationKeys:', reconciliationKeys?.boColumnFilters);
       console.log('🔍 Nombre de filtres BO:', reconciliationKeys?.boColumnFilters?.length || 0);
       
@@ -1257,7 +1280,26 @@ export class AutoProcessingModelsComponent implements OnInit {
     const selectedIds = this.modelForm.get('reconciliationKeys.boModels')?.value || [];
     const availableModels = this.getAvailableBOModels();
     
-    return availableModels.filter(model => selectedIds.includes(model.id));
+    // Filtrer les modèles sélectionnés qui ont des fichiers valides
+    return availableModels.filter(model => {
+      const isSelected = selectedIds.includes(model.id);
+      if (!isSelected) return false;
+      
+      // Vérifier si le modèle a un fichier template valide
+      if (!model.templateFile) {
+        console.log(`⚠️ Modèle BO ${model.name} (${model.id}) n'a pas de fichier template`);
+        return false;
+      }
+      
+      // Vérifier si le fichier existe dans les fichiers disponibles
+      const fileExists = this.availableFiles.some(f => f.fileName === model.templateFile);
+      if (!fileExists) {
+        console.log(`⚠️ Fichier ${model.templateFile} non trouvé pour le modèle BO ${model.name} (${model.id})`);
+        return false;
+      }
+      
+      return true;
+    });
   }
 
   getBOModelColumns(boModel: AutoProcessingModel): string[] {
@@ -1444,28 +1486,54 @@ export class AutoProcessingModelsComponent implements OnInit {
     // Gérer les contrôles dynamiques pour les clés des modèles BO
     const boModelKeysGroup = this.modelForm.get('reconciliationKeys.boModelKeys') as FormGroup;
     
-    // Supprimer tous les contrôles existants
-    Object.keys(boModelKeysGroup.controls).forEach(key => {
-      boModelKeysGroup.removeControl(key);
+    if (!boModelKeysGroup) {
+      console.error('❌ boModelKeysGroup non trouvé dans le formulaire');
+      this.isUpdatingBOModels = false;
+      return;
+    }
+    
+    // Supprimer tous les contrôles existants de manière sécurisée
+    const existingControls = Object.keys(boModelKeysGroup.controls);
+    console.log('🔧 Contrôles existants avant suppression:', existingControls);
+    
+    existingControls.forEach(key => {
+      try {
+        boModelKeysGroup.removeControl(key);
+        console.log(`  - Contrôle ${key} supprimé`);
+      } catch (error) {
+        console.warn(`⚠️ Erreur lors de la suppression du contrôle ${key}:`, error);
+      }
     });
     
     // Ajouter les contrôles pour les modèles sélectionnés
+    console.log('🔄 onBOModelsChange() - Création des contrôles pour les modèles BO');
     selectedModelIds.forEach((modelId: string) => {
       const controlName = `boKeys_${modelId}`;
-      const newControl = new FormControl([]);
       
-      // Ajouter un listener pour les changements de valeur
-      newControl.valueChanges.subscribe(value => {
-        this.boModelKeysMap[modelId] = value || [];
+      try {
+        const newControl = new FormControl([]);
         
-        // Forcer la mise à jour de l'affichage sans émettre d'événements
-        setTimeout(() => {
-          this.modelForm.updateValueAndValidity({ emitEvent: false });
-        }, 50);
-      });
-      
-      boModelKeysGroup.addControl(controlName, newControl);
+        console.log(`  - Création du contrôle ${controlName} pour le modèle ${modelId}`);
+        
+        // Ajouter un listener pour les changements de valeur
+        newControl.valueChanges.subscribe(value => {
+          this.boModelKeysMap[modelId] = value || [];
+          console.log(`  - Changement détecté pour ${controlName}:`, value);
+          
+          // Forcer la mise à jour de l'affichage sans émettre d'événements
+          setTimeout(() => {
+            this.modelForm.updateValueAndValidity({ emitEvent: false });
+          }, 50);
+        });
+        
+        boModelKeysGroup.addControl(controlName, newControl);
+        console.log(`  - ✅ Contrôle ${controlName} ajouté au FormGroup`);
+      } catch (error) {
+        console.error(`❌ Erreur lors de la création du contrôle ${controlName}:`, error);
+      }
     });
+    
+    console.log('🔄 onBOModelsChange() - Contrôles créés:', Object.keys(boModelKeysGroup.controls));
     
     // Forcer la mise à jour de l'affichage
     setTimeout(() => {
@@ -1499,18 +1567,208 @@ export class AutoProcessingModelsComponent implements OnInit {
     });
   }
 
-  // Méthode pour obtenir les clés sélectionnées pour un modèle spécifique
-  getSelectedKeysForModel(modelId: string): string[] {
-    const boModelKeysGroup = this.modelForm.get('reconciliationKeys.boModelKeys') as FormGroup;
-    const controlKey = `boKeys_${modelId}`;
-    const control = boModelKeysGroup.get(controlKey);
+  // Méthode pour vérifier si un contrôle BO existe et a un fichier valide
+  hasBOModelControl(boModelId: string): boolean {
+    try {
+      const control = this.getBOModelKeysControl(boModelId);
+      const controlExists = control !== null && control !== undefined;
+      
+      if (!controlExists) {
+        console.log(`🔍 Contrôle boKeys_${boModelId} n'existe pas`);
+        return false;
+      }
+      
+      // Vérifier si le modèle BO correspondant a un fichier valide
+      const boModel = this.models.find(m => m.id === boModelId);
+      if (!boModel) {
+        console.log(`🔍 Modèle BO ${boModelId} non trouvé`);
+        return false;
+      }
+      
+      if (!boModel.templateFile) {
+        console.log(`🔍 Modèle BO ${boModelId} n'a pas de fichier template`);
+        return false;
+      }
+      
+      // Vérifier si le fichier existe dans les fichiers disponibles
+      const fileExists = this.availableFiles.some(f => f.fileName === boModel.templateFile);
+      if (!fileExists) {
+        console.log(`🔍 Fichier ${boModel.templateFile} non trouvé pour le modèle BO ${boModelId}`);
+        return false;
+      }
+      
+      console.log(`🔍 Contrôle boKeys_${boModelId} existe et fichier valide`);
+      return true;
+    } catch (error) {
+      console.log(`⚠️ Erreur lors de la vérification du contrôle boKeys_${boModelId}:`, error);
+      return false;
+    }
+  }
+
+  // Méthode pour corriger les contrôles manquants
+  fixMissingControls(): void {
+    console.log('🔧 fixMissingControls() appelé');
     
-    if (control) {
-      return control.value || [];
+    const boModelKeysGroup = this.modelForm.get('reconciliationKeys.boModelKeys') as FormGroup;
+    if (!boModelKeysGroup) {
+      console.error('❌ boModelKeysGroup non trouvé');
+      return;
     }
     
-    // Si le contrôle n'existe pas encore, vérifier dans la carte des clés
-    return this.boModelKeysMap[modelId] || [];
+    const boModelsControl = this.modelForm.get('reconciliationKeys.boModels') as FormControl;
+    const selectedModelIds = boModelsControl?.value || [];
+    
+    console.log('🔧 Modèles BO sélectionnés:', selectedModelIds);
+    
+    selectedModelIds.forEach((modelId: string) => {
+      const controlName = `boKeys_${modelId}`;
+      const existingControl = boModelKeysGroup.get(controlName);
+      
+      if (!existingControl) {
+        console.log(`🔧 Création du contrôle manquant: ${controlName}`);
+        try {
+          const newControl = new FormControl([]);
+          boModelKeysGroup.addControl(controlName, newControl);
+          console.log(`✅ Contrôle ${controlName} créé avec succès`);
+        } catch (error) {
+          console.error(`❌ Erreur lors de la création du contrôle ${controlName}:`, error);
+        }
+      } else {
+        console.log(`✅ Contrôle ${controlName} existe déjà`);
+      }
+    });
+    
+    // Forcer la mise à jour de l'affichage
+    setTimeout(() => {
+      this.modelForm.updateValueAndValidity({ emitEvent: false });
+      console.log('✅ Affichage mis à jour après correction des contrôles');
+    }, 100);
+  }
+
+  // Méthode pour forcer la mise à jour de l'affichage des clés sélectionnées
+  forceUpdateDisplay(): void {
+    console.log('🔄 forceUpdateDisplay() appelé');
+    
+    // Forcer la détection de changements
+    this.cdr.detectChanges();
+    
+    // Forcer la mise à jour du formulaire
+    setTimeout(() => {
+      this.modelForm.updateValueAndValidity({ emitEvent: false });
+      console.log('✅ Affichage forcé mis à jour');
+    }, 50);
+  }
+
+  // Méthode pour obtenir le contrôle FormControl d'un modèle BO
+  getBOModelKeysControl(modelId: string): FormControl {
+    const boModelKeysGroup = this.modelForm.get('reconciliationKeys.boModelKeys') as FormGroup;
+    if (!boModelKeysGroup) {
+      console.error('❌ boModelKeysGroup non trouvé dans getBOModelKeysControl');
+      return new FormControl([]);
+    }
+    
+    const controlName = `boKeys_${modelId}`;
+    let control = boModelKeysGroup.get(controlName) as FormControl;
+    
+    if (!control) {
+      console.log(`🔧 Contrôle ${controlName} non trouvé, création...`);
+      try {
+        control = new FormControl([]);
+        boModelKeysGroup.addControl(controlName, control);
+        console.log(`✅ Contrôle ${controlName} créé avec succès`);
+      } catch (error) {
+        console.error(`❌ Erreur lors de la création du contrôle ${controlName}:`, error);
+        control = new FormControl([]);
+      }
+    }
+    
+    return control;
+  }
+
+  // Méthode pour obtenir les clés sélectionnées pour un modèle spécifique
+  getSelectedKeysForModel(modelId: string): string[] {
+    try {
+      const control = this.getBOModelKeysControl(modelId);
+      const value = control.value || [];
+      
+      // Mettre à jour la carte des clés BO pour la cohérence
+      this.boModelKeysMap[modelId] = value;
+      
+      return value;
+    } catch (error) {
+      console.error(`❌ Erreur dans getSelectedKeysForModel pour le modèle ${modelId}:`, error);
+      // Retourner la valeur de la carte si disponible
+      return this.boModelKeysMap[modelId] || [];
+    }
+  }
+
+  // Méthodes pour la gestion des clés partenaires
+  getSelectedPartnerKeys(): string[] {
+    return this.modelForm.get('reconciliationKeys.partnerKeys')?.value || [];
+  }
+
+  clearPartnerKeys(): void {
+    this.modelForm.get('reconciliationKeys.partnerKeys')?.setValue([]);
+    this.onPartnerKeysChange();
+  }
+
+  selectAllPartnerKeys(): void {
+    const allColumns = this.availableColumnsForTemplate;
+    this.modelForm.get('reconciliationKeys.partnerKeys')?.setValue(allColumns);
+    this.onPartnerKeysChange();
+  }
+
+  // Méthodes pour la gestion des modèles BO
+  clearBOModels(): void {
+    this.modelForm.get('reconciliationKeys.boModels')?.setValue([]);
+    this.onBOModelsChange();
+  }
+
+  selectAllBOModels(): void {
+    const allBOModels = this.getAvailableBOModels().map(model => model.id);
+    this.modelForm.get('reconciliationKeys.boModels')?.setValue(allBOModels);
+    this.onBOModelsChange();
+  }
+
+  // Méthodes pour la gestion des clés des modèles BO
+  clearBOModelKeys(boModelId: string): void {
+    const boModelKeysGroup = this.modelForm.get('reconciliationKeys.boModelKeys') as FormGroup;
+    const control = boModelKeysGroup.get(`boKeys_${boModelId}`);
+    if (control) {
+      control.setValue([]);
+      this.boModelKeysMap[boModelId] = [];
+    }
+  }
+
+  selectAllBOModelKeys(boModelId: string): void {
+    const boModel = this.models.find(m => m.id === boModelId);
+    if (boModel) {
+      const allColumns = this.getBOModelColumns(boModel);
+      const boModelKeysGroup = this.modelForm.get('reconciliationKeys.boModelKeys') as FormGroup;
+      const control = boModelKeysGroup.get(`boKeys_${boModelId}`);
+      if (control) {
+        control.setValue(allColumns);
+        this.boModelKeysMap[boModelId] = allColumns;
+      }
+    }
+  }
+
+  // Méthode pour gérer les changements des clés partenaires
+  onPartnerKeysChange(): void {
+    console.log('🔄 onPartnerKeysChange() appelé');
+    const selectedKeys = this.getSelectedPartnerKeys();
+    console.log('  - Clés partenaires sélectionnées:', selectedKeys);
+    
+    // Mettre à jour la validation si nécessaire
+    const partnerKeysControl = this.modelForm.get('reconciliationKeys.partnerKeys');
+    if (partnerKeysControl) {
+      if (selectedKeys.length > 0) {
+        partnerKeysControl.setValidators([Validators.required]);
+      } else {
+        partnerKeysControl.clearValidators();
+      }
+      partnerKeysControl.updateValueAndValidity({ emitEvent: false });
+    }
   }
 
      // Méthode pour mettre à jour la validation des clés de réconciliation selon le type
@@ -1673,49 +1931,13 @@ export class AutoProcessingModelsComponent implements OnInit {
      }
    }
 
-  // Méthode pour détecter les changements de sélection des clés partenaires
-  onPartnerKeysChange(): void {
-    // Protection contre les boucles infinies
-    if (this.isUpdatingPartnerKeys) {
-      return;
-    }
-    
-    this.isUpdatingPartnerKeys = true;
-    
-    const control = this.modelForm.get('reconciliationKeys.partnerKeys') as FormControl;
-    const selectedKeys = control.value || [];
-    
-    console.log('🔄 onPartnerKeysChange() - Clés partenaire sélectionnées:', selectedKeys);
-    
-    // Mettre à jour la validation conditionnelle
-    if (selectedKeys.length > 0) {
-      control.setValidators([Validators.required]);
-    } else {
-      control.clearValidators();
-    }
-    
-    // Forcer la mise à jour
-    control.markAsDirty();
-    control.markAsTouched();
-    control.updateValueAndValidity({ emitEvent: false }); // Ne pas émettre d'événements
-    
-    // Forcer la mise à jour de l'affichage
-    setTimeout(() => {
-      this.modelForm.updateValueAndValidity({ emitEvent: false });
-      console.log('✅ Affichage mis à jour après sélection des clés partenaire');
-      this.isUpdatingPartnerKeys = false; // Réactiver les mises à jour
-    }, 50);
-  }
 
-  // Méthode pour obtenir les clés partenaires sélectionnées
-  getSelectedPartnerKeys(): string[] {
-    const partnerKeysControl = this.modelForm.get('reconciliationKeys.partnerKeys');
-    return partnerKeysControl?.value || [];
-  }
+
+
 
      // Méthode pour détecter les changements de sélection des clés BO
   onBOKeysChange(modelId: string, event: any): void {
-    const control = this.modelForm.get(`reconciliationKeys.boModelKeys.boKeys_${modelId}`) as FormControl;
+    const control = this.getBOModelKeysControl(modelId);
     const selectedKeys = control.value || [];
     
     console.log(`�� onBOKeysChange() - Clés BO sélectionnées pour le modèle ${modelId}:`, selectedKeys);
@@ -1883,6 +2105,96 @@ export class AutoProcessingModelsComponent implements OnInit {
       error: (error) => {
         console.error('❌ Erreur lors de la création du modèle BO:', error);
         this.showAlert('Erreur lors de la création du modèle BO', 'danger');
+      }
+    });
+  }
+
+  // Mettre à jour le modèle TRXBO existant
+  updateTRXBOModel(): void {
+    console.log('🔧 updateTRXBOModel() appelé');
+    this.loading = true;
+    this.errorMessage = '';
+    
+    this.autoProcessingService.updateTRXBOModel().subscribe({
+      next: (model) => {
+        if (model) {
+          console.log('✅ Modèle TRXBO mis à jour avec succès:', model);
+          this.showAlert('Modèle TRXBO mis à jour avec succès', 'success');
+          this.loadModels();
+          
+          // Réinitialiser le formulaire pour éviter les erreurs de contrôles
+          setTimeout(() => {
+            this.closeForm();
+            console.log('✅ Formulaire réinitialisé après mise à jour du modèle');
+          }, 500);
+        } else {
+          console.log('⚠️ Modèle TRXBO non trouvé, création d\'un nouveau modèle');
+          this.showAlert('Modèle TRXBO non trouvé, un nouveau modèle a été créé', 'warning');
+        }
+        this.loading = false;
+      },
+      error: (error) => {
+        console.error('❌ Erreur lors de la mise à jour du modèle TRXBO:', error);
+        this.showAlert('Erreur lors de la mise à jour du modèle TRXBO', 'danger');
+        this.loading = false;
+      }
+    });
+  }
+
+  // Créer le modèle TRXBO complet (toutes les colonnes)
+  createTRXBOFullModel(): void {
+    console.log('🔧 createTRXBOFullModel() appelé');
+    this.loading = true;
+    this.errorMessage = '';
+    
+    this.autoProcessingService.createTRXBOFullModel().subscribe({
+      next: (model) => {
+        console.log('✅ Modèle TRXBO complet créé avec succès:', model);
+        this.showAlert('Modèle TRXBO complet créé avec succès', 'success');
+        this.loadModels();
+        this.loading = false;
+      },
+      error: (error) => {
+        console.error('❌ Erreur lors de la création du modèle TRXBO complet:', error);
+        this.showAlert('Erreur lors de la création du modèle TRXBO complet', 'danger');
+        this.loading = false;
+      }
+    });
+  }
+
+  // Analyser les clés de réconciliation
+  analyzeReconciliationKeys(): void {
+    console.log('🔧 analyzeReconciliationKeys() appelé');
+    this.loading = true;
+    this.errorMessage = '';
+    
+    // Pour l'instant, on va utiliser des données d'exemple
+    // Dans une implémentation complète, on récupérerait les vraies données
+    const boData = [
+      { 'ID': '123', 'IDTransaction': 'TX001', 'montant': '1000', 'Date': '2024-01-01' },
+      { 'ID': '124', 'IDTransaction': 'TX002', 'montant': '2000', 'Date': '2024-01-02' }
+    ];
+    
+    const partnerData = [
+      { 'External id': '123', 'Transaction ID': 'TX001', 'Amount': '1000', 'Date': '2024-01-01' },
+      { 'External id': '124', 'Transaction ID': 'TX002', 'Amount': '2000', 'Date': '2024-01-02' }
+    ];
+    
+    this.autoProcessingService.analyzeReconciliationKeys(boData, partnerData).subscribe({
+      next: (result) => {
+        if (result.success) {
+          console.log('✅ Analyse des clés terminée:', result);
+          this.showAlert(`Analyse terminée. Suggestions: ${result.suggestions.boKeys.join(', ')}`, 'success');
+        } else {
+          console.log('⚠️ Analyse échouée:', result.message);
+          this.showAlert(result.message, 'warning');
+        }
+        this.loading = false;
+      },
+      error: (error) => {
+        console.error('❌ Erreur lors de l\'analyse des clés:', error);
+        this.showAlert('Erreur lors de l\'analyse des clés de réconciliation', 'danger');
+        this.loading = false;
       }
     });
   }

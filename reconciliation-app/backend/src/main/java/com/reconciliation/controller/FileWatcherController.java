@@ -144,11 +144,39 @@ public class FileWatcherController {
     public ResponseEntity<Map<String, Object>> analyzeFile(@RequestBody Map<String, String> request) {
         try {
             String filePath = request.get("filePath");
-            File file = new File(filePath);
+            
+            // Construire le chemin complet en utilisant WATCH_FOLDER
+            Path fullPath;
+            if (filePath.startsWith("watch-folder/")) {
+                // Le chemin contient déjà watch-folder, construire le chemin complet
+                fullPath = Paths.get(WATCH_FOLDER).resolve(filePath.substring("watch-folder/".length()));
+            } else {
+                // C'est juste un nom de fichier, l'ajouter à WATCH_FOLDER
+                fullPath = Paths.get(WATCH_FOLDER).resolve(filePath);
+            }
+            
+            // Si le chemin relatif ne fonctionne pas, essayer avec le chemin absolu depuis le répertoire de travail
+            if (!fullPath.toFile().exists()) {
+                System.out.println("⚠️ Chemin relatif non trouvé, essai avec chemin absolu...");
+                fullPath = Paths.get(System.getProperty("user.dir")).resolve(WATCH_FOLDER).resolve(filePath.replace("watch-folder/", ""));
+            }
+            
+            // Si toujours pas trouvé, essayer avec le chemin depuis la racine du projet
+            if (!fullPath.toFile().exists()) {
+                System.out.println("⚠️ Chemin absolu non trouvé, essai depuis la racine du projet...");
+                fullPath = Paths.get(System.getProperty("user.dir")).resolve("..").resolve("watch-folder").resolve(filePath.replace("watch-folder/", ""));
+            }
+            
+            File file = fullPath.toFile();
+            
+            System.out.println("🔍 Analyse du fichier demandée: " + filePath);
+            System.out.println("📁 Chemin complet construit: " + fullPath.toAbsolutePath());
+            System.out.println("✅ Fichier existe: " + file.exists());
             
             if (!file.exists()) {
+                System.err.println("❌ Fichier non trouvé: " + fullPath.toAbsolutePath());
                 return ResponseEntity.badRequest().body(Map.of(
-                    "error", "Fichier non trouvé"
+                    "error", "Fichier non trouvé: " + filePath
                 ));
             }
             
@@ -161,8 +189,11 @@ public class FileWatcherController {
                 "recordCount", getRecordCount(file)
             );
             
+            System.out.println("✅ Analyse terminée pour: " + file.getName());
             return ResponseEntity.ok(analysis);
         } catch (Exception e) {
+            System.err.println("❌ Erreur lors de l'analyse du fichier: " + e.getMessage());
+            e.printStackTrace();
             return ResponseEntity.badRequest().body(Map.of(
                 "error", e.getMessage()
             ));

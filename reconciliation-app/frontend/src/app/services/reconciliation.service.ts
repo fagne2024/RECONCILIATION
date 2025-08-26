@@ -68,8 +68,8 @@ export class ReconciliationService implements OnInit, OnDestroy {
     constructor(private http: HttpClient) {
         console.log('🚀 ReconciliationService initialisé');
         // Désactiver temporairement les WebSockets en attendant le backend
-        this.initializeWebSocket();
-        console.log('🔌 WebSockets activés - mode temps réel');
+        // this.initializeWebSocket();
+        console.log('⚠️ WebSockets désactivés temporairement - mode API classique');
     }
 
     ngOnInit(): void {

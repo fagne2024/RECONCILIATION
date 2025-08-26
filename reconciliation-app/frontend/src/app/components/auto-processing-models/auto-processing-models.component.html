@@ -9,6 +9,21 @@
       <button (click)="createDefaultBOModel()" class="btn btn-secondary">
         <i class="fas fa-magic"></i> Créer modèle BO TRXBO
       </button>
+      <button (click)="updateTRXBOModel()" class="btn btn-warning">
+        <i class="fas fa-sync-alt"></i> Mettre à jour modèle TRXBO
+      </button>
+      <button (click)="createTRXBOFullModel()" class="btn btn-info">
+        <i class="fas fa-list"></i> Créer modèle TRXBO complet
+      </button>
+      <button (click)="analyzeReconciliationKeys()" class="btn btn-primary">
+        <i class="fas fa-search"></i> Analyser clés réconciliation
+      </button>
+      <button (click)="fixMissingControls()" class="btn btn-secondary">
+        <i class="fas fa-tools"></i> Corriger contrôles
+      </button>
+      <button (click)="forceUpdateDisplay()" class="btn btn-warning">
+        <i class="fas fa-sync"></i> Forcer mise à jour
+      </button>
       <button (click)="createDefaultOrangeMoneyModel()" class="btn btn-info">
         <i class="fas fa-mobile-alt"></i> Créer modèle Orange Money
       </button>
@@ -902,79 +917,161 @@
 
         <!-- Configuration pour les modèles partenaire -->
         <div class="partner-config" *ngIf="modelForm.get('fileType')?.value === 'partner'">
-          <div class="form-row">
-            <div class="form-group">
-              <label>Clés côté partenaire *</label>
-              <select formControlName="partnerKeys" class="form-control" multiple size="4" (change)="onPartnerKeysChange()">
-                <option *ngFor="let col of availableColumnsForTemplate" [value]="col">
-                  {{ col }}
-                </option>
-              </select>
-              <small class="form-text text-muted">
-                Sélectionnez les colonnes qui serviront de clés de réconciliation côté partenaire
-              </small>
-              
-              <!-- Indicateur des clés partenaires sélectionnées -->
-              <div class="selected-keys-indicator" *ngIf="getSelectedPartnerKeys().length > 0">
-                <strong>Clés partenaires sélectionnées :</strong>
-                <div class="selected-keys-list">
-                  <span class="selected-key" *ngFor="let key of getSelectedPartnerKeys()">
-                    {{ key }}
-                  </span>
-                </div>
-              </div>
+          <!-- Section de configuration des clés partenaires -->
+          <div class="reconciliation-section">
+            <div class="section-header">
+              <h5><i class="fas fa-key"></i> Configuration des clés de réconciliation</h5>
+              <p class="section-description">
+                Configurez les clés de réconciliation pour ce modèle partenaire
+              </p>
             </div>
 
-            <div class="form-group">
-              <label>Modèles BO à utiliser *</label>
-              <select formControlName="boModels" class="form-control" multiple size="4" (change)="onBOModelsChange()" (ngModelChange)="onBOModelsChange()">
-                <option *ngFor="let boModel of getAvailableBOModels()" [value]="boModel.id">
-                  {{ boModel.name }} ({{ boModel.filePattern }})
-                </option>
-              </select>
-              <small class="form-text text-muted">
-                Sélectionnez les modèles BO qui seront utilisés pour la réconciliation
-              </small>
+            <div class="form-row">
+              <!-- Configuration des clés côté partenaire -->
+              <div class="form-group col-md-6">
+                <label class="form-label">
+                  <i class="fas fa-handshake"></i> Clés côté partenaire *
+                </label>
+                <div class="select-container">
+                  <select formControlName="partnerKeys" class="form-control" multiple size="6" (change)="onPartnerKeysChange()">
+                    <option *ngFor="let col of availableColumnsForTemplate" [value]="col">
+                      {{ col }}
+                    </option>
+                  </select>
+                  <div class="select-actions">
+                    <button type="button" class="btn btn-sm btn-outline-secondary" (click)="clearPartnerKeys()" *ngIf="getSelectedPartnerKeys().length > 0">
+                      <i class="fas fa-times"></i> Effacer
+                    </button>
+                    <button type="button" class="btn btn-sm btn-outline-info" (click)="selectAllPartnerKeys()" *ngIf="availableColumnsForTemplate.length > 0">
+                      <i class="fas fa-check-double"></i> Tout sélectionner
+                    </button>
+                  </div>
+                </div>
+                <small class="form-text text-muted">
+                  <i class="fas fa-info-circle"></i> Sélectionnez les colonnes qui serviront de clés de réconciliation côté partenaire
+                </small>
+                
+                <!-- Indicateur des clés partenaires sélectionnées -->
+                <div class="selected-keys-indicator" *ngIf="getSelectedPartnerKeys().length > 0">
+                  <div class="keys-header">
+                    <strong><i class="fas fa-check-circle text-success"></i> Clés partenaires sélectionnées ({{ getSelectedPartnerKeys().length }}) :</strong>
+                  </div>
+                  <div class="selected-keys-list">
+                    <span class="selected-key" *ngFor="let key of getSelectedPartnerKeys()">
+                      <i class="fas fa-key"></i> {{ key }}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Sélection des modèles BO -->
+              <div class="form-group col-md-6">
+                <label class="form-label">
+                  <i class="fas fa-database"></i> Modèles BO à utiliser *
+                </label>
+                <div class="select-container">
+                  <select formControlName="boModels" class="form-control" multiple size="6" (change)="onBOModelsChange()" (ngModelChange)="onBOModelsChange()">
+                    <option *ngFor="let boModel of getAvailableBOModels()" [value]="boModel.id">
+                      {{ boModel.name }} ({{ boModel.filePattern }})
+                    </option>
+                  </select>
+                  <div class="select-actions">
+                    <button type="button" class="btn btn-sm btn-outline-secondary" (click)="clearBOModels()" *ngIf="getSelectedBOModels().length > 0">
+                      <i class="fas fa-times"></i> Effacer
+                    </button>
+                    <button type="button" class="btn btn-sm btn-outline-info" (click)="selectAllBOModels()" *ngIf="getAvailableBOModels().length > 0">
+                      <i class="fas fa-check-double"></i> Tout sélectionner
+                    </button>
+                  </div>
+                </div>
+                <small class="form-text text-muted">
+                  <i class="fas fa-info-circle"></i> Sélectionnez les modèles BO qui seront utilisés pour la réconciliation
+                </small>
+
+                <!-- Indicateur des modèles BO sélectionnés -->
+                <div class="selected-keys-indicator" *ngIf="getSelectedBOModels().length > 0">
+                  <div class="keys-header">
+                    <strong><i class="fas fa-check-circle text-success"></i> Modèles BO sélectionnés ({{ getSelectedBOModels().length }}) :</strong>
+                  </div>
+                  <div class="selected-keys-list">
+                    <span class="selected-key" *ngFor="let boModel of getSelectedBOModels()">
+                      <i class="fas fa-database"></i> {{ boModel.name }}
+                    </span>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
 
           <!-- Configuration des clés et traitements pour chaque modèle BO sélectionné -->
           <div class="bo-models-config" *ngIf="getSelectedBOModels().length > 0">
-            <h5>Configuration des modèles BO</h5>
-            <div class="bo-model-config" *ngFor="let boModel of getSelectedBOModels()">
-              <div class="bo-model-header">
-                <h6>{{ boModel.name }}</h6>
-                <small>{{ boModel.filePattern }}</small>
-              </div>
-              
-              <!-- Configuration des clés -->
-              <div class="form-row">
-                <div class="form-group">
-                  <label>Clés de réconciliation pour {{ boModel.name }}</label>
-                  <div class="column-loading-indicator" *ngIf="getBOModelColumns(boModel).length === 0">
-                    <small class="text-warning">
-                      <i class="fas fa-spinner fa-spin"></i> Chargement des colonnes...
-                    </small>
-                    <button type="button" class="btn btn-sm btn-outline-primary ml-2" (click)="reloadBOModelColumns(boModel)">
-                      <i class="fas fa-sync-alt"></i> Recharger
-                    </button>
+            <div class="section-header">
+              <h5><i class="fas fa-cogs"></i> Configuration des modèles BO</h5>
+              <p class="section-description">
+                Configurez les clés de réconciliation et les traitements pour chaque modèle BO sélectionné
+              </p>
+            </div>
+
+            <div class="bo-model-config" *ngFor="let boModel of getSelectedBOModels(); let boIndex = index">
+              <div class="bo-model-card">
+                <div class="bo-model-header">
+                  <div class="bo-model-info">
+                    <h6><i class="fas fa-database"></i> {{ boModel.name }}</h6>
+                    <small class="text-muted">{{ boModel.filePattern }}</small>
                   </div>
-                  <select [formControlName]="'boModelKeys.boKeys_' + boModel.id" class="form-control" multiple size="3" (change)="onBOKeysChange(boModel.id, $event)">
-                    <option *ngFor="let col of getBOModelColumns(boModel)" [value]="col">
-                      {{ col }}
-                    </option>
-                  </select>
-                  <small class="form-text text-muted">
-                    Clés de réconciliation pour ce modèle BO ({{ getBOModelColumns(boModel).length }} colonnes disponibles)
-                  </small>
-                  
-                  <!-- Indicateur des clés sélectionnées -->
-                  <div class="selected-keys-indicator" *ngIf="getSelectedKeysForModel(boModel.id).length > 0">
-                    <strong>Clés sélectionnées :</strong>
-                    <div class="selected-keys-list">
-                      <span class="selected-key" *ngFor="let key of getSelectedKeysForModel(boModel.id)">
-                        {{ key }}
-                      </span>
+                  <div class="bo-model-actions">
+                    <span class="badge badge-info">{{ boIndex + 1 }}/{{ getSelectedBOModels().length }}</span>
+                  </div>
+                </div>
+                
+                <!-- Configuration des clés -->
+                <div class="form-row">
+                  <div class="form-group col-md-6">
+                    <label class="form-label">
+                      <i class="fas fa-key"></i> Clés de réconciliation pour {{ boModel.name }}
+                    </label>
+                    
+                    <!-- Indicateur de chargement -->
+                    <div class="column-loading-indicator" *ngIf="getBOModelColumns(boModel).length === 0">
+                      <div class="alert alert-warning">
+                        <i class="fas fa-spinner fa-spin"></i> Chargement des colonnes...
+                        <button type="button" class="btn btn-sm btn-outline-primary ml-2" (click)="reloadBOModelColumns(boModel)">
+                          <i class="fas fa-sync-alt"></i> Recharger
+                        </button>
+                      </div>
+                    </div>
+
+                    <!-- Sélecteur de clés -->
+                    <div class="select-container" *ngIf="hasBOModelControl(boModel.id) && getBOModelColumns(boModel).length > 0">
+                      <select [formControl]="getBOModelKeysControl(boModel.id)" class="form-control" multiple size="5" (change)="onBOKeysChange(boModel.id, $event)">
+                        <option *ngFor="let col of getBOModelColumns(boModel)" [value]="col">
+                          {{ col }}
+                        </option>
+                      </select>
+                      <div class="select-actions">
+                        <button type="button" class="btn btn-sm btn-outline-secondary" (click)="clearBOModelKeys(boModel.id)" *ngIf="getSelectedKeysForModel(boModel.id).length > 0">
+                          <i class="fas fa-times"></i> Effacer
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline-info" (click)="selectAllBOModelKeys(boModel.id)" *ngIf="getBOModelColumns(boModel).length > 0">
+                          <i class="fas fa-check-double"></i> Tout sélectionner
+                        </button>
+                      </div>
+                    </div>
+
+                    <small class="form-text text-muted">
+                      <i class="fas fa-info-circle"></i> Clés de réconciliation pour ce modèle BO ({{ getBOModelColumns(boModel).length }} colonnes disponibles)
+                    </small>
+                    
+                    <!-- Indicateur des clés sélectionnées -->
+                    <div class="selected-keys-indicator" *ngIf="getSelectedKeysForModel(boModel.id).length > 0">
+                      <div class="keys-header">
+                        <strong><i class="fas fa-check-circle text-success"></i> Clés sélectionnées ({{ getSelectedKeysForModel(boModel.id).length }}) :</strong>
+                      </div>
+                      <div class="selected-keys-list">
+                        <span class="selected-key" *ngFor="let key of getSelectedKeysForModel(boModel.id)">
+                          <i class="fas fa-key"></i> {{ key }}
+                        </span>
+                      </div>
                     </div>
                   </div>
                 </div>

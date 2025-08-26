@@ -48,9 +48,9 @@ export class ReconciliationComponent implements OnInit, OnDestroy {
     ngOnInit(): void {
         console.log('🚀 ReconciliationComponent initialisé');
         // Activer les WebSockets maintenant que le backend est prêt
-        this.initializeWebSocketListeners();
-        this.connectToWebSocket();
-        console.log('🔌 WebSockets activés - mode temps réel');
+        // this.initializeWebSocketListeners();
+        // this.connectToWebSocket();
+        console.log('⚠️ WebSockets désactivés temporairement - mode API classique');
     }
 
     ngOnDestroy(): void {

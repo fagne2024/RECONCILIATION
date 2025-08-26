@@ -48,6 +48,149 @@
     flex-direction: column;
     width: 100%;
 
+    // Styles pour la configuration des clés de réconciliation
+    .reconciliation-section {
+      background: #f8f9fa;
+      border: 1px solid #e9ecef;
+      border-radius: 8px;
+      padding: 20px;
+      margin-bottom: 20px;
+
+      .section-header {
+        margin-bottom: 20px;
+        padding-bottom: 15px;
+        border-bottom: 2px solid #e9ecef;
+
+        h5 {
+          color: #2c3e50;
+          margin: 0 0 10px 0;
+          font-weight: 600;
+
+          i {
+            margin-right: 8px;
+            color: #17a2b8;
+          }
+        }
+
+        .section-description {
+          color: #6c757d;
+          margin: 0;
+          font-size: 14px;
+        }
+      }
+
+      .select-container {
+        position: relative;
+
+        .select-actions {
+          display: flex;
+          gap: 8px;
+          margin-top: 8px;
+
+          .btn {
+            font-size: 12px;
+            padding: 4px 8px;
+          }
+        }
+      }
+
+      .selected-keys-indicator {
+        margin-top: 15px;
+        padding: 12px;
+        background: #e8f5e8;
+        border: 1px solid #c3e6c3;
+        border-radius: 6px;
+
+        .keys-header {
+          margin-bottom: 8px;
+          font-size: 14px;
+        }
+
+        .selected-keys-list {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 6px;
+
+          .selected-key {
+            background: #28a745;
+            color: white;
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 12px;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+
+            i {
+              font-size: 10px;
+            }
+          }
+        }
+      }
+    }
+
+    // Styles pour la configuration des modèles BO
+    .bo-models-config {
+      background: #f8f9fa;
+      border: 1px solid #e9ecef;
+      border-radius: 8px;
+      padding: 20px;
+      margin-top: 20px;
+
+      .bo-model-card {
+        background: white;
+        border: 1px solid #dee2e6;
+        border-radius: 6px;
+        padding: 15px;
+        margin-bottom: 15px;
+
+        .bo-model-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 15px;
+          padding-bottom: 10px;
+          border-bottom: 1px solid #e9ecef;
+
+          .bo-model-info {
+            h6 {
+              color: #2c3e50;
+              margin: 0 0 5px 0;
+              font-weight: 600;
+
+              i {
+                margin-right: 8px;
+                color: #17a2b8;
+              }
+            }
+
+            small {
+              color: #6c757d;
+            }
+          }
+
+          .bo-model-actions {
+            .badge {
+              font-size: 12px;
+              padding: 6px 10px;
+            }
+          }
+        }
+
+        .column-loading-indicator {
+          .alert {
+            margin-bottom: 15px;
+            font-size: 14px;
+
+            .btn {
+              font-size: 12px;
+              padding: 4px 8px;
+            }
+          }
+        }
+      }
+    }
+
     // Style global pour tous les contrôles de filtres
     .filter-controls {
       width: 100%;

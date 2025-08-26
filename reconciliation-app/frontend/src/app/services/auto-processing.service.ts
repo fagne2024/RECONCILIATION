@@ -202,8 +202,17 @@ export class AutoProcessingService {
 
   // Analyser un fichier pour extraire ses colonnes et données d'exemple
   analyzeFileModel(filePath: string): Observable<FileModel> {
+    // Si on reçoit juste un nom de fichier, construire le chemin complet
+    let fullPath = filePath;
+    if (!filePath.includes('/') && !filePath.includes('\\')) {
+      // C'est juste un nom de fichier, construire le chemin complet
+      fullPath = `watch-folder/${filePath}`;
+    }
+    
+    console.log(`🔍 Analyse du fichier: ${fullPath}`);
+    
     return this.http.post<FileModel>(`${this.apiUrl}/file-watcher/analyze-file`, {
-      filePath: filePath
+      filePath: fullPath
     });
   }
 
@@ -409,16 +418,16 @@ export class AutoProcessingService {
           name: 'FILTRAGE_COLONNES_ESSENTIELLES',
           type: 'select' as const,
           action: 'keepColumns',
-          field: ['ID', 'IDTransaction', 'montant', 'Service', 'Date', 'Numéro Trans GU'],
+          field: ['ID', 'IDTransaction', 'téléphone client', 'montant', 'Service', 'Agence', 'Agent', 'Date', 'Numéro Trans GU', 'PAYS', 'Statut', 'Expéditeur', 'Bénéficiaire'],
           params: {
-            columns: ['ID', 'IDTransaction', 'montant', 'Service', 'Date', 'Numéro Trans GU']
+            columns: ['ID', 'IDTransaction', 'téléphone client', 'montant', 'Service', 'Agence', 'Agent', 'Date', 'Numéro Trans GU', 'PAYS', 'Statut', 'Expéditeur', 'Bénéficiaire']
           },
-          description: 'Garder seulement les colonnes essentielles pour la réconciliation'
+          description: 'Garder les colonnes essentielles pour la réconciliation avec plus de contexte'
         }
       ],
       reconciliationKeys: {
-        boKeys: ['ID', 'IDTransaction', 'Numéro Trans GU'],
-        partnerKeys: ['External id']
+        boKeys: ['ID', 'IDTransaction', 'Numéro Trans GU', 'montant', 'Date', 'téléphone client'],
+        partnerKeys: ['External id', 'Transaction ID', 'Amount', 'Date', 'Phone Number']
       }
     };
 
@@ -453,6 +462,154 @@ export class AutoProcessingService {
 
     console.log('🔧 Création du modèle TRXBO corrigé:', trxboModel);
     return this.createModel(trxboModel);
+  }
+
+  // Méthode pour créer un modèle TRXBO sans filtrage (toutes les colonnes)
+  createTRXBOFullModel(): Observable<AutoProcessingModel> {
+    const trxboFullModel = {
+      name: 'Modèle TRXBO - Toutes Colonnes',
+      filePattern: '*TRXBO*.csv',
+      fileType: 'bo' as const,
+      autoApply: true,
+      templateFile: 'TRXBO.csv',
+      processingSteps: [
+        {
+          id: 'step_clean_data',
+          name: 'NETTOYAGE_DONNEES_TRXBO',
+          type: 'format' as const,
+          action: 'cleanText',
+          field: ['ID', 'IDTransaction', 'téléphone client', 'montant', 'Service', 'Moyen de Paiement', 'Agence', 'Agent', 'Type agent', 'PIXI', 'Date', 'Numéro Trans GU', 'PAYS', 'Statut', 'Latitude', 'Longitude', 'ID Partenaire DIST', 'Expéditeur', 'Pays de provenance', 'Bénéficiaire', 'Canal de distribution'],
+          params: {},
+          description: 'Nettoyage des données TRXBO sans filtrage de colonnes'
+        }
+      ],
+      reconciliationKeys: {
+        boKeys: ['ID', 'IDTransaction', 'Numéro Trans GU', 'montant', 'Date', 'téléphone client', 'Service', 'Agence'],
+        partnerKeys: ['External id', 'Transaction ID', 'Amount', 'Date', 'Phone Number', 'Service', 'Agency']
+      }
+    };
+
+    console.log('🔧 Création du modèle TRXBO complet:', trxboFullModel);
+    return this.createModel(trxboFullModel);
+  }
+
+  // Méthode pour mettre à jour le modèle TRXBO existant avec la nouvelle configuration
+  updateTRXBOModel(): Observable<AutoProcessingModel | null> {
+    console.log('🔄 Mise à jour du modèle TRXBO existant...');
+    
+    return this.getModels().pipe(
+      switchMap(models => {
+        const trxboModel = models.find(m => m.name === 'Modèle BO TRXBO - Filtrage');
+        
+        if (!trxboModel) {
+          console.log('❌ Modèle TRXBO non trouvé, création d\'un nouveau modèle');
+          return this.createDefaultBOModel();
+        }
+        
+        console.log('✅ Modèle TRXBO trouvé, mise à jour en cours...');
+        
+        const updatedModel = {
+          processingSteps: [
+            {
+              id: 'step_filter_columns',
+              name: 'FILTRAGE_COLONNES_ESSENTIELLES',
+              type: 'select' as const,
+              action: 'keepColumns',
+              field: ['ID', 'IDTransaction', 'téléphone client', 'montant', 'Service', 'Agence', 'Agent', 'Date', 'Numéro Trans GU', 'PAYS', 'Statut', 'Expéditeur', 'Bénéficiaire'],
+              params: {
+                columns: ['ID', 'IDTransaction', 'téléphone client', 'montant', 'Service', 'Agence', 'Agent', 'Date', 'Numéro Trans GU', 'PAYS', 'Statut', 'Expéditeur', 'Bénéficiaire']
+              },
+              description: 'Garder les colonnes essentielles pour la réconciliation avec plus de contexte'
+            }
+          ],
+          reconciliationKeys: {
+            boKeys: ['ID', 'IDTransaction', 'Numéro Trans GU', 'montant', 'Date', 'téléphone client'],
+            partnerKeys: ['External id', 'Transaction ID', 'Amount', 'Date', 'Phone Number']
+          }
+        };
+        
+        return this.updateModel(trxboModel.id, updatedModel);
+      })
+    );
+  }
+
+  // Méthode pour analyser et suggérer les meilleures clés de réconciliation
+  analyzeReconciliationKeys(boData: any[], partnerData: any[]): Observable<any> {
+    console.log('🔍 Analyse des clés de réconciliation...');
+    console.log('  - Données BO:', boData.length, 'lignes');
+    console.log('  - Données Partenaire:', partnerData.length, 'lignes');
+    
+    if (!boData.length || !partnerData.length) {
+      return of({
+        success: false,
+        message: 'Données insuffisantes pour l\'analyse'
+      });
+    }
+    
+    const boColumns = Object.keys(boData[0] || {});
+    const partnerColumns = Object.keys(partnerData[0] || {});
+    
+    console.log('  - Colonnes BO:', boColumns);
+    console.log('  - Colonnes Partenaire:', partnerColumns);
+    
+    // Analyser les correspondances potentielles
+    const potentialMatches: any[] = [];
+    
+    boColumns.forEach(boCol => {
+      partnerColumns.forEach(partnerCol => {
+        const similarity = this.calculateColumnSimilarity(boCol, partnerCol);
+        if (similarity > 0.3) { // Seuil de similarité
+          potentialMatches.push({
+            boColumn: boCol,
+            partnerColumn: partnerCol,
+            similarity: similarity
+          });
+        }
+      });
+    });
+    
+    // Trier par similarité décroissante
+    potentialMatches.sort((a, b) => b.similarity - a.similarity);
+    
+    // Suggérer les meilleures clés
+    const suggestedKeys = {
+      boKeys: potentialMatches.slice(0, 5).map(m => m.boColumn),
+      partnerKeys: potentialMatches.slice(0, 5).map(m => m.partnerColumn),
+      allMatches: potentialMatches
+    };
+    
+    console.log('✅ Suggestions de clés:', suggestedKeys);
+    
+    return of({
+      success: true,
+      suggestions: suggestedKeys,
+      boColumns: boColumns,
+      partnerColumns: partnerColumns
+    });
+  }
+
+  // Calculer la similarité entre deux noms de colonnes
+  private calculateColumnSimilarity(col1: string, col2: string): number {
+    const normalized1 = this.normalizeColumnName(col1).toLowerCase();
+    const normalized2 = this.normalizeColumnName(col2).toLowerCase();
+    
+    // Correspondances exactes
+    if (normalized1 === normalized2) return 1.0;
+    
+    // Correspondances partielles
+    if (normalized1.includes(normalized2) || normalized2.includes(normalized1)) return 0.8;
+    
+    // Correspondances par mots-clés
+    const keywords = ['id', 'transaction', 'montant', 'amount', 'date', 'telephone', 'phone', 'service', 'agence', 'agency'];
+    let maxSimilarity = 0;
+    
+    keywords.forEach(keyword => {
+      if (normalized1.includes(keyword) && normalized2.includes(keyword)) {
+        maxSimilarity = Math.max(maxSimilarity, 0.6);
+      }
+    });
+    
+    return maxSimilarity;
   }
 
   // Méthode pour créer un modèle OPPART avec configuration complète
