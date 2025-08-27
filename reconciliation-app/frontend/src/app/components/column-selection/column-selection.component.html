@@ -69,4 +69,64 @@
                     <span *ngIf="!isReconciliationInProgress">🚀 Lancer la Réconciliation</span>
                     <span *ngIf="isReconciliationInProgress">⏳ Réconciliation en cours...</span>
                 </button>
+            </div>
+
+            <!-- Suggestions automatiques -->
+            <div class="section suggestions-section" *ngIf="showSuggestions">
+                <h3>🤖 Suggestions Automatiques</h3>
+                <p class="section-description">Le système a analysé vos données et suggère les meilleures clés de réconciliation</p>
+                
+                <!-- Confiance globale -->
+                <div class="confidence-indicator">
+                    <div class="confidence-bar">
+                        <div class="confidence-fill" [style.width.%]="overallConfidence * 100"></div>
+                    </div>
+                    <span class="confidence-text">Confiance globale: {{ (overallConfidence * 100) | number:'1.0-0' }}%</span>
+                </div>
+
+                <!-- Liste des suggestions avec confiance individuelle -->
+                <div class="suggestions-list">
+                    <div class="suggestion-item" *ngFor="let suggestion of keySuggestions; let i = index">
+                        <div class="suggestion-header">
+                            <span class="suggestion-rank">#{{ i + 1 }}</span>
+                            <div class="confidence-display">
+                                <div class="confidence-bar-small">
+                                    <div class="confidence-fill-small" [style.width.%]="suggestion.confidence * 100"></div>
+                                </div>
+                                <span class="suggestion-confidence">{{ (suggestion.confidence * 100) | number:'1.0-0' }}%</span>
+                            </div>
+                        </div>
+                        <div class="suggestion-pair">
+                            <span class="bo-column">{{ suggestion.boColumn }}</span>
+                            <span class="arrow">↔</span>
+                            <span class="partner-column">{{ suggestion.partnerColumn }}</span>
+                        </div>
+                        <div class="suggestion-reason">{{ suggestion.reason }}</div>
+                        <div class="suggestion-transformation" *ngIf="suggestion.transformation">
+                            <div class="transformation-badge">
+                                🔧 {{ suggestion.transformation.description }}
+                            </div>
+                        </div>
+                        <div class="suggestion-samples" *ngIf="suggestion.sampleValues.length > 0">
+                            <small>Exemples: {{ suggestion.sampleValues.join(', ') }}</small>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Bouton d'application automatique -->
+                <div class="auto-apply-section">
+                    <button class="auto-apply-btn" (click)="applyTopSuggestions()" 
+                            [disabled]="keySuggestions.length === 0">
+                        ✅ Appliquer la clé principale automatiquement
+                    </button>
+                    <p class="auto-apply-note">Seule la meilleure suggestion sera appliquée comme clé principale</p>
+                </div>
+            </div>
+
+            <!-- Indicateur d'analyse -->
+            <div class="section" *ngIf="isAnalyzing">
+                <div class="analyzing-indicator">
+                    <div class="spinner"></div>
+                    <p>🔍 Analyse des données en cours...</p>
+                </div>
             </div> 

@@ -1,0 +1,159 @@
+<div class="key-analysis-container">
+    <!-- État de chargement -->
+    <div *ngIf="isLoading" class="loading-state">
+        <div class="loading-spinner"></div>
+        <h3>🔍 Analyse intelligente des clés en cours...</h3>
+        <p>Le système analyse vos fichiers pour trouver les meilleures correspondances de colonnes.</p>
+    </div>
+
+    <!-- État d'erreur -->
+    <div *ngIf="error && !isLoading" class="error-state">
+        <div class="error-icon">
+            <i class="fas fa-exclamation-triangle"></i>
+        </div>
+        <h3>❌ Erreur lors de l'analyse</h3>
+        <p>{{ error }}</p>
+        <button class="retry-button" (click)="retry()">
+            <i class="fas fa-redo"></i>
+            Réessayer l'analyse
+        </button>
+    </div>
+
+    <!-- Résultats de l'analyse -->
+    <div *ngIf="analysisResult && !isLoading && !error" class="analysis-results">
+        <div class="results-header">
+            <h2>🔍 Analyse Intelligente des Clés</h2>
+            <div class="summary-stats">
+                <div class="stat-item">
+                    <span class="stat-label">Suggestions trouvées:</span>
+                    <span class="stat-value">{{ analysisResult.totalAnalyzed }}</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Confiance globale:</span>
+                    <span class="stat-value" [class]="getConfidenceClass(analysisResult.overallConfidence)">
+                        {{ formatConfidence(analysisResult.overallConfidence) }}
+                    </span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Liste des suggestions -->
+        <div class="suggestions-container">
+            <div *ngFor="let suggestion of analysisResult.suggestions; let i = index" 
+                 class="suggestion-card" 
+                 [class.selected]="false"
+                 (click)="selectSuggestion(suggestion)">
+                
+                <div class="suggestion-header">
+                    <div class="suggestion-rank">
+                        <span class="rank-number">{{ i + 1 }}</span>
+                    </div>
+                    <div class="suggestion-title">
+                        <h3>{{ suggestion.boColumn }} ↔ {{ suggestion.partnerColumn }}</h3>
+                        <div class="confidence-badge" [class]="getConfidenceClass(suggestion.confidenceScore)">
+                            {{ formatConfidence(suggestion.confidenceScore) }}
+                        </div>
+                    </div>
+                </div>
+
+                <div class="suggestion-details">
+                    <!-- Taux d'unicité -->
+                    <div class="detail-section">
+                        <h4>📊 Taux d'Unicité</h4>
+                        <div class="uniqueness-info">
+                            <div class="uniqueness-item">
+                                <span class="label">BO:</span>
+                                <span class="value" [class]="getUniquenessClass(suggestion.uniqueness.bo)">
+                                    {{ formatUniqueness(suggestion.uniqueness.bo) }}
+                                </span>
+                            </div>
+                            <div class="uniqueness-item">
+                                <span class="label">Partenaire:</span>
+                                <span class="value" [class]="getUniquenessClass(suggestion.uniqueness.partner)">
+                                    {{ formatUniqueness(suggestion.uniqueness.partner) }}
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Exemples de données -->
+                    <div class="detail-section">
+                        <h4>📝 Exemples de Données</h4>
+                        <div class="sample-data">
+                            <div class="sample-column">
+                                <span class="column-label">BO ({{ suggestion.boColumn }}):</span>
+                                <div class="sample-values">
+                                    <span *ngFor="let value of limitArray(suggestion.sampleData.bo, 3)" 
+                                          class="sample-value">
+                                        {{ value }}
+                                    </span>
+                                </div>
+                            </div>
+                            <div class="sample-column">
+                                <span class="column-label">Partenaire ({{ suggestion.partnerColumn }}):</span>
+                                <div class="sample-values">
+                                    <span *ngFor="let value of limitArray(suggestion.sampleData.partner, 3)" 
+                                          class="sample-value">
+                                        {{ value }}
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Transformations détectées -->
+                    <div class="detail-section" *ngIf="suggestion.transformation || suggestion.appliedTreatments?.length">
+                        <h4>🔧 Transformations Détectées</h4>
+                        <div class="transformations-info">
+                            <!-- Transformation spécifique -->
+                            <div *ngIf="suggestion.transformation" class="transformation-item">
+                                <div class="transformation-badge">
+                                    <i class="fas fa-magic"></i>
+                                    {{ suggestion.transformation.description }}
+                                </div>
+                                <div class="transformation-details">
+                                    <span class="pattern-label">Pattern:</span>
+                                    <code class="pattern-value">{{ suggestion.transformation.pattern }}</code>
+                                </div>
+                            </div>
+                            
+                            <!-- Traitements appliqués -->
+                            <div *ngIf="suggestion.appliedTreatments?.length" class="treatments-info">
+                                <div class="treatments-label">Traitements appliqués:</div>
+                                <div class="treatments-list">
+                                    <span *ngFor="let treatment of suggestion.appliedTreatments" 
+                                          class="treatment-badge">
+                                        {{ treatment }}
+                                    </span>
+                                </div>
+                            </div>
+                            
+                            <!-- Raison -->
+                            <div *ngIf="suggestion.reason" class="reason-info">
+                                <div class="reason-label">Raison:</div>
+                                <div class="reason-text">{{ suggestion.reason }}</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="suggestion-actions">
+                    <button class="select-button" (click)="selectSuggestion(suggestion); $event.stopPropagation()">
+                        <i class="fas fa-check"></i>
+                        Sélectionner cette clé
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Message si aucune suggestion -->
+        <div *ngIf="analysisResult.suggestions.length === 0" class="no-suggestions">
+            <div class="no-suggestions-icon">
+                <i class="fas fa-search"></i>
+            </div>
+            <h3>Aucune suggestion trouvée</h3>
+            <p>Le système n'a pas pu identifier de correspondances fiables entre vos fichiers.</p>
+            <p>Veuillez vérifier que vos fichiers contiennent des données compatibles ou utiliser le mode manuel.</p>
+        </div>
+    </div>
+</div>

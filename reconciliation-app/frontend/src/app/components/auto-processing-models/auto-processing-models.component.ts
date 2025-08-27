@@ -1555,6 +1555,9 @@ export class AutoProcessingModelsComponent implements OnInit {
   // Propriété pour stocker les clés BO (évite les appels multiples dans le template)
   boModelKeysMap: { [key: string]: string[] } = {};
 
+  // Propriété pour afficher/masquer les outils de développement
+  showDevTools: boolean = false;
+
   // Méthode pour mettre à jour la carte des clés BO
   updateBOModelKeysMap(): void {
     const boModelKeysGroup = this.modelForm.get('reconciliationKeys.boModelKeys') as FormGroup;
@@ -1657,6 +1660,12 @@ export class AutoProcessingModelsComponent implements OnInit {
       this.modelForm.updateValueAndValidity({ emitEvent: false });
       console.log('✅ Affichage forcé mis à jour');
     }, 50);
+  }
+
+  // Méthode pour basculer l'affichage des outils de développement
+  toggleDevTools(): void {
+    this.showDevTools = !this.showDevTools;
+    console.log(`🔧 Outils de développement ${this.showDevTools ? 'affichés' : 'masqués'}`);
   }
 
   // Méthode pour obtenir le contrôle FormControl d'un modèle BO

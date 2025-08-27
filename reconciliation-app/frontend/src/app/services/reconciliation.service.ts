@@ -1,7 +1,7 @@
 import { Injectable, OnInit, OnDestroy } from '@angular/core';
 import { HttpClient, HttpErrorResponse, HttpHeaders } from '@angular/common/http';
-import { Observable, throwError, BehaviorSubject, Subject, timer } from 'rxjs';
-import { catchError, tap, map, finalize, retry, takeUntil } from 'rxjs/operators';
+import { Observable, throwError, BehaviorSubject, Subject, timer, from } from 'rxjs';
+import { catchError, tap, map, finalize, retry, takeUntil, switchMap } from 'rxjs/operators';
 import { webSocket, WebSocketSubject } from 'rxjs/webSocket';
 import { ReconciliationRequest } from '../models/reconciliation-request.model';
 import { ReconciliationResponse } from '../models/reconciliation-response.model';
@@ -323,6 +323,26 @@ export class ReconciliationService implements OnInit, OnDestroy {
             .pipe(catchError(this.handleError));
     }
 
+    /**
+     * Récupère la progression d'un job spécifique
+     */
+    getJobProgress(jobId: string): Observable<any> {
+        return this.http.get<any>(`${this.apiUrl}/jobs/${jobId}`)
+            .pipe(
+                tap(progress => console.log('📊 Progression reçue pour le job', jobId, ':', progress)),
+                catchError(this.handleError)
+            );
+    }
+
+    getJobResults(jobId: string): Observable<any> {
+        // Utiliser l'endpoint correct pour les résultats
+        return this.http.get<any>(`${this.apiUrl}/results/${jobId}`)
+            .pipe(
+                tap(results => console.log('📋 Résultats reçus pour le job', jobId, ':', results)),
+                catchError(this.handleError)
+            );
+    }
+
     // Méthodes utilitaires conservées pour compatibilité
     uploadFile(file: File): Observable<string> {
         const formData = new FormData();
@@ -358,6 +378,147 @@ export class ReconciliationService implements OnInit, OnDestroy {
             }),
             catchError(this.handleError)
         );
+    }
+
+    /**
+     * Lance une réconciliation magique (automatique)
+     */
+    executeMagicReconciliation(formData: FormData): Observable<any> {
+        console.log('🚀 Lancement de la réconciliation magique...');
+        
+        return this.http.post<any>(`${this.apiUrl}/execute-magic`, formData)
+            .pipe(
+                tap(response => console.log('✅ Réconciliation magique lancée:', response)),
+                catchError(this.handleError)
+            );
+    }
+
+    /**
+     * Analyse intelligente des clés de réconciliation
+     */
+    analyzeReconciliationKeys(formData: FormData): Observable<any> {
+        console.log('🔍 Analyse intelligente des clés de réconciliation...');
+        
+        return this.http.post<any>(`${this.apiUrl}/analyze-keys`, formData)
+            .pipe(
+                tap(response => console.log('✅ Analyse des clés terminée:', response)),
+                catchError(this.handleError)
+            );
+    }
+
+    /**
+     * Lit le contenu d'un fichier CSV/Excel et le convertit en tableau d'objets
+     */
+    private async readFileContent(file: File): Promise<Record<string, string>[]> {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    const content = e.target?.result as string;
+                    const lines = content.split('\n');
+                    
+                    // Détecter automatiquement le séparateur
+                    const firstLine = lines[0];
+                    let separator = ',';
+                    if (firstLine.includes(';')) {
+                        separator = ';';
+                    }
+                    
+                    console.log(`🔍 Séparateur détecté: "${separator}" pour le fichier ${file.name}`);
+                    
+                    const headers = lines[0].split(separator).map(h => h.trim().replace(/"/g, ''));
+                    
+                    const data = lines.slice(1)
+                        .filter(line => line.trim())
+                        .map(line => {
+                            const values = line.split(separator);
+                            const row: Record<string, string> = {};
+                            headers.forEach((header, index) => {
+                                row[header] = values[index] ? values[index].trim().replace(/"/g, '') : '';
+                            });
+                            return row;
+                        });
+                    
+                    console.log(`📊 ${data.length} lignes lues du fichier ${file.name}`);
+                    console.log(`📋 En-têtes détectés:`, headers);
+                    
+                    resolve(data);
+                } catch (error) {
+                    reject(error);
+                }
+            };
+            reader.onerror = reject;
+            reader.readAsText(file);
+        });
+    }
+
+    /**
+     * Exécute une réconciliation avec une configuration spécifique
+     */
+    executeReconciliation(config: ReconciliationConfig): Observable<any> {
+        console.log('🚀 Exécution de la réconciliation avec config:', config);
+        
+        // Lire le contenu des fichiers et créer la requête JSON
+        return from(this.readFilesAndCreateRequest(config)).pipe(
+            switchMap(request => {
+                console.log('📋 Requête de réconciliation créée:', request);
+                
+                // Utiliser l'endpoint /reconcile avec du JSON
+                return this.http.post<any>(`${this.apiUrl}/reconcile`, request)
+                    .pipe(
+                        tap(response => console.log('✅ Réconciliation exécutée via /reconcile:', response)),
+                        catchError(this.handleError)
+                    );
+            })
+        );
+    }
+
+    /**
+     * Lit les fichiers et crée la requête de réconciliation
+     */
+    private async readFilesAndCreateRequest(config: ReconciliationConfig): Promise<any> {
+        console.log('📖 Lecture des fichiers pour création de la requête...');
+        
+        // Lire le contenu des deux fichiers
+        const [boContent, partnerContent] = await Promise.all([
+            this.readFileContent(config.boFile),
+            this.readFileContent(config.partnerFile)
+        ]);
+        
+        // Créer la requête au format attendu par l'API
+        const request = {
+            boFileContent: boContent,
+            partnerFileContent: partnerContent,
+            boKeyColumn: config.boReconciliationKey,
+            partnerKeyColumn: config.partnerReconciliationKey,
+            additionalKeys: config.additionalKeys || [],
+            comparisonColumns: [
+                {
+                    boColumn: config.boReconciliationKey,
+                    partnerColumn: config.partnerReconciliationKey
+                }
+            ]
+        };
+        
+        console.log('📋 Requête créée avec succès');
+        return request;
+    }
+
+    /**
+     * Analyse intelligente des clés de réconciliation (méthode existante pour compatibilité)
+     */
+    analyzeKeys(boFile: File, partnerFile: File): Observable<any> {
+        console.log('🔍 Analyse intelligente des clés de réconciliation...');
+        
+        const formData = new FormData();
+        formData.append('boFile', boFile);
+        formData.append('partnerFile', partnerFile);
+        
+        return this.http.post<any>(`${this.apiUrl}/analyze-keys`, formData)
+            .pipe(
+                tap(response => console.log('✅ Analyse des clés terminée:', response)),
+                catchError(this.handleError)
+            );
     }
 
     saveSummary(summary: any[]): Observable<any> {

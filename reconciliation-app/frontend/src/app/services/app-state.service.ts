@@ -56,6 +56,15 @@ export class AppStateService {
     private userRights: UserRights | null = null;
     private username: string | null = null;
 
+    // Gestion des fichiers uploadés
+    private uploadedFilesSubject = new BehaviorSubject<{ boFile: File | null; partnerFile: File | null }>({
+        boFile: null,
+        partnerFile: null
+    });
+    uploadedFiles$ = this.uploadedFilesSubject.asObservable();
+
+
+
     constructor(
         private http: HttpClient,
         private dataNormalizationService: DataNormalizationService
@@ -168,7 +177,13 @@ export class AppStateService {
 
     // Méthodes pour les résultats de la réconciliation
     setReconciliationResults(results: ReconciliationResponse) {
-        console.log('Stockage des résultats de la réconciliation:', results);
+        console.log('💾 AppStateService - Stockage des résultats de la réconciliation:', results);
+        console.log('📊 TotalMatches:', results.totalMatches);
+        console.log('📊 TotalBoRecords:', results.totalBoRecords);
+        console.log('📊 TotalPartnerRecords:', results.totalPartnerRecords);
+        console.log('📊 Matches length:', results.matches?.length);
+        console.log('📊 BoOnly length:', results.boOnly?.length);
+        console.log('📊 PartnerOnly length:', results.partnerOnly?.length);
         this.reconciliationResultSubject.next(results);
     }
 
@@ -290,5 +305,36 @@ export class AppStateService {
 
     isModuleAllowed(module: string): boolean {
         return this.userRights?.modules.includes(module) ?? false;
+    }
+
+    // Méthodes pour gérer les fichiers uploadés
+    setUploadedFiles(files: { boFile: File | null; partnerFile: File | null }) {
+        console.log('📁 Sauvegarde des fichiers uploadés:', {
+            boFile: files.boFile?.name,
+            partnerFile: files.partnerFile?.name
+        });
+        this.uploadedFilesSubject.next(files);
+    }
+
+    getUploadedFiles(): { boFile: File | null; partnerFile: File | null } {
+        return this.uploadedFilesSubject.value;
+    }
+
+    // Méthodes pour gérer les données parsées
+    setBoData(data: Record<string, string>[]) {
+        console.log('📊 Sauvegarde des données BO:', data.length, 'enregistrements');
+        this.boDataSubject.next(data);
+    }
+
+    setPartnerData(data: Record<string, string>[]) {
+        console.log('📊 Sauvegarde des données Partenaire:', data.length, 'enregistrements');
+        this.partnerDataSubject.next(data);
+    }
+
+    clearData() {
+        console.log('🧹 Nettoyage des données');
+        this.boDataSubject.next([]);
+        this.partnerDataSubject.next([]);
+        this.uploadedFilesSubject.next({ boFile: null, partnerFile: null });
     }
 } 

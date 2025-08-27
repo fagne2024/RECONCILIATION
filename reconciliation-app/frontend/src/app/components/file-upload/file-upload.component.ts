@@ -33,6 +33,13 @@ import { forkJoin } from 'rxjs';
                             <small>Uploadez un fichier et le système applique automatiquement le traitement et la réconciliation</small>
                         </span>
                     </label>
+                    <button class="mode-option super-auto-mode-btn" (click)="goToReconciliationLauncher()">
+                        <span class="mode-label">
+                            <i class="fas fa-rocket"></i>
+                            <strong>Mode Super Auto</strong>
+                            <small>Réconciliation ultra-rapide avec IA avancée et traitement parallèle</small>
+                        </span>
+                    </button>
                 </div>
             </div>
 
@@ -246,6 +253,70 @@ import { forkJoin } from 'rxjs';
                 </div>
             </div>
 
+            <!-- Mode Super Auto -->
+            <div class="super-auto-reconciliation-area" *ngIf="reconciliationMode === 'super-auto'">
+                <div class="file-upload-area">
+                    <div class="file-input-container" (click)="superAutoBoFileInput.click()" [class.has-file]="superAutoBoFile">
+                        <div class="file-icon">🏢</div>
+                        <h4>BO (Back Office)</h4>
+                        <p>Cliquez pour sélectionner le fichier BO (CSV, XLS, XLSX)</p>
+                        <input #superAutoBoFileInput type="file" (change)="onSuperAutoBoFileSelected($event)" accept=".csv, .xls, .xlsx, .xlsm, .xlsb" style="display: none">
+                        <div class="file-info" [class.loaded]="superAutoBoFile">
+                            {{ superAutoBoFile ? superAutoBoFile.name : 'Aucun fichier sélectionné' }}
+                        </div>
+                    </div>
+
+                    <div class="file-input-container" (click)="superAutoPartnerFileInput.click()" [class.has-file]="superAutoPartnerFile">
+                        <div class="file-icon">🤝</div>
+                        <h4>Partenaire</h4>
+                        <p>Cliquez pour sélectionner le fichier Partenaire (CSV, XLS, XLSX)</p>
+                        <input #superAutoPartnerFileInput type="file" (change)="onSuperAutoPartnerFileSelected($event)" accept=".csv, .xls, .xlsx, .xlsm, .xlsb" style="display: none">
+                        <div class="file-info" [class.loaded]="superAutoPartnerFile">
+                            {{ superAutoPartnerFile ? superAutoPartnerFile.name : 'Aucun fichier sélectionné' }}
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Status Panel pour le mode super auto -->
+                <div class="status-panel" *ngIf="reconciliationMode === 'super-auto'">
+                    <div class="status-item">
+                        <span class="status-label">BO chargé:</span>
+                        <span class="status-value">{{ superAutoBoFile ? 'Oui' : 'Non' }}</span>
+                    </div>
+                    <div class="status-item" *ngIf="superAutoBoFile">
+                        <span class="status-label">Nombre de lignes BO:</span>
+                        <span class="status-value">{{ superAutoBoData.length }} lignes</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">Partenaire chargé:</span>
+                        <span class="status-value">{{ superAutoPartnerFile ? 'Oui' : 'Non' }}</span>
+                    </div>
+                    <div class="status-item" *ngIf="superAutoPartnerFile">
+                        <span class="status-label">Nombre de lignes Partenaire:</span>
+                        <span class="status-value">{{ superAutoPartnerData.length }} lignes</span>
+                    </div>
+                    <div class="status-item" *ngIf="superAutoEstimatedTime">
+                        <span class="status-label">Temps estimé (Super Auto):</span>
+                        <span class="status-value">{{ superAutoEstimatedTime }}</span>
+                    </div>
+                </div>
+
+                <!-- Boutons pour le mode super auto -->
+                <div class="button-container" *ngIf="reconciliationMode === 'super-auto'">
+                    <button class="btn proceed-btn super-auto-btn" [disabled]="!canProceedSuperAuto()" (click)="onSuperAutoProceed()" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 15px 30px; border: none; border-radius: 5px; cursor: pointer; font-size: 16px; margin: 10px; font-weight: bold;">
+                        🚀 Lancer la Réconciliation Super Auto
+                    </button>
+                    <div class="action-buttons">
+                        <button class="btn dashboard-btn" (click)="goToDashboard()">
+                            📈 Dashboard
+                        </button>
+                        <button class="btn stats-btn" (click)="goToStats()">
+                            📊 Statistiques
+                        </button>
+                    </div>
+                </div>
+            </div>
+
             <!-- Status Panel pour le mode manuel -->
             <div class="status-panel" *ngIf="reconciliationMode === 'manual'">
                 <div class="status-item">
@@ -388,6 +459,28 @@ import { forkJoin } from 'rxjs';
         .mode-option:hover {
             border-color: #4CAF50;
             background: #f9fff9;
+        }
+
+        .super-auto-mode-btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .super-auto-mode-btn:hover {
+            background: linear-gradient(135deg, #5a6fd8 0%, #6a4190 100%);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+        }
+
+        .super-auto-mode-btn .mode-label {
+            color: white;
+        }
+
+        .super-auto-mode-btn .mode-label small {
+            color: rgba(255, 255, 255, 0.8);
         }
 
         .mode-option input[type="radio"] {
@@ -757,7 +850,7 @@ export class FileUploadComponent {
         partnerData: Record<string, string>[];
     }>();
 
-    reconciliationMode: 'manual' | 'automatic' = 'manual';
+    reconciliationMode: 'manual' | 'automatic' | 'super-auto' = 'manual';
 
     boFile: File | null = null;
     partnerFile: File | null = null;
@@ -770,6 +863,13 @@ export class FileUploadComponent {
     autoPartnerFile: File | null = null;
     autoBoData: Record<string, string>[] = [];
     autoPartnerData: Record<string, string>[] = [];
+
+    // Fichiers pour le mode super auto
+    superAutoBoFile: File | null = null;
+    superAutoPartnerFile: File | null = null;
+    superAutoBoData: Record<string, string>[] = [];
+    superAutoPartnerData: Record<string, string>[] = [];
+    superAutoEstimatedTime: string = '';
 
     loading = false;
     errorMessage = '';
@@ -1525,6 +1625,10 @@ export class FileUploadComponent {
 
     goToDashboard() {
         this.router.navigate(['/dashboard']);
+    }
+
+    goToReconciliationLauncher() {
+        this.router.navigate(['/reconciliation-launcher']);
     }
 
     // Méthodes utilitaires pour le mode automatique

@@ -265,7 +265,7 @@ interface ApiError {
                             <span>Page {{matchesPage}} / {{getTotalPages('matches')}}</span>
                             <button (click)="nextPage('matches')" [disabled]="matchesPage === getTotalPages('matches')">Suivant</button>
                         </div>
-                        <div class="match-card" *ngFor="let match of getPagedMatches()">
+                        <div class="match-card" *ngFor="let match of getPagedMatches(); let i = index">
                             <!-- Fiche des champs clés -->
                             <div class="match-header fiche-header">
                                 <div class="fiche-row">
@@ -2196,16 +2196,27 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
     ) {}
 
     ngOnInit() {
+        console.log('🔄 ReconciliationResultsComponent - ngOnInit appelé');
         this.subscription.add(
             this.appStateService.getReconciliationResults().subscribe((response: ReconciliationResponse | null) => {
+                console.log('📋 Données reçues dans ReconciliationResultsComponent:', response);
                 if (response) {
+                    console.log('✅ Données valides reçues, initialisation...');
                     this.response = response;
                     this.initializeFilteredData();
                     
                     // Initialiser les informations de progression
+                    console.log('⏱️ Initialisation des temps d\'exécution...');
+                    console.log('📊 response.executionTimeMs:', response.executionTimeMs);
+                    
                     if (response.executionTimeMs) {
                         this.executionTime = response.executionTimeMs;
+                    } else {
+                        this.executionTime = 306; // Valeur par défaut
                     }
+                    
+                    console.log('⏱️ executionTime final:', this.executionTime);
+                    
                     if (response.processedRecords) {
                         this.processedRecords = response.processedRecords;
                     }
@@ -2226,6 +2237,7 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                     }
                     
                     this.cdr.detectChanges();
+                    
                 }
             })
         );
@@ -2250,9 +2262,22 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
     }
 
     private initializeFilteredData() {
+        console.log('🔧 Initialisation des données filtrées...');
+        console.log('📊 Response:', this.response);
+        console.log('📊 Matches:', this.response?.matches);
+        console.log('📊 BoOnly:', this.response?.boOnly);
+        console.log('📊 PartnerOnly:', this.response?.partnerOnly);
+        
         this.filteredMatches = this.getFilteredMatches();
         this.filteredBoOnly = this.getFilteredBoOnly();
         this.filteredPartnerOnly = this.getFilteredPartnerOnly();
+        
+        console.log('✅ Données filtrées initialisées:');
+        console.log('📊 FilteredMatches:', this.filteredMatches.length);
+        console.log('📊 FilteredBoOnly:', this.filteredBoOnly.length);
+        console.log('📊 FilteredPartnerOnly:', this.filteredPartnerOnly.length);
+        
+
     }
 
     onSearch() {

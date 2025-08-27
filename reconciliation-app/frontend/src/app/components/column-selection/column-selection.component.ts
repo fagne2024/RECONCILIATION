@@ -5,6 +5,7 @@ import { Router, ActivatedRoute } from '@angular/router';
 import { ColumnComparison } from '../../models/column-comparison.model';
 import { AppStateService } from '../../services/app-state.service';
 import { ReconciliationService } from '../../services/reconciliation.service';
+import { KeySuggestionService, KeySuggestion, KeyAnalysisResult } from '../../services/key-suggestion.service';
 import { Subscription } from 'rxjs';
 import { ReconciliationRequest } from '../../models/reconciliation-request.model';
 
@@ -16,6 +17,53 @@ import { ReconciliationRequest } from '../../models/reconciliation-request.model
         <div class="column-selection-container">
             <h2>📊 Sélection des colonnes</h2>
             <p class="description">Sélectionnez les colonnes clés et les colonnes à comparer</p>
+
+            <!-- Suggestions automatiques -->
+            <div class="section suggestions-section" *ngIf="showSuggestions">
+                <h3>🤖 Suggestions Automatiques</h3>
+                <p class="section-description">Le système a analysé vos données et suggère les meilleures clés de réconciliation</p>
+                
+                <div class="confidence-indicator">
+                    <div class="confidence-bar">
+                        <div class="confidence-fill" [style.width.%]="overallConfidence * 100"></div>
+                    </div>
+                    <span class="confidence-text">Confiance globale: {{ (overallConfidence * 100) | number:'1.0-0' }}%</span>
+                </div>
+
+                <div class="suggestions-list">
+                    <div class="suggestion-item" *ngFor="let suggestion of keySuggestions; let i = index">
+                        <div class="suggestion-header">
+                            <span class="suggestion-rank">#{{ i + 1 }}</span>
+                            <span class="suggestion-confidence">{{ (suggestion.confidence * 100) | number:'1.0-0' }}%</span>
+                        </div>
+                        <div class="suggestion-pair">
+                            <span class="bo-column">{{ suggestion.boColumn }}</span>
+                            <span class="arrow">↔</span>
+                            <span class="partner-column">{{ suggestion.partnerColumn }}</span>
+                        </div>
+                        <div class="suggestion-reason">{{ suggestion.reason }}</div>
+                        <div class="suggestion-samples" *ngIf="suggestion.sampleValues.length > 0">
+                            <small>Exemples: {{ suggestion.sampleValues.join(', ') }}</small>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="auto-apply-section">
+                    <button class="auto-apply-btn" (click)="applyTopSuggestions()" 
+                            [disabled]="keySuggestions.length === 0">
+                        ✅ Appliquer les suggestions automatiquement
+                    </button>
+                    <p class="auto-apply-note">Les meilleures suggestions seront appliquées automatiquement</p>
+                </div>
+            </div>
+
+            <!-- Indicateur d'analyse -->
+            <div class="section" *ngIf="isAnalyzing">
+                <div class="analyzing-indicator">
+                    <div class="spinner"></div>
+                    <p>🔍 Analyse des données en cours...</p>
+                </div>
+            </div>
 
             <!-- Colonnes clés -->
             <div class="section">
@@ -242,6 +290,216 @@ import { ReconciliationRequest } from '../../models/reconciliation-request.model
             color: white;
         }
 
+        /* Styles pour les suggestions automatiques */
+        .suggestions-section {
+            background: linear-gradient(135deg, #e3f2fd 0%, #f3e5f5 100%);
+            border: 2px solid #2196F3;
+        }
+
+        .confidence-indicator {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            margin-bottom: 20px;
+            padding: 15px;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .confidence-bar {
+            flex: 1;
+            height: 20px;
+            background: #e0e0e0;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+
+        .confidence-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #4CAF50, #8BC34A);
+            transition: width 0.5s ease;
+        }
+
+        .confidence-text {
+            font-weight: bold;
+            color: #1976D2;
+            min-width: 150px;
+        }
+
+        .suggestions-list {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .suggestion-item {
+            background: white;
+            border-radius: 8px;
+            padding: 15px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            border-left: 4px solid #2196F3;
+        }
+
+        .suggestion-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .suggestion-rank {
+            background: #2196F3;
+            color: white;
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 0.8em;
+            font-weight: bold;
+        }
+
+        .suggestion-confidence {
+            font-weight: bold;
+            color: #2196f3;
+            font-size: 14px;
+            margin-left: 10px;
+        }
+
+        .confidence-display {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .confidence-bar-small {
+            width: 60px;
+            height: 8px;
+            background: #e0e0e0;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .confidence-fill-small {
+            height: 100%;
+            background: linear-gradient(90deg, #ff6b6b, #ffa726, #66bb6a);
+            border-radius: 4px;
+            transition: width 0.3s ease;
+        }
+
+        .suggestion-transformation {
+            margin: 8px 0;
+        }
+
+        .transformation-badge {
+            background: linear-gradient(135deg, #ff9800, #ff5722);
+            color: white;
+            padding: 6px 12px;
+            border-radius: 15px;
+            font-size: 0.85em;
+            font-weight: 500;
+            display: inline-block;
+            box-shadow: 0 2px 4px rgba(255, 152, 0, 0.3);
+        }
+
+        .suggestion-pair {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 8px;
+            font-weight: 500;
+        }
+
+        .bo-column {
+            background: #e3f2fd;
+            padding: 4px 8px;
+            border-radius: 4px;
+            color: #1976D2;
+        }
+
+        .arrow {
+            color: #666;
+            font-size: 1.2em;
+        }
+
+        .partner-column {
+            background: #f3e5f5;
+            padding: 4px 8px;
+            border-radius: 4px;
+            color: #7B1FA2;
+        }
+
+        .suggestion-reason {
+            color: #666;
+            font-size: 0.9em;
+            margin-bottom: 5px;
+        }
+
+        .suggestion-samples {
+            color: #999;
+            font-size: 0.8em;
+        }
+
+        .auto-apply-section {
+            text-align: center;
+            padding: 20px;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .auto-apply-btn {
+            background: linear-gradient(135deg, #4CAF50, #8BC34A);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            font-size: 1em;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-bottom: 10px;
+        }
+
+        .auto-apply-btn:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        }
+
+        .auto-apply-btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+
+        .auto-apply-note {
+            color: #666;
+            font-size: 0.9em;
+        }
+
+        .analyzing-indicator {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 15px;
+            padding: 30px;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .spinner {
+            width: 30px;
+            height: 30px;
+            border: 3px solid #e0e0e0;
+            border-top: 3px solid #2196F3;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
         .validation-section {
             text-align: center;
             margin-top: 30px;
@@ -303,9 +561,17 @@ export class ColumnSelectionComponent implements OnDestroy, OnChanges, OnInit {
     private readonly CHUNK_SIZE = 1000; // Traiter par chunks de 1000 lignes
     private readonly SAMPLE_SIZE = 100; // Échantillon pour l'analyse
 
+    // Propriétés pour les suggestions de clés
+    keySuggestions: KeySuggestion[] = [];
+    overallConfidence = 0;
+    recommendedKeys: string[] = [];
+    showSuggestions = false;
+    isAnalyzing = false;
+
     constructor(
         private reconciliationService: ReconciliationService,
         private appStateService: AppStateService,
+        private keySuggestionService: KeySuggestionService,
         private router: Router,
         private cdr: ChangeDetectorRef
     ) {}
@@ -347,9 +613,125 @@ export class ColumnSelectionComponent implements OnDestroy, OnChanges, OnInit {
             console.log('✅ Données trouvées, optimisation en cours...');
             this.optimizeAndLoadData(this.boData, this.partnerData);
         } else {
-            console.warn('❌ Aucune donnée trouvée dans le service');
+            console.log('⚠️ Aucune donnée trouvée, tentative de parsing automatique...');
+            this.tryAutoParseFiles();
+        }
+    }
+
+    /**
+     * Tente de parser automatiquement les fichiers uploadés
+     */
+    private async tryAutoParseFiles(): Promise<void> {
+        console.log('🔄 Tentative de parsing automatique des fichiers...');
+        
+        // Récupérer les fichiers uploadés
+        const uploadedFiles = this.appStateService.getUploadedFiles();
+        
+        if (!uploadedFiles.boFile || !uploadedFiles.partnerFile) {
+            console.warn('❌ Aucun fichier disponible pour le parsing automatique');
+            this.router.navigate(['/upload']);
+            return;
+        }
+        
+        try {
+            console.log('📁 Fichiers trouvés, début du parsing automatique...');
+            
+            // Parser les fichiers CSV
+            const boData = await this.parseCsvFile(uploadedFiles.boFile);
+            const partnerData = await this.parseCsvFile(uploadedFiles.partnerFile);
+            
+            // Sauvegarder les données parsées dans le service
+            this.appStateService.setBoData(boData);
+            this.appStateService.setPartnerData(partnerData);
+            
+            console.log('✅ Parsing automatique réussi:', {
+                boRecords: boData.length,
+                partnerRecords: partnerData.length
+            });
+            
+            // Charger les données parsées
+            this.boData = boData;
+            this.partnerData = partnerData;
+            this.optimizeAndLoadData(boData, partnerData);
+            
+        } catch (error) {
+            console.error('❌ Erreur lors du parsing automatique:', error);
             this.router.navigate(['/upload']);
         }
+    }
+
+    /**
+     * Parse un fichier CSV
+     */
+    private parseCsvFile(file: File): Promise<Record<string, string>[]> {
+        return new Promise((resolve, reject) => {
+            console.log(`📖 Début de la lecture du fichier: ${file.name} (${file.size} bytes)`);
+            
+            const reader = new FileReader();
+            
+            reader.onload = (e) => {
+                try {
+                    const content = e.target?.result as string;
+                    console.log(`📄 Contenu du fichier ${file.name}: ${content.length} caractères`);
+                    
+                    const lines = content.split('\n');
+                    console.log(`📋 Nombre de lignes dans ${file.name}: ${lines.length}`);
+                    
+                    if (lines.length < 2) {
+                        reject(new Error('Fichier CSV invalide: au moins 2 lignes requises (en-tête + données)'));
+                        return;
+                    }
+                    
+                    // Détecter le séparateur (virgule ou point-virgule)
+                    const firstLine = lines[0];
+                    const commaCount = (firstLine.match(/,/g) || []).length;
+                    const semicolonCount = (firstLine.match(/;/g) || []).length;
+                    const separator = semicolonCount > commaCount ? ';' : ',';
+                    
+                    console.log(`🔧 Séparateur détecté pour ${file.name}: "${separator}" (virgules: ${commaCount}, points-virgules: ${semicolonCount})`);
+                    
+                    // Parser l'en-tête
+                    const headers = lines[0].split(separator).map(h => h.trim());
+                    console.log(`🏷️ En-têtes trouvées dans ${file.name}:`, headers);
+                    
+                    const data: Record<string, string>[] = [];
+                    
+                    // Parser les données (limitées à 1000 lignes pour les performances)
+                    const maxLines = Math.min(lines.length - 1, 1000);
+                    console.log(`📊 Parsing de ${maxLines} lignes de données dans ${file.name}`);
+                    
+                    for (let i = 1; i <= maxLines; i++) {
+                        if (lines[i].trim().length === 0) continue;
+                        
+                        const values = lines[i].split(separator).map(v => v.trim());
+                        const row: Record<string, string> = {};
+                        
+                        for (let j = 0; j < Math.min(headers.length, values.length); j++) {
+                            row[headers[j]] = values[j];
+                        }
+                        
+                        data.push(row);
+                    }
+                    
+                    console.log(`✅ Fichier ${file.name} parsé avec succès: ${data.length} enregistrements`);
+                    if (data.length > 0) {
+                        console.log(`📊 Exemple de données:`, data[0]);
+                    }
+                    resolve(data);
+                    
+                } catch (error) {
+                    console.error(`❌ Erreur lors du parsing du fichier ${file.name}:`, error);
+                    reject(new Error(`Erreur lors du parsing du fichier ${file.name}: ${error}`));
+                }
+            };
+            
+            reader.onerror = (error) => {
+                console.error(`❌ Erreur lors de la lecture du fichier ${file.name}:`, error);
+                reject(new Error(`Erreur lors de la lecture du fichier ${file.name}`));
+            };
+            
+            reader.readAsText(file, 'UTF-8');
+        });
     }
 
     /**
@@ -421,7 +803,75 @@ export class ColumnSelectionComponent implements OnDestroy, OnChanges, OnInit {
         
         this.dataLoaded = true;
         this.loadingInProgress = false;
+        
+        // Analyser et suggérer les clés automatiquement
+        this.analyzeAndSuggestKeys();
+        
         this.cdr.detectChanges();
+    }
+
+    /**
+     * Analyse les données et suggère les meilleures clés
+     */
+    private analyzeAndSuggestKeys(): void {
+        if (!this.boData || !this.partnerData || this.boData.length === 0 || this.partnerData.length === 0) {
+            console.warn('⚠️ Données insuffisantes pour l\'analyse des clés');
+            return;
+        }
+
+        console.log('🔍 Début de l\'analyse des clés de réconciliation...');
+        this.isAnalyzing = true;
+        this.showSuggestions = false;
+        
+        // Utiliser un timeout pour éviter de bloquer l'interface
+        setTimeout(() => {
+            try {
+                const result = this.keySuggestionService.analyzeAndSuggestKeys(this.boData, this.partnerData);
+                
+                this.keySuggestions = result.suggestions;
+                this.overallConfidence = result.overallConfidence;
+                this.recommendedKeys = result.recommendedKeys;
+                this.showSuggestions = true;
+                
+                console.log('✅ Analyse des clés terminée:', {
+                    suggestionsCount: this.keySuggestions.length,
+                    overallConfidence: this.overallConfidence,
+                    recommendedKeys: this.recommendedKeys
+                });
+                
+                // Appliquer automatiquement les meilleures suggestions
+                this.applyTopSuggestions();
+                
+            } catch (error) {
+                console.error('❌ Erreur lors de l\'analyse des clés:', error);
+            } finally {
+                this.isAnalyzing = false;
+                this.cdr.detectChanges();
+            }
+        }, 100);
+    }
+
+    /**
+     * Applique automatiquement les meilleures suggestions (clés principales uniquement)
+     */
+    applyTopSuggestions(): void {
+        if (this.keySuggestions.length === 0) return;
+        
+        // Appliquer la première suggestion comme clé principale
+        const topSuggestion = this.keySuggestions[0];
+        if (topSuggestion.confidence > 0.7) {
+            this.selectedBoKeyColumn = topSuggestion.boColumn;
+            this.selectedPartnerKeyColumn = topSuggestion.partnerColumn;
+            console.log('✅ Clé principale appliquée automatiquement:', {
+                boColumn: topSuggestion.boColumn,
+                partnerColumn: topSuggestion.partnerColumn,
+                confidence: topSuggestion.confidence
+            });
+        }
+        
+        // Ne pas appliquer de clés supplémentaires
+        this.additionalKeys = [];
+        console.log('✅ Aucune clé supplémentaire appliquée (mode clés principales uniquement)');
     }
 
     /**
@@ -684,14 +1134,72 @@ export class ColumnSelectionComponent implements OnDestroy, OnChanges, OnInit {
         console.log('🚀 Début de la réconciliation optimisée...');
         
         // Utiliser les données compressées si disponibles
-        const boDataToReconcile = this.compressedBoData.length > 0 ? this.compressedBoData : this.boData;
+        let boDataToReconcile = this.compressedBoData.length > 0 ? this.compressedBoData : this.boData;
         const partnerDataToReconcile = this.compressedPartnerData.length > 0 ? this.compressedPartnerData : this.partnerData;
+        
+        // Appliquer la transformation détectée si elle existe pour la paire de clés sélectionnée
+        const selectedSuggestion = this.keySuggestions?.find(s => 
+            s.boColumn === this.selectedBoKeyColumn && 
+            s.partnerColumn === this.selectedPartnerKeyColumn
+        );
+        
+        if (selectedSuggestion?.transformation) {
+            console.log('🔧 Application de la transformation détectée:', selectedSuggestion.transformation.description);
+            
+            // Créer une copie des données BO avec la transformation appliquée
+            boDataToReconcile = boDataToReconcile.map(row => {
+                const transformedRow = { ...row };
+                const originalValue = transformedRow[this.selectedBoKeyColumn];
+                
+                if (originalValue && typeof originalValue === 'string') {
+                    let transformedValue = originalValue;
+                    
+                    // Appliquer la transformation selon le type
+                    switch (selectedSuggestion.transformation.type) {
+                        case 'remove_suffix':
+                            const suffix = selectedSuggestion.transformation.pattern;
+                            if (originalValue.endsWith(suffix)) {
+                                transformedValue = originalValue.slice(0, -suffix.length);
+                            }
+                            break;
+                        case 'remove_prefix':
+                            const prefix = selectedSuggestion.transformation.pattern;
+                            if (originalValue.startsWith(prefix)) {
+                                transformedValue = originalValue.slice(prefix.length);
+                            }
+                            break;
+                        case 'remove_pattern':
+                            const pattern = new RegExp(selectedSuggestion.transformation.pattern + '$');
+                            transformedValue = originalValue.replace(pattern, '');
+                            break;
+                    }
+                    
+                    transformedRow[this.selectedBoKeyColumn] = transformedValue;
+                    console.log(`🔧 Transformation: "${originalValue}" → "${transformedValue}"`);
+                }
+                
+                return transformedRow;
+            });
+            
+            console.log('✅ Transformation appliquée aux données BO');
+        }
         
         console.log('📊 Données pour réconciliation:', {
             boDataLength: boDataToReconcile.length,
             partnerDataLength: partnerDataToReconcile.length,
-            usingCompressedData: this.compressedBoData.length > 0
+            usingCompressedData: this.compressedBoData.length > 0,
+            transformationApplied: selectedSuggestion?.transformation ? true : false
         });
+        
+        // Log des échantillons de données transformées
+        if (selectedSuggestion?.transformation) {
+            const boSample = boDataToReconcile.slice(0, 3).map(row => row[this.selectedBoKeyColumn]);
+            const partnerSample = partnerDataToReconcile.slice(0, 3).map(row => row[this.selectedPartnerKeyColumn]);
+            console.log('🔍 Échantillons après transformation:', {
+                boKeys: boSample,
+                partnerKeys: partnerSample
+            });
+        }
 
         // Préparer les paramètres de réconciliation
         const reconciliationParams = {

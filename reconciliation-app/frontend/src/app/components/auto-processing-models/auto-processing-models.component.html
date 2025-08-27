@@ -3,35 +3,43 @@
     <h2>Modèles de Traitement Automatique</h2>
     <p>Créez et gérez des modèles de traitement automatique pour vos fichiers</p>
     <div class="header-actions">
-      <button (click)="cleanupModels()" class="btn btn-warning">
-        <i class="fas fa-broom"></i> Nettoyer modèles vides
-      </button>
-      <button (click)="createDefaultBOModel()" class="btn btn-secondary">
-        <i class="fas fa-magic"></i> Créer modèle BO TRXBO
-      </button>
-      <button (click)="updateTRXBOModel()" class="btn btn-warning">
-        <i class="fas fa-sync-alt"></i> Mettre à jour modèle TRXBO
-      </button>
-      <button (click)="createTRXBOFullModel()" class="btn btn-info">
-        <i class="fas fa-list"></i> Créer modèle TRXBO complet
-      </button>
-      <button (click)="analyzeReconciliationKeys()" class="btn btn-primary">
-        <i class="fas fa-search"></i> Analyser clés réconciliation
-      </button>
-      <button (click)="fixMissingControls()" class="btn btn-secondary">
-        <i class="fas fa-tools"></i> Corriger contrôles
-      </button>
-      <button (click)="forceUpdateDisplay()" class="btn btn-warning">
-        <i class="fas fa-sync"></i> Forcer mise à jour
-      </button>
-      <button (click)="createDefaultOrangeMoneyModel()" class="btn btn-info">
-        <i class="fas fa-mobile-alt"></i> Créer modèle Orange Money
-      </button>
-      <button (click)="createExtendedCIOMModel()" class="btn btn-info">
-        <i class="fas fa-expand"></i> Créer modèle CIOM/PMOM étendu
-      </button>
-      <button class="btn btn-success me-2" (click)="fixReconciliationKeys()">
-        <i class="fas fa-wrench"></i> Corriger clés réconciliation
+      <!-- Boutons de développement masqués en production -->
+      <div class="dev-tools" *ngIf="showDevTools">
+        <button (click)="cleanupModels()" class="btn btn-warning">
+          <i class="fas fa-broom"></i> Nettoyer modèles vides
+        </button>
+        <button (click)="createDefaultBOModel()" class="btn btn-secondary">
+          <i class="fas fa-magic"></i> Créer modèle BO TRXBO
+        </button>
+        <button (click)="updateTRXBOModel()" class="btn btn-warning">
+          <i class="fas fa-sync-alt"></i> Mettre à jour modèle TRXBO
+        </button>
+        <button (click)="createTRXBOFullModel()" class="btn btn-info">
+          <i class="fas fa-list"></i> Créer modèle TRXBO complet
+        </button>
+        <button (click)="analyzeReconciliationKeys()" class="btn btn-primary">
+          <i class="fas fa-search"></i> Analyser clés réconciliation
+        </button>
+        <button (click)="fixMissingControls()" class="btn btn-secondary">
+          <i class="fas fa-tools"></i> Corriger contrôles
+        </button>
+        <button (click)="forceUpdateDisplay()" class="btn btn-warning">
+          <i class="fas fa-sync"></i> Forcer mise à jour
+        </button>
+        <button (click)="createDefaultOrangeMoneyModel()" class="btn btn-info">
+          <i class="fas fa-mobile-alt"></i> Créer modèle Orange Money
+        </button>
+        <button (click)="createExtendedCIOMModel()" class="btn btn-info">
+          <i class="fas fa-expand"></i> Créer modèle CIOM/PMOM étendu
+        </button>
+        <button class="btn btn-success me-2" (click)="fixReconciliationKeys()">
+          <i class="fas fa-wrench"></i> Corriger clés réconciliation
+        </button>
+      </div>
+      
+      <!-- Bouton pour afficher/masquer les outils de développement -->
+      <button (click)="toggleDevTools()" class="btn btn-outline-secondary">
+        <i class="fas fa-cog"></i> {{ showDevTools ? 'Masquer' : 'Afficher' }} outils dev
       </button>
     </div>
   </div>

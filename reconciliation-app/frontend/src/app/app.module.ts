@@ -52,6 +52,7 @@ import { TrxSfComponent } from './components/trx-sf/trx-sf.component';
 import { AutoProcessingModelsComponent } from './components/auto-processing-models/auto-processing-models.component';
 import { BanqueComponent } from './components/banque/banque.component';
 import { ExcelAnalysisComponent } from './components/excel-analysis/excel-analysis.component';
+import { ReconciliationLauncherComponent } from './components/reconciliation-launcher/reconciliation-launcher.component';
 
 @NgModule({
     declarations: [
@@ -108,7 +109,8 @@ import { ExcelAnalysisComponent } from './components/excel-analysis/excel-analys
         MatOptionModule,
         NgxMatSelectSearchModule,
         ColumnSelectionComponent,
-        AgencySummaryComponent
+        AgencySummaryComponent,
+        ReconciliationLauncherComponent
     ],
     providers: [ReconciliationService],
     bootstrap: [AppComponent]

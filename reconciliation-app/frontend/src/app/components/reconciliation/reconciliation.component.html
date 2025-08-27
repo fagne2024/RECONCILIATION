@@ -23,6 +23,93 @@
 </div>
 
 <div class="reconciliation-container">
+    <!-- Section de sélection des modes -->
+    <div *ngIf="!isLoading && !showProgress && !reconciliationResponse && !error" class="mode-selection-container">
+        <div class="mode-selection-header">
+            <h2>🔄 Réconciliation de Données</h2>
+            <p>Choisissez votre mode de réconciliation préféré</p>
+        </div>
+        
+        <div class="mode-cards-container">
+            <!-- Carte pour le Mode Assisté -->
+            <div class="mode-card assisted-mode">
+                <div class="mode-header">
+                    <i class="fas fa-magic"></i>
+                    <h3>Mode Assisté</h3>
+                </div>
+                <div class="mode-description">
+                    <p>Le système analyse vos fichiers et suggère les meilleures clés de réconciliation.</p>
+                </div>
+                <div class="mode-features">
+                    <ul>
+                        <li>Analyse automatique des correspondances</li>
+                        <li>Suggestions intelligentes</li>
+                        <li>Validation avant exécution</li>
+                    </ul>
+                </div>
+                <button class="mode-button assisted-button" (click)="startAssistedMode()">
+                    <i class="fas fa-play"></i>
+                    Lancer l'analyse
+                </button>
+            </div>
+            
+            <!-- Carte pour le Mode Magique -->
+            <div class="mode-card magic-mode">
+                <div class="mode-header">
+                    <i class="fas fa-wand-magic-sparkles"></i>
+                    <h3>Mode Magique</h3>
+                </div>
+                <div class="mode-description">
+                    <p>Réconciliation en un clic ! Le système trouve automatiquement les meilleures clés et lance la réconciliation.</p>
+                </div>
+                <div class="mode-features">
+                    <ul>
+                        <li>Configuration automatique</li>
+                        <li>Lancement immédiat</li>
+                        <li>Résultats rapides</li>
+                    </ul>
+                </div>
+                <button class="mode-button magic-button" (click)="startMagicMode()">
+                    <i class="fas fa-rocket"></i>
+                    Lancer la réconciliation magique
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Contenu par défaut pour le mode magique (quand on arrive via URL avec paramètres) -->
+    <div *ngIf="!showProgress && !reconciliationResponse && !error && isLoading" class="default-content">
+        <div class="magic-reconciliation-header">
+            <h2>🪄 Réconciliation Magique</h2>
+            <p>Votre réconciliation magique est en cours de préparation...</p>
+        </div>
+        
+        <div class="magic-status">
+            <div class="status-card">
+                <i class="fas fa-magic"></i>
+                <h3>Mode Magique Activé</h3>
+                <p>Le système analyse automatiquement vos fichiers et trouve les meilleures clés de réconciliation.</p>
+            </div>
+            
+            <div class="status-card">
+                <i class="fas fa-cogs"></i>
+                <h3>Configuration Automatique</h3>
+                <p>Découverte intelligente des colonnes de correspondance en cours...</p>
+            </div>
+            
+            <div class="status-card">
+                <i class="fas fa-rocket"></i>
+                <h3>Lancement Immédiat</h3>
+                <p>La réconciliation sera lancée automatiquement dès que la configuration sera optimale.</p>
+            </div>
+        </div>
+        
+        <div class="loading-indicator">
+            <div class="spinner"></div>
+            <p>Initialisation de la réconciliation magique...</p>
+        </div>
+    </div>
+
     <!-- Affichage de la progression avec le composant générique -->
     <app-progress-popup
       *ngIf="showProgress"
@@ -36,6 +123,129 @@
 
     <!-- Affichage des résultats -->
     <div *ngIf="reconciliationResponse && !isLoading" class="results-container">
+        
+        <!-- Section spéciale pour le mode magique -->
+        <div *ngIf="isMagicMode && magicResults" class="magic-results-section">
+            <div class="magic-header">
+                <h2>🪄 Réconciliation Magique Terminée</h2>
+                <div class="magic-confidence">
+                    <span class="confidence-label">Confiance globale:</span>
+                    <span class="confidence-value" [class]="getConfidenceClass(magicConfidence)">
+                        {{ (magicConfidence * 100) | number:'1.0-0' }}%
+                    </span>
+                </div>
+            </div>
+
+            <!-- Clé sélectionnée automatiquement -->
+            <div *ngIf="magicResults?.selectedKey" class="selected-key-section">
+                <h3>🎯 Clé Sélectionnée Automatiquement</h3>
+                <div class="selected-key-card">
+                    <div class="selected-key-header">
+                        <i class="fas fa-star"></i>
+                        <span>Meilleure correspondance détectée</span>
+                        <span class="selected-confidence" [class]="getConfidenceClass(magicResults.selectedKey.confidence)">
+                            {{ (magicResults.selectedKey.confidence * 100) | number:'1.0-0' }}%
+                        </span>
+                    </div>
+                    <div class="selected-key-pair">
+                        <span class="bo-column">{{ magicResults.selectedKey.boColumn }}</span>
+                        <span class="arrow">↔</span>
+                        <span class="partner-column">{{ magicResults.selectedKey.partnerColumn }}</span>
+                    </div>
+                    <div class="selected-key-reason">
+                        <small>{{ magicResults.selectedKey.reason }}</small>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Résumé de l'analyse -->
+            <div *ngIf="magicResults?.analysisSummary" class="analysis-summary-section">
+                <h3>📊 Résumé de l'Analyse</h3>
+                <div class="analysis-summary-grid">
+                    <div class="summary-item">
+                        <i class="fas fa-columns"></i>
+                        <span>Colonnes analysées: {{ magicResults.analysisSummary.totalColumnsAnalyzed }}</span>
+                    </div>
+                    <div class="summary-item">
+                        <i class="fas fa-handshake"></i>
+                        <span>Meilleure correspondance: {{ magicResults.analysisSummary.bestMatchFound }}</span>
+                    </div>
+                    <div class="summary-item">
+                        <i class="fas fa-shield-alt"></i>
+                        <span>Niveau de confiance: {{ magicResults.analysisSummary.confidenceLevel }}</span>
+                    </div>
+                    <div class="summary-item">
+                        <i class="fas fa-magic"></i>
+                        <span>Transformations appliquées: {{ magicResults.analysisSummary.transformationApplied ? 'Oui' : 'Non' }}</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Clés détectées -->
+            <div *ngIf="detectedKeys.length > 0" class="detected-keys-section">
+                <h3>🔑 Clés Détectées Automatiquement</h3>
+                <div class="keys-grid">
+                    <div *ngFor="let key of detectedKeys; let i = index" class="key-card">
+                        <div class="key-header">
+                            <span class="key-rank">#{{ i + 1 }}</span>
+                            <span class="key-confidence" [class]="getConfidenceClass(key.confidence)">
+                                {{ (key.confidence * 100) | number:'1.0-0' }}%
+                            </span>
+                        </div>
+                        <div class="key-pair">
+                            <span class="bo-column">{{ key.boColumn }}</span>
+                            <span class="arrow">↔</span>
+                            <span class="partner-column">{{ key.partnerColumn }}</span>
+                        </div>
+                        <div class="key-details">
+                            <div class="detail-item">
+                                <span class="label">Similarité des noms:</span>
+                                <span class="value">{{ (key.nameSimilarity * 100) | number:'1.0-0' }}%</span>
+                            </div>
+                            <div class="detail-item">
+                                <span class="label">Confiance contenu:</span>
+                                <span class="value">{{ (key.contentConfidence * 100) | number:'1.0-0' }}%</span>
+                            </div>
+                            <div class="detail-item">
+                                <span class="label">Qualité des données:</span>
+                                <span class="value">{{ (key.dataQuality * 100) | number:'1.0-0' }}%</span>
+                            </div>
+                        </div>
+                        <div *ngIf="key.reason" class="key-reason">
+                            <small>{{ key.reason }}</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Transformations appliquées -->
+            <div *ngIf="appliedTransformations.length > 0" class="transformations-section">
+                <h3>🔧 Transformations Appliquées</h3>
+                <div class="transformations-grid">
+                    <div *ngFor="let transform of appliedTransformations" class="transformation-card">
+                        <div class="transformation-header">
+                            <i class="fas fa-magic"></i>
+                            <span>Transformation détectée</span>
+                        </div>
+                        <div class="transformation-pair">
+                            <span class="bo-column">{{ transform.boColumn }}</span>
+                            <span class="arrow">↔</span>
+                            <span class="partner-column">{{ transform.partnerColumn }}</span>
+                        </div>
+                        <div class="transformation-details">
+                            <div class="treatments-list">
+                                <span *ngFor="let treatment of transform.treatments" class="treatment-badge">
+                                    {{ treatment }}
+                                </span>
+                            </div>
+                            <div *ngIf="transform.reason" class="transformation-reason">
+                                <small>{{ transform.reason }}</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
         <div class="results-header">
             <h2>Réconciliation terminée</h2>
             <div class="execution-summary">
@@ -89,8 +299,18 @@
     <div *ngIf="error" class="error-container">
         <div class="error-card">
             <i class="fas fa-exclamation-circle"></i>
-            <h3>Erreur lors de la réconciliation</h3>
+            <h3>Réconciliation magique non possible</h3>
             <p>{{ error }}</p>
+            <div class="error-actions">
+                <button class="btn btn-primary" (click)="goToAssistedMode()">
+                    <i class="fas fa-magic"></i>
+                    Utiliser le mode Assisté
+                </button>
+                <button class="btn btn-secondary" (click)="goToManualMode()">
+                    <i class="fas fa-cogs"></i>
+                    Utiliser le mode Manuel
+                </button>
+            </div>
         </div>
     </div>
 </div> 

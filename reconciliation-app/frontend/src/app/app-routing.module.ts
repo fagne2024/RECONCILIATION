@@ -23,9 +23,13 @@ import { TrxSfComponent } from './components/trx-sf/trx-sf.component';
 
 import { AutoProcessingModelsComponent } from './components/auto-processing-models/auto-processing-models.component';
 import { BanqueComponent } from './components/banque/banque.component';
+import { ReconciliationLauncherComponent } from './components/reconciliation-launcher/reconciliation-launcher.component';
+import { ReconciliationComponent } from './components/reconciliation/reconciliation.component';
 
 const routes: Routes = [
-  { path: '', redirectTo: '/upload', pathMatch: 'full' },
+  { path: '', redirectTo: '/reconciliation-launcher', pathMatch: 'full' },
+  { path: 'reconciliation-launcher', component: ReconciliationLauncherComponent },
+  { path: 'reconciliation', component: ReconciliationComponent },
   { path: 'upload', component: FileUploadComponent },
   { path: 'column-selection', component: ColumnSelectionComponent },
   { path: 'stats', component: StatsComponent },
