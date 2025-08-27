@@ -551,4 +551,24 @@ export class ReconciliationService implements OnInit, OnDestroy {
         console.error('Erreur complète:', error);
         return throwError(() => new Error(errorMessage));
     }
+
+    /**
+     * Efface toutes les données de réconciliation
+     */
+    clearData(): void {
+        console.log('🧹 Nettoyage des données de réconciliation...');
+        
+        // Réinitialiser la progression
+        this.progressSubject.next({
+            percentage: 0,
+            processed: 0,
+            total: 0,
+            step: 'Initialisation...'
+        });
+        
+        // Fermer la connexion WebSocket si elle existe
+        this.disconnect();
+        
+        console.log('✅ Données de réconciliation effacées');
+    }
 } 

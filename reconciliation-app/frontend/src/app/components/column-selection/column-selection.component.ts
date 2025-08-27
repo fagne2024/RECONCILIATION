@@ -559,7 +559,7 @@ export class ColumnSelectionComponent implements OnDestroy, OnChanges, OnInit {
     private dataLoaded = false;
     private loadingInProgress = false;
     private readonly CHUNK_SIZE = 1000; // Traiter par chunks de 1000 lignes
-    private readonly SAMPLE_SIZE = 100; // Échantillon pour l'analyse
+    private readonly SAMPLE_SIZE = 1000; // Échantillon pour l'analyse des clés
 
     // Propriétés pour les suggestions de clés
     keySuggestions: KeySuggestion[] = [];
@@ -696,8 +696,8 @@ export class ColumnSelectionComponent implements OnDestroy, OnChanges, OnInit {
                     
                     const data: Record<string, string>[] = [];
                     
-                    // Parser les données (limitées à 1000 lignes pour les performances)
-                    const maxLines = Math.min(lines.length - 1, 1000);
+                    // Parser les données (limitées à 10000 lignes pour l'analyse des clés)
+                    const maxLines = Math.min(lines.length - 1, 10000);
                     console.log(`📊 Parsing de ${maxLines} lignes de données dans ${file.name}`);
                     
                     for (let i = 1; i <= maxLines; i++) {
@@ -826,6 +826,25 @@ export class ColumnSelectionComponent implements OnDestroy, OnChanges, OnInit {
         // Utiliser un timeout pour éviter de bloquer l'interface
         setTimeout(() => {
             try {
+                // Vérifications supplémentaires
+                if (!Array.isArray(this.boData) || !Array.isArray(this.partnerData)) {
+                    throw new Error('Les données ne sont pas des tableaux valides');
+                }
+                
+                if (this.boData.length === 0 || this.partnerData.length === 0) {
+                    throw new Error('Les données sont vides');
+                }
+                
+                // Vérifier que les premières lignes ont des propriétés
+                if (!this.boData[0] || typeof this.boData[0] !== 'object') {
+                    throw new Error('La première ligne BO n\'est pas un objet valide');
+                }
+                
+                if (!this.partnerData[0] || typeof this.partnerData[0] !== 'object') {
+                    throw new Error('La première ligne Partner n\'est pas un objet valide');
+                }
+                
+                console.log('🔍 Données validées, lancement de l\'analyse...');
                 const result = this.keySuggestionService.analyzeAndSuggestKeys(this.boData, this.partnerData);
                 
                 this.keySuggestions = result.suggestions;
@@ -844,6 +863,9 @@ export class ColumnSelectionComponent implements OnDestroy, OnChanges, OnInit {
                 
             } catch (error) {
                 console.error('❌ Erreur lors de l\'analyse des clés:', error);
+                this.showSuggestions = false;
+                this.keySuggestions = [];
+                this.overallConfidence = 0;
             } finally {
                 this.isAnalyzing = false;
                 this.cdr.detectChanges();

@@ -175,6 +175,10 @@ export class AppStateService {
         this.partnerDataSubject.next([]);
     }
 
+    clearUploadedFiles() {
+        this.uploadedFilesSubject.next({ boFile: null, partnerFile: null });
+    }
+
     // Méthodes pour les résultats de la réconciliation
     setReconciliationResults(results: ReconciliationResponse) {
         console.log('💾 AppStateService - Stockage des résultats de la réconciliation:', results);

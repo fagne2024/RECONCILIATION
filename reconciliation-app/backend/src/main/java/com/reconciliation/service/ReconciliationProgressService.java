@@ -20,4 +20,9 @@ public class ReconciliationProgressService {
     public void clearProgress(String sessionId) {
         progressMap.remove(sessionId);
     }
+
+    public void createJob(String jobId, String message) {
+        ReconciliationProgress progress = new ReconciliationProgress(0, message, 0, 0);
+        progressMap.put(jobId, progress);
+    }
 } 

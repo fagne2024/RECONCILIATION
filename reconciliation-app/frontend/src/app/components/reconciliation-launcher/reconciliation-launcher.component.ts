@@ -152,6 +152,17 @@ import { Subscription } from 'rxjs';
         </button>
       </div>
 
+      <!-- Bouton de réinitialisation -->
+      <div class="reset-section">
+        <button class="reset-btn" 
+                [disabled]="!hasDataToReset"
+                (click)="resetData()"
+                title="Réinitialiser tous les fichiers et données">
+          <i class="fas fa-trash-alt"></i>
+          Réinitialiser les données
+        </button>
+      </div>
+
       <!-- Messages d'erreur -->
       <div *ngIf="errorMessage" class="error-message">
         <i class="fas fa-exclamation-circle"></i>
@@ -1527,5 +1538,78 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
        reader.onerror = reject;
        reader.readAsText(file);
      });
+   }
+
+   /**
+    * Vérifie s'il y a des données à réinitialiser
+    */
+   get hasDataToReset(): boolean {
+     return !!(this.boFile || this.partnerFile || this.selectedMode);
+   }
+
+   /**
+    * Réinitialise toutes les données et fichiers
+    */
+   resetData(): void {
+     // Demander confirmation à l'utilisateur
+     if (confirm('Êtes-vous sûr de vouloir réinitialiser toutes les données ? Cette action ne peut pas être annulée.')) {
+       console.log('🔄 Réinitialisation des données...');
+       
+       // Réinitialiser les fichiers
+       this.boFile = null;
+       this.partnerFile = null;
+       
+       // Réinitialiser le mode sélectionné
+       this.selectedMode = null;
+       
+       // Réinitialiser les messages d'erreur
+       this.errorMessage = '';
+       
+       // Réinitialiser l'état de l'application
+       this.appStateService.clearUploadedFiles();
+       this.appStateService.clearReconciliationData();
+       
+       // Réinitialiser les données de réconciliation
+       this.reconciliationService.clearData();
+       
+       // Réinitialiser les inputs de fichiers
+       const boFileInput = document.getElementById('boFileInput') as HTMLInputElement;
+       const partnerFileInput = document.getElementById('partnerFileInput') as HTMLInputElement;
+       
+       if (boFileInput) {
+         boFileInput.value = '';
+       }
+       if (partnerFileInput) {
+         partnerFileInput.value = '';
+       }
+       
+       console.log('✅ Données réinitialisées avec succès');
+       
+       // Afficher un message de confirmation
+       this.showSuccessMessage('Données réinitialisées avec succès');
+     }
+   }
+
+   /**
+    * Affiche un message de succès temporaire
+    */
+   private showSuccessMessage(message: string): void {
+     // Créer un élément de message temporaire
+     const successElement = document.createElement('div');
+     successElement.className = 'success-message';
+     successElement.innerHTML = `
+       <i class="fas fa-check-circle"></i>
+       <span>${message}</span>
+     `;
+     
+     // Ajouter au DOM
+     document.body.appendChild(successElement);
+     
+     // Supprimer après 3 secondes
+     setTimeout(() => {
+       if (successElement.parentNode) {
+         successElement.parentNode.removeChild(successElement);
+       }
+     }, 3000);
    }
 }

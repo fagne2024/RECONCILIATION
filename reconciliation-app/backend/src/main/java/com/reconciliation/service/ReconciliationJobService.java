@@ -101,17 +101,30 @@ public class ReconciliationJobService {
         if (jobOpt.isPresent()) {
             ReconciliationJob job = jobOpt.get();
             try {
+                log.info("💾 Sauvegarde des résultats pour le job: {}", jobId);
+                log.info("📊 Détails des résultats:");
+                log.info("  - totalMatches: {}", result.getTotalMatches());
+                log.info("  - totalMismatches: {}", result.getTotalMismatches());
+                log.info("  - totalBoOnly: {}", result.getTotalBoOnly());
+                log.info("  - totalPartnerOnly: {}", result.getTotalPartnerOnly());
+                log.info("  - totalBoRecords: {}", result.getTotalBoRecords());
+                log.info("  - totalPartnerRecords: {}", result.getTotalPartnerRecords());
+                log.info("  - matches size: {}", result.getMatches() != null ? result.getMatches().size() : 0);
+                log.info("  - mismatches size: {}", result.getMismatches() != null ? result.getMismatches().size() : 0);
+                log.info("  - boOnly size: {}", result.getBoOnly() != null ? result.getBoOnly().size() : 0);
+                log.info("  - partnerOnly size: {}", result.getPartnerOnly() != null ? result.getPartnerOnly().size() : 0);
+                
                 job.setResultJson(objectMapper.writeValueAsString(result));
                 job.setStatus(ReconciliationJob.JobStatus.COMPLETED);
                 job.setCompletedAt(LocalDateTime.now());
                 jobRepository.save(job);
                 
-                // Job terminé avec succès
-                
-                log.info("Job terminé avec succès: {}", jobId);
+                log.info("✅ Job terminé avec succès: {} - Résultats sauvegardés", jobId);
             } catch (JsonProcessingException e) {
-                log.error("Erreur lors de la sérialisation du résultat", e);
+                log.error("❌ Erreur lors de la sérialisation du résultat", e);
             }
+        } else {
+            log.error("❌ Job non trouvé pour sauvegarde: {}", jobId);
         }
     }
     
