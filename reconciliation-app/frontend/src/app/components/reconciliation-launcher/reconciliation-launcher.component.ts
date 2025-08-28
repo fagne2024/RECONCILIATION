@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { AppStateService } from '../../services/app-state.service';
 import { ReconciliationService } from '../../services/reconciliation.service';
+import { PopupService } from '../../services/popup.service';
 import { Subscription } from 'rxjs';
 
 @Component({
@@ -163,12 +164,7 @@ import { Subscription } from 'rxjs';
         </button>
       </div>
 
-      <!-- Messages d'erreur -->
-      <div *ngIf="errorMessage" class="error-message">
-        <i class="fas fa-exclamation-circle"></i>
-        <span>{{ errorMessage }}</span>
-        <button (click)="clearError()" class="close-btn">×</button>
-      </div>
+
     </div>
   `,
   styleUrls: ['./reconciliation-launcher.component.scss']
@@ -177,7 +173,6 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
   boFile: File | null = null;
   partnerFile: File | null = null;
   selectedMode: 'manual' | 'assisted' | 'magic' | null = 'manual';
-  errorMessage: string = '';
   isLoading: boolean = false;
 
   private subscriptions: Subscription[] = [];
@@ -185,7 +180,8 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
   constructor(
     private router: Router,
     private appStateService: AppStateService,
-    private reconciliationService: ReconciliationService
+    private reconciliationService: ReconciliationService,
+    private popupService: PopupService
   ) {}
 
   ngOnInit(): void {
@@ -226,7 +222,6 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
       } else {
         this.partnerFile = file;
       }
-      this.clearError();
     }
   }
 
@@ -247,7 +242,6 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
       } else {
         this.partnerFile = file;
       }
-      this.clearError();
     }
   }
 
@@ -263,7 +257,6 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
   selectMode(mode: 'manual' | 'assisted' | 'magic'): void {
     console.log('🎯 Mode sélectionné:', mode);
     this.selectedMode = mode;
-    this.clearError();
 
     // Si le mode magique est sélectionné, lancer immédiatement
     if (mode === 'magic') {
@@ -323,12 +316,11 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
   // Méthode pour la réconciliation magique
   private async launchMagicReconciliation(): Promise<void> {
     if (!this.canProceed) {
-      this.errorMessage = 'Veuillez sélectionner les deux fichiers avant de lancer la réconciliation magique.';
+      this.popupService.showWarning('Veuillez sélectionner les deux fichiers avant de lancer la réconciliation magique.');
       return;
     }
 
     this.isLoading = true;
-    this.clearError();
 
     console.log('🚀 Lancement de la réconciliation magique (flux robuste)...');
 
@@ -443,7 +435,7 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
            transformationToApply = improvedMatch.transformation;
          } else {
            console.warn('⚠️ Aucune amélioration suffisante trouvée (confiance <70%)');
-           this.errorMessage = `Échec de la détection automatique : Confiance insuffisante (${(confidence * 100).toFixed(1)}%). Une confiance >70% est requise. Veuillez utiliser le Mode Assisté pour choisir les clés manuellement.`;
+           this.popupService.showWarning(`Échec de la détection automatique : Confiance insuffisante (${(confidence * 100).toFixed(1)}%). Une confiance >70% est requise. Veuillez utiliser le Mode Assisté pour choisir les clés manuellement.`);
            this.isLoading = false;
            return;
          }
@@ -528,15 +520,12 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
        
      } catch (error) {
        console.error('❌ Erreur lors du démarrage du mode magique:', error);
-       this.errorMessage = 'Erreur lors du démarrage du mode magique: ' + (error instanceof Error ? error.message : 'Erreur inconnue');
+       this.popupService.showError('Erreur lors du démarrage du mode magique: ' + (error instanceof Error ? error.message : 'Erreur inconnue'));
         this.isLoading = false;
       }
   }
 
-  // Méthodes utilitaires
-  clearError(): void {
-    this.errorMessage = '';
-  }
+
    
    // Méthode pour lire les en-têtes d'un fichier
    private getFileHeaders(file: File): Promise<string[]> {
@@ -1550,9 +1539,14 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
    /**
     * Réinitialise toutes les données et fichiers
     */
-   resetData(): void {
+   async resetData(): Promise<void> {
      // Demander confirmation à l'utilisateur
-     if (confirm('Êtes-vous sûr de vouloir réinitialiser toutes les données ? Cette action ne peut pas être annulée.')) {
+     const confirmed = await this.popupService.showConfirm(
+       'Êtes-vous sûr de vouloir réinitialiser toutes les données ? Cette action ne peut pas être annulée.',
+       'Confirmation de réinitialisation'
+     );
+     
+     if (confirmed) {
        console.log('🔄 Réinitialisation des données...');
        
        // Réinitialiser les fichiers
@@ -1562,8 +1556,7 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
        // Réinitialiser le mode sélectionné
        this.selectedMode = null;
        
-       // Réinitialiser les messages d'erreur
-       this.errorMessage = '';
+
        
        // Réinitialiser l'état de l'application
        this.appStateService.clearUploadedFiles();
@@ -1586,30 +1579,9 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
        console.log('✅ Données réinitialisées avec succès');
        
        // Afficher un message de confirmation
-       this.showSuccessMessage('Données réinitialisées avec succès');
+       this.popupService.showSuccess('Données réinitialisées avec succès');
      }
    }
 
-   /**
-    * Affiche un message de succès temporaire
-    */
-   private showSuccessMessage(message: string): void {
-     // Créer un élément de message temporaire
-     const successElement = document.createElement('div');
-     successElement.className = 'success-message';
-     successElement.innerHTML = `
-       <i class="fas fa-check-circle"></i>
-       <span>${message}</span>
-     `;
-     
-     // Ajouter au DOM
-     document.body.appendChild(successElement);
-     
-     // Supprimer après 3 secondes
-     setTimeout(() => {
-       if (successElement.parentNode) {
-         successElement.parentNode.removeChild(successElement);
-       }
-     }, 3000);
-   }
+
 }

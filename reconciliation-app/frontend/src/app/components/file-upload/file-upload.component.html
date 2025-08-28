@@ -1,0 +1,351 @@
+<div class="file-upload-container">
+    <!-- Mode de réconciliation -->
+    <div class="reconciliation-mode-selector">
+        <h3>🔄 Mode de Réconciliation</h3>
+        <div class="mode-options">
+            <label class="mode-option">
+                <input type="radio" name="reconciliationMode" value="manual" [(ngModel)]="reconciliationMode">
+                <span class="mode-label">
+                    <i class="fas fa-cogs"></i>
+                    <strong>Mode Manuel</strong>
+                    <small>Choisissez les fichiers BO et Partenaire séparément</small>
+                </span>
+            </label>
+            <label class="mode-option">
+                <input type="radio" name="reconciliationMode" value="automatic" [(ngModel)]="reconciliationMode">
+                <span class="mode-label">
+                    <i class="fas fa-magic"></i>
+                    <strong>Mode Automatique</strong>
+                    <small>Uploadez un fichier et le système applique automatiquement le traitement et la réconciliation</small>
+                </span>
+            </label>
+            <button class="mode-option super-auto-mode-btn" (click)="goToReconciliationLauncher()">
+                <span class="mode-label">
+                    <i class="fas fa-rocket"></i>
+                    <strong>Mode Super Auto</strong>
+                    <small>Réconciliation ultra-rapide avec IA avancée et traitement parallèle</small>
+                </span>
+            </button>
+        </div>
+    </div>
+
+    <!-- Indicateur de progression pour gros fichiers -->
+    <div class="large-file-progress" *ngIf="isProcessingLargeFile">
+        <div class="progress-container">
+            <div class="progress-header">
+                <h4>🔄 Traitement en cours...</h4>
+                <div class="processing-info">
+                    <span class="processing-mode" *ngIf="processingMode">
+                        <i class="fas fa-microchip"></i>
+                        {{ processingMode }}
+                    </span>
+                    <button class="cancel-btn" (click)="cancelProcessing()" [disabled]="processingCancelled">
+                        <i class="fas fa-times"></i>
+                        Annuler
+                    </button>
+                </div>
+            </div>
+            <div class="progress-bar">
+                <div class="progress-fill" [style.width.%]="processingProgress"></div>
+            </div>
+            <div class="progress-text">{{ processingMessage }}</div>
+            <div class="progress-percentage">{{ processingProgress }}%</div>
+            <div class="progress-details" *ngIf="processingDetails">
+                <div class="detail-item">
+                    <span class="detail-label">Mode:</span>
+                    <span class="detail-value">{{ processingDetails.mode }}</span>
+                </div>
+                <div class="detail-item" *ngIf="processingDetails.chunks">
+                    <span class="detail-label">Chunks:</span>
+                    <span class="detail-value">{{ processingDetails.chunks }}</span>
+                </div>
+                <div class="detail-item" *ngIf="processingDetails.workers">
+                    <span class="detail-label">Workers:</span>
+                    <span class="detail-value">{{ processingDetails.workers }}</span>
+                </div>
+                <div class="detail-item" *ngIf="processingDetails.memory">
+                    <span class="detail-label">Mémoire:</span>
+                    <span class="detail-value">{{ processingDetails.memory }}</span>
+                </div>
+            </div>
+            <div class="progress-status" *ngIf="processingCancelled">
+                <span class="cancelled-status">⏹️ Traitement annulé</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Mode Manuel -->
+    <div class="file-upload-area" *ngIf="reconciliationMode === 'manual'">
+        <div class="file-input-container" (click)="boFileInput.click()" [class.has-file]="boFile">
+            <div class="file-icon">🏢</div>
+            <h4>BO (Back Office)</h4>
+            <p>Cliquez pour sélectionner le fichier BO (CSV, XLS, XLSX)</p>
+            <input #boFileInput type="file" (change)="onBoFileSelected($event)" accept=".csv, .xls, .xlsx, .xlsm, .xlsb" style="display: none">
+            <div class="file-info" [class.loaded]="boFile">
+                {{ boFile ? boFile.name : 'Aucun fichier sélectionné' }}
+            </div>
+        </div>
+
+        <div class="file-input-container" (click)="partnerFileInput.click()" [class.has-file]="partnerFile">
+            <div class="file-icon">🤝</div>
+            <h4>Partenaire</h4>
+            <p>Cliquez pour sélectionner le fichier Partenaire (CSV, XLS, XLSX)</p>
+            <input #partnerFileInput type="file" (change)="onPartnerFileSelected($event)" accept=".csv, .xls, .xlsx, .xlsm, .xlsb" style="display: none">
+            <div class="file-info" [class.loaded]="partnerFile">
+                {{ partnerFile ? partnerFile.name : 'Aucun fichier sélectionné' }}
+            </div>
+        </div>
+    </div>
+
+    <!-- Mode Automatique -->
+    <div class="auto-reconciliation-area" *ngIf="reconciliationMode === 'automatic'">
+        <div class="file-upload-area">
+            <div class="file-input-container" (click)="autoBoFileInput.click()" [class.has-file]="autoBoFile">
+                <div class="file-icon">🏢</div>
+                <h4>BO (Back Office)</h4>
+                <p>Cliquez pour sélectionner le fichier BO (CSV, XLS, XLSX)</p>
+                <input #autoBoFileInput type="file" (change)="onAutoBoFileSelected($event)" accept=".csv, .xls, .xlsx, .xlsm, .xlsb" style="display: none">
+                <div class="file-info" [class.loaded]="autoBoFile">
+                    {{ autoBoFile ? autoBoFile.name : 'Aucun fichier sélectionné' }}
+                </div>
+            </div>
+
+            <div class="file-input-container" (click)="autoPartnerFileInput.click()" [class.has-file]="autoPartnerFile">
+                <div class="file-icon">🤝</div>
+                <h4>Partenaire</h4>
+                <p>Cliquez pour sélectionner le fichier Partenaire (CSV, XLS, XLSX)</p>
+                <input #autoPartnerFileInput type="file" (change)="onAutoPartnerFileSelected($event)" accept=".csv, .xls, .xlsx, .xlsm, .xlsb" style="display: none">
+                <div class="file-info" [class.loaded]="autoPartnerFile">
+                    {{ autoPartnerFile ? autoPartnerFile.name : 'Aucun fichier sélectionné' }}
+                </div>
+            </div>
+        </div>
+
+        <!-- Status Panel pour le mode automatique -->
+        <div class="status-panel" *ngIf="reconciliationMode === 'automatic'">
+            <div class="status-item">
+                <span class="status-label">BO chargé:</span>
+                <span class="status-value">{{ autoBoFile ? 'Oui' : 'Non' }}</span>
+            </div>
+            <div class="status-item" *ngIf="autoBoFile">
+                <span class="status-label">Nombre de lignes BO:</span>
+                <span class="status-value">{{ autoBoData.length }} lignes</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">Partenaire chargé:</span>
+                <span class="status-value">{{ autoPartnerFile ? 'Oui' : 'Non' }}</span>
+            </div>
+            <div class="status-item" *ngIf="autoPartnerFile">
+                <span class="status-label">Nombre de lignes Partenaire:</span>
+                <span class="status-value">{{ autoPartnerData.length }} lignes</span>
+            </div>
+        </div>
+
+        <!-- Messages d'état pour le mode automatique -->
+        <div class="messages-section" *ngIf="errorMessage || successMessage">
+            <div class="error-message" *ngIf="errorMessage">
+                <span class="error-icon">❌</span>
+                {{ errorMessage }}
+                <button class="close-btn" (click)="clearMessages()">×</button>
+            </div>
+            
+            <div class="success-message" *ngIf="successMessage">
+                <span class="success-icon">✅</span>
+                {{ successMessage }}
+                <button class="close-btn" (click)="clearMessages()">×</button>
+            </div>
+        </div>
+
+        <!-- Indicateur de chargement -->
+        <div class="loading-section" *ngIf="loading">
+            <div class="loading-spinner"></div>
+            <p>🔄 Traitement automatique en cours...</p>
+            <p class="loading-details">
+                Application des modèles de traitement et réconciliation automatique
+            </p>
+        </div>
+
+        <!-- Boutons pour le mode automatique -->
+        <div class="button-container" *ngIf="reconciliationMode === 'automatic'">
+            <button class="btn proceed-btn" [disabled]="!canProceedAuto()" (click)="onAutoProceed()">
+                🔄 Lancer la Réconciliation Automatique
+            </button>
+            <div class="action-buttons">
+                <button class="btn dashboard-btn" (click)="goToDashboard()">
+                    📈 Dashboard
+                </button>
+                <button class="btn stats-btn" (click)="goToStats()">
+                    📊 Statistiques
+                </button>
+            </div>
+        </div>
+
+        <!-- Sélection des services pour TRXBO - Design Moderne -->
+        <div class="service-selection-overlay" *ngIf="showServiceSelection">
+            <div class="service-selection-modal">
+                <!-- En-tête moderne -->
+                <div class="service-selection-header">
+                    <div class="header-badge">
+                        <span class="badge-text">Services disponibles: {{ availableServices.length }}</span>
+                    </div>
+                </div>
+                
+                <div class="service-selection-content">
+                    <!-- Boutons d'action principaux -->
+                    <div class="service-controls">
+                        <button class="modern-btn select-all-btn" (click)="selectAllServices()">
+                            <i class="fas fa-check-double"></i>
+                            Tout sélectionner
+                        </button>
+                        <button class="modern-btn deselect-all-btn" (click)="deselectAllServices()">
+                            <i class="fas fa-check-double"></i>
+                            Tout désélectionner
+                        </button>
+                    </div>
+                    
+                    <!-- Grille de services en cartes -->
+                    <div class="service-grid">
+                        <div class="service-card" *ngFor="let service of availableServices">
+                            <div class="service-card-content">
+                                <div class="service-checkbox-modern">
+                                    <input type="checkbox" 
+                                           [id]="'service-' + service"
+                                           [value]="service" 
+                                           [checked]="selectedServices.includes(service)"
+                                           (change)="onServiceSelectionChange($event, service)">
+                                    <label [for]="'service-' + service" class="checkbox-label">
+                                        <span class="checkmark"></span>
+                                    </label>
+                                </div>
+                                <div class="service-info">
+                                    <h4 class="service-name-modern">{{ service }}</h4>
+                                    <p class="service-count-modern">{{ getServiceCount(service) }} lignes</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Boutons de confirmation modernes -->
+                <div class="service-selection-actions">
+                    <button class="modern-btn cancel-btn" (click)="cancelServiceSelection()">
+                        <i class="fas fa-times"></i>
+                        Annuler
+                    </button>
+                    <button class="modern-btn confirm-btn" 
+                            [disabled]="selectedServices.length === 0"
+                            (click)="confirmServiceSelection()">
+                        <i class="fas fa-check"></i>
+                        Confirmer la sélection
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Mode Super Auto -->
+    <div class="super-auto-reconciliation-area" *ngIf="reconciliationMode === 'super-auto'">
+        <div class="file-upload-area">
+            <div class="file-input-container" (click)="superAutoBoFileInput.click()" [class.has-file]="superAutoBoFile">
+                <div class="file-icon">🏢</div>
+                <h4>BO (Back Office)</h4>
+                <p>Cliquez pour sélectionner le fichier BO (CSV, XLS, XLSX)</p>
+                <input #superAutoBoFileInput type="file" (change)="onSuperAutoBoFileSelected($event)" accept=".csv, .xls, .xlsx, .xlsm, .xlsb" style="display: none">
+                <div class="file-info" [class.loaded]="superAutoBoFile">
+                    {{ superAutoBoFile ? superAutoBoFile.name : 'Aucun fichier sélectionné' }}
+                </div>
+            </div>
+
+            <div class="file-input-container" (click)="superAutoPartnerFileInput.click()" [class.has-file]="superAutoPartnerFile">
+                <div class="file-icon">🤝</div>
+                <h4>Partenaire</h4>
+                <p>Cliquez pour sélectionner le fichier Partenaire (CSV, XLS, XLSX)</p>
+                <input #superAutoPartnerFileInput type="file" (change)="onSuperAutoPartnerFileSelected($event)" accept=".csv, .xls, .xlsx, .xlsm, .xlsb" style="display: none">
+                <div class="file-info" [class.loaded]="superAutoPartnerFile">
+                    {{ superAutoPartnerFile ? superAutoPartnerFile.name : 'Aucun fichier sélectionné' }}
+                </div>
+            </div>
+        </div>
+
+        <!-- Status Panel pour le mode super auto -->
+        <div class="status-panel" *ngIf="reconciliationMode === 'super-auto'">
+            <div class="status-item">
+                <span class="status-label">BO chargé:</span>
+                <span class="status-value">{{ superAutoBoFile ? 'Oui' : 'Non' }}</span>
+            </div>
+            <div class="status-item" *ngIf="superAutoBoFile">
+                <span class="status-label">Nombre de lignes BO:</span>
+                <span class="status-value">{{ superAutoBoData.length }} lignes</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">Partenaire chargé:</span>
+                <span class="status-value">{{ superAutoPartnerFile ? 'Oui' : 'Non' }}</span>
+            </div>
+            <div class="status-item" *ngIf="superAutoPartnerFile">
+                <span class="status-label">Nombre de lignes Partenaire:</span>
+                <span class="status-value">{{ superAutoPartnerData.length }} lignes</span>
+            </div>
+            <div class="status-item" *ngIf="superAutoEstimatedTime">
+                <span class="status-label">Temps estimé (Super Auto):</span>
+                <span class="status-value">{{ superAutoEstimatedTime }}</span>
+            </div>
+        </div>
+
+        <!-- Boutons pour le mode super auto -->
+        <div class="button-container" *ngIf="reconciliationMode === 'super-auto'">
+            <button class="btn proceed-btn super-auto-btn" [disabled]="!canProceedSuperAuto()" (click)="onSuperAutoProceed()" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 15px 30px; border: none; border-radius: 5px; cursor: pointer; font-size: 16px; margin: 10px; font-weight: bold;">
+                🚀 Lancer la Réconciliation Super Auto
+            </button>
+            <div class="action-buttons">
+                <button class="btn dashboard-btn" (click)="goToDashboard()">
+                    📈 Dashboard
+                </button>
+                <button class="btn stats-btn" (click)="goToStats()">
+                    📊 Statistiques
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Status Panel pour le mode manuel -->
+    <div class="status-panel" *ngIf="reconciliationMode === 'manual'">
+        <div class="status-item">
+            <span class="status-label">BO chargé:</span>
+            <span class="status-value">{{ boFile ? 'Oui' : 'Non' }}</span>
+        </div>
+        <div class="status-item" *ngIf="boFile">
+            <span class="status-label">Nombre de lignes BO:</span>
+            <span class="status-value">{{ boData.length }} lignes</span>
+        </div>
+        <div class="status-item">
+            <span class="status-label">Partenaire chargé:</span>
+            <span class="status-value">{{ partnerFile ? 'Oui' : 'Non' }}</span>
+        </div>
+        <div class="status-item" *ngIf="partnerFile">
+            <span class="status-label">Nombre de lignes Partenaire:</span>
+            <span class="status-value">{{ partnerData.length }} lignes</span>
+        </div>
+        <div class="status-item" *ngIf="estimatedTime">
+            <span class="status-label">Temps estimé:</span>
+            <span class="status-value">{{ estimatedTime }}</span>
+        </div>
+    </div>
+
+    <!-- Boutons pour le mode manuel -->
+    <div class="button-container" *ngIf="reconciliationMode === 'manual'">
+        <div class="debug-info" style="background: #f0f0f0; padding: 10px; margin: 10px 0; border-radius: 5px; font-size: 12px;">
+            <strong>Debug:</strong> BO: {{ boData.length }} lignes | Partenaire: {{ partnerData.length }} lignes | Bouton actif: {{ canProceed() ? 'Oui' : 'Non' }}
+        </div>
+        <button class="btn proceed-btn" [disabled]="!canProceed()" (click)="onProceed()" style="background-color: #4CAF50; color: white; padding: 15px 30px; border: none; border-radius: 5px; cursor: pointer; font-size: 16px; margin: 10px;">
+            🚀 Lancer la Réconciliation Manuelle
+        </button>
+        <div class="action-buttons">
+            <button class="btn dashboard-btn" (click)="goToDashboard()">
+                📈 Dashboard
+            </button>
+            <button class="btn stats-btn" (click)="goToStats()">
+                📊 Statistiques
+            </button>
+        </div>
+    </div>
+</div>

@@ -53,6 +53,7 @@ import { AutoProcessingModelsComponent } from './components/auto-processing-mode
 import { BanqueComponent } from './components/banque/banque.component';
 import { ExcelAnalysisComponent } from './components/excel-analysis/excel-analysis.component';
 import { ReconciliationLauncherComponent } from './components/reconciliation-launcher/reconciliation-launcher.component';
+import { ModernPopupComponent } from './components/modern-popup/modern-popup.component';
 
 @NgModule({
     declarations: [
@@ -85,7 +86,8 @@ import { ReconciliationLauncherComponent } from './components/reconciliation-lau
 
                 AutoProcessingModelsComponent,
                 BanqueComponent,
-                ExcelAnalysisComponent
+                ExcelAnalysisComponent,
+                ModernPopupComponent
     ],
     imports: [
         BrowserModule,

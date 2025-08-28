@@ -18,6 +18,7 @@ import { StatisticsService, Statistics } from '../../services/statistics.service
 import { AgencySummaryService } from '../../services/agency-summary.service';
 import { FraisTransactionService } from '../../services/frais-transaction.service';
 import { FraisTransaction } from '../../models/frais-transaction.model';
+import { PopupService } from '../../services/popup.service';
 
 @Component({
     selector: 'app-comptes',
@@ -206,7 +207,8 @@ export class ComptesComponent implements OnInit, OnDestroy {
         private router: Router,
         private ecartSoldeService: EcartSoldeService,
         private impactOPService: ImpactOPService,
-        private trxSfService: TrxSfService
+        private trxSfService: TrxSfService,
+        private popupService: PopupService
     ) {
         this.addForm = this.fb.group({
             numeroCompte: ['', [Validators.required]],
@@ -327,7 +329,7 @@ export class ComptesComponent implements OnInit, OnDestroy {
                     error: (error) => {
                         console.error('Erreur lors de l\'ajout du compte:', error);
                         this.isAdding = false;
-                        alert('Erreur lors de l\'ajout du compte: ' + error.message);
+                        this.popupService.showError('Erreur lors de l\'ajout du compte: ' + error.message);
                     }
                 })
             );
@@ -373,8 +375,9 @@ export class ComptesComponent implements OnInit, OnDestroy {
         });
     }
 
-    deleteCompte(id: number) {
-        if (confirm('Êtes-vous sûr de vouloir supprimer ce compte ?')) {
+    async deleteCompte(id: number) {
+        const confirmed = await this.popupService.showConfirm('Êtes-vous sûr de vouloir supprimer ce compte ?');
+        if (confirmed) {
             this.subscription.add(
                 this.compteService.deleteCompte(id).subscribe({
                     next: (success) => {
@@ -722,7 +725,7 @@ export class ComptesComponent implements OnInit, OnDestroy {
                     error: (error) => {
                         console.error('Erreur lors de la mise à jour du compte:', error);
                         this.isEditing = false;
-                        alert('Erreur lors de la mise à jour du compte: ' + error.message);
+                        this.popupService.showError('Erreur lors de la mise à jour du compte: ' + error.message);
                     }
                 })
             );
@@ -1803,12 +1806,12 @@ export class ComptesComponent implements OnInit, OnDestroy {
           .subscribe({
             next: (response) => {
               console.log('✅ Solde BO enregistré avec succès:', response);
-              alert('Solde BO enregistré !');
+              this.popupService.showSuccess('Solde BO enregistré !');
               this.closeSoldeBoModal();
             },
             error: (error) => {
               console.error('❌ Erreur lors de l\'enregistrement du solde BO:', error);
-              alert(`Erreur lors de l'enregistrement : ${error.message || error.error?.message || 'Erreur inconnue'}`);
+              this.popupService.showError(`Erreur lors de l'enregistrement : ${error.message || error.error?.message || 'Erreur inconnue'}`);
             }
           });
       } else {
@@ -1817,7 +1820,7 @@ export class ComptesComponent implements OnInit, OnDestroy {
           dernierSoldeBo: this.dernierSoldeBo,
           dateSoldeBo: this.dateSoldeBo
         });
-        alert('Veuillez remplir tous les champs requis');
+        this.popupService.showWarning('Veuillez remplir tous les champs requis');
       }
     }
 
@@ -2748,7 +2751,7 @@ export class ComptesComponent implements OnInit, OnDestroy {
 
     exportDateViewData(): void {
         if (this.dateViewData.length === 0) {
-            alert('Aucune donnée à exporter');
+            this.popupService.showWarning('Aucune donnée à exporter');
             return;
         }
 
@@ -2822,22 +2825,22 @@ export class ComptesComponent implements OnInit, OnDestroy {
             document.body.removeChild(link);
             URL.revokeObjectURL(url);
 
-            alert('Export terminé avec succès !');
+            this.popupService.showSuccess('Export terminé avec succès !');
         } catch (error) {
             console.error('Erreur lors de l\'export:', error);
-            alert('Erreur lors de l\'export des données');
+            this.popupService.showError('Erreur lors de l\'export des données');
         }
     }
 
     exportControlRevenu(controle: any): void {
         // TODO: Implémenter l'export du contrôle
         console.log('Exporter le contrôle:', controle);
-        alert(`Export du contrôle du ${controle.date} en cours...`);
+        this.popupService.showInfo(`Export du contrôle du ${controle.date} en cours...`);
     }
 
     exportControlRevenuData(): void {
         if (this.controlRevenuDataFiltered.length === 0) {
-            alert('Aucune donnée à exporter');
+            this.popupService.showWarning('Aucune donnée à exporter');
             return;
         }
 
@@ -2919,7 +2922,7 @@ export class ComptesComponent implements OnInit, OnDestroy {
             console.log('Export Control Revenu réussi:', exportData.length, 'lignes exportées');
         } catch (error) {
             console.error('Erreur lors de l\'export Control Revenu:', error);
-            alert('Erreur lors de l\'export. Veuillez réessayer.');
+            this.popupService.showError('Erreur lors de l\'export. Veuillez réessayer.');
         }
     }
 } 

@@ -5,6 +5,7 @@ import { FraisTransactionService } from '../../services/frais-transaction.servic
 import { FraisTransaction, FraisTransactionRequest } from '../../models/frais-transaction.model';
 import * as XLSX from 'xlsx';
 import { MatSelect } from '@angular/material/select';
+import { PopupService } from '../../services/popup.service';
 
 interface ExportFraisData {
     'ID'?: number | undefined;
@@ -75,7 +76,8 @@ export class FraisComponent implements OnInit, OnDestroy {
     
     constructor(
         private fraisTransactionService: FraisTransactionService,
-        private fb: FormBuilder
+        private fb: FormBuilder,
+        private popupService: PopupService
     ) {
         this.addForm = this.fb.group({
             service: ['', [Validators.required]],
@@ -208,9 +210,9 @@ export class FraisComponent implements OnInit, OnDestroy {
                         console.error('Erreur lors de l\'ajout', err);
                         // Afficher le message d'erreur du backend
                         if (err.error && err.error.error) {
-                            alert('Erreur: ' + err.error.error);
+                            this.popupService.showError('Erreur: ' + err.error.error);
                         } else {
-                            alert('Erreur lors de l\'ajout du frais de transaction');
+                            this.popupService.showError('Erreur lors de l\'ajout du frais de transaction');
                         }
                         this.isAdding = false;
                     }
@@ -260,9 +262,9 @@ export class FraisComponent implements OnInit, OnDestroy {
                         console.error('Erreur lors de la mise à jour', err);
                         // Afficher le message d'erreur du backend
                         if (err.error && err.error.error) {
-                            alert('Erreur: ' + err.error.error);
+                            this.popupService.showError('Erreur: ' + err.error.error);
                         } else {
-                            alert('Erreur lors de la mise à jour du frais de transaction');
+                            this.popupService.showError('Erreur lors de la mise à jour du frais de transaction');
                         }
                     }
                 })
@@ -452,7 +454,7 @@ export class FraisComponent implements OnInit, OnDestroy {
     
     testFraisCalculation() {
         if (!this.testService || !this.testAgence || !this.testVolumeOperation) {
-            alert('Veuillez remplir tous les champs obligatoires');
+            this.popupService.showWarning('Veuillez remplir tous les champs obligatoires');
             return;
         }
         
@@ -477,7 +479,7 @@ export class FraisComponent implements OnInit, OnDestroy {
                 },
                 error: (err: any) => {
                     console.error('Erreur lors du test', err);
-                    alert('Erreur lors du test du calcul');
+                    this.popupService.showError('Erreur lors du test du calcul');
                 }
             })
         );
@@ -527,7 +529,7 @@ export class FraisComponent implements OnInit, OnDestroy {
             this.isExporting = false;
         } catch (error) {
             console.error('Erreur lors de l\'export CSV:', error);
-            alert('Erreur lors de l\'export CSV');
+            this.popupService.showError('Erreur lors de l\'export CSV');
             this.isExporting = false;
         }
     }

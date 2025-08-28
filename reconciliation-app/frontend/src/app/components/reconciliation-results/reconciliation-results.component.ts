@@ -12,6 +12,7 @@ import * as ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
 import { HttpClient } from '@angular/common/http';
 import { Subscription, firstValueFrom } from 'rxjs';
+import { PopupService } from '../../services/popup.service';
 
 interface ApiError {
     error?: {
@@ -1344,7 +1345,7 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
 
     async saveEcartBoToEcartSolde(): Promise<void> {
         if (!this.response?.boOnly || this.response.boOnly.length === 0) {
-            alert('❌ Aucune donnée ECART BO à sauvegarder.');
+            this.popupService.showWarning('❌ Aucune donnée ECART BO à sauvegarder.');
             return;
         }
 
@@ -1447,7 +1448,7 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                 console.error('- idTransaction manquant ou vide');
                 console.error('- agence manquante ou vide');
                 console.error('- Colonnes non trouvées dans les données source');
-                alert('❌ Aucune donnée valide trouvée pour la sauvegarde.');
+                this.popupService.showWarning('❌ Aucune donnée valide trouvée pour la sauvegarde.');
                 return;
             }
 
@@ -1490,7 +1491,7 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
             successMessage += `• Doublons ignorés: ${result.duplicates}\n\n`;
             successMessage += `💾 Les données ont été sauvegardées dans la table Ecart Solde.`;
             
-            alert(successMessage);
+            this.popupService.showSuccess(successMessage);
             
         } catch (error: any) {
             console.error('❌ Erreur lors de la sauvegarde des ECART BO:', error);
@@ -1504,7 +1505,7 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                 errorMessage += 'Veuillez réessayer.';
             }
             
-            alert(errorMessage);
+            this.popupService.showError(errorMessage);
         } finally {
             this.isSavingEcartBo = false;
         }
@@ -1512,7 +1513,7 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
 
     async saveEcartBoToTrxSf(): Promise<void> {
         if (!this.response?.boOnly || this.response.boOnly.length === 0) {
-            alert('❌ Aucune donnée ECART BO à sauvegarder dans TRX SF.');
+            this.popupService.showWarning('❌ Aucune donnée ECART BO à sauvegarder dans TRX SF.');
             return;
         }
 
@@ -1626,7 +1627,7 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
             console.log('DEBUG: Nombre d\'enregistrements valides après filtrage:', validRecords.length);
 
             if (validRecords.length === 0) {
-                alert('❌ Aucun enregistrement valide trouvé pour la sauvegarde dans TRX SF.');
+                this.popupService.showWarning('❌ Aucun enregistrement valide trouvé pour la sauvegarde dans TRX SF.');
                 return;
             }
 
@@ -1639,7 +1640,7 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
             console.log('✅ Sauvegarde dans TRX SF terminée avec succès:', result);
             
             // Afficher un message de succès
-            alert(`✅ ${validRecords.length} enregistrements ECART BO ont été sauvegardés dans TRX SF avec frais TSOP !`);
+            this.popupService.showSuccess(`✅ ${validRecords.length} enregistrements ECART BO ont été sauvegardés dans TRX SF avec frais TSOP !`);
 
         } catch (error) {
             console.error('❌ Erreur lors de la sauvegarde dans TRX SF:', error);
@@ -1654,17 +1655,17 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                 }
             }
             
-            alert(`❌ ${errorMessage}`);
-        } finally {
-            this.isSavingEcartBoToTrxSf = false;
+            this.popupService.showError(`❌ ${errorMessage}`);
+                    } finally {
+                this.isSavingEcartBoToTrxSf = false;
+            }
         }
-    }
-
-    async saveEcartPartnerToTrxSf(): Promise<void> {
-        if (!this.response?.partnerOnly || this.response.partnerOnly.length === 0) {
-            alert('❌ Aucune donnée ECART Partenaire à sauvegarder dans TRX SF.');
-            return;
-        }
+    
+        async saveEcartPartnerToTrxSf(): Promise<void> {
+            if (!this.response?.partnerOnly || this.response.partnerOnly.length === 0) {
+                this.popupService.showWarning('❌ Aucune donnée ECART Partenaire à sauvegarder dans TRX SF.');
+                return;
+            }
 
         this.isSavingEcartPartnerToTrxSf = true;
 
@@ -1776,7 +1777,7 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
             console.log('DEBUG: Nombre d\'enregistrements valides après filtrage:', validRecords.length);
 
             if (validRecords.length === 0) {
-                alert('❌ Aucun enregistrement valide trouvé pour la sauvegarde dans TRX SF.');
+                this.popupService.showWarning('❌ Aucun enregistrement valide trouvé pour la sauvegarde dans TRX SF.');
                 return;
             }
 
@@ -1789,7 +1790,7 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
             console.log('✅ Sauvegarde dans TRX SF terminée avec succès:', result);
             
             // Afficher un message de succès
-            alert(`✅ ${validRecords.length} enregistrements ECART Partenaire ont été sauvegardés dans TRX SF avec frais TSOP !`);
+            this.popupService.showSuccess(`✅ ${validRecords.length} enregistrements ECART Partenaire ont été sauvegardés dans TRX SF avec frais TSOP !`);
 
         } catch (error) {
             console.error('❌ Erreur lors de la sauvegarde dans TRX SF:', error);
@@ -1804,7 +1805,7 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                 }
             }
             
-            alert(`❌ ${errorMessage}`);
+            this.popupService.showError(`❌ ${errorMessage}`);
         } finally {
             this.isSavingEcartPartnerToTrxSf = false;
         }
@@ -1893,7 +1894,7 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
 
     async saveEcartPartnerToEcartSolde(): Promise<void> {
         if (!this.response?.partnerOnly || this.response.partnerOnly.length === 0) {
-            alert('❌ Aucune donnée ECART Partenaire à sauvegarder.');
+            this.popupService.showWarning('❌ Aucune donnée ECART Partenaire à sauvegarder.');
             return;
         }
 
@@ -1999,7 +2000,7 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                 console.error('- idTransaction manquant ou vide');
                 console.error('- agence manquante ou vide');
                 console.error('- Colonnes non trouvées dans les données source');
-                alert('❌ Aucune donnée valide trouvée pour la sauvegarde.');
+                this.popupService.showWarning('❌ Aucune donnée valide trouvée pour la sauvegarde.');
                 return;
             }
 
@@ -2055,7 +2056,7 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
             successMessage += `• Doublons ignorés: ${result.duplicates}\n\n`;
             successMessage += `💾 Les données ont été sauvegardées dans la table Ecart Solde.`;
             
-            alert(successMessage);
+            this.popupService.showSuccess(successMessage);
             
         } catch (error: any) {
             console.error('❌ Erreur lors de la sauvegarde des ECART Partenaire:', error);
@@ -2069,7 +2070,7 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                 errorMessage += 'Veuillez réessayer.';
             }
             
-            alert(errorMessage);
+            this.popupService.showError(errorMessage);
         } finally {
             this.isSavingEcartPartner = false;
         }
@@ -2077,7 +2078,7 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
 
     async saveEcartPartnerToImpactOP(): Promise<void> {
         if (!this.response?.partnerOnly || this.response.partnerOnly.length === 0) {
-            alert('❌ Aucune donnée ECART Partenaire à sauvegarder dans Import OP.');
+            this.popupService.showWarning('❌ Aucune donnée ECART Partenaire à sauvegarder dans Import OP.');
             return;
         }
 
@@ -2153,9 +2154,9 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
             }
 
             if (successCount > 0) {
-                alert(`✅ Sauvegarde réussie !\n\n📊 Résumé:\n• ${successCount} Import OP créés avec succès\n• ${errorCount} erreurs\n\n💾 Les données ECART Partenaire ont été sauvegardées dans Import OP.`);
+                this.popupService.showSuccess(`✅ Sauvegarde réussie !\n\n📊 Résumé:\n• ${successCount} Import OP créés avec succès\n• ${errorCount} erreurs\n\n💾 Les données ECART Partenaire ont été sauvegardées dans Import OP.`);
             } else {
-                alert(`❌ Échec de la sauvegarde !\n\nAucun Import OP n'a pu être créé.\nVeuillez vérifier les logs de la console pour plus de détails.`);
+                this.popupService.showError(`❌ Échec de la sauvegarde !\n\nAucun Import OP n'a pu être créé.\nVeuillez vérifier les logs de la console pour plus de détails.`);
             }
 
         } catch (error) {
@@ -2178,7 +2179,7 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
             
             errorMessage += '\n\nVeuillez réessayer.';
             
-            alert(errorMessage);
+            this.popupService.showError(errorMessage);
         } finally {
             this.isSavingEcartPartnerToImpactOP = false;
         }
@@ -2192,7 +2193,8 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
         private ecartSoldeService: EcartSoldeService,
         private trxSfService: TrxSfService,
         private impactOPService: ImpactOPService,
-        private http: HttpClient
+        private http: HttpClient,
+        private popupService: PopupService
     ) {}
 
     ngOnInit() {
@@ -3624,7 +3626,7 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
             const selectedSummaries = allSummaries.filter(s => this.selectedAgencySummaries.includes(this.getAgencyKey(s)));
     
             if (selectedSummaries.length === 0) {
-                alert('Veuillez sélectionner au moins une ligne à sauvegarder.');
+                this.popupService.showWarning('Veuillez sélectionner au moins une ligne à sauvegarder.');
                 this.isSaving = false;
                 return;
             }
@@ -3647,7 +3649,7 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
                 message += `\nErreurs: ${response.errors.length}`;
             }
             
-            alert(message);
+            this.popupService.showInfo(message);
             
             // Notifier le dashboard seulement quand le résumé est enregistré avec succès
             this.appStateService.notifySummarySaved();
@@ -3676,7 +3678,7 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
             } else if (error && error.message) {
                 msg = error.message;
             }
-            alert(msg);
+            this.popupService.showInfo(msg);
         } finally {
             this.isSaving = false;
         }
