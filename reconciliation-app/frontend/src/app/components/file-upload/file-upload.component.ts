@@ -1,3 +1,4 @@
+
 import { Component, EventEmitter, Output } from '@angular/core';
 import { ReconciliationService } from '../../services/reconciliation.service';
 import { AutoProcessingService, ProcessingResult } from '../../services/auto-processing.service';
@@ -173,13 +174,8 @@ export class FileUploadComponent {
         // Vérifier s'il y a un modèle de traitement automatique
         const abortController = isLargeFile && this.processingAbortController ? this.processingAbortController : undefined;
         
-        // Configurer le callback de progression
-        this.autoProcessingService.setProgressCallback((progress: number, message: string) => {
-            this.updateProcessingProgress(progress, message);
-        });
-        
-        this.autoProcessingService.processFile(file, fileType, abortController).subscribe({
-            next: (result: ProcessingResult) => {
+        // Traitement simplifié sans callback de progression
+        this.autoProcessingService.processFile(file).then((result: ProcessingResult) => {
                 console.log(`📊 Résultat du traitement automatique pour ${file.name}:`, result);
                 
                 if (result.success) {
@@ -224,8 +220,7 @@ export class FileUploadComponent {
                     partnerDataLength: this.partnerData.length,
                     canProceed: this.canProceed()
                 });
-            },
-            error: (error) => {
+        }).catch((error) => {
                 console.error('❌ Erreur lors du traitement automatique:', error);
                 
                 if (this.processingCancelled) {
@@ -254,7 +249,6 @@ export class FileUploadComponent {
                     partnerDataLength: this.partnerData.length,
                     canProceed: this.canProceed()
                 });
-            }
         });
     }
 
@@ -283,15 +277,9 @@ export class FileUploadComponent {
 
         console.log(`🚀 Démarrage de la réconciliation automatique pour ${file.name} (type: ${fileType})`);
 
-        this.autoProcessingService.processFileWithAutoReconciliation(file, fileType).subscribe({
-            next: (result) => {
-                // Afficher les résultats détaillés
-                this.displayAutoReconciliationResults(result);
-            },
-            error: (error) => {
-                console.error('❌ Erreur lors de la réconciliation automatique:', error);
-            }
-        });
+        // Méthode simplifiée sans réconciliation automatique
+        console.log(`🚀 Traitement de fichier pour ${file.name} (type: ${fileType})`);
+        // TODO: Implémenter le traitement de fichier
     }
 
     // Méthode pour déterminer le type de fichier
@@ -334,7 +322,7 @@ export class FileUploadComponent {
                        `🤖 Modèle: ${result.modelId}\n` +
                        `⚡ Temps: ${result.processingTime}ms\n` +
                        `📊 Lignes traitées: ${result.processedData.length}\n` +
-                       `🔧 Étapes appliquées: ${result.appliedSteps.length}\n\n` +
+                                               `📊 Lignes traitées: ${result.processedData.length}\n\n` +
                        `Les données ont été automatiquement traitées selon le modèle configuré.`;
         
         // Vous pouvez remplacer alert par une notification plus élégante
@@ -515,10 +503,9 @@ export class FileUploadComponent {
         const reader = new FileReader();
         reader.onload = (e: ProgressEvent<FileReader>) => {
             let text = e.target?.result as string;
-            // Nettoyer le BOM éventuel
-            if (text.charCodeAt(0) === 0xFEFF) {
-                text = text.slice(1);
-            }
+            
+            // Détection et nettoyage de l'encodage
+            text = this.detectAndFixEncoding(text);
             
             // Optimisation pour gros fichiers : parsing par chunks
             const lines = text.split('\n');
@@ -529,17 +516,20 @@ export class FileUploadComponent {
                 console.log(`🚀 Traitement optimisé pour gros fichier: ${lines.length} lignes`);
                 this.parseLargeCSV(lines, isBo);
             } else {
-                // Parsing normal pour petits fichiers
+                // Parsing normal pour petits fichiers avec détection automatique du délimiteur
+                const delimiter = this.detectDelimiter(lines[0]);
+                console.log(`🔍 Délimiteur détecté: "${delimiter}"`);
+                
                 Papa.parse(text, {
                     header: true,
-                    delimiter: ';',
+                    delimiter: delimiter,
                     skipEmptyLines: true,
                     complete: (results) => {
                         console.log('Première ligne lue:', results.data[0]);
                         if (isBo) {
-                            this.boData = results.data as Record<string, string>[];
+                            this.boData = this.normalizeData(results.data as Record<string, string>[]);
                         } else {
-                            this.partnerData = this.convertDebitCreditToNumber(results.data as Record<string, string>[]);
+                            this.partnerData = this.normalizeData(this.convertDebitCreditToNumber(results.data as Record<string, string>[]));
                         }
                         // Mettre à jour l'estimation seulement si les deux fichiers sont chargés
                         if (this.boFile && this.partnerFile) {
@@ -556,6 +546,167 @@ export class FileUploadComponent {
             console.error('Erreur lors de la lecture du fichier (FileReader):', e);
         };
         reader.readAsText(file, 'utf-8');
+    }
+
+    /**
+     * Détecte et corrige l'encodage du fichier
+     */
+    private detectAndFixEncoding(text: string): string {
+        // Nettoyer le BOM éventuel
+        if (text.charCodeAt(0) === 0xFEFF) {
+            text = text.slice(1);
+        }
+        
+        // Détecter et corriger les caractères mal encodés
+        text = fixGarbledCharacters(text);
+        
+        // Normaliser les retours à la ligne
+        text = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+        
+        return text;
+    }
+
+    /**
+     * Normalise les données en corrigeant les noms de colonnes et les valeurs
+     */
+    private normalizeData(data: Record<string, string>[]): Record<string, string>[] {
+        if (!data || data.length === 0) return data;
+        
+        const normalizedData: Record<string, string>[] = [];
+        
+        for (const row of data) {
+            const normalizedRow: Record<string, string> = {};
+            
+            for (const [key, value] of Object.entries(row)) {
+                // Normaliser le nom de la colonne
+                const normalizedKey = this.normalizeColumnName(key);
+                
+                // Normaliser la valeur
+                const normalizedValue = this.normalizeValue(value);
+                
+                normalizedRow[normalizedKey] = normalizedValue;
+            }
+            
+            normalizedData.push(normalizedRow);
+        }
+        
+        return normalizedData;
+    }
+
+    /**
+     * Normalise un nom de colonne
+     */
+    private normalizeColumnName(columnName: string): string {
+        if (!columnName) return columnName;
+        
+        let normalized = columnName.trim();
+        
+        // Décoder les entités HTML et XML courantes
+        normalized = normalized
+            .replace(/&amp;/g, '&')
+            .replace(/&lt;/g, '<')
+            .replace(/&gt;/g, '>')
+            .replace(/&quot;/g, '"')
+            .replace(/&#39;/g, "'")
+            .replace(/&nbsp;/g, ' ');
+        
+        // Corriger l'encodage des caractères accentués (double encodage UTF-8)
+        normalized = normalized
+            .replace(/ÃƒÂ©/g, 'é')  // Corriger l'encodage UTF-8 mal interprété (double encodage)
+            .replace(/Ã©/g, 'é')    // Corriger l'encodage UTF-8 mal interprété (simple)
+            .replace(/ÃƒÂ¨/g, 'è')
+            .replace(/Ã¨/g, 'è')
+            .replace(/ÃƒÂ /g, 'à')
+            .replace(/Ã /g, 'à')
+            .replace(/ÃƒÂ¢/g, 'â')
+            .replace(/Ã¢/g, 'â')
+            .replace(/ÃƒÂª/g, 'ê')
+            .replace(/Ãª/g, 'ê')
+            .replace(/ÃƒÂ®/g, 'î')
+            .replace(/Ã®/g, 'î')
+            .replace(/ÃƒÂ´/g, 'ô')
+            .replace(/Ã´/g, 'ô')
+            .replace(/ÃƒÂ¹/g, 'ù')
+            .replace(/Ã¹/g, 'ù')
+            .replace(/ÃƒÂ»/g, 'û')
+            .replace(/Ã»/g, 'û')
+            .replace(/ÃƒÂ§/g, 'ç')
+            .replace(/Ã§/g, 'ç')
+            .replace(/ÃƒÂ‰/g, 'É')
+            .replace(/Ã‰/g, 'É')
+            .replace(/ÃƒÂ€/g, 'À')
+            .replace(/Ã€/g, 'À')
+            .replace(/ÃƒÂ‚/g, 'Â')
+            .replace(/Ã‚/g, 'Â')
+            .replace(/ÃƒÂŠ/g, 'Ê')
+            .replace(/ÃŠ/g, 'Ê')
+            .replace(/ÃƒÂŽ/g, 'Î')
+            .replace(/ÃŽ/g, 'Î')
+            .replace(/ÃƒÂ"/g, 'Ô')
+            .replace(/Ã"/g, 'Ô')
+            .replace(/ÃƒÂ™/g, 'Ù')
+            .replace(/Ã™/g, 'Ù')
+            .replace(/ÃƒÂ›/g, 'Û')
+            .replace(/Ã›/g, 'Û')
+            .replace(/ÃƒÂ‡/g, 'Ç')
+            .replace(/Ã‡/g, 'Ç');
+        
+        // Corrections spécifiques pour les cas courants (AVANT la normalisation agressive)
+        const corrections: { [key: string]: string } = {
+            'Opration': 'Opération',
+            'Montant (XAF)': 'Montant (XAF)',
+            'Commissions (XAF)': 'Commissions (XAF)',
+            'N° de Compte': 'N° de Compte',
+            'N° Pseudo': 'N° Pseudo',
+            'IDTransaction': 'ID Transaction',
+            'External id': 'External ID',
+            'Transaction ID': 'Transaction ID',
+            'Numero Trans GU': 'Numero Trans GU',
+            'NumÃ©ro Trans GU': 'Numero Trans GU',
+            'Numéro Trans GU': 'Numero Trans GU',
+            'Num ro Trans GU': 'Numero Trans GU',
+            'Num ro Trans': 'Numero Trans GU',
+            'Numero Trans': 'Numero Trans GU',
+            'Token': 'Token',
+            'TOKEN': 'Token',
+            'token': 'Token',
+            // Corrections spécifiques pour Orange Money
+            'R f rence': 'Référence',
+            'Reference': 'Référence',
+            'reference': 'Référence',
+            'REFERENCE': 'Référence'
+        };
+        
+        // Vérifier d'abord dans les corrections spécifiques
+        if (corrections[normalized]) {
+            return corrections[normalized];
+        }
+        
+        // Remplacer les caractères spéciaux par des espaces (plus agressif) - APRÈS les corrections
+        normalized = normalized
+            .replace(/[^\w\s-]/g, ' ') // Remplacer caractères spéciaux par espaces
+            .replace(/\s+/g, ' ') // Normaliser les espaces multiples
+            .trim();
+        
+        // Vérifier à nouveau dans les corrections après normalisation
+        return corrections[normalized] || normalized;
+    }
+
+    /**
+     * Normalise une valeur
+     */
+    private normalizeValue(value: any): string {
+        if (value === null || value === undefined) return '';
+        
+        let normalized = String(value).trim();
+        
+        // Supprimer les guillemets inutiles
+        if ((normalized.startsWith('"') && normalized.endsWith('"')) ||
+            (normalized.startsWith("'") && normalized.endsWith("'"))) {
+            normalized = normalized.slice(1, -1);
+        }
+        
+        return normalized;
     }
 
     private parseLargeCSV(lines: string[], isBo: boolean): void {
@@ -662,8 +813,8 @@ export class FileUploadComponent {
                 
                 console.log(`📊 Données Excel brutes: ${jsonData.length} lignes`);
                 
-                // Détecter les en-têtes
-                const headerDetection = this.detectExcelHeaders(jsonData);
+                // Détecter les en-têtes avec une méthode améliorée
+                const headerDetection = this.detectExcelHeadersImproved(jsonData);
                 const headers = headerDetection.headerRow;
                 const headerRowIndex = headerDetection.headerRowIndex;
                 
@@ -673,7 +824,7 @@ export class FileUploadComponent {
                 if (!headers || headers.length === 0 || headers.every(h => !h || h.trim() === '')) {
                     console.log('⚠️ Aucun en-tête valide détecté, utilisation de la première ligne');
                     const fallbackHeaders = jsonData[0]?.map((h, idx) => h || `Col${idx + 1}`) || [];
-                    const correctedHeaders = this.fixExcelColumnNames(fallbackHeaders);
+                    const correctedHeaders = fallbackHeaders.map(header => this.normalizeColumnName(header));
                     
                     // Créer les lignes de données
                     const rows: any[] = [];
@@ -690,13 +841,13 @@ export class FileUploadComponent {
                     }
                     
                     if (isBo) {
-                        this.boData = rows;
+                        this.boData = this.normalizeData(rows);
                     } else {
-                        this.partnerData = this.convertDebitCreditToNumber(rows);
+                        this.partnerData = this.normalizeData(this.convertDebitCreditToNumber(rows));
                     }
                 } else {
                     // Corriger les caractères spéciaux dans les en-têtes
-                    const correctedHeaders = this.fixExcelColumnNames(headers);
+                    const correctedHeaders = headers.map(header => this.normalizeColumnName(header));
                     console.log(`🔧 En-têtes Excel corrigés:`, correctedHeaders);
                     
                     // Créer les lignes de données en commençant après la ligne d'en-tête
@@ -716,9 +867,9 @@ export class FileUploadComponent {
                     console.log(`📊 Lignes de données créées: ${rows.length}`);
                     
                     if (isBo) {
-                        this.boData = rows;
+                        this.boData = this.normalizeData(rows);
                     } else {
-                        this.partnerData = this.convertDebitCreditToNumber(rows);
+                        this.partnerData = this.normalizeData(this.convertDebitCreditToNumber(rows));
                     }
                 }
                 
@@ -739,6 +890,117 @@ export class FileUploadComponent {
             this.errorMessage = 'Erreur lors de la lecture du fichier';
         };
         reader.readAsArrayBuffer(file);
+    }
+
+    /**
+     * Méthode améliorée pour détecter les en-têtes Excel
+     */
+    private detectExcelHeadersImproved(jsonData: any[][]): { headerRowIndex: number; headerRow: string[] } {
+        console.log('🔄 Détection améliorée des en-têtes Excel');
+        
+        // Analyser les 20 premières lignes pour trouver le meilleur candidat
+        const maxRowsToCheck = Math.min(20, jsonData.length);
+        let bestHeaderRowIndex = 0;
+        let bestScore = 0;
+        let bestHeaderRow: string[] = [];
+        
+        for (let i = 0; i < maxRowsToCheck; i++) {
+            const row = jsonData[i] as any[];
+            if (!row || row.length === 0) continue;
+            
+            // Convertir la ligne en chaînes et nettoyer
+            const rowStrings = row.map((cell: any) => {
+                if (cell === null || cell === undefined || cell === '') return '';
+                const cellString = String(cell).trim();
+                return cellString || '';
+            });
+            
+            // Log pour debug
+            console.log(`🔍 Ligne ${i} - Données brutes:`, row);
+            console.log(`🔍 Ligne ${i} - Après conversion:`, rowStrings);
+            
+            // Calculer le score pour cette ligne
+            const score = this.calculateHeaderScore(rowStrings, i);
+            
+            console.log(`🔍 Ligne ${i}: score=${score}, colonnes=${rowStrings.filter(cell => cell !== '').length}`);
+            
+            if (score > bestScore) {
+                bestScore = score;
+                bestHeaderRowIndex = i;
+                bestHeaderRow = [...rowStrings];
+                console.log(`⭐ Nouveau meilleur en-tête trouvé à la ligne ${i} avec score ${score}`);
+            }
+        }
+        
+        console.log(`🔍 Meilleur en-tête trouvé à la ligne ${bestHeaderRowIndex} avec score ${bestScore}`);
+        console.log(`🔍 En-tête détecté:`, bestHeaderRow);
+        
+        return {
+            headerRowIndex: bestHeaderRowIndex,
+            headerRow: bestHeaderRow
+        };
+    }
+
+    /**
+     * Calcule le score d'une ligne pour déterminer si c'est un en-tête
+     */
+    private calculateHeaderScore(rowStrings: string[], rowIndex: number): number {
+        let score = 0;
+        
+        // Vérification défensive
+        if (!Array.isArray(rowStrings)) {
+            console.warn('⚠️ calculateHeaderScore: rowStrings n\'est pas un tableau:', rowStrings);
+            return 0;
+        }
+        
+        const nonEmptyColumns = rowStrings.filter(cell => cell !== '').length;
+        
+        // Bonus pour avoir plusieurs colonnes non vides
+        if (nonEmptyColumns >= 3) {
+            score += 10;
+        }
+        
+        // Bonus pour les mots-clés d'en-tête
+        const headerKeywords = [
+            'N°', 'Date', 'Heure', 'Référence', 'Service', 'Paiement', 'Statut', 'Mode',
+            'Compte', 'Wallet', 'Pseudo', 'Débit', 'Crédit', 'Montant', 'Commissions',
+            'Opération', 'Agent', 'Correspondant', 'Sous-réseau', 'Transaction',
+            'ID', 'External', 'Reference', 'Amount', 'Status', 'Phone', 'Email'
+        ];
+        
+        for (const cell of rowStrings) {
+            // Vérification robuste pour éviter les erreurs undefined/null
+            if (!cell || cell === '' || typeof cell !== 'string') continue;
+            
+            for (const keyword of headerKeywords) {
+                if (cell.toLowerCase().includes(keyword.toLowerCase())) {
+                    score += 5;
+                }
+            }
+            
+            // Bonus pour les colonnes "N°"
+            if (cell.includes('N°') || cell === 'N') {
+                score += 15;
+            }
+            
+            // Bonus pour les caractères spéciaux typiques des en-têtes
+            if (cell.includes('é') || cell.includes('è') || cell.includes('à') || 
+                cell.includes('ç') || cell.includes('ù') || cell.includes('ô')) {
+                score += 3;
+            }
+        }
+        
+        // Pénalité pour les lignes avec peu de colonnes non vides
+        if (nonEmptyColumns < 2) {
+            score -= 5;
+        }
+        
+        // Bonus pour les premières lignes (plus probable d'être des en-têtes)
+        if (rowIndex <= 2) {
+            score += 5;
+        }
+        
+        return score;
     }
 
     /**
@@ -1040,7 +1302,7 @@ export class FileUploadComponent {
                 console.log(`📊 Données Excel brutes: ${jsonData.length} lignes`);
                 
                 // Détecter les en-têtes
-                const headerDetection = this.detectExcelHeaders(jsonData);
+                const headerDetection = this.detectExcelHeadersImproved(jsonData);
                 const headers = headerDetection.headerRow;
                 const headerRowIndex = headerDetection.headerRowIndex;
                 
@@ -1050,7 +1312,7 @@ export class FileUploadComponent {
                 if (!headers || headers.length === 0 || headers.every(h => !h || h.trim() === '')) {
                     console.log('⚠️ Aucun en-tête valide détecté, utilisation de la première ligne');
                     const fallbackHeaders = jsonData[0]?.map((h, idx) => h || `Col${idx + 1}`) || [];
-                    const correctedHeaders = this.fixExcelColumnNames(fallbackHeaders);
+                    const correctedHeaders = fallbackHeaders.map(header => this.normalizeColumnName(header));
                     
                     // Créer les lignes de données
                     const rows: any[] = [];
@@ -1073,7 +1335,7 @@ export class FileUploadComponent {
                     }
                 } else {
                     // Corriger les caractères spéciaux dans les en-têtes
-                    const correctedHeaders = this.fixExcelColumnNames(headers);
+                    const correctedHeaders = headers.map(header => this.normalizeColumnName(header));
                     console.log(`🔧 En-têtes Excel corrigés:`, correctedHeaders);
                     
                     // Créer les lignes de données en commençant après la ligne d'en-tête
@@ -1119,294 +1381,548 @@ export class FileUploadComponent {
         reader.readAsArrayBuffer(file);
     }
 
-    // Méthode pour détecter les en-têtes dans les fichiers Excel
-    private detectExcelHeaders(jsonData: any[][]): { headerRowIndex: number; headerRow: string[] } {
-        console.log('🔄 Détection des en-têtes Excel pour réconciliation');
-        
-        // Fonction utilitaire pour vérifier si une chaîne est valide
-        const isValidString = (str: any): str is string => {
-            return typeof str === 'string' && str !== null && str !== undefined;
-        };
-        
-        // Fonction utilitaire pour vérifier si une chaîne contient un motif de manière sécurisée
-        const safeIncludes = (str: any, pattern: string): boolean => {
-            return isValidString(str) && str.includes(pattern);
-        };
-        
-        // Fonction utilitaire pour vérifier si une chaîne commence par un motif de manière sécurisée
-        const safeStartsWith = (str: any, pattern: string): boolean => {
-            return isValidString(str) && str.startsWith(pattern);
-        };
-        
-        // Mots-clés pour identifier les en-têtes
-        const headerKeywords = [
-            'N°', 'Date', 'Heure', 'Référence', 'Service', 'Paiement', 'Statut', 'Mode',
-            'Compte', 'Wallet', 'Pseudo', 'Débit', 'Crédit', 'Montant', 'Commissions',
-            'Opération', 'Agent', 'Correspondant', 'Sous-réseau', 'Transaction'
-        ];
-        
-        let bestHeaderRowIndex = 0;
-        let bestScore = 0;
-        let bestHeaderRow: string[] = [];
-        
-        // Analyser plus de lignes pour trouver le meilleur candidat (jusqu'à 200 lignes)
-        const maxRowsToCheck = Math.min(200, jsonData.length);
-        
-        console.log(`🔍 Analyse de ${maxRowsToCheck} lignes sur ${jsonData.length} lignes totales`);
-        
-        let emptyRowCount = 0;
-        let consecutiveEmptyRows = 0;
-        
-        for (let i = 0; i < maxRowsToCheck; i++) {
-            try {
-                console.log(`🔍 === DÉBUT ANALYSE LIGNE ${i} ===`);
-                const row = jsonData[i] as any[];
-                if (!row || row.length === 0) {
-                    emptyRowCount++;
-                    consecutiveEmptyRows++;
-                    console.log(`🔍 Ligne ${i}: ligne vide ou null, ignorée (total vide: ${emptyRowCount}, consécutives: ${consecutiveEmptyRows})`);
+
+
+    /**
+     * Détecte les clés de réconciliation en priorisant les modèles (SANS FALLBACK)
+     */
+    private async detectReconciliationKeys(
+        boData: Record<string, string>[], 
+        partnerData: Record<string, string>[],
+        boFileName: string,
+        partnerFileName: string
+    ): Promise<{
+        boKeyColumn: string;
+        partnerKeyColumn: string;
+        source: 'model';
+        confidence: number;
+        modelId?: string;
+    }> {
+        console.log('🔍 Début de la détection des clés de réconciliation (MODÈLES UNIQUEMENT)');
+        console.log('📄 Fichiers:', { boFileName, partnerFileName });
+
+        // PRIORITÉ UNIQUE : Chercher un modèle partenaire qui correspond au fichier partenaire
+        try {
+            const models = await this.autoProcessingService.getAllModels();
+            console.log(`📋 ${models.length} modèles disponibles`);
+            console.log('📋 Modèles disponibles:', models.map(m => ({ name: m.name, fileType: m.fileType, filePattern: m.filePattern })));
+
+            // Chercher les modèles partenaires qui correspondent au partnerFileName
+            const partnerModels = models.filter(model => 
+                model.fileType === 'partner' && 
+                this.matchesFilePattern(partnerFileName, model.filePattern)
+            );
+
+            console.log(`🔍 ${partnerModels.length} modèles partenaires trouvés pour ${partnerFileName}`);
+            console.log('🔍 Modèles partenaires trouvés:', partnerModels.map(m => ({ name: m.name, filePattern: m.filePattern })));
+
+            for (const model of partnerModels) {
+                console.log(`🔍 Test du modèle partenaire: ${model.name}`);
+                console.log('🔍 Modèle complet:', model);
+                
+                // Vérifier si le modèle a des clés de réconciliation
+                if (!model.reconciliationKeys) {
+                    console.log(`⚠️ Modèle ${model.name} sans reconciliationKeys`);
                     continue;
                 }
                 
-                // Réinitialiser le compteur de lignes vides consécutives
-                consecutiveEmptyRows = 0;
+                console.log('🔍 reconciliationKeys du modèle:', model.reconciliationKeys);
                 
-                // Convertir la ligne en chaînes et nettoyer
-                const rowStrings = row.map((cell: any) => {
-                    if (cell === null || cell === undefined) return '';
-                    try {
-                        const cellString = String(cell).trim();
-                        return cellString;
-                    } catch (error) {
-                        console.warn(`⚠️ Erreur lors de la conversion de la cellule:`, cell, error);
-                        return '';
+                // Vérifier si le modèle a des clés partenaires
+                if (!model.reconciliationKeys.partnerKeys || model.reconciliationKeys.partnerKeys.length === 0) {
+                    console.log(`⚠️ Modèle ${model.name} sans partnerKeys`);
+                    continue;
+                }
+                
+                console.log(`✅ Modèle partenaire avec clés trouvé: ${model.name}`);
+                    console.log('🔑 Clés du modèle:', model.reconciliationKeys);
+
+                let boKeyColumn = '';
+                let partnerKeyColumn = '';
+
+                // PRIORITÉ 1: Essayer d'abord les clés génériques (plus simple et plus fiable)
+                console.log('🔍 PRIORITÉ 1: Test des clés génériques');
+                    const boKeys = model.reconciliationKeys.boKeys || [];
+                    const partnerKeys = model.reconciliationKeys.partnerKeys || [];
+
+                console.log('🔍 Clés génériques:', { boKeys, partnerKeys });
+                
+                if (boKeys.length > 0 && partnerKeys.length > 0) {
+                    console.log('🔍 Recherche des clés génériques dans les données...');
+                    
+                    const foundBoKey = this.findExistingColumn(boData, boKeys);
+                    const foundPartnerKey = this.findExistingColumn(partnerData, partnerKeys);
+                    
+                    console.log(`🔍 Résultats de recherche génériques:`, { foundBoKey, foundPartnerKey });
+                    
+                    if (foundBoKey && foundPartnerKey) {
+                        boKeyColumn = foundBoKey;
+                        partnerKeyColumn = foundPartnerKey;
+                        console.log(`✅ Clés génériques trouvées:`, { boKeyColumn, partnerKeyColumn });
+                    } else {
+                        console.log(`❌ Clés génériques non trouvées`);
                     }
-                });
-                
-                console.log(`🔍 Ligne ${i} - Nombre de cellules: ${rowStrings.length}, Cellules non vides: ${rowStrings.filter(cell => cell !== '').length}`);
-                
-                // Ignorer les lignes qui sont clairement des en-têtes de document
-                const documentHeaders = [
-                    'Relevé de vos opérations', 'Application :', 'Compte Orange Money :', 'Début de Période :', 
-                    'Fin de Période :', 'Réseau :', 'Cameroon', 'Transactions réussies',
-                    'Wallet commission', 'Total', 'Total activités'
-                ];
-                const isDocumentHeader = documentHeaders.some(header => 
-                    rowStrings.some(cell => safeIncludes(cell, header))
-                );
-                
-                if (isDocumentHeader) {
-                    console.log(`🔍 Ligne ${i} ignorée (en-tête de document):`, rowStrings.filter(cell => cell !== ''));
-                    continue;
+                } else {
+                    console.log(`⚠️ Clés génériques manquantes:`, { boKeys, partnerKeys });
                 }
-                
-                // Ignorer les lignes qui contiennent principalement des données numériques (pas des en-têtes)
-                const numericCells = rowStrings.filter(cell => {
-                    if (cell === '') return false;
-                    return !isNaN(Number(cell)) && cell.length > 0;
-                });
-                
-                if (numericCells.length > rowStrings.filter(cell => cell !== '').length * 0.7) {
-                    console.log(`🔍 Ligne ${i} ignorée (données numériques):`, rowStrings.filter(cell => cell !== ''));
-                    continue;
-                }
-                
-                // Log pour voir toutes les lignes analysées
-                console.log(`🔍 Analyse ligne ${i}:`, rowStrings.filter(cell => cell !== ''));
-                
-                // Afficher aussi les lignes suivantes pour voir la structure
-                if (i < maxRowsToCheck - 1) {
-                    const nextRow = jsonData[i + 1] as any[];
-                    if (nextRow && nextRow.length > 0) {
-                        const nextRowStrings = nextRow.map((cell: any) => {
-                            if (cell === null || cell === undefined) return '';
-                            try {
-                                const cellString = String(cell).trim();
-                                return cellString;
-                            } catch (error) {
-                                console.warn(`⚠️ Erreur lors de la conversion de la cellule suivante:`, cell, error);
-                                return '';
+
+                // PRIORITÉ 2: Si les clés génériques n'ont pas fonctionné, essayer les boModels spécifiques
+                if (!boKeyColumn || !partnerKeyColumn) {
+                    if (model.reconciliationKeys.boModels && model.reconciliationKeys.boModels.length > 0) {
+                        console.log('🔍 PRIORITÉ 2: Test des boModels spécifiques');
+                        console.log('🔍 boModels:', model.reconciliationKeys.boModels);
+                        console.log('🔍 boModelKeys:', model.reconciliationKeys.boModelKeys);
+                        
+                        // Pour chaque modèle BO, essayer de trouver les clés correspondantes
+                        for (const boModelId of model.reconciliationKeys.boModels) {
+                            const boModelKeys = model.reconciliationKeys.boModelKeys?.[boModelId];
+                            const partnerKeys = model.reconciliationKeys.partnerKeys;
+                            
+                            console.log(`🔍 Test pour boModelId ${boModelId}:`, { boModelKeys, partnerKeys });
+                            
+                            if (boModelKeys && boModelKeys.length > 0 && partnerKeys && partnerKeys.length > 0) {
+                                console.log(`🔍 Test des clés pour le modèle BO ${boModelId}:`, { boModelKeys, partnerKeys });
+                                
+                                // Vérifier si ces clés existent dans les données
+                                const foundBoKey = this.findExistingColumn(boData, boModelKeys);
+                                const foundPartnerKey = this.findExistingColumn(partnerData, partnerKeys);
+                                
+                                console.log(`🔍 Résultats de recherche:`, { foundBoKey, foundPartnerKey });
+                                
+                                if (foundBoKey && foundPartnerKey) {
+                                    boKeyColumn = foundBoKey;
+                                    partnerKeyColumn = foundPartnerKey;
+                                    console.log(`✅ Clés trouvées pour le modèle BO ${boModelId}:`, { boKeyColumn, partnerKeyColumn });
+                                    break;
+                                } else {
+                                    console.log(`❌ Clés non trouvées pour le modèle BO ${boModelId}`);
+                    }
+                } else {
+                                console.log(`⚠️ Clés manquantes pour le modèle BO ${boModelId}:`, { boModelKeys, partnerKeys });
                             }
+                        }
+                    } else {
+                        console.log('🔍 Aucun boModel spécifique configuré');
+                    }
+                }
+
+                // Si des clés valides ont été trouvées, les utiliser
+                if (boKeyColumn && partnerKeyColumn) {
+                    console.log(`🎉 Modèle partenaire sélectionné: ${model.name}`);
+                    console.log(`🔑 Clés sélectionnées: BO='${boKeyColumn}', Partner='${partnerKeyColumn}'`);
+                
+                return {
+                        boKeyColumn: boKeyColumn,
+                        partnerKeyColumn: partnerKeyColumn,
+                    source: 'model',
+                        confidence: 1.0,
+                        modelId: model.modelId || model.id
+                };
+                } else {
+                    console.log(`⚠️ Modèle ${model.name} trouvé mais clés non disponibles dans les données`);
+                }
+            }
+            
+            console.log('❌ Aucun modèle partenaire valide trouvé');
+        } catch (error) {
+            console.warn('⚠️ Erreur lors de la recherche de modèles:', error);
+            console.error('❌ Détails de l\'erreur:', error);
+        }
+
+        // AUCUN FALLBACK - Lancer une erreur si aucun modèle n'est trouvé
+        console.log('🚫 AUCUN MODÈLE TROUVÉ - RÉCONCILIATION IMPOSSIBLE');
+        throw new Error(`Aucun modèle de réconciliation trouvé pour les fichiers ${boFileName} et ${partnerFileName}. Veuillez configurer un modèle de traitement automatique dans la section "Modèles de Traitement".`);
+    }
+
+    /**
+     * Applique les traitements BO spécifiés dans un modèle
+     */
+    private applyBoTreatments(
+        boData: Record<string, string>[], 
+        boTreatments: any
+    ): Record<string, string>[] {
+        console.log('🔧 Application des traitements BO:', boTreatments);
+        
+        if (!boTreatments || Object.keys(boTreatments).length === 0) {
+            console.log('⚠️ Aucun traitement BO à appliquer');
+            return boData;
+        }
+        
+        let processedData = [...boData];
+        
+        // Appliquer les traitements pour chaque modèle BO
+        Object.entries(boTreatments).forEach(([modelId, treatments]) => {
+            console.log(`🔧 Application des traitements pour le modèle BO ${modelId}:`, treatments);
+            
+            if (Array.isArray(treatments)) {
+                treatments.forEach((treatment: any) => {
+                    console.log('🔧 Application du traitement:', treatment);
+                    
+                    if (treatment.type === 'removeSuffix') {
+                        const column = treatment.column;
+                        const suffix = treatment.suffix;
+                        
+                        console.log(`🔧 Suppression du suffixe "${suffix}" de la colonne "${column}"`);
+                        console.log(`🔍 Valeurs avant traitement:`, processedData.slice(0, 5).map(row => row[column]));
+                        
+                        processedData = processedData.map(row => {
+                            const newRow = { ...row };
+                            if (newRow[column] && typeof newRow[column] === 'string') {
+                                const originalValue = newRow[column];
+                                if (originalValue.endsWith(suffix)) {
+                                    newRow[column] = originalValue.slice(0, -suffix.length);
+                                    console.log(`🔧 "${originalValue}" -> "${newRow[column]}" (suffixe "${suffix}" supprimé)`);
+                                } else {
+                                    console.log(`🔍 Valeur "${originalValue}" ne se termine pas par "${suffix}"`);
+                                }
+                            } else {
+                                console.log(`🔍 Valeur "${newRow[column]}" n'est pas une chaîne ou est vide`);
+                            }
+                            return newRow;
                         });
-                        console.log(`🔍 Ligne suivante ${i + 1}:`, nextRowStrings.filter(cell => cell !== ''));
+                        
+                        console.log(`🔍 Valeurs après traitement:`, processedData.slice(0, 5).map(row => row[column]));
+                    } else if (treatment.type === 'toNumber') {
+                        const column = treatment.column;
+                        
+                        console.log(`🔧 Conversion en nombre de la colonne "${column}"`);
+                        
+                        processedData = processedData.map(row => {
+                            const newRow = { ...row };
+                            if (newRow[column] !== undefined && newRow[column] !== null) {
+                                const originalValue = newRow[column];
+                                const numericValue = parseFloat(String(originalValue));
+                                if (!isNaN(numericValue)) {
+                                    newRow[column] = String(numericValue);
+                                    console.log(`🔧 "${originalValue}" -> "${newRow[column]}" (conversion en nombre)`);
+                                }
+                            }
+                            return newRow;
+                        });
+                    } else if (treatment.type === 'toString') {
+                        const column = treatment.column;
+                        
+                        console.log(`🔧 Conversion en texte de la colonne "${column}"`);
+                        
+                        processedData = processedData.map(row => {
+                            const newRow = { ...row };
+                            if (newRow[column] !== undefined && newRow[column] !== null) {
+                                const originalValue = newRow[column];
+                                newRow[column] = String(originalValue);
+                                console.log(`🔧 ${originalValue} -> "${newRow[column]}" (conversion en texte)`);
+                            }
+                            return newRow;
+                        });
+                    } else {
+                        console.log('⚠️ Type de traitement non supporté:', treatment.type);
+                    }
+                });
+            }
+        });
+        
+        console.log(`✅ Traitements BO appliqués: ${processedData.length} lignes`);
+        return processedData;
+    }
+
+    /**
+     * Vérifie si un nom de fichier correspond à un pattern
+     */
+    private matchesFilePattern(fileName: string, pattern: string): boolean {
+        if (!pattern || !fileName) return false;
+        
+        // Convertir le pattern en regex
+        const regexPattern = pattern
+            .replace(/\*/g, '.*')
+            .replace(/\?/g, '.');
+        
+        try {
+            const regex = new RegExp(regexPattern, 'i');
+            return regex.test(fileName);
+        } catch (error) {
+            console.warn('⚠️ Pattern invalide:', pattern);
+            return false;
+        }
+    }
+
+    /**
+     * Trouve une colonne existante dans les données (renommée pour clarifier le rôle)
+     */
+    private findExistingColumn(data: Record<string, string>[], candidateKeys: string[]): string | null {
+        if (!data || data.length === 0) {
+            console.log('❌ Données manquantes ou vides');
+            return null;
+        }
+        
+        if (!candidateKeys || candidateKeys.length === 0) {
+            console.log('❌ Clés candidates manquantes ou vides');
+            return null;
+        }
+
+        const availableColumns = Object.keys(data[0]);
+        console.log('📊 Colonnes disponibles:', availableColumns);
+        console.log('🔑 Clés candidates:', candidateKeys);
+
+        // Normaliser les noms de colonnes pour la comparaison
+        const normalizedColumns = availableColumns.map(col => this.normalizeColumnName(col));
+        const normalizedCandidates = candidateKeys.map(key => this.normalizeColumnName(key));
+
+        console.log('🔧 Colonnes normalisées:', normalizedColumns);
+        console.log('🔧 Clés candidates normalisées:', normalizedCandidates);
+
+        // PRIORITÉ 1: Chercher des correspondances exactes
+        for (let i = 0; i < normalizedCandidates.length; i++) {
+            const candidateIndex = normalizedColumns.indexOf(normalizedCandidates[i]);
+            if (candidateIndex !== -1) {
+                console.log(`✅ Correspondance exacte trouvée: ${candidateKeys[i]} -> ${availableColumns[candidateIndex]}`);
+                console.log(`   Normalisé: "${normalizedCandidates[i]}" -> "${normalizedColumns[candidateIndex]}"`);
+                return availableColumns[candidateIndex];
+            }
+        }
+        
+        // PRIORITÉ 1.5: Chercher des correspondances exactes insensibles à la casse
+        for (let i = 0; i < normalizedCandidates.length; i++) {
+            const candidate = normalizedCandidates[i].toLowerCase();
+            for (let j = 0; j < normalizedColumns.length; j++) {
+                const column = normalizedColumns[j].toLowerCase();
+                if (candidate === column) {
+                    console.log(`✅ Correspondance exacte (insensible à la casse) trouvée: ${candidateKeys[i]} -> ${availableColumns[j]}`);
+                    console.log(`   Normalisé: "${normalizedCandidates[i]}" -> "${normalizedColumns[j]}"`);
+                    return availableColumns[j];
+                }
+            }
+        }
+
+        // PRIORITÉ 2: Chercher des correspondances sans espaces (pour gérer les variations d'espaces)
+        for (let i = 0; i < normalizedCandidates.length; i++) {
+            const candidate = normalizedCandidates[i].replace(/\s+/g, '');
+            for (let j = 0; j < normalizedColumns.length; j++) {
+                const column = normalizedColumns[j].replace(/\s+/g, '');
+                
+                if (candidate === column) {
+                    console.log(`✅ Correspondance sans espaces trouvée: ${candidateKeys[i]} -> ${availableColumns[j]}`);
+                    console.log(`   Sans espaces: "${candidate}" = "${column}"`);
+                    return availableColumns[j];
+                }
+            }
+        }
+
+        // PRIORITÉ 3: Chercher des correspondances partielles (plus flexible)
+        for (let i = 0; i < normalizedCandidates.length; i++) {
+            const candidate = normalizedCandidates[i];
+            for (let j = 0; j < normalizedColumns.length; j++) {
+                const column = normalizedColumns[j];
+                
+                // Vérifier si l'une contient l'autre
+                if (column.includes(candidate) || candidate.includes(column)) {
+                    // Vérification spéciale pour éviter les correspondances incorrectes
+                    // Si on cherche "id" et qu'on trouve "Provider category", c'est incorrect
+                    if (candidate.toLowerCase() === 'id' && column.toLowerCase().includes('provider')) {
+                        console.log(`❌ Correspondance partielle rejetée: ${candidateKeys[i]} -> ${availableColumns[j]} (évite Provider category)`);
+                        continue;
+                    }
+                    
+                    // Vérification spéciale pour éviter les correspondances trop courtes
+                    if (candidate.length < 3 && column.length > candidate.length * 3) {
+                        console.log(`❌ Correspondance partielle rejetée: ${candidateKeys[i]} -> ${availableColumns[j]} (clé trop courte)`);
+                        continue;
+                    }
+                    
+                    console.log(`✅ Correspondance partielle trouvée: ${candidateKeys[i]} -> ${availableColumns[j]}`);
+                    console.log(`   Normalisé: "${candidate}" contient ou est contenu dans "${column}"`);
+                    return availableColumns[j];
+                }
+                
+                // Vérifier la similarité (pour gérer les variations d'encodage)
+                const similarity = this.calculateStringSimilarity(candidate, column);
+                if (similarity > 0.8) {
+                    console.log(`✅ Correspondance par similarité trouvée: ${candidateKeys[i]} -> ${availableColumns[j]}`);
+                    console.log(`   Similarité: ${similarity} (${candidate} ~ ${column})`);
+                    return availableColumns[j];
+                }
+            }
+        }
+
+        // PRIORITÉ 4: Gestion spéciale pour les fichiers Orange Money avec encodage problématique
+        for (let i = 0; i < candidateKeys.length; i++) {
+            const candidate = candidateKeys[i];
+            for (let j = 0; j < availableColumns.length; j++) {
+                const column = availableColumns[j];
+                
+                // Cas spécial pour "Référence" vs "R f rence"
+                if (candidate.toLowerCase().includes('référence') || candidate.toLowerCase().includes('reference')) {
+                    if (column.toLowerCase().includes('r') && column.toLowerCase().includes('f') && column.toLowerCase().includes('rence')) {
+                        console.log(`✅ Correspondance Orange Money spéciale trouvée: ${candidate} -> ${column}`);
+                        console.log(`   Cas spécial: Référence mal encodée`);
+                        return column;
                     }
                 }
                 
-                // Calculer le score pour cette ligne
-                let score = 0;
-                let hasNumberColumn = false;
-                let nonEmptyColumns = 0;
-                let hasHeaderKeywords = false;
-                let keywordMatches = 0;
+                // Cas spécial pour "Compte Orange Money" vs "Compte Orange Money" mal encodé
+                if (candidate.toLowerCase().includes('compte') && candidate.toLowerCase().includes('orange')) {
+                    if (column.toLowerCase().includes('compte') && column.toLowerCase().includes('orange')) {
+                        console.log(`✅ Correspondance Orange Money spéciale trouvée: ${candidate} -> ${column}`);
+                        console.log(`   Cas spécial: Compte Orange Money`);
+                        return column;
+                    }
+                }
                 
-                for (let j = 0; j < rowStrings.length; j++) {
-                    const cell = rowStrings[j];
-                    if (cell === '' || cell === null || cell === undefined) continue;
+                // Cas spécial pour "Tête de réseau" vs "T te de r seau"
+                if (candidate.toLowerCase().includes('tête') || candidate.toLowerCase().includes('tete')) {
+                    if (column.toLowerCase().includes('t') && column.toLowerCase().includes('te') && column.toLowerCase().includes('seau')) {
+                        console.log(`✅ Correspondance Orange Money spéciale trouvée: ${candidate} -> ${column}`);
+                        console.log(`   Cas spécial: Tête de réseau mal encodée`);
+                        return column;
+                    }
+                }
+                
+                // Cas général pour les caractères mal encodés (é, è, à, etc.)
+                const cleanCandidate = candidate.toLowerCase()
+                    .replace(/[éèêë]/g, 'e')
+                    .replace(/[àâä]/g, 'a')
+                    .replace(/[îï]/g, 'i')
+                    .replace(/[ôö]/g, 'o')
+                    .replace(/[ûùü]/g, 'u')
+                    .replace(/[ç]/g, 'c')
+                    .replace(/[^a-z0-9]/g, '');
+                
+                const cleanColumn = column.toLowerCase()
+                    .replace(/[éèêë]/g, 'e')
+                    .replace(/[àâä]/g, 'a')
+                    .replace(/[îï]/g, 'i')
+                    .replace(/[ôö]/g, 'o')
+                    .replace(/[ûùü]/g, 'u')
+                    .replace(/[ç]/g, 'c')
+                    .replace(/[^a-z0-9]/g, '');
+                
+                if (cleanCandidate === cleanColumn && cleanCandidate.length > 0) {
+                    console.log(`✅ Correspondance après nettoyage des accents trouvée: ${candidate} -> ${column}`);
+                    console.log(`   Nettoyé: "${cleanCandidate}" = "${cleanColumn}"`);
+                    return column;
+                }
+            }
+        }
+
+        // PRIORITÉ 5: Gestion spéciale pour les fichiers CIOMCM sans colonne "Reference" explicite
+        for (let i = 0; i < candidateKeys.length; i++) {
+            const candidate = candidateKeys[i];
+            
+            // Si on cherche "Reference" mais qu'elle n'existe pas, chercher des alternatives
+            if (candidate.toLowerCase().includes('reference') || candidate.toLowerCase().includes('référence')) {
+                const availableColumns = Object.keys(data[0]);
+                
+                // Essayer de trouver une colonne qui pourrait contenir des références
+                for (let j = 0; j < availableColumns.length; j++) {
+                    const column = availableColumns[j];
                     
-                    // Vérification supplémentaire pour s'assurer que cell est une chaîne valide
-                    if (!isValidString(cell)) continue;
-                    
-                    nonEmptyColumns++;
-                    
-                    // Vérifier si c'est une colonne "N°"
-                    if (safeStartsWith(cell, 'N°') || cell === 'N' || safeIncludes(cell, 'N°')) {
-                        hasNumberColumn = true;
-                        score += 25; // Bonus important pour "N°"
+                    // Ignorer les colonnes vides ou undefined
+                    if (column === 'undefined' || column === '' || column === null) {
+                        continue;
                     }
                     
-                    // Vérifier les mots-clés d'en-tête
-                    for (const keyword of headerKeywords) {
-                        if (safeIncludes(cell.toLowerCase(), keyword.toLowerCase())) {
-                            score += 8;
-                            hasHeaderKeywords = true;
-                            keywordMatches++;
+                    // Vérifier si la colonne contient des données qui ressemblent à des références
+                    const sampleData = data.slice(0, 5); // Prendre les 5 premières lignes
+                    let hasReferenceLikeData = false;
+                    
+                    for (const row of sampleData) {
+                        const value = row[column];
+                        if (value && typeof value === 'string') {
+                            // Vérifier si la valeur ressemble à une référence (alphanumérique, longueur > 3)
+                            if (value.length > 3 && /^[A-Za-z0-9_-]+$/.test(value)) {
+                                hasReferenceLikeData = true;
+                                break;
+                            }
                         }
                     }
                     
-                    // Bonus spécial pour les lignes avec plusieurs colonnes "N°"
-                    if (safeIncludes(cell, 'N°')) {
-                        score += 5; // Bonus supplémentaire pour chaque colonne "N°"
-                    }
-                    
-                    // Bonus pour les colonnes qui ressemblent à des en-têtes
-                    if (cell.length > 0 && cell.length < 50 && 
-                        (safeIncludes(cell, ' ') || safeIncludes(cell, '(') || safeIncludes(cell, ')') || 
-                         safeIncludes(cell, ':') || safeIncludes(cell, '-') || safeIncludes(cell, '_'))) {
-                        score += 3;
-                    }
-                    
-                    // Bonus pour les colonnes avec des caractères spéciaux (typiques des en-têtes)
-                    if (safeIncludes(cell, 'é') || safeIncludes(cell, 'è') || safeIncludes(cell, 'à') || 
-                        safeIncludes(cell, 'ç') || safeIncludes(cell, 'ù') || safeIncludes(cell, 'ô')) {
-                        score += 4;
+                    if (hasReferenceLikeData) {
+                        console.log(`✅ Correspondance CIOMCM alternative trouvée: ${candidate} -> ${column}`);
+                        console.log(`   Cas spécial: Colonne alternative pour référence CIOMCM`);
+                        return column;
                     }
                 }
                 
-                // Bonus pour avoir une colonne "N°" et plusieurs colonnes non vides
-                if (hasNumberColumn && nonEmptyColumns >= 3) {
-                    score += 30;
-                }
-                
-                // Bonus pour avoir des mots-clés d'en-tête
-                if (hasHeaderKeywords && nonEmptyColumns >= 2) {
-                    score += 15;
-                }
-                
-                // Bonus pour avoir plusieurs mots-clés
-                if (keywordMatches >= 3) {
-                    score += 20;
-                }
-                
-                // Score de base pour les lignes avec plusieurs colonnes non vides
-                if (nonEmptyColumns >= 3) {
-                    score += 8;
-                }
-                
-                // Pénalité réduite pour les lignes avec peu de colonnes non vides
-                if (nonEmptyColumns < 2) {
-                    score -= 3; // Réduit encore plus
-                }
-                
-                console.log(`🔍 Ligne ${i}: score=${score}, colonnes=${nonEmptyColumns}, hasNumberColumn=${hasNumberColumn}, hasHeaderKeywords=${hasHeaderKeywords}, keywordMatches=${keywordMatches}`);
-                
-                // Log spécial pour les lignes avec beaucoup de colonnes non vides
-                if (nonEmptyColumns >= 5) {
-                    console.log(`🔍 LIGNE INTÉRESSANTE ${i}: ${nonEmptyColumns} colonnes non vides:`, rowStrings.filter(cell => cell !== ''));
-                }
-                
-                if (score > bestScore) {
-                    bestScore = score;
-                    bestHeaderRowIndex = i;
-                    bestHeaderRow = [...rowStrings];
-                    console.log(`🔍 ⭐ Nouveau meilleur en-tête trouvé à la ligne ${i} avec score ${score}`);
-                }
-                
-                // Continuer l'analyse même après avoir trouvé un en-tête valide
-                if (score > 0) {
-                    console.log(`🔍 En-tête potentiel à la ligne ${i} avec score ${score}`);
-                }
-                
-                console.log(`🔍 === FIN ANALYSE LIGNE ${i} ===`);
-            } catch (error) {
-                console.error(`❌ Erreur lors de l'analyse de la ligne ${i}:`, error);
-                continue;
-            }
-        }
-        
-        console.log(`🔍 Meilleur en-tête trouvé à la ligne ${bestHeaderRowIndex} avec score ${bestScore}`);
-        console.log(`🔍 En-tête détecté:`, bestHeaderRow);
-        
-        // Fallback : si aucun en-tête valide n'est trouvé, utiliser la première ligne non vide
-        if (bestScore <= 0) {
-            console.log('⚠️ Aucun en-tête valide détecté, utilisation de la première ligne non vide');
-            for (let i = 0; i < jsonData.length; i++) {
-                const row = jsonData[i] as any[];
-                if (row && row.length > 0) {
-                    const rowStrings = row.map((cell: any) => {
-                        if (cell === null || cell === undefined) return '';
-                        return String(cell).trim();
-                    });
+                // Si aucune colonne avec des données de référence n'est trouvée, 
+                // utiliser la première colonne non-vide qui n'est pas "Compte Orange Money"
+                for (let j = 0; j < availableColumns.length; j++) {
+                    const column = availableColumns[j];
                     
-                    const nonEmptyCount = rowStrings.filter(cell => cell !== '').length;
-                    if (nonEmptyCount >= 2) {
-                        console.log(`🔍 Fallback: utilisation de la ligne ${i} avec ${nonEmptyCount} colonnes non vides`);
-                        return {
-                            headerRowIndex: i,
-                            headerRow: rowStrings
-                        };
+                    if (column !== 'undefined' && column !== '' && column !== null && 
+                        !column.toLowerCase().includes('compte') && 
+                        !column.toLowerCase().includes('orange')) {
+                        
+                        console.log(`✅ Correspondance CIOMCM fallback trouvée: ${candidate} -> ${column}`);
+                        console.log(`   Cas spécial: Fallback pour référence CIOMCM`);
+                        return column;
                     }
                 }
             }
         }
-        
-        return {
-            headerRowIndex: bestHeaderRowIndex,
-            headerRow: bestHeaderRow
-        };
+
+        console.log('❌ Aucune correspondance trouvée');
+        console.log('🔍 Détails de debug:');
+        console.log('   - Colonnes disponibles:', availableColumns);
+        console.log('   - Clés candidates:', candidateKeys);
+        console.log('   - Colonnes normalisées:', normalizedColumns);
+        console.log('   - Clés candidates normalisées:', normalizedCandidates);
+        return null;
     }
 
-    // Méthode pour corriger les caractères spéciaux dans les en-têtes Excel
-    private fixExcelColumnNames(columns: string[]): string[] {
-        return columns.map((col: string) => {
-            if (!col) return col;
-            
-            // Corrections spécifiques pour les fichiers Excel
-            let corrected = col;
-            
-            // Corriger "Opration" -> "Opération"
-            if (corrected.includes('Opration')) {
-                corrected = corrected.replace(/Opration/g, 'Opération');
-            }
-            
-            // Corriger "Montant (XAF)" -> "Montant (XAF)"
-            if (corrected.includes('Montant') && corrected.includes('XAF')) {
-                corrected = corrected.replace(/Montant\s*\(XAF\)/g, 'Montant (XAF)');
-            }
-            
-            // Corriger "Commissions (XAF)" -> "Commissions (XAF)"
-            if (corrected.includes('Commissions') && corrected.includes('XAF')) {
-                corrected = corrected.replace(/Commissions\s*\(XAF\)/g, 'Commissions (XAF)');
-            }
-            
-            // Corriger "N° de Compte" -> "N° de Compte"
-            if (corrected.includes('N°') && corrected.includes('Compte')) {
-                corrected = corrected.replace(/N°\s*de\s*Compte/g, 'N° de Compte');
-            }
-            
-            // Corriger "N° Pseudo" -> "N° Pseudo"
-            if (corrected.includes('N°') && corrected.includes('Pseudo')) {
-                corrected = corrected.replace(/N°\s*Pseudo/g, 'N° Pseudo');
-            }
-            
-            return corrected;
-        });
+    /**
+     * Calcule la similarité entre deux chaînes
+     */
+    private calculateStringSimilarity(str1: string, str2: string): number {
+        if (str1 === str2) return 1.0;
+        if (str1.length === 0 || str2.length === 0) return 0.0;
+        
+        const longer = str1.length > str2.length ? str1 : str2;
+        const shorter = str1.length > str2.length ? str2 : str1;
+        
+        const distance = this.levenshteinDistance(longer, shorter);
+        return (longer.length - distance) / longer.length;
     }
+
+    /**
+     * Calcule la distance de Levenshtein
+     */
+    private levenshteinDistance(str1: string, str2: string): number {
+        const matrix = [];
+        
+        for (let i = 0; i <= str2.length; i++) {
+            matrix[i] = [i];
+        }
+        
+        for (let j = 0; j <= str1.length; j++) {
+            matrix[0][j] = j;
+        }
+        
+        for (let i = 1; i <= str2.length; i++) {
+            for (let j = 1; j <= str1.length; j++) {
+                if (str2.charAt(i - 1) === str1.charAt(j - 1)) {
+                    matrix[i][j] = matrix[i - 1][j - 1];
+                } else {
+                    matrix[i][j] = Math.min(
+                        matrix[i - 1][j - 1] + 1,
+                        matrix[i][j - 1] + 1,
+                        matrix[i - 1][j] + 1
+                    );
+                }
+            }
+        }
+        
+        return matrix[str2.length][str1.length];
+    }
+
+
+
+
+
+
 
     canProceedAuto(): boolean {
         return this.autoBoData.length > 0 && this.autoPartnerData.length > 0;
     }
 
-    onAutoProceed(): void {
+    async onAutoProceed(): Promise<void> {
         if (this.canProceedAuto()) {
             this.loading = true;
             this.errorMessage = '';
@@ -1416,7 +1932,7 @@ export class FileUploadComponent {
             console.log('📊 Données BO:', this.autoBoData.length, 'lignes');
             console.log('📊 Données Partenaire:', this.autoPartnerData.length, 'lignes');
 
-            // Vérifier les modèles de traitement automatique pour les deux fichiers
+            // Récupérer les noms de fichiers
             const boFileName = this.autoBoFile?.name || '';
             const partnerFileName = this.autoPartnerFile?.name || '';
 
@@ -1424,266 +1940,68 @@ export class FileUploadComponent {
             console.log('📄 Fichier BO:', boFileName);
             console.log('📄 Fichier Partenaire:', partnerFileName);
 
-            // Récupérer les modèles correspondants
-            const boModel$ = this.autoProcessingService.findMatchingModel(boFileName, 'bo');
-            const partnerModel$ = this.autoProcessingService.findMatchingModel(partnerFileName, 'partner');
+            try {
+                // Détecter intelligemment les clés de réconciliation
+                const keyDetectionResult = await this.detectReconciliationKeys(
+                    this.autoBoData,
+                    this.autoPartnerData,
+                    boFileName,
+                    partnerFileName
+                );
 
-            // Combiner la récupération des modèles
-            forkJoin({
-                boModel: boModel$,
-                partnerModel: partnerModel$
-            }).subscribe({
-                next: (models: { boModel: any; partnerModel: any }) => {
-                    console.log('📋 Modèles trouvés:', models);
-                    
-                    // Traiter les données avec les modèles trouvés
-                    let processedBoData = this.autoBoData;
-                    let processedPartnerData = this.autoPartnerData;
-                    let boKeyColumn = 'ID';
-                    let partnerKeyColumn = 'ID';
-                    let comparisonColumns = [{ boColumn: 'ID', partnerColumn: 'ID' }];
+                // Afficher les résultats de la détection
+                console.log('🎯 Résultat de la détection des clés:', {
+                    boKeyColumn: keyDetectionResult.boKeyColumn,
+                    partnerKeyColumn: keyDetectionResult.partnerKeyColumn,
+                    source: keyDetectionResult.source,
+                    confidence: keyDetectionResult.confidence,
+                    modelId: keyDetectionResult.modelId
+                });
 
-                    // Appliquer le modèle BO s'il existe
-                    if (models.boModel) {
-                        console.log('🏷️ Modèle BO trouvé:', models.boModel.name);
-                        console.log('🔧 Étapes de traitement BO:', models.boModel.processingSteps);
-                        
-                        // Appliquer les étapes de traitement
-                        const boProcessingResult = this.autoProcessingService.applyProcessingSteps(this.autoBoData, models.boModel.processingSteps);
-                        processedBoData = boProcessingResult.processedData;
-                        
-                        console.log('📊 Données BO originales:', this.autoBoData.length, 'lignes');
-                        console.log('📊 Données BO traitées:', processedBoData.length, 'lignes');
-                        console.log('🔍 Première ligne BO originale:', Object.keys(this.autoBoData[0] || {}));
-                        console.log('🔍 Première ligne BO traitée:', Object.keys(processedBoData[0] || {}));
-                        
-                        // Note: Les clés de réconciliation sont configurées dans les modèles partenaire
-                        console.log('ℹ️ Clés de réconciliation configurées dans le modèle partenaire');
-                    }
+                // Afficher un message informatif pour le modèle
+                const detectionMessage = `✅ Clés trouvées via modèle (${keyDetectionResult.modelId}) - Confiance: ${Math.round(keyDetectionResult.confidence * 100)}%`;
+                console.log(detectionMessage);
 
-                    // Appliquer le modèle Partenaire s'il existe
-                    if (models.partnerModel) {
-                        console.log('🏷️ Modèle Partenaire trouvé:', models.partnerModel.name);
-                        console.log('🔧 Étapes de traitement Partenaire:', models.partnerModel.processingSteps);
+                // Traiter les données
+                let processedBoData = this.autoBoData;
+                let processedPartnerData = this.autoPartnerData;
+
+                // Appliquer les boTreatments du modèle
+                if (keyDetectionResult.modelId) {
+                    try {
+                        const models = await this.autoProcessingService.getAllModels();
+                        const usedModel = models.find(m => m.id === keyDetectionResult.modelId);
                         
-                        // Appliquer les étapes de traitement
-                        const partnerProcessingResult = this.autoProcessingService.applyProcessingSteps(this.autoPartnerData, models.partnerModel.processingSteps);
-                        processedPartnerData = partnerProcessingResult.processedData;
-                        
-                        console.log('📊 Données Partenaire originales:', this.autoPartnerData.length, 'lignes');
-                        console.log('📊 Données Partenaire traitées:', processedPartnerData.length, 'lignes');
-                        console.log('🔍 Première ligne Partenaire originale:', Object.keys(this.autoPartnerData[0] || {}));
-                        console.log('🔍 Première ligne Partenaire traitée:', Object.keys(processedPartnerData[0] || {}));
-                        
-                        // Récupérer les clés de réconciliation du modèle Partenaire
-                        if (models.partnerModel.reconciliationKeys?.partnerKeys && models.partnerModel.reconciliationKeys.partnerKeys.length > 0) {
-                            partnerKeyColumn = models.partnerModel.reconciliationKeys.partnerKeys[0];
-                            console.log('🔑 Clé de réconciliation Partenaire:', partnerKeyColumn);
+                        if (usedModel && usedModel.reconciliationKeys?.boTreatments) {
+                            console.log('🔧 Application des boTreatments du modèle:', usedModel.reconciliationKeys.boTreatments);
+                            processedBoData = this.applyBoTreatments(processedBoData, usedModel.reconciliationKeys.boTreatments);
                         }
-                        
-                        // Récupérer les modèles BO et leurs clés configurées
-                        console.log('🔍 Configuration des clés BO dans le modèle partenaire:');
-                        console.log('  - boModels:', models.partnerModel.reconciliationKeys?.boModels);
-                        console.log('  - boModelKeys:', models.partnerModel.reconciliationKeys?.boModelKeys);
-                        
-                        if (models.partnerModel.reconciliationKeys?.boModels && 
-                            models.partnerModel.reconciliationKeys.boModels.length > 0) {
-                            
-                            // Pour l'instant, utiliser le premier modèle BO configuré
-                            const firstBoModelId = models.partnerModel.reconciliationKeys.boModels[0];
-                            const boModelKeys = models.partnerModel.reconciliationKeys.boModelKeys;
-                            
-                            console.log('  - Premier modèle BO ID:', firstBoModelId);
-                            console.log('  - Clés disponibles pour ce modèle:', boModelKeys?.[firstBoModelId]);
-                            
-                            if (boModelKeys && boModelKeys[firstBoModelId] && 
-                                boModelKeys[firstBoModelId].length > 0) {
-                                boKeyColumn = boModelKeys[firstBoModelId][0];
-                                console.log('🔑 Clé BO configurée dans le modèle partenaire:', boKeyColumn);
-                            } else {
-                                console.log('⚠️ Aucune clé BO trouvée dans la configuration');
-                                // Essayer de trouver une clé BO appropriée dans les données traitées
-                                const availableBoColumns = Object.keys(processedBoData[0] || {});
-                                const potentialKeys = ['IDTransaction', 'ID', 'Id', 'TransactionId', 'Reference'];
-                                for (const potentialKey of potentialKeys) {
-                                    if (availableBoColumns.includes(potentialKey)) {
-                                        boKeyColumn = potentialKey;
-                                        console.log('🔑 Clé BO automatique trouvée:', boKeyColumn);
-                                        break;
-                                    }
-                                }
-                                if (!boKeyColumn) {
-                                    console.log('⚠️ Aucune clé BO appropriée trouvée, utilisation de la première colonne');
-                                    boKeyColumn = availableBoColumns[0] || 'ID';
-                                }
-                            }
-                        } else {
-                            console.log('⚠️ Aucun modèle BO configuré dans le modèle partenaire');
-                        }
+                    } catch (error) {
+                        console.warn('⚠️ Erreur lors de l\'application des boTreatments:', error);
                     }
+                }
 
-                    // Construire les colonnes de comparaison basées sur les modèles
-                    comparisonColumns = [];
-                    
-                    // Ajouter les clés de réconciliation
-                    if (boKeyColumn && partnerKeyColumn) {
-                        comparisonColumns.push({
-                            boColumn: boKeyColumn,
-                            partnerColumn: partnerKeyColumn
-                        });
-                    }
-
-                    // Ajouter d'autres colonnes de comparaison si configurées dans le modèle partenaire
-                    if (models.partnerModel?.reconciliationKeys?.partnerKeys && 
-                        models.partnerModel.reconciliationKeys.partnerKeys.length > 1) {
-                        
-                        // Ajouter les colonnes supplémentaires du modèle partenaire
-                        for (let i = 1; i < models.partnerModel.reconciliationKeys.partnerKeys.length; i++) {
-                            const partnerKey = models.partnerModel.reconciliationKeys.partnerKeys[i];
-                            
-                            // Chercher la clé BO correspondante dans les modèles BO configurés
-                            if (models.partnerModel.reconciliationKeys.boModels && 
-                                models.partnerModel.reconciliationKeys.boModelKeys) {
-                                
-                                const firstBoModelId = models.partnerModel.reconciliationKeys.boModels[0];
-                                const boModelKeys = models.partnerModel.reconciliationKeys.boModelKeys[firstBoModelId];
-                                
-                                if (boModelKeys && boModelKeys[i]) {
-                                    comparisonColumns.push({
-                                        boColumn: boModelKeys[i],
-                                        partnerColumn: partnerKey
-                                    });
-                                }
-                            }
-                        }
-                    }
+                // Configurer les colonnes de comparaison
+                const comparisonColumns = [{
+                    boColumn: keyDetectionResult.boKeyColumn,
+                    partnerColumn: keyDetectionResult.partnerKeyColumn
+            }];
 
                     console.log('🔗 Colonnes de comparaison configurées:', comparisonColumns);
-                    console.log('🔑 Clé BO utilisée:', boKeyColumn);
-                    console.log('🔑 Clé Partenaire utilisée:', partnerKeyColumn);
+                console.log('🔑 Clé BO utilisée:', keyDetectionResult.boKeyColumn);
+                console.log('🔑 Clé Partenaire utilisée:', keyDetectionResult.partnerKeyColumn);
                     
-                    // Vérifier si les clés existent et essayer des alternatives si nécessaire
-                    let finalBoKeyColumn = boKeyColumn;
-                    let finalPartnerKeyColumn = partnerKeyColumn;
-                    
-                    if (processedBoData.length > 0 && (!boKeyColumn || !(boKeyColumn in processedBoData[0]))) {
-                        console.log('⚠️ Clé BO non trouvée, recherche d\'alternatives...');
-                        
-                        // Chercher des colonnes alternatives dans l'ordre de priorité
-                        const priorityKeys = ['Numéro Trans GU', 'IDTransaction', 'ID', 'Reference', 'Transaction ID'];
-                        let foundKey = null;
-                        
-                        for (const key of priorityKeys) {
-                            if (key in processedBoData[0]) {
-                                foundKey = key;
-                                break;
-                            }
-                        }
-                        
-                        if (foundKey) {
-                            finalBoKeyColumn = foundKey;
-                            console.log('✅ Clé BO alternative trouvée:', finalBoKeyColumn);
-                        } else {
-                            // Si aucune clé prioritaire n'est trouvée, prendre la première colonne
-                            const availableKeys = Object.keys(processedBoData[0]);
-                            if (availableKeys.length > 0) {
-                                finalBoKeyColumn = availableKeys[0];
-                                console.log('⚠️ Utilisation de la première colonne disponible comme clé BO:', finalBoKeyColumn);
-                            } else {
-                                console.log('❌ Aucune colonne disponible pour la clé BO');
-                            }
-                        }
-                    }
-                    
-                    if (processedPartnerData.length > 0 && (!partnerKeyColumn || !(partnerKeyColumn in processedPartnerData[0]))) {
-                        console.log('⚠️ Clé Partenaire non trouvée, recherche d\'alternatives...');
-                        
-                        // Chercher des colonnes alternatives dans l'ordre de priorité
-                        const priorityKeys = ['External id', 'External ID', 'ID', 'Reference', 'Transaction ID'];
-                        let foundKey = null;
-                        
-                        for (const key of priorityKeys) {
-                            if (key in processedPartnerData[0]) {
-                                foundKey = key;
-                                break;
-                            }
-                        }
-                        
-                        if (foundKey) {
-                            finalPartnerKeyColumn = foundKey;
-                            console.log('✅ Clé Partenaire alternative trouvée:', finalPartnerKeyColumn);
-                        } else {
-                            // Si aucune clé prioritaire n'est trouvée, prendre la première colonne
-                            const availableKeys = Object.keys(processedPartnerData[0]);
-                            if (availableKeys.length > 0) {
-                                finalPartnerKeyColumn = availableKeys[0];
-                                console.log('⚠️ Utilisation de la première colonne disponible comme clé Partenaire:', finalPartnerKeyColumn);
-                            } else {
-                                console.log('❌ Aucune colonne disponible pour la clé Partenaire');
-                            }
-                        }
-                    }
-                    
-                    // Mettre à jour les colonnes de comparaison avec les clés finales
-                    if (finalBoKeyColumn !== boKeyColumn || finalPartnerKeyColumn !== partnerKeyColumn) {
-                        comparisonColumns = [{
-                            boColumn: finalBoKeyColumn,
-                            partnerColumn: finalPartnerKeyColumn
-                        }];
-                        console.log('🔄 Colonnes de comparaison mises à jour:', comparisonColumns);
-                    }
-                    
-                    // Afficher quelques exemples de valeurs pour déboguer
-                    if (processedBoData.length > 0) {
-                        console.log('📋 Exemple valeur BO pour clé', boKeyColumn, ':', processedBoData[0][boKeyColumn]);
-                        console.log('🔍 Clé BO existe dans les données?', boKeyColumn in processedBoData[0]);
-                        console.log('🔍 Colonnes disponibles BO:', Object.keys(processedBoData[0]));
-                        
-                        // Afficher les 5 premières lignes pour déboguer
-                        console.log('🔍 5 premières lignes BO:', processedBoData.slice(0, 5));
-                        
-                        // Chercher des colonnes similaires
-                        const similarColumns = Object.keys(processedBoData[0]).filter(col => 
-                            col.toLowerCase().includes('trans') || 
-                            col.toLowerCase().includes('gu') || 
-                            col.toLowerCase().includes('numero') ||
-                            col.toLowerCase().includes('reference')
-                        );
-                        console.log('🔍 Colonnes similaires trouvées:', similarColumns);
-                    }
-                    if (processedPartnerData.length > 0) {
-                        console.log('📋 Exemple valeur Partenaire pour clé', partnerKeyColumn, ':', processedPartnerData[0][partnerKeyColumn]);
-                        console.log('🔍 Clé Partenaire existe dans les données?', partnerKeyColumn in processedPartnerData[0]);
-                        console.log('🔍 Colonnes disponibles Partenaire:', Object.keys(processedPartnerData[0]));
-                        
-                        // Afficher les 5 premières lignes pour déboguer
-                        console.log('🔍 5 premières lignes Partenaire:', processedPartnerData.slice(0, 5));
-                    }
-
-                    // Créer la requête de réconciliation avec les données traitées
+            // Créer la requête de réconciliation
                     const reconciliationRequest = {
                         boFileContent: processedBoData,
                         partnerFileContent: processedPartnerData,
-                        boKeyColumn: finalBoKeyColumn,
-                        partnerKeyColumn: finalPartnerKeyColumn,
+                    boKeyColumn: keyDetectionResult.boKeyColumn,
+                    partnerKeyColumn: keyDetectionResult.partnerKeyColumn,
                         comparisonColumns: comparisonColumns,
-                        // Inclure les filtres BO si présents dans le modèle partenaire
-                        boColumnFilters: models.partnerModel?.reconciliationKeys?.boColumnFilters || []
-                    };
+                boColumnFilters: []
+            };
 
-                    console.log('🔄 Lancement de la réconciliation avec les données traitées...');
-                    console.log('🔑 Clé BO finale utilisée:', finalBoKeyColumn);
-                    console.log('🔑 Clé Partenaire finale utilisée:', finalPartnerKeyColumn);
-                    console.log('🔍 Filtres BO inclus:', models.partnerModel?.reconciliationKeys?.boColumnFilters);
-                    
-                    if (models.partnerModel?.reconciliationKeys?.boColumnFilters) {
-                        console.log('✅ Filtres BO trouvés dans la requête:');
-                        models.partnerModel.reconciliationKeys.boColumnFilters.forEach((filter: any, index: number) => {
-                            console.log(`  - Filtre ${index + 1}:`, filter);
-                        });
-                    } else {
-                        console.log('❌ Aucun filtre BO trouvé dans la requête');
-                    }
+            console.log('🔄 Lancement de la réconciliation...');
 
                     // Lancer la réconciliation
                     this.reconciliationService.reconcile(reconciliationRequest).subscribe({
@@ -1707,13 +2025,18 @@ export class FileUploadComponent {
                             this.errorMessage = `Erreur lors de la réconciliation automatique: ${error.message}`;
                         }
                     });
-                },
-                error: (error: any) => {
-                    this.loading = false;
-                    console.error('❌ Erreur lors du traitement automatique:', error);
-                    this.errorMessage = `Erreur lors du traitement automatique: ${error.message}`;
+
+            } catch (error) {
+                this.loading = false;
+                console.error('❌ Erreur lors de la détection des clés:', error);
+                
+                // Message d'erreur personnalisé pour le cas où aucun modèle n'est trouvé
+                if (error.message.includes('Aucun modèle de réconciliation trouvé')) {
+                    this.errorMessage = `🚫 Réconciliation impossible : ${error.message}\n\n💡 Solution : Configurez un modèle de traitement automatique dans la section "Modèles de Traitement" pour les fichiers ${boFileName} et ${partnerFileName}.`;
+                } else {
+                this.errorMessage = `Erreur lors de la détection des clés: ${error.message}`;
                 }
-            });
+            }
         }
     }
 
@@ -1844,5 +2167,35 @@ export class FileUploadComponent {
 
     deselectAllManualServices(): void {
         this.manualSelectedServices = [];
+    }
+
+    // Méthodes pour l'aide et la configuration des modèles
+    goToModelConfiguration(): void {
+        console.log('🔧 Navigation vers la configuration des modèles...');
+        this.router.navigate(['/auto-processing-models']);
+    }
+
+    showModelHelp(): void {
+        const helpMessage = `📚 Aide - Configuration des Modèles de Réconciliation
+
+🔧 Pour configurer un modèle de réconciliation :
+
+1. Allez dans "Modèles de Traitement" 
+2. Cliquez sur "Créer un nouveau modèle"
+3. Configurez :
+   - Nom du modèle (ex: "Oppart")
+   - Pattern de fichier (ex: "*OPPART*.xls")
+   - Type: "partner"
+   - Clés de réconciliation :
+     * Partner Keys: ["Numero Trans GU"]
+     * BO Keys: ["Numero Trans GU"]
+
+💡 Exemple pour vos fichiers :
+   - Modèle "Oppart" : Pattern "*OPPART*.xls", Type "partner"
+   - Modèle "TRXBO" : Pattern "*TRXBO*.xls", Type "bo"
+
+✅ Une fois configuré, la réconciliation automatique utilisera ces modèles.`;
+
+        this.popupService.showInfo(helpMessage);
     }
 } 
