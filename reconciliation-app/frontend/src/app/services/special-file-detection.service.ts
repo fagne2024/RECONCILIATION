@@ -255,81 +255,19 @@ export class SpecialFileDetectionService {
     };
   }
 
-  // Normaliser le nom d'une colonne (gérer les caractères spéciaux)
+  /**
+   * Méthode simple qui retourne la valeur de la colonne sans modification
+   */
   private normalizeColumnName(columnName: string): string {
-    if (!columnName) return columnName;
-    
-    let normalizedName = columnName;
-    
-    // Normalisation des caractères spéciaux français
-    const frenchCharReplacements: { [key: string]: string } = {
-      // Caractères corrompus spécifiques aux colonnes
-      'tlphone': 'téléphone',
-      'Numro': 'Numéro',
-      'Solde aprs': 'Solde après',
-      'Code proprietaire': 'Code propriétaire',
-      'groupe de rseau': 'groupe de réseau',
-      'Code rseau': 'Code réseau',
-      'date de cration': 'date de création',
-      'Motif rgularisation': 'Motif régularisation',
-      'Dstinataire': 'Destinataire',
-      'Login demandeur Appro': 'Login demandeur Appro',
-      'Login valideur Appro': 'Login valideur Appro',
-      'Motif rejet': 'Motif rejet',
-      'Frais connexion': 'Frais connexion',
-      'Login agent': 'Login agent',
-      'Type agent': 'Type agent',
-      'Date d\'envoi vers part': 'Date d\'envoi vers part',
-      'Action faite': 'Action faite',
-      'Partenaire dist ID': 'Partenaire dist ID',
-      'Agence SC': 'Agence SC',
-      'Groupe reseau SC': 'Groupe reseau SC',
-      'Agent SC': 'Agent SC',
-      'PDA SC': 'PDA SC',
-      'Date dernier traitement': 'Date dernier traitement',
-      
-      // Corrections spécifiques pour les fichiers Excel
-      'Opration': 'Opération',
-      'Montant (XAF)': 'Montant (XAF)',
-      'Commissions (XAF)': 'Commissions (XAF)',
-      'N° de Compte': 'N° de Compte',
-      'N° Pseudo': 'N° Pseudo',
-      
-      // Corrections spécifiques pour TRXBO
-      'tÃ©lÃ©phone client': 'téléphone client',
-      'NumÃ©ro Trans GU': 'Numéro Trans GU',
-      'tÃ©lÃ©phone': 'téléphone',
-      'NumÃ©ro': 'Numéro'
-    };
-
-    // Appliquer les remplacements de caractères spéciaux
-    for (const [corrupted, correct] of Object.entries(frenchCharReplacements)) {
-      if (normalizedName.includes(corrupted)) {
-        normalizedName = normalizedName.replace(new RegExp(this.escapeRegExp(corrupted), 'g'), correct);
-      }
-    }
-
-    // Normalisation des espaces multiples et caractères invisibles
-    normalizedName = normalizedName
-      .replace(/\s+/g, ' ')  // Espaces multiples -> un seul espace
-      .replace(/[\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]/g, ' ')  // Caractères invisibles -> espace
-      .trim();
-
-    // Normalisation de la casse pour les mots-clés spécifiques
-    const keywordsToNormalize = [
-      'téléphone', 'numéro', 'propriétaire', 'réseau', 'création', 
-      'régularisation', 'destinataire', 'connexion', 'opération'
-    ];
-    
-    keywordsToNormalize.forEach(keyword => {
-      const regex = new RegExp(this.escapeRegExp(keyword), 'gi');
-      normalizedName = normalizedName.replace(regex, keyword);
-    });
-
-    return normalizedName;
+    return columnName;
   }
 
-  // Méthode pour échapper les caractères spéciaux dans les expressions régulières
+  /**
+   * Échappe les caractères spéciaux regex dans une chaîne
+   * 
+   * @param string La chaîne à échapper
+   * @return La chaîne avec les caractères spéciaux échappés
+   */
   private escapeRegExp(string: string): string {
     return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }

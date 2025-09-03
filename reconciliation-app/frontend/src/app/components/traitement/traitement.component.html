@@ -1,7 +1,14 @@
 <div class="traitement-container">
   <div class="header-section">
     <h2>Traitement de fichiers (CSV, XLS, XLSX)</h2>
-    <button type="button" class="new-treatment-btn" (click)="newTraitement()">+ Nouveau traitement</button>
+    <div class="header-actions">
+      <button type="button" class="btn btn-outline-secondary" (click)="toggleAllSections()">
+        <i class="fas fa-eye" *ngIf="!allSectionsVisible"></i>
+        <i class="fas fa-eye-slash" *ngIf="allSectionsVisible"></i>
+        {{ allSectionsVisible ? 'Masquer tout' : 'Afficher tout' }}
+      </button>
+      <button type="button" class="new-treatment-btn" (click)="newTraitement()">+ Nouveau traitement</button>
+    </div>
   </div>
   
   <!-- Barre de progression pour les fichiers volumineux -->
@@ -80,17 +87,256 @@
     </ul>
   </div>
   
-  <!-- Indication Orange Money -->
-  <div *ngIf="isOrangeMoneyFile" class="orange-money-indicator">
-    <div class="orange-money-badge">
-      <i class="fas fa-mobile-alt"></i>
-      <span>Fichier Orange Money détecté</span>
-      <small>Les lignes au-dessus de la première colonne "N°" seront ignorées</small>
+     <!-- Indication Orange Money -->
+   <div *ngIf="isOrangeMoneyFile" class="orange-money-indicator">
+     <div class="orange-money-badge">
+       <i class="fas fa-mobile-alt"></i>
+       <span>Fichier Orange Money détecté</span>
+       <small>Les lignes au-dessus de la première colonne "N°" seront ignorées</small>
+     </div>
+           <div class="orange-money-features">
+        <div class="feature-item">
+          <i class="fas fa-filter"></i>
+          <span>Filtre automatique "Succès" appliqué</span>
+        </div>
+        <div class="feature-item">
+          <i class="fas fa-exchange-alt"></i>
+          <span>Filtre automatique "Cash in" et "Merchant Payment" appliqué</span>
+        </div>
+        <div class="feature-item">
+          <i class="fas fa-columns"></i>
+          <span>Affichage automatique des colonnes : Référence, Débit, Crédit, N° de Compte, DATE, Service, Statut</span>
+        </div>
+        <div class="feature-item">
+          <i class="fas fa-calendar-alt"></i>
+          <span>Concaténation automatique Date + Heure → colonne "DATE"</span>
+        </div>
+      </div>
+   </div>
+  
+  <!-- Aperçu des données combinées en première position -->
+  <div *ngIf="combinedRows.length > 0" class="preview-table" style="margin-top: 32px;">
+    <div class="section-header">
+      <h4>
+        <i class="fas fa-table"></i> Aperçu des données combinées
+        <button type="button" class="btn btn-sm btn-outline-info" (click)="toggleSection('preview')">
+          <i class="fas fa-eye" *ngIf="!showSections.preview"></i>
+          <i class="fas fa-eye-slash" *ngIf="showSections.preview"></i>
+          {{ showSections.preview ? 'Masquer' : 'Afficher' }}
+        </button>
+      </h4>
     </div>
-  </div>
+    
+    <div *ngIf="showSections.preview" class="section-content">
+   
+   <!-- Contrôles de réorganisation des colonnes -->
+   <div class="column-reorder-controls" style="margin-bottom: 16px;">
+     <div class="reorder-controls">
+       <button type="button" 
+               (click)="toggleColumnReorderMode()" 
+               [class.active]="isColumnReorderMode"
+               class="reorder-btn">
+         {{ isColumnReorderMode ? '🔄 Mode réorganisation actif' : '📋 Réorganiser les colonnes' }}
+       </button>
+       
+       <div *ngIf="isColumnReorderMode" class="reorder-actions">
+         <button type="button" (click)="applyColumnReorder()" class="apply-btn">✅ Appliquer</button>
+         <button type="button" (click)="cancelColumnReorder()" class="cancel-btn">❌ Annuler</button>
+       </div>
+     </div>
+     
+     <div *ngIf="isColumnReorderMode" class="reorder-instructions">
+       <span class="instruction-text">💡 Glissez-déposez les colonnes pour les réorganiser ou utilisez les boutons ↑↓</span>
+     </div>
+   </div>
+   
+   <!-- Informations sur le fichier -->
+   <div class="file-info-panel" *ngIf="combinedRows.length > 1000">
+     <div class="file-stats">
+       <div class="stat-item">
+         <span class="stat-label">📊 Total lignes :</span>
+         <span class="stat-value">{{ combinedRows.length.toLocaleString() }}</span>
+       </div>
+       <div class="stat-item">
+         <span class="stat-label">📋 Colonnes :</span>
+         <span class="stat-value">{{ columns.length }}</span>
+       </div>
+       <div class="stat-item">
+         <span class="stat-label">💾 Taille estimée :</span>
+         <span class="stat-value">{{ getFileStats().fileSize }}</span>
+       </div>
+     </div>
+     <div class="performance-tips" *ngIf="getFileStats().isLargeFile">
+       <div class="tip-icon">💡</div>
+       <div class="tip-content">
+         <strong>Conseils pour les gros fichiers :</strong>
+         <ul>
+           <li>Utilisez les filtres pour réduire la quantité de données affichées</li>
+           <li>Sélectionnez uniquement les colonnes nécessaires</li>
+           <li>Utilisez la pagination pour naviguer efficacement</li>
+           <li>Évitez d'afficher toutes les lignes pour de meilleures performances</li>
+         </ul>
+       </div>
+     </div>
+   </div>
+   <!-- Contrôles d'affichage -->
+   <div class="display-controls" *ngIf="combinedRows.length > 20">
+     <div class="control-group">
+       <label>Lignes par page :</label>
+       <select [(ngModel)]="rowsPerPage" (change)="onRowsPerPageChange()" [disabled]="showAllRows">
+         <option value="50">50</option>
+         <option value="100">100</option>
+         <option value="200">200</option>
+         <option value="500">500</option>
+         <option value="1000">1000</option>
+       </select>
+     </div>
+     <div class="control-group">
+       <label>
+         <input type="checkbox" [(ngModel)]="showAllRows" (change)="toggleShowAllRows()">
+         Afficher toutes les lignes ({{ combinedRows.length }})
+       </label>
+     </div>
+     <div class="control-group" *ngIf="!showAllRows">
+       <span class="info-text">
+         Affichage des lignes {{ startRow }} à {{ endRow }} sur {{ combinedRows.length }} total
+       </span>
+     </div>
+   </div>
+   <div class="table-responsive">
+     <div class="export-csv-bar" style="margin-bottom: 8px; display: flex; align-items: center; gap: 16px;">
+       <div class="export-controls" style="display: flex; align-items: center; gap: 8px;">
+         <label for="exportFileName" style="font-weight: 500; color: #333;">Nom du fichier:</label>
+         <input 
+           type="text" 
+           id="exportFileName"
+           [(ngModel)]="exportFileName" 
+           placeholder="resultat"
+           style="padding: 4px 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; min-width: 150px;"
+           title="Entrez le nom du fichier (l'extension sera ajoutée automatiquement selon le format choisi)">
+       </div>
+       <button type="button" (click)="exportCSV()" style="background: #007bff; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer;">Exporter en CSV</button>
+       <button type="button" (click)="exportXLS()" style="background: #28a745; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer;">Exporter en XLS</button>
+       <div *ngIf="successMsg.export" class="success-msg">{{ successMsg.export }}</div>
+       <div *ngIf="errorMsg.export" class="error-msg">{{ errorMsg.export }}</div>
+       <div *ngIf="successMsg.reorder" class="success-msg">{{ successMsg.reorder }}</div>
+     </div>
+     <table>
+       <thead>
+         <tr>
+           <th *ngFor="let col of getDisplayColumns(); let i = index"
+               [draggable]="isColumnReorderMode"
+               (dragstart)="onColumnDragStart($event, col)"
+               (dragover)="onColumnDragOver($event, col)"
+               (drop)="onColumnDrop($event, col)"
+               (dragend)="onColumnDragEnd()"
+               [class.dragging]="isColumnDragging(col)"
+               [class.drag-over]="isColumnDragOver(col)"
+               [class.reorder-mode]="isColumnReorderMode"
+               class="column-header">
+             
+             <div class="column-content">
+               <span class="column-title">{{ col }}</span>
+               
+               <div *ngIf="isColumnReorderMode" class="column-controls">
+                 <button type="button" 
+                         (click)="moveColumnUp(col)" 
+                         [disabled]="i === 0"
+                         class="move-btn move-up"
+                         title="Déplacer vers le haut">
+                   ↑
+                 </button>
+                 <button type="button" 
+                         (click)="moveColumnDown(col)" 
+                         [disabled]="i === getDisplayColumns().length - 1"
+                         class="move-btn move-down"
+                         title="Déplacer vers le bas">
+                   ↓
+                 </button>
+               </div>
+             </div>
+           </th>
+         </tr>
+       </thead>
+       <tbody>
+         <tr *ngFor="let row of displayedRows">
+           <td *ngFor="let col of getDisplayColumns()">{{ row[col] }}</td>
+         </tr>
+       </tbody>
+     </table>
+     <!-- Pagination -->
+     <div class="pagination" *ngIf="!showAllRows && totalPages > 1">
+       <div class="pagination-info">
+         Page {{ currentPage }} sur {{ totalPages }}
+       </div>
+       <div class="pagination-controls">
+         <button 
+           type="button" 
+           (click)="onPageChange(1)" 
+           [disabled]="currentPage === 1"
+           class="pagination-btn">
+           « Première
+         </button>
+         <button 
+           type="button" 
+           (click)="onPageChange(currentPage - 1)" 
+           [disabled]="currentPage === 1"
+           class="pagination-btn">
+           ‹ Précédente
+         </button>
+         <span class="page-numbers">
+           <ng-container *ngFor="let page of getPageNumbers()">
+             <span *ngIf="page === -1" class="page-ellipsis">...</span>
+             <button 
+               *ngIf="page !== -1"
+               type="button" 
+               (click)="onPageChange(page)" 
+               [class.active]="page === currentPage"
+               class="pagination-btn page-number">
+               {{ page }}
+             </button>
+           </ng-container>
+         </span>
+         <button 
+           type="button" 
+           (click)="onPageChange(currentPage + 1)" 
+           [disabled]="currentPage === totalPages"
+           class="pagination-btn">
+           Suivante ›
+         </button>
+         <button 
+           type="button" 
+           (click)="onPageChange(totalPages)" 
+           [disabled]="currentPage === totalPages"
+           class="pagination-btn">Dernière »</button>
+       </div>
+     </div>
+     <!-- Message d'information pour les gros fichiers -->
+     <div *ngIf="combinedRows.length > 10000" class="large-file-info">
+       <div class="info-box">
+         <strong>Fichier volumineux détecté :</strong> {{ combinedRows.length.toLocaleString() }} lignes
+         <br>
+         <small>
+           💡 Conseil : Utilisez les filtres ou la sélection de colonnes pour réduire la taille des données affichées.
+         </small>
+       </div>
+     </div>
+   </div>
+   </div>
   
   <div *ngIf="allColumns.length > 0" class="select-cols-section">
-    <h4>Sélection des colonnes à conserver</h4>
+    <div class="section-header">
+      <h4>
+        <i class="fas fa-columns"></i> Sélection des colonnes à conserver
+        <button type="button" class="btn btn-sm btn-outline-info" (click)="toggleSection('selectCols')">
+          <i class="fas fa-eye" *ngIf="!showSections.selectCols"></i>
+          <i class="fas fa-eye-slash" *ngIf="showSections.selectCols"></i>
+          {{ showSections.selectCols ? 'Masquer' : 'Afficher' }}
+        </button>
+      </h4>
+    </div>
+    
+    <div *ngIf="showSections.selectCols" class="section-content">
     <div class="select-cols">
       <label>
         <input type="checkbox"
@@ -108,14 +354,24 @@
       <button type="button" class="select-cols-btn apply-btn" (click)="applyColumnSelection()" [disabled]="selectedCols.length === 0">Appliquer la sélection</button>
       <button type="button" class="select-cols-btn reset-btn" (click)="resetColumnSelection()">Réinitialiser la sélection</button>
     </div>
-    <div *ngIf="successMsg.select" class="success-msg">{{ successMsg.select }}</div>
-    <div *ngIf="errorMsg.select" class="error-msg">{{ errorMsg.select }}</div>
-  </div>
-  <div *ngIf="columns.length > 0" class="extract-section">
-    <div class="section-header">
-      <h4>🔍 Extraction de données</h4>
-      <p class="section-description">Extrayez des informations spécifiques d'une colonne pour créer une nouvelle colonne</p>
-    </div>
+         <div *ngIf="successMsg.select" class="success-msg">{{ successMsg.select }}</div>
+     <div *ngIf="errorMsg.select" class="error-msg">{{ errorMsg.select }}</div>
+   </div>
+   </div>
+     <div *ngIf="columns.length > 0" class="extract-section">
+     <div class="section-header">
+       <h4>
+         <i class="fas fa-search"></i> Extraction de données
+         <button type="button" class="btn btn-sm btn-outline-info" (click)="toggleSection('extract')">
+           <i class="fas fa-eye" *ngIf="!showSections.extract"></i>
+           <i class="fas fa-eye-slash" *ngIf="showSections.extract"></i>
+           {{ showSections.extract ? 'Masquer' : 'Afficher' }}
+         </button>
+       </h4>
+       <p class="section-description">Extrayez des informations spécifiques d'une colonne pour créer une nouvelle colonne</p>
+     </div>
+     
+     <div *ngIf="showSections.extract" class="section-content">
     
           <div class="extract-controls">
         <!-- Ligne principale avec les 3 champs principaux -->
@@ -254,17 +510,29 @@
     </div>
 
     <!-- Messages de succès et d'erreur -->
-    <div *ngIf="successMsg.extract" class="success-msg extract-success">
-      <i class="fas fa-check-circle"></i>
-      {{ successMsg.extract }}
-    </div>
-    <div *ngIf="errorMsg.extract" class="error-msg extract-error">
-      <i class="fas fa-exclamation-triangle"></i>
-      {{ errorMsg.extract }}
-    </div>
-  </div>
-  <div *ngIf="columns.length > 0 && combinedRows.length > 0" class="filtre-section" style="margin-bottom: 24px;">
-    <h4>Filtrer les lignes</h4>
+         <div *ngIf="successMsg.extract" class="success-msg extract-success">
+       <i class="fas fa-check-circle"></i>
+       {{ successMsg.extract }}
+     </div>
+     <div *ngIf="errorMsg.extract" class="error-msg extract-error">
+       <i class="fas fa-exclamation-triangle"></i>
+       {{ errorMsg.extract }}
+     </div>
+   </div>
+   </div>
+     <div *ngIf="columns.length > 0 && combinedRows.length > 0" class="filtre-section" style="margin-bottom: 24px;">
+     <div class="section-header">
+       <h4>
+         <i class="fas fa-filter"></i> Filtrer les lignes
+         <button type="button" class="btn btn-sm btn-outline-info" (click)="toggleSection('filter')">
+           <i class="fas fa-eye" *ngIf="!showSections.filter"></i>
+           <i class="fas fa-eye-slash" *ngIf="showSections.filter"></i>
+           {{ showSections.filter ? 'Masquer' : 'Afficher' }}
+         </button>
+       </h4>
+     </div>
+     
+     <div *ngIf="showSections.filter" class="section-content">
     <div class="filter-controls">
       <div class="filter-group">
         <label>Colonne :</label>
@@ -295,11 +563,23 @@
         <button (click)="resetFilter()" [disabled]="!selectedFilterColumn && !selectedFilterValues.length" class="reset-btn">Réinitialiser</button>
       </div>
     </div>
-    <div *ngIf="successMsg.filter" class="success-msg">{{ successMsg.filter }}</div>
-    <div *ngIf="errorMsg.filter" class="error-msg">{{ errorMsg.filter }}</div>
-  </div>
-  <div *ngIf="columns.length > 1" class="concat-section" style="margin-bottom: 24px;">
-    <h4>Concaténer plusieurs colonnes</h4>
+         <div *ngIf="successMsg.filter" class="success-msg">{{ successMsg.filter }}</div>
+     <div *ngIf="errorMsg.filter" class="error-msg">{{ errorMsg.filter }}</div>
+   </div>
+   </div>
+     <div *ngIf="columns.length > 1" class="concat-section" style="margin-bottom: 24px;">
+     <div class="section-header">
+       <h4>
+         <i class="fas fa-link"></i> Concaténer plusieurs colonnes
+         <button type="button" class="btn btn-sm btn-outline-info" (click)="toggleSection('concat')">
+           <i class="fas fa-eye" *ngIf="!showSections.concat"></i>
+           <i class="fas fa-eye-slash" *ngIf="showSections.concat"></i>
+           {{ showSections.concat ? 'Masquer' : 'Afficher' }}
+         </button>
+       </h4>
+     </div>
+     
+     <div *ngIf="showSections.concat" class="section-content">
     <div class="filter-controls">
       <div class="filter-group">
         <label>Colonnes à concaténer :</label>
@@ -324,17 +604,29 @@
         <button (click)="applyConcat()" [disabled]="!concatCols.length || !concatNewCol" class="apply-btn">Concaténer</button>
       </div>
     </div>
-    <div *ngIf="successMsg.concat" class="success-msg">{{ successMsg.concat }}</div>
-    <div *ngIf="errorMsg.concat" class="error-msg">{{ errorMsg.concat }}</div>
-  </div>
+         <div *ngIf="successMsg.concat" class="success-msg">{{ successMsg.concat }}</div>
+     <div *ngIf="errorMsg.concat" class="error-msg">{{ errorMsg.concat }}</div>
+   </div>
+   </div>
   <!-- Messages de performance -->
   <div *ngIf="successMsg.performance" class="success-msg performance-msg">
     <span class="performance-icon">⚡</span>
     {{ successMsg.performance }}
   </div>
   
-  <div *ngIf="columns.length > 0 && combinedRows.length > 0" class="export-by-type-section">
-    <h4>Export par type</h4>
+     <div *ngIf="columns.length > 0 && combinedRows.length > 0" class="export-by-type-section">
+     <div class="section-header">
+       <h4>
+         <i class="fas fa-file-export"></i> Export par type
+         <button type="button" class="btn btn-sm btn-outline-info" (click)="toggleSection('exportByType')">
+           <i class="fas fa-eye" *ngIf="!showSections.exportByType"></i>
+           <i class="fas fa-eye-slash" *ngIf="showSections.exportByType"></i>
+           {{ showSections.exportByType ? 'Masquer' : 'Afficher' }}
+         </button>
+       </h4>
+     </div>
+     
+     <div *ngIf="showSections.exportByType" class="section-content">
     <div class="filter-controls">
       <div class="filter-group">
         <label>Colonne de tri :</label>
@@ -378,11 +670,23 @@
         <button type="button" (click)="exportByType()" [disabled]="!exportTypeCol || exportTypeSelected.length === 0" class="apply-btn">Exporter par type</button>
       </div>
     </div>
-    <div *ngIf="successMsg.exportType" class="success-msg">{{ successMsg.exportType }}</div>
-    <div *ngIf="errorMsg.exportType" class="error-msg">{{ errorMsg.exportType }}</div>
-  </div>
-  <div *ngIf="columns.length > 0" class="dedup-section">
-    <h4>Suppression de doublons</h4>
+         <div *ngIf="successMsg.exportType" class="success-msg">{{ successMsg.exportType }}</div>
+     <div *ngIf="errorMsg.exportType" class="error-msg">{{ errorMsg.exportType }}</div>
+   </div>
+   </div>
+     <div *ngIf="columns.length > 0" class="dedup-section">
+     <div class="section-header">
+       <h4>
+         <i class="fas fa-copy"></i> Suppression de doublons
+         <button type="button" class="btn btn-sm btn-outline-info" (click)="toggleSection('dedup')">
+           <i class="fas fa-eye" *ngIf="!showSections.dedup"></i>
+           <i class="fas fa-eye-slash" *ngIf="showSections.dedup"></i>
+           {{ showSections.dedup ? 'Masquer' : 'Afficher' }}
+         </button>
+       </h4>
+     </div>
+     
+     <div *ngIf="showSections.dedup" class="section-content">
     <label>Sélectionnez les colonnes à utiliser :</label>
     <div class="dedup-cols">
       <label *ngFor="let col of columns">
@@ -390,12 +694,24 @@
         {{ col }}
       </label>
     </div>
-    <button type="button" (click)="deduplicate()" [disabled]="dedupCols.length === 0">Supprimer les doublons</button>
-    <div *ngIf="successMsg.dedup" class="success-msg">{{ successMsg.dedup }}</div>
-    <div *ngIf="errorMsg.dedup" class="error-msg">{{ errorMsg.dedup }}</div>
-  </div>
-  <div *ngIf="columns.length > 0" class="format-section">
-    <h4>Formatage automatique</h4>
+         <button type="button" (click)="deduplicate()" [disabled]="dedupCols.length === 0">Supprimer les doublons</button>
+     <div *ngIf="successMsg.dedup" class="success-msg">{{ successMsg.dedup }}</div>
+     <div *ngIf="errorMsg.dedup" class="error-msg">{{ errorMsg.dedup }}</div>
+   </div>
+   </div>
+     <div *ngIf="columns.length > 0" class="format-section">
+     <div class="section-header">
+       <h4>
+         <i class="fas fa-magic"></i> Formatage automatique
+         <button type="button" class="btn btn-sm btn-outline-info" (click)="toggleSection('format')">
+           <i class="fas fa-eye" *ngIf="!showSections.format"></i>
+           <i class="fas fa-eye-slash" *ngIf="showSections.format"></i>
+           {{ showSections.format ? 'Masquer' : 'Afficher' }}
+         </button>
+       </h4>
+     </div>
+     
+     <div *ngIf="showSections.format" class="section-content">
     <div class="format-options">
       <!-- Option : Supprimer les espaces inutiles -->
       <label>
@@ -845,7 +1161,21 @@
             </div>
           </div>
         </div>
+        
+        <!-- Bouton pour appliquer le formatage des en-têtes -->
+        <div class="format-actions">
+          <button type="button" 
+                  (click)="applyHeaderFormatting()" 
+                  [disabled]="!hasHeaderFormattingOption()"
+                  class="apply-header-formatting-btn">
+            🔧 Appliquer le formatage des en-têtes
+          </button>
+          <small class="help-text">
+            💡 Applique uniquement les formatages des en-têtes sélectionnés ci-dessus
+          </small>
+        </div>
       </div>
+    </div>
       
       <!-- Bouton principal pour appliquer le formatage -->
       <div class="format-actions">
@@ -860,204 +1190,9 @@
         </small>
       </div>
     </div>
-    <div *ngIf="successMsg.format" class="success-msg">{{ successMsg.format }}</div>
-    <div *ngIf="errorMsg.format" class="error-msg">{{ errorMsg.format }}</div>
-  </div>
-  <!-- Tableau d'aperçu déplacé en bas -->
-  <div *ngIf="combinedRows.length > 0" class="preview-table" style="margin-top: 32px;">
-    <h4>Aperçu des données combinées :</h4>
-    
-    <!-- Contrôles de réorganisation des colonnes -->
-    <div class="column-reorder-controls" style="margin-bottom: 16px;">
-      <div class="reorder-controls">
-        <button type="button" 
-                (click)="toggleColumnReorderMode()" 
-                [class.active]="isColumnReorderMode"
-                class="reorder-btn">
-          {{ isColumnReorderMode ? '🔄 Mode réorganisation actif' : '📋 Réorganiser les colonnes' }}
-        </button>
-        
-        <div *ngIf="isColumnReorderMode" class="reorder-actions">
-          <button type="button" (click)="applyColumnReorder()" class="apply-btn">✅ Appliquer</button>
-          <button type="button" (click)="cancelColumnReorder()" class="cancel-btn">❌ Annuler</button>
-        </div>
-      </div>
-      
-      <div *ngIf="isColumnReorderMode" class="reorder-instructions">
-        <span class="instruction-text">💡 Glissez-déposez les colonnes pour les réorganiser ou utilisez les boutons ↑↓</span>
-      </div>
-    </div>
-    
-    <!-- Informations sur le fichier -->
-    <div class="file-info-panel" *ngIf="combinedRows.length > 1000">
-      <div class="file-stats">
-        <div class="stat-item">
-          <span class="stat-label">📊 Total lignes :</span>
-          <span class="stat-value">{{ combinedRows.length.toLocaleString() }}</span>
-        </div>
-        <div class="stat-item">
-          <span class="stat-label">📋 Colonnes :</span>
-          <span class="stat-value">{{ columns.length }}</span>
-        </div>
-        <div class="stat-item">
-          <span class="stat-label">💾 Taille estimée :</span>
-          <span class="stat-value">{{ getFileStats().fileSize }}</span>
-        </div>
-      </div>
-      <div class="performance-tips" *ngIf="getFileStats().isLargeFile">
-        <div class="tip-icon">💡</div>
-        <div class="tip-content">
-          <strong>Conseils pour les gros fichiers :</strong>
-          <ul>
-            <li>Utilisez les filtres pour réduire la quantité de données affichées</li>
-            <li>Sélectionnez uniquement les colonnes nécessaires</li>
-            <li>Utilisez la pagination pour naviguer efficacement</li>
-            <li>Évitez d'afficher toutes les lignes pour de meilleures performances</li>
-          </ul>
-        </div>
-      </div>
-    </div>
-    <!-- Contrôles d'affichage -->
-    <div class="display-controls" *ngIf="combinedRows.length > 20">
-      <div class="control-group">
-        <label>Lignes par page :</label>
-        <select [(ngModel)]="rowsPerPage" (change)="onRowsPerPageChange()" [disabled]="showAllRows">
-          <option value="50">50</option>
-          <option value="100">100</option>
-          <option value="200">200</option>
-          <option value="500">500</option>
-          <option value="1000">1000</option>
-        </select>
-      </div>
-      <div class="control-group">
-        <label>
-          <input type="checkbox" [(ngModel)]="showAllRows" (change)="toggleShowAllRows()">
-          Afficher toutes les lignes ({{ combinedRows.length }})
-        </label>
-      </div>
-      <div class="control-group" *ngIf="!showAllRows">
-        <span class="info-text">
-          Affichage des lignes {{ startRow }} à {{ endRow }} sur {{ combinedRows.length }} total
-        </span>
-      </div>
-    </div>
-    <div class="table-responsive">
-      <div class="export-csv-bar" style="margin-bottom: 8px; display: flex; align-items: center; gap: 16px;">
-        <div class="export-controls" style="display: flex; align-items: center; gap: 8px;">
-          <label for="exportFileName" style="font-weight: 500; color: #333;">Nom du fichier:</label>
-          <input 
-            type="text" 
-            id="exportFileName"
-            [(ngModel)]="exportFileName" 
-            placeholder="resultat.csv"
-            style="padding: 4px 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; min-width: 150px;"
-            title="Entrez le nom du fichier CSV (l'extension .csv sera ajoutée automatiquement si nécessaire)">
-        </div>
-        <button type="button" (click)="exportCSV()" style="background: #007bff; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer;">Exporter en CSV</button>
-        <div *ngIf="successMsg.export" class="success-msg">{{ successMsg.export }}</div>
-        <div *ngIf="errorMsg.export" class="error-msg">{{ errorMsg.export }}</div>
-        <div *ngIf="successMsg.reorder" class="success-msg">{{ successMsg.reorder }}</div>
-      </div>
-      <table>
-        <thead>
-          <tr>
-            <th *ngFor="let col of getDisplayColumns(); let i = index"
-                [draggable]="isColumnReorderMode"
-                (dragstart)="onColumnDragStart($event, col)"
-                (dragover)="onColumnDragOver($event, col)"
-                (drop)="onColumnDrop($event, col)"
-                (dragend)="onColumnDragEnd()"
-                [class.dragging]="isColumnDragging(col)"
-                [class.drag-over]="isColumnDragOver(col)"
-                [class.reorder-mode]="isColumnReorderMode"
-                class="column-header">
-              
-              <div class="column-content">
-                <span class="column-title">{{ col }}</span>
-                
-                <div *ngIf="isColumnReorderMode" class="column-controls">
-                  <button type="button" 
-                          (click)="moveColumnUp(col)" 
-                          [disabled]="i === 0"
-                          class="move-btn move-up"
-                          title="Déplacer vers le haut">
-                    ↑
-                  </button>
-                  <button type="button" 
-                          (click)="moveColumnDown(col)" 
-                          [disabled]="i === getDisplayColumns().length - 1"
-                          class="move-btn move-down"
-                          title="Déplacer vers le bas">
-                    ↓
-                  </button>
-                </div>
-              </div>
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr *ngFor="let row of displayedRows">
-            <td *ngFor="let col of getDisplayColumns()">{{ row[col] }}</td>
-          </tr>
-        </tbody>
-      </table>
-      <!-- Pagination -->
-      <div class="pagination" *ngIf="!showAllRows && totalPages > 1">
-        <div class="pagination-info">
-          Page {{ currentPage }} sur {{ totalPages }}
-        </div>
-        <div class="pagination-controls">
-          <button 
-            type="button" 
-            (click)="onPageChange(1)" 
-            [disabled]="currentPage === 1"
-            class="pagination-btn">
-            « Première
-          </button>
-          <button 
-            type="button" 
-            (click)="onPageChange(currentPage - 1)" 
-            [disabled]="currentPage === 1"
-            class="pagination-btn">
-            ‹ Précédente
-          </button>
-          <span class="page-numbers">
-            <ng-container *ngFor="let page of getPageNumbers()">
-              <span *ngIf="page === -1" class="page-ellipsis">...</span>
-              <button 
-                *ngIf="page !== -1"
-                type="button" 
-                (click)="onPageChange(page)" 
-                [class.active]="page === currentPage"
-                class="pagination-btn page-number">
-                {{ page }}
-              </button>
-            </ng-container>
-          </span>
-          <button 
-            type="button" 
-            (click)="onPageChange(currentPage + 1)" 
-            [disabled]="currentPage === totalPages"
-            class="pagination-btn">
-            Suivante ›
-          </button>
-          <button 
-            type="button" 
-            (click)="onPageChange(totalPages)" 
-            [disabled]="currentPage === totalPages"
-            class="pagination-btn">Dernière »</button>
-        </div>
-      </div>
-      <!-- Message d'information pour les gros fichiers -->
-      <div *ngIf="combinedRows.length > 10000" class="large-file-info">
-        <div class="info-box">
-          <strong>Fichier volumineux détecté :</strong> {{ combinedRows.length.toLocaleString() }} lignes
-          <br>
-          <small>
-            💡 Conseil : Utilisez les filtres ou la sélection de colonnes pour réduire la taille des données affichées.
-          </small>
-        </div>
-      </div>
-    </div>
-  </div>
+         <div *ngIf="successMsg.format" class="success-msg">{{ successMsg.format }}</div>
+     <div *ngIf="errorMsg.format" class="error-msg">{{ errorMsg.format }}</div>
+   </div>
+   </div>
+
 </div> 

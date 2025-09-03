@@ -1,1231 +1,613 @@
 <div class="auto-processing-models-container">
   <div class="header">
-    <h2>Modèles de Traitement Automatique</h2>
-    <p>Créez et gérez des modèles de traitement automatique pour vos fichiers</p>
-    <div class="header-actions">
-      <!-- Boutons de développement masqués en production -->
-      <div class="dev-tools" *ngIf="showDevTools">
-        <button (click)="cleanupModels()" class="btn btn-warning">
-          <i class="fas fa-broom"></i> Nettoyer modèles vides
-        </button>
-        <button (click)="createDefaultBOModel()" class="btn btn-secondary">
-          <i class="fas fa-magic"></i> Créer modèle BO TRXBO
-        </button>
-        <button (click)="updateTRXBOModel()" class="btn btn-warning">
-          <i class="fas fa-sync-alt"></i> Mettre à jour modèle TRXBO
-        </button>
-        <button (click)="createTRXBOFullModel()" class="btn btn-info">
-          <i class="fas fa-list"></i> Créer modèle TRXBO complet
-        </button>
-        <button (click)="analyzeReconciliationKeys()" class="btn btn-primary">
-          <i class="fas fa-search"></i> Analyser clés réconciliation
-        </button>
-        <button (click)="fixMissingControls()" class="btn btn-secondary">
-          <i class="fas fa-tools"></i> Corriger contrôles
-        </button>
-        <button (click)="forceUpdateDisplay()" class="btn btn-warning">
-          <i class="fas fa-sync"></i> Forcer mise à jour
-        </button>
-        <button (click)="createDefaultOrangeMoneyModel()" class="btn btn-info">
-          <i class="fas fa-mobile-alt"></i> Créer modèle Orange Money
-        </button>
-        <button (click)="createExtendedCIOMModel()" class="btn btn-info">
-          <i class="fas fa-expand"></i> Créer modèle CIOM/PMOM étendu
-        </button>
-        <button class="btn btn-success me-2" (click)="fixReconciliationKeys()">
-          <i class="fas fa-wrench"></i> Corriger clés réconciliation
-        </button>
-      </div>
-      
-      <!-- Bouton pour afficher/masquer les outils de développement -->
-      <button (click)="toggleDevTools()" class="btn btn-outline-secondary">
-        <i class="fas fa-cog"></i> {{ showDevTools ? 'Masquer' : 'Afficher' }} outils dev
-      </button>
-    </div>
-  </div>
-
-  <!-- Messages d'erreur -->
-  <div *ngIf="errorMessage" class="error-message">
-    <span>{{ errorMessage }}</span>
-    <button (click)="clearError()" class="close-btn">×</button>
-  </div>
-
-  <!-- Liste des modèles existants -->
-  <div class="models-section">
-    <div class="section-header">
-      <h3>Modèles existants</h3>
-      <div class="header-actions">
-        <button (click)="toggleModelFilter()" class="btn btn-info me-2" 
-                [class.active]="showModelFilter">
-          <i class="fas fa-filter"></i> 
-          {{ showModelFilter ? 'Masquer' : 'Afficher' }} filtres modèles
-        </button>
-        <button (click)="togglePartnerFilter()" class="btn btn-warning me-2" 
-                [class.active]="showPartnerFilter">
-          <i class="fas fa-filter"></i> 
-          {{ showPartnerFilter ? 'Masquer' : 'Afficher' }} filtres partenaires
-        </button>
-        <button (click)="createNewModel()" class="btn btn-primary">
+    <h2>Modèles de traitement automatique</h2>
+    <button class="btn btn-primary" (click)="resetForm()">
           <i class="fas fa-plus"></i> Nouveau modèle
         </button>
-      </div>
     </div>
 
-    <!-- Section de filtrage général des modèles -->
-    <div *ngIf="showModelFilter && models.length > 0" class="model-filter-section">
-      <h4>🔍 Filtrer tous les modèles</h4>
-      <div class="filter-controls">
-        <div class="filter-group">
-          <label>Colonne :</label>
-          <select [(ngModel)]="selectedModelFilterColumn" (change)="onModelFilterColumnChange()">
-            <option value="">-- Choisir une colonne --</option>
-            <option *ngFor="let col of getModelFilterColumns()" [value]="col.value">
-              {{ col.label }}
-            </option>
-          </select>
+  <!-- Messages d'erreur et de succès -->
+  <div class="alert alert-danger" *ngIf="errorMessage">
+    {{ errorMessage }}
         </div>
-        
-        <div class="filter-group" *ngIf="selectedModelFilterColumn && modelFilterValues.length > 0">
-          <label>Valeur à garder :</label>
-          <mat-form-field appearance="fill" class="filter-select">
-            <mat-label>Sélectionner des valeurs</mat-label>
-            <mat-select [(ngModel)]="selectedModelFilterValues" multiple>
-              <mat-option>
-                <ngx-mat-select-search [formControl]="modelFilterValueSearchCtrl" 
-                                     placeholderLabel="Rechercher une valeur..." 
-                                     noEntriesFoundLabel="Aucune valeur trouvée">
-                </ngx-mat-select-search>
-              </mat-option>
-              <mat-option value="__TOUS__" (click)="selectAllModelFilterValues()">
-                <strong>📋 Tous</strong>
-              </mat-option>
-              <mat-option *ngFor="let val of filteredModelFilterValues" [value]="val">
-                {{ val || '(vide)' }}
-              </mat-option>
-            </mat-select>
-          </mat-form-field>
-        </div>
-        
-        <div class="filter-actions">
-          <button (click)="applyModelFilter()" 
-                  [disabled]="!selectedModelFilterColumn || !selectedModelFilterValues.length" 
-                  class="apply-btn">
-            Appliquer le filtre
-          </button>
-          <button (click)="resetModelFilter()" 
-                  [disabled]="!selectedModelFilterColumn && !selectedModelFilterValues.length" 
-                  class="reset-btn">
-            Réinitialiser
-          </button>
-        </div>
-      </div>
+  <div class="alert alert-success" *ngIf="successMessage">
+    {{ successMessage }}
+    </div>
+
+  <!-- Debug temporaire -->
+  <div class="alert alert-info" style="margin-bottom: 10px;">
+    <strong>Debug:</strong> showCreateForm = {{ showCreateForm }}, editingModel = {{ editingModel ? 'true' : 'false' }}, 
+    Condition = {{ (editingModel || showCreateForm) ? 'true' : 'false' }}
+  </div>
+
+  <!-- Formulaire de création/édition pour modèles autonomes -->
+  <div class="form-section" *ngIf="editingModel || showCreateForm">
+    <h3>{{ editingModel ? 'Modifier le modèle autonome' : 'Créer un nouveau modèle autonome' }}</h3>
+    <p class="form-description">
+      <i class="fas fa-robot"></i> 
+      Configurez un modèle autonome qui gérera automatiquement la réconciliation sans code dur.
+    </p>
+
+    <form [formGroup]="modelForm" (ngSubmit)="saveModel()">
       
-      <!-- Indicateur de filtre appliqué -->
-      <div *ngIf="modelFilterApplied" class="filter-status">
-        <span class="filter-badge">
-          <i class="fas fa-filter"></i>
-          Filtre appliqué: {{ filteredModels.length }} modèle(s) sur {{ models.length }}
-        </span>
-      </div>
-    </div>
-
-    <!-- Section de filtrage des modèles partenaires -->
-    <div *ngIf="showPartnerFilter && getPartnerModels().length > 0" class="partner-filter-section">
-      <h4>🔍 Filtrer les modèles partenaires</h4>
-      <div class="filter-controls">
-        <!-- Filtre par colonne existant -->
-        <div class="filter-group">
-          <label>Colonne :</label>
-          <select [(ngModel)]="selectedPartnerFilterColumn" (change)="onPartnerFilterColumnChange()">
-            <option value="">-- Choisir une colonne --</option>
-            <option *ngFor="let col of getPartnerFilterColumns()" [value]="col.value">
-              {{ col.label }}
-            </option>
-          </select>
-        </div>
+      <!-- Section 1: Configuration de base -->
+      <div class="config-section">
+        <h4><i class="fas fa-cog"></i> Configuration de base</h4>
         
-        <div class="filter-group" *ngIf="selectedPartnerFilterColumn && partnerFilterValues.length > 0">
-          <label>Valeur à garder :</label>
-          <mat-form-field appearance="fill" class="filter-select">
-            <mat-label>Sélectionner des valeurs</mat-label>
-            <mat-select [(ngModel)]="selectedPartnerFilterValues" multiple>
-              <mat-option>
-                <ngx-mat-select-search [formControl]="partnerFilterValueSearchCtrl" 
-                                     placeholderLabel="Rechercher une valeur..." 
-                                     noEntriesFoundLabel="Aucune valeur trouvée">
-                </ngx-mat-select-search>
-              </mat-option>
-              <mat-option value="__TOUS__" (click)="selectAllPartnerFilterValues()">
-                <strong>📋 Tous</strong>
-              </mat-option>
-              <mat-option *ngFor="let val of filteredPartnerFilterValues" [value]="val">
-                {{ val || '(vide)' }}
-              </mat-option>
-            </mat-select>
-          </mat-form-field>
-        </div>
-
-        <!-- Nouveau filtre par pays -->
-        <div class="filter-group">
-          <label>Pays (2 dernières lettres) :</label>
-          <mat-form-field appearance="fill" class="filter-select">
-            <mat-label>Sélectionner des pays</mat-label>
-            <mat-select [(ngModel)]="selectedPartnerCountries" multiple (selectionChange)="onPartnerCountryChange()">
-              <mat-option>
-                <ngx-mat-select-search [formControl]="partnerCountrySearchCtrl" 
-                                     placeholderLabel="Rechercher un pays..." 
-                                     noEntriesFoundLabel="Aucun pays trouvé">
-                </ngx-mat-select-search>
-              </mat-option>
-              <mat-option value="__TOUS__" (click)="selectAllPartnerCountries()">
-                <strong>🌍 Tous les pays</strong>
-              </mat-option>
-              <mat-option *ngFor="let country of filteredPartnerCountries" [value]="country">
-                <span class="country-option">
-                  <span class="country-code">{{ country }}</span>
-                  <span class="country-example">(ex: CIOM{{ country }})</span>
-                </span>
-              </mat-option>
-            </mat-select>
-          </mat-form-field>
-        </div>
-        
-        <div class="filter-actions">
-          <button (click)="applyPartnerFilter()" 
-                  [disabled]="!selectedPartnerFilterColumn || !selectedPartnerFilterValues.length" 
-                  class="apply-btn">
-            Appliquer le filtre
-          </button>
-          <button (click)="resetPartnerFilter()" 
-                  [disabled]="!selectedPartnerFilterColumn && !selectedPartnerFilterValues.length && !selectedPartnerCountries.length" 
-                  class="reset-btn">
-            Réinitialiser
-          </button>
-        </div>
-      </div>
-      
-      <!-- Indicateur de filtre appliqué -->
-      <div *ngIf="partnerFilterApplied" class="filter-status">
-        <span class="filter-badge">
-          <i class="fas fa-filter"></i>
-          Filtre appliqué: {{ filteredPartnerModels.length }} modèle(s) sur {{ getPartnerModels().length }}
-        </span>
-      </div>
-    </div>
-
-    <div class="models-grid" *ngIf="models.length > 0">
-      <!-- Séparateur pour les modèles CI (verts) -->
-      <div class="color-separator ci-separator" *ngIf="hasCIModels()">
-        <div class="separator-line"></div>
-        <div class="separator-text">
-          <i class="fas fa-check-circle"></i>
-          Modèles CI
-        </div>
-        <div class="separator-line"></div>
-      </div>
-      
-      <!-- Modèles CI -->
-      <div class="model-cards-section">
-        <div class="model-card" 
-             [ngClass]="{
-               'model-ci': isCIModel(model),
-               'model-pm': isPMModel(model),
-               'model-other': !isCIModel(model) && !isPMModel(model)
-             }"
-             *ngFor="let model of getCIModels()">
-        <div class="model-header">
-          <div class="model-title-section">
-            <h4 [ngClass]="{
-              'title-ci': isCIModel(model),
-              'title-pm': isPMModel(model),
-              'title-other': !isCIModel(model) && !isPMModel(model)
-            }">{{ model.name }}</h4>
-            <div class="model-badges">
-              <span *ngIf="isCIModel(model)" class="badge badge-ci">
-                <i class="fas fa-check-circle"></i> CI
-              </span>
-              <span *ngIf="isPMModel(model)" class="badge badge-pm">
-                <i class="fas fa-exclamation-circle"></i> PM
-              </span>
-              <span *ngIf="!isCIModel(model) && !isPMModel(model)" class="badge badge-other">
-                <i class="fas fa-cog"></i> AUTRE
-              </span>
-            </div>
-          </div>
-          <div class="model-actions">
-            <button (click)="editModel(model)" class="btn btn-sm btn-edit" title="Modifier">
-              <i class="fas fa-edit"></i>
-            </button>
-            <button (click)="deleteModel(model.id)" class="btn btn-sm btn-delete" title="Supprimer">
-              <i class="fas fa-trash"></i>
-            </button>
-          </div>
-        </div>
-        
-        <div class="model-info">
-          <p><strong>Pattern:</strong> {{ model.filePattern }}</p>
-          <p><strong>Type:</strong> {{ model.fileType }}</p>
-          <p><strong>Étapes:</strong> {{ getStepCount(model) }}</p>
-          <p><strong>Auto-appliqué:</strong> {{ model.autoApply ? 'Oui' : 'Non' }}</p>
-          <p *ngIf="model.templateFile"><strong>Fichier modèle:</strong> {{ model.templateFile }}</p>
-        </div>
-
-        <div class="model-steps" *ngIf="model.processingSteps.length > 0">
-          <h5>Étapes de traitement:</h5>
-          <ul>
-            <li *ngFor="let step of model.processingSteps">{{ step.name }}</li>
-          </ul>
-        </div>
-      </div>
-      </div>
-
-      <!-- Séparateur pour les modèles PM (rouges) -->
-      <div class="color-separator pm-separator" *ngIf="hasPMModels()">
-        <div class="separator-line"></div>
-        <div class="separator-text">
-          <i class="fas fa-exclamation-circle"></i>
-          Modèles PM
-        </div>
-        <div class="separator-line"></div>
-      </div>
-      
-      <!-- Modèles PM -->
-      <div class="model-cards-section">
-        <div class="model-card" 
-             [ngClass]="{
-               'model-ci': isCIModel(model),
-               'model-pm': isPMModel(model),
-               'model-other': !isCIModel(model) && !isPMModel(model)
-             }"
-             *ngFor="let model of getPMModels()">
-        <div class="model-header">
-          <div class="model-title-section">
-            <h4 [ngClass]="{
-              'title-ci': isCIModel(model),
-              'title-pm': isPMModel(model),
-              'title-other': !isCIModel(model) && !isPMModel(model)
-            }">{{ model.name }}</h4>
-            <div class="model-badges">
-              <span *ngIf="isCIModel(model)" class="badge badge-ci">
-                <i class="fas fa-check-circle"></i> CI
-              </span>
-              <span *ngIf="isPMModel(model)" class="badge badge-pm">
-                <i class="fas fa-exclamation-circle"></i> PM
-              </span>
-              <span *ngIf="!isCIModel(model) && !isPMModel(model)" class="badge badge-other">
-                <i class="fas fa-cog"></i> AUTRE
-              </span>
-            </div>
-          </div>
-          <div class="model-actions">
-            <button (click)="editModel(model)" class="btn btn-sm btn-edit" title="Modifier">
-              <i class="fas fa-edit"></i>
-            </button>
-            <button (click)="deleteModel(model.id)" class="btn btn-sm btn-delete" title="Supprimer">
-              <i class="fas fa-trash"></i>
-            </button>
-          </div>
-        </div>
-        
-        <div class="model-info">
-          <p><strong>Pattern:</strong> {{ model.filePattern }}</p>
-          <p><strong>Type:</strong> {{ model.fileType }}</p>
-          <p><strong>Étapes:</strong> {{ getStepCount(model) }}</p>
-          <p><strong>Auto-appliqué:</strong> {{ model.autoApply ? 'Oui' : 'Non' }}</p>
-          <p *ngIf="model.templateFile"><strong>Fichier modèle:</strong> {{ model.templateFile }}</p>
-        </div>
-
-        <div class="model-steps" *ngIf="model.processingSteps.length > 0">
-          <h5>Étapes de traitement:</h5>
-          <ul>
-            <li *ngFor="let step of model.processingSteps">{{ step.name }}</li>
-          </ul>
-        </div>
-      </div>
-      </div>
-
-      <!-- Séparateur pour les autres modèles (jaunes) -->
-      <div class="color-separator other-separator" *ngIf="hasOtherModels()">
-        <div class="separator-line"></div>
-        <div class="separator-text">
-          <i class="fas fa-cog"></i>
-          Autres modèles
-        </div>
-        <div class="separator-line"></div>
-      </div>
-      
-      <!-- Autres modèles -->
-      <div class="model-cards-section">
-        <div class="model-card" 
-             [ngClass]="{
-               'model-ci': isCIModel(model),
-               'model-pm': isPMModel(model),
-               'model-other': !isCIModel(model) && !isPMModel(model)
-             }"
-             *ngFor="let model of getOtherModels()">
-        <div class="model-header">
-          <div class="model-title-section">
-            <h4 [ngClass]="{
-              'title-ci': isCIModel(model),
-              'title-pm': isPMModel(model),
-              'title-other': !isCIModel(model) && !isPMModel(model)
-            }">{{ model.name }}</h4>
-            <div class="model-badges">
-              <span *ngIf="isCIModel(model)" class="badge badge-ci">
-                <i class="fas fa-check-circle"></i> CI
-              </span>
-              <span *ngIf="isPMModel(model)" class="badge badge-pm">
-                <i class="fas fa-exclamation-circle"></i> PM
-              </span>
-              <span *ngIf="!isCIModel(model) && !isPMModel(model)" class="badge badge-other">
-                <i class="fas fa-cog"></i> AUTRE
-              </span>
-            </div>
-          </div>
-          <div class="model-actions">
-            <button (click)="editModel(model)" class="btn btn-sm btn-edit" title="Modifier">
-              <i class="fas fa-edit"></i>
-            </button>
-            <button (click)="deleteModel(model.id)" class="btn btn-sm btn-delete" title="Supprimer">
-              <i class="fas fa-trash"></i>
-            </button>
-          </div>
-        </div>
-        
-        <div class="model-info">
-          <p><strong>Pattern:</strong> {{ model.filePattern }}</p>
-          <p><strong>Type:</strong> {{ model.fileType }}</p>
-          <p><strong>Étapes:</strong> {{ getStepCount(model) }}</p>
-          <p><strong>Auto-appliqué:</strong> {{ model.autoApply ? 'Oui' : 'Non' }}</p>
-          <p *ngIf="model.templateFile"><strong>Fichier modèle:</strong> {{ model.templateFile }}</p>
-        </div>
-
-        <div class="model-steps" *ngIf="model.processingSteps.length > 0">
-          <h5>Étapes de traitement:</h5>
-          <ul>
-            <li *ngFor="let step of model.processingSteps">{{ step.name }}</li>
-          </ul>
-        </div>
-
-      </div>
-    </div>
-
-        <div class="no-models" *ngIf="models.length === 0">
-      <p>Aucun modèle de traitement automatique créé.</p>
-              <button (click)="createNewModel()" class="btn btn-primary">
-          <i class="fas fa-plus"></i> Créer le premier modèle
-        </button>
-        <button (click)="testScroll()" class="btn btn-info ml-2">
-          <i class="fas fa-arrow-down"></i> Test Scroll
-        </button>
-          </div>
-    </div>
-
-  <!-- Formulaire de création/édition -->
-  <div class="form-section" id="model-form" *ngIf="showCreateForm">
-    <div class="form-header">
-      <h3>{{ editingModel ? 'Modifier le modèle' : 'Créer un nouveau modèle' }}</h3>
-      <button (click)="closeForm()" class="btn btn-secondary">
-        <i class="fas fa-times"></i> Fermer
-      </button>
-    </div>
-
-    <form [formGroup]="modelForm" (ngSubmit)="saveModel()" class="model-form create-model-form" id="create-model-form">
       <div class="form-row">
         <div class="form-group">
           <label for="name">Nom du modèle *</label>
-          <input type="text" id="name" formControlName="name" class="form-control" 
-                 placeholder="Ex: Traitement BO Standard">
+            <input type="text" id="name" formControlName="name" class="form-control" 
+                   placeholder="Ex: TRXBO-OPPART Autonome">
+            <small class="form-text text-muted">Donnez un nom descriptif à votre modèle</small>
         </div>
 
         <div class="form-group">
-          <label for="fileType">Type de fichier *</label>
-                      <select id="fileType" formControlName="fileType" class="form-control" (change)="onFileTypeChange()">
-            <option value="bo">Back Office</option>
-            <option value="partner">Partenaire</option>
-            <option value="both">Les deux</option>
-          </select>
+          <label for="filePattern">Pattern de fichier *</label>
+          <input type="text" id="filePattern" formControlName="filePattern" class="form-control" 
+                 [class.is-invalid]="modelForm.get('filePattern')?.invalid && modelForm.get('filePattern')?.touched"
+                   placeholder="Ex: *TRXBO*.xls, *OPPART*.csv">
+          <div class="invalid-feedback" *ngIf="modelForm.get('filePattern')?.invalid && modelForm.get('filePattern')?.touched">
+            Le pattern de fichier est obligatoire.
+          </div>
+            <small class="form-text text-muted">Utilisez * comme wildcard (ex: *TRXBO*.xls)</small>
         </div>
       </div>
 
       <div class="form-row">
         <div class="form-group">
-          <label for="filePattern">Pattern de fichier *</label>
-          <input type="text" id="filePattern" formControlName="filePattern" class="form-control" 
-                 placeholder="Ex: *bo*.csv">
+          <label for="fileType">Type de fichier *</label>
+          <select id="fileType" formControlName="fileType" class="form-control">
+              <option value="partner">Partenaire</option>
+            <option value="bo">Back Office (BO)</option>
+          </select>
+            <small class="form-text text-muted">Sélectionnez le type de fichier que ce modèle traitera</small>
         </div>
 
         <div class="form-group">
-          <label for="templateFile">Fichier modèle</label>
-          <div class="template-file-section">
-            <input type="text" id="templateFile" formControlName="templateFile" class="form-control" 
-                   placeholder="Sélectionner un fichier modèle" readonly>
-            <button type="button" (click)="openFileSelector()" class="btn btn-secondary">
-              <i class="fas fa-folder-open"></i> Choisir
+            <label for="templateFile">Fichier modèle *</label>
+            <select id="templateFile" formControlName="templateFile" class="form-control" 
+                    [class.is-invalid]="modelForm.get('templateFile')?.invalid && modelForm.get('templateFile')?.touched">
+              <option value="">Sélectionner un fichier depuis watch-folder</option>
+            <option *ngFor="let file of availableFiles" [value]="file.fileName">
+              {{ file.fileName }}
+                    </option>
+                  </select>
+            <div class="invalid-feedback" *ngIf="modelForm.get('templateFile')?.invalid && modelForm.get('templateFile')?.touched">
+              Le fichier modèle est obligatoire.
+            </div>
+            <small class="form-text text-muted">Fichier de référence pour la structure des données</small>
+                </div>
+              </div>
+
+        <div class="form-row">
+                      <div class="form-group">
+                        <label>
+          <input type="checkbox" formControlName="autoApply">
+          Appliquer automatiquement
+                        </label>
+            <small class="form-text text-muted">Le modèle sera appliqué automatiquement aux fichiers correspondants</small>
+          </div>
+        </div>
+                  </div>
+
+                    <!-- Section 2: Clés de réconciliation (masquée pour les fichiers BO) -->
+        <div class="config-section" *ngIf="modelForm.get('fileType')?.value !== 'bo'">
+          <h4><i class="fas fa-key"></i> Clés de réconciliation</h4>
+          <p class="section-description">Configurez les clés qui permettront de faire correspondre les enregistrements entre les fichiers BO et Partenaire.</p>
+        
+        <!-- Message d'information si aucun fichier modèle sélectionné -->
+        <div class="alert alert-info" *ngIf="!modelForm.get('templateFile')?.value">
+          <i class="fas fa-info-circle"></i>
+          <strong>Information :</strong> Veuillez d'abord sélectionner un fichier modèle pour charger les colonnes disponibles.
+        </div>
+
+        <!-- Chargement des colonnes du fichier modèle -->
+        <div class="form-row" *ngIf="modelForm.get('templateFile')?.value && !isLoadingTemplateColumns">
+          <div class="form-group">
+            <label>Clés partenaire</label>
+            <div class="key-selection" *ngIf="availableTemplateColumns.length > 0">
+              <div *ngFor="let column of availableTemplateColumns" 
+                   class="key-option"
+                   [class.selected]="selectedPartnerKeys.includes(column)">
+                <label class="key-label">
+                  <input type="checkbox" 
+                         [value]="column" 
+                         [checked]="selectedPartnerKeys.includes(column)"
+                         (change)="togglePartnerKey(column, $event)">
+                  <span class="column-name" [class.selected-text]="selectedPartnerKeys.includes(column)">
+                    <i class="fas fa-check-circle selected-icon" *ngIf="selectedPartnerKeys.includes(column)"></i>
+                    {{ column }}
+                  </span>
+                </label>
+              </div>
+            </div>
+            <div class="no-columns" *ngIf="availableTemplateColumns.length === 0">
+              <small class="text-muted">Aucune colonne disponible pour ce fichier modèle</small>
+            </div>
+            <small class="form-text text-muted">Sélectionnez les colonnes clés du fichier partenaire</small>
+          </div>
+
+          <div class="form-group">
+            <label>Modèles BO à utiliser</label>
+            <div class="bo-model-selection" *ngIf="availableBOModels.length > 0">
+              <div *ngFor="let boModel of availableBOModels" 
+                   class="bo-model-option"
+                   [class.selected]="selectedBOModels.includes(boModel.id)">
+                <label class="model-label">
+                  <input type="checkbox" 
+                         [value]="boModel.id" 
+                         [checked]="selectedBOModels.includes(boModel.id)"
+                         (change)="toggleBOModel(boModel.id, $event)">
+                  <span class="model-name" [class.selected-text]="selectedBOModels.includes(boModel.id)">
+                    <i class="fas fa-check-circle selected-icon" *ngIf="selectedBOModels.includes(boModel.id)"></i>
+                    {{ boModel.name }}
+                  </span>
+                  <small class="model-pattern">({{ boModel.filePattern }})</small>
+                </label>
+              </div>
+            </div>
+            <div class="no-models" *ngIf="availableBOModels.length === 0">
+              <small class="text-muted">Aucun modèle BO disponible</small>
+            </div>
+            <small class="form-text text-muted">Sélectionnez les modèles BO pour la réconciliation</small>
+          </div>
+        </div>
+
+        <!-- Indicateur de chargement -->
+        <div class="loading-indicator" *ngIf="isLoadingTemplateColumns">
+          <i class="fas fa-spinner fa-spin"></i>
+          <span>Chargement des colonnes du fichier modèle...</span>
+        </div>
+
+        <!-- Colonnes des modèles BO sélectionnés -->
+        <div class="form-row" *ngIf="selectedBOModels.length > 0 && !isLoadingBOColumns">
+          <div class="form-group">
+            <label>Colonnes des modèles BO sélectionnés</label>
+            <div class="key-selection" *ngIf="availableBOColumns.length > 0">
+              <div *ngFor="let column of availableBOColumns" 
+                   class="key-option"
+                   [class.selected]="selectedBOKeys.includes(column)">
+                <label class="key-label">
+                  <input type="checkbox" 
+                         [value]="column" 
+                         [checked]="selectedBOKeys.includes(column)"
+                         (change)="toggleBOKey(column, $event)">
+                  <span class="column-name" [class.selected-text]="selectedBOKeys.includes(column)">
+                    <i class="fas fa-check-circle selected-icon" *ngIf="selectedBOKeys.includes(column)"></i>
+                    {{ column }}
+                  </span>
+                </label>
+              </div>
+            </div>
+            <div class="no-columns" *ngIf="availableBOColumns.length === 0">
+              <small class="text-muted">Aucune colonne disponible pour les modèles BO sélectionnés</small>
+            </div>
+            <small class="form-text text-muted">Colonnes disponibles dans les modèles BO sélectionnés</small>
+          </div>
+        </div>
+
+        <!-- Indicateur de chargement pour les colonnes BO -->
+        <div class="loading-indicator" *ngIf="isLoadingBOColumns">
+          <i class="fas fa-spinner fa-spin"></i>
+          <span>Chargement des colonnes des modèles BO...</span>
+        </div>
+
+
+
+        <!-- Résumé des sélections -->
+        <div class="selection-summary" *ngIf="selectedPartnerKeys.length > 0 || selectedBOModels.length > 0 || selectedBOKeys.length > 0">
+          <h5><i class="fas fa-list"></i> Résumé des sélections</h5>
+          <div class="summary-items">
+            <div class="summary-item" *ngIf="selectedPartnerKeys.length > 0">
+              <strong>Clés partenaire :</strong> {{ selectedPartnerKeys.join(', ') }}
+            </div>
+            <div class="summary-item" *ngIf="selectedBOModels.length > 0">
+              <strong>Modèles BO :</strong> {{ getSelectedBOModelNames() }}
+            </div>
+            <div class="summary-item" *ngIf="selectedBOKeys.length > 0">
+              <strong>Clés BO :</strong> {{ selectedBOKeys.join(', ') }}
+            </div>
+          </div>
+        </div>
+              </div>
+
+        <!-- Message informatif pour les fichiers BO -->
+        <div class="config-section" *ngIf="modelForm.get('fileType')?.value === 'bo'">
+          <div class="alert alert-info">
+            <i class="fas fa-info-circle"></i>
+            <strong>Information :</strong> Pour les fichiers de type "BO", les clés de réconciliation sont configurées au niveau des modèles partenaires. Cette section n'est donc pas nécessaire.
+          </div>
+        </div>
+
+        <!-- Section 3: Logique de réconciliation -->
+      <div class="config-section">
+        <h4>
+          <i class="fas fa-cogs"></i> Logique de réconciliation
+          <button type="button" class="btn btn-sm btn-outline-info" (click)="toggleReconciliationLogicSection()">
+            <i class="fas fa-cog"></i> {{ showReconciliationLogicSection ? 'Masquer' : 'Afficher' }}
+          </button>
+        </h4>
+        <p class="section-description">Définissez la logique de correspondance entre les enregistrements BO et Partenaire.</p>
+        
+        <div *ngIf="showReconciliationLogicSection" class="logic-config-container">
+          <!-- Affichage de la logique actuelle -->
+          <div class="logic-display" *ngIf="modelForm.get('logicType')?.value">
+            <div class="logic-item">
+              <div class="logic-header">
+                <span class="logic-type">{{ modelForm.get('logicType')?.value }}</span>
+                <span class="logic-ratio badge badge-primary" *ngIf="modelForm.get('expectedRatio')?.value">
+                  {{ modelForm.get('expectedRatio')?.value }}
+                </span>
+                <div class="logic-actions">
+                  <button type="button" class="btn btn-sm btn-outline-primary" (click)="editReconciliationLogic()">
+                    <i class="fas fa-edit"></i>
+                  </button>
+                </div>
+              </div>
+              <div class="logic-description" *ngIf="modelForm.get('logicDescription')?.value">
+                {{ modelForm.get('logicDescription')?.value }}
+              </div>
+            </div>
+          </div>
+
+          <!-- Formulaire d'édition -->
+          <div *ngIf="editingReconciliationLogic" class="logic-form">
+            <h5>Configuration de la logique de réconciliation</h5>
+            <form [formGroup]="modelForm">
+                  <div class="form-row">
+                <div class="form-group">
+                  <label for="logicType">Type de logique *</label>
+                  <select id="logicType" formControlName="logicType" class="form-control" (change)="onLogicTypeChange()">
+                    <option value="STANDARD">Standard (1:1)</option>
+                    <option value="SPECIAL_RATIO">Ratio spécial (1:2, 1:3, etc.)</option>
+                    <option value="CUSTOM">Personnalisée</option>
+                  </select>
+                  <small class="form-text text-muted">Choisissez le type de logique de réconciliation</small>
+                </div>
+                
+                <div class="form-group" *ngIf="modelForm.get('logicType')?.value === 'SPECIAL_RATIO'">
+                  <label for="expectedRatio">Ratio attendu</label>
+                  <select id="expectedRatio" formControlName="expectedRatio" class="form-control">
+                    <option value="1:2">1:2 (ex: TRXBO/OPPART)</option>
+                    <option value="1:3">1:3</option>
+                    <option value="2:1">2:1</option>
+                    <option value="3:1">3:1</option>
+                      </select>
+                  <small class="form-text text-muted">Définissez le ratio de correspondance attendu</small>
+                </div>
+              </div>
+
+              <div class="form-row">
+                <div class="form-group">
+                  <label for="logicDescription">Description</label>
+                  <textarea id="logicDescription" formControlName="logicDescription" class="form-control" rows="2"
+                            placeholder="Décrivez la logique de réconciliation..."></textarea>
+                  <small class="form-text text-muted">Description optionnelle de la logique</small>
+                </div>
+              </div>
+
+              <div class="form-actions">
+                <button type="button" class="btn btn-primary" (click)="saveReconciliationLogic()">Sauvegarder</button>
+                <button type="button" class="btn btn-secondary" (click)="cancelReconciliationLogicEdit()">Annuler</button>
+              </div>
+            </form>
+          </div>
+
+          <!-- Bouton d'ajout si aucune logique n'est configurée -->
+          <div class="add-logic-section" *ngIf="!modelForm.get('logicType')?.value && !editingReconciliationLogic">
+            <button type="button" class="btn btn-success" (click)="editReconciliationLogic()">
+              <i class="fas fa-plus"></i> Configurer la logique de réconciliation
             </button>
           </div>
         </div>
       </div>
 
-      <div class="form-group">
-        <label class="checkbox-label">
-          <input type="checkbox" formControlName="autoApply">
-          Appliquer automatiquement lors de l'upload
-        </label>
+
+
+
+
+      <!-- Messages informatifs pour les modèles autonomes -->
+      <div class="info-message" *ngIf="modelForm.get('fileType')?.value === 'partner' && !modelForm.get('templateFile')?.value">
+        <div class="alert alert-warning">
+          <i class="fas fa-exclamation-triangle"></i>
+          <strong>Attention :</strong> Veuillez sélectionner un fichier modèle depuis le dossier watch-folder pour configurer les clés de réconciliation.
+        </div>
       </div>
 
-      <!-- Étapes de traitement -->
-      <div class="processing-steps-section">
-        <div class="steps-header">
-          <h4>Étapes de traitement</h4>
-          <button type="button" (click)="addProcessingStep()" class="btn btn-success">
-            <i class="fas fa-plus"></i> Ajouter une étape
-          </button>
+      <div class="info-message" *ngIf="modelForm.get('fileType')?.value === 'partner' && 
+                                   modelForm.get('templateFile')?.value && 
+                                   availableColumns.length === 0">
+        <div class="alert alert-warning">
+          <i class="fas fa-exclamation-triangle"></i>
+          <strong>Attention :</strong> Les colonnes du fichier modèle sont en cours de chargement...
         </div>
+      </div>
 
-        <div class="steps-list" formArrayName="processingSteps">
-          <div class="step-item" *ngFor="let step of processingStepsFormArray.controls; let i = index" 
-               [formGroupName]="i">
-            
-            <div class="step-header">
-              <h5>Étape {{ i + 1 }}</h5>
-              <button type="button" (click)="removeProcessingStep(i)" class="btn btn-sm btn-delete">
-                <i class="fas fa-trash"></i>
-              </button>
-            </div>
+      <!-- Message informatif pour les règles de traitement des colonnes -->
+      <div class="info-message" *ngIf="showColumnRulesSection && availableColumnsForTemplate.length === 0">
+        <div class="alert alert-info">
+          <i class="fas fa-info-circle"></i>
+          <strong>Information :</strong> Les colonnes du modèle seront automatiquement chargées pour tous les types (partner, bo, both) avec encodage et typage corrects.
+        </div>
+      </div>
 
-            <div class="step-form">
-              <div class="form-row">
-                <div class="form-group">
-                  <label>Nom de l'étape *</label>
-                  <input type="text" formControlName="name" class="form-control" 
-                         placeholder="Ex: Formatage des montants">
-                </div>
-
-                <div class="form-group">
-                  <label>Type d'étape *</label>
-                  <select formControlName="type" (change)="onStepTypeChange(i)" class="form-control">
-                    <option *ngFor="let type of stepTypes" [value]="type.value">
-                      {{ type.label }}
-                    </option>
-                  </select>
+      <!-- Règles de traitement des colonnes -->
+      <div class="config-section">
+        <h4>
+          <i class="fas fa-tools"></i> Règles de traitement des colonnes
+          <button type="button" class="btn btn-sm btn-outline-info" (click)="toggleColumnProcessingSection()">
+            <i class="fas fa-tools"></i> {{ showColumnProcessingSection ? 'Masquer' : 'Afficher' }}
+          </button>
+        </h4>
+        <p class="section-description">Configurez les règles de nettoyage des données avant la réconciliation.</p>
+        
+        <div *ngIf="showColumnProcessingSection" class="processing-config-container">
+          <!-- Liste des règles existantes -->
+          <div class="processing-rules-list" *ngIf="columnProcessingRules.length > 0">
+            <h5>Règles configurées ({{ columnProcessingRules.length }})</h5>
+            <div *ngFor="let rule of columnProcessingRules; let i = index" class="processing-rule-item">
+              <div class="rule-header">
+                <span class="rule-order">{{ i + 1 }}</span>
+                <span class="rule-title">
+                  <i class="fas fa-columns"></i> 
+                  {{ rule.sourceColumns ? rule.sourceColumns.length : 1 }} colonne(s)
+                </span>
+                <div class="rule-actions">
+                  <button type="button" class="btn btn-sm btn-outline-primary" (click)="editColumnProcessingRule(i)">
+                    <i class="fas fa-edit"></i>
+                  </button>
+                  <button type="button" class="btn btn-sm btn-outline-danger" (click)="deleteColumnProcessingRule(i)">
+                    <i class="fas fa-trash"></i>
+                  </button>
                 </div>
               </div>
-
-              <div class="form-row">
-                <div class="form-group">
-                  <label>Champ à traiter *</label>
-                  <select formControlName="field" class="form-control" multiple size="4">
-                    <option *ngFor="let col of availableColumnsForTemplate" [value]="col">
+              <div class="rule-details">
+                <div class="rule-columns">
+                  <strong>Colonnes :</strong>
+                  <div class="columns-badges">
+                    <span *ngFor="let col of rule.sourceColumns || [rule.sourceColumn]" class="column-badge badge badge-primary">
                       {{ col }}
-                    </option>
-                  </select>
-                  <small class="form-text text-muted">Maintenez Ctrl (ou Cmd sur Mac) pour sélectionner plusieurs champs</small>
+                    </span>
+                  </div>
                 </div>
+                <div class="rule-badges">
+                  <span class="rule-action badge badge-warning" *ngIf="rule.removeSpecialChars">
+                    <i class="fas fa-magic"></i> Supprimer caractères spéciaux
+                  </span>
+                  <span class="rule-action badge badge-info" *ngIf="rule.removeAccents">
+                    <i class="fas fa-language"></i> Supprimer accents
+                  </span>
+                  <span class="rule-action badge badge-secondary" *ngIf="rule.toUpperCase">
+                    <i class="fas fa-arrow-up"></i> Majuscules
+                  </span>
+                  <span class="rule-action badge badge-secondary" *ngIf="rule.toLowerCase">
+                    <i class="fas fa-arrow-down"></i> Minuscules
+                  </span>
+                  <span class="rule-action badge badge-light" *ngIf="rule.trimSpaces">
+                    <i class="fas fa-cut"></i> Nettoyer espaces
+                  </span>
+                </div>
+                <div class="rule-details-text" *ngIf="rule.stringToRemove">
+                  <small class="text-muted">
+                    Chaîne à supprimer : <code>{{ rule.stringToRemove }}</code>
+                  </small>
+                </div>
+              </div>
+            </div>
+          </div>
 
+          <div class="add-processing-rule-section">
+            <button type="button" class="btn btn-success" (click)="addColumnProcessingRule()">
+              <i class="fas fa-plus"></i> Ajouter une règle de nettoyage
+            </button>
+                 </div>
+                 
+          <!-- Formulaire d'ajout/édition de règle de traitement -->
+          <div *ngIf="editingColumnProcessingRule !== null" class="processing-rule-form">
+            <h5>{{ editingColumnProcessingRule === -1 ? 'Nouvelle règle' : 'Modifier la règle' }}</h5>
+            <form [formGroup]="columnProcessingRuleForm" (ngSubmit)="saveColumnProcessingRule()">
+              <div class="form-row">
                 <div class="form-group">
-                  <label>Action *</label>
-                  <select formControlName="action" class="form-control">
-                    <option *ngFor="let action of getActionsForType(step.get('type')?.value)" [value]="action.value">
-                      {{ action.label }}
-                    </option>
-                  </select>
-                </div>
-              </div>
-
-              <div class="form-group">
-                <label>Description *</label>
-                <textarea formControlName="description" class="form-control" rows="2"
-                          placeholder="Description de ce que fait cette étape"></textarea>
-              </div>
-
-              <!-- Paramètres dynamiques selon l'action -->
-              <div class="dynamic-params" *ngIf="step.get('action')?.value">
-                
-                <!-- Paramètres pour formatage -->
-                <div class="param-group" *ngIf="step.get('type')?.value === 'format'">
-
-                  <!-- Paramètres spécifiques selon l'action -->
-                  <div class="format-params" *ngIf="step.get('action')?.value === 'currency'">
-                    <div class="form-row">
-                      <div class="form-group">
-                        <label>Locale</label>
-                        <select formControlName="locale" class="form-control">
-                          <option value="fr-FR">Français (France)</option>
-                          <option value="en-US">Anglais (États-Unis)</option>
-                          <option value="en-GB">Anglais (Royaume-Uni)</option>
-                          <option value="de-DE">Allemand</option>
-                          <option value="es-ES">Espagnol</option>
-                        </select>
-                      </div>
-                      <div class="form-group">
-                        <label>Devise</label>
-                        <select formControlName="currency" class="form-control">
-                          <option value="EUR">EUR (€)</option>
-                          <option value="USD">USD ($)</option>
-                          <option value="GBP">GBP (£)</option>
-                          <option value="CHF">CHF (Fr)</option>
-                        </select>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div class="format-params" *ngIf="step.get('action')?.value === 'normalizeDates'">
-                    <div class="form-group">
-                      <label>Format de date</label>
-                      <select formControlName="dateFormat" class="form-control">
-                        <option value="yyyy-MM-dd">yyyy-MM-dd</option>
-                        <option value="dd/MM/yyyy">dd/MM/yyyy</option>
-                        <option value="MM/dd/yyyy">MM/dd/yyyy</option>
-                        <option value="yyyy/MM/dd">yyyy/MM/dd</option>
-                      </select>
-                    </div>
-                  </div>
-
-                  <div class="format-params" *ngIf="step.get('action')?.value === 'removeCharacters'">
-                    <div class="form-row">
-                      <div class="form-group">
-                        <label>Position</label>
-                        <select formControlName="position" class="form-control">
-                          <option value="start">Depuis le début</option>
-                          <option value="end">Depuis la fin</option>
-                          <option value="specific">Position spécifique</option>
-                        </select>
-                      </div>
-                      <div class="form-group">
-                        <label>Nombre de caractères</label>
-                        <input type="number" formControlName="count" class="form-control" min="1" value="1">
-                      </div>
-                      <div class="form-group" *ngIf="step.get('position')?.value === 'specific'">
-                        <label>Position spécifique (1-based)</label>
-                        <input type="number" formControlName="specificPosition" class="form-control" min="1" value="1">
-                      </div>
-                    </div>
-                  </div>
-
-                  <div class="format-params" *ngIf="step.get('action')?.value === 'removeSpecificCharacters'">
-                    <div class="form-row">
-                      <div class="form-group">
-                        <label>Caractères à supprimer</label>
-                        <input type="text" formControlName="characters" class="form-control" 
-                               placeholder="Ex: _CM ou abc123">
-                      </div>
-                      <div class="form-group">
-                        <label>
-                          <input type="checkbox" formControlName="caseSensitive">
-                          Sensible à la casse
+                  <label>Colonnes à nettoyer *</label>
+                  <div class="columns-selection-container">
+                    <div class="columns-list">
+                      <div *ngFor="let col of availableTemplateColumns" class="column-checkbox-item">
+                        <label class="column-checkbox-label">
+                          <input type="checkbox" 
+                                 [value]="col" 
+                                 (change)="toggleColumnSelection(col, $event.target.checked)"
+                                 [checked]="isColumnSelected(col)">
+                          <span class="column-name">{{ col }}</span>
                         </label>
                       </div>
                     </div>
-                  </div>
-
-                  <div class="format-params" *ngIf="step.get('action')?.value === 'insertCharacters'">
-                    <div class="form-row">
-                      <div class="form-group">
-                        <label>Caractères à insérer</label>
-                        <input type="text" formControlName="characters" class="form-control" 
-                               placeholder="Ex: _CM ou 123">
-                      </div>
-                      <div class="form-group">
-                        <label>Position</label>
-                        <select formControlName="position" class="form-control">
-                          <option value="start">Au début</option>
-                          <option value="end">À la fin</option>
-                          <option value="specific">Position spécifique</option>
-                        </select>
-                      </div>
-                      <div class="form-group" *ngIf="step.get('position')?.value === 'specific'">
-                        <label>Position spécifique (1-based)</label>
-                        <input type="number" formControlName="specificPosition" class="form-control" min="1" value="1">
-                      </div>
-                    </div>
-                  </div>
-
-                  <!-- Aide pour les actions de formatage -->
-                  <div class="format-help" *ngIf="['trimSpaces', 'toLowerCase', 'toUpperCase', 'removeDashesAndCommas', 'removeSeparators', 'dotToComma', 'normalizeDates', 'normalizeNumbers', 'absoluteValue', 'cleanAmounts'].includes(step.get('action')?.value)">
-                    <small class="form-text text-muted">
-                      <strong>💡 Aide :</strong>
-                      <span *ngIf="step.get('action')?.value === 'trimSpaces'">
-                        Supprime les espaces en début et fin de chaîne
-                      </span>
-                      <span *ngIf="step.get('action')?.value === 'toLowerCase'">
-                        Convertit tout le texte en minuscules
-                      </span>
-                      <span *ngIf="step.get('action')?.value === 'toUpperCase'">
-                        Convertit tout le texte en majuscules
-                      </span>
-                      <span *ngIf="step.get('action')?.value === 'removeDashesAndCommas'">
-                        Supprime les tirets (-) et les virgules (,)
-                      </span>
-                      <span *ngIf="step.get('action')?.value === 'removeSeparators'">
-                        Supprime les virgules, points et espaces
-                      </span>
-                      <span *ngIf="step.get('action')?.value === 'dotToComma'">
-                        Remplace les points par des virgules
-                      </span>
-                      <span *ngIf="step.get('action')?.value === 'normalizeDates'">
-                        Normalise les dates au format ISO (yyyy-MM-dd)
-                      </span>
-                      <span *ngIf="step.get('action')?.value === 'normalizeNumbers'">
-                        Convertit les chaînes en nombres
-                      </span>
-                      <span *ngIf="step.get('action')?.value === 'absoluteValue'">
-                        Convertit en valeur absolue
-                      </span>
-                      <span *ngIf="step.get('action')?.value === 'cleanAmounts'">
-                        Nettoie les montants (enlève espaces et ,00)
-                      </span>
-                    </small>
-                  </div>
-                </div>
-
-                <!-- Paramètres pour extraction -->
-                <div class="param-group" *ngIf="step.get('action')?.value === 'extract'">
-                  <div class="form-row">
-                    <div class="form-group">
-                      <label>Type d'extraction</label>
-                      <select formControlName="extractType" class="form-control">
-                        <option value="first">Premiers caractères</option>
-                        <option value="last">Derniers caractères</option>
-                        <option value="from">À partir de</option>
-                        <option value="between">Entre deux caractères</option>
-                        <option value="key">Après une clé</option>
-                      </select>
-                    </div>
-                    <div class="form-group">
-                      <label>Nombre de caractères</label>
-                      <input type="number" formControlName="extractCount" class="form-control" min="1">
-                    </div>
-                  </div>
-                </div>
-
-                <!-- Paramètres pour concaténation -->
-                <div class="param-group" *ngIf="step.get('action')?.value === 'concat'">
-                  <div class="form-row">
-                    <div class="form-group">
-                      <label>Colonnes à concaténer</label>
-                      <select formControlName="field" class="form-control" multiple size="4">
-                        <option *ngFor="let col of availableColumnsForTemplate" [value]="col">
-                          {{ col }}
-                        </option>
-                      </select>
-                      <small class="form-text text-muted">
-                        Sélectionnez les colonnes à concaténer (sélection multiple possible)
+                    <div class="columns-selection-summary">
+                      <small class="form-text text-info">
+                        <i class="fas fa-info-circle"></i> 
+                        {{ getSelectedColumnsCount() }} colonne(s) sélectionnée(s) sur {{ availableTemplateColumns.length }} disponibles
                       </small>
-                    </div>
-                    <div class="form-group">
-                      <label>Nouvelle colonne</label>
-                      <input type="text" formControlName="newColumn" class="form-control" 
-                             placeholder="concatenated">
-                    </div>
-                    <div class="form-group">
-                      <label>Séparateur</label>
-                      <input type="text" formControlName="separator" class="form-control" value=" ">
+                      <button type="button" class="btn btn-sm btn-outline-secondary" (click)="selectAllColumns()">
+                        <i class="fas fa-check-double"></i> Tout sélectionner
+                      </button>
+                      <button type="button" class="btn btn-sm btn-outline-secondary" (click)="deselectAllColumns()">
+                        <i class="fas fa-times"></i> Tout désélectionner
+                      </button>
                     </div>
                   </div>
-                </div>
-
-                <!-- Paramètres pour filtrage -->
-                <div class="param-group" *ngIf="step.get('action')?.value === 'keepMatching'">
-                  <div class="form-group">
-                    <label>Pattern regex</label>
-                    <input type="text" formControlName="pattern" class="form-control" value=".*">
-                  </div>
-                </div>
-
-                <!-- Paramètres pour sélection de colonnes -->
-                <div class="param-group" *ngIf="['keepColumns', 'removeColumns', 'removeDuplicates'].includes(step.get('action')?.value)">
-                  <!-- Le champ "Champ à traiter" est déjà défini dans la section principale de l'étape -->
-                </div>
-
-                <!-- Paramètres pour extraction de données -->
-                <div class="param-group" *ngIf="['extractFirst', 'extractLast', 'extractFrom', 'extractBetween', 'extractAfterKey'].includes(step.get('action')?.value)">
-                  <div class="form-row">
-                    <div class="form-group">
-                      <label>Colonne source *</label>
-                      <select formControlName="sourceColumn" class="form-control">
-                        <option value="">-- Choisir une colonne --</option>
-                        <option *ngFor="let col of availableColumnsForTemplate" [value]="col">
-                          {{ col }}
-                        </option>
-                      </select>
-                    </div>
-                    <div class="form-group">
-                      <label>Nouvelle colonne</label>
-                      <input type="text" formControlName="newColumn" class="form-control" 
-                             placeholder="colonne_extraite">
-                    </div>
-                  </div>
-                  
-                  <!-- Paramètres spécifiques selon le type d'extraction -->
-                  <div class="form-row" *ngIf="['extractFirst', 'extractLast'].includes(step.get('action')?.value)">
-                    <div class="form-group">
-                      <label>Nombre de caractères</label>
-                      <input type="number" formControlName="extractCount" class="form-control" min="1" value="1">
-                    </div>
-                  </div>
-                  
-                  <div class="form-row" *ngIf="step.get('action')?.value === 'extractFrom'">
-                    <div class="form-group">
-                      <label>Position de départ</label>
-                      <input type="number" formControlName="extractStart" class="form-control" min="1" value="1">
-                    </div>
-                    <div class="form-group">
-                      <label>Nombre de caractères</label>
-                      <input type="number" formControlName="extractCount" class="form-control" min="1" value="1">
-                    </div>
-                  </div>
-                  
-                  <div class="form-row" *ngIf="step.get('action')?.value === 'extractBetween'">
-                    <div class="form-group">
-                      <label>Caractère de début</label>
-                      <input type="text" formControlName="startChar" class="form-control" placeholder="(">
-                    </div>
-                    <div class="form-group">
-                      <label>Caractère de fin</label>
-                      <input type="text" formControlName="endChar" class="form-control" placeholder=")">
-                    </div>
-                  </div>
-                  
-                  <div class="form-row" *ngIf="step.get('action')?.value === 'extractAfterKey'">
-                    <div class="form-group">
-                      <label>Clé de recherche</label>
-                      <input type="text" formControlName="searchKey" class="form-control" placeholder="ID:">
-                    </div>
-                    <div class="form-group">
-                      <label>Nombre de caractères après la clé</label>
-                      <input type="number" formControlName="extractCount" class="form-control" min="1" value="1">
-                    </div>
-                  </div>
-                </div>
-
-                <!-- Paramètres pour filtrage par colonne -->
-                <div class="param-group" *ngIf="['filterByColumn', 'filterByMultipleValues'].includes(step.get('action')?.value)">
-                  <div class="form-row">
-                    <div class="form-group">
-                      <label>Colonne de filtrage *</label>
-                      <select formControlName="filterColumn" class="form-control">
-                        <option value="">-- Choisir une colonne --</option>
-                        <option *ngFor="let col of availableColumnsForTemplate" [value]="col">
-                          {{ col }}
-                        </option>
-                      </select>
-                    </div>
-                    <div class="form-group">
-                      <label>Valeurs à garder</label>
-                      <input type="text" formControlName="filterValues" class="form-control" 
-                             placeholder="valeur1,valeur2,valeur3">
-                      <small class="form-text text-muted">
-                        Séparez les valeurs par des virgules
-                      </small>
-                    </div>
-                  </div>
-                </div>
-
-                <!-- Paramètres pour filtrage par valeur -->
-                <div class="param-group" *ngIf="step.get('action')?.value === 'filterByValue'">
-                  <div class="form-row">
-                    <div class="form-group">
-                      <label>Champ à filtrer *</label>
-                      <select formControlName="field" class="form-control" (change)="onFilterFieldChange(i)">
-                        <option value="">-- Choisir un champ --</option>
-                        <option *ngFor="let col of availableColumnsForTemplate" [value]="col">
-                          {{ col }}
-                        </option>
-                      </select>
-                    </div>
-                    <div class="form-group">
-                      <label>Valeurs disponibles</label>
-                      <div class="available-values-container">
-                        <div class="values-list" *ngIf="getAvailableValuesForField(step.get('field')?.value).length > 0">
-                          <div class="value-item" *ngFor="let value of getAvailableValuesForField(step.get('field')?.value)" 
-                               (click)="toggleValueSelection(i, value)"
-                               [class.selected]="isValueSelected(i, value)">
-                            {{ value }}
-                          </div>
-                        </div>
-                        <div class="no-values" *ngIf="getAvailableValuesForField(step.get('field')?.value).length === 0">
-                          <small class="text-muted">Aucune valeur disponible pour ce champ</small>
-                        </div>
-                      </div>
-                      <small class="form-text text-muted">
-                        Cliquez sur les valeurs pour les sélectionner/désélectionner
-                      </small>
-                      <div class="help-info" *ngIf="step.get('field')?.value">
-                        <small class="text-info">
-                          <strong>💡 Aide :</strong> Colonnes disponibles dans votre fichier : 
-                          <span class="available-columns">{{ availableColumnsForTemplate.join(', ') }}</span>
-                        </small>
-                      </div>
-                    </div>
-                  </div>
-                  <div class="form-row" *ngIf="getSelectedValuesForField(i).length > 0">
-                    <div class="form-group">
-                      <label>Valeurs sélectionnées</label>
-                      <div class="selected-values">
-                        <span class="selected-value" *ngFor="let value of getSelectedValuesForField(i)">
-                          {{ value }}
-                          <button type="button" class="remove-value" (click)="removeValueSelection(i, value)">×</button>
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <!-- Paramètres pour export par type -->
-                <div class="param-group" *ngIf="['exportByType', 'exportByColumn', 'exportByValue'].includes(step.get('action')?.value)">
-                  <div class="form-row">
-                    <div class="form-group">
-                      <label>Colonne de tri *</label>
-                      <select formControlName="exportColumn" class="form-control">
-                        <option value="">-- Choisir une colonne --</option>
-                        <option *ngFor="let col of availableColumnsForTemplate" [value]="col">
-                          {{ col }}
-                        </option>
-                      </select>
-                    </div>
-                    <div class="form-group">
-                      <label>Valeurs à exporter</label>
-                      <input type="text" formControlName="exportValues" class="form-control" 
-                             placeholder="valeur1,valeur2,valeur3">
-                      <small class="form-text text-muted">
-                        Séparez les valeurs par des virgules. Laissez vide pour toutes les valeurs.
-                      </small>
-                    </div>
-                  </div>
-                  
-                  <div class="form-row">
-                    <div class="form-group">
-                      <label>Suffixe du fichier</label>
-                      <input type="text" formControlName="exportSuffix" class="form-control" 
-                             placeholder="_export">
-                    </div>
-                    <div class="form-group">
-                      <label>Description</label>
-                      <input type="text" formControlName="exportDescription" class="form-control" 
-                             placeholder="Export par type">
-                    </div>
-                  </div>
-                </div>
-
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Configuration des clés de réconciliation -->
-      <div class="reconciliation-keys-section" formGroupName="reconciliationKeys">
-        <div class="section-header">
-          <h4>Configuration des clés de réconciliation</h4>
-          <p class="section-description">
-            Configuration spécifique selon le type de modèle
-          </p>
-        </div>
-
-        <!-- Configuration pour les modèles partenaire -->
-        <div class="partner-config" *ngIf="modelForm.get('fileType')?.value === 'partner'">
-          <!-- Section de configuration des clés partenaires -->
-          <div class="reconciliation-section">
-            <div class="section-header">
-              <h5><i class="fas fa-key"></i> Configuration des clés de réconciliation</h5>
-              <p class="section-description">
-                Configurez les clés de réconciliation pour ce modèle partenaire
-              </p>
-            </div>
-
-            <div class="form-row">
-              <!-- Configuration des clés côté partenaire -->
-              <div class="form-group col-md-6">
-                <label class="form-label">
-                  <i class="fas fa-handshake"></i> Clés côté partenaire *
-                </label>
-                <div class="select-container">
-                  <select formControlName="partnerKeys" class="form-control" multiple size="6" (change)="onPartnerKeysChange()">
-                    <option *ngFor="let col of availableColumnsForTemplate" [value]="col">
-                      {{ col }}
-                    </option>
-                  </select>
-                  <div class="select-actions">
-                    <button type="button" class="btn btn-sm btn-outline-secondary" (click)="clearPartnerKeys()" *ngIf="getSelectedPartnerKeys().length > 0">
-                      <i class="fas fa-times"></i> Effacer
-                    </button>
-                    <button type="button" class="btn btn-sm btn-outline-info" (click)="selectAllPartnerKeys()" *ngIf="availableColumnsForTemplate.length > 0">
-                      <i class="fas fa-check-double"></i> Tout sélectionner
-                    </button>
-                  </div>
-                </div>
-                <small class="form-text text-muted">
-                  <i class="fas fa-info-circle"></i> Sélectionnez les colonnes qui serviront de clés de réconciliation côté partenaire
-                </small>
-                
-                <!-- Indicateur des clés partenaires sélectionnées -->
-                <div class="selected-keys-indicator" *ngIf="getSelectedPartnerKeys().length > 0">
-                  <div class="keys-header">
-                    <strong><i class="fas fa-check-circle text-success"></i> Clés partenaires sélectionnées ({{ getSelectedPartnerKeys().length }}) :</strong>
-                  </div>
-                  <div class="selected-keys-list">
-                    <span class="selected-key" *ngFor="let key of getSelectedPartnerKeys()">
-                      <i class="fas fa-key"></i> {{ key }}
-                    </span>
-                  </div>
+                  <small class="form-text text-muted" *ngIf="availableTemplateColumns.length === 0">
+                    <i class="fas fa-spinner fa-spin"></i> Chargement des colonnes du modèle...
+                  </small>
+                  <small class="form-text text-success" *ngIf="availableTemplateColumns.length > 0">
+                    <i class="fas fa-check"></i> {{ availableTemplateColumns.length }} colonnes du modèle disponibles
+                  </small>
                 </div>
               </div>
 
-              <!-- Sélection des modèles BO -->
-              <div class="form-group col-md-6">
-                <label class="form-label">
-                  <i class="fas fa-database"></i> Modèles BO à utiliser *
-                </label>
-                <div class="select-container">
-                  <select formControlName="boModels" class="form-control" multiple size="6" (change)="onBOModelsChange()" (ngModelChange)="onBOModelsChange()">
-                    <option *ngFor="let boModel of getAvailableBOModels()" [value]="boModel.id">
-                      {{ boModel.name }} ({{ boModel.filePattern }})
-                    </option>
-                  </select>
-                  <div class="select-actions">
-                    <button type="button" class="btn btn-sm btn-outline-secondary" (click)="clearBOModels()" *ngIf="getSelectedBOModels().length > 0">
-                      <i class="fas fa-times"></i> Effacer
-                    </button>
-                    <button type="button" class="btn btn-sm btn-outline-info" (click)="selectAllBOModels()" *ngIf="getAvailableBOModels().length > 0">
-                      <i class="fas fa-check-double"></i> Tout sélectionner
-                    </button>
-                  </div>
-                </div>
-                <small class="form-text text-muted">
-                  <i class="fas fa-info-circle"></i> Sélectionnez les modèles BO qui seront utilisés pour la réconciliation
-                </small>
-
-                <!-- Indicateur des modèles BO sélectionnés -->
-                <div class="selected-keys-indicator" *ngIf="getSelectedBOModels().length > 0">
-                  <div class="keys-header">
-                    <strong><i class="fas fa-check-circle text-success"></i> Modèles BO sélectionnés ({{ getSelectedBOModels().length }}) :</strong>
-                  </div>
-                  <div class="selected-keys-list">
-                    <span class="selected-key" *ngFor="let boModel of getSelectedBOModels()">
-                      <i class="fas fa-database"></i> {{ boModel.name }}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- Configuration des clés et traitements pour chaque modèle BO sélectionné -->
-          <div class="bo-models-config" *ngIf="getSelectedBOModels().length > 0">
-            <div class="section-header">
-              <h5><i class="fas fa-cogs"></i> Configuration des modèles BO</h5>
-              <p class="section-description">
-                Configurez les clés de réconciliation et les traitements pour chaque modèle BO sélectionné
-              </p>
-            </div>
-
-            <div class="bo-model-config" *ngFor="let boModel of getSelectedBOModels(); let boIndex = index">
-              <div class="bo-model-card">
-                <div class="bo-model-header">
-                  <div class="bo-model-info">
-                    <h6><i class="fas fa-database"></i> {{ boModel.name }}</h6>
-                    <small class="text-muted">{{ boModel.filePattern }}</small>
-                  </div>
-                  <div class="bo-model-actions">
-                    <span class="badge badge-info">{{ boIndex + 1 }}/{{ getSelectedBOModels().length }}</span>
-                  </div>
-                </div>
-                
-                <!-- Configuration des clés -->
-                <div class="form-row">
-                  <div class="form-group col-md-6">
-                    <label class="form-label">
-                      <i class="fas fa-key"></i> Clés de réconciliation pour {{ boModel.name }}
-                    </label>
-                    
-                    <!-- Indicateur de chargement -->
-                    <div class="column-loading-indicator" *ngIf="getBOModelColumns(boModel).length === 0">
-                      <div class="alert alert-warning">
-                        <i class="fas fa-spinner fa-spin"></i> Chargement des colonnes...
-                        <button type="button" class="btn btn-sm btn-outline-primary ml-2" (click)="reloadBOModelColumns(boModel)">
-                          <i class="fas fa-sync-alt"></i> Recharger
-                        </button>
-                      </div>
-                    </div>
-
-                    <!-- Sélecteur de clés -->
-                    <div class="select-container" *ngIf="hasBOModelControl(boModel.id) && getBOModelColumns(boModel).length > 0">
-                      <select [formControl]="getBOModelKeysControl(boModel.id)" class="form-control" multiple size="5" (change)="onBOKeysChange(boModel.id, $event)">
-                        <option *ngFor="let col of getBOModelColumns(boModel)" [value]="col">
-                          {{ col }}
-                        </option>
-                      </select>
-                      <div class="select-actions">
-                        <button type="button" class="btn btn-sm btn-outline-secondary" (click)="clearBOModelKeys(boModel.id)" *ngIf="getSelectedKeysForModel(boModel.id).length > 0">
-                          <i class="fas fa-times"></i> Effacer
-                        </button>
-                        <button type="button" class="btn btn-sm btn-outline-info" (click)="selectAllBOModelKeys(boModel.id)" *ngIf="getBOModelColumns(boModel).length > 0">
-                          <i class="fas fa-check-double"></i> Tout sélectionner
-                        </button>
-                      </div>
-                    </div>
-
-                    <small class="form-text text-muted">
-                      <i class="fas fa-info-circle"></i> Clés de réconciliation pour ce modèle BO ({{ getBOModelColumns(boModel).length }} colonnes disponibles)
-                    </small>
-                    
-                    <!-- Indicateur des clés sélectionnées -->
-                    <div class="selected-keys-indicator" *ngIf="getSelectedKeysForModel(boModel.id).length > 0">
-                      <div class="keys-header">
-                        <strong><i class="fas fa-check-circle text-success"></i> Clés sélectionnées ({{ getSelectedKeysForModel(boModel.id).length }}) :</strong>
-                      </div>
-                      <div class="selected-keys-list">
-                        <span class="selected-key" *ngFor="let key of getSelectedKeysForModel(boModel.id)">
-                          <i class="fas fa-key"></i> {{ key }}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <!-- Configuration des traitements BO -->
+              <div class="form-row">
                 <div class="form-group">
-                  <label>Traitements pour {{ boModel.name }}</label>
-                  <div class="bo-treatments">
-                    <div class="treatment-step" *ngFor="let treatmentStep of getBOTreatmentStepsArray(boModel.id); let i = index">
-                      <div class="treatment-header">
-                        <span>Traitement {{ i + 1 }}</span>
-                        <button type="button" class="btn btn-sm btn-danger" (click)="removeBOTreatmentStep(boModel.id, i)">
-                          <i class="fas fa-trash"></i>
-                        </button>
-                      </div>
-                      <div class="treatment-content">
-                        <div class="form-row">
-                          <div class="form-group">
-                            <label>Type</label>
-                            <select [formControlName]="'type'" class="form-control" (change)="onBOTreatmentTypeChange(boModel.id, i)">
-                              <option *ngFor="let stepType of getStepTypesArray()" [value]="stepType.value">
-                                {{ stepType.label }}
-                              </option>
-                            </select>
-                          </div>
-                          <div class="form-group">
-                            <label>Action</label>
-                            <select [formControlName]="'action'" class="form-control">
-                              <option *ngFor="let action of getBOTreatmentActions(boModel.id, i)" [value]="action.value">
-                                {{ action.label }}
-                              </option>
-                            </select>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                    <button type="button" class="btn btn-sm btn-primary" (click)="addBOTreatmentStep(boModel.id)">
-                      <i class="fas fa-plus"></i> Ajouter un traitement
-                    </button>
-                  </div>
+                  <label>
+                    <input type="checkbox" formControlName="removeSpecialChars" [checked]="true">
+                    Supprimer les caractères spéciaux
+                  </label>
+                  <small class="form-text text-muted">
+                    Cette option supprime automatiquement les caractères spéciaux de la colonne sélectionnée
+                  </small>
                 </div>
               </div>
-            </div>
-          </div>
 
+              <div class="form-row">
+                <div class="form-group">
+                  <label>
+                    <input type="checkbox" formControlName="removeAccents">
+                    Supprimer les accents
+                  </label>
+                  <small class="form-text text-muted">
+                    Cette option supprime automatiquement tous les accents des valeurs (é, è, à, ç, etc.)
+                    <br>Exemple : "Téléphone" → "Telephone", "Numéro" → "Numero"
+                  </small>
+                </div>
+              </div>
 
-        </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label>
+                    <input type="checkbox" formControlName="toUpperCase">
+                    Convertir en majuscules
+                  </label>
+                  <small class="form-text text-muted">
+                    Convertit toutes les lettres en majuscules
+                    <br>Exemple : "hello world" → "HELLO WORLD"
+                  </small>
+                </div>
+              </div>
 
-                 <!-- Configuration pour les modèles BO et "both" -->
-         <div class="other-config" *ngIf="modelForm.get('fileType')?.value !== 'partner'">
-           <div class="info-message">
-             <p><i class="fas fa-info-circle"></i> La configuration des clés de réconciliation se fait uniquement sur les modèles "Partenaire".</p>
-             <p>Pour les modèles BO et "Les deux", les clés seront déterminées automatiquement lors de la réconciliation.</p>
+              <div class="form-row">
+                <div class="form-group">
+                  <label>
+                    <input type="checkbox" formControlName="toLowerCase">
+                    Convertir en minuscules
+                  </label>
+                  <small class="form-text text-muted">
+                    Convertit toutes les lettres en minuscules
+                    <br>Exemple : "HELLO WORLD" → "hello world"
+                  </small>
+                </div>
+              </div>
+
+              <div class="form-row">
+                <div class="form-group">
+                  <label>
+                    <input type="checkbox" formControlName="trimSpaces">
+                    Nettoyer les espaces
+                  </label>
+                  <small class="form-text text-muted">
+                    Supprime les espaces en début et fin de chaîne
+                    <br>Exemple : "  hello world  " → "hello world"
+                  </small>
+                </div>
+              </div>
+                
+              <!-- Champ pour spécifier les chaînes à supprimer -->
+              <div class="form-row" *ngIf="columnProcessingRuleForm.get('removeSpecialChars')?.value">
+                <div class="form-group">
+                  <label>Chaîne à supprimer</label>
+                  <input type="text" formControlName="stringToRemove" class="form-control" 
+                         placeholder="Ex: _CM ou abc123">
+                  <small class="form-text text-muted">
+                    <strong>Sensible à la casse</strong><br>
+                    🔍 <strong>Appliquer seulement sur les lignes avec une valeur exacte</strong><br>
+                    💡 <strong>Suppression de chaînes spécifiques autorisées :</strong><br>
+                    • Seules les chaînes suivantes sont autorisées : <code>_CM, _ML, _GN, _CI, _BF, _KE, _SN, _KN, _BJ, _GB</code><br>
+                    • Exemple : <code>"_CM"</code> supprimera <code>"_CM"</code> dans <code>"ID_CM_123"</code> → <code>"ID_123"</code><br>
+                    • Exemple : <code>"_ML"</code> supprimera <code>"_ML"</code> dans <code>"REF_ML_456"</code> → <code>"REF_456"</code><br>
+                    ⚠️ <strong>Note :</strong> Les caractères individuels (C, M, P, etc.) ne sont pas autorisés
+                  </small>
+                </div>
+              </div>
+
+              <div class="form-actions">
+                <button type="submit" class="btn btn-primary">Sauvegarder</button>
+                <button type="button" class="btn btn-secondary" (click)="cancelColumnProcessingRuleEdit()">Annuler</button>
+              </div>
+            </form>
            </div>
          </div>
       </div>
 
       <div class="form-actions">
-        <button type="submit" [disabled]="!modelForm.valid || loading" class="btn btn-primary">
-          <i class="fas fa-save"></i> {{ editingModel ? 'Mettre à jour' : 'Créer' }}
+        <button type="submit" class="btn btn-primary" [disabled]="!isFormValid()">
+          {{ editingModel ? 'Modifier' : 'Créer' }}
         </button>
-        <button type="button" (click)="closeForm()" class="btn btn-secondary">
-          Annuler
+        <button type="button" class="btn btn-secondary" (click)="cancelEdit()">
+          {{ editingModel ? 'Annuler' : 'Fermer' }}
         </button>
+        
+        <!-- Bouton de debug temporaire -->
+        <button type="button" class="btn btn-warning" (click)="debugValidationState()" style="margin-left: 10px;">
+          🔍 Debug Validation
+        </button>
+        
+        <!-- Message d'aide pour la validation -->
+        <div class="validation-help" *ngIf="!isFormValid() && modelForm.get('fileType')?.value !== 'bo'">
+          <div class="alert alert-info">
+            <i class="fas fa-info-circle"></i>
+            <strong>Pour activer le bouton "Créer" :</strong>
+            <ul>
+              <li *ngIf="selectedPartnerKeys.length === 0">✅ Sélectionnez au moins une clé partenaire</li>
+              <li *ngIf="selectedPartnerKeys.length > 0">✅ Clés partenaire sélectionnées ({{ selectedPartnerKeys.length }})</li>
+              <li *ngIf="selectedBOModels.length === 0">✅ Sélectionnez au moins un modèle BO</li>
+              <li *ngIf="selectedBOModels.length > 0">✅ Modèles BO sélectionnés ({{ selectedBOModels.length }})</li>
+            </ul>
+          </div>
+        </div>
       </div>
     </form>
   </div>
 
-  <!-- Modal de sélection de fichiers -->
-  <div class="modal-overlay" *ngIf="showFileSelector" (click)="closeFileSelector()">
-    <div class="modal-content" (click)="$event.stopPropagation()">
-      <div class="modal-header">
-        <h3>Sélectionner un fichier modèle</h3>
-        <button (click)="closeFileSelector()" class="btn btn-sm btn-secondary">
-          <i class="fas fa-times"></i>
-        </button>
+  <!-- Liste des modèles -->
+  <div class="models-list" *ngIf="models.length > 0">
+    <h3>Modèles existants ({{ models.length }})</h3>
+    
+    <div class="models-grid">
+      <div class="model-card" *ngFor="let model of models">
+        <div class="model-header">
+          <h4>{{ model.name }}</h4>
+          <div class="model-actions">
+            <button (click)="editModel(model)" class="btn btn-sm btn-edit" title="Modifier">
+              <i class="fas fa-edit"></i>
+            </button>
+            <button (click)="deleteModel(model)" class="btn btn-sm btn-delete" title="Supprimer">
+              <i class="fas fa-trash"></i>
+            </button>
+        </div>
       </div>
 
-      <div class="modal-body">
-        <!-- Barre de recherche -->
-        <div *ngIf="!loading && availableFiles.length > 0" class="search-section">
-          <div class="search-input-container">
-            <i class="fas fa-search search-icon"></i>
-            <input 
-              type="text" 
-              [(ngModel)]="fileSearchTerm" 
-              (ngModelChange)="onFileSearchChange()"
-              placeholder="Rechercher un fichier par nom, type ou colonnes..."
-              class="search-input"
-            >
-            <button 
-              *ngIf="fileSearchTerm" 
-              (click)="clearFileSearch()" 
-              class="clear-search-btn"
-              title="Effacer la recherche">
-              <i class="fas fa-times"></i>
-            </button>
-          </div>
-          <div class="search-stats" *ngIf="fileSearchTerm">
-            <span>{{ filteredFiles.length }} fichier(s) trouvé(s) sur {{ availableFiles.length }}</span>
-          </div>
-        </div>
-
-        <div *ngIf="loading" class="loading">
-          <i class="fas fa-spinner fa-spin"></i> Chargement des fichiers...
-        </div>
-
-        <div *ngIf="!loading && availableFiles.length === 0" class="no-files">
-          <p>Aucun fichier disponible dans le dossier watch-folder.</p>
-          <p>Placez des fichiers CSV, Excel ou JSON dans le dossier pour les voir ici.</p>
-        </div>
-
-        <div *ngIf="!loading && availableFiles.length > 0 && filteredFiles.length === 0 && fileSearchTerm" class="no-results">
-          <i class="fas fa-search"></i>
-          <p>Aucun fichier ne correspond à votre recherche : "{{ fileSearchTerm }}"</p>
-          <button (click)="clearFileSearch()" class="btn btn-secondary">
-            <i class="fas fa-times"></i> Effacer la recherche
-          </button>
-        </div>
-
-        <div *ngIf="!loading && availableFiles.length > 0 && filteredFiles.length > 0" class="files-list">
-          <div class="file-item" *ngFor="let file of filteredFiles" (click)="selectFileModel(file)">
-            <div class="file-info">
-              <i class="fas fa-file" [class.fa-file-csv]="file.fileType === 'csv'"
-                 [class.fa-file-excel]="file.fileType === 'excel'"
-                 [class.fa-file-code]="file.fileType === 'json'"></i>
-              <div class="file-details">
-                <h4>{{ file.fileName }}</h4>
-                <p>{{ file.fileType.toUpperCase() }} • {{ file.recordCount }} enregistrements</p>
-                <p *ngIf="file.columns.length > 0">
-                  <strong>Colonnes:</strong> {{ file.columns.join(', ') }}
-                </p>
-              </div>
+        <div class="model-info">
+          <p><strong>Pattern:</strong> {{ model.filePattern }}</p>
+          <p><strong>Type:</strong> {{ model.fileType }}</p>
+          <p><strong>Auto-appliqué:</strong> {{ model.autoApply ? 'Oui' : 'Non' }}</p>
+          <p *ngIf="model.templateFile"><strong>Fichier modèle:</strong> {{ model.templateFile }}</p>
+          
+          <!-- Affichage des règles de traitement des colonnes -->
+          <div class="model-rules" *ngIf="model.columnProcessingRules && model.columnProcessingRules.length > 0">
+            <p><strong>Règles de traitement:</strong> {{ model.columnProcessingRules.length }} règle(s)</p>
+            <div class="rules-preview">
+              <span class="rule-badge" *ngFor="let rule of model.columnProcessingRules.slice(0, 3)">
+                {{ rule.sourceColumn }} → {{ rule.targetColumn }}
+              </span>
+              <span class="rule-more" *ngIf="model.columnProcessingRules.length > 3">
+                +{{ model.columnProcessingRules.length - 3 }} autres
+              </span>
             </div>
-            <button class="btn btn-sm btn-primary">
-              <i class="fas fa-check"></i> Sélectionner
-            </button>
           </div>
-        </div>
-      </div>
-
-      <div class="modal-footer">
-        <button (click)="closeFileSelector()" class="btn btn-secondary">
-          Annuler
-        </button>
       </div>
     </div>
+    </div>
+  </div>
+
+  <!-- État de chargement -->
+  <div class="loading" *ngIf="loading">
+    <i class="fas fa-spinner fa-spin"></i> Chargement...
   </div>
 </div> 

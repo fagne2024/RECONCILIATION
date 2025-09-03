@@ -90,8 +90,8 @@ export class AppStateService {
             return;
         }
         try {
-            // Normaliser les données
-            const normalizedData = this.dataNormalizationService.normalizeData(data);
+            // Utiliser les données directement sans normalisation
+            const normalizedData = data;
 
             // Formatage des données pour le backend
             const formattedData = normalizedData.map((item: any) => {

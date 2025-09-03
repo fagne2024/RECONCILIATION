@@ -145,7 +145,19 @@
         <div class="messages-section" *ngIf="errorMessage || successMessage">
             <div class="error-message" *ngIf="errorMessage">
                 <span class="error-icon">❌</span>
-                {{ errorMessage }}
+                <div class="error-content">
+                    <div class="error-text">{{ errorMessage }}</div>
+                    <div class="error-actions" *ngIf="errorMessage.includes('Aucun modèle de réconciliation trouvé')">
+                        <button class="btn help-btn" (click)="goToModelConfiguration()">
+                            <i class="fas fa-cog"></i>
+                            Configurer les Modèles
+                        </button>
+                        <button class="btn help-btn" (click)="showModelHelp()">
+                            <i class="fas fa-question-circle"></i>
+                            Aide
+                        </button>
+                    </div>
+                </div>
                 <button class="close-btn" (click)="clearMessages()">×</button>
             </div>
             

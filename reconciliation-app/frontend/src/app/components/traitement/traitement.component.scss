@@ -29,6 +29,34 @@
     font-weight: 600;
   }
   
+  .header-actions {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    
+    .btn-outline-secondary {
+      background: transparent;
+      color: #6c757d;
+      border: 1px solid #6c757d;
+      padding: 8px 16px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      
+      &:hover {
+        background: #6c757d;
+        color: white;
+        transform: translateY(-1px);
+      }
+      
+      i {
+        margin-right: 6px;
+      }
+    }
+  }
+  
   .new-treatment-btn {
     background: #1976d2;
     color: white;
@@ -81,7 +109,10 @@
 .traitement-container .extract-section,
 .traitement-container .filtre-section,
 .traitement-container .concat-section,
-.traitement-container .export-by-type-section {
+.traitement-container .export-by-type-section,
+.traitement-container .dedup-section,
+.traitement-container .format-section,
+.traitement-container .preview-table {
   display: flex;
   flex-direction: column;
   margin-bottom: 24px;
@@ -92,6 +123,61 @@
   padding: 24px;
   box-shadow: 0 2px 8px rgba(0,0,0,0.08);
   border: 1px solid #e3f2fd;
+}
+
+// Styles pour les en-têtes de section avec boutons d'affichage/masquage
+.section-header {
+  margin-bottom: 16px;
+  
+  h4 {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin: 0 0 8px 0;
+    color: #1976d2;
+    font-size: 1.2rem;
+    font-weight: 600;
+    
+    i {
+      margin-right: 8px;
+      color: #1976d2;
+    }
+    
+    .btn {
+      font-size: 12px;
+      padding: 4px 8px;
+      border-radius: 4px;
+      border: 1px solid #1976d2;
+      background: transparent;
+      color: #1976d2;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      
+      &:hover {
+        background: #1976d2;
+        color: white;
+      }
+      
+      i {
+        margin-right: 4px;
+      }
+    }
+  }
+}
+
+.section-content {
+  animation: fadeIn 0.3s ease-in-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 // Correctif global pour le débordement vertical
@@ -469,7 +555,7 @@ button:hover {
 // Styles pour l'indicateur Orange Money
 .orange-money-indicator {
   margin: 16px 0;
-  padding: 12px 16px;
+  padding: 16px;
   background: linear-gradient(135deg, #ff9800, #ff5722);
   border-radius: 8px;
   box-shadow: 0 2px 8px rgba(255, 152, 0, 0.3);
@@ -481,6 +567,7 @@ button:hover {
   gap: 12px;
   color: white;
   font-weight: 500;
+  margin-bottom: 12px;
 }
 
 .orange-money-badge i {
@@ -497,6 +584,36 @@ button:hover {
   font-size: 0.85rem;
   opacity: 0.9;
   font-weight: 400;
+}
+
+.orange-money-features {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.feature-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: white;
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.feature-item i {
+  font-size: 1rem;
+  color: #fff;
+  width: 16px;
+  text-align: center;
+}
+
+.feature-item span {
+  font-size: 0.9rem;
+  opacity: 0.95;
 }
 
 .filter-group {

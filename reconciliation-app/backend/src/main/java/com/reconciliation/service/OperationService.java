@@ -367,31 +367,15 @@ public class OperationService {
         Optional<OperationEntity> optionalOperation = operationRepository.findById(id);
         if (optionalOperation.isPresent()) {
             OperationEntity operation = optionalOperation.get();
+            // Supprimer simplement l'opération sans recalculer les soldes des autres opérations
+            // pour éviter d'avoir un impact sur le compte
+            operationRepository.deleteById(id);
+            
+            // Mettre à jour seulement la date de dernière modification du compte
             if (operation.getCompte() != null) {
                 CompteEntity compte = operation.getCompte();
-                double soldeAvant = operation.getSoldeAvant();
-                // 1. Supprimer l'opération
-                operationRepository.deleteById(id);
-                // 2. Recalculer les soldes de toutes les opérations restantes du compte, dans l'ordre chronologique
-                List<OperationEntity> allOps = operationRepository.findByCompteIdOrderByDateOperationAsc(compte.getId());
-                double soldeCourant = 0.0;
-                for (OperationEntity op : allOps) {
-                    op.setSoldeAvant(soldeCourant);
-                    double impact = calculateImpact(op.getTypeOperation(), op.getMontant(), op.getService());
-                    soldeCourant += impact;
-                    op.setSoldeApres(soldeCourant);
-                }
-                if (!allOps.isEmpty()) {
-                    operationRepository.saveAll(allOps);
-                    compte.setSolde(allOps.get(allOps.size() - 1).getSoldeApres());
-                } else {
-                    compte.setSolde(0.0);
-                }
                 compte.setDateDerniereMaj(java.time.LocalDateTime.now());
                 compteRepository.save(compte);
-            } else {
-                // Si pas de compte associé, juste supprimer
-            operationRepository.deleteById(id);
             }
             return true;
         }

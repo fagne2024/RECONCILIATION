@@ -4,6 +4,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import java.util.*;
+import java.text.Normalizer;
+import java.util.regex.Pattern;
 
 @Service
 public class DataNormalizationService {
@@ -17,7 +19,20 @@ public class DataNormalizationService {
         COLUMN_MAPPING.put("Country", "country");
         COLUMN_MAPPING.put("COUNTRY", "country");
         COLUMN_MAPPING.put("Countries", "country");
+        
+        // Ajout de nouveaux mappings pour les colonnes courantes
+        COLUMN_MAPPING.put("External id", "External ID");
+        COLUMN_MAPPING.put("Transaction ID", "Transaction ID");
+        COLUMN_MAPPING.put("Opration", "Opération");
+        COLUMN_MAPPING.put("Montant (XAF)", "Montant (XAF)");
+        COLUMN_MAPPING.put("Commissions (XAF)", "Commissions (XAF)");
+        COLUMN_MAPPING.put("N° de Compte", "N° de Compte");
+        COLUMN_MAPPING.put("N° Pseudo", "N° Pseudo");
     }
+
+    // Pattern pour nettoyer les caractères spéciaux
+    private static final Pattern SPECIAL_CHARS_PATTERN = Pattern.compile("[^\\w\\s-]");
+    private static final Pattern MULTIPLE_SPACES_PATTERN = Pattern.compile("\\s+");
 
     public Map<String, String> normalizeRecord(Map<String, String> record) {
         logger.info("Début de la normalisation d'un enregistrement");
@@ -26,10 +41,13 @@ public class DataNormalizationService {
         // Création d'une nouvelle map pour l'enregistrement normalisé
         Map<String, String> normalizedRecord = new HashMap<>();
         
-        // Copie de toutes les colonnes originales
+        // Copie et normalisation de toutes les colonnes originales
         for (Map.Entry<String, String> entry : record.entrySet()) {
-            normalizedRecord.put(entry.getKey(), entry.getValue());
-            logger.debug("Copie de la colonne {} avec la valeur {}", entry.getKey(), entry.getValue());
+            String normalizedKey = normalizeColumnName(entry.getKey());
+            String normalizedValue = normalizeValue(entry.getValue());
+            
+            normalizedRecord.put(normalizedKey, normalizedValue);
+            logger.debug("Colonne normalisée: {} -> {} avec valeur: {}", entry.getKey(), normalizedKey, normalizedValue);
         }
         
         // Recherche et normalisation de la colonne pays
@@ -90,6 +108,60 @@ public class DataNormalizationService {
         logger.info("Enregistrement normalisé: {}", normalizedRecord);
         
         return normalizedRecord;
+    }
+
+    /**
+     * Normalise un nom de colonne
+     */
+    private String normalizeColumnName(String columnName) {
+        if (columnName == null || columnName.trim().isEmpty()) {
+            return columnName;
+        }
+
+        String normalized = columnName.trim();
+        
+        // Vérifier d'abord dans le mapping
+        if (COLUMN_MAPPING.containsKey(normalized)) {
+            return COLUMN_MAPPING.get(normalized);
+        }
+        
+        // Normaliser les caractères spéciaux
+        normalized = SPECIAL_CHARS_PATTERN.matcher(normalized).replaceAll(" ");
+        
+        // Normaliser les espaces multiples
+        normalized = MULTIPLE_SPACES_PATTERN.matcher(normalized).replaceAll(" ");
+        
+        // Supprimer les espaces en début et fin
+        normalized = normalized.trim();
+        
+        // Vérifier à nouveau dans le mapping après normalisation
+        if (COLUMN_MAPPING.containsKey(normalized)) {
+            return COLUMN_MAPPING.get(normalized);
+        }
+        
+        return normalized;
+    }
+
+    /**
+     * Normalise une valeur
+     */
+    private String normalizeValue(String value) {
+        if (value == null) {
+            return "";
+        }
+
+        String normalized = value.trim();
+        
+        // Supprimer les guillemets inutiles
+        if ((normalized.startsWith("\"") && normalized.endsWith("\"")) ||
+            (normalized.startsWith("'") && normalized.endsWith("'"))) {
+            normalized = normalized.substring(1, normalized.length() - 1);
+        }
+        
+        // Normaliser les caractères spéciaux
+        normalized = Normalizer.normalize(normalized, Normalizer.Form.NFC);
+        
+        return normalized;
     }
 
     private String normalizeCountryValue(String value) {

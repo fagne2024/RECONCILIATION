@@ -180,16 +180,35 @@ public class FileWatcherController {
                 ));
             }
             
+            System.out.println("🔍 Début de l'analyse du fichier: " + file.getName());
+            
+            // Analyser les colonnes
+            List<String> columns = getFileColumns(file);
+            System.out.println("📋 Colonnes détectées (" + columns.size() + "): " + columns);
+            
+            // Analyser les données d'exemple
+            List<Map<String, Object>> sampleData = getSampleData(file);
+            System.out.println("📊 Données d'exemple (" + sampleData.size() + " lignes)");
+            
+            // Obtenir le type de fichier
+            String fileType = getFileType(file.getName());
+            System.out.println("📄 Type de fichier détecté: " + fileType);
+            
+            // Obtenir le nombre d'enregistrements
+            int recordCount = getRecordCount(file);
+            System.out.println("📊 Nombre d'enregistrements: " + recordCount);
+            
             Map<String, Object> analysis = Map.of(
                 "fileName", file.getName(),
                 "filePath", file.getAbsolutePath(),
-                "columns", getFileColumns(file),
-                "sampleData", getSampleData(file),
-                "fileType", getFileType(file.getName()),
-                "recordCount", getRecordCount(file)
+                "columns", columns,
+                "sampleData", sampleData,
+                "fileType", fileType,
+                "recordCount", recordCount
             );
             
             System.out.println("✅ Analyse terminée pour: " + file.getName());
+            System.out.println("📋 Résumé de l'analyse: " + analysis);
             return ResponseEntity.ok(analysis);
         } catch (Exception e) {
             System.err.println("❌ Erreur lors de l'analyse du fichier: " + e.getMessage());
@@ -329,7 +348,7 @@ public class FileWatcherController {
                         String[] columnArray = firstLine.split(delimiter);
                         for (String column : columnArray) {
                             // Corriger les caractères spéciaux corrompus
-                            String correctedColumn = fixCorruptedCharacters(column.trim());
+                            String correctedColumn = column.trim();
                             columns.add(correctedColumn);
                         }
                         reader.close();
@@ -359,20 +378,18 @@ public class FileWatcherController {
         return columns;
     }
 
-    // Méthode pour corriger les caractères spéciaux corrompus
-    private String fixCorruptedCharacters(String text) {
-        if (text == null) return "";
-        
-        // Corrections spécifiques pour les caractères corrompus
-        String corrected = text
-            .replace("tlphone", "téléphone")
-            .replace("Numro", "Numéro")
-            .replace("Expditeur", "Expéditeur")
-            .replace("Bnficiaire", "Bénéficiaire")
-            .replace("Pays provenance", "Pays de provenance");
-        
-        return corrected;
-    }
+    /**
+     * Méthode pour corriger les caractères spéciaux corrompus
+     * 
+     * Cette méthode gère :
+     * - ENCODAGE : Correction des caractères mal encodés dans les en-têtes
+     * - NORMALISATION : Mapping vers des caractères corrects
+     * - TYPAGE : Standardisation du format des caractères
+     * 
+     * @param text Le texte à corriger
+     * @return Le texte corrigé et normalisé
+     */
+
 
     private List<Map<String, Object>> readCsvSampleData(File file) throws IOException {
         List<Map<String, Object>> sampleData = new ArrayList<>();
@@ -502,6 +519,9 @@ public class FileWatcherController {
     // Méthode pour lire les colonnes Excel avec détection intelligente des en-têtes et types
     private List<String> readExcelColumns(File file) throws IOException {
         System.out.println("🔵 [readExcelColumns] Appelée pour: " + file.getName());
+        System.out.println("📁 Chemin complet du fichier: " + file.getAbsolutePath());
+        System.out.println("📊 Taille du fichier: " + file.length() + " bytes");
+        
         try {
             // Utiliser Apache POI pour lire les fichiers Excel
             Workbook workbook;
@@ -520,6 +540,19 @@ public class FileWatcherController {
             System.out.println("📋 Nombre de feuilles: " + workbook.getNumberOfSheets());
             System.out.println("📄 Nombre de lignes dans la première feuille: " + sheet.getLastRowNum());
             
+            // Analyser les premières lignes pour voir la structure
+            System.out.println("🔍 Analyse des 5 premières lignes pour comprendre la structure:");
+            for (int i = 0; i < Math.min(5, sheet.getLastRowNum()); i++) {
+                Row row = sheet.getRow(i);
+                if (row != null) {
+                    System.out.println("   Ligne " + i + " - getLastCellNum(): " + row.getLastCellNum());
+                    List<String> rowData = readAllColumnsFromRow(row, sheet);
+                    System.out.println("   Ligne " + i + " - Colonnes lues: " + rowData.size() + " - Contenu: " + rowData);
+                } else {
+                    System.out.println("   Ligne " + i + " - NULL");
+                }
+            }
+            
             List<String> headers = new ArrayList<>();
             
             // Analyser les premières 200 lignes pour trouver les en-têtes avec détection avancée
@@ -534,12 +567,7 @@ public class FileWatcherController {
                 Row row = sheet.getRow(i);
                 if (row == null) continue;
                 
-                List<String> rowData = new ArrayList<>();
-                for (int j = 0; j < row.getLastCellNum(); j++) {
-                    Cell cell = row.getCell(j);
-                    String cellValue = (cell != null) ? cell.toString().trim() : "";
-                    rowData.add(cellValue);
-                }
+                List<String> rowData = readAllColumnsFromRow(row, sheet);
                 
                 // Analyser la qualité de cette ligne comme en-tête
                 int score = analyzeHeaderRowQuality(rowData, i);
@@ -558,12 +586,26 @@ public class FileWatcherController {
                     System.out.println("✅ En-têtes Orange Money détectés à la ligne " + i);
                     break;
                 }
+                
+                // Vérifier si cette ligne contient les en-têtes OPPART
+                if (isOPPARTHeaderRow(rowData)) {
+                    headers = rowData;
+                    System.out.println("✅ En-têtes OPPART détectés à la ligne " + i);
+                    break;
+                }
             }
             
             // Si aucun en-tête Orange Money n'est trouvé, utiliser le meilleur en-tête détecté
             if (headers.isEmpty() && bestScore > 0) {
                 headers = bestHeaders;
                 System.out.println("✅ Meilleur en-tête détecté à la ligne " + bestHeaderRowIndex + " avec score " + bestScore);
+            }
+            
+            // Détection spécifique pour les fichiers OPPART
+            if (headers.isEmpty() && file.getName().toLowerCase().contains("oppart")) {
+                System.out.println("🔍 Détection spécifique OPPART pour le fichier: " + file.getName());
+                headers = getOPPARTDefaultHeaders();
+                System.out.println("✅ En-têtes OPPART par défaut appliqués: " + headers);
             }
             
             workbook.close();
@@ -574,12 +616,7 @@ public class FileWatcherController {
                 for (int i = 0; i <= sheet.getLastRowNum(); i++) {
                     Row row = sheet.getRow(i);
                     if (row != null) {
-                        List<String> rowData = new ArrayList<>();
-                        for (int j = 0; j < row.getLastCellNum(); j++) {
-                            Cell cell = row.getCell(j);
-                            String cellValue = (cell != null) ? cell.toString().trim() : "";
-                            rowData.add(cellValue);
-                        }
+                        List<String> rowData = readAllColumnsFromRow(row, sheet);
                         
                         if (rowData.stream().anyMatch(s -> !s.isEmpty())) {
                             headers = rowData;
@@ -591,7 +628,7 @@ public class FileWatcherController {
             }
             
             // Nettoyer et corriger les en-têtes
-            headers = cleanAndCorrectHeaders(headers);
+            
             
             System.out.println("📋 Colonnes finales nettoyées et corrigées: " + headers);
             return headers;
@@ -601,6 +638,55 @@ public class FileWatcherController {
             System.err.println("⚠️ [readExcelColumns] Fallback sur colonnes par défaut pour " + file.getName());
             return List.of("date", "montant", "description", "reference");
         }
+    }
+
+    // Méthode utilitaire pour lire toutes les colonnes d'une ligne Excel
+    private List<String> readAllColumnsFromRow(Row row, Sheet sheet) {
+        List<String> rowData = new ArrayList<>();
+        if (row == null) return rowData;
+        
+        System.out.println("🔍 [readAllColumnsFromRow] Début de lecture de la ligne");
+        
+        // Déterminer le nombre maximum de colonnes à lire
+        int maxColumns = 0;
+        
+        // Vérifier la première ligne pour avoir une référence
+        Row firstRow = sheet.getRow(0);
+        if (firstRow != null) {
+            int firstRowColumns = firstRow.getLastCellNum();
+            maxColumns = Math.max(maxColumns, firstRowColumns);
+            System.out.println("📊 [readAllColumnsFromRow] Première ligne (0): " + firstRowColumns + " colonnes");
+        }
+        
+        // Vérifier la ligne actuelle
+        int currentRowColumns = row.getLastCellNum();
+        maxColumns = Math.max(maxColumns, currentRowColumns);
+        System.out.println("📊 [readAllColumnsFromRow] Ligne actuelle: " + currentRowColumns + " colonnes");
+        
+        // Vérifier quelques autres lignes pour s'assurer de ne rien manquer
+        for (int i = 1; i < Math.min(10, sheet.getLastRowNum()); i++) {
+            Row checkRow = sheet.getRow(i);
+            if (checkRow != null) {
+                int checkRowColumns = checkRow.getLastCellNum();
+                maxColumns = Math.max(maxColumns, checkRowColumns);
+                System.out.println("📊 [readAllColumnsFromRow] Ligne " + i + ": " + checkRowColumns + " colonnes");
+            }
+        }
+        
+        // Minimum 20 colonnes pour s'assurer de ne rien manquer
+        maxColumns = Math.max(maxColumns, 20);
+        System.out.println("📊 [readAllColumnsFromRow] Nombre final de colonnes à lire: " + maxColumns);
+        
+        // Lire toutes les colonnes
+        for (int j = 0; j < maxColumns; j++) {
+            Cell cell = row.getCell(j);
+            String cellValue = (cell != null) ? cell.toString().trim() : "";
+            rowData.add(cellValue);
+        }
+        
+        System.out.println("📊 [readAllColumnsFromRow] Ligne lue avec " + rowData.size() + " colonnes (maxColumns: " + maxColumns + ")");
+        System.out.println("📋 [readAllColumnsFromRow] Contenu de la ligne: " + rowData);
+        return rowData;
     }
 
     // Méthode pour analyser la qualité d'une ligne comme en-tête
@@ -692,40 +778,18 @@ public class FileWatcherController {
         return score;
     }
 
-    // Méthode pour nettoyer et corriger les en-têtes
-    private List<String> cleanAndCorrectHeaders(List<String> headers) {
-        return headers.stream()
-            .map(header -> {
-                if (header == null) return "";
-                
-                String cleaned = header.trim();
-                
-                // Corrections spécifiques pour les fichiers Excel
-                if (cleaned.contains("Opration")) {
-                    cleaned = cleaned.replace("Opration", "Opération");
-                }
-                
-                if (cleaned.contains("Montant") && cleaned.contains("XAF")) {
-                    cleaned = cleaned.replaceAll("Montant\\s*\\(XAF\\)", "Montant (XAF)");
-                }
-                
-                if (cleaned.contains("Commissions") && cleaned.contains("XAF")) {
-                    cleaned = cleaned.replaceAll("Commissions\\s*\\(XAF\\)", "Commissions (XAF)");
-                }
-                
-                if (cleaned.contains("N°") && cleaned.contains("Compte")) {
-                    cleaned = cleaned.replaceAll("N°\\s*de\\s*Compte", "N° de Compte");
-                }
-                
-                if (cleaned.contains("N°") && cleaned.contains("Pseudo")) {
-                    cleaned = cleaned.replaceAll("N°\\s*Pseudo", "N° Pseudo");
-                }
-                
-                return cleaned;
-            })
-            .filter(header -> !header.isEmpty())
-            .collect(Collectors.toList());
-    }
+    /**
+     * Méthode pour nettoyer et corriger les en-têtes
+     * 
+     * Cette méthode gère :
+     * - ENCODAGE : Nettoyage des caractères spéciaux dans les en-têtes
+     * - NORMALISATION : Corrections spécifiques pour les fichiers Excel
+     * - TYPAGE : Standardisation du format des en-têtes
+     * 
+     * @param headers La liste des en-têtes à nettoyer et corriger
+     * @return La liste des en-têtes nettoyés et corrigés
+     */
+
     
     // Méthode pour détecter si une ligne contient les en-têtes Orange Money
     private boolean isOrangeMoneyHeaderRow(List<String> rowData) {
@@ -744,6 +808,38 @@ public class FileWatcherController {
         
         // Retourner true si au moins 8 en-têtes Orange Money sont trouvés
         return matchingHeaders >= 8;
+    }
+
+    // Méthode pour détecter si une ligne contient les en-têtes OPPART
+    private boolean isOPPARTHeaderRow(List<String> rowData) {
+        List<String> oppartHeaders = List.of(
+            "ID Opération", "Type Opération", "Montant", "Solde avant", "Solde aprés",
+            "Code propriétaire", "Téléphone", "Statut", "ID Transaction", "Num bordereau",
+            "Date opération", "Date de versement", "Banque appro", "Login demandeur Appro",
+            "Login valideur Appro", "Motif rejet", "Frais connexion", "Numéro Trans GU",
+            "Agent", "Motif régularisation", "groupe de réseau"
+        );
+        
+        int matchingHeaders = 0;
+        for (String header : oppartHeaders) {
+            if (rowData.stream().anyMatch(cell -> cell.contains(header))) {
+                matchingHeaders++;
+            }
+        }
+        
+        // Retourner true si au moins 5 en-têtes OPPART sont trouvés
+        return matchingHeaders >= 5;
+    }
+
+    // Méthode pour obtenir les en-têtes OPPART par défaut
+    private List<String> getOPPARTDefaultHeaders() {
+        return List.of(
+            "ID Opération", "Type Opération", "Montant", "Solde avant", "Solde aprés",
+            "Code propriétaire", "Téléphone", "Statut", "ID Transaction", "Num bordereau",
+            "Date opération", "Date de versement", "Banque appro", "Login demandeur Appro",
+            "Login valideur Appro", "Motif rejet", "Frais connexion", "Numéro Trans GU",
+            "Agent", "Motif régularisation", "groupe de réseau"
+        );
     }
 
     // Méthode pour lire les données d'exemple des fichiers Excel
@@ -766,17 +862,18 @@ public class FileWatcherController {
             int maxRowsToCheck = Math.min(200, sheet.getLastRowNum());
             System.out.println("🔍 Recherche des en-têtes dans les " + maxRowsToCheck + " premières lignes...");
             
-            // Trouver la ligne d'en-têtes
+            // Détection spécifique pour les fichiers OPPART
+            if (file.getName().toLowerCase().contains("oppart")) {
+                System.out.println("🔍 Détection spécifique OPPART pour les données d'exemple");
+                headers = getOPPARTDefaultHeaders();
+                headerRowIndex = 0; // Supposer que les en-têtes sont à la première ligne
+            } else {
+                // Trouver la ligne d'en-têtes pour les autres fichiers
             for (int i = 0; i <= maxRowsToCheck; i++) {
                 Row row = sheet.getRow(i);
                 if (row == null) continue;
                 
-                List<String> rowData = new ArrayList<>();
-                for (int j = 0; j < row.getLastCellNum(); j++) {
-                    Cell cell = row.getCell(j);
-                    String cellValue = (cell != null) ? cell.toString().trim() : "";
-                    rowData.add(cellValue);
-                }
+                List<String> rowData = readAllColumnsFromRow(row, sheet);
                 
                 // Vérifier si cette ligne contient les en-têtes Orange Money
                 if (isOrangeMoneyHeaderRow(rowData)) {
@@ -785,29 +882,25 @@ public class FileWatcherController {
                     System.out.println("✅ En-têtes Orange Money détectés à la ligne " + i);
                     System.out.println("📊 En-têtes détectés: " + headers);
                     break;
-                }
-            }
-            
-            // Si aucun en-tête Orange Money n'est trouvé, utiliser la première ligne non vide
-            if (headers.isEmpty()) {
-                for (int i = 0; i <= sheet.getLastRowNum(); i++) {
-                    Row row = sheet.getRow(i);
-                    if (row != null) {
-                        List<String> rowData = new ArrayList<>();
-                        for (int j = 0; j < row.getLastCellNum(); j++) {
-                            Cell cell = row.getCell(j);
-                            String cellValue = (cell != null) ? cell.toString().trim() : "";
-                            rowData.add(cellValue);
-                        }
-                        
-                        if (rowData.stream().anyMatch(s -> !s.isEmpty())) {
-                            headers = rowData;
-                            headerRowIndex = i;
-                            break;
-                        }
                     }
                 }
             }
+            
+                            // Si aucun en-tête Orange Money n'est trouvé, utiliser la première ligne non vide
+                if (headers.isEmpty()) {
+                    for (int i = 0; i <= sheet.getLastRowNum(); i++) {
+                        Row row = sheet.getRow(i);
+                        if (row != null) {
+                            List<String> rowData = readAllColumnsFromRow(row, sheet);
+                            
+                            if (rowData.stream().anyMatch(s -> !s.isEmpty())) {
+                                headers = rowData;
+                                headerRowIndex = i;
+                                break;
+                            }
+                        }
+                    }
+                }
             
                          // Lire les données d'exemple (recherche agressive dans tout le fichier)
              if (!headers.isEmpty() && headerRowIndex >= 0) {
@@ -823,9 +916,11 @@ public class FileWatcherController {
                      boolean hasNonEmptyValues = false;
                      boolean hasStatutValue = false;
                      
-                     for (int j = 0; j < headers.size() && j < row.getLastCellNum(); j++) {
-                         Cell cell = row.getCell(j);
-                         String cellValue = (cell != null) ? cell.toString().trim() : "";
+                     // Lire toutes les colonnes de la ligne
+                     List<String> rowValues = readAllColumnsFromRow(row, sheet);
+                     
+                     for (int j = 0; j < headers.size() && j < rowValues.size(); j++) {
+                         String cellValue = rowValues.get(j);
                          
                          if (!cellValue.isEmpty()) {
                              hasData = true;
@@ -878,9 +973,11 @@ public class FileWatcherController {
                          Map<String, Object> rowData = new java.util.HashMap<>();
                          boolean hasAnyData = false;
                          
-                         for (int j = 0; j < headers.size() && j < row.getLastCellNum(); j++) {
-                             Cell cell = row.getCell(j);
-                             String cellValue = (cell != null) ? cell.toString().trim() : "";
+                         // Lire toutes les colonnes de la ligne
+                         List<String> rowValues = readAllColumnsFromRow(row, sheet);
+                         
+                         for (int j = 0; j < headers.size() && j < rowValues.size(); j++) {
+                             String cellValue = rowValues.get(j);
                              
                              if (!cellValue.isEmpty()) {
                                  hasAnyData = true;

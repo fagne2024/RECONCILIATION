@@ -5,6 +5,7 @@ import { Router } from '@angular/router';
 import { AppStateService } from '../../services/app-state.service';
 import { ReconciliationService } from '../../services/reconciliation.service';
 import { PopupService } from '../../services/popup.service';
+import { AutoProcessingService } from '../../services/auto-processing.service';
 import { Subscription } from 'rxjs';
 
 @Component({
@@ -181,7 +182,8 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
     private router: Router,
     private appStateService: AppStateService,
     private reconciliationService: ReconciliationService,
-    private popupService: PopupService
+    private popupService: PopupService,
+    private autoProcessingService: AutoProcessingService
   ) {}
 
   ngOnInit(): void {
@@ -329,6 +331,75 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
       boFile: this.boFile!,
       partnerFile: this.partnerFile!
     });
+
+    // Récupérer les modèles et leurs règles de traitement
+    console.log('🔍 Récupération des modèles et règles de traitement...');
+    let columnProcessingRules: any[] = [];
+    
+    try {
+      const models = await this.autoProcessingService.getAllModels();
+      
+      // Trouver les modèles correspondants aux fichiers
+      const boModel = models.find(m => 
+        m.fileType === 'bo' && 
+        this.boFile?.name.match(new RegExp(m.filePattern.replace('*', '.*')))
+      );
+      
+      const partnerModel = models.find(m => 
+        m.fileType === 'partner' && 
+        this.partnerFile?.name.match(new RegExp(m.filePattern.replace('*', '.*')))
+      );
+      
+      console.log('📋 Modèle BO trouvé:', boModel?.name);
+      console.log('📋 Modèle Partenaire trouvé:', partnerModel?.name);
+      
+      // Récupérer les règles de traitement
+      if (boModel?.modelId) {
+        try {
+          const boRules = await this.autoProcessingService.getColumnProcessingRules(boModel.modelId);
+          console.log('🔧 Règles BO récupérées:', boRules.length);
+          columnProcessingRules.push(...boRules);
+        } catch (error) {
+          console.warn('⚠️ Erreur lors de la récupération des règles BO:', error);
+        }
+      }
+      
+      if (partnerModel?.modelId) {
+        try {
+          const partnerRules = await this.autoProcessingService.getColumnProcessingRules(partnerModel.modelId);
+          console.log('🔧 Règles Partenaire récupérées:', partnerRules.length);
+          columnProcessingRules.push(...partnerRules);
+        } catch (error) {
+          console.warn('⚠️ Erreur lors de la récupération des règles Partenaire:', error);
+        }
+      }
+      
+      console.log(`✅ ${columnProcessingRules.length} règles de traitement prêtes à appliquer`);
+      if (columnProcessingRules.length > 0) {
+        console.log('📋 Règles de traitement à appliquer:');
+        columnProcessingRules.forEach((rule, index) => {
+          console.log(`  ${index + 1}. Colonne: ${rule.sourceColumn}`);
+          console.log(`     - Supprimer caractères spéciaux: ${rule.removeSpecialChars}`);
+          console.log(`     - Nettoyer espaces: ${rule.trimSpaces}`);
+          console.log(`     - Majuscules: ${rule.toUpperCase}`);
+          console.log(`     - Minuscules: ${rule.toLowerCase}`);
+          console.log(`     - Supprimer accents: ${rule.removeAccents}`);
+        });
+      }
+    } catch (error) {
+      console.warn('⚠️ Erreur lors de la récupération des modèles:', error);
+      // Fallback: règles par défaut
+      columnProcessingRules = [
+        {
+          sourceColumn: 'Numéro Trans GU',
+          removeSpecialChars: true,
+          trimSpaces: true,
+          toUpperCase: false,
+          toLowerCase: false,
+          removeAccents: false
+        }
+      ];
+    }
 
     // Créer un FormData avec les fichiers
     const formData = new FormData();
@@ -488,25 +559,59 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
          }
        }
        
-       // Lancer la réconciliation avec ou sans transformation
-       let reconciliationResponse;
-       if (transformationToApply && config.boFileContent) {
-         console.log('🚀 Lancement avec données transformées...');
-                   // Utiliser les données transformées directement
-          const reconciliationRequest = {
-            boFileContent: config.boFileContent,
-            partnerFileContent: await this.readFileContent(this.partnerFile!),
-            boKeyColumn: finalBoKey,
-            partnerKeyColumn: finalPartnerKey,
-            comparisonColumns: [],
-            additionalKeys: [],
-            tolerance: 0.01
-          };
-         reconciliationResponse = await this.reconciliationService.reconcile(reconciliationRequest).toPromise();
-       } else {
-         console.log('🚀 Lancement sans transformation...');
-         reconciliationResponse = await this.reconciliationService.executeReconciliation(config).toPromise();
+       // Appliquer les règles de traitement des colonnes aux données
+       console.log('🔧 Application des règles de traitement des colonnes...');
+       let processedBoData = await this.readFileContent(this.boFile!);
+       let processedPartnerData = await this.readFileContent(this.partnerFile!);
+       
+       if (columnProcessingRules.length > 0) {
+         console.log('📋 Application des règles de traitement...');
+         
+         // Appliquer les règles aux données BO
+         processedBoData = this.applyColumnProcessingRules(processedBoData, columnProcessingRules);
+         console.log('✅ Règles appliquées aux données BO');
+         
+         // Appliquer les règles aux données Partenaire
+         processedPartnerData = this.applyColumnProcessingRules(processedPartnerData, columnProcessingRules);
+         console.log('✅ Règles appliquées aux données Partenaire');
+         
+         // Afficher quelques exemples de transformation
+         console.log('🔍 Exemples de transformations appliquées:');
+         const originalBoData = await this.readFileContent(this.boFile!);
+         const originalPartnerData = await this.readFileContent(this.partnerFile!);
+         
+         for (let i = 0; i < Math.min(3, processedBoData.length); i++) {
+           columnProcessingRules.forEach(rule => {
+             const originalBoValue = originalBoData[i][rule.sourceColumn];
+             const processedBoValue = processedBoData[i][rule.sourceColumn];
+             const originalPartnerValue = originalPartnerData[i][rule.sourceColumn];
+             const processedPartnerValue = processedPartnerData[i][rule.sourceColumn];
+             
+             if (originalBoValue !== processedBoValue) {
+               console.log(`  BO "${originalBoValue}" → "${processedBoValue}"`);
+             }
+             if (originalPartnerValue !== processedPartnerValue) {
+               console.log(`  Partner "${originalPartnerValue}" → "${processedPartnerValue}"`);
+             }
+           });
+         }
        }
+       
+       // Lancer la réconciliation avec les données traitées
+       let reconciliationResponse;
+       console.log('🚀 Lancement de la réconciliation avec données traitées...');
+       
+       const reconciliationRequest = {
+         boFileContent: processedBoData,
+         partnerFileContent: processedPartnerData,
+         boKeyColumn: finalBoKey,
+         partnerKeyColumn: finalPartnerKey,
+         comparisonColumns: [],
+         additionalKeys: [],
+         tolerance: 0.01
+       };
+       
+       reconciliationResponse = await this.reconciliationService.reconcile(reconciliationRequest).toPromise();
          
          if (reconciliationResponse) {
            console.log('✅ Réconciliation terminée avec succès:', reconciliationResponse);
@@ -1526,6 +1631,58 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
        };
        reader.onerror = reject;
        reader.readAsText(file);
+     });
+   }
+
+   /**
+    * Applique les règles de traitement des colonnes aux données
+    */
+   private applyColumnProcessingRules(data: Record<string, string>[], rules: any[]): Record<string, string>[] {
+     console.log('🔧 Application des règles de traitement des colonnes...');
+     
+     return data.map(row => {
+       const processedRow = { ...row };
+       
+       rules.forEach(rule => {
+         const columnName = rule.sourceColumn;
+         if (processedRow[columnName]) {
+           let value = processedRow[columnName];
+           const originalValue = value;
+           
+           // Appliquer les transformations dans l'ordre
+           if (rule.removeSpecialChars) {
+             // Supprimer les caractères spéciaux autorisés (_CM, _ML, etc.)
+             const allowedSuffixes = ['_CM', '_ML', '_GN', '_CI', '_BF', '_KE', '_SN', '_KN', '_BJ', '_GB'];
+             allowedSuffixes.forEach(suffix => {
+               value = value.replace(new RegExp(suffix, 'g'), '');
+             });
+           }
+           
+           if (rule.trimSpaces) {
+             value = value.trim();
+           }
+           
+           if (rule.toUpperCase) {
+             value = value.toUpperCase();
+           }
+           
+           if (rule.toLowerCase) {
+             value = value.toLowerCase();
+           }
+           
+           if (rule.removeAccents) {
+             value = value.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+           }
+           
+           // Mettre à jour la valeur si elle a changé
+           if (value !== originalValue) {
+             processedRow[columnName] = value;
+             console.log(`🔧 Transformation ${columnName}: "${originalValue}" → "${value}"`);
+           }
+         }
+       });
+       
+       return processedRow;
      });
    }
 

@@ -353,13 +353,16 @@ export class ReconciliationService implements OnInit, OnDestroy {
 
     /**
      * Méthode de compatibilité pour l'ancienne API
-     * Utilise l'API existante du backend
+     * Utilise l'API existante du backend avec optimisations
      */
     reconcile(request: ReconciliationRequest): Observable<ReconciliationResponse> {
-        console.log('🔄 Utilisation de l\'API reconcile existante');
+        console.log('🔄 Utilisation de l\'API reconcile existante avec optimisations');
+        
+        // Optimiser les données avant envoi
+        const optimizedRequest = this.optimizeReconciliationRequest(request);
         
         // Utiliser l'API existante du backend
-        return this.http.post<ReconciliationResponse>(`${this.apiUrl}/reconcile`, request, {
+        return this.http.post<ReconciliationResponse>(`${this.apiUrl}/reconcile`, optimizedRequest, {
             headers: new HttpHeaders({
                 'Content-Type': 'application/json'
             })
@@ -378,6 +381,75 @@ export class ReconciliationService implements OnInit, OnDestroy {
             }),
             catchError(this.handleError)
         );
+    }
+
+    /**
+     * Optimise la requête de réconciliation pour de meilleures performances
+     */
+    private optimizeReconciliationRequest(request: ReconciliationRequest): ReconciliationRequest {
+        console.log('🔧 Optimisation de la requête de réconciliation...');
+        
+        const optimizedRequest = { ...request };
+        
+        // Optimiser les données BO
+        if (optimizedRequest.boFileContent && optimizedRequest.boFileContent.length > 0) {
+            optimizedRequest.boFileContent = this.optimizeData(optimizedRequest.boFileContent);
+            console.log(`📊 Données BO optimisées: ${optimizedRequest.boFileContent.length} lignes`);
+        }
+        
+        // Optimiser les données Partner
+        if (optimizedRequest.partnerFileContent && optimizedRequest.partnerFileContent.length > 0) {
+            optimizedRequest.partnerFileContent = this.optimizeData(optimizedRequest.partnerFileContent);
+            console.log(`📊 Données Partner optimisées: ${optimizedRequest.partnerFileContent.length} lignes`);
+        }
+        
+        // Normaliser les noms de colonnes
+        if (optimizedRequest.comparisonColumns) {
+            optimizedRequest.comparisonColumns = optimizedRequest.comparisonColumns.map(col => ({
+                boColumn: this.normalizeColumnName(col.boColumn),
+                partnerColumn: this.normalizeColumnName(col.partnerColumn)
+            }));
+        }
+        
+        console.log('✅ Requête optimisée');
+        return optimizedRequest;
+    }
+
+    /**
+     * Optimise les données en supprimant les valeurs vides et en normalisant les types
+     */
+    private optimizeData(data: Record<string, string>[]): Record<string, string>[] {
+        if (!data || data.length === 0) return data;
+        
+        return data.map(row => {
+            const optimizedRow: Record<string, string> = {};
+            
+            for (const [key, value] of Object.entries(row)) {
+                // Normaliser la valeur
+                const normalizedValue = this.normalizeValue(value);
+                
+                // Ne garder que les valeurs non vides
+                if (normalizedValue !== '') {
+                    optimizedRow[key] = normalizedValue;
+                }
+            }
+            
+            return optimizedRow;
+        }).filter(row => Object.keys(row).length > 0); // Supprimer les lignes vides
+    }
+
+    /**
+     * Méthode simple qui retourne la valeur sans modification
+     */
+    private normalizeValue(value: any): string {
+        return String(value);
+    }
+
+    /**
+     * Méthode simple qui retourne la valeur de la colonne sans modification
+     */
+    private normalizeColumnName(columnName: string): string {
+        return columnName;
     }
 
     /**

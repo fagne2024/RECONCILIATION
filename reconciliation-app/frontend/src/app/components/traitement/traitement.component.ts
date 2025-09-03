@@ -1670,6 +1670,28 @@ export class TraitementComponent implements OnInit, AfterViewInit {
     return dataFormattingOptions || headerFormattingOptions;
   }
 
+  hasHeaderFormattingOption(): boolean {
+    const { normalizeHeaders, fixSpecialCharacters, removeAccents, standardizeHeaders } = this.formatOptions;
+    return normalizeHeaders || fixSpecialCharacters || removeAccents || standardizeHeaders;
+  }
+
+  applyHeaderFormatting() {
+    try {
+      if (!this.hasHeaderFormattingOption()) {
+        this.showError('format', 'Veuillez sélectionner au moins une option de formatage des en-têtes.');
+        return;
+      }
+      
+      // Traitement des en-têtes de colonnes
+      this.normalizeColumnHeaders();
+      
+      this.showSuccess('format', 'Formatage des en-têtes appliqué avec succès.');
+    } catch (error) {
+      console.error('❌ Erreur lors du formatage des en-têtes:', error);
+      this.showError('format', 'Erreur lors du formatage des en-têtes.');
+    }
+  }
+
   applyFormatting() {
     try {
       if (!this.hasFormattingOption()) return;
@@ -1736,171 +1758,29 @@ export class TraitementComponent implements OnInit, AfterViewInit {
     }
   }
 
-  // Méthode pour normaliser les en-têtes de colonnes
+  // Méthode simple qui ne fait rien
   private normalizeColumnHeaders() {
-    const oldToNewColumnMap: { [key: string]: string } = {};
-    
-    // Créer une copie des colonnes actuelles pour éviter les problèmes de référence
-    const currentColumns = [...this.columns];
-    
-    // Traiter chaque colonne
-    this.columns = currentColumns.map(columnName => {
-      let normalizedName = columnName;
-      
-      // Correction des caractères spéciaux corrompus
-      if (this.formatOptions.fixSpecialCharacters) {
-        normalizedName = this.fixSpecialCharacters(normalizedName);
-      }
-      
-      // Suppression des accents
-      if (this.formatOptions.removeAccents) {
-        normalizedName = this.removeAccents(normalizedName);
-      }
-      
-      // Standardisation des en-têtes
-      if (this.formatOptions.standardizeHeaders) {
-        normalizedName = this.standardizeHeader(normalizedName);
-      }
-      
-      // Normalisation générale
-      if (this.formatOptions.normalizeHeaders) {
-        normalizedName = this.normalizeHeader(normalizedName);
-      }
-      
-      // Mapper l'ancien nom vers le nouveau nom
-      if (normalizedName !== columnName) {
-        oldToNewColumnMap[columnName] = normalizedName;
-      }
-      
-      return normalizedName;
-    });
-    
-    // Mettre à jour les données avec les nouveaux noms de colonnes
-    if (Object.keys(oldToNewColumnMap).length > 0) {
-      console.log('🔄 Mise à jour des noms de colonnes:', oldToNewColumnMap);
-      
-      this.combinedRows = this.combinedRows.map(row => {
-        const newRow: any = {};
-        // Parcourir les anciennes colonnes pour créer le nouveau mapping
-        for (const oldCol of currentColumns) {
-          const newCol = oldToNewColumnMap[oldCol] || oldCol;
-          newRow[newCol] = row[oldCol];
-        }
-        return newRow;
-      });
-      
-      // Mettre à jour aussi allColumns si nécessaire
-      this.allColumns = this.allColumns.map(col => oldToNewColumnMap[col] || col);
-      
-      // Forcer la mise à jour de l'affichage
-      this.updateDisplayedRows();
-      
-      console.log('✅ Colonnes mises à jour:', this.columns);
-      console.log('✅ Données mises à jour:', this.combinedRows.length, 'lignes');
-    }
+    // Ne fait rien - les colonnes restent inchangées
   }
 
-  // Méthode pour corriger les caractères spéciaux corrompus
+  // Méthode simple qui retourne la valeur sans modification
   private fixSpecialCharacters(text: string): string {
-    const frenchCharReplacements: { [key: string]: string } = {
-      // Caractères corrompus courants
-      'é': 'é', 'è': 'è', 'ê': 'ê', 'ë': 'ë',
-      'à': 'à', 'â': 'â', 'ä': 'ä',
-      'ç': 'ç',
-      'ù': 'ù', 'û': 'û', 'ü': 'ü',
-      'ï': 'ï', 'î': 'î',
-      'ô': 'ô', 'ö': 'ö',
-      'ÿ': 'ÿ',
-      
-      // Caractères corrompus spécifiques aux colonnes
-      'tlphone': 'téléphone',
-      'Numro': 'Numéro',
-      'Solde aprs': 'Solde après',
-      'Code proprietaire': 'Code propriétaire',
-      'groupe de rseau': 'groupe de réseau',
-      'Code rseau': 'Code réseau',
-      'date de cration': 'date de création',
-      'Motif rgularisation': 'Motif régularisation',
-      'Dstinataire': 'Destinataire',
-      'Login demandeur Appro': 'Login demandeur Appro',
-      'Login valideur Appro': 'Login valideur Appro',
-      'Motif rejet': 'Motif rejet',
-      'Frais connexion': 'Frais connexion',
-      'Code de Proxy': 'Code de Proxy',
-      'Code service': 'Code service',
-      'Login agent': 'Login agent',
-      'Type agent': 'Type agent',
-      'Date denvoi vers part': 'Date d\'envoi vers part',
-      'Etat': 'Etat',
-      'Type': 'Type',
-      'Token': 'Token',
-      'SMS': 'SMS',
-      'Action faite': 'Action faite',
-      'Statut': 'Statut',
-      'Utilisateur': 'Utilisateur',
-      'Montant': 'Montant',
-      'Latitude': 'Latitude',
-      'Longitude': 'Longitude',
-      'Partenaire dist ID': 'Partenaire dist ID',
-      'Agence SC': 'Agence SC',
-      'Groupe reseau SC': 'Groupe reseau SC',
-      'Agent SC': 'Agent SC',
-      'PDA SC': 'PDA SC',
-      'Date dernier traitement': 'Date dernier traitement',
-      
-      // Corrections spécifiques pour TRXBO
-      'tÃ©lÃ©phone client': 'téléphone client',
-      'NumÃ©ro Trans GU': 'Numéro Trans GU',
-      'tÃ©lÃ©phone': 'téléphone',
-      'NumÃ©ro': 'Numéro'
-    };
-    
-    let normalizedText = text;
-    
-    // Appliquer les remplacements
-    for (const [corrupted, correct] of Object.entries(frenchCharReplacements)) {
-      normalizedText = normalizedText.replace(new RegExp(corrupted, 'gi'), correct);
-    }
-    
-    // Nettoyer les espaces multiples et caractères invisibles
-    normalizedText = normalizedText.replace(/\s+/g, ' ').trim();
-    
-    return normalizedText;
+    return text;
   }
 
-  // Méthode pour supprimer les accents
+  // Méthode simple qui retourne la valeur sans modification
   private removeAccents(text: string): string {
-    return text.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    return text;
   }
 
-  // Méthode pour standardiser les en-têtes
+  // Méthode simple qui retourne la valeur sans modification
   private standardizeHeader(text: string): string {
-    // Remplacer les espaces par des underscores
-    let standardized = text.replace(/\s+/g, '_');
-    
-    // Supprimer les caractères spéciaux non alphanumériques
-    standardized = standardized.replace(/[^a-zA-Z0-9_]/g, '');
-    
-    // Première lettre en majuscule
-    if (standardized.length > 0) {
-      standardized = standardized.charAt(0).toUpperCase() + standardized.slice(1);
-    }
-    
-    return standardized;
+    return text;
   }
 
-  // Méthode pour normaliser les en-têtes
+  // Méthode simple qui retourne la valeur sans modification
   private normalizeHeader(text: string): string {
-    // Normaliser les espaces
-    let normalized = text.replace(/\s+/g, ' ').trim();
-    
-    // Première lettre de chaque mot en majuscule
-    normalized = normalized.replace(/\b\w/g, l => l.toUpperCase());
-    
-    // Supprimer les caractères de contrôle
-    normalized = normalized.replace(/[\x00-\x1F\x7F]/g, '');
-    
-    return normalized;
+    return text;
   }
 
   applyExtraction() {
@@ -1979,6 +1859,7 @@ export class TraitementComponent implements OnInit, AfterViewInit {
       }
       this.selectionApplied = true;
       this.updateDisplayedRows();
+      this.autoShowPreviewSection(); // Afficher automatiquement la section d'aperçu
       this.showSuccess('select', 'Sélection de colonnes appliquée.');
     } catch (e) {
       this.showError('select', 'Erreur lors de la sélection de colonnes.');
@@ -2052,6 +1933,7 @@ export class TraitementComponent implements OnInit, AfterViewInit {
         this.showSuccess('filter', `Filtre appliqué sur « ${this.selectedFilterColumn} » = « ${this.selectedFilterValues.join(', ')} » (${this.combinedRows.length} lignes).`);
       }
       this.updateDisplayedRows();
+      this.autoShowPreviewSection(); // Afficher automatiquement la section d'aperçu
     }
   }
 
@@ -2097,6 +1979,23 @@ export class TraitementComponent implements OnInit, AfterViewInit {
   // Propriété pour le nom du fichier d'export
   exportFileName: string = 'resultat.csv';
 
+  // Propriétés pour l'affichage/masquage des sections
+  showSections = {
+    selectCols: false,
+    extract: false,
+    filter: false,
+    concat: false,
+    exportByType: false,
+    dedup: false,
+    format: false,
+    preview: true  // Aperçu des données combinées visible par défaut
+  };
+
+  // Propriété pour vérifier si toutes les sections sont visibles
+  get allSectionsVisible(): boolean {
+    return Object.values(this.showSections).every(visible => visible);
+  }
+
   exportCSV() {
     try {
       if (this.combinedRows.length === 0) return;
@@ -2131,6 +2030,66 @@ export class TraitementComponent implements OnInit, AfterViewInit {
     } catch (e) {
       this.showError('export', 'Erreur lors de l\'export CSV.');
     }
+  }
+
+  exportXLS() {
+    try {
+      if (this.combinedRows.length === 0) return;
+      
+      // Remplacement de l'en-tête GRX par PAYS
+      const exportColumns = this.columns.map(col => col === 'GRX' ? 'PAYS' : col);
+      
+      // Préparer les données pour l'export XLS
+      const exportData = this.combinedRows.map(row => {
+        const exportRow: any = {};
+        this.columns.forEach((col, idx) => {
+          const exportCol = exportColumns[idx];
+          exportRow[exportCol] = row[col] !== undefined && row[col] !== null ? row[col] : '';
+        });
+        return exportRow;
+      });
+      
+      // Créer le workbook et la worksheet
+      const workbook = XLSX.utils.book_new();
+      const worksheet = XLSX.utils.json_to_sheet(exportData);
+      
+      // Ajouter la worksheet au workbook
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Données');
+      
+      // Utiliser le nom personnalisé ou le nom par défaut
+      const fileName = this.exportFileName.trim() || 'resultat.xls';
+      // S'assurer que le fichier a l'extension .xls
+      const finalFileName = fileName.endsWith('.xls') ? fileName : fileName + '.xls';
+      
+      // Générer et télécharger le fichier
+      XLSX.writeFile(workbook, finalFileName);
+      
+      this.showSuccess('export', `Export XLS réussi: ${finalFileName}`);
+    } catch (e) {
+      console.error('Erreur lors de l\'export XLS:', e);
+      this.showError('export', 'Erreur lors de l\'export XLS.');
+    }
+  }
+
+  // Méthode pour basculer l'affichage d'une section
+  toggleSection(sectionName: keyof typeof this.showSections) {
+    this.showSections[sectionName] = !this.showSections[sectionName];
+  }
+
+  // Méthode pour afficher automatiquement la section d'aperçu quand des données sont disponibles
+  private autoShowPreviewSection() {
+    if (this.combinedRows.length > 0 && !this.showSections.preview) {
+      // Afficher automatiquement la section d'aperçu si elle n'est pas déjà visible
+      this.showSections.preview = true;
+    }
+  }
+
+  // Méthode pour basculer l'affichage de toutes les sections
+  toggleAllSections() {
+    const shouldShow = !this.allSectionsVisible;
+    Object.keys(this.showSections).forEach(key => {
+      this.showSections[key as keyof typeof this.showSections] = shouldShow;
+    });
   }
 
   convertColumnsToNumber() {
@@ -4265,7 +4224,7 @@ export class TraitementComponent implements OnInit, AfterViewInit {
       this.cd.detectChanges();
       console.log(`🟠 Détection des changements forcée - allColumns:`, this.allColumns.length);
       
-      // Appliquer automatiquement le filtre "Succès" sur la colonne "Statut"
+      // Appliquer automatiquement le filtre Orange Money complet (filtres + colonnes spécifiques)
       this.applyAutomaticOrangeMoneyFilter();
     }, 100);
   }
@@ -4289,6 +4248,12 @@ export class TraitementComponent implements OnInit, AfterViewInit {
         .replace(/Dbit/g, 'Débit')
         .replace(/Sous-rseau/g, 'Sous-réseau');
       
+      // Suppression des accents pour les colonnes spécifiques
+      corrected = corrected
+        .replace(/Référence/g, 'Reference')
+        .replace(/Débit/g, 'Debit')
+        .replace(/Crédit/g, 'Credit');
+      
       return corrected;
     });
   }
@@ -4303,31 +4268,237 @@ export class TraitementComponent implements OnInit, AfterViewInit {
       col.toLowerCase().includes('status')
     );
     
-    if (statutColumn && this.allRows.length > 0) {
+    // Chercher la colonne "Type d'opération" ou "Opération" pour filtrer Cash in et Merchant Payment
+    const operationColumn = this.allColumns.find(col => {
+      const colLower = col.toLowerCase();
+      return (colLower.includes('type') && colLower.includes('opération')) ||
+             colLower.includes('opération') ||
+             colLower.includes('operation') ||
+             colLower.includes('transaction') ||
+             colLower.includes('service') ||
+             colLower.includes('type') ||
+             colLower.includes('catégorie') ||
+             colLower.includes('categorie') ||
+             colLower.includes('nature');
+    });
+    
+    let filteredRows = [...this.allRows];
+    
+    // Appliquer le filtre sur le statut "Succès"
+    if (statutColumn && filteredRows.length > 0) {
       console.log('✅ Colonne Statut trouvée:', statutColumn);
       
-      // Appliquer le filtre automatiquement
-      this.selectedFilterColumn = statutColumn;
-      this.selectedFilterValues = ['Succès'];
-      
-      // Filtrer les données
-      this.filteredRows = this.allRows.filter(row => {
+      filteredRows = filteredRows.filter(row => {
         const statutValue = row[statutColumn];
         return statutValue && statutValue.toString().toLowerCase().includes('succès');
       });
       
+      console.log(`✅ Filtre Statut "Succès" appliqué: ${filteredRows.length} lignes restantes`);
+    } else {
+      console.log('⚠️ Colonne Statut non trouvée ou aucune donnée disponible');
+    }
+    
+    // Appliquer le filtre sur les types d'opération (Cash in et Merchant Payment)
+    if (operationColumn && filteredRows.length > 0) {
+      console.log('✅ Colonne Type d\'opération trouvée:', operationColumn);
+      
+      const originalCount = filteredRows.length;
+      
+      // Collecter les types d'opération uniques pour le debug
+      const uniqueOperations = new Set();
+      filteredRows.forEach(row => {
+        const operationValue = row[operationColumn];
+        if (operationValue) {
+          uniqueOperations.add(operationValue.toString());
+        }
+      });
+      console.log('🔍 Types d\'opération disponibles:', Array.from(uniqueOperations));
+      
+      filteredRows = filteredRows.filter(row => {
+        const operationValue = row[operationColumn];
+        if (!operationValue) return false;
+        
+        const operationLower = operationValue.toString().toLowerCase();
+        const isAccepted = operationLower.includes('cash in') || 
+               operationLower.includes('merchant payment') ||
+               operationLower.includes('paiement marchand') ||
+               operationLower.includes('versement') ||
+               operationLower.includes('deposit') ||
+               operationLower.includes('cash-in') ||
+               operationLower.includes('cashin') ||
+               operationLower.includes('merchant') ||
+               operationLower.includes('marchand') ||
+               operationLower.includes('recharge') ||
+               operationLower.includes('top up') ||
+               operationLower.includes('topup');
+        
+        if (isAccepted) {
+          console.log(`✅ Opération acceptée: "${operationValue}"`);
+        }
+        
+        return isAccepted;
+      });
+      
+      console.log(`✅ Filtre Type d'opération appliqué: ${filteredRows.length} lignes restantes (${originalCount - filteredRows.length} lignes filtrées)`);
+    } else {
+      console.log('⚠️ Colonne Type d\'opération non trouvée ou aucune donnée disponible');
+      console.log('🔍 Colonnes disponibles:', this.allColumns);
+    }
+    
+    // Appliquer le filtre de colonnes spécifique pour Orange Money
+    this.applyOrangeMoneyColumnFilter();
+      
       // Mettre à jour les données affichées
-      this.allRows = [...this.filteredRows];
-      this.combinedRows = [...this.filteredRows];
+    if (filteredRows.length > 0) {
+      this.allRows = [...filteredRows];
+      this.combinedRows = [...filteredRows];
       this.filterApplied = true;
       
       // Mettre à jour l'affichage
       this.updateDisplayedRows();
       
-      console.log(`✅ Filtre automatique appliqué: ${this.filteredRows.length} lignes avec "Succès" affichées`);
-      this.showSuccess('filter', `Filtre automatique Orange Money appliqué: ${this.filteredRows.length} lignes avec "Succès" affichées.`);
+      console.log(`✅ Filtres automatiques appliqués: ${filteredRows.length} lignes finales`);
+      this.showSuccess('filter', `Filtres automatiques Orange Money appliqués: ${filteredRows.length} lignes (Succès + Cash in/Merchant Payment)`);
     } else {
-      console.log('⚠️ Colonne Statut non trouvée ou aucune donnée disponible');
+      console.log('⚠️ Aucune ligne ne correspond aux critères de filtrage');
+      this.showError('filter', 'Aucune ligne ne correspond aux critères de filtrage automatique.');
+    }
+    
+    // Concaténation automatique des colonnes Date et Heure pour Orange Money
+    this.applyAutomaticDateHeureConcatenation();
+  }
+
+  // Nouvelle méthode pour appliquer le filtre de colonnes spécifique Orange Money
+  private applyOrangeMoneyColumnFilter(): void {
+    console.log('🎯 Application du filtre de colonnes Orange Money...');
+    
+    // Définir l'ordre spécifique des colonnes pour Orange Money
+    const orangeMoneyColumnOrder = [
+      'Référence',
+      'Débit', 
+      'Crédit',
+      'N° de Compte',
+      'DATE',
+      'Service',
+      'Statut'
+    ];
+    
+    // Chercher les colonnes correspondantes dans les données disponibles
+    const availableColumns: string[] = [];
+    
+    for (const targetColumn of orangeMoneyColumnOrder) {
+      // Chercher une correspondance exacte ou partielle
+      const foundColumn = this.allColumns.find(col => {
+        const colLower = col.toLowerCase();
+        const targetLower = targetColumn.toLowerCase();
+        
+        // Correspondance exacte
+        if (col === targetColumn) return true;
+        
+        // Correspondance partielle pour les colonnes spécifiques
+        if (targetColumn === 'Référence' && colLower.includes('référence')) return true;
+        if (targetColumn === 'Débit' && colLower.includes('débit')) return true;
+        if (targetColumn === 'Crédit' && colLower.includes('crédit')) return true;
+        if (targetColumn === 'N° de Compte' && (colLower.includes('n°') && colLower.includes('compte'))) return true;
+        if (targetColumn === 'DATE' && colLower.includes('date')) return true;
+        if (targetColumn === 'Service' && colLower.includes('service')) return true;
+        if (targetColumn === 'Statut' && (colLower.includes('statut') || colLower.includes('status'))) return true;
+        
+        return false;
+      });
+      
+      if (foundColumn) {
+        availableColumns.push(foundColumn);
+        console.log(`✅ Colonne trouvée pour "${targetColumn}": "${foundColumn}"`);
+      } else {
+        console.log(`⚠️ Colonne non trouvée pour "${targetColumn}"`);
+      }
+    }
+    
+    // Appliquer le filtre de colonnes si des colonnes ont été trouvées
+    if (availableColumns.length > 0) {
+      console.log(`🎯 Application du filtre de colonnes Orange Money: ${availableColumns.length} colonnes`);
+      console.log(`📋 Colonnes sélectionnées:`, availableColumns);
+      
+      // Mettre à jour les colonnes affichées
+      this.columns = [...availableColumns];
+      this.selectedCols = [...availableColumns];
+      this.selectionApplied = true;
+      
+      // Mettre à jour l'affichage
+      this.updateDisplayedRows();
+      
+      console.log(`✅ Filtre de colonnes Orange Money appliqué avec succès`);
+      this.showSuccess('select', `Filtre de colonnes Orange Money appliqué: ${availableColumns.length} colonnes affichées dans l'ordre spécifique`);
+    } else {
+      console.log('⚠️ Aucune colonne correspondante trouvée pour le filtre Orange Money');
+    }
+  }
+
+  // Méthode pour concaténer automatiquement les colonnes Date et Heure pour les fichiers Orange Money
+  private applyAutomaticDateHeureConcatenation(): void {
+    console.log('📅 Application de la concaténation automatique Date + Heure pour Orange Money...');
+    
+    // Chercher les colonnes Date et Heure avec une détection plus flexible
+    const dateColumn = this.allColumns.find(col => {
+      const colLower = col.toLowerCase();
+      return (colLower.includes('date') || colLower.includes('jour')) && 
+             !colLower.includes('heure') && 
+             !colLower.includes('time') &&
+             !colLower.includes('horaire');
+    });
+    
+    const heureColumn = this.allColumns.find(col => {
+      const colLower = col.toLowerCase();
+      return colLower.includes('heure') || 
+             colLower.includes('time') ||
+             colLower.includes('horaire') ||
+             colLower.includes('moment');
+    });
+    
+    if (dateColumn && heureColumn && this.allRows.length > 0) {
+      console.log('✅ Colonnes Date et Heure trouvées:', { date: dateColumn, heure: heureColumn });
+      
+      // Vérifier si la colonne DATE existe déjà
+      const dateColumnExists = this.allColumns.includes('DATE');
+      
+      if (!dateColumnExists) {
+        // Ajouter la nouvelle colonne DATE aux colonnes
+        this.allColumns.push('DATE');
+        this.columns.push('DATE');
+        
+        // Concaténer les données
+        let concatenatedCount = 0;
+        for (const row of this.allRows) {
+          const dateValue = row[dateColumn] || '';
+          const heureValue = row[heureColumn] || '';
+          
+          // Concaténer avec un espace entre Date et Heure
+          const concatenatedValue = `${dateValue} ${heureValue}`.trim();
+          row['DATE'] = concatenatedValue;
+          
+          if (concatenatedValue) {
+            concatenatedCount++;
+          }
+        }
+        
+        // Mettre à jour les données affichées
+        this.combinedRows = [...this.allRows];
+        this.originalRows = [...this.allRows];
+        
+        // Mettre à jour l'affichage
+        this.updateDisplayedRows();
+        
+        console.log(`✅ Concaténation automatique appliquée: colonne DATE créée avec ${concatenatedCount} valeurs`);
+        this.showSuccess('concat', `Concaténation automatique Orange Money: colonne DATE créée (${dateColumn} + ${heureColumn}) - ${concatenatedCount} valeurs traitées`);
+      } else {
+        console.log('ℹ️ Colonne DATE existe déjà, pas de concaténation automatique');
+      }
+    } else {
+      console.log('⚠️ Colonnes Date et/ou Heure non trouvées pour la concaténation automatique');
+      console.log('🔍 Colonnes disponibles:', this.allColumns);
+      if (!dateColumn) console.log('❌ Colonne Date non trouvée');
+      if (!heureColumn) console.log('❌ Colonne Heure non trouvée');
     }
   }
 

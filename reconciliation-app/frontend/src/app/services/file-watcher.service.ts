@@ -1,6 +1,7 @@
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
+import { tap, catchError } from 'rxjs/operators';
 import { environment } from '../../environments/environment';
 
 export interface ProcessingSpecification {
@@ -93,5 +94,43 @@ export class FileWatcherService {
   // Exemples
   getExamples(): Observable<any[]> {
     return this.http.get<any[]>(`${this.apiUrl}/file-watcher/examples`);
+  }
+
+  // Méthodes manquantes pour le composant auto-processing-models
+  getAvailableFiles(): Observable<any[]> {
+    console.log('🔍 [FileWatcherService] getAvailableFiles() appelé');
+    return this.http.get<any[]>(`${this.apiUrl}/file-watcher/available-files`)
+      .pipe(
+        tap(response => {
+          console.log('📊 [FileWatcherService] getAvailableFiles() réponse:', response);
+          if (Array.isArray(response)) {
+            console.log(`📁 [FileWatcherService] ${response.length} fichiers disponibles`);
+            response.forEach(file => {
+              console.log(`📄 [FileWatcherService] Fichier: ${file.fileName}, Colonnes: ${file.columns?.length || 0}`);
+            });
+          }
+        }),
+        catchError(error => {
+          console.error('❌ [FileWatcherService] getAvailableFiles() erreur:', error);
+          throw error;
+        })
+      );
+  }
+
+  analyzeFile(fileName: string): Observable<any> {
+    console.log('🔍 [FileWatcherService] analyzeFile() appelé pour:', fileName);
+    return this.http.get<any>(`${this.apiUrl}/file-watcher/analyze/${fileName}`)
+      .pipe(
+        tap(response => {
+          console.log('📊 [FileWatcherService] analyzeFile() réponse:', response);
+          if (response && response.columns) {
+            console.log(`📋 [FileWatcherService] ${response.columns.length} colonnes détectées pour ${fileName}:`, response.columns);
+          }
+        }),
+        catchError(error => {
+          console.error('❌ [FileWatcherService] analyzeFile() erreur:', error);
+          throw error;
+        })
+      );
   }
 } 

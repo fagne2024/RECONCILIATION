@@ -26,9 +26,10 @@
 - Les crédits et ajustements sont toujours autorisés
 - Les opérations en attente peuvent être validées ou rejetées
 
-### 3. Annulation d'Opérations
-- Lors de la suppression d'une opération, le solde précédent est restauré
-- La date de dernière mise à jour est mise à jour
+### 3. Suppression d'Opérations
+- Lors de la suppression d'une opération, aucune modification n'est apportée aux autres opérations du compte
+- Le solde du compte et les soldes des autres opérations restent inchangés
+- Seule la date de dernière mise à jour du compte est mise à jour
 
 ### 4. Contrôles de Sécurité
 - Vérification du solde suffisant avant débit

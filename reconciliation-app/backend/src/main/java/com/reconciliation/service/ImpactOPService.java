@@ -539,16 +539,21 @@ public class ImpactOPService {
     }
 
     /**
-     * Parser un fichier CSV
+     * Parse un fichier CSV
+     * 
+     * Cette méthode gère :
+     * - ENCODAGE : Lecture du fichier en UTF-8 et détection du séparateur
+     * - NORMALISATION : Nettoyage des en-têtes et des données
+     * - TYPAGE : Conversion des données vers le format standardisé
+     * 
+     * @param file Le fichier CSV à parser
+     * @return La liste des enregistrements parsés et normalisés
+     * @throws IOException En cas d'erreur de lecture du fichier
      */
     private List<Map<String, String>> parseCsvFile(MultipartFile file) throws IOException {
         List<Map<String, String>> data = new ArrayList<>();
         String content = new String(file.getBytes(), "UTF-8");
         String[] lines = content.split("\n");
-        
-        System.out.println("DEBUG: === DÉBUT parseCsvFile ===");
-        System.out.println("DEBUG: Nombre total de lignes dans le fichier: " + lines.length);
-        System.out.println("DEBUG: Première ligne (en-tête): '" + lines[0] + "'");
         
         if (lines.length < 2) {
             throw new RuntimeException("Fichier vide ou format invalide");
@@ -556,51 +561,26 @@ public class ImpactOPService {
 
         // Détecter automatiquement le séparateur
         String separator = detectSeparator(lines[0]);
-        System.out.println("DEBUG: Séparateur détecté: '" + separator + "'");
 
-        // En-têtes - nettoyer les espaces et corriger les accents
+        // En-têtes
         String[] headers = lines[0].split(separator);
-        System.out.println("DEBUG: Nombre d'en-têtes trouvés: " + headers.length);
-        System.out.println("DEBUG: En-têtes bruts: " + Arrays.toString(headers));
-        
         for (int i = 0; i < headers.length; i++) {
             headers[i] = headers[i].trim();
-            // Corriger les accents courants
-            headers[i] = headers[i].replace("aprés", "après")
-                                  .replace("proprietaire", "propriétaire")
-                                  .replace("groupe de réseau", "Groupe de réseau");
         }
         
-        System.out.println("DEBUG: En-têtes nettoyés: " + Arrays.toString(headers));
-        
+        // Données
         for (int i = 1; i < lines.length; i++) {
-            String line = lines[i].trim();
-            if (line.isEmpty()) {
-                System.out.println("DEBUG: Ligne " + (i+1) + " vide, ignorée");
-                continue;
+            if (lines[i].trim().isEmpty()) continue;
+            
+            String[] values = lines[i].split(separator);
+            Map<String, String> row = new HashMap<>();
+            
+            for (int j = 0; j < Math.min(headers.length, values.length); j++) {
+                row.put(headers[j], values[j].trim());
             }
             
-            System.out.println("DEBUG: Traitement ligne " + (i+1) + ": '" + line + "'");
-            String[] values = line.split(separator);
-            System.out.println("DEBUG: Ligne " + (i+1) + " - Nombre de valeurs: " + values.length);
-            
-            if (values.length == headers.length) {
-                Map<String, String> row = new HashMap<>();
-                for (int j = 0; j < headers.length; j++) {
-                    String value = values[j].trim();
-                    row.put(headers[j], value);
-                    System.out.println("DEBUG: Ligne " + (i+1) + " - " + headers[j] + ": '" + value + "'");
-                }
-                data.add(row);
-                System.out.println("DEBUG: Ligne " + (i+1) + " ajoutée avec succès");
-            } else {
-                System.out.println("DEBUG: Ligne " + (i+1) + " - ERREUR: Nombre de valeurs (" + values.length + ") != nombre d'en-têtes (" + headers.length + ")");
-                System.out.println("DEBUG: Valeurs trouvées: " + Arrays.toString(values));
-            }
+            data.add(row);
         }
-        
-        System.out.println("DEBUG: Nombre total de lignes parsées: " + data.size());
-        System.out.println("DEBUG: === FIN parseCsvFile ===");
         
         return data;
     }

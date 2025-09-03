@@ -4,8 +4,10 @@ import jakarta.persistence.*;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.ArrayList;
 import com.fasterxml.jackson.annotation.JsonValue;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
+import com.fasterxml.jackson.annotation.JsonManagedReference;
 
 @Entity
 @Table(name = "auto_processing_models")
@@ -41,12 +43,28 @@ public class AutoProcessingModel {
     @Column(name = "updated_at")
     private LocalDateTime updatedAt;
     
-    @OneToMany(mappedBy = "model", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
-    private List<ProcessingStep> processingSteps;
+    // Suppression de la relation avec ProcessingStep
     
     @Convert(converter = JsonConverter.class)
     @Column(columnDefinition = "TEXT")
     private Map<String, Object> reconciliationKeys;
+    
+    @Convert(converter = JsonConverter.class)
+    @Column(name = "reconciliation_logic", columnDefinition = "TEXT")
+    private Map<String, Object> reconciliationLogic;
+    
+    @Convert(converter = JsonConverter.class)
+    @Column(name = "correspondence_rules", columnDefinition = "TEXT")
+    private Map<String, Object> correspondenceRules;
+    
+    @Convert(converter = JsonConverter.class)
+    @Column(name = "comparison_columns", columnDefinition = "TEXT")
+    private Map<String, Object> comparisonColumns;
+    
+    @OneToMany(mappedBy = "autoProcessingModel", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
+    @JsonManagedReference
+    @OrderBy("ruleOrder ASC")
+    private List<ColumnProcessingRule> columnProcessingRules = new ArrayList<>();
     
     public enum FileType {
         BO("bo"),
@@ -153,13 +171,7 @@ public class AutoProcessingModel {
         this.updatedAt = updatedAt;
     }
     
-    public List<ProcessingStep> getProcessingSteps() {
-        return processingSteps;
-    }
-    
-    public void setProcessingSteps(List<ProcessingStep> processingSteps) {
-        this.processingSteps = processingSteps;
-    }
+    // Suppression des getters/setters pour ProcessingStep
     
     public Map<String, Object> getReconciliationKeys() {
         return reconciliationKeys;
@@ -167,6 +179,48 @@ public class AutoProcessingModel {
     
     public void setReconciliationKeys(Map<String, Object> reconciliationKeys) {
         this.reconciliationKeys = reconciliationKeys;
+    }
+    
+    public Map<String, Object> getReconciliationLogic() {
+        return reconciliationLogic;
+    }
+    
+    public void setReconciliationLogic(Map<String, Object> reconciliationLogic) {
+        this.reconciliationLogic = reconciliationLogic;
+    }
+    
+    public Map<String, Object> getCorrespondenceRules() {
+        return correspondenceRules;
+    }
+    
+    public void setCorrespondenceRules(Map<String, Object> correspondenceRules) {
+        this.correspondenceRules = correspondenceRules;
+    }
+    
+    public Map<String, Object> getComparisonColumns() {
+        return comparisonColumns;
+    }
+    
+    public void setComparisonColumns(Map<String, Object> comparisonColumns) {
+        this.comparisonColumns = comparisonColumns;
+    }
+    
+    public List<ColumnProcessingRule> getColumnProcessingRules() {
+        return columnProcessingRules;
+    }
+    
+    public void setColumnProcessingRules(List<ColumnProcessingRule> columnProcessingRules) {
+        this.columnProcessingRules = columnProcessingRules;
+    }
+    
+    public void addColumnProcessingRule(ColumnProcessingRule rule) {
+        columnProcessingRules.add(rule);
+        rule.setAutoProcessingModel(this);
+    }
+    
+    public void removeColumnProcessingRule(ColumnProcessingRule rule) {
+        columnProcessingRules.remove(rule);
+        rule.setAutoProcessingModel(null);
     }
     
     @PreUpdate

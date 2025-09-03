@@ -1394,13 +1394,13 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                 // Créer l'objet EcartSolde avec les données mappées
                 const ecartSolde: EcartSolde = {
                     id: undefined, // Sera généré par la base de données
-                    idTransaction: getValueWithFallback(['IDTransaction', 'id_transaction', 'ID_TRANSACTION', 'transaction_id', 'TransactionId']),
-                    telephoneClient: getValueWithFallback(['téléphone client', 'telephone_client', 'TELEPHONE_CLIENT', 'phone', 'Phone']),
+                    idTransaction: getValueWithFallback(['ID Transaction', 'IDTransaction', 'id_transaction', 'ID_TRANSACTION', 'transaction_id', 'TransactionId']),
+                    telephoneClient: getValueWithFallback(['t l phone client', 'téléphone client', 'telephone_client', 'TELEPHONE_CLIENT', 'phone', 'Phone']),
                     montant: parseFloat(getValueWithFallback(['montant', 'Montant', 'MONTANT', 'amount', 'Amount', 'volume', 'Volume'])) || 0,
                     service: agencyInfo.service,
                     agence: agencyInfo.agency,
                     dateTransaction: formatDateForBackend(agencyInfo.date),
-                    numeroTransGu: getValueWithFallback(['Numéro Trans GU', 'numero_trans_gu', 'NUMERO_TRANS_GU', 'transaction_number', 'TransactionNumber']),
+                    numeroTransGu: getValueWithFallback(['Numero Trans GU', 'Numéro Trans GU', 'numero_trans_gu', 'NUMERO_TRANS_GU', 'transaction_number', 'TransactionNumber']),
                     pays: agencyInfo.country,
                     statut: 'EN_ATTENTE', // Statut par défaut
                     commentaire: 'IMPACT J+1', // Commentaire par défaut
