@@ -6,6 +6,7 @@ import { ColumnComparison } from '../../models/column-comparison.model';
 import { AppStateService } from '../../services/app-state.service';
 import { ReconciliationService } from '../../services/reconciliation.service';
 import { KeySuggestionService, KeySuggestion, KeyAnalysisResult } from '../../services/key-suggestion.service';
+import { PopupService } from '../../services/popup.service';
 import { Subscription } from 'rxjs';
 import { ReconciliationRequest } from '../../models/reconciliation-request.model';
 
@@ -573,7 +574,8 @@ export class ColumnSelectionComponent implements OnDestroy, OnChanges, OnInit {
         private appStateService: AppStateService,
         private keySuggestionService: KeySuggestionService,
         private router: Router,
-        private cdr: ChangeDetectorRef
+        private cdr: ChangeDetectorRef,
+        private popupService: PopupService
     ) {}
 
     ngOnChanges(changes: SimpleChanges) {
@@ -1276,7 +1278,7 @@ export class ColumnSelectionComponent implements OnDestroy, OnChanges, OnInit {
                 this.finishReconciliationProgress();
                 
                 // Afficher l'erreur à l'utilisateur
-                alert(`Erreur lors de la réconciliation: ${error.message || 'Erreur inconnue'}`);
+                this.popupService.showError(`Erreur lors de la réconciliation: ${error.message || 'Erreur inconnue'}`, 'Erreur de Réconciliation');
             }
         });
     }

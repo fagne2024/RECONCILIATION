@@ -490,7 +490,7 @@ export class FraisComponent implements OnInit, OnDestroy {
      */
     exportToCSV() {
         if (!this.filteredFrais || !this.filteredFrais.length) {
-            alert('Aucune donnée à exporter');
+            this.popupService.showInfo('Aucune donnée à exporter', 'Aucune Donnée');
             return;
         }
 
@@ -539,7 +539,7 @@ export class FraisComponent implements OnInit, OnDestroy {
      */
     exportToExcel() {
         if (!this.filteredFrais || !this.filteredFrais.length) {
-            alert('Aucune donnée à exporter');
+            this.popupService.showInfo('Aucune donnée à exporter', 'Aucune Donnée');
             return;
         }
 
@@ -604,7 +604,7 @@ export class FraisComponent implements OnInit, OnDestroy {
             this.isExporting = false;
         } catch (error) {
             console.error('Erreur lors de l\'export Excel:', error);
-            alert('Erreur lors de l\'export Excel');
+            this.popupService.showError('Erreur lors de l\'export Excel', 'Erreur d\'Export');
             this.isExporting = false;
         }
     }
@@ -648,13 +648,13 @@ export class FraisComponent implements OnInit, OnDestroy {
                         
                         console.log(`Export réussi: ${response.totalCount} frais exportés`);
                     } else {
-                        alert('Erreur lors de l\'export: ' + (response.error || 'Erreur inconnue'));
+                        this.popupService.showError('Erreur lors de l\'export: ' + (response.error || 'Erreur inconnue'), 'Erreur d\'Export');
                     }
                     this.isExporting = false;
                 },
                 error: (err) => {
                     console.error('Erreur lors de l\'export via API:', err);
-                    alert('Erreur lors de l\'export via API');
+                    this.popupService.showError('Erreur lors de l\'export via API', 'Erreur d\'Export');
                     this.isExporting = false;
                 }
             })

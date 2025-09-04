@@ -994,6 +994,7 @@ public class CsvReconciliationService implements DisposableBean {
         System.out.println("🔧 Application des règles de traitement pour le type: " + fileType);
         
         // Pour l'instant, appliquer une règle hardcodée pour IDTransaction
+        // TODO: Récupérer les vraies règles depuis les modèles
         List<Map<String, String>> processedData = new ArrayList<>();
         
         for (Map<String, String> row : data) {
@@ -1006,6 +1007,16 @@ public class CsvReconciliationService implements DisposableBean {
                     String newValue = originalValue.substring(0, originalValue.length() - 3);
                     processedRow.put("IDTransaction", newValue);
                     System.out.println("🔧 Transformation IDTransaction: \"" + originalValue + "\" → \"" + newValue + "\"");
+                }
+            }
+            
+            // Règle pour Numéro Trans GU : supprimer _CM aussi
+            if (processedRow.containsKey("Numéro Trans GU")) {
+                String originalValue = processedRow.get("Numéro Trans GU");
+                if (originalValue != null && originalValue.endsWith("_CM")) {
+                    String newValue = originalValue.substring(0, originalValue.length() - 3);
+                    processedRow.put("Numéro Trans GU", newValue);
+                    System.out.println("🔧 Transformation Numéro Trans GU: \"" + originalValue + "\" → \"" + newValue + "\"");
                 }
             }
             

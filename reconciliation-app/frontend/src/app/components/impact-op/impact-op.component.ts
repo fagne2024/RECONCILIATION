@@ -4,6 +4,7 @@ import { Subscription, forkJoin, concatMap, delay, of } from 'rxjs';
 import { ActivatedRoute } from '@angular/router';
 import { ImpactOP, ImpactOPFilter, ImpactOPValidationResult } from '../../models/impact-op.model';
 import { ImpactOPService } from '../../services/impact-op.service';
+import { PopupService } from '../../services/popup.service';
 import * as XLSX from 'xlsx';
 
 @Component({
@@ -64,7 +65,8 @@ export class ImpactOPComponent implements OnInit, OnDestroy {
   constructor(
     private impactOPService: ImpactOPService,
     private fb: FormBuilder,
-    private route: ActivatedRoute
+    private route: ActivatedRoute,
+    private popupService: PopupService
   ) {
     this.filterForm = this.fb.group({
       codeProprietaire: [''],
@@ -701,7 +703,7 @@ export class ImpactOPComponent implements OnInit, OnDestroy {
 
   updateMultipleStatuts(): void {
     if (this.selectedItems.size === 0) {
-      alert('Veuillez sélectionner au moins un impact OP.');
+      this.popupService.showWarning('Veuillez sélectionner au moins un impact OP.', 'Sélection Requise');
       return;
     }
 

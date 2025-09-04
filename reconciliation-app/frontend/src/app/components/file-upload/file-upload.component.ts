@@ -320,12 +320,10 @@ export class FileUploadComponent {
                        `📁 Fichier: ${result.fileName}\n` +
                        `🤖 Modèle: ${result.modelId}\n` +
                        `⚡ Temps: ${result.processingTime}ms\n` +
-                       `📊 Lignes traitées: ${result.processedData.length}\n` +
-                                               `📊 Lignes traitées: ${result.processedData.length}\n\n` +
+                       `📊 Lignes traitées: ${result.processedData.length}\n\n` +
                        `Les données ont été automatiquement traitées selon le modèle configuré.`;
         
-        // Vous pouvez remplacer alert par une notification plus élégante
-        alert(message);
+        this.popupService.showSuccess(message, 'Traitement Automatique');
     }
 
     private convertDebitCreditToNumber(records: Record<string, any>[]): Record<string, any>[] {
@@ -511,8 +509,7 @@ export class FileUploadComponent {
                        `Seules les lignes avec le statut "Succès" ont été conservées.`;
         
         console.log('🎯 Notification Orange Money (File Upload):', message);
-        // Vous pouvez remplacer alert par une notification plus élégante
-        alert(message);
+        this.popupService.showInfo(message, 'Filtrage Orange Money');
     }
 
     private parseFile(file: File, isBo: boolean): void {
@@ -1393,7 +1390,7 @@ export class FileUploadComponent {
         } else if (this.isExcelFile(fileName)) {
             this.parseAutoXLSX(file, isBo);
         } else {
-            alert('Format de fichier non supporté. Veuillez choisir un fichier CSV ou Excel (.xls, .xlsx, .xlsm, .xlsb, .xlt, .xltx, .xltm)');
+            this.popupService.showError('Format de fichier non supporté. Veuillez choisir un fichier CSV ou Excel (.xls, .xlsx, .xlsm, .xlsb, .xlt, .xltx, .xltm)', 'Format Non Supporté');
         }
     }
 

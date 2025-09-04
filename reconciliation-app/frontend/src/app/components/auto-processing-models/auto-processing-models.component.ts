@@ -177,6 +177,7 @@ export class AutoProcessingModelsComponent implements OnInit {
       // Réinitialiser les clés de réconciliation si le type est BO
       if (fileType === 'bo') {
         this.resetReconciliationKeysForBO();
+        this.resetReconciliationLogicForBO();
       }
       
       // Réinitialiser le pattern seulement si on n'est pas en mode édition
@@ -184,26 +185,20 @@ export class AutoProcessingModelsComponent implements OnInit {
         this.modelForm.patchValue({ filePattern: '' });
       }
       
-      console.log('🔄 Changement de type de fichier:', fileType);
       if (fileType === 'partner') {
-        console.log('📋 Type partenaire détecté - Chargement des colonnes TRXBO');
         // Pour les modèles partenaires, charger les colonnes TRXBO pour les clés BO
         this.loadColumnsForBOType();
         // Et aussi les colonnes partenaires si nécessaire
         if (this.availableColumnsForTemplate.length === 0) {
-          console.log('📋 Chargement des colonnes partenaires');
           this.loadColumnsForPartnerType();
         }
       } else if (fileType === 'bo' && this.availableColumnsForTemplate.length === 0) {
-        console.log('📋 Type BO détecté - Chargement des colonnes BO');
         this.loadColumnsForBOType();
       }
     });
 
     // Écouter les changements du fichier modèle pour charger les colonnes
     this.modelForm.get('templateFile')?.valueChanges.subscribe(templateFile => {
-      console.log('🔄 Changement de fichier modèle détecté:', templateFile);
-      
       if (templateFile) {
         this.loadTemplateColumns();
         // Charger automatiquement les colonnes pour les règles de traitement
@@ -279,15 +274,12 @@ export class AutoProcessingModelsComponent implements OnInit {
 
   // Charger les règles de traitement des colonnes pour un modèle
   loadColumnProcessingRules(modelId: string): void {
-    console.log('🔄 [DEBUG] Chargement des règles pour le modèle:', modelId);
-    
     this.autoProcessingService.getColumnProcessingRules(modelId)
       .then(rules => {
-        console.log('✅ [DEBUG] Règles chargées:', rules);
         this.columnProcessingRules = rules;
       })
       .catch(error => {
-        console.error('❌ [DEBUG] Erreur lors du chargement des règles:', error);
+        console.error('Erreur lors du chargement des règles:', error);
         this.columnProcessingRules = [];
       });
   }
@@ -306,17 +298,14 @@ export class AutoProcessingModelsComponent implements OnInit {
   }
 
   loadAvailableFiles(): Promise<void> {
-    console.log('🔍 [AutoProcessingModelsComponent] loadAvailableFiles() appelé');
     this.loading = true;
     
     return this.fileWatcherService.getAvailableFiles().toPromise().then(files => {
-      console.log('📊 [AutoProcessingModelsComponent] loadAvailableFiles() réponse:', files);
       this.availableFiles = files || [];
       
       // Correction spécifique pour OPPART.xls
       this.availableFiles.forEach(file => {
         if (file.fileName.toLowerCase().includes('oppart')) {
-          console.log('🔧 Correction des colonnes OPPART dans loadAvailableFiles');
           file.columns = [
             'ID Opération', 'Type Opération', 'Montant', 'Solde avant', 'Solde aprés',
             'Code proprietaire', 'Téléphone', 'Statut', 'ID Transaction', 'Num bordereau',
@@ -324,12 +313,10 @@ export class AutoProcessingModelsComponent implements OnInit {
             'Login valideur Appro', 'Motif rejet', 'Frais connexion', 'Numéro Trans GU',
             'Agent', 'Motif régularisation', 'groupe de réseau'
           ];
-          console.log('✅ Colonnes OPPART corrigées:', file.columns);
         }
         
         // Correction spécifique pour TRXBO.xls
         if (file.fileName.toLowerCase().includes('trxbo')) {
-          console.log('🔧 Correction des colonnes TRXBO dans loadAvailableFiles');
           file.columns = [
             'ID', 'IDTransaction', 'téléphone client', 'montant', 'Service',
             'Moyen de Paiement', 'Agence', 'Agent', 'Type agent', 'PIXI',
@@ -337,12 +324,10 @@ export class AutoProcessingModelsComponent implements OnInit {
             'Longitude', 'ID Partenaire DIST', 'Expéditeur', 'Pays provenance',
             'Bénéficiaire', 'Canal de distribution'
           ];
-          console.log('✅ Colonnes TRXBO corrigées:', file.columns);
         }
         
         // Correction spécifique pour USSDPART.xls
         if (file.fileName.toLowerCase().includes('ussdpart')) {
-          console.log('🔧 Correction des colonnes USSDPART dans loadAvailableFiles');
           file.columns = [
             'ID', 'Groupe Réseaux', 'Code réseau', 'Agence', 'Code PIXI',
             'Code de Proxy', 'Code service', 'Numéro Trans GU', 'Déstinataire',
@@ -352,25 +337,12 @@ export class AutoProcessingModelsComponent implements OnInit {
             'Longitude', 'Partenaire dist ID', 'Agence SC', 'Groupe reseau SC',
             'Agent SC', 'PDA SC'
           ];
-          console.log('✅ Colonnes USSDPART corrigées:', file.columns);
         }
-      });
-      
-      console.log(`📁 [AutoProcessingModelsComponent] ${this.availableFiles.length} fichiers chargés`);
-      
-      // Log détaillé de chaque fichier
-      this.availableFiles.forEach((file, index) => {
-        console.log(`📄 [AutoProcessingModelsComponent] Fichier ${index + 1}:`, {
-          fileName: file.fileName,
-          fileType: file.fileType,
-          columnsCount: file.columns?.length || 0,
-          columns: file.columns
-        });
       });
       
       this.loading = false;
     }).catch(error => {
-      console.error('❌ [AutoProcessingModelsComponent] Erreur lors du chargement des fichiers:', error);
+      console.error('Erreur lors du chargement des fichiers:', error);
       this.loading = false;
     });
   }
@@ -461,6 +433,18 @@ export class AutoProcessingModelsComponent implements OnInit {
       boTreatments: {}
     });
     console.log('✅ Clés de réconciliation réinitialisées pour le type BO');
+  }
+
+  private resetReconciliationLogicForBO(): void {
+    // Réinitialiser la logique de réconciliation pour les modèles BO
+    this.modelForm.patchValue({
+      logicType: null,
+      expectedRatio: null,
+      logicDescription: null
+    });
+    this.showReconciliationLogicSection = false;
+    this.editingReconciliationLogic = false;
+    console.log('✅ Logique de réconciliation réinitialisée pour le type BO');
   }
 
   private loadColumnsForTemplateFile(templateFile: string): void {
@@ -698,29 +682,19 @@ export class AutoProcessingModelsComponent implements OnInit {
       //   modelData.updatedAt = new Date();
       // }
       
-      // 🔍 DEBUG: Log des données à sauvegarder
-      console.log('🔍 [DEBUG] Données à sauvegarder:', modelData);
-      console.log('🔍 [DEBUG] reconciliationKeys:', formValue.reconciliationKeys);
-      console.log('🔍 [DEBUG] columnProcessingRules:', this.columnProcessingRules);
-      console.log('🔍 [DEBUG] Règles avant sauvegarde du modèle:', this.columnProcessingRules);
-      console.log('🔍 [DEBUG] Nombre de règles:', this.columnProcessingRules.length);
-      console.log('🔍 [DEBUG] Form complet:', formValue);
-      console.log('🔍 [DEBUG] JSON stringifié:', JSON.stringify(modelData, null, 2));
+      // Données à sauvegarder
 
       // 🔧 SOLUTION: Supprimer l'ancien modèle puis créer un nouveau (éviter les conflits de structure)
       let savePromise: Promise<any>;
       
       if (this.editingModel) {
         // Supprimer l'ancien modèle d'abord
-        console.log('🔄 Tentative de suppression du modèle existant:', this.editingModel.id);
         savePromise = this.autoProcessingService.deleteModel(this.editingModel.id)
           .then(() => {
-            console.log('✅ Ancien modèle supprimé, création du nouveau...');
             return this.autoProcessingService.createModel(modelData);
           })
           .catch(error => {
-            console.error('❌ Erreur lors de la suppression:', error);
-            console.log('🔄 Tentative de création du nouveau modèle malgré l\'erreur de suppression...');
+            console.error('Erreur lors de la suppression:', error);
             // Si la suppression échoue, essayer quand même la création
             return this.autoProcessingService.createModel(modelData);
           });
@@ -730,24 +704,17 @@ export class AutoProcessingModelsComponent implements OnInit {
       }
 
       savePromise.then(savedModel => {
-        console.log('✅ [DEBUG] Modèle sauvegardé:', savedModel);
-        
         // Sauvegarder les règles de traitement des colonnes si elles existent
         if (this.columnProcessingRules.length > 0 && savedModel.modelId) {
-          console.log('🔄 [DEBUG] Sauvegarde des règles pour le modèle:', savedModel.modelId);
-          console.log('🔍 [DEBUG] Règles à sauvegarder:', this.columnProcessingRules);
-          
           this.autoProcessingService.saveColumnProcessingRulesBatch(savedModel.modelId, this.columnProcessingRules)
             .then((savedRules) => {
-              console.log('✅ [DEBUG] Règles sauvegardées avec succès:', savedRules);
               this.successMessage = `Modèle ${this.editingModel ? 'modifié' : 'créé'} avec ${this.columnProcessingRules.length} règle(s) de traitement`;
             })
             .catch(error => {
-              console.error('❌ [DEBUG] Erreur lors de la sauvegarde des règles:', error);
+              console.error('Erreur lors de la sauvegarde des règles:', error);
               this.successMessage = `Modèle ${this.editingModel ? 'modifié' : 'créé'} mais erreur lors de la sauvegarde des règles`;
             });
         } else {
-          console.log('ℹ️ [DEBUG] Aucune règle à sauvegarder');
           this.successMessage = `Modèle ${this.editingModel ? 'modifié' : 'créé'} avec succès`;
         }
         
@@ -1842,23 +1809,10 @@ export class AutoProcessingModelsComponent implements OnInit {
 
   // Méthode de debug pour vérifier l'état des sélections
   debugValidationState(): void {
-    console.log('🔍 État actuel de la validation:');
-    console.log('  - Formulaire valide:', this.modelForm.valid);
-    console.log('  - Type de fichier:', this.modelForm.get('fileType')?.value);
-    console.log('  - Clés partenaire sélectionnées:', this.selectedPartnerKeys);
-    console.log('  - Modèles BO sélectionnés:', this.selectedBOModels);
-    console.log('  - Validation finale:', this.isFormValid());
-    
-    if (this.modelForm.get('fileType')?.value === 'partner') {
-      console.log('  - Nombre de clés partenaire:', this.selectedPartnerKeys.length);
-      console.log('  - Nombre de modèles BO:', this.selectedBOModels.length);
-      console.log('  - Clés partenaire présentes:', this.selectedPartnerKeys.length > 0);
-      console.log('  - Modèles BO présents:', this.selectedBOModels.length > 0);
-    }
+    // Méthode de debug supprimée pour nettoyer l'interface
   }
 
   addColumnProcessingRule(): void {
-    console.log('🚀 [DEBUG] addColumnProcessingRule() appelée');
     this.editingColumnProcessingRule = -1;
     
     // S'assurer que les colonnes du modèle sont chargées avec la méthode centralisée
@@ -2395,7 +2349,6 @@ export class AutoProcessingModelsComponent implements OnInit {
     } else {
       this.selectedColumns = this.selectedColumns.filter(col => col !== columnName);
     }
-    console.log('🔍 [DEBUG] Colonnes sélectionnées:', this.selectedColumns);
   }
 
   isColumnSelected(columnName: string): boolean {
@@ -2408,11 +2361,122 @@ export class AutoProcessingModelsComponent implements OnInit {
 
   selectAllColumns(): void {
     this.selectedColumns = [...this.availableTemplateColumns];
-    console.log('✅ [DEBUG] Toutes les colonnes sélectionnées:', this.selectedColumns);
   }
 
   deselectAllColumns(): void {
     this.selectedColumns = [];
-    console.log('✅ [DEBUG] Toutes les colonnes désélectionnées');
+  }
+
+  // ===== MÉTHODES POUR LE REGROUPEMENT DES MODÈLES =====
+
+  /**
+   * Détermine la catégorie d'un modèle basée sur son nom
+   */
+  getModelCategory(model: AutoProcessingModel): string {
+    const modelName = model.name.toLowerCase();
+    
+    // Patterns pour Partenaire CASHIN
+    const cashinPatterns = [
+      'ciom', 'cashin', 'cash', 'ci_', '_ci', 'ciomcm', 'ciomml', 'ciomgn', 
+      'ciomci', 'ciomsn', 'ciomkn', 'ciombj', 'ciomgb'
+    ];
+    
+    // Patterns pour Partenaire PAIEMENT
+    const paiementPatterns = [
+      'pmom', 'paiement', 'payment', 'pm_', '_pm', 'pmomcm', 'pmomml', 'pmomgn',
+      'pmomci', 'pmomsn', 'pmomkn', 'pmombj', 'pmomgb'
+    ];
+    
+    // Vérifier les patterns CASHIN
+    for (const pattern of cashinPatterns) {
+      if (modelName.includes(pattern)) {
+        return 'Partenaire CASHIN';
+      }
+    }
+    
+    // Vérifier les patterns PAIEMENT
+    for (const pattern of paiementPatterns) {
+      if (modelName.includes(pattern)) {
+        return 'Partenaire PAIEMENT';
+      }
+    }
+    
+    // Vérifier les patterns génériques CI et PM
+    if (modelName.includes('ci') && !modelName.includes('city') && !modelName.includes('circle')) {
+      return 'Partenaire CASHIN';
+    }
+    
+    if (modelName.includes('pm') && !modelName.includes('pump') && !modelName.includes('prime')) {
+      return 'Partenaire PAIEMENT';
+    }
+    
+    // Par défaut, c'est un modèle Back Office
+    return 'Back Office';
+  }
+
+  /**
+   * Regroupe les modèles par catégorie
+   */
+  getModelsByCategory(): { [category: string]: AutoProcessingModel[] } {
+    const groupedModels: { [category: string]: AutoProcessingModel[] } = {
+      'Partenaire CASHIN': [],
+      'Partenaire PAIEMENT': [],
+      'Back Office': []
+    };
+
+    this.models.forEach(model => {
+      const category = this.getModelCategory(model);
+      groupedModels[category].push(model);
+    });
+
+    return groupedModels;
+  }
+
+  /**
+   * Obtient les catégories qui ont des modèles
+   */
+  getActiveCategories(): string[] {
+    const groupedModels = this.getModelsByCategory();
+    return Object.keys(groupedModels).filter(category => groupedModels[category].length > 0);
+  }
+
+  /**
+   * Obtient le nombre de modèles par catégorie
+   */
+  getCategoryCount(category: string): number {
+    const groupedModels = this.getModelsByCategory();
+    return groupedModels[category]?.length || 0;
+  }
+
+  /**
+   * Obtient la description de la catégorie
+   */
+  getCategoryDescription(category: string): string {
+    switch (category) {
+      case 'Partenaire CASHIN':
+        return 'Modèles pour les opérations de cash-in (dépôt d\'argent)';
+      case 'Partenaire PAIEMENT':
+        return 'Modèles pour les opérations de paiement et transfert';
+      case 'Back Office':
+        return 'Modèles pour les opérations internes et de gestion';
+      default:
+        return '';
+    }
+  }
+
+  /**
+   * Obtient l'icône de la catégorie
+   */
+  getCategoryIcon(category: string): string {
+    switch (category) {
+      case 'Partenaire CASHIN':
+        return 'fas fa-money-bill-wave';
+      case 'Partenaire PAIEMENT':
+        return 'fas fa-credit-card';
+      case 'Back Office':
+        return 'fas fa-folder';
+      default:
+        return 'fas fa-cog';
+    }
   }
 } 

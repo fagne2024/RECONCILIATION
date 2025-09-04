@@ -14,11 +14,7 @@
     {{ successMessage }}
     </div>
 
-  <!-- Debug temporaire -->
-  <div class="alert alert-info" style="margin-bottom: 10px;">
-    <strong>Debug:</strong> showCreateForm = {{ showCreateForm }}, editingModel = {{ editingModel ? 'true' : 'false' }}, 
-    Condition = {{ (editingModel || showCreateForm) ? 'true' : 'false' }}
-  </div>
+
 
   <!-- Formulaire de création/édition pour modèles autonomes -->
   <div class="form-section" *ngIf="editingModel || showCreateForm">
@@ -220,8 +216,8 @@
           </div>
         </div>
 
-        <!-- Section 3: Logique de réconciliation -->
-      <div class="config-section">
+        <!-- Section 3: Logique de réconciliation (uniquement pour les modèles partenaires) -->
+      <div class="config-section" *ngIf="modelForm.get('fileType')?.value === 'partner'">
         <h4>
           <i class="fas fa-cogs"></i> Logique de réconciliation
           <button type="button" class="btn btn-sm btn-outline-info" (click)="toggleReconciliationLogicSection()">
@@ -543,10 +539,7 @@
           {{ editingModel ? 'Annuler' : 'Fermer' }}
         </button>
         
-        <!-- Bouton de debug temporaire -->
-        <button type="button" class="btn btn-warning" (click)="debugValidationState()" style="margin-left: 10px;">
-          🔍 Debug Validation
-        </button>
+
         
         <!-- Message d'aide pour la validation -->
         <div class="validation-help" *ngIf="!isFormValid() && modelForm.get('fileType')?.value !== 'bo'">
@@ -565,44 +558,61 @@
     </form>
   </div>
 
-  <!-- Liste des modèles -->
+  <!-- Liste des modèles regroupés par catégorie -->
   <div class="models-list" *ngIf="models.length > 0">
     <h3>Modèles existants ({{ models.length }})</h3>
     
-    <div class="models-grid">
-      <div class="model-card" *ngFor="let model of models">
-        <div class="model-header">
-          <h4>{{ model.name }}</h4>
-          <div class="model-actions">
-            <button (click)="editModel(model)" class="btn btn-sm btn-edit" title="Modifier">
-              <i class="fas fa-edit"></i>
-            </button>
-            <button (click)="deleteModel(model)" class="btn btn-sm btn-delete" title="Supprimer">
-              <i class="fas fa-trash"></i>
-            </button>
-        </div>
+    <!-- Parcourir les catégories actives -->
+    <div class="category-section" 
+         [ngClass]="{
+           'category-cashin': category === 'Partenaire CASHIN',
+           'category-paiement': category === 'Partenaire PAIEMENT',
+           'category-backoffice': category === 'Back Office'
+         }"
+         *ngFor="let category of getActiveCategories()">
+      <div class="category-header">
+        <h4 class="category-title">
+          <i [class]="getCategoryIcon(category)"></i>
+          {{ category }} ({{ getCategoryCount(category) }})
+        </h4>
+        <p class="category-description">{{ getCategoryDescription(category) }}</p>
       </div>
-
-        <div class="model-info">
-          <p><strong>Pattern:</strong> {{ model.filePattern }}</p>
-          <p><strong>Type:</strong> {{ model.fileType }}</p>
-          <p><strong>Auto-appliqué:</strong> {{ model.autoApply ? 'Oui' : 'Non' }}</p>
-          <p *ngIf="model.templateFile"><strong>Fichier modèle:</strong> {{ model.templateFile }}</p>
-          
-          <!-- Affichage des règles de traitement des colonnes -->
-          <div class="model-rules" *ngIf="model.columnProcessingRules && model.columnProcessingRules.length > 0">
-            <p><strong>Règles de traitement:</strong> {{ model.columnProcessingRules.length }} règle(s)</p>
-            <div class="rules-preview">
-              <span class="rule-badge" *ngFor="let rule of model.columnProcessingRules.slice(0, 3)">
-                {{ rule.sourceColumn }} → {{ rule.targetColumn }}
-              </span>
-              <span class="rule-more" *ngIf="model.columnProcessingRules.length > 3">
-                +{{ model.columnProcessingRules.length - 3 }} autres
-              </span>
+      
+      <div class="models-grid">
+        <div class="model-card" *ngFor="let model of getModelsByCategory()[category]">
+          <div class="model-header">
+            <h4>{{ model.name }}</h4>
+            <div class="model-actions">
+              <button (click)="editModel(model)" class="btn btn-sm btn-edit" title="Modifier">
+                <i class="fas fa-edit"></i>
+              </button>
+              <button (click)="deleteModel(model)" class="btn btn-sm btn-delete" title="Supprimer">
+                <i class="fas fa-trash"></i>
+              </button>
             </div>
           </div>
+
+          <div class="model-info">
+            <p><strong>Pattern:</strong> {{ model.filePattern }}</p>
+            <p><strong>Type:</strong> {{ model.fileType }}</p>
+            <p><strong>Auto-appliqué:</strong> {{ model.autoApply ? 'Oui' : 'Non' }}</p>
+            <p *ngIf="model.templateFile"><strong>Fichier modèle:</strong> {{ model.templateFile }}</p>
+            
+            <!-- Affichage des règles de traitement des colonnes -->
+            <div class="model-rules" *ngIf="model.columnProcessingRules && model.columnProcessingRules.length > 0">
+              <p><strong>Règles de traitement:</strong> {{ model.columnProcessingRules.length }} règle(s)</p>
+              <div class="rules-preview">
+                <span class="rule-badge" *ngFor="let rule of model.columnProcessingRules.slice(0, 3)">
+                  {{ rule.sourceColumn }} → {{ rule.targetColumn }}
+                </span>
+                <span class="rule-more" *ngIf="model.columnProcessingRules.length > 3">
+                  +{{ model.columnProcessingRules.length - 3 }} autres
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
-    </div>
     </div>
   </div>
 

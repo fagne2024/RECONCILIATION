@@ -386,7 +386,7 @@ interface ApiError {
                                     <span class="label">Date:</span>
                                     <span class="value">{{getBoOnlyAgencyAndService(record).date}}</span>
                                 </div>
-                                <div class="data-row" *ngFor="let key of getRecordKeys(record)">
+                                <div class="data-row" *ngFor="let key of getBoOnlyKeys(record)">
                                     <span class="label">{{key}}:</span>
                                     <span class="value">{{record[key]}}</span>
                                 </div>
@@ -439,7 +439,7 @@ interface ApiError {
                                     <span class="label">Date:</span>
                                     <span class="value">{{getPartnerOnlyDate(record)}}</span>
                                 </div>
-                                <div class="data-row" *ngFor="let key of getRecordKeys(record)">
+                                <div class="data-row" *ngFor="let key of getPartnerOnlyKeys(record)">
                                     <span class="label">{{key}}:</span>
                                     <span class="value">{{record[key]}}</span>
                                 </div>
@@ -2377,15 +2377,91 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
     }
 
     getBoKeys(match: Match): string[] {
-        return Object.keys(match.boData);
+        // Détecter le type de données BO et appliquer le bon filtrage
+        return this.getFilteredKeys(match.boData, 'bo');
     }
 
     getPartnerKeys(match: Match): string[] {
-        return Object.keys(match.partnerData);
+        // Détecter le type de données Partenaire et appliquer le bon filtrage
+        return this.getFilteredKeys(match.partnerData, 'partner');
     }
 
     getRecordKeys(record: Record<string, string>): string[] {
         return Object.keys(record);
+    }
+
+    /**
+     * Méthode intelligente pour filtrer les colonnes selon le type de données détecté
+     */
+    getFilteredKeys(record: Record<string, string>, dataType: 'bo' | 'partner'): string[] {
+        const keys = Object.keys(record);
+        
+        // Détecter le type de données basé sur les colonnes présentes
+        const isTRXBO = keys.some(key => ['IDTransaction', 'téléphone client', 'GRX'].includes(key));
+        const isOPPART = keys.some(key => ['ID Opération', 'Type Opération', 'Solde avant', 'Solde aprés'].includes(key));
+        const isUSSDPART = keys.some(key => ['Code service', 'Déstinataire', 'Token', 'SMS Action faite'].includes(key));
+        
+        // Définir les colonnes autorisées selon le type détecté
+        let allowedColumns: string[] = [];
+        
+        if (isTRXBO) {
+            // Colonnes TRXBO autorisées
+            allowedColumns = [
+                'ID',
+                'IDTransaction',
+                'téléphone client',
+                'montant',
+                'Service',
+                'Agence',
+                'Date',
+                'Numéro Trans GU',
+                'GRX',
+                'Statut'
+            ];
+        } else if (isOPPART) {
+            // Colonnes OPPART autorisées
+            allowedColumns = [
+                'ID Opération',
+                'Type Opération',
+                'Montant',
+                'Solde avant',
+                'Solde aprés',
+                'Code proprietaire',
+                'Date opération',
+                'Numéro Trans GU',
+                'groupe de réseau'
+            ];
+        } else if (isUSSDPART) {
+            // Colonnes USSDPART autorisées
+            allowedColumns = [
+                'ID',
+                'Agence',
+                'Code service',
+                'Numéro Trans GU',
+                'Déstinataire',
+                'date de création',
+                'Etat',
+                'Token',
+                'SMS Action faite',
+                'Montant'
+            ];
+        } else {
+            // Si aucun type n'est détecté, retourner toutes les colonnes
+            return keys;
+        }
+        
+        // Filtrer les clés pour ne garder que les colonnes autorisées
+        return keys.filter(key => allowedColumns.includes(key));
+    }
+
+    getBoOnlyKeys(record: Record<string, string>): string[] {
+        // Détecter le type de données BO et appliquer le bon filtrage
+        return this.getFilteredKeys(record, 'bo');
+    }
+
+    getPartnerOnlyKeys(record: Record<string, string>): string[] {
+        // Détecter le type de données Partenaire et appliquer le bon filtrage
+        return this.getFilteredKeys(record, 'partner');
     }
 
     /**

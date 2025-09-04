@@ -5,6 +5,7 @@ import { OperationService } from '../../services/operation.service';
 import { CompteService } from '../../services/compte.service';
 import { Operation, OperationFilter, TypeOperation, StatutOperation, OperationUpdateRequest } from '../../models/operation.model';
 import { Compte } from '../../models/compte.model';
+import { PopupService } from '../../services/popup.service';
 import * as ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
 import { MatSelect } from '@angular/material/select';
@@ -148,7 +149,8 @@ export class OperationsComponent implements OnInit, OnDestroy {
         private operationService: OperationService,
         private compteService: CompteService,
         private fb: FormBuilder,
-        private cdr: ChangeDetectorRef
+        private cdr: ChangeDetectorRef,
+        private popupService: PopupService
     ) {
         this.addForm = this.fb.group({
             typeOperation: ['', [Validators.required]],
@@ -554,10 +556,10 @@ export class OperationsComponent implements OnInit, OnDestroy {
             document.body.removeChild(link);
             URL.revokeObjectURL(url);
 
-            alert('Export terminé avec succès !');
+            this.popupService.showSuccess('Export terminé avec succès !', 'Export Réussi');
         } catch (error) {
             console.error('Erreur lors de l\'export:', error);
-            alert('Erreur lors de l\'export des données');
+            this.popupService.showError('Erreur lors de l\'export des données', 'Erreur d\'Export');
         }
     }
 
@@ -1066,30 +1068,35 @@ export class OperationsComponent implements OnInit, OnDestroy {
                 if (success) {
                     this.loadOperations();
                 } else {
-                    alert('Impossible de valider cette opération. Le solde du compte est insuffisant.');
+                    this.popupService.showError('Impossible de valider cette opération. Le solde du compte est insuffisant.', 'Validation Impossible');
                 }
             },
             error: (err) => {
                 console.error('Erreur lors de la validation', err);
-                alert('Erreur lors de la validation de l\'opération');
+                this.popupService.showError('Erreur lors de la validation de l\'opération', 'Erreur de Validation');
             }
         });
     }
 
-    annulerOperation(id: number) {
-        if (confirm('Êtes-vous sûr de vouloir annuler cette opération ? Cette action changera le statut à "Annulée" et préfixera le type avec "annulation_".')) {
+    async annulerOperation(id: number) {
+        const confirmed = await this.popupService.showConfirm(
+            'Êtes-vous sûr de vouloir annuler cette opération ? Cette action changera le statut à "Annulée" et préfixera le type avec "annulation_".',
+            'Confirmation d\'Annulation'
+        );
+        
+        if (confirmed) {
             this.operationService.cancelOperation(id).subscribe({
                 next: (success) => {
                     if (success) {
                         this.loadOperations();
-                        alert('Opération annulée avec succès. Le statut a été changé à "Annulée".');
+                        this.popupService.showSuccess('Opération annulée avec succès. Le statut a été changé à "Annulée".', 'Annulation Réussie');
                     } else {
-                        alert('Impossible d\'annuler cette opération.');
+                        this.popupService.showError('Impossible d\'annuler cette opération.', 'Annulation Impossible');
                     }
                 },
                 error: (err) => {
                     console.error('Erreur lors de l\'annulation', err);
-                    alert('Erreur lors de l\'annulation de l\'opération');
+                    this.popupService.showError('Erreur lors de l\'annulation de l\'opération', 'Erreur d\'Annulation');
                 }
             });
         }

@@ -4,6 +4,7 @@ import { Subscription } from 'rxjs';
 import { ActivatedRoute } from '@angular/router';
 import { EcartSolde, EcartSoldeFilter } from '../../models/ecart-solde.model';
 import { EcartSoldeService } from '../../services/ecart-solde.service';
+import { PopupService } from '../../services/popup.service';
 import * as XLSX from 'xlsx';
 
 @Component({
@@ -61,7 +62,8 @@ export class EcartSoldeComponent implements OnInit, OnDestroy {
   constructor(
     private ecartSoldeService: EcartSoldeService,
     private fb: FormBuilder,
-    private route: ActivatedRoute
+    private route: ActivatedRoute,
+    private popupService: PopupService
   ) {
     this.filterForm = this.fb.group({
       agence: [''],
@@ -582,7 +584,7 @@ export class EcartSoldeComponent implements OnInit, OnDestroy {
 
   exportEcartSoldes(): void {
     if (this.filteredEcartSoldes.length === 0) {
-      alert('Aucune donnée à exporter');
+      this.popupService.showInfo('Aucune donnée à exporter', 'Aucune Donnée');
       return;
     }
 
@@ -771,7 +773,7 @@ export class EcartSoldeComponent implements OnInit, OnDestroy {
 
   updateMultipleStatuts(): void {
     if (this.selectedItems.size === 0) {
-      alert('Veuillez sélectionner au moins un écart de solde.');
+      this.popupService.showWarning('Veuillez sélectionner au moins un écart de solde.', 'Sélection Requise');
       return;
     }
 

@@ -4,6 +4,7 @@ import { Subject } from 'rxjs';
 import { takeUntil } from 'rxjs/operators';
 import { TrxSfService, TrxSfData, TrxSfStatistics, ValidationResult } from '../../services/trx-sf.service';
 import { AppStateService } from '../../services/app-state.service';
+import { PopupService } from '../../services/popup.service';
 
 @Component({
   selector: 'app-trx-sf',
@@ -65,7 +66,8 @@ export class TrxSfComponent implements OnInit, OnDestroy {
   constructor(
     private trxSfService: TrxSfService,
     private fb: FormBuilder,
-    private appState: AppStateService
+    private appState: AppStateService,
+    private popupService: PopupService
   ) {
     this.filterForm = this.fb.group({
       agence: [''],
@@ -591,7 +593,7 @@ export class TrxSfComponent implements OnInit, OnDestroy {
 
   updateMultipleStatuts(): void {
     if (this.selectedItems.size === 0) {
-      alert('Veuillez sélectionner au moins une transaction.');
+      this.popupService.showWarning('Veuillez sélectionner au moins une transaction.', 'Sélection Requise');
       return;
     }
 
@@ -613,7 +615,7 @@ export class TrxSfComponent implements OnInit, OnDestroy {
       .catch(error => {
         console.error('Erreur lors de la mise à jour multiple:', error);
         this.isUpdatingMultipleStatuts = false;
-        alert('Erreur lors de la mise à jour des statuts.');
+        this.popupService.showError('Erreur lors de la mise à jour des statuts.', 'Erreur de Mise à Jour');
       });
   }
 
@@ -632,18 +634,22 @@ export class TrxSfComponent implements OnInit, OnDestroy {
         error: (error) => {
           console.error('Erreur lors de la recherche des doublons:', error);
           this.isLoadingDuplicates = false;
-          alert('Erreur lors de la recherche des doublons.');
+          this.popupService.showError('Erreur lors de la recherche des doublons.', 'Erreur de Recherche');
         }
       });
   }
 
-  removeDuplicates(): void {
+  async removeDuplicates(): Promise<void> {
     if (this.duplicates.length === 0) {
-      alert('Aucun doublon à supprimer.');
+      this.popupService.showInfo('Aucun doublon à supprimer.', 'Aucun Doublon');
       return;
     }
 
-    if (!confirm(`Êtes-vous sûr de vouloir supprimer ${this.duplicates.length} doublon(s) ?`)) {
+    const confirmed = await this.popupService.showConfirm(
+      `Êtes-vous sûr de vouloir supprimer ${this.duplicates.length} doublon(s) ?`,
+      'Confirmation de Suppression'
+    );
+    if (!confirmed) {
       return;
     }
 
@@ -656,13 +662,13 @@ export class TrxSfComponent implements OnInit, OnDestroy {
           this.isRemovingDuplicates = false;
           this.duplicates = [];
           console.log(`✅ ${response.removedCount} doublon(s) supprimé(s)`);
-          alert(`${response.removedCount} doublon(s) supprimé(s) avec succès.`);
+          this.popupService.showSuccess(`${response.removedCount} doublon(s) supprimé(s) avec succès.`, 'Suppression Réussie');
           this.loadTrxSfData(); // Recharger les données
         },
         error: (error) => {
           console.error('Erreur lors de la suppression des doublons:', error);
           this.isRemovingDuplicates = false;
-          alert('Erreur lors de la suppression des doublons.');
+          this.popupService.showError('Erreur lors de la suppression des doublons.', 'Erreur de Suppression');
         }
       });
   }
@@ -716,7 +722,7 @@ export class TrxSfComponent implements OnInit, OnDestroy {
 
   private traiterFichierFrais(file: File): void {
     if (this.filteredTrxSfData.length === 0) {
-      alert('❌ Aucune transaction TRX SF chargée.');
+      this.popupService.showError('❌ Aucune transaction TRX SF chargée.', 'Aucune Donnée');
       return;
     }
 
@@ -764,7 +770,7 @@ export class TrxSfComponent implements OnInit, OnDestroy {
 
           } else if (file.name.toLowerCase().endsWith('.xlsx') || file.name.toLowerCase().endsWith('.xls')) {
             // Pour les fichiers Excel, on doit utiliser une bibliothèque comme SheetJS
-            alert('❌ Les fichiers Excel ne sont pas encore supportés. Veuillez utiliser un fichier CSV avec des séparateurs point-virgule (;)');
+            this.popupService.showError('❌ Les fichiers Excel ne sont pas encore supportés. Veuillez utiliser un fichier CSV avec des séparateurs point-virgule (;)', 'Format Non Supporté');
             this.isVerifyingFrais = false;
             return;
           }
@@ -774,13 +780,13 @@ export class TrxSfComponent implements OnInit, OnDestroy {
 
         } catch (error) {
           console.error('❌ Erreur lors du parsing du fichier:', error);
-          alert(`❌ Erreur lors du traitement du fichier:\n${error}`);
+          this.popupService.showError(`❌ Erreur lors du traitement du fichier:\n${error}`, 'Erreur de Traitement');
           this.isVerifyingFrais = false;
         }
       };
 
       reader.onerror = () => {
-        alert('❌ Erreur lors de la lecture du fichier');
+        this.popupService.showError('❌ Erreur lors de la lecture du fichier', 'Erreur de Lecture');
         this.isVerifyingFrais = false;
       };
 
@@ -788,7 +794,7 @@ export class TrxSfComponent implements OnInit, OnDestroy {
 
     } catch (error) {
       console.error('❌ Erreur lors du traitement du fichier:', error);
-      alert(`❌ Erreur lors du traitement du fichier: ${error}`);
+      this.popupService.showError(`❌ Erreur lors du traitement du fichier: ${error}`, 'Erreur de Traitement');
       this.isVerifyingFrais = false;
     }
   }
@@ -901,7 +907,7 @@ export class TrxSfComponent implements OnInit, OnDestroy {
           }
         }
 
-        alert(rapport);
+        this.popupService.showInfo(rapport, 'Rapport de Vérification');
 
         // Log complet dans la console
         console.log('📊 Rapport complet:', {
@@ -924,7 +930,7 @@ export class TrxSfComponent implements OnInit, OnDestroy {
 
     } catch (error) {
       console.error('❌ Erreur lors de la vérification:', error);
-      alert(`❌ Erreur lors de la vérification: ${error}`);
+      this.popupService.showError(`❌ Erreur lors de la vérification: ${error}`, 'Erreur de Vérification');
       this.isVerifyingFrais = false;
     }
   }
