@@ -36,6 +36,10 @@
     <p>Glissez-déposez vos fichiers (CSV, XLS, XLSX) ici ou</p>
     <input type="file" multiple accept=".csv,.xls,.xlsx,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" (change)="onFileSelected($event)" id="fileInput" hidden />
     <button type="button" (click)="triggerFileInput()" [disabled]="isProcessing">Sélectionner des fichiers (CSV, XLS, XLSX)</button>
+    <div class="upload-info">
+      <p><small>💡 Optimisé pour fichiers jusqu'à 1M lignes (2GB max)</small></p>
+      <p><small>⚡ Traitement par chunks pour performance maximale</small></p>
+    </div>
     <div *ngIf="errorMsg.upload" class="error-msg">{{ errorMsg.upload }}</div>
   </div>
   <div *ngIf="successMsg.upload" class="success-msg" [innerHTML]="successMsg.upload"></div>
@@ -533,6 +537,83 @@
      </div>
      
      <div *ngIf="showSections.filter" class="section-content">
+    <!-- Filtres multiples -->
+    <div class="multiple-filters-container">
+      <div class="filters-header">
+        <h5>Filtres multiples</h5>
+        <button type="button" class="btn btn-sm btn-success" (click)="addNewFilter()">
+          <i class="fas fa-plus"></i> Ajouter un filtre
+        </button>
+      </div>
+
+      <!-- Liste des filtres existants -->
+      <div class="filter-list" *ngIf="multipleFilters.length > 0">
+        <div class="filter-item" *ngFor="let filter of multipleFilters; trackBy: trackByFilterId">
+          <div class="filter-header">
+            <div class="filter-title">
+              <i class="fas fa-filter"></i>
+              Filtre {{ filter.id.replace('filter_', '') }}
+            </div>
+            <div class="filter-controls">
+              <label class="filter-toggle">
+                <input type="checkbox" [(ngModel)]="filter.enabled">
+                Actif
+              </label>
+              <button type="button" class="btn btn-sm btn-danger" (click)="removeFilter(filter.id)">
+                <i class="fas fa-trash"></i>
+              </button>
+            </div>
+          </div>
+
+          <div class="filter-content" *ngIf="filter.enabled">
+            <div class="filter-group">
+              <label>Colonne :</label>
+              <select [(ngModel)]="filter.column" (change)="onMultipleFilterColumnChange(filter)">
+                <option value="">-- Choisir une colonne --</option>
+                <option *ngFor="let col of allColumns" [value]="col">{{ col }}</option>
+              </select>
+            </div>
+
+            <div class="filter-group" *ngIf="filter.column">
+              <label>Valeurs à garder :</label>
+              <mat-form-field appearance="fill" class="filter-select">
+                <mat-label>Sélectionner des valeurs</mat-label>
+                <mat-select [(ngModel)]="filter.selectedValues" multiple>
+                  <mat-option value="__TOUS__" (click)="selectAllMultipleFilterValues(filter)">
+                    <strong>📋 Tous</strong>
+                  </mat-option>
+                  <mat-option *ngFor="let val of filter.filteredFilterValues" [value]="val">
+                    {{ val || '(vide)' }}
+                  </mat-option>
+                </mat-select>
+              </mat-form-field>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Actions globales -->
+      <div class="filter-actions" *ngIf="multipleFilters.length > 0">
+        <button (click)="applyMultipleFilters()" class="apply-btn">
+          <i class="fas fa-check"></i> Appliquer tous les filtres
+        </button>
+        <button (click)="resetAllFilters()" class="reset-btn">
+          <i class="fas fa-undo"></i> Réinitialiser tous les filtres
+        </button>
+      </div>
+
+      <!-- Message d'information -->
+      <div class="filter-info" *ngIf="multipleFilters.length === 0">
+        <div class="info-box">
+          <i class="fas fa-info-circle"></i>
+          <p>Aucun filtre configuré. Cliquez sur "Ajouter un filtre" pour commencer.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Ancien système de filtre unique (maintenu pour compatibilité) -->
+    <div class="legacy-filter" style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #ddd;">
+      <h6>Filtre unique (ancien système)</h6>
     <div class="filter-controls">
       <div class="filter-group">
         <label>Colonne :</label>
@@ -563,6 +644,8 @@
         <button (click)="resetFilter()" [disabled]="!selectedFilterColumn && !selectedFilterValues.length" class="reset-btn">Réinitialiser</button>
       </div>
     </div>
+    </div>
+
          <div *ngIf="successMsg.filter" class="success-msg">{{ successMsg.filter }}</div>
      <div *ngIf="errorMsg.filter" class="error-msg">{{ errorMsg.filter }}</div>
    </div>
@@ -583,14 +666,62 @@
     <div class="filter-controls">
       <div class="filter-group">
         <label>Colonnes à concaténer :</label>
-        <mat-form-field appearance="fill" class="filter-select">
-          <mat-label>Sélectionner des colonnes</mat-label>
-          <mat-select [(ngModel)]="concatCols" multiple>
-            <mat-option *ngFor="let col of columns" [value]="col">
-              {{ col }}
-            </mat-option>
-          </mat-select>
-        </mat-form-field>
+                 <div class="concat-controls">
+           <button type="button" (click)="toggleConcatOrderMode()" class="order-mode-btn" [class.active]="concatOrderMode">
+             ↕ {{ concatOrderMode ? 'Mode ordre activé' : 'Activer mode ordre' }}
+           </button>
+         </div>
+        
+        <!-- Mode sélection simple -->
+        <div *ngIf="!concatOrderMode">
+          <mat-form-field appearance="fill" class="filter-select">
+            <mat-label>Sélectionner des colonnes</mat-label>
+            <mat-select [(ngModel)]="concatCols" multiple>
+              <mat-option *ngFor="let col of columns" [value]="col">
+                {{ col }}
+              </mat-option>
+            </mat-select>
+          </mat-form-field>
+        </div>
+
+        <!-- Mode ordre personnalisé -->
+        <div *ngIf="concatOrderMode" class="concat-order-mode">
+          <div class="available-columns">
+            <label>Colonnes disponibles :</label>
+                         <div class="column-list">
+               <div *ngFor="let col of getAvailableColumnsForConcat()" class="column-item" (click)="addConcatColumn(col)">
+                 + {{ col }}
+               </div>
+             </div>
+          </div>
+          
+                     <div class="selected-columns">
+             <label>Ordre de concaténation :</label>
+             <div class="column-list">
+               <div *ngFor="let col of concatCols; let i = index" class="column-item selected">
+                 <div class="column-controls">
+                   <button type="button" (click)="moveConcatColumnUp(i)" [disabled]="i === 0" class="move-btn up" title="Déplacer vers le haut">
+                     ↑
+                   </button>
+                   <button type="button" (click)="moveConcatColumnDown(i)" [disabled]="i === concatCols.length - 1" class="move-btn down" title="Déplacer vers le bas">
+                     ↓
+                   </button>
+                   <button type="button" (click)="removeConcatColumn(i)" class="remove-btn" title="Supprimer">
+                     ✕
+                   </button>
+                 </div>
+                 <span class="column-name">{{ col }}</span>
+                 <div class="column-order-dropdown">
+                   <select [value]="i + 1" (change)="onConcatColumnOrderChange($event, i)" class="order-select">
+                     <option *ngFor="let pos of getConcatColumnOrderOptions()" [value]="pos">
+                       Position {{ pos }}
+                     </option>
+                   </select>
+                 </div>
+               </div>
+             </div>
+           </div>
+        </div>
       </div>
       <div class="filter-group">
         <label>Nom de la nouvelle colonne :</label>
@@ -699,6 +830,123 @@
      <div *ngIf="errorMsg.dedup" class="error-msg">{{ errorMsg.dedup }}</div>
    </div>
    </div>
+     <div *ngIf="columns.length > 0 && combinedRows.length > 0" class="export-by-date-section">
+     <div class="section-header">
+       <h4>
+         <i class="fas fa-calendar-alt"></i> Export par date
+         <button type="button" class="btn btn-sm btn-outline-info" (click)="toggleSection('exportByDate')">
+           <i class="fas fa-eye" *ngIf="!showSections.exportByDate"></i>
+           <i class="fas fa-eye-slash" *ngIf="showSections.exportByDate"></i>
+           {{ showSections.exportByDate ? 'Masquer' : 'Afficher' }}
+         </button>
+       </h4>
+     </div>
+     
+     <div *ngIf="showSections.exportByDate" class="section-content">
+    <div class="export-date-controls">
+      <div class="filter-group">
+        <label>Colonne de date :</label>
+        <mat-form-field appearance="fill" class="filter-select">
+          <mat-label>Sélectionner une colonne de date</mat-label>
+          <mat-select [(ngModel)]="exportDateCol" (selectionChange)="onExportDateColChange()">
+            <mat-option *ngFor="let col of columns" [value]="col">
+              {{ col }}
+            </mat-option>
+          </mat-select>
+        </mat-form-field>
+      </div>
+      
+      <div class="filter-group" *ngIf="exportDateCol">
+        <label>Période d'export :</label>
+        <div class="date-period-options">
+          <div class="period-option">
+            <label class="period-label">
+              <input type="radio" [(ngModel)]="exportDatePeriod" value="day" name="exportDatePeriod">
+              <span class="period-text">
+                <i class="fas fa-calendar-day"></i>
+                <strong>Par jour</strong>
+                <small>Export séparé pour chaque jour</small>
+              </span>
+            </label>
+          </div>
+          <div class="period-option">
+            <label class="period-label">
+              <input type="radio" [(ngModel)]="exportDatePeriod" value="week" name="exportDatePeriod">
+              <span class="period-text">
+                <i class="fas fa-calendar-week"></i>
+                <strong>Par semaine</strong>
+                <small>Export séparé pour chaque semaine</small>
+              </span>
+            </label>
+          </div>
+          <div class="period-option">
+            <label class="period-label">
+              <input type="radio" [(ngModel)]="exportDatePeriod" value="month" name="exportDatePeriod">
+              <span class="period-text">
+                <i class="fas fa-calendar"></i>
+                <strong>Par mois</strong>
+                <small>Export séparé pour chaque mois</small>
+              </span>
+            </label>
+          </div>
+        </div>
+      </div>
+      
+      <div class="filter-group" *ngIf="exportDateCol && exportDatePeriod">
+        <label>Format de fichier :</label>
+        <div class="format-options">
+          <label class="format-option">
+            <input type="radio" [(ngModel)]="exportDateFormat" value="csv" name="exportDateFormat">
+            <span>CSV</span>
+          </label>
+          <label class="format-option">
+            <input type="radio" [(ngModel)]="exportDateFormat" value="xls" name="exportDateFormat">
+            <span>XLS</span>
+          </label>
+          <label class="format-option">
+            <input type="radio" [(ngModel)]="exportDateFormat" value="xlsx" name="exportDateFormat">
+            <span>XLSX</span>
+          </label>
+        </div>
+      </div>
+      
+      <div class="filter-group" *ngIf="exportDateCol && exportDatePeriod">
+        <label>Préfixe des fichiers :</label>
+        <input type="text" [(ngModel)]="exportDatePrefix" placeholder="export" class="filter-input">
+        <small class="help-text">Le nom des fichiers sera : [préfixe]_[période]_[date].csv/xls/xlsx</small>
+      </div>
+      
+      <div class="filter-actions">
+        <button type="button" (click)="exportByDate()" 
+                [disabled]="!exportDateCol || !exportDatePeriod || !exportDateFormat" 
+                class="apply-btn">
+          <i class="fas fa-download"></i> Exporter par date
+        </button>
+        <button type="button" (click)="resetExportDate()" class="reset-btn">
+          <i class="fas fa-undo"></i> Réinitialiser
+        </button>
+      </div>
+    </div>
+    
+    <!-- Aperçu des périodes détectées -->
+    <div *ngIf="exportDateCol && exportDatePeriod && detectedPeriods.length > 0" class="detected-periods">
+      <h5><i class="fas fa-list"></i> Périodes détectées ({{ detectedPeriods.length }})</h5>
+      <div class="periods-list">
+        <div *ngFor="let period of detectedPeriods.slice(0, 10)" class="period-item">
+          <span class="period-label">{{ period.label }}</span>
+          <span class="period-count">{{ period.count }} lignes</span>
+        </div>
+        <div *ngIf="detectedPeriods.length > 10" class="period-more">
+          ... et {{ detectedPeriods.length - 10 }} autres périodes
+        </div>
+      </div>
+    </div>
+    
+    <div *ngIf="successMsg.exportDate" class="success-msg">{{ successMsg.exportDate }}</div>
+    <div *ngIf="errorMsg.exportDate" class="error-msg">{{ errorMsg.exportDate }}</div>
+   </div>
+   </div>
+
      <div *ngIf="columns.length > 0" class="format-section">
      <div class="section-header">
        <h4>
@@ -713,105 +961,6 @@
      
      <div *ngIf="showSections.format" class="section-content">
     <div class="format-options">
-      <!-- Option : Supprimer les espaces inutiles -->
-      <label>
-        <input type="checkbox" [(ngModel)]="formatOptions['trimSpaces']"> Supprimer les espaces inutiles
-      </label>
-      <div *ngIf="formatOptions['trimSpaces']" class="format-columns">
-        <label>Colonnes à traiter :</label>
-        <select multiple [(ngModel)]="formatSelections['trimSpaces']">
-          <option *ngFor="let col of columns" [value]="col">{{ col }}</option>
-        </select>
-        <button type="button" disabled>Appliquer</button>
-      </div>
-      <!-- Option : Tout en minuscules -->
-      <label>
-        <input type="checkbox" [(ngModel)]="formatOptions['toLowerCase']"> Tout en minuscules
-      </label>
-      <div *ngIf="formatOptions['toLowerCase']" class="format-columns">
-        <label>Colonnes à traiter :</label>
-        <select multiple [(ngModel)]="formatSelections['toLowerCase']">
-          <option *ngFor="let col of columns" [value]="col">{{ col }}</option>
-        </select>
-        <button type="button" disabled>Appliquer</button>
-      </div>
-      <!-- Option : Tout en MAJUSCULES -->
-      <label>
-        <input type="checkbox" [(ngModel)]="formatOptions['toUpperCase']"> Tout en MAJUSCULES
-      </label>
-      <div *ngIf="formatOptions['toUpperCase']" class="format-columns">
-        <label>Colonnes à traiter :</label>
-        <select multiple [(ngModel)]="formatSelections['toUpperCase']">
-          <option *ngFor="let col of columns" [value]="col">{{ col }}</option>
-        </select>
-        <button type="button" disabled>Appliquer</button>
-      </div>
-      <!-- Option : Supprimer les tirets et virgules -->
-      <label>
-        <input type="checkbox" [(ngModel)]="formatOptions['removeDashesAndCommas']"> Supprimer les tirets et virgules
-      </label>
-      <div *ngIf="formatOptions['removeDashesAndCommas']" class="format-columns">
-        <label>Colonnes à traiter :</label>
-        <select multiple [(ngModel)]="formatSelections['removeDashesAndCommas']">
-          <option *ngFor="let col of columns" [value]="col">{{ col }}</option>
-        </select>
-        <button type="button" disabled>Appliquer</button>
-      </div>
-      <!-- Option : Supprimer les séparateurs (virgules) -->
-      <label>
-        <input type="checkbox" [(ngModel)]="formatOptions['removeSeparators']"> Supprimer les séparateurs (virgules)
-      </label>
-      <div *ngIf="formatOptions['removeSeparators']" class="format-columns">
-        <label>Colonnes à traiter :</label>
-        <select multiple [(ngModel)]="formatSelections['removeSeparators']">
-          <option *ngFor="let col of columns" [value]="col">{{ col }}</option>
-        </select>
-        <button type="button" disabled>Appliquer</button>
-      </div>
-      <!-- Option : Remplacer les points par des virgules -->
-      <label>
-        <input type="checkbox" [(ngModel)]="formatOptions['dotToComma']"> Remplacer les points par des virgules
-      </label>
-      <div *ngIf="formatOptions['dotToComma']" class="format-columns">
-        <label>Colonnes à traiter :</label>
-        <select multiple [(ngModel)]="formatSelections['dotToComma']">
-          <option *ngFor="let col of columns" [value]="col">{{ col }}</option>
-        </select>
-        <button type="button" disabled>Appliquer</button>
-      </div>
-      <!-- Option : Convertir les dates (format ISO) -->
-      <label>
-        <input type="checkbox" [(ngModel)]="formatOptions['normalizeDates']"> Convertir les dates (format ISO)
-      </label>
-      <div *ngIf="formatOptions['normalizeDates']" class="format-columns">
-        <label>Colonnes à traiter :</label>
-        <select multiple [(ngModel)]="formatSelections['normalizeDates']">
-          <option *ngFor="let col of columns" [value]="col">{{ col }}</option>
-        </select>
-        <button type="button" disabled>Appliquer</button>
-      </div>
-      <!-- Option : Convertir les montants (nombres) -->
-      <label>
-        <input type="checkbox" [(ngModel)]="formatOptions['normalizeNumbers']"> Convertir les montants (nombres)
-      </label>
-      <div *ngIf="formatOptions['normalizeNumbers']" class="format-columns">
-        <label>Colonnes à traiter :</label>
-        <select multiple [(ngModel)]="formatSelections['normalizeNumbers']">
-          <option *ngFor="let col of columns" [value]="col">{{ col }}</option>
-        </select>
-        <button type="button" disabled>Appliquer</button>
-      </div>
-      <!-- Option : Convertir en valeur absolue -->
-      <label>
-        <input type="checkbox" [(ngModel)]="formatOptions['absoluteValue']"> Convertir en valeur absolue
-      </label>
-      <div *ngIf="formatOptions['absoluteValue']" class="format-columns">
-        <label>Colonnes à traiter :</label>
-        <select multiple [(ngModel)]="formatSelections['absoluteValue']">
-          <option *ngFor="let col of columns" [value]="col">{{ col }}</option>
-        </select>
-        <button type="button" (click)="applyAbsoluteValueFormatting()" [disabled]="!formatSelections['absoluteValue'].length">Appliquer</button>
-      </div>
       <!-- Option : Supprimer des caractères -->
       <label>
         <input type="checkbox" [(ngModel)]="formatOptions['removeCharacters']"> Supprimer des caractères
@@ -842,356 +991,119 @@
         <button type="button" (click)="applyRemoveCharactersFormatting()" [disabled]="!formatSelections['removeCharacters'].length">Appliquer</button>
       </div>
       
-      <!-- Option : Supprimer des caractères spécifiques -->
+      <!-- Option : Supprimer des nombres -->
       <label>
-        <input type="checkbox" [(ngModel)]="formatOptions['removeSpecificCharacters']"> Supprimer des chaînes de caractères
+        <input type="checkbox" [(ngModel)]="formatOptions['removeNumbers']"> Supprimer des nombres
       </label>
-      <div *ngIf="formatOptions['removeSpecificCharacters']" class="format-columns">
+      <div *ngIf="formatOptions['removeNumbers']" class="format-columns">
         <label>Colonnes à traiter :</label>
-        <select multiple [(ngModel)]="formatSelections['removeSpecificCharacters']">
+        <select multiple [(ngModel)]="formatSelections['removeNumbers']">
           <option *ngFor="let col of columns" [value]="col">{{ col }}</option>
         </select>
-        <div class="remove-specific-char-options">
-          <div class="option-group">
-            <label>Chaîne à supprimer :</label>
-            <input type="text" [(ngModel)]="specificCharactersToRemove" 
-                   placeholder="Ex: _CM ou abc123" 
-                   style="width: 200px;"
-                   title="Tapez la chaîne de caractères que vous voulez supprimer">
-          </div>
-          <div class="option-group">
-            <label>
-              <input type="checkbox" [(ngModel)]="removeSpecificCharactersCaseSensitive">
-              Sensible à la casse
-            </label>
-          </div>
-          
-          <!-- Filtrage par valeur exacte -->
-          <div class="option-group">
-            <label>
-              <input type="checkbox" [(ngModel)]="filterByExactValue">
-              🔍 Appliquer seulement sur les lignes avec une valeur exacte
-            </label>
-          </div>
-          
-          <div *ngIf="filterByExactValue" class="exact-value-filter">
-            <div class="filter-row">
-              <label>Colonne à vérifier :</label>
-              <select [(ngModel)]="exactValueColumn" style="width: 200px;">
-                <option value="">-- Choisir une colonne --</option>
-                <option *ngFor="let col of allColumns" [value]="col">{{ col }}</option>
-              </select>
-            </div>
-            <div class="filter-row">
-              <label>Valeur exacte :</label>
-              <input type="text" [(ngModel)]="exactValueToFilter" 
-                     placeholder="Ex: _CM" 
-                     style="width: 200px;"
-                     title="Tapez la valeur exacte que doit contenir la colonne">
-            </div>
-            <div class="help-text">
-              <small>
-                💡 Exemple : Si vous tapez "_CM" et sélectionnez la colonne "Code", 
-                <br>la suppression se fera seulement sur les lignes où "Code" = "_CM"
-              </small>
-            </div>
-          </div>
-          
-                                            <div class="option-group">
+        <div class="remove-numbers-help">
                <small class="help-text">
-                 💡 Suppression de chaînes spécifiques autorisées : 
-                 <br>• Seules les chaînes suivantes sont autorisées : _CM, _ML, _GN, _CI, _BF, _KE, _SN, _KN, _BJ, _GB
-                 <br>• Exemple : "_CM" supprimera "_CM" dans "ID_CM_123" → "ID_123"
-                 <br>• Exemple : "_ML" supprimera "_ML" dans "REF_ML_456" → "REF_456"
-                 <br>⚠️ Note : Les caractères individuels (C, M, P, etc.) ne sont pas autorisés
+            💡 Cette option va supprimer tous les chiffres (0-9) des valeurs sélectionnées.
+            <br>Exemple : "ABC123DEF456" → "ABCDEF"
+            <br>Exemple : "Téléphone: 0123456789" → "Téléphone: "
                </small>
              </div>
-        </div>
-        <button type="button" (click)="applyRemoveSpecificCharactersFormatting()" 
-                [disabled]="!formatSelections['removeSpecificCharacters'].length || !specificCharactersToRemove.trim()">
-          Appliquer
-        </button>
+        <button type="button" (click)="applyRemoveNumbersFormatting()" [disabled]="!formatSelections['removeNumbers'].length">Appliquer</button>
       </div>
       
-      <!-- Option : Nettoyer les montants -->
+      <!-- Option : Supprimer indicatif -->
       <label>
-        <input type="checkbox" [(ngModel)]="formatOptions['cleanAmounts']"> Nettoyer les montants (enlever espaces et ,00)
+        <input type="checkbox" [(ngModel)]="formatOptions['removeIndicatif']"> Supprimer indicatif
       </label>
-      <div *ngIf="formatOptions['cleanAmounts']" class="format-columns">
+      <div *ngIf="formatOptions['removeIndicatif']" class="format-columns">
         <label>Colonnes à traiter :</label>
-        <select multiple [(ngModel)]="formatSelections['cleanAmounts']">
+        <select multiple [(ngModel)]="formatSelections['removeIndicatif']">
           <option *ngFor="let col of columns" [value]="col">{{ col }}</option>
         </select>
-        <div class="clean-amounts-help">
-          <small class="help-text">
-            💡 Cette option va :
-            <br>• Enlever tous les espaces (ex: "100 000,00" → "100000,00")
-            <br>• Enlever ",00" à la fin (ex: "100000,00" → "100000")
-            <br>• Enlever ",0" à la fin (ex: "100000,0" → "100000")
-            <br>• Convertir les nombres entiers (ex: 100000.0 → 100000)
-          </small>
-        </div>
-        <button type="button" (click)="applyCleanAmountsFormatting()" 
-                [disabled]="!formatSelections['cleanAmounts'].length">
-          Appliquer
-        </button>
-      </div>
-      
-      <!-- Option : Insérer des caractères -->
-      <label>
-        <input type="checkbox" [(ngModel)]="formatOptions['insertCharacters']"> Insérer des caractères
-      </label>
-      <div *ngIf="formatOptions['insertCharacters']" class="format-columns">
-        <label>Colonnes à traiter :</label>
-        <select multiple [(ngModel)]="formatSelections['insertCharacters']">
-          <option *ngFor="let col of columns" [value]="col">{{ col }}</option>
-        </select>
-        <div class="insert-char-options">
+        <div class="remove-indicatif-options">
           <div class="option-group">
-            <label>Caractères à insérer :</label>
-            <input type="text" [(ngModel)]="charactersToInsert" 
-                   placeholder="Ex: _CM ou 123" 
-                   style="width: 200px;"
-                   title="Tapez les caractères que vous voulez insérer">
-          </div>
-          <div class="option-group">
-            <label>Position :</label>
-            <select [(ngModel)]="insertPosition">
-              <option value="start">Au début</option>
-              <option value="end">À la fin</option>
-              <option value="specific">Position spécifique</option>
+            <label>Type d'indicatif :</label>
+            <select [(ngModel)]="indicatifType">
+              <option value="international">International (+XX)</option>
+              <option value="national">National français (0X)</option>
+              <option value="custom">Personnalisé</option>
             </select>
           </div>
-          <div class="option-group" *ngIf="insertPosition === 'specific'">
-            <label>Position (1-based) :</label>
-            <input type="number" [(ngModel)]="insertSpecificPosition" min="1" style="width: 80px;">
+          <div class="option-group" *ngIf="indicatifType === 'custom'">
+            <label>Indicatif personnalisé :</label>
+            <input type="text" [(ngModel)]="customIndicatif" placeholder="+33" style="width: 100px;">
+          </div>
+          </div>
+        <div class="remove-indicatif-help">
+          <small class="help-text">
+            💡 Cette option va supprimer les indicatifs téléphoniques selon le type choisi.
+            <br><strong>International :</strong> "+33 1 23 45 67 89" → "1 23 45 67 89"
+            <br><strong>National français :</strong> "01 23 45 67 89" → "1 23 45 67 89"
+            <br><strong>Personnalisé :</strong> Supprime l'indicatif spécifié
+          </small>
+        </div>
+                <button type="button" (click)="applyRemoveIndicatifFormatting()" [disabled]="!formatSelections['removeIndicatif'].length">Appliquer</button>
+      </div>
+
+      <!-- Option : Supprimer décimales -->
+      <label>
+        <input type="checkbox" [(ngModel)]="formatOptions['removeDecimals']"> Supprimer décimales
+      </label>
+      <div *ngIf="formatOptions['removeDecimals']" class="format-columns">
+        <label>Colonnes à traiter :</label>
+        <select multiple [(ngModel)]="formatSelections['removeDecimals']">
+          <option *ngFor="let col of columns" [value]="col">{{ col }}</option>
+        </select>
+        <div class="remove-decimals-options">
+          <div class="option-group">
+            <label>Séparateur décimal :</label>
+            <select [(ngModel)]="decimalSeparator">
+              <option value=",">Virgule (3000,00)</option>
+              <option value=".">Point (3000.00)</option>
+            </select>
           </div>
           <div class="option-group">
-            <small class="help-text">
-              💡 Exemples d'insertion :
-              <br>• Au début : "ABC" + "123" = "ABC123"
-              <br>• À la fin : "123" + "XYZ" = "123XYZ"
-              <br>• Position 2 : "123" → "1ABC23" (position 2)
-              <br>• Position 1 : "123" → "ABC123" (position 1)
-              <br><strong>🛡️ Protection anti-doublons :</strong> Les caractères ne sont ajoutés qu'une seule fois
-            </small>
+            <label>
+              <input type="checkbox" [(ngModel)]="keepTrailingZeros"> Garder les valeurs non nulles
+            </label>
+            <small class="help-text">Si activé, ne supprime que les décimales qui sont des zéros</small>
           </div>
         </div>
-        <button type="button" (click)="applyInsertCharactersFormatting()" 
-                [disabled]="!formatSelections['insertCharacters'].length || !charactersToInsert.trim()">
-          Appliquer
-        </button>
-      </div>
-      
-      <!-- Option : Formater en nombre -->
-      <label>
-        <input type="checkbox" [(ngModel)]="formatOptions['formatToNumber']"> Formater en nombre
-      </label>
-      <div *ngIf="formatOptions['formatToNumber']" class="format-columns">
-        <label>Colonnes à traiter :</label>
-        <select multiple [(ngModel)]="formatSelections['formatToNumber']">
-          <option *ngFor="let col of columns" [value]="col">{{ col }}</option>
-        </select>
-        <div class="format-number-help">
+        <div class="remove-decimals-help">
           <small class="help-text">
-            💡 Cette option va :
-            <br>• Nettoyer les valeurs (supprimer espaces, caractères spéciaux)
-            <br>• Remplacer les virgules par des points (ex: "1,234" → "1.234")
-            <br>• Convertir en nombre JavaScript (ex: "1.234" → 1234)
-            <br>• Garder la valeur originale si la conversion échoue
-            <br>• Exemples : "1 234,56" → 1234.56, "abc123" → 123, "text" → "text" (inchangé)
+            💡 Cette option va supprimer la partie décimale des montants.
+            <br><strong>Avec virgule :</strong> "3000,00" → "3000" | "1500,50" → "1500" (si garder valeurs non nulles = false)
+            <br><strong>Avec point :</strong> "3000.00" → "3000" | "1500.50" → "1500" (si garder valeurs non nulles = false)
+            <br><strong>Option "Garder valeurs non nulles" :</strong> "1500,50" reste "1500,50" | "3000,00" → "3000"
           </small>
         </div>
-        <button type="button" (click)="applyNumberFormatting()" 
-                [disabled]="!formatSelections['formatToNumber'].length">
-          Appliquer
-        </button>
+        <button type="button" (click)="applyRemoveDecimalsFormatting()" [disabled]="!formatSelections['removeDecimals'].length">Appliquer</button>
       </div>
-      
-      <!-- Option : Normaliser les en-têtes -->
+
+      <!-- Option : Garder N derniers digits -->
       <label>
-        <input type="checkbox" [(ngModel)]="formatOptions['normalizeHeaders']"> Normaliser les en-têtes
+        <input type="checkbox" [(ngModel)]="formatOptions['keepLastDigits']"> Garder N derniers digits
       </label>
-      <div *ngIf="formatOptions['normalizeHeaders']" class="format-columns">
+      <div *ngIf="formatOptions['keepLastDigits']" class="format-columns">
         <label>Colonnes à traiter :</label>
-        <select multiple [(ngModel)]="formatSelections['normalizeHeaders']">
+        <select multiple [(ngModel)]="formatSelections['keepLastDigits']">
           <option *ngFor="let col of columns" [value]="col">{{ col }}</option>
         </select>
-        <div class="format-help">
+        <div class="keep-digits-options">
+          <div class="option-group">
+            <label>Nombre de digits à garder :</label>
+            <input type="number" [(ngModel)]="keepLastDigitsCount" min="1" max="20" placeholder="3">
+          </div>
           <small class="help-text">
-            💡 Normalise les espaces et met la première lettre de chaque mot en majuscule
-            <br>Exemple : "  code proprietaire  " → "Code Proprietaire"
+            <strong>Exemple :</strong> "774478320" avec 3 digits → "320"
+            <br><strong>Autres exemples :</strong> "1234567890" avec 4 digits → "7890"
+            <br><strong>Note :</strong> Seuls les chiffres sont extraits, les autres caractères sont ignorés
           </small>
         </div>
-        <button type="button" (click)="applyNormalizeHeadersFormatting()" 
-                [disabled]="!formatSelections['normalizeHeaders'].length">
-          Appliquer
-        </button>
-      </div>
-      
-      <!-- Option : Corriger les caractères spéciaux -->
-      <label>
-        <input type="checkbox" [(ngModel)]="formatOptions['fixSpecialCharacters']"> Corriger les caractères spéciaux
-      </label>
-      <div *ngIf="formatOptions['fixSpecialCharacters']" class="format-columns">
-        <label>Colonnes à traiter :</label>
-        <select multiple [(ngModel)]="formatSelections['fixSpecialCharacters']">
-          <option *ngFor="let col of columns" [value]="col">{{ col }}</option>
-        </select>
-        <div class="format-help">
-          <small class="help-text">
-            💡 Corrige les caractères spéciaux français corrompus
-            <br>Exemples : "tlphone" → "téléphone", "Numro" → "Numéro"
-          </small>
-        </div>
-        <button type="button" (click)="applyFixSpecialCharactersFormatting()" 
-                [disabled]="!formatSelections['fixSpecialCharacters'].length">
-          Appliquer
-        </button>
-      </div>
-      
-      <!-- Option : Supprimer les accents -->
-      <label>
-        <input type="checkbox" [(ngModel)]="formatOptions['removeAccents']"> Supprimer les accents
-      </label>
-      <div *ngIf="formatOptions['removeAccents']" class="format-columns">
-        <label>Colonnes à traiter :</label>
-        <select multiple [(ngModel)]="formatSelections['removeAccents']">
-          <option *ngFor="let col of columns" [value]="col">{{ col }}</option>
-        </select>
-        <div class="format-help">
-          <small class="help-text">
-            💡 Supprime tous les accents des valeurs
-            <br>Exemple : "Téléphone" → "Telephone", "Numéro" → "Numero"
-          </small>
-        </div>
-        <button type="button" (click)="applyRemoveAccentsFormatting()" 
-                [disabled]="!formatSelections['removeAccents'].length">
-          Appliquer
-        </button>
-      </div>
-      
-      <!-- Option : Standardiser les en-têtes -->
-      <label>
-        <input type="checkbox" [(ngModel)]="formatOptions['standardizeHeaders']"> Standardiser les en-têtes
-      </label>
-      <div *ngIf="formatOptions['standardizeHeaders']" class="format-columns">
-        <label>Colonnes à traiter :</label>
-        <select multiple [(ngModel)]="formatSelections['standardizeHeaders']">
-          <option *ngFor="let col of columns" [value]="col">{{ col }}</option>
-        </select>
-        <div class="format-help">
-          <small class="help-text">
-            💡 Convertit en format standard (underscores, alphanumérique)
-            <br>Exemple : "Code propriétaire" → "Code_proprietaire"
-          </small>
-        </div>
-        <button type="button" (click)="applyStandardizeHeadersFormatting()" 
-                [disabled]="!formatSelections['standardizeHeaders'].length">
-          Appliquer
-        </button>
+        <button type="button" (click)="applyKeepLastDigitsFormatting()" [disabled]="!formatSelections['keepLastDigits'].length || keepLastDigitsCount <= 0">Appliquer</button>
       </div>
     </div>
-
-    <!-- Traitement des caractères spéciaux des en-têtes -->
-    <div class="format-section">
-      <h4>🔧 Traitement des en-têtes de colonnes</h4>
-      <div class="format-options">
-        
-        <!-- Normalisation des en-têtes -->
-        <div class="format-option">
-          <input type="checkbox" [(ngModel)]="formatOptions['normalizeHeaders']"> Normaliser les en-têtes
-          <div *ngIf="formatOptions['normalizeHeaders']" class="format-description">
-            <small class="help-text">
-              💡 Normalise les espaces, met la première lettre de chaque mot en majuscule
-              <br>Exemple : "  code proprietaire  " → "Code Proprietaire"
-              <br>⚠️ <strong>Note :</strong> N'affecte que les en-têtes, pas les données
-            </small>
-          </div>
-        </div>
-
-        <!-- Correction des caractères spéciaux -->
-        <div class="format-option">
-          <input type="checkbox" [(ngModel)]="formatOptions['fixSpecialCharacters']"> Corriger les caractères spéciaux
-          <div *ngIf="formatOptions['fixSpecialCharacters']" class="format-description">
-            <small class="help-text">
-              💡 Corrige les caractères spéciaux français corrompus
-              <br>Exemples : "tlphone" → "téléphone", "Numro" → "Numéro", "Code proprietaire" → "Code propriétaire"
-              <br>⚠️ <strong>Note :</strong> N'affecte que les en-têtes, pas les données
-            </small>
-          </div>
-        </div>
-
-        <!-- Suppression des accents -->
-        <div class="format-option">
-          <input type="checkbox" [(ngModel)]="formatOptions['removeAccents']"> Supprimer les accents des en-têtes
-          <div *ngIf="formatOptions['removeAccents']" class="format-description">
-            <small class="help-text">
-              💡 Supprime tous les accents des noms de colonnes uniquement
-              <br>Exemple : "Téléphone" → "Telephone", "Numéro" → "Numero"
-              <br>⚠️ <strong>Note :</strong> N'affecte que les en-têtes, pas les données
-            </small>
-          </div>
-        </div>
-
-        <!-- Standardisation des en-têtes -->
-        <div class="format-option">
-          <input type="checkbox" [(ngModel)]="formatOptions['standardizeHeaders']"> Standardiser les en-têtes
-          <div *ngIf="formatOptions['standardizeHeaders']" class="format-description">
-            <small class="help-text">
-              💡 Convertit en format standard (underscores, alphanumérique)
-              <br>Exemple : "Code propriétaire" → "Code_proprietaire"
-              <br>⚠️ <strong>Note :</strong> N'affecte que les en-têtes, pas les données
-            </small>
-          </div>
-        </div>
-
-        <div class="format-info">
-          <div class="info-box">
-            <strong>📋 Traitement des en-têtes :</strong>
-            <ul>
-              <li><strong>Normalisation :</strong> Espaces propres + première lettre majuscule</li>
-              <li><strong>Correction caractères :</strong> Réparation des caractères français corrompus</li>
-              <li><strong>Suppression accents :</strong> Enlève tous les accents (é, è, à, ç, etc.)</li>
-              <li><strong>Standardisation :</strong> Format compatible base de données (underscores)</li>
-            </ul>
-            <div class="warning-box">
-              ⚠️ <strong>Attention :</strong> Le traitement des en-têtes modifie les noms de colonnes. 
-              Assurez-vous que vos données sont sauvegardées avant application.
-            </div>
-          </div>
-        </div>
-        
-        <!-- Bouton pour appliquer le formatage des en-têtes -->
-        <div class="format-actions">
-          <button type="button" 
-                  (click)="applyHeaderFormatting()" 
-                  [disabled]="!hasHeaderFormattingOption()"
-                  class="apply-header-formatting-btn">
-            🔧 Appliquer le formatage des en-têtes
-          </button>
-          <small class="help-text">
-            💡 Applique uniquement les formatages des en-têtes sélectionnés ci-dessus
-          </small>
-        </div>
-      </div>
-    </div>
-      
-      <!-- Bouton principal pour appliquer le formatage -->
-      <div class="format-actions">
-        <button type="button" 
-                (click)="applyFormatting()" 
-                [disabled]="!hasFormattingOption()"
-                class="apply-formatting-btn">
-          🔧 Appliquer le formatage
-        </button>
-        <small class="help-text">
-          💡 Ce bouton applique tous les formatages sélectionnés (données et en-têtes)
-        </small>
-      </div>
-    </div>
-         <div *ngIf="successMsg.format" class="success-msg">{{ successMsg.format }}</div>
-     <div *ngIf="errorMsg.format" class="error-msg">{{ errorMsg.format }}</div>
+    <div *ngIf="successMsg.format" class="success-msg">{{ successMsg.format }}</div>
+    <div *ngIf="errorMsg.format" class="error-msg">{{ errorMsg.format }}</div>
    </div>
    </div>
 

@@ -20,30 +20,11 @@ export class TraitementComponent implements OnInit, AfterViewInit {
   columns: string[] = [];
   dedupCols: string[] = [];
   formatOptions: any = {
-    trimSpaces: false,
-    toLowerCase: false,
-    toUpperCase: false,
-    normalizeDates: false,
-    normalizeNumbers: false,
-    amountColumns: [],
-    numberColumns: [],
-    dateColumns: [],
-    removeDashesAndCommas: false,
-    removeSeparators: false,
-    dotToComma: false,
-    absoluteValue: false,
     removeCharacters: false,
-    removeSpecificCharacters: false,
-    cleanAmounts: false,
-    insertCharacters: false,
-    // Nouvelles options pour le traitement des caractères spéciaux des en-têtes
-    normalizeHeaders: false,
-    fixSpecialCharacters: false,
-    removeAccents: false,
-    standardizeHeaders: false,
-    // Nouvelle option pour formater en nombre
-    formatToNumber: false,
-    numberFormatColumns: []
+    removeNumbers: false,
+    removeIndicatif: false,
+    removeDecimals: false,
+    keepLastDigits: false
   };
   extractCol: string = '';
   extractType: string = '';
@@ -70,6 +51,18 @@ export class TraitementComponent implements OnInit, AfterViewInit {
   filteredRows: any[] = [];
   filterApplied: boolean = false;
 
+  // --- FILTRES MULTIPLES ---
+  multipleFilters: Array<{
+    id: string;
+    column: string;
+    values: string[];
+    selectedValues: string[];
+    filterValues: string[];
+    filteredFilterValues: string[];
+    enabled: boolean;
+  }> = [];
+  nextFilterId: number = 1;
+
   // --- CONTRÔLES DE RECHERCHE POUR COHÉRENCE AVEC LES FILTRES ---
   filterValueSearchCtrl = new FormControl('');
   filteredFilterValues: string[] = [];
@@ -79,14 +72,34 @@ export class TraitementComponent implements OnInit, AfterViewInit {
   concatCols: string[] = [];
   concatNewCol: string = '';
   concatSeparator: string = ' ';
+  concatOrderMode: boolean = false;
 
   exportTypeSuffix: string = '';
   exportTypeDescription: string = '';
+
+  // --- EXPORT PAR DATE ---
+  exportDateCol: string = '';
+  exportDatePeriod: 'day' | 'week' | 'month' = 'day';
+  exportDateFormat: 'csv' | 'xls' | 'xlsx' = 'csv';
+  exportDatePrefix: string = 'export';
+  detectedPeriods: Array<{ label: string; count: number; key: string }> = [];
 
   // --- SUPPRESSION DE CARACTÈRES ---
   removeCharPosition: 'start' | 'end' | 'specific' = 'start';
   removeCharCount: number = 1;
   removeCharSpecificPosition: number = 1;
+
+  // --- SUPPRESSION D'INDICATIF ---
+  indicatifType: 'international' | 'national' | 'custom' = 'international';
+  customIndicatif: string = '+33';
+  indicatifLength: number = 2;
+
+  // --- GARDER N DERNIERS DIGITS ---
+  keepLastDigitsCount: number = 3;
+
+  // --- SUPPRESSION DE DÉCIMALES ---
+  decimalSeparator: ',' | '.' = ',';
+  keepTrailingZeros: boolean = false;
 
   // --- SUPPRESSION DE CARACTÈRES SPÉCIFIQUES ---
   specificCharactersToRemove: string = '';
@@ -152,24 +165,11 @@ export class TraitementComponent implements OnInit, AfterViewInit {
 
   // Sélection de colonnes par option de formatage
   formatSelections: { [key: string]: string[] } = {
-    trimSpaces: [],
-    toLowerCase: [],
-    toUpperCase: [],
-    normalizeDates: [],
-    normalizeNumbers: [],
-    removeDashesAndCommas: [],
-    removeSeparators: [],
-    dotToComma: [],
-    absoluteValue: [],
     removeCharacters: [],
-    removeSpecificCharacters: [],
-    cleanAmounts: [],
-    insertCharacters: [],
-    formatToNumber: [],
-    normalizeHeaders: [],
-    fixSpecialCharacters: [],
-    removeAccents: [],
-    standardizeHeaders: []
+    removeNumbers: [],
+    removeIndicatif: [],
+    removeDecimals: [],
+    keepLastDigits: []
   };
 
   constructor(
@@ -289,9 +289,16 @@ export class TraitementComponent implements OnInit, AfterViewInit {
       return;
     }
     
+    // Vérifier la taille totale des fichiers
+    const totalSize = this.selectedFiles.reduce((sum, file) => sum + file.size, 0);
+    const totalSizeMB = totalSize / (1024 * 1024);
+    const isLargeUpload = totalSizeMB > 100; // Plus de 100MB
+    
+    console.log(`📊 Upload détecté: ${totalSizeMB.toFixed(2)} MB (${isLargeUpload ? 'gros upload' : 'upload normal'})`);
+
     this.isProcessing = true;
     this.processingProgress = 0;
-    this.processingMessage = 'Initialisation du traitement ultra-rapide...';
+    this.processingMessage = isLargeUpload ? 'Initialisation du traitement optimisé pour gros fichiers...' : 'Initialisation du traitement ultra-rapide...';
     
     this.combinedRows = [];
     this.columns = [];
@@ -308,18 +315,26 @@ export class TraitementComponent implements OnInit, AfterViewInit {
     this.totalFilesToProcess = this.selectedFiles.length;
     this.currentFileIndex = 0;
     this.fileProcessStats = [];
+    const startTime = Date.now();
     
     try {
       for (const file of this.selectedFiles) {
         this.currentFileIndex++;
-        this.processingMessage = `Traitement ultra-rapide du fichier ${this.currentFileIndex}/${this.totalFilesToProcess}: ${file.name}`;
+        this.processingMessage = `Traitement ${isLargeUpload ? 'optimisé' : 'ultra-rapide'} du fichier ${this.currentFileIndex}/${this.totalFilesToProcess}: ${file.name}`;
         this.processingProgress = (this.currentFileIndex - 1) / this.totalFilesToProcess * 100;
         
         const fileName = file.name.toLowerCase();
-        console.log(`🚀 Traitement ultra-rapide: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`);
+        const fileSizeMB = (file.size / 1024 / 1024).toFixed(2);
+        console.log(`🚀 Traitement ${isLargeUpload ? 'optimisé' : 'ultra-rapide'}: ${file.name} (${fileSizeMB} MB)`);
         
         let beforeRows = this.allRows.length;
         try {
+          // Gestion mémoire pour gros fichiers
+          if (isLargeUpload && this.allRows.length > 500000) {
+            console.log('⚠️ Mémoire élevée détectée, optimisation en cours...');
+            this.processingMessage = 'Optimisation mémoire en cours...';
+            await this.optimizeMemoryUsage();
+          }
           if (fileName.endsWith('.csv')) {
             await this.readCsvFileOptimized(file);
           } else if (fileName.endsWith('.xls') || fileName.endsWith('.xlsx')) {
@@ -343,14 +358,19 @@ export class TraitementComponent implements OnInit, AfterViewInit {
         
         // Mettre à jour la progression
         this.processingProgress = this.currentFileIndex / this.totalFilesToProcess * 100;
+        
+        // Pause pour gros uploads
+        if (isLargeUpload && this.currentFileIndex < this.totalFilesToProcess) {
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
       }
       
-      // Fusion ultra-rapide des colonnes
-      this.processingMessage = 'Fusion ultra-rapide des colonnes...';
+      // Fusion optimisée des colonnes
+      this.processingMessage = `Fusion ${isLargeUpload ? 'optimisée' : 'ultra-rapide'} des colonnes...`;
       this.allColumns = await this.mergeColumnsOptimized();
       
-      // Normalisation ultra-rapide des données
-      this.processingMessage = 'Normalisation ultra-rapide des données...';
+      // Normalisation optimisée des données
+      this.processingMessage = `Normalisation ${isLargeUpload ? 'optimisée' : 'ultra-rapide'} des données...`;
       await this.normalizeDataOptimized();
       
       // Finalisation
@@ -370,9 +390,10 @@ export class TraitementComponent implements OnInit, AfterViewInit {
       this.processingProgress = 100;
       
       const totalProcessed = this.allRows.length;
-      console.log(`🚀 Traitement terminé: ${totalProcessed} lignes`);
+      const processingTime = ((Date.now() - startTime) / 1000).toFixed(1);
+      console.log(`🚀 Traitement ${isLargeUpload ? 'optimisé' : 'ultra-rapide'} terminé: ${totalProcessed.toLocaleString()} lignes en ${processingTime}s`);
       
-      this.showSuccess('upload', `Traitement ultra-rapide terminé ! ${totalProcessed} lignes traitées`);
+      this.showSuccess('upload', `Traitement ${isLargeUpload ? 'optimisé' : 'ultra-rapide'} terminé ! ${totalProcessed.toLocaleString()} lignes traitées en ${processingTime}s`);
       
     } catch (error) {
       console.error('Erreur lors du traitement:', error);
@@ -402,11 +423,21 @@ export class TraitementComponent implements OnInit, AfterViewInit {
           // Extraire les en-têtes avec correction des caractères spéciaux
           const headers = firstLine.split(delimiter).map((h: string) => fixGarbledCharacters(h.trim()));
           
-          // Traitement par chunks pour éviter le débordement de pile
-          const chunkSize = 1000; // Traiter 1000 lignes à la fois
+          // Traitement par chunks optimisé pour gros fichiers (jusqu'à 1M lignes)
           const totalLines = lines.length - 1; // Exclure l'en-tête
+          const isLargeFile = totalLines > 100000; // Plus de 100k lignes
+          const chunkSize = isLargeFile ? 5000 : 1000; // Chunks plus gros pour gros fichiers
           
-          console.log(`📊 Traitement par chunks: ${totalLines} lignes, chunks de ${chunkSize}`);
+          console.log(`📊 Traitement optimisé: ${totalLines} lignes, chunks de ${chunkSize} (${isLargeFile ? 'gros fichier' : 'fichier normal'})`);
+          
+          // Mise à jour de la progression pour gros fichiers
+          let processedLines = 0;
+          const updateProgress = () => {
+            if (isLargeFile) {
+              this.processingProgress = Math.min(95, (processedLines / totalLines) * 100);
+              this.processingMessage = `Traitement CSV: ${processedLines.toLocaleString()}/${totalLines.toLocaleString()} lignes`;
+            }
+          };
           
           for (let i = 1; i < lines.length; i += chunkSize) {
             const chunkEnd = Math.min(i + chunkSize, lines.length);
@@ -426,14 +457,21 @@ export class TraitementComponent implements OnInit, AfterViewInit {
             
             // Ajouter le chunk aux données
             this.allRows.push(...chunkRows);
+            processedLines += chunkLines.length;
             
-            // Permettre à l'interface de respirer
-            if (i % (chunkSize * 5) === 0) {
-              await new Promise(resolve => setTimeout(resolve, 1));
+            // Mettre à jour la progression pour gros fichiers
+            if (isLargeFile) {
+              updateProgress();
+            }
+            
+            // Permettre à l'interface de respirer (plus fréquent pour gros fichiers)
+            const yieldInterval = isLargeFile ? chunkSize : chunkSize * 5;
+            if (i % yieldInterval === 0) {
+              await new Promise(resolve => setTimeout(resolve, isLargeFile ? 0 : 1));
             }
           }
           
-          console.log(`✅ Traitement terminé: ${this.allRows.length} lignes`);
+          console.log(`✅ Traitement CSV terminé: ${this.allRows.length.toLocaleString()} lignes`);
           resolve();
         } catch (error) {
           console.error('❌ Erreur lors du traitement optimisé:', error);
@@ -445,18 +483,28 @@ export class TraitementComponent implements OnInit, AfterViewInit {
     });
   }
   
-  // Méthode pour détecter le délimiteur
+  // Méthode optimisée pour détecter le délimiteur
   private detectDelimiter(line: string): string {
     const delimiters = [';', ',', '\t', '|'];
     const scores: { [key: string]: number } = {};
     
+    // Optimisation : analyser seulement les premiers caractères pour les gros fichiers
+    const sampleLine = line.length > 1000 ? line.substring(0, 1000) : line;
+    
     delimiters.forEach(delimiter => {
-      const parts = line.split(delimiter);
+      const parts = sampleLine.split(delimiter);
       scores[delimiter] = parts.length;
     });
     
     // Retourner le délimiteur qui donne le plus de colonnes
-    return Object.keys(scores).reduce((a, b) => scores[a] > scores[b] ? a : b);
+    const bestDelimiter = Object.keys(scores).reduce((a, b) => scores[a] > scores[b] ? a : b);
+    
+    // Validation supplémentaire pour les gros fichiers
+    if (line.length > 1000) {
+      console.log(`🔍 Délimiteur détecté: "${bestDelimiter}" (${scores[bestDelimiter]} colonnes) sur échantillon de ${sampleLine.length} caractères`);
+    }
+    
+    return bestDelimiter;
   }
 
   // Nouvelle méthode pour détecter les en-têtes dans les fichiers Excel
@@ -474,8 +522,8 @@ export class TraitementComponent implements OnInit, AfterViewInit {
     let bestScore = 0;
     let bestHeaderRow: string[] = [];
     
-    // Analyser plus de lignes pour trouver le meilleur candidat (jusqu'à 200 lignes)
-    const maxRowsToCheck = Math.min(200, jsonData.length);
+    // Analyser plus de lignes pour trouver le meilleur candidat (optimisé pour gros fichiers)
+    const maxRowsToCheck = Math.min(jsonData.length > 100000 ? 50 : 200, jsonData.length);
     
     console.log(`🔍 Analyse de ${maxRowsToCheck} lignes sur ${jsonData.length} lignes totales`);
     
@@ -802,29 +850,61 @@ export class TraitementComponent implements OnInit, AfterViewInit {
       console.log(`🔧 En-têtes Excel corrigés:`, correctedHeaders);
       
       // Créer les lignes de données en commençant après la ligne d'en-tête
-      const rows: any[] = [];
+      const totalDataRows = jsonData.length - headerRowIndex - 1;
+      const isLargeFile = totalDataRows > 100000; // Plus de 100k lignes
+      const chunkSize = isLargeFile ? 5000 : 1000; // Chunks plus gros pour gros fichiers
       
-      // Traitement optimisé par chunks
-      for (let i = headerRowIndex + 1; i < jsonData.length; i++) {
-        const rowData = jsonData[i] as any[];
-        if (!rowData || rowData.length === 0) continue;
+      console.log(`📊 Traitement Excel optimisé: ${totalDataRows} lignes, chunks de ${chunkSize} (${isLargeFile ? 'gros fichier' : 'fichier normal'})`);
+      
+      // Mise à jour de la progression pour gros fichiers
+      let processedRows = 0;
+      const updateProgress = () => {
+        if (isLargeFile) {
+          this.processingProgress = Math.min(95, (processedRows / totalDataRows) * 100);
+          this.processingMessage = `Traitement Excel: ${processedRows.toLocaleString()}/${totalDataRows.toLocaleString()} lignes`;
+        }
+      };
+      
+      // Traitement optimisé par chunks pour Excel
+      for (let i = headerRowIndex + 1; i < jsonData.length; i += chunkSize) {
+        const chunkEnd = Math.min(i + chunkSize, jsonData.length);
+        const chunkRows: any[] = [];
         
-        const row: any = {};
-        correctedHeaders.forEach((header: string, index: number) => {
-          const value = rowData[index];
-          row[header] = value !== undefined && value !== null ? value : '';
-        });
-        rows.push(row);
+        for (let j = i; j < chunkEnd; j++) {
+          const rowData = jsonData[j] as any[];
+          if (!rowData || rowData.length === 0) continue;
+          
+          const row: any = {};
+          correctedHeaders.forEach((header: string, index: number) => {
+            const value = rowData[index];
+            row[header] = value !== undefined && value !== null ? value : '';
+          });
+          chunkRows.push(row);
+        }
+        
+        // Ajouter le chunk aux données
+        this.allRows.push(...chunkRows);
+        processedRows += chunkRows.length;
+        
+        // Mettre à jour la progression pour gros fichiers
+        if (isLargeFile) {
+          updateProgress();
+        }
+        
+        // Permettre à l'interface de respirer (plus fréquent pour gros fichiers)
+        const yieldInterval = isLargeFile ? chunkSize : chunkSize * 5;
+        if (i % yieldInterval === 0) {
+          await new Promise(resolve => setTimeout(resolve, isLargeFile ? 0 : 1));
+        }
       }
       
-      console.log(`📊 Lignes de données créées: ${rows.length}`);
+      console.log(`📊 Lignes de données Excel créées: ${this.allRows.length.toLocaleString()}`);
       
       // Mettre à jour les propriétés du composant
-      this.allRows.push(...rows);
       this.allColumns = [...correctedHeaders];
       this.columns = [...correctedHeaders];
       
-      console.log(`✅ Fichier Excel traité: ${rows.length} lignes, ${correctedHeaders.length} colonnes`);
+      console.log(`✅ Fichier Excel traité: ${this.allRows.length.toLocaleString()} lignes, ${correctedHeaders.length} colonnes`);
       console.log(`📋 Colonnes détectées:`, this.allColumns);
       
       // Vérifier si c'est un fichier Orange Money et appliquer le filtre automatique
@@ -884,6 +964,44 @@ export class TraitementComponent implements OnInit, AfterViewInit {
   // Méthode utilitaire pour créer un délai
   private delay(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  // Méthode d'optimisation mémoire pour gros fichiers
+  private async optimizeMemoryUsage(): Promise<void> {
+    try {
+      console.log('🧹 Optimisation mémoire en cours...');
+      
+      // Forcer le garbage collection si disponible
+      if ('gc' in window && typeof (window as any).gc === 'function') {
+        (window as any).gc();
+      }
+      
+      // Nettoyer les références temporaires
+      this.displayedRows = [];
+      
+      // Compacter les données si nécessaire
+      if (this.allRows.length > 1000000) {
+        console.log('📦 Compaction des données pour optimiser la mémoire...');
+        // Créer une copie compacte des données
+        const compactRows = this.allRows.map(row => {
+          const compactRow: any = {};
+          Object.keys(row).forEach(key => {
+            if (row[key] !== undefined && row[key] !== null && row[key] !== '') {
+              compactRow[key] = row[key];
+            }
+          });
+          return compactRow;
+        });
+        this.allRows = compactRows;
+      }
+      
+      // Pause pour permettre au navigateur de libérer la mémoire
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      console.log('✅ Optimisation mémoire terminée');
+    } catch (error) {
+      console.warn('⚠️ Erreur lors de l\'optimisation mémoire:', error);
+    }
   }
 
   // Méthode optimisée pour traiter les données en arrière-plan sans bloquer l'interface
@@ -1656,105 +1774,32 @@ export class TraitementComponent implements OnInit, AfterViewInit {
   }
 
   hasFormattingOption(): boolean {
-    // On ne vérifie plus textColumns
-    const { trimSpaces, toLowerCase, toUpperCase, normalizeDates, normalizeNumbers, amountColumns, numberColumns, dateColumns, absoluteValue, 
-            normalizeHeaders, fixSpecialCharacters, removeAccents, standardizeHeaders, formatToNumber } = this.formatOptions;
-    
-    // Options pour le traitement des données
-    const dataFormattingOptions = trimSpaces || toLowerCase || toUpperCase || normalizeDates || normalizeNumbers || 
-                                 amountColumns.length > 0 || numberColumns.length > 0 || dateColumns.length > 0 || absoluteValue || formatToNumber;
-    
-    // Options pour le traitement des en-têtes uniquement
-    const headerFormattingOptions = normalizeHeaders || fixSpecialCharacters || removeAccents || standardizeHeaders;
-    
-    return dataFormattingOptions || headerFormattingOptions;
+    return this.formatOptions.removeCharacters || this.formatOptions.removeNumbers || this.formatOptions.removeIndicatif || this.formatOptions.removeDecimals || this.formatOptions.keepLastDigits;
   }
 
   hasHeaderFormattingOption(): boolean {
-    const { normalizeHeaders, fixSpecialCharacters, removeAccents, standardizeHeaders } = this.formatOptions;
-    return normalizeHeaders || fixSpecialCharacters || removeAccents || standardizeHeaders;
+    return false; // Plus d'options d'en-têtes
   }
 
   applyHeaderFormatting() {
-    try {
-      if (!this.hasHeaderFormattingOption()) {
-        this.showError('format', 'Veuillez sélectionner au moins une option de formatage des en-têtes.');
-        return;
-      }
-      
-      // Traitement des en-têtes de colonnes
-      this.normalizeColumnHeaders();
-      
-      this.showSuccess('format', 'Formatage des en-têtes appliqué avec succès.');
-    } catch (error) {
-      console.error('❌ Erreur lors du formatage des en-têtes:', error);
-      this.showError('format', 'Erreur lors du formatage des en-têtes.');
-    }
+    this.showError('format', 'Aucune option de formatage des en-têtes disponible.');
   }
 
   applyFormatting() {
-    try {
-      if (!this.hasFormattingOption()) return;
-      
-      // Traitement des en-têtes de colonnes si activé
-      if (this.formatOptions.normalizeHeaders || this.formatOptions.fixSpecialCharacters || 
-          this.formatOptions.removeAccents || this.formatOptions.standardizeHeaders) {
-        this.normalizeColumnHeaders();
-      }
-      
-      this.combinedRows = this.combinedRows.map(row => {
-        const newRow: any = {};
-        for (const col of this.columns) {
-          let value = row[col];
-          if (typeof value === 'string') {
-            if (this.formatOptions.trimSpaces) {
-              value = value.replace(/\s+/g, ' ').trim();
-            }
-            if (this.formatOptions.toLowerCase) {
-              value = value.toLowerCase();
-            }
-            if (this.formatOptions.toUpperCase) {
-              value = value.toUpperCase();
-            }
-            if (this.formatOptions.removeSeparators) {
-              value = value.replace(/,/g, '');
-            }
-            if (this.formatOptions.dotToComma) {
-              value = value.replace(/\./g, ',');
-            }
-            if (this.formatOptions.removeDashesAndCommas) {
-              value = value.replace(/-/g, '').replace(/,/g, '');
-            }
-            // Note: removeAccents n'est PAS appliqué ici car il ne doit affecter que les en-têtes
-          }
-          // Normalisation des dates (format ISO)
-          if (this.formatOptions.normalizeDates && value && typeof value === 'string') {
-            const date = new Date(value);
-            if (!isNaN(date.getTime()) && value.length >= 6) {
-              value = date.toISOString().split('T')[0];
-            }
-          }
-          // Normalisation des montants (nombres)
-          if (this.formatOptions.normalizeNumbers && value && typeof value === 'string') {
-            const num = parseFloat(value.replace(/\s/g, '').replace(',', '.'));
-            if (!isNaN(num)) {
-              value = num;
-            }
-          }
-          newRow[col] = value;
-        }
-        return newRow;
-      });
-      // Vérifier que les données n'ont pas été perdues
-      if (this.combinedRows.length > 0 && this.columns.length > 0) {
-        console.log('✅ Formatage réussi - Données préservées');
-        this.showSuccess('format', 'Formatage appliqué avec succès.');
-      } else {
-        console.error('❌ Erreur - Données perdues après formatage');
-        this.showError('format', 'Erreur lors du formatage - données perdues.');
-      }
-    } catch (e) {
-      this.showError('format', 'Erreur lors du formatage.');
+    if (this.formatOptions.removeCharacters) {
+      this.applyRemoveCharactersFormatting();
+    }
+    if (this.formatOptions.removeNumbers) {
+      this.applyRemoveNumbersFormatting();
+    }
+    if (this.formatOptions.removeIndicatif) {
+      this.applyRemoveIndicatifFormatting();
+    }
+    if (this.formatOptions.removeDecimals) {
+      this.applyRemoveDecimalsFormatting();
+    }
+    if (this.formatOptions.keepLastDigits) {
+      this.applyKeepLastDigitsFormatting();
     }
   }
 
@@ -1948,6 +1993,110 @@ export class TraitementComponent implements OnInit, AfterViewInit {
     this.updateDisplayedRows();
   }
 
+  // --- MÉTHODES POUR FILTRES MULTIPLES ---
+
+  addNewFilter() {
+    const newFilter = {
+      id: `filter_${this.nextFilterId++}`,
+      column: '',
+      values: [],
+      selectedValues: [],
+      filterValues: [],
+      filteredFilterValues: [],
+      enabled: true
+    };
+    this.multipleFilters.push(newFilter);
+    this.showSuccess('filter', 'Nouveau filtre ajouté. Sélectionnez une colonne pour commencer.');
+  }
+
+  removeFilter(filterId: string) {
+    this.multipleFilters = this.multipleFilters.filter(f => f.id !== filterId);
+    this.applyMultipleFilters();
+    this.showSuccess('filter', 'Filtre supprimé.');
+  }
+
+  onMultipleFilterColumnChange(filter: any) {
+    if (filter.column) {
+      // Extraire les valeurs uniques de la colonne sélectionnée
+      const uniqueValues = Array.from(new Set(this.allRows.map(row => row[filter.column])));
+      filter.values = uniqueValues;
+      filter.filteredFilterValues = filter.values.slice();
+      filter.selectedValues = [];
+    } else {
+      filter.values = [];
+      filter.filteredFilterValues = [];
+      filter.selectedValues = [];
+    }
+  }
+
+  selectAllMultipleFilterValues(filter: any) {
+    if (filter.selectedValues.includes('__TOUS__')) {
+      filter.selectedValues = ['__TOUS__', ...filter.filteredFilterValues];
+    } else {
+      filter.selectedValues = filter.selectedValues.filter(val => val !== '__TOUS__');
+    }
+  }
+
+  applyMultipleFilters() {
+    if (this.multipleFilters.length === 0) {
+      // Aucun filtre, restaurer toutes les données
+      this.allRows = [...this.originalRows];
+      this.combinedRows = [...this.originalRows];
+      this.filterApplied = false;
+      this.updateDisplayedRows();
+      return;
+    }
+
+    // Appliquer tous les filtres actifs
+    let filteredData = [...this.originalRows];
+    const appliedFilters: string[] = [];
+
+    for (const filter of this.multipleFilters) {
+      if (filter.enabled && filter.column && filter.selectedValues.length > 0) {
+        if (filter.selectedValues.includes('__TOUS__')) {
+          // "Tous" sélectionné, pas de filtrage pour cette colonne
+          continue;
+        }
+
+        filteredData = filteredData.filter(row => 
+          filter.selectedValues.includes(row[filter.column])
+        );
+        appliedFilters.push(`${filter.column}: ${filter.selectedValues.join(', ')}`);
+      }
+    }
+
+    this.allRows = filteredData;
+    this.combinedRows = filteredData;
+    this.filterApplied = appliedFilters.length > 0;
+    
+    if (this.filterApplied) {
+      this.showSuccess('filter', `Filtres appliqués: ${appliedFilters.join(' | ')} (${this.combinedRows.length} lignes).`);
+    } else {
+      this.showSuccess('filter', 'Aucun filtre actif appliqué - toutes les lignes conservées.');
+    }
+    
+    this.updateDisplayedRows();
+    this.autoShowPreviewSection();
+  }
+
+  resetAllFilters() {
+    this.selectedFilterColumn = '';
+    this.selectedFilterValues = [];
+    this.filterValues = [];
+    this.filteredFilterValues = [];
+    this.multipleFilters = [];
+    this.nextFilterId = 1;
+    this.filterApplied = false;
+    this.allRows = [...this.originalRows];
+    this.combinedRows = [...this.originalRows];
+    this.updateDisplayedRows();
+    this.showSuccess('filter', 'Tous les filtres ont été réinitialisés.');
+  }
+
+  trackByFilterId(index: number, filter: any): string {
+    return filter.id;
+  }
+
   readExcelFile(file: File): Promise<XLSX.WorkBook> {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -1986,6 +2135,7 @@ export class TraitementComponent implements OnInit, AfterViewInit {
     filter: false,
     concat: false,
     exportByType: false,
+    exportByDate: false,
     dedup: false,
     format: false,
     preview: true  // Aperçu des données combinées visible par défaut
@@ -2292,6 +2442,7 @@ export class TraitementComponent implements OnInit, AfterViewInit {
       // Appliquer la concaténation sur toutes les données d'origine
       this.originalRows = this.originalRows.map(row => {
         const newRow = { ...row };
+        // Utiliser l'ordre des colonnes tel qu'il est dans concatCols
         newRow[this.concatNewCol] = this.concatCols.map(col => row[col] ?? '').join(this.concatSeparator ?? '');
         return newRow;
       });
@@ -2320,486 +2471,98 @@ export class TraitementComponent implements OnInit, AfterViewInit {
     }
   }
 
-  // Méthodes d'application pour chaque option
-  applyTrimSpacesFormatting() {
-    if (!this.formatSelections['trimSpaces'].length) {
-      this.showError('format', 'Veuillez sélectionner au moins une colonne');
-      return;
-    }
+  // Méthodes pour gérer l'ordre des colonnes dans la concaténation
+  toggleConcatOrderMode() {
+    this.concatOrderMode = !this.concatOrderMode;
+  }
 
-    try {
-      let processedCells = 0;
-      let totalCells = 0;
-      
-      // Traiter les données affichées (combinedRows)
-      this.combinedRows.forEach((row, rowIndex) => {
-        this.formatSelections['trimSpaces'].forEach(col => {
-          totalCells++;
-          if (row[col] && typeof row[col] === 'string') {
-            const originalValue = row[col];
-            const newValue = row[col].replace(/\s+/g, ' ').trim();
-            
-            if (newValue !== originalValue) {
-              processedCells++;
-              console.log(`✅ MODIFICATION: Ligne ${rowIndex}, Colonne ${col}: "${originalValue}" -> "${newValue}"`);
-            }
-            
-            row[col] = newValue;
-          }
-        });
-      });
-
-      // Mettre à jour aussi allRows si la sélection n'est pas appliquée
-      if (!this.selectionApplied) {
-        this.allRows.forEach((row, rowIndex) => {
-          this.formatSelections['trimSpaces'].forEach(col => {
-            if (row[col] && typeof row[col] === 'string') {
-              row[col] = row[col].replace(/\s+/g, ' ').trim();
-            }
-          });
-        });
-      }
-
-      console.log(`📊 RÉSUMÉ: ${totalCells} cellules vérifiées, ${processedCells} cellules modifiées`);
-      this.showSuccess('format', `Espaces supprimés avec succès (${processedCells} modifications)`);
-      
-      // Forcer la mise à jour de l'affichage
-      this.updateDisplayedRowsForPage();
-      this.cd.detectChanges();
-    } catch (error) {
-      console.error('❌ Erreur lors de la suppression des espaces:', error);
-      this.showError('format', 'Erreur lors du formatage des espaces.');
+  moveConcatColumnUp(index: number) {
+    if (index > 0 && index < this.concatCols.length) {
+      const temp = this.concatCols[index];
+      this.concatCols[index] = this.concatCols[index - 1];
+      this.concatCols[index - 1] = temp;
     }
   }
 
-  applyToLowerCaseFormatting() {
-    if (!this.formatSelections['toLowerCase'].length) {
-      this.showError('format', 'Veuillez sélectionner au moins une colonne');
-      return;
-    }
-
-    try {
-      let processedCells = 0;
-      let totalCells = 0;
-      
-      // Traiter les données affichées (combinedRows)
-      this.combinedRows.forEach((row, rowIndex) => {
-        this.formatSelections['toLowerCase'].forEach(col => {
-          totalCells++;
-          if (row[col] && typeof row[col] === 'string') {
-            const originalValue = row[col];
-            const newValue = row[col].toLowerCase();
-            
-            if (newValue !== originalValue) {
-              processedCells++;
-              console.log(`✅ MODIFICATION: Ligne ${rowIndex}, Colonne ${col}: "${originalValue}" -> "${newValue}"`);
-            }
-            
-            row[col] = newValue;
-          }
-        });
-      });
-
-      // Mettre à jour aussi allRows si la sélection n'est pas appliquée
-      if (!this.selectionApplied) {
-        this.allRows.forEach((row, rowIndex) => {
-          this.formatSelections['toLowerCase'].forEach(col => {
-            if (row[col] && typeof row[col] === 'string') {
-              row[col] = row[col].toLowerCase();
-            }
-          });
-        });
-      }
-
-      console.log(`📊 RÉSUMÉ: ${totalCells} cellules vérifiées, ${processedCells} cellules modifiées`);
-      this.showSuccess('format', `Conversion en minuscules réussie (${processedCells} modifications)`);
-      
-      // Forcer la mise à jour de l'affichage
-      this.updateDisplayedRowsForPage();
-      this.cd.detectChanges();
-    } catch (error) {
-      console.error('❌ Erreur lors de la conversion en minuscules:', error);
-      this.showError('format', 'Erreur lors du passage en minuscules.');
+  moveConcatColumnDown(index: number) {
+    if (index >= 0 && index < this.concatCols.length - 1) {
+      const temp = this.concatCols[index];
+      this.concatCols[index] = this.concatCols[index + 1];
+      this.concatCols[index + 1] = temp;
     }
   }
 
-  applyToUpperCaseFormatting() {
-    if (!this.formatSelections['toUpperCase'].length) {
-      this.showError('format', 'Veuillez sélectionner au moins une colonne');
-      return;
-    }
-
-    try {
-      let processedCells = 0;
-      let totalCells = 0;
-      
-      // Traiter les données affichées (combinedRows)
-      this.combinedRows.forEach((row, rowIndex) => {
-        this.formatSelections['toUpperCase'].forEach(col => {
-          totalCells++;
-          if (row[col] && typeof row[col] === 'string') {
-            const originalValue = row[col];
-            const newValue = row[col].toUpperCase();
-            
-            if (newValue !== originalValue) {
-              processedCells++;
-              console.log(`✅ MODIFICATION: Ligne ${rowIndex}, Colonne ${col}: "${originalValue}" -> "${newValue}"`);
-            }
-            
-            row[col] = newValue;
-          }
-        });
-      });
-
-      // Mettre à jour aussi allRows si la sélection n'est pas appliquée
-      if (!this.selectionApplied) {
-        this.allRows.forEach((row, rowIndex) => {
-          this.formatSelections['toUpperCase'].forEach(col => {
-            if (row[col] && typeof row[col] === 'string') {
-              row[col] = row[col].toUpperCase();
-            }
-          });
-        });
-      }
-
-      console.log(`📊 RÉSUMÉ: ${totalCells} cellules vérifiées, ${processedCells} cellules modifiées`);
-      this.showSuccess('format', `Conversion en MAJUSCULES réussie (${processedCells} modifications)`);
-      
-      // Forcer la mise à jour de l'affichage
-      this.updateDisplayedRowsForPage();
-      this.cd.detectChanges();
-    } catch (error) {
-      console.error('❌ Erreur lors de la conversion en MAJUSCULES:', error);
-      this.showError('format', 'Erreur lors du passage en MAJUSCULES.');
+  removeConcatColumn(index: number) {
+    if (index >= 0 && index < this.concatCols.length) {
+      this.concatCols.splice(index, 1);
     }
   }
 
-  applyRemoveDashesAndCommasFormatting() {
-    if (!this.formatSelections['removeDashesAndCommas'].length) {
-      this.showError('format', 'Veuillez sélectionner au moins une colonne');
-      return;
-    }
-
-    try {
-      let processedCells = 0;
-      let totalCells = 0;
-      
-      // Traiter les données affichées (combinedRows)
-      this.combinedRows.forEach((row, rowIndex) => {
-        this.formatSelections['removeDashesAndCommas'].forEach(col => {
-          totalCells++;
-          if (row[col] && typeof row[col] === 'string') {
-            const originalValue = row[col];
-            const newValue = row[col].replace(/[-,]/g, '');
-            
-            if (newValue !== originalValue) {
-              processedCells++;
-              console.log(`✅ MODIFICATION: Ligne ${rowIndex}, Colonne ${col}: "${originalValue}" -> "${newValue}"`);
-            }
-            
-            row[col] = newValue;
-          }
-        });
-      });
-
-      // Mettre à jour aussi allRows si la sélection n'est pas appliquée
-      if (!this.selectionApplied) {
-        this.allRows.forEach((row, rowIndex) => {
-          this.formatSelections['removeDashesAndCommas'].forEach(col => {
-            if (row[col] && typeof row[col] === 'string') {
-              row[col] = row[col].replace(/[-,]/g, '');
-            }
-          });
-        });
-      }
-
-      console.log(`📊 RÉSUMÉ: ${totalCells} cellules vérifiées, ${processedCells} cellules modifiées`);
-      this.showSuccess('format', `Tirets et virgules supprimés avec succès (${processedCells} modifications)`);
-      
-      // Forcer la mise à jour de l'affichage
-      this.updateDisplayedRowsForPage();
-      this.cd.detectChanges();
-    } catch (error) {
-      console.error('❌ Erreur lors de la suppression des tirets/virgules:', error);
-      this.showError('format', 'Erreur lors de la suppression des tirets/virgules.');
+  addConcatColumn(column: string) {
+    if (!this.concatCols.includes(column)) {
+      this.concatCols.push(column);
     }
   }
 
-  applyRemoveSeparatorsFormatting() {
-    if (!this.formatSelections['removeSeparators'].length) {
-      this.showError('format', 'Veuillez sélectionner au moins une colonne');
-      return;
-    }
+  getAvailableColumnsForConcat(): string[] {
+    return this.columns.filter(col => !this.concatCols.includes(col));
+  }
 
-    try {
-      let processedCells = 0;
-      let totalCells = 0;
-      
-      // Traiter les données affichées (combinedRows)
-      this.combinedRows.forEach((row, rowIndex) => {
-        this.formatSelections['removeSeparators'].forEach(col => {
-          totalCells++;
-          if (row[col] && typeof row[col] === 'string') {
-            const originalValue = row[col];
-            const newValue = row[col].replace(/,/g, '');
-            
-            if (newValue !== originalValue) {
-              processedCells++;
-              console.log(`✅ MODIFICATION: Ligne ${rowIndex}, Colonne ${col}: "${originalValue}" -> "${newValue}"`);
-            }
-            
-            row[col] = newValue;
-          }
-        });
-      });
-
-      // Mettre à jour aussi allRows si la sélection n'est pas appliquée
-      if (!this.selectionApplied) {
-        this.allRows.forEach((row, rowIndex) => {
-          this.formatSelections['removeSeparators'].forEach(col => {
-            if (row[col] && typeof row[col] === 'string') {
-              row[col] = row[col].replace(/,/g, '');
-            }
-          });
-        });
-      }
-
-      console.log(`📊 RÉSUMÉ: ${totalCells} cellules vérifiées, ${processedCells} cellules modifiées`);
-      this.showSuccess('format', `Séparateurs supprimés avec succès (${processedCells} modifications)`);
-      
-      // Forcer la mise à jour de l'affichage
-      this.updateDisplayedRowsForPage();
-      this.cd.detectChanges();
-    } catch (error) {
-      console.error('❌ Erreur lors de la suppression des séparateurs:', error);
-      this.showError('format', 'Erreur lors de la suppression des séparateurs.');
+  // Méthodes pour le dropdown d'ordre
+  onConcatColumnOrderChange(event: any, index: number) {
+    const newIndex = parseInt(event.target.value);
+    if (newIndex !== index && newIndex >= 0 && newIndex < this.concatCols.length) {
+      // Déplacer la colonne à la nouvelle position
+      const column = this.concatCols[index];
+      this.concatCols.splice(index, 1);
+      this.concatCols.splice(newIndex, 0, column);
     }
   }
 
-  applyDotToCommaFormatting() {
-    if (!this.formatSelections['dotToComma'].length) {
-      this.showError('format', 'Veuillez sélectionner au moins une colonne');
-      return;
-    }
-
-    try {
-      let processedCells = 0;
-      let totalCells = 0;
-      
-      // Traiter les données affichées (combinedRows)
-      this.combinedRows.forEach((row, rowIndex) => {
-        this.formatSelections['dotToComma'].forEach(col => {
-          totalCells++;
-          if (row[col] && typeof row[col] === 'string') {
-            const originalValue = row[col];
-            const newValue = row[col].replace(/\./g, ',');
-            
-            if (newValue !== originalValue) {
-              processedCells++;
-              console.log(`✅ MODIFICATION: Ligne ${rowIndex}, Colonne ${col}: "${originalValue}" -> "${newValue}"`);
-            }
-            
-            row[col] = newValue;
-          }
-        });
-      });
-
-      // Mettre à jour aussi allRows si la sélection n'est pas appliquée
-      if (!this.selectionApplied) {
-        this.allRows.forEach((row, rowIndex) => {
-          this.formatSelections['dotToComma'].forEach(col => {
-            if (row[col] && typeof row[col] === 'string') {
-              row[col] = row[col].replace(/\./g, ',');
-            }
-          });
-        });
-      }
-
-      console.log(`📊 RÉSUMÉ: ${totalCells} cellules vérifiées, ${processedCells} cellules modifiées`);
-      this.showSuccess('format', `Points remplacés par des virgules avec succès (${processedCells} modifications)`);
-      
-      // Forcer la mise à jour de l'affichage
-      this.updateDisplayedRowsForPage();
-      this.cd.detectChanges();
-    } catch (error) {
-      console.error('❌ Erreur lors du remplacement des points:', error);
-      this.showError('format', 'Erreur lors du remplacement des points.');
-    }
+  getConcatColumnOrderOptions(): number[] {
+    return Array.from({ length: this.concatCols.length }, (_, i) => i + 1);
   }
 
-  applyNormalizeDatesFormatting() {
-    if (!this.formatSelections['normalizeDates'].length) {
-      this.showError('format', 'Veuillez sélectionner au moins une colonne');
-      return;
-    }
 
-    try {
-      let processedCells = 0;
-      let totalCells = 0;
-      
-      // Traiter les données affichées (combinedRows)
-      this.combinedRows.forEach((row, rowIndex) => {
-        this.formatSelections['normalizeDates'].forEach(col => {
-          totalCells++;
-          if (row[col]) {
-            let val = row[col].toString();
-            const originalValue = val;
-            
-            if (val.endsWith('.0')) {
-              val = val.slice(0, -2);
-            }
-            const d = new Date(val);
-            if (!isNaN(d.getTime())) {
-              const newValue = this.formatDate(d, this.formatOptions.dateFormat);
-              if (newValue !== originalValue) {
-                processedCells++;
-                console.log(`✅ MODIFICATION: Ligne ${rowIndex}, Colonne ${col}: "${originalValue}" -> "${newValue}"`);
-              }
-              row[col] = newValue;
-            }
-          }
-        });
-      });
 
-      // Mettre à jour aussi allRows si la sélection n'est pas appliquée
-      if (!this.selectionApplied) {
-        this.allRows.forEach((row, rowIndex) => {
-          this.formatSelections['normalizeDates'].forEach(col => {
-            if (row[col]) {
-              let val = row[col].toString();
-              if (val.endsWith('.0')) {
-                val = val.slice(0, -2);
-              }
-              const d = new Date(val);
-              if (!isNaN(d.getTime())) {
-                row[col] = this.formatDate(d, this.formatOptions.dateFormat);
-              }
-            }
-          });
-        });
-      }
 
-      console.log(`📊 RÉSUMÉ: ${totalCells} cellules vérifiées, ${processedCells} cellules modifiées`);
-      this.showSuccess('format', `Formatage des dates réussi (${processedCells} modifications)`);
-      
-      // Forcer la mise à jour de l'affichage
-      this.updateDisplayedRowsForPage();
-      this.cd.detectChanges();
-    } catch (error) {
-      console.error('❌ Erreur lors du formatage des dates:', error);
-      this.showError('format', 'Erreur lors du formatage des dates.');
-    }
-  }
 
-  applyNormalizeNumbersFormatting() {
-    if (!this.formatSelections['normalizeNumbers'].length) {
-      this.showError('format', 'Veuillez sélectionner au moins une colonne');
-      return;
-    }
 
-    try {
-      let processedCells = 0;
-      let totalCells = 0;
-      
-      // Traiter les données affichées (combinedRows)
-      this.combinedRows.forEach((row, rowIndex) => {
-        this.formatSelections['normalizeNumbers'].forEach(col => {
-          totalCells++;
-          if (row[col] !== undefined && row[col] !== null) {
-            const originalValue = row[col];
-            const num = parseFloat(row[col].toString().replace(/\s/g, '').replace(',', '.'));
-            const newValue = isNaN(num) ? row[col] : num;
-            
-            if (newValue !== originalValue) {
-              processedCells++;
-              console.log(`✅ MODIFICATION: Ligne ${rowIndex}, Colonne ${col}: "${originalValue}" -> "${newValue}"`);
-            }
-            
-            row[col] = newValue;
-          }
-        });
-      });
 
-      // Mettre à jour aussi allRows si la sélection n'est pas appliquée
-      if (!this.selectionApplied) {
-        this.allRows.forEach((row, rowIndex) => {
-          this.formatSelections['normalizeNumbers'].forEach(col => {
-            if (row[col] !== undefined && row[col] !== null) {
-              const num = parseFloat(row[col].toString().replace(/\s/g, '').replace(',', '.'));
-              row[col] = isNaN(num) ? row[col] : num;
-            }
-          });
-        });
-      }
 
-      console.log(`📊 RÉSUMÉ: ${totalCells} cellules vérifiées, ${processedCells} cellules modifiées`);
-      this.showSuccess('format', `Conversion en nombre réussie (${processedCells} modifications)`);
-      
-      // Forcer la mise à jour de l'affichage
-      this.updateDisplayedRowsForPage();
-      this.cd.detectChanges();
-    } catch (error) {
-      console.error('❌ Erreur lors de la conversion en nombre:', error);
-      this.showError('format', 'Erreur lors de la conversion en nombre.');
-    }
-  }
 
-  applyAbsoluteValueFormatting() {
-    if (!this.formatSelections['absoluteValue'].length) {
-      this.showError('format', 'Veuillez sélectionner au moins une colonne');
-      return;
-    }
 
-    try {
-      let processedCells = 0;
-      let totalCells = 0;
-      
-      // Traiter les données affichées (combinedRows)
-      this.combinedRows.forEach((row, rowIndex) => {
-        this.formatSelections['absoluteValue'].forEach(col => {
-          totalCells++;
-          if (row[col] !== undefined && row[col] !== null && !isNaN(Number(row[col]))) {
-            const originalValue = row[col];
-            const newValue = Math.abs(Number(row[col]));
-            
-            if (newValue !== originalValue) {
-              processedCells++;
-              console.log(`✅ MODIFICATION: Ligne ${rowIndex}, Colonne ${col}: "${originalValue}" -> "${newValue}"`);
-            }
-            
-            row[col] = newValue;
-          }
-        });
-      });
 
-      // Mettre à jour aussi allRows si la sélection n'est pas appliquée
-      if (!this.selectionApplied) {
-        this.allRows.forEach((row, rowIndex) => {
-          this.formatSelections['absoluteValue'].forEach(col => {
-            if (row[col] !== undefined && row[col] !== null && !isNaN(Number(row[col]))) {
-              row[col] = Math.abs(Number(row[col]));
-            }
-          });
-        });
-      }
 
-      console.log(`📊 RÉSUMÉ: ${totalCells} cellules vérifiées, ${processedCells} cellules modifiées`);
-      this.showSuccess('format', `Conversion en valeur absolue réussie (${processedCells} modifications)`);
-      
-      // Forcer la mise à jour de l'affichage
-      this.updateDisplayedRowsForPage();
-      this.cd.detectChanges();
-    } catch (error) {
-      console.error('❌ Erreur lors de la conversion en valeur absolue:', error);
-      this.showError('format', 'Erreur lors de la conversion en valeur absolue.');
-    }
-  }
+
+
+
+
 
   applyRemoveCharactersFormatting() {
     if (!this.formatSelections['removeCharacters'].length) {
       this.showError('format', 'Veuillez sélectionner au moins une colonne');
       return;
     }
+
+    // Vérifier les paramètres de suppression
+    if (!this.removeCharPosition) {
+      this.showError('format', 'Veuillez sélectionner une position de suppression');
+      return;
+    }
+
+    if (!this.removeCharCount || this.removeCharCount <= 0) {
+      this.showError('format', 'Veuillez spécifier un nombre de caractères à supprimer (supérieur à 0)');
+      return;
+    }
+
+    // Vérification supplémentaire pour la position spécifique
+    if (this.removeCharPosition === 'specific' && (!this.removeCharSpecificPosition || this.removeCharSpecificPosition <= 0)) {
+      this.showError('format', 'Veuillez spécifier une position valide pour la suppression spécifique');
+      return;
+    }
+
+
 
     try {
       let processedCells = 0;
@@ -2809,20 +2572,30 @@ export class TraitementComponent implements OnInit, AfterViewInit {
       this.combinedRows.forEach((row, rowIndex) => {
         this.formatSelections['removeCharacters'].forEach(col => {
           totalCells++;
-          if (row[col] && typeof row[col] === 'string') {
-            let value = row[col];
+          if (row[col] !== undefined && row[col] !== null) {
+            // Convertir en chaîne si ce n'est pas déjà le cas
+            let value = String(row[col]);
             const originalValue = value;
+            
+            // Vérifier que la chaîne a une longueur suffisante
+            if (value.length === 0) {
+      return;
+    }
             
             switch (this.removeCharPosition) {
               case 'start':
+                if (value.length >= this.removeCharCount) {
                 value = value.substring(this.removeCharCount);
+                }
                 break;
               case 'end':
+                if (value.length >= this.removeCharCount) {
                 value = value.substring(0, value.length - this.removeCharCount);
+                }
                 break;
               case 'specific':
                 const pos = this.removeCharSpecificPosition - 1; // Convert to 0-based
-                if (pos >= 0 && pos < value.length) {
+                if (pos >= 0 && pos < value.length && pos + this.removeCharCount <= value.length) {
                   value = value.substring(0, pos) + value.substring(pos + this.removeCharCount);
                 }
                 break;
@@ -2830,7 +2603,6 @@ export class TraitementComponent implements OnInit, AfterViewInit {
             
             if (value !== originalValue) {
               processedCells++;
-              console.log(`✅ MODIFICATION: Ligne ${rowIndex}, Colonne ${col}: "${originalValue}" -> "${value}"`);
             }
             
             row[col] = value;
@@ -2842,19 +2614,29 @@ export class TraitementComponent implements OnInit, AfterViewInit {
       if (!this.selectionApplied) {
         this.allRows.forEach((row, rowIndex) => {
           this.formatSelections['removeCharacters'].forEach(col => {
-            if (row[col] && typeof row[col] === 'string') {
-              let value = row[col];
+            if (row[col] !== undefined && row[col] !== null) {
+              // Convertir en chaîne si ce n'est pas déjà le cas
+              let value = String(row[col]);
+              
+              // Vérifier que la chaîne a une longueur suffisante
+              if (value.length === 0) {
+                return;
+              }
               
               switch (this.removeCharPosition) {
                 case 'start':
+                  if (value.length >= this.removeCharCount) {
                   value = value.substring(this.removeCharCount);
+                  }
                   break;
                 case 'end':
+                  if (value.length >= this.removeCharCount) {
                   value = value.substring(0, value.length - this.removeCharCount);
+                  }
                   break;
                 case 'specific':
                   const pos = this.removeCharSpecificPosition - 1; // Convert to 0-based
-                  if (pos >= 0 && pos < value.length) {
+                  if (pos >= 0 && pos < value.length && pos + this.removeCharCount <= value.length) {
                     value = value.substring(0, pos) + value.substring(pos + this.removeCharCount);
                   }
                   break;
@@ -2879,79 +2661,38 @@ export class TraitementComponent implements OnInit, AfterViewInit {
     }
   }
 
-  applyRemoveSpecificCharactersFormatting() {
-    if (!this.formatSelections['removeSpecificCharacters'].length) {
+  applyRemoveNumbersFormatting() {
+    if (!this.formatSelections['removeNumbers'].length) {
       this.showError('format', 'Veuillez sélectionner au moins une colonne');
-      return;
-    }
-
-    if (!this.specificCharactersToRemove.trim()) {
-      this.showError('format', 'Veuillez spécifier les caractères à supprimer');
       return;
     }
 
     try {
       let processedCells = 0;
       let totalCells = 0;
-      const charsToRemove = this.specificCharactersToRemove.trim();
-      const isCaseSensitive = this.removeSpecificCharactersCaseSensitive;
-      
-      // Liste des chaînes autorisées pour la suppression
-      const allowedStrings = ['_CM', '_ML', '_GN', '_CI', '_BF', '_KE', '_SN', '_KN', '_BJ', '_GB'];
-      
-      // Vérifier si la chaîne à supprimer est dans la liste autorisée
-      if (!allowedStrings.includes(charsToRemove)) {
-        this.showError('format', `La chaîne "${charsToRemove}" n'est pas autorisée. Chaînes autorisées: ${allowedStrings.join(', ')}`);
-        return;
-      }
       
       // Traiter les données affichées (combinedRows)
       this.combinedRows.forEach((row, rowIndex) => {
-        this.formatSelections['removeSpecificCharacters'].forEach(col => {
+        this.formatSelections['removeNumbers'].forEach(col => {
           totalCells++;
-          if (row[col] && typeof row[col] === 'string') {
-            const originalValue = row[col];
+          if (row[col] !== undefined && row[col] !== null) {
+            // Convertir en chaîne si ce n'est pas déjà le cas
+            let value = String(row[col]);
+            const originalValue = value;
             
-            // Vérifier si on doit filtrer par valeur exacte
-            let shouldProcess = true;
-            if (this.filterByExactValue && this.exactValueColumn && this.exactValueToFilter) {
-              const filterValue = row[this.exactValueColumn];
-              if (filterValue !== this.exactValueToFilter) {
-                shouldProcess = false;
-              }
+            // Vérifier que la chaîne a une longueur suffisante
+            if (value.length === 0) {
+              return;
             }
             
-            if (shouldProcess) {
-              let newValue = originalValue;
-              
-              // Logique de suppression de chaînes complètes : supprimer la chaîne spécifiée partout où elle apparaît
-              console.log(`🔍 DEBUG: Suppression de "${charsToRemove}" dans "${originalValue}"`);
-              console.log(`🔍 DEBUG: Chaîne à supprimer: "${charsToRemove}"`);
-              console.log(`🔍 DEBUG: Sensible à la casse: ${isCaseSensitive}`);
-              
-              if (isCaseSensitive) {
-                // Suppression sensible à la casse de la chaîne complète partout où elle apparaît
-                const escapedPattern = this.escapeRegExp(charsToRemove);
-                const regex = new RegExp(escapedPattern, 'g');
-                console.log(`🔍 DEBUG: Pattern regex: ${regex}`);
-                newValue = originalValue.replace(regex, '');
-              } else {
-                // Suppression insensible à la casse de la chaîne complète partout où elle apparaît
-                const escapedPattern = this.escapeRegExp(charsToRemove);
-                const regex = new RegExp(escapedPattern, 'gi');
-                console.log(`🔍 DEBUG: Pattern regex: ${regex}`);
-                newValue = originalValue.replace(regex, '');
-              }
-              
-              console.log(`🔍 DEBUG: Résultat: "${originalValue}" -> "${newValue}"`);
-              
-              if (newValue !== originalValue) {
+            // Supprimer tous les chiffres (0-9)
+            value = value.replace(/\d/g, '');
+            
+            if (value !== originalValue) {
                 processedCells++;
-                console.log(`✅ MODIFICATION: Ligne ${rowIndex}, Colonne ${col}: "${originalValue}" -> "${newValue}"`);
               }
               
-              row[col] = newValue;
-            }
+            row[col] = value;
           }
         });
       });
@@ -2959,60 +2700,40 @@ export class TraitementComponent implements OnInit, AfterViewInit {
       // Mettre à jour aussi allRows si la sélection n'est pas appliquée
       if (!this.selectionApplied) {
         this.allRows.forEach((row, rowIndex) => {
-          this.formatSelections['removeSpecificCharacters'].forEach(col => {
-            if (row[col] && typeof row[col] === 'string') {
-              const originalValue = row[col];
+          this.formatSelections['removeNumbers'].forEach(col => {
+            if (row[col] !== undefined && row[col] !== null) {
+              // Convertir en chaîne si ce n'est pas déjà le cas
+              let value = String(row[col]);
               
-              // Vérifier si on doit filtrer par valeur exacte
-              let shouldProcess = true;
-              if (this.filterByExactValue && this.exactValueColumn && this.exactValueToFilter) {
-                const filterValue = row[this.exactValueColumn];
-                if (filterValue !== this.exactValueToFilter) {
-                  shouldProcess = false;
-                }
+              // Vérifier que la chaîne a une longueur suffisante
+              if (value.length === 0) {
+                return;
               }
               
-              if (shouldProcess) {
-                let newValue = originalValue;
-                
-                // Logique de suppression de chaînes complètes : supprimer la chaîne spécifiée partout où elle apparaît
-                console.log(`🔍 DEBUG (allRows): Suppression de "${charsToRemove}" dans "${originalValue}"`);
-                
-                if (isCaseSensitive) {
-                  // Suppression sensible à la casse de la chaîne complète partout où elle apparaît
-                  const escapedPattern = this.escapeRegExp(charsToRemove);
-                  const regex = new RegExp(escapedPattern, 'g');
-                  newValue = originalValue.replace(regex, '');
-                } else {
-                  // Suppression insensible à la casse de la chaîne complète partout où elle apparaît
-                  const escapedPattern = this.escapeRegExp(charsToRemove);
-                  const regex = new RegExp(escapedPattern, 'gi');
-                  newValue = originalValue.replace(regex, '');
-                }
-                
-                console.log(`🔍 DEBUG (allRows): Résultat: "${originalValue}" -> "${newValue}"`);
-                
-                row[col] = newValue;
-              }
+              // Supprimer tous les chiffres (0-9)
+              value = value.replace(/\d/g, '');
+              
+              row[col] = value;
             }
           });
         });
       }
 
       console.log(`📊 RÉSUMÉ: ${totalCells} cellules vérifiées, ${processedCells} cellules modifiées`);
-      this.showSuccess('format', `Chaînes supprimées avec succès (${processedCells} modifications)`);
+
+      this.showSuccess('format', `Suppression de nombres appliquée sur ${this.formatSelections['removeNumbers'].length} colonne(s) (${processedCells} modifications)`);
       
       // Forcer la mise à jour de l'affichage
       this.updateDisplayedRowsForPage();
       this.cd.detectChanges();
     } catch (error) {
-      console.error('❌ Erreur lors de la suppression des caractères:', error);
-      this.showError('format', 'Erreur lors de la suppression des caractères.');
+      console.error('❌ Erreur lors de la suppression des nombres:', error);
+      this.showError('format', 'Erreur lors de la suppression des nombres');
     }
   }
 
-  applyCleanAmountsFormatting() {
-    if (!this.formatSelections['cleanAmounts'].length) {
+  applyRemoveIndicatifFormatting() {
+    if (!this.formatSelections['removeIndicatif'].length) {
       this.showError('format', 'Veuillez sélectionner au moins une colonne');
       return;
     }
@@ -3023,35 +2744,212 @@ export class TraitementComponent implements OnInit, AfterViewInit {
       
       // Traiter les données affichées (combinedRows)
       this.combinedRows.forEach((row, rowIndex) => {
-        this.formatSelections['cleanAmounts'].forEach(col => {
+        this.formatSelections['removeIndicatif'].forEach(col => {
           totalCells++;
           if (row[col] !== undefined && row[col] !== null) {
-            const originalValue = row[col];
-            let newValue = originalValue;
+            // Convertir en chaîne si ce n'est pas déjà le cas
+            let value = String(row[col]).trim();
+            const originalValue = value;
             
-            // Si c'est une chaîne, nettoyer le formatage
-            if (typeof originalValue === 'string') {
-              // Enlever les espaces
-              newValue = originalValue.replace(/\s/g, '');
-              // Enlever ",00" à la fin
-              newValue = newValue.replace(/,00$/, '');
-              // Enlever ",0" à la fin (pour les montants comme 100,0)
-              newValue = newValue.replace(/,0$/, '');
-            } else if (typeof originalValue === 'number') {
-              // Si c'est un nombre, le convertir en entier si c'est un nombre entier
-              if (originalValue % 1 === 0) {
-                newValue = Math.floor(originalValue);
+            // Vérifier que la chaîne a une longueur suffisante
+            if (value.length === 0) {
+      return;
+    }
+
+            let modified = false;
+
+            switch (this.indicatifType) {
+              case 'international':
+                // Supprimer les indicatifs internationaux courants
+                // Format: +XX ou +XXX ou +XXXX
+                const internationalPattern = /^\+(\d{1,4})\s*/;
+                if (internationalPattern.test(value)) {
+                  value = value.replace(internationalPattern, '');
+                  modified = true;
+                }
+                break;
+
+              case 'national':
+                // Supprimer les indicatifs nationaux français
+                // Format: 0X XX XX XX XX ou 0XXXXXXXXX
+                const nationalPattern = /^0\d\s*\d{2}\s*\d{2}\s*\d{2}\s*\d{2}$/;
+                if (nationalPattern.test(value.replace(/\s/g, ''))) {
+                  // Supprimer le premier chiffre (0) et reformater
+                  const cleanNumber = value.replace(/\s/g, '').substring(1);
+                  value = cleanNumber.replace(/(\d{2})(?=\d)/g, '$1 ');
+                  modified = true;
+                }
+                break;
+
+              case 'custom':
+                // Supprimer un indicatif personnalisé
+                if (this.customIndicatif && value.startsWith(this.customIndicatif)) {
+                  value = value.substring(this.customIndicatif.length).trim();
+                  modified = true;
+                }
+                break;
+            }
+            
+            if (modified) {
+              processedCells++;
+            }
+            
+            row[col] = value;
+          }
+        });
+      });
+
+      // Mettre à jour aussi allRows si la sélection n'est pas appliquée
+      if (!this.selectionApplied) {
+        this.allRows.forEach((row, rowIndex) => {
+          this.formatSelections['removeIndicatif'].forEach(col => {
+            if (row[col] !== undefined && row[col] !== null) {
+              // Convertir en chaîne si ce n'est pas déjà le cas
+              let value = String(row[col]).trim();
+              
+              // Vérifier que la chaîne a une longueur suffisante
+              if (value.length === 0) {
+                return;
+              }
+
+              switch (this.indicatifType) {
+                case 'international':
+                  // Supprimer les indicatifs internationaux courants
+                  const internationalPattern = /^\+(\d{1,4})\s*/;
+                  if (internationalPattern.test(value)) {
+                    value = value.replace(internationalPattern, '');
+                  }
+                  break;
+
+                case 'national':
+                  // Supprimer les indicatifs nationaux français
+                  const nationalPattern = /^0\d\s*\d{2}\s*\d{2}\s*\d{2}\s*\d{2}$/;
+                  if (nationalPattern.test(value.replace(/\s/g, ''))) {
+                    // Supprimer le premier chiffre (0) et reformater
+                    const cleanNumber = value.replace(/\s/g, '').substring(1);
+                    value = cleanNumber.replace(/(\d{2})(?=\d)/g, '$1 ');
+                  }
+                  break;
+
+                case 'custom':
+                  // Supprimer un indicatif personnalisé
+                  if (this.customIndicatif && value.startsWith(this.customIndicatif)) {
+                    value = value.substring(this.customIndicatif.length).trim();
+                  }
+                  break;
+              }
+              
+              row[col] = value;
+            }
+          });
+        });
+      }
+
+      console.log(`📊 RÉSUMÉ: ${totalCells} cellules vérifiées, ${processedCells} cellules modifiées`);
+
+      this.showSuccess('format', `Suppression d'indicatif appliquée sur ${this.formatSelections['removeIndicatif'].length} colonne(s) (${processedCells} modifications)`);
+      
+      // Forcer la mise à jour de l'affichage
+      this.updateDisplayedRowsForPage();
+      this.cd.detectChanges();
+    } catch (error) {
+      console.error('❌ Erreur lors de la suppression d\'indicatif:', error);
+      this.showError('format', 'Erreur lors de la suppression d\'indicatif');
+    }
+  }
+
+  applyRemoveDecimalsFormatting() {
+    if (!this.formatSelections['removeDecimals'].length) {
+      this.showError('format', 'Veuillez sélectionner au moins une colonne');
+      return;
+    }
+
+    try {
+      let processedCells = 0;
+      let totalCells = 0;
+      
+      // Traiter les données affichées (combinedRows)
+      this.combinedRows.forEach((row, rowIndex) => {
+        this.formatSelections['removeDecimals'].forEach(col => {
+          totalCells++;
+          if (row[col] !== undefined && row[col] !== null) {
+            // Convertir en chaîne si ce n'est pas déjà le cas
+            let value = String(row[col]).trim();
+            const originalValue = value;
+            
+            // Vérifier que la chaîne a une longueur suffisante
+            if (value.length === 0) {
+              return;
+            }
+
+            let modified = false;
+
+            // Détecter et supprimer les décimales selon le séparateur choisi
+            if (this.decimalSeparator === ',') {
+              // Format français : 3 000,00 ou 3000,00 - gère les séparateurs de milliers (espaces)
+              // Pattern: nombre avec espaces possibles + virgule + décimales
+              const frenchPattern = /^([\d\s]+)\s*,\s*(\d+)\s*$/;
+              const match = value.match(frenchPattern);
+              console.log(`🔍 Test français pour "${value}":`, match);
+              if (match) {
+                let integerPart = match[1];
+                const decimalPart = match[2];
+                console.log(`📊 Partie entière brute: "${integerPart}", Partie décimale: "${decimalPart}"`);
+                
+                // Nettoyer la partie entière en supprimant les espaces (séparateurs de milliers)
+                integerPart = integerPart.replace(/\s/g, '');
+                console.log(`📊 Partie entière nettoyée: "${integerPart}"`);
+                
+                // Si on garde les zéros de fin et que la partie décimale n'est pas que des zéros
+                if (this.keepTrailingZeros && !/^0+$/.test(decimalPart)) {
+                  console.log(`⏭️ Garde "${value}" car partie décimale non nulle: "${decimalPart}"`);
+                  // Garder le nombre tel quel
+                  return;
+                }
+                
+                // Supprimer la partie décimale et retourner la partie entière nettoyée
+                value = integerPart;
+                modified = true;
+                console.log(`✅ Modifié "${originalValue}" → "${value}"`);
               } else {
-                newValue = originalValue;
+                console.log(`❌ Pas de match pour "${value}" avec le pattern français`);
+              }
+            } else {
+              // Format anglais : 3,000.00 ou 3000.00 - gère les séparateurs de milliers (virgules)
+              // Pattern: nombre avec virgules possibles + point + décimales
+              const englishPattern = /^([\d,]+)\s*\.\s*(\d+)\s*$/;
+              const match = value.match(englishPattern);
+              console.log(`🔍 Test anglais pour "${value}":`, match);
+              if (match) {
+                let integerPart = match[1];
+                const decimalPart = match[2];
+                console.log(`📊 Partie entière brute: "${integerPart}", Partie décimale: "${decimalPart}"`);
+                
+                // Nettoyer la partie entière en supprimant les virgules (séparateurs de milliers)
+                integerPart = integerPart.replace(/,/g, '');
+                console.log(`📊 Partie entière nettoyée: "${integerPart}"`);
+                
+                // Si on garde les zéros de fin et que la partie décimale n'est pas que des zéros
+                if (this.keepTrailingZeros && !/^0+$/.test(decimalPart)) {
+                  console.log(`⏭️ Garde "${value}" car partie décimale non nulle: "${decimalPart}"`);
+                  // Garder le nombre tel quel
+                  return;
+                }
+                
+                // Supprimer la partie décimale et retourner la partie entière nettoyée
+                value = integerPart;
+                modified = true;
+                console.log(`✅ Modifié "${originalValue}" → "${value}"`);
+              } else {
+                console.log(`❌ Pas de match pour "${value}" avec le pattern anglais`);
               }
             }
             
-            if (newValue !== originalValue) {
+            if (modified) {
               processedCells++;
-              console.log(`✅ MODIFICATION: Ligne ${rowIndex}, Colonne ${col}: "${originalValue}" -> "${newValue}"`);
             }
             
-            row[col] = newValue;
+            row[col] = value;
           }
         });
       });
@@ -3059,114 +2957,141 @@ export class TraitementComponent implements OnInit, AfterViewInit {
       // Mettre à jour aussi allRows si la sélection n'est pas appliquée
       if (!this.selectionApplied) {
         this.allRows.forEach((row, rowIndex) => {
-          this.formatSelections['cleanAmounts'].forEach(col => {
+          this.formatSelections['removeDecimals'].forEach(col => {
             if (row[col] !== undefined && row[col] !== null) {
-              const originalValue = row[col];
-              let newValue = originalValue;
+              // Convertir en chaîne si ce n'est pas déjà le cas
+              let value = String(row[col]).trim();
               
-              // Si c'est une chaîne, nettoyer le formatage
-              if (typeof originalValue === 'string') {
-                // Enlever les espaces
-                newValue = originalValue.replace(/\s/g, '');
-                // Enlever ",00" à la fin
-                newValue = newValue.replace(/,00$/, '');
-                // Enlever ",0" à la fin (pour les montants comme 100,0)
-                newValue = newValue.replace(/,0$/, '');
-              } else if (typeof originalValue === 'number') {
-                // Si c'est un nombre, le convertir en entier si c'est un nombre entier
-                if (originalValue % 1 === 0) {
-                  newValue = Math.floor(originalValue);
-                } else {
-                  newValue = originalValue;
+              // Vérifier que la chaîne a une longueur suffisante
+              if (value.length === 0) {
+                return;
+              }
+
+              // Détecter et supprimer les décimales selon le séparateur choisi
+              if (this.decimalSeparator === ',') {
+                // Format français : 3 000,00 ou 3000,00 - gère les séparateurs de milliers (espaces)
+                // Pattern: nombre avec espaces possibles + virgule + décimales
+                const frenchPattern = /^([\d\s]+)\s*,\s*(\d+)\s*$/;
+                const match = value.match(frenchPattern);
+                if (match) {
+                  let integerPart = match[1];
+                  const decimalPart = match[2];
+                  
+                  // Nettoyer la partie entière en supprimant les espaces (séparateurs de milliers)
+                  integerPart = integerPart.replace(/\s/g, '');
+                  
+                  // Si on garde les zéros de fin et que la partie décimale n'est pas que des zéros
+                  if (this.keepTrailingZeros && !/^0+$/.test(decimalPart)) {
+                    // Garder le nombre tel quel
+                    return;
+                  }
+                  
+                  // Supprimer la partie décimale et retourner la partie entière nettoyée
+                  value = integerPart;
+                }
+              } else {
+                // Format anglais : 3,000.00 ou 3000.00 - gère les séparateurs de milliers (virgules)
+                // Pattern: nombre avec virgules possibles + point + décimales
+                const englishPattern = /^([\d,]+)\s*\.\s*(\d+)\s*$/;
+                const match = value.match(englishPattern);
+                if (match) {
+                  let integerPart = match[1];
+                  const decimalPart = match[2];
+                  
+                  // Nettoyer la partie entière en supprimant les virgules (séparateurs de milliers)
+                  integerPart = integerPart.replace(/,/g, '');
+                  
+                  // Si on garde les zéros de fin et que la partie décimale n'est pas que des zéros
+                  if (this.keepTrailingZeros && !/^0+$/.test(decimalPart)) {
+                    // Garder le nombre tel quel
+                    return;
+                  }
+                  
+                  // Supprimer la partie décimale et retourner la partie entière nettoyée
+                  value = integerPart;
                 }
               }
               
-              row[col] = newValue;
+              row[col] = value;
             }
           });
         });
       }
 
       console.log(`📊 RÉSUMÉ: ${totalCells} cellules vérifiées, ${processedCells} cellules modifiées`);
-      this.showSuccess('format', `Montants nettoyés avec succès (${processedCells} modifications)`);
+
+      this.showSuccess('format', `Suppression de décimales appliquée sur ${this.formatSelections['removeDecimals'].length} colonne(s) (${processedCells} modifications)`);
       
       // Forcer la mise à jour de l'affichage
       this.updateDisplayedRowsForPage();
       this.cd.detectChanges();
     } catch (error) {
-      console.error('❌ Erreur lors du nettoyage des montants:', error);
-      this.showError('format', 'Erreur lors du nettoyage des montants.');
+      console.error('❌ Erreur lors de la suppression des décimales:', error);
+      this.showError('format', 'Erreur lors de la suppression des décimales');
     }
   }
 
-  applyInsertCharactersFormatting() {
-    if (!this.formatSelections['insertCharacters'].length) {
+  /**
+   * Applique le formatage pour garder les N derniers digits
+   */
+  applyKeepLastDigitsFormatting() {
+    if (!this.formatSelections['keepLastDigits'].length) {
       this.showError('format', 'Veuillez sélectionner au moins une colonne');
       return;
     }
 
-    if (!this.charactersToInsert.trim()) {
-      this.showError('format', 'Veuillez spécifier les caractères à insérer');
+    if (this.keepLastDigitsCount <= 0) {
+      this.showError('format', 'Le nombre de digits à garder doit être supérieur à 0');
       return;
     }
 
     try {
       let processedCells = 0;
       let totalCells = 0;
-      const charsToInsert = this.charactersToInsert.trim();
+      
+      console.log(`🔄 Formatage: Garder les ${this.keepLastDigitsCount} derniers digits`);
       
       // Traiter les données affichées (combinedRows)
       this.combinedRows.forEach((row, rowIndex) => {
-        this.formatSelections['insertCharacters'].forEach(col => {
+        this.formatSelections['keepLastDigits'].forEach(col => {
           totalCells++;
           if (row[col] !== undefined && row[col] !== null) {
-            const originalValue = row[col];
-            let newValue = originalValue;
-            
             // Convertir en chaîne si ce n'est pas déjà le cas
-            if (typeof originalValue !== 'string') {
-              newValue = originalValue.toString();
+            let value = String(row[col]).trim();
+            const originalValue = value;
+            
+            // Vérifier que la chaîne a une longueur suffisante
+            if (value.length === 0) {
+              return;
             }
+
+            // Extraire seulement les digits (nombres)
+            const digitsOnly = value.replace(/\D/g, '');
             
-            // Vérifier si les caractères sont déjà présents pour éviter les doublons
-            let shouldInsert = true;
-            
-            switch (this.insertPosition) {
-              case 'start':
-                // Vérifier si les caractères sont déjà au début
-                if (newValue.startsWith(charsToInsert)) {
-                  shouldInsert = false;
-                } else {
-                  newValue = charsToInsert + newValue;
-                }
-                break;
-              case 'end':
-                // Vérifier si les caractères sont déjà à la fin
-                if (newValue.endsWith(charsToInsert)) {
-                  shouldInsert = false;
-                } else {
-                  newValue = newValue + charsToInsert;
-                }
-                break;
-              case 'specific':
-                const position = Math.max(0, Math.min(this.insertSpecificPosition - 1, newValue.length));
-                // Vérifier si les caractères sont déjà présents à cette position
-                const beforePosition = newValue.substring(0, position);
-                const afterPosition = newValue.substring(position);
-                if (afterPosition.startsWith(charsToInsert)) {
-                  shouldInsert = false;
-                } else {
-                  newValue = beforePosition + charsToInsert + afterPosition;
-                }
-                break;
+            if (digitsOnly.length === 0) {
+              // Aucun digit trouvé, garder la valeur originale
+              return;
             }
-            
-            if (shouldInsert && newValue !== originalValue) {
+
+            // Garder les N derniers digits
+            if (digitsOnly.length >= this.keepLastDigitsCount) {
+              value = digitsOnly.slice(-this.keepLastDigitsCount);
+              row[col] = value;
               processedCells++;
-              console.log(`✅ MODIFICATION: Ligne ${rowIndex}, Colonne ${col}: "${originalValue}" -> "${newValue}"`);
+              
+              if (rowIndex < 5) { // Log pour les 5 premières lignes
+                console.log(`📝 ${col}[${rowIndex}]: "${originalValue}" -> "${value}"`);
+              }
+            } else {
+              // Si moins de digits que demandé, garder tous les digits disponibles
+              value = digitsOnly;
+              row[col] = value;
+              processedCells++;
+              
+              if (rowIndex < 5) { // Log pour les 5 premières lignes
+                console.log(`📝 ${col}[${rowIndex}]: "${originalValue}" -> "${value}" (moins de ${this.keepLastDigitsCount} digits)`);
+              }
             }
-            
-            row[col] = newValue;
           }
         });
       });
@@ -3174,381 +3099,48 @@ export class TraitementComponent implements OnInit, AfterViewInit {
       // Mettre à jour aussi allRows si la sélection n'est pas appliquée
       if (!this.selectionApplied) {
         this.allRows.forEach((row, rowIndex) => {
-          this.formatSelections['insertCharacters'].forEach(col => {
+          this.formatSelections['keepLastDigits'].forEach(col => {
             if (row[col] !== undefined && row[col] !== null) {
-              const originalValue = row[col];
-              let newValue = originalValue;
-              
               // Convertir en chaîne si ce n'est pas déjà le cas
-              if (typeof originalValue !== 'string') {
-                newValue = originalValue.toString();
+              let value = String(row[col]).trim();
+              
+              // Vérifier que la chaîne a une longueur suffisante
+              if (value.length === 0) {
+                return;
               }
+
+              // Extraire seulement les digits (nombres)
+              const digitsOnly = value.replace(/\D/g, '');
               
-              // Vérifier si les caractères sont déjà présents pour éviter les doublons
-              let shouldInsert = true;
-              
-              switch (this.insertPosition) {
-                case 'start':
-                  // Vérifier si les caractères sont déjà au début
-                  if (newValue.startsWith(charsToInsert)) {
-                    shouldInsert = false;
-                  } else {
-                    newValue = charsToInsert + newValue;
-                  }
-                  break;
-                case 'end':
-                  // Vérifier si les caractères sont déjà à la fin
-                  if (newValue.endsWith(charsToInsert)) {
-                    shouldInsert = false;
-                  } else {
-                    newValue = newValue + charsToInsert;
-                  }
-                  break;
-                case 'specific':
-                  const position = Math.max(0, Math.min(this.insertSpecificPosition - 1, newValue.length));
-                  // Vérifier si les caractères sont déjà présents à cette position
-                  const beforePosition = newValue.substring(0, position);
-                  const afterPosition = newValue.substring(position);
-                  if (afterPosition.startsWith(charsToInsert)) {
-                    shouldInsert = false;
-                  } else {
-                    newValue = beforePosition + charsToInsert + afterPosition;
-                  }
-                  break;
+              if (digitsOnly.length === 0) {
+                // Aucun digit trouvé, garder la valeur originale
+                return;
               }
-              
-              row[col] = newValue;
+
+              // Garder les N derniers digits
+              if (digitsOnly.length >= this.keepLastDigitsCount) {
+                value = digitsOnly.slice(-this.keepLastDigitsCount);
+                row[col] = value;
+              } else {
+                // Si moins de digits que demandé, garder tous les digits disponibles
+                value = digitsOnly;
+                row[col] = value;
+              }
             }
           });
         });
       }
 
       console.log(`📊 RÉSUMÉ: ${totalCells} cellules vérifiées, ${processedCells} cellules modifiées`);
-      this.showSuccess('format', `Caractères insérés avec succès (${processedCells} modifications)`);
+
+      this.showSuccess('format', `Formatage "garder ${this.keepLastDigitsCount} derniers digits" appliqué sur ${this.formatSelections['keepLastDigits'].length} colonne(s) (${processedCells} modifications)`);
       
       // Forcer la mise à jour de l'affichage
       this.updateDisplayedRowsForPage();
       this.cd.detectChanges();
     } catch (error) {
-      console.error('❌ Erreur lors de l\'insertion des caractères:', error);
-      this.showError('format', 'Erreur lors de l\'insertion des caractères.');
-    }
-  }
-
-  // Méthode pour formater les colonnes en nombre
-  applyNumberFormatting() {
-    if (!this.formatSelections['formatToNumber'].length) {
-      this.showError('format', 'Veuillez sélectionner au moins une colonne à formater en nombre.');
-      return;
-    }
-
-    try {
-      let processedCells = 0;
-      let errorCells = 0;
-      let totalCells = 0;
-
-      // Traiter les données affichées (combinedRows)
-      this.combinedRows.forEach((row, rowIndex) => {
-        this.formatSelections['formatToNumber'].forEach(col => {
-          totalCells++;
-          if (row[col] !== undefined && row[col] !== null && row[col] !== '') {
-            const originalValue = row[col];
-            let newValue: number | string = originalValue;
-            
-            // Convertir en chaîne si ce n'est pas déjà le cas
-            if (typeof originalValue !== 'string') {
-              newValue = originalValue.toString();
-            }
-            
-            // Nettoyer la valeur (supprimer espaces, caractères spéciaux)
-            let cleanValue = String(newValue).trim().replace(/[^\d.,-]/g, '');
-            
-            // Remplacer la virgule par un point pour la conversion
-            cleanValue = cleanValue.replace(',', '.');
-            
-            // Convertir en nombre
-            const numberValue = parseFloat(cleanValue);
-            
-            if (!isNaN(numberValue)) {
-              row[col] = numberValue;
-              processedCells++;
-              console.log(`✅ CONVERSION: Ligne ${rowIndex}, Colonne ${col}: "${originalValue}" -> ${numberValue}`);
-            } else {
-              // Garder la valeur originale si la conversion échoue
-              console.warn(`⚠️ IMPOSSIBLE DE CONVERTIR: Ligne ${rowIndex}, Colonne ${col}: "${originalValue}"`);
-              errorCells++;
-            }
-          }
-        });
-      });
-
-      // Mettre à jour aussi allRows si la sélection n'est pas appliquée
-      if (!this.selectionApplied) {
-        this.allRows.forEach((row, rowIndex) => {
-          this.formatSelections['formatToNumber'].forEach(col => {
-            if (row[col] !== undefined && row[col] !== null && row[col] !== '') {
-              const originalValue = row[col];
-              let newValue: number | string = originalValue;
-              
-              // Convertir en chaîne si ce n'est pas déjà le cas
-              if (typeof originalValue !== 'string') {
-                newValue = originalValue.toString();
-              }
-              
-              // Nettoyer la valeur (supprimer espaces, caractères spéciaux)
-              let cleanValue = String(newValue).trim().replace(/[^\d.,-]/g, '');
-              
-              // Remplacer la virgule par un point pour la conversion
-              cleanValue = cleanValue.replace(',', '.');
-              
-              // Convertir en nombre
-              const numberValue = parseFloat(cleanValue);
-              
-              if (!isNaN(numberValue)) {
-                row[col] = numberValue;
-              }
-            }
-          });
-        });
-      }
-
-      // Afficher le résultat
-      if (errorCells > 0) {
-        this.showError('format', `Formatage terminé avec ${errorCells} erreur(s). ${processedCells} valeurs converties en nombre.`);
-      } else {
-        this.showSuccess('format', `${processedCells} valeurs converties en nombre avec succès.`);
-      }
-      
-      // Forcer la mise à jour de l'affichage
-      this.updateDisplayedRowsForPage();
-      this.cd.detectChanges();
-    } catch (error) {
-      console.error('❌ Erreur lors du formatage en nombre:', error);
-      this.showError('format', 'Erreur lors du formatage en nombre.');
-    }
-  }
-
-  // Méthode pour normaliser les en-têtes
-  applyNormalizeHeadersFormatting() {
-    if (!this.formatSelections['normalizeHeaders'].length) {
-      this.showError('format', 'Veuillez sélectionner au moins une colonne à normaliser.');
-      return;
-    }
-
-    try {
-      let processedCells = 0;
-      let totalCells = 0;
-
-      // Traiter les données affichées (combinedRows)
-      this.combinedRows.forEach((row, rowIndex) => {
-        this.formatSelections['normalizeHeaders'].forEach(col => {
-          totalCells++;
-          if (row[col] !== undefined && row[col] !== null && row[col] !== '') {
-            const originalValue = row[col];
-            let newValue = String(originalValue);
-            
-            // Normaliser les en-têtes (espaces + première lettre majuscule)
-            newValue = this.normalizeHeader(newValue);
-            
-            if (newValue !== originalValue) {
-              row[col] = newValue;
-              processedCells++;
-              console.log(`✅ NORMALISATION: Ligne ${rowIndex}, Colonne ${col}: "${originalValue}" -> "${newValue}"`);
-            }
-          }
-        });
-      });
-
-      // Mettre à jour aussi allRows si la sélection n'est pas appliquée
-      if (!this.selectionApplied) {
-        this.allRows.forEach((row, rowIndex) => {
-          this.formatSelections['normalizeHeaders'].forEach(col => {
-            if (row[col] !== undefined && row[col] !== null && row[col] !== '') {
-              const originalValue = row[col];
-              let newValue = String(originalValue);
-              newValue = this.normalizeHeader(newValue);
-              row[col] = newValue;
-            }
-          });
-        });
-      }
-
-      this.showSuccess('format', `${processedCells} valeurs normalisées avec succès.`);
-      
-      // Forcer la mise à jour de l'affichage
-      this.updateDisplayedRowsForPage();
-      this.cd.detectChanges();
-    } catch (error) {
-      console.error('❌ Erreur lors de la normalisation des en-têtes:', error);
-      this.showError('format', 'Erreur lors de la normalisation des en-têtes.');
-    }
-  }
-
-  // Méthode pour corriger les caractères spéciaux
-  applyFixSpecialCharactersFormatting() {
-    if (!this.formatSelections['fixSpecialCharacters'].length) {
-      this.showError('format', 'Veuillez sélectionner au moins une colonne à corriger.');
-      return;
-    }
-
-    try {
-      let processedCells = 0;
-      let totalCells = 0;
-
-      // Traiter les données affichées (combinedRows)
-      this.combinedRows.forEach((row, rowIndex) => {
-        this.formatSelections['fixSpecialCharacters'].forEach(col => {
-          totalCells++;
-          if (row[col] !== undefined && row[col] !== null && row[col] !== '') {
-            const originalValue = row[col];
-            let newValue = String(originalValue);
-            
-            // Corriger les caractères spéciaux
-            newValue = this.fixSpecialCharacters(newValue);
-            
-            if (newValue !== originalValue) {
-              row[col] = newValue;
-              processedCells++;
-              console.log(`✅ CORRECTION: Ligne ${rowIndex}, Colonne ${col}: "${originalValue}" -> "${newValue}"`);
-            }
-          }
-        });
-      });
-
-      // Mettre à jour aussi allRows si la sélection n'est pas appliquée
-      if (!this.selectionApplied) {
-        this.allRows.forEach((row, rowIndex) => {
-          this.formatSelections['fixSpecialCharacters'].forEach(col => {
-            if (row[col] !== undefined && row[col] !== null && row[col] !== '') {
-              const originalValue = row[col];
-              let newValue = String(originalValue);
-              newValue = this.fixSpecialCharacters(newValue);
-              row[col] = newValue;
-            }
-          });
-        });
-      }
-
-      this.showSuccess('format', `${processedCells} valeurs corrigées avec succès.`);
-      
-      // Forcer la mise à jour de l'affichage
-      this.updateDisplayedRowsForPage();
-      this.cd.detectChanges();
-    } catch (error) {
-      console.error('❌ Erreur lors de la correction des caractères spéciaux:', error);
-      this.showError('format', 'Erreur lors de la correction des caractères spéciaux.');
-    }
-  }
-
-  // Méthode pour supprimer les accents
-  applyRemoveAccentsFormatting() {
-    if (!this.formatSelections['removeAccents'].length) {
-      this.showError('format', 'Veuillez sélectionner au moins une colonne à traiter.');
-      return;
-    }
-
-    try {
-      let processedCells = 0;
-      let totalCells = 0;
-
-      // Traiter les données affichées (combinedRows)
-      this.combinedRows.forEach((row, rowIndex) => {
-        this.formatSelections['removeAccents'].forEach(col => {
-          totalCells++;
-          if (row[col] !== undefined && row[col] !== null && row[col] !== '') {
-            const originalValue = row[col];
-            let newValue = String(originalValue);
-            
-            // Supprimer les accents
-            newValue = this.removeAccents(newValue);
-            
-            if (newValue !== originalValue) {
-              row[col] = newValue;
-              processedCells++;
-              console.log(`✅ SUPPRESSION ACCENTS: Ligne ${rowIndex}, Colonne ${col}: "${originalValue}" -> "${newValue}"`);
-            }
-          }
-        });
-      });
-
-      // Mettre à jour aussi allRows si la sélection n'est pas appliquée
-      if (!this.selectionApplied) {
-        this.allRows.forEach((row, rowIndex) => {
-          this.formatSelections['removeAccents'].forEach(col => {
-            if (row[col] !== undefined && row[col] !== null && row[col] !== '') {
-              const originalValue = row[col];
-              let newValue = String(originalValue);
-              newValue = this.removeAccents(newValue);
-              row[col] = newValue;
-            }
-          });
-        });
-      }
-
-      this.showSuccess('format', `${processedCells} valeurs traitées avec succès.`);
-      
-      // Forcer la mise à jour de l'affichage
-      this.updateDisplayedRowsForPage();
-      this.cd.detectChanges();
-    } catch (error) {
-      console.error('❌ Erreur lors de la suppression des accents:', error);
-      this.showError('format', 'Erreur lors de la suppression des accents.');
-    }
-  }
-
-  // Méthode pour standardiser les en-têtes
-  applyStandardizeHeadersFormatting() {
-    if (!this.formatSelections['standardizeHeaders'].length) {
-      this.showError('format', 'Veuillez sélectionner au moins une colonne à standardiser.');
-      return;
-    }
-
-    try {
-      let processedCells = 0;
-      let totalCells = 0;
-
-      // Traiter les données affichées (combinedRows)
-      this.combinedRows.forEach((row, rowIndex) => {
-        this.formatSelections['standardizeHeaders'].forEach(col => {
-          totalCells++;
-          if (row[col] !== undefined && row[col] !== null && row[col] !== '') {
-            const originalValue = row[col];
-            let newValue = String(originalValue);
-            
-            // Standardiser les en-têtes
-            newValue = this.standardizeHeader(newValue);
-            
-            if (newValue !== originalValue) {
-              row[col] = newValue;
-              processedCells++;
-              console.log(`✅ STANDARDISATION: Ligne ${rowIndex}, Colonne ${col}: "${originalValue}" -> "${newValue}"`);
-            }
-          }
-        });
-      });
-
-      // Mettre à jour aussi allRows si la sélection n'est pas appliquée
-      if (!this.selectionApplied) {
-        this.allRows.forEach((row, rowIndex) => {
-          this.formatSelections['standardizeHeaders'].forEach(col => {
-            if (row[col] !== undefined && row[col] !== null && row[col] !== '') {
-              const originalValue = row[col];
-              let newValue = String(originalValue);
-              newValue = this.standardizeHeader(newValue);
-              row[col] = newValue;
-            }
-          });
-        });
-      }
-
-      this.showSuccess('format', `${processedCells} valeurs standardisées avec succès.`);
-      
-      // Forcer la mise à jour de l'affichage
-      this.updateDisplayedRowsForPage();
-      this.cd.detectChanges();
-    } catch (error) {
-      console.error('❌ Erreur lors de la standardisation des en-têtes:', error);
-      this.showError('format', 'Erreur lors de la standardisation des en-têtes.');
+      console.error('❌ Erreur lors du formatage des digits:', error);
+      this.showError('format', 'Erreur lors du formatage des digits');
     }
   }
 
@@ -4647,5 +4239,451 @@ export class TraitementComponent implements OnInit, AfterViewInit {
       averageValue: analysis.averageValue,
       sampleValues: analysis.sampleValues
     };
+  }
+
+  // ===== MÉTHODES POUR L'EXPORT PAR DATE =====
+
+  /**
+   * Gère le changement de colonne de date pour l'export
+   */
+  onExportDateColChange(): void {
+    this.detectedPeriods = [];
+    if (this.exportDateCol && this.exportDatePeriod) {
+      this.detectPeriods();
+    }
+  }
+
+  /**
+   * Détecte les périodes disponibles dans la colonne de date sélectionnée
+   */
+  private detectPeriods(): void {
+    if (!this.exportDateCol || !this.exportDatePeriod) return;
+
+    const periodMap = new Map<string, number>();
+
+    this.combinedRows.forEach(row => {
+      const dateValue = row[this.exportDateCol];
+      if (dateValue) {
+        const periodKey = this.getPeriodKey(dateValue, this.exportDatePeriod);
+        if (periodKey) {
+          periodMap.set(periodKey, (periodMap.get(periodKey) || 0) + 1);
+        }
+      }
+    });
+
+    this.detectedPeriods = Array.from(periodMap.entries())
+      .map(([key, count]) => ({
+        key,
+        label: this.formatPeriodLabel(key, this.exportDatePeriod),
+        count
+      }))
+      .sort((a, b) => a.key.localeCompare(b.key));
+  }
+
+  /**
+   * Génère une clé de période basée sur la date et le type de période
+   */
+  private getPeriodKey(dateValue: any, period: string): string | null {
+    try {
+      const date = this.parseDate(dateValue);
+      if (!date) return null;
+
+      switch (period) {
+        case 'day':
+          return date.toISOString().split('T')[0]; // YYYY-MM-DD
+        case 'week':
+          const year = date.getFullYear();
+          const week = this.getWeekNumber(date);
+          return `${year}-W${week.toString().padStart(2, '0')}`;
+        case 'month':
+          return `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}`;
+        default:
+          return null;
+      }
+    } catch (error) {
+      console.error('Erreur lors de la génération de la clé de période:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Formate le label d'une période pour l'affichage
+   */
+  private formatPeriodLabel(key: string, period: string): string {
+    switch (period) {
+      case 'day':
+        return new Date(key).toLocaleDateString('fr-FR');
+      case 'week':
+        const [year, week] = key.split('-W');
+        return `Semaine ${week} de ${year}`;
+      case 'month':
+        const [yearMonth, month] = key.split('-');
+        const monthNames = [
+          'Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin',
+          'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'
+        ];
+        return `${monthNames[parseInt(month) - 1]} ${yearMonth}`;
+      default:
+        return key;
+    }
+  }
+
+  /**
+   * Calcule le numéro de semaine d'une date
+   */
+  private getWeekNumber(date: Date): number {
+    const firstDayOfYear = new Date(date.getFullYear(), 0, 1);
+    const pastDaysOfYear = (date.getTime() - firstDayOfYear.getTime()) / 86400000;
+    return Math.ceil((pastDaysOfYear + firstDayOfYear.getDay() + 1) / 7);
+  }
+
+  /**
+   * Parse une date depuis différentes formats
+   */
+  private parseDate(dateValue: any): Date | null {
+    if (!dateValue) return null;
+
+    // Si c'est déjà un objet Date
+    if (dateValue instanceof Date) {
+      return dateValue;
+    }
+
+    // Si c'est une string, essayer de la parser
+    if (typeof dateValue === 'string') {
+      // Essayer différents formats de date
+      const formats = [
+        /^\d{4}-\d{2}-\d{2}$/, // YYYY-MM-DD
+        /^\d{2}\/\d{2}\/\d{4}$/, // DD/MM/YYYY
+        /^\d{2}-\d{2}-\d{4}$/, // DD-MM-YYYY
+        /^\d{4}\/\d{2}\/\d{2}$/, // YYYY/MM/DD
+      ];
+
+      for (const format of formats) {
+        if (format.test(dateValue)) {
+          const parsed = new Date(dateValue);
+          if (!isNaN(parsed.getTime())) {
+            return parsed;
+          }
+        }
+      }
+
+      // Essayer de parser directement
+      const parsed = new Date(dateValue);
+      if (!isNaN(parsed.getTime())) {
+        return parsed;
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Exporte les données par période de date
+   */
+  exportByDate(): void {
+    console.log('🔄 Début de l\'export par date...');
+    console.log('📋 Paramètres:', {
+      exportDateCol: this.exportDateCol,
+      exportDatePeriod: this.exportDatePeriod,
+      exportDateFormat: this.exportDateFormat,
+      totalRows: this.combinedRows.length,
+      totalColumns: this.columns.length
+    });
+
+    if (!this.exportDateCol || !this.exportDatePeriod || !this.exportDateFormat) {
+      this.showError('exportDate', 'Veuillez sélectionner une colonne de date, une période et un format.');
+      return;
+    }
+
+    if (!this.combinedRows || this.combinedRows.length === 0) {
+      this.showError('exportDate', 'Aucune donnée disponible pour l\'export. Veuillez d\'abord charger des fichiers.');
+      return;
+    }
+
+    if (!this.columns || this.columns.length === 0) {
+      this.showError('exportDate', 'Aucune colonne définie. Veuillez d\'abord charger des fichiers.');
+      return;
+    }
+
+    // Vérifier que la colonne de date existe
+    if (!this.columns.includes(this.exportDateCol)) {
+      this.showError('exportDate', `La colonne "${this.exportDateCol}" n'existe pas dans les données chargées.`);
+      return;
+    }
+
+    try {
+      const periodGroups = this.groupDataByPeriod();
+      console.log(`📊 Groupes de périodes détectés: ${periodGroups.size}`);
+      
+      if (periodGroups.size === 0) {
+        this.showError('exportDate', 'Aucune période détectée dans les données. Vérifiez la colonne de date sélectionnée.');
+        return;
+      }
+
+      let exportedCount = 0;
+      const errors: string[] = [];
+
+      for (const [periodKey, rows] of periodGroups.entries()) {
+        try {
+          const periodLabel = this.formatPeriodLabel(periodKey, this.exportDatePeriod);
+          const fileName = this.generateExportFileName(periodKey, periodLabel);
+          
+          console.log(`📁 Export de la période: ${periodLabel} (${rows.length} lignes) -> ${fileName}`);
+          
+          if (this.exportDateFormat === 'csv') {
+            this.exportPeriodAsCSV(rows, fileName);
+          } else if (this.exportDateFormat === 'xls') {
+            this.exportPeriodAsXLS(rows, fileName);
+          } else if (this.exportDateFormat === 'xlsx') {
+            this.exportPeriodAsXLSX(rows, fileName);
+          } else {
+            throw new Error(`Format d'export non supporté: ${this.exportDateFormat}`);
+          }
+          
+          exportedCount++;
+        } catch (periodError) {
+          console.error(`❌ Erreur pour la période ${periodKey}:`, periodError);
+          errors.push(`Période ${periodKey}: ${periodError.message}`);
+        }
+      }
+
+      if (exportedCount > 0) {
+        const message = errors.length > 0 
+          ? `${exportedCount} fichier(s) exporté(s) avec succès, ${errors.length} erreur(s).`
+          : `${exportedCount} fichier(s) exporté(s) avec succès !`;
+        this.showSuccess('exportDate', message);
+        
+        if (errors.length > 0) {
+          console.warn('⚠️ Erreurs lors de l\'export:', errors);
+        }
+      } else {
+        this.showError('exportDate', 'Aucun fichier n\'a pu être exporté. Vérifiez les données et les paramètres.');
+      }
+    } catch (error) {
+      console.error('❌ Erreur lors de l\'export par date:', error);
+      this.showError('exportDate', `Erreur lors de l'export par date: ${error.message}`);
+    }
+  }
+
+  /**
+   * Groupe les données par période
+   */
+  private groupDataByPeriod(): Map<string, any[]> {
+    const groups = new Map<string, any[]>();
+
+    this.combinedRows.forEach(row => {
+      const dateValue = row[this.exportDateCol];
+      if (dateValue) {
+        const periodKey = this.getPeriodKey(dateValue, this.exportDatePeriod);
+        if (periodKey) {
+          if (!groups.has(periodKey)) {
+            groups.set(periodKey, []);
+          }
+          groups.get(periodKey)!.push(row);
+        }
+      }
+    });
+
+    return groups;
+  }
+
+  /**
+   * Génère le nom de fichier pour l'export
+   */
+  private generateExportFileName(periodKey: string, periodLabel: string): string {
+    const prefix = this.exportDatePrefix.trim() || 'export';
+    const extension = this.exportDateFormat;
+    
+    // Nettoyer le label pour le nom de fichier
+    const cleanLabel = periodLabel.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '_');
+    
+    return `${prefix}_${cleanLabel}.${extension}`;
+  }
+
+  /**
+   * Exporte une période en CSV
+   */
+  private exportPeriodAsCSV(rows: any[], fileName: string): void {
+    try {
+      console.log(`🔄 Export CSV: ${rows.length} lignes, ${this.columns.length} colonnes`);
+      
+      if (!rows || rows.length === 0) {
+        console.warn('⚠️ Aucune donnée à exporter en CSV');
+        return;
+      }
+
+      if (!this.columns || this.columns.length === 0) {
+        console.warn('⚠️ Aucune colonne définie pour l\'export CSV');
+        return;
+      }
+
+      const exportColumns = this.columns.map(col => col === 'GRX' ? 'PAYS' : col);
+      const csvRows: string[] = [];
+      csvRows.push(exportColumns.join(';'));
+
+      for (const row of rows) {
+        const line = this.columns.map((col, idx) => {
+          let val = row[col];
+          
+          // Nettoyer et formater les valeurs
+          if (val === undefined || val === null) {
+            val = '';
+          } else if (typeof val === 'object') {
+            val = JSON.stringify(val);
+          } else {
+            val = String(val).trim();
+          }
+          
+          // Échapper les caractères spéciaux pour CSV
+          if (val.includes('"')) val = val.replace(/"/g, '""');
+          if (val.includes(';') || val.includes('"') || val.includes('\n')) val = '"' + val + '"';
+          return val;
+        }).join(';');
+        csvRows.push(line);
+      }
+
+      const csvContent = csvRows.join('\r\n');
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      a.click();
+      URL.revokeObjectURL(url);
+      
+      console.log(`✅ Export CSV réussi: ${fileName}`);
+    } catch (error) {
+      console.error('❌ Erreur lors de l\'export CSV:', error);
+      throw new Error(`Erreur lors de l'export CSV: ${error.message}`);
+    }
+  }
+
+  /**
+   * Exporte une période en XLS
+   */
+  private exportPeriodAsXLS(rows: any[], fileName: string): void {
+    try {
+      console.log(`🔄 Export XLS: ${rows.length} lignes, ${this.columns.length} colonnes`);
+      
+      if (!rows || rows.length === 0) {
+        console.warn('⚠️ Aucune donnée à exporter en XLS');
+        return;
+      }
+
+      if (!this.columns || this.columns.length === 0) {
+        console.warn('⚠️ Aucune colonne définie pour l\'export XLS');
+        return;
+      }
+
+      const exportColumns = this.columns.map(col => col === 'GRX' ? 'PAYS' : col);
+      
+      const exportData = rows.map((row, index) => {
+        const exportRow: any = {};
+        this.columns.forEach((col, idx) => {
+          const exportCol = exportColumns[idx];
+          let value = row[col];
+          
+          // Nettoyer et formater les valeurs
+          if (value === undefined || value === null) {
+            value = '';
+          } else if (typeof value === 'object') {
+            value = JSON.stringify(value);
+          } else {
+            value = String(value).trim();
+          }
+          
+          exportRow[exportCol] = value;
+        });
+        return exportRow;
+      });
+
+      console.log(`📊 Données préparées pour XLS: ${exportData.length} lignes`);
+      
+      const workbook = XLSX.utils.book_new();
+      const worksheet = XLSX.utils.json_to_sheet(exportData);
+      
+      // Définir la largeur des colonnes
+      const colWidths = exportColumns.map(() => ({ wch: 15 }));
+      worksheet['!cols'] = colWidths;
+      
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Données');
+      XLSX.writeFile(workbook, fileName);
+      
+      console.log(`✅ Export XLS réussi: ${fileName}`);
+    } catch (error) {
+      console.error('❌ Erreur lors de l\'export XLS:', error);
+      throw new Error(`Erreur lors de l'export XLS: ${error.message}`);
+    }
+  }
+
+  /**
+   * Exporte une période en XLSX
+   */
+  private exportPeriodAsXLSX(rows: any[], fileName: string): void {
+    try {
+      console.log(`🔄 Export XLSX: ${rows.length} lignes, ${this.columns.length} colonnes`);
+      
+      if (!rows || rows.length === 0) {
+        console.warn('⚠️ Aucune donnée à exporter en XLSX');
+        return;
+      }
+
+      if (!this.columns || this.columns.length === 0) {
+        console.warn('⚠️ Aucune colonne définie pour l\'export XLSX');
+        return;
+      }
+
+      const exportColumns = this.columns.map(col => col === 'GRX' ? 'PAYS' : col);
+      
+      const exportData = rows.map((row, index) => {
+        const exportRow: any = {};
+        this.columns.forEach((col, idx) => {
+          const exportCol = exportColumns[idx];
+          let value = row[col];
+          
+          // Nettoyer et formater les valeurs
+          if (value === undefined || value === null) {
+            value = '';
+          } else if (typeof value === 'object') {
+            value = JSON.stringify(value);
+          } else {
+            value = String(value).trim();
+          }
+          
+          exportRow[exportCol] = value;
+        });
+        return exportRow;
+      });
+
+      console.log(`📊 Données préparées pour XLSX: ${exportData.length} lignes`);
+      
+      const workbook = XLSX.utils.book_new();
+      const worksheet = XLSX.utils.json_to_sheet(exportData);
+      
+      // Définir la largeur des colonnes
+      const colWidths = exportColumns.map(() => ({ wch: 15 }));
+      worksheet['!cols'] = colWidths;
+      
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Données');
+      XLSX.writeFile(workbook, fileName);
+      
+      console.log(`✅ Export XLSX réussi: ${fileName}`);
+    } catch (error) {
+      console.error('❌ Erreur lors de l\'export XLSX:', error);
+      throw new Error(`Erreur lors de l'export XLSX: ${error.message}`);
+    }
+  }
+
+  /**
+   * Réinitialise les paramètres d'export par date
+   */
+  resetExportDate(): void {
+    this.exportDateCol = '';
+    this.exportDatePeriod = 'day';
+    this.exportDateFormat = 'csv';
+    this.exportDatePrefix = 'export';
+    this.detectedPeriods = [];
+    this.successMsg.exportDate = '';
+    this.errorMsg.exportDate = '';
   }
 } 
