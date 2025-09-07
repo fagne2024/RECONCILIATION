@@ -916,11 +916,27 @@
         <small class="help-text">Le nom des fichiers sera : [préfixe]_[période]_[date].csv/xls/xlsx</small>
       </div>
       
+      <!-- Message d'information sur l'export de la page courante -->
+      <div *ngIf="exportDateCol && exportDatePeriod && detectedPeriods.length > 0" class="export-complete-info">
+        <div class="info-box">
+          <i class="fas fa-info-circle"></i>
+          <div class="info-content">
+            <strong>Export de la page courante :</strong> Seuls les {{ getPagedDetectedPeriods().length }} fichiers de la page {{ detectedPeriodsPage }} seront exportés.
+            <br><small>Pour exporter toutes les {{ detectedPeriods.length }} périodes, naviguez entre les pages et exportez chaque page.</small>
+          </div>
+        </div>
+      </div>
+      
       <div class="filter-actions">
         <button type="button" (click)="exportByDate()" 
                 [disabled]="!exportDateCol || !exportDatePeriod || !exportDateFormat" 
                 class="apply-btn">
-          <i class="fas fa-download"></i> Exporter par date
+          <i class="fas fa-download"></i> Exporter page courante ({{ getPagedDetectedPeriods().length }} fichiers)
+        </button>
+        <button type="button" (click)="exportAllPages()" 
+                [disabled]="!exportDateCol || !exportDatePeriod || !exportDateFormat" 
+                class="btn btn-outline-primary">
+          <i class="fas fa-download"></i> Exporter toutes les pages ({{ detectedPeriods.length }} fichiers)
         </button>
         <button type="button" (click)="resetExportDate()" class="reset-btn">
           <i class="fas fa-undo"></i> Réinitialiser
@@ -928,16 +944,61 @@
       </div>
     </div>
     
-    <!-- Aperçu des périodes détectées -->
+    <!-- Aperçu des périodes détectées avec pagination -->
     <div *ngIf="exportDateCol && exportDatePeriod && detectedPeriods.length > 0" class="detected-periods">
-      <h5><i class="fas fa-list"></i> Périodes détectées ({{ detectedPeriods.length }})</h5>
+      <div class="periods-header">
+        <h5><i class="fas fa-list"></i> Périodes détectées ({{ detectedPeriods.length }})</h5>
+        <div class="periods-per-page" *ngIf="detectedPeriods.length > 5">
+          <label>Afficher par :</label>
+          <select [(ngModel)]="detectedPeriodsPageSize" (ngModelChange)="onPeriodsPageSizeChange()" class="form-control form-control-sm">
+            <option value="5">5</option>
+            <option value="10">10</option>
+            <option value="20">20</option>
+            <option value="50">50</option>
+          </select>
+        </div>
+      </div>
       <div class="periods-list">
-        <div *ngFor="let period of detectedPeriods.slice(0, 10)" class="period-item">
+        <div *ngFor="let period of getPagedDetectedPeriods()" class="period-item">
           <span class="period-label">{{ period.label }}</span>
           <span class="period-count">{{ period.count }} lignes</span>
         </div>
-        <div *ngIf="detectedPeriods.length > 10" class="period-more">
-          ... et {{ detectedPeriods.length - 10 }} autres périodes
+      </div>
+      
+      <!-- Contrôles de pagination -->
+      <div *ngIf="detectedPeriodsTotalPages > 1" class="periods-pagination">
+        <div class="pagination-info">
+          Page {{ detectedPeriodsPage }} sur {{ detectedPeriodsTotalPages }}
+          ({{ detectedPeriods.length }} périodes au total)
+        </div>
+        <div class="export-note">
+          <i class="fas fa-download"></i>
+          <strong>Export de la page courante :</strong> L'export créera <strong>{{ getPagedDetectedPeriods().length }} fichiers</strong> pour la page {{ detectedPeriodsPage }} seulement.
+        </div>
+        <div class="pagination-controls">
+          <button type="button" 
+                  (click)="previousDetectedPeriodsPage()" 
+                  [disabled]="detectedPeriodsPage === 1"
+                  class="btn btn-sm btn-outline-secondary">
+            <i class="fas fa-chevron-left"></i> Précédent
+          </button>
+          
+          <div class="page-numbers">
+            <button *ngFor="let page of [].constructor(detectedPeriodsTotalPages); let i = index" 
+                    type="button"
+                    (click)="goToDetectedPeriodsPage(i + 1)"
+                    [class.active]="detectedPeriodsPage === (i + 1)"
+                    class="btn btn-sm btn-outline-secondary page-number">
+              {{ i + 1 }}
+            </button>
+          </div>
+          
+          <button type="button" 
+                  (click)="nextDetectedPeriodsPage()" 
+                  [disabled]="detectedPeriodsPage === detectedPeriodsTotalPages"
+                  class="btn btn-sm btn-outline-secondary">
+            Suivant <i class="fas fa-chevron-right"></i>
+          </button>
         </div>
       </div>
     </div>

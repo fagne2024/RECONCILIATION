@@ -2567,6 +2567,36 @@ button:disabled:hover {
       font-size: 0.85rem;
       font-style: italic;
     }
+    
+    // Message d'information sur l'export complet
+    .export-complete-info {
+      margin-top: 16px;
+      
+      .info-box {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 12px 16px;
+        background: #e8f5e8;
+        border: 1px solid #4caf50;
+        border-radius: 6px;
+        
+        i {
+          color: #4caf50;
+          font-size: 1.2rem;
+          flex-shrink: 0;
+        }
+        
+        .info-content {
+          color: #2e7d32;
+          font-size: 0.9rem;
+          
+          strong {
+            font-weight: 600;
+          }
+        }
+      }
+    }
   }
   
   .detected-periods {
@@ -2576,16 +2606,54 @@ button:disabled:hover {
     border-radius: 8px;
     border: 1px solid #e9ecef;
     
-    h5 {
-      margin: 0 0 12px 0;
-      color: #495057;
-      font-size: 1rem;
+    .periods-header {
       display: flex;
+      justify-content: space-between;
       align-items: center;
-      gap: 8px;
+      margin-bottom: 12px;
+      flex-wrap: wrap;
+      gap: 12px;
       
-      i {
-        color: #6c757d;
+      h5 {
+        margin: 0;
+        color: #495057;
+        font-size: 1rem;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        
+        i {
+          color: #6c757d;
+        }
+      }
+      
+      .periods-per-page {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        
+        label {
+          margin: 0;
+          color: #6c757d;
+          font-size: 0.9rem;
+          font-weight: 500;
+        }
+        
+        select {
+          width: 70px;
+          height: 28px;
+          font-size: 0.85rem;
+          border: 1px solid #ced4da;
+          border-radius: 4px;
+          background: white;
+          color: #495057;
+          
+          &:focus {
+            border-color: #1976d2;
+            box-shadow: 0 0 0 0.2rem rgba(25, 118, 210, 0.25);
+            outline: none;
+          }
+        }
       }
     }
     
@@ -2623,6 +2691,96 @@ button:disabled:hover {
         color: #6c757d;
         font-style: italic;
         font-size: 0.9rem;
+      }
+    }
+    
+    // Styles pour la pagination des périodes
+    .periods-pagination {
+      margin-top: 16px;
+      padding-top: 16px;
+      border-top: 1px solid #e9ecef;
+      
+      .pagination-info {
+        text-align: center;
+        margin-bottom: 8px;
+        color: #6c757d;
+        font-size: 0.9rem;
+        font-weight: 500;
+      }
+      
+      .export-note {
+        text-align: center;
+        margin-bottom: 12px;
+        padding: 8px 12px;
+        background: #e3f2fd;
+        border: 1px solid #bbdefb;
+        border-radius: 4px;
+        color: #1976d2;
+        font-size: 0.85rem;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        
+        i {
+          color: #1976d2;
+        }
+        
+        strong {
+          font-weight: 600;
+        }
+      }
+      
+      .pagination-controls {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+        
+        .btn {
+          min-width: 40px;
+          height: 32px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 0.85rem;
+          border-radius: 4px;
+          transition: all 0.2s ease;
+          
+          &:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+          }
+          
+          &:not(:disabled):hover {
+            transform: translateY(-1px);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+          }
+        }
+        
+        .page-numbers {
+          display: flex;
+          gap: 4px;
+          margin: 0 8px;
+          
+          .page-number {
+            min-width: 32px;
+            height: 32px;
+            padding: 0;
+            
+            &.active {
+              background: #1976d2;
+              color: white;
+              border-color: #1976d2;
+              
+              &:hover {
+                background: #1565c0;
+                border-color: #1565c0;
+              }
+            }
+          }
+        }
       }
     }
   }

@@ -4243,11 +4243,18 @@ export class TraitementComponent implements OnInit, AfterViewInit {
 
   // ===== MÉTHODES POUR L'EXPORT PAR DATE =====
 
+  // Pagination pour l'aperçu des périodes détectées
+  detectedPeriodsPage: number = 1;
+  detectedPeriodsPageSize: number = 10;
+  detectedPeriodsTotalPages: number = 0;
+
   /**
    * Gère le changement de colonne de date pour l'export
    */
   onExportDateColChange(): void {
     this.detectedPeriods = [];
+    this.detectedPeriodsPage = 1;
+    this.detectedPeriodsTotalPages = 0;
     if (this.exportDateCol && this.exportDatePeriod) {
       this.detectPeriods();
     }
@@ -4278,6 +4285,150 @@ export class TraitementComponent implements OnInit, AfterViewInit {
         count
       }))
       .sort((a, b) => a.key.localeCompare(b.key));
+
+    // Calculer le nombre total de pages pour la pagination
+    this.detectedPeriodsTotalPages = Math.ceil(this.detectedPeriods.length / this.detectedPeriodsPageSize);
+  }
+
+  /**
+   * Obtient les périodes détectées pour la page courante
+   */
+  getPagedDetectedPeriods(): any[] {
+    const startIndex = (this.detectedPeriodsPage - 1) * this.detectedPeriodsPageSize;
+    const endIndex = startIndex + this.detectedPeriodsPageSize;
+    return this.detectedPeriods.slice(startIndex, endIndex);
+  }
+
+  /**
+   * Va à la page précédente des périodes détectées
+   */
+  previousDetectedPeriodsPage(): void {
+    if (this.detectedPeriodsPage > 1) {
+      this.detectedPeriodsPage--;
+    }
+  }
+
+  /**
+   * Va à la page suivante des périodes détectées
+   */
+  nextDetectedPeriodsPage(): void {
+    if (this.detectedPeriodsPage < this.detectedPeriodsTotalPages) {
+      this.detectedPeriodsPage++;
+    }
+  }
+
+  /**
+   * Va à une page spécifique des périodes détectées
+   */
+  goToDetectedPeriodsPage(page: number): void {
+    if (page >= 1 && page <= this.detectedPeriodsTotalPages) {
+      this.detectedPeriodsPage = page;
+    }
+  }
+
+  /**
+   * Gère le changement de taille de page pour les périodes détectées
+   */
+  onPeriodsPageSizeChange(): void {
+    this.detectedPeriodsPage = 1; // Retourner à la première page
+    this.detectedPeriodsTotalPages = Math.ceil(this.detectedPeriods.length / this.detectedPeriodsPageSize);
+  }
+
+  /**
+   * Exporte toutes les périodes (toutes les pages)
+   */
+  exportAllPages(): void {
+    console.log('🔄 Début de l\'export de toutes les pages...');
+    console.log('📋 Paramètres:', {
+      exportDateCol: this.exportDateCol,
+      exportDatePeriod: this.exportDatePeriod,
+      exportDateFormat: this.exportDateFormat,
+      totalPages: this.detectedPeriodsTotalPages,
+      totalPeriods: this.detectedPeriods.length,
+      totalRows: this.combinedRows.length,
+      totalColumns: this.columns.length
+    });
+
+    if (!this.exportDateCol || !this.exportDatePeriod || !this.exportDateFormat) {
+      this.showError('exportDate', 'Veuillez sélectionner une colonne de date, une période et un format.');
+      return;
+    }
+
+    if (!this.combinedRows || this.combinedRows.length === 0) {
+      this.showError('exportDate', 'Aucune donnée disponible pour l\'export. Veuillez d\'abord charger des fichiers.');
+      return;
+    }
+
+    if (!this.columns || this.columns.length === 0) {
+      this.showError('exportDate', 'Aucune colonne définie. Veuillez d\'abord charger des fichiers.');
+      return;
+    }
+
+    // Vérifier que la colonne de date existe
+    if (!this.columns.includes(this.exportDateCol)) {
+      this.showError('exportDate', `La colonne "${this.exportDateCol}" n'existe pas dans les données chargées.`);
+      return;
+    }
+
+    // Vérifier qu'il y a des périodes détectées
+    if (!this.detectedPeriods || this.detectedPeriods.length === 0) {
+      this.showError('exportDate', 'Aucune période détectée. Veuillez d\'abord sélectionner une colonne de date et une période.');
+      return;
+    }
+
+    try {
+      // Grouper les données pour toutes les périodes
+      const periodGroups = this.groupDataByPeriod();
+      console.log(`📊 Groupes de périodes pour toutes les pages: ${periodGroups.size}`);
+
+      let exportedCount = 0;
+      const errors: string[] = [];
+
+      console.log(`🚀 Début de l'export de ${periodGroups.size} périodes (toutes les pages)...`);
+      
+      for (const [periodKey, rows] of periodGroups.entries()) {
+        try {
+          const periodLabel = this.formatPeriodLabel(periodKey, this.exportDatePeriod);
+          const fileName = this.generateExportFileName(periodKey, periodLabel);
+          
+          console.log(`📁 Export de la période: ${periodLabel} (${rows.length} lignes) -> ${fileName}`);
+          
+          if (this.exportDateFormat === 'csv') {
+            this.exportPeriodAsCSV(rows, fileName);
+          } else if (this.exportDateFormat === 'xls') {
+            this.exportPeriodAsXLS(rows, fileName);
+          } else if (this.exportDateFormat === 'xlsx') {
+            this.exportPeriodAsXLSX(rows, fileName);
+          } else {
+            throw new Error(`Format d'export non supporté: ${this.exportDateFormat}`);
+          }
+          
+          exportedCount++;
+          console.log(`✅ Fichier exporté avec succès: ${fileName}`);
+        } catch (periodError) {
+          console.error(`❌ Erreur pour la période ${periodKey}:`, periodError);
+          errors.push(`Période ${periodKey}: ${periodError.message}`);
+        }
+      }
+      
+      console.log(`🏁 Export terminé: ${exportedCount} fichiers créés, ${errors.length} erreurs`);
+
+      if (exportedCount > 0) {
+        const message = errors.length > 0 
+          ? `${exportedCount} fichier(s) exporté(s) avec succès (toutes les pages), ${errors.length} erreur(s).`
+          : `${exportedCount} fichier(s) exporté(s) avec succès (toutes les pages) !`;
+        this.showSuccess('exportDate', message);
+        
+        if (errors.length > 0) {
+          console.warn('⚠️ Erreurs lors de l\'export:', errors);
+        }
+      } else {
+        this.showError('exportDate', 'Aucun fichier n\'a pu être exporté. Vérifiez les données et les paramètres.');
+      }
+    } catch (error) {
+      console.error('❌ Erreur lors de l\'export de toutes les pages:', error);
+      this.showError('exportDate', `Erreur lors de l'export de toutes les pages: ${error.message}`);
+    }
   }
 
   /**
@@ -4286,22 +4437,37 @@ export class TraitementComponent implements OnInit, AfterViewInit {
   private getPeriodKey(dateValue: any, period: string): string | null {
     try {
       const date = this.parseDate(dateValue);
-      if (!date) return null;
+      if (!date) {
+        console.warn(`⚠️ Impossible de parser la date: ${dateValue}`);
+        return null;
+      }
 
+      let periodKey: string | null = null;
+      
       switch (period) {
         case 'day':
-          return date.toISOString().split('T')[0]; // YYYY-MM-DD
+          periodKey = date.toISOString().split('T')[0]; // YYYY-MM-DD
+          break;
         case 'week':
           const year = date.getFullYear();
           const week = this.getWeekNumber(date);
-          return `${year}-W${week.toString().padStart(2, '0')}`;
+          periodKey = `${year}-W${week.toString().padStart(2, '0')}`;
+          break;
         case 'month':
-          return `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}`;
+          periodKey = `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}`;
+          break;
         default:
+          console.warn(`⚠️ Type de période non supporté: ${period}`);
           return null;
       }
+      
+      // Log seulement pour les premières dates pour éviter de surcharger la console
+      if (Math.random() < 0.01) { // 1% des cas seulement
+        console.log(`🔑 Clé de période générée: ${dateValue} -> ${periodKey} (${period})`);
+      }
+      return periodKey;
     } catch (error) {
-      console.error('Erreur lors de la génération de la clé de période:', error);
+      console.error('❌ Erreur lors de la génération de la clé de période:', error, 'pour la valeur:', dateValue);
       return null;
     }
   }
@@ -4341,51 +4507,74 @@ export class TraitementComponent implements OnInit, AfterViewInit {
    * Parse une date depuis différentes formats
    */
   private parseDate(dateValue: any): Date | null {
-    if (!dateValue) return null;
+    if (!dateValue) {
+      console.warn('⚠️ Valeur de date vide ou nulle');
+      return null;
+    }
 
     // Si c'est déjà un objet Date
     if (dateValue instanceof Date) {
+      console.log(`📅 Date déjà parsée: ${dateValue.toISOString()}`);
       return dateValue;
     }
 
     // Si c'est une string, essayer de la parser
     if (typeof dateValue === 'string') {
+      const trimmedValue = dateValue.trim();
+      // Log seulement pour les premières dates pour éviter de surcharger la console
+      if (Math.random() < 0.01) { // 1% des cas seulement
+        console.log(`🔍 Tentative de parsing de la date: "${trimmedValue}"`);
+      }
+      
       // Essayer différents formats de date
       const formats = [
-        /^\d{4}-\d{2}-\d{2}$/, // YYYY-MM-DD
-        /^\d{2}\/\d{2}\/\d{4}$/, // DD/MM/YYYY
-        /^\d{2}-\d{2}-\d{4}$/, // DD-MM-YYYY
-        /^\d{4}\/\d{2}\/\d{2}$/, // YYYY/MM/DD
+        { pattern: /^\d{4}-\d{2}-\d{2}$/, name: 'YYYY-MM-DD' },
+        { pattern: /^\d{2}\/\d{2}\/\d{4}$/, name: 'DD/MM/YYYY' },
+        { pattern: /^\d{2}-\d{2}-\d{4}$/, name: 'DD-MM-YYYY' },
+        { pattern: /^\d{4}\/\d{2}\/\d{2}$/, name: 'YYYY/MM/DD' },
+        { pattern: /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/, name: 'ISO DateTime' },
       ];
 
       for (const format of formats) {
-        if (format.test(dateValue)) {
-          const parsed = new Date(dateValue);
+        if (format.pattern.test(trimmedValue)) {
+          const parsed = new Date(trimmedValue);
           if (!isNaN(parsed.getTime())) {
+            if (Math.random() < 0.01) { // 1% des cas seulement
+              console.log(`✅ Date parsée avec le format ${format.name}: ${parsed.toISOString()}`);
+            }
             return parsed;
           }
         }
       }
 
       // Essayer de parser directement
-      const parsed = new Date(dateValue);
+      const parsed = new Date(trimmedValue);
       if (!isNaN(parsed.getTime())) {
+        if (Math.random() < 0.01) { // 1% des cas seulement
+          console.log(`✅ Date parsée directement: ${parsed.toISOString()}`);
+        }
         return parsed;
       }
+      
+      console.warn(`❌ Impossible de parser la date: "${trimmedValue}"`);
+    } else {
+      console.warn(`❌ Type de valeur non supporté pour le parsing de date: ${typeof dateValue}`, dateValue);
     }
 
     return null;
   }
 
   /**
-   * Exporte les données par période de date
+   * Exporte les données par période de date (page courante seulement)
    */
   exportByDate(): void {
-    console.log('🔄 Début de l\'export par date...');
+    console.log('🔄 Début de l\'export par date (page courante)...');
     console.log('📋 Paramètres:', {
       exportDateCol: this.exportDateCol,
       exportDatePeriod: this.exportDatePeriod,
       exportDateFormat: this.exportDateFormat,
+      currentPage: this.detectedPeriodsPage,
+      totalPages: this.detectedPeriodsTotalPages,
       totalRows: this.combinedRows.length,
       totalColumns: this.columns.length
     });
@@ -4411,18 +4600,31 @@ export class TraitementComponent implements OnInit, AfterViewInit {
       return;
     }
 
+    // Vérifier qu'il y a des périodes détectées
+    if (!this.detectedPeriods || this.detectedPeriods.length === 0) {
+      this.showError('exportDate', 'Aucune période détectée. Veuillez d\'abord sélectionner une colonne de date et une période.');
+      return;
+    }
+
     try {
-      const periodGroups = this.groupDataByPeriod();
-      console.log(`📊 Groupes de périodes détectés: ${periodGroups.size}`);
+      // Obtenir les périodes de la page courante
+      const currentPagePeriods = this.getPagedDetectedPeriods();
+      console.log(`📊 Périodes de la page courante (${this.detectedPeriodsPage}/${this.detectedPeriodsTotalPages}): ${currentPagePeriods.length}`);
       
-      if (periodGroups.size === 0) {
-        this.showError('exportDate', 'Aucune période détectée dans les données. Vérifiez la colonne de date sélectionnée.');
+      if (currentPagePeriods.length === 0) {
+        this.showError('exportDate', 'Aucune période sur la page courante à exporter.');
         return;
       }
+
+      // Grouper les données pour les périodes de la page courante seulement
+      const periodGroups = this.groupDataByPeriodForPage(currentPagePeriods);
+      console.log(`📊 Groupes de périodes pour la page courante: ${periodGroups.size}`);
 
       let exportedCount = 0;
       const errors: string[] = [];
 
+      console.log(`🚀 Début de l'export de ${periodGroups.size} périodes de la page courante...`);
+      
       for (const [periodKey, rows] of periodGroups.entries()) {
         try {
           const periodLabel = this.formatPeriodLabel(periodKey, this.exportDatePeriod);
@@ -4441,16 +4643,19 @@ export class TraitementComponent implements OnInit, AfterViewInit {
           }
           
           exportedCount++;
+          console.log(`✅ Fichier exporté avec succès: ${fileName}`);
         } catch (periodError) {
           console.error(`❌ Erreur pour la période ${periodKey}:`, periodError);
           errors.push(`Période ${periodKey}: ${periodError.message}`);
         }
       }
+      
+      console.log(`🏁 Export terminé: ${exportedCount} fichiers créés, ${errors.length} erreurs`);
 
       if (exportedCount > 0) {
         const message = errors.length > 0 
-          ? `${exportedCount} fichier(s) exporté(s) avec succès, ${errors.length} erreur(s).`
-          : `${exportedCount} fichier(s) exporté(s) avec succès !`;
+          ? `${exportedCount} fichier(s) exporté(s) avec succès (page ${this.detectedPeriodsPage}), ${errors.length} erreur(s).`
+          : `${exportedCount} fichier(s) exporté(s) avec succès (page ${this.detectedPeriodsPage}) !`;
         this.showSuccess('exportDate', message);
         
         if (errors.length > 0) {
@@ -4466,12 +4671,84 @@ export class TraitementComponent implements OnInit, AfterViewInit {
   }
 
   /**
-   * Groupe les données par période
+   * Groupe les données par période pour les périodes de la page courante seulement
+   */
+  private groupDataByPeriodForPage(currentPagePeriods: any[]): Map<string, any[]> {
+    const groups = new Map<string, any[]>();
+    
+    console.log('🔍 Début du groupement des données pour la page courante...');
+    console.log(`📊 Périodes à traiter: ${currentPagePeriods.length}`);
+    console.log(`📊 Nombre total de lignes: ${this.combinedRows.length}`);
+
+    // Créer un Set des clés de période de la page courante pour un accès rapide
+    const currentPageKeys = new Set(currentPagePeriods.map(period => period.key));
+    console.log(`🔑 Clés de période de la page courante:`, Array.from(currentPageKeys));
+
+    let processedRows = 0;
+    let validDates = 0;
+    let invalidDates = 0;
+    let matchedPeriods = 0;
+
+    this.combinedRows.forEach((row, index) => {
+      const dateValue = row[this.exportDateCol];
+      if (dateValue) {
+        const periodKey = this.getPeriodKey(dateValue, this.exportDatePeriod);
+        if (periodKey && currentPageKeys.has(periodKey)) {
+          if (!groups.has(periodKey)) {
+            groups.set(periodKey, []);
+          }
+          groups.get(periodKey)!.push(row);
+          validDates++;
+          matchedPeriods++;
+        } else if (periodKey) {
+          // Période valide mais pas dans la page courante
+          validDates++;
+        } else {
+          invalidDates++;
+          if (invalidDates <= 5) {
+            console.warn(`⚠️ Date invalide à la ligne ${index}:`, dateValue);
+          }
+        }
+      } else {
+        invalidDates++;
+        if (invalidDates <= 5) {
+          console.warn(`⚠️ Valeur de date vide à la ligne ${index}`);
+        }
+      }
+      processedRows++;
+    });
+
+    console.log(`✅ Groupement pour la page courante terminé:`);
+    console.log(`   - Lignes traitées: ${processedRows}`);
+    console.log(`   - Dates valides: ${validDates}`);
+    console.log(`   - Dates invalides: ${invalidDates}`);
+    console.log(`   - Périodes correspondantes: ${matchedPeriods}`);
+    console.log(`   - Groupes créés: ${groups.size}`);
+    
+    // Afficher les détails de chaque groupe
+    for (const [periodKey, rows] of groups.entries()) {
+      console.log(`   📅 ${periodKey}: ${rows.length} lignes`);
+    }
+
+    return groups;
+  }
+
+  /**
+   * Groupe les données par période (toutes les périodes)
    */
   private groupDataByPeriod(): Map<string, any[]> {
     const groups = new Map<string, any[]>();
+    
+    console.log('🔍 Début du groupement des données par période...');
+    console.log(`📊 Nombre total de lignes à traiter: ${this.combinedRows.length}`);
+    console.log(`📅 Colonne de date sélectionnée: ${this.exportDateCol}`);
+    console.log(`📆 Période d'export: ${this.exportDatePeriod}`);
 
-    this.combinedRows.forEach(row => {
+    let processedRows = 0;
+    let validDates = 0;
+    let invalidDates = 0;
+
+    this.combinedRows.forEach((row, index) => {
       const dateValue = row[this.exportDateCol];
       if (dateValue) {
         const periodKey = this.getPeriodKey(dateValue, this.exportDatePeriod);
@@ -4480,9 +4757,42 @@ export class TraitementComponent implements OnInit, AfterViewInit {
             groups.set(periodKey, []);
           }
           groups.get(periodKey)!.push(row);
+          validDates++;
+        } else {
+          invalidDates++;
+          // Log seulement les premières erreurs pour éviter de surcharger la console
+          if (invalidDates <= 5) {
+            console.warn(`⚠️ Date invalide à la ligne ${index}:`, dateValue);
+          }
+        }
+      } else {
+        invalidDates++;
+        // Log seulement les premières erreurs pour éviter de surcharger la console
+        if (invalidDates <= 5) {
+          console.warn(`⚠️ Valeur de date vide à la ligne ${index}`);
         }
       }
+      processedRows++;
     });
+
+    console.log(`✅ Groupement terminé:`);
+    console.log(`   - Lignes traitées: ${processedRows}`);
+    console.log(`   - Dates valides: ${validDates}`);
+    console.log(`   - Dates invalides: ${invalidDates}`);
+    console.log(`   - Périodes détectées: ${groups.size}`);
+    
+    // Afficher les détails de chaque période (limité à 10 pour éviter de surcharger)
+    let periodCount = 0;
+    for (const [periodKey, rows] of groups.entries()) {
+      if (periodCount < 10) {
+        console.log(`   📅 ${periodKey}: ${rows.length} lignes`);
+      }
+      periodCount++;
+    }
+    
+    if (groups.size > 10) {
+      console.log(`   ... et ${groups.size - 10} autres périodes`);
+    }
 
     return groups;
   }
