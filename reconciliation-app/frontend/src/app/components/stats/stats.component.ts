@@ -98,7 +98,10 @@ export class StatsComponent implements OnInit, OnDestroy {
             this.filteredAgencies = availableAgencies.filter(a => a.toLowerCase().includes(s));
             if (this.filteredAgencies.length === 1 && !this.filterForm.value.agency.includes(this.filteredAgencies[0])) {
                 this.filterForm.controls['agency'].setValue([this.filteredAgencies[0]]);
-                if (this.agenceSelect) { this.agenceSelect.close(); }
+                // Fermer automatiquement le dropdown après sélection
+                setTimeout(() => {
+                    if (this.agenceSelect) { this.agenceSelect.close(); }
+                }, 100);
                 this.onFilterChange();
             }
         });
@@ -108,7 +111,10 @@ export class StatsComponent implements OnInit, OnDestroy {
             this.filteredServices = availableServices.filter(a => a.toLowerCase().includes(s));
             if (this.filteredServices.length === 1 && !this.filterForm.value.service.includes(this.filteredServices[0])) {
                 this.filterForm.controls['service'].setValue([this.filteredServices[0]]);
-                if (this.serviceSelect) { this.serviceSelect.close(); }
+                // Fermer automatiquement le dropdown après sélection
+                setTimeout(() => {
+                    if (this.serviceSelect) { this.serviceSelect.close(); }
+                }, 100);
                 this.onFilterChange();
             }
         });
@@ -118,7 +124,10 @@ export class StatsComponent implements OnInit, OnDestroy {
             this.filteredCountries = availableCountries.filter(a => a.toLowerCase().includes(s));
             if (this.filteredCountries.length === 1 && !this.filterForm.value.country.includes(this.filteredCountries[0])) {
                 this.filterForm.controls['country'].setValue([this.filteredCountries[0]]);
-                if (this.paysSelect) { this.paysSelect.close(); }
+                // Fermer automatiquement le dropdown après sélection
+                setTimeout(() => {
+                    if (this.paysSelect) { this.paysSelect.close(); }
+                }, 100);
                 this.onFilterChange();
             }
         });
@@ -229,6 +238,9 @@ export class StatsComponent implements OnInit, OnDestroy {
 
     // Méthode appelée lors d'un changement de filtre
     onFilterChange() {
+        console.log('=== DÉBUT onFilterChange() ===');
+        console.log('filterForm.value:', this.filterForm.value);
+        
         // Mettre à jour les listes filtrées pour le cloisonnement
         this.updateFilteredLists();
         
@@ -240,6 +252,8 @@ export class StatsComponent implements OnInit, OnDestroy {
             if (this.serviceSelect) this.serviceSelect.close();
             if (this.paysSelect) this.paysSelect.close();
         }, 100);
+        
+        console.log('=== FIN onFilterChange() ===');
     }
 
     // Méthode pour mettre à jour les listes filtrées avec cloisonnement
