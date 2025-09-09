@@ -134,16 +134,15 @@ public class CsvReconciliationService implements DisposableBean {
             logger.info("📊 Nombre d'enregistrements Partenaire: {}", processedPartnerData.size());
             logger.info("⚡ Threads parallèles: {}", PARALLEL_THREADS);
             
-            // Vérifier si un type de réconciliation paramétrable est spécifié
-            if (request.getReconciliationType() != null && !"1-1".equals(request.getReconciliationType())) {
-                logger.info("🔍 Type de réconciliation paramétrable détecté: {} - Utilisation de la logique paramétrable", 
-                    request.getReconciliationType());
-                return reconcileWithParametricType(request, startTime);
-            }
-            
             // FORCER LA LOGIQUE 1-1 POUR LA RÉCONCILIATION AUTOMATIQUE
             // La réconciliation automatique doit toujours utiliser la logique 1-1 pour éviter les correspondances multiples
             logger.info("🔒 RÉCONCILIATION AUTOMATIQUE - Forçage de la logique 1-1 (pas de correspondances multiples)");
+            
+            // IGNORER les types paramétrables dans la réconciliation automatique
+            if (request.getReconciliationType() != null && !"1-1".equals(request.getReconciliationType())) {
+                logger.info("⚠️ Type paramétrable détecté: {} mais IGNORÉ pour la réconciliation automatique - Forçage 1-1", 
+                    request.getReconciliationType());
+            }
             
             // Détection de la logique de réconciliation à utiliser (CONFIGURABLE)
             ConfigurableReconciliationService.ReconciliationLogicType logicType = 
