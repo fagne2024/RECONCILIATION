@@ -28,6 +28,12 @@ import java.util.Optional;
 import java.util.stream.Collectors;
 import com.reconciliation.model.ReconciliationProgress;
 import com.reconciliation.service.ReconciliationProgressService;
+import com.reconciliation.repository.AgencySummaryRepository;
+import com.reconciliation.entity.AgencySummaryEntity;
+import com.reconciliation.service.OperationService;
+import com.reconciliation.service.CompteService;
+import com.reconciliation.dto.OperationCreateRequest;
+import com.reconciliation.model.Compte;
 import org.springframework.beans.factory.annotation.Autowired;
 
 @Slf4j
@@ -47,6 +53,12 @@ public class ReconciliationController {
     private ReconciliationJobService jobService;
     @Autowired
     private ObjectMapper objectMapper;
+    @Autowired
+    private AgencySummaryRepository agencySummaryRepository;
+    @Autowired
+    private OperationService operationService;
+    @Autowired
+    private CompteService compteService;
 
     @GetMapping("/test")
     public ResponseEntity<String> test() {
@@ -479,6 +491,292 @@ public class ReconciliationController {
                 .filter(val -> !val.trim().isEmpty())
                 .limit(maxSamples)
                 .collect(Collectors.toList());
+    }
+
+    @PostMapping("/save-summary")
+    public ResponseEntity<Map<String, Object>> saveSummary(@RequestBody Object summaryData) {
+        try {
+            log.info("💾 Sauvegarde du résumé de réconciliation");
+            
+            List<Map<String, Object>> savedItems = new ArrayList<>();
+            List<Map<String, Object>> duplicateItems = new ArrayList<>();
+            List<String> errorItems = new ArrayList<>();
+            
+            // Gérer les deux cas : objet ou tableau
+            if (summaryData instanceof List) {
+                List<?> summaryList = (List<?>) summaryData;
+                log.info("📊 Résumé reçu sous forme de tableau avec {} éléments", summaryList.size());
+                
+                // Traiter chaque élément du tableau
+                for (int i = 0; i < summaryList.size(); i++) {
+                    Object item = summaryList.get(i);
+                    try {
+                        if (item instanceof Map) {
+                            Map<?, ?> itemMap = (Map<?, ?>) item;
+                            log.info("📋 Élément {}: {}", i, itemMap.keySet());
+                            
+                            // Sauvegarder réellement en base de données
+                            AgencySummaryEntity savedEntity = saveAgencySummaryToDatabase(itemMap);
+                            if (savedEntity != null) {
+                                Map<String, Object> savedItem = new HashMap<>();
+                                savedItem.put("index", i);
+                                savedItem.put("id", savedEntity.getId());
+                                savedItem.put("data", itemMap);
+                                savedItem.put("timestamp", System.currentTimeMillis());
+                                savedItems.add(savedItem);
+                                log.info("✅ Élément {} sauvegardé en base avec ID: {}", i, savedEntity.getId());
+                            } else {
+                                errorItems.add("Impossible de sauvegarder l'élément " + i);
+                            }
+                            
+                        } else {
+                            log.info("📋 Élément {}: {}", i, item);
+                            errorItems.add("Élément " + i + " n'est pas un objet valide pour la sauvegarde");
+                        }
+                    } catch (Exception itemError) {
+                        log.warn("⚠️ Erreur lors du traitement de l'élément {}: {}", i, itemError.getMessage());
+                        errorItems.add("Erreur sur l'élément " + i + ": " + itemError.getMessage());
+                    }
+                }
+            } else if (summaryData instanceof Map) {
+                Map<?, ?> summaryMap = (Map<?, ?>) summaryData;
+                log.info("📊 Résumé reçu sous forme d'objet avec {} propriétés", summaryMap.size());
+                log.info("📋 Propriétés: {}", summaryMap.keySet());
+                
+                // Sauvegarder l'objet unique
+                AgencySummaryEntity savedEntity = saveAgencySummaryToDatabase(summaryMap);
+                if (savedEntity != null) {
+                    Map<String, Object> savedItem = new HashMap<>();
+                    savedItem.put("id", savedEntity.getId());
+                    savedItem.put("data", summaryMap);
+                    savedItem.put("timestamp", System.currentTimeMillis());
+                    savedItems.add(savedItem);
+                    log.info("✅ Objet sauvegardé en base avec ID: {}", savedEntity.getId());
+                } else {
+                    errorItems.add("Impossible de sauvegarder l'objet");
+                }
+                
+            } else {
+                log.info("📊 Résumé reçu sous forme de: {}", summaryData.getClass().getSimpleName());
+                errorItems.add("Type de données non supporté: " + summaryData.getClass().getSimpleName());
+            }
+            
+            // Construire la réponse au format attendu par le frontend
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("message", "Résumé sauvegardé avec succès");
+            response.put("timestamp", System.currentTimeMillis());
+            response.put("dataType", summaryData.getClass().getSimpleName());
+            
+            // Ajouter les tableaux attendus par le frontend
+            response.put("saved", savedItems);
+            response.put("duplicates", duplicateItems);
+            response.put("errors", errorItems);
+            
+            log.info("✅ Résumé sauvegardé avec succès - {} éléments sauvegardés, {} doublons, {} erreurs", 
+                    savedItems.size(), duplicateItems.size(), errorItems.size());
+            
+            return ResponseEntity.ok(response);
+            
+        } catch (Exception e) {
+            log.error("❌ Erreur lors de la sauvegarde du résumé: {}", e.getMessage());
+            log.error("🔍 Stack trace:", e);
+            
+            Map<String, Object> errorResponse = new HashMap<>();
+            errorResponse.put("success", false);
+            errorResponse.put("message", "Erreur lors de la sauvegarde: " + e.getMessage());
+            errorResponse.put("saved", new ArrayList<>());
+            errorResponse.put("duplicates", new ArrayList<>());
+            errorResponse.put("errors", new ArrayList<>());
+            return ResponseEntity.badRequest().body(errorResponse);
+        }
+    }
+    
+    /**
+     * Sauvegarde un résumé d'agence en base de données
+     */
+    private AgencySummaryEntity saveAgencySummaryToDatabase(Map<?, ?> data) {
+        try {
+            // Extraire les données du Map
+            String agency = getStringValue(data, "agency");
+            String service = getStringValue(data, "service");
+            String country = getStringValue(data, "country");
+            String date = getStringValue(data, "date");
+            Double totalVolume = getDoubleValue(data, "totalVolume");
+            Integer recordCount = getIntegerValue(data, "recordCount");
+            
+            // Validation des données requises
+            if (agency == null || service == null || country == null || date == null || totalVolume == null || recordCount == null) {
+                log.warn("⚠️ Données manquantes pour la sauvegarde: agency={}, service={}, country={}, date={}, totalVolume={}, recordCount={}", 
+                        agency, service, country, date, totalVolume, recordCount);
+                return null;
+            }
+            
+            // Vérifier s'il existe déjà un enregistrement avec les mêmes critères
+            List<AgencySummaryEntity> existing = agencySummaryRepository.findByDateAndAgencyAndService(date, agency, service);
+            AgencySummaryEntity savedEntity;
+            
+            if (!existing.isEmpty()) {
+                log.info("🔄 Mise à jour de l'enregistrement existant pour {}/{}/{}", date, agency, service);
+                AgencySummaryEntity existingEntity = existing.get(0);
+                existingEntity.setTotalVolume(totalVolume);
+                existingEntity.setRecordCount(recordCount);
+                existingEntity.setTimestamp(String.valueOf(System.currentTimeMillis()));
+                savedEntity = agencySummaryRepository.save(existingEntity);
+            } else {
+                // Créer un nouvel enregistrement
+                log.info("➕ Création d'un nouvel enregistrement pour {}/{}/{}", date, agency, service);
+                AgencySummaryEntity newEntity = new AgencySummaryEntity();
+                newEntity.setAgency(agency);
+                newEntity.setService(service);
+                newEntity.setCountry(country);
+                newEntity.setDate(date);
+                newEntity.setTotalVolume(totalVolume);
+                newEntity.setRecordCount(recordCount);
+                newEntity.setTimestamp(String.valueOf(System.currentTimeMillis()));
+                savedEntity = agencySummaryRepository.save(newEntity);
+            }
+            
+            // Créer automatiquement l'opération et mettre à jour le compte
+            try {
+                createOperationFromSummary(savedEntity);
+                log.info("✅ Opération créée automatiquement pour {}/{}/{}", date, agency, service);
+            } catch (Exception e) {
+                log.warn("⚠️ Erreur lors de la création automatique de l'opération pour {}/{}/{}: {}", 
+                        date, agency, service, e.getMessage());
+                // Ne pas faire échouer la sauvegarde du summary à cause de l'opération
+            }
+            
+            return savedEntity;
+            
+        } catch (Exception e) {
+            log.error("❌ Erreur lors de la sauvegarde en base: {}", e.getMessage());
+            return null;
+        }
+    }
+    
+    /**
+     * Crée automatiquement 4 opérations à partir d'un AgencySummary
+     * 1. Opération nominale agence (agence comme compte, service comme service)
+     * 2. Opération frais agence (frais sur le compte agence)
+     * 3. Opération nominale service (service comme compte, agence comme service)
+     * 4. Opération frais service (frais sur le compte service)
+     */
+    private void createOperationFromSummary(AgencySummaryEntity summary) {
+        // 1. Créer le compte agence
+        String agencyAccountNumber = summary.getAgency();
+        Compte agencyCompte = compteService.getCompteByNumero(agencyAccountNumber)
+            .orElseGet(() -> {
+                // Si le compte d'agence n'existe pas, en créer un nouveau
+                Compte newCompte = new Compte();
+                newCompte.setNumeroCompte(agencyAccountNumber);
+                newCompte.setPays(summary.getCountry() != null ? summary.getCountry() : "SN");
+                newCompte.setCodeProprietaire(agencyAccountNumber);
+                newCompte.setAgence(agencyAccountNumber); // Définir l'agence pour les frais de transaction
+                newCompte.setSolde(0.0);
+                return compteService.saveCompte(newCompte);
+            });
+
+        // 2. Créer le compte service
+        String serviceAccountNumber = summary.getService();
+        Compte serviceCompte = compteService.getCompteByNumero(serviceAccountNumber)
+            .orElseGet(() -> {
+                // Si le compte service n'existe pas, en créer un nouveau
+                Compte newCompte = new Compte();
+                newCompte.setNumeroCompte(serviceAccountNumber);
+                newCompte.setPays(summary.getCountry() != null ? summary.getCountry() : "SN");
+                newCompte.setCodeProprietaire(serviceAccountNumber);
+                newCompte.setAgence(agencyAccountNumber); // L'agence reste la même
+                newCompte.setSolde(0.0);
+                return compteService.saveCompte(newCompte);
+            });
+
+        String operationType = determineOperationType(summary.getService());
+        
+        // 3. Opération nominale pour l'agence (comportement existant)
+        OperationCreateRequest agencyOperationRequest = new OperationCreateRequest();
+        agencyOperationRequest.setCompteId(agencyCompte.getId());
+        agencyOperationRequest.setTypeOperation(operationType);
+        agencyOperationRequest.setMontant(summary.getTotalVolume());
+        agencyOperationRequest.setBanque("SYSTEM");
+        agencyOperationRequest.setNomBordereau("AGENCY_SUMMARY_" + summary.getDate() + "_" + summary.getAgency());
+        agencyOperationRequest.setService(summary.getService());
+        agencyOperationRequest.setDateOperation(summary.getDate());
+        agencyOperationRequest.setRecordCount(summary.getRecordCount());
+        
+        log.info("🔧 Création opération nominale agence avec date: {} pour agence: {} service: {}", 
+                summary.getDate(), summary.getAgency(), summary.getService());
+        
+        operationService.createOperationForSummary(agencyOperationRequest);
+        
+        // 4. Opération nominale pour le service (nouvelle logique)
+        OperationCreateRequest serviceOperationRequest = new OperationCreateRequest();
+        serviceOperationRequest.setCompteId(serviceCompte.getId());
+        serviceOperationRequest.setTypeOperation(operationType);
+        serviceOperationRequest.setMontant(summary.getTotalVolume());
+        serviceOperationRequest.setBanque("SYSTEM");
+        serviceOperationRequest.setNomBordereau("SERVICE_SUMMARY_" + summary.getDate() + "_" + summary.getService());
+        serviceOperationRequest.setService(summary.getAgency()); // L'agence devient le service
+        serviceOperationRequest.setDateOperation(summary.getDate());
+        serviceOperationRequest.setRecordCount(summary.getRecordCount());
+        
+        log.info("🔧 Création opération nominale service avec date: {} pour service: {} agence: {}", 
+                summary.getDate(), summary.getService(), summary.getAgency());
+        
+        operationService.createOperationForSummary(serviceOperationRequest);
+    }
+    
+    /**
+     * Détermine le type d'opération basé sur le nom du service
+     */
+    private String determineOperationType(String serviceName) {
+        if (serviceName == null) {
+            return "total_cashin"; // Par défaut
+        }
+        
+        String serviceUpper = serviceName.toUpperCase();
+        
+        if (serviceUpper.contains("CASHIN") || serviceUpper.contains("AIRTIME") || serviceUpper.contains("SEND")) {
+            return "total_cashin";
+        } else if (serviceUpper.contains("PAIEMENT")) {
+            return "total_paiement";
+        } else {
+            return "total_cashin"; // Par défaut
+        }
+    }
+
+    /**
+     * Utilitaires pour extraire les valeurs du Map
+     */
+    private String getStringValue(Map<?, ?> map, String key) {
+        Object value = map.get(key);
+        return value != null ? value.toString() : null;
+    }
+    
+    private Double getDoubleValue(Map<?, ?> map, String key) {
+        Object value = map.get(key);
+        if (value == null) return null;
+        if (value instanceof Number) {
+            return ((Number) value).doubleValue();
+        }
+        try {
+            return Double.parseDouble(value.toString());
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+    
+    private Integer getIntegerValue(Map<?, ?> map, String key) {
+        Object value = map.get(key);
+        if (value == null) return null;
+        if (value instanceof Number) {
+            return ((Number) value).intValue();
+        }
+        try {
+            return Integer.parseInt(value.toString());
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 
     /**

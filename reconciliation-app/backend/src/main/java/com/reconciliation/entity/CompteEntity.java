@@ -32,6 +32,9 @@ public class CompteEntity {
     @Column(name = "type")
     private String type;
     
+    @Column(name = "categorie")
+    private String categorie;
+    
     // Constructeurs
     public CompteEntity() {}
     
@@ -112,5 +115,13 @@ public class CompteEntity {
     }
     public void setType(String type) {
         this.type = type;
+    }
+    
+    public String getCategorie() {
+        return categorie;
+    }
+    
+    public void setCategorie(String categorie) {
+        this.categorie = categorie;
     }
 } 

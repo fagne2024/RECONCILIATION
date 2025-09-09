@@ -322,6 +322,12 @@ public class OperationController {
         return ResponseEntity.ok(services);
     }
     
+    @GetMapping("/service/list/{codeProprietaire}")
+    public ResponseEntity<List<String>> getDistinctServiceByCodeProprietaire(@PathVariable String codeProprietaire) {
+        List<String> services = operationService.getDistinctServiceByCodeProprietaire(codeProprietaire);
+        return ResponseEntity.ok(services);
+    }
+    
     @GetMapping("/filter")
     public ResponseEntity<List<Operation>> filterOperations(
             @RequestParam(required = false) Long compteId,

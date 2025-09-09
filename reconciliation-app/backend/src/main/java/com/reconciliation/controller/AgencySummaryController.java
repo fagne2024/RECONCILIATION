@@ -494,7 +494,7 @@ public class AgencySummaryController {
     }
 
     private void createOperationFromSummary(AgencySummary summary) {
-        // 1. Créer l'opération pour l'agence individuelle
+        // 1. Créer le compte agence
         String agencyAccountNumber = summary.getAgency();
         Compte agencyCompte = compteService.getCompteByNumero(agencyAccountNumber)
             .orElseGet(() -> {
@@ -508,9 +508,23 @@ public class AgencySummaryController {
                 return compteService.saveCompte(newCompte);
             });
 
+        // 2. Créer le compte service
+        String serviceAccountNumber = summary.getService();
+        Compte serviceCompte = compteService.getCompteByNumero(serviceAccountNumber)
+            .orElseGet(() -> {
+                // Si le compte service n'existe pas, en créer un nouveau
+                Compte newCompte = new Compte();
+                newCompte.setNumeroCompte(serviceAccountNumber);
+                newCompte.setPays(summary.getCountry() != null ? summary.getCountry() : "SN");
+                newCompte.setCodeProprietaire(serviceAccountNumber);
+                newCompte.setAgence(agencyAccountNumber); // L'agence reste la même
+                newCompte.setSolde(0.0);
+                return compteService.saveCompte(newCompte);
+            });
+
         String operationType = determineOperationType(summary.getService());
         
-        // Opération pour l'agence
+        // 3. Opération nominale pour l'agence (comportement existant)
         OperationCreateRequest agencyOperationRequest = new OperationCreateRequest();
         agencyOperationRequest.setCompteId(agencyCompte.getId());
         agencyOperationRequest.setTypeOperation(operationType);
@@ -521,9 +535,24 @@ public class AgencySummaryController {
         agencyOperationRequest.setDateOperation(summary.getDate());
         agencyOperationRequest.setRecordCount(summary.getRecordCount());
         
-        System.out.println("DEBUG: Création opération avec date: " + summary.getDate() + " pour agence: " + summary.getAgency() + " service: " + summary.getService());
+        System.out.println("DEBUG: Création opération nominale agence avec date: " + summary.getDate() + " pour agence: " + summary.getAgency() + " service: " + summary.getService());
         
         operationService.createOperationForSummary(agencyOperationRequest);
+        
+        // 4. Opération nominale pour le service (nouvelle logique)
+        OperationCreateRequest serviceOperationRequest = new OperationCreateRequest();
+        serviceOperationRequest.setCompteId(serviceCompte.getId());
+        serviceOperationRequest.setTypeOperation(operationType);
+        serviceOperationRequest.setMontant(summary.getTotalVolume());
+        serviceOperationRequest.setBanque("SYSTEM");
+        serviceOperationRequest.setNomBordereau("SERVICE_SUMMARY_" + summary.getDate() + "_" + summary.getService());
+        serviceOperationRequest.setService(summary.getAgency()); // L'agence devient le service
+        serviceOperationRequest.setDateOperation(summary.getDate());
+        serviceOperationRequest.setRecordCount(summary.getRecordCount());
+        
+        System.out.println("DEBUG: Création opération nominale service avec date: " + summary.getDate() + " pour service: " + summary.getService() + " agence: " + summary.getAgency());
+        
+        operationService.createOperationForSummary(serviceOperationRequest);
     }
 
     /**

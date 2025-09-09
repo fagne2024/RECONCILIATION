@@ -109,6 +109,9 @@ public class CompteController {
             if (compteUpdate.getType() != null) {
                 existing.setType(compteUpdate.getType());
             }
+            if (compteUpdate.getCategorie() != null) {
+                existing.setCategorie(compteUpdate.getCategorie());
+            }
             
             // Mettre à jour la date de dernière modification
             existing.setDateDerniereMaj(java.time.LocalDateTime.now());
@@ -167,13 +170,15 @@ public class CompteController {
             @RequestParam(required = false) Double soldeMin,
             @RequestParam(required = false) String dateDebut,
             @RequestParam(required = false) String dateFin,
-            @RequestParam(required = false) List<String> codeProprietaire) {
+            @RequestParam(required = false) List<String> codeProprietaire,
+            @RequestParam(required = false) List<String> categorie) {
         
         System.out.println("=== FILTRE COMPTES (DEBUG) ===");
         System.out.println("Pays (reçu): " + pays);
         System.out.println("CodeProprietaire (reçu): " + codeProprietaire);
+        System.out.println("Categorie (reçu): " + categorie);
         
-        List<Compte> comptes = compteService.filterComptes(pays, soldeMin, dateDebut, dateFin, codeProprietaire);
+        List<Compte> comptes = compteService.filterComptes(pays, soldeMin, dateDebut, dateFin, codeProprietaire, categorie);
         System.out.println("Résultats: " + comptes.size() + " comptes trouvés");
         
         return ResponseEntity.ok(comptes);

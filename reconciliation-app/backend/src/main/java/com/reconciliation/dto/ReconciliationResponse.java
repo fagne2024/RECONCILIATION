@@ -28,8 +28,10 @@ public class ReconciliationResponse {
     public static class Match {
         private String key;
         private Map<String, String> boData;
-        private Map<String, String> partnerData;
+        private Map<String, String> partnerData; // Pour compatibilité avec l'existant
+        private List<Map<String, String>> partnerDataList; // Pour les correspondances multiples
         private List<Difference> differences;
+        private String reconciliationType; // Type de réconciliation utilisé
     }
 
     @Data

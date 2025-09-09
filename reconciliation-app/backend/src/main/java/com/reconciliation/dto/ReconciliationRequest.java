@@ -15,6 +15,9 @@ public class ReconciliationRequest {
     // Filtres BO pour la réconciliation
     private List<BOColumnFilter> boColumnFilters;
     
+    // Type de réconciliation (1-1, 1-2, 1-3, 1-4, 1-5)
+    private String reconciliationType = "1-1";
+    
     @Data
     public static class BOColumnFilter {
         private String modelId;

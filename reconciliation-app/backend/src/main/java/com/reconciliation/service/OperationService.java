@@ -152,6 +152,10 @@ public class OperationService {
         return operationRepository.findDistinctService();
     }
     
+    public List<String> getDistinctServiceByCodeProprietaire(String codeProprietaire) {
+        return operationRepository.findDistinctServiceByCodeProprietaire(codeProprietaire);
+    }
+    
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public Operation createAdjustment(Long compteId, double amount, String reason) {
         OperationCreateRequest adjustmentRequest = new OperationCreateRequest();
@@ -737,6 +741,7 @@ public class OperationService {
     /**
      * Créer automatiquement une opération de frais de transaction
      * AMÉLIORATION : Garantir que les données AgencySummary sont disponibles
+     * NOUVELLE LOGIQUE : Gérer les opérations service avec les mêmes frais que les opérations agence
      */
     private void createFraisTransactionAutomatique(OperationEntity operation) {
         System.out.println("=== DÉBUT createFraisTransactionAutomatique ===");
@@ -755,11 +760,33 @@ public class OperationService {
             return;
         }
         
-        // Chercher le frais applicable pour ce service et cette agence
-        Optional<FraisTransactionEntity> fraisOpt = fraisTransactionService.getFraisApplicable(operation.getService(), numeroCompte);
+        // DÉTERMINER LA CONFIGURATION DE FRAIS À UTILISER
+        String servicePourFrais, agencePourFrais;
+        
+        // Vérifier si c'est une opération service (bordereau commence par SERVICE_SUMMARY)
+        if (operation.getNomBordereau() != null && operation.getNomBordereau().startsWith("SERVICE_SUMMARY_")) {
+            // Pour les opérations service : utiliser la configuration originale
+            // Le service de l'opération est en fait l'agence originale
+            // Le codeProprietaire de l'opération est en fait le service original
+            agencePourFrais = operation.getService(); // L'agence originale
+            servicePourFrais = numeroCompte; // Le service original
+            System.out.println("DEBUG: 🔄 Opération SERVICE détectée - Utilisation de la configuration originale");
+            System.out.println("DEBUG: 🔄 Service pour frais: " + servicePourFrais + " (service original)");
+            System.out.println("DEBUG: 🔄 Agence pour frais: " + agencePourFrais + " (agence originale)");
+        } else {
+            // Pour les opérations agence : utiliser la configuration normale
+            servicePourFrais = operation.getService();
+            agencePourFrais = numeroCompte;
+            System.out.println("DEBUG: 🔄 Opération AGENCE détectée - Utilisation de la configuration normale");
+            System.out.println("DEBUG: 🔄 Service pour frais: " + servicePourFrais);
+            System.out.println("DEBUG: 🔄 Agence pour frais: " + agencePourFrais);
+        }
+        
+        // Chercher le frais applicable pour cette configuration
+        Optional<FraisTransactionEntity> fraisOpt = fraisTransactionService.getFraisApplicable(servicePourFrais, agencePourFrais);
         
         if (fraisOpt.isEmpty()) {
-            System.out.println("DEBUG: ⚠️ Aucun frais applicable trouvé pour service=" + operation.getService() + " et agence=" + numeroCompte);
+            System.out.println("DEBUG: ⚠️ Aucun frais applicable trouvé pour service=" + servicePourFrais + " et agence=" + agencePourFrais);
             return;
         }
         
@@ -942,6 +969,7 @@ public class OperationService {
 
     /**
      * Enrichir une opération avec ses frais de transaction associés
+     * NOUVELLE LOGIQUE : Gérer les opérations service avec les mêmes frais que les opérations agence
      */
     private Operation enrichOperationWithFrais(Operation operation) {
         try {
@@ -958,8 +986,22 @@ public class OperationService {
                 return operation;
             }
             
-            // Chercher le frais applicable pour ce service et cette agence
-            Optional<FraisTransactionEntity> fraisOpt = fraisTransactionService.getFraisApplicable(operation.getService(), numeroCompte);
+            // DÉTERMINER LA CONFIGURATION DE FRAIS À UTILISER
+            String servicePourFrais, agencePourFrais;
+            
+            // Vérifier si c'est une opération service (bordereau commence par SERVICE_SUMMARY)
+            if (operation.getNomBordereau() != null && operation.getNomBordereau().startsWith("SERVICE_SUMMARY_")) {
+                // Pour les opérations service : utiliser la configuration originale
+                agencePourFrais = operation.getService(); // L'agence originale
+                servicePourFrais = numeroCompte; // Le service original
+            } else {
+                // Pour les opérations agence : utiliser la configuration normale
+                servicePourFrais = operation.getService();
+                agencePourFrais = numeroCompte;
+            }
+            
+            // Chercher le frais applicable pour cette configuration
+            Optional<FraisTransactionEntity> fraisOpt = fraisTransactionService.getFraisApplicable(servicePourFrais, agencePourFrais);
             
             if (fraisOpt.isEmpty()) {
                 operation.setFraisApplicable(false);

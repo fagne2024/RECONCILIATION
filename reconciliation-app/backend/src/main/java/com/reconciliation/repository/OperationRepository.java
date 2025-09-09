@@ -47,6 +47,9 @@ public interface OperationRepository extends JpaRepository<OperationEntity, Long
     @Query("SELECT DISTINCT o.service FROM OperationEntity o WHERE o.service IS NOT NULL AND o.service != '' ORDER BY o.service")
     List<String> findDistinctService();
     
+    @Query("SELECT DISTINCT o.service FROM OperationEntity o WHERE o.codeProprietaire = :codeProprietaire AND o.service IS NOT NULL AND o.service != '' ORDER BY o.service")
+    List<String> findDistinctServiceByCodeProprietaire(@Param("codeProprietaire") String codeProprietaire);
+    
     @Query("SELECT o FROM OperationEntity o ORDER BY o.dateOperation DESC")
     List<OperationEntity> findAllOrderByDateOperationDesc();
     

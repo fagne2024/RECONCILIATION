@@ -11,6 +11,7 @@ public class Compte {
     private String codeProprietaire;
     private String agence;
     private String type;
+    private String categorie;
     
     // Constructeurs
     public Compte() {}
@@ -96,6 +97,14 @@ public class Compte {
         this.type = type;
     }
     
+    public String getCategorie() {
+        return categorie;
+    }
+    
+    public void setCategorie(String categorie) {
+        this.categorie = categorie;
+    }
+    
     @Override
     public String toString() {
         return "Compte{" +
@@ -107,6 +116,7 @@ public class Compte {
                 ", codeProprietaire='" + codeProprietaire + '\'' +
                 ", agence='" + agence + '\'' +
                 ", type='" + type + '\'' +
+                ", categorie='" + categorie + '\'' +
                 '}';
     }
 } 
