@@ -2612,25 +2612,20 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
     }
 
     /**
-     * Obtenir le commentaire TSOP pour un enregistrement
+     * Obtenir le commentaire TSOP pour un enregistrement (écarts Partenaire)
      */
     getTSOPComment(record: any): string {
-        const duplicatesMap = this.getTSOPDuplicatesMap();
-        const reconciliationKey = this.getReconciliationKey(record);
+        const typeOperation = this.getTypeOperation(record);
         
-        if (reconciliationKey && duplicatesMap.has(reconciliationKey)) {
-            const duplicateRecords = duplicatesMap.get(reconciliationKey);
-            if (duplicateRecords && duplicateRecords.length > 0) {
-                const tsopType = duplicateRecords[0].tsopType;
-                if (tsopType === 'COMPLETE') {
-                    return 'TSOP';
-                } else if (tsopType === 'REGULARISATION_FRAIS') {
-                    return 'Régularisation FRAIS';
-                } else {
-                    return 'SANS FRAIS';
-                }
-            }
+        // Logique selon les spécifications :
+        // - IMPACT_COMPTIMPACT-COMPTE-GENERAL sans FRAIS → TSF (jaune)
+        // - FRAIS_TRANSACTION → C FRAIS (orange)
+        if (typeOperation && typeOperation.includes('FRAIS_TRANSACTION')) {
+            return 'C FRAIS';
+        } else if (typeOperation && typeOperation.includes('IMPACT_COMPTIMPACT-COMPTE-GENERAL')) {
+            return 'TSF';
         }
+        
         return '';
     }
 
@@ -2638,15 +2633,17 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
      * Obtenir le type TSOP pour un enregistrement (pour le style CSS)
      */
     getTSOPType(record: any): string {
-        const duplicatesMap = this.getTSOPDuplicatesMap();
-        const reconciliationKey = this.getReconciliationKey(record);
+        const typeOperation = this.getTypeOperation(record);
         
-        if (reconciliationKey && duplicatesMap.has(reconciliationKey)) {
-            const duplicateRecords = duplicatesMap.get(reconciliationKey);
-            if (duplicateRecords && duplicateRecords.length > 0) {
-                return duplicateRecords[0].tsopType || 'COMPLETE';
-            }
+        // Logique selon les spécifications :
+        // - FRAIS_TRANSACTION → C FRAIS (orange)
+        // - IMPACT_COMPTIMPACT-COMPTE-GENERAL → TSF (jaune)
+        if (typeOperation && typeOperation.includes('FRAIS_TRANSACTION')) {
+            return 'C_FRAIS';
+        } else if (typeOperation && typeOperation.includes('IMPACT_COMPTIMPACT-COMPTE-GENERAL')) {
+            return 'TSF';
         }
+        
         return '';
     }
 
@@ -2654,42 +2651,16 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
      * Obtenir le commentaire pour un enregistrement ECART BO
      */
     getBoOnlyComment(record: any): string {
-        // Pour ECART BO, on utilise la même logique que ECART Partenaire
-        // car ce sont les mêmes lignes sur les deux exports
-        const duplicatesMap = this.getTSOPDuplicatesMap();
-        const reconciliationKey = this.getReconciliationKey(record);
-        
-        if (reconciliationKey && duplicatesMap.has(reconciliationKey)) {
-            const duplicateRecords = duplicatesMap.get(reconciliationKey);
-            if (duplicateRecords && duplicateRecords.length > 0) {
-                const tsopType = duplicateRecords[0].tsopType;
-                if (tsopType === 'COMPLETE') {
-                    return 'TSOP';
-                } else if (tsopType === 'REGULARISATION_FRAIS') {
-                    return 'Régularisation FRAIS';
-                } else {
-                    return 'SANS FRAIS';
-                }
-            }
-        }
-        return '';
+        // Pour les écarts BO : toujours TSOP en rouge selon les spécifications
+        return 'TSOP';
     }
 
     /**
      * Obtenir le type pour un enregistrement ECART BO (pour le style CSS)
      */
     getBoOnlyType(record: any): string {
-        // Pour ECART BO, on utilise la même logique que ECART Partenaire
-        const duplicatesMap = this.getTSOPDuplicatesMap();
-        const reconciliationKey = this.getReconciliationKey(record);
-        
-        if (reconciliationKey && duplicatesMap.has(reconciliationKey)) {
-            const duplicateRecords = duplicatesMap.get(reconciliationKey);
-            if (duplicateRecords && duplicateRecords.length > 0) {
-                return duplicateRecords[0].tsopType || 'COMPLETE';
-            }
-        }
-        return '';
+        // Pour les écarts BO : toujours TSOP (rouge) selon les spécifications
+        return 'TSOP';
     }
 
     hasDifferences(match: Match): boolean {
@@ -2979,25 +2950,13 @@ private async generateExcelFile(): Promise<ExcelJS.Workbook[]> {
                 });
                 const row = worksheet.addRow(rowData);
                 
-                // Appliquer le style selon le type
-                if (boOnlyType === 'COMPLETE') {
-                    // Style rouge pour TSOP complet
+                // Appliquer le style selon le type - ÉCARTS BO : toujours TSOP (rouge)
+                if (boOnlyType === 'TSOP') {
+                    // Style rouge pour TSOP (écarts BO)
                     row.eachCell(cell => {
                         cell.style = tsorDuplicateStyle;
                     });
-                    console.log(`🟥 Ligne ECART BO ${index + 2} colorée en rouge (TSOP complet)`);
-                } else if (boOnlyType === 'SANS_FRAIS') {
-                    // Style jaune pour IMPACT sans FRAIS
-                    row.eachCell(cell => {
-                        cell.style = tsorSansFraisStyle;
-                    });
-                    console.log(`🟡 Ligne ECART BO ${index + 2} colorée en jaune (SANS FRAIS)`);
-                } else if (boOnlyType === 'REGULARISATION_FRAIS') {
-                    // Style orange pour FRAIS_TRANSACTION seul
-                    row.eachCell(cell => {
-                        cell.style = regularisationFraisStyle;
-                    });
-                    console.log(`🟠 Ligne ECART BO ${index + 2} colorée en orange (Régularisation FRAIS)`);
+                    console.log(`🟥 Ligne ECART BO ${index + 2} colorée en rouge (TSOP)`);
                 } else {
                     // Style normal
                     row.eachCell(cell => {
@@ -3113,25 +3072,19 @@ private async generateExcelFile(): Promise<ExcelJS.Workbook[]> {
                 });
                 const row = worksheet.addRow(rowData);
                 
-                // Appliquer le style selon le type TSOP
-                if (tsopType === 'COMPLETE') {
-                    // Style rouge pour TSOP complet
-                    row.eachCell(cell => {
-                        cell.style = tsorDuplicateStyle;
-                    });
-                    console.log(`🟥 Ligne ${index + 2} colorée en rouge (TSOP complet)`);
-                } else if (tsopType === 'SANS_FRAIS') {
-                    // Style jaune pour IMPACT sans FRAIS
+                // Appliquer le style selon le type - ÉCARTS PARTENAIRE
+                if (tsopType === 'TSF') {
+                    // Style jaune pour TSF (IMPACT sans FRAIS)
                     row.eachCell(cell => {
                         cell.style = tsorSansFraisStyle;
                     });
-                    console.log(`🟡 Ligne ${index + 2} colorée en jaune (SANS FRAIS)`);
-                } else if (tsopType === 'REGULARISATION_FRAIS') {
-                    // Style orange pour FRAIS_TRANSACTION seul
+                    console.log(`🟡 Ligne ${index + 2} colorée en jaune (TSF)`);
+                } else if (tsopType === 'C_FRAIS') {
+                    // Style orange pour C FRAIS (FRAIS_TRANSACTION)
                     row.eachCell(cell => {
                         cell.style = regularisationFraisStyle;
                     });
-                    console.log(`🟠 Ligne ${index + 2} colorée en orange (Régularisation FRAIS)`);
+                    console.log(`🟠 Ligne ${index + 2} colorée en orange (C FRAIS)`);
                 } else {
                     // Style normal
                     row.eachCell(cell => {
