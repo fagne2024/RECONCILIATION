@@ -134,15 +134,27 @@ public class CsvReconciliationService implements DisposableBean {
             logger.info("📊 Nombre d'enregistrements Partenaire: {}", processedPartnerData.size());
             logger.info("⚡ Threads parallèles: {}", PARALLEL_THREADS);
             
+            // Vérifier si un type de réconciliation paramétrable est spécifié
+            if (request.getReconciliationType() != null && !"1-1".equals(request.getReconciliationType())) {
+                logger.info("🔍 Type de réconciliation paramétrable détecté: {} - Utilisation de la logique paramétrable", 
+                    request.getReconciliationType());
+                return reconcileWithParametricType(request, startTime);
+            }
+            
+            // FORCER LA LOGIQUE 1-1 POUR LA RÉCONCILIATION AUTOMATIQUE
+            // La réconciliation automatique doit toujours utiliser la logique 1-1 pour éviter les correspondances multiples
+            logger.info("🔒 RÉCONCILIATION AUTOMATIQUE - Forçage de la logique 1-1 (pas de correspondances multiples)");
+            
             // Détection de la logique de réconciliation à utiliser (CONFIGURABLE)
             ConfigurableReconciliationService.ReconciliationLogicType logicType = 
                 configurableReconciliationService.determineReconciliationLogic(request);
             
+            // IGNORER la logique SPECIAL_RATIO pour la réconciliation automatique
             if (logicType == ConfigurableReconciliationService.ReconciliationLogicType.SPECIAL_RATIO) {
-                logger.info("🔍 Logique de réconciliation spéciale détectée - Utilisation de la logique configurable");
-                return reconcileWithSpecialRatio(request, startTime);
+                logger.info("⚠️ Logique SPECIAL_RATIO détectée mais IGNORÉE pour la réconciliation automatique - Utilisation de la logique standard 1-1");
+                logicType = ConfigurableReconciliationService.ReconciliationLogicType.STANDARD;
             }
-            logger.info("✅ Logique standard utilisée - Logique configurable: {}", logicType);
+            logger.info("✅ Logique standard 1-1 utilisée pour la réconciliation automatique - Logique configurable: {}", logicType);
             
             // Vérification de la mémoire disponible
             Runtime runtime = Runtime.getRuntime();
@@ -631,8 +643,6 @@ public class CsvReconciliationService implements DisposableBean {
             
             // Log de progression
             if (processedCount % 1000 == 0) {
-                long currentTime = System.currentTimeMillis();
-                long elapsedTime = currentTime - startTime;
                 double progress = (double) processedCount / filteredBoRecords.size() * 100;
                 logger.info("📊 Progression TRXBO/OPPART: {:.2f}% ({}/{} enregistrements)", 
                     progress, processedCount, filteredBoRecords.size());
@@ -675,6 +685,172 @@ public class CsvReconciliationService implements DisposableBean {
         logger.info("⏱️  Temps total d'exécution: {} ms ({:.2f} secondes)", totalTime, totalTime / 1000.0);
         
         return response;
+    }
+
+    /**
+     * Réconciliation avec types paramétrables (1-1, 1-2, 1-3, 1-4, 1-5)
+     * Gère les correspondances multiples selon le type sélectionné
+     */
+    private ReconciliationResponse reconcileWithParametricType(ReconciliationRequest request, long startTime) {
+        logger.info("🔄 Début de la réconciliation avec type paramétrable: {}", request.getReconciliationType());
+        
+        // Appliquer les filtres BO si présents
+        List<Map<String, String>> filteredBoRecords = applyBOFilters(request.getBoFileContent(), request.getBoColumnFilters());
+        logger.info("✅ Nombre d'enregistrements BO après filtrage: {}", filteredBoRecords.size());
+        
+        // Initialise la réponse
+        ReconciliationResponse response = new ReconciliationResponse();
+        response.setMatches(new ArrayList<>());
+        response.setBoOnly(new ArrayList<>());
+        response.setPartnerOnly(new ArrayList<>());
+        response.setMismatches(new ArrayList<>());
+        
+        // Créer un index des enregistrements partenaire groupés par clé
+        Map<String, List<Map<String, String>>> partnerIndex = new HashMap<>();
+        
+        for (Map<String, String> partnerRecord : request.getPartnerFileContent()) {
+            String partnerKey = partnerRecord.get(request.getPartnerKeyColumn());
+            if (partnerKey != null) {
+                partnerIndex.computeIfAbsent(partnerKey, k -> new ArrayList<>()).add(partnerRecord);
+            }
+        }
+        
+        logger.info("✅ Index partenaire créé avec {} clés uniques", partnerIndex.size());
+        
+        // Déterminer le nombre de correspondances attendues
+        int expectedPartnerCount = getExpectedPartnerCount(request.getReconciliationType());
+        logger.info("🎯 Nombre de correspondances partenaire attendues: {}", expectedPartnerCount);
+        
+        // Traiter chaque enregistrement BO
+        Set<String> processedPartnerKeys = new HashSet<>();
+        int processedCount = 0;
+        
+        for (Map<String, String> boRecord : filteredBoRecords) {
+            String boKey = boRecord.get(request.getBoKeyColumn());
+            if (boKey == null) {
+                response.getBoOnly().add(boRecord);
+                processedCount++;
+                continue;
+            }
+            
+            List<Map<String, String>> matchingPartnerRecords = partnerIndex.get(boKey);
+            int partnerMatchCount = matchingPartnerRecords != null ? matchingPartnerRecords.size() : 0;
+            
+            // Vérifier si le nombre de correspondances correspond au type attendu
+            if (partnerMatchCount == expectedPartnerCount) {
+                logger.debug("✅ CORRESPONDANCE PARFAITE ({}): {} correspondances pour key: {}", 
+                    request.getReconciliationType(), partnerMatchCount, boKey);
+                
+                // Créer un match avec les enregistrements partenaires
+                ReconciliationResponse.Match match = new ReconciliationResponse.Match();
+                match.setKey(boKey);
+                match.setBoData(boRecord);
+                match.setReconciliationType(request.getReconciliationType());
+                
+                // Pour les types 1-1, utiliser la structure existante
+                if ("1-1".equals(request.getReconciliationType())) {
+                    match.setPartnerData(matchingPartnerRecords.get(0));
+                    match.setPartnerDataList(null);
+                } else {
+                    // Pour les types multiples, utiliser la nouvelle structure
+                    match.setPartnerData(null);
+                    match.setPartnerDataList(matchingPartnerRecords);
+                    
+                    // Créer aussi une version combinée pour compatibilité
+                    Map<String, String> combinedPartnerData = new HashMap<>();
+                    if (matchingPartnerRecords != null) {
+                        for (int i = 0; i < matchingPartnerRecords.size(); i++) {
+                            Map<String, String> partnerRecord = matchingPartnerRecords.get(i);
+                            for (Map.Entry<String, String> entry : partnerRecord.entrySet()) {
+                                String key = entry.getKey();
+                                String value = entry.getValue();
+                                combinedPartnerData.put(key + "_PARTNER_" + (i + 1), value);
+                            }
+                        }
+                    }
+                    match.setPartnerData(combinedPartnerData);
+                }
+                
+                match.setDifferences(new ArrayList<>());
+                response.getMatches().add(match);
+                processedPartnerKeys.add(boKey);
+                
+            } else if (partnerMatchCount > 0) {
+                logger.debug("❌ ÉCART ({}): {} correspondances pour key: {} (attendu: {})", 
+                    request.getReconciliationType(), partnerMatchCount, boKey, expectedPartnerCount);
+                response.getMismatches().add(boRecord);
+                if (matchingPartnerRecords != null) {
+                    for (Map<String, String> partnerRecord : matchingPartnerRecords) {
+                        response.getPartnerOnly().add(partnerRecord);
+                    }
+                }
+                processedPartnerKeys.add(boKey);
+            } else {
+                logger.debug("📈 BO UNIQUEMENT ({}): 0 correspondances pour key: {}", 
+                    request.getReconciliationType(), boKey);
+                response.getBoOnly().add(boRecord);
+            }
+            
+            processedCount++;
+            
+            // Log de progression
+            if (processedCount % 1000 == 0) {
+                double progress = (double) processedCount / filteredBoRecords.size() * 100;
+                logger.info("📊 Progression réconciliation {}: {:.2f}% ({}/{} enregistrements)", 
+                    request.getReconciliationType(), progress, processedCount, filteredBoRecords.size());
+            }
+        }
+        
+        // Identifier les enregistrements partenaire non utilisés
+        for (Map<String, String> partnerRecord : request.getPartnerFileContent()) {
+            String partnerKey = partnerRecord.get(request.getPartnerKeyColumn());
+            if (partnerKey != null && !processedPartnerKeys.contains(partnerKey)) {
+                response.getPartnerOnly().add(partnerRecord);
+            }
+        }
+        
+        // Calculer les totaux
+        response.setTotalBoRecords(filteredBoRecords.size());
+        response.setTotalPartnerRecords(request.getPartnerFileContent().size());
+        response.setTotalMatches(response.getMatches().size());
+        response.setTotalMismatches(response.getMismatches().size());
+        response.setTotalBoOnly(response.getBoOnly().size());
+        response.setTotalPartnerOnly(response.getPartnerOnly().size());
+        
+        // Calcul du temps total
+        long totalTime = System.currentTimeMillis() - startTime;
+        double recordsPerSecond = (double) processedCount / (totalTime / 1000.0);
+        
+        // Ajout des informations de performance à la réponse
+        response.setExecutionTimeMs(totalTime);
+        response.setProcessedRecords(processedCount);
+        response.setProgressPercentage(100.0);
+        
+        logger.info("🎯 RÉSULTATS FINAUX RÉCONCILIATION {}:", request.getReconciliationType());
+        logger.info("📊 Total BO: {}", response.getTotalBoRecords());
+        logger.info("📊 Total Partenaire: {}", response.getTotalPartnerRecords());
+        logger.info("✅ Correspondances parfaites ({}): {}", request.getReconciliationType(), response.getTotalMatches());
+        logger.info("❌ Écarts: {}", response.getTotalMismatches());
+        logger.info("📈 Uniquement BO: {}", response.getTotalBoOnly());
+        logger.info("📈 Uniquement Partenaire: {}", response.getTotalPartnerOnly());
+        logger.info("⚡ Performance: {:.0f} enregistrements/seconde", recordsPerSecond);
+        logger.info("⏱️  Temps total d'exécution: {} ms ({:.2f} secondes)", totalTime, totalTime / 1000.0);
+        
+        return response;
+    }
+
+    /**
+     * Détermine le nombre de correspondances partenaire attendues selon le type
+     */
+    private int getExpectedPartnerCount(String reconciliationType) {
+        switch (reconciliationType) {
+            case "1-1": return 1;
+            case "1-2": return 2;
+            case "1-3": return 3;
+            case "1-4": return 4;
+            case "1-5": return 5;
+            default: return 1; // Par défaut 1-1
+        }
     }
 
     private ReconciliationBatchResult processBatchOptimized(List<Map<String, String>> batch, 
