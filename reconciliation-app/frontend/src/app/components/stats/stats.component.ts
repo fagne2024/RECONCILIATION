@@ -9,6 +9,7 @@ import * as ExcelJS from 'exceljs';
 // @ts-ignore
 import * as FileSaver from 'file-saver';
 import { MatSelect } from '@angular/material/select';
+import { ModernPopupComponent, PopupConfig } from '../modern-popup/modern-popup.component';
 
 @Component({
     selector: 'app-stats',
@@ -148,10 +149,11 @@ export class StatsComponent implements OnInit, OnDestroy {
                 this.applyFilters();
                 this.isLoading = false;
             },
-            error: (error) => {
+            error: async (error) => {
                 console.error('Erreur lors du chargement des données:', error);
                 this.errorMessage = 'Erreur lors du chargement des données';
                 this.isLoading = false;
+                await this.showErrorMessage('Erreur lors du chargement des données');
             }
         });
     }
@@ -358,6 +360,8 @@ export class StatsComponent implements OnInit, OnDestroy {
             let service = group[0].service;
             let country = group[0].country;
             let date = group[0].date;
+            let ids: number[] = []; // Collecter tous les IDs du groupe
+            
             for (const item of group) {
                 if (item.isAnnulation) {
                     totalVolume -= item.totalVolume;
@@ -366,10 +370,22 @@ export class StatsComponent implements OnInit, OnDestroy {
                     totalVolume += item.totalVolume;
                     recordCount += item.recordCount;
                 }
+                // Collecter l'ID si disponible
+                if (item.id) {
+                    ids.push(item.id);
+                }
             }
             // On n'affiche que si le total est positif ou non nul
             if (recordCount !== 0 || totalVolume !== 0) {
-                result.push({ agency, service, country, date, totalVolume, recordCount });
+                result.push({ 
+                    agency, 
+                    service, 
+                    country, 
+                    date, 
+                    totalVolume, 
+                    recordCount,
+                    ids: ids // Inclure les IDs pour la suppression
+                });
             } else {
                 console.log('Groupe exclu car total nul:', { service, agency, country, date, totalVolume, recordCount });
             }
@@ -491,7 +507,7 @@ export class StatsComponent implements OnInit, OnDestroy {
             }));
 
             if (data.length === 0) {
-                this.errorMessage = 'Aucune donnée à exporter';
+                await this.showErrorMessage('Aucune donnée à exporter');
                 return;
             }
 
@@ -577,9 +593,10 @@ export class StatsComponent implements OnInit, OnDestroy {
             window.URL.revokeObjectURL(url);
             
             console.log(`Fichier téléchargé avec succès : ${fileName}`);
+            await this.showSuccessMessage(`Fichier exporté avec succès : ${fileName}`);
         } catch (error) {
             console.error('Erreur lors de l\'export:', error);
-            this.errorMessage = 'Erreur lors de l\'export des données';
+            await this.showErrorMessage('Erreur lors de l\'export des données');
         } finally {
             this.isLoading = false;
         }
@@ -637,5 +654,88 @@ export class StatsComponent implements OnInit, OnDestroy {
     }
     getAllCountries(): string[] {
         return Array.from(new Set(this.agencySummaries.map(s => s.country))).sort();
+    }
+
+    /**
+     * Supprime une statistique avec confirmation moderne
+     */
+    async deleteSummary(summary: any) {
+        const confirmMessage = `Êtes-vous sûr de vouloir supprimer cette statistique ?\n\n` +
+            `Client: ${summary.agency}\n` +
+            `Service: ${summary.service}\n` +
+            `Pays: ${summary.country}\n` +
+            `Date: ${this.formatDateWithTime(summary.date)}\n` +
+            `Volume: ${summary.totalVolume.toLocaleString('fr-FR')}\n` +
+            `Transactions: ${summary.recordCount}`;
+
+        const config: PopupConfig = {
+            title: 'Confirmation de suppression',
+            message: confirmMessage,
+            type: 'confirm',
+            showCancelButton: true,
+            cancelText: 'Annuler',
+            confirmText: 'Supprimer'
+        };
+
+        try {
+            await ModernPopupComponent.showPopup(config);
+            
+            this.isLoading = true;
+            try {
+                // Supprimer tous les IDs associés à cette statistique agrégée
+                if (summary.ids && summary.ids.length > 0) {
+                    const deletePromises = summary.ids.map((id: number) => 
+                        this.agencySummaryService.deleteSummary(id).toPromise()
+                    );
+                    await Promise.all(deletePromises);
+                } else {
+                    throw new Error('Aucun ID trouvé pour cette statistique');
+                }
+                
+                // Recharger les données après suppression
+                this.loadData();
+                
+                // Afficher un message de succès
+                await this.showSuccessMessage('Statistique supprimée avec succès');
+                
+                console.log('Statistique supprimée avec succès');
+            } catch (error) {
+                console.error('Erreur lors de la suppression:', error);
+                await this.showErrorMessage('Erreur lors de la suppression de la statistique');
+            } finally {
+                this.isLoading = false;
+            }
+        } catch (error) {
+            // L'utilisateur a annulé la suppression
+            console.log('Suppression annulée par l\'utilisateur');
+        }
+    }
+
+    /**
+     * Affiche un message de succès avec popup moderne
+     */
+    private async showSuccessMessage(message: string) {
+        const config: PopupConfig = {
+            title: 'Succès',
+            message: message,
+            type: 'success',
+            showCancelButton: false,
+            confirmText: 'OK'
+        };
+        await ModernPopupComponent.showPopup(config);
+    }
+
+    /**
+     * Affiche un message d'erreur avec popup moderne
+     */
+    private async showErrorMessage(message: string) {
+        const config: PopupConfig = {
+            title: 'Erreur',
+            message: message,
+            type: 'error',
+            showCancelButton: false,
+            confirmText: 'OK'
+        };
+        await ModernPopupComponent.showPopup(config);
     }
 } 

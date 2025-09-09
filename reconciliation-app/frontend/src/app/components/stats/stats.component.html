@@ -99,6 +99,7 @@
                             <th>Date</th>
                             <th>Volume Total</th>
                             <th>Nombres de Transactions</th>
+                            <th>Actions</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -112,6 +113,11 @@
                             <td>{{formatDateWithTime(summary.date)}}</td>
                             <td>{{summary.totalVolume | number:'1.0-0'}}</td>
                             <td>{{summary.recordCount}}</td>
+                            <td>
+                                <button class="delete-btn" (click)="deleteSummary(summary)" [disabled]="isLoading" title="Supprimer cette statistique">
+                                    🗑️
+                                </button>
+                            </td>
                         </tr>
                     </tbody>
                 </table>

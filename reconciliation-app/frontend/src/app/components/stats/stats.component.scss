@@ -240,6 +240,34 @@ h2 {
     background: #1565C0;
 }
 
+// Styles pour les boutons d'action dans le tableau
+.delete-btn {
+    background: #dc3545;
+    color: white;
+    border: none;
+    padding: 6px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: all 0.3s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 32px;
+    height: 32px;
+}
+
+.delete-btn:hover:not(:disabled) {
+    background: #c82333;
+    transform: scale(1.05);
+}
+
+.delete-btn:disabled {
+    background: #ccc;
+    cursor: not-allowed;
+    transform: none;
+}
+
 // Responsive design pour les filtres
 @media (max-width: 1100px) {
     .filter-form {
