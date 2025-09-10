@@ -32,8 +32,11 @@ import com.reconciliation.repository.AgencySummaryRepository;
 import com.reconciliation.entity.AgencySummaryEntity;
 import com.reconciliation.service.OperationService;
 import com.reconciliation.service.CompteService;
+import com.reconciliation.service.CompteRegroupementService;
 import com.reconciliation.dto.OperationCreateRequest;
 import com.reconciliation.model.Compte;
+import com.reconciliation.model.Operation;
+import com.reconciliation.entity.CompteEntity;
 import org.springframework.beans.factory.annotation.Autowired;
 
 @Slf4j
@@ -59,6 +62,8 @@ public class ReconciliationController {
     private OperationService operationService;
     @Autowired
     private CompteService compteService;
+    @Autowired
+    private CompteRegroupementService compteRegroupementService;
 
     @GetMapping("/test")
     public ResponseEntity<String> test() {
@@ -597,6 +602,10 @@ public class ReconciliationController {
      */
     private AgencySummaryEntity saveAgencySummaryToDatabase(Map<?, ?> data) {
         try {
+            // Log de débogage pour voir les données reçues
+            log.info("🔍 DEBUG saveAgencySummaryToDatabase - Données reçues: {}", data);
+            log.info("🔍 DEBUG saveAgencySummaryToDatabase - Clés disponibles: {}", data.keySet());
+            
             // Extraire les données du Map
             String agency = getStringValue(data, "agency");
             String service = getStringValue(data, "service");
@@ -604,6 +613,9 @@ public class ReconciliationController {
             String date = getStringValue(data, "date");
             Double totalVolume = getDoubleValue(data, "totalVolume");
             Integer recordCount = getIntegerValue(data, "recordCount");
+            
+            log.info("🔍 DEBUG saveAgencySummaryToDatabase - Valeurs extraites: agency={}, service={}, country={}, date={}, totalVolume={}, recordCount={}", 
+                    agency, service, country, date, totalVolume, recordCount);
             
             // Validation des données requises
             if (agency == null || service == null || country == null || date == null || totalVolume == null || recordCount == null) {
@@ -642,9 +654,18 @@ public class ReconciliationController {
                 createOperationFromSummary(savedEntity);
                 log.info("✅ Opération créée automatiquement pour {}/{}/{}", date, agency, service);
             } catch (Exception e) {
-                log.warn("⚠️ Erreur lors de la création automatique de l'opération pour {}/{}/{}: {}", 
+                log.error("❌ Erreur lors de la création automatique de l'opération pour {}/{}/{}: {}", 
                         date, agency, service, e.getMessage());
+                log.error("🔍 Stack trace complète:", e);
                 // Ne pas faire échouer la sauvegarde du summary à cause de l'opération
+                // Mais continuer avec la création du compte service et la synchronisation
+                try {
+                    createServiceAccountAndSyncBalances(savedEntity);
+                    log.info("✅ Compte service créé et soldes synchronisés pour {}/{}/{}", date, agency, service);
+                } catch (Exception syncError) {
+                    log.error("❌ Erreur lors de la synchronisation des soldes pour {}/{}/{}: {}", 
+                            date, agency, service, syncError.getMessage());
+                }
             }
             
             return savedEntity;
@@ -656,76 +677,260 @@ public class ReconciliationController {
     }
     
     /**
-     * Crée automatiquement 4 opérations à partir d'un AgencySummary
-     * 1. Opération nominale agence (agence comme compte, service comme service)
-     * 2. Opération frais agence (frais sur le compte agence)
-     * 3. Opération nominale service (service comme compte, agence comme service)
-     * 4. Opération frais service (frais sur le compte service)
+     * Crée automatiquement les opérations à partir d'un AgencySummary
+     * Crée les comptes agence et service s'ils n'existent pas
+     * Applique les mêmes impacts sur les deux comptes
+     * Synchronise les soldes des comptes fusionés
      */
     private void createOperationFromSummary(AgencySummaryEntity summary) {
-        // 1. Créer le compte agence
-        String agencyAccountNumber = summary.getAgency();
-        Compte agencyCompte = compteService.getCompteByNumero(agencyAccountNumber)
-            .orElseGet(() -> {
-                // Si le compte d'agence n'existe pas, en créer un nouveau
-                Compte newCompte = new Compte();
-                newCompte.setNumeroCompte(agencyAccountNumber);
-                newCompte.setPays(summary.getCountry() != null ? summary.getCountry() : "SN");
-                newCompte.setCodeProprietaire(agencyAccountNumber);
-                newCompte.setAgence(agencyAccountNumber); // Définir l'agence pour les frais de transaction
-                newCompte.setSolde(0.0);
-                return compteService.saveCompte(newCompte);
-            });
+        try {
+            log.info("🔧 Début de création d'opération pour summary: {}/{}/{}", 
+                    summary.getAgency(), summary.getService(), summary.getDate());
+            
+            // 1. Créer le compte agence
+            String agencyAccountNumber = summary.getAgency();
+            Compte agencyCompte = compteService.getCompteByNumero(agencyAccountNumber)
+                .orElseGet(() -> {
+                    log.info("➕ Création du compte agence: {}", agencyAccountNumber);
+                    Compte newCompte = new Compte();
+                    newCompte.setNumeroCompte(agencyAccountNumber);
+                    newCompte.setPays(summary.getCountry() != null ? summary.getCountry() : "SN");
+                    newCompte.setCodeProprietaire(agencyAccountNumber);
+                    newCompte.setAgence(agencyAccountNumber);
+                    newCompte.setSolde(0.0);
+                    return compteService.saveCompte(newCompte);
+                });
+            
+            log.info("✅ Compte agence trouvé/créé: ID={}, Numéro={}", agencyCompte.getId(), agencyCompte.getNumeroCompte());
 
-        // 2. Créer le compte service
-        String serviceAccountNumber = summary.getService();
-        Compte serviceCompte = compteService.getCompteByNumero(serviceAccountNumber)
-            .orElseGet(() -> {
-                // Si le compte service n'existe pas, en créer un nouveau
-                Compte newCompte = new Compte();
-                newCompte.setNumeroCompte(serviceAccountNumber);
-                newCompte.setPays(summary.getCountry() != null ? summary.getCountry() : "SN");
-                newCompte.setCodeProprietaire(serviceAccountNumber);
-                newCompte.setAgence(agencyAccountNumber); // L'agence reste la même
-                newCompte.setSolde(0.0);
-                return compteService.saveCompte(newCompte);
-            });
+            // 2. Créer le compte service
+            String serviceAccountNumber = summary.getService();
+            Compte serviceCompte = compteService.getCompteByNumero(serviceAccountNumber)
+                .orElseGet(() -> {
+                    log.info("➕ Création du compte service: {}", serviceAccountNumber);
+                    Compte newCompte = new Compte();
+                    newCompte.setNumeroCompte(serviceAccountNumber);
+                    newCompte.setPays(summary.getCountry() != null ? summary.getCountry() : "SN");
+                    newCompte.setCodeProprietaire(serviceAccountNumber);
+                    newCompte.setAgence(agencyAccountNumber);
+                    newCompte.setSolde(0.0);
+                    return compteService.saveCompte(newCompte);
+                });
+            
+            log.info("✅ Compte service trouvé/créé: ID={}, Numéro={}", serviceCompte.getId(), serviceCompte.getNumeroCompte());
 
-        String operationType = determineOperationType(summary.getService());
-        
-        // 3. Opération nominale pour l'agence (comportement existant)
-        OperationCreateRequest agencyOperationRequest = new OperationCreateRequest();
-        agencyOperationRequest.setCompteId(agencyCompte.getId());
-        agencyOperationRequest.setTypeOperation(operationType);
-        agencyOperationRequest.setMontant(summary.getTotalVolume());
-        agencyOperationRequest.setBanque("SYSTEM");
-        agencyOperationRequest.setNomBordereau("AGENCY_SUMMARY_" + summary.getDate() + "_" + summary.getAgency());
-        agencyOperationRequest.setService(summary.getService());
-        agencyOperationRequest.setDateOperation(summary.getDate());
-        agencyOperationRequest.setRecordCount(summary.getRecordCount());
-        
-        log.info("🔧 Création opération nominale agence avec date: {} pour agence: {} service: {}", 
-                summary.getDate(), summary.getAgency(), summary.getService());
-        
-        operationService.createOperationForSummary(agencyOperationRequest);
-        
-        // 4. Opération nominale pour le service (nouvelle logique)
-        OperationCreateRequest serviceOperationRequest = new OperationCreateRequest();
-        serviceOperationRequest.setCompteId(serviceCompte.getId());
-        serviceOperationRequest.setTypeOperation(operationType);
-        serviceOperationRequest.setMontant(summary.getTotalVolume());
-        serviceOperationRequest.setBanque("SYSTEM");
-        serviceOperationRequest.setNomBordereau("SERVICE_SUMMARY_" + summary.getDate() + "_" + summary.getService());
-        serviceOperationRequest.setService(summary.getAgency()); // L'agence devient le service
-        serviceOperationRequest.setDateOperation(summary.getDate());
-        serviceOperationRequest.setRecordCount(summary.getRecordCount());
-        
-        log.info("🔧 Création opération nominale service avec date: {} pour service: {} agence: {}", 
-                summary.getDate(), summary.getService(), summary.getAgency());
-        
-        operationService.createOperationForSummary(serviceOperationRequest);
+            String operationType = determineOperationType(summary.getService());
+            
+            // 3. Créer l'opération pour l'agence
+            try {
+                OperationCreateRequest agencyOperationRequest = new OperationCreateRequest();
+                agencyOperationRequest.setCompteId(agencyCompte.getId());
+                agencyOperationRequest.setTypeOperation(operationType);
+                agencyOperationRequest.setMontant(summary.getTotalVolume());
+                agencyOperationRequest.setBanque("SYSTEM");
+                agencyOperationRequest.setNomBordereau("AGENCY_SUMMARY_" + summary.getDate() + "_" + summary.getAgency());
+                agencyOperationRequest.setService(summary.getService());
+                agencyOperationRequest.setDateOperation(summary.getDate());
+                agencyOperationRequest.setRecordCount(summary.getRecordCount());
+                
+                log.info("🔧 Création opération agence: type={}, montant={}, service={}", 
+                        operationType, summary.getTotalVolume(), summary.getService());
+                
+                operationService.createOperationForSummary(agencyOperationRequest);
+                log.info("✅ Opération agence créée avec succès");
+                
+                // Synchroniser immédiatement les soldes des comptes consolidés après la création de l'opération
+                synchroniserComptesConsolides(agencyCompte.getId());
+                
+                // Synchroniser également les comptes consolidés qui contiennent ce service dans leur codeProprietaire
+                synchroniserComptesConsolidesParCodeProprietaire(summary.getService());
+                
+            } catch (Exception agencyError) {
+                log.error("❌ Erreur lors de la création de l'opération agence: {}", agencyError.getMessage());
+                // Continuer avec l'opération service même si l'agence échoue
+            }
+            
+            // 4. Créer l'opération pour le service
+            try {
+                OperationCreateRequest serviceOperationRequest = new OperationCreateRequest();
+                serviceOperationRequest.setCompteId(serviceCompte.getId());
+                serviceOperationRequest.setTypeOperation(operationType);
+                serviceOperationRequest.setMontant(summary.getTotalVolume());
+                serviceOperationRequest.setBanque("SYSTEM");
+                serviceOperationRequest.setNomBordereau("SERVICE_SUMMARY_" + summary.getDate() + "_" + summary.getService());
+                serviceOperationRequest.setService(summary.getAgency()); // L'agence devient le service
+                serviceOperationRequest.setDateOperation(summary.getDate());
+                serviceOperationRequest.setRecordCount(summary.getRecordCount());
+                
+                log.info("🔧 Création opération service: type={}, montant={}, service={}", 
+                        operationType, summary.getTotalVolume(), summary.getAgency());
+                
+                Operation serviceOperation = operationService.createOperationForSummary(serviceOperationRequest);
+                log.info("✅ Opération service créée avec ID: {}", serviceOperation.getId());
+                
+                // Synchroniser immédiatement les soldes des comptes consolidés après la création de l'opération
+                synchroniserComptesConsolides(serviceCompte.getId());
+                
+                // Synchroniser également les comptes consolidés qui contiennent ce service dans leur codeProprietaire
+                synchroniserComptesConsolidesParCodeProprietaire(summary.getService());
+                
+            } catch (Exception serviceError) {
+                log.error("❌ Erreur lors de la création de l'opération service: {}", serviceError.getMessage());
+                // Ne pas faire échouer complètement la méthode
+            }
+            
+            // 5. Synchroniser les soldes des comptes consolidés
+            try {
+                synchroniserComptesConsolides(agencyCompte.getId());
+                synchroniserComptesConsolides(serviceCompte.getId());
+                
+                // Synchroniser également tous les comptes consolidés pour s'assurer de la cohérence
+                synchroniserTousLesComptesConsolides();
+                
+                log.info("✅ Soldes des comptes consolidés synchronisés");
+            } catch (Exception syncError) {
+                log.error("❌ Erreur lors de la synchronisation des soldes consolidés: {}", syncError.getMessage());
+                // Ne pas faire échouer la méthode pour une erreur de synchronisation
+            }
+            
+            log.info("✅ Création des opérations terminée pour {}/{}/{}", 
+                    summary.getAgency(), summary.getService(), summary.getDate());
+                    
+        } catch (Exception e) {
+            log.error("❌ Erreur lors de la création des opérations pour {}/{}/{}: {}", 
+                    summary.getAgency(), summary.getService(), summary.getDate(), e.getMessage());
+            log.error("🔍 Stack trace complète:", e);
+            throw new RuntimeException("Erreur lors de la création des opérations: " + e.getMessage(), e);
+        }
     }
     
+    /**
+     * Crée le compte service et synchronise les soldes des comptes fusionés
+     * Utilisé en cas d'échec de la création des opérations complètes
+     */
+    private void createServiceAccountAndSyncBalances(AgencySummaryEntity summary) {
+        try {
+            log.info("🔧 Création du compte service et synchronisation des soldes pour {}/{}/{}", 
+                    summary.getAgency(), summary.getService(), summary.getDate());
+            
+            // 1. Créer le compte agence s'il n'existe pas
+            String agencyAccountNumber = summary.getAgency();
+            Compte agencyCompte = compteService.getCompteByNumero(agencyAccountNumber)
+                .orElseGet(() -> {
+                    log.info("➕ Création du compte agence: {}", agencyAccountNumber);
+                    Compte newCompte = new Compte();
+                    newCompte.setNumeroCompte(agencyAccountNumber);
+                    newCompte.setPays(summary.getCountry() != null ? summary.getCountry() : "SN");
+                    newCompte.setCodeProprietaire(agencyAccountNumber);
+                    newCompte.setAgence(agencyAccountNumber);
+                    newCompte.setSolde(0.0);
+                    return compteService.saveCompte(newCompte);
+                });
+            
+            // 2. Créer le compte service s'il n'existe pas
+            String serviceAccountNumber = summary.getService();
+            Compte serviceCompte = compteService.getCompteByNumero(serviceAccountNumber)
+                .orElseGet(() -> {
+                    log.info("➕ Création du compte service: {}", serviceAccountNumber);
+                    Compte newCompte = new Compte();
+                    newCompte.setNumeroCompte(serviceAccountNumber);
+                    newCompte.setPays(summary.getCountry() != null ? summary.getCountry() : "SN");
+                    newCompte.setCodeProprietaire(serviceAccountNumber);
+                    newCompte.setAgence(agencyAccountNumber);
+                    newCompte.setSolde(0.0);
+                    return compteService.saveCompte(newCompte);
+                });
+            
+            log.info("✅ Comptes agence et service créés/vérifiés: agence={}, service={}", 
+                    agencyCompte.getId(), serviceCompte.getId());
+            
+            // 3. Synchroniser les soldes des comptes consolidés
+            try {
+                // Synchroniser le compte agence
+                synchroniserComptesConsolides(agencyCompte.getId());
+                log.info("✅ Soldes consolidés synchronisés pour le compte agence: {}", agencyAccountNumber);
+                
+                // Synchroniser le compte service
+                synchroniserComptesConsolides(serviceCompte.getId());
+                log.info("✅ Soldes consolidés synchronisés pour le compte service: {}", serviceAccountNumber);
+                
+                // Synchroniser également tous les comptes consolidés pour s'assurer de la cohérence globale
+                synchroniserTousLesComptesConsolides();
+                
+                // Synchroniser les comptes consolidés qui contiennent ce service dans leur codeProprietaire
+                synchroniserComptesConsolidesParCodeProprietaire(summary.getService());
+                
+                log.info("✅ Synchronisation globale des comptes consolidés terminée");
+                
+            } catch (Exception syncError) {
+                log.error("❌ Erreur lors de la synchronisation des soldes consolidés: {}", syncError.getMessage());
+                // Ne pas faire échouer la méthode pour une erreur de synchronisation
+            }
+            
+            log.info("✅ Création du compte service et synchronisation terminée pour {}/{}/{}", 
+                    summary.getAgency(), summary.getService(), summary.getDate());
+                    
+        } catch (Exception e) {
+            log.error("❌ Erreur lors de la création du compte service et synchronisation pour {}/{}/{}: {}", 
+                    summary.getAgency(), summary.getService(), summary.getDate(), e.getMessage());
+            throw new RuntimeException("Erreur lors de la création du compte service: " + e.getMessage(), e);
+        }
+    }
+    
+    /**
+     * Synchronise les comptes consolidés qui dépendent du compte modifié
+     */
+    private void synchroniserComptesConsolides(Long compteId) {
+        try {
+            // Utiliser le service de regroupement pour synchroniser les soldes
+            if (compteRegroupementService != null) {
+                List<CompteEntity> comptesConsolides = compteRegroupementService.getComptesConsolidesDependants(compteId);
+                for (CompteEntity compteConsolide : comptesConsolides) {
+                    compteRegroupementService.synchroniserSoldeCompteConsolide(compteConsolide.getId());
+                }
+                log.info("✅ Synchronisation des comptes consolidés terminée pour le compte: {}", compteId);
+            } else {
+                log.warn("⚠️ Service de regroupement non disponible pour la synchronisation du compte: {}", compteId);
+            }
+        } catch (Exception e) {
+            log.error("❌ Erreur lors de la synchronisation des comptes consolidés pour le compte {}: {}", 
+                    compteId, e.getMessage(), e);
+        }
+    }
+    
+    /**
+     * Synchronise tous les comptes consolidés pour assurer la cohérence globale
+     */
+    private void synchroniserTousLesComptesConsolides() {
+        try {
+            if (compteRegroupementService != null) {
+                compteRegroupementService.synchroniserTousLesComptesConsolides();
+                log.info("✅ Synchronisation globale de tous les comptes consolidés terminée");
+            } else {
+                log.warn("⚠️ Service de regroupement non disponible pour la synchronisation globale");
+            }
+        } catch (Exception e) {
+            log.error("❌ Erreur lors de la synchronisation globale des comptes consolidés: {}", e.getMessage(), e);
+        }
+    }
+    
+    /**
+     * Synchronise les comptes consolidés basé sur le codeProprietaire
+     * Cette méthode trouve les comptes consolidés qui contiennent le service dans leur codeProprietaire
+     */
+    private void synchroniserComptesConsolidesParCodeProprietaire(String serviceCode) {
+        try {
+            if (compteRegroupementService != null) {
+                compteRegroupementService.synchroniserComptesConsolidesParCodeProprietaire(serviceCode);
+                log.info("✅ Synchronisation des comptes consolidés par codeProprietaire terminée pour le service: {}", serviceCode);
+            } else {
+                log.warn("⚠️ Service de regroupement non disponible pour la synchronisation par codeProprietaire");
+            }
+        } catch (Exception e) {
+            log.error("❌ Erreur lors de la synchronisation par codeProprietaire pour le service {}: {}", serviceCode, e.getMessage(), e);
+        }
+    }
+
     /**
      * Détermine le type d'opération basé sur le nom du service
      */
@@ -750,7 +955,30 @@ public class ReconciliationController {
      */
     private String getStringValue(Map<?, ?> map, String key) {
         Object value = map.get(key);
-        return value != null ? value.toString() : null;
+        if (value != null) {
+            log.debug("🔍 DEBUG getStringValue - Clé '{}' trouvée avec valeur: {}", key, value);
+            return value.toString();
+        }
+        
+        // Pour le pays, chercher aussi dans paysProvenance (fichiers GRX)
+        if ("country".equals(key)) {
+            log.debug("🔍 DEBUG getStringValue - Recherche du pays dans les colonnes GRX");
+            Object paysProvenance = map.get("paysProvenance");
+            if (paysProvenance != null) {
+                log.info("✅ DEBUG getStringValue - Pays trouvé dans 'paysProvenance': {}", paysProvenance);
+                return paysProvenance.toString();
+            }
+            // Chercher aussi dans "Pays provenance"
+            Object paysProvenanceWithSpace = map.get("Pays provenance");
+            if (paysProvenanceWithSpace != null) {
+                log.info("✅ DEBUG getStringValue - Pays trouvé dans 'Pays provenance': {}", paysProvenanceWithSpace);
+                return paysProvenanceWithSpace.toString();
+            }
+            log.warn("❌ DEBUG getStringValue - Aucun pays trouvé dans les colonnes GRX");
+        }
+        
+        log.debug("🔍 DEBUG getStringValue - Clé '{}' non trouvée", key);
+        return null;
     }
     
     private Double getDoubleValue(Map<?, ?> map, String key) {
