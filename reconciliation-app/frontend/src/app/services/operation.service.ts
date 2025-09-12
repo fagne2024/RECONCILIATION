@@ -116,6 +116,11 @@ export class OperationService {
         return this.http.post<Operation>(this.apiUrl, operation);
     }
 
+    // Créer une opération avec la logique des 4 opérations
+    createOperationWithFourOperations(operation: OperationCreateRequest): Observable<Operation> {
+        return this.http.post<Operation>(`${this.apiUrl}/manual-with-four-operations`, operation);
+    }
+
     // Mettre à jour une opération
     updateOperation(id: number, operation: OperationUpdateRequest): Observable<Operation> {
         return this.http.put<Operation>(`${this.apiUrl}/${id}`, operation);
@@ -139,6 +144,11 @@ export class OperationService {
     // Supprimer une opération
     deleteOperation(id: number): Observable<boolean> {
         return this.http.delete<boolean>(`${this.apiUrl}/${id}`);
+    }
+
+    // Supprimer plusieurs opérations en lot
+    deleteOperations(ids: number[]): Observable<{ success: boolean, deletedCount: number, errors: string[] }> {
+        return this.http.post<{ success: boolean, deletedCount: number, errors: string[] }>(`${this.apiUrl}/delete-batch`, { ids });
     }
 
     // Filtrer les opérations avec des paramètres
@@ -216,5 +226,10 @@ export class OperationService {
     // Récupérer la liste des services uniques
     getDistinctService(): Observable<string[]> {
         return this.http.get<string[]>(`${this.apiUrl}/service/list`);
+    }
+
+    // Récupérer la liste des services uniques par code propriétaire
+    getDistinctServiceByCodeProprietaire(codeProprietaire: string): Observable<string[]> {
+        return this.http.get<string[]>(`${this.apiUrl}/service/list/${codeProprietaire}`);
     }
 } 

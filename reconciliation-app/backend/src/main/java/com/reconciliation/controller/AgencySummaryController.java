@@ -6,8 +6,11 @@ import com.reconciliation.entity.AgencySummaryEntity;
 import com.reconciliation.repository.AgencySummaryRepository;
 import com.reconciliation.service.OperationService;
 import com.reconciliation.service.CompteService;
+import com.reconciliation.service.FraisTransactionService;
 import com.reconciliation.dto.OperationCreateRequest;
 import com.reconciliation.model.Compte;
+import com.reconciliation.entity.FraisTransactionEntity;
+import com.reconciliation.entity.OperationEntity;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -29,12 +32,15 @@ public class AgencySummaryController {
 
     @Autowired
     private AgencySummaryRepository repository;
-
+    
     @Autowired
     private OperationService operationService;
-
+    
     @Autowired
     private CompteService compteService;
+    
+    @Autowired
+    private FraisTransactionService fraisTransactionService;
 
     /**
      * Détermine le type d'opération basé sur le nom du service
@@ -537,22 +543,51 @@ public class AgencySummaryController {
         
         System.out.println("DEBUG: Création opération nominale agence avec date: " + summary.getDate() + " pour agence: " + summary.getAgency() + " service: " + summary.getService());
         
-        operationService.createOperationForSummary(agencyOperationRequest);
+        // Créer l'opération nominale agence et récupérer l'entité créée
+        OperationEntity agencyOperation = operationService.createOperationEntityForSummary(agencyOperationRequest);
         
-        // 4. Opération nominale pour le service (nouvelle logique)
-        OperationCreateRequest serviceOperationRequest = new OperationCreateRequest();
-        serviceOperationRequest.setCompteId(serviceCompte.getId());
-        serviceOperationRequest.setTypeOperation(operationType);
-        serviceOperationRequest.setMontant(summary.getTotalVolume());
-        serviceOperationRequest.setBanque("SYSTEM");
-        serviceOperationRequest.setNomBordereau("SERVICE_SUMMARY_" + summary.getDate() + "_" + summary.getService());
-        serviceOperationRequest.setService(summary.getAgency()); // L'agence devient le service
-        serviceOperationRequest.setDateOperation(summary.getDate());
-        serviceOperationRequest.setRecordCount(summary.getRecordCount());
+        // Vérifier si des frais sont configurés pour ce service
+        boolean fraisConfigured = checkFraisConfiguration(summary.getService(), summary.getAgency());
         
-        System.out.println("DEBUG: Création opération nominale service avec date: " + summary.getDate() + " pour service: " + summary.getService() + " agence: " + summary.getAgency());
-        
-        operationService.createOperationForSummary(serviceOperationRequest);
+        if (fraisConfigured) {
+            System.out.println("DEBUG: ✅ Frais configurés pour " + summary.getService() + " - Création uniquement du nominal + frais");
+            
+            // Créer automatiquement les frais pour l'opération agence
+            if (agencyOperation != null) {
+                operationService.createFraisTransactionAutomatique(agencyOperation);
+                System.out.println("DEBUG: ✅ Frais créés automatiquement pour l'opération agence");
+            }
+        } else {
+            System.out.println("DEBUG: ⚠️ Pas de frais configurés pour " + summary.getService() + " - Utilisation de la logique des 4 opérations");
+            
+            // 4. Opération nominale pour le service (logique des 4 opérations)
+            OperationCreateRequest serviceOperationRequest = new OperationCreateRequest();
+            serviceOperationRequest.setCompteId(serviceCompte.getId());
+            serviceOperationRequest.setTypeOperation(operationType);
+            serviceOperationRequest.setMontant(summary.getTotalVolume());
+            serviceOperationRequest.setBanque("SYSTEM");
+            serviceOperationRequest.setNomBordereau("SERVICE_SUMMARY_" + summary.getDate() + "_" + summary.getService());
+            serviceOperationRequest.setService(summary.getAgency()); // L'agence devient le service
+            serviceOperationRequest.setDateOperation(summary.getDate());
+            serviceOperationRequest.setRecordCount(summary.getRecordCount());
+            
+            System.out.println("DEBUG: Création opération nominale service avec date: " + summary.getDate() + " pour service: " + summary.getService() + " agence: " + summary.getAgency());
+            
+            operationService.createOperationForSummary(serviceOperationRequest);
+        }
+    }
+
+    /**
+     * Vérifier si des frais sont configurés pour un service/agence
+     */
+    private boolean checkFraisConfiguration(String service, String agence) {
+        try {
+            Optional<FraisTransactionEntity> fraisOpt = fraisTransactionService.getFraisApplicable(service, agence);
+            return fraisOpt.isPresent();
+        } catch (Exception e) {
+            System.out.println("DEBUG: ⚠️ Erreur lors de la vérification des frais pour " + service + "/" + agence + ": " + e.getMessage());
+            return false;
+        }
     }
 
     /**

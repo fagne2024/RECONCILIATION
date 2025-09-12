@@ -29,6 +29,83 @@
         </div>
     </div>
 
+    <!-- Section d'information sur le mode 1-1 -->
+    <div class="info-section" *ngIf="reconciliationMode === 'manual'">
+        <div class="info-card">
+            <div class="info-header">
+                <i class="fas fa-info-circle"></i>
+                <h4>Mode de Réconciliation 1-1</h4>
+            </div>
+            <div class="info-content">
+                <p>Le mode 1-1 est le mode de réconciliation par défaut qui compare chaque transaction BO avec une transaction partenaire correspondante.</p>
+                <ul>
+                    <li><strong>Correspondance exacte :</strong> Chaque transaction BO doit avoir une transaction partenaire correspondante</li>
+                    <li><strong>Critères de matching :</strong> Montant, date, référence, etc.</li>
+                    <li><strong>Résultat :</strong> Transactions matchées, non-matchées et écarts identifiés</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <!-- Sélecteur de type de réconciliation - Masqué par défaut pour le mode 1-1 -->
+    <div class="reconciliation-mode-selector" *ngIf="reconciliationMode === 'manual' && reconciliationType !== '1-1'">
+        <h3>🔢 Type de Réconciliation</h3>
+        <div class="mode-options">
+            <label class="mode-option" [class.selected]="reconciliationType === '1-1'">
+                <input type="radio" name="reconciliationType" value="1-1" [(ngModel)]="reconciliationType" (change)="onReconciliationTypeChange('1-1')">
+                <span class="mode-label">
+                    <i class="fas fa-balance-scale"></i>
+                    <strong>1-1</strong>
+                    <small>Une transaction BO = Une transaction Partenaire</small>
+                </span>
+            </label>
+            <label class="mode-option" [class.selected]="reconciliationType === '1-2'">
+                <input type="radio" name="reconciliationType" value="1-2" [(ngModel)]="reconciliationType" (change)="onReconciliationTypeChange('1-2')">
+                <span class="mode-label">
+                    <i class="fas fa-layer-group"></i>
+                    <strong>1-2</strong>
+                    <small>Une transaction BO = Deux transactions Partenaire</small>
+                </span>
+            </label>
+            <label class="mode-option" [class.selected]="reconciliationType === '1-3'">
+                <input type="radio" name="reconciliationType" value="1-3" [(ngModel)]="reconciliationType" (change)="onReconciliationTypeChange('1-3')">
+                <span class="mode-label">
+                    <i class="fas fa-th-large"></i>
+                    <strong>1-3</strong>
+                    <small>Une transaction BO = Trois transactions Partenaire</small>
+                </span>
+            </label>
+            <label class="mode-option" [class.selected]="reconciliationType === '1-4'">
+                <input type="radio" name="reconciliationType" value="1-4" [(ngModel)]="reconciliationType" (change)="onReconciliationTypeChange('1-4')">
+                <span class="mode-label">
+                    <i class="fas fa-th"></i>
+                    <strong>1-4</strong>
+                    <small>Une transaction BO = Quatre transactions Partenaire</small>
+                </span>
+            </label>
+            <label class="mode-option" [class.selected]="reconciliationType === '1-5'">
+                <input type="radio" name="reconciliationType" value="1-5" [(ngModel)]="reconciliationType" (change)="onReconciliationTypeChange('1-5')">
+                <span class="mode-label">
+                    <i class="fas fa-th-list"></i>
+                    <strong>1-5</strong>
+                    <small>Une transaction BO = Cinq transactions Partenaire</small>
+                </span>
+            </label>
+        </div>
+    </div>
+
+    <!-- Indicateur discret du mode 1-1 actif -->
+    <div class="reconciliation-mode-indicator" *ngIf="reconciliationMode === 'manual' && reconciliationType === '1-1'">
+        <div class="mode-indicator-card">
+            <i class="fas fa-balance-scale"></i>
+            <span class="mode-text">Mode de réconciliation 1-1 actif</span>
+            <button class="change-mode-btn" (click)="showReconciliationTypeSelector()">
+                <i class="fas fa-cog"></i>
+                Changer
+            </button>
+        </div>
+    </div>
+
     <!-- Indicateur de progression pour gros fichiers -->
     <div class="large-file-progress" *ngIf="isProcessingLargeFile">
         <div class="progress-container">
@@ -93,6 +170,68 @@
             <input #partnerFileInput type="file" (change)="onPartnerFileSelected($event)" accept=".csv, .xls, .xlsx, .xlsm, .xlsb" style="display: none">
             <div class="file-info" [class.loaded]="partnerFile">
                 {{ partnerFile ? partnerFile.name : 'Aucun fichier sélectionné' }}
+            </div>
+        </div>
+    </div>
+
+    <!-- Sélection des services pour TRXBO en mode manuel -->
+    <div class="manual-service-selection-overlay" *ngIf="showManualServiceSelection">
+        <div class="manual-service-selection-modal">
+            <!-- En-tête moderne -->
+            <div class="manual-service-selection-header">
+                <div class="header-badge">
+                    <span class="badge-text">Services disponibles: {{ manualAvailableServices.length }}</span>
+                </div>
+            </div>
+            
+            <div class="manual-service-selection-content">
+                <!-- Boutons d'action principaux -->
+                <div class="manual-service-controls">
+                    <button class="modern-btn select-all-btn" (click)="selectAllManualServices()">
+                        <i class="fas fa-check-double"></i>
+                        Tout sélectionner
+                    </button>
+                    <button class="modern-btn deselect-all-btn" (click)="deselectAllManualServices()">
+                        <i class="fas fa-check-double"></i>
+                        Tout désélectionner
+                    </button>
+                </div>
+                
+                <!-- Grille de services en cartes -->
+                <div class="manual-service-grid">
+                    <div class="manual-service-card" *ngFor="let service of manualAvailableServices">
+                        <div class="manual-service-card-content">
+                            <div class="manual-service-checkbox-modern">
+                                <input type="checkbox" 
+                                       [id]="'manual-service-' + service"
+                                       [value]="service" 
+                                       [checked]="manualSelectedServices.includes(service)"
+                                       (change)="onManualServiceSelectionChange($event, service)">
+                                <label [for]="'manual-service-' + service" class="checkbox-label">
+                                    <span class="checkmark"></span>
+                                </label>
+                            </div>
+                            <div class="manual-service-info">
+                                <h4 class="manual-service-name-modern">{{ service }}</h4>
+                                <p class="manual-service-count-modern">{{ getManualServiceCount(service) }} lignes</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Boutons de confirmation modernes -->
+            <div class="manual-service-selection-actions">
+                <button class="modern-btn cancel-btn" (click)="cancelManualServiceSelection()">
+                    <i class="fas fa-times"></i>
+                    Annuler
+                </button>
+                <button class="modern-btn confirm-btn" 
+                        [disabled]="manualSelectedServices.length === 0"
+                        (click)="confirmManualServiceSelection()">
+                    <i class="fas fa-check"></i>
+                    Confirmer la sélection
+                </button>
             </div>
         </div>
     </div>
@@ -348,6 +487,13 @@
         <div class="debug-info" style="background: #f0f0f0; padding: 10px; margin: 10px 0; border-radius: 5px; font-size: 12px;">
             <strong>Debug:</strong> BO: {{ boData.length }} lignes | Partenaire: {{ partnerData.length }} lignes | Bouton actif: {{ canProceed() ? 'Oui' : 'Non' }}
         </div>
+        
+        <!-- Message d'information si fichier partenaire manquant -->
+        <div *ngIf="boData.length > 0 && partnerData.length === 0" class="info-message" style="background: #e3f2fd; border: 1px solid #2196f3; padding: 15px; margin: 10px 0; border-radius: 5px; color: #1976d2;">
+            <i class="fas fa-info-circle"></i>
+            <strong>Information:</strong> Le fichier BO est chargé ({{ boData.length }} lignes). Veuillez maintenant uploader le fichier partenaire pour continuer.
+        </div>
+        
         <button class="btn proceed-btn" [disabled]="!canProceed()" (click)="onProceed()" style="background-color: #4CAF50; color: white; padding: 15px 30px; border: none; border-radius: 5px; cursor: pointer; font-size: 16px; margin: 10px;">
             🚀 Lancer la Réconciliation Manuelle
         </button>

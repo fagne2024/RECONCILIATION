@@ -32,6 +32,10 @@ public class DataNormalizationService {
         COLUMN_MAPPING.put("AMOUNT", "Montant");
         COLUMN_MAPPING.put("PAYS", "Pays");
         COLUMN_MAPPING.put("COUNTRY", "Pays");
+        // Ajout pour les fichiers GRX
+        COLUMN_MAPPING.put("Pays provenance", "Pays");
+        COLUMN_MAPPING.put("PAYS PROVENANCE", "Pays");
+        COLUMN_MAPPING.put("paysProvenance", "Pays");
         COLUMN_MAPPING.put("TELEPHONE", "Téléphone");
         COLUMN_MAPPING.put("PHONE", "Téléphone");
         COLUMN_MAPPING.put("NUMERO", "Numéro");

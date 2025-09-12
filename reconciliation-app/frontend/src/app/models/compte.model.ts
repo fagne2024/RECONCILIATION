@@ -7,6 +7,7 @@ export interface Compte {
     codeProprietaire?: string;
     agence?: string;
     type?: string; // Ajouté : TOP20, B2B, G&I
+    categorie?: string; // Ajouté : Client, Service, Banque
 }
 
 export interface CompteCreateRequest {
@@ -16,6 +17,7 @@ export interface CompteCreateRequest {
     codeProprietaire?: string;
     agence?: string;
     type?: string; // Ajouté
+    categorie?: string; // Ajouté
 }
 
 export interface CompteUpdateRequest {
@@ -25,6 +27,7 @@ export interface CompteUpdateRequest {
     codeProprietaire?: string;
     agence?: string;
     type?: string; // Ajouté
+    categorie?: string; // Ajouté
 }
 
 export interface CompteFilter {
@@ -32,4 +35,5 @@ export interface CompteFilter {
     dateDebut?: string;
     dateFin?: string;
     codeProprietaire?: string;
+    categorie?: string;
 } 

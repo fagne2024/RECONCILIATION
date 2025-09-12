@@ -7,6 +7,8 @@ import com.reconciliation.repository.OperationRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.time.LocalDateTime;
 import java.util.Optional;
@@ -14,11 +16,16 @@ import java.util.Optional;
 @Service
 public class OperationBusinessService {
     
+    private static final Logger logger = LoggerFactory.getLogger(OperationBusinessService.class);
+    
     @Autowired
     private CompteRepository compteRepository;
     
     @Autowired
     private OperationRepository operationRepository;
+    
+    @Autowired
+    private OperationService operationService;
     
     /**
      * Traite une opération et met à jour le solde du compte associé
@@ -68,6 +75,7 @@ public class OperationBusinessService {
     
     /**
      * Annule une opération : garde la ligne, change le statut à "Annulée" et préfixe le type avec "annulation_"
+     * Annule automatiquement les frais associés
      */
     @Transactional
     public boolean cancelOperation(Long operationId) {
@@ -75,24 +83,20 @@ public class OperationBusinessService {
         if (optionalOperation.isPresent()) {
             OperationEntity operation = optionalOperation.get();
             
-            if (operation.getCompte() != null) {
-                CompteEntity compte = operation.getCompte();
-                double soldeAvant = operation.getSoldeAvant();
-                
-                // Restaurer le solde précédent
-                compte.setSolde(soldeAvant);
-                compte.setDateDerniereMaj(LocalDateTime.now());
-                compteRepository.save(compte);
-            }
+            logger.info("🔧 Annulation de l'opération ID: {} (Type: {}, Statut actuel: {})", 
+                       operationId, operation.getTypeOperation(), operation.getStatut());
             
-            // Garder la ligne, changer le statut à "Annulée" et préfixer le type avec "annulation_"
-            operation.setStatut("Annulée");
-            if (!operation.getTypeOperation().startsWith("annulation_")) {
-                operation.setTypeOperation("annulation_" + operation.getTypeOperation());
+            // Utiliser la logique complète d'annulation qui gère les frais associés
+            try {
+                operationService.updateOperationStatut(operationId, "Annulée");
+                logger.info("✅ Opération ID: {} annulée avec succès (frais associés annulés automatiquement)", operationId);
+                return true;
+            } catch (Exception e) {
+                logger.error("❌ Erreur lors de l'annulation de l'opération ID: {}: {}", operationId, e.getMessage(), e);
+                return false;
             }
-            operationRepository.save(operation);
-            return true;
         }
+        logger.warn("⚠️ Opération ID: {} introuvable pour annulation", operationId);
         return false;
     }
     

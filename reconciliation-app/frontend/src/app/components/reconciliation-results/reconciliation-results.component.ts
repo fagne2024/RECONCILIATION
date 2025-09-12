@@ -1292,6 +1292,9 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
     readonly agencyPageSize = 10;
     selectedService: string = '';
     selectedDate: string = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    
+    // Cache pour optimiser les performances
+    private agencyServiceCache = new Map<string, { agency: string; service: string; volume: number; date: string; country: string }>();
     isSaving: boolean = false;
     isSavingEcartBo: boolean = false;
     isSavingEcartPartner: boolean = false;
@@ -2207,6 +2210,9 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                     this.response = response;
                     this.initializeFilteredData();
                     
+                    // Vider le cache quand les données changent
+                    this.agencyServiceCache.clear();
+                    
                     // Initialiser les informations de progression
                     console.log('⏱️ Initialisation des temps d\'exécution...');
                     console.log('📊 response.executionTimeMs:', response.executionTimeMs);
@@ -2468,6 +2474,12 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
      * Détecter les doublons de clé de réconciliation avec types d'opération spécifiques
      */
     detectTSOPDuplicates(data: any[]): Map<string, any[]> {
+        // Vérifier si c'est une réconciliation TRXBO-OPPART
+        if (!this.isTRXBOOPPARTReconciliation()) {
+            console.log('🔍 detectTSOPDuplicates: Pas une réconciliation TRXBO-OPPART, retour d\'une map vide');
+            return new Map<string, any[]>();
+        }
+        
         console.log('🔍 DÉBUT detectTSOPDuplicates - Nombre d\'enregistrements:', data.length);
         
         if (data.length > 0) {
@@ -2612,9 +2624,43 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
     }
 
     /**
+     * Vérifier si la réconciliation est entre TRXBO et OPPART
+     */
+    isTRXBOOPPARTReconciliation(): boolean {
+        if (!this.response) return false;
+        
+        // Vérifier les noms de fichiers ou les données pour identifier TRXBO-OPPART
+        const boData = this.response.boOnly || [];
+        const partnerData = this.response.partnerOnly || [];
+        
+        // Vérifier si on a des données TRXBO (Back Office) et OPPART (Partenaire)
+        const hasTRXBOData = boData.length > 0;
+        const hasOPPARTData = partnerData.length > 0;
+        
+        // Vérifier les types d'opérations caractéristiques de TRXBO-OPPART
+        const hasTRXBOOperations = boData.some(record => {
+            const type = this.getTypeOperation(record);
+            return type && (type.includes('total_cashin') || type.includes('total_paiement') || type.includes('FRAIS_TRANSACTION'));
+        });
+        
+        const hasOPPARTOperations = partnerData.some(record => {
+            const type = this.getTypeOperation(record);
+            return type && (type.includes('IMPACT_COMPTIMPACT-COMPTE-GENERAL') || type.includes('FRAIS_TRANSACTION'));
+        });
+        
+        return hasTRXBOData && hasOPPARTData && (hasTRXBOOperations || hasOPPARTOperations);
+    }
+
+    /**
      * Obtenir le commentaire TSOP pour un enregistrement (écarts Partenaire)
+     * Uniquement applicable pour la réconciliation TRXBO-OPPART
      */
     getTSOPComment(record: any): string {
+        // Vérifier si c'est une réconciliation TRXBO-OPPART
+        if (!this.isTRXBOOPPARTReconciliation()) {
+            return '';
+        }
+        
         const typeOperation = this.getTypeOperation(record);
         
         // Logique selon les spécifications :
@@ -2631,8 +2677,14 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
 
     /**
      * Obtenir le type TSOP pour un enregistrement (pour le style CSS)
+     * Uniquement applicable pour la réconciliation TRXBO-OPPART
      */
     getTSOPType(record: any): string {
+        // Vérifier si c'est une réconciliation TRXBO-OPPART
+        if (!this.isTRXBOOPPARTReconciliation()) {
+            return '';
+        }
+        
         const typeOperation = this.getTypeOperation(record);
         
         // Logique selon les spécifications :
@@ -2649,16 +2701,28 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
 
     /**
      * Obtenir le commentaire pour un enregistrement ECART BO
+     * Uniquement applicable pour la réconciliation TRXBO-OPPART
      */
     getBoOnlyComment(record: any): string {
+        // Vérifier si c'est une réconciliation TRXBO-OPPART
+        if (!this.isTRXBOOPPARTReconciliation()) {
+            return '';
+        }
+        
         // Pour les écarts BO : toujours TSOP en rouge selon les spécifications
         return 'TSOP';
     }
 
     /**
      * Obtenir le type pour un enregistrement ECART BO (pour le style CSS)
+     * Uniquement applicable pour la réconciliation TRXBO-OPPART
      */
     getBoOnlyType(record: any): string {
+        // Vérifier si c'est une réconciliation TRXBO-OPPART
+        if (!this.isTRXBOOPPARTReconciliation()) {
+            return '';
+        }
+        
         // Pour les écarts BO : toujours TSOP (rouge) selon les spécifications
         return 'TSOP';
     }
@@ -3291,14 +3355,36 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
     }
 
     getBoAgencyAndService(match: Match): { agency: string; service: string; volume: number; date: string; country: string } {
+        // Créer une clé de cache basée sur les données du match
+        const cacheKey = JSON.stringify(match.boData);
+        
+        // Vérifier le cache d'abord
+        if (this.agencyServiceCache.has(cacheKey)) {
+            return this.agencyServiceCache.get(cacheKey)!;
+        }
+        
         const boData = match.boData;
+        
         const agency = boData['Agence'] || '';
         const service = boData['Service'] || '';
         const volume = boData['montant'] ? parseFloat(boData['montant'].toString().replace(',', '.')) : 0;
         const date = boData['Date'] || '';
         const countryColumn = this.findCountryColumn(boData);
-        const country = countryColumn ? boData[countryColumn] || 'Non spécifié' : 'Non spécifié';
-        return { agency, service, volume, date, country };
+        let country = 'Non spécifié';
+        
+        if (countryColumn === 'fallback') {
+            // Utiliser la logique de fallback pour déterminer le pays
+            country = this.determineCountryFromContext(boData) || 'Non spécifié';
+        } else if (countryColumn) {
+            country = boData[countryColumn] || 'Non spécifié';
+        }
+        
+        const result = { agency, service, volume, date, country };
+        
+        // Mettre en cache le résultat
+        this.agencyServiceCache.set(cacheKey, result);
+        
+        return result;
     }
 
     getBoOnlyAgencyAndService(record: Record<string, string>): { agency: string; service: string; volume: number; date: string; country: string } {
@@ -3327,16 +3413,15 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
         
         // Recherche de pays
         const countryColumn = this.findCountryColumn(record);
-        const country = countryColumn ? record[countryColumn] || 'Non spécifié' : 'Non spécifié';
+        let country = 'Non spécifié';
+        
+        if (countryColumn === 'fallback') {
+            // Utiliser la logique de fallback pour déterminer le pays
+            country = this.determineCountryFromContext(record) || 'Non spécifié';
+        } else if (countryColumn) {
+            country = record[countryColumn] || 'Non spécifié';
+        }
 
-        console.log('DEBUG: getBoOnlyAgencyAndService - Valeurs extraites:', {
-            agency,
-            service,
-            volume,
-            date,
-            country,
-            availableKeys: Object.keys(record)
-        });
 
         return { agency, service, volume, date, country };
     }
@@ -3367,16 +3452,15 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
         
         // Recherche de pays
         const countryColumn = this.findCountryColumn(record);
-        const country = countryColumn ? record[countryColumn] || 'Non spécifié' : 'Non spécifié';
+        let country = 'Non spécifié';
+        
+        if (countryColumn === 'fallback') {
+            // Utiliser la logique de fallback pour déterminer le pays
+            country = this.determineCountryFromContext(record) || 'Non spécifié';
+        } else if (countryColumn) {
+            country = record[countryColumn] || 'Non spécifié';
+        }
 
-        console.log('DEBUG: getPartnerOnlyAgencyAndService - Valeurs extraites:', {
-            agency,
-            service,
-            volume,
-            date,
-            country,
-            availableKeys: Object.keys(record)
-        });
 
         return { agency, service, volume, date, country };
     }
@@ -3392,20 +3476,78 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
     }
 
     private findCountryColumn(data: Record<string, string>): string | null {
-        const possibleColumns = ['Pays', 'PAYS', 'Country', 'COUNTRY'];
+        const possibleColumns = ['Pays', 'PAYS', 'Country', 'COUNTRY', 'paysProvenance', 'Pays provenance', 'PAYS PROVENANCE'];
         for (const column of possibleColumns) {
-            if (data[column]) {
+            if (data[column] && data[column].trim() !== '') {
                 return column;
             }
         }
+        
         // Si aucune colonne exacte n'est trouvée, chercher les colonnes qui contiennent les mots-clés
-        const keywords = ['pays', 'country', 'grx'];
+        const keywords = ['pays', 'country', 'grx', 'provenance'];
         for (const column of Object.keys(data)) {
             const lowerColumn = column.toLowerCase();
             if (keywords.some(keyword => lowerColumn.includes(keyword))) {
-                return column;
+                if (data[column] && data[column].trim() !== '') {
+                    return column;
+                }
             }
         }
+        
+        // Fallback : pour les fichiers GRX, essayer de déterminer le pays à partir d'autres informations
+        const fallbackCountry = this.determineCountryFromContext(data);
+        if (fallbackCountry) {
+            return 'fallback';
+        }
+        
+        return null;
+    }
+    
+    /**
+     * Détermine le pays à partir du contexte pour les fichiers GRX
+     */
+    private determineCountryFromContext(data: Record<string, string>): string | null {
+        // Pour les fichiers GRX, on peut déterminer le pays à partir de plusieurs sources :
+        
+        // 1. Vérifier si c'est un fichier GRX (TRXBO)
+        const isGrxFile = Object.keys(data).some(key => 
+            key.toLowerCase().includes('grx') || 
+            key.toLowerCase().includes('pays provenance')
+        );
+        
+        if (isGrxFile) {
+            console.log('🔍 DEBUG determineCountryFromContext - Fichier GRX détecté');
+            
+            // 2. Vérifier la colonne GRX pour déterminer le pays
+            const grxValue = data['GRX'];
+            if (grxValue && grxValue.trim() !== '') {
+                console.log('🔍 DEBUG determineCountryFromContext - Valeur GRX trouvée:', grxValue);
+                // Pour les fichiers GRX, le pays est généralement déterminé par la valeur GRX
+                // ou par défaut, on peut utiliser le pays de l'agence
+                return 'GRX'; // ou déterminer le pays réel à partir de la valeur GRX
+            }
+            
+            // 3. Vérifier l'agence pour déterminer le pays
+            const agency = data['Agence'];
+            if (agency && agency.trim() !== '') {
+                console.log('🔍 DEBUG determineCountryFromContext - Agence trouvée:', agency);
+                // Déterminer le pays à partir du code de l'agence
+                if (agency.includes('CM')) {
+                    return 'CM'; // Cameroun
+                } else if (agency.includes('SN')) {
+                    return 'SN'; // Sénégal
+                } else if (agency.includes('CI')) {
+                    return 'CI'; // Côte d'Ivoire
+                } else if (agency.includes('BF')) {
+                    return 'BF'; // Burkina Faso
+                }
+            }
+            
+            // 4. Par défaut pour les fichiers GRX, utiliser le pays de l'agence ou un pays par défaut
+            console.log('🔍 DEBUG determineCountryFromContext - Utilisation du pays par défaut pour GRX');
+            return 'GRX'; // ou 'CM' selon votre logique métier
+        }
+        
         return null;
     }
 

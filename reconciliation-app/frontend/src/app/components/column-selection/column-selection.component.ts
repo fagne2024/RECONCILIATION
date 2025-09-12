@@ -19,8 +19,32 @@ import { ReconciliationRequest } from '../../models/reconciliation-request.model
             <h2>📊 Sélection des colonnes</h2>
             <p class="description">Sélectionnez les colonnes clés et les colonnes à comparer</p>
 
+            <!-- Option pour désactiver l'analyse automatique (seulement en mode assisté) -->
+            <div class="section analysis-options-section" *ngIf="!disableAutoAnalysis">
+                <h3>⚙️ Options d'analyse</h3>
+                <div class="analysis-toggle">
+                    <label class="toggle-label">
+                        <input type="checkbox" 
+                               [(ngModel)]="disableAutoAnalysis" 
+                               (ngModelChange)="onAnalysisToggleChange($event)">
+                        <span class="toggle-text">Désactiver l'analyse automatique des clés</span>
+                    </label>
+                    <p class="toggle-description">
+                        Si activé, vous devrez sélectionner manuellement toutes les colonnes sans suggestions automatiques
+                    </p>
+                </div>
+            </div>
+
+            <!-- Message pour le mode manuel -->
+            <div class="section manual-mode-section" *ngIf="disableAutoAnalysis">
+                <h3>🖐️ Mode Manuel</h3>
+                <p class="manual-mode-description">
+                    Vous êtes en mode manuel. Sélectionnez manuellement les colonnes clés et les colonnes à comparer sans analyse automatique.
+                </p>
+            </div>
+
             <!-- Suggestions automatiques -->
-            <div class="section suggestions-section" *ngIf="showSuggestions">
+            <div class="section suggestions-section" *ngIf="showSuggestions && !disableAutoAnalysis">
                 <h3>🤖 Suggestions Automatiques</h3>
                 <p class="section-description">Le système a analysé vos données et suggère les meilleures clés de réconciliation</p>
                 
@@ -526,11 +550,67 @@ import { ReconciliationRequest } from '../../models/reconciliation-request.model
             transform: translateY(-2px);
             box-shadow: 0 5px 15px rgba(33, 150, 243, 0.3);
         }
+
+        /* Styles pour les options d'analyse */
+        .analysis-options-section {
+            background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+            border: 2px solid #6c757d;
+        }
+
+        .analysis-toggle {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .toggle-label {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            cursor: pointer;
+            font-weight: 500;
+            color: #495057;
+        }
+
+        .toggle-label input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+        }
+
+        .toggle-text {
+            font-size: 1em;
+            color: #495057;
+        }
+
+        .toggle-description {
+            color: #6c757d;
+            font-size: 0.9em;
+            margin: 0;
+            padding-left: 28px;
+        }
+
+        /* Styles pour le mode manuel */
+        .manual-mode-section {
+            background: linear-gradient(135deg, #fff3cd 0%, #ffeaa7 100%);
+            border: 2px solid #ffc107;
+        }
+
+        .manual-mode-description {
+            color: #856404;
+            font-size: 1em;
+            margin: 0;
+            padding: 15px;
+            background: rgba(255, 255, 255, 0.7);
+            border-radius: 6px;
+            border-left: 4px solid #ffc107;
+        }
     `]
 })
 export class ColumnSelectionComponent implements OnDestroy, OnChanges, OnInit {
     @Input() boData: Record<string, string>[] = [];
     @Input() partnerData: Record<string, string>[] = [];
+    @Input() disableAutoAnalysis: boolean = false; // Nouvelle propriété pour désactiver l'analyse automatique
     @Output() selectionComplete = new EventEmitter<{
         boKeyColumn: string;
         partnerKeyColumn: string;
@@ -591,6 +671,20 @@ export class ColumnSelectionComponent implements OnDestroy, OnChanges, OnInit {
 
     ngOnInit() {
         console.log('🔍 DEBUG - ColumnSelectionComponent initialized');
+        
+        // Détecter automatiquement le mode manuel depuis l'URL
+        const urlParams = new URLSearchParams(window.location.search);
+        const mode = urlParams.get('mode');
+        
+        // Si on est en mode manuel (pas de paramètre mode ou mode = 'manual'), désactiver l'analyse automatique
+        if (!mode || mode === 'manual') {
+            console.log('🚫 Mode manuel détecté - désactivation de l\'analyse automatique');
+            this.disableAutoAnalysis = true;
+        } else {
+            console.log('🤖 Mode assisté détecté - activation de l\'analyse automatique');
+            this.disableAutoAnalysis = false;
+        }
+        
         this.loadDataFromService();
     }
 
@@ -806,8 +900,8 @@ export class ColumnSelectionComponent implements OnDestroy, OnChanges, OnInit {
         this.dataLoaded = true;
         this.loadingInProgress = false;
         
-        // Analyser et suggérer les clés automatiquement
-        this.analyzeAndSuggestKeys();
+        // Analyser et suggérer les clés automatiquement (seulement si pas désactivée)
+        this.launchKeyAnalysis();
         
         this.cdr.detectChanges();
     }
@@ -835,6 +929,93 @@ export class ColumnSelectionComponent implements OnDestroy, OnChanges, OnInit {
                 
                 if (this.boData.length === 0 || this.partnerData.length === 0) {
                     throw new Error('Les données sont vides');
+                }
+                
+                // Vérifier que les premières lignes ont des propriétés
+                if (!this.boData[0] || typeof this.boData[0] !== 'object') {
+                    throw new Error('La première ligne BO n\'est pas un objet valide');
+                }
+                
+                if (!this.partnerData[0] || typeof this.partnerData[0] !== 'object') {
+                    throw new Error('La première ligne Partner n\'est pas un objet valide');
+                }
+                
+                console.log('🔍 Données validées, lancement de l\'analyse...');
+                const result = this.keySuggestionService.analyzeAndSuggestKeys(this.boData, this.partnerData);
+                
+                this.keySuggestions = result.suggestions;
+                this.overallConfidence = result.overallConfidence;
+                this.recommendedKeys = result.recommendedKeys;
+                this.showSuggestions = true;
+                
+                console.log('✅ Analyse des clés terminée:', {
+                    suggestionsCount: this.keySuggestions.length,
+                    overallConfidence: this.overallConfidence,
+                    recommendedKeys: this.recommendedKeys
+                });
+                
+                // Appliquer automatiquement les meilleures suggestions
+                this.applyTopSuggestions();
+                
+            } catch (error) {
+                console.error('❌ Erreur lors de l\'analyse des clés:', error);
+                this.showSuggestions = false;
+                this.keySuggestions = [];
+                this.overallConfidence = 0;
+            } finally {
+                this.isAnalyzing = false;
+                this.cdr.detectChanges();
+            }
+        }, 100);
+    }
+
+    /**
+     * Gère le changement de l'option d'analyse automatique
+     */
+    onAnalysisToggleChange(disabled: boolean): void {
+        console.log('🔄 Option d\'analyse automatique changée:', disabled ? 'désactivée' : 'activée');
+        
+        if (disabled) {
+            // Désactiver les suggestions automatiques
+            this.showSuggestions = false;
+            this.keySuggestions = [];
+            this.overallConfidence = 0;
+            console.log('🚫 Analyse automatique désactivée - mode manuel uniquement');
+        } else {
+            // Relancer l'analyse automatique
+            console.log('🔄 Relance de l\'analyse automatique...');
+            this.launchKeyAnalysis();
+        }
+        
+        this.cdr.detectChanges();
+    }
+
+    /**
+     * Lance l'analyse automatique des clés (seulement si pas désactivée)
+     */
+    private launchKeyAnalysis(): void {
+        // Vérifier si l'analyse automatique est désactivée
+        if (this.disableAutoAnalysis) {
+            console.log('🚫 Analyse automatique des clés désactivée - mode manuel uniquement');
+            this.showSuggestions = false;
+            this.isAnalyzing = false;
+            return;
+        }
+
+        console.log('🔍 Lancement de l\'analyse automatique des clés...');
+        this.isAnalyzing = true;
+        this.cdr.detectChanges();
+
+        // Délai pour permettre l'affichage de l'indicateur de chargement
+        setTimeout(() => {
+            try {
+                // Vérifications de sécurité
+                if (!this.boData || this.boData.length === 0) {
+                    throw new Error('Données BO manquantes ou vides');
+                }
+                
+                if (!this.partnerData || this.partnerData.length === 0) {
+                    throw new Error('Données Partner manquantes ou vides');
                 }
                 
                 // Vérifier que les premières lignes ont des propriétés

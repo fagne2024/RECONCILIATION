@@ -531,7 +531,27 @@ public class ReconciliationController {
                                 savedItems.add(savedItem);
                                 log.info("✅ Élément {} sauvegardé en base avec ID: {}", i, savedEntity.getId());
                             } else {
-                                errorItems.add("Impossible de sauvegarder l'élément " + i);
+                                // Vérifier si c'est un doublon ou une erreur
+                                String agency = getStringValue(itemMap, "agency");
+                                String service = getStringValue(itemMap, "service");
+                                String date = getStringValue(itemMap, "date");
+                                Double totalVolume = getDoubleValue(itemMap, "totalVolume");
+                                Integer recordCount = getIntegerValue(itemMap, "recordCount");
+                                
+                                if (agency != null && service != null && date != null && totalVolume != null && recordCount != null) {
+                                    // C'est probablement un doublon
+                                    Map<String, Object> duplicateItem = new HashMap<>();
+                                    duplicateItem.put("index", i);
+                                    duplicateItem.put("data", itemMap);
+                                    duplicateItem.put("message", String.format(
+                                        "❌ Doublon détecté pour l'agence %s, service %s, date %s, volume %.2f, records %d",
+                                        agency, service, date, totalVolume, recordCount
+                                    ));
+                                    duplicateItems.add(duplicateItem);
+                                    log.info("❌ Élément {} est un doublon - ignoré", i);
+                                } else {
+                                    errorItems.add("Impossible de sauvegarder l'élément " + i + " - données manquantes");
+                                }
                             }
                             
                         } else {
@@ -558,7 +578,26 @@ public class ReconciliationController {
                     savedItems.add(savedItem);
                     log.info("✅ Objet sauvegardé en base avec ID: {}", savedEntity.getId());
                 } else {
-                    errorItems.add("Impossible de sauvegarder l'objet");
+                    // Vérifier si c'est un doublon ou une erreur
+                    String agency = getStringValue(summaryMap, "agency");
+                    String service = getStringValue(summaryMap, "service");
+                    String date = getStringValue(summaryMap, "date");
+                    Double totalVolume = getDoubleValue(summaryMap, "totalVolume");
+                    Integer recordCount = getIntegerValue(summaryMap, "recordCount");
+                    
+                    if (agency != null && service != null && date != null && totalVolume != null && recordCount != null) {
+                        // C'est probablement un doublon
+                        Map<String, Object> duplicateItem = new HashMap<>();
+                        duplicateItem.put("data", summaryMap);
+                        duplicateItem.put("message", String.format(
+                            "❌ Doublon détecté pour l'agence %s, service %s, date %s, volume %.2f, records %d",
+                            agency, service, date, totalVolume, recordCount
+                        ));
+                        duplicateItems.add(duplicateItem);
+                        log.info("❌ Objet est un doublon - ignoré");
+                    } else {
+                        errorItems.add("Impossible de sauvegarder l'objet - données manquantes");
+                    }
                 }
                 
             } else {
@@ -624,7 +663,18 @@ public class ReconciliationController {
                 return null;
             }
             
-            // Vérifier s'il existe déjà un enregistrement avec les mêmes critères
+            // Vérifier s'il existe déjà un enregistrement avec les mêmes critères (y compris volume et recordCount)
+            List<AgencySummaryEntity> existingDuplicates = agencySummaryRepository.findDuplicates(
+                date, agency, service, totalVolume, recordCount
+            );
+            
+            if (!existingDuplicates.isEmpty()) {
+                log.info("❌ Doublon détecté pour {}/{}/{} - Volume: {}, Records: {}", 
+                        date, agency, service, totalVolume, recordCount);
+                return null; // Ne pas sauvegarder le doublon
+            }
+            
+            // Vérifier s'il existe un enregistrement avec les mêmes critères de base (pour mise à jour)
             List<AgencySummaryEntity> existing = agencySummaryRepository.findByDateAndAgencyAndService(date, agency, service);
             AgencySummaryEntity savedEntity;
             

@@ -1,3 +1,4 @@
+com\reconciliation\config\CorsConfig.class
 com\reconciliation\service\ConfigurableReconciliationService$ReconciliationLogicType.class
 com\reconciliation\model\ReconciliationProgress.class
 com\reconciliation\entity\FraisTransactionEntity.class
@@ -9,12 +10,14 @@ com\reconciliation\repository\OperationRepository.class
 com\reconciliation\repository\AgencySummaryRepository.class
 com\reconciliation\entity\AgencySummaryEntity.class
 com\reconciliation\controller\ImpactOPController.class
+com\reconciliation\service\ServiceBalanceService.class
 com\reconciliation\controller\RankingController.class
 com\reconciliation\dto\OperationCreateRequest.class
 com\reconciliation\controller\ReconciliationController.class
 com\reconciliation\entity\AutoProcessingModel.class
 com\reconciliation\config\DatabaseInitializer.class
 com\reconciliation\model\Statistics.class
+com\reconciliation\controller\ServiceBalanceController$MergeRequest.class
 com\reconciliation\dto\ReconciliationRequest.class
 com\reconciliation\controller\ModelManagementController.class
 com\reconciliation\service\TrxSfService$1.class
@@ -26,6 +29,7 @@ com\reconciliation\repository\ImpactOPRepository.class
 com\reconciliation\entity\ProfilEntity.class
 com\reconciliation\entity\CompteSoldeBoEntity.class
 com\reconciliation\service\ModelNormalizationService.class
+com\reconciliation\controller\ServiceBalanceController.class
 com\reconciliation\controller\StatisticsController.class
 com\reconciliation\service\CompteSoldeBoService.class
 com\reconciliation\service\ReconciliationBatchResult.class
@@ -55,7 +59,9 @@ com\reconciliation\repository\FraisTransactionRepository.class
 com\reconciliation\entity\JsonConverter$1.class
 com\reconciliation\repository\StatisticsRepository.class
 com\reconciliation\dto\ReconciliationResponse$Match.class
+com\reconciliation\service\CompteRegroupementService.class
 com\reconciliation\service\DataNormalizationService.class
+com\reconciliation\service\ServiceBalanceService$FusionResult.class
 com\reconciliation\repository\CompteSoldeBoRepository.class
 com\reconciliation\service\StatisticsService.class
 com\reconciliation\dto\ReconciliationConfig$AdditionalKey.class
@@ -82,6 +88,7 @@ com\reconciliation\config\WebConfig.class
 com\reconciliation\service\CsvReconciliationService.class
 com\reconciliation\entity\CompteEntity.class
 com\reconciliation\entity\StringArrayConverter.class
+com\reconciliation\repository\CompteRegroupementRepository.class
 com\reconciliation\CsvReconciliationApplication.class
 com\reconciliation\dto\ReconciliationConfig.class
 com\reconciliation\repository\CompteRepository.class
@@ -104,6 +111,8 @@ com\reconciliation\controller\FileWatcherController.class
 com\reconciliation\dto\ColumnProcessingRuleDTO.class
 com\reconciliation\dto\OperationUpdateRequest.class
 com\reconciliation\service\ReconciliationJobService.class
+com\reconciliation\controller\TestController.class
+com\reconciliation\entity\CompteRegroupementEntity.class
 com\reconciliation\entity\OperationEntity.class
 com\reconciliation\service\ConfigurableReconciliationService$ComparisonColumn.class
 com\reconciliation\controller\SqlController.class

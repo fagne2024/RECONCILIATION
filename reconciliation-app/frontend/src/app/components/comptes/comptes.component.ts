@@ -118,14 +118,38 @@ export class ComptesComponent implements OnInit, OnDestroy {
     selectedCodesProprietaire: string[] = [];
     codeProprietaireSearch: string = '';
     filteredCodeProprietaireList: string[] = [];
+    selectedCategories: string[] = [];
+    categorieSearch: string = '';
+    filteredCategorieList: string[] = [];
     paysSearchCtrl = new FormControl('');
     codeProprietaireSearchCtrl = new FormControl('');
+    categorieSearchCtrl = new FormControl('');
 
     // Liste des types de compte
     compteTypes: string[] = ['TOP20', 'B2B', 'G&I'];
+    
+    // Liste des catégories de compte
+    compteCategories: string[] = ['Client', 'Service', 'Banque'];
+    
+    // Méthode pour obtenir la classe CSS de la catégorie
+    getCategorieClass(categorie: string | undefined): string {
+        if (!categorie) return 'categorie-default';
+        
+        switch (categorie.toLowerCase()) {
+            case 'client':
+                return 'categorie-client';
+            case 'service':
+                return 'categorie-service';
+            case 'banque':
+                return 'categorie-banque';
+            default:
+                return 'categorie-default';
+        }
+    }
 
     @ViewChild('paysSelect') paysSelect!: MatSelect;
     @ViewChild('codeProprietaireSelect') codeProprietaireSelect!: MatSelect;
+    @ViewChild('categorieSelect') categorieSelect!: MatSelect;
 
     selectedCompteForBo: Compte | null = null;
     showSoldeBoModal = false;
@@ -215,7 +239,8 @@ export class ComptesComponent implements OnInit, OnDestroy {
             solde: [0, [Validators.required, Validators.min(0)]],
             pays: ['', [Validators.required]],
             codeProprietaire: [''],
-            type: ['', [Validators.required]] // Ajouté
+            type: ['', [Validators.required]], // Ajouté
+            categorie: ['', [Validators.required]] // Ajouté
         });
 
         this.editForm = this.fb.group({
@@ -223,7 +248,8 @@ export class ComptesComponent implements OnInit, OnDestroy {
             solde: [0, [Validators.required]],
             pays: ['', [Validators.required]],
             codeProprietaire: [''],
-            type: ['', [Validators.required]] // Ajouté
+            type: ['', [Validators.required]], // Ajouté
+            categorie: ['', [Validators.required]] // Ajouté
         });
 
         this.filterForm = this.fb.group({
@@ -231,7 +257,8 @@ export class ComptesComponent implements OnInit, OnDestroy {
             soldeMin: [''],
             dateDebut: [''],
             dateFin: [''],
-            codeProprietaire: ['']
+            codeProprietaire: [''],
+            categorie: ['']
         });
     }
 
@@ -269,6 +296,20 @@ export class ComptesComponent implements OnInit, OnDestroy {
                 this.applyFilters();
             }
         });
+        
+        this.categorieSearchCtrl.valueChanges.subscribe((search: string | null) => {
+            const s = (search || '').toLowerCase();
+            const availableCategories = this.getFilteredCategories();
+            this.filteredCategorieList = availableCategories.filter(c => c.toLowerCase().includes(s));
+            // Sélection automatique si un seul résultat
+            if (this.filteredCategorieList.length === 1 && !this.selectedCategories.includes(this.filteredCategorieList[0])) {
+                this.selectedCategories = [this.filteredCategorieList[0]];
+                this.filterForm.controls['categorie'].setValue(this.selectedCategories);
+                if (this.categorieSelect) { this.categorieSelect.close(); }
+                this.updateFilteredLists();
+                this.applyFilters();
+            }
+        });
 
         // Synchroniser les valeurs du formulaire vers les variables locales
         this.filterForm.controls['pays'].valueChanges.subscribe((value: string[]) => {
@@ -277,6 +318,10 @@ export class ComptesComponent implements OnInit, OnDestroy {
 
         this.filterForm.controls['codeProprietaire'].valueChanges.subscribe((value: string[]) => {
             this.selectedCodesProprietaire = value || [];
+        });
+        
+        this.filterForm.controls['categorie'].valueChanges.subscribe((value: string[]) => {
+            this.selectedCategories = value || [];
         });
     }
 
@@ -371,7 +416,8 @@ export class ComptesComponent implements OnInit, OnDestroy {
             solde: compte.solde,
             pays: compte.pays,
             codeProprietaire: compte.codeProprietaire,
-            type: compte.type || '' // Ajouté
+            type: compte.type || '', // Ajouté
+            categorie: compte.categorie || '' // Ajouté
         });
     }
 
@@ -380,15 +426,28 @@ export class ComptesComponent implements OnInit, OnDestroy {
         if (confirmed) {
             this.subscription.add(
                 this.compteService.deleteCompte(id).subscribe({
-                    next: (success) => {
-                        if (success) {
+                    next: (response) => {
+                        if (response.success) {
                             this.comptes = this.comptes.filter(c => c.id !== id);
                             this.updatePagedComptes();
                             this.calculateStats();
+                            this.popupService.showSuccess('Suppression réussie', response.message);
+                        } else {
+                            this.popupService.showError('Suppression impossible', response.message);
                         }
                     },
                     error: (error) => {
                         console.error('Erreur lors de la suppression:', error);
+                        let errorMessage = 'Erreur lors de la suppression du compte';
+                        
+                        // Extraire le message d'erreur du backend si disponible
+                        if (error.error && error.error.message) {
+                            errorMessage = error.error.message;
+                        } else if (error.message) {
+                            errorMessage = error.message;
+                        }
+                        
+                        this.popupService.showError('Erreur de suppression', errorMessage);
                     }
                 })
             );
@@ -399,11 +458,13 @@ export class ComptesComponent implements OnInit, OnDestroy {
         // Synchroniser les champs du formulaire avec les sélections UI
         this.filterForm.controls['pays'].setValue(this.selectedPays);
         this.filterForm.controls['codeProprietaire'].setValue(this.selectedCodesProprietaire);
+        this.filterForm.controls['categorie'].setValue(this.selectedCategories);
 
         const filter: CompteFilter = {
             ...this.filterForm.value,
             pays: this.selectedPays,
-            codeProprietaire: this.selectedCodesProprietaire
+            codeProprietaire: this.selectedCodesProprietaire,
+            categorie: this.selectedCategories
         };
         console.log('Filtres appliqués:', filter);
         this.isLoading = true;
@@ -433,6 +494,7 @@ export class ComptesComponent implements OnInit, OnDestroy {
         this.filterForm.reset();
         this.selectedPays = [];
         this.selectedCodesProprietaire = [];
+        this.selectedCategories = [];
         this.loadComptes();
     }
 
@@ -613,6 +675,10 @@ export class ComptesComponent implements OnInit, OnDestroy {
         } finally {
             this.isExporting = false;
         }
+    }
+
+    goToServiceBalance() {
+        this.router.navigate(['/service-balance']);
     }
 
     async exportSoldesCritiques() {
@@ -813,6 +879,22 @@ export class ComptesComponent implements OnInit, OnDestroy {
             if (this.codeProprietaireSelect) this.codeProprietaireSelect.close();
         }, 100);
     }
+    
+    onCategorieChange(event: any) {
+        this.selectedCategories = event.value;
+        console.log('onCategorieChange called, selectedCategories:', this.selectedCategories, 'event:', event);
+        this.filterForm.controls['categorie'].setValue(this.selectedCategories);
+        
+        // Mettre à jour les listes filtrées pour le cloisonnement
+        this.updateFilteredLists();
+        
+        this.applyFilters();
+        
+        // Fermer automatiquement le dropdown après un choix
+        setTimeout(() => {
+            if (this.categorieSelect) this.categorieSelect.close();
+        }, 100);
+    }
 
     // Méthode pour mettre à jour les listes filtrées avec cloisonnement
     updateFilteredLists() {
@@ -822,17 +904,22 @@ export class ComptesComponent implements OnInit, OnDestroy {
         // Mettre à jour les pays disponibles selon le code propriétaire sélectionné
         this.filteredPaysList = this.getFilteredPays();
         
+        // Mettre à jour les catégories disponibles selon les autres filtres
+        this.filteredCategorieList = this.getFilteredCategories();
+        
         // Nettoyer les sélections qui ne sont plus valides
         this.cleanInvalidSelections();
         
         console.log('updateFilteredLists - filteredPaysList:', this.filteredPaysList);
         console.log('updateFilteredLists - filteredCodeProprietaireList:', this.filteredCodeProprietaireList);
+        console.log('updateFilteredLists - filteredCategorieList:', this.filteredCategorieList);
     }
 
     // Méthode pour nettoyer les sélections invalides
     cleanInvalidSelections() {
         const currentPays = this.selectedPays;
         const currentCodeProprietaire = this.selectedCodesProprietaire;
+        const currentCategories = this.selectedCategories;
 
         // Nettoyer les codes propriétaires si le pays a changé
         if (currentCodeProprietaire && currentCodeProprietaire.length > 0) {
@@ -853,6 +940,17 @@ export class ComptesComponent implements OnInit, OnDestroy {
             if (validPays.length !== currentPays.length) {
                 this.selectedPays = validPays;
                 this.filterForm.controls['pays'].setValue(validPays);
+            }
+        }
+        
+        // Nettoyer les catégories si les autres filtres ont changé
+        if (currentCategories && currentCategories.length > 0) {
+            const validCategories = currentCategories.filter((categorie: string) => 
+                this.filteredCategorieList.includes(categorie)
+            );
+            if (validCategories.length !== currentCategories.length) {
+                this.selectedCategories = validCategories;
+                this.filterForm.controls['categorie'].setValue(validCategories);
             }
         }
     }
@@ -886,6 +984,25 @@ export class ComptesComponent implements OnInit, OnDestroy {
         }
         const codeProprietaire = [...new Set(data.map(c => c.codeProprietaire).filter((c): c is string => c !== undefined && c !== null))];
         return codeProprietaire.sort();
+    }
+    
+    getFilteredCategories(): string[] {
+        // Si pas de données comptes, retourner la liste de base
+        if (!this.comptes || this.comptes.length === 0) {
+            return this.compteCategories;
+        }
+        
+        let data = this.comptes;
+        // Filtrer par pays si sélectionné
+        if (this.selectedPays && this.selectedPays.length > 0) {
+            data = data.filter(c => c.pays && this.selectedPays.includes(c.pays));
+        }
+        // Filtrer par code propriétaire si sélectionné
+        if (this.selectedCodesProprietaire && this.selectedCodesProprietaire.length > 0) {
+            data = data.filter(c => c.codeProprietaire && this.selectedCodesProprietaire.includes(c.codeProprietaire));
+        }
+        const categories = [...new Set(data.map(c => c.categorie).filter((c): c is string => c !== undefined && c !== null))];
+        return categories.sort();
     }
 
     get pagedComptesCritiques() {

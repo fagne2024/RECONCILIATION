@@ -2,7 +2,7 @@ import { Component, OnInit, OnDestroy, ChangeDetectorRef } from '@angular/core';
 import { Router } from '@angular/router';
 import { ReconciliationRequest } from '../../models/reconciliation-request.model';
 import { ReconciliationResponse } from '../../models/reconciliation-response.model';
-import { ReconciliationService, ReconciliationConfig, WebSocketMessage, ProgressUpdate } from '../../services/reconciliation.service';
+import { ReconciliationService, ReconciliationConfig, ProgressUpdate } from '../../services/reconciliation.service';
 import { AppStateService } from '../../services/app-state.service';
 import { OrangeMoneyUtilsService } from '../../services/orange-money-utils.service';
 import { Subject, takeUntil } from 'rxjs';
@@ -34,8 +34,7 @@ export class ReconciliationComponent implements OnInit, OnDestroy {
     progressCurrentFile: number = 0;
     progressTotalFiles: number = 0;
 
-    // Gestion des WebSockets
-    isConnected = false;
+    // Gestion des jobs
     currentJobId: string | null = null;
     private destroy$ = new Subject<void>();
 
@@ -60,10 +59,8 @@ export class ReconciliationComponent implements OnInit, OnDestroy {
         // Vérifier si on est en mode magique
         this.checkMagicMode();
         
-        // Activer les WebSockets maintenant que le backend est prêt
-        // this.initializeWebSocketListeners();
-        // this.connectToWebSocket();
-        console.log('⚠️ WebSockets désactivés temporairement - mode API classique');
+        // Mode API classique activé
+        console.log('✅ Mode API classique activé');
     }
 
     /**
@@ -460,13 +457,13 @@ export class ReconciliationComponent implements OnInit, OnDestroy {
                 // Lancer la réconciliation
                 const reconciliationResponse = await this.reconciliationService.executeReconciliation(config).toPromise();
                 
-                if (reconciliationResponse && reconciliationResponse.jobId) {
-                    console.log('✅ Réconciliation lancée avec jobId:', reconciliationResponse.jobId);
+                if (reconciliationResponse) {
+                    console.log('✅ Réconciliation terminée:', reconciliationResponse);
                     // La réconciliation est déjà terminée avec l'API /reconcile, 
                     // on peut directement charger les résultats
-                    this.loadReconciliationResults(reconciliationResponse.jobId);
-            } else {
-                    throw new Error('Aucun jobId reçu lors du lancement de la réconciliation');
+                    this.loadReconciliationResults(null);
+                } else {
+                    throw new Error('Aucune réponse reçue lors de la réconciliation');
                 }
             } else {
                 console.warn('⚠️ Confiance insuffisante:', bestSuggestion.confidence);
@@ -494,89 +491,6 @@ export class ReconciliationComponent implements OnInit, OnDestroy {
         }
     }
 
-    /**
-     * Initialise les écouteurs WebSocket
-     */
-    private initializeWebSocketListeners(): void {
-        // Écouter le statut de connexion
-        this.reconciliationService.getConnectionStatus()
-            .pipe(takeUntil(this.destroy$))
-            .subscribe({
-                next: (connected) => {
-                    this.isConnected = connected;
-                    console.log('📡 Statut de connexion WebSocket:', connected);
-                    this.cd.detectChanges();
-                },
-                error: (error) => {
-                    console.error('❌ Erreur de statut de connexion:', error);
-                    this.isConnected = false;
-                    this.cd.detectChanges();
-                }
-            });
-
-        // Écouter les mises à jour de réconciliation
-        this.reconciliationService.getReconciliationUpdates()
-            .pipe(takeUntil(this.destroy$))
-            .subscribe({
-                next: (message: WebSocketMessage) => {
-                    this.handleWebSocketMessage(message);
-                },
-                error: (error) => {
-                    console.error('❌ Erreur lors de la réception des mises à jour:', error);
-                    this.handleError('Erreur de communication avec le serveur');
-                }
-            });
-
-        // Écouter les mises à jour de progression
-        this.reconciliationService.getProgress()
-            .pipe(takeUntil(this.destroy$))
-            .subscribe({
-                next: (progress: ProgressUpdate) => {
-                    this.updateProgress(progress);
-                },
-                error: (error) => {
-                    console.error('❌ Erreur de progression:', error);
-                }
-            });
-    }
-
-    /**
-     * Se connecte au WebSocket
-     */
-    private connectToWebSocket(): void {
-        this.reconciliationService.connect();
-    }
-
-    /**
-     * Traite les messages WebSocket reçus
-     */
-    private handleWebSocketMessage(message: WebSocketMessage): void {
-        console.log('📨 Message reçu dans le composant:', message);
-
-        switch (message.type) {
-            case 'PROGRESS_UPDATE':
-                this.updateProgress(message.payload);
-                break;
-
-            case 'RECONCILIATION_COMPLETE':
-                this.handleReconciliationComplete(message.payload);
-                break;
-
-            case 'RECONCILIATION_ERROR':
-                this.handleReconciliationError(message.payload);
-                break;
-
-            case 'CONNECTION_STATUS':
-                console.log('📡 Statut de connexion:', message.payload);
-                break;
-
-            default:
-                console.warn('⚠️ Type de message inconnu:', message.type);
-        }
-
-        // Forcer la détection de changement
-        this.cd.detectChanges();
-    }
 
     /**
      * Met à jour la progression avec les vraies données
@@ -657,13 +571,7 @@ export class ReconciliationComponent implements OnInit, OnDestroy {
      */
     startReconciliation(config: ReconciliationConfig) {
         console.log('🚀 Démarrage de la réconciliation avec config:', config);
-        
-        // Vérifier la connexion WebSocket
-        if (!this.isConnected) {
-            this.handleError('Pas de connexion au serveur. Tentative de reconnexion...');
-            this.connectToWebSocket();
-            return;
-        }
+        console.log('✅ Mode HTTP classique activé');
 
         // Réinitialiser l'état
         this.reconciliationRequest = null;
@@ -790,14 +698,14 @@ export class ReconciliationComponent implements OnInit, OnDestroy {
      * Obtient le statut de connexion pour l'affichage
      */
     getConnectionStatusText(): string {
-        return this.isConnected ? 'Connecté' : 'Déconnecté';
+        return 'Connecté (HTTP)';
     }
 
     /**
      * Obtient la classe CSS pour le statut de connexion
      */
     getConnectionStatusClass(): string {
-        return this.isConnected ? 'connected' : 'disconnected';
+        return 'connected';
     }
 
 

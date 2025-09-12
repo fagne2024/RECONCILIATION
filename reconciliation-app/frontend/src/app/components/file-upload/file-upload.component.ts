@@ -22,6 +22,7 @@ export class FileUploadComponent {
     }>();
 
     reconciliationMode: 'manual' | 'automatic' | 'super-auto' = 'manual';
+    reconciliationType: '1-1' | '1-2' | '1-3' | '1-4' | '1-5' = '1-1';
 
     boFile: File | null = null;
     partnerFile: File | null = null;
@@ -86,7 +87,28 @@ export class FileUploadComponent {
         private router: Router, 
         private appStateService: AppStateService,
         private popupService: PopupService
-    ) {}
+    ) {
+        // Initialiser le type de réconciliation depuis le service
+        this.reconciliationType = this.appStateService.getReconciliationType();
+    }
+
+    onReconciliationTypeChange(type: '1-1' | '1-2' | '1-3' | '1-4' | '1-5'): void {
+        this.reconciliationType = type;
+        // Sauvegarder le type dans le service
+        this.appStateService.setReconciliationType(type);
+        // Réinitialiser les fichiers si on change de type
+        this.boFile = null;
+        this.partnerFile = null;
+        this.boData = [];
+        this.partnerData = [];
+        this.estimatedTime = '';
+    }
+
+    showReconciliationTypeSelector(): void {
+        // Permettre à l'utilisateur de changer le type de réconciliation
+        // En changeant temporairement le type pour afficher le sélecteur
+        this.reconciliationType = '1-2'; // Changer temporairement pour afficher le sélecteur
+    }
 
     private updateEstimatedTime(): void {
         // Ne calculer l'estimation que si les deux fichiers sont chargés
@@ -120,7 +142,9 @@ export class FileUploadComponent {
         if (input.files?.length) {
             this.boFile = input.files[0];
             console.log('📁 Fichier BO sélectionné:', this.boFile.name, 'Taille:', this.boFile.size);
-            this.processFileWithAutoProcessing(this.boFile, 'bo');
+            
+            // Traitement du fichier avec détection TRXBO pour le mode manuel
+            this.processManualBoFile(this.boFile);
         }
     }
 
@@ -132,6 +156,25 @@ export class FileUploadComponent {
             console.log('📁 Fichier Partenaire sélectionné:', this.partnerFile.name, 'Taille:', this.partnerFile.size);
             this.processFileWithAutoProcessing(this.partnerFile, 'partner');
         }
+    }
+
+    // Nouvelle méthode pour traiter le fichier BO en mode manuel avec détection TRXBO
+    private processManualBoFile(file: File): void {
+        console.log('🔧 Traitement du fichier BO en mode manuel:', file.name);
+        
+        // D'abord, traiter le fichier normalement
+        this.processFileWithAutoProcessing(file, 'bo');
+        
+        // Ensuite, vérifier si c'est un fichier TRXBO et extraire les services
+        // On va attendre que les données soient chargées avant de vérifier
+        setTimeout(() => {
+            if (this.boData && this.boData.length > 0) {
+                console.log('🔍 Vérification TRXBO sur les données BO chargées...');
+                if (this.detectTRXBOAndExtractServicesForManual(this.boData)) {
+                    this.showManualServiceSelectionStep();
+                }
+            }
+        }, 1000); // Attendre 1 seconde pour que les données soient chargées
     }
 
     // Nouvelle méthode pour le traitement automatique optimisé
@@ -1203,6 +1246,7 @@ export class FileUploadComponent {
             
             // Sauvegarder les données dans le service d'état
             this.appStateService.setReconciliationData(this.boData, this.partnerData);
+            this.appStateService.setReconciliationType(this.reconciliationType);
             this.appStateService.setCurrentStep(2);
             
             // Naviguer vers la page de sélection des colonnes
@@ -1291,11 +1335,50 @@ export class FileUploadComponent {
         return false;
     }
 
+    // Méthode pour détecter TRXBO et extraire les services pour le mode manuel
+    private detectTRXBOAndExtractServicesForManual(data: Record<string, string>[]): boolean {
+        if (!data || data.length === 0) return false;
+        
+        const firstRow = data[0];
+        const columns = Object.keys(firstRow);
+        
+        // Vérifier si c'est un fichier TRXBO (contient une colonne "Service" ou "service")
+        const hasServiceColumn = columns.some(col => 
+            col.toLowerCase().includes('service') || 
+            col.toLowerCase().includes('serv')
+        );
+        
+        if (hasServiceColumn) {
+            console.log('🔍 Fichier TRXBO détecté en mode manuel, extraction des services...');
+            
+            // Trouver la colonne service
+            const serviceColumn = columns.find(col => 
+                col.toLowerCase().includes('service') || 
+                col.toLowerCase().includes('serv')
+            );
+            
+            if (serviceColumn) {
+                // Extraire tous les services uniques
+                const services = [...new Set(data.map(row => row[serviceColumn]).filter(service => service && service.trim()))];
+                this.manualAvailableServices = services.sort();
+                this.manualServiceSelectionData = data;
+                
+                console.log('📋 Services disponibles (mode manuel):', this.manualAvailableServices);
+                console.log('📊 Nombre total de lignes:', data.length);
+                
+                return true;
+            }
+        }
+        
+        return false;
+    }
+
     // Méthode pour afficher la sélection des services
     private showServiceSelectionStep(): void {
         this.showServiceSelection = true;
         this.selectedServices = [...this.availableServices]; // Sélectionner tous par défaut
     }
+
 
     // Méthode pour confirmer la sélection des services
     confirmServiceSelection(): void {
@@ -1382,6 +1465,7 @@ export class FileUploadComponent {
     deselectAllServices(): void {
         this.selectedServices = [];
     }
+
 
     private parseAutoFile(file: File, isBo: boolean): void {
         const fileName = file.name.toLowerCase();
@@ -1787,22 +1871,63 @@ export class FileUploadComponent {
 
     /**
      * Vérifie si un nom de fichier correspond à un pattern
+     * Supporte plusieurs modes de détection :
+     * 1. Patterns avec wildcards (* et ?) - comportement classique
+     * 2. Patterns avec extension - correspondance exacte avec extension
+     * 3. Patterns simples - détection par inclusion (ex: "TRXBO" détecte "TRXBO_02082025.xlsx")
+     * 4. Détection par préfixe - détection par début de nom
      */
     private matchesFilePattern(fileName: string, pattern: string): boolean {
         if (!pattern || !fileName) return false;
         
-        // Convertir le pattern en regex
-        const regexPattern = pattern
-            .replace(/\*/g, '.*')
-            .replace(/\?/g, '.');
+        console.log(`🔍 Test de correspondance: "${fileName}" vs pattern "${pattern}"`);
         
-        try {
-            const regex = new RegExp(regexPattern, 'i');
-            return regex.test(fileName);
-        } catch (error) {
-            console.warn('⚠️ Pattern invalide:', pattern);
-            return false;
+        // Mode 1: Pattern avec wildcards (comportement classique)
+        if (pattern.includes('*') || pattern.includes('?')) {
+            const regexPattern = pattern
+                .replace(/\*/g, '.*')
+                .replace(/\?/g, '.');
+            
+            try {
+                const regex = new RegExp(regexPattern, 'i');
+                const matches = regex.test(fileName);
+                console.log(`🔍 Test wildcard: ${matches ? '✅' : '❌'}`);
+                return matches;
+            } catch (error) {
+                console.warn('⚠️ Pattern wildcard invalide:', pattern);
+                return false;
+            }
         }
+        
+        // Mode 2: Pattern avec extension - correspondance exacte (insensible à la casse)
+        // Exemple: pattern "pmmoovbf.xlsx" détecte "PMMOOVBF.xlsx"
+        if (pattern.includes('.')) {
+            const exactMatch = fileName.toLowerCase() === pattern.toLowerCase();
+            console.log(`🔍 Test correspondance exacte avec extension: ${exactMatch ? '✅' : '❌'}`);
+            if (exactMatch) {
+                return true;
+            }
+        }
+        
+        // Mode 3: Pattern simple - détection par inclusion (sans extension)
+        // Nettoyer le nom du fichier et le pattern (enlever l'extension)
+        const cleanFileName = fileName.replace(/\.[^/.]+$/, '').toLowerCase();
+        const cleanPattern = pattern.replace(/\.[^/.]+$/, '').toLowerCase();
+        
+        // Exemple: pattern "TRXBO" détecte "TRXBO_02082025.xlsx"
+        const containsPattern = cleanFileName.includes(cleanPattern);
+        console.log(`🔍 Test inclusion (sans extension): "${cleanFileName}" contient "${cleanPattern}": ${containsPattern ? '✅' : '❌'}`);
+        
+        if (containsPattern) {
+            return true;
+        }
+        
+        // Mode 4: Détection par préfixe (optionnel, pour plus de flexibilité)
+        // Exemple: pattern "TRXBO" détecte "TRXBO_02082025.xlsx"
+        const startsWithPattern = cleanFileName.startsWith(cleanPattern);
+        console.log(`🔍 Test préfixe (sans extension): "${cleanFileName}" commence par "${cleanPattern}": ${startsWithPattern ? '✅' : '❌'}`);
+        
+        return startsWithPattern;
     }
 
     /**
@@ -2287,6 +2412,20 @@ export class FileUploadComponent {
         console.log('✅ Navigation vers la sélection des colonnes après sélection de service...');
         console.log('Données BO filtrées:', this.boData.length, 'lignes');
         console.log('Données Partenaire:', this.partnerData.length, 'lignes');
+        
+        // Vérifier si le fichier partenaire est uploadé
+        if (!this.partnerFile) {
+            console.log('⚠️ Fichier partenaire manquant - retour à l\'upload');
+            this.errorMessage = 'Veuillez d\'abord uploader le fichier partenaire avant de continuer.';
+            return;
+        }
+        
+        // Vérifier si les données partenaire sont chargées
+        if (this.partnerData.length === 0) {
+            console.log('⚠️ Données partenaire non chargées - traitement du fichier partenaire');
+            this.processFileWithAutoProcessing(this.partnerFile, 'partner');
+            return;
+        }
         
         // Sauvegarder les données dans le service d'état
         this.appStateService.setReconciliationData(this.boData, this.partnerData);

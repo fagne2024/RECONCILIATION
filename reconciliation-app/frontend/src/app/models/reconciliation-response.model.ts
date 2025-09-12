@@ -17,8 +17,10 @@ export interface ReconciliationResponse {
 export interface Match {
     key: string;
     boData: Record<string, string>;
-    partnerData: Record<string, string>;
+    partnerData: Record<string, string>; // Pour compatibilité avec l'existant
+    partnerDataList?: Record<string, string>[]; // Pour les correspondances multiples
     differences: Difference[];
+    reconciliationType?: string; // Type de réconciliation utilisé
 }
 
 export interface Difference {

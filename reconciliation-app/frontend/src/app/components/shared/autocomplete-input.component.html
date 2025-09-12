@@ -1,15 +1,19 @@
 <div class="autocomplete-container">
   <label *ngIf="label" class="autocomplete-label">{{ label }}</label>
-  <select 
+  <input 
+    type="text"
     [value]="value"
-    (change)="onSelectChange($event)"
+    (input)="onInputChange($event)"
+    (blur)="onBlur()"
+    [placeholder]="placeholder"
     [disabled]="disabled"
-    class="autocomplete-select">
-    <option value="">{{ placeholder }}</option>
+    [attr.list]="'options-' + label"
+    class="autocomplete-input">
+  <datalist [id]="'options-' + label">
     <option *ngFor="let option of options" [value]="option">
       {{ option }}
     </option>
-  </select>
+  </datalist>
   <div *ngIf="options.length === 0" class="no-options-message">
     Aucune option disponible
   </div>

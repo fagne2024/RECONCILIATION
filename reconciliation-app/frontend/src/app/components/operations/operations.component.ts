@@ -19,11 +19,13 @@ export class OperationsComponent implements OnInit, OnDestroy {
     operations: Operation[] = [];
     filteredOperations: Operation[] = [];
     pagedOperations: Operation[] = [];
+    associatedFrais: Operation[] = []; // Frais associés aux opérations filtrées
     comptes: Compte[] = [];
     paysList: string[] = [];
     codeProprietaireList: string[] = [];
     banqueList: string[] = [];
     serviceList: string[] = [];
+    addFormServiceList: string[] = []; // Services disponibles pour le formulaire d'ajout (cloisonnés par code propriétaire)
     referenceList: string[] = [];
     statutList: string[] = [];
     
@@ -43,6 +45,22 @@ export class OperationsComponent implements OnInit, OnDestroy {
     filterForm: FormGroup;
 
     editingOperation: Operation | null = null;
+    
+    // Option pour la création avec 4 opérations
+    useFourOperationsLogic = false;
+    
+    // Contrôles de recherche pour les formulaires de création/modification
+    addFormTypeOperationSearchCtrl = new FormControl('');
+    filteredAddFormTypeOperationList: string[] = [];
+    addFormCodeProprietaireSearchCtrl = new FormControl('');
+    filteredAddFormCodeProprietaireList: string[] = [];
+    addFormServiceSearchCtrl = new FormControl('');
+    filteredAddFormServiceList: string[] = [];
+    
+    editFormTypeOperationSearchCtrl = new FormControl('');
+    filteredEditFormTypeOperationList: string[] = [];
+    editFormServiceSearchCtrl = new FormControl('');
+    filteredEditFormServiceList: string[] = [];
 
     typeOperations = Object.values(TypeOperation);
     statutOperations = Object.values(StatutOperation);
@@ -78,6 +96,11 @@ export class OperationsComponent implements OnInit, OnDestroy {
     get comptesNumeros(): string[] {
         return this.codeProprietaireList;
     }
+
+    // Propriétés pour la sélection multiple
+    selectedOperations: Set<number> = new Set();
+    isSelectionMode = false;
+    isDeletingMultiple = false;
 
     // Propriété pour les options de comptes avec ID et nom
     get compteOptions(): { value: number, label: string }[] {
@@ -223,6 +246,10 @@ export class OperationsComponent implements OnInit, OnDestroy {
                 }, 100);
             }
         });
+        
+        // Initialisation des contrôles de recherche pour les formulaires de création/modification
+        this.initializeAddFormSearchControls();
+        this.initializeEditFormSearchControls();
         this.paysSearchCtrl.valueChanges.subscribe((search: string | null) => {
             const s = (search || '').toLowerCase();
             const availablePays = this.getFilteredPays();
@@ -301,6 +328,8 @@ export class OperationsComponent implements OnInit, OnDestroy {
                 setTimeout(() => {
                 this.operations = operations;
                 this.filteredOperations = operations;
+                this.associatedFrais = []; // Initialiser les frais associés
+                this.addFormServiceList = this.serviceList; // Initialiser les services pour le formulaire d'ajout
                 this.updatePagedOperations();
                 this.calculateStats();
                 this.loadReferenceListFromOperations();
@@ -577,12 +606,15 @@ export class OperationsComponent implements OnInit, OnDestroy {
         setTimeout(() => {
         this.paysList = [...new Set(this.operations.map(op => op.pays))].sort();
         this.filteredPaysList = this.paysList.slice();
+        this.filteredAddFormCodeProprietaireList = this.codeProprietaireList.slice();
         }, 100);
     }
 
     loadCodeProprietaireList() {
         setTimeout(() => {
         this.codeProprietaireList = [...new Set(this.operations.map(op => op.codeProprietaire).filter(code => code !== undefined))] as string[];
+        this.filteredCodeProprietaireList = this.codeProprietaireList.slice();
+        this.filteredAddFormCodeProprietaireList = this.codeProprietaireList.slice();
         }, 100);
     }
 
@@ -643,12 +675,41 @@ export class OperationsComponent implements OnInit, OnDestroy {
         this.operationService.getDistinctService().subscribe({
             next: (services) => {
                 this.serviceList = services;
-                this.filteredServiceList = services;
+                this.addFormServiceList = services; // Initialiser aussi pour le formulaire d'ajout
+                this.filteredAddFormServiceList = services.slice();
+                this.filteredEditFormServiceList = services.slice();
             },
             error: (err) => {
                 console.error('Erreur lors du chargement des services:', err);
                 this.serviceList = [];
-                this.filteredServiceList = [];
+                this.addFormServiceList = [];
+                this.filteredAddFormServiceList = [];
+                this.filteredEditFormServiceList = [];
+            }
+        });
+    }
+
+    loadServicesByCodeProprietaire(codeProprietaire: string) {
+        console.log('Chargement des services pour le code propriétaire:', codeProprietaire);
+        
+        this.operationService.getDistinctServiceByCodeProprietaire(codeProprietaire).subscribe({
+            next: (services) => {
+                this.addFormServiceList = services;
+                this.filteredAddFormServiceList = services.slice();
+                console.log('Services filtrés chargés:', services);
+                
+                // Réinitialiser le service sélectionné s'il n'est plus dans la liste filtrée
+                const currentService = this.addForm.get('service')?.value;
+                if (currentService && !services.includes(currentService)) {
+                    this.addForm.patchValue({ service: '' });
+                    console.log('Service réinitialisé car non disponible pour ce code propriétaire');
+                }
+            },
+            error: (err) => {
+                console.error('Erreur lors du chargement des services filtrés:', err);
+                // En cas d'erreur, utiliser la liste complète
+                this.addFormServiceList = this.serviceList;
+                this.filteredAddFormServiceList = this.serviceList.slice();
             }
         });
     }
@@ -721,12 +782,23 @@ export class OperationsComponent implements OnInit, OnDestroy {
                 pays: selectedCompte.pays,
                 soldeAvant: selectedCompte.solde
             });
+            
+            // Charger les services filtrés par code propriétaire
+            this.loadServicesByCodeProprietaire(codeProprietaire);
+            
+            // Mettre à jour la liste filtrée des services
+            this.filteredAddFormServiceList = this.addFormServiceList.slice();
         } else {
             // Si aucun compte n'est trouvé, réinitialiser les champs
             this.addForm.patchValue({
                 pays: '',
-                soldeAvant: 0
+                soldeAvant: 0,
+                service: '' // Réinitialiser aussi le service
             });
+            
+            // Réinitialiser la liste des services
+            this.addFormServiceList = this.serviceList;
+            this.filteredAddFormServiceList = this.serviceList.slice();
         }
     }
 
@@ -830,21 +902,113 @@ export class OperationsComponent implements OnInit, OnDestroy {
             dateOperation: formData.dateOperation
         };
 
-        this.operationService.createOperation(newOperation).subscribe({
+        // Choisir la méthode de création selon l'option sélectionnée
+        const createOperation$ = this.useFourOperationsLogic && 
+                                 this.shouldUseFourOperationsLogic(formData.typeOperation, formData.service) ?
+            this.operationService.createOperationWithFourOperations(newOperation) :
+            this.operationService.createOperation(newOperation);
+
+        createOperation$.subscribe({
             next: (op) => {
                 this.loadOperations();
                 this.loadComptes();
                 this.cancelAdd();
                 // Effacer la recherche dynamique après ajout réussi
                 this.clearDynamicSearch();
+                
+                // Afficher un message informatif si les 4 opérations ont été créées
+                if (this.useFourOperationsLogic && this.shouldUseFourOperationsLogic(formData.typeOperation, formData.service)) {
+                    this.popupService.showSuccess('Opération créée avec succès !', 
+                        '4 opérations ont été générées : 2 opérations nominales (agence + service) et 2 opérations de frais associées.');
+                }
             },
-            error: (err) => console.error('Erreur ajout opération', err)
+            error: (err) => {
+                console.error('Erreur ajout opération', err);
+                this.popupService.showError('Erreur lors de la création', 'Une erreur est survenue lors de la création de l\'opération.');
+            }
         }).add(() => this.isAdding = false);
+    }
+    
+    /**
+     * Détermine si la logique des 4 opérations doit être utilisée
+     */
+    shouldUseFourOperationsLogic(typeOperation: string, service: string): boolean {
+        return (typeOperation === 'total_cashin' || 
+                typeOperation === 'total_paiement' ||
+                typeOperation === 'annulation_bo' ||
+                typeOperation === 'transaction_cree') && 
+               service && service.trim() !== '';
+    }
+    
+    /**
+     * Initialise les contrôles de recherche pour le formulaire de création
+     */
+    private initializeAddFormSearchControls() {
+        // Initialiser les listes filtrées
+        this.filteredAddFormTypeOperationList = this.typeOperations.slice();
+        this.filteredAddFormCodeProprietaireList = this.codeProprietaireList.slice();
+        this.filteredAddFormServiceList = this.addFormServiceList.slice();
+        
+        // Contrôle de recherche pour le type d'opération
+        this.addFormTypeOperationSearchCtrl.valueChanges.subscribe((search: string | null) => {
+            const s = (search || '').toLowerCase();
+            this.filteredAddFormTypeOperationList = this.typeOperations.filter(type => 
+                type.toLowerCase().includes(s)
+            );
+        });
+        
+        // Contrôle de recherche pour le code propriétaire
+        this.addFormCodeProprietaireSearchCtrl.valueChanges.subscribe((search: string | null) => {
+            const s = (search || '').toLowerCase();
+            this.filteredAddFormCodeProprietaireList = this.codeProprietaireList.filter(code => 
+                code.toLowerCase().includes(s)
+            );
+        });
+        
+        // Contrôle de recherche pour le service
+        this.addFormServiceSearchCtrl.valueChanges.subscribe((search: string | null) => {
+            const s = (search || '').toLowerCase();
+            this.filteredAddFormServiceList = this.addFormServiceList.filter(service => 
+                service.toLowerCase().includes(s)
+            );
+        });
+    }
+    
+    /**
+     * Initialise les contrôles de recherche pour le formulaire de modification
+     */
+    private initializeEditFormSearchControls() {
+        // Initialiser les listes filtrées
+        this.filteredEditFormTypeOperationList = this.typeOperations.slice();
+        this.filteredEditFormServiceList = this.addFormServiceList.slice();
+        
+        // Contrôle de recherche pour le type d'opération
+        this.editFormTypeOperationSearchCtrl.valueChanges.subscribe((search: string | null) => {
+            const s = (search || '').toLowerCase();
+            this.filteredEditFormTypeOperationList = this.typeOperations.filter(type => 
+                type.toLowerCase().includes(s)
+            );
+        });
+        
+        // Contrôle de recherche pour le service
+        this.editFormServiceSearchCtrl.valueChanges.subscribe((search: string | null) => {
+            const s = (search || '').toLowerCase();
+            this.filteredEditFormServiceList = this.addFormServiceList.filter(service => 
+                service.toLowerCase().includes(s)
+            );
+        });
     }
 
     cancelAdd() {
         this.showAddForm = false;
         this.addForm.reset();
+        // Réinitialiser la liste des services pour le formulaire d'ajout
+        this.addFormServiceList = this.serviceList;
+        this.filteredAddFormServiceList = this.serviceList.slice();
+        // Réinitialiser les contrôles de recherche
+        this.addFormTypeOperationSearchCtrl.setValue('');
+        this.addFormCodeProprietaireSearchCtrl.setValue('');
+        this.addFormServiceSearchCtrl.setValue('');
         // Effacer aussi la recherche dynamique
         this.clearDynamicSearch();
     }
@@ -855,6 +1019,10 @@ export class OperationsComponent implements OnInit, OnDestroy {
         this.showEditForm = true;
         this.showAddForm = false;
         this.currentEditStep = 1; // Réinitialiser à la première étape
+        
+        // Initialiser les listes filtrées pour le formulaire de modification
+        this.filteredEditFormTypeOperationList = this.typeOperations.slice();
+        this.filteredEditFormServiceList = this.addFormServiceList.slice();
     }
 
     // Méthodes pour la navigation par étapes
@@ -1009,6 +1177,9 @@ export class OperationsComponent implements OnInit, OnDestroy {
         this.showEditForm = false;
         this.editingOperation = null;
         this.editForm.reset();
+        // Réinitialiser les contrôles de recherche
+        this.editFormTypeOperationSearchCtrl.setValue('');
+        this.editFormServiceSearchCtrl.setValue('');
     }
 
     updateOperation() {
@@ -1057,6 +1228,81 @@ export class OperationsComponent implements OnInit, OnDestroy {
                 },
                 error: (err) => {
                     console.error('Erreur lors de la suppression', err);
+                }
+            });
+        }
+    }
+
+    // Méthodes pour la sélection multiple
+    toggleSelectionMode() {
+        this.isSelectionMode = !this.isSelectionMode;
+        if (!this.isSelectionMode) {
+            this.selectedOperations.clear();
+        }
+    }
+
+    toggleOperationSelection(operationId: number) {
+        if (this.selectedOperations.has(operationId)) {
+            this.selectedOperations.delete(operationId);
+        } else {
+            this.selectedOperations.add(operationId);
+        }
+    }
+
+    selectAllOperations() {
+        this.pagedOperations.forEach(op => {
+            if (op.id) {
+                this.selectedOperations.add(op.id);
+            }
+        });
+    }
+
+    deselectAllOperations() {
+        this.selectedOperations.clear();
+    }
+
+    isOperationSelected(operationId: number): boolean {
+        return this.selectedOperations.has(operationId);
+    }
+
+    get selectedOperationsCount(): number {
+        return this.selectedOperations.size;
+    }
+
+    get hasSelectedOperations(): boolean {
+        return this.selectedOperations.size > 0;
+    }
+
+    deleteSelectedOperations() {
+        if (this.selectedOperations.size === 0) {
+            return;
+        }
+
+        const count = this.selectedOperations.size;
+        const message = `Êtes-vous sûr de vouloir supprimer ${count} opération(s) sélectionnée(s) ?`;
+        
+        if (confirm(message)) {
+            this.isDeletingMultiple = true;
+            const operationIds = Array.from(this.selectedOperations);
+            
+            // Utiliser la méthode de suppression en lot
+            this.operationService.deleteOperations(operationIds).subscribe({
+                next: (result) => {
+                    this.isDeletingMultiple = false;
+                    this.selectedOperations.clear();
+                    this.isSelectionMode = false;
+                    this.loadOperations();
+                    
+                    if (result.success) {
+                        this.popupService.showSuccess(`${result.deletedCount} opération(s) supprimée(s) avec succès`);
+                    } else {
+                        this.popupService.showError(`Erreur lors de la suppression : ${result.errors.join(', ')}`);
+                    }
+                },
+                error: (err) => {
+                    console.error('Erreur lors de la suppression en lot', err);
+                    this.isDeletingMultiple = false;
+                    this.popupService.showError('Erreur lors de la suppression des opérations');
                 }
             });
         }
@@ -1117,8 +1363,8 @@ export class OperationsComponent implements OnInit, OnDestroy {
         const selectedPays = formValue.pays || [];
         const selectedCodesProprietaire = formValue.codeProprietaire || [];
         
-        // Filtrer les opérations
-        this.filteredOperations = this.operations.filter(op => {
+        // Filtrer les opérations principales
+        let filteredMainOperations = this.operations.filter(op => {
             let keepOperation = true;
             
             // Filtre par type d'opération
@@ -1170,7 +1416,6 @@ export class OperationsComponent implements OnInit, OnDestroy {
             }
             
             // Filtre par date
-            const formValue = this.filterForm.value;
             if (formValue.dateDebut && op.dateOperation) {
                 const opDate = new Date(op.dateOperation);
                 const debutDate = new Date(formValue.dateDebut);
@@ -1192,7 +1437,26 @@ export class OperationsComponent implements OnInit, OnDestroy {
             return true;
         });
         
-        console.log('Opérations filtrées:', this.filteredOperations.length);
+        // Récupérer les IDs des opérations principales filtrées
+        const filteredMainOperationIds = new Set(filteredMainOperations.map(op => op.id).filter(id => id !== undefined));
+        
+        // Récupérer tous les frais associés aux opérations principales filtrées
+        const associatedFrais = this.operations.filter(op => 
+            op.typeOperation === 'FRAIS_TRANSACTION' && 
+            op.parentOperationId && 
+            filteredMainOperationIds.has(op.parentOperationId)
+        );
+        
+        // Stocker les frais associés séparément pour éviter le double affichage
+        this.associatedFrais = associatedFrais;
+        
+        // Ne garder que les opérations principales dans filteredOperations
+        // Les frais seront ajoutés lors de la pagination
+        this.filteredOperations = filteredMainOperations;
+        
+        console.log('Opérations principales filtrées:', filteredMainOperations.length);
+        console.log('Frais associés trouvés:', associatedFrais.length);
+        console.log('Total opérations + frais:', this.filteredOperations.length);
         console.log('Premières opérations filtrées:', this.filteredOperations.slice(0, 3));
         
         // Appliquer le tri
@@ -1208,7 +1472,7 @@ export class OperationsComponent implements OnInit, OnDestroy {
         // Forcer la détection de changement
         this.cdr.markForCheck();
         
-        console.log(`Filtres appliqués: ${this.filteredOperations.length} opérations trouvées`);
+        console.log(`Filtres appliqués: ${this.filteredOperations.length} opérations trouvées (${filteredMainOperations.length} principales + ${associatedFrais.length} frais)`);
         console.log('=== FIN applyFilters() ===');
     }
 
@@ -1526,15 +1790,47 @@ export class OperationsComponent implements OnInit, OnDestroy {
         console.log('pageSize:', this.pageSize);
         console.log('filteredOperations.length:', this.filteredOperations.length);
         
+        // Récupérer les opérations principales de la page courante
+        const mainOperations = this.filteredOperations.filter(op => op.typeOperation !== 'FRAIS_TRANSACTION');
         const startIndex = (this.currentPage - 1) * this.pageSize;
         const endIndex = startIndex + this.pageSize;
         console.log('startIndex:', startIndex, 'endIndex:', endIndex);
         
-        this.pagedOperations = this.filteredOperations.slice(startIndex, endIndex);
-        this.totalPages = Math.ceil(this.filteredOperations.length / this.pageSize);
+        // Récupérer les opérations principales de cette page
+        const mainOperationsOnPage = mainOperations.slice(startIndex, endIndex);
         
+        // Récupérer les IDs des opérations principales de cette page
+        const mainOperationIdsOnPage = new Set(mainOperationsOnPage.map(op => op.id).filter(id => id !== undefined));
+        
+        // Récupérer tous les frais associés aux opérations de cette page
+        const fraisForThisPage = this.associatedFrais.filter(op => 
+            op.parentOperationId && 
+            mainOperationIdsOnPage.has(op.parentOperationId)
+        );
+        
+        // Réorganiser l'affichage : chaque opération nominale suivie de ses frais
+        const reorganizedOperations: Operation[] = [];
+        
+        mainOperationsOnPage.forEach(mainOp => {
+            // Ajouter l'opération principale
+            reorganizedOperations.push(mainOp);
+            
+            // Ajouter immédiatement ses frais associés
+            const associatedFrais = fraisForThisPage.filter(frais => 
+                frais.parentOperationId === mainOp.id
+            );
+            reorganizedOperations.push(...associatedFrais);
+        });
+        
+        this.pagedOperations = reorganizedOperations;
+        
+        // Calculer le nombre total de pages basé sur les opérations principales uniquement
+        this.totalPages = Math.ceil(mainOperations.length / this.pageSize);
+        
+        console.log('mainOperationsOnPage.length:', mainOperationsOnPage.length);
+        console.log('fraisForThisPage.length:', fraisForThisPage.length);
         console.log('pagedOperations.length:', this.pagedOperations.length);
-        console.log('totalPages:', this.totalPages);
+        console.log('totalPages (basé sur opérations principales):', this.totalPages);
         console.log('Premières opérations paginées:', this.pagedOperations.slice(0, 2));
         
         // S'assurer que la page courante est valide
@@ -1564,22 +1860,26 @@ export class OperationsComponent implements OnInit, OnDestroy {
     }
 
     calculateStats() {
-        // Calculer les statistiques basées sur les opérations filtrées
-        this.totalOperations = this.filteredOperations.length;
-        this.totalMontant = this.filteredOperations.reduce((sum, op) => sum + (op.montant || 0), 0);
+        // Utiliser directement filteredOperations car elle ne contient que les opérations principales
+        const mainOperations = this.filteredOperations;
+        
+        // Calculer les statistiques basées sur les opérations principales uniquement
+        this.totalOperations = mainOperations.length;
+        this.totalMontant = mainOperations.reduce((sum, op) => sum + (op.montant || 0), 0);
         this.montantMoyen = this.totalOperations > 0 ? this.totalMontant / this.totalOperations : 0;
-        this.operationsValidees = this.filteredOperations.filter(op => op.statut === 'Validée').length;
+        this.operationsValidees = mainOperations.filter(op => op.statut === 'Validée').length;
+        
+        // Log pour debug
+        console.log(`Stats calculées: ${this.totalOperations} opérations principales, ${this.associatedFrais.length} frais associés, ${this.totalMontant} montant total, ${this.operationsValidees} validées`);
         
         // Mettre à jour les statistiques par type
         this.loadStatsByType();
-        
-        // Log pour debug
-        console.log(`Stats calculées: ${this.totalOperations} opérations, ${this.totalMontant} montant total, ${this.operationsValidees} validées`);
     }
 
     getOperationTypes(): string[] {
-        // Récupérer tous les types d'opération disponibles dans les données filtrées
-        const types = Array.from(new Set(this.filteredOperations.map(op => op.typeOperation).filter(type => type)));
+        // Récupérer tous les types d'opération disponibles dans les données filtrées (opérations principales uniquement)
+        const mainOperations = this.filteredOperations;
+        const types = Array.from(new Set(mainOperations.map(op => op.typeOperation).filter(type => type)));
         
         // Si nous avons des statistiques, retourner les types qui ont des données
         if (this.statsByType && Object.keys(this.statsByType).length > 0) {
@@ -2264,34 +2564,33 @@ export class OperationsComponent implements OnInit, OnDestroy {
         const grouped: Array<{main: Operation, frais: Operation[]}> = [];
         const operationsMap = new Map<number, {main: Operation | null, frais: Operation[]}>();
         
-        // Utiliser filteredOperations au lieu de pagedOperations pour que le groupement fonctionne avec les filtres
-        const operationsToGroup = this.filteredOperations.length > 0 ? this.filteredOperations : this.pagedOperations;
+        // Utiliser filteredOperations (opérations principales) et associatedFrais
+        const mainOperations = this.filteredOperations;
         
-        // Séparer les opérations principales et les frais
-        operationsToGroup.forEach(op => {
-            if (op.typeOperation === 'FRAIS_TRANSACTION') {
-                // C'est un frais, on le stocke temporairement
-                const parentId = op.parentOperationId;
-                if (parentId) {
-                    if (!operationsMap.has(parentId)) {
-                        operationsMap.set(parentId, { main: null, frais: [] });
-                    }
-                    const group = operationsMap.get(parentId);
+        // Traiter les opérations principales
+        mainOperations.forEach(op => {
+            if (op.id) {
+                if (!operationsMap.has(op.id)) {
+                    operationsMap.set(op.id, { main: op, frais: [] });
+                } else {
+                    const group = operationsMap.get(op.id);
                     if (group) {
-                        group.frais.push(op);
+                        group.main = op;
                     }
                 }
-            } else {
-                // C'est une opération principale
-                if (op.id) {
-                    if (!operationsMap.has(op.id)) {
-                        operationsMap.set(op.id, { main: op, frais: [] });
-                    } else {
-                        const group = operationsMap.get(op.id);
-                        if (group) {
-                            group.main = op;
-                        }
-                    }
+            }
+        });
+        
+        // Traiter les frais associés
+        this.associatedFrais.forEach(frais => {
+            const parentId = frais.parentOperationId;
+            if (parentId) {
+                if (!operationsMap.has(parentId)) {
+                    operationsMap.set(parentId, { main: null, frais: [] });
+                }
+                const group = operationsMap.get(parentId);
+                if (group) {
+                    group.frais.push(frais);
                 }
             }
         });
@@ -2314,8 +2613,7 @@ export class OperationsComponent implements OnInit, OnDestroy {
         if (!operation.id) return false;
         
         // Vérifier s'il y a des frais associés à cette opération
-        return this.filteredOperations.some(op => 
-            op.typeOperation === 'FRAIS_TRANSACTION' && 
+        return this.associatedFrais.some(op => 
             op.parentOperationId === operation.id
         );
     }

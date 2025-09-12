@@ -923,6 +923,7 @@
           <div class="info-content">
             <strong>Export de la page courante :</strong> Seuls les {{ getPagedDetectedPeriods().length }} fichiers de la page {{ detectedPeriodsPage }} seront exportés.
             <br><small>Pour exporter toutes les {{ detectedPeriods.length }} périodes, naviguez entre les pages et exportez chaque page.</small>
+            <br><small><strong>Debug :</strong> Ouvrez la console du navigateur (F12) pour voir les détails de détection des dates.</small>
           </div>
         </div>
       </div>
@@ -937,6 +938,11 @@
                 [disabled]="!exportDateCol || !exportDatePeriod || !exportDateFormat" 
                 class="btn btn-outline-primary">
           <i class="fas fa-download"></i> Exporter toutes les pages ({{ detectedPeriods.length }} fichiers)
+        </button>
+        <button type="button" (click)="forceRedetectPeriods()" 
+                [disabled]="!exportDateCol || !exportDatePeriod" 
+                class="btn btn-outline-info">
+          <i class="fas fa-search"></i> Re-détecter les périodes
         </button>
         <button type="button" (click)="resetExportDate()" class="reset-btn">
           <i class="fas fa-undo"></i> Réinitialiser
@@ -1161,6 +1167,58 @@
           </small>
         </div>
         <button type="button" (click)="applyKeepLastDigitsFormatting()" [disabled]="!formatSelections['keepLastDigits'].length || keepLastDigitsCount <= 0">Appliquer</button>
+      </div>
+
+      <!-- Option : Supprimer .0 sur les dates -->
+      <label>
+        <input type="checkbox" [(ngModel)]="formatOptions['removeZeroDecimals']"> Supprimer .0 sur les dates
+      </label>
+      <div *ngIf="formatOptions['removeZeroDecimals']" class="format-columns">
+        <label>Colonnes à traiter :</label>
+        <select multiple [(ngModel)]="formatSelections['removeZeroDecimals']">
+          <option *ngFor="let col of columns" [value]="col">{{ col }}</option>
+        </select>
+        <div class="remove-zero-decimals-help">
+          <small class="help-text">
+            💡 Cette option va supprimer les décimales .0 des valeurs numériques qui représentent des dates.
+            <br><strong>Exemple :</strong> "2024-01-15.0" → "2024-01-15"
+            <br><strong>Autres exemples :</strong> "2023-12-25.0" → "2023-12-25"
+            <br><strong>Note :</strong> Seules les décimales .0 sont supprimées, les autres décimales sont conservées
+          </small>
+        </div>
+        <button type="button" (click)="applyRemoveZeroDecimalsFormatting()" [disabled]="!formatSelections['removeZeroDecimals'].length">Appliquer</button>
+      </div>
+
+      <!-- Option : Supprimer les espaces -->
+      <label>
+        <input type="checkbox" [(ngModel)]="formatOptions['removeSpaces']"> Supprimer les espaces
+      </label>
+      <div *ngIf="formatOptions['removeSpaces']" class="format-columns">
+        <label>Colonnes à traiter :</label>
+        <select multiple [(ngModel)]="formatSelections['removeSpaces']">
+          <option *ngFor="let col of columns" [value]="col">{{ col }}</option>
+        </select>
+        <div class="remove-spaces-options">
+          <div class="option-group">
+            <label>Type de suppression :</label>
+            <select [(ngModel)]="removeSpacesType">
+              <option value="all">Tous les espaces</option>
+              <option value="leading">Espaces en début</option>
+              <option value="trailing">Espaces en fin</option>
+              <option value="multiple">Espaces multiples</option>
+            </select>
+          </div>
+        </div>
+        <div class="remove-spaces-help">
+          <small class="help-text">
+            💡 Cette option va supprimer les espaces selon le type choisi.
+            <br><strong>Tous les espaces :</strong> "A B C" → "ABC"
+            <br><strong>Espaces en début :</strong> "  ABC" → "ABC"
+            <br><strong>Espaces en fin :</strong> "ABC  " → "ABC"
+            <br><strong>Espaces multiples :</strong> "A  B   C" → "A B C"
+          </small>
+        </div>
+        <button type="button" (click)="applyRemoveSpacesFormatting()" [disabled]="!formatSelections['removeSpaces'].length">Appliquer</button>
       </div>
     </div>
     <div *ngIf="successMsg.format" class="success-msg">{{ successMsg.format }}</div>

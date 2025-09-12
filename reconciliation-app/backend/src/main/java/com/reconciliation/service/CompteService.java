@@ -1,8 +1,12 @@
 package com.reconciliation.service;
 
 import com.reconciliation.entity.CompteEntity;
+import com.reconciliation.entity.OperationEntity;
 import com.reconciliation.model.Compte;
 import com.reconciliation.repository.CompteRepository;
+import com.reconciliation.repository.OperationRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -15,8 +19,13 @@ import java.util.stream.Collectors;
 @Service
 public class CompteService {
     
+    private static final Logger logger = LoggerFactory.getLogger(CompteService.class);
+    
     @Autowired
     private CompteRepository compteRepository;
+    
+    @Autowired
+    private OperationRepository operationRepository;
     
     public List<Compte> getAllComptes() {
         return compteRepository.findAll().stream()
@@ -122,11 +131,24 @@ public class CompteService {
     
     @Transactional
     public boolean deleteCompte(Long id) {
-        if (compteRepository.existsById(id)) {
-            compteRepository.deleteById(id);
-            return true;
+        try {
+            if (compteRepository.existsById(id)) {
+                // Vérifier s'il y a des opérations liées à ce compte
+                List<OperationEntity> operationsLiees = operationRepository.findByCompteId(id);
+                if (!operationsLiees.isEmpty()) {
+                    logger.warn("Impossible de supprimer le compte ID {} : {} opérations liées trouvées", id, operationsLiees.size());
+                    return false;
+                }
+                
+                compteRepository.deleteById(id);
+                logger.info("Compte ID {} supprimé avec succès", id);
+                return true;
+            }
+            return false;
+        } catch (Exception e) {
+            logger.error("Erreur lors de la suppression du compte ID {} : {}", id, e.getMessage(), e);
+            return false;
         }
-        return false;
     }
     
     @Transactional

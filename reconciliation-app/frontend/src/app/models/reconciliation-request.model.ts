@@ -16,6 +16,9 @@ export interface ReconciliationRequest {
     
     // Filtres BO pour la réconciliation
     boColumnFilters?: BOColumnFilter[];
+    
+    // Type de réconciliation (1-1, 1-2, 1-3, 1-4, 1-5)
+    reconciliationType?: string;
 }
 
 export interface BOColumnFilter {

@@ -34,12 +34,15 @@ export class AutocompleteInputComponent implements OnInit, ControlValueAccessor 
     }
   }
 
-  onSelectChange(event: Event) {
-    const select = event.target as HTMLSelectElement;
-    this.value = select.value;
+  onInputChange(event: Event) {
+    const input = event.target as HTMLInputElement;
+    this.value = input.value;
     this.onChange(this.value);
     this.valueChange.emit(this.value);
-    this.optionSelected.emit(this.value);
+    this.onTouched();
+  }
+
+  onBlur() {
     this.onTouched();
   }
 

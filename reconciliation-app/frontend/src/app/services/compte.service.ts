@@ -73,8 +73,8 @@ export class CompteService {
     }
 
     // Supprimer un compte
-    deleteCompte(id: number): Observable<boolean> {
-        return this.http.delete<boolean>(`${this.apiUrl}/${id}`);
+    deleteCompte(id: number): Observable<{success: boolean, message: string}> {
+        return this.http.delete<{success: boolean, message: string}>(`${this.apiUrl}/${id}`);
     }
 
     // Vérifier si un compte existe
@@ -101,6 +101,11 @@ export class CompteService {
         }
         if (filter.dateFin) {
             params = params.set('dateFin', filter.dateFin);
+        }
+        if (filter.categorie && Array.isArray(filter.categorie)) {
+            filter.categorie.forEach((c: string) => {
+                params = params.append('categorie', c);
+            });
         }
 
         return this.http.get<Compte[]>(`${this.apiUrl}/filter`, { params });

@@ -17,17 +17,20 @@ import java.util.Optional;
 import java.util.stream.Collectors;
 import java.util.Map;
 import java.util.HashMap;
-import java.util.Arrays;
 
 import com.reconciliation.dto.OperationUpdateRequest;
 import com.reconciliation.dto.OperationCreateRequest;
-import com.reconciliation.service.FraisTransactionService;
 import com.reconciliation.entity.FraisTransactionEntity;
 import com.reconciliation.repository.AgencySummaryRepository;
 import com.reconciliation.entity.AgencySummaryEntity;
+import com.reconciliation.service.CompteRegroupementService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 @Service
 public class OperationService {
+    
+    private static final Logger logger = LoggerFactory.getLogger(OperationService.class);
     
     @Autowired
     private OperationRepository operationRepository;
@@ -40,6 +43,9 @@ public class OperationService {
     
     @Autowired
     private AgencySummaryRepository agencySummaryRepository;
+    
+    @Autowired
+    private CompteRegroupementService compteRegroupementService;
     
     @Autowired
     @Lazy
@@ -170,15 +176,195 @@ public class OperationService {
     
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public Operation createOperationForSummary(OperationCreateRequest request) {
-        // Tentative de création de l'opération
-        // Si le solde est insuffisant, l'erreur sera relancée sans ajustement automatique
-        return createOperation(request);
+        // Créer une seule opération SANS déclencher la logique des 4 opérations
+        // Utilisé spécifiquement pour les résumés d'agence
+        logger.info("🔧 Création d'une seule opération pour résumé: type={}, compte={}, montant={}", 
+                   request.getTypeOperation(), request.getCompteId(), request.getMontant());
+        return createSingleOperation(request);
+    }
+    
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public OperationEntity createOperationEntityForSummary(OperationCreateRequest request) {
+        // Créer une seule opération SANS déclencher la logique des 4 opérations
+        // Utilisé spécifiquement pour les résumés d'agence - retourne l'entité
+        logger.info("🔧 Création d'une seule opération entité pour résumé: type={}, compte={}, montant={}", 
+                   request.getTypeOperation(), request.getCompteId(), request.getMontant());
+        
+        CompteEntity compte = compteRepository.findById(request.getCompteId())
+                .orElseThrow(() -> new IllegalArgumentException("Compte non trouvé avec ID: " + request.getCompteId()));
+        
+        logger.info("🔧 Compte trouvé: ID={}, Numéro={}, Solde actuel={}", 
+                   compte.getId(), compte.getNumeroCompte(), compte.getSolde());
+
+        OperationEntity entity = new OperationEntity();
+        entity.setCompte(compte);
+        entity.setTypeOperation(request.getTypeOperation());
+        entity.setMontant(request.getMontant());
+        entity.setBanque(request.getBanque());
+        entity.setNomBordereau(request.getNomBordereau());
+        entity.setService(request.getService());
+        // Convertir la date string en LocalDateTime
+        if (request.getDateOperation() != null) {
+            // Parser la date string
+            LocalDateTime dateTime = LocalDateTime.parse(request.getDateOperation() + "T00:00:00");
+            entity.setDateOperation(dateTime);
+        }
+        entity.setCodeProprietaire(compte.getCodeProprietaire());
+        entity.setPays(compte.getPays());
+        entity.setRecordCount(request.getRecordCount());
+        
+        // Calculer les soldes
+        double soldeAvant = compte.getSolde();
+        double soldeApres = soldeAvant + request.getMontant();
+        entity.setSoldeAvant(soldeAvant);
+        entity.setSoldeApres(soldeApres);
+        
+        // Mettre à jour le solde du compte
+        compte.setSolde(soldeApres);
+        compteRepository.save(compte);
+        
+        // Sauvegarder l'opération
+        OperationEntity savedEntity = operationRepository.save(entity);
+        
+        logger.info("✅ Opération entité créée avec ID: {}, nouveau solde compte: {}", 
+                   savedEntity.getId(), soldeApres);
+        
+        return savedEntity;
+    }
+    
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public Operation createSingleOperationForSummary(OperationCreateRequest request) {
+        // Créer une seule opération SANS déclencher la logique des 4 opérations
+        // Utilisé spécifiquement pour les résumés d'agence
+        logger.info("🔧 Création d'une seule opération pour résumé: type={}, compte={}, montant={}", 
+                   request.getTypeOperation(), request.getCompteId(), request.getMontant());
+        return createSingleOperation(request);
     }
     
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public Operation createOperation(OperationCreateRequest request) {
+        // Vérifier si c'est une opération qui doit générer les 4 opérations
+        if (shouldCreateFourOperations(request)) {
+            return createOperationWithFourOperations(request);
+        } else {
+            return createSingleOperation(request);
+        }
+    }
+    
+    /**
+     * Détermine si une opération doit générer les 4 opérations
+     */
+    private boolean shouldCreateFourOperations(OperationCreateRequest request) {
+        // Générer les 4 opérations pour les types total_cashin, total_paiement, annulation_bo et transaction_cree
+        // qui ont un service défini et qui ne sont pas déjà des frais
+        return ("total_cashin".equals(request.getTypeOperation()) || 
+                "total_paiement".equals(request.getTypeOperation()) ||
+                "annulation_bo".equals(request.getTypeOperation()) ||
+                "transaction_cree".equals(request.getTypeOperation())) 
+               && request.getService() != null 
+               && !request.getService().trim().isEmpty()
+               && !"FRAIS_TRANSACTION".equals(request.getTypeOperation());
+    }
+    
+    /**
+     * Crée une opération avec la logique des 4 opérations
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public Operation createOperationWithFourOperations(OperationCreateRequest request) {
+        System.out.println("=== DÉBUT createOperationWithFourOperations ===");
+        System.out.println("DEBUG: 📋 Création manuelle avec logique des 4 opérations");
+        System.out.println("DEBUG: 📋 Type: " + request.getTypeOperation() + ", Service: " + request.getService());
+        
+        // Récupérer le compte agence (compte sélectionné)
+        CompteEntity agenceCompte = compteRepository.findById(request.getCompteId())
+                .orElseThrow(() -> new IllegalArgumentException("Compte non trouvé avec ID: " + request.getCompteId()));
+        
+        String agence = agenceCompte.getNumeroCompte();
+        String service = request.getService();
+        String dateStr = request.getDateOperation() != null ? 
+            request.getDateOperation().substring(0, 10) : 
+            LocalDateTime.now().toLocalDate().toString();
+        
+        System.out.println("DEBUG: 📋 Agence: " + agence + ", Service: " + service + ", Date: " + dateStr);
+        
+        // 1. Créer le compte service s'il n'existe pas
+        CompteEntity serviceCompte = createOrGetServiceCompte(service, agence, agenceCompte.getPays());
+        
+        // 2. Créer l'opération nominale agence (comportement existant)
+        OperationCreateRequest agenceOperationRequest = new OperationCreateRequest();
+        agenceOperationRequest.setCompteId(agenceCompte.getId());
+        agenceOperationRequest.setTypeOperation(request.getTypeOperation());
+        agenceOperationRequest.setMontant(request.getMontant());
+        agenceOperationRequest.setBanque(request.getBanque());
+        agenceOperationRequest.setNomBordereau("AGENCY_SUMMARY_" + dateStr + "_" + agence);
+        agenceOperationRequest.setService(service);
+        agenceOperationRequest.setDateOperation(request.getDateOperation());
+        agenceOperationRequest.setRecordCount(request.getRecordCount());
+        
+        System.out.println("DEBUG: 🔧 Création opération nominale agence");
+        Operation agenceOperation = createSingleOperation(agenceOperationRequest);
+        
+        // 3. Créer l'opération nominale service (nouvelle logique)
+        OperationCreateRequest serviceOperationRequest = new OperationCreateRequest();
+        serviceOperationRequest.setCompteId(serviceCompte.getId());
+        serviceOperationRequest.setTypeOperation(request.getTypeOperation());
+        serviceOperationRequest.setMontant(request.getMontant());
+        serviceOperationRequest.setBanque(request.getBanque());
+        serviceOperationRequest.setNomBordereau("SERVICE_SUMMARY_" + dateStr + "_" + service);
+        serviceOperationRequest.setService(agence); // L'agence devient le service
+        serviceOperationRequest.setDateOperation(request.getDateOperation());
+        serviceOperationRequest.setRecordCount(request.getRecordCount());
+        
+        System.out.println("DEBUG: 🔧 Création opération nominale service");
+        createSingleOperation(serviceOperationRequest);
+        
+        System.out.println("DEBUG: ✅ Création des 4 opérations terminée");
+        System.out.println("=== FIN createOperationWithFourOperations ===");
+        
+        // Retourner l'opération agence comme opération principale
+        return agenceOperation;
+    }
+    
+    /**
+     * Crée ou récupère le compte service
+     */
+    private CompteEntity createOrGetServiceCompte(String serviceName, String agence, String pays) {
+        // Chercher le compte service existant
+        Optional<CompteEntity> existingServiceCompte = compteRepository.findByNumeroCompte(serviceName);
+        
+        if (existingServiceCompte.isPresent()) {
+            System.out.println("DEBUG: ✅ Compte service existant trouvé: " + serviceName);
+            return existingServiceCompte.get();
+        } else {
+            // Créer un nouveau compte service
+            System.out.println("DEBUG: ➕ Création d'un nouveau compte service: " + serviceName);
+            CompteEntity newServiceCompte = new CompteEntity();
+            newServiceCompte.setNumeroCompte(serviceName);
+            newServiceCompte.setPays(pays != null ? pays : "CM");
+            newServiceCompte.setCodeProprietaire(serviceName);
+            newServiceCompte.setAgence(agence); // L'agence reste la même
+            newServiceCompte.setSolde(0.0);
+            newServiceCompte.setDateDerniereMaj(LocalDateTime.now());
+            
+            CompteEntity savedServiceCompte = compteRepository.save(newServiceCompte);
+            System.out.println("DEBUG: ✅ Nouveau compte service créé avec ID: " + savedServiceCompte.getId());
+            return savedServiceCompte;
+        }
+    }
+    
+    /**
+     * Crée une opération simple (logique existante)
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public Operation createSingleOperation(OperationCreateRequest request) {
+        logger.info("🔧 createSingleOperation appelée: compteId={}, type={}, montant={}", 
+                   request.getCompteId(), request.getTypeOperation(), request.getMontant());
+        
         CompteEntity compte = compteRepository.findById(request.getCompteId())
                 .orElseThrow(() -> new IllegalArgumentException("Compte non trouvé avec ID: " + request.getCompteId()));
+        
+        logger.info("🔧 Compte trouvé: ID={}, Numéro={}, Solde actuel={}", 
+                   compte.getId(), compte.getNumeroCompte(), compte.getSolde());
 
         OperationEntity entity = new OperationEntity();
         entity.setCompte(compte);
@@ -247,12 +433,21 @@ public class OperationService {
         double impact = calculateImpact(entity.getTypeOperation(), entity.getMontant(), entity.getService());
         double soldeApres = soldeAvant + impact;
 
+        logger.info("🔧 Calcul solde: soldeAvant={}, impact={}, soldeApres={}", 
+                   soldeAvant, impact, soldeApres);
+
         // Par défaut, statut 'Validée' pour toutes les opérations
             entity.setStatut("Validée");
             entity.setSoldeApres(soldeApres);
             compte.setSolde(soldeApres);
             compte.setDateDerniereMaj(LocalDateTime.now());
             compteRepository.save(compte);
+            
+            logger.info("✅ Solde du compte {} mis à jour: {} -> {}", 
+                       compte.getNumeroCompte(), soldeAvant, soldeApres);
+            
+            // Synchroniser les comptes consolidés si ce compte est regroupé
+            synchroniserComptesConsolides(compte.getId());
 
         OperationEntity savedEntity = operationRepository.save(entity);
         
@@ -356,6 +551,9 @@ public class OperationService {
         // Mettre à jour le solde du compte
         compte.setSolde(compte.getSolde() + impactDifference);
         
+        // Synchroniser les comptes consolidés si ce compte est regroupé
+        synchroniserComptesConsolides(compte.getId());
+        
         if (compte.getSolde() < 0) {
             throw new IllegalStateException("La modification résulte en un solde de compte négatif.");
         }
@@ -411,6 +609,9 @@ public class OperationService {
                 compte.setSolde(soldeReelActuel + impact);
                 compte.setDateDerniereMaj(LocalDateTime.now());
                 compteRepository.save(compte);
+                
+                // Synchroniser les comptes consolidés si ce compte est regroupé
+                synchroniserComptesConsolides(compte.getId());
                 
                 // Mettre à jour les soldes des opérations suivantes
                 List<OperationEntity> operationsSuivantes = operationRepository
@@ -639,28 +840,6 @@ public class OperationService {
         return op;
     }
     
-    private OperationEntity convertToEntity(Operation model) {
-        OperationEntity entity = new OperationEntity();
-        entity.setId(model.getId());
-        entity.setTypeOperation(model.getTypeOperation());
-        entity.setDateOperation(model.getDateOperation());
-        entity.setCodeProprietaire(model.getCodeProprietaire());
-        entity.setService(model.getService());
-        entity.setMontant(model.getMontant());
-        entity.setSoldeAvant(model.getSoldeAvant());
-        entity.setSoldeApres(model.getSoldeApres());
-        entity.setNomBordereau(model.getNomBordereau());
-        entity.setBanque(model.getBanque());
-        entity.setStatut(model.getStatut());
-        entity.setPays(model.getPays());
-        if (model.getCompteId() != null) {
-            compteRepository.findById(model.getCompteId()).ifPresent(entity::setCompte);
-        }
-        entity.setRecordCount(model.getRecordCount());
-        entity.setParentOperationId(model.getParentOperationId());
-        entity.setReference(model.getReference());
-        return entity;
-    }
     
     public Map<String, Object> getStatsByType() {
         Map<String, Object> stats = new HashMap<>();
@@ -743,7 +922,7 @@ public class OperationService {
      * AMÉLIORATION : Garantir que les données AgencySummary sont disponibles
      * NOUVELLE LOGIQUE : Gérer les opérations service avec les mêmes frais que les opérations agence
      */
-    private void createFraisTransactionAutomatique(OperationEntity operation) {
+    public void createFraisTransactionAutomatique(OperationEntity operation) {
         System.out.println("=== DÉBUT createFraisTransactionAutomatique ===");
         System.out.println("DEBUG: 📋 Opération: " + operation.getTypeOperation() + " - " + operation.getService() + " - " + operation.getCodeProprietaire());
         
@@ -866,6 +1045,9 @@ public class OperationService {
             compte.setSolde(soldeApres);
             compte.setDateDerniereMaj(java.time.LocalDateTime.now());
             compteRepository.save(compte);
+            
+            // Synchroniser les comptes consolidés si ce compte est regroupé
+            synchroniserComptesConsolides(compte.getId());
         }
         
         System.out.println("DEBUG: 📝 Création de l'opération FRAIS_TRANSACTION:");
@@ -1222,6 +1404,9 @@ public class OperationService {
             compte.setSolde(soldeApres);
             compte.setDateDerniereMaj(LocalDateTime.now());
             compteRepository.save(compte);
+            
+            // Synchroniser les comptes consolidés si ce compte est regroupé
+            synchroniserComptesConsolides(compte.getId());
 
         OperationEntity savedEntity = operationRepository.save(entity);
         
@@ -1241,6 +1426,21 @@ public class OperationService {
         filterOptions.put("codeProprietaires", operationRepository.findDistinctCodeProprietaire());
         // Si tu as un champ nomBordereau distinct, ajoute-le ici
         return filterOptions;
+    }
+    
+    /**
+     * Synchronise les comptes consolidés qui dépendent du compte modifié
+     */
+    private void synchroniserComptesConsolides(Long compteId) {
+        try {
+            List<CompteEntity> comptesConsolides = compteRegroupementService.getComptesConsolidesDependants(compteId);
+            for (CompteEntity compteConsolide : comptesConsolides) {
+                compteRegroupementService.synchroniserSoldeCompteConsolide(compteConsolide.getId());
+            }
+        } catch (Exception e) {
+            logger.error("Erreur lors de la synchronisation des comptes consolidés pour le compte {}: {}", 
+                        compteId, e.getMessage(), e);
+        }
     }
     
     /**

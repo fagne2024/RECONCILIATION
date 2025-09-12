@@ -1,4 +1,6 @@
+C:\Users\YamarNDAO\OneDrive - Intouchgroup\Bureau\PAD\reconciliation-app\backend\src\main\java\com\reconciliation\repository\CompteRegroupementRepository.java
 C:\Users\YamarNDAO\OneDrive - Intouchgroup\Bureau\PAD\reconciliation-app\backend\src\main\java\com\reconciliation\controller\UserController.java
+C:\Users\YamarNDAO\OneDrive - Intouchgroup\Bureau\PAD\reconciliation-app\backend\src\main\java\com\reconciliation\dto\DeleteOperationsRequest.java
 C:\Users\YamarNDAO\OneDrive - Intouchgroup\Bureau\PAD\reconciliation-app\backend\src\main\java\com\reconciliation\controller\ImpactOPController.java
 C:\Users\YamarNDAO\OneDrive - Intouchgroup\Bureau\PAD\reconciliation-app\backend\src\main\java\com\reconciliation\controller\RankingController.java
 C:\Users\YamarNDAO\OneDrive - Intouchgroup\Bureau\PAD\reconciliation-app\backend\src\main\java\com\reconciliation\service\RankingService.java
@@ -10,6 +12,7 @@ C:\Users\YamarNDAO\OneDrive - Intouchgroup\Bureau\PAD\reconciliation-app\backend
 C:\Users\YamarNDAO\OneDrive - Intouchgroup\Bureau\PAD\reconciliation-app\backend\src\main\java\com\reconciliation\repository\UserRepository.java
 C:\Users\YamarNDAO\OneDrive - Intouchgroup\Bureau\PAD\reconciliation-app\backend\src\main\java\com\reconciliation\service\KeyDiscoveryService.java
 C:\Users\YamarNDAO\OneDrive - Intouchgroup\Bureau\PAD\reconciliation-app\backend\src\main\java\com\reconciliation\service\EcartSoldeService.java
+C:\Users\YamarNDAO\OneDrive - Intouchgroup\Bureau\PAD\reconciliation-app\backend\src\main\java\com\reconciliation\entity\CompteRegroupementEntity.java
 C:\Users\YamarNDAO\OneDrive - Intouchgroup\Bureau\PAD\reconciliation-app\backend\src\main\java\com\reconciliation\service\ReconciliationJobService.java
 C:\Users\YamarNDAO\OneDrive - Intouchgroup\Bureau\PAD\reconciliation-app\backend\src\main\java\com\reconciliation\controller\FileWatcherController.java
 C:\Users\YamarNDAO\OneDrive - Intouchgroup\Bureau\PAD\reconciliation-app\backend\src\main\java\com\reconciliation\controller\UserProfilController.java
@@ -38,6 +41,7 @@ C:\Users\YamarNDAO\OneDrive - Intouchgroup\Bureau\PAD\reconciliation-app\backend
 C:\Users\YamarNDAO\OneDrive - Intouchgroup\Bureau\PAD\reconciliation-app\backend\src\main\java\com\reconciliation\entity\TrxSfEntity.java
 C:\Users\YamarNDAO\OneDrive - Intouchgroup\Bureau\PAD\reconciliation-app\backend\src\main\java\com\reconciliation\repository\CompteRepository.java
 C:\Users\YamarNDAO\OneDrive - Intouchgroup\Bureau\PAD\reconciliation-app\backend\src\main\java\com\reconciliation\repository\FraisTransactionRepository.java
+C:\Users\YamarNDAO\OneDrive - Intouchgroup\Bureau\PAD\reconciliation-app\backend\src\main\java\com\reconciliation\service\CompteRegroupementService.java
 C:\Users\YamarNDAO\OneDrive - Intouchgroup\Bureau\PAD\reconciliation-app\backend\src\main\java\com\reconciliation\service\StatisticsService.java
 C:\Users\YamarNDAO\OneDrive - Intouchgroup\Bureau\PAD\reconciliation-app\backend\src\main\java\com\reconciliation\entity\EcartSoldeEntity.java
 C:\Users\YamarNDAO\OneDrive - Intouchgroup\Bureau\PAD\reconciliation-app\backend\src\main\java\com\reconciliation\controller\ReconciliationController.java
@@ -45,15 +49,18 @@ C:\Users\YamarNDAO\OneDrive - Intouchgroup\Bureau\PAD\reconciliation-app\backend
 C:\Users\YamarNDAO\OneDrive - Intouchgroup\Bureau\PAD\reconciliation-app\backend\src\main\java\com\reconciliation\dto\OperationCreateRequest.java
 C:\Users\YamarNDAO\OneDrive - Intouchgroup\Bureau\PAD\reconciliation-app\backend\src\main\java\com\reconciliation\service\CsvReconciliationService.java
 C:\Users\YamarNDAO\OneDrive - Intouchgroup\Bureau\PAD\reconciliation-app\backend\src\main\java\com\reconciliation\entity\FileTypeDeserializer.java
+C:\Users\YamarNDAO\OneDrive - Intouchgroup\Bureau\PAD\reconciliation-app\backend\src\main\java\com\reconciliation\config\CorsConfig.java
 C:\Users\YamarNDAO\OneDrive - Intouchgroup\Bureau\PAD\reconciliation-app\backend\src\main\java\com\reconciliation\dto\FraisTransactionRequest.java
 C:\Users\YamarNDAO\OneDrive - Intouchgroup\Bureau\PAD\reconciliation-app\backend\src\main\java\com\reconciliation\repository\ImpactOPRepository.java
 C:\Users\YamarNDAO\OneDrive - Intouchgroup\Bureau\PAD\reconciliation-app\backend\src\main\java\com\reconciliation\service\ReconciliationProgressService.java
 C:\Users\YamarNDAO\OneDrive - Intouchgroup\Bureau\PAD\reconciliation-app\backend\src\main\java\com\reconciliation\entity\ModulePermissionEntity.java
+C:\Users\YamarNDAO\OneDrive - Intouchgroup\Bureau\PAD\reconciliation-app\backend\src\main\java\com\reconciliation\controller\TestController.java
 C:\Users\YamarNDAO\OneDrive - Intouchgroup\Bureau\PAD\reconciliation-app\backend\src\main\java\com\reconciliation\dto\ColumnProcessingRuleDTO.java
 C:\Users\YamarNDAO\OneDrive - Intouchgroup\Bureau\PAD\reconciliation-app\backend\src\main\java\com\reconciliation\repository\ProfilRepository.java
 C:\Users\YamarNDAO\OneDrive - Intouchgroup\Bureau\PAD\reconciliation-app\backend\src\main\java\com\reconciliation\service\CompteService.java
 C:\Users\YamarNDAO\OneDrive - Intouchgroup\Bureau\PAD\reconciliation-app\backend\src\main\java\com\reconciliation\repository\ProfilPermissionRepository.java
 C:\Users\YamarNDAO\OneDrive - Intouchgroup\Bureau\PAD\reconciliation-app\backend\src\main\java\com\reconciliation\dto\ProgressUpdate.java
+C:\Users\YamarNDAO\OneDrive - Intouchgroup\Bureau\PAD\reconciliation-app\backend\src\main\java\com\reconciliation\service\ServiceBalanceService.java
 C:\Users\YamarNDAO\OneDrive - Intouchgroup\Bureau\PAD\reconciliation-app\backend\src\main\java\com\reconciliation\controller\StatisticsController.java
 C:\Users\YamarNDAO\OneDrive - Intouchgroup\Bureau\PAD\reconciliation-app\backend\src\main\java\com\reconciliation\service\ModelNormalizationService.java
 C:\Users\YamarNDAO\OneDrive - Intouchgroup\Bureau\PAD\reconciliation-app\backend\src\main\java\com\reconciliation\dto\ColumnComparison.java
@@ -61,10 +68,12 @@ C:\Users\YamarNDAO\OneDrive - Intouchgroup\Bureau\PAD\reconciliation-app\backend
 C:\Users\YamarNDAO\OneDrive - Intouchgroup\Bureau\PAD\reconciliation-app\backend\src\main\java\com\reconciliation\CsvReconciliationApplication.java
 C:\Users\YamarNDAO\OneDrive - Intouchgroup\Bureau\PAD\reconciliation-app\backend\src\main\java\com\reconciliation\entity\ColumnProcessingRule.java
 C:\Users\YamarNDAO\OneDrive - Intouchgroup\Bureau\PAD\reconciliation-app\backend\src\main\java\com\reconciliation\service\FraisTransactionService.java
+C:\Users\YamarNDAO\OneDrive - Intouchgroup\Bureau\PAD\reconciliation-app\backend\src\main\java\com\reconciliation\dto\DeleteOperationsResponse.java
 C:\Users\YamarNDAO\OneDrive - Intouchgroup\Bureau\PAD\reconciliation-app\backend\src\main\java\com\reconciliation\controller\CompteSoldeBoController.java
 C:\Users\YamarNDAO\OneDrive - Intouchgroup\Bureau\PAD\reconciliation-app\backend\src\main\java\com\reconciliation\repository\EcartSoldeRepository.java
 C:\Users\YamarNDAO\OneDrive - Intouchgroup\Bureau\PAD\reconciliation-app\backend\src\main\java\com\reconciliation\dto\OperationUpdateRequest.java
 C:\Users\YamarNDAO\OneDrive - Intouchgroup\Bureau\PAD\reconciliation-app\backend\src\main\java\com\reconciliation\repository\AgencySummaryRepository.java
+C:\Users\YamarNDAO\OneDrive - Intouchgroup\Bureau\PAD\reconciliation-app\backend\src\main\java\com\reconciliation\controller\ServiceBalanceController.java
 C:\Users\YamarNDAO\OneDrive - Intouchgroup\Bureau\PAD\reconciliation-app\backend\src\main\java\com\reconciliation\entity\AutoProcessingModel.java
 C:\Users\YamarNDAO\OneDrive - Intouchgroup\Bureau\PAD\reconciliation-app\backend\src\main\java\com\reconciliation\controller\AuthController.java
 C:\Users\YamarNDAO\OneDrive - Intouchgroup\Bureau\PAD\reconciliation-app\backend\src\main\java\com\reconciliation\entity\OperationEntity.java

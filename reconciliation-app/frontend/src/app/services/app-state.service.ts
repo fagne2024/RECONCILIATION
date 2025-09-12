@@ -162,6 +162,17 @@ export class AppStateService {
         this.partnerDataSubject.next(partnerData);
     }
 
+    setReconciliationType(type: '1-1' | '1-2' | '1-3' | '1-4' | '1-5') {
+        console.log('Stockage du type de réconciliation:', type);
+        // Stocker dans localStorage pour persistance
+        localStorage.setItem('reconciliationType', type);
+    }
+
+    getReconciliationType(): '1-1' | '1-2' | '1-3' | '1-4' | '1-5' {
+        const type = localStorage.getItem('reconciliationType') as '1-1' | '1-2' | '1-3' | '1-4' | '1-5';
+        return type || '1-1'; // Par défaut 1-1
+    }
+
     getBoData(): Record<string, string>[] {
         return this.boDataSubject.value;
     }

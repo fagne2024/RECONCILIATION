@@ -252,11 +252,11 @@ export class ModernPopupComponent implements OnInit, OnDestroy {
         }
 
         .popup-btn-success {
-          background: #28a745;
+          background: #28a745 !important;
         }
 
         .popup-btn-success:hover {
-          background: #1e7e34;
+          background: #1e7e34 !important;
         }
 
         .popup-btn-warning {
@@ -269,11 +269,11 @@ export class ModernPopupComponent implements OnInit, OnDestroy {
         }
 
         .popup-btn-error {
-          background: #dc3545;
+          background: #dc3545 !important;
         }
 
         .popup-btn-error:hover {
-          background: #c82333;
+          background: #c82333 !important;
         }
 
         .popup-btn-confirm {

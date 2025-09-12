@@ -558,9 +558,80 @@
     </form>
   </div>
 
+  <!-- Section de filtrage -->
+  <div class="filters-section" *ngIf="models.length > 0">
+    <h3><i class="fas fa-filter"></i> Filtres</h3>
+    <div class="filters-container">
+      <div class="filter-row">
+        <div class="filter-group">
+          <label for="filterGroup">Groupe</label>
+          <select id="filterGroup" [(ngModel)]="filterGroup" (change)="applyFilters()" class="form-control">
+            <option value="">Tous les groupes</option>
+            <option *ngFor="let group of availableGroups" [value]="group">
+              {{ group }}
+            </option>
+          </select>
+        </div>
+        
+        <div class="filter-group">
+          <label for="filterCountry">Pays</label>
+          <select id="filterCountry" [(ngModel)]="filterCountry" (change)="applyFilters()" class="form-control">
+            <option value="">Tous les pays</option>
+            <option *ngFor="let country of availableCountries" [value]="country">
+              {{ country }}
+            </option>
+          </select>
+        </div>
+        
+        <div class="filter-group">
+          <label for="filterName">Nom du modèle</label>
+          <input type="text" id="filterName" [(ngModel)]="filterName" 
+                 (input)="applyFilters()" class="form-control" 
+                 placeholder="Rechercher dans le nom...">
+        </div>
+        
+        <div class="filter-actions">
+          <button type="button" class="btn btn-outline-secondary" (click)="resetFilters()" 
+                  [disabled]="!hasActiveFilters()">
+            <i class="fas fa-times"></i> Réinitialiser
+          </button>
+        </div>
+      </div>
+      
+      <!-- Indicateur de filtres actifs -->
+      <div class="active-filters" *ngIf="hasActiveFilters()">
+        <span class="filter-badge">
+          <i class="fas fa-filter"></i>
+          {{ getFilteredModelsCount() }} modèle(s) trouvé(s) sur {{ models.length }}
+        </span>
+        <span class="filter-badge" *ngIf="filterGroup">
+          <i class="fas fa-tag"></i> Groupe: {{ filterGroup }}
+        </span>
+        <span class="filter-badge" *ngIf="filterCountry">
+          <i class="fas fa-flag"></i> Pays: {{ filterCountry }}
+        </span>
+        <span class="filter-badge" *ngIf="filterName">
+          <i class="fas fa-search"></i> Nom: "{{ filterName }}"
+        </span>
+      </div>
+    </div>
+  </div>
+
   <!-- Liste des modèles regroupés par catégorie -->
   <div class="models-list" *ngIf="models.length > 0">
-    <h3>Modèles existants ({{ models.length }})</h3>
+    <h3>Modèles existants ({{ getFilteredModelsCount() }})</h3>
+    
+    <!-- Message si aucun modèle ne correspond aux filtres -->
+    <div class="no-results" *ngIf="getFilteredModelsCount() === 0 && hasActiveFilters()">
+      <div class="alert alert-info">
+        <i class="fas fa-search"></i>
+        <strong>Aucun modèle trouvé</strong>
+        <p>Aucun modèle ne correspond aux critères de filtrage sélectionnés.</p>
+        <button type="button" class="btn btn-outline-primary" (click)="resetFilters()">
+          <i class="fas fa-times"></i> Réinitialiser les filtres
+        </button>
+      </div>
+    </div>
     
     <!-- Parcourir les catégories actives -->
     <div class="category-section" 
@@ -569,17 +640,17 @@
            'category-paiement': category === 'Partenaire PAIEMENT',
            'category-backoffice': category === 'Back Office'
          }"
-         *ngFor="let category of getActiveCategories()">
+         *ngFor="let category of getActiveFilteredCategories()">
       <div class="category-header">
         <h4 class="category-title">
           <i [class]="getCategoryIcon(category)"></i>
-          {{ category }} ({{ getCategoryCount(category) }})
+          {{ category }} ({{ getFilteredCategoryCount(category) }})
         </h4>
         <p class="category-description">{{ getCategoryDescription(category) }}</p>
       </div>
       
       <div class="models-grid">
-        <div class="model-card" *ngFor="let model of getModelsByCategory()[category]">
+        <div class="model-card" *ngFor="let model of getFilteredModelsByCategory()[category]">
           <div class="model-header">
             <h4>{{ model.name }}</h4>
             <div class="model-actions">

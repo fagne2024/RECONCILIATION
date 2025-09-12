@@ -5,6 +5,9 @@
             <button (click)="showAddForm = !showAddForm" class="btn add-btn">
                 <i class="fas fa-plus"></i> Nouveau Compte
             </button>
+            <button (click)="goToServiceBalance()" class="btn service-balance-btn">
+                <i class="fas fa-layer-group"></i> Fusion Service
+            </button>
             <button (click)="exportComptes()" class="btn export-btn" [disabled]="isExporting">
                 <i class="fas fa-file-excel"></i> {{ isExporting ? 'Exportation...' : 'Exporter en Excel' }}
             </button>
@@ -60,6 +63,16 @@
                                 </select>
                                 <div *ngIf="addForm.get('type')?.invalid && addForm.get('type')?.touched" class="error-message">
                                     Le type de compte est requis.
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label>Catégorie *</label>
+                                <select formControlName="categorie" class="modern-select">
+                                    <option value="" disabled>Sélectionner une catégorie</option>
+                                    <option *ngFor="let c of compteCategories" [value]="c">{{ c }}</option>
+                                </select>
+                                <div *ngIf="addForm.get('categorie')?.invalid && addForm.get('categorie')?.touched" class="error-message">
+                                    La catégorie est requise.
                                 </div>
                             </div>
                         </div>
@@ -139,6 +152,16 @@
                                     Le type de compte est requis.
                                 </div>
                             </div>
+                            <div class="form-group">
+                                <label>Catégorie *</label>
+                                <select formControlName="categorie" class="modern-select">
+                                    <option value="" disabled>Sélectionner une catégorie</option>
+                                    <option *ngFor="let c of compteCategories" [value]="c">{{ c }}</option>
+                                </select>
+                                <div *ngIf="editForm.get('categorie')?.invalid && editForm.get('categorie')?.touched" class="error-message">
+                                    La catégorie est requise.
+                                </div>
+                            </div>
                         </div>
                         <div class="form-row">
                             <div class="form-group full-width">
@@ -192,6 +215,21 @@
                             </mat-option>
                             <mat-option *ngFor="let code of filteredCodeProprietaireList" [value]="code">
                                 {{ code }}
+                            </mat-option>
+                        </mat-select>
+                    </mat-form-field>
+                </div>
+                <div class="form-field">
+                    <mat-form-field appearance="fill" class="filter-select">
+                        <mat-label>Catégorie</mat-label>
+                        <mat-select #categorieSelect formControlName="categorie" multiple (selectionChange)="onCategorieChange($event)">
+                            <mat-option>
+                                <ngx-mat-select-search [formControl]="categorieSearchCtrl" placeholderLabel="Rechercher une catégorie..." noEntriesFoundLabel="Aucune catégorie trouvée"></ngx-mat-select-search>
+                            </mat-option>
+                            <mat-option *ngFor="let categorie of filteredCategorieList" [value]="categorie">
+                                <span class="categorie-badge" [ngClass]="getCategorieClass(categorie)">
+                                    {{ categorie }}
+                                </span>
                             </mat-option>
                         </mat-select>
                     </mat-form-field>
@@ -270,6 +308,7 @@
                     <th>Pays</th>
                     <th>Code Propriétaire</th>
                     <th>Type</th>
+                    <th>Catégorie</th>
                     <th>Actions</th>
                 </tr>
             </thead>
@@ -281,6 +320,11 @@
                     <td>{{ compte.pays }}</td>
                     <td>{{ compte.codeProprietaire || '-' }}</td>
                     <td>{{ compte.type || '-' }}</td>
+                    <td>
+                        <span class="categorie-badge" [ngClass]="getCategorieClass(compte.categorie)">
+                            {{ compte.categorie || '-' }}
+                        </span>
+                    </td>
                     <td class="actions-cell">
                         <button (click)="viewReleve(compte)" class="btn icon-btn" title="Voir le relevé">
                             <i class="fas fa-file-alt" style="color: blue;"></i>

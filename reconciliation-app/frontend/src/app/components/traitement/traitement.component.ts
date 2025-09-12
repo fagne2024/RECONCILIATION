@@ -24,7 +24,9 @@ export class TraitementComponent implements OnInit, AfterViewInit {
     removeNumbers: false,
     removeIndicatif: false,
     removeDecimals: false,
-    keepLastDigits: false
+    keepLastDigits: false,
+    removeZeroDecimals: false,
+    removeSpaces: false
   };
   extractCol: string = '';
   extractType: string = '';
@@ -101,6 +103,12 @@ export class TraitementComponent implements OnInit, AfterViewInit {
   decimalSeparator: ',' | '.' = ',';
   keepTrailingZeros: boolean = false;
 
+  // --- SUPPRESSION .0 SUR LES DATES ---
+  // Pas de propriétés supplémentaires nécessaires pour cette option
+
+  // --- SUPPRESSION D'ESPACES ---
+  removeSpacesType: 'all' | 'leading' | 'trailing' | 'multiple' = 'all';
+
   // --- SUPPRESSION DE CARACTÈRES SPÉCIFIQUES ---
   specificCharactersToRemove: string = '';
   removeSpecificCharactersCaseSensitive: boolean = true;
@@ -169,7 +177,9 @@ export class TraitementComponent implements OnInit, AfterViewInit {
     removeNumbers: [],
     removeIndicatif: [],
     removeDecimals: [],
-    keepLastDigits: []
+    keepLastDigits: [],
+    removeZeroDecimals: [],
+    removeSpaces: []
   };
 
   constructor(
@@ -1774,7 +1784,7 @@ export class TraitementComponent implements OnInit, AfterViewInit {
   }
 
   hasFormattingOption(): boolean {
-    return this.formatOptions.removeCharacters || this.formatOptions.removeNumbers || this.formatOptions.removeIndicatif || this.formatOptions.removeDecimals || this.formatOptions.keepLastDigits;
+    return this.formatOptions.removeCharacters || this.formatOptions.removeNumbers || this.formatOptions.removeIndicatif || this.formatOptions.removeDecimals || this.formatOptions.keepLastDigits || this.formatOptions.removeZeroDecimals || this.formatOptions.removeSpaces;
   }
 
   hasHeaderFormattingOption(): boolean {
@@ -1800,6 +1810,12 @@ export class TraitementComponent implements OnInit, AfterViewInit {
     }
     if (this.formatOptions.keepLastDigits) {
       this.applyKeepLastDigitsFormatting();
+    }
+    if (this.formatOptions.removeZeroDecimals) {
+      this.applyRemoveZeroDecimalsFormatting();
+    }
+    if (this.formatOptions.removeSpaces) {
+      this.applyRemoveSpacesFormatting();
     }
   }
 
@@ -3144,6 +3160,170 @@ export class TraitementComponent implements OnInit, AfterViewInit {
     }
   }
 
+  /**
+   * Applique le formatage pour supprimer .0 sur les dates
+   */
+  applyRemoveZeroDecimalsFormatting() {
+    if (!this.formatSelections['removeZeroDecimals'].length) {
+      this.showError('format', 'Veuillez sélectionner au moins une colonne');
+      return;
+    }
+
+    try {
+      let totalCells = 0;
+      let processedCells = 0;
+      
+      console.log('🔄 Formatage: Suppression des .0 sur les dates');
+      
+      // Traiter les données affichées (combinedRows)
+      this.combinedRows.forEach((row, rowIndex) => {
+        this.formatSelections['removeZeroDecimals'].forEach(col => {
+          totalCells++;
+          if (row[col] !== undefined && row[col] !== null) {
+            // Convertir en chaîne si ce n'est pas déjà le cas
+            let value = String(row[col]).trim();
+            const originalValue = value;
+            
+            // Supprimer .0 à la fin de la chaîne
+            if (value.endsWith('.0')) {
+              value = value.slice(0, -2);
+              row[col] = value;
+              processedCells++;
+              
+              if (rowIndex < 5) { // Log pour les 5 premières lignes
+                console.log(`📝 ${col}[${rowIndex}]: "${originalValue}" -> "${value}"`);
+              }
+            }
+          }
+        });
+      });
+
+      // Mettre à jour aussi allRows si la sélection n'est pas appliquée
+      if (!this.selectionApplied) {
+        this.allRows.forEach((row, rowIndex) => {
+          this.formatSelections['removeZeroDecimals'].forEach(col => {
+            if (row[col] !== undefined && row[col] !== null) {
+              // Convertir en chaîne si ce n'est pas déjà le cas
+              let value = String(row[col]).trim();
+              
+              // Supprimer .0 à la fin de la chaîne
+              if (value.endsWith('.0')) {
+                value = value.slice(0, -2);
+                row[col] = value;
+              }
+            }
+          });
+        });
+      }
+
+      console.log(`📊 RÉSUMÉ: ${totalCells} cellules vérifiées, ${processedCells} cellules modifiées`);
+
+      this.showSuccess('format', `Suppression des .0 sur les dates appliquée sur ${this.formatSelections['removeZeroDecimals'].length} colonne(s) (${processedCells} modifications)`);
+      
+      // Forcer la mise à jour de l'affichage
+      this.updateDisplayedRowsForPage();
+      this.cd.detectChanges();
+    } catch (error) {
+      console.error('❌ Erreur lors de la suppression des .0:', error);
+      this.showError('format', 'Erreur lors de la suppression des .0');
+    }
+  }
+
+  /**
+   * Applique le formatage pour supprimer les espaces
+   */
+  applyRemoveSpacesFormatting() {
+    if (!this.formatSelections['removeSpaces'].length) {
+      this.showError('format', 'Veuillez sélectionner au moins une colonne');
+      return;
+    }
+
+    try {
+      let totalCells = 0;
+      let processedCells = 0;
+      
+      console.log(`🔄 Formatage: Suppression des espaces (type: ${this.removeSpacesType})`);
+      
+      // Traiter les données affichées (combinedRows)
+      this.combinedRows.forEach((row, rowIndex) => {
+        this.formatSelections['removeSpaces'].forEach(col => {
+          totalCells++;
+          if (row[col] !== undefined && row[col] !== null) {
+            // Convertir en chaîne si ce n'est pas déjà le cas
+            let value = String(row[col]);
+            const originalValue = value;
+            
+            // Appliquer la suppression d'espaces selon le type choisi
+            switch (this.removeSpacesType) {
+              case 'all':
+                value = value.replace(/\s/g, '');
+                break;
+              case 'leading':
+                value = value.replace(/^\s+/, '');
+                break;
+              case 'trailing':
+                value = value.replace(/\s+$/, '');
+                break;
+              case 'multiple':
+                value = value.replace(/\s+/g, ' ');
+                break;
+            }
+            
+            if (value !== originalValue) {
+              row[col] = value;
+              processedCells++;
+              
+              if (rowIndex < 5) { // Log pour les 5 premières lignes
+                console.log(`📝 ${col}[${rowIndex}]: "${originalValue}" -> "${value}"`);
+              }
+            }
+          }
+        });
+      });
+
+      // Mettre à jour aussi allRows si la sélection n'est pas appliquée
+      if (!this.selectionApplied) {
+        this.allRows.forEach((row, rowIndex) => {
+          this.formatSelections['removeSpaces'].forEach(col => {
+            if (row[col] !== undefined && row[col] !== null) {
+              // Convertir en chaîne si ce n'est pas déjà le cas
+              let value = String(row[col]);
+              
+              // Appliquer la suppression d'espaces selon le type choisi
+              switch (this.removeSpacesType) {
+                case 'all':
+                  value = value.replace(/\s/g, '');
+                  break;
+                case 'leading':
+                  value = value.replace(/^\s+/, '');
+                  break;
+                case 'trailing':
+                  value = value.replace(/\s+$/, '');
+                  break;
+                case 'multiple':
+                  value = value.replace(/\s+/g, ' ');
+                  break;
+              }
+              
+              row[col] = value;
+            }
+          });
+        });
+      }
+
+      console.log(`📊 RÉSUMÉ: ${totalCells} cellules vérifiées, ${processedCells} cellules modifiées`);
+
+      this.showSuccess('format', `Suppression des espaces (${this.removeSpacesType}) appliquée sur ${this.formatSelections['removeSpaces'].length} colonne(s) (${processedCells} modifications)`);
+      
+      // Forcer la mise à jour de l'affichage
+      this.updateDisplayedRowsForPage();
+      this.cd.detectChanges();
+    } catch (error) {
+      console.error('❌ Erreur lors de la suppression des espaces:', error);
+      this.showError('format', 'Erreur lors de la suppression des espaces');
+    }
+  }
+
   ngOnInit() {
     // Initialiser l'affichage au démarrage
     this.currentPage = 1;
@@ -3219,6 +3399,7 @@ export class TraitementComponent implements OnInit, AfterViewInit {
           removeCharSpecificPosition: this.removeCharSpecificPosition,
           specificCharactersToRemove: this.specificCharactersToRemove,
           removeSpecificCharactersCaseSensitive: this.removeSpecificCharactersCaseSensitive,
+          removeSpacesType: this.removeSpacesType,
           currentPage: this.currentPage,
           rowsPerPage: this.rowsPerPage,
           maxDisplayedRows: this.maxDisplayedRows,
@@ -3316,6 +3497,7 @@ export class TraitementComponent implements OnInit, AfterViewInit {
     this.removeCharSpecificPosition = 1;
     this.specificCharactersToRemove = '';
     this.removeSpecificCharactersCaseSensitive = true;
+    this.removeSpacesType = 'all';
     this.currentPage = 1;
     this.rowsPerPage = 100;
     this.maxDisplayedRows = 1000;
@@ -4261,22 +4443,70 @@ export class TraitementComponent implements OnInit, AfterViewInit {
   }
 
   /**
+   * Force la re-détection des périodes (pour debug)
+   */
+  forceRedetectPeriods(): void {
+    console.log('🔄 Force re-détection des périodes...');
+    this.detectedPeriods = [];
+    this.detectedPeriodsPage = 1;
+    this.detectedPeriodsTotalPages = 0;
+    if (this.exportDateCol && this.exportDatePeriod) {
+      this.detectPeriods();
+    } else {
+      console.warn('⚠️ Colonne de date ou période non sélectionnée');
+    }
+  }
+
+  /**
    * Détecte les périodes disponibles dans la colonne de date sélectionnée
    */
   private detectPeriods(): void {
     if (!this.exportDateCol || !this.exportDatePeriod) return;
 
-    const periodMap = new Map<string, number>();
+    console.log(`🔍 Détection des périodes pour la colonne: ${this.exportDateCol}, période: ${this.exportDatePeriod}`);
+    console.log(`📊 Nombre total de lignes à analyser: ${this.combinedRows.length}`);
 
-    this.combinedRows.forEach(row => {
+    const periodMap = new Map<string, number>();
+    let processedRows = 0;
+    let validDates = 0;
+    let invalidDates = 0;
+    let uniqueDates = new Set<string>();
+
+    this.combinedRows.forEach((row, index) => {
       const dateValue = row[this.exportDateCol];
       if (dateValue) {
         const periodKey = this.getPeriodKey(dateValue, this.exportDatePeriod);
         if (periodKey) {
           periodMap.set(periodKey, (periodMap.get(periodKey) || 0) + 1);
+          validDates++;
+          uniqueDates.add(periodKey);
+          
+          // Log des premières dates pour debug
+          if (index < 10 || Math.random() < 0.001) {
+            console.log(`📅 Ligne ${index}: "${dateValue}" -> ${periodKey}`);
+          }
+        } else {
+          invalidDates++;
+          // Log des dates invalides pour debug
+          if (invalidDates <= 10) {
+            console.warn(`⚠️ Date invalide à la ligne ${index}: "${dateValue}"`);
+          }
+        }
+      } else {
+        invalidDates++;
+        if (invalidDates <= 5) {
+          console.warn(`⚠️ Valeur de date vide à la ligne ${index}`);
         }
       }
+      processedRows++;
     });
+
+    console.log(`✅ Détection terminée:`);
+    console.log(`   - Lignes traitées: ${processedRows}`);
+    console.log(`   - Dates valides: ${validDates}`);
+    console.log(`   - Dates invalides: ${invalidDates}`);
+    console.log(`   - Périodes uniques détectées: ${uniqueDates.size}`);
+    console.log(`   - Périodes détectées:`, Array.from(uniqueDates).sort());
 
     this.detectedPeriods = Array.from(periodMap.entries())
       .map(([key, count]) => ({
@@ -4285,6 +4515,8 @@ export class TraitementComponent implements OnInit, AfterViewInit {
         count
       }))
       .sort((a, b) => a.key.localeCompare(b.key));
+
+    console.log(`📋 Périodes finales:`, this.detectedPeriods.map(p => `${p.label} (${p.count} lignes)`));
 
     // Calculer le nombre total de pages pour la pagination
     this.detectedPeriodsTotalPages = Math.ceil(this.detectedPeriods.length / this.detectedPeriodsPageSize);
@@ -4528,32 +4760,72 @@ export class TraitementComponent implements OnInit, AfterViewInit {
       
       // Essayer différents formats de date
       const formats = [
-        { pattern: /^\d{4}-\d{2}-\d{2}$/, name: 'YYYY-MM-DD' },
-        { pattern: /^\d{2}\/\d{2}\/\d{4}$/, name: 'DD/MM/YYYY' },
-        { pattern: /^\d{2}-\d{2}-\d{4}$/, name: 'DD-MM-YYYY' },
-        { pattern: /^\d{4}\/\d{2}\/\d{2}$/, name: 'YYYY/MM/DD' },
-        { pattern: /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/, name: 'ISO DateTime' },
+        { pattern: /^\d{4}-\d{2}-\d{2}$/, name: 'YYYY-MM-DD', parser: (str: string) => new Date(str) },
+        { pattern: /^\d{2}\/\d{2}\/\d{4}$/, name: 'DD/MM/YYYY', parser: (str: string) => {
+          const [day, month, year] = str.split('/');
+          return new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+        }},
+        { pattern: /^\d{2}-\d{2}-\d{4}$/, name: 'DD-MM-YYYY', parser: (str: string) => {
+          const [day, month, year] = str.split('-');
+          return new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+        }},
+        { pattern: /^\d{4}\/\d{2}\/\d{2}$/, name: 'YYYY/MM/DD', parser: (str: string) => {
+          const [year, month, day] = str.split('/');
+          return new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+        }},
+        { pattern: /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/, name: 'ISO DateTime', parser: (str: string) => new Date(str) },
+        { pattern: /^\d{1,2}\/\d{1,2}\/\d{4}$/, name: 'D/M/YYYY ou DD/MM/YYYY', parser: (str: string) => {
+          const [day, month, year] = str.split('/');
+          return new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+        }},
+        { pattern: /^\d{1,2}-\d{1,2}-\d{4}$/, name: 'D-M-YYYY ou DD-MM-YYYY', parser: (str: string) => {
+          const [day, month, year] = str.split('-');
+          return new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+        }},
+        { pattern: /^\d{4}-\d{1,2}-\d{1,2}$/, name: 'YYYY-M-D ou YYYY-MM-DD', parser: (str: string) => {
+          const [year, month, day] = str.split('-');
+          return new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+        }},
+        { pattern: /^\d{1,2}\/\d{1,2}\/\d{2}$/, name: 'D/M/YY ou DD/MM/YY', parser: (str: string) => {
+          const [day, month, year] = str.split('/');
+          const fullYear = parseInt(year) < 50 ? 2000 + parseInt(year) : 1900 + parseInt(year);
+          return new Date(fullYear, parseInt(month) - 1, parseInt(day));
+        }},
+        { pattern: /^\d{1,2}-\d{1,2}-\d{2}$/, name: 'D-M-YY ou DD-MM-YY', parser: (str: string) => {
+          const [day, month, year] = str.split('-');
+          const fullYear = parseInt(year) < 50 ? 2000 + parseInt(year) : 1900 + parseInt(year);
+          return new Date(fullYear, parseInt(month) - 1, parseInt(day));
+        }},
       ];
 
       for (const format of formats) {
         if (format.pattern.test(trimmedValue)) {
-          const parsed = new Date(trimmedValue);
-          if (!isNaN(parsed.getTime())) {
-            if (Math.random() < 0.01) { // 1% des cas seulement
-              console.log(`✅ Date parsée avec le format ${format.name}: ${parsed.toISOString()}`);
+          try {
+            const parsed = format.parser(trimmedValue);
+            if (!isNaN(parsed.getTime())) {
+              if (Math.random() < 0.01) { // 1% des cas seulement
+                console.log(`✅ Date parsée avec le format ${format.name}: "${trimmedValue}" -> ${parsed.toISOString()}`);
+              }
+              return parsed;
             }
-            return parsed;
+          } catch (error) {
+            // Continue avec le format suivant
+            continue;
           }
         }
       }
 
       // Essayer de parser directement
-      const parsed = new Date(trimmedValue);
-      if (!isNaN(parsed.getTime())) {
-        if (Math.random() < 0.01) { // 1% des cas seulement
-          console.log(`✅ Date parsée directement: ${parsed.toISOString()}`);
+      try {
+        const parsed = new Date(trimmedValue);
+        if (!isNaN(parsed.getTime())) {
+          if (Math.random() < 0.01) { // 1% des cas seulement
+            console.log(`✅ Date parsée directement: "${trimmedValue}" -> ${parsed.toISOString()}`);
+          }
+          return parsed;
         }
-        return parsed;
+      } catch (error) {
+        // Ignore l'erreur et continue
       }
       
       console.warn(`❌ Impossible de parser la date: "${trimmedValue}"`);

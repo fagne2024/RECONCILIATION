@@ -1,3 +1,54 @@
+/* Styles pour la section d'information du mode 1-1 */
+.info-section {
+    margin: 20px 0;
+    
+    .info-card {
+        background: linear-gradient(135deg, #e3f2fd 0%, #f3e5f5 100%);
+        border: 1px solid #2196f3;
+        border-radius: 12px;
+        padding: 20px;
+        box-shadow: 0 4px 12px rgba(33, 150, 243, 0.15);
+        
+        .info-header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 15px;
+            
+            i {
+                color: #2196f3;
+                font-size: 20px;
+                margin-right: 10px;
+            }
+            
+            h4 {
+                color: #1976d2;
+                margin: 0;
+                font-size: 18px;
+                font-weight: 600;
+            }
+        }
+        
+        .info-content {
+            p {
+                margin: 10px 0;
+                color: #424242;
+                line-height: 1.5;
+            }
+            
+            ul {
+                margin: 10px 0;
+                padding-left: 20px;
+                
+                li {
+                    margin: 8px 0;
+                    color: #424242;
+                    line-height: 1.4;
+                }
+            }
+        }
+    }
+}
+
 /* Styles modernes pour la sélection des services TRXBO */
 .service-selection-overlay {
     position: fixed;
@@ -11,6 +62,169 @@
     align-items: center;
     z-index: 1000;
     backdrop-filter: blur(4px);
+}
+
+/* Styles pour la sélection des services en mode manuel */
+.manual-service-selection-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.7);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+    backdrop-filter: blur(4px);
+}
+
+.manual-service-selection-modal {
+    background: white;
+    border-radius: 16px;
+    padding: 32px;
+    max-width: 800px;
+    width: 90%;
+    max-height: 85vh;
+    overflow-y: auto;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+    animation: modalSlideIn 0.3s ease-out;
+}
+
+.manual-service-selection-header {
+    text-align: center;
+    margin-bottom: 32px;
+
+    .header-badge {
+        display: inline-block;
+        background: #f8f9fa;
+        border-radius: 20px;
+        padding: 8px 16px;
+        border: 1px solid #e9ecef;
+
+        .badge-text {
+            font-size: 14px;
+            font-weight: 600;
+            color: #495057;
+        }
+    }
+}
+
+.manual-service-selection-content {
+    margin-bottom: 32px;
+}
+
+.manual-service-controls {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 24px;
+    justify-content: center;
+}
+
+.manual-service-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+    gap: 16px;
+    max-height: 400px;
+    overflow-y: auto;
+    padding: 8px;
+}
+
+.manual-service-card {
+    background: #f8f9fa;
+    border: 2px solid #e9ecef;
+    border-radius: 12px;
+    padding: 16px;
+    transition: all 0.2s ease;
+    cursor: pointer;
+
+    &:hover {
+        border-color: #007bff;
+        background: #e3f2fd;
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0, 123, 255, 0.15);
+    }
+}
+
+.manual-service-card-content {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.manual-service-checkbox-modern {
+    position: relative;
+    flex-shrink: 0;
+
+    input[type="checkbox"] {
+        opacity: 0;
+        position: absolute;
+        width: 0;
+        height: 0;
+    }
+
+    .checkbox-label {
+        display: block;
+        width: 20px;
+        height: 20px;
+        background: white;
+        border: 2px solid #dee2e6;
+        border-radius: 4px;
+        cursor: pointer;
+        position: relative;
+        transition: all 0.2s ease;
+
+        .checkmark {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 8px;
+            height: 8px;
+            background: #28a745;
+            border-radius: 2px;
+            opacity: 0;
+            transition: opacity 0.2s ease;
+        }
+    }
+
+    input[type="checkbox"]:checked + .checkbox-label {
+        background: #28a745;
+        border-color: #28a745;
+
+        .checkmark {
+            opacity: 1;
+        }
+    }
+}
+
+.manual-service-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.manual-service-name-modern {
+    font-size: 14px;
+    font-weight: 600;
+    color: #212529;
+    margin: 0 0 4px 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.manual-service-count-modern {
+    font-size: 12px;
+    color: #6c757d;
+    margin: 0;
+}
+
+.manual-service-selection-actions {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+    padding-top: 24px;
+    border-top: 1px solid #e9ecef;
 }
 
 .service-selection-modal {
@@ -530,6 +744,12 @@
     background: #f9fff9;
 }
 
+.mode-option.selected {
+    border-color: #4CAF50;
+    background: #e8f5e8;
+    box-shadow: 0 2px 8px rgba(76, 175, 80, 0.2);
+}
+
 .super-auto-mode-btn {
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     color: white;
@@ -757,4 +977,64 @@
     color: #666;
     font-size: 0.9em;
     margin-top: 10px;
+}
+
+/* Styles pour l'indicateur de mode 1-1 */
+.reconciliation-mode-indicator {
+    margin: 20px 0;
+    
+    .mode-indicator-card {
+        background: linear-gradient(135deg, #e8f5e8 0%, #f0f8f0 100%);
+        border: 1px solid #4CAF50;
+        border-radius: 8px;
+        padding: 15px 20px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        box-shadow: 0 2px 8px rgba(76, 175, 80, 0.1);
+        transition: all 0.3s ease;
+        
+        &:hover {
+            box-shadow: 0 4px 12px rgba(76, 175, 80, 0.2);
+            transform: translateY(-1px);
+        }
+        
+        i {
+            color: #4CAF50;
+            font-size: 18px;
+            margin-right: 10px;
+        }
+        
+        .mode-text {
+            color: #2e7d32;
+            font-weight: 500;
+            font-size: 14px;
+            flex-grow: 1;
+        }
+        
+        .change-mode-btn {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            padding: 6px 12px;
+            font-size: 12px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            transition: all 0.2s ease;
+            
+            &:hover {
+                background: #45a049;
+                transform: scale(1.05);
+            }
+            
+            i {
+                color: white;
+                margin: 0;
+                font-size: 12px;
+            }
+        }
+    }
 } 

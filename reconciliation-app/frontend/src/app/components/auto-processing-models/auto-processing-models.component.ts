@@ -97,6 +97,14 @@ export class AutoProcessingModelsComponent implements OnInit {
     { value: 'boolean', label: 'Booléen' }
   ];
 
+  // Nouvelles propriétés pour le filtrage
+  filterGroup: string = '';
+  filterCountry: string = '';
+  filterName: string = '';
+  filteredModels: AutoProcessingModel[] = [];
+  availableGroups: string[] = [];
+  availableCountries: string[] = [];
+
   constructor(
     private fb: FormBuilder,
     private autoProcessingService: AutoProcessingService,
@@ -260,16 +268,190 @@ export class AutoProcessingModelsComponent implements OnInit {
           this.models.forEach(model => {
             this.loadColumnProcessingRules(model.id);
           });
+          
+          // Initialiser les filtres et appliquer le filtrage
+          this.initializeFilters();
+          this.applyFilters();
         } else {
           console.warn('La réponse getAllModels n\'est pas un tableau:', models);
           this.models = [];
+          this.filteredModels = [];
           this.errorMessage = 'Format de réponse invalide pour les modèles';
         }
     }).catch(error => {
         console.error('Erreur lors du chargement des modèles:', error);
         this.errorMessage = 'Erreur lors du chargement des modèles';
         this.models = [];
+        this.filteredModels = [];
     });
+  }
+
+  /**
+   * Initialise les options de filtrage disponibles
+   */
+  private initializeFilters(): void {
+    // Extraire les groupes uniques
+    const groups = new Set<string>();
+    const countries = new Set<string>();
+    
+    this.models.forEach(model => {
+      // Ajouter le groupe (catégorie)
+      const category = this.getModelCategory(model);
+      groups.add(category);
+      
+      // Extraire le pays du nom du modèle
+      const country = this.extractCountryFromModelName(model.name);
+      if (country) {
+        countries.add(country);
+      }
+    });
+    
+    this.availableGroups = Array.from(groups).sort();
+    this.availableCountries = Array.from(countries).sort();
+    
+    console.log('🔍 Options de filtrage initialisées:', {
+      groups: this.availableGroups,
+      countries: this.availableCountries
+    });
+  }
+
+  /**
+   * Extrait le pays du nom du modèle selon la règle spécifiée
+   * Exemple: "Modèle basé sur CIMTNCM" -> "CM"
+   */
+  private extractCountryFromModelName(modelName: string): string | null {
+    // Chercher le pattern "Modèle basé sur" suivi du nom
+    const match = modelName.match(/Modèle basé sur\s+([A-Z]+)/i);
+    if (match && match[1]) {
+      const baseName = match[1];
+      // Prendre les deux dernières lettres comme code pays
+      if (baseName.length >= 2) {
+        return baseName.slice(-2).toUpperCase();
+      }
+    }
+    
+    // Fallback: chercher directement dans le nom du modèle
+    const countryMatch = modelName.match(/([A-Z]{2})$/);
+    if (countryMatch) {
+      return countryMatch[1];
+    }
+    
+    return null;
+  }
+
+  /**
+   * Extrait le nom du modèle après "Modèle basé sur"
+   */
+  private extractModelBaseName(modelName: string): string {
+    const match = modelName.match(/Modèle basé sur\s+(.+)/i);
+    if (match && match[1]) {
+      return match[1].trim();
+    }
+    return modelName;
+  }
+
+  /**
+   * Applique les filtres sur les modèles
+   */
+  applyFilters(): void {
+    console.log('🔍 Application des filtres:', {
+      group: this.filterGroup,
+      country: this.filterCountry,
+      name: this.filterName
+    });
+    
+    this.filteredModels = this.models.filter(model => {
+      // Filtre par groupe (catégorie)
+      if (this.filterGroup && this.getModelCategory(model) !== this.filterGroup) {
+        return false;
+      }
+      
+      // Filtre par pays
+      if (this.filterCountry) {
+        const modelCountry = this.extractCountryFromModelName(model.name);
+        if (!modelCountry || modelCountry !== this.filterCountry) {
+          return false;
+        }
+      }
+      
+      // Filtre par nom (recherche dans le nom après "Modèle basé sur")
+      if (this.filterName) {
+        const baseName = this.extractModelBaseName(model.name);
+        if (!baseName.toLowerCase().includes(this.filterName.toLowerCase())) {
+          return false;
+        }
+      }
+      
+      return true;
+    });
+    
+    console.log('✅ Filtrage appliqué:', {
+      totalModels: this.models.length,
+      filteredModels: this.filteredModels.length,
+      filters: {
+        group: this.filterGroup,
+        country: this.filterCountry,
+        name: this.filterName
+      }
+    });
+  }
+
+  /**
+   * Réinitialise tous les filtres
+   */
+  resetFilters(): void {
+    this.filterGroup = '';
+    this.filterCountry = '';
+    this.filterName = '';
+    this.applyFilters();
+  }
+
+  /**
+   * Vérifie si des filtres sont actifs
+   */
+  hasActiveFilters(): boolean {
+    return !!(this.filterGroup || this.filterCountry || this.filterName);
+  }
+
+  /**
+   * Obtient le nombre de modèles filtrés
+   */
+  getFilteredModelsCount(): number {
+    return this.filteredModels.length;
+  }
+
+  /**
+   * Obtient les modèles filtrés par catégorie
+   */
+  getFilteredModelsByCategory(): { [category: string]: AutoProcessingModel[] } {
+    const groupedModels: { [category: string]: AutoProcessingModel[] } = {
+      'Partenaire CASHIN': [],
+      'Partenaire PAIEMENT': [],
+      'Back Office': []
+    };
+
+    this.filteredModels.forEach(model => {
+      const category = this.getModelCategory(model);
+      groupedModels[category].push(model);
+    });
+
+    return groupedModels;
+  }
+
+  /**
+   * Obtient les catégories actives parmi les modèles filtrés
+   */
+  getActiveFilteredCategories(): string[] {
+    const groupedModels = this.getFilteredModelsByCategory();
+    return Object.keys(groupedModels).filter(category => groupedModels[category].length > 0);
+  }
+
+  /**
+   * Obtient le nombre de modèles filtrés par catégorie
+   */
+  getFilteredCategoryCount(category: string): number {
+    const groupedModels = this.getFilteredModelsByCategory();
+    return groupedModels[category]?.length || 0;
   }
 
   // Charger les règles de traitement des colonnes pour un modèle

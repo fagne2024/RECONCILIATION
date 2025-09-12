@@ -47,6 +47,8 @@ import { EcartSoldeTabComponent } from './components/comptes/ecart-solde-tab.com
 import { ImpactOPComponent } from './components/impact-op/impact-op.component';
 import { ImpactOPTabComponent } from './components/comptes/impact-op-tab.component';
 import { TrxSfComponent } from './components/trx-sf/trx-sf.component';
+import { ServiceBalanceComponent } from './components/service-balance/service-balance.component';
+import { ServiceBalanceService } from './services/service-balance.service';
 
 
 import { AutoProcessingModelsComponent } from './components/auto-processing-models/auto-processing-models.component';
@@ -82,6 +84,7 @@ import { ModernPopupComponent } from './components/modern-popup/modern-popup.com
                 ImpactOPComponent,
                 ImpactOPTabComponent,
                 TrxSfComponent,
+                ServiceBalanceComponent,
 
 
                 AutoProcessingModelsComponent,
@@ -114,7 +117,7 @@ import { ModernPopupComponent } from './components/modern-popup/modern-popup.com
         AgencySummaryComponent,
         ReconciliationLauncherComponent
     ],
-    providers: [ReconciliationService],
+    providers: [ReconciliationService, ServiceBalanceService],
     bootstrap: [AppComponent]
 })
 export class AppModule { } 

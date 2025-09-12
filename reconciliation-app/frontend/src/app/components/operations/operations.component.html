@@ -124,6 +124,33 @@
             
             <div class="modal-body">
                 <form [formGroup]="addForm" (ngSubmit)="addOperation()" class="add-form">
+                    <!-- Option de création -->
+                    <div class="form-section">
+                        <h4 class="section-title">
+                            <i class="fas fa-cogs"></i> Mode de création
+                        </h4>
+                        <div class="form-row">
+                            <div class="form-group full-width">
+                                <div class="checkbox-group">
+                                    <label class="checkbox-label">
+                                        <input type="checkbox" [(ngModel)]="useFourOperationsLogic" 
+                                               [ngModelOptions]="{standalone: true}"
+                                               class="checkbox-input">
+                                        <span class="checkbox-custom"></span>
+                                        <span class="checkbox-text">
+                                            <strong>Utiliser la logique des 4 opérations</strong>
+                                            <small>Génère automatiquement 4 opérations : 2 nominales (agence + service) et 2 frais associées</small>
+                                        </span>
+                                    </label>
+                                </div>
+                                <div class="info-message" *ngIf="useFourOperationsLogic">
+                                    <i class="fas fa-info-circle"></i>
+                                    <p>Cette option est recommandée pour les opérations <strong>total_cashin</strong>, <strong>total_paiement</strong>, <strong>annulation_bo</strong> et <strong>transaction_cree</strong> avec un service défini.</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
                     <!-- Informations de base -->
                     <div class="form-section">
                         <h4 class="section-title">
@@ -135,8 +162,12 @@
                                 <mat-form-field appearance="fill">
                                     <mat-label>Type d'opération *</mat-label>
                                     <mat-select formControlName="typeOperation">
-                                        <mat-option value="">Sélectionner un type...</mat-option>
-                                        <mat-option *ngFor="let type of typeOperations" [value]="type">
+                                        <mat-option>
+                                            <ngx-mat-select-search [formControl]="addFormTypeOperationSearchCtrl" 
+                                                                  placeholderLabel="Rechercher un type..." 
+                                                                  noEntriesFoundLabel="Aucun type trouvé"></ngx-mat-select-search>
+                                        </mat-option>
+                                        <mat-option *ngFor="let type of filteredAddFormTypeOperationList" [value]="type">
                                             {{ type }}
                                         </mat-option>
                                     </mat-select>
@@ -164,8 +195,12 @@
                                 <mat-form-field appearance="fill">
                                     <mat-label>Code propriétaire *</mat-label>
                                     <mat-select formControlName="codeProprietaire">
-                                        <mat-option value="">Sélectionner un code propriétaire...</mat-option>
-                                        <mat-option *ngFor="let code of codeProprietaireList" [value]="code">
+                                        <mat-option>
+                                            <ngx-mat-select-search [formControl]="addFormCodeProprietaireSearchCtrl" 
+                                                                  placeholderLabel="Rechercher un code..." 
+                                                                  noEntriesFoundLabel="Aucun code trouvé"></ngx-mat-select-search>
+                                        </mat-option>
+                                        <mat-option *ngFor="let code of filteredAddFormCodeProprietaireList" [value]="code">
                                             {{ code }}
                                         </mat-option>
                                     </mat-select>
@@ -183,8 +218,12 @@
                                 <mat-form-field appearance="fill">
                                     <mat-label>Service</mat-label>
                                     <mat-select formControlName="service">
-                                        <mat-option value="">Sélectionner un service...</mat-option>
-                                        <mat-option *ngFor="let service of serviceList" [value]="service">
+                                        <mat-option>
+                                            <ngx-mat-select-search [formControl]="addFormServiceSearchCtrl" 
+                                                                  placeholderLabel="Rechercher un service..." 
+                                                                  noEntriesFoundLabel="Aucun service trouvé"></ngx-mat-select-search>
+                                        </mat-option>
+                                        <mat-option *ngFor="let service of filteredAddFormServiceList" [value]="service">
                                             {{ service }}
                                         </mat-option>
                                     </mat-select>
@@ -373,8 +412,12 @@
                             <mat-form-field appearance="fill">
                                 <mat-label>Type d'opération *</mat-label>
                                 <mat-select formControlName="typeOperation">
-                                    <mat-option value="">Sélectionner un type d'opération...</mat-option>
-                                    <mat-option *ngFor="let type of typeOperations" [value]="type">
+                                    <mat-option>
+                                        <ngx-mat-select-search [formControl]="editFormTypeOperationSearchCtrl" 
+                                                              placeholderLabel="Rechercher un type..." 
+                                                              noEntriesFoundLabel="Aucun type trouvé"></ngx-mat-select-search>
+                                    </mat-option>
+                                    <mat-option *ngFor="let type of filteredEditFormTypeOperationList" [value]="type">
                                         {{ type }}
                                     </mat-option>
                                 </mat-select>
@@ -411,8 +454,12 @@
                             <mat-form-field appearance="fill">
                                 <mat-label>Service</mat-label>
                                 <mat-select formControlName="service">
-                                    <mat-option value="">Sélectionner un service...</mat-option>
-                                    <mat-option *ngFor="let service of serviceList" [value]="service">
+                                    <mat-option>
+                                        <ngx-mat-select-search [formControl]="editFormServiceSearchCtrl" 
+                                                              placeholderLabel="Rechercher un service..." 
+                                                              noEntriesFoundLabel="Aucun service trouvé"></ngx-mat-select-search>
+                                    </mat-option>
+                                    <mat-option *ngFor="let service of filteredEditFormServiceList" [value]="service">
                                         {{ service }}
                                     </mat-option>
                                 </mat-select>
@@ -729,6 +776,13 @@
                     <i class="fas fa-file-excel"></i>
                     {{ isExporting ? 'Export...' : 'Excel' }}
                 </button>
+                <button class="btn-secondary" 
+                        [class.active]="isSelectionMode"
+                        (click)="toggleSelectionMode()" 
+                        title="Mode sélection multiple">
+                    <i class="fas fa-check-square"></i>
+                    {{ isSelectionMode ? 'Quitter la sélection' : 'Sélection multiple' }}
+                </button>
             </div>
         </div>
 
@@ -752,11 +806,39 @@
             </button>
         </div>
 
+        <!-- Barre d'actions pour la sélection multiple -->
+        <div *ngIf="isSelectionMode && hasSelectedOperations" class="selection-actions-bar">
+            <div class="selection-info">
+                <i class="fas fa-check-circle"></i>
+                <span>{{ selectedOperationsCount }} opération(s) sélectionnée(s)</span>
+            </div>
+            <div class="selection-actions">
+                <button class="btn-secondary" (click)="deselectAllOperations()" title="Tout désélectionner">
+                    <i class="fas fa-times"></i>
+                    Désélectionner tout
+                </button>
+                <button class="btn-danger" 
+                        (click)="deleteSelectedOperations()" 
+                        [disabled]="isDeletingMultiple"
+                        title="Supprimer les opérations sélectionnées">
+                    <i class="fas fa-trash"></i>
+                    {{ isDeletingMultiple ? 'Suppression...' : 'Supprimer sélection' }}
+                </button>
+            </div>
+        </div>
+
         <!-- Tableau des opérations -->
         <div *ngIf="!isLoading && pagedOperations.length > 0" class="table-container">
             <table class="operations-table">
                 <thead>
                     <tr>
+                        <th class="selection-column" *ngIf="isSelectionMode">
+                            <input type="checkbox" 
+                                   [checked]="selectedOperationsCount === pagedOperations.length && pagedOperations.length > 0"
+                                   [indeterminate]="selectedOperationsCount > 0 && selectedOperationsCount < pagedOperations.length"
+                                   (change)="selectedOperationsCount === pagedOperations.length ? deselectAllOperations() : selectAllOperations()"
+                                   title="Sélectionner tout">
+                        </th>
                         <th class="sortable" (click)="sortBy('dateOperation')">
                             <i class="fas fa-calendar"></i> Date
                             <i class="fas fa-sort" *ngIf="sortField !== 'dateOperation'"></i>
@@ -822,8 +904,16 @@
                         [class.frais-row]="op.typeOperation === 'FRAIS_TRANSACTION'"
                         [class.has-frais]="op.typeOperation !== 'FRAIS_TRANSACTION' && hasAssociatedFrais(op)"
                         (click)="selectOperation(op)"
-                        [class.selected]="selectedOperation?.id === op.id">
+                        [class.selected]="selectedOperation?.id === op.id"
+                        [class.selection-mode]="isSelectionMode">
                         
+                        <td class="selection-cell" *ngIf="isSelectionMode">
+                            <input type="checkbox" 
+                                   [checked]="isOperationSelected(op.id!)"
+                                   (change)="toggleOperationSelection(op.id!); $event.stopPropagation()"
+                                   (click)="$event.stopPropagation()"
+                                   title="Sélectionner cette opération">
+                        </td>
                         <td class="date-cell">
                             <div class="date-content">
                                 <span class="date-day">{{ op.dateOperation | date:'dd' }}</span>

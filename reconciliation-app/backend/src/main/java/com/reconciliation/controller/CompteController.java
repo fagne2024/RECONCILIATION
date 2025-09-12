@@ -7,6 +7,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 @RestController
@@ -129,9 +130,17 @@ public class CompteController {
     }
     
     @DeleteMapping("/{id}")
-    public ResponseEntity<Boolean> deleteCompte(@PathVariable Long id) {
-        boolean deleted = compteService.deleteCompte(id);
-        return deleted ? ResponseEntity.ok(true) : ResponseEntity.notFound().build();
+    public ResponseEntity<?> deleteCompte(@PathVariable Long id) {
+        try {
+            boolean deleted = compteService.deleteCompte(id);
+            if (deleted) {
+                return ResponseEntity.ok(Map.of("success", true, "message", "Compte supprimé avec succès"));
+            } else {
+                return ResponseEntity.badRequest().body(Map.of("success", false, "message", "Impossible de supprimer le compte : des opérations sont liées à ce compte"));
+            }
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(Map.of("success", false, "message", "Erreur lors de la suppression : " + e.getMessage()));
+        }
     }
     
     @GetMapping("/exists/{numeroCompte}")

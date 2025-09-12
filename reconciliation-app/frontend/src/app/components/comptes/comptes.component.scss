@@ -49,6 +49,12 @@
             color: white;
             &:hover { background-color: #1565C0; }
         }
+
+        &.service-balance-btn {
+            background-color: #FF9800;
+            color: white;
+            &:hover { background-color: #F57C00; }
+        }
         
         &.primary {
             background-color: #2196F3;
@@ -1282,6 +1288,76 @@
     }
 }
 
+// Styles pour les badges de catégorie
+.categorie-badge {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    border: 2px solid transparent;
+    transition: all 0.3s ease;
+    
+    &.categorie-client {
+        background-color: #e3f2fd;
+        color: #1976d2;
+        border-color: #bbdefb;
+        
+        &:hover {
+            background-color: #bbdefb;
+            transform: translateY(-1px);
+            box-shadow: 0 2px 8px rgba(25, 118, 210, 0.3);
+        }
+    }
+    
+    &.categorie-service {
+        background-color: #f3e5f5;
+        color: #7b1fa2;
+        border-color: #ce93d8;
+        
+        &:hover {
+            background-color: #ce93d8;
+            transform: translateY(-1px);
+            box-shadow: 0 2px 8px rgba(123, 31, 162, 0.3);
+        }
+    }
+    
+    &.categorie-banque {
+        background-color: #e8f5e8;
+        color: #2e7d32;
+        border-color: #a5d6a7;
+        
+        &:hover {
+            background-color: #a5d6a7;
+            transform: translateY(-1px);
+            box-shadow: 0 2px 8px rgba(46, 125, 50, 0.3);
+        }
+    }
+    
+    &.categorie-default {
+        background-color: #f5f5f5;
+        color: #666;
+        border-color: #ddd;
+        
+        &:hover {
+            background-color: #e0e0e0;
+        }
+    }
+}
+
+// Animation pour les badges
+@keyframes pulse {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.05); }
+    100% { transform: scale(1); }
+}
+
+.categorie-badge:hover {
+    animation: pulse 0.6s ease-in-out;
+}
+
 .modal-footer {
     padding: 16px 24px;
     border-top: 1px solid #e0e0e0;
@@ -2466,4 +2542,74 @@
     .full-width {
         width: 100%;
     }
+}
+
+// Styles pour les badges de catégorie
+.categorie-badge {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    border: 2px solid transparent;
+    transition: all 0.3s ease;
+    
+    &.categorie-client {
+        background-color: #e3f2fd;
+        color: #1976d2;
+        border-color: #bbdefb;
+        
+        &:hover {
+            background-color: #bbdefb;
+            transform: translateY(-1px);
+            box-shadow: 0 2px 8px rgba(25, 118, 210, 0.3);
+        }
+    }
+    
+    &.categorie-service {
+        background-color: #f3e5f5;
+        color: #7b1fa2;
+        border-color: #ce93d8;
+        
+        &:hover {
+            background-color: #ce93d8;
+            transform: translateY(-1px);
+            box-shadow: 0 2px 8px rgba(123, 31, 162, 0.3);
+        }
+    }
+    
+    &.categorie-banque {
+        background-color: #e8f5e8;
+        color: #2e7d32;
+        border-color: #a5d6a7;
+        
+        &:hover {
+            background-color: #a5d6a7;
+            transform: translateY(-1px);
+            box-shadow: 0 2px 8px rgba(46, 125, 50, 0.3);
+        }
+    }
+    
+    &.categorie-default {
+        background-color: #f5f5f5;
+        color: #666;
+        border-color: #ddd;
+        
+        &:hover {
+            background-color: #e0e0e0;
+        }
+    }
+}
+
+// Animation pour les badges
+@keyframes pulse {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.05); }
+    100% { transform: scale(1); }
+}
+
+.categorie-badge:hover {
+    animation: pulse 0.6s ease-in-out;
 }

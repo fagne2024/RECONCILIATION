@@ -19,6 +19,7 @@ import { PermissionsComponent } from './components/permissions/permissions.compo
 import { EcartSoldeComponent } from './components/ecart-solde/ecart-solde.component';
 import { ImpactOPComponent } from './components/impact-op/impact-op.component';
 import { TrxSfComponent } from './components/trx-sf/trx-sf.component';
+import { ServiceBalanceComponent } from './components/service-balance/service-balance.component';
 
 
 import { AutoProcessingModelsComponent } from './components/auto-processing-models/auto-processing-models.component';
@@ -49,9 +50,10 @@ const routes: Routes = [
   { path: 'ecart-solde', component: EcartSoldeComponent },
   { path: 'trx-sf', component: TrxSfComponent },
   { path: 'impact-op', component: ImpactOPComponent },
+  { path: 'service-balance', component: ServiceBalanceComponent },
 
   { path: 'auto-processing-models', component: AutoProcessingModelsComponent },
-  { path: 'banque', component: BanqueComponent }
+  { path: 'banque', component: BanqueComponent },
 ];
 
 @NgModule({

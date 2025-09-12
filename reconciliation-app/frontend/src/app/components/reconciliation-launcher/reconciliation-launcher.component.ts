@@ -290,7 +290,7 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
           partnerFile: this.partnerFile
         });
       }
-      this.router.navigate(['/column-selection']);
+      this.router.navigate(['/column-selection'], { queryParams: { mode: 'manual' } });
       return;
     }
 
@@ -342,12 +342,12 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
       // Trouver les modèles correspondants aux fichiers
       const boModel = models.find(m => 
         m.fileType === 'bo' && 
-        this.boFile?.name.match(new RegExp(m.filePattern.replace('*', '.*')))
+        this.matchesFilePattern(this.boFile?.name || '', m.filePattern)
       );
       
       const partnerModel = models.find(m => 
         m.fileType === 'partner' && 
-        this.partnerFile?.name.match(new RegExp(m.filePattern.replace('*', '.*')))
+        this.matchesFilePattern(this.partnerFile?.name || '', m.filePattern)
       );
       
       console.log('📋 Modèle BO trouvé:', boModel?.name);
@@ -1693,52 +1693,112 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
      return !!(this.boFile || this.partnerFile || this.selectedMode);
    }
 
-   /**
-    * Réinitialise toutes les données et fichiers
-    */
-   async resetData(): Promise<void> {
-     // Demander confirmation à l'utilisateur
-     const confirmed = await this.popupService.showConfirm(
-       'Êtes-vous sûr de vouloir réinitialiser toutes les données ? Cette action ne peut pas être annulée.',
-       'Confirmation de réinitialisation'
-     );
-     
-     if (confirmed) {
-       console.log('🔄 Réinitialisation des données...');
-       
-       // Réinitialiser les fichiers
-       this.boFile = null;
-       this.partnerFile = null;
-       
-       // Réinitialiser le mode sélectionné
-       this.selectedMode = null;
-       
+     /**
+   * Réinitialise toutes les données et fichiers
+   */
+  async resetData(): Promise<void> {
+    // Demander confirmation à l'utilisateur
+    const confirmed = await this.popupService.showConfirm(
+      'Êtes-vous sûr de vouloir réinitialiser toutes les données ? Cette action ne peut pas être annulée.',
+      'Confirmation de réinitialisation'
+    );
+    
+    if (confirmed) {
+      console.log('🔄 Réinitialisation des données...');
+      
+      // Réinitialiser les fichiers
+      this.boFile = null;
+      this.partnerFile = null;
+      
+      // Réinitialiser le mode sélectionné
+      this.selectedMode = null;
+      
 
-       
-       // Réinitialiser l'état de l'application
-       this.appStateService.clearUploadedFiles();
-       this.appStateService.clearReconciliationData();
-       
-       // Réinitialiser les données de réconciliation
-       this.reconciliationService.clearData();
-       
-       // Réinitialiser les inputs de fichiers
-       const boFileInput = document.getElementById('boFileInput') as HTMLInputElement;
-       const partnerFileInput = document.getElementById('partnerFileInput') as HTMLInputElement;
-       
-       if (boFileInput) {
-         boFileInput.value = '';
-       }
-       if (partnerFileInput) {
-         partnerFileInput.value = '';
-       }
-       
-       console.log('✅ Données réinitialisées avec succès');
-       
-       // Afficher un message de confirmation
-       this.popupService.showSuccess('Données réinitialisées avec succès');
-     }
-   }
+      
+      // Réinitialiser l'état de l'application
+      this.appStateService.clearUploadedFiles();
+      this.appStateService.clearReconciliationData();
+      
+      // Réinitialiser les données de réconciliation
+      this.reconciliationService.clearData();
+      
+      // Réinitialiser les inputs de fichiers
+      const boFileInput = document.getElementById('boFileInput') as HTMLInputElement;
+      const partnerFileInput = document.getElementById('partnerFileInput') as HTMLInputElement;
+      
+      if (boFileInput) {
+        boFileInput.value = '';
+      }
+      if (partnerFileInput) {
+        partnerFileInput.value = '';
+      }
+      
+      console.log('✅ Données réinitialisées avec succès');
+      
+      // Afficher un message de confirmation
+      this.popupService.showSuccess('Données réinitialisées avec succès');
+    }
+  }
 
+  /**
+   * Vérifie si un nom de fichier correspond à un pattern
+   * Supporte plusieurs modes de détection :
+   * 1. Patterns avec wildcards (* et ?) - comportement classique
+   * 2. Patterns avec extension - correspondance exacte avec extension
+   * 3. Patterns simples - détection par inclusion (ex: "TRXBO" détecte "TRXBO_02082025.xlsx")
+   * 4. Détection par préfixe - détection par début de nom
+   */
+  private matchesFilePattern(fileName: string, pattern: string): boolean {
+    if (!pattern || !fileName) return false;
+    
+    console.log(`🔍 Test de correspondance: "${fileName}" vs pattern "${pattern}"`);
+    
+    // Mode 1: Pattern avec wildcards (comportement classique)
+    if (pattern.includes('*') || pattern.includes('?')) {
+      const regexPattern = pattern
+        .replace(/\*/g, '.*')
+        .replace(/\?/g, '.');
+      
+      try {
+        const regex = new RegExp(regexPattern, 'i');
+        const matches = regex.test(fileName);
+        console.log(`🔍 Test wildcard: ${matches ? '✅' : '❌'}`);
+        return matches;
+      } catch (error) {
+        console.warn('⚠️ Pattern wildcard invalide:', pattern);
+        return false;
+      }
+    }
+    
+    // Mode 2: Pattern avec extension - correspondance exacte (insensible à la casse)
+    // Exemple: pattern "pmmoovbf.xlsx" détecte "PMMOOVBF.xlsx"
+    if (pattern.includes('.')) {
+      const exactMatch = fileName.toLowerCase() === pattern.toLowerCase();
+      console.log(`🔍 Test correspondance exacte avec extension: ${exactMatch ? '✅' : '❌'}`);
+      if (exactMatch) {
+        return true;
+      }
+    }
+    
+    // Mode 3: Pattern simple - détection par inclusion (sans extension)
+    // Nettoyer le nom du fichier et le pattern (enlever l'extension)
+    const cleanFileName = fileName.replace(/\.[^/.]+$/, '').toLowerCase();
+    const cleanPattern = pattern.replace(/\.[^/.]+$/, '').toLowerCase();
+    
+    // Exemple: pattern "TRXBO" détecte "TRXBO_02082025.xlsx"
+    const containsPattern = cleanFileName.includes(cleanPattern);
+    console.log(`🔍 Test inclusion (sans extension): "${cleanFileName}" contient "${cleanPattern}": ${containsPattern ? '✅' : '❌'}`);
+    
+    if (containsPattern) {
+      return true;
+    }
+    
+    // Mode 4: Détection par préfixe (optionnel, pour plus de flexibilité)
+    // Exemple: pattern "TRXBO" détecte "TRXBO_02082025.xlsx"
+    const startsWithPattern = cleanFileName.startsWith(cleanPattern);
+    console.log(`🔍 Test préfixe (sans extension): "${cleanFileName}" commence par "${cleanPattern}": ${startsWithPattern ? '✅' : '❌'}`);
+    
+    return startsWithPattern;
+  }
 
 }

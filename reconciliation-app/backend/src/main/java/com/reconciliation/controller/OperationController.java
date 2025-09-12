@@ -5,6 +5,8 @@ import com.reconciliation.service.OperationService;
 import com.reconciliation.service.OperationBusinessService;
 import com.reconciliation.dto.OperationUpdateRequest;
 import com.reconciliation.dto.OperationCreateRequest;
+import com.reconciliation.dto.DeleteOperationsRequest;
+import com.reconciliation.dto.DeleteOperationsResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -16,6 +18,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.HashMap;
+import java.util.ArrayList;
 import java.util.stream.Collectors;
 
 @RestController
@@ -207,6 +210,19 @@ public class OperationController {
         }
     }
     
+    @PostMapping("/manual-with-four-operations")
+    public ResponseEntity<Operation> createOperationWithFourOperations(@RequestBody OperationCreateRequest request) {
+        try {
+            logger.info("🔧 Création manuelle avec logique des 4 opérations - Type: {}, Service: {}", 
+                       request.getTypeOperation(), request.getService());
+            Operation savedOperation = operationService.createOperationWithFourOperations(request);
+            return ResponseEntity.ok(savedOperation);
+        } catch (Exception e) {
+            logger.error("❌ Erreur lors de la création manuelle avec 4 opérations: {}", e.getMessage(), e);
+            return ResponseEntity.badRequest().body(null);
+        }
+    }
+    
     @PutMapping("/{id}")
     public ResponseEntity<Operation> updateOperation(@PathVariable Long id, @RequestBody OperationUpdateRequest request) {
         try {
@@ -239,14 +255,71 @@ public class OperationController {
     
     @PutMapping("/{id}/cancel")
     public ResponseEntity<Boolean> cancelOperation(@PathVariable Long id) {
-        boolean cancelled = operationBusinessService.cancelOperation(id);
-        return cancelled ? ResponseEntity.ok(true) : ResponseEntity.notFound().build();
+        try {
+            logger.info("🔧 Tentative d'annulation de l'opération ID: {}", id);
+            boolean cancelled = operationBusinessService.cancelOperation(id);
+            if (cancelled) {
+                logger.info("✅ Opération ID: {} annulée avec succès", id);
+                return ResponseEntity.ok(true);
+            } else {
+                logger.warn("⚠️ Impossible d'annuler l'opération ID: {}", id);
+                return ResponseEntity.notFound().build();
+            }
+        } catch (Exception e) {
+            logger.error("❌ Erreur lors de l'annulation de l'opération ID: {}: {}", id, e.getMessage(), e);
+            return ResponseEntity.status(500).body(false);
+        }
     }
     
     @DeleteMapping("/{id}")
     public ResponseEntity<Boolean> deleteOperation(@PathVariable Long id) {
         boolean deleted = operationService.deleteOperation(id);
         return deleted ? ResponseEntity.ok(true) : ResponseEntity.notFound().build();
+    }
+
+    @RequestMapping(value = "/delete-batch", method = RequestMethod.OPTIONS)
+    @CrossOrigin(origins = "http://localhost:4200")
+    public ResponseEntity<?> handleDeleteBatchOptions() {
+        return ResponseEntity.ok().build();
+    }
+
+    @PostMapping("/delete-batch")
+    @CrossOrigin(origins = "http://localhost:4200", methods = {RequestMethod.POST, RequestMethod.OPTIONS})
+    public ResponseEntity<DeleteOperationsResponse> deleteOperations(@RequestBody DeleteOperationsRequest request) {
+        try {
+            logger.info("🔧 Suppression en lot de {} opérations", request.getIds().size());
+            
+            List<String> errors = new ArrayList<>();
+            int deletedCount = 0;
+            
+            for (Long id : request.getIds()) {
+                try {
+                    boolean deleted = operationService.deleteOperation(id);
+                    if (deleted) {
+                        deletedCount++;
+                        logger.info("✅ Opération ID: {} supprimée avec succès", id);
+                    } else {
+                        errors.add("Opération ID " + id + " non trouvée");
+                        logger.warn("⚠️ Opération ID: {} non trouvée", id);
+                    }
+                } catch (Exception e) {
+                    String error = "Erreur lors de la suppression de l'opération ID " + id + ": " + e.getMessage();
+                    errors.add(error);
+                    logger.error("❌ Erreur lors de la suppression de l'opération ID: {}: {}", id, e.getMessage(), e);
+                }
+            }
+            
+            boolean success = errors.isEmpty() || deletedCount > 0;
+            DeleteOperationsResponse response = new DeleteOperationsResponse(success, deletedCount, errors);
+            
+            logger.info("✅ Suppression en lot terminée: {} supprimées, {} erreurs", deletedCount, errors.size());
+            return ResponseEntity.ok(response);
+            
+        } catch (Exception e) {
+            logger.error("❌ Erreur lors de la suppression en lot: {}", e.getMessage(), e);
+            DeleteOperationsResponse response = new DeleteOperationsResponse(false, 0, List.of("Erreur générale: " + e.getMessage()));
+            return ResponseEntity.status(500).body(response);
+        }
     }
     
     @GetMapping("/{id}/can-process")

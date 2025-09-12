@@ -19,6 +19,10 @@ public class DataNormalizationService {
         COLUMN_MAPPING.put("Country", "country");
         COLUMN_MAPPING.put("COUNTRY", "country");
         COLUMN_MAPPING.put("Countries", "country");
+        // Ajout pour les fichiers GRX
+        COLUMN_MAPPING.put("Pays provenance", "country");
+        COLUMN_MAPPING.put("PAYS PROVENANCE", "country");
+        COLUMN_MAPPING.put("paysProvenance", "country");
         
         // Ajout de nouveaux mappings pour les colonnes courantes
         COLUMN_MAPPING.put("External id", "External ID");
@@ -55,7 +59,7 @@ public class DataNormalizationService {
         String paysKey = null;
         
         // Vérification de chaque clé possible pour le pays
-        for (String key : Arrays.asList("PAYS", "Pays", "Country", "COUNTRY", "Countries")) {
+        for (String key : Arrays.asList("PAYS", "Pays", "Country", "COUNTRY", "Countries", "Pays provenance", "PAYS PROVENANCE", "paysProvenance")) {
             paysValue = record.get(key);
             if (paysValue != null && !paysValue.trim().isEmpty()) {
                 paysKey = key;
