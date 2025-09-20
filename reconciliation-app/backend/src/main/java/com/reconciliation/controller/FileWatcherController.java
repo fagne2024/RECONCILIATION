@@ -2,6 +2,7 @@ package com.reconciliation.controller;
 
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import lombok.extern.slf4j.Slf4j;
 
 import java.io.*;
 import java.nio.file.Files;
@@ -15,6 +16,7 @@ import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.apache.poi.hssf.usermodel.HSSFWorkbook;
 import java.util.stream.Collectors;
 
+@Slf4j
 @RestController
 @RequestMapping("/api/file-watcher")
 @CrossOrigin(origins = {"http://localhost:4200", "http://localhost:3000"}, allowCredentials = "true")
@@ -26,12 +28,8 @@ public class FileWatcherController {
     @GetMapping("/status")
     public ResponseEntity<Map<String, Object>> getStatus() {
         try {
-            System.out.println("🔍 FileWatcherController: getStatus() appelé");
             Path watchPath = Paths.get(WATCH_FOLDER);
-            System.out.println("📁 Chemin du dossier watch: " + watchPath.toAbsolutePath());
-            
             boolean isWatching = Files.exists(watchPath);
-            System.out.println("✅ Dossier existe: " + isWatching);
             
             int queueLength = 0;
             if (isWatching) {
@@ -46,7 +44,7 @@ public class FileWatcherController {
                     name.toLowerCase().endsWith(".xltm")
                 );
                 queueLength = files != null ? files.length : 0;
-                System.out.println("📄 Nombre de fichiers trouvés: " + queueLength);
+                // Nombre de fichiers trouvés
             }
             
             Map<String, Object> response = Map.of(
@@ -55,11 +53,10 @@ public class FileWatcherController {
                 "queueLength", queueLength
             );
             
-            System.out.println("✅ Réponse status: " + response);
+            // Réponse status générée
             return ResponseEntity.ok(response);
         } catch (Exception e) {
-            System.err.println("❌ Erreur dans getStatus(): " + e.getMessage());
-            e.printStackTrace();
+            log.error("Erreur dans getStatus(): {}", e.getMessage(), e);
             return ResponseEntity.badRequest().body(Map.of(
                 "error", e.getMessage()
             ));
@@ -69,20 +66,13 @@ public class FileWatcherController {
     @GetMapping("/available-files")
     public ResponseEntity<List<Map<String, Object>>> getAvailableFiles() {
         try {
-            System.out.println("🔍 FileWatcherController: getAvailableFiles() appelé");
             List<Map<String, Object>> files = new ArrayList<>();
             Path watchPath = Paths.get(WATCH_FOLDER);
-            System.out.println("📁 Chemin du dossier watch: " + watchPath.toAbsolutePath());
             
             if (Files.exists(watchPath)) {
                 // Lister TOUS les fichiers dans le dossier
                 File[] allFiles = watchPath.toFile().listFiles();
-                System.out.println("📄 Tous les fichiers dans le dossier: " + (allFiles != null ? allFiles.length : 0));
-                if (allFiles != null) {
-                    for (File file : allFiles) {
-                        System.out.println("   - " + file.getName() + " (taille: " + file.length() + " bytes)");
-                    }
-                }
+                // Logs de débogage supprimés pour réduire la verbosité
                 
                 File[] fileList = watchPath.toFile().listFiles((dir, name) -> 
                     name.toLowerCase().endsWith(".csv") || 
@@ -95,24 +85,15 @@ public class FileWatcherController {
                     name.toLowerCase().endsWith(".xltm")
                 );
                 
-                System.out.println("📄 Fichiers filtrés trouvés: " + (fileList != null ? fileList.length : 0));
-                if (fileList != null) {
-                    for (File file : fileList) {
-                        System.out.println("   ✅ Fichier accepté: " + file.getName());
-                    }
-                }
+                // Logs de débogage supprimés pour réduire la verbosité
                 
                 if (fileList != null) {
                     for (File file : fileList) {
-                        System.out.println("📄 Traitement du fichier: " + file.getName());
-                        
                         // Lire les vraies colonnes
                         List<String> columns = getFileColumns(file);
-                        System.out.println("📋 Colonnes lues pour " + file.getName() + ": " + columns);
                         
                         // Lire les vraies données d'exemple
                         List<Map<String, Object>> sampleData = getSampleData(file);
-                        System.out.println("📊 Données d'exemple lues pour " + file.getName() + ": " + sampleData.size() + " lignes");
                         
                         Map<String, Object> fileInfo = Map.of(
                             "fileName", file.getName(),
@@ -124,18 +105,17 @@ public class FileWatcherController {
                         );
                         files.add(fileInfo);
                         
-                        System.out.println("✅ Fichier " + file.getName() + " traité avec succès");
+                        // Fichier traité avec succès
                     }
                 }
             } else {
-                System.out.println("❌ Le dossier watch-folder n'existe pas: " + watchPath.toAbsolutePath());
+                log.warn("Le dossier watch-folder n'existe pas: {}", watchPath.toAbsolutePath());
             }
             
-            System.out.println("✅ Nombre de fichiers retournés: " + files.size());
+            log.info("Nombre de fichiers retournés: {}", files.size());
             return ResponseEntity.ok(files);
         } catch (Exception e) {
-            System.err.println("❌ Erreur dans getAvailableFiles(): " + e.getMessage());
-            e.printStackTrace();
+            log.error("Erreur dans getAvailableFiles(): {}", e.getMessage(), e);
             return ResponseEntity.badRequest().body(List.of());
         }
     }
@@ -157,46 +137,38 @@ public class FileWatcherController {
             
             // Si le chemin relatif ne fonctionne pas, essayer avec le chemin absolu depuis le répertoire de travail
             if (!fullPath.toFile().exists()) {
-                System.out.println("⚠️ Chemin relatif non trouvé, essai avec chemin absolu...");
+                // Chemin relatif non trouvé, essai avec chemin absolu
                 fullPath = Paths.get(System.getProperty("user.dir")).resolve(WATCH_FOLDER).resolve(filePath.replace("watch-folder/", ""));
             }
             
             // Si toujours pas trouvé, essayer avec le chemin depuis la racine du projet
             if (!fullPath.toFile().exists()) {
-                System.out.println("⚠️ Chemin absolu non trouvé, essai depuis la racine du projet...");
+                // Chemin absolu non trouvé, essai depuis la racine du projet
                 fullPath = Paths.get(System.getProperty("user.dir")).resolve("..").resolve("watch-folder").resolve(filePath.replace("watch-folder/", ""));
             }
             
             File file = fullPath.toFile();
             
-            System.out.println("🔍 Analyse du fichier demandée: " + filePath);
-            System.out.println("📁 Chemin complet construit: " + fullPath.toAbsolutePath());
-            System.out.println("✅ Fichier existe: " + file.exists());
+            // Analyse du fichier demandée
             
             if (!file.exists()) {
-                System.err.println("❌ Fichier non trouvé: " + fullPath.toAbsolutePath());
+                log.warn("Fichier non trouvé: {}", fullPath.toAbsolutePath());
                 return ResponseEntity.badRequest().body(Map.of(
                     "error", "Fichier non trouvé: " + filePath
                 ));
             }
             
-            System.out.println("🔍 Début de l'analyse du fichier: " + file.getName());
-            
             // Analyser les colonnes
             List<String> columns = getFileColumns(file);
-            System.out.println("📋 Colonnes détectées (" + columns.size() + "): " + columns);
             
             // Analyser les données d'exemple
             List<Map<String, Object>> sampleData = getSampleData(file);
-            System.out.println("📊 Données d'exemple (" + sampleData.size() + " lignes)");
             
             // Obtenir le type de fichier
             String fileType = getFileType(file.getName());
-            System.out.println("📄 Type de fichier détecté: " + fileType);
             
             // Obtenir le nombre d'enregistrements
             int recordCount = getRecordCount(file);
-            System.out.println("📊 Nombre d'enregistrements: " + recordCount);
             
             Map<String, Object> analysis = Map.of(
                 "fileName", file.getName(),
@@ -207,12 +179,10 @@ public class FileWatcherController {
                 "recordCount", recordCount
             );
             
-            System.out.println("✅ Analyse terminée pour: " + file.getName());
-            System.out.println("📋 Résumé de l'analyse: " + analysis);
+            // Analyse terminée
             return ResponseEntity.ok(analysis);
         } catch (Exception e) {
-            System.err.println("❌ Erreur lors de l'analyse du fichier: " + e.getMessage());
-            e.printStackTrace();
+            log.error("Erreur lors de l'analyse du fichier: {}", e.getMessage(), e);
             return ResponseEntity.badRequest().body(Map.of(
                 "error", e.getMessage()
             ));
@@ -262,34 +232,22 @@ public class FileWatcherController {
     // Méthodes utilitaires améliorées
     private List<String> getFileColumns(File file) {
         try {
-            System.out.println("🔍 getFileColumns() appelé pour: " + file.getName());
-            System.out.println("📁 Chemin absolu: " + file.getAbsolutePath());
-            System.out.println("✅ Fichier existe: " + file.exists());
-            
             List<String> columns;
             if (file.getName().toLowerCase().endsWith(".csv")) {
-                System.out.println("📄 Lecture des colonnes CSV");
                 columns = readCsvColumns(file);
             } else {
-                System.out.println("📄 Lecture des colonnes Excel");
                 columns = readExcelColumns(file);
             }
-            
-            System.out.println("📋 Colonnes détectées pour " + file.getName() + ": " + columns);
             return columns;
         } catch (Exception e) {
-            System.err.println("❌ Erreur dans getFileColumns() pour " + file.getName() + ": " + e.getMessage());
-            e.printStackTrace();
+            log.error("Erreur dans getFileColumns() pour {}: {}", file.getName(), e.getMessage(), e);
             return List.of("date", "montant", "description", "reference");
         }
     }
 
     private List<Map<String, Object>> getSampleData(File file) {
         try {
-            System.out.println("🔍 getSampleData() appelé pour: " + file.getName());
-            
             if (file.getName().toLowerCase().endsWith(".csv")) {
-                System.out.println("📄 Lecture des données d'exemple CSV");
                 return readCsvSampleData(file);
             } else if (file.getName().toLowerCase().endsWith(".xls") || 
                        file.getName().toLowerCase().endsWith(".xlsx") ||
@@ -298,10 +256,8 @@ public class FileWatcherController {
                        file.getName().toLowerCase().endsWith(".xlt") ||
                        file.getName().toLowerCase().endsWith(".xltx") ||
                        file.getName().toLowerCase().endsWith(".xltm")) {
-                System.out.println("📄 Lecture des données d'exemple Excel");
                 return readExcelSampleData(file);
             } else {
-                System.out.println("⚠️ Type de fichier non supporté, utilisation de données par défaut");
                 // Pour les autres types de fichiers, retourner des données d'exemple
                 return List.of(
                     Map.of("date", "2025-08-01", "montant", "1000.00", "description", "Transaction 1", "reference", "REF001"),
@@ -309,9 +265,7 @@ public class FileWatcherController {
                 );
             }
         } catch (Exception e) {
-            System.err.println("❌ Erreur dans getSampleData() pour " + file.getName() + ": " + e.getMessage());
-            e.printStackTrace();
-            System.out.println("🔄 Utilisation de données par défaut en cas d'erreur");
+            log.error("Erreur dans getSampleData() pour {}: {}", file.getName(), e.getMessage(), e);
             return List.of(
                 Map.of("date", "2025-08-01", "montant", "1000.00", "description", "Transaction 1", "reference", "REF001"),
                 Map.of("date", "2025-08-02", "montant", "2000.00", "description", "Transaction 2", "reference", "REF002")
@@ -342,7 +296,7 @@ public class FileWatcherController {
                 
                                     String firstLine = reader.readLine();
                     if (firstLine != null && !firstLine.trim().isEmpty()) {
-                        System.out.println("🔍 Ligne brute lue avec " + encoding + ": " + firstLine);
+                        // Ligne brute lue
                         // Détecter le délimiteur (virgule ou point-virgule)
                         String delimiter = firstLine.contains(";") ? ";" : ",";
                         String[] columnArray = firstLine.split(delimiter);
@@ -352,12 +306,12 @@ public class FileWatcherController {
                             columns.add(correctedColumn);
                         }
                         reader.close();
-                        System.out.println("📊 Colonnes détectées avec encodage " + encoding + ": " + columns);
+                        // Colonnes détectées
                         return columns;
                     }
                 reader.close();
             } catch (Exception e) {
-                System.err.println("❌ Erreur avec l'encodage " + encoding + ": " + e.getMessage());
+                log.debug("Erreur avec l'encodage {}: {}", encoding, e.getMessage());
                 columns.clear();
             }
         }
@@ -374,7 +328,7 @@ public class FileWatcherController {
             }
         }
         
-        System.out.println("📊 Colonnes détectées (fallback): " + columns);
+        // Colonnes détectées (fallback)
         return columns;
     }
 
@@ -443,10 +397,10 @@ public class FileWatcherController {
                     }
                 }
                 reader.close();
-                System.out.println("📊 Données d'exemple avec encodage " + encoding + ": " + sampleData.size() + " lignes");
+                // Données d'exemple lues
                 return sampleData;
             } catch (Exception e) {
-                System.err.println("❌ Erreur avec l'encodage " + encoding + " pour les données: " + e.getMessage());
+                log.debug("Erreur avec l'encodage {} pour les données: {}", encoding, e.getMessage());
                 sampleData.clear();
             }
         }
@@ -475,7 +429,7 @@ public class FileWatcherController {
             }
         }
         
-        System.out.println("📊 Données d'exemple (fallback): " + sampleData.size() + " lignes");
+        // Données d'exemple (fallback)
         return sampleData;
     }
 
@@ -500,7 +454,7 @@ public class FileWatcherController {
                 return 100; // Valeur par défaut pour les autres types
             }
         } catch (Exception e) {
-            System.err.println("❌ Erreur lors du comptage des lignes: " + e.getMessage());
+            log.warn("Erreur lors du comptage des lignes: {}", e.getMessage());
             return 100;
         }
     }
@@ -518,9 +472,7 @@ public class FileWatcherController {
 
     // Méthode pour lire les colonnes Excel avec détection intelligente des en-têtes et types
     private List<String> readExcelColumns(File file) throws IOException {
-        System.out.println("🔵 [readExcelColumns] Appelée pour: " + file.getName());
-        System.out.println("📁 Chemin complet du fichier: " + file.getAbsolutePath());
-        System.out.println("📊 Taille du fichier: " + file.length() + " bytes");
+        // Lecture des colonnes Excel
         
         try {
             // Utiliser Apache POI pour lire les fichiers Excel
@@ -530,34 +482,23 @@ public class FileWatcherController {
                 file.getName().toLowerCase().endsWith(".xltx") ||
                 file.getName().toLowerCase().endsWith(".xltm")) {
                 workbook = new XSSFWorkbook(new FileInputStream(file));
-                System.out.println("📄 Format Excel détecté: XLSX (2007+)");
+                // Format Excel XLSX détecté
             } else {
                 workbook = new HSSFWorkbook(new FileInputStream(file));
-                System.out.println("📄 Format Excel détecté: XLS (97-2003)");
+                // Format Excel XLS détecté
             }
             
             Sheet sheet = workbook.getSheetAt(0);
-            System.out.println("📋 Nombre de feuilles: " + workbook.getNumberOfSheets());
-            System.out.println("📄 Nombre de lignes dans la première feuille: " + sheet.getLastRowNum());
+            // Feuille Excel analysée
             
             // Analyser les premières lignes pour voir la structure
-            System.out.println("🔍 Analyse des 5 premières lignes pour comprendre la structure:");
-            for (int i = 0; i < Math.min(5, sheet.getLastRowNum()); i++) {
-                Row row = sheet.getRow(i);
-                if (row != null) {
-                    System.out.println("   Ligne " + i + " - getLastCellNum(): " + row.getLastCellNum());
-                    List<String> rowData = readAllColumnsFromRow(row, sheet);
-                    System.out.println("   Ligne " + i + " - Colonnes lues: " + rowData.size() + " - Contenu: " + rowData);
-                } else {
-                    System.out.println("   Ligne " + i + " - NULL");
-                }
-            }
+            // Analyse de la structure du fichier
             
             List<String> headers = new ArrayList<>();
             
             // Analyser les premières 200 lignes pour trouver les en-têtes avec détection avancée
             int maxRowsToCheck = Math.min(200, sheet.getLastRowNum());
-            System.out.println("🔍 Analyse avancée des " + maxRowsToCheck + " premières lignes");
+            // Analyse avancée des lignes
             
             int bestHeaderRowIndex = 0;
             int bestScore = 0;
@@ -571,26 +512,26 @@ public class FileWatcherController {
                 
                 // Analyser la qualité de cette ligne comme en-tête
                 int score = analyzeHeaderRowQuality(rowData, i);
-                System.out.println("📋 Ligne " + i + " - Score: " + score + " - Contenu: " + rowData);
+                // Analyse de la ligne
                 
                 if (score > bestScore) {
                     bestScore = score;
                     bestHeaderRowIndex = i;
                     bestHeaders = new ArrayList<>(rowData);
-                    System.out.println("⭐ Nouveau meilleur en-tête trouvé à la ligne " + i + " avec score " + score);
+                    // Nouveau meilleur en-tête trouvé
                 }
                 
                 // Vérifier si cette ligne contient les en-têtes Orange Money
                 if (isOrangeMoneyHeaderRow(rowData)) {
                     headers = rowData;
-                    System.out.println("✅ En-têtes Orange Money détectés à la ligne " + i);
+                    // En-têtes Orange Money détectés
                     break;
                 }
                 
                 // Vérifier si cette ligne contient les en-têtes OPPART
                 if (isOPPARTHeaderRow(rowData)) {
                     headers = rowData;
-                    System.out.println("✅ En-têtes OPPART détectés à la ligne " + i);
+                    // En-têtes OPPART détectés
                     break;
                 }
             }
@@ -598,20 +539,19 @@ public class FileWatcherController {
             // Si aucun en-tête Orange Money n'est trouvé, utiliser le meilleur en-tête détecté
             if (headers.isEmpty() && bestScore > 0) {
                 headers = bestHeaders;
-                System.out.println("✅ Meilleur en-tête détecté à la ligne " + bestHeaderRowIndex + " avec score " + bestScore);
+                // Meilleur en-tête détecté
             }
             
             // Détection spécifique pour les fichiers OPPART
             if (headers.isEmpty() && file.getName().toLowerCase().contains("oppart")) {
-                System.out.println("🔍 Détection spécifique OPPART pour le fichier: " + file.getName());
+                // Détection spécifique OPPART
                 headers = getOPPARTDefaultHeaders();
-                System.out.println("✅ En-têtes OPPART par défaut appliqués: " + headers);
             }
             
             workbook.close();
             
             if (headers.isEmpty()) {
-                System.err.println("⚠️ [readExcelColumns] Fallback sur colonnes par défaut pour " + file.getName());
+                log.warn("Fallback sur colonnes par défaut pour {}", file.getName());
                 // Fallback : utiliser la première ligne non vide
                 for (int i = 0; i <= sheet.getLastRowNum(); i++) {
                     Row row = sheet.getRow(i);
@@ -620,7 +560,7 @@ public class FileWatcherController {
                         
                         if (rowData.stream().anyMatch(s -> !s.isEmpty())) {
                             headers = rowData;
-                            System.out.println("✅ En-têtes de fallback à la ligne " + i + ": " + headers);
+                            // En-têtes de fallback trouvés
                             break;
                         }
                     }
@@ -630,12 +570,11 @@ public class FileWatcherController {
             // Nettoyer et corriger les en-têtes
             
             
-            System.out.println("📋 Colonnes finales nettoyées et corrigées: " + headers);
+            // Colonnes finales nettoyées
             return headers;
         } catch (Exception e) {
-            System.err.println("❌ [readExcelColumns] Erreur lors de la lecture Excel pour " + file.getName() + ": " + e.getMessage());
-            e.printStackTrace();
-            System.err.println("⚠️ [readExcelColumns] Fallback sur colonnes par défaut pour " + file.getName());
+            log.error("Erreur lors de la lecture Excel pour {}: {}", file.getName(), e.getMessage(), e);
+            log.warn("Fallback sur colonnes par défaut pour {}", file.getName());
             return List.of("date", "montant", "description", "reference");
         }
     }
@@ -645,7 +584,7 @@ public class FileWatcherController {
         List<String> rowData = new ArrayList<>();
         if (row == null) return rowData;
         
-        System.out.println("🔍 [readAllColumnsFromRow] Début de lecture de la ligne");
+        // Début de lecture de la ligne
         
         // Déterminer le nombre maximum de colonnes à lire
         int maxColumns = 0;
@@ -655,13 +594,13 @@ public class FileWatcherController {
         if (firstRow != null) {
             int firstRowColumns = firstRow.getLastCellNum();
             maxColumns = Math.max(maxColumns, firstRowColumns);
-            System.out.println("📊 [readAllColumnsFromRow] Première ligne (0): " + firstRowColumns + " colonnes");
+            // Première ligne analysée
         }
         
         // Vérifier la ligne actuelle
         int currentRowColumns = row.getLastCellNum();
         maxColumns = Math.max(maxColumns, currentRowColumns);
-        System.out.println("📊 [readAllColumnsFromRow] Ligne actuelle: " + currentRowColumns + " colonnes");
+        // Ligne actuelle analysée
         
         // Vérifier quelques autres lignes pour s'assurer de ne rien manquer
         for (int i = 1; i < Math.min(10, sheet.getLastRowNum()); i++) {
@@ -669,13 +608,13 @@ public class FileWatcherController {
             if (checkRow != null) {
                 int checkRowColumns = checkRow.getLastCellNum();
                 maxColumns = Math.max(maxColumns, checkRowColumns);
-                System.out.println("📊 [readAllColumnsFromRow] Ligne " + i + ": " + checkRowColumns + " colonnes");
+                // Ligne analysée
             }
         }
         
         // Minimum 20 colonnes pour s'assurer de ne rien manquer
         maxColumns = Math.max(maxColumns, 20);
-        System.out.println("📊 [readAllColumnsFromRow] Nombre final de colonnes à lire: " + maxColumns);
+        // Nombre final de colonnes déterminé
         
         // Lire toutes les colonnes
         for (int j = 0; j < maxColumns; j++) {
@@ -684,8 +623,7 @@ public class FileWatcherController {
             rowData.add(cellValue);
         }
         
-        System.out.println("📊 [readAllColumnsFromRow] Ligne lue avec " + rowData.size() + " colonnes (maxColumns: " + maxColumns + ")");
-        System.out.println("📋 [readAllColumnsFromRow] Contenu de la ligne: " + rowData);
+        // Ligne lue avec succès
         return rowData;
     }
 
@@ -860,11 +798,11 @@ public class FileWatcherController {
             
             // Analyser les premières 200 lignes pour trouver les en-têtes
             int maxRowsToCheck = Math.min(200, sheet.getLastRowNum());
-            System.out.println("🔍 Recherche des en-têtes dans les " + maxRowsToCheck + " premières lignes...");
+            // Recherche des en-têtes
             
             // Détection spécifique pour les fichiers OPPART
             if (file.getName().toLowerCase().contains("oppart")) {
-                System.out.println("🔍 Détection spécifique OPPART pour les données d'exemple");
+                // Détection spécifique OPPART
                 headers = getOPPARTDefaultHeaders();
                 headerRowIndex = 0; // Supposer que les en-têtes sont à la première ligne
             } else {
@@ -879,8 +817,8 @@ public class FileWatcherController {
                 if (isOrangeMoneyHeaderRow(rowData)) {
                     headers = rowData;
                     headerRowIndex = i;
-                    System.out.println("✅ En-têtes Orange Money détectés à la ligne " + i);
-                    System.out.println("📊 En-têtes détectés: " + headers);
+                    // En-têtes Orange Money détectés
+                    // En-têtes détectés
                     break;
                     }
                 }
@@ -904,7 +842,7 @@ public class FileWatcherController {
             
                          // Lire les données d'exemple (recherche agressive dans tout le fichier)
              if (!headers.isEmpty() && headerRowIndex >= 0) {
-                 System.out.println("🔍 Recherche de données valides dans tout le fichier...");
+                 // Recherche de données valides
                  
                  // Parcourir tout le fichier pour trouver des données valides
                  for (int i = headerRowIndex + 1; i <= sheet.getLastRowNum(); i++) {
@@ -928,7 +866,7 @@ public class FileWatcherController {
                              // Vérifier spécifiquement si la colonne Statut a une valeur
                              if (j < headers.size() && headers.get(j).equals("Statut") && !cellValue.isEmpty()) {
                                  hasStatutValue = true;
-                                 System.out.println("🎯 Valeur Statut trouvée: " + cellValue);
+                                 // Valeur Statut trouvée
                              }
                          }
                          
@@ -947,25 +885,25 @@ public class FileWatcherController {
                      // Ajouter les lignes qui contiennent des données significatives
                      if (hasData && !isHeaderRow) { // Suppression de la vérification hasNonEmptyValues
                          sampleData.add(rowData);
-                         System.out.println("✅ Ligne " + i + " ajoutée avec des données valides: " + rowData);
+                         // Ligne ajoutée avec des données valides
                          
                          // Si on a trouvé une ligne avec une valeur Statut, c'est encore mieux
                          if (hasStatutValue) {
-                             System.out.println("🎯 Ligne " + i + " contient une valeur Statut!");
+                             // Ligne contient une valeur Statut
                          }
                          
                          // Arrêter après avoir trouvé 10 lignes valides (augmenté)
                          if (sampleData.size() >= 10) break;
                      } else if (isHeaderRow) {
-                         System.out.println("⚠️ Ligne " + i + " ignorée car c'est la ligne d'en-têtes: " + rowData);
+                         // Ligne d'en-têtes ignorée
                      } else {
-                         System.out.println("⚠️ Ligne " + i + " ignorée car pas de données valides: " + rowData);
+                         // Ligne ignorée car pas de données valides
                      }
                  }
                  
                  // Si toujours aucune ligne valide, essayer une approche plus permissive
                  if (sampleData.isEmpty()) {
-                     System.out.println("⚠️ Aucune ligne valide trouvée, essai avec critères plus permissifs...");
+                     // Aucune ligne valide trouvée, essai avec critères plus permissifs
                      for (int i = headerRowIndex + 1; i <= Math.min(headerRowIndex + 1000, sheet.getLastRowNum()); i++) {
                          Row row = sheet.getRow(i);
                          if (row == null) continue;
@@ -989,7 +927,7 @@ public class FileWatcherController {
                          // Ajouter toute ligne qui a au moins une donnée
                          if (hasAnyData) {
                              sampleData.add(rowData);
-                             System.out.println("✅ Ligne " + i + " ajoutée (critères permissifs): " + rowData);
+                             // Ligne ajoutée (critères permissifs)
                              if (sampleData.size() >= 10) break; // Augmenté à 10
                          }
                      }
@@ -997,12 +935,11 @@ public class FileWatcherController {
              }
             
             workbook.close();
-            System.out.println("📊 Données d'exemple Excel: " + sampleData.size() + " lignes avec " + headers.size() + " colonnes");
+            // Données d'exemple Excel lues
             return sampleData;
             
         } catch (Exception e) {
-            System.err.println("❌ Erreur lors de la lecture des données Excel: " + e.getMessage());
-            e.printStackTrace();
+            log.error("Erreur lors de la lecture des données Excel: {}", e.getMessage(), e);
             return List.of(
                 Map.of("date", "2025-08-01", "montant", "1000.00", "description", "Transaction 1", "reference", "REF001"),
                 Map.of("date", "2025-08-02", "montant", "2000.00", "description", "Transaction 2", "reference", "REF002")

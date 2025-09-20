@@ -49,6 +49,7 @@ import { ImpactOPTabComponent } from './components/comptes/impact-op-tab.compone
 import { TrxSfComponent } from './components/trx-sf/trx-sf.component';
 import { ServiceBalanceComponent } from './components/service-balance/service-balance.component';
 import { ServiceBalanceService } from './services/service-balance.service';
+import { ExportOptimizationService } from './services/export-optimization.service';
 
 
 import { AutoProcessingModelsComponent } from './components/auto-processing-models/auto-processing-models.component';
@@ -56,6 +57,7 @@ import { BanqueComponent } from './components/banque/banque.component';
 import { ExcelAnalysisComponent } from './components/excel-analysis/excel-analysis.component';
 import { ReconciliationLauncherComponent } from './components/reconciliation-launcher/reconciliation-launcher.component';
 import { ModernPopupComponent } from './components/modern-popup/modern-popup.component';
+import { ProgressIndicatorComponent } from './components/progress-indicator/progress-indicator.component';
 
 @NgModule({
     declarations: [
@@ -90,7 +92,8 @@ import { ModernPopupComponent } from './components/modern-popup/modern-popup.com
                 AutoProcessingModelsComponent,
                 BanqueComponent,
                 ExcelAnalysisComponent,
-                ModernPopupComponent
+                ModernPopupComponent,
+                ProgressIndicatorComponent
     ],
     imports: [
         BrowserModule,
@@ -117,7 +120,7 @@ import { ModernPopupComponent } from './components/modern-popup/modern-popup.com
         AgencySummaryComponent,
         ReconciliationLauncherComponent
     ],
-    providers: [ReconciliationService, ServiceBalanceService],
+    providers: [ReconciliationService, ServiceBalanceService, ExportOptimizationService],
     bootstrap: [AppComponent]
 })
 export class AppModule { } 

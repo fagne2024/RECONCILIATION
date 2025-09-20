@@ -8,6 +8,7 @@ import { EcartSolde } from '../../models/ecart-solde.model';
 import { TrxSfService } from '../../services/trx-sf.service';
 import { ImpactOPService } from '../../services/impact-op.service';
 import { ImpactOP } from '../../models/impact-op.model';
+import { ExportOptimizationService, ExportProgress } from '../../services/export-optimization.service';
 import * as ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
 import { HttpClient } from '@angular/common/http';
@@ -104,7 +105,12 @@ interface ApiError {
                 </div>
             </div>
             <div class="summary-section">
-                <h3>📊 Résumé de la réconciliation</h3>
+                <div class="summary-header">
+                    <h3>📊 Résumé de la réconciliation</h3>
+                    <button (click)="openColumnSelector()" class="report-button">
+                        📋 Rapport des écarts
+                    </button>
+                </div>
                 <div class="stats-grid">
                     <div class="stat-card">
                         <div class="stat-value">{{filteredMatches.length || 0}}</div>
@@ -450,8 +456,11 @@ interface ApiError {
             </div>
 
             <div class="action-buttons">
-                <button class="export-btn" (click)="exportResults()">
+                <button class="export-btn" (click)="exportResults()" [disabled]="isExporting">
                     📥 Exporter les résultats
+                </button>
+                <button class="export-btn-optimized" (click)="exportResultsOptimized()" [disabled]="isExporting">
+                    🚀 Export optimisé
                 </button>
                 <button class="new-reconciliation-btn" (click)="nouvelleReconciliation()">
                     🔄 Nouvelle réconciliation
@@ -463,9 +472,58 @@ interface ApiError {
 
             <div *ngIf="isExporting" class="export-progress">
                 <div class="progress-bar">
-                    <div class="progress" [style.width.%]="exportProgress"></div>
+                    <div class="progress" [style.width.%]="exportProgressOptimized.percentage"></div>
                 </div>
-                <div class="progress-text">Export en cours... {{exportProgress}}%</div>
+                <div class="progress-text">{{ exportProgressOptimized.message }} - {{ exportProgressOptimized.percentage | number:'1.0-0' }}%</div>
+                <div class="progress-details" *ngIf="exportProgressOptimized.total > 0">
+                    {{ exportProgressOptimized.current | number }} / {{ exportProgressOptimized.total | number }} lignes
+                </div>
+            </div>
+        </div>
+
+        <!-- Popup de sélection des colonnes pour l'export -->
+        <div *ngIf="showColumnSelector" class="column-selector-overlay">
+            <div class="column-selector-popup">
+                <div class="popup-header">
+                    <h3>📋 Sélection des colonnes pour l'export</h3>
+                    <button (click)="closeColumnSelector()" class="close-btn">×</button>
+                </div>
+                
+                <div class="popup-content">
+                    <div class="selection-controls">
+                        <button (click)="toggleAllColumns(true)" class="select-all-btn">
+                            ✅ Tout sélectionner
+                        </button>
+                        <button (click)="toggleAllColumns(false)" class="deselect-all-btn">
+                            ❌ Tout désélectionner
+                        </button>
+                        <span class="selection-info">
+                            {{selectedColumnsCount}} / {{availableColumns.length}} colonnes sélectionnées
+                        </span>
+                    </div>
+                    
+                    <div class="columns-grid">
+                        <div *ngFor="let column of availableColumns" class="column-item">
+                            <label class="column-checkbox">
+                                <input 
+                                    type="checkbox" 
+                                    [(ngModel)]="selectedColumns[column]"
+                                    [checked]="selectedColumns[column]">
+                                <span class="column-name">{{column}}</span>
+                                <span *ngIf="defaultColumns.includes(column)" class="default-badge">Par défaut</span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="popup-actions">
+                    <button (click)="closeColumnSelector()" class="cancel-btn">
+                        Annuler
+                    </button>
+                    <button (click)="confirmExportWithSelectedColumns()" class="export-btn">
+                        📥 Exporter avec les colonnes sélectionnées
+                    </button>
+                </div>
             </div>
         </div>
     `,
@@ -479,6 +537,239 @@ interface ApiError {
             border-radius: 8px;
             padding: 20px;
             margin-bottom: 30px;
+        }
+
+        .summary-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+
+        .summary-header h3 {
+            margin: 0;
+            color: #2c3e50;
+        }
+
+        .report-button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            padding: 10px 16px;
+            font-size: 0.9rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 2px 4px rgba(102, 126, 234, 0.3);
+        }
+
+        .report-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(102, 126, 234, 0.4);
+            background: linear-gradient(135deg, #5a6fd8 0%, #6a4190 100%);
+        }
+
+        .report-button:active {
+            transform: translateY(0);
+            box-shadow: 0 2px 4px rgba(102, 126, 234, 0.3);
+        }
+
+        /* Styles pour la popup de sélection des colonnes */
+        .column-selector-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+
+        .column-selector-popup {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+            width: 90%;
+            max-width: 600px;
+            max-height: 80vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .popup-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px;
+            border-bottom: 1px solid #e0e0e0;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 12px 12px 0 0;
+        }
+
+        .popup-header h3 {
+            margin: 0;
+            font-size: 1.2rem;
+        }
+
+        .close-btn {
+            background: none;
+            border: none;
+            color: white;
+            font-size: 24px;
+            cursor: pointer;
+            padding: 0;
+            width: 30px;
+            height: 30px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            transition: background-color 0.3s;
+        }
+
+        .close-btn:hover {
+            background-color: rgba(255, 255, 255, 0.2);
+        }
+
+        .popup-content {
+            padding: 20px;
+            flex: 1;
+            overflow-y: auto;
+        }
+
+        .selection-controls {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+
+        .select-all-btn, .deselect-all-btn {
+            padding: 8px 12px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: all 0.3s;
+        }
+
+        .select-all-btn {
+            background-color: #4CAF50;
+            color: white;
+        }
+
+        .select-all-btn:hover {
+            background-color: #45a049;
+        }
+
+        .deselect-all-btn {
+            background-color: #f44336;
+            color: white;
+        }
+
+        .deselect-all-btn:hover {
+            background-color: #da190b;
+        }
+
+        .selection-info {
+            color: #666;
+            font-size: 0.9rem;
+            margin-left: auto;
+        }
+
+        .columns-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+            gap: 10px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .column-item {
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 12px;
+            background: #f9f9f9;
+            transition: all 0.3s;
+        }
+
+        .column-item:hover {
+            background: #f0f0f0;
+            border-color: #667eea;
+        }
+
+        .column-checkbox {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+            width: 100%;
+        }
+
+        .column-checkbox input[type="checkbox"] {
+            width: 16px;
+            height: 16px;
+            accent-color: #667eea;
+        }
+
+        .column-name {
+            flex: 1;
+            font-weight: 500;
+            color: #333;
+        }
+
+        .default-badge {
+            background: #667eea;
+            color: white;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 0.7rem;
+            font-weight: 500;
+        }
+
+        .popup-actions {
+            padding: 20px;
+            border-top: 1px solid #e0e0e0;
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+        }
+
+        .cancel-btn, .export-btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 1rem;
+            font-weight: 500;
+            transition: all 0.3s;
+        }
+
+        .cancel-btn {
+            background-color: #f5f5f5;
+            color: #666;
+            border: 1px solid #ddd;
+        }
+
+        .cancel-btn:hover {
+            background-color: #e0e0e0;
+        }
+
+        .export-btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            box-shadow: 0 2px 4px rgba(102, 126, 234, 0.3);
+        }
+
+        .export-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(102, 126, 234, 0.4);
         }
 
         .stats-grid {
@@ -1158,6 +1449,31 @@ interface ApiError {
             background: #1976D2;
         }
 
+        .export-btn-optimized {
+            background: linear-gradient(45deg, #FF6B35, #F7931E);
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 1em;
+            transition: all 0.3s ease;
+            margin-left: 10px;
+        }
+
+        .export-btn-optimized:hover {
+            background: linear-gradient(45deg, #E55A2B, #E8821A);
+            transform: translateY(-1px);
+            box-shadow: 0 4px 8px rgba(255, 107, 53, 0.3);
+        }
+
+        .export-btn-optimized:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
         .new-reconciliation-btn {
             background: #4CAF50;
             color: white;
@@ -1304,6 +1620,15 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
     exportProgress = 0;
     isExporting = false;
     
+    // Propriétés pour l'export optimisé
+    exportProgressOptimized: ExportProgress = {
+        current: 0,
+        total: 0,
+        percentage: 0,
+        message: '',
+        isComplete: false
+    };
+    
     // Propriétés pour la progression de la réconciliation
     showProgress = false;
     progressPercentage = 0;
@@ -1311,6 +1636,12 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
     totalRecords = 0;
     executionTime = 0;
     startTime = 0;
+    
+    // Propriétés pour la sélection des colonnes
+    showColumnSelector = false;
+    availableColumns: string[] = [];
+    selectedColumns: { [key: string]: boolean } = {};
+    defaultColumns = ['Service', 'téléphone client', 'montant', 'Agence', 'Date', 'HEURE', 'SOURCE'];
 
     // Ajout pour sélection Résumé par Agence
     selectedAgencySummaries: string[] = [];
@@ -2197,7 +2528,8 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
         private trxSfService: TrxSfService,
         private impactOPService: ImpactOPService,
         private http: HttpClient,
-        private popupService: PopupService
+        private popupService: PopupService,
+        private exportOptimizationService: ExportOptimizationService
     ) {}
 
     ngOnInit() {
@@ -2560,6 +2892,9 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
      */
     private getReconciliationKey(record: any): string {
         const possibleKeys = [
+            'Service',
+            'service',
+            'SERVICE',
             'CLE',
             'clé de réconciliation',
             'cle_reconciliation', 
@@ -3260,6 +3595,139 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
         throw error;
     }
 }
+
+    /**
+     * Export optimisé avec Web Worker pour les gros volumes
+     */
+    async exportResultsOptimized() {
+        console.log('🚀 Début de l\'export optimisé...');
+        console.log('Onglet actif:', this.activeTab);
+        
+        try {
+            this.isExporting = true;
+            this.exportProgressOptimized = {
+                current: 0,
+                total: 0,
+                percentage: 0,
+                message: '🚀 Démarrage de l\'export optimisé...',
+                isComplete: false
+            };
+            this.cdr.detectChanges();
+
+            // Demander le nom du fichier à l'utilisateur
+            const fileName = await this.promptFileName();
+            if (!fileName) {
+                console.log('Export annulé par l\'utilisateur');
+                return;
+            }
+
+            // Préparer les données selon l'onglet actif
+            const { rows, columns } = this.prepareDataForExport();
+            
+            if (rows.length === 0) {
+                console.log('Aucune donnée à exporter');
+                return;
+            }
+
+            // Déterminer la stratégie d'export
+            const isLargeDataset = rows.length > 10000;
+            const format = fileName.endsWith('.csv') ? 'csv' : 'xlsx';
+            
+            if (isLargeDataset) {
+                // Export optimisé avec Web Worker
+                if (format === 'csv') {
+                    this.exportOptimizationService.exportCSVOptimized(
+                        rows,
+                        columns,
+                        fileName,
+                        {
+                            chunkSize: 5000,
+                            useWebWorker: true,
+                            enableCompression: true
+                        }
+                    );
+                } else {
+                    this.exportOptimizationService.exportExcelOptimized(
+                        rows,
+                        columns,
+                        fileName,
+                        {
+                            chunkSize: 3000,
+                            useWebWorker: true,
+                            enableCompression: true
+                        }
+                    );
+                }
+                
+                // S'abonner à la progression
+                this.exportOptimizationService.exportProgress$.subscribe(progress => {
+                    this.exportProgressOptimized = progress;
+                    if (progress.isComplete) {
+                        this.isExporting = false;
+                        this.cdr.detectChanges();
+                    }
+                });
+            } else {
+                // Export rapide pour petits volumes
+                this.exportOptimizationService.exportQuick(rows, columns, fileName, format);
+                this.isExporting = false;
+                this.cdr.detectChanges();
+            }
+
+        } catch (error) {
+            console.error('❌ Erreur lors de l\'export optimisé:', error);
+            this.isExporting = false;
+            this.cdr.detectChanges();
+        }
+    }
+
+    /**
+     * Prépare les données pour l'export selon l'onglet actif
+     */
+    private prepareDataForExport(): { rows: any[], columns: string[] } {
+        let rows: any[] = [];
+        let columns: string[] = [];
+
+        switch (this.activeTab) {
+            case 'matches':
+                const filteredMatches = this.getFilteredMatches();
+                rows = filteredMatches.map(match => ({
+                    ...match.boData,
+                    ...match.partnerData
+                }));
+                
+                // Récupérer toutes les colonnes uniques
+                const allKeys = new Set<string>();
+                filteredMatches.forEach(match => {
+                    Object.keys(match.boData).forEach(key => allKeys.add(key));
+                    Object.keys(match.partnerData).forEach(key => allKeys.add(key));
+                });
+                columns = Array.from(allKeys);
+                break;
+
+            case 'boOnly':
+                rows = this.response?.boOnly || [];
+                columns = rows.length > 0 ? Object.keys(rows[0]) : [];
+                break;
+
+            case 'partnerOnly':
+                rows = this.response?.partnerOnly || [];
+                columns = rows.length > 0 ? Object.keys(rows[0]) : [];
+                break;
+
+            case 'agencySummary':
+                // Pour le résumé par agence, on utilise les données existantes
+                rows = this.response?.boOnly || [];
+                columns = rows.length > 0 ? Object.keys(rows[0]) : [];
+                break;
+
+            default:
+                rows = [];
+                columns = [];
+        }
+
+        return { rows, columns };
+    }
 
     nouvelleReconciliation() {
         console.log('Navigation vers nouvelle réconciliation');
@@ -4007,5 +4475,663 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
     // Utilisation d'une clé unique pour chaque ligne
     getAgencyKey(summary: any): string {
         return `${summary.agency}__${summary.service}__${summary.country}`;
+    }
+
+    /**
+     * Génère un rapport regroupé des écarts BO et Partenaire
+     */
+    generateEcartReport(): any {
+        if (!this.response) {
+            return null;
+        }
+
+        // Fonction pour extraire les données communes d'un enregistrement
+        const extractCommonData = (record: any, source: string) => {
+            const baseData = {
+                Service: this.getValueWithFallback(record, ['Service', 'service', 'SERVICE', 'CLE', 'cle', 'key', 'id', 'Id', 'ID']),
+                telephoneClient: this.getValueWithFallback(record, ['téléphone client', 'telephone', 'phone', 'numéro', 'numero']),
+                montant: this.getValueWithFallback(record, ['montant', 'amount', 'valeur', 'prix']),
+                Agence: this.getValueWithFallback(record, ['Agence', 'agence', 'agency', 'bureau', 'point']),
+                Date: this.formatDateForReport(this.getValueWithFallback(record, ['Date', 'date', 'DateTransaction', 'created_at'])),
+                SOURCE: source
+            };
+
+            // Debug pour les données Partenaire
+            if (source === 'PARTENAIRE') {
+                console.log('🔍 Debug extractCommonData PARTENAIRE:');
+                console.log('- Record original:', record);
+                console.log('- BaseData généré:', baseData);
+                console.log('- Colonnes disponibles dans record:', Object.keys(record));
+            }
+
+            // Pour les écarts BO, ajouter les colonnes supplémentaires
+            if (source === 'BO') {
+                return {
+                    ...baseData,
+                    numeroTransGU: this.getValueWithFallback(record, ['numéro trans gu', 'numero_trans_gu', 'numéro_trans_gu', 'Numéro Trans GU', 'transaction_number', 'trans_gu']),
+                    IDTransaction: this.getValueWithFallback(record, ['IDTransaction', 'id_transaction', 'transaction_id', 'idTransaction'])
+                };
+            } else {
+                // Pour les écarts Partenaire, ajouter l'heure
+                const result = {
+                    ...baseData,
+                    Heure: this.extractTimeFromRecord(record)
+                };
+                
+                if (source === 'PARTENAIRE') {
+                    console.log('🔍 Résultat final PARTENAIRE:', result);
+                }
+                
+                return result;
+            }
+        };
+
+        // Regrouper les écarts BO
+        const ecartBo = (this.response.boOnly || []).map(record => 
+            extractCommonData(record, 'BO')
+        );
+
+        // Regrouper les écarts Partenaire
+        const ecartPartenaire = (this.response.partnerOnly || []).map(record => 
+            extractCommonData(record, 'PARTENAIRE')
+        );
+
+        // Debug pour vérifier les données générées
+        console.log('🔍 Debug generateEcartReport:');
+        console.log('- Données originales partnerOnly:', this.response.partnerOnly?.length || 0);
+        console.log('- Premier enregistrement partnerOnly:', this.response.partnerOnly?.[0]);
+        console.log('- Écarts Partenaire générés:', ecartPartenaire.length);
+        console.log('- Premier écart Partenaire généré:', ecartPartenaire[0]);
+
+        return {
+            ecartBo,
+            ecartPartenaire,
+            totalEcartBo: ecartBo.length,
+            totalEcartPartenaire: ecartPartenaire.length,
+            totalEcart: ecartBo.length + ecartPartenaire.length,
+            generatedAt: new Date().toISOString()
+        };
+    }
+
+    /**
+     * Aide pour extraire une valeur avec fallback sur plusieurs clés possibles
+     */
+    private getValueWithFallback(record: any, keys: string[]): string {
+        for (const key of keys) {
+            if (record[key] !== undefined && record[key] !== null && record[key] !== '') {
+                return String(record[key]);
+            }
+        }
+        return '';
+    }
+
+    /**
+     * Formate la date pour le rapport
+     */
+    private formatDateForReport(dateValue: string): string {
+        if (!dateValue) return '';
+        
+        try {
+            // Si c'est déjà au format DD/MM/YYYY
+            if (/^\d{2}\/\d{2}\/\d{4}$/.test(dateValue)) {
+                return dateValue;
+            }
+            
+            // Si c'est au format ISO ou autre, convertir
+            const date = new Date(dateValue);
+            if (!isNaN(date.getTime())) {
+                const day = String(date.getDate()).padStart(2, '0');
+                const month = String(date.getMonth() + 1).padStart(2, '0');
+                const year = date.getFullYear();
+                return `${day}/${month}/${year}`;
+            }
+        } catch (error) {
+            console.warn('Erreur de formatage de date:', error);
+        }
+        
+        return dateValue; // Retourner la valeur originale si le formatage échoue
+    }
+
+    /**
+     * Extrait l'heure d'un enregistrement partenaire
+     */
+    private extractTimeFromRecord(record: any): string {
+        // Chercher une colonne heure spécifique
+        const timeValue = this.getValueWithFallback(record, ['HEURE', 'Heure', 'heure', 'time', 'Time']);
+        if (timeValue) {
+            // Si c'est déjà au format HH:MM:SS
+            if (/^\d{2}:\d{2}:\d{2}$/.test(timeValue)) {
+                return timeValue;
+            }
+            
+            // Si c'est dans la date, extraire la partie heure
+            const dateValue = this.getValueWithFallback(record, ['Date', 'date', 'DateTransaction']);
+            if (dateValue && dateValue.includes(' ')) {
+                const timePart = dateValue.split(' ')[1];
+                if (timePart && /^\d{2}:\d{2}:\d{2}/.test(timePart)) {
+                    return timePart.substring(0, 8); // HH:MM:SS
+                }
+            }
+        }
+        
+        return '';
+    }
+
+    /**
+     * Ouvre la popup de sélection des colonnes pour l'export
+     */
+    openColumnSelector(): void {
+        if (!this.response?.partnerOnly || this.response.partnerOnly.length === 0) {
+            this.popupService.showWarning('❌ Aucune donnée ECART Partenaire disponible pour la sélection des colonnes.');
+            return;
+        }
+
+        // Extraire toutes les colonnes disponibles des données Partenaire
+        this.availableColumns = [];
+        const allColumns = new Set<string>();
+        
+        this.response.partnerOnly.forEach(record => {
+            Object.keys(record).forEach(key => {
+                if (record[key] !== undefined && record[key] !== null && record[key] !== '') {
+                    allColumns.add(key);
+                }
+            });
+        });
+
+        // S'assurer que les colonnes par défaut sont toujours disponibles
+        this.defaultColumns.forEach(col => {
+            allColumns.add(col);
+        });
+
+        this.availableColumns = Array.from(allColumns).sort();
+        
+        // Initialiser la sélection avec les colonnes par défaut
+        this.selectedColumns = {};
+        this.defaultColumns.forEach(col => {
+            this.selectedColumns[col] = this.availableColumns.includes(col);
+        });
+        
+        // Marquer toutes les autres colonnes comme non sélectionnées par défaut
+        this.availableColumns.forEach(col => {
+            if (!this.defaultColumns.includes(col)) {
+                this.selectedColumns[col] = false;
+            }
+        });
+
+        this.showColumnSelector = true;
+    }
+
+    /**
+     * Ferme la popup de sélection des colonnes
+     */
+    closeColumnSelector(): void {
+        this.showColumnSelector = false;
+    }
+
+    /**
+     * Sélectionne/désélectionne toutes les colonnes
+     */
+    toggleAllColumns(selected: boolean): void {
+        this.availableColumns.forEach(col => {
+            this.selectedColumns[col] = selected;
+        });
+    }
+
+    /**
+     * Vérifie si toutes les colonnes sont sélectionnées
+     */
+    get allColumnsSelected(): boolean {
+        return this.availableColumns.every(col => this.selectedColumns[col]);
+    }
+
+    /**
+     * Vérifie si certaines colonnes sont sélectionnées
+     */
+    get someColumnsSelected(): boolean {
+        return this.availableColumns.some(col => this.selectedColumns[col]) && !this.allColumnsSelected;
+    }
+
+    get selectedColumnsCount(): number {
+        return this.availableColumns.filter(col => this.selectedColumns[col]).length;
+    }
+
+    /**
+     * Exporte le rapport des écarts en CSV avec les colonnes sélectionnées
+     */
+    async exportEcartReport(): Promise<void> {
+        try {
+            const report = this.generateEcartReport();
+            if (!report) {
+                this.popupService.showWarning('❌ Aucune donnée disponible pour le rapport.');
+                return;
+            }
+
+            // Créer le contenu CSV avec les deux sections côte à côte
+            let csvContent = '';
+            
+            // Obtenir les colonnes sélectionnées pour les écarts Partenaire
+            const selectedPartnerColumns = this.availableColumns.filter(col => this.selectedColumns[col]);
+            
+            // Debug pour vérifier les données
+            console.log('🔍 Debug Export Rapport:');
+            console.log('- Écarts BO disponibles:', report.ecartBo.length);
+            console.log('- Écarts Partenaire disponibles:', report.ecartPartenaire.length);
+            console.log('- Colonnes disponibles:', this.availableColumns);
+            console.log('- Colonnes sélectionnées:', selectedPartnerColumns);
+            console.log('- Sélection actuelle:', this.selectedColumns);
+            
+            // En-têtes côte à côte
+            const boHeader = 'Service;téléphone client;montant;Agence;Date;Numéro Trans GU;IDTransaction;SOURCE';
+            const partnerHeader = selectedPartnerColumns.length > 0 ? selectedPartnerColumns.join(';') : '';
+            
+            // Calculer l'espacement entre les colonnes (2 colonnes vides pour séparer)
+            const spacing = ';;';
+            
+            // Ligne 1: Titre ECART BO centré au-dessus de son tableau
+            const boColumnsCount = boHeader.split(';').length;
+            const partnerColumnsCount = selectedPartnerColumns.length;
+            
+            // Centrer le titre ECART BO
+            const boTitlePadding = Math.floor((boColumnsCount - 1) / 2);
+            const boTitleCells = ';'.repeat(boTitlePadding) + 'ECART BO' + ';'.repeat(boColumnsCount - 1 - boTitlePadding);
+            
+            // Centrer le titre ECART PARTENAIRE
+            const partnerTitlePadding = Math.floor((partnerColumnsCount - 1) / 2);
+            const partnerTitleCells = ';'.repeat(partnerTitlePadding) + 'ECART PARTENAIRE' + ';'.repeat(partnerColumnsCount - 1 - partnerTitlePadding);
+            
+            csvContent += `${boTitleCells}${spacing}${partnerTitleCells}\n`;
+            
+            // Ligne 2: En-têtes des colonnes
+            csvContent += `${boHeader}${spacing}${partnerHeader}\n`;
+            
+            // Trouver le nombre maximum de lignes entre les deux sections
+            const maxRows = Math.max(report.ecartBo.length, report.ecartPartenaire.length);
+            
+            // Générer les lignes côte à côte
+            for (let i = 0; i < maxRows; i++) {
+                let boRow = '';
+                let partnerRow = '';
+                
+                // Ligne ECART BO
+                if (i < report.ecartBo.length) {
+                    const boItem = report.ecartBo[i];
+                    boRow = `${boItem.Service || boItem.CLE};${boItem.telephoneClient};${boItem.montant};${boItem.Agence};${boItem.Date};${boItem.numeroTransGU};${boItem.IDTransaction};${boItem.SOURCE}`;
+                } else {
+                    // Remplir avec des valeurs vides si pas de données
+                    boRow = ';'.repeat(boColumnsCount - 1);
+                }
+                
+                // Ligne ECART PARTENAIRE
+                if (i < report.ecartPartenaire.length && selectedPartnerColumns.length > 0) {
+                    // Utiliser directement les données originales au lieu des données transformées
+                    const originalPartnerRecord = this.response?.partnerOnly?.[i];
+                    console.log(`🔍 Ligne ${i} - Données Partenaire Originales:`, originalPartnerRecord);
+                    
+                    const row = selectedPartnerColumns.map(col => {
+                        let value = '';
+                        
+                        // Utiliser directement la valeur de la colonne dans les données originales
+                        if (originalPartnerRecord && originalPartnerRecord[col] !== undefined && originalPartnerRecord[col] !== null && originalPartnerRecord[col] !== '') {
+                            value = String(originalPartnerRecord[col]);
+                        } else {
+                            // Si pas trouvé, essayer avec les propriétés transformées comme fallback
+                            const partnerItem = report.ecartPartenaire[i];
+                            switch (col) {
+                                case 'CLE': value = partnerItem.CLE || ''; break;
+                                case 'téléphone client': value = partnerItem.telephoneClient || ''; break;
+                                case 'montant': value = partnerItem.montant || ''; break;
+                                case 'Agence': value = partnerItem.Agence || ''; break;
+                                case 'Date': value = partnerItem.Date || ''; break;
+                                case 'HEURE': value = partnerItem.Heure || ''; break;
+                                case 'SOURCE': value = partnerItem.SOURCE || ''; break;
+                                default: value = ''; break;
+                            }
+                        }
+                        
+                        console.log(`  - Colonne "${col}": "${value}"`);
+                        return value;
+                    });
+                    partnerRow = row.join(';');
+                    console.log(`  - Ligne finale Partenaire: "${partnerRow}"`);
+                } else {
+                    // Remplir avec des valeurs vides si pas de données
+                    partnerRow = ';'.repeat(partnerColumnsCount - 1);
+                    console.log(`🔍 Ligne ${i} - Pas de données Partenaire, ligne vide: "${partnerRow}"`);
+                }
+                
+                csvContent += `${boRow}${spacing}${partnerRow}\n`;
+            }
+
+            // Créer et télécharger le fichier Excel avec couleurs
+            await this.createExcelReport(report, selectedPartnerColumns, boHeader, partnerHeader);
+
+            const selectedCount = this.availableColumns.filter(col => this.selectedColumns[col]).length;
+            this.popupService.showSuccess(`✅ Rapport des écarts exporté avec succès !\n\n📊 Résumé:\n• Écarts BO: ${report.totalEcartBo} colonnes (format fixe)\n• Écarts Partenaire: ${report.totalEcartPartenaire} lignes (${selectedCount} colonnes sélectionnées)\n• Format: Côte à côte avec espacement\n• Total: ${report.totalEcart}`);
+            
+            // Fermer la popup après l'export
+            this.closeColumnSelector();
+
+        } catch (error) {
+            console.error('❌ Erreur lors de l\'export du rapport:', error);
+            this.popupService.showError('❌ Erreur lors de l\'export du rapport des écarts.');
+        }
+    }
+
+    /**
+     * Confirme l'export avec les colonnes sélectionnées
+     */
+    confirmExportWithSelectedColumns(): void {
+        const selectedCount = this.availableColumns.filter(col => this.selectedColumns[col]).length;
+        if (selectedCount === 0) {
+            this.popupService.showWarning('⚠️ Veuillez sélectionner au moins une colonne pour l\'export.');
+            return;
+        }
+        this.exportEcartReport();
+    }
+
+    /**
+     * Crée un rapport Excel avec des couleurs
+     */
+    async createExcelReport(report: any, selectedPartnerColumns: string[], boHeader: string, partnerHeader: string): Promise<void> {
+        try {
+            const workbook = new ExcelJS.Workbook();
+            const worksheet = workbook.addWorksheet('Rapport Écarts');
+
+            // Définir les styles
+            const titleStyle = {
+                font: { bold: true, size: 14, color: { argb: 'FFFFFF' } },
+                fill: { type: 'pattern' as const, pattern: 'solid' as const, fgColor: { argb: '4472C4' } },
+                alignment: { horizontal: 'center' as const, vertical: 'middle' as const }
+            };
+
+            const headerStyle = {
+                font: { bold: true, size: 11, color: { argb: 'FFFFFF' } },
+                fill: { type: 'pattern' as const, pattern: 'solid' as const, fgColor: { argb: '4472C4' } },
+                alignment: { horizontal: 'center' as const, vertical: 'middle' as const },
+                border: {
+                    top: { style: 'thin' as const, color: { argb: '000000' } },
+                    left: { style: 'thin' as const, color: { argb: '000000' } },
+                    bottom: { style: 'thin' as const, color: { argb: '000000' } },
+                    right: { style: 'thin' as const, color: { argb: '000000' } }
+                }
+            };
+
+            const dataStyle = {
+                border: {
+                    top: { style: 'thin' as const, color: { argb: '000000' } },
+                    left: { style: 'thin' as const, color: { argb: '000000' } },
+                    bottom: { style: 'thin' as const, color: { argb: '000000' } },
+                    right: { style: 'thin' as const, color: { argb: '000000' } }
+                },
+                alignment: { vertical: 'middle' as const }
+            };
+
+            const boColumnsCount = boHeader.split(';').length;
+            const partnerColumnsCount = selectedPartnerColumns.length;
+            const spacing = 2; // 2 colonnes d'espacement
+            const topSpacing = 2; // 2 lignes d'espacement en haut
+
+            // Ligne 1-2: Espacement en haut (lignes vides)
+            // Pas de contenu sur ces lignes
+
+            // Ligne 3: Titre principal "ECART Réconciliation [Agence] du [Date]"
+            const reportTitle = this.generateReportTitle();
+            const totalColumns = boColumnsCount + spacing + partnerColumnsCount;
+            
+            // Centrer le titre en fusionnant toutes les colonnes disponibles
+            worksheet.getCell(topSpacing + 1, 1).value = reportTitle;
+            worksheet.getCell(topSpacing + 1, 1).style = {
+                font: { bold: true, size: 16, color: { argb: '000000' } },
+                alignment: { horizontal: 'center' as const, vertical: 'middle' as const }
+            };
+            
+            // Fusionner toutes les colonnes pour centrer parfaitement le titre
+            worksheet.mergeCells(topSpacing + 1, 1, topSpacing + 1, totalColumns);
+
+            // Ligne 4: Titres des sections "ECART BO" et "ECART PARTENAIRE"
+            const boTitleCol = Math.floor(boColumnsCount / 2);
+            const partnerTitleCol = boColumnsCount + spacing + Math.floor(partnerColumnsCount / 2);
+
+            worksheet.getCell(topSpacing + 2, boTitleCol + 1).value = 'ECART BO';
+            worksheet.getCell(topSpacing + 2, boTitleCol + 1).style = titleStyle;
+            worksheet.mergeCells(topSpacing + 2, boTitleCol + 1, topSpacing + 2, boTitleCol + 1);
+
+            worksheet.getCell(topSpacing + 2, partnerTitleCol + 1).value = 'ECART PARTENAIRE';
+            worksheet.getCell(topSpacing + 2, partnerTitleCol + 1).style = titleStyle;
+            worksheet.mergeCells(topSpacing + 2, partnerTitleCol + 1, topSpacing + 2, partnerTitleCol + 1);
+
+            // Ligne 5: En-têtes
+            const boHeaders = boHeader.split(';');
+            const partnerHeaders = partnerHeader.split(';');
+
+            boHeaders.forEach((header, index) => {
+                const cell = worksheet.getCell(topSpacing + 3, index + 1);
+                cell.value = header;
+                cell.style = headerStyle;
+            });
+
+            partnerHeaders.forEach((header, index) => {
+                const cell = worksheet.getCell(topSpacing + 3, boColumnsCount + spacing + index + 1);
+                cell.value = header;
+                cell.style = headerStyle;
+            });
+
+            // Données
+            const maxRows = Math.max(report.ecartBo.length, report.ecartPartenaire.length);
+
+            for (let i = 0; i < maxRows; i++) {
+                const rowIndex = i + topSpacing + 4; // +topSpacing (2) + 4 car on a le titre principal + titres sections + en-têtes
+
+                // Données BO
+                if (i < report.ecartBo.length) {
+                    const boItem = report.ecartBo[i];
+                    const boData = [boItem.Service || boItem.CLE, boItem.telephoneClient, boItem.montant, boItem.Agence, boItem.Date, boItem.numeroTransGU, boItem.IDTransaction, boItem.SOURCE];
+                    
+                    boData.forEach((value, colIndex) => {
+                        const cell = worksheet.getCell(rowIndex, colIndex + 1);
+                        cell.value = value;
+                        cell.style = dataStyle;
+                    });
+                }
+
+                // Données Partenaire
+                if (i < report.ecartPartenaire.length && selectedPartnerColumns.length > 0) {
+                    // Utiliser directement les données originales au lieu des données transformées
+                    const originalPartnerRecord = this.response?.partnerOnly?.[i];
+                    console.log(`🔍 Excel - Ligne ${i} - Données Partenaire Originales:`, originalPartnerRecord);
+                    
+                    selectedPartnerColumns.forEach((col, colIndex) => {
+                        let value = '';
+                        
+                        // Utiliser directement la valeur de la colonne dans les données originales
+                        if (originalPartnerRecord && originalPartnerRecord[col] !== undefined && originalPartnerRecord[col] !== null && originalPartnerRecord[col] !== '') {
+                            value = String(originalPartnerRecord[col]);
+                        } else {
+                            // Si pas trouvé, essayer avec les propriétés transformées comme fallback
+                            const partnerItem = report.ecartPartenaire[i];
+                            switch (col) {
+                                case 'CLE': value = partnerItem.CLE || ''; break;
+                                case 'téléphone client': value = partnerItem.telephoneClient || ''; break;
+                                case 'montant': value = partnerItem.montant || ''; break;
+                                case 'Agence': value = partnerItem.Agence || ''; break;
+                                case 'Date': value = partnerItem.Date || ''; break;
+                                case 'HEURE': value = partnerItem.Heure || ''; break;
+                                case 'SOURCE': value = partnerItem.SOURCE || ''; break;
+                                default: value = ''; break;
+                            }
+                        }
+                        
+                        console.log(`  - Excel - Colonne "${col}": "${value}"`);
+                        
+                        const cell = worksheet.getCell(rowIndex, boColumnsCount + spacing + colIndex + 1);
+                        cell.value = value;
+                        cell.style = dataStyle;
+                    });
+                }
+            }
+
+            // Ajuster la largeur des colonnes
+            for (let i = 1; i <= boColumnsCount + spacing + partnerColumnsCount; i++) {
+                worksheet.getColumn(i).width = 15;
+            }
+
+            // Télécharger le fichier
+            const buffer = await workbook.xlsx.writeBuffer();
+            const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+            
+            const link = document.createElement('a');
+            const url = URL.createObjectURL(blob);
+            link.setAttribute('href', url);
+            link.setAttribute('download', `rapport_ecarts_${new Date().toISOString().split('T')[0]}.xlsx`);
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+
+        } catch (error) {
+            console.error('❌ Erreur lors de la création du fichier Excel:', error);
+            // Fallback vers CSV si Excel échoue
+            const csvContent = this.generateCsvContent(report, selectedPartnerColumns, boHeader, partnerHeader);
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            const url = URL.createObjectURL(blob);
+            link.setAttribute('href', url);
+            link.setAttribute('download', `rapport_ecarts_${new Date().toISOString().split('T')[0]}.csv`);
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+    }
+
+    /**
+     * Génère le titre du rapport avec agence et date
+     */
+    private generateReportTitle(): string {
+        let agency = '';
+        let date = '';
+
+        // Récupérer l'agence à partir des données BO ou Partenaire
+        if (this.response?.boOnly && this.response.boOnly.length > 0) {
+            const firstBoRecord = this.response.boOnly[0];
+            agency = this.getValueWithFallback(firstBoRecord, ['Agence', 'agence', 'AGENCE', 'agency', 'Agency', 'AGENCY']);
+        } else if (this.response?.partnerOnly && this.response.partnerOnly.length > 0) {
+            const firstPartnerRecord = this.response.partnerOnly[0];
+            agency = this.getValueWithFallback(firstPartnerRecord, ['Agence', 'agence', 'AGENCE', 'agency', 'Agency', 'AGENCY']);
+        }
+
+        // Récupérer la date à partir de selectedDate ou date actuelle
+        if (this.selectedDate) {
+            const dateObj = new Date(this.selectedDate);
+            date = dateObj.toLocaleDateString('fr-FR', { 
+                day: '2-digit', 
+                month: 'short', 
+                year: 'numeric' 
+            });
+        } else {
+            // Utiliser la date actuelle si pas de date sélectionnée
+            date = new Date().toLocaleDateString('fr-FR', { 
+                day: '2-digit', 
+                month: 'short', 
+                year: 'numeric' 
+            });
+        }
+
+        // Construire le titre
+        if (agency && agency.trim() !== '') {
+            return `ECART Réconciliation ${agency} du ${date}`;
+        } else {
+            return `ECART Réconciliation du ${date}`;
+        }
+    }
+
+    /**
+     * Génère le contenu CSV (fallback)
+     */
+    private generateCsvContent(report: any, selectedPartnerColumns: string[], boHeader: string, partnerHeader: string): string {
+        let csvContent = '';
+        
+        const spacing = ';;';
+        const boColumnsCount = boHeader.split(';').length;
+        const partnerColumnsCount = selectedPartnerColumns.length;
+        const topSpacing = 2; // 2 lignes d'espacement en haut
+
+        // Ajouter l'espacement en haut (2 lignes vides)
+        const emptyRow = ';'.repeat(boColumnsCount + 2 + partnerColumnsCount - 1); // -1 car on compte déjà les séparateurs
+        csvContent += `${emptyRow}\n`;
+        csvContent += `${emptyRow}\n`;
+
+        // Titre principal "ECART Réconciliation [Agence] du [Date]"
+        const reportTitle = this.generateReportTitle();
+        const totalColumns = boColumnsCount + 2 + partnerColumnsCount;
+        
+        // Centrer le titre en calculant l'espacement optimal
+        const titleLength = reportTitle.length;
+        const availableSpace = totalColumns - 1; // -1 car on compte déjà les séparateurs
+        const leftPadding = Math.floor((availableSpace - titleLength) / 2);
+        const rightPadding = availableSpace - titleLength - leftPadding;
+        
+        const titleRow = ';'.repeat(Math.max(0, leftPadding)) + reportTitle + ';'.repeat(Math.max(0, rightPadding));
+        csvContent += `${titleRow}\n`;
+
+        // Titres centrés
+        const boTitlePadding = Math.floor((boColumnsCount - 1) / 2);
+        const boTitleCells = ';'.repeat(boTitlePadding) + 'ECART BO' + ';'.repeat(boColumnsCount - 1 - boTitlePadding);
+
+        const partnerTitlePadding = Math.floor((partnerColumnsCount - 1) / 2);
+        const partnerTitleCells = ';'.repeat(partnerTitlePadding) + 'ECART PARTENAIRE' + ';'.repeat(partnerColumnsCount - 1 - partnerTitlePadding);
+
+        csvContent += `${boTitleCells}${spacing}${partnerTitleCells}\n`;
+        csvContent += `${boHeader}${spacing}${partnerHeader}\n`;
+
+        const maxRows = Math.max(report.ecartBo.length, report.ecartPartenaire.length);
+
+        for (let i = 0; i < maxRows; i++) {
+            let boRow = '';
+            let partnerRow = '';
+
+            if (i < report.ecartBo.length) {
+                const boItem = report.ecartBo[i];
+                boRow = `${boItem.Service || boItem.CLE};${boItem.telephoneClient};${boItem.montant};${boItem.Agence};${boItem.Date};${boItem.numeroTransGU};${boItem.IDTransaction};${boItem.SOURCE}`;
+            } else {
+                boRow = ';'.repeat(boColumnsCount - 1);
+            }
+
+            if (i < report.ecartPartenaire.length && selectedPartnerColumns.length > 0) {
+                // Utiliser directement les données originales au lieu des données transformées
+                const originalPartnerRecord = this.response?.partnerOnly?.[i];
+                
+                const row = selectedPartnerColumns.map(col => {
+                    let value = '';
+                    
+                    // Utiliser directement la valeur de la colonne dans les données originales
+                    if (originalPartnerRecord && originalPartnerRecord[col] !== undefined && originalPartnerRecord[col] !== null && originalPartnerRecord[col] !== '') {
+                        value = String(originalPartnerRecord[col]);
+                    } else {
+                        // Si pas trouvé, essayer avec les propriétés transformées comme fallback
+                        const partnerItem = report.ecartPartenaire[i];
+                        switch (col) {
+                            case 'CLE': value = partnerItem.CLE || ''; break;
+                            case 'téléphone client': value = partnerItem.telephoneClient || ''; break;
+                            case 'montant': value = partnerItem.montant || ''; break;
+                            case 'Agence': value = partnerItem.Agence || ''; break;
+                            case 'Date': value = partnerItem.Date || ''; break;
+                            case 'HEURE': value = partnerItem.Heure || ''; break;
+                            case 'SOURCE': value = partnerItem.SOURCE || ''; break;
+                            default: value = ''; break;
+                        }
+                    }
+                    
+                    return value;
+                });
+                partnerRow = row.join(';');
+            } else {
+                partnerRow = ';'.repeat(partnerColumnsCount - 1);
+            }
+
+            csvContent += `${boRow}${spacing}${partnerRow}\n`;
+        }
+
+        return csvContent;
     }
 } 

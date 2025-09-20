@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test de Performance des Exports</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            background: #fafafa;
+        }
+        .test-section h3 {
+            color: #2196F3;
+            margin-top: 0;
+        }
+        .performance-metrics {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }
+        .metric-card {
+            background: white;
+            padding: 15px;
+            border-radius: 6px;
+            border-left: 4px solid #4CAF50;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .metric-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #4CAF50;
+        }
+        .metric-label {
+            font-size: 14px;
+            color: #666;
+            margin-top: 5px;
+        }
+        .test-button {
+            background: #2196F3;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 10px 5px;
+            transition: background 0.3s;
+        }
+        .test-button:hover {
+            background: #1976D2;
+        }
+        .test-button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        .progress-bar {
+            width: 100%;
+            height: 20px;
+            background: #f0f0f0;
+            border-radius: 10px;
+            overflow: hidden;
+            margin: 10px 0;
+        }
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #4CAF50, #8BC34A);
+            transition: width 0.3s ease;
+        }
+        .log-container {
+            background: #1e1e1e;
+            color: #fff;
+            padding: 15px;
+            border-radius: 6px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            max-height: 300px;
+            overflow-y: auto;
+            margin: 15px 0;
+        }
+        .log-entry {
+            margin: 2px 0;
+        }
+        .log-info { color: #4CAF50; }
+        .log-warning { color: #FF9800; }
+        .log-error { color: #F44336; }
+        .comparison-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        .comparison-table th,
+        .comparison-table td {
+            border: 1px solid #ddd;
+            padding: 12px;
+            text-align: left;
+        }
+        .comparison-table th {
+            background: #f5f5f5;
+            font-weight: bold;
+        }
+        .improvement {
+            color: #4CAF50;
+            font-weight: bold;
+        }
+        .regression {
+            color: #F44336;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 Test de Performance des Exports Optimisés</h1>
+        
+        <div class="test-section">
+            <h3>📊 Métriques de Performance</h3>
+            <div class="performance-metrics">
+                <div class="metric-card">
+                    <div class="metric-value" id="exportTime">-</div>
+                    <div class="metric-label">Temps d'export (ms)</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value" id="memoryUsage">-</div>
+                    <div class="metric-label">Utilisation mémoire (MB)</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value" id="rowsPerSecond">-</div>
+                    <div class="metric-label">Lignes/seconde</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value" id="fileSize">-</div>
+                    <div class="metric-label">Taille fichier (KB)</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="test-section">
+            <h3>🧪 Tests d'Export</h3>
+            <div>
+                <button class="test-button" onclick="generateTestData()">Générer données de test</button>
+                <button class="test-button" onclick="testCSVExport()" id="csvBtn" disabled>Test Export CSV</button>
+                <button class="test-button" onclick="testExcelExport()" id="excelBtn" disabled>Test Export Excel</button>
+                <button class="test-button" onclick="testOptimizedExport()" id="optimizedBtn" disabled>Test Export Optimisé</button>
+                <button class="test-button" onclick="clearResults()">Effacer résultats</button>
+            </div>
+            
+            <div class="progress-bar" id="progressBar" style="display: none;">
+                <div class="progress-fill" id="progressFill" style="width: 0%"></div>
+            </div>
+        </div>
+
+        <div class="test-section">
+            <h3>📈 Comparaison des Performances</h3>
+            <table class="comparison-table" id="comparisonTable">
+                <thead>
+                    <tr>
+                        <th>Méthode</th>
+                        <th>Temps (ms)</th>
+                        <th>Mémoire (MB)</th>
+                        <th>Lignes/sec</th>
+                        <th>Amélioration</th>
+                    </tr>
+                </thead>
+                <tbody id="comparisonBody">
+                    <tr>
+                        <td colspan="5" style="text-align: center; color: #666;">Aucun test effectué</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="test-section">
+            <h3>📝 Logs de Test</h3>
+            <div class="log-container" id="logContainer">
+                <div class="log-entry log-info">Système de test initialisé</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let testData = [];
+        let testResults = [];
+
+        function log(message, type = 'info') {
+            const logContainer = document.getElementById('logContainer');
+            const timestamp = new Date().toLocaleTimeString();
+            const logEntry = document.createElement('div');
+            logEntry.className = `log-entry log-${type}`;
+            logEntry.textContent = `[${timestamp}] ${message}`;
+            logContainer.appendChild(logEntry);
+            logContainer.scrollTop = logContainer.scrollHeight;
+        }
+
+        function generateTestData() {
+            log('Génération de données de test...', 'info');
+            const startTime = performance.now();
+            
+            testData = [];
+            const columns = ['ID', 'Nom', 'Email', 'Montant', 'Date', 'Statut', 'Agence', 'Service'];
+            
+            // Générer 50,000 lignes de données de test
+            for (let i = 0; i < 50000; i++) {
+                const row = {
+                    'ID': i + 1,
+                    'Nom': `Utilisateur ${i + 1}`,
+                    'Email': `user${i + 1}@example.com`,
+                    'Montant': (Math.random() * 10000).toFixed(2),
+                    'Date': new Date(2024, Math.floor(Math.random() * 12), Math.floor(Math.random() * 28) + 1).toISOString().split('T')[0],
+                    'Statut': ['Actif', 'Inactif', 'Suspendu'][Math.floor(Math.random() * 3)],
+                    'Agence': `Agence ${Math.floor(Math.random() * 10) + 1}`,
+                    'Service': ['Orange Money', 'Mobile Money', 'Transfert'][Math.floor(Math.random() * 3)]
+                };
+                testData.push(row);
+            }
+            
+            const endTime = performance.now();
+            const generationTime = endTime - startTime;
+            
+            log(`✅ ${testData.length.toLocaleString()} lignes générées en ${generationTime.toFixed(2)}ms`, 'info');
+            
+            // Activer les boutons de test
+            document.getElementById('csvBtn').disabled = false;
+            document.getElementById('excelBtn').disabled = false;
+            document.getElementById('optimizedBtn').disabled = false;
+            
+            updateMetrics({
+                rowsPerSecond: Math.round(testData.length / (generationTime / 1000))
+            });
+        }
+
+        function testCSVExport() {
+            log('Début test export CSV standard...', 'info');
+            const startTime = performance.now();
+            const startMemory = performance.memory ? performance.memory.usedJSHeapSize : 0;
+            
+            try {
+                // Simulation d'export CSV standard
+                const csvContent = generateCSVContent(testData);
+                const blob = new Blob([csvContent], { type: 'text/csv' });
+                
+                const endTime = performance.now();
+                const endMemory = performance.memory ? performance.memory.usedJSHeapSize : 0;
+                
+                const result = {
+                    method: 'CSV Standard',
+                    time: endTime - startTime,
+                    memory: (endMemory - startMemory) / 1024 / 1024,
+                    rowsPerSecond: Math.round(testData.length / ((endTime - startTime) / 1000)),
+                    fileSize: blob.size / 1024
+                };
+                
+                testResults.push(result);
+                log(`✅ Export CSV terminé: ${result.time.toFixed(2)}ms, ${result.memory.toFixed(2)}MB`, 'info');
+                updateComparisonTable();
+                
+            } catch (error) {
+                log(`❌ Erreur export CSV: ${error.message}`, 'error');
+            }
+        }
+
+        function testExcelExport() {
+            log('Début test export Excel standard...', 'info');
+            const startTime = performance.now();
+            const startMemory = performance.memory ? performance.memory.usedJSHeapSize : 0;
+            
+            try {
+                // Simulation d'export Excel standard (sans XLSX pour ce test)
+                const excelContent = generateExcelContent(testData);
+                const blob = new Blob([excelContent], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+                
+                const endTime = performance.now();
+                const endMemory = performance.memory ? performance.memory.usedJSHeapSize : 0;
+                
+                const result = {
+                    method: 'Excel Standard',
+                    time: endTime - startTime,
+                    memory: (endMemory - startMemory) / 1024 / 1024,
+                    rowsPerSecond: Math.round(testData.length / ((endTime - startTime) / 1000)),
+                    fileSize: blob.size / 1024
+                };
+                
+                testResults.push(result);
+                log(`✅ Export Excel terminé: ${result.time.toFixed(2)}ms, ${result.memory.toFixed(2)}MB`, 'info');
+                updateComparisonTable();
+                
+            } catch (error) {
+                log(`❌ Erreur export Excel: ${error.message}`, 'error');
+            }
+        }
+
+        function testOptimizedExport() {
+            log('Début test export optimisé...', 'info');
+            const startTime = performance.now();
+            const startMemory = performance.memory ? performance.memory.usedJSHeapSize : 0;
+            
+            // Afficher la barre de progression
+            const progressBar = document.getElementById('progressBar');
+            const progressFill = document.getElementById('progressFill');
+            progressBar.style.display = 'block';
+            
+            // Simulation d'export optimisé avec chunks
+            const chunkSize = 5000;
+            const totalChunks = Math.ceil(testData.length / chunkSize);
+            let processedRows = 0;
+            
+            const processChunk = (chunkIndex) => {
+                return new Promise((resolve) => {
+                    setTimeout(() => {
+                        const start = chunkIndex * chunkSize;
+                        const end = Math.min(start + chunkSize, testData.length);
+                        const chunk = testData.slice(start, end);
+                        
+                        // Traitement du chunk
+                        const csvContent = generateCSVContent(chunk);
+                        
+                        processedRows += chunk.length;
+                        const progress = (processedRows / testData.length) * 100;
+                        progressFill.style.width = progress + '%';
+                        
+                        log(`Chunk ${chunkIndex + 1}/${totalChunks}: ${processedRows.toLocaleString()}/${testData.length.toLocaleString()} lignes`, 'info');
+                        
+                        resolve();
+                    }, 10); // Simulation d'un délai de traitement
+                });
+            };
+            
+            // Traitement séquentiel des chunks
+            const processAllChunks = async () => {
+                for (let i = 0; i < totalChunks; i++) {
+                    await processChunk(i);
+                }
+                
+                const endTime = performance.now();
+                const endMemory = performance.memory ? performance.memory.usedJSHeapSize : 0;
+                
+                const result = {
+                    method: 'Export Optimisé',
+                    time: endTime - startTime,
+                    memory: (endMemory - startMemory) / 1024 / 1024,
+                    rowsPerSecond: Math.round(testData.length / ((endTime - startTime) / 1000)),
+                    fileSize: (testData.length * 50) / 1024 // Estimation
+                };
+                
+                testResults.push(result);
+                log(`✅ Export optimisé terminé: ${result.time.toFixed(2)}ms, ${result.memory.toFixed(2)}MB`, 'info');
+                updateComparisonTable();
+                updateMetrics(result);
+                
+                progressBar.style.display = 'none';
+            };
+            
+            processAllChunks();
+        }
+
+        function generateCSVContent(data) {
+            if (data.length === 0) return '';
+            
+            const columns = Object.keys(data[0]);
+            const header = columns.join(';');
+            const rows = data.map(row => 
+                columns.map(col => {
+                    let val = row[col] !== undefined && row[col] !== null ? row[col].toString() : '';
+                    if (val.includes('"')) val = val.replace(/"/g, '""');
+                    if (val.includes(';') || val.includes('"') || val.includes('\n')) {
+                        val = '"' + val + '"';
+                    }
+                    return val;
+                }).join(';')
+            );
+            
+            return [header, ...rows].join('\r\n');
+        }
+
+        function generateExcelContent(data) {
+            // Simulation simplifiée du contenu Excel
+            return generateCSVContent(data);
+        }
+
+        function updateMetrics(result) {
+            if (result) {
+                document.getElementById('exportTime').textContent = result.time.toFixed(0);
+                document.getElementById('memoryUsage').textContent = result.memory.toFixed(1);
+                document.getElementById('rowsPerSecond').textContent = result.rowsPerSecond.toLocaleString();
+                document.getElementById('fileSize').textContent = result.fileSize.toFixed(0);
+            }
+        }
+
+        function updateComparisonTable() {
+            const tbody = document.getElementById('comparisonBody');
+            tbody.innerHTML = '';
+            
+            if (testResults.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: #666;">Aucun test effectué</td></tr>';
+                return;
+            }
+            
+            testResults.forEach((result, index) => {
+                const row = document.createElement('tr');
+                
+                // Calculer l'amélioration par rapport au premier test
+                let improvement = '';
+                if (index > 0) {
+                    const baseline = testResults[0];
+                    const timeImprovement = ((baseline.time - result.time) / baseline.time * 100);
+                    const memoryImprovement = ((baseline.memory - result.memory) / baseline.memory * 100);
+                    
+                    if (timeImprovement > 0) {
+                        improvement = `<span class="improvement">+${timeImprovement.toFixed(1)}% plus rapide</span>`;
+                    } else if (timeImprovement < 0) {
+                        improvement = `<span class="regression">${timeImprovement.toFixed(1)}% plus lent</span>`;
+                    } else {
+                        improvement = 'Même performance';
+                    }
+                } else {
+                    improvement = 'Baseline';
+                }
+                
+                row.innerHTML = `
+                    <td>${result.method}</td>
+                    <td>${result.time.toFixed(0)}</td>
+                    <td>${result.memory.toFixed(1)}</td>
+                    <td>${result.rowsPerSecond.toLocaleString()}</td>
+                    <td>${improvement}</td>
+                `;
+                
+                tbody.appendChild(row);
+            });
+        }
+
+        function clearResults() {
+            testResults = [];
+            testData = [];
+            updateComparisonTable();
+            document.getElementById('logContainer').innerHTML = '<div class="log-entry log-info">Logs effacés</div>';
+            document.getElementById('csvBtn').disabled = true;
+            document.getElementById('excelBtn').disabled = true;
+            document.getElementById('optimizedBtn').disabled = true;
+            document.getElementById('progressBar').style.display = 'none';
+            
+            // Réinitialiser les métriques
+            document.getElementById('exportTime').textContent = '-';
+            document.getElementById('memoryUsage').textContent = '-';
+            document.getElementById('rowsPerSecond').textContent = '-';
+            document.getElementById('fileSize').textContent = '-';
+        }
+
+        // Initialisation
+        log('Système de test de performance initialisé', 'info');
+        log('Cliquez sur "Générer données de test" pour commencer', 'info');
+    </script>
+</body>
+</html>

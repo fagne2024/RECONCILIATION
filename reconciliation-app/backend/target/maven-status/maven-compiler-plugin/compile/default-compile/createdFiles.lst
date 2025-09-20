@@ -54,6 +54,7 @@ com\reconciliation\model\Operation.class
 com\reconciliation\service\KeyDiscoveryService$KeyCandidate.class
 com\reconciliation\controller\FraisTransactionController.class
 com\reconciliation\service\ProfilService.class
+com\reconciliation\dto\DeleteOperationsResponse.class
 com\reconciliation\service\ImpactOPService.class
 com\reconciliation\repository\FraisTransactionRepository.class
 com\reconciliation\entity\JsonConverter$1.class
@@ -85,6 +86,7 @@ com\reconciliation\entity\ImpactOPEntity.class
 com\reconciliation\entity\ModulePermissionEntity.class
 com\reconciliation\service\KeyDiscoveryService$KeyDiscoveryResult.class
 com\reconciliation\config\WebConfig.class
+com\reconciliation\dto\DeleteOperationsRequest.class
 com\reconciliation\service\CsvReconciliationService.class
 com\reconciliation\entity\CompteEntity.class
 com\reconciliation\entity\StringArrayConverter.class

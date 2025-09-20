@@ -907,6 +907,22 @@ button:hover {
   box-shadow: 0 0 0 2px rgba(25, 118, 210, 0.2);
 }
 
+// Style pour le champ de saisie personnalisé du suffixe
+.filter-input[placeholder*="suffixe personnalisé"] {
+  border-color: #28a745;
+  background-color: #f8fff9;
+  
+  &:focus {
+    border-color: #28a745;
+    box-shadow: 0 0 0 2px rgba(40, 167, 69, 0.2);
+  }
+  
+  &::placeholder {
+    color: #6c757d;
+    font-style: italic;
+  }
+}
+
 .checkbox-group {
   display: flex;
   flex-wrap: wrap;

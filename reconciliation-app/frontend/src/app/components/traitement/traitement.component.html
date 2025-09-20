@@ -216,11 +216,35 @@
            id="exportFileName"
            [(ngModel)]="exportFileName" 
            placeholder="resultat"
+           [disabled]="isExporting"
            style="padding: 4px 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; min-width: 150px;"
            title="Entrez le nom du fichier (l'extension sera ajoutée automatiquement selon le format choisi)">
        </div>
-       <button type="button" (click)="exportCSV()" style="background: #007bff; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer;">Exporter en CSV</button>
-       <button type="button" (click)="exportXLS()" style="background: #28a745; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer;">Exporter en XLS</button>
+       <button type="button" 
+               (click)="exportCSV()" 
+               [disabled]="isExporting"
+               style="background: #007bff; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; opacity: isExporting ? 0.6 : 1;">
+         {{ isExporting ? 'Export en cours...' : 'Exporter en CSV' }}
+       </button>
+       <button type="button" 
+               (click)="exportXLS()" 
+               [disabled]="isExporting"
+               style="background: #28a745; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; opacity: isExporting ? 0.6 : 1;">
+         {{ isExporting ? 'Export en cours...' : 'Exporter en Excel' }}
+       </button>
+       
+       <!-- Barre de progression pour l'export -->
+       <div *ngIf="isExporting" class="export-progress" style="flex: 1; margin-left: 16px;">
+         <div style="display: flex; align-items: center; gap: 8px;">
+           <div style="flex: 1; background: #f0f0f0; border-radius: 4px; height: 8px; overflow: hidden;">
+             <div [style.width.%]="exportProgress.percentage" 
+                  style="background: linear-gradient(90deg, #007bff, #28a745); height: 100%; transition: width 0.3s ease;"></div>
+           </div>
+           <span style="font-size: 12px; color: #666; min-width: 60px;">{{ exportProgress.percentage | number:'1.0-0' }}%</span>
+         </div>
+         <div style="font-size: 12px; color: #666; margin-top: 4px;">{{ exportProgress.message }}</div>
+       </div>
+       
        <div *ngIf="successMsg.export" class="success-msg">{{ successMsg.export }}</div>
        <div *ngIf="errorMsg.export" class="error-msg">{{ errorMsg.export }}</div>
        <div *ngIf="successMsg.reorder" class="success-msg">{{ successMsg.reorder }}</div>
@@ -787,15 +811,39 @@
       </div>
       <div class="filter-group">
         <label>Suffixe du fichier :</label>
-        <select [(ngModel)]="exportTypeSuffix" class="filter-input">
+        <select [(ngModel)]="exportTypeSuffix" class="filter-input" (change)="onExportTypeSuffixChange()">
           <option value="">(aucun)</option>
           <option value="BO">BO</option>
           <option value="PART">PART</option>
+          <option value="CUSTOM">Personnalisé</option>
         </select>
+        <input *ngIf="exportTypeSuffix === 'CUSTOM'" 
+               type="text" 
+               [(ngModel)]="exportTypeCustomSuffix" 
+               placeholder="Entrez votre suffixe personnalisé" 
+               class="filter-input" 
+               style="margin-top: 8px;">
       </div>
       <div class="filter-group">
         <label>Description :</label>
         <input type="text" [(ngModel)]="exportTypeDescription" placeholder="Description" class="filter-input">
+      </div>
+      <div class="filter-group">
+        <label>Format de fichier :</label>
+        <div class="format-options">
+          <label class="format-option">
+            <input type="radio" [(ngModel)]="exportTypeFormat" value="csv" name="exportTypeFormat">
+            <span>CSV</span>
+          </label>
+          <label class="format-option">
+            <input type="radio" [(ngModel)]="exportTypeFormat" value="xls" name="exportTypeFormat">
+            <span>XLS</span>
+          </label>
+          <label class="format-option">
+            <input type="radio" [(ngModel)]="exportTypeFormat" value="xlsx" name="exportTypeFormat">
+            <span>XLSX</span>
+          </label>
+        </div>
       </div>
       <div class="filter-actions">
         <button type="button" (click)="exportByType()" [disabled]="!exportTypeCol || exportTypeSelected.length === 0" class="apply-btn">Exporter par type</button>
@@ -1056,6 +1104,40 @@
           </div>
         </div>
         <button type="button" (click)="applyRemoveCharactersFormatting()" [disabled]="!formatSelections['removeCharacters'].length">Appliquer</button>
+      </div>
+
+      <!-- Option : Supprimer caractères spéciaux -->
+      <label>
+        <input type="checkbox" [(ngModel)]="formatOptions['removeSpecialStrings']"> Supprimer caractères spéciaux
+      </label>
+      <div *ngIf="formatOptions['removeSpecialStrings']" class="format-columns">
+        <label>Colonnes à traiter :</label>
+        <select multiple [(ngModel)]="formatSelections['removeSpecialStrings']">
+          <option *ngFor="let col of columns" [value]="col">{{ col }}</option>
+        </select>
+        <div class="remove-special-strings-options">
+          <div class="option-group">
+            <label>Chaîne à supprimer :</label>
+            <input type="text" [(ngModel)]="specialStringToRemove" placeholder="Ex: _CM" style="width: 150px;">
+          </div>
+          <div class="option-group">
+            <label>Mode de suppression :</label>
+            <select [(ngModel)]="specialStringRemovalMode">
+              <option value="all">Toutes les occurrences</option>
+              <option value="start">Seulement au début</option>
+              <option value="end">Seulement à la fin</option>
+            </select>
+          </div>
+        </div>
+        <div class="remove-special-strings-help">
+          <small class="help-text">
+            💡 Cette option va supprimer une chaîne de caractères spécifique des valeurs sélectionnées.
+            <br><strong>Toutes les occurrences :</strong> "ABC_CM_DEF_CM" → "ABC_DEF"
+            <br><strong>Au début :</strong> "_CM_ABC" → "ABC"
+            <br><strong>À la fin :</strong> "ABC_CM" → "ABC"
+          </small>
+        </div>
+        <button type="button" (click)="applyRemoveSpecialStringsFormatting()" [disabled]="!formatSelections['removeSpecialStrings'].length || !specialStringToRemove">Appliquer</button>
       </div>
       
       <!-- Option : Supprimer des nombres -->

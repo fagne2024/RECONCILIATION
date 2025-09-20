@@ -17,6 +17,7 @@ export interface ColumnProcessingRule {
   trimSpaces?: boolean;
   removeSpecialChars?: boolean;
   removeAccents?: boolean;
+  stringToRemove?: string;
   padZeros?: boolean;
   regexReplace?: string;
   specialCharReplacementMap?: { [key: string]: string };

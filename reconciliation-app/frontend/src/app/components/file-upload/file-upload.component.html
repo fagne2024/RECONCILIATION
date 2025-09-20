@@ -482,6 +482,29 @@
         </div>
     </div>
 
+    <!-- Affichage des colonnes pour le mode manuel -->
+    <div class="columns-display" *ngIf="reconciliationMode === 'manual' && (boData.length > 0 || partnerData.length > 0)">
+        <div class="columns-section">
+            <h3>📊 Colonnes détectées</h3>
+            
+            <!-- Colonnes BO -->
+            <div class="file-columns" *ngIf="boData.length > 0">
+                <h4>📁 Fichier BO ({{ boData.length }} lignes)</h4>
+                <div class="columns-list">
+                    <span class="column-tag" *ngFor="let column of getColumnsFromData(boData)">{{ column }}</span>
+                </div>
+            </div>
+            
+            <!-- Colonnes Partenaire -->
+            <div class="file-columns" *ngIf="partnerData.length > 0">
+                <h4>📁 Fichier Partenaire ({{ partnerData.length }} lignes)</h4>
+                <div class="columns-list">
+                    <span class="column-tag" *ngFor="let column of getColumnsFromData(partnerData)">{{ column }}</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Boutons pour le mode manuel -->
     <div class="button-container" *ngIf="reconciliationMode === 'manual'">
         <div class="debug-info" style="background: #f0f0f0; padding: 10px; margin: 10px 0; border-radius: 5px; font-size: 12px;">

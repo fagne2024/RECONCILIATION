@@ -62,43 +62,33 @@ public class CsvReconciliationService implements DisposableBean {
     public ReconciliationResponse reconcile(ReconciliationRequest request) {
         long startTime = System.currentTimeMillis();
         
-        // LOGS DE DEBUG TRÈS VISIBLES
-        System.out.println("🚀🚀🚀 DÉBUT RÉCONCILIATION DEBUG 🚀🚀🚀");
-        System.out.println("📊 Données BO: " + request.getBoFileContent().size() + " lignes");
-        System.out.println("📊 Données Partenaire: " + request.getPartnerFileContent().size() + " lignes");
-        System.out.println("🔑 Clé BO: '" + request.getBoKeyColumn() + "'");
-        System.out.println("🔑 Clé Partenaire: '" + request.getPartnerKeyColumn() + "'");
+        // Début de la réconciliation
+        logger.info("Début de la réconciliation - BO: {} lignes, Partenaire: {} lignes", 
+            request.getBoFileContent().size(), request.getPartnerFileContent().size());
         
-        // 🔧 APPLICATION DES RÈGLES DE TRAITEMENT DES COLONNES
-        System.out.println("🔧 Application des règles de traitement des colonnes...");
+        // Application des règles de traitement des colonnes
         List<Map<String, String>> processedBoData = applyColumnProcessingRules(request.getBoFileContent(), "bo");
         List<Map<String, String>> processedPartnerData = applyColumnProcessingRules(request.getPartnerFileContent(), "partner");
-        
-        System.out.println("✅ Règles de traitement appliquées");
-        System.out.println("📊 Données BO après traitement: " + processedBoData.size() + " lignes");
-        System.out.println("📊 Données Partenaire après traitement: " + processedPartnerData.size() + " lignes");
         
                     // DEBUG: Afficher quelques exemples de valeurs (après traitement)
             if (!processedBoData.isEmpty()) {
                 Map<String, String> firstBoRecord = processedBoData.get(0);
                 String boKeyValue = firstBoRecord.get(request.getBoKeyColumn());
-                System.out.println("🔍 Exemple clé BO (après traitement): '" + request.getBoKeyColumn() + "' -> '" + boKeyValue + "'");
-                System.out.println("🔍 Toutes les clés BO disponibles: " + firstBoRecord.keySet());
+                logger.debug("Exemple clé BO: {} -> {}", request.getBoKeyColumn(), boKeyValue);
             }
             
             if (!processedPartnerData.isEmpty()) {
                 Map<String, String> firstPartnerRecord = processedPartnerData.get(0);
                 String partnerKeyValue = firstPartnerRecord.get(request.getPartnerKeyColumn());
-                System.out.println("🔍 Exemple clé Partenaire (après traitement): '" + request.getPartnerKeyColumn() + "' -> '" + partnerKeyValue + "'");
-                System.out.println("🔍 Toutes les clés Partenaire disponibles: " + firstPartnerRecord.keySet());
+                logger.debug("Exemple clé Partenaire: {} -> {}", request.getPartnerKeyColumn(), partnerKeyValue);
             }
         
                     // DEBUG: Afficher toutes les colonnes disponibles (après traitement)
             if (!processedBoData.isEmpty()) {
-                System.out.println("📋 Colonnes BO disponibles: " + processedBoData.get(0).keySet());
+                logger.debug("Colonnes BO disponibles: {}", processedBoData.get(0).keySet());
             }
             if (!processedPartnerData.isEmpty()) {
-                System.out.println("📋 Colonnes Partenaire disponibles: " + processedPartnerData.get(0).keySet());
+                logger.debug("Colonnes Partenaire disponibles: {}", processedPartnerData.get(0).keySet());
             }
         
         logger.info("🚀 Début de la réconciliation optimisée");
@@ -1166,7 +1156,7 @@ public class CsvReconciliationService implements DisposableBean {
      * Applique les règles de traitement des colonnes aux données
      */
     private List<Map<String, String>> applyColumnProcessingRules(List<Map<String, String>> data, String fileType) {
-        System.out.println("🔧 Application des règles de traitement pour le type: " + fileType);
+        logger.debug("Application des règles de traitement pour le type: {}", fileType);
         
         // Pour l'instant, appliquer une règle hardcodée pour IDTransaction
         // TODO: Récupérer les vraies règles depuis les modèles
@@ -1181,7 +1171,7 @@ public class CsvReconciliationService implements DisposableBean {
                 if (originalValue != null && originalValue.endsWith("_CM")) {
                     String newValue = originalValue.substring(0, originalValue.length() - 3);
                     processedRow.put("IDTransaction", newValue);
-                    System.out.println("🔧 Transformation IDTransaction: \"" + originalValue + "\" → \"" + newValue + "\"");
+                    logger.debug("Transformation IDTransaction: {} → {}", originalValue, newValue);
                 }
             }
             
@@ -1191,14 +1181,14 @@ public class CsvReconciliationService implements DisposableBean {
                 if (originalValue != null && originalValue.endsWith("_CM")) {
                     String newValue = originalValue.substring(0, originalValue.length() - 3);
                     processedRow.put("Numéro Trans GU", newValue);
-                    System.out.println("🔧 Transformation Numéro Trans GU: \"" + originalValue + "\" → \"" + newValue + "\"");
+                    logger.debug("Transformation Numéro Trans GU: {} → {}", originalValue, newValue);
                 }
             }
             
             processedData.add(processedRow);
         }
         
-        System.out.println("✅ Règles appliquées à " + processedData.size() + " lignes");
+        logger.debug("Règles appliquées à {} lignes", processedData.size());
         return processedData;
     }
 } 

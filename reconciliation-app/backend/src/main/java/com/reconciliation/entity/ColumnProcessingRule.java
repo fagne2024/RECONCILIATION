@@ -1,7 +1,6 @@
 package com.reconciliation.entity;
 
 import jakarta.persistence.*;
-import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonBackReference;
 import java.util.Map;
 
@@ -47,6 +46,9 @@ public class ColumnProcessingRule {
     
     @Column(name = "regex_replace")
     private String regexReplace;
+    
+    @Column(name = "string_to_remove")
+    private String stringToRemove;
     
     @Convert(converter = JsonConverter.class)
     @Column(columnDefinition = "TEXT")
@@ -160,6 +162,14 @@ public class ColumnProcessingRule {
         this.regexReplace = regexReplace;
     }
     
+    public String getStringToRemove() {
+        return stringToRemove;
+    }
+    
+    public void setStringToRemove(String stringToRemove) {
+        this.stringToRemove = stringToRemove;
+    }
+    
     public Map<String, String> getSpecialCharReplacementMap() {
         return specialCharReplacementMap;
     }
@@ -189,6 +199,7 @@ public class ColumnProcessingRule {
                 ", removeSpecialChars=" + removeSpecialChars +
                 ", removeAccents=" + removeAccents +
                 ", padZeros=" + padZeros +
+                ", stringToRemove='" + stringToRemove + '\'' +
                 ", ruleOrder=" + ruleOrder +
                 '}';
     }

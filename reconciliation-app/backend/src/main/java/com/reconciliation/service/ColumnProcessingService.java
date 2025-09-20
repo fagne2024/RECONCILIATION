@@ -1,13 +1,10 @@
 package com.reconciliation.service;
 
 import com.reconciliation.entity.ColumnProcessingRule;
-import com.reconciliation.entity.AutoProcessingModel;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
-import java.util.regex.Pattern;
-import java.util.regex.Matcher;
 
 @Service
 public class ColumnProcessingService {
@@ -74,6 +71,7 @@ public class ColumnProcessingService {
         stringValue = applyCaseTransformations(stringValue, rule);
         stringValue = applySpaceTransformations(stringValue, rule);
         stringValue = applySpecialCharTransformations(stringValue, rule);
+        stringValue = applyStringRemoval(stringValue, rule);
         stringValue = applyAccentRemoval(stringValue, rule);
         stringValue = applyPadding(stringValue, rule);
         stringValue = applyRegexReplace(stringValue, rule);
@@ -144,6 +142,18 @@ public class ColumnProcessingService {
             }
         }
         
+        return value;
+    }
+
+    /**
+     * Applique la suppression de chaînes spécifiques
+     */
+    private String applyStringRemoval(String value, ColumnProcessingRule rule) {
+        String stringToRemove = rule.getStringToRemove();
+        if (stringToRemove != null && !stringToRemove.isEmpty()) {
+            // Supprimer toutes les occurrences de la chaîne spécifiée
+            value = value.replace(stringToRemove, "");
+        }
         return value;
     }
 

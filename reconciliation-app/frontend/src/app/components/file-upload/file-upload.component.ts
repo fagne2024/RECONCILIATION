@@ -1,4 +1,4 @@
-import { Component, EventEmitter, Output } from '@angular/core';
+import { Component, EventEmitter, Output, ChangeDetectorRef } from '@angular/core';
 import { ReconciliationService } from '../../services/reconciliation.service';
 import { AutoProcessingService, ProcessingResult } from '../../services/auto-processing.service';
 import { OrangeMoneyUtilsService } from '../../services/orange-money-utils.service';
@@ -9,6 +9,7 @@ import { Router } from '@angular/router';
 import { AppStateService } from '../../services/app-state.service';
 import { forkJoin } from 'rxjs';
 import { PopupService } from '../../services/popup.service';
+import { ProgressIndicatorService } from '../../services/progress-indicator.service';
 
 @Component({
     selector: 'app-file-upload',
@@ -86,7 +87,9 @@ export class FileUploadComponent {
         private orangeMoneyUtilsService: OrangeMoneyUtilsService,
         private router: Router, 
         private appStateService: AppStateService,
-        private popupService: PopupService
+        private popupService: PopupService,
+        private progressIndicatorService: ProgressIndicatorService,
+        private cd: ChangeDetectorRef
     ) {
         // Initialiser le type de réconciliation depuis le service
         this.reconciliationType = this.appStateService.getReconciliationType();
@@ -514,26 +517,26 @@ export class FileUploadComponent {
         
         if (isOrangeMoneyFile) {
             console.log('🎯 Fichier Orange Money détecté dans le file upload');
-            console.log('🔍 autoBoData.length:', this.autoBoData.length);
-            console.log('🔍 autoPartnerData.length:', this.autoPartnerData.length);
+            console.log('🔍 boData.length:', this.boData.length);
+            console.log('🔍 partnerData.length:', this.partnerData.length);
             
             // Appliquer le filtrage sur les données appropriées
-            if (isBo && this.autoBoData.length > 0) {
-                const originalCount = this.autoBoData.length;
-                this.autoBoData = this.filterOrangeMoneyData(this.autoBoData);
-                const filteredCount = this.autoBoData.length;
+            if (isBo && this.boData.length > 0) {
+                const originalCount = this.boData.length;
+                this.boData = this.filterOrangeMoneyData(this.boData);
+                const filteredCount = this.boData.length;
                 
                 console.log(`✅ Filtrage Orange Money appliqué sur BO: ${filteredCount} lignes avec "Succès" sur ${originalCount} lignes totales`);
                 this.showOrangeMoneyFilterNotificationForFileUpload(fileName, 'BO', originalCount, filteredCount);
-            } else if (!isBo && this.autoPartnerData.length > 0) {
-                const originalCount = this.autoPartnerData.length;
-                this.autoPartnerData = this.filterOrangeMoneyData(this.autoPartnerData);
-                const filteredCount = this.autoPartnerData.length;
+            } else if (!isBo && this.partnerData.length > 0) {
+                const originalCount = this.partnerData.length;
+                this.partnerData = this.filterOrangeMoneyData(this.partnerData);
+                const filteredCount = this.partnerData.length;
                 
                 console.log(`✅ Filtrage Orange Money appliqué sur Partenaire: ${filteredCount} lignes avec "Succès" sur ${originalCount} lignes totales`);
                 this.showOrangeMoneyFilterNotificationForFileUpload(fileName, 'Partenaire', originalCount, filteredCount);
             } else {
-                console.log('⚠️ Aucune donnée disponible pour le filtrage (isBo:', isBo, ', autoBoData.length:', this.autoBoData.length, ', autoPartnerData.length:', this.autoPartnerData.length, ')');
+                console.log('⚠️ Aucune donnée disponible pour le filtrage (isBo:', isBo, ', boData.length:', this.boData.length, ', partnerData.length:', this.partnerData.length, ')');
             }
         } else {
             console.log('⚠️ Fichier non-Orange Money détecté, pas de filtrage automatique');
@@ -553,6 +556,92 @@ export class FileUploadComponent {
         
         console.log('🎯 Notification Orange Money (File Upload):', message);
         this.popupService.showInfo(message, 'Filtrage Orange Money');
+    }
+
+    /**
+     * Sélectionne et ordonne les colonnes Orange Money pour correspondre à la logique du menu Traitement
+     * Ordre attendu: Référence, Débit, Crédit, N° de Compte, Date, Service, Statut
+     * Si le fichier ne semble pas être Orange Money, renvoie les données telles quelles.
+     * EXCEPTION: Le fichier PMOMBF ne doit pas utiliser les colonnes par défaut Orange Money.
+     */
+    private applyOrangeMoneyColumnSelection<T extends Record<string, any>>(rows: T[], fileName?: string): T[] {
+        if (!rows || rows.length === 0) return rows;
+
+        const headers = Object.keys(rows[0]);
+        console.log('🔍 applyOrangeMoneyColumnSelection - Colonnes d\'entrée:', headers);
+        console.log('🔍 applyOrangeMoneyColumnSelection - Nom du fichier:', fileName);
+        
+        const lower = (s: string) => s.toLowerCase();
+
+        // EXCEPTION: Le fichier PMOMBF ne doit pas utiliser les colonnes par défaut Orange Money
+        if (fileName && lower(fileName).includes('pmombf')) {
+            console.log('🚫 Exception PMOMBF détectée - retour des données originales sans transformation Orange Money');
+            return rows;
+        }
+
+        // Détection d'un fichier Orange Money basée sur la présence de colonnes clés
+        const looksLikeOM = headers.some(h => lower(h).includes('référence') || lower(h).includes('reference'))
+            && headers.some(h => lower(h).includes('statut') || lower(h).includes('status'))
+            && headers.some(h => lower(h).includes('date'));
+
+        console.log('🔍 Détection Orange Money:', looksLikeOM);
+        
+        if (!looksLikeOM) {
+            console.log('✅ Fichier non-Orange Money détecté, retour des données originales');
+            return rows;
+        }
+
+        const targetOrder = [
+            'Référence',
+            'Débit',
+            'Crédit',
+            'N° de Compte',
+            'Date',
+            'Service',
+            'Statut'
+        ];
+
+        // Fonction de matching souple inspirée de la logique du menu Traitement
+        const findColumn = (target: string): string | null => {
+            const targetLower = target.toLowerCase();
+            // Correspondance exacte d'abord
+            const exact = headers.find(h => h === target);
+            if (exact) return exact;
+
+            // Correspondances partielles spécifiques
+            for (const h of headers) {
+                const hLower = lower(h);
+                if (target === 'Référence' && (hLower.includes('référence') || hLower.includes('reference'))) return h;
+                if (target === 'Débit' && hLower.includes('débit')) return h;
+                if (target === 'Crédit' && hLower.includes('crédit')) return h;
+                if (target === 'N° de Compte' && ((hLower.includes('n°') || hLower.includes('no') || hLower.includes('nº')) && hLower.includes('compte'))) return h;
+                if (target === 'Date' && hLower.includes('date')) return h;
+                if (target === 'Service' && hLower.includes('service')) return h;
+                if (target === 'Statut' && (hLower.includes('statut') || hLower.includes('status'))) return h;
+            }
+            return null;
+        };
+
+        const mappedColumns: (string | null)[] = targetOrder.map(findColumn);
+
+        // Si aucune correspondance pertinente, ne pas altérer
+        if (mappedColumns.every(c => c === null)) return rows;
+
+        // Recomposer les lignes avec uniquement les colonnes cibles, dans l'ordre
+        const remapped = rows.map(row => {
+            const obj: any = {};
+            mappedColumns.forEach((col, idx) => {
+                const targetName = targetOrder[idx];
+                if (col && Object.prototype.hasOwnProperty.call(row, col)) {
+                    obj[targetName] = row[col];
+                } else {
+                    obj[targetName] = '';
+                }
+            });
+            return obj as T;
+        });
+
+        return remapped;
     }
 
     private parseFile(file: File, isBo: boolean): void {
@@ -603,7 +692,7 @@ export class FileUploadComponent {
             // Pour les gros fichiers (>50k lignes), utiliser un parsing optimisé
             if (lines.length > 50000) {
                 console.log(`🚀 Traitement optimisé pour gros fichier: ${lines.length} lignes`);
-                this.parseLargeCSV(lines, isBo);
+                this.parseLargeCSV(lines, isBo, file.name);
             } else {
                 // Parsing normal pour petits fichiers avec détection automatique du délimiteur
                 const delimiter = this.detectDelimiter(lines[0]);
@@ -648,12 +737,14 @@ export class FileUploadComponent {
                                 console.log(`📊 Lignes de données créées: ${processedRows.length}`);
                                 
                                 if (isBo) {
-                                    this.autoBoData = this.normalizeData(processedRows);
+                                    this.boData = this.applyOrangeMoneyColumnSelection(this.normalizeData(processedRows), file.name);
                                 } else {
-                                    this.autoPartnerData = this.normalizeData(this.convertDebitCreditToNumber(processedRows));
+                                    this.partnerData = this.applyOrangeMoneyColumnSelection(this.normalizeData(this.convertDebitCreditToNumber(processedRows)), file.name);
                                 }
                                 
-                                console.log(`✅ Fichier Excel traité: ${isBo ? this.autoBoData.length : this.autoPartnerData.length} lignes`);
+                                console.log(`✅ Fichier Excel traité: ${isBo ? this.boData.length : this.partnerData.length} lignes`);
+                                // Forcer la détection des changements
+                                this.cd.detectChanges();
                                 
                                 // Appliquer le filtrage automatique Orange Money si nécessaire
                                 this.applyAutomaticOrangeMoneyFilterForFileUpload(file.name, isBo);
@@ -671,15 +762,36 @@ export class FileUploadComponent {
                         skipEmptyLines: true,
                         complete: (results) => {
                             console.log('Première ligne lue:', results.data[0]);
+                            console.log('📊 Colonnes détectées dans le CSV:', results.data.length > 0 ? Object.keys(results.data[0]) : []);
+                            
+                            const rawData = results.data as Record<string, string>[];
+                            console.log('📊 Données brutes CSV:', rawData.length, 'lignes');
+                            
+                            // Vérifier si les colonnes semblent être des données au lieu d'en-têtes
+                            const firstRowKeys = Object.keys(rawData[0] || {});
+                            const hasValidHeaders = this.hasValidHeaders(firstRowKeys);
+                            
+                            if (!hasValidHeaders && rawData.length > 0) {
+                                console.log('⚠️ En-têtes invalides détectés, tentative de parsing sans en-têtes');
+                                this.parseCSVWithoutHeaders(text, delimiter, isBo, file.name);
+                                return;
+                            }
+                            
                             if (isBo) {
-                                this.boData = this.normalizeData(results.data as Record<string, string>[]);
+                                this.boData = this.applyOrangeMoneyColumnSelection(this.normalizeData(rawData), file.name);
+                                console.log('📊 Données BO après traitement:', this.boData.length, 'lignes');
+                                console.log('📊 Colonnes BO après traitement:', this.boData.length > 0 ? Object.keys(this.boData[0]) : []);
                             } else {
-                                this.partnerData = this.normalizeData(this.convertDebitCreditToNumber(results.data as Record<string, string>[]));
+                                this.partnerData = this.applyOrangeMoneyColumnSelection(this.normalizeData(this.convertDebitCreditToNumber(rawData)), file.name);
+                                console.log('📊 Données Partenaire après traitement:', this.partnerData.length, 'lignes');
+                                console.log('📊 Colonnes Partenaire après traitement:', this.partnerData.length > 0 ? Object.keys(this.partnerData[0]) : []);
                             }
                             // Mettre à jour l'estimation seulement si les deux fichiers sont chargés
                             if (this.boFile && this.partnerFile) {
                                 this.updateEstimatedTime();
                             }
+                            // Forcer la détection des changements
+                            this.cd.detectChanges();
                         },
                         error: (error: any) => {
                             console.error('Erreur lors de la lecture du fichier CSV:', error);
@@ -727,7 +839,7 @@ export class FileUploadComponent {
         let bestScore = -1;
         let bestHeaderRow: string[] = [];
         
-        // NOUVELLE APPROCHE : Chercher d'abord à la ligne 23 (ligne spécifique)
+        // NOUVELLE APPROCHE : Chercher d'abord à la ligne 23 (ligne spécifique) mais vérifier que ce sont des en-têtes
         console.log('🎯 ÉTAPE 1: Recherche ciblée à la ligne 23');
         
         // Vérifier si la ligne 23 existe
@@ -740,16 +852,19 @@ export class FileUploadComponent {
             console.log(`🔍 Ligne 23 - Données brutes:`, cells23);
             console.log(`🔍 Ligne 23 - Colonnes non vides: ${nonEmptyColumns23}`);
             
-            // Si la ligne 23 a beaucoup de colonnes, c'est probablement la bonne
-            if (nonEmptyColumns23 >= 10) {
-                console.log('✅ Ligne 23 trouvée avec suffisamment de colonnes!');
+            // Vérifier si la ligne 23 contient des en-têtes valides (pas des données)
+            const hasValidHeaders = this.hasValidHeaders(rowStrings23);
+            
+            // Si la ligne 23 a beaucoup de colonnes ET contient des en-têtes valides
+            if (nonEmptyColumns23 >= 10 && hasValidHeaders) {
+                console.log('✅ Ligne 23 trouvée avec suffisamment de colonnes et en-têtes valides!');
                 return {
                     isOrangeMoney: true,
                     headerRowIndex: 22, // Index 22 = ligne 23
                     headerRow: cells23
                 };
             } else {
-                console.log('⚠️ Ligne 23 n\'a pas assez de colonnes, recherche dans les 50 premières lignes');
+                console.log('⚠️ Ligne 23 n\'a pas assez de colonnes ou contient des données au lieu d\'en-têtes, recherche dans les 50 premières lignes');
             }
         } else {
             console.log('⚠️ Ligne 23 n\'existe pas, recherche dans les 50 premières lignes');
@@ -894,7 +1009,7 @@ export class FileUploadComponent {
         return normalized;
     }
 
-    private parseLargeCSV(lines: string[], isBo: boolean): void {
+    private parseLargeCSV(lines: string[], isBo: boolean, fileName: string): void {
         const CHUNK_SIZE = 10000;
         const data: Record<string, string>[] = [];
         
@@ -949,25 +1064,143 @@ export class FileUploadComponent {
         this.processingMessage = '';
         
         if (isBo) {
-            this.boData = data;
+            this.boData = this.applyOrangeMoneyColumnSelection(data, fileName);
         } else {
-            this.partnerData = this.convertDebitCreditToNumber(data);
+            this.partnerData = this.applyOrangeMoneyColumnSelection(this.convertDebitCreditToNumber(data), fileName);
         }
         
         // Mettre à jour l'estimation seulement si les deux fichiers sont chargés
         if (this.boFile && this.partnerFile) {
             this.updateEstimatedTime();
         }
+        // Forcer la détection des changements
+        this.cd.detectChanges();
     }
 
     private detectDelimiter(line: string): string {
         const delimiters = [';', ',', '\t', '|'];
+        let bestDelimiter = ';'; // Délimiteur par défaut
+        let maxCount = 0;
+        
         for (const delimiter of delimiters) {
-            if (line.includes(delimiter)) {
-                return delimiter;
+            const count = (line.match(new RegExp('\\' + delimiter, 'g')) || []).length;
+            if (count > maxCount) {
+                maxCount = count;
+                bestDelimiter = delimiter;
             }
         }
-        return ';'; // Délimiteur par défaut
+        
+        console.log(`🔍 Détection délimiteur: "${bestDelimiter}" (${maxCount} occurrences)`);
+        return bestDelimiter;
+    }
+
+    /**
+     * Vérifie si les clés semblent être des en-têtes valides plutôt que des données
+     */
+    private hasValidHeaders(keys: string[]): boolean {
+        if (!keys || keys.length === 0) return false;
+        
+        // Vérifier si les clés contiennent des patterns typiques de données
+        const dataPatterns = [
+            /^\d{10,}$/, // Numéros de téléphone longs
+            /^\d{4}-\d{2}-\d{2}/, // Dates
+            /^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}/, // Dates avec heures
+            /^Col\d+$/, // Colonnes génériques
+            /^Successful$/, // Statuts
+            /^Cash in$/, // Types de transaction
+            /^Cash out$/, // Types de transaction
+            /^FRI:\d+\/MSISDN$/, // Références Orange Money
+            /^ID:\d+\/(MM|MSISDN|USER)$/, // IDs Orange Money
+            /^INTOUCH CASHIN CASHOUT$/, // Services Orange Money
+            /^INTOUCH PAYMENT$/, // Services Orange Money
+            /^depot\s+\d+\s+\d+$/, // Descriptions de dépôt
+            /^Un paiement de \d+ XAF/, // Descriptions de paiement
+            /^-\d+$/, // Montants négatifs
+            /^XAF$/, // Devises
+            /^Debit$/, // Types de transaction
+            /^PC0_\d+$/, // Codes de transaction
+        ];
+        
+        // Filtrer les clés vides et les colonnes génériques
+        const nonEmptyKeys = keys.filter(key => key && key.trim() !== '' && !key.startsWith('Col'));
+        
+        // Si plus de 30% des clés non vides correspondent à des patterns de données, ce ne sont probablement pas des en-têtes
+        const dataMatches = nonEmptyKeys.filter(key => 
+            dataPatterns.some(pattern => pattern.test(key))
+        ).length;
+        
+        const isDataLike = nonEmptyKeys.length > 0 && dataMatches > nonEmptyKeys.length * 0.3;
+        
+        console.log('🔍 Validation des en-têtes:', {
+            keys: keys.slice(0, 5), // Afficher seulement les 5 premiers
+            nonEmptyKeys: nonEmptyKeys.slice(0, 5),
+            dataMatches,
+            nonEmptyKeysCount: nonEmptyKeys.length,
+            totalKeys: keys.length,
+            isDataLike
+        });
+        
+        return !isDataLike;
+    }
+
+    /**
+     * Parse un fichier CSV sans en-têtes en générant des noms de colonnes
+     */
+    private parseCSVWithoutHeaders(text: string, delimiter: string, isBo: boolean, fileName: string): void {
+        console.log('🔧 Parsing CSV sans en-têtes');
+        
+        Papa.parse(text, {
+            header: false,
+            delimiter: delimiter,
+            skipEmptyLines: true,
+            complete: (results) => {
+                const rawRows = results.data as any[][];
+                console.log('📊 Lignes brutes sans en-têtes:', rawRows.length);
+                
+                if (rawRows.length === 0) {
+                    console.log('⚠️ Aucune donnée trouvée');
+                    return;
+                }
+                
+                // Générer des noms de colonnes basés sur le nombre de colonnes
+                const firstRow = rawRows[0];
+                const columnCount = firstRow.length;
+                const generatedHeaders = Array.from({ length: columnCount }, (_, i) => `Colonne_${i + 1}`);
+                
+                console.log('📊 En-têtes générés:', generatedHeaders);
+                
+                // Créer les lignes de données avec les en-têtes générés
+                const processedRows: any[] = [];
+                for (const rowData of rawRows) {
+                    if (!rowData || rowData.length === 0) continue;
+                    
+                    const row: any = {};
+                    generatedHeaders.forEach((header: string, index: number) => {
+                        const value = rowData[index];
+                        row[header] = value !== undefined && value !== null ? value : '';
+                    });
+                    processedRows.push(row);
+                }
+                
+                console.log('📊 Lignes de données créées:', processedRows.length);
+                
+                if (isBo) {
+                    this.boData = this.applyOrangeMoneyColumnSelection(this.normalizeData(processedRows), fileName);
+                } else {
+                    this.partnerData = this.applyOrangeMoneyColumnSelection(this.normalizeData(this.convertDebitCreditToNumber(processedRows)), fileName);
+                }
+                
+                // Mettre à jour l'estimation seulement si les deux fichiers sont chargés
+                if (this.boFile && this.partnerFile) {
+                    this.updateEstimatedTime();
+                }
+                // Forcer la détection des changements
+                this.cd.detectChanges();
+            },
+            error: (error: any) => {
+                console.error('Erreur lors de la lecture du fichier CSV sans en-têtes:', error);
+            }
+        });
     }
 
     private parseXLSX(file: File, isBo: boolean): void {
@@ -1038,10 +1271,12 @@ export class FileUploadComponent {
                     }
                     
                     if (isBo) {
-                        this.boData = this.normalizeData(rows);
+                        this.boData = this.applyOrangeMoneyColumnSelection(this.normalizeData(rows), file.name);
                     } else {
-                        this.partnerData = this.normalizeData(this.convertDebitCreditToNumber(rows));
+                        this.partnerData = this.applyOrangeMoneyColumnSelection(this.normalizeData(this.convertDebitCreditToNumber(rows)), file.name);
                     }
+                    // Forcer la détection des changements
+                    this.cd.detectChanges();
                 } else {
                     // Corriger les caractères spéciaux dans les en-têtes
                     const correctedHeaders = headers.map(header => this.normalizeColumnName(header));
@@ -1064,10 +1299,12 @@ export class FileUploadComponent {
                     console.log(`📊 Lignes de données créées: ${rows.length}`);
                     
                     if (isBo) {
-                        this.boData = this.normalizeData(rows);
+                        this.boData = this.applyOrangeMoneyColumnSelection(this.normalizeData(rows), file.name);
                     } else {
-                        this.partnerData = this.normalizeData(this.convertDebitCreditToNumber(rows));
+                        this.partnerData = this.applyOrangeMoneyColumnSelection(this.normalizeData(this.convertDebitCreditToNumber(rows)), file.name);
                     }
+                    // Forcer la détection des changements
+                    this.cd.detectChanges();
                 }
                 
                 console.log(`✅ Fichier Excel traité: ${isBo ? this.boData.length : this.partnerData.length} lignes`);
@@ -1101,8 +1338,8 @@ export class FileUploadComponent {
     private detectExcelHeadersImproved(jsonData: any[][]): { headerRowIndex: number; headerRow: string[] } {
         console.log('🔄 Détection améliorée des en-têtes Excel');
         
-        // Analyser les 20 premières lignes pour trouver le meilleur candidat
-        const maxRowsToCheck = Math.min(20, jsonData.length);
+        // Analyser davantage de lignes pour les rapports avec entête tardif (ex: Orange Money)
+        const maxRowsToCheck = Math.min(300, jsonData.length);
         let bestHeaderRowIndex = 0;
         let bestScore = 0;
         let bestHeaderRow: string[] = [];
@@ -1138,6 +1375,26 @@ export class FileUploadComponent {
         console.log(`🔍 Meilleur en-tête trouvé à la ligne ${bestHeaderRowIndex} avec score ${bestScore}`);
         console.log(`🔍 En-tête détecté:`, bestHeaderRow);
         
+        // Fallback orienté Orange Money: si la meilleure ligne ne contient pas assez d'indices, chercher plus bas
+        const omTargets = ['référence','reference','débit','debit','crédit','credit','n°','no','nº','compte','date','service','statut','status'];
+        const bestOmMatches = (bestHeaderRow || []).reduce((acc, c) => {
+            const v = (c || '').toString().toLowerCase();
+            return acc + (omTargets.some(t => v.includes(t)) ? 1 : 0);
+        }, 0);
+        if (bestOmMatches < 4) {
+            for (let i = bestHeaderRowIndex + 1; i < Math.min(bestHeaderRowIndex + 80, jsonData.length); i++) {
+                const row = jsonData[i] || [];
+                const rowStrings = row.map(cell => (cell !== undefined && cell !== null) ? String(cell).trim() : '');
+                const matches = rowStrings.reduce((acc, c) => acc + (omTargets.some(t => c.toLowerCase().includes(t)) ? 1 : 0), 0);
+                if (matches >= 4) {
+                    bestHeaderRowIndex = i;
+                    bestHeaderRow = [...rowStrings];
+                    console.log(`⭐ Fallback OM: en-tête ajusté à la ligne ${i} (matches=${matches})`);
+                    break;
+                }
+            }
+        }
+
         return {
             headerRowIndex: bestHeaderRowIndex,
             headerRow: bestHeaderRow
@@ -1159,9 +1416,8 @@ export class FileUploadComponent {
         const nonEmptyColumns = rowStrings.filter(cell => cell !== '').length;
         
         // Bonus pour avoir plusieurs colonnes non vides
-        if (nonEmptyColumns >= 3) {
-            score += 10;
-        }
+        if (nonEmptyColumns >= 3) score += 10;
+        if (nonEmptyColumns >= 6) score += 10;
         
         // Bonus pour les mots-clés d'en-tête
         const headerKeywords = [
@@ -1182,16 +1438,24 @@ export class FileUploadComponent {
             }
             
             // Bonus pour les colonnes "N°"
-            if (cell.includes('N°') || cell === 'N') {
-                score += 15;
-            }
+            if (cell.includes('N°') || cell === 'N') score += 15;
             
             // Bonus pour les caractères spéciaux typiques des en-têtes
             if (cell.includes('é') || cell.includes('è') || cell.includes('à') || 
-                cell.includes('ç') || cell.includes('ù') || cell.includes('ô')) {
-                score += 3;
-            }
+                cell.includes('ç') || cell.includes('ù') || cell.includes('ô')) score += 3;
         }
+
+        // Heuristique spécifique Orange Money
+        const rowLower = rowStrings.map(c => c.toLowerCase());
+        const omTargets = ['référence','reference','débit','debit','crédit','credit','n°','no','nº','compte','date','service','statut','status'];
+        const omMatches = rowLower.reduce((acc, v) => acc + (omTargets.some(t => v.includes(t)) ? 1 : 0), 0);
+        score += omMatches * 5;
+        if (omMatches >= 5) score += 30;
+        // Bonus si présence combinée de Date + (Référence) + (Débit|Crédit)
+        const hasDate = rowLower.some(v => v.includes('date'));
+        const hasRef  = rowLower.some(v => v.includes('référence') || v.includes('reference'));
+        const hasAmt  = rowLower.some(v => v.includes('débit') || v.includes('debit') || v.includes('crédit') || v.includes('credit'));
+        if (hasDate && hasRef && hasAmt) score += 20;
         
         // Pénalité pour les lignes avec peu de colonnes non vides
         if (nonEmptyColumns < 2) {
@@ -1221,13 +1485,37 @@ export class FileUploadComponent {
         return 'Format Excel inconnu';
     }
 
+    private _canProceedCache: boolean | null = null;
+    private _lastDataLengths = { bo: 0, partner: 0 };
+
     canProceed(): boolean {
-        const canProceed = this.boData.length > 0 && this.partnerData.length > 0;
-        console.log('🔍 canProceed() appelé:', {
-            boDataLength: this.boData.length,
-            partnerDataLength: this.partnerData.length,
+        // Cache pour éviter les recalculs inutiles
+        const currentBoLength = this.boData.length;
+        const currentPartnerLength = this.partnerData.length;
+        
+        // Vérifier si les données ont changé depuis le dernier calcul
+        if (this._lastDataLengths.bo === currentBoLength && 
+            this._lastDataLengths.partner === currentPartnerLength && 
+            this._canProceedCache !== null) {
+            return this._canProceedCache;
+        }
+
+        const canProceed = currentBoLength > 0 && currentPartnerLength > 0;
+        
+        // Mettre à jour le cache et les longueurs
+        this._canProceedCache = canProceed;
+        this._lastDataLengths = { bo: currentBoLength, partner: currentPartnerLength };
+        
+        // Log seulement si les données ont changé
+        console.log('🔍 canProceed() mis à jour:', {
+            boDataLength: currentBoLength,
+            partnerDataLength: currentPartnerLength,
             canProceed: canProceed
         });
+        
+        // Forcer la détection des changements si l'état a changé
+        this.cd.detectChanges();
+        
         return canProceed;
     }
 
@@ -1469,10 +1757,18 @@ export class FileUploadComponent {
 
     private parseAutoFile(file: File, isBo: boolean): void {
         const fileName = file.name.toLowerCase();
+        const fileSizeMB = file.size / (1024 * 1024);
+        
         if (fileName.endsWith('.csv')) {
             this.parseAutoCSV(file, isBo);
         } else if (this.isExcelFile(fileName)) {
-            this.parseAutoXLSX(file, isBo);
+            // Utiliser la méthode alternative pour les très gros fichiers Excel
+            if (fileSizeMB > 50) {
+                console.log(`🔄 Fichier Excel très volumineux détecté (${fileSizeMB.toFixed(1)} MB), utilisation de la méthode alternative`);
+                this.parseAutoXLSXLargeFile(file, isBo);
+            } else {
+                this.parseAutoXLSX(file, isBo);
+            }
         } else {
             this.popupService.showError('Format de fichier non supporté. Veuillez choisir un fichier CSV ou Excel (.xls, .xlsx, .xlsm, .xlsb, .xlt, .xltx, .xltm)', 'Format Non Supporté');
         }
@@ -1527,25 +1823,121 @@ export class FileUploadComponent {
     }
 
     private parseAutoXLSX(file: File, isBo: boolean): void {
+        // Afficher un indicateur de progression pour les fichiers volumineux
+        const fileSizeMB = file.size / (1024 * 1024);
+        const startTime = Date.now();
+        
+        if (fileSizeMB > 5) {
+            console.log(`📁 Fichier volumineux détecté (${fileSizeMB.toFixed(1)} MB). Traitement optimisé en cours...`);
+            this.progressIndicatorService.showProgress(
+                'Lecture du fichier Excel en cours...',
+                file.name,
+                file.size
+            );
+        }
+
         const reader = new FileReader();
         reader.onload = (e: ProgressEvent<FileReader>) => {
             try {
                 console.log('🔄 Début lecture fichier Excel automatique pour réconciliation');
-            const data = new Uint8Array(e.target?.result as ArrayBuffer);
-            const workbook = XLSX.read(data, { type: 'array' });
-            const firstSheetName = workbook.SheetNames[0];
-            const worksheet = workbook.Sheets[firstSheetName];
                 
-                // Conversion en tableau de tableaux pour analyse
-                const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
-                if (jsonData.length === 0) {
-                    console.log('❌ Fichier Excel vide');
+                // Options optimisées pour les fichiers volumineux
+                const options: XLSX.ParsingOptions = {
+                    type: 'array',
+                    cellDates: true,
+                    cellNF: false,
+                    cellText: false,
+                    sheetStubs: false,
+                    // Lire toutes les lignes
+                    sheetRows: undefined,
+                };
+
+                const data = new Uint8Array(e.target?.result as ArrayBuffer);
+                const workbook = XLSX.read(data, options);
+                const firstSheetName = workbook.SheetNames[0];
+                const worksheet = workbook.Sheets[firstSheetName];
+                
+                // Vérifier si la feuille est valide avant de continuer
+                console.log('🔍 Informations sur la feuille Excel:', {
+                    sheetName: firstSheetName,
+                    hasWorksheet: !!worksheet,
+                    hasRef: !!worksheet?.['!ref'],
+                    ref: worksheet?.['!ref'],
+                    range: worksheet?.['!range'],
+                    workbookSheets: workbook.SheetNames.length
+                });
+
+                if (!worksheet) {
+                    console.log('❌ Feuille Excel non trouvée');
+                    if (fileSizeMB > 5) {
+                        this.progressIndicatorService.hideProgress();
+                    }
+                    this.popupService.showError('Impossible de lire la feuille Excel. Vérifiez que le fichier n\'est pas corrompu.', 'Erreur de lecture Excel');
+                    return;
+                }
+
+                // Pour les gros fichiers, on essaie de lire même sans !ref
+                if (!worksheet['!ref'] && fileSizeMB < 10) {
+                    console.log('❌ Feuille Excel vide (petit fichier)');
+                    if (fileSizeMB > 5) {
+                        this.progressIndicatorService.hideProgress();
+                    }
+                    this.popupService.showError('Le fichier Excel semble être vide. Veuillez vérifier le fichier et réessayer.', 'Fichier Excel vide');
+                    return;
+                }
+
+                // Conversion optimisée en tableau de tableaux pour analyse
+                let jsonData: any[][];
+                try {
+                    jsonData = XLSX.utils.sheet_to_json(worksheet, { 
+                        header: 1,
+                        defval: '', // Valeur par défaut pour les cellules vides
+                        raw: false // Convertir les dates en strings
+                    }) as any[][];
+                } catch (error) {
+                    console.log('⚠️ Erreur lors de la conversion JSON, tentative avec options alternatives:', error);
+                    // Tentative alternative avec options plus permissives
+                    jsonData = XLSX.utils.sheet_to_json(worksheet, { 
+                        header: 1,
+                        defval: '',
+                        raw: true, // Garder les valeurs brutes
+                        blankrows: false // Ignorer les lignes vides
+                    }) as any[][];
+                }
+                
+                if (!jsonData || jsonData.length === 0) {
+                    console.log('❌ Fichier Excel vide ou aucune donnée trouvée');
+                    if (fileSizeMB > 5) {
+                        this.progressIndicatorService.hideProgress();
+                    }
+                    
+                    // Pour les très gros fichiers, suggérer des solutions alternatives
+                    if (fileSizeMB > 50) {
+                        this.popupService.showError(
+                            `Le fichier Excel (${fileSizeMB.toFixed(1)} MB) est très volumineux et ne peut pas être traité entièrement. 
+                            Suggestions : 
+                            1. Divisez le fichier en plusieurs parties plus petites
+                            2. Supprimez les colonnes non nécessaires
+                            3. Utilisez un fichier CSV à la place si possible`,
+                            'Fichier trop volumineux'
+                        );
+                    } else {
+                        this.popupService.showError('Aucune donnée trouvée dans le fichier Excel. Veuillez vérifier que le fichier contient des données.', 'Aucune donnée');
+                    }
                     return;
                 }
                 
                 console.log(`📊 Données Excel brutes: ${jsonData.length} lignes`);
                 
-                // Détecter les en-têtes
+                // Pour les très gros fichiers, informer l'utilisateur de la limitation
+                if (fileSizeMB > 50 && jsonData.length === 10000) {
+                    console.log('⚠️ Fichier très volumineux : seulement les 10,000 premières lignes ont été lues');
+                    this.progressIndicatorService.updateMessage(
+                        'Fichier très volumineux détecté. Traitement des 10,000 premières lignes seulement...'
+                    );
+                }
+                
+                // Détecter les en-têtes avec une méthode optimisée
                 const headerDetection = this.detectExcelHeadersImproved(jsonData);
                 const headers = headerDetection.headerRow;
                 const headerRowIndex = headerDetection.headerRowIndex;
@@ -1558,25 +1950,44 @@ export class FileUploadComponent {
                     const fallbackHeaders = jsonData[0]?.map((h, idx) => h || `Col${idx + 1}`) || [];
                     const correctedHeaders = fallbackHeaders.map(header => this.normalizeColumnName(header));
                     
-                    // Créer les lignes de données
+                    // Créer les lignes de données avec traitement par chunks pour les gros fichiers
                     const rows: any[] = [];
-                    for (let i = 1; i < jsonData.length; i++) {
-                        const rowData = jsonData[i] as any[];
-                        if (!rowData || rowData.length === 0) continue;
+                    const chunkSize = 1000; // Traiter par chunks de 1000 lignes
+                    
+                    for (let i = 1; i < jsonData.length; i += chunkSize) {
+                        const endIndex = Math.min(i + chunkSize, jsonData.length);
                         
-                        const row: any = {};
-                        correctedHeaders.forEach((header: string, index: number) => {
-                            const value = rowData[index];
-                            row[header] = value !== undefined && value !== null ? value : '';
-                        });
-                        rows.push(row);
+                        for (let j = i; j < endIndex; j++) {
+                            const rowData = jsonData[j] as any[];
+                            if (!rowData || rowData.length === 0) continue;
+                            
+                            const row: any = {};
+                            correctedHeaders.forEach((header: string, index: number) => {
+                                const value = rowData[index];
+                                row[header] = value !== undefined && value !== null ? value : '';
+                            });
+                            rows.push(row);
+                        }
+                        
+                        // Log de progression pour gros fichiers
+                        if (fileSizeMB > 5 && i % (chunkSize * 10) === 1) {
+                            const progress = ((i - 1) / jsonData.length * 100);
+                            console.log(`📈 Progression: ${progress.toFixed(1)}% (${i}/${jsonData.length} lignes traitées)`);
+                            this.progressIndicatorService.updateProgress(
+                                progress,
+                                `Traitement des données: ${progress.toFixed(1)}%`
+                            );
+                        }
                     }
                     
-            if (isBo) {
+                    if (isBo) {
                         this.autoBoData = rows;
-            } else {
+                    } else {
                         this.autoPartnerData = this.convertDebitCreditToNumber(rows);
                     }
+                    
+                    // Invalider le cache de canProceed
+                    this._canProceedCache = null;
                 } else {
                     // Corriger les caractères spéciaux dans les en-têtes
                     const correctedHeaders = headers.map(header => this.normalizeColumnName(header));
@@ -1584,16 +1995,32 @@ export class FileUploadComponent {
                     
                     // Créer les lignes de données en commençant après la ligne d'en-tête
                     const rows: any[] = [];
-                    for (let i = headerRowIndex + 1; i < jsonData.length; i++) {
-                        const rowData = jsonData[i] as any[];
-                        if (!rowData || rowData.length === 0) continue;
+                    const chunkSize = 1000; // Traiter par chunks de 1000 lignes
+                    
+                    for (let i = headerRowIndex + 1; i < jsonData.length; i += chunkSize) {
+                        const endIndex = Math.min(i + chunkSize, jsonData.length);
                         
-                        const row: any = {};
-                        correctedHeaders.forEach((header: string, index: number) => {
-                            const value = rowData[index];
-                            row[header] = value !== undefined && value !== null ? value : '';
-                        });
-                        rows.push(row);
+                        for (let j = i; j < endIndex; j++) {
+                            const rowData = jsonData[j] as any[];
+                            if (!rowData || rowData.length === 0) continue;
+                            
+                            const row: any = {};
+                            correctedHeaders.forEach((header: string, index: number) => {
+                                const value = rowData[index];
+                                row[header] = value !== undefined && value !== null ? value : '';
+                            });
+                            rows.push(row);
+                        }
+                        
+                        // Log de progression pour gros fichiers
+                        if (fileSizeMB > 5 && i % (chunkSize * 10) === headerRowIndex + 1) {
+                            const progress = ((i - headerRowIndex - 1) / (jsonData.length - headerRowIndex - 1) * 100);
+                            console.log(`📈 Progression: ${progress.toFixed(1)}% (${i - headerRowIndex}/${jsonData.length - headerRowIndex - 1} lignes traitées)`);
+                            this.progressIndicatorService.updateProgress(
+                                progress,
+                                `Traitement des données: ${progress.toFixed(1)}%`
+                            );
+                        }
                     }
                     
                     console.log(`📊 Lignes de données créées: ${rows.length}`);
@@ -1608,9 +2035,20 @@ export class FileUploadComponent {
                     } else {
                         this.autoPartnerData = this.convertDebitCreditToNumber(rows);
                     }
+                    
+                    // Invalider le cache de canProceed
+                    this._canProceedCache = null;
                 }
                 
                 console.log(`✅ Fichier Excel traité: ${isBo ? this.autoBoData.length : this.autoPartnerData.length} lignes`);
+                
+                // Masquer l'indicateur de progression
+                if (fileSizeMB > 5) {
+                    this.progressIndicatorService.updateProgress(100, 'Traitement terminé avec succès !');
+                    setTimeout(() => {
+                        this.progressIndicatorService.hideProgress();
+                    }, 1500);
+                }
                 
                 // Appliquer le filtrage automatique Orange Money si nécessaire
                 // ATTENTION: Le filtrage se fait APRÈS le traitement complet pour préserver toutes les colonnes
@@ -1618,12 +2056,438 @@ export class FileUploadComponent {
                 
             } catch (error) {
                 console.error('❌ Erreur lors de la lecture du fichier Excel:', error);
+                // Masquer l'indicateur de progression en cas d'erreur
+                if (fileSizeMB > 5) {
+                    this.progressIndicatorService.hideProgress();
+                }
+                // En cas d'erreur avec un gros fichier, suggérer des solutions
+                if (file.size > 10 * 1024 * 1024) { // > 10MB
+                    console.log('💡 Suggestion: Le fichier est très volumineux. Considérez diviser le fichier ou utiliser le mode de traitement par lots.');
+                }
             }
         };
         reader.onerror = (e) => {
             console.error('Erreur lors de la lecture du fichier (FileReader):', e);
         };
         reader.readAsArrayBuffer(file);
+    }
+
+    /**
+     * Méthode alternative pour traiter les fichiers Excel très volumineux
+     * Utilise une approche de lecture par chunks pour éviter les problèmes de mémoire
+     */
+    private async parseAutoXLSXLargeFile(file: File, isBo: boolean): Promise<void> {
+        const fileSizeMB = file.size / (1024 * 1024);
+        console.log(`🔄 Traitement fichier très volumineux (${fileSizeMB.toFixed(1)} MB) avec méthode alternative`);
+        
+        this.progressIndicatorService.showProgress(
+            'Lecture du fichier Excel volumineux...',
+            file.name,
+            file.size
+        );
+
+        try {
+            // Lire le fichier par chunks pour éviter les problèmes de mémoire
+            const arrayBuffer = await this.readFileAsArrayBuffer(file);
+            const data = new Uint8Array(arrayBuffer);
+            
+            // Options pour forcer le chargement des feuilles
+            const options: XLSX.ParsingOptions = {
+                type: 'array',
+                cellDates: false,
+                cellNF: false,
+                cellText: false,
+                sheetStubs: false,
+                sheetRows: undefined,
+                // Forcer le chargement des feuilles
+                bookSheets: true,
+                bookProps: false,
+                bookVBA: false,
+                // Options supplémentaires pour les gros fichiers
+                cellStyles: false,
+                cellHTML: false,
+                cellFormula: false
+            };
+
+            const workbook = XLSX.read(data, options);
+            console.log('📋 Toutes les feuilles disponibles:', workbook.SheetNames);
+            console.log('🔍 Workbook.Sheets existe:', !!workbook.Sheets);
+            
+            // Vérifier si les feuilles sont chargées
+            if (!workbook.Sheets || workbook.SheetNames.length === 0) {
+                throw new Error('Aucune feuille chargée dans le workbook');
+            }
+            
+            let firstSheetName = workbook.SheetNames[0];
+            let worksheet = workbook.Sheets[firstSheetName];
+
+            console.log('🔍 Informations workbook volumineux:', {
+                sheetName: firstSheetName,
+                hasWorksheet: !!worksheet,
+                hasRef: !!worksheet?.['!ref'],
+                ref: worksheet?.['!ref'],
+                workbookSheets: workbook.SheetNames.length
+            });
+
+            // Si la première feuille n'est pas accessible, essayer les autres
+            if (!worksheet && workbook.SheetNames.length > 1) {
+                console.log('⚠️ Première feuille inaccessible, tentative avec les autres feuilles...');
+                for (let i = 1; i < workbook.SheetNames.length; i++) {
+                    const sheetName = workbook.SheetNames[i];
+                    const testWorksheet = workbook.Sheets[sheetName];
+                    if (testWorksheet) {
+                        firstSheetName = sheetName;
+                        worksheet = testWorksheet;
+                        console.log(`✅ Feuille alternative trouvée: ${sheetName}`);
+                        break;
+                    }
+                }
+            }
+
+            if (!worksheet) {
+                console.log('❌ Aucune feuille accessible trouvée');
+                throw new Error('Impossible de lire la feuille Excel');
+            }
+
+            // Lecture limitée des données avec fallback
+            let jsonData: any[][];
+            try {
+                jsonData = XLSX.utils.sheet_to_json(worksheet, { 
+                    header: 1,
+                    defval: '',
+                    raw: true
+                }) as any[][];
+            } catch (error) {
+                console.log('⚠️ Erreur lors de la lecture avec range, tentative sans range:', error);
+                // Tentative sans limitation de range
+                jsonData = XLSX.utils.sheet_to_json(worksheet, { 
+                    header: 1,
+                    defval: '',
+                    raw: true,
+                    blankrows: false
+                }) as any[][];
+            }
+
+            if (!jsonData || jsonData.length === 0) {
+                throw new Error('Aucune donnée trouvée dans le fichier');
+            }
+
+            console.log(`📊 Données Excel volumineux: ${jsonData.length} lignes (limitées)`);
+
+            // Traitement standard des données
+            const headerDetection = this.detectExcelHeadersImproved(jsonData);
+            const headers = headerDetection.headerRow;
+            const headerRowIndex = headerDetection.headerRowIndex;
+
+            if (!headers || headers.length === 0 || headers.every(h => !h || h.trim() === '')) {
+                const fallbackHeaders = jsonData[0]?.map((h, idx) => h || `Col${idx + 1}`) || [];
+                const correctedHeaders = fallbackHeaders.map(header => this.normalizeColumnName(header));
+                
+                const rows: any[] = [];
+                for (let i = 1; i < jsonData.length; i++) {
+                    const rowData = jsonData[i] as any[];
+                    if (!rowData || rowData.length === 0) continue;
+                    
+                    const row: any = {};
+                    correctedHeaders.forEach((header: string, index: number) => {
+                        const value = rowData[index];
+                        row[header] = value !== undefined && value !== null ? value : '';
+                    });
+                    rows.push(row);
+                }
+                
+                if (isBo) {
+                    this.autoBoData = rows;
+                } else {
+                    this.autoPartnerData = this.convertDebitCreditToNumber(rows);
+                }
+            } else {
+                const correctedHeaders = headers.map(header => this.normalizeColumnName(header));
+                const rows: any[] = [];
+                
+                for (let i = headerRowIndex + 1; i < jsonData.length; i++) {
+                    const rowData = jsonData[i] as any[];
+                    if (!rowData || rowData.length === 0) continue;
+                    
+                    const row: any = {};
+                    correctedHeaders.forEach((header: string, index: number) => {
+                        const value = rowData[index];
+                        row[header] = value !== undefined && value !== null ? value : '';
+                    });
+                    rows.push(row);
+                }
+                
+                if (isBo) {
+                    this.autoBoData = rows;
+                    if (this.detectTRXBOAndExtractServices(this.autoBoData)) {
+                        this.showServiceSelectionStep();
+                    }
+                } else {
+                    this.autoPartnerData = this.convertDebitCreditToNumber(rows);
+                }
+            }
+
+            console.log(`✅ Fichier Excel volumineux traité: ${isBo ? this.autoBoData.length : this.autoPartnerData.length} lignes`);
+            this.progressIndicatorService.updateProgress(100, 'Traitement terminé avec succès !');
+            
+            setTimeout(() => {
+                this.progressIndicatorService.hideProgress();
+            }, 1500);
+
+            // Invalider le cache de canProceed
+            this._canProceedCache = null;
+
+        } catch (error) {
+            console.error('❌ Erreur lors du traitement du fichier volumineux, tentative de fallback ultime:', error);
+            
+            // Tentative de fallback ultime avec options minimales
+            try {
+                console.log('🔄 Tentative de fallback ultime avec options minimales...');
+                const arrayBuffer = await this.readFileAsArrayBuffer(file);
+                const data = new Uint8Array(arrayBuffer);
+                
+                // Options ultra-minimales pour forcer le chargement
+                const minimalOptions: XLSX.ParsingOptions = {
+                    type: 'array',
+                    cellDates: false,
+                    cellNF: false,
+                    cellText: false,
+                    sheetStubs: false,
+                    // Essayer sans limitation de lignes
+                    sheetRows: undefined,
+                    // Forcer le chargement des feuilles
+                    bookSheets: true
+                };
+
+                const workbook = XLSX.read(data, minimalOptions);
+                console.log('📋 Feuilles disponibles (fallback):', workbook.SheetNames);
+                console.log('🔍 Workbook.Sheets existe (fallback):', !!workbook.Sheets);
+                
+                if (!workbook.Sheets || workbook.SheetNames.length === 0) {
+                    throw new Error('Aucune feuille chargée en fallback');
+                }
+                
+                if (workbook.SheetNames.length > 0) {
+                    const sheetName = workbook.SheetNames[0];
+                    const worksheet = workbook.Sheets[sheetName];
+                    
+                    if (worksheet) {
+                        console.log(`✅ Feuille trouvée en fallback: ${sheetName}`);
+                        
+                        // Lecture ultra-simple
+                        const jsonData = XLSX.utils.sheet_to_json(worksheet, { 
+                            header: 1,
+                            defval: '',
+                            raw: true
+                        }) as any[][];
+
+                        if (jsonData && jsonData.length > 0) {
+                            console.log(`📊 Données fallback: ${jsonData.length} lignes`);
+                            
+                            // Traitement simplifié
+                            const fallbackHeaders = jsonData[0]?.map((h, idx) => h || `Col${idx + 1}`) || [];
+                            const correctedHeaders = fallbackHeaders.map(header => this.normalizeColumnName(header));
+                            
+                            const rows: any[] = [];
+                            const maxRows = Math.min(jsonData.length, 1000); // Limiter à 1000 lignes max
+                            
+                            for (let i = 1; i < maxRows; i++) {
+                                const rowData = jsonData[i] as any[];
+                                if (!rowData || rowData.length === 0) continue;
+                                
+                                const row: any = {};
+                                correctedHeaders.forEach((header: string, index: number) => {
+                                    const value = rowData[index];
+                                    row[header] = value !== undefined && value !== null ? value : '';
+                                });
+                                rows.push(row);
+                            }
+                            
+                            if (isBo) {
+                                this.autoBoData = rows;
+                            } else {
+                                this.autoPartnerData = this.convertDebitCreditToNumber(rows);
+                            }
+
+                            console.log(`✅ Fallback réussi: ${rows.length} lignes traitées`);
+                            this.progressIndicatorService.updateProgress(100, 'Traitement réussi en mode fallback !');
+                            
+                            setTimeout(() => {
+                                this.progressIndicatorService.hideProgress();
+                            }, 1500);
+
+                            this._canProceedCache = null;
+                            return;
+                        }
+                    }
+                }
+                
+                throw new Error('Fallback ultime échoué');
+                
+            } catch (fallbackError) {
+                console.error('❌ Fallback ultime échoué, tentative du fallback final:', fallbackError);
+                // Dernière tentative avec la méthode de fallback ultime
+                await this.parseAutoXLSXUltimateFallback(file, isBo);
+            }
+        }
+    }
+
+    /**
+     * Lit un fichier comme ArrayBuffer de manière asynchrone
+     */
+    private readFileAsArrayBuffer(file: File): Promise<ArrayBuffer> {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = (e) => resolve(e.target?.result as ArrayBuffer);
+            reader.onerror = (e) => reject(e);
+            reader.readAsArrayBuffer(file);
+        });
+    }
+
+    /**
+     * Méthode de fallback ultime pour les fichiers Excel problématiques
+     * Utilise une approche complètement différente
+     */
+    private async parseAutoXLSXUltimateFallback(file: File, isBo: boolean): Promise<void> {
+        const fileSizeMB = file.size / (1024 * 1024);
+        console.log(`🔄 Fallback ultime pour fichier Excel (${fileSizeMB.toFixed(1)} MB)`);
+        
+        this.progressIndicatorService.showProgress(
+            'Tentative de lecture alternative...',
+            file.name,
+            file.size
+        );
+
+        try {
+            const arrayBuffer = await this.readFileAsArrayBuffer(file);
+            const data = new Uint8Array(arrayBuffer);
+            
+            // Essayer différentes approches de lecture
+            const approaches = [
+                // Approche 1: Lecture complète sans limitations
+                {
+                    name: 'Lecture complète',
+                    options: {
+                        type: 'array' as const,
+                        cellDates: false,
+                        cellNF: false,
+                        cellText: false,
+                        sheetStubs: false
+                    }
+                },
+                // Approche 2: Lecture avec cellDates activé
+                {
+                    name: 'Avec cellDates',
+                    options: {
+                        type: 'array' as const,
+                        cellDates: true,
+                        cellNF: false,
+                        cellText: false,
+                        sheetStubs: false
+                    }
+                },
+                // Approche 3: Lecture avec cellText activé
+                {
+                    name: 'Avec cellText',
+                    options: {
+                        type: 'array' as const,
+                        cellDates: false,
+                        cellNF: false,
+                        cellText: true,
+                        sheetStubs: false
+                    }
+                }
+            ];
+
+            for (const approach of approaches) {
+                try {
+                    console.log(`🔍 Tentative: ${approach.name}`);
+                    const workbook = XLSX.read(data, approach.options);
+                    
+                    console.log(`📋 ${approach.name} - Feuilles:`, workbook.SheetNames);
+                    console.log(`📋 ${approach.name} - Sheets existe:`, !!workbook.Sheets);
+                    
+                    if (workbook.Sheets && workbook.SheetNames.length > 0) {
+                        const sheetName = workbook.SheetNames[0];
+                        const worksheet = workbook.Sheets[sheetName];
+                        
+                        if (worksheet) {
+                            console.log(`✅ Succès avec ${approach.name}: ${sheetName}`);
+                            
+                            // Lecture des données avec options permissives
+                            const jsonData = XLSX.utils.sheet_to_json(worksheet, { 
+                                header: 1,
+                                defval: '',
+                                raw: true,
+                                blankrows: false
+                            }) as any[][];
+
+                            if (jsonData && jsonData.length > 0) {
+                                console.log(`📊 Données lues: ${jsonData.length} lignes`);
+                                
+                                // Traitement simplifié
+                                const fallbackHeaders = jsonData[0]?.map((h, idx) => h || `Col${idx + 1}`) || [];
+                                const correctedHeaders = fallbackHeaders.map(header => this.normalizeColumnName(header));
+                                
+                                const rows: any[] = [];
+                                const maxRows = jsonData.length;
+                                
+                                for (let i = 1; i < maxRows; i++) {
+                                    const rowData = jsonData[i] as any[];
+                                    if (!rowData || rowData.length === 0) continue;
+                                    
+                                    const row: any = {};
+                                    correctedHeaders.forEach((header: string, index: number) => {
+                                        const value = rowData[index];
+                                        row[header] = value !== undefined && value !== null ? value : '';
+                                    });
+                                    rows.push(row);
+                                }
+                                
+                                if (isBo) {
+                                    this.autoBoData = rows;
+                                } else {
+                                    this.autoPartnerData = this.convertDebitCreditToNumber(rows);
+                                }
+
+                                console.log(`✅ Fallback ultime réussi avec ${approach.name}: ${rows.length} lignes`);
+                                this.progressIndicatorService.updateProgress(100, 'Lecture réussie avec méthode alternative !');
+                                
+                                setTimeout(() => {
+                                    this.progressIndicatorService.hideProgress();
+                                }, 1500);
+
+                                this._canProceedCache = null;
+                                return;
+                            }
+                        }
+                    }
+                } catch (approachError) {
+                    console.log(`❌ ${approach.name} échoué:`, approachError);
+                    continue;
+                }
+            }
+            
+            throw new Error('Toutes les approches de lecture ont échoué');
+            
+        } catch (error) {
+            console.error('❌ Fallback ultime complètement échoué:', error);
+            this.progressIndicatorService.hideProgress();
+            this.popupService.showError(
+                `Impossible de traiter ce fichier Excel de ${fileSizeMB.toFixed(1)} MB. 
+                
+                Le fichier semble avoir un format ou une structure qui empêche sa lecture par la bibliothèque XLSX.
+                
+                Solutions recommandées :
+                1. Ouvrez le fichier dans Excel et sauvegardez-le au format CSV
+                2. Divisez le fichier en plusieurs parties plus petites
+                3. Vérifiez que le fichier n'est pas protégé par mot de passe
+                4. Essayez de supprimer les colonnes non nécessaires
+                
+                Si le problème persiste, le fichier pourrait être corrompu.`,
+                'Fichier non lisible'
+            );
+        }
     }
 
 

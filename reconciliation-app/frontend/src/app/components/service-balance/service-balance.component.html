@@ -88,9 +88,69 @@
             </button>
         </div>
 
+        <!-- Barre de filtres et recherche -->
+        <div class="filters-section">
+            <div class="filters-row">
+                <div class="search-box">
+                    <i class="fas fa-search"></i>
+                    <input 
+                        type="text" 
+                        [(ngModel)]="searchTerm" 
+                        (input)="onSearchChange()"
+                        placeholder="Rechercher par nom de compte ou agence..."
+                        class="search-input">
+                </div>
+                
+                <div class="filter-controls">
+                    <select 
+                        [(ngModel)]="filterBySolde" 
+                        (change)="onFilterChange()"
+                        class="filter-select">
+                        <option value="all">Tous les soldes</option>
+                        <option value="positive">Soldes positifs</option>
+                        <option value="negative">Soldes négatifs</option>
+                        <option value="zero">Soldes à zéro</option>
+                    </select>
+                    
+                    <select 
+                        [(ngModel)]="sortBy" 
+                        (change)="onSortChange()"
+                        class="filter-select">
+                        <option value="numeroCompte">Trier par nom</option>
+                        <option value="solde">Trier par solde</option>
+                        <option value="dateDerniereMaj">Trier par date</option>
+                    </select>
+                    
+                    <button 
+                        (click)="sortOrder = sortOrder === 'asc' ? 'desc' : 'asc'; onSortChange()"
+                        class="btn btn-secondary sort-btn">
+                        <i class="fas" [class.fa-sort-amount-up]="sortOrder === 'asc'" [class.fa-sort-amount-down]="sortOrder === 'desc'"></i>
+                        {{ sortOrder === 'asc' ? 'Croissant' : 'Décroissant' }}
+                    </button>
+                    
+                    <button 
+                        (click)="clearFilters()"
+                        class="btn btn-warning clear-btn">
+                        <i class="fas fa-times"></i>
+                        Effacer les filtres
+                    </button>
+                </div>
+            </div>
+            
+            <div class="results-info">
+                <span class="results-count">
+                    {{ getTotalFilteredCount() }} compte(s) trouvé(s)
+                    <span *ngIf="searchTerm || filterBySolde !== 'all'" class="filtered-indicator">
+                        (filtré sur {{ filteredServiceComptes.length }} compte(s) au total)
+                    </span>
+                </span>
+            </div>
+        </div>
+
+        <!-- Grille des comptes -->
         <div class="comptes-grid">
             <div 
-                *ngFor="let compte of filteredServiceComptes" 
+                *ngFor="let compte of paginatedComptes" 
                 class="compte-card"
                 [class.selected]="isCompteSelected(compte)"
                 (click)="toggleCompteSelection(compte)">
@@ -115,6 +175,42 @@
                         {{ compte.solde | currency:'XAF':'symbol':'1.0-0' }}
                     </div>
                 </div>
+            </div>
+        </div>
+
+        <!-- Pagination -->
+        <div class="pagination-section" *ngIf="totalPages > 1">
+            <div class="pagination-info">
+                Page {{ currentPage }} sur {{ totalPages }} 
+                ({{ (currentPage - 1) * itemsPerPage + 1 }} - {{ Math.min(currentPage * itemsPerPage, getTotalFilteredCount()) }} sur {{ getTotalFilteredCount() }} comptes)
+            </div>
+            
+            <div class="pagination-controls">
+                <button 
+                    (click)="previousPage()"
+                    [disabled]="currentPage === 1"
+                    class="btn btn-secondary pagination-btn">
+                    <i class="fas fa-chevron-left"></i>
+                    Précédent
+                </button>
+                
+                <div class="page-numbers">
+                    <button 
+                        *ngFor="let page of getPageNumbers()"
+                        (click)="goToPage(page)"
+                        [class.active]="page === currentPage"
+                        class="btn page-btn">
+                        {{ page }}
+                    </button>
+                </div>
+                
+                <button 
+                    (click)="nextPage()"
+                    [disabled]="currentPage === totalPages"
+                    class="btn btn-secondary pagination-btn">
+                    Suivant
+                    <i class="fas fa-chevron-right"></i>
+                </button>
             </div>
         </div>
     </div>
