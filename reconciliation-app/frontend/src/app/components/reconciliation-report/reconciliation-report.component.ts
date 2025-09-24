@@ -78,10 +78,12 @@ export interface ReconciliationReportData {
                 </div>
                 <div class="filter-group">
                     <label>Date:</label>
-                    <select [(ngModel)]="selectedDate" (change)="filterReport()">
-                        <option value="">Toutes les dates</option>
-                        <option *ngFor="let date of uniqueDates" [value]="date">{{formatDate(date)}}</option>
-                    </select>
+                    <input 
+                        type="date" 
+                        [(ngModel)]="selectedDate" 
+                        (change)="filterReport()"
+                        class="filter-date"
+                        placeholder="Sélectionner une date">
                 </div>
             </div>
 
@@ -341,6 +343,22 @@ export interface ReconciliationReportData {
         }
 
         .filter-input:focus {
+            outline: none;
+            border-color: #007bff;
+            box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25);
+        }
+
+        .filter-date {
+            padding: 8px 12px;
+            border: 1px solid #ced4da;
+            border-radius: 6px;
+            font-size: 0.9rem;
+            background: white;
+            min-width: 150px;
+            transition: border-color 0.2s ease;
+        }
+
+        .filter-date:focus {
             outline: none;
             border-color: #007bff;
             box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25);
@@ -956,9 +974,19 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
 
     filterReport() {
         this.filteredReportData = this.reportData.filter(item => {
-            const agencyMatch = !this.selectedAgency || item.agency === this.selectedAgency;
-            const serviceMatch = !this.selectedService || item.service === this.selectedService;
-            const dateMatch = !this.selectedDate || item.date === this.selectedDate;
+            const agencyMatch = !this.selectedAgency || item.agency.toLowerCase().includes(this.selectedAgency.toLowerCase());
+            const serviceMatch = !this.selectedService || item.service.toLowerCase().includes(this.selectedService.toLowerCase());
+            
+            // Filtrage de date plus flexible
+            let dateMatch = true;
+            if (this.selectedDate) {
+                // Convertir la date sélectionnée en format comparable
+                const selectedDateObj = new Date(this.selectedDate);
+                const itemDateObj = new Date(item.date);
+                
+                // Comparer seulement la date (sans l'heure)
+                dateMatch = selectedDateObj.toDateString() === itemDateObj.toDateString();
+            }
             
             return agencyMatch && serviceMatch && dateMatch;
         });
