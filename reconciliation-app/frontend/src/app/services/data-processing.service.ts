@@ -326,8 +326,8 @@ export class DataProcessingService {
           const headers = jsonData[0].map((h: any) => h?.toString() || '');
           const dataRows = jsonData.slice(1);
           
-          // Traitement par chunks
-          const chunkSize = 10000;
+          // Traitement par chunks optimisé pour 700k lignes
+          const chunkSize = dataRows.length > 500000 ? 25000 : dataRows.length > 100000 ? 15000 : 10000;
           let processedRows = 0;
           
           for (let i = 0; i < dataRows.length; i += chunkSize) {

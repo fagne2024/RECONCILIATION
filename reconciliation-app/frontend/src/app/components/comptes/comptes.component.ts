@@ -1677,30 +1677,59 @@ export class ComptesComponent implements OnInit, OnDestroy {
         let globalOpeningSet = false;
         let globalOpening = 0;
         Object.entries(grouped).forEach(([date, ops], idx) => {
-            const sorted = ops.slice().sort((a, b) => {
-                const tA = new Date(a.dateOperation).getTime();
-                const tB = new Date(b.dateOperation).getTime();
-                if (tA !== tB) return tA - tB;
-                // Si égalité stricte, trie par id (ou autre champ unique)
-                return (a.id || 0) - (b.id || 0);
-            });
-            // Chercher la première opération de type total_cashin ou total_paiement
-            const firstTotalOp = sorted.find(op => op.typeOperation === 'total_cashin' || op.typeOperation === 'total_paiement');
-            let opening = sorted[0]?.soldeAvant ?? 0;
-            if (firstTotalOp) {
-                opening = firstTotalOp.soldeAvant ?? opening;
+            // Filtrer les opérations non annulées pour le calcul du solde de clôture
+            const opsValides = ops.filter(op => op.statut !== 'Annulée');
+            
+            if (opsValides.length === 0) {
+                // Si toutes les opérations sont annulées, utiliser le solde d'ouverture
+                const sorted = ops.slice().sort((a, b) => {
+                    const tA = new Date(a.dateOperation).getTime();
+                    const tB = new Date(b.dateOperation).getTime();
+                    if (tA !== tB) return tA - tB;
+                    return (a.id || 0) - (b.id || 0);
+                });
+                const firstTotalOp = sorted.find(op => op.typeOperation === 'total_cashin' || op.typeOperation === 'total_paiement');
+                let opening = sorted[0]?.soldeAvant ?? 0;
+                if (firstTotalOp) {
+                    opening = firstTotalOp.soldeAvant ?? opening;
+                }
+                if (!globalOpeningSet && firstTotalOp) {
+                    globalOpening = firstTotalOp.soldeAvant ?? 0;
+                    globalOpeningSet = true;
+                } else if (!globalOpeningSet && sorted[0]) {
+                    globalOpening = sorted[0].soldeAvant ?? 0;
+                    globalOpeningSet = true;
+                }
+                result[date] = {
+                    opening: opening,
+                    closing: opening // Solde de clôture = solde d'ouverture si toutes les opérations sont annulées
+                };
+            } else {
+                const sorted = opsValides.slice().sort((a, b) => {
+                    const tA = new Date(a.dateOperation).getTime();
+                    const tB = new Date(b.dateOperation).getTime();
+                    if (tA !== tB) return tA - tB;
+                    return (a.id || 0) - (b.id || 0);
+                });
+                // Chercher la première opération de type total_cashin ou total_paiement
+                const firstTotalOp = sorted.find(op => op.typeOperation === 'total_cashin' || op.typeOperation === 'total_paiement');
+                let opening = sorted[0]?.soldeAvant ?? 0;
+                if (firstTotalOp) {
+                    opening = firstTotalOp.soldeAvant ?? opening;
+                }
+                if (!globalOpeningSet && firstTotalOp) {
+                    globalOpening = firstTotalOp.soldeAvant ?? 0;
+                    globalOpeningSet = true;
+                } else if (!globalOpeningSet && sorted[0]) {
+                    globalOpening = sorted[0].soldeAvant ?? 0;
+                    globalOpeningSet = true;
+                }
+                // Le solde de clôture est toujours le soldeApres de la dernière opération valide du jour
+                result[date] = {
+                    opening: opening,
+                    closing: sorted[sorted.length - 1]?.soldeApres ?? 0
+                };
             }
-            if (!globalOpeningSet && firstTotalOp) {
-                globalOpening = firstTotalOp.soldeAvant ?? 0;
-                globalOpeningSet = true;
-            } else if (!globalOpeningSet && sorted[0]) {
-                globalOpening = sorted[0].soldeAvant ?? 0;
-                globalOpeningSet = true;
-            }
-            result[date] = {
-                opening: opening,
-                closing: sorted[sorted.length - 1]?.soldeApres ?? 0
-            };
         });
         (result as any)._globalOpening = globalOpening;
         return result;

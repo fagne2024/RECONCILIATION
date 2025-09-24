@@ -229,8 +229,14 @@
        <button type="button" 
                (click)="exportXLS()" 
                [disabled]="isExporting"
-               style="background: #28a745; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; opacity: isExporting ? 0.6 : 1;">
-         {{ isExporting ? 'Export en cours...' : 'Exporter en Excel' }}
+               style="background: #28a745; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; opacity: isExporting ? 0.6 : 1; margin-right: 8px;">
+         {{ isExporting ? 'Export en cours...' : 'Exporter en XLS' }}
+       </button>
+       <button type="button" 
+               (click)="exportXLSX()" 
+               [disabled]="isExporting"
+               style="background: #007bff; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; opacity: isExporting ? 0.6 : 1;">
+         {{ isExporting ? 'Export en cours...' : 'Exporter en XLSX' }}
        </button>
        
        <!-- Barre de progression pour l'export -->
@@ -909,7 +915,7 @@
         <div class="date-period-options">
           <div class="period-option">
             <label class="period-label">
-              <input type="radio" [(ngModel)]="exportDatePeriod" value="day" name="exportDatePeriod">
+              <input type="radio" [(ngModel)]="exportDatePeriod" (change)="onExportPeriodChange()" value="day" name="exportDatePeriod">
               <span class="period-text">
                 <i class="fas fa-calendar-day"></i>
                 <strong>Par jour</strong>
@@ -919,7 +925,7 @@
           </div>
           <div class="period-option">
             <label class="period-label">
-              <input type="radio" [(ngModel)]="exportDatePeriod" value="week" name="exportDatePeriod">
+              <input type="radio" [(ngModel)]="exportDatePeriod" (change)="onExportPeriodChange()" value="week" name="exportDatePeriod">
               <span class="period-text">
                 <i class="fas fa-calendar-week"></i>
                 <strong>Par semaine</strong>
@@ -929,7 +935,7 @@
           </div>
           <div class="period-option">
             <label class="period-label">
-              <input type="radio" [(ngModel)]="exportDatePeriod" value="month" name="exportDatePeriod">
+              <input type="radio" [(ngModel)]="exportDatePeriod" (change)="onExportPeriodChange()" value="month" name="exportDatePeriod">
               <span class="period-text">
                 <i class="fas fa-calendar"></i>
                 <strong>Par mois</strong>
@@ -937,9 +943,36 @@
               </span>
             </label>
           </div>
+          <div class="period-option">
+            <label class="period-label">
+              <input type="radio" [(ngModel)]="exportDatePeriod" (change)="onExportPeriodChange()" value="hour" name="exportDatePeriod">
+              <span class="period-text">
+                <i class="fas fa-clock"></i>
+                <strong>Par heure</strong>
+                <small>Export séparé pour chaque heure</small>
+              </span>
+            </label>
+          </div>
+          <div class="period-option">
+            <label class="period-label">
+              <input type="radio" [(ngModel)]="exportDatePeriod" (change)="onExportPeriodChange()" value="timerange" name="exportDatePeriod">
+              <span class="period-text">
+                <i class="fas fa-hourglass-half"></i>
+                <strong>Par plage horaire</strong>
+                <small>Export par tranches de N minutes</small>
+              </span>
+            </label>
+          </div>
         </div>
       </div>
       
+      <!-- Paramètre de plage horaire -->
+      <div class="filter-group" *ngIf="exportDateCol && exportDatePeriod === 'timerange'">
+        <label>Durée de la plage (minutes) :</label>
+        <input type="number" min="1" step="1" [(ngModel)]="exportTimeRangeMinutes" (ngModelChange)="onExportTimeRangeMinutesChange()" class="filter-input" placeholder="60">
+        <small class="help-text">Les enregistrements seront regroupés par tranches de {{ exportTimeRangeMinutes }} minute(s).</small>
+      </div>
+
       <div class="filter-group" *ngIf="exportDateCol && exportDatePeriod">
         <label>Format de fichier :</label>
         <div class="format-options">

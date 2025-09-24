@@ -275,4 +275,11 @@ public interface OperationRepository extends JpaRepository<OperationEntity, Long
         @Param("dateOperation") LocalDateTime dateOperation,
         @Param("operationIdToExclude") Long operationIdToExclude
     );
+
+    // Méthode pour récupérer les opérations valides (non annulées) d'un compte triées par date décroissante
+    @Query("SELECT o FROM OperationEntity o WHERE o.compte.id = :compteId AND o.statut != :statutExclu ORDER BY o.dateOperation DESC")
+    List<OperationEntity> findByCompteIdAndStatutNotOrderByDateOperationDesc(
+        @Param("compteId") Long compteId, 
+        @Param("statutExclu") String statutExclu
+    );
 } 

@@ -66,10 +66,10 @@ let allColumns: Set<string> = new Set();
 let totalProcessedRows = 0;
 let currentChunkIndex = 0;
 
-// Configuration par défaut
+// Configuration par défaut - Optimisé pour 700k lignes
 const DEFAULT_OPTIONS: ProcessingOptions = {
-  chunkSize: 25000,
-  maxMemoryUsage: 500 * 1024 * 1024, // 500MB
+  chunkSize: 50000, // Augmenté de 25k à 50k pour 700k lignes
+  maxMemoryUsage: 1024 * 1024 * 1024, // 1GB au lieu de 500MB
   enableStreaming: true,
   enableCompression: true
 };
@@ -292,7 +292,7 @@ async function processExcelContent(data: Uint8Array, XLSX: any, options: Process
   
   // Obtenir la plage de données
   const range = (XLSX as any).utils.decode_range(worksheet['!ref'] || 'A1');
-  const totalRows = range.e.r;
+  const totalRows = range.e.r - range.s.r;
   
   if (totalRows === 0) {
     sendProgress({
@@ -308,9 +308,12 @@ async function processExcelContent(data: Uint8Array, XLSX: any, options: Process
   const headers = detectExcelHeaders(worksheet, range);
   sendColumns(headers);
   
-  // Traitement par streaming des lignes de données
+  // Traitement par streaming optimisé pour 700k lignes
   let processedRows = 0;
   let currentChunk: any[] = [];
+  const isVeryLargeFile = totalRows > 500000;
+  
+  console.log(`🔄 Début traitement streaming Excel: ${totalRows.toLocaleString()} lignes (${isVeryLargeFile ? 'très gros fichier' : 'fichier normal'})`);
   
   for (let rowIndex = range.s.r + 1; rowIndex <= range.e.r; rowIndex++) {
     const row = parseExcelRow(worksheet, rowIndex, headers, range);
@@ -330,14 +333,15 @@ async function processExcelContent(data: Uint8Array, XLSX: any, options: Process
     
     processedRows++;
     
-    // Mettre à jour la progression
-    if (rowIndex % 1000 === 0 || rowIndex === range.e.r) {
-      const percentage = (processedRows / (range.e.r - range.s.r)) * 100;
+    // Mettre à jour la progression moins fréquemment pour les très gros fichiers
+    const progressInterval = isVeryLargeFile ? 5000 : 1000;
+    if (rowIndex % progressInterval === 0 || rowIndex === range.e.r) {
+      const percentage = (processedRows / totalRows) * 100;
       sendProgress({
         current: processedRows,
-        total: range.e.r - range.s.r,
+        total: totalRows,
         percentage,
-        message: `Traitement Excel: ${processedRows.toLocaleString()}/${(range.e.r - range.s.r).toLocaleString()} lignes`
+        message: `Traitement Excel: ${processedRows.toLocaleString()}/${totalRows.toLocaleString()} lignes`
       });
     }
   }

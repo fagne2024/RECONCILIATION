@@ -44,6 +44,14 @@ export class ExportOptimizationService {
       if (typeof Worker !== 'undefined') {
         // Créer un worker inline pour les exports
         const workerCode = `
+          // Charger XLSX dans le contexte du Worker
+          try {
+            importScripts('https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js');
+          } catch (e) {
+            // Si l'import échoue, on remonte une erreur exploitable côté UI
+            self.postMessage({ type: 'error', message: 'XLSX introuvable dans le Worker' });
+          }
+
           self.onmessage = function(e) {
             const { type, data } = e.data;
             
@@ -106,6 +114,10 @@ export class ExportOptimizationService {
           }
 
           function exportExcel({ rows, columns, fileName, chunkSize = 5000 }) {
+            if (typeof XLSX === 'undefined') {
+              self.postMessage({ type: 'error', message: 'Bibliothèque XLSX non chargée dans le Worker' });
+              return;
+            }
             const totalRows = rows.length;
             const workbook = XLSX.utils.book_new();
             const worksheet = XLSX.utils.aoa_to_sheet([columns]);
@@ -351,7 +363,8 @@ export class ExportOptimizationService {
     fileName: string, 
     options: ExportOptions = {}
   ): Promise<void> {
-    const { chunkSize = 5000, useWebWorker = true } = options;
+    const { chunkSize = 5000, useWebWorker = true, format = 'xlsx' } = options;
+    const excelFormat = format === 'xls' ? 'xls' : 'xlsx';
 
     if (useWebWorker && this.worker) {
       // Export avec Web Worker
@@ -360,13 +373,14 @@ export class ExportOptimizationService {
         data: {
           rows,
           columns,
-          fileName: fileName.endsWith('.xlsx') ? fileName : fileName + '.xlsx',
-          chunkSize
+          fileName: fileName.endsWith(`.${excelFormat}`) ? fileName : fileName + `.${excelFormat}`,
+          chunkSize,
+          format: excelFormat
         }
       });
     } else {
       // Export synchrone optimisé
-      await this.exportExcelSynchronous(rows, columns, fileName, chunkSize);
+      await this.exportExcelSynchronous(rows, columns, fileName, chunkSize, excelFormat);
     }
   }
 
@@ -377,7 +391,8 @@ export class ExportOptimizationService {
     rows: any[], 
     columns: string[], 
     fileName: string, 
-    chunkSize: number
+    chunkSize: number,
+    format: 'xlsx' | 'xls' = 'xlsx'
   ): Promise<void> {
     const totalRows = rows.length;
     const workbook = XLSX.utils.book_new();
@@ -413,8 +428,14 @@ export class ExportOptimizationService {
     XLSX.utils.book_append_sheet(workbook, worksheet, 'Données');
     
     // Télécharger le fichier
-    const finalFileName = fileName.endsWith('.xlsx') ? fileName : fileName + '.xlsx';
-    XLSX.writeFile(workbook, finalFileName);
+    let finalFileName: string;
+    if (format === 'xls') {
+      finalFileName = fileName.endsWith('.xls') ? fileName : fileName + '.xls';
+      XLSX.writeFile(workbook, finalFileName, { bookType: 'biff8' });
+    } else {
+      finalFileName = fileName.endsWith('.xlsx') ? fileName : fileName + '.xlsx';
+      XLSX.writeFile(workbook, finalFileName);
+    }
     
     this._exportProgress.next({
       current: totalRows,
@@ -432,7 +453,7 @@ export class ExportOptimizationService {
     rows: any[], 
     columns: string[], 
     fileName: string, 
-    format: 'csv' | 'xlsx' = 'csv'
+    format: 'csv' | 'xlsx' | 'xls' = 'csv'
   ): void {
     if (format === 'csv') {
       const csvContent = [
@@ -451,7 +472,7 @@ export class ExportOptimizationService {
       
       const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
       this.downloadFile(blob, fileName.endsWith('.csv') ? fileName : fileName + '.csv');
-    } else {
+    } else if (format === 'xlsx' || format === 'xls') {
       const exportData = rows.map(row => {
         const exportRow: any = {};
         columns.forEach(col => {
@@ -464,8 +485,15 @@ export class ExportOptimizationService {
       const worksheet = XLSX.utils.json_to_sheet(exportData);
       XLSX.utils.book_append_sheet(workbook, worksheet, 'Données');
       
-      const finalFileName = fileName.endsWith('.xlsx') ? fileName : fileName + '.xlsx';
-      XLSX.writeFile(workbook, finalFileName);
+      let finalFileName: string;
+      if (format === 'xls') {
+        finalFileName = fileName.endsWith('.xls') ? fileName : fileName + '.xls';
+        // Pour XLS, on utilise le format BIFF8 (Excel 97-2003)
+        XLSX.writeFile(workbook, finalFileName, { bookType: 'biff8' });
+      } else {
+        finalFileName = fileName.endsWith('.xlsx') ? fileName : fileName + '.xlsx';
+        XLSX.writeFile(workbook, finalFileName);
+      }
     }
   }
 

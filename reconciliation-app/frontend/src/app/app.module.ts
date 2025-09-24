@@ -50,6 +50,8 @@ import { TrxSfComponent } from './components/trx-sf/trx-sf.component';
 import { ServiceBalanceComponent } from './components/service-balance/service-balance.component';
 import { ServiceBalanceService } from './services/service-balance.service';
 import { ExportOptimizationService } from './services/export-optimization.service';
+import { ReconciliationSummaryService } from './services/reconciliation-summary.service';
+import { ReconciliationTabsService } from './services/reconciliation-tabs.service';
 
 
 import { AutoProcessingModelsComponent } from './components/auto-processing-models/auto-processing-models.component';
@@ -58,6 +60,7 @@ import { ExcelAnalysisComponent } from './components/excel-analysis/excel-analys
 import { ReconciliationLauncherComponent } from './components/reconciliation-launcher/reconciliation-launcher.component';
 import { ModernPopupComponent } from './components/modern-popup/modern-popup.component';
 import { ProgressIndicatorComponent } from './components/progress-indicator/progress-indicator.component';
+import { ReconciliationReportComponent } from './components/reconciliation-report/reconciliation-report.component';
 
 @NgModule({
     declarations: [
@@ -93,7 +96,8 @@ import { ProgressIndicatorComponent } from './components/progress-indicator/prog
                 BanqueComponent,
                 ExcelAnalysisComponent,
                 ModernPopupComponent,
-                ProgressIndicatorComponent
+                ProgressIndicatorComponent,
+                ReconciliationReportComponent
     ],
     imports: [
         BrowserModule,
@@ -120,7 +124,7 @@ import { ProgressIndicatorComponent } from './components/progress-indicator/prog
         AgencySummaryComponent,
         ReconciliationLauncherComponent
     ],
-    providers: [ReconciliationService, ServiceBalanceService, ExportOptimizationService],
+    providers: [ReconciliationService, ServiceBalanceService, ExportOptimizationService, ReconciliationSummaryService, ReconciliationTabsService],
     bootstrap: [AppComponent]
 })
 export class AppModule { } 

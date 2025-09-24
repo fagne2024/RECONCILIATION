@@ -26,6 +26,7 @@ import { AutoProcessingModelsComponent } from './components/auto-processing-mode
 import { BanqueComponent } from './components/banque/banque.component';
 import { ReconciliationLauncherComponent } from './components/reconciliation-launcher/reconciliation-launcher.component';
 import { ReconciliationComponent } from './components/reconciliation/reconciliation.component';
+import { ReconciliationReportComponent } from './components/reconciliation-report/reconciliation-report.component';
 
 const routes: Routes = [
   { path: '', redirectTo: '/reconciliation-launcher', pathMatch: 'full' },
@@ -54,6 +55,7 @@ const routes: Routes = [
 
   { path: 'auto-processing-models', component: AutoProcessingModelsComponent },
   { path: 'banque', component: BanqueComponent },
+  { path: 'reconciliation-report', component: ReconciliationReportComponent },
 ];
 
 @NgModule({

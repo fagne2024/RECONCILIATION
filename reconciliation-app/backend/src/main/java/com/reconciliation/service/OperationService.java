@@ -23,7 +23,6 @@ import com.reconciliation.dto.OperationCreateRequest;
 import com.reconciliation.entity.FraisTransactionEntity;
 import com.reconciliation.repository.AgencySummaryRepository;
 import com.reconciliation.entity.AgencySummaryEntity;
-import com.reconciliation.service.CompteRegroupementService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -564,21 +563,57 @@ public class OperationService {
         return convertToModel(savedEntity);
     }
     
+    /**
+     * Recalcule le solde de clôture du compte basé sur la dernière opération valide du jour
+     */
+    @Transactional
+    public void recalculerSoldeClotureCompte(Long compteId) {
+        try {
+            CompteEntity compte = compteRepository.findById(compteId)
+                .orElseThrow(() -> new RuntimeException("Compte non trouvé: " + compteId));
+            
+            // Récupérer la dernière opération valide (non annulée) du compte
+            List<OperationEntity> operationsValides = operationRepository
+                .findByCompteIdAndStatutNotOrderByDateOperationDesc(compteId, "Annulée");
+            
+            if (!operationsValides.isEmpty()) {
+                OperationEntity derniereOperation = operationsValides.get(0);
+                double nouveauSoldeCloture = derniereOperation.getSoldeApres();
+                
+                // Mettre à jour le solde du compte avec le solde de clôture de la dernière opération valide
+                compte.setSolde(nouveauSoldeCloture);
+                compte.setDateDerniereMaj(LocalDateTime.now());
+                compteRepository.save(compte);
+                
+                logger.info("✅ Solde de clôture recalculé pour le compte {}: {} (basé sur l'opération ID: {})", 
+                           compte.getNumeroCompte(), nouveauSoldeCloture, derniereOperation.getId());
+                
+                // Synchroniser les comptes consolidés si ce compte est regroupé
+                synchroniserComptesConsolides(compteId);
+            } else {
+                logger.warn("⚠️ Aucune opération valide trouvée pour le compte {}, solde inchangé", compte.getNumeroCompte());
+            }
+        } catch (Exception e) {
+            logger.error("❌ Erreur lors du recalcul du solde de clôture pour le compte {}: {}", compteId, e.getMessage(), e);
+        }
+    }
+
     @Transactional
     public boolean deleteOperation(Long id) {
         Optional<OperationEntity> optionalOperation = operationRepository.findById(id);
         if (optionalOperation.isPresent()) {
             OperationEntity operation = optionalOperation.get();
-            // Supprimer simplement l'opération sans recalculer les soldes des autres opérations
-            // pour éviter d'avoir un impact sur le compte
+            CompteEntity compte = operation.getCompte();
+            
+            // Supprimer l'opération
             operationRepository.deleteById(id);
             
-            // Mettre à jour seulement la date de dernière modification du compte
-            if (operation.getCompte() != null) {
-                CompteEntity compte = operation.getCompte();
-                compte.setDateDerniereMaj(java.time.LocalDateTime.now());
-                compteRepository.save(compte);
+            // Recalculer le solde de clôture du compte après suppression
+            if (compte != null) {
+                recalculerSoldeClotureCompte(compte.getId());
+                logger.info("✅ Solde de clôture recalculé après suppression de l'opération ID: {}", id);
             }
+            
             return true;
         }
         return false;
@@ -632,6 +667,15 @@ public class OperationService {
             
             operation.setStatut(nouveauStatut);
             operationRepository.save(operation);
+
+            // Recalculer le solde de clôture si l'opération est annulée
+            if ("Annulée".equals(nouveauStatut)) {
+                CompteEntity compte = operation.getCompte();
+                if (compte != null) {
+                    recalculerSoldeClotureCompte(compte.getId());
+                    logger.info("✅ Solde de clôture recalculé après annulation de l'opération ID: {}", id);
+                }
+            }
 
             // Suppression dans agency_summary si statut Annulée ou Rejetée ET type concerné
             if (("Annulée".equals(nouveauStatut) || "Rejetée".equals(nouveauStatut)) &&

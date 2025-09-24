@@ -4,6 +4,8 @@ import { AppStateService } from '../../services/app-state.service';
 import { Router } from '@angular/router';
 import { ReconciliationService } from '../../services/reconciliation.service';
 import { EcartSoldeService } from '../../services/ecart-solde.service';
+import { ReconciliationSummaryService } from '../../services/reconciliation-summary.service';
+import { ReconciliationTabsService } from '../../services/reconciliation-tabs.service';
 import { EcartSolde } from '../../models/ecart-solde.model';
 import { TrxSfService } from '../../services/trx-sf.service';
 import { ImpactOPService } from '../../services/impact-op.service';
@@ -26,6 +28,7 @@ interface ApiError {
 @Component({
     selector: 'app-reconciliation-results',
     template: `
+
         <!-- Affichage de la progression -->
         <div *ngIf="showProgress" class="progress-overlay">
             <div class="progress-card">
@@ -152,6 +155,11 @@ interface ApiError {
                         [class.active]="activeTab === 'agencySummary'"
                         (click)="setActiveTab('agencySummary')">
                         📊 Résumé par Agence
+                    </button>
+                    <button 
+                        class="report-button"
+                        (click)="openReconciliationReport()">
+                        📈 Rapport Réconciliation
                     </button>
                 </div>
 
@@ -825,6 +833,26 @@ interface ApiError {
         .tab-buttons button.active {
             background: #2196F3;
             color: white;
+        }
+
+        .report-button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+            color: white !important;
+            font-weight: 600;
+            border-radius: 6px;
+            margin-left: 10px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .report-button:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        }
+
+        .report-button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none !important;
         }
 
         .tab-content {
@@ -1613,6 +1641,7 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
     private agencyServiceCache = new Map<string, { agency: string; service: string; volume: number; date: string; country: string }>();
     isSaving: boolean = false;
     isSavingEcartBo: boolean = false;
+    
     isSavingEcartPartner: boolean = false;
     isSavingEcartBoToTrxSf: boolean = false;
     isSavingEcartPartnerToTrxSf: boolean = false;
@@ -1801,7 +1830,8 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                 `🔄 Les doublons seront automatiquement ignorés.\n\n` +
                 `Voulez-vous continuer avec la sauvegarde ?`;
 
-            if (!confirm(message)) {
+            const confirmed = await this.popupService.showConfirm(message, 'Confirmation de sauvegarde');
+            if (!confirmed) {
                 console.log('❌ Sauvegarde annulée par l\'utilisateur');
                 return;
             }
@@ -2366,7 +2396,8 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                 `🔄 Les doublons seront automatiquement ignorés.\n\n` +
                 `Voulez-vous continuer avec la sauvegarde ?`;
 
-            if (!confirm(message)) {
+            const confirmed = await this.popupService.showConfirm(message, 'Confirmation de sauvegarde');
+            if (!confirmed) {
                 console.log('❌ Sauvegarde annulée par l\'utilisateur');
                 return;
             }
@@ -2529,7 +2560,9 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
         private impactOPService: ImpactOPService,
         private http: HttpClient,
         private popupService: PopupService,
-        private exportOptimizationService: ExportOptimizationService
+        private exportOptimizationService: ExportOptimizationService,
+        private reconciliationSummaryService: ReconciliationSummaryService,
+        private reconciliationTabsService: ReconciliationTabsService
     ) {}
 
     ngOnInit() {
@@ -2612,6 +2645,12 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
         this.filteredBoOnly = this.getFilteredBoOnly();
         this.filteredPartnerOnly = this.getFilteredPartnerOnly();
         
+        // Partager les données filtrées avec le service pour le rapport
+        this.reconciliationTabsService.setFilteredMatches(this.filteredMatches);
+        this.reconciliationTabsService.setFilteredBoOnly(this.filteredBoOnly);
+        this.reconciliationTabsService.setFilteredPartnerOnly(this.filteredPartnerOnly);
+        this.reconciliationTabsService.setFilteredMismatches(this.response?.mismatches || []);
+        
         console.log('✅ Données filtrées initialisées:');
         console.log('📊 FilteredMatches:', this.filteredMatches.length);
         console.log('📊 FilteredBoOnly:', this.filteredBoOnly.length);
@@ -2628,6 +2667,8 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                 match.key.toLowerCase().includes(searchTerm)
             );
             this.matchesPage = 1;
+            // Partager les données filtrées
+            this.reconciliationTabsService.setFilteredMatches(this.filteredMatches);
         } else if (this.activeTab === 'boOnly') {
             // Pour TRXBO/OPPART, utiliser mismatches au lieu de boOnly
             const mismatches = this.response?.mismatches || [];
@@ -2640,6 +2681,8 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                 )
             );
             this.boOnlyPage = 1;
+            // Partager les données filtrées
+            this.reconciliationTabsService.setFilteredBoOnly(this.filteredBoOnly);
         } else if (this.activeTab === 'partnerOnly') {
             this.filteredPartnerOnly = (this.response?.partnerOnly || []).filter(record => 
                 Object.values(record).some(value => 
@@ -2647,6 +2690,8 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                 )
             );
             this.partnerOnlyPage = 1;
+            // Partager les données filtrées
+            this.reconciliationTabsService.setFilteredPartnerOnly(this.filteredPartnerOnly);
         }
         
         this.cdr.detectChanges();
@@ -2698,6 +2743,11 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
         }, 100);
         
         console.log('✅ setActiveTab terminé pour:', tab);
+    }
+
+    openReconciliationReport() {
+        console.log('📈 Navigation vers le rapport de réconciliation...');
+        this.router.navigate(['/reconciliation-report']);
     }
 
     nextPage(type: 'matches' | 'boOnly' | 'partnerOnly') {
@@ -4054,6 +4104,9 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
         // Mettre en cache le résultat
         this.cachedAgencySummary = summary;
         this.lastResponseHash = currentHash;
+
+        // Stocker dans le service pour le rapport
+        this.reconciliationSummaryService.setAgencySummary(summary);
 
         return summary;
     }

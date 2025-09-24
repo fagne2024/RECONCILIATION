@@ -1220,8 +1220,9 @@ export class OperationsComponent implements OnInit, OnDestroy {
         });
     }
 
-    deleteOperation(id: number) {
-        if (confirm('Êtes-vous sûr de vouloir supprimer cette opération ?')) {
+    async deleteOperation(id: number) {
+        const confirmed = await this.popupService.showConfirm('Êtes-vous sûr de vouloir supprimer cette opération ?', 'Confirmation de suppression');
+        if (confirmed) {
             this.operationService.deleteOperation(id).subscribe({
                 next: () => {
                     this.loadOperations();
@@ -1273,7 +1274,7 @@ export class OperationsComponent implements OnInit, OnDestroy {
         return this.selectedOperations.size > 0;
     }
 
-    deleteSelectedOperations() {
+    async deleteSelectedOperations() {
         if (this.selectedOperations.size === 0) {
             return;
         }
@@ -1281,7 +1282,8 @@ export class OperationsComponent implements OnInit, OnDestroy {
         const count = this.selectedOperations.size;
         const message = `Êtes-vous sûr de vouloir supprimer ${count} opération(s) sélectionnée(s) ?`;
         
-        if (confirm(message)) {
+        const confirmed = await this.popupService.showConfirm(message, 'Confirmation de suppression multiple');
+        if (confirmed) {
             this.isDeletingMultiple = true;
             const operationIds = Array.from(this.selectedOperations);
             

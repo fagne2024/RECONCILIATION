@@ -85,9 +85,10 @@ export class TraitementComponent implements OnInit, AfterViewInit {
 
   // --- EXPORT PAR DATE ---
   exportDateCol: string = '';
-  exportDatePeriod: 'day' | 'week' | 'month' = 'day';
+  exportDatePeriod: 'day' | 'week' | 'month' | 'hour' | 'timerange' = 'day';
   exportDateFormat: 'csv' | 'xls' | 'xlsx' = 'xlsx';
   exportDatePrefix: string = 'export';
+  exportTimeRangeMinutes: number = 60;
   detectedPeriods: Array<{ label: string; count: number; key: string }> = [];
 
   // --- SUPPRESSION DE CARACTÈRES ---
@@ -806,14 +807,17 @@ export class TraitementComponent implements OnInit, AfterViewInit {
 
       console.log('🔄 VERSION AMÉLIORÉE - Début lecture fichier Excel avec détection d\'en-têtes étendue');
       
-      // Options optimisées pour les fichiers volumineux
+      // Options optimisées pour les fichiers volumineux jusqu'à 700k lignes
       const options: XLSX.ParsingOptions = {
         cellDates: true,
         cellNF: false,
         cellText: false,
         sheetStubs: false,
-        // Limiter le nombre de lignes pour très gros fichiers
-        sheetRows: fileSizeMB > 10 ? 50000 : undefined,
+        // Suppression de la limite pour supporter 700k lignes
+        sheetRows: undefined, // Pas de limite pour 700k lignes
+        // Optimisations pour très gros fichiers
+        dense: true, // Mode dense pour économiser la mémoire
+        codepage: 65001, // UTF-8
       };
 
       const workbook = await this.readExcelFile(file, options);
@@ -868,7 +872,10 @@ export class TraitementComponent implements OnInit, AfterViewInit {
               
               // Créer les lignes de données avec traitement par chunks pour les gros fichiers
               const rows: any[] = [];
-              const chunkSize = 1000; // Traiter par chunks de 1000 lignes
+              const totalDataRows = jsonData.length - i - 1;
+              const isLargeFile = totalDataRows > 100000; // Plus de 100k lignes
+              const isVeryLargeFile = totalDataRows > 500000; // Plus de 500k lignes
+              const chunkSize = isVeryLargeFile ? 20000 : isLargeFile ? 10000 : 5000; // Chunks optimisés pour 700k
               
               for (let j = i + 1; j < jsonData.length; j += chunkSize) {
                 const endIndex = Math.min(j + chunkSize, jsonData.length);
@@ -929,9 +936,10 @@ export class TraitementComponent implements OnInit, AfterViewInit {
       // Créer les lignes de données en commençant après la ligne d'en-tête
       const totalDataRows = jsonData.length - headerRowIndex - 1;
       const isLargeFile = totalDataRows > 100000; // Plus de 100k lignes
-      const chunkSize = isLargeFile ? 5000 : 1000; // Chunks plus gros pour gros fichiers
+      const isVeryLargeFile = totalDataRows > 500000; // Plus de 500k lignes
+      const chunkSize = isVeryLargeFile ? 15000 : isLargeFile ? 10000 : 5000; // Chunks optimisés pour 700k
       
-      console.log(`📊 Traitement Excel optimisé: ${totalDataRows} lignes, chunks de ${chunkSize} (${isLargeFile ? 'gros fichier' : 'fichier normal'})`);
+      console.log(`📊 Traitement Excel optimisé: ${totalDataRows} lignes, chunks de ${chunkSize} (${isVeryLargeFile ? 'très gros fichier' : isLargeFile ? 'gros fichier' : 'fichier normal'})`);
       
       // Mise à jour de la progression pour gros fichiers
       let processedRows = 0;
@@ -2641,6 +2649,14 @@ export class TraitementComponent implements OnInit, AfterViewInit {
   }
 
   exportXLS() {
+    this.exportExcel('xls');
+  }
+
+  exportXLSX() {
+    this.exportExcel('xlsx');
+  }
+
+  private exportExcel(format: 'xls' | 'xlsx') {
     try {
       if (this.combinedRows.length === 0) return;
       
@@ -2649,7 +2665,7 @@ export class TraitementComponent implements OnInit, AfterViewInit {
         current: 0,
         total: this.combinedRows.length,
         percentage: 0,
-        message: '🚀 Démarrage de l\'export Excel optimisé...',
+        message: `🚀 Démarrage de l'export ${format.toUpperCase()} optimisé...`,
         isComplete: false
       };
       
@@ -2657,8 +2673,8 @@ export class TraitementComponent implements OnInit, AfterViewInit {
       const exportColumns = this.columns.map(col => col === 'GRX' ? 'PAYS' : col);
       
       // Utiliser le nom personnalisé ou le nom par défaut
-      const fileName = this.exportFileName.trim() || 'resultat.xlsx';
-      const finalFileName = fileName.endsWith('.xlsx') ? fileName : fileName + '.xlsx';
+      const fileName = this.exportFileName.trim() || `resultat.${format}`;
+      const finalFileName = fileName.endsWith(`.${format}`) ? fileName : fileName + `.${format}`;
       
       // Déterminer la stratégie d'export basée sur la taille des données
       const isLargeDataset = this.combinedRows.length > 5000;
@@ -2672,7 +2688,8 @@ export class TraitementComponent implements OnInit, AfterViewInit {
           {
             chunkSize: 3000,
             useWebWorker: true,
-            enableCompression: true
+            enableCompression: true,
+            format: format
           }
         );
         
@@ -2682,9 +2699,9 @@ export class TraitementComponent implements OnInit, AfterViewInit {
           if (progress.isComplete) {
             this.isExporting = false;
             if (progress.message.includes('✅')) {
-              this.showSuccess('export', `Export Excel réussi: ${finalFileName}`);
+              this.showSuccess('export', `Export ${format.toUpperCase()} réussi: ${finalFileName}`);
             } else {
-              this.showError('export', 'Erreur lors de l\'export Excel.');
+              this.showError('export', `Erreur lors de l'export ${format.toUpperCase()}.`);
             }
           }
         });
@@ -2694,16 +2711,16 @@ export class TraitementComponent implements OnInit, AfterViewInit {
           this.combinedRows,
           exportColumns,
           finalFileName,
-          'xlsx'
+          format
         );
         
         this.isExporting = false;
-        this.showSuccess('export', `Export Excel réussi: ${finalFileName}`);
+        this.showSuccess('export', `Export ${format.toUpperCase()} réussi: ${finalFileName}`);
       }
     } catch (e) {
       this.isExporting = false;
-      console.error('Erreur lors de l\'export Excel:', e);
-      this.showError('export', 'Erreur lors de l\'export Excel.');
+      console.error(`Erreur lors de l'export ${format.toUpperCase()}:`, e);
+      this.showError('export', `Erreur lors de l'export ${format.toUpperCase()}.`);
     }
   }
 
@@ -5012,6 +5029,28 @@ export class TraitementComponent implements OnInit, AfterViewInit {
   }
 
   /**
+   * Gère le changement de période d'export
+   */
+  onExportPeriodChange(): void {
+    this.detectedPeriods = [];
+    this.detectedPeriodsPage = 1;
+    this.detectedPeriodsTotalPages = 0;
+    if (this.exportDateCol && this.exportDatePeriod) {
+      this.detectPeriods();
+    }
+  }
+
+  /**
+   * Gère le changement de durée pour la plage horaire
+   */
+  onExportTimeRangeMinutesChange(): void {
+    if (!this.exportTimeRangeMinutes || this.exportTimeRangeMinutes < 1) {
+      this.exportTimeRangeMinutes = 60;
+    }
+    this.onExportPeriodChange();
+  }
+
+  /**
    * Force la re-détection des périodes (pour debug)
    */
   forceRedetectPeriods(): void {
@@ -5257,6 +5296,28 @@ export class TraitementComponent implements OnInit, AfterViewInit {
         case 'month':
           periodKey = `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}`;
           break;
+        case 'hour': {
+          const yyyy = date.getFullYear();
+          const mm = (date.getMonth() + 1).toString().padStart(2, '0');
+          const dd = date.getDate().toString().padStart(2, '0');
+          const HH = date.getHours().toString().padStart(2, '0');
+          periodKey = `${yyyy}-${mm}-${dd}T${HH}:00`;
+          break;
+        }
+        case 'timerange': {
+          const rangeMinutes = Math.max(1, Number(this.exportTimeRangeMinutes || 60));
+          const bucketMs = rangeMinutes * 60 * 1000;
+          const bucketStart = Math.floor(date.getTime() / bucketMs) * bucketMs;
+          const d = new Date(bucketStart);
+          const yyyy = d.getFullYear();
+          const mm = (d.getMonth() + 1).toString().padStart(2, '0');
+          const dd = d.getDate().toString().padStart(2, '0');
+          const HH = d.getHours().toString().padStart(2, '0');
+          const MM = d.getMinutes().toString().padStart(2, '0');
+          // Inclure la durée pour désambiguïser les clés
+          periodKey = `${yyyy}-${mm}-${dd}T${HH}:${MM}-R${rangeMinutes}`;
+          break;
+        }
         default:
           console.warn(`⚠️ Type de période non supporté: ${period}`);
           return null;
@@ -5290,6 +5351,25 @@ export class TraitementComponent implements OnInit, AfterViewInit {
           'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'
         ];
         return `${monthNames[parseInt(month) - 1]} ${yearMonth}`;
+      case 'hour': {
+        // key: YYYY-MM-DDTHH:00
+        const [datePart, timePart] = key.split('T');
+        const [hour] = (timePart || '00:00').split(':');
+        const d = new Date(datePart + 'T' + hour.padStart(2, '0') + ':00:00');
+        const ddmmyyyy = d.toLocaleDateString('fr-FR');
+        return `${ddmmyyyy} ${hour.padStart(2, '0')}:00`;
+      }
+      case 'timerange': {
+        // key: YYYY-MM-DDTHH:MM-R{minutes}
+        const [left, rPart] = key.split('-R');
+        const minutes = parseInt(rPart || '60', 10);
+        const start = new Date(left.replace(' ', 'T'));
+        const end = new Date(start.getTime() + Math.max(1, minutes) * 60 * 1000);
+        const pad = (n: number) => n.toString().padStart(2, '0');
+        const startLabel = `${start.toLocaleDateString('fr-FR')} ${pad(start.getHours())}:${pad(start.getMinutes())}`;
+        const endLabel = `${pad(end.getHours())}:${pad(end.getMinutes())}`;
+        return `${startLabel} - ${endLabel} (${Math.max(1, minutes)} min)`;
+      }
       default:
         return key;
     }
@@ -5833,6 +5913,7 @@ export class TraitementComponent implements OnInit, AfterViewInit {
     this.exportDatePeriod = 'day';
     this.exportDateFormat = 'xlsx';
     this.exportDatePrefix = 'export';
+    this.exportTimeRangeMinutes = 60;
     this.detectedPeriods = [];
     this.successMsg.exportDate = '';
     this.errorMsg.exportDate = '';

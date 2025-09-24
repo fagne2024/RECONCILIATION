@@ -3,6 +3,7 @@ import { FormBuilder, FormGroup, Validators, FormArray } from '@angular/forms';
 import { AutoProcessingService, AutoProcessingModel } from '../../services/auto-processing.service';
 import { FileWatcherService } from '../../services/file-watcher.service';
 import { ModelManagementService } from '../../services/model-management.service';
+import { PopupService } from '../../services/popup.service';
 
 // Interface pour les règles de traitement des colonnes
 interface ColumnProcessingRule {
@@ -110,7 +111,8 @@ export class AutoProcessingModelsComponent implements OnInit {
     private autoProcessingService: AutoProcessingService,
     private fileWatcherService: FileWatcherService,
     private cdr: ChangeDetectorRef,
-    private modelManagementService: ModelManagementService
+    private modelManagementService: ModelManagementService,
+    private popupService: PopupService
   ) {
     this.modelForm = this.fb.group({
       name: ['', Validators.required],
@@ -1104,8 +1106,9 @@ export class AutoProcessingModelsComponent implements OnInit {
     }, 500);
   }
     
-  deleteModel(model: AutoProcessingModel): void {
-    if (confirm(`Êtes-vous sûr de vouloir supprimer le modèle "${model.name}" ?`)) {
+  async deleteModel(model: AutoProcessingModel): Promise<void> {
+    const confirmed = await this.popupService.showConfirm(`Êtes-vous sûr de vouloir supprimer le modèle "${model.name}" ?`, 'Confirmation de suppression');
+    if (confirmed) {
       this.autoProcessingService.deleteModel(model.id).then(() => {
         this.successMessage = 'Modèle supprimé avec succès';
           this.loadModels();
@@ -1372,8 +1375,9 @@ export class AutoProcessingModelsComponent implements OnInit {
     }
   }
 
-  deleteColumnRule(rule: ColumnProcessingRule): void {
-    if (confirm('Êtes-vous sûr de vouloir supprimer cette règle ?')) {
+  async deleteColumnRule(rule: ColumnProcessingRule): Promise<void> {
+    const confirmed = await this.popupService.showConfirm('Êtes-vous sûr de vouloir supprimer cette règle ?', 'Confirmation de suppression');
+    if (confirmed) {
       const index = this.columnProcessingRules.findIndex(r => r.id === rule.id);
       if (index !== -1) {
         this.columnProcessingRules.splice(index, 1);
