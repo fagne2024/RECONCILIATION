@@ -10,9 +10,11 @@ C:\Users\YamarNDAO\OneDrive - Intouchgroup\Bureau\PAD\reconciliation-app\backend
 C:\Users\YamarNDAO\OneDrive - Intouchgroup\Bureau\PAD\reconciliation-app\backend\src\main\java\com\reconciliation\service\ModelWatchFolderService.java
 C:\Users\YamarNDAO\OneDrive - Intouchgroup\Bureau\PAD\reconciliation-app\backend\src\main\java\com\reconciliation\model\ReconciliationProgress.java
 C:\Users\YamarNDAO\OneDrive - Intouchgroup\Bureau\PAD\reconciliation-app\backend\src\main\java\com\reconciliation\repository\UserRepository.java
+C:\Users\YamarNDAO\OneDrive - Intouchgroup\Bureau\PAD\reconciliation-app\backend\src\main\java\com\reconciliation\controller\Result8RecController.java
 C:\Users\YamarNDAO\OneDrive - Intouchgroup\Bureau\PAD\reconciliation-app\backend\src\main\java\com\reconciliation\service\KeyDiscoveryService.java
 C:\Users\YamarNDAO\OneDrive - Intouchgroup\Bureau\PAD\reconciliation-app\backend\src\main\java\com\reconciliation\service\EcartSoldeService.java
 C:\Users\YamarNDAO\OneDrive - Intouchgroup\Bureau\PAD\reconciliation-app\backend\src\main\java\com\reconciliation\entity\CompteRegroupementEntity.java
+C:\Users\YamarNDAO\OneDrive - Intouchgroup\Bureau\PAD\reconciliation-app\backend\src\main\java\com\reconciliation\entity\Result8RecEntity.java
 C:\Users\YamarNDAO\OneDrive - Intouchgroup\Bureau\PAD\reconciliation-app\backend\src\main\java\com\reconciliation\service\ReconciliationJobService.java
 C:\Users\YamarNDAO\OneDrive - Intouchgroup\Bureau\PAD\reconciliation-app\backend\src\main\java\com\reconciliation\controller\FileWatcherController.java
 C:\Users\YamarNDAO\OneDrive - Intouchgroup\Bureau\PAD\reconciliation-app\backend\src\main\java\com\reconciliation\controller\UserProfilController.java
@@ -30,6 +32,7 @@ C:\Users\YamarNDAO\OneDrive - Intouchgroup\Bureau\PAD\reconciliation-app\backend
 C:\Users\YamarNDAO\OneDrive - Intouchgroup\Bureau\PAD\reconciliation-app\backend\src\main\java\com\reconciliation\controller\SqlController.java
 C:\Users\YamarNDAO\OneDrive - Intouchgroup\Bureau\PAD\reconciliation-app\backend\src\main\java\com\reconciliation\entity\UserEntity.java
 C:\Users\YamarNDAO\OneDrive - Intouchgroup\Bureau\PAD\reconciliation-app\backend\src\main\java\com\reconciliation\entity\ReconciliationJob.java
+C:\Users\YamarNDAO\OneDrive - Intouchgroup\Bureau\PAD\reconciliation-app\backend\src\main\java\com\reconciliation\repository\Result8RecRepository.java
 C:\Users\YamarNDAO\OneDrive - Intouchgroup\Bureau\PAD\reconciliation-app\backend\src\main\java\com\reconciliation\service\ColumnProcessingRuleService.java
 C:\Users\YamarNDAO\OneDrive - Intouchgroup\Bureau\PAD\reconciliation-app\backend\src\main\java\com\reconciliation\controller\AgencySummaryController.java
 C:\Users\YamarNDAO\OneDrive - Intouchgroup\Bureau\PAD\reconciliation-app\backend\src\main\java\com\reconciliation\entity\PermissionEntity.java

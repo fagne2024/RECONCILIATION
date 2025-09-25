@@ -61,6 +61,20 @@ public class Result8RecController {
         repository.deleteById(id);
         return ResponseEntity.noContent().build();
     }
+
+    @PutMapping("/{id}")
+    public ResponseEntity<?> update(@PathVariable Long id, @RequestBody Result8RecEntity body) {
+        return repository.findById(id)
+                .map(existing -> {
+                    existing.setStatus(body.getStatus());
+                    existing.setComment(body.getComment());
+                    existing.setGlpiId(body.getGlpiId());
+                    Result8RecEntity saved = repository.save(existing);
+                    log.info("✅ result8rec mis à jour id={}", saved.getId());
+                    return ResponseEntity.ok(saved);
+                })
+                .orElseGet(() -> ResponseEntity.notFound().build());
+    }
 }
 
 

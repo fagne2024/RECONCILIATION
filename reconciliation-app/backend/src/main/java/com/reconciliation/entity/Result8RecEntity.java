@@ -25,6 +25,8 @@ public class Result8RecEntity {
     private String status;
     private String comment;
 
+    private String glpiId;
+
     private String createdAt;
 
     public Long getId() { return id; }
@@ -68,6 +70,9 @@ public class Result8RecEntity {
 
     public String getComment() { return comment; }
     public void setComment(String comment) { this.comment = comment; }
+
+    public String getGlpiId() { return glpiId; }
+    public void setGlpiId(String glpiId) { this.glpiId = glpiId; }
 
     public String getCreatedAt() { return createdAt; }
     public void setCreatedAt(String createdAt) { this.createdAt = createdAt; }
