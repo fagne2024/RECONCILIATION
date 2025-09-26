@@ -50,6 +50,7 @@ import { TrxSfComponent } from './components/trx-sf/trx-sf.component';
 import { ServiceBalanceComponent } from './components/service-balance/service-balance.component';
 import { ServiceBalanceService } from './services/service-balance.service';
 import { ExportOptimizationService } from './services/export-optimization.service';
+import { ModernExcelExportService } from './services/modern-excel-export.service';
 import { ReconciliationSummaryService } from './services/reconciliation-summary.service';
 import { ReconciliationTabsService } from './services/reconciliation-tabs.service';
 
@@ -61,6 +62,7 @@ import { ReconciliationLauncherComponent } from './components/reconciliation-lau
 import { ModernPopupComponent } from './components/modern-popup/modern-popup.component';
 import { ProgressIndicatorComponent } from './components/progress-indicator/progress-indicator.component';
 import { ReconciliationReportComponent } from './components/reconciliation-report/reconciliation-report.component';
+import { ReportDashboardComponent } from './components/report-dashboard/report-dashboard.component';
 
 @NgModule({
     declarations: [
@@ -97,7 +99,8 @@ import { ReconciliationReportComponent } from './components/reconciliation-repor
                 ExcelAnalysisComponent,
                 ModernPopupComponent,
                 ProgressIndicatorComponent,
-                ReconciliationReportComponent
+                ReconciliationReportComponent,
+                ReportDashboardComponent
     ],
     imports: [
         BrowserModule,
@@ -124,7 +127,7 @@ import { ReconciliationReportComponent } from './components/reconciliation-repor
         AgencySummaryComponent,
         ReconciliationLauncherComponent
     ],
-    providers: [ReconciliationService, ServiceBalanceService, ExportOptimizationService, ReconciliationSummaryService, ReconciliationTabsService],
+    providers: [ReconciliationService, ServiceBalanceService, ExportOptimizationService, ModernExcelExportService, ReconciliationSummaryService, ReconciliationTabsService],
     bootstrap: [AppComponent]
 })
 export class AppModule { } 

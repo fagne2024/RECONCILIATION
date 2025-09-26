@@ -123,8 +123,8 @@
 
 .info-section {
     background: white;
-    border-radius: 12px;
-    padding: 25px;
+    border-radius: 8px;
+    padding: 20px;
     box-shadow: 0 2px 4px rgba(0,0,0,0.1);
 }
 
@@ -181,10 +181,10 @@
 
 // Styles pour les métriques détaillées
 .detailed-metrics-section {
-    margin-top: 40px;
+    margin-top: 30px;
     background: white;
-    border-radius: 12px;
-    padding: 25px;
+    border-radius: 8px;
+    padding: 20px;
     box-shadow: 0 2px 4px rgba(0,0,0,0.1);
 }
 
@@ -334,35 +334,61 @@
 }
 
 .main-metric {
-    background: #f8f9fa;
-    border-radius: 10px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border-radius: 12px;
     padding: 20px;
     text-align: center;
     border: 2px solid transparent;
     transition: all 0.3s ease;
+    color: white;
+    position: relative;
+    overflow: hidden;
+    min-height: 120px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}
+
+.main-metric::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, #4CAF50, #FFC107, #F44336, #2196F3);
 }
 
 .main-metric:hover {
-    border-color: #2196F3;
-    transform: translateY(-2px);
+    transform: translateY(-3px);
+    box-shadow: 0 8px 25px rgba(0,0,0,0.15);
 }
 
 .main-metric-icon {
-    font-size: 2em;
+    font-size: 2.5rem;
     margin-bottom: 10px;
+    opacity: 0.9;
 }
 
 .main-metric-value {
-    font-size: 1.8em;
+    font-size: 2rem;
     font-weight: bold;
-    color: #2196F3;
-    margin-bottom: 5px;
+    color: white;
+    margin-bottom: 8px;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.1);
 }
 
 .main-metric-label {
-    font-size: 0.9em;
-    color: #666;
-    font-weight: 500;
+    font-size: 1rem;
+    color: rgba(255,255,255,0.9);
+    font-weight: 600;
+    margin-bottom: 5px;
+}
+
+.main-metric-subtitle {
+    font-size: 0.9rem;
+    color: rgba(255,255,255,0.7);
+    font-weight: 400;
 }
 
 .operation-stats-section,
@@ -467,23 +493,105 @@
     text-align: right;
 }
 
-// Responsive design
-@media (max-width: 768px) {
-    .detailed-metrics-header {
-        flex-direction: column;
-        align-items: stretch;
+// Styles pour très grandes résolutions
+@media (min-width: 1920px) {
+    .main-metrics-grid {
+        max-width: 1800px;
+        margin: 0 auto;
+        gap: 20px;
     }
     
-    .filters-container {
-        justify-content: center;
-        flex-direction: column;
+    .main-metric {
+        padding: 20px;
+        min-height: 140px;
     }
     
-    .custom-date-inputs {
-        flex-direction: column;
+    .main-metric-value {
+        font-size: 1.8em;
+    }
+    
+    .main-metric-icon {
+        font-size: 2.2em;
+    }
+    
+    .main-metric-label {
+        font-size: 0.9em;
+    }
+    
+    .main-metric-subtitle {
+        font-size: 0.75em;
+    }
+}
+
+@media (min-width: 2560px) {
+    .main-metrics-grid {
+        max-width: 2400px;
+        gap: 24px;
+    }
+    
+    .main-metric {
+        padding: 24px;
+        min-height: 160px;
+    }
+    
+    .main-metric-value {
+        font-size: 2.0em;
+    }
+    
+    .main-metric-icon {
+        font-size: 2.5em;
+    }
+}
+
+// Responsive design pour différentes résolutions
+@media (max-width: 1600px) {
+    .main-metrics-grid {
         gap: 10px;
     }
     
+    .main-metric {
+        padding: 10px;
+        min-height: 100px;
+    }
+    
+    .main-metric-value {
+        font-size: 1.2em;
+    }
+    
+    .main-metric-icon {
+        font-size: 1.5em;
+    }
+}
+
+@media (max-width: 1400px) {
+    .main-metrics-grid {
+        grid-template-columns: repeat(3, 1fr);
+        gap: 8px;
+    }
+    
+    .main-metric {
+        padding: 8px;
+        min-height: 95px;
+    }
+    
+    .main-metric-value {
+        font-size: 1.1em;
+    }
+    
+    .main-metric-icon {
+        font-size: 1.4em;
+    }
+    
+    .main-metric-label {
+        font-size: 0.7em;
+    }
+    
+    .main-metric-subtitle {
+        font-size: 0.6em;
+    }
+}
+
+@media (max-width: 768px) {
     .main-metrics-grid {
         grid-template-columns: repeat(2, 1fr);
     }
@@ -523,20 +631,20 @@
 .graph-placeholder {
   width: 100%;
   max-width: 100%;
-  height: 350px;
-  min-height: 250px;
+  height: 220px;
+  min-height: 160px;
   display: flex;
   align-items: center;
   justify-content: center;
   background: #fff;
-  border-radius: 8px;
+  border-radius: 6px;
   box-shadow: 0 2px 8px #0001;
-  margin-bottom: 24px;
+  margin-bottom: 12px;
   overflow-x: auto; /* Pour le scroll horizontal si besoin */
 }
 
 .graph-placeholder canvas {
-  max-height: 320px;
+  max-height: 200px;
   width: 100% !important;
   height: 100% !important;
 }

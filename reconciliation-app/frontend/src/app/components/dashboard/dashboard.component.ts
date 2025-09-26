@@ -988,6 +988,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
         return this.detailedMetrics.averageTransactions?.toLocaleString() ?? '0';
     }
 
+
     resetFilters() {
         this.selectedAgency = [];
         this.selectedService = [];

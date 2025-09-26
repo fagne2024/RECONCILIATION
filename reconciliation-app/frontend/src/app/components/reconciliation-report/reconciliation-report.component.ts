@@ -44,6 +44,9 @@ export interface ReconciliationReportData {
                     <button class="btn btn-save-all" (click)="saveAll()" [disabled]="!filteredReportData.length && !reportData.length">
                         💾 Sauvegarder tout
                     </button>
+                    <button class="btn btn-report" (click)="goToReportDashboard()" [disabled]="!filteredReportData.length && !reportData.length">
+                        📊 Rapport Avancé
+                    </button>
                     <button class="btn btn-close" (click)="goBack()">
                         ❌ Fermer
                     </button>
@@ -87,6 +90,7 @@ export interface ReconciliationReportData {
                         placeholder="Sélectionner une date">
                 </div>
             </div>
+
 
             <div class="report-summary">
                 <div class="summary-cards">
@@ -336,6 +340,16 @@ export interface ReconciliationReportData {
         .btn-save-all {
             background: #0069d9;
             color: #fff;
+        }
+
+        .btn-report {
+            background: #6f42c1;
+            color: white;
+        }
+
+        .btn-report:hover:not(:disabled) {
+            background: #5a32a3;
+            transform: translateY(-1px);
         }
 
         .icon-btn {
@@ -690,6 +704,7 @@ export interface ReconciliationReportData {
             border-color: #0056b3;
         }
 
+
         @media (max-width: 768px) {
             .report-filters {
                 flex-direction: column;
@@ -729,7 +744,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
     currentPage = 1;
     itemsPerPage = 10;
     totalPages = 0;
-    paginatedData: ReconciliationReportData[] = [];;
+    paginatedData: ReconciliationReportData[] = [];
     response: ReconciliationResponse | null = null;
     private subscription = new Subscription();
     private loadedFromDb = false;
@@ -1216,12 +1231,6 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         }
     }
 
-    getRateClass(rate: number): string {
-        if (rate >= 95) return 'rate-excellent';
-        if (rate >= 80) return 'rate-good';
-        if (rate >= 60) return 'rate-average';
-        return 'rate-poor';
-    }
 
     private computeStatusFromCounts(matches: number, boOnly: number, partnerOnly: number, mismatches: number, totalTransactions: number): string {
         // Indisponible si aucun enregistrement
@@ -1491,15 +1500,177 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
         })
-        .then(r => r.ok ? r.json() : Promise.reject(r))
+        .then(async r => {
+            console.log('🔍 Debug saveAll response:', {
+                status: r.status,
+                statusText: r.statusText,
+                ok: r.ok,
+                contentType: r.headers.get('content-type')
+            });
+            
+            if (!r.ok) {
+                const errorText = await r.text();
+                console.error('❌ Erreur HTTP:', errorText);
+                throw new Error(`HTTP ${r.status}: ${errorText}`);
+            }
+            
+            // Essayer de parser en JSON, sinon utiliser le texte brut
+            try {
+                const jsonResponse = await r.json();
+                console.log('🔍 Debug saveAll JSON response:', jsonResponse);
+                return jsonResponse;
+            } catch (parseError) {
+                console.log('🔍 Debug saveAll - Response is not JSON, using text');
+                const textResponse = await r.text();
+                console.log('🔍 Debug saveAll text response:', textResponse);
+                return textResponse;
+            }
+        })
         .then((res) => {
             const message = typeof res === 'string' ? res : `${rowsSource.length} ligne(s) sauvegardée(s)`;
+            console.log('✅ Sauvegarde bulk réussie:', message);
             this.popupService.showSuccess(message);
         })
         .catch(err => {
             console.error('❌ Erreur de sauvegarde bulk', err);
-            this.popupService.showError('Erreur de sauvegarde', 'Impossible de sauvegarder les lignes');
+            this.popupService.showError('Erreur de sauvegarde', `Impossible de sauvegarder les lignes: ${err.message}`);
         });
+    }
+
+    goToReportDashboard() {
+        window.location.href = '/report-dashboard';
+    }
+
+
+    getRateClass(rate: number): string {
+        if (rate >= 95) return 'rate-excellent';
+        if (rate >= 85) return 'rate-good';
+        if (rate >= 70) return 'rate-average';
+        return 'rate-poor';
+    }
+
+    private groupDataByAgency(data: ReconciliationReportData[]): any {
+        const groupedData: { [key: string]: any } = {};
+        
+        data.forEach(item => {
+            const agency = item.agency;
+            
+            if (!groupedData[agency]) {
+                groupedData[agency] = {
+                    agency: agency,
+                    services: {},
+                    totalTransactions: 0,
+                    totalVolume: 0,
+                    totalMatches: 0,
+                    totalBoOnly: 0,
+                    totalPartnerOnly: 0,
+                    totalMismatches: 0,
+                    averageMatchRate: 0
+                };
+            }
+            
+            // Grouper par service dans l'agence
+            const service = item.service;
+            if (!groupedData[agency].services[service]) {
+                groupedData[agency].services[service] = {
+                    service: service,
+                    transactions: 0,
+                    volume: 0,
+                    matches: 0,
+                    boOnly: 0,
+                    partnerOnly: 0,
+                    mismatches: 0,
+                    matchRate: 0,
+                    status: item.status,
+                    comment: item.comment,
+                    glpiId: item.glpiId
+                };
+            }
+            
+            // Accumuler les totaux
+            groupedData[agency].totalTransactions += item.totalTransactions;
+            groupedData[agency].totalVolume += item.totalVolume;
+            groupedData[agency].totalMatches += item.matches;
+            groupedData[agency].totalBoOnly += item.boOnly;
+            groupedData[agency].totalPartnerOnly += item.partnerOnly;
+            groupedData[agency].totalMismatches += item.mismatches;
+            
+            // Mettre à jour le service
+            groupedData[agency].services[service].transactions += item.totalTransactions;
+            groupedData[agency].services[service].volume += item.totalVolume;
+            groupedData[agency].services[service].matches += item.matches;
+            groupedData[agency].services[service].boOnly += item.boOnly;
+            groupedData[agency].services[service].partnerOnly += item.partnerOnly;
+            groupedData[agency].services[service].mismatches += item.mismatches;
+            groupedData[agency].services[service].matchRate = item.matchRate;
+            groupedData[agency].services[service].status = item.status;
+            groupedData[agency].services[service].comment = item.comment;
+            groupedData[agency].services[service].glpiId = item.glpiId;
+        });
+        
+        // Calculer les taux moyens par agence
+        Object.keys(groupedData).forEach(agency => {
+            const agencyData = groupedData[agency];
+            agencyData.averageMatchRate = agencyData.totalTransactions > 0 
+                ? (agencyData.totalMatches / agencyData.totalTransactions) * 100 
+                : 0;
+        });
+        
+        return groupedData;
+    }
+
+    private exportDetailedReportToExcel(reportData: any) {
+        const fileName = `rapport_detaille_agences_${new Date().toISOString().slice(0,10)}`;
+        
+        // Récupérer les données originales pour avoir toutes les lignes individuelles
+        const rowsSource = this.filteredReportData.length > 0 ? this.filteredReportData : this.reportData;
+        
+        // Feuille 1: Résumé par agence
+        const agencySummary = Object.values(reportData).map((agency: any) => ({
+            'Agence': agency.agency,
+            'Total Transactions': agency.totalTransactions,
+            'Total Volume': agency.totalVolume,
+            'Correspondances': agency.totalMatches,
+            'Écarts BO': agency.totalBoOnly,
+            'Écarts Partenaire': agency.totalPartnerOnly,
+            'Incohérences': agency.totalMismatches,
+            'Taux Moyen': `${agency.averageMatchRate.toFixed(2)}%`,
+            'Nombre de Services': Object.keys(agency.services).length
+        }));
+        
+        // Feuille 2: Détail complet - une ligne par agence/service/date
+        const detailedRows = rowsSource.map(item => ({
+            'Date': this.formatDate(item.date),
+            'Agence': item.agency,
+            'Service': item.service,
+            'Pays': item.country,
+            'Transactions': item.totalTransactions,
+            'Volume': item.totalVolume,
+            'Correspondances': item.matches,
+            'Écarts BO': item.boOnly,
+            'Écarts Partenaire': item.partnerOnly,
+            'Incohérences': item.mismatches,
+            'Taux': `${item.matchRate.toFixed(2)}%`,
+            'Statut': item.status,
+            'Commentaire': item.comment,
+            'ID GLPI': item.glpiId
+        }));
+        
+        // Exporter les deux feuilles séparément
+        this.exportService.exportExcelOptimized(
+            agencySummary, 
+            ['Agence', 'Total Transactions', 'Total Volume', 'Correspondances', 'Écarts BO', 'Écarts Partenaire', 'Incohérences', 'Taux Moyen', 'Nombre de Services'], 
+            `${fileName}_resume_agences.xlsx`
+        );
+        
+        // Attendre un peu avant le deuxième export
+        setTimeout(() => {
+            this.exportService.exportExcelOptimized(
+                detailedRows, 
+                ['Date', 'Agence', 'Service', 'Pays', 'Transactions', 'Volume', 'Correspondances', 'Écarts BO', 'Écarts Partenaire', 'Incohérences', 'Taux', 'Statut', 'Commentaire', 'ID GLPI'], 
+                `${fileName}_detail_complet.xlsx`
+            );
+        }, 1000);
     }
 
     // Méthodes de pagination
