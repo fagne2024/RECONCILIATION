@@ -94,7 +94,7 @@ export interface ReconciliationReportData {
                         <div class="card-icon">📅</div>
                         <div class="card-content">
                             <div class="card-title">Dates</div>
-                            <div class="card-value">{{filteredReportData.length > 0 ? uniqueDates.length : 0}}</div>
+                            <div class="card-value">{{uniqueFilteredDates}}</div>
                         </div>
                     </div>
                     <div class="summary-card">
@@ -143,7 +143,7 @@ export interface ReconciliationReportData {
                         </tr>
                     </thead>
                     <tbody>
-                        <tr *ngFor="let item of filteredReportData; trackBy: trackByItem">
+                        <tr *ngFor="let item of paginatedData; trackBy: trackByItem">
                             <td class="text-cell">{{formatDate(item.date)}}</td>
                             <td class="text-cell">{{item.agency}}</td>
                             <td class="text-cell">{{item.service}}</td>
@@ -189,7 +189,55 @@ export interface ReconciliationReportData {
                 </table>
             </div>
 
-            <div *ngIf="!filteredReportData.length" class="no-data">
+            <!-- Contrôles de pagination -->
+            <div *ngIf="filteredReportData && filteredReportData.length > 0" class="pagination-container">
+                <div class="pagination-info">
+                    <span>Affichage de {{getPaginationStartIndex()}} à {{getPaginationEndIndex()}} sur {{filteredReportData?.length || 0}} éléments</span>
+                </div>
+                <div class="pagination-controls">
+                    <button 
+                        class="pagination-btn" 
+                        (click)="goToPage(1)" 
+                        [disabled]="currentPage === 1"
+                        title="Première page">
+                        ⏮️
+                    </button>
+                    <button 
+                        class="pagination-btn" 
+                        (click)="previousPage()" 
+                        [disabled]="currentPage === 1"
+                        title="Page précédente">
+                        ⏪
+                    </button>
+                    
+                    <div class="page-numbers">
+                        <button 
+                            *ngFor="let page of getPageNumbers()" 
+                            class="page-number" 
+                            [class.active]="page === currentPage"
+                            (click)="goToPage(page)">
+                            {{page}}
+                        </button>
+                    </div>
+                    
+                    <button 
+                        class="pagination-btn" 
+                        (click)="nextPage()" 
+                        [disabled]="currentPage === totalPages"
+                        title="Page suivante">
+                        ⏩
+                    </button>
+                    <button 
+                        class="pagination-btn" 
+                        (click)="goToPage(totalPages)" 
+                        [disabled]="currentPage === totalPages"
+                        title="Dernière page">
+                        ⏭️
+                    </button>
+                </div>
+            </div>
+
+            <div *ngIf="!filteredReportData || !filteredReportData.length" class="no-data">
                 <div class="no-data-icon">📊</div>
                 <div class="no-data-message">Aucune donnée de réconciliation disponible</div>
             </div>
@@ -549,6 +597,99 @@ export interface ReconciliationReportData {
             font-weight: 500;
         }
 
+        /* Styles de pagination */
+        .pagination-container {
+            padding: 20px;
+            background: #f8f9fa;
+            border-top: 1px solid #dee2e6;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+
+        .pagination-info {
+            color: #6c757d;
+            font-size: 0.9rem;
+            font-weight: 500;
+        }
+
+        .pagination-controls {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .pagination-btn {
+            padding: 8px 12px;
+            border: 1px solid #dee2e6;
+            background: white;
+            color: #495057;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 40px;
+            height: 36px;
+        }
+
+        .pagination-btn:hover:not(:disabled) {
+            background: #e9ecef;
+            border-color: #adb5bd;
+            transform: translateY(-1px);
+        }
+
+        .pagination-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            background: #f8f9fa;
+        }
+
+        .page-numbers {
+            display: flex;
+            gap: 4px;
+            margin: 0 8px;
+        }
+
+        .page-number {
+            padding: 8px 12px;
+            border: 1px solid #dee2e6;
+            background: white;
+            color: #495057;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            font-weight: 500;
+            transition: all 0.2s ease;
+            min-width: 36px;
+            height: 36px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .page-number:hover {
+            background: #e9ecef;
+            border-color: #adb5bd;
+            transform: translateY(-1px);
+        }
+
+        .page-number.active {
+            background: #007bff;
+            color: white;
+            border-color: #007bff;
+            font-weight: 600;
+        }
+
+        .page-number.active:hover {
+            background: #0056b3;
+            border-color: #0056b3;
+        }
+
         @media (max-width: 768px) {
             .report-filters {
                 flex-direction: column;
@@ -563,11 +704,32 @@ export interface ReconciliationReportData {
             .summary-cards {
                 grid-template-columns: 1fr;
             }
+
+            .pagination-container {
+                flex-direction: column;
+                gap: 15px;
+                text-align: center;
+            }
+
+            .pagination-controls {
+                justify-content: center;
+                flex-wrap: wrap;
+            }
+
+            .page-numbers {
+                margin: 0 4px;
+            }
         }
     `]
 })
 export class ReconciliationReportComponent implements OnInit, OnDestroy {
-    glpiBaseUrl = 'https://glpi.intouchgroup.net/glpi/front/ticket.form.php?id=';
+    glpiBaseUrl = 'https://glpi.intouchgroup.net/glpi/front/ticket.form.php?id='
+    
+    // Propriétés de pagination
+    currentPage = 1;
+    itemsPerPage = 10;
+    totalPages = 0;
+    paginatedData: ReconciliationReportData[] = [];;
     response: ReconciliationResponse | null = null;
     private subscription = new Subscription();
     private loadedFromDb = false;
@@ -586,7 +748,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
     uniqueDates: string[] = [];
 
     statusOptions: string[] = ['OK', 'NOK', 'REPORTING INCOMPLET', 'REPORTING INDISPONIBLE', 'EN COURS.....'];
-    commentOptions: string[] = ['ECARTS TRANSMIS', "PAS D'ECARTS CONTATES", 'NOK'];
+    commentOptions: string[] = ['ECARTS TRANSMIS', "PAS D'ECARTS CONSTATES", 'NOK'];
 
     constructor(
         private route: ActivatedRoute,
@@ -596,7 +758,10 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         private reconciliationTabsService: ReconciliationTabsService,
         private exportService: ExportOptimizationService,
         private popupService: PopupService
-    ) {}
+    ) {
+        // Initialiser filteredReportData pour éviter les erreurs
+        this.filteredReportData = [];
+    }
 
     ngOnInit() {
         // Récupérer les données du résumé depuis le service dédié
@@ -949,6 +1114,9 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                 comment: this.buildCommentForCounts(data.matches, data.boOnly, data.partnerOnly, data.mismatches)
             };
         });
+        
+        // Mettre à jour la pagination après génération des données
+        this.updatePagination();
     }
 
     private getGroupKey(record: Record<string, string>): string {
@@ -995,6 +1163,16 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         this.uniqueAgencies = [...new Set(this.reportData.map(item => item.agency))].sort();
         this.uniqueServices = [...new Set(this.reportData.map(item => item.service))].sort();
         this.uniqueDates = [...new Set(this.reportData.map(item => item.date))].sort();
+        
+        // Initialiser filteredReportData avec toutes les données si pas encore fait
+        if (this.filteredReportData.length === 0) {
+            this.filteredReportData = [...this.reportData];
+            console.log('🔍 Debug extractUniqueValues - Initialisation filteredReportData:', {
+                reportDataLength: this.reportData.length,
+                filteredReportDataLength: this.filteredReportData.length,
+                uniqueDatesFromReportData: this.uniqueDates.length
+            });
+        }
     }
 
     filterReport() {
@@ -1015,6 +1193,18 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             
             return agencyMatch && serviceMatch && dateMatch;
         });
+        
+        console.log('🔍 Debug filterReport:', {
+            reportDataLength: this.reportData.length,
+            filteredReportDataLength: this.filteredReportData.length,
+            selectedAgency: this.selectedAgency,
+            selectedService: this.selectedService,
+            selectedDate: this.selectedDate
+        });
+        
+        // Réinitialiser à la première page et mettre à jour la pagination
+        this.currentPage = 1;
+        this.updatePagination();
     }
 
     formatDate(dateStr: string): string {
@@ -1047,9 +1237,9 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
     }
 
     private buildCommentForCounts(matches: number, boOnly: number, partnerOnly: number, mismatches: number): string {
-        // Si pas d'écarts (correspondances = total transactions), retourner automatiquement "PAS D'ECART CONSTATES"
+        // Si pas d'écarts (correspondances = total transactions), retourner automatiquement "PAS D'ECARTS CONSTATES"
         if (boOnly === 0 && partnerOnly === 0 && mismatches === 0) {
-            return "PAS D'ECART CONSTATES";
+            return "PAS D'ECARTS CONSTATES";
         }
         
         const parts: string[] = [];
@@ -1061,9 +1251,30 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
     }
 
     get averageMatchRate(): number {
-        if (this.filteredReportData.length === 0) return 0;
+        if (!this.filteredReportData || this.filteredReportData.length === 0) return 0;
         const total = this.filteredReportData.reduce((sum, item) => sum + item.matchRate, 0);
         return Math.round(total / this.filteredReportData.length * 100) / 100;
+    }
+
+    get uniqueFilteredDates(): number {
+        if (!this.filteredReportData || this.filteredReportData.length === 0) return 0;
+        
+        // Normaliser les dates pour ignorer l'heure
+        const normalizedDates = this.filteredReportData.map(item => {
+            const date = new Date(item.date);
+            return date.toISOString().split('T')[0]; // Format YYYY-MM-DD
+        });
+        
+        const uniqueDates = [...new Set(normalizedDates)];
+        console.log('🔍 Debug uniqueFilteredDates:', {
+            filteredReportDataLength: this.filteredReportData.length,
+            uniqueDates: uniqueDates,
+            uniqueCount: uniqueDates.length,
+            sampleDates: this.filteredReportData.slice(0, 3).map(item => item.date),
+            allDates: this.filteredReportData.map(item => item.date),
+            normalizedDates: normalizedDates
+        });
+        return uniqueDates.length;
     }
 
     trackByItem(index: number, item: ReconciliationReportData): string {
@@ -1140,6 +1351,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             this.extractUniqueValues();
             this.filterReport();
             this.currentSource = 'db';
+            this.updatePagination();
         })
         .catch(() => {
             // Ignorer silencieusement en cas d'erreur
@@ -1288,5 +1500,66 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             console.error('❌ Erreur de sauvegarde bulk', err);
             this.popupService.showError('Erreur de sauvegarde', 'Impossible de sauvegarder les lignes');
         });
+    }
+
+    // Méthodes de pagination
+    updatePagination() {
+        this.totalPages = Math.ceil(this.filteredReportData.length / this.itemsPerPage);
+        if (this.currentPage > this.totalPages && this.totalPages > 0) {
+            this.currentPage = this.totalPages;
+        }
+        if (this.currentPage < 1) {
+            this.currentPage = 1;
+        }
+        
+        const startIndex = (this.currentPage - 1) * this.itemsPerPage;
+        const endIndex = startIndex + this.itemsPerPage;
+        this.paginatedData = this.filteredReportData.slice(startIndex, endIndex);
+    }
+
+    goToPage(page: number) {
+        if (page >= 1 && page <= this.totalPages) {
+            this.currentPage = page;
+            this.updatePagination();
+        }
+    }
+
+    nextPage() {
+        if (this.currentPage < this.totalPages) {
+            this.currentPage++;
+            this.updatePagination();
+        }
+    }
+
+    previousPage() {
+        if (this.currentPage > 1) {
+            this.currentPage--;
+            this.updatePagination();
+        }
+    }
+
+    getPageNumbers(): number[] {
+        const pages: number[] = [];
+        const maxVisiblePages = 5;
+        let startPage = Math.max(1, this.currentPage - Math.floor(maxVisiblePages / 2));
+        let endPage = Math.min(this.totalPages, startPage + maxVisiblePages - 1);
+        
+        if (endPage - startPage + 1 < maxVisiblePages) {
+            startPage = Math.max(1, endPage - maxVisiblePages + 1);
+        }
+        
+        for (let i = startPage; i <= endPage; i++) {
+            pages.push(i);
+        }
+        return pages;
+    }
+
+    getPaginationEndIndex(): number {
+        if (!this.filteredReportData) return 0;
+        return Math.min(this.currentPage * this.itemsPerPage, this.filteredReportData.length);
+    }
+
+    getPaginationStartIndex(): number {
+        return (this.currentPage - 1) * this.itemsPerPage + 1;
     }
 }
