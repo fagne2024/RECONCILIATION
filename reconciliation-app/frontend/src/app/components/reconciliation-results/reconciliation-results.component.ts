@@ -4674,22 +4674,28 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
      * Ouvre la popup de sélection des colonnes pour l'export
      */
     openColumnSelector(): void {
-        if (!this.response?.partnerOnly || this.response.partnerOnly.length === 0) {
-            this.popupService.showWarning('❌ Aucune donnée ECART Partenaire disponible pour la sélection des colonnes.');
+        // Vérifier s'il y a au moins des écarts BO ou Partenaire
+        const hasBoEcart = this.response?.boOnly && this.response.boOnly.length > 0;
+        const hasPartnerEcart = this.response?.partnerOnly && this.response.partnerOnly.length > 0;
+        
+        if (!hasBoEcart && !hasPartnerEcart) {
+            this.popupService.showWarning('❌ Aucun écart disponible pour l\'export.');
             return;
         }
 
-        // Extraire toutes les colonnes disponibles des données Partenaire
+        // Extraire toutes les colonnes disponibles des données Partenaire (si disponibles)
         this.availableColumns = [];
         const allColumns = new Set<string>();
         
-        this.response.partnerOnly.forEach(record => {
-            Object.keys(record).forEach(key => {
-                if (record[key] !== undefined && record[key] !== null && record[key] !== '') {
-                    allColumns.add(key);
-                }
+        if (hasPartnerEcart) {
+            this.response.partnerOnly.forEach(record => {
+                Object.keys(record).forEach(key => {
+                    if (record[key] !== undefined && record[key] !== null && record[key] !== '') {
+                        allColumns.add(key);
+                    }
+                });
             });
-        });
+        }
 
         // S'assurer que les colonnes par défaut sont toujours disponibles
         this.defaultColumns.forEach(col => {
@@ -4710,6 +4716,11 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
                 this.selectedColumns[col] = false;
             }
         });
+
+        // Si pas de colonnes partenaire disponibles, afficher un message informatif
+        if (!hasPartnerEcart && hasBoEcart) {
+            this.popupService.showInfo('ℹ️ Aucun écart partenaire détecté. Seuls les écarts BO seront exportés.');
+        }
 
         this.showColumnSelector = true;
     }
@@ -4759,6 +4770,12 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
                 return;
             }
 
+            // Vérifier s'il y a au moins des écarts BO ou Partenaire
+            if (report.ecartBo.length === 0 && report.ecartPartenaire.length === 0) {
+                this.popupService.showWarning('❌ Aucun écart disponible pour l\'export.');
+                return;
+            }
+
             // Créer le contenu CSV avec les deux sections côte à côte
             let csvContent = '';
             
@@ -4788,9 +4805,10 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
             const boTitlePadding = Math.floor((boColumnsCount - 1) / 2);
             const boTitleCells = ';'.repeat(boTitlePadding) + 'ECART BO' + ';'.repeat(boColumnsCount - 1 - boTitlePadding);
             
-            // Centrer le titre ECART PARTENAIRE
+            // Centrer le titre ECART PARTENAIRE (seulement s'il y a des colonnes sélectionnées)
             const partnerTitlePadding = Math.floor((partnerColumnsCount - 1) / 2);
-            const partnerTitleCells = ';'.repeat(partnerTitlePadding) + 'ECART PARTENAIRE' + ';'.repeat(partnerColumnsCount - 1 - partnerTitlePadding);
+            const partnerTitleCells = partnerColumnsCount > 0 ? 
+                ';'.repeat(partnerTitlePadding) + 'ECART PARTENAIRE' + ';'.repeat(partnerColumnsCount - 1 - partnerTitlePadding) : '';
             
             csvContent += `${boTitleCells}${spacing}${partnerTitleCells}\n`;
             
@@ -4814,7 +4832,7 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
                     boRow = ';'.repeat(boColumnsCount - 1);
                 }
                 
-                // Ligne ECART PARTENAIRE
+                // Ligne ECART PARTENAIRE (seulement si des colonnes sont sélectionnées)
                 if (i < report.ecartPartenaire.length && selectedPartnerColumns.length > 0) {
                     // Utiliser directement les données originales au lieu des données transformées
                     const originalPartnerRecord = this.response?.partnerOnly?.[i];
@@ -4847,19 +4865,36 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
                     partnerRow = row.join(';');
                     console.log(`  - Ligne finale Partenaire: "${partnerRow}"`);
                 } else {
-                    // Remplir avec des valeurs vides si pas de données
-                    partnerRow = ';'.repeat(partnerColumnsCount - 1);
+                    // Remplir avec des valeurs vides si pas de données ou pas de colonnes sélectionnées
+                    partnerRow = partnerColumnsCount > 0 ? ';'.repeat(partnerColumnsCount - 1) : '';
                     console.log(`🔍 Ligne ${i} - Pas de données Partenaire, ligne vide: "${partnerRow}"`);
                 }
                 
-                csvContent += `${boRow}${spacing}${partnerRow}\n`;
+                // Ajouter la ligne au CSV (avec ou sans colonnes partenaire)
+                if (partnerColumnsCount > 0) {
+                    csvContent += `${boRow}${spacing}${partnerRow}\n`;
+                } else {
+                    csvContent += `${boRow}\n`;
+                }
             }
 
             // Créer et télécharger le fichier Excel avec couleurs
             await this.createExcelReport(report, selectedPartnerColumns, boHeader, partnerHeader);
 
             const selectedCount = this.availableColumns.filter(col => this.selectedColumns[col]).length;
-            this.popupService.showSuccess(`✅ Rapport des écarts exporté avec succès !\n\n📊 Résumé:\n• Écarts BO: ${report.totalEcartBo} colonnes (format fixe)\n• Écarts Partenaire: ${report.totalEcartPartenaire} lignes (${selectedCount} colonnes sélectionnées)\n• Format: Côte à côte avec espacement\n• Total: ${report.totalEcart}`);
+            const hasPartnerColumns = selectedCount > 0;
+            
+            let successMessage = `✅ Rapport des écarts exporté avec succès !\n\n📊 Résumé:\n• Écarts BO: ${report.totalEcartBo} lignes (format fixe)`;
+            
+            if (hasPartnerColumns) {
+                successMessage += `\n• Écarts Partenaire: ${report.totalEcartPartenaire} lignes (${selectedCount} colonnes sélectionnées)\n• Format: Côte à côte avec espacement`;
+            } else {
+                successMessage += `\n• Format: Écarts BO uniquement`;
+            }
+            
+            successMessage += `\n• Total: ${report.totalEcart}`;
+            
+            this.popupService.showSuccess(successMessage);
             
             // Fermer la popup après l'export
             this.closeColumnSelector();
@@ -4875,10 +4910,21 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
      */
     confirmExportWithSelectedColumns(): void {
         const selectedCount = this.availableColumns.filter(col => this.selectedColumns[col]).length;
-        if (selectedCount === 0) {
-            this.popupService.showWarning('⚠️ Veuillez sélectionner au moins une colonne pour l\'export.');
+        const report = this.generateEcartReport();
+        
+        // Vérifier s'il y a des écarts BO (permettre l'export même sans colonnes partenaire)
+        const hasBoEcart = report && report.ecartBo && report.ecartBo.length > 0;
+        const hasPartnerEcart = report && report.ecartPartenaire && report.ecartPartenaire.length > 0;
+        
+        if (selectedCount === 0 && !hasBoEcart) {
+            this.popupService.showWarning('⚠️ Veuillez sélectionner au moins une colonne pour l\'export ou vérifiez qu\'il y a des écarts BO.');
             return;
         }
+        
+        if (hasBoEcart && selectedCount === 0) {
+            this.popupService.showInfo('ℹ️ Export des écarts BO uniquement (aucune colonne partenaire sélectionnée).');
+        }
+        
         this.exportEcartReport();
     }
 

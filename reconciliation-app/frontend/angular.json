@@ -91,6 +91,11 @@
                 },
                 "serve": {
                     "builder": "@angular-devkit/build-angular:dev-server",
+                    "options": {
+                        "host": "0.0.0.0",
+                        "disableHostCheck": true,
+                        "port": 4200
+                    },
                     "configurations": {
                         "production": {
                             "browserTarget": "csv-reconciliation:build:production"

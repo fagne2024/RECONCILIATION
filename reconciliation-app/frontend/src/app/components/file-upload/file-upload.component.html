@@ -19,6 +19,7 @@
                     <small>Uploadez un fichier et le système applique automatiquement le traitement et la réconciliation</small>
                 </span>
             </label>
+            <!-- Mode Super Auto - COMMENTÉ
             <button class="mode-option super-auto-mode-btn" (click)="goToReconciliationLauncher()">
                 <span class="mode-label">
                     <i class="fas fa-rocket"></i>
@@ -26,6 +27,7 @@
                     <small>Réconciliation ultra-rapide avec IA avancée et traitement parallèle</small>
                 </span>
             </button>
+            -->
         </div>
     </div>
 
@@ -47,7 +49,7 @@
         </div>
     </div>
 
-    <!-- Sélecteur de type de réconciliation - Masqué par défaut pour le mode 1-1 -->
+    <!-- Sélecteur de type de réconciliation - COMMENTÉ (seul le mode 1-1 est conservé)
     <div class="reconciliation-mode-selector" *ngIf="reconciliationMode === 'manual' && reconciliationType !== '1-1'">
         <h3>🔢 Type de Réconciliation</h3>
         <div class="mode-options">
@@ -93,6 +95,7 @@
             </label>
         </div>
     </div>
+    -->
 
     <!-- Indicateur discret du mode 1-1 actif -->
     <div class="reconciliation-mode-indicator" *ngIf="reconciliationMode === 'manual' && reconciliationType === '1-1'">
@@ -394,7 +397,7 @@
         </div>
     </div>
 
-    <!-- Mode Super Auto -->
+    <!-- Mode Super Auto - COMMENTÉ
     <div class="super-auto-reconciliation-area" *ngIf="reconciliationMode === 'super-auto'">
         <div class="file-upload-area">
             <div class="file-input-container" (click)="superAutoBoFileInput.click()" [class.has-file]="superAutoBoFile">
@@ -418,7 +421,6 @@
             </div>
         </div>
 
-        <!-- Status Panel pour le mode super auto -->
         <div class="status-panel" *ngIf="reconciliationMode === 'super-auto'">
             <div class="status-item">
                 <span class="status-label">BO chargé:</span>
@@ -442,7 +444,6 @@
             </div>
         </div>
 
-        <!-- Boutons pour le mode super auto -->
         <div class="button-container" *ngIf="reconciliationMode === 'super-auto'">
             <button class="btn proceed-btn super-auto-btn" [disabled]="!canProceedSuperAuto()" (click)="onSuperAutoProceed()" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 15px 30px; border: none; border-radius: 5px; cursor: pointer; font-size: 16px; margin: 10px; font-weight: bold;">
                 🚀 Lancer la Réconciliation Super Auto
@@ -457,6 +458,7 @@
             </div>
         </div>
     </div>
+    -->
 
     <!-- Status Panel pour le mode manuel -->
     <div class="status-panel" *ngIf="reconciliationMode === 'manual'">
@@ -515,6 +517,12 @@
         <div *ngIf="boData.length > 0 && partnerData.length === 0" class="info-message" style="background: #e3f2fd; border: 1px solid #2196f3; padding: 15px; margin: 10px 0; border-radius: 5px; color: #1976d2;">
             <i class="fas fa-info-circle"></i>
             <strong>Information:</strong> Le fichier BO est chargé ({{ boData.length }} lignes). Veuillez maintenant uploader le fichier partenaire pour continuer.
+        </div>
+        
+        <!-- Message d'information pour gros fichiers -->
+        <div *ngIf="isLargeFileDetected()" class="large-file-info" style="background: #fff3cd; border: 1px solid #ffeaa7; padding: 15px; margin: 10px 0; border-radius: 5px; color: #856404;">
+            <i class="fas fa-exclamation-triangle"></i>
+            <strong>Gros fichier détecté:</strong> Le système utilisera un traitement par chunks optimisé pour éviter les erreurs de mémoire. Le traitement peut prendre plus de temps mais sera plus stable.
         </div>
         
         <button class="btn proceed-btn" [disabled]="!canProceed()" (click)="onProceed()" style="background-color: #4CAF50; color: white; padding: 15px 30px; border: none; border-radius: 5px; cursor: pointer; font-size: 16px; margin: 10px;">

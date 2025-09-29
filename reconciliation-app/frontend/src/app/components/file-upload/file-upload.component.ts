@@ -22,8 +22,8 @@ export class FileUploadComponent {
         partnerData: Record<string, string>[];
     }>();
 
-    reconciliationMode: 'manual' | 'automatic' | 'super-auto' = 'manual';
-    reconciliationType: '1-1' | '1-2' | '1-3' | '1-4' | '1-5' = '1-1';
+    reconciliationMode: 'manual' | 'automatic' = 'manual'; // 'super-auto' commenté
+    reconciliationType: '1-1' = '1-1'; // Autres types commentés: '1-2' | '1-3' | '1-4' | '1-5'
 
     boFile: File | null = null;
     partnerFile: File | null = null;
@@ -37,12 +37,12 @@ export class FileUploadComponent {
     autoBoData: Record<string, string>[] = [];
     autoPartnerData: Record<string, string>[] = [];
 
-    // Fichiers pour le mode super auto
-    superAutoBoFile: File | null = null;
-    superAutoPartnerFile: File | null = null;
-    superAutoBoData: Record<string, string>[] = [];
-    superAutoPartnerData: Record<string, string>[] = [];
-    superAutoEstimatedTime: string = '';
+    // Fichiers pour le mode super auto - COMMENTÉ
+    // superAutoBoFile: File | null = null;
+    // superAutoPartnerFile: File | null = null;
+    // superAutoBoData: Record<string, string>[] = [];
+    // superAutoPartnerData: Record<string, string>[] = [];
+    // superAutoEstimatedTime: string = '';
 
     loading = false;
     errorMessage = '';
@@ -91,27 +91,30 @@ export class FileUploadComponent {
         private progressIndicatorService: ProgressIndicatorService,
         private cd: ChangeDetectorRef
     ) {
-        // Initialiser le type de réconciliation depuis le service
-        this.reconciliationType = this.appStateService.getReconciliationType();
+        // Initialiser le type de réconciliation depuis le service (forcé à 1-1)
+        const serviceType = this.appStateService.getReconciliationType();
+        this.reconciliationType = serviceType === '1-1' ? '1-1' : '1-1'; // Forcer à 1-1
     }
 
-    onReconciliationTypeChange(type: '1-1' | '1-2' | '1-3' | '1-4' | '1-5'): void {
-        this.reconciliationType = type;
-        // Sauvegarder le type dans le service
-        this.appStateService.setReconciliationType(type);
-        // Réinitialiser les fichiers si on change de type
-        this.boFile = null;
-        this.partnerFile = null;
-        this.boData = [];
-        this.partnerData = [];
-        this.estimatedTime = '';
-    }
+    // onReconciliationTypeChange - COMMENTÉ (seul le type 1-1 est conservé)
+    // onReconciliationTypeChange(type: '1-1' | '1-2' | '1-3' | '1-4' | '1-5'): void {
+    //     this.reconciliationType = type;
+    //     // Sauvegarder le type dans le service
+    //     this.appStateService.setReconciliationType(type);
+    //     // Réinitialiser les fichiers si on change de type
+    //     this.boFile = null;
+    //     this.partnerFile = null;
+    //     this.boData = [];
+    //     this.partnerData = [];
+    //     this.estimatedTime = '';
+    // }
 
-    showReconciliationTypeSelector(): void {
-        // Permettre à l'utilisateur de changer le type de réconciliation
-        // En changeant temporairement le type pour afficher le sélecteur
-        this.reconciliationType = '1-2'; // Changer temporairement pour afficher le sélecteur
-    }
+    // showReconciliationTypeSelector - COMMENTÉ (seul le type 1-1 est conservé)
+    // showReconciliationTypeSelector(): void {
+    //     // Permettre à l'utilisateur de changer le type de réconciliation
+    //     // En changeant temporairement le type pour afficher le sélecteur
+    //     this.reconciliationType = '1-2'; // Changer temporairement pour afficher le sélecteur
+    // }
 
     private updateEstimatedTime(): void {
         // Ne calculer l'estimation que si les deux fichiers sont chargés
@@ -1549,13 +1552,37 @@ export class FileUploadComponent {
         this.router.navigate(['/stats']);
     }
 
+    /**
+     * Détermine si un gros fichier est détecté
+     */
+    isLargeFileDetected(): boolean {
+        if (!this.boFile || !this.partnerFile) {
+            return false;
+        }
+        
+        const totalSize = this.boFile.size + this.partnerFile.size;
+        const sizeThreshold = 50 * 1024 * 1024; // 50MB
+        
+        // Vérifier la taille totale
+        if (totalSize > sizeThreshold) {
+            return true;
+        }
+        
+        // Vérifier le nombre de lignes estimé
+        const estimatedBoRows = Math.ceil(this.boFile.size / 100);
+        const estimatedPartnerRows = Math.ceil(this.partnerFile.size / 100);
+        
+        return estimatedBoRows > 100000 || estimatedPartnerRows > 100000;
+    }
+
     goToDashboard() {
         this.router.navigate(['/dashboard']);
     }
 
-    goToReconciliationLauncher() {
-        this.router.navigate(['/reconciliation-launcher']);
-    }
+    // goToReconciliationLauncher() - COMMENTÉ (mode super auto désactivé)
+    // goToReconciliationLauncher() {
+    //     this.router.navigate(['/reconciliation-launcher']);
+    // }
 
     // Méthodes utilitaires pour le mode automatique
     clearMessages(): void {

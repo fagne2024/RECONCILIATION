@@ -1395,16 +1395,6 @@ export class ColumnSelectionComponent implements OnDestroy, OnChanges, OnInit {
             usingCompressedData: this.compressedBoData.length > 0,
             transformationApplied: selectedSuggestion?.transformation ? true : false
         });
-        
-        // Log des échantillons de données transformées
-        if (selectedSuggestion?.transformation) {
-            const boSample = boDataToReconcile.slice(0, 3).map(row => row[this.selectedBoKeyColumn]);
-            const partnerSample = partnerDataToReconcile.slice(0, 3).map(row => row[this.selectedPartnerKeyColumn]);
-            console.log('🔍 Échantillons après transformation:', {
-                boKeys: boSample,
-                partnerKeys: partnerSample
-            });
-        }
 
         // Préparer les paramètres de réconciliation
         const reconciliationParams = {
@@ -1419,6 +1409,31 @@ export class ColumnSelectionComponent implements OnDestroy, OnChanges, OnInit {
                 key.boColumn && key.partnerColumn
             )
         };
+
+        // Vérifier si le traitement par chunks sera utilisé
+        const willUseChunks = this.willUseChunkedProcessing(boDataToReconcile, partnerDataToReconcile);
+        if (willUseChunks) {
+            console.log('📊 Gros fichier détecté - Le système utilisera un traitement par chunks optimisé');
+            this.popupService.showInfo(
+                'Gros fichier détecté ! Le système utilisera un traitement par chunks optimisé pour éviter les erreurs de mémoire. Le traitement peut prendre plus de temps mais sera plus stable.',
+                'Traitement Optimisé'
+            );
+            
+            // Pour les très gros fichiers, utiliser directement le traitement par chunks
+            console.log('🚀 Lancement direct du traitement par chunks pour éviter l\'erreur de sérialisation');
+            this.launchChunkedReconciliation(reconciliationParams);
+            return;
+        }
+        
+        // Log des échantillons de données transformées
+        if (selectedSuggestion?.transformation) {
+            const boSample = boDataToReconcile.slice(0, 3).map(row => row[this.selectedBoKeyColumn]);
+            const partnerSample = partnerDataToReconcile.slice(0, 3).map(row => row[this.selectedPartnerKeyColumn]);
+            console.log('🔍 Échantillons après transformation:', {
+                boKeys: boSample,
+                partnerKeys: partnerSample
+            });
+        }
 
         console.log('⚙️ Paramètres de réconciliation:', {
             boKeyColumn: reconciliationParams.boKeyColumn,
@@ -1462,6 +1477,69 @@ export class ColumnSelectionComponent implements OnDestroy, OnChanges, OnInit {
                 this.popupService.showError(`Erreur lors de la réconciliation: ${error.message || 'Erreur inconnue'}`, 'Erreur de Réconciliation');
             }
         });
+    }
+
+    /**
+     * Lance directement le traitement par chunks pour éviter l'erreur de sérialisation
+     */
+    private launchChunkedReconciliation(reconciliationParams: any): void {
+        console.log('🚀 Lancement direct du traitement par chunks');
+        
+        // Démarrer la progression
+        this.startReconciliationProgress();
+        
+        // Créer une requête simplifiée pour le traitement par chunks
+        const chunkedRequest = {
+            boFileContent: reconciliationParams.boFileContent,
+            partnerFileContent: reconciliationParams.partnerFileContent,
+            boKeyColumn: reconciliationParams.boKeyColumn,
+            partnerKeyColumn: reconciliationParams.partnerKeyColumn,
+            comparisonColumns: reconciliationParams.comparisonColumns,
+            additionalKeys: reconciliationParams.additionalKeys
+        };
+        
+        // Lancer la réconciliation par chunks
+        this.reconciliationService.reconcile(chunkedRequest).subscribe({
+            next: (result: any) => {
+                console.log('✅ Réconciliation par chunks terminée avec succès');
+                console.log('📊 Résultats de la réconciliation:', {
+                    matches: result.matches?.length || 0,
+                    boOnly: result.boOnly?.length || 0,
+                    partnerOnly: result.partnerOnly?.length || 0,
+                    mismatches: result.mismatches?.length || 0,
+                    totalBoRecords: result.totalBoRecords || 0,
+                    totalPartnerRecords: result.totalPartnerRecords || 0
+                });
+                
+                this.finishReconciliationProgress();
+                
+                // Stocker les résultats dans le service d'état
+                this.appStateService.setReconciliationResults(result);
+                
+                // Naviguer vers la page des résultats avec un délai pour voir la progression
+                setTimeout(() => {
+                    console.log('🚀 Navigation vers les résultats...');
+                    this.router.navigate(['/results']);
+                }, 2000); // 2 secondes de délai pour voir la progression
+            },
+            error: (error: any) => {
+                console.error('❌ Erreur lors de la réconciliation par chunks:', error);
+                this.finishReconciliationProgress();
+                
+                // Afficher l'erreur à l'utilisateur
+                this.popupService.showError(`Erreur lors de la réconciliation par chunks: ${error.message || 'Erreur inconnue'}`, 'Erreur de Réconciliation');
+            }
+        });
+    }
+
+    /**
+     * Détermine si le traitement par chunks sera utilisé
+     */
+    private willUseChunkedProcessing(boData: any[], partnerData: any[]): boolean {
+        // Désactiver le traitement par chunks frontend pour forcer l'utilisation du backend
+        // Le backend est plus optimisé pour les gros volumes et la logique de correspondance
+        console.log('📊 Utilisation du backend pour tous les fichiers (traitement optimisé)');
+        return false;
     }
 
     // Méthodes pour gérer la progression
