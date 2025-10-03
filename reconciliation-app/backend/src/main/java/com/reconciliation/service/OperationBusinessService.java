@@ -48,10 +48,7 @@ public class OperationBusinessService {
         
         // Déterminer le type d'opération et calculer le nouveau solde
         if (isDebitOperation(operation.getTypeOperation())) {
-            // Vérifier si le compte a un solde suffisant pour le débit
-            if (soldeAvant < montant) {
-                throw new IllegalStateException("Solde insuffisant pour effectuer cette opération");
-            }
+            // Autoriser le solde négatif : débiter sans contrainte
             soldeApres = soldeAvant - montant;
         } else if (isCreditOperation(operation.getTypeOperation())) {
             soldeApres = soldeAvant + montant;
@@ -109,15 +106,12 @@ public class OperationBusinessService {
         if (optionalOperation.isPresent()) {
             OperationEntity operation = optionalOperation.get();
             
-            // Vérifier que l'opération est en attente ou en cours
-            if ("En attente".equals(operation.getStatut()) || "En cours".equals(operation.getStatut())) {
-                // Traiter l'opération et mettre à jour le solde du compte
-                if (processOperation(operation)) {
-                    // Changer le statut à "Validée"
-                    operation.setStatut("Validée");
-                    operationRepository.save(operation);
-                    return true;
-                }
+            // Traiter l'opération quel que soit son statut actuel
+            if (processOperation(operation)) {
+                // Changer le statut à "Validée"
+                operation.setStatut("Validée");
+                operationRepository.save(operation);
+                return true;
             }
         }
         return false;

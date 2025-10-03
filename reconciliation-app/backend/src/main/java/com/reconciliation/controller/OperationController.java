@@ -480,5 +480,62 @@ public class OperationController {
         }
     }
     
+    /**
+     * Synchronise les soldes de clôture de tous les comptes
+     */
+    @PostMapping("/synchronize-closing-balances")
+    public ResponseEntity<Map<String, Object>> synchronizeClosingBalances() {
+        try {
+            logger.info("Demande de synchronisation des soldes de clôture");
+            
+            operationService.synchroniserSoldesClotureQuotidiens();
+            
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("message", "Synchronisation des soldes de clôture terminée avec succès");
+            response.put("timestamp", LocalDateTime.now());
+            
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            logger.error("Erreur lors de la synchronisation des soldes de clôture: {}", e.getMessage(), e);
+            
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", false);
+            response.put("message", "Erreur lors de la synchronisation: " + e.getMessage());
+            response.put("timestamp", LocalDateTime.now());
+            
+            return ResponseEntity.badRequest().body(response);
+        }
+    }
+    
+    /**
+     * Recalcule le solde de clôture d'un compte spécifique
+     */
+    @PostMapping("/recalculate-closing-balance/{compteId}")
+    public ResponseEntity<Map<String, Object>> recalculateClosingBalance(@PathVariable Long compteId) {
+        try {
+            logger.info("Demande de recalcul du solde de clôture pour le compte {}", compteId);
+            
+            operationService.recalculerSoldeClotureCompte(compteId);
+            
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("message", "Solde de clôture recalculé avec succès pour le compte " + compteId);
+            response.put("compteId", compteId);
+            response.put("timestamp", LocalDateTime.now());
+            
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            logger.error("Erreur lors du recalcul du solde de clôture pour le compte {}: {}", compteId, e.getMessage(), e);
+            
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", false);
+            response.put("message", "Erreur lors du recalcul: " + e.getMessage());
+            response.put("compteId", compteId);
+            response.put("timestamp", LocalDateTime.now());
+            
+            return ResponseEntity.badRequest().body(response);
+        }
+    }
 
 } 

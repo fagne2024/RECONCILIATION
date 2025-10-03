@@ -103,6 +103,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
     /**
      * Filtre les types d'opérations à afficher sur les graphiques.
      * Exclut tous les types commençant par 'annulation_' sauf 'annulation_bo'.
+     * Exclut également les ajustements et transactions créées.
      * @param typeOperation Le type d'opération à vérifier.
      * @returns `true` si le type doit être inclus, `false` sinon.
      */
@@ -111,9 +112,17 @@ export class DashboardComponent implements OnInit, OnDestroy {
             return true; // Inclure par défaut si le type est manquant
         }
         const lowerCaseType = typeOperation.toLowerCase();
+        
+        // Exclure les annulations sauf annulation_bo
         if (lowerCaseType.startsWith('annulation_')) {
             return lowerCaseType === 'annulation_bo';
         }
+        
+        // Exclure les ajustements et transactions créées
+        if (lowerCaseType === 'ajustement' || lowerCaseType === 'transaction_cree') {
+            return false;
+        }
+        
         return true;
     }
 
@@ -222,7 +231,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
 
       if (this.selectedMetric === 'transactions') {
         // Bar chart : répartition par service
-        const excludedTypes = ['annulation_bo']; // NE PAS exclure 'transaction_cree'
+        const excludedTypes = ['annulation_bo', 'ajustement', 'transaction_cree'];
         // On filtre explicitement par agence (client) sélectionnée pour la courbe
         let filteredAgencySummary = agencySummaryFiltered
             .filter(s => !excludedTypes.includes((s.typeOperation || '').toLowerCase()))
@@ -237,10 +246,8 @@ export class DashboardComponent implements OnInit, OnDestroy {
           aggregation[s.service] += Number(s.recordCount) || 0;
         });
         const barLabels = Object.keys(aggregation);
-        // Couleurs : couleur aléatoire pour 'transaction_cree', palette sinon
-        const barColors = barLabels.map((label, idx) =>
-          (label && label.toLowerCase() === 'transaction_cree') ? randomColor() : colorList[idx % colorList.length]
-        );
+        // Couleurs : palette standard
+        const barColors = barLabels.map((label, idx) => colorList[idx % colorList.length]);
         // Correction : un dataset par service
         const barDatasets = barLabels.map((label, idx) => ({
           label: label,
@@ -291,7 +298,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
         return;
       } else if (this.selectedMetric === 'revenu') {
         // Bar chart : volume des frais par service (tous les FRAIS_TRANSACTION, crédit et débit)
-        const excludedTypes = ['annulation_bo'];
+        const excludedTypes = ['annulation_bo', 'ajustement', 'transaction_cree'];
         let filteredOperations = operationsFiltered
             .filter(op => !excludedTypes.includes((op.typeOperation || '').toLowerCase()))
             .filter(op => this.shouldIncludeOperation(op.typeOperation));
@@ -364,7 +371,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
       } else if (this.selectedMetric === 'volume') {
         // Bar chart : volume total par type d'opération
         if (!this.detailedMetrics?.operationStats) return;
-        const excludedTypes2 = ['annulation_bo']; // NE PAS exclure 'transaction_cree'
+        const excludedTypes2 = ['annulation_bo', 'ajustement', 'transaction_cree'];
         let filteredOperations = operationsFiltered
             .filter(op => !excludedTypes2.includes((op.typeOperation || '').toLowerCase()))
             .filter(op => this.shouldIncludeOperation(op.typeOperation));
@@ -391,7 +398,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
             .filter((op: any) => op.typeOperation === type)
             .reduce((sum, op) => sum + Number(op.montant), 0)
           ],
-          backgroundColor: (type && type.toLowerCase() === 'transaction_cree') ? randomColor() : colorList[idx % colorList.length],
+          backgroundColor: colorList[idx % colorList.length],
           borderRadius: 6
         }));
         this.barChartData = {

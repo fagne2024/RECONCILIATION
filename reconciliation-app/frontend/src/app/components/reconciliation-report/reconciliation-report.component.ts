@@ -122,6 +122,20 @@ export interface ReconciliationReportData {
                             <div class="card-value">{{averageMatchRate}}%</div>
                         </div>
                     </div>
+                    <div class="summary-card">
+                        <div class="card-icon">⏳</div>
+                        <div class="card-content">
+                            <div class="card-title">Écarts en cours</div>
+                            <div class="card-value">{{inProgressDiscrepancies | number}}</div>
+                        </div>
+                    </div>
+                    <div class="summary-card">
+                        <div class="card-icon">✅</div>
+                        <div class="card-content">
+                            <div class="card-title">Écarts traités</div>
+                            <div class="card-value">{{treatedDiscrepancies | number}}</div>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -1284,6 +1298,21 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             normalizedDates: normalizedDates
         });
         return uniqueDates.length;
+    }
+
+    // Compteurs d'écarts
+    get inProgressDiscrepancies(): number {
+        if (!this.filteredReportData) return 0;
+        return this.filteredReportData
+            .filter(item => (item.status || '').toUpperCase().includes('EN COURS'))
+            .reduce((sum, item) => sum + (item.boOnly || 0) + (item.partnerOnly || 0) + (item.mismatches || 0), 0);
+    }
+
+    get treatedDiscrepancies(): number {
+        if (!this.filteredReportData) return 0;
+        return this.filteredReportData
+            .filter(item => !(item.status || '').toUpperCase().includes('EN COURS'))
+            .reduce((sum, item) => sum + (item.boOnly || 0) + (item.partnerOnly || 0) + (item.mismatches || 0), 0);
     }
 
     trackByItem(index: number, item: ReconciliationReportData): string {

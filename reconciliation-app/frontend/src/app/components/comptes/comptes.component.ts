@@ -1153,6 +1153,14 @@ export class ComptesComponent implements OnInit, OnDestroy {
         this.isLoadingReleve = false;
     }
 
+    // Méthode pour recalculer le solde de clôture après validation d'une opération
+    public recalculateClosingBalance(): void {
+        if (this.releveOperations && this.releveOperations.length > 0) {
+            // Recalculer les soldes journaliers
+            this.processReleveOperations();
+        }
+    }
+
     calculateRelevePagination(): void {
         this.releveCurrentPage = 1;
         if (this.showSoldesSeulement) {
@@ -1677,8 +1685,9 @@ export class ComptesComponent implements OnInit, OnDestroy {
         let globalOpeningSet = false;
         let globalOpening = 0;
         Object.entries(grouped).forEach(([date, ops], idx) => {
-            // Filtrer les opérations non annulées pour le calcul du solde de clôture
-            const opsValides = ops.filter(op => op.statut !== 'Annulée');
+            // Filtrer les opérations valides (non annulées) pour le calcul du solde de clôture
+            // Inclure les opérations "En attente" car elles peuvent être validées
+            const opsValides = ops.filter(op => op.statut !== 'Annulée' && op.statut !== 'Rejetée');
             
             if (opsValides.length === 0) {
                 // Si toutes les opérations sont annulées, utiliser le solde d'ouverture
@@ -1705,6 +1714,7 @@ export class ComptesComponent implements OnInit, OnDestroy {
                     closing: opening // Solde de clôture = solde d'ouverture si toutes les opérations sont annulées
                 };
             } else {
+                // Trier les opérations valides par date/heure puis par ID pour garantir l'ordre chronologique
                 const sorted = opsValides.slice().sort((a, b) => {
                     const tA = new Date(a.dateOperation).getTime();
                     const tB = new Date(b.dateOperation).getTime();
@@ -1725,9 +1735,13 @@ export class ComptesComponent implements OnInit, OnDestroy {
                     globalOpeningSet = true;
                 }
                 // Le solde de clôture est toujours le soldeApres de la dernière opération valide du jour
+                // Trier par date/heure pour s'assurer que la dernière opération est vraiment la dernière chronologiquement
+                const lastOperation = sorted[sorted.length - 1];
+                const closingBalance = lastOperation?.soldeApres ?? 0;
+                
                 result[date] = {
                     opening: opening,
-                    closing: sorted[sorted.length - 1]?.soldeApres ?? 0
+                    closing: closingBalance
                 };
             }
         });

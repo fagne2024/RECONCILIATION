@@ -83,16 +83,29 @@
                 <button class="export-btn" (click)="exportStats()" [disabled]="!agencySummaries.length || isLoading">
                     📥 Exporter le résumé
                 </button>
-
+                <button class="bulk-delete-btn" (click)="deleteSelectedSummaries()" 
+                        [disabled]="!hasSelectedItems() || isLoading"
+                        *ngIf="hasSelectedItems()">
+                    🗑️ Supprimer sélectionnés ({{getSelectedCount()}})
+                </button>
+                <button class="clear-selection-btn" (click)="clearSelection()" 
+                        [disabled]="!hasSelectedItems() || isLoading"
+                        *ngIf="hasSelectedItems()">
+                    ✖️ Désélectionner tout
+                </button>
+                <div class="selection-info" *ngIf="hasSelectedItems()">
+                    <span class="selection-count">{{getSelectedCount()}} élément(s) sélectionné(s)</span>
+                </div>
             </div>
 
             <div class="details-table">
                 <table>
                     <thead>
                         <tr>
-                            <!-- <th>
-                                <input type="checkbox" [checked]="allSelected" (change)="toggleSelectAll($event)">
-                            </th> -->
+                            <th>
+                                <input type="checkbox" [checked]="allSelected" (change)="toggleSelectAll($event)" 
+                                       title="Sélectionner/désélectionner toutes les statistiques (toutes pages)">
+                            </th>
                             <th>Agence</th>
                             <th>Service</th>
                             <th>Pays</th>
@@ -103,10 +116,11 @@
                         </tr>
                     </thead>
                     <tbody>
-                        <tr *ngFor="let summary of pagedStats">
-                            <!-- <td>
-                                <input type="checkbox" [checked]="isSelected(summary)" (change)="toggleSelection(summary, $event)">
-                            </td> -->
+                        <tr *ngFor="let summary of pagedStats" [class.selected-row]="isSelected(summary)">
+                            <td>
+                                <input type="checkbox" [checked]="isSelected(summary)" (change)="toggleSelection(summary, $event)"
+                                       title="Sélectionner cette statistique">
+                            </td>
                             <td>{{summary.agency}}</td>
                             <td>{{summary.service}}</td>
                             <td>{{summary.country}}</td>

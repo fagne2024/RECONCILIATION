@@ -20,7 +20,7 @@ export class RankingComponent implements OnInit {
   serviceRankingType: 'transactions' | 'volume' | 'fees' = 'transactions';
   
   // Période de calcul
-  selectedPeriod: 'all' | 'day' | 'week' | 'month' | 'thisYear' | 'lastYear' | 'custom' = 'month';
+  selectedPeriod: 'all' | 'day' | 'week' | 'month' | 'lastMonth' | 'thisYear' | 'lastYear' | 'custom' = 'month';
   
   // États de chargement
   loadingAgencies = false;
@@ -317,6 +317,8 @@ export class RankingComponent implements OnInit {
         return 'Semaine';
       case 'month':
         return 'Mois';
+      case 'lastMonth':
+        return 'Mois';
       default:
         return 'Mois';
     }
@@ -345,6 +347,10 @@ export class RankingComponent implements OnInit {
         const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
         const monthEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0);
         return `Données du ${monthStart.toLocaleDateString('fr-FR')} au ${monthEnd.toLocaleDateString('fr-FR')} (mois en cours)`;
+      case 'lastMonth':
+        const lastMonthStart = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+        const lastMonthEnd = new Date(today.getFullYear(), today.getMonth(), 0);
+        return `Données du ${lastMonthStart.toLocaleDateString('fr-FR')} au ${lastMonthEnd.toLocaleDateString('fr-FR')} (mois dernier)`;
       case 'thisYear':
         const yearStart = new Date(today.getFullYear(), 0, 1);
         const yearEnd = new Date(today.getFullYear(), 11, 31);

@@ -80,6 +80,7 @@ com\reconciliation\controller\UserProfilController.class
 com\reconciliation\controller\EcartSoldeController.class
 com\reconciliation\repository\PermissionRepository.class
 com\reconciliation\service\ColumnProcessingService.class
+com\reconciliation\service\MagicReconciliationResult.class
 com\reconciliation\service\UserProfilService.class
 com\reconciliation\service\ConfigurableReconciliationService$CorrespondenceRule.class
 com\reconciliation\entity\ImpactOPEntity.class
@@ -101,6 +102,7 @@ com\reconciliation\service\OperationService.class
 com\reconciliation\dto\FraisTransactionRequest.class
 com\reconciliation\entity\TrxSfEntity.class
 com\reconciliation\entity\JsonConverter.class
+com\reconciliation\repository\Result8RecRepository.class
 com\reconciliation\service\ColumnProcessingRuleService.class
 com\reconciliation\dto\ReconciliationResponse$Difference.class
 com\reconciliation\controller\TrxSfController.class
@@ -111,6 +113,7 @@ com\reconciliation\service\MagicReconciliationService.class
 com\reconciliation\service\CompteService.class
 com\reconciliation\controller\FileWatcherController.class
 com\reconciliation\dto\ColumnProcessingRuleDTO.class
+com\reconciliation\entity\Result8RecEntity.class
 com\reconciliation\dto\OperationUpdateRequest.class
 com\reconciliation\service\ReconciliationJobService.class
 com\reconciliation\controller\TestController.class
@@ -134,3 +137,4 @@ com\reconciliation\repository\UserRepository.class
 com\reconciliation\entity\StringArrayConverter$1.class
 com\reconciliation\repository\ProfilPermissionRepository.class
 com\reconciliation\entity\ColumnProcessingRule.class
+com\reconciliation\controller\Result8RecController.class

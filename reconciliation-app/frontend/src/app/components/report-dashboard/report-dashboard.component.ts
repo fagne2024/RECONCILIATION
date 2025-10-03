@@ -85,6 +85,7 @@ import { ModernExcelExportService, ExcelColumn } from '../../services/modern-exc
                             <option value="day">Aujourd'hui</option>
                             <option value="week">Cette semaine</option>
                             <option value="month">Ce mois</option>
+                            <option value="lastMonth">Le mois dernier</option>
                             <option value="year">Cette année</option>
                             <option value="custom">Période personnalisée</option>
                         </select>
@@ -133,11 +134,11 @@ import { ModernExcelExportService, ExcelColumn } from '../../services/modern-exc
             <!-- Métriques principales -->
             <div class="metrics-section">
                 <div class="metrics-grid">
-                    <div class="metric-card primary">
+                    <div class="metric-card primary" [title]="'Total transactions: ' + (getTotalTransactions() | number)">
                         <div class="metric-icon">📈</div>
                         <div class="metric-content">
                             <div class="metric-title">Total Transactions</div>
-                            <div class="metric-value">{{getTotalTransactions() | number}}</div>
+                            <div class="metric-value">{{getTotalTransactionsFormatted()}}</div>
                             <div class="metric-subtitle">Sur {{getDateRange()}}</div>
                         </div>
                     </div>
@@ -1314,6 +1315,7 @@ export class ReportDashboardComponent implements OnInit, OnDestroy {
         if (this.selectedPeriod !== 'custom') {
             const now = new Date();
             let startDate: Date;
+            let endDate: Date | null = null;
 
             switch (this.selectedPeriod) {
                 case 'day':
@@ -1326,6 +1328,10 @@ export class ReportDashboardComponent implements OnInit, OnDestroy {
                 case 'month':
                     startDate = new Date(now.getFullYear(), now.getMonth(), 1);
                     break;
+                case 'lastMonth':
+                    startDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+                    endDate = new Date(now.getFullYear(), now.getMonth(), 0);
+                    break;
                 case 'year':
                     startDate = new Date(now.getFullYear(), 0, 1);
                     break;
@@ -1335,6 +1341,9 @@ export class ReportDashboardComponent implements OnInit, OnDestroy {
 
             filtered = filtered.filter(item => {
                 const itemDate = new Date(item.date);
+                if (endDate) {
+                    return itemDate >= startDate && itemDate <= endDate;
+                }
                 return itemDate >= startDate;
             });
         } else if (this.selectedPeriod === 'custom' && this.customStartDate && this.customEndDate) {
@@ -1424,6 +1433,16 @@ export class ReportDashboardComponent implements OnInit, OnDestroy {
     // Métriques
     getTotalTransactions(): number {
         return this.filteredData.reduce((sum, item) => sum + item.totalTransactions, 0);
+    }
+
+    getTotalTransactionsFormatted(): string {
+        const totalTransactions = this.getTotalTransactions();
+        if (totalTransactions >= 1000000) {
+            return (totalTransactions / 1000000).toFixed(1) + 'M';
+        } else if (totalTransactions >= 1000) {
+            return (totalTransactions / 1000).toFixed(0) + 'K';
+        }
+        return totalTransactions.toString();
     }
 
     getTotalVolume(): number {
@@ -1792,6 +1811,7 @@ export class ReportDashboardComponent implements OnInit, OnDestroy {
             case 'day': return 'aujourd_hui';
             case 'week': return 'cette_semaine';
             case 'month': return 'ce_mois';
+            case 'lastMonth': return 'le_mois_dernier';
             case 'year': return 'cette_annee';
             case 'custom': return 'periode_personnalisee';
             default: return 'filtre';

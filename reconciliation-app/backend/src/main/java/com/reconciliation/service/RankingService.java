@@ -381,6 +381,11 @@ public class RankingService {
                     startDate = today.minusYears(1).withDayOfYear(1);
                     endDate = today.minusYears(1).withDayOfYear(today.minusYears(1).lengthOfYear());
                     break;
+                case "lastmonth":
+                    // Mois dernier (1er au dernier jour du mois précédent)
+                    startDate = today.minusMonths(1).withDayOfMonth(1);
+                    endDate = today.minusMonths(1).withDayOfMonth(today.minusMonths(1).lengthOfMonth());
+                    break;
                 case "month":
                 default:
                     // Mois en cours
@@ -450,6 +455,11 @@ public class RankingService {
                     // Année dernière (1er janvier au 31 décembre de l'année précédente)
                     startDate = today.minusYears(1).withDayOfYear(1);
                     endDate = today.minusYears(1).withDayOfYear(today.minusYears(1).lengthOfYear());
+                    break;
+                case "lastmonth":
+                    // Mois dernier (1er au dernier jour du mois précédent)
+                    startDate = today.minusMonths(1).withDayOfMonth(1);
+                    endDate = today.minusMonths(1).withDayOfMonth(today.minusMonths(1).lengthOfMonth());
                     break;
                 case "month":
                 default:

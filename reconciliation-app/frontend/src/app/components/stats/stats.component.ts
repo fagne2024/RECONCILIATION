@@ -47,6 +47,11 @@ export class StatsComponent implements OnInit, OnDestroy {
     filteredServices: string[] = [];
     filteredCountries: string[] = [];
 
+    // Variables pour la sélection multiple
+    selectedSummaries: Set<any> = new Set();
+    allSelected: boolean = false;
+    selectedSummaryIds: Set<string> = new Set(); // Pour identifier les statistiques sélectionnées par leur clé unique
+
     @ViewChild('agenceSelect') agenceSelect!: MatSelect;
     @ViewChild('serviceSelect') serviceSelect!: MatSelect;
     @ViewChild('paysSelect') paysSelect!: MatSelect;
@@ -737,5 +742,143 @@ export class StatsComponent implements OnInit, OnDestroy {
             confirmText: 'OK'
         };
         await ModernPopupComponent.showPopup(config);
+    }
+
+    /**
+     * Méthodes pour la sélection multiple
+     */
+    isSelected(summary: any): boolean {
+        const summaryKey = this.getSummaryKey(summary);
+        return this.selectedSummaryIds.has(summaryKey);
+    }
+
+    toggleSelection(summary: any, event: any) {
+        const summaryKey = this.getSummaryKey(summary);
+        if (event.target.checked) {
+            this.selectedSummaryIds.add(summaryKey);
+            this.selectedSummaries.add(summary);
+        } else {
+            this.selectedSummaryIds.delete(summaryKey);
+            this.selectedSummaries.delete(summary);
+        }
+        this.updateAllSelectedState();
+    }
+
+    toggleSelectAll(event: any) {
+        if (event.target.checked) {
+            // Sélectionner toutes les statistiques de toutes les pages
+            const allStats = this.getAggregatedStats();
+            allStats.forEach(summary => {
+                const summaryKey = this.getSummaryKey(summary);
+                this.selectedSummaryIds.add(summaryKey);
+                this.selectedSummaries.add(summary);
+            });
+        } else {
+            // Désélectionner toutes les statistiques
+            this.selectedSummaryIds.clear();
+            this.selectedSummaries.clear();
+        }
+        this.allSelected = event.target.checked;
+    }
+
+    updateAllSelectedState() {
+        const allStats = this.getAggregatedStats();
+        if (allStats.length === 0) {
+            this.allSelected = false;
+            return;
+        }
+        
+        // Vérifier si toutes les statistiques de toutes les pages sont sélectionnées
+        this.allSelected = allStats.every(summary => {
+            const summaryKey = this.getSummaryKey(summary);
+            return this.selectedSummaryIds.has(summaryKey);
+        });
+    }
+
+    /**
+     * Génère une clé unique pour une statistique
+     */
+    private getSummaryKey(summary: any): string {
+        return `${summary.agency}|${summary.service}|${summary.country}|${summary.date}`;
+    }
+
+    getSelectedCount(): number {
+        return this.selectedSummaries.size;
+    }
+
+    hasSelectedItems(): boolean {
+        return this.selectedSummaries.size > 0;
+    }
+
+    /**
+     * Supprime toutes les statistiques sélectionnées
+     */
+    async deleteSelectedSummaries() {
+        if (this.selectedSummaries.size === 0) {
+            await this.showErrorMessage('Aucune statistique sélectionnée');
+            return;
+        }
+
+        const selectedArray = Array.from(this.selectedSummaries);
+        const confirmMessage = `Êtes-vous sûr de vouloir supprimer ${selectedArray.length} statistique(s) sélectionnée(s) ?\n\n` +
+            `Cette action est irréversible.`;
+
+        const config: PopupConfig = {
+            title: 'Confirmation de suppression multiple',
+            message: confirmMessage,
+            type: 'confirm',
+            showCancelButton: true,
+            cancelText: 'Annuler',
+            confirmText: 'Supprimer tout'
+        };
+
+        try {
+            await ModernPopupComponent.showPopup(config);
+            
+            this.isLoading = true;
+            try {
+                // Supprimer toutes les statistiques sélectionnées
+                const deletePromises = selectedArray.map(summary => {
+                    if (summary.ids && summary.ids.length > 0) {
+                        return Promise.all(summary.ids.map((id: number) => 
+                            this.agencySummaryService.deleteSummary(id).toPromise()
+                        ));
+                    } else {
+                        throw new Error('Aucun ID trouvé pour cette statistique');
+                    }
+                });
+                
+                await Promise.all(deletePromises);
+                
+                // Vider la sélection
+                this.selectedSummaries.clear();
+                this.allSelected = false;
+                
+                // Recharger les données après suppression
+                this.loadData();
+                
+                // Afficher un message de succès
+                await this.showSuccessMessage(`${selectedArray.length} statistique(s) supprimée(s) avec succès`);
+                
+                console.log('Statistiques supprimées avec succès');
+            } catch (error) {
+                console.error('Erreur lors de la suppression:', error);
+                await this.showErrorMessage('Erreur lors de la suppression des statistiques');
+            } finally {
+                this.isLoading = false;
+            }
+        } catch (error) {
+            // L'utilisateur a annulé la suppression
+            console.log('Suppression annulée par l\'utilisateur');
+        }
+    }
+
+    /**
+     * Désélectionne toutes les statistiques
+     */
+    clearSelection() {
+        this.selectedSummaries.clear();
+        this.selectedSummaryIds.clear();
+        this.allSelected = false;
     }
 } 

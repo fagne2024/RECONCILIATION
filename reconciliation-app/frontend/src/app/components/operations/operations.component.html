@@ -822,7 +822,7 @@
                         [disabled]="isDeletingMultiple"
                         title="Supprimer les opérations sélectionnées">
                     <i class="fas fa-trash"></i>
-                    {{ isDeletingMultiple ? 'Suppression...' : 'Supprimer sélection' }}
+                    {{ isDeletingMultiple ? 'Suppression...' : 'Supprimer sélection (' + selectedOperationsCount + ')' }}
                 </button>
             </div>
         </div>
@@ -834,10 +834,10 @@
                     <tr>
                         <th class="selection-column" *ngIf="isSelectionMode">
                             <input type="checkbox" 
-                                   [checked]="selectedOperationsCount === pagedOperations.length && pagedOperations.length > 0"
-                                   [indeterminate]="selectedOperationsCount > 0 && selectedOperationsCount < pagedOperations.length"
-                                   (change)="selectedOperationsCount === pagedOperations.length ? deselectAllOperations() : selectAllOperations()"
-                                   title="Sélectionner tout">
+                                   [checked]="allSelected"
+                                   [indeterminate]="selectedOperationsCount > 0 && !allSelected"
+                                   (change)="allSelected ? deselectAllOperations() : selectAllOperations()"
+                                   title="Sélectionner/désélectionner toutes les opérations (toutes pages)">
                         </th>
                         <th class="sortable" (click)="sortBy('dateOperation')">
                             <i class="fas fa-calendar"></i> Date
@@ -991,6 +991,12 @@
                         
                         <td class="actions-cell">
                             <div class="action-buttons">
+                                <button class="btn btn-sm btn-primary"
+                                        *ngIf="(op.statut || '') === 'En attente'"
+                                        (click)="validateOperation(op.id!); $event.stopPropagation()"
+                                        title="Valider l'opération">
+                                    <i class="fas fa-check"></i>
+                                </button>
                                 <button class="btn btn-sm btn-success" 
                                         (click)="editOperation(op); $event.stopPropagation()" 
                                         title="Modifier l'opération">

@@ -99,8 +99,10 @@ export class OperationsComponent implements OnInit, OnDestroy {
 
     // Propriétés pour la sélection multiple
     selectedOperations: Set<number> = new Set();
+    selectedOperationIds: Set<number> = new Set(); // Pour identifier les opérations sélectionnées par leur ID
     isSelectionMode = false;
     isDeletingMultiple = false;
+    allSelected: boolean = false;
 
     // Propriété pour les options de comptes avec ID et nom
     get compteOptions(): { value: number, label: string }[] {
@@ -1239,59 +1241,83 @@ export class OperationsComponent implements OnInit, OnDestroy {
         this.isSelectionMode = !this.isSelectionMode;
         if (!this.isSelectionMode) {
             this.selectedOperations.clear();
+            this.selectedOperationIds.clear();
+            this.allSelected = false;
         }
     }
 
     toggleOperationSelection(operationId: number) {
-        if (this.selectedOperations.has(operationId)) {
+        if (this.selectedOperationIds.has(operationId)) {
+            this.selectedOperationIds.delete(operationId);
             this.selectedOperations.delete(operationId);
         } else {
+            this.selectedOperationIds.add(operationId);
             this.selectedOperations.add(operationId);
         }
+        this.updateAllSelectedState();
     }
 
     selectAllOperations() {
-        this.pagedOperations.forEach(op => {
+        // Sélectionner toutes les opérations de toutes les pages
+        this.filteredOperations.forEach(op => {
             if (op.id) {
+                this.selectedOperationIds.add(op.id);
                 this.selectedOperations.add(op.id);
             }
         });
+        this.allSelected = true;
     }
 
     deselectAllOperations() {
         this.selectedOperations.clear();
+        this.selectedOperationIds.clear();
+        this.allSelected = false;
     }
 
     isOperationSelected(operationId: number): boolean {
-        return this.selectedOperations.has(operationId);
+        return this.selectedOperationIds.has(operationId);
+    }
+
+    updateAllSelectedState() {
+        if (this.filteredOperations.length === 0) {
+            this.allSelected = false;
+            return;
+        }
+        
+        // Vérifier si toutes les opérations de toutes les pages sont sélectionnées
+        this.allSelected = this.filteredOperations.every(op => {
+            return op.id ? this.selectedOperationIds.has(op.id) : false;
+        });
     }
 
     get selectedOperationsCount(): number {
-        return this.selectedOperations.size;
+        return this.selectedOperationIds.size;
     }
 
     get hasSelectedOperations(): boolean {
-        return this.selectedOperations.size > 0;
+        return this.selectedOperationIds.size > 0;
     }
 
     async deleteSelectedOperations() {
-        if (this.selectedOperations.size === 0) {
+        if (this.selectedOperationIds.size === 0) {
             return;
         }
 
-        const count = this.selectedOperations.size;
+        const count = this.selectedOperationIds.size;
         const message = `Êtes-vous sûr de vouloir supprimer ${count} opération(s) sélectionnée(s) ?`;
         
         const confirmed = await this.popupService.showConfirm(message, 'Confirmation de suppression multiple');
         if (confirmed) {
             this.isDeletingMultiple = true;
-            const operationIds = Array.from(this.selectedOperations);
+            const operationIds = Array.from(this.selectedOperationIds);
             
             // Utiliser la méthode de suppression en lot
             this.operationService.deleteOperations(operationIds).subscribe({
                 next: (result) => {
                     this.isDeletingMultiple = false;
                     this.selectedOperations.clear();
+                    this.selectedOperationIds.clear();
+                    this.allSelected = false;
                     this.isSelectionMode = false;
                     this.loadOperations();
                     

@@ -553,9 +553,7 @@ public class OperationService {
         // Synchroniser les comptes consolidés si ce compte est regroupé
         synchroniserComptesConsolides(compte.getId());
         
-        if (compte.getSolde() < 0) {
-            throw new IllegalStateException("La modification résulte en un solde de compte négatif.");
-        }
+        // Autoriser les soldes négatifs (suppression de la contrainte)
         
         compteRepository.save(compte);
         OperationEntity savedEntity = operationRepository.save(operationToUpdate);
@@ -564,7 +562,8 @@ public class OperationService {
     }
     
     /**
-     * Recalcule le solde de clôture du compte basé sur la dernière opération valide du jour
+     * Recalcule le solde de clôture du compte basé sur toutes les opérations valides
+     * Garantit que le solde de clôture est toujours égal au solde en cours du compte
      */
     @Transactional
     public void recalculerSoldeClotureCompte(Long compteId) {
@@ -572,21 +571,39 @@ public class OperationService {
             CompteEntity compte = compteRepository.findById(compteId)
                 .orElseThrow(() -> new RuntimeException("Compte non trouvé: " + compteId));
             
-            // Récupérer la dernière opération valide (non annulée) du compte
+            // Récupérer toutes les opérations valides (excluant les annulations et statut annulée)
+            // Utiliser findAll puis filtrer par compte pour éviter les filtres automatiques
             List<OperationEntity> operationsValides = operationRepository
-                .findByCompteIdAndStatutNotOrderByDateOperationDesc(compteId, "Annulée");
+                .findAll()
+                .stream()
+                .filter(op -> compteId.equals(op.getCompte().getId()))
+                .filter(op -> !op.getTypeOperation().startsWith("annulation_"))
+                .filter(op -> op.getStatut() == null || !op.getStatut().equals("Annulée"))
+                .sorted((op1, op2) -> op1.getDateOperation().compareTo(op2.getDateOperation()))
+                .collect(Collectors.toList());
             
             if (!operationsValides.isEmpty()) {
-                OperationEntity derniereOperation = operationsValides.get(0);
-                double nouveauSoldeCloture = derniereOperation.getSoldeApres();
+                // Calculer le solde de clôture en partant du solde initial et en appliquant chaque opération
+                double soldeCloture = 0.0; // Solde initial
                 
-                // Mettre à jour le solde du compte avec le solde de clôture de la dernière opération valide
-                compte.setSolde(nouveauSoldeCloture);
+                for (OperationEntity operation : operationsValides) {
+                    double impact = calculateImpact(operation.getTypeOperation(), operation.getMontant(), operation.getService());
+                    soldeCloture += impact;
+                    
+                    // Mettre à jour les soldes de l'opération pour cohérence
+                    operation.setSoldeAvant(soldeCloture - impact);
+                    operation.setSoldeApres(soldeCloture);
+                    operationRepository.save(operation);
+                }
+                
+                // Mettre à jour le solde du compte avec le solde de clôture calculé
+                double ancienSolde = compte.getSolde();
+                compte.setSolde(soldeCloture);
                 compte.setDateDerniereMaj(LocalDateTime.now());
                 compteRepository.save(compte);
                 
-                logger.info("✅ Solde de clôture recalculé pour le compte {}: {} (basé sur l'opération ID: {})", 
-                           compte.getNumeroCompte(), nouveauSoldeCloture, derniereOperation.getId());
+                logger.info("✅ Solde de clôture recalculé pour le compte {}: {} (ancien: {}) basé sur {} opérations valides", 
+                           compte.getNumeroCompte(), soldeCloture, ancienSolde, operationsValides.size());
                 
                 // Synchroniser les comptes consolidés si ce compte est regroupé
                 synchroniserComptesConsolides(compteId);
@@ -595,6 +612,7 @@ public class OperationService {
             }
         } catch (Exception e) {
             logger.error("❌ Erreur lors du recalcul du solde de clôture pour le compte {}: {}", compteId, e.getMessage(), e);
+            throw new RuntimeException("Erreur lors du recalcul du solde de clôture", e);
         }
     }
 
@@ -603,19 +621,19 @@ public class OperationService {
         Optional<OperationEntity> optionalOperation = operationRepository.findById(id);
         if (optionalOperation.isPresent()) {
             OperationEntity operation = optionalOperation.get();
-            CompteEntity compte = operation.getCompte();
             
-            // Supprimer l'opération
+            logger.info("🗑️ Suppression de l'opération ID: {} (Type: {}, Montant: {}) - AUCUN IMPACT sur le solde", 
+                       id, operation.getTypeOperation(), operation.getMontant());
+            
+            // Supprimer l'opération SANS recalculer le solde
+            // La suppression ne doit pas avoir d'impact sur le solde selon les spécifications
             operationRepository.deleteById(id);
             
-            // Recalculer le solde de clôture du compte après suppression
-            if (compte != null) {
-                recalculerSoldeClotureCompte(compte.getId());
-                logger.info("✅ Solde de clôture recalculé après suppression de l'opération ID: {}", id);
-            }
+            logger.info("✅ Opération ID: {} supprimée avec succès (aucun impact sur le solde)", id);
             
             return true;
         }
+        logger.warn("⚠️ Opération ID: {} introuvable pour suppression", id);
         return false;
     }
     
@@ -624,24 +642,38 @@ public class OperationService {
         Optional<OperationEntity> optionalOperation = operationRepository.findById(id);
         if (optionalOperation.isPresent()) {
             OperationEntity operation = optionalOperation.get();
-            if ("Validée".equals(nouveauStatut) && "En attente".equals(operation.getStatut())) {
+            if ("Validée".equals(nouveauStatut)) {
                 CompteEntity compte = operation.getCompte();
-                
-                // Récupérer le solde réel actuel du compte
-                double soldeReelActuel = compte.getSolde();
-                double impact = calculateImpact(operation.getTypeOperation(), operation.getMontant(), operation.getService());
-                
-                if (soldeReelActuel + impact < 0 && !isAjustementOperation(operation.getTypeOperation())) {
-                    // Toujours insuffisant
-                    return false;
+
+                // Déterminer le solde chronologique juste avant cette opération (pas le solde courant du compte)
+                double soldeAvantChronologique = 0.0;
+                try {
+                    List<OperationEntity> operationsPrecedentes = operationRepository
+                        .findAll()
+                        .stream()
+                        .filter(op -> op.getCompte() != null && op.getCompte().getId().equals(compte.getId()))
+                        .filter(op -> op.getDateOperation().isBefore(operation.getDateOperation()))
+                        .sorted((o1, o2) -> o1.getDateOperation().compareTo(o2.getDateOperation()))
+                        .collect(java.util.stream.Collectors.toList());
+                    if (!operationsPrecedentes.isEmpty()) {
+                        OperationEntity derniere = operationsPrecedentes.get(operationsPrecedentes.size() - 1);
+                        if (derniere.getSoldeApres() != null) {
+                            soldeAvantChronologique = derniere.getSoldeApres();
+                        }
+                    }
+                } catch (Exception e) {
+                    logger.warn("⚠️ Impossible de déterminer le solde chronologique avant l'opération {}: {}", id, e.getMessage());
                 }
-                
-                // Mettre à jour le solde avant avec le solde réel actuel
-                operation.setSoldeAvant(soldeReelActuel);
-                operation.setSoldeApres(soldeReelActuel + impact);
+
+                double impact = calculateImpact(operation.getTypeOperation(), operation.getMontant(), operation.getService());
+
+                // Mettre à jour cette opération selon la chronologie
+                operation.setSoldeAvant(soldeAvantChronologique);
+                operation.setSoldeApres(soldeAvantChronologique + impact);
                 
                 // Mettre à jour le solde du compte
-                compte.setSolde(soldeReelActuel + impact);
+                // Le solde du compte sera harmonisé par le recalcul de clôture; on met à jour provisoirement
+                compte.setSolde(operation.getSoldeApres());
                 compte.setDateDerniereMaj(LocalDateTime.now());
                 compteRepository.save(compte);
                 
@@ -652,7 +684,7 @@ public class OperationService {
                 List<OperationEntity> operationsSuivantes = operationRepository
                     .findByCompteIdAndDateOperationAfterOrderByDateOperationAsc(compte.getId(), operation.getDateOperation());
                 
-                double soldeCourant = soldeReelActuel + impact;
+                double soldeCourant = operation.getSoldeApres();
                 for (OperationEntity opSuivante : operationsSuivantes) {
                     opSuivante.setSoldeAvant(soldeCourant);
                     double impactOpSuivante = calculateImpact(opSuivante.getTypeOperation(), opSuivante.getMontant(), opSuivante.getService());
@@ -663,19 +695,52 @@ public class OperationService {
                 if (!operationsSuivantes.isEmpty()) {
                     operationRepository.saveAll(operationsSuivantes);
                 }
+                
+                // Recalculer le solde de clôture pour s'assurer de la cohérence
+                recalculerSoldeClotureCompte(compte.getId());
             }
             
-            operation.setStatut(nouveauStatut);
-            operationRepository.save(operation);
-
-            // Recalculer le solde de clôture si l'opération est annulée
+            // Si l'opération est annulée, mettre à jour le soldeApres et recalculer les opérations suivantes
             if ("Annulée".equals(nouveauStatut)) {
                 CompteEntity compte = operation.getCompte();
                 if (compte != null) {
+                    // Récupérer le solde en cours du compte au moment de l'annulation
+                    double soldeEnCours = compte.getSolde();
+                    
+                    // Calculer l'impact de l'opération annulée
+                    double impactAnnule = calculateImpact(operation.getTypeOperation(), operation.getMontant(), operation.getService());
+                    
+                    // Mettre à jour le soldeAvant avec le solde en cours et le soldeApres avec l'impact
+                    operation.setSoldeAvant(soldeEnCours);
+                    operation.setSoldeApres(soldeEnCours + impactAnnule);
+                    
+                    logger.info("🔄 Opération annulée ID: {} - Solde avant: {}, Impact: {}, Solde après: {}", 
+                               operation.getId(), operation.getSoldeAvant(), impactAnnule, operation.getSoldeApres());
+                    
+                    // Recalculer toutes les opérations suivantes chronologiquement
+                    List<OperationEntity> operationsSuivantes = operationRepository
+                        .findByCompteIdAndDateOperationAfterOrderByDateOperationAsc(compte.getId(), operation.getDateOperation());
+                    
+                    double soldeCourant = operation.getSoldeApres();
+                    for (OperationEntity opSuivante : operationsSuivantes) {
+                        opSuivante.setSoldeAvant(soldeCourant);
+                        double impactOpSuivante = calculateImpact(opSuivante.getTypeOperation(), opSuivante.getMontant(), opSuivante.getService());
+                        soldeCourant += impactOpSuivante;
+                        opSuivante.setSoldeApres(soldeCourant);
+                    }
+                    
+                    if (!operationsSuivantes.isEmpty()) {
+                        operationRepository.saveAll(operationsSuivantes);
+                    }
+                    
+                    // Recalculer le solde de clôture pour s'assurer de la cohérence
                     recalculerSoldeClotureCompte(compte.getId());
                     logger.info("✅ Solde de clôture recalculé après annulation de l'opération ID: {}", id);
                 }
             }
+            
+            operation.setStatut(nouveauStatut);
+            operationRepository.save(operation);
 
             // Suppression dans agency_summary si statut Annulée ou Rejetée ET type concerné
             if (("Annulée".equals(nouveauStatut) || "Rejetée".equals(nouveauStatut)) &&
@@ -688,7 +753,7 @@ public class OperationService {
 
             // Création de l'opération d'annulation si le statut devient "Annulée"
             if ("Annulée".equals(nouveauStatut)) {
-                // 1. Créer l'opération d'annulation pour l'opération nominale
+                // 1. Créer l'opération d'annulation pour l'opération nominale avec impact inverse
                 OperationCreateRequest annulationRequest = new OperationCreateRequest();
                 annulationRequest.setCompteId(operation.getCompte().getId());
                 annulationRequest.setTypeOperation("annulation_" + operation.getTypeOperation());
@@ -699,8 +764,9 @@ public class OperationService {
                 annulationRequest.setDateOperation(java.time.LocalDateTime.now().toString());
                 annulationRequest.setRecordCount(operation.getRecordCount());
                 annulationRequest.setParentOperationId(operation.getId());
-                // Création de l'opération d'annulation avec impact inverse (sans frais automatiques)
-                this.createOperationWithoutFrais(annulationRequest);
+                
+                // Création de l'opération d'annulation avec impact inverse sur le solde
+                this.createOperationWithInverseImpact(annulationRequest, operation.getTypeOperation());
                 
                 // 2. Annuler automatiquement les frais liés à cette opération
                 List<OperationEntity> fraisOperations = operationRepository.findFraisByParentOperationId(operation.getId());
@@ -722,7 +788,7 @@ public class OperationService {
                     System.out.println("DEBUG: 💰 Traitement du frais ID: " + fraisOp.getId() + ", Statut: " + fraisOp.getStatut() + ", ParentOperationId: " + fraisOp.getParentOperationId());
                     if (!"Annulée".equals(fraisOp.getStatut())) {
                         System.out.println("DEBUG: ✅ Annulation du frais ID: " + fraisOp.getId());
-                        // Créer une opération d'annulation pour chaque frais (sans frais automatiques)
+                        // Créer une opération d'annulation pour chaque frais avec impact inverse
                         OperationCreateRequest annulationFraisRequest = new OperationCreateRequest();
                         annulationFraisRequest.setCompteId(fraisOp.getCompte().getId());
                         annulationFraisRequest.setTypeOperation("annulation_FRAIS_TRANSACTION");
@@ -733,8 +799,8 @@ public class OperationService {
                         annulationFraisRequest.setDateOperation(java.time.LocalDateTime.now().toString());
                         annulationFraisRequest.setRecordCount(fraisOp.getRecordCount());
                         annulationFraisRequest.setParentOperationId(fraisOp.getId());
-                        // Création de l'opération d'annulation des frais (sans frais automatiques)
-                        this.createOperationWithoutFrais(annulationFraisRequest);
+                        // Création de l'opération d'annulation des frais avec impact inverse
+                        this.createOperationWithInverseImpact(annulationFraisRequest, "FRAIS_TRANSACTION");
                         
                         // Marquer le frais comme annulé
                         fraisOp.setStatut("Annulée");
@@ -1331,6 +1397,19 @@ public class OperationService {
     }
     
     /**
+     * Récupérer toutes les opérations enrichies avec leurs frais, excluant les annulations
+     * Utilisé pour les relevés de compte et calculs de solde
+     */
+    public List<Operation> getAllOperationsWithFraisForAccountStatement() {
+        return operationRepository.findAllOrderByDateOperationDesc().stream()
+                .filter(op -> !op.getTypeOperation().startsWith("annulation_"))
+                .filter(op -> op.getStatut() == null || !op.getStatut().equals("Annulée"))
+                .map(this::convertToModel)
+                .map(this::enrichOperationWithFrais)
+                .collect(Collectors.toList());
+    }
+    
+    /**
      * Récupérer une opération par ID enrichie avec ses frais
      */
     public Optional<Operation> getOperationByIdWithFrais(Long id) {
@@ -1470,6 +1549,99 @@ public class OperationService {
         filterOptions.put("codeProprietaires", operationRepository.findDistinctCodeProprietaire());
         // Si tu as un champ nomBordereau distinct, ajoute-le ici
         return filterOptions;
+    }
+    
+    /**
+     * Crée une opération avec un impact inverse sur le solde (pour les annulations)
+     * L'impact inverse annule l'effet de l'opération originale
+     */
+    @Transactional
+    private Operation createOperationWithInverseImpact(OperationCreateRequest request, String typeOperationOriginale) {
+        CompteEntity compte = compteRepository.findById(request.getCompteId())
+            .orElseThrow(() -> new RuntimeException("Compte non trouvé: " + request.getCompteId()));
+        
+        OperationEntity entity = new OperationEntity();
+        entity.setCompte(compte);
+        entity.setTypeOperation(request.getTypeOperation());
+        entity.setMontant(request.getMontant());
+        entity.setBanque(request.getBanque());
+        entity.setNomBordereau(request.getNomBordereau());
+        entity.setService(request.getService());
+        entity.setDateOperation(LocalDateTime.parse(request.getDateOperation()));
+        entity.setPays(compte.getPays());
+        entity.setCodeProprietaire(compte.getNumeroCompte());
+        entity.setRecordCount(request.getRecordCount());
+        entity.setParentOperationId(request.getParentOperationId());
+
+        // Calculer l'impact inverse de l'opération originale
+        double soldeAvant = compte.getSolde();
+        entity.setSoldeAvant(soldeAvant);
+        
+        // L'impact inverse est l'opposé de l'impact de l'opération originale
+        double impactOriginal = calculateImpact(typeOperationOriginale, request.getMontant(), request.getService());
+        double impactInverse = -impactOriginal; // Impact inverse
+        double soldeApres = soldeAvant + impactInverse;
+        
+        entity.setStatut("Validée");
+        entity.setSoldeApres(soldeApres);
+        
+        // Mettre à jour le solde du compte avec l'impact inverse
+        compte.setSolde(soldeApres);
+        compte.setDateDerniereMaj(LocalDateTime.now());
+        compteRepository.save(compte);
+        
+        // Synchroniser les comptes consolidés si ce compte est regroupé
+        synchroniserComptesConsolides(compte.getId());
+
+        OperationEntity savedEntity = operationRepository.save(entity);
+        
+        logger.info("🔄 Opération d'annulation créée avec impact inverse: {} (impact original: {}, impact inverse: {})", 
+                   request.getTypeOperation(), impactOriginal, impactInverse);
+        
+        return convertToModel(savedEntity);
+    }
+
+    /**
+     * Synchronise automatiquement le solde de clôture avec le solde en cours pour tous les comptes
+     * Appelée quotidiennement ou après des modifications importantes
+     */
+    @Transactional
+    public void synchroniserSoldesClotureQuotidiens() {
+        try {
+            logger.info("🔄 Début de la synchronisation des soldes de clôture quotidiens...");
+            
+            // Récupérer tous les comptes
+            List<CompteEntity> tousLesComptes = compteRepository.findAll();
+            int comptesTraites = 0;
+            int comptesModifies = 0;
+            
+            for (CompteEntity compte : tousLesComptes) {
+                try {
+                    double soldeAvant = compte.getSolde();
+                    recalculerSoldeClotureCompte(compte.getId());
+                    
+                    // Recharger le compte pour vérifier le nouveau solde
+                    CompteEntity compteApres = compteRepository.findById(compte.getId()).orElse(null);
+                    if (compteApres != null && compteApres.getSolde() != soldeAvant) {
+                        comptesModifies++;
+                        logger.info("📊 Compte {} synchronisé: {} → {}", 
+                                   compte.getNumeroCompte(), soldeAvant, compteApres.getSolde());
+                    }
+                    comptesTraites++;
+                } catch (Exception e) {
+                    logger.error("❌ Erreur lors de la synchronisation du compte {}: {}", 
+                                compte.getNumeroCompte(), e.getMessage());
+                }
+            }
+            
+            logger.info("✅ Synchronisation terminée: {} comptes traités, {} modifiés", 
+                       comptesTraites, comptesModifies);
+                       
+        } catch (Exception e) {
+            logger.error("❌ Erreur lors de la synchronisation des soldes de clôture quotidiens: {}", 
+                        e.getMessage(), e);
+            throw new RuntimeException("Erreur lors de la synchronisation des soldes", e);
+        }
     }
     
     /**

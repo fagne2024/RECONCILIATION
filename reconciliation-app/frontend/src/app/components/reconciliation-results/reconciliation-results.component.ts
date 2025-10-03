@@ -418,6 +418,10 @@ interface ApiError {
                                 placeholder="Rechercher par clé..."
                                 class="search-input"
                             >
+                            <label style="display:flex;align-items:center;gap:6px;">
+                                <input type="checkbox" [checked]="allPartnerSelectedOnPage" (change)="toggleSelectAllPartnerOnPage($event)">
+                                <span>Sélectionner la page</span>
+                            </label>
                             <button (click)="exportResults()" class="export-button">
                                 📥 Exporter les ECART Partenaire
                             </button>
@@ -444,6 +448,13 @@ interface ApiError {
                             <button (click)="nextPage('partnerOnly')" [disabled]="partnerOnlyPage === getTotalPages('partnerOnly')">Suivant</button>
                         </div>
                         <div class="unmatched-card" *ngFor="let record of getPagedPartnerOnly()">
+                            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+                                <div style="font-weight:600;color:#1976D2;">Ligne partenaire</div>
+                                <label style="display:flex;align-items:center;gap:6px;">
+                                    <input type="checkbox" [checked]="isPartnerRecordSelected(record)" (change)="togglePartnerSelection(record, $event)">
+                                    <span>Sélectionner</span>
+                                </label>
+                            </div>
                             <div class="data-grid">
                                 <div class="info-row">
                                     <span class="label">Volume:</span>
@@ -518,7 +529,6 @@ interface ApiError {
                                     [(ngModel)]="selectedColumns[column]"
                                     [checked]="selectedColumns[column]">
                                 <span class="column-name">{{column}}</span>
-                                <span *ngIf="defaultColumns.includes(column)" class="default-badge">Par défaut</span>
                             </label>
                         </div>
                     </div>
@@ -1706,6 +1716,42 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
         // Ici, tu peux appeler une API ou autre logique
     }
 
+    // Sélection pour ECART Partenaire (Import OP)
+    selectedPartnerOnlyKeys: string[] = [];
+    private getPartnerOnlyKey(record: Record<string, string>): string {
+        const numeroTrans = (record['Numéro Trans GU'] || record['Numero Trans GU'] || record['numeroTransGU'] || record['numero_trans_gu'] || '').toString();
+        const idOperation = (record['ID Opération'] || record['ID Operation'] || record['id_operation'] || '').toString();
+        const dateOp = (record['Date opération'] || record['dateOperation'] || record['date_operation'] || record['Date'] || '').toString();
+        const montant = (record['Montant'] || record['montant'] || record['amount'] || '').toString();
+        return [numeroTrans, idOperation, dateOp, montant].join('|');
+    }
+    isPartnerRecordSelected(record: Record<string, string>): boolean {
+        return this.selectedPartnerOnlyKeys.includes(this.getPartnerOnlyKey(record));
+    }
+    togglePartnerSelection(record: Record<string, string>, event: any): void {
+        const key = this.getPartnerOnlyKey(record);
+        if (event.target.checked) {
+            if (!this.selectedPartnerOnlyKeys.includes(key)) {
+                this.selectedPartnerOnlyKeys.push(key);
+            }
+        } else {
+            this.selectedPartnerOnlyKeys = this.selectedPartnerOnlyKeys.filter(k => k !== key);
+        }
+    }
+    get allPartnerSelectedOnPage(): boolean {
+        const page = this.getPagedPartnerOnly();
+        return page.length > 0 && page.every(r => this.isPartnerRecordSelected(r));
+    }
+    toggleSelectAllPartnerOnPage(event: any): void {
+        const page = this.getPagedPartnerOnly();
+        const pageKeys = page.map(r => this.getPartnerOnlyKey(r));
+        if (event.target.checked) {
+            this.selectedPartnerOnlyKeys = Array.from(new Set([...this.selectedPartnerOnlyKeys, ...pageKeys]));
+        } else {
+            this.selectedPartnerOnlyKeys = this.selectedPartnerOnlyKeys.filter(k => !pageKeys.includes(k));
+        }
+    }
+
     async saveEcartBoToEcartSolde(): Promise<void> {
         if (!this.response?.boOnly || this.response.boOnly.length === 0) {
             this.popupService.showWarning('❌ Aucune donnée ECART BO à sauvegarder.');
@@ -2451,10 +2497,23 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
 
         try {
             console.log('🔄 Début de la sauvegarde des ECART Partenaire dans Import OP...');
-            console.log('DEBUG: Nombre d\'enregistrements ECART Partenaire:', this.response.partnerOnly.length);
+            console.log('DEBUG: Nombre d\'enregistrements ECART Partenaire (total):', this.response.partnerOnly.length);
+
+            // Déterminer la source: lignes sélectionnées ou tout le jeu de données
+            const sourceRecords: Record<string, string>[] =
+                this.selectedPartnerOnlyKeys.length > 0
+                    ? (this.filteredPartnerOnly || []).filter(r => this.selectedPartnerOnlyKeys.includes(this.getPartnerOnlyKey(r)))
+                    : (this.response.partnerOnly || []);
+
+            if (sourceRecords.length === 0) {
+                this.popupService.showWarning('❌ Aucune ligne sélectionnée pour la sauvegarde.');
+                return;
+            }
+
+            console.log('DEBUG: Nombre d\'enregistrements à sauvegarder (sélection):', sourceRecords.length);
 
             // Convertir les données ECART Partenaire en format ImpactOP
-            const impactOPData: ImpactOP[] = this.response.partnerOnly.map((record, index) => {
+            const impactOPData: ImpactOP[] = sourceRecords.map((record, index) => {
                 const getValueWithFallback = (keys: string[]): string => {
                     for (const key of keys) {
                         if (record[key] !== undefined && record[key] !== null && record[key] !== '') {
@@ -4683,7 +4742,7 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
             return;
         }
 
-        // Extraire toutes les colonnes disponibles des données Partenaire (si disponibles)
+        // Extraire uniquement les colonnes disponibles du fichier partenaire en cours
         this.availableColumns = [];
         const allColumns = new Set<string>();
         
@@ -4697,24 +4756,12 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
             });
         }
 
-        // S'assurer que les colonnes par défaut sont toujours disponibles
-        this.defaultColumns.forEach(col => {
-            allColumns.add(col);
-        });
-
         this.availableColumns = Array.from(allColumns).sort();
         
-        // Initialiser la sélection avec les colonnes par défaut
+        // Initialiser toutes les colonnes comme non sélectionnées par défaut
         this.selectedColumns = {};
-        this.defaultColumns.forEach(col => {
-            this.selectedColumns[col] = this.availableColumns.includes(col);
-        });
-        
-        // Marquer toutes les autres colonnes comme non sélectionnées par défaut
         this.availableColumns.forEach(col => {
-            if (!this.defaultColumns.includes(col)) {
-                this.selectedColumns[col] = false;
-            }
+            this.selectedColumns[col] = false;
         });
 
         // Si pas de colonnes partenaire disponibles, afficher un message informatif

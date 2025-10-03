@@ -12,7 +12,9 @@ import java.util.List;
 @Repository
 public interface OperationRepository extends JpaRepository<OperationEntity, Long> {
     
-    @Query("SELECT o FROM OperationEntity o WHERE o.compte.id = :compteId")
+    @Query("SELECT o FROM OperationEntity o WHERE o.compte.id = :compteId " +
+           "AND o.typeOperation NOT LIKE 'annulation_%' " +
+           "AND (o.statut IS NULL OR o.statut != 'Annulée')")
     List<OperationEntity> findByCompteId(@Param("compteId") Long compteId);
     
     List<OperationEntity> findByTypeOperation(String typeOperation);
@@ -53,13 +55,18 @@ public interface OperationRepository extends JpaRepository<OperationEntity, Long
     @Query("SELECT o FROM OperationEntity o ORDER BY o.dateOperation DESC")
     List<OperationEntity> findAllOrderByDateOperationDesc();
     
-    @Query("SELECT o FROM OperationEntity o WHERE o.compte.id = :compteId ORDER BY o.dateOperation DESC")
+    @Query("SELECT o FROM OperationEntity o WHERE o.compte.id = :compteId " +
+           "AND o.typeOperation NOT LIKE 'annulation_%' " +
+           "AND (o.statut IS NULL OR o.statut != 'Annulée') " +
+           "ORDER BY o.dateOperation DESC")
     List<OperationEntity> findByCompteIdOrderByDateOperationDesc(@Param("compteId") Long compteId);
     
     @Query("SELECT o FROM OperationEntity o WHERE o.compte.numeroCompte = :numeroCompte " +
            "AND (:dateDebut IS NULL OR o.dateOperation >= :dateDebut) " +
            "AND (:dateFin IS NULL OR o.dateOperation <= :dateFin) " +
            "AND (:typeOperation IS NULL OR o.typeOperation = :typeOperation) " +
+           "AND o.typeOperation NOT LIKE 'annulation_%' " +
+           "AND (o.statut IS NULL OR o.statut != 'Annulée') " +
            "ORDER BY o.dateOperation DESC")
     List<OperationEntity> findByCompteNumeroCompteAndFiltersOrderByDateOperationDesc(
             @Param("numeroCompte") String numeroCompte,
@@ -71,6 +78,8 @@ public interface OperationRepository extends JpaRepository<OperationEntity, Long
            "AND (:dateDebut IS NULL OR o.dateOperation >= :dateDebut) " +
            "AND (:dateFin IS NULL OR o.dateOperation <= :dateFin) " +
            "AND (:typeOperation IS NULL OR o.typeOperation = :typeOperation) " +
+           "AND o.typeOperation NOT LIKE 'annulation_%' " +
+           "AND (o.statut IS NULL OR o.statut != 'Annulée') " +
            "ORDER BY o.dateOperation ASC")
     List<OperationEntity> findByCompteNumeroCompteAndFiltersOrderByDateOperationAsc(
             @Param("numeroCompte") String numeroCompte,
