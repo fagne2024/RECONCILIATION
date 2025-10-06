@@ -982,8 +982,8 @@
                                     <div class="summary-value compliance">{{ getTauxConformiteControlRevenu() | number:'1.1-1' }}%</div>
                                 </div>
                                 <div class="summary-card">
-                                    <div class="summary-title">Total MàG</div>
-                                    <div class="summary-value mag">{{ getTotalMagControlRevenu() | number:'1.2-2' }}</div>
+                                    <div class="summary-title">MàG Moyen</div>
+                                    <div class="summary-value mag">{{ getMoyenneMagPercentageControlRevenu() | number:'1.2-2' }}%</div>
                                 </div>
                                 <div class="summary-card">
                                     <div class="summary-title">Total Revenu Réel</div>
@@ -1021,7 +1021,7 @@
                                             <td class="frais-trx-sf">{{ controle.totalFraisTrxSf | number:'1.2-2' }}</td>
                                             <td class="revenu-reel">{{ controle.revenuReel | number:'1.2-2' }}</td>
                                             <td class="mag" [ngClass]="{'negative': controle.ecart < 0, 'positive': controle.ecart > 0}">
-                                                {{ controle.ecart | number:'1.2-2' }}
+                                                {{ getMagPercentage(controle) | number:'1.2-2' }}%
                                             </td>
                                             <td>
                                                 <span class="status-badge" [ngClass]="getControlRevenuStatusClass(controle)">
@@ -1286,7 +1286,7 @@
           <div class="detail-item">
             <label>MàG :</label>
             <span class="amount mag" [ngClass]="{'negative': selectedControlRevenu.ecart < 0, 'positive': selectedControlRevenu.ecart > 0}">
-              {{ selectedControlRevenu.ecart | number:'1.2-2' }}
+              {{ getMagPercentage(selectedControlRevenu) | number:'1.2-2' }}%
             </span>
           </div>
         </div>
@@ -1356,9 +1356,9 @@
             <span class="frais-trx-sf">{{ getDateViewTotalFraisTrxSf() | number:'1.2-2' }}</span>
           </div>
           <div class="summary-item">
-            <label>MàG Total</label>
+            <label>MàG Moyen</label>
             <span class="mag" [ngClass]="{'negative': getDateViewTotalEcart() < 0, 'positive': getDateViewTotalEcart() > 0}">
-              {{ getDateViewTotalEcart() | number:'1.2-2' }}
+              {{ getDateViewMagPercentage() | number:'1.2-2' }}%
             </span>
           </div>
         </div>
@@ -1403,7 +1403,7 @@
                 <td class="frais-trx-sf">{{ service.fraisTrxSf | number:'1.2-2' }}</td>
                 <td class="revenu-reel">{{ service.revenuReel | number:'1.2-2' }}</td>
                 <td class="mag" [ngClass]="{'negative': service.ecart < 0, 'positive': service.ecart > 0}">
-                  {{ service.ecart | number:'1.2-2' }}
+                  {{ getMagPercentageFromService(service) | number:'1.2-2' }}%
                 </td>
                 <td>
                   <span class="status-badge" [ngClass]="getControlRevenuStatusClass(service)">

@@ -2627,6 +2627,13 @@ export class ComptesComponent implements OnInit, OnDestroy {
         return this.controlRevenuDataFiltered.reduce((total, item) => total + item.ecart, 0);
     }
 
+    getMoyenneMagPercentageControlRevenu(): number {
+        const totalRevenuAttendu = this.controlRevenuDataFiltered.reduce((total, item) => total + item.revenuAttendu, 0);
+        const totalEcart = this.controlRevenuDataFiltered.reduce((total, item) => total + item.ecart, 0);
+        if (totalRevenuAttendu === 0) return 0;
+        return (totalEcart / totalRevenuAttendu) * 100;
+    }
+
     getTotalRevenuReelControlRevenu(): number {
         return this.controlRevenuDataFiltered.reduce((total, item) => total + item.revenuReel, 0);
     }
@@ -2824,6 +2831,11 @@ export class ComptesComponent implements OnInit, OnDestroy {
         return (Math.abs(ecart) / revenuAttendu) * 100;
     }
 
+    getMagPercentage(controle: any): number {
+        if (controle.revenuAttendu === 0) return 0;
+        return (controle.ecart / controle.revenuAttendu) * 100;
+    }
+
     // Méthodes pour la visualisation par date
     openDateViewModal(date: string): void {
         this.selectedDate = date;
@@ -2899,6 +2911,18 @@ export class ComptesComponent implements OnInit, OnDestroy {
         return this.dateViewData.reduce((total, item) => total + item.ecart, 0);
     }
 
+    getDateViewMagPercentage(): number {
+        const totalRevenuAttendu = this.getDateViewTotalRevenuAttendu();
+        const totalEcart = this.getDateViewTotalEcart();
+        if (totalRevenuAttendu === 0) return 0;
+        return (totalEcart / totalRevenuAttendu) * 100;
+    }
+
+    getMagPercentageFromService(service: any): number {
+        if (service.revenuAttendu === 0) return 0;
+        return (service.ecart / service.revenuAttendu) * 100;
+    }
+
     getDateViewTotalFraisTrxSf(): number {
         return this.dateViewData.reduce((total, item) => total + item.fraisTrxSf, 0);
     }
@@ -2941,7 +2965,7 @@ export class ComptesComponent implements OnInit, OnDestroy {
                 'Revenu Attendu': formatMontant(service.revenuAttendu),
                 'Frais TRX SF': formatMontant(service.fraisTrxSf),
                 'Revenu Reel': formatMontant(service.revenuReel),
-                'MaG': formatMontant(service.ecart),
+                'MaG (%)': this.getMagPercentageFromService(service).toFixed(2) + '%',
                 'Statut': this.getControlRevenuStatusLabel(service),
                 'Nombre de Controles': service.nombreControles.toString()
             }));
@@ -2967,7 +2991,7 @@ export class ComptesComponent implements OnInit, OnDestroy {
                 `Revenu Attendu Total: ${formatMontant(this.getDateViewTotalRevenuAttendu())}`,
                 `Revenu Reel Total: ${formatMontant(this.getDateViewTotalRevenuReel())}`,
                 `Frais TRX SF Total: ${formatMontant(this.getDateViewTotalFraisTrxSf())}`,
-                `MaG Total: ${formatMontant(this.getDateViewTotalEcart())}`,
+                `MaG Moyen (%): ${this.getDateViewMagPercentage().toFixed(2)}%`,
                 '',
                 csvContent
             ].join('\n');
@@ -3036,7 +3060,7 @@ export class ComptesComponent implements OnInit, OnDestroy {
                 'Revenu Attendu': formatMontant(controle.revenuAttendu),
                 'Frais TRX SF': formatMontant(controle.totalFraisTrxSf || 0),
                 'Revenu Reel': formatMontant(controle.revenuReel),
-                'MaG': formatMontant(controle.ecart),
+                'MaG (%)': this.getMagPercentage(controle).toFixed(2) + '%',
                 'Statut': this.getControlRevenuStatusLabel(controle)
             }));
 
@@ -3058,7 +3082,7 @@ export class ComptesComponent implements OnInit, OnDestroy {
                 `Total Controles: ${this.getTotalControlRevenu()}`,
                 `Volume Total: ${formatMontant(this.getTotalVolumeControlRevenu())}`,
                 `Total Transactions: ${this.getTotalNombreTrxControlRevenu().toString()}`,
-                `Total MaG: ${formatMontant(this.getTotalMagControlRevenu())}`,
+                `MaG Moyen (%): ${this.getMoyenneMagPercentageControlRevenu().toFixed(2)}%`,
                 `Anomalies: ${this.getTotalAnomaliesControlRevenu()}`,
                 `Controles Normaux: ${this.getTotalNormauxControlRevenu()}`,
                 `Controles Critiques: ${this.getTotalCritiquesControlRevenu()}`,
