@@ -125,3 +125,7 @@ prisma/dev.db-journal
 
 # Angular
 .angular/
+
+# Upload directories
+reconciliation-app/backend/uploads/
+reconciliation-app/watch-folder/processed/
