@@ -117,6 +117,15 @@
           <div class="alert alert-warning" *ngIf="selectedFile && !fileType">
             <i class="fas fa-exclamation-triangle"></i>
             Type de fichier non reconnu. Assurez-vous que le fichier contient soit 9 colonnes (fichier complet) soit 2 colonnes (fichier de statut).
+            <div class="mt-2">
+              <button 
+                type="button" 
+                class="btn btn-warning btn-sm" 
+                (click)="forceValidateAsFullFile()"
+                [disabled]="isUploading">
+                <i class="fas fa-check"></i> Forcer la validation comme fichier complet
+              </button>
+            </div>
           </div>
         </div>
       

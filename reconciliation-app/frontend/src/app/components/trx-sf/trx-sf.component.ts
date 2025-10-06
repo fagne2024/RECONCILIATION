@@ -253,30 +253,79 @@ export class TrxSfComponent implements OnInit, OnDestroy {
       const content = e.target.result;
       const lines = content.split('\n');
       
+      console.log('🔍 Détection du type de fichier pour:', file.name);
+      console.log('   - Taille du fichier:', file.size, 'bytes');
+      console.log('   - Nombre de lignes:', lines.length);
+      
       if (lines.length > 0) {
-        const firstLine = lines[0];
-        const columns = firstLine.split(/[,;]/); // Détecter le séparateur
+        const firstLine = lines[0].trim();
         
-        console.log('🔍 Détection du type de fichier:');
+        // Essayer différents séparateurs
+        const separators = [',', ';', '\t', '|'];
+        let bestSeparator = ',';
+        let maxColumns = 0;
+        
+        for (const sep of separators) {
+          const columns = firstLine.split(sep);
+          if (columns.length > maxColumns) {
+            maxColumns = columns.length;
+            bestSeparator = sep;
+          }
+        }
+        
+        const columns = firstLine.split(bestSeparator);
+        
+        console.log('   - Séparateur détecté:', bestSeparator);
         console.log('   - Nombre de colonnes détectées:', columns.length);
         console.log('   - Première ligne:', firstLine);
+        console.log('   - Colonnes:', columns.map((col, i) => `${i}: "${col.trim()}"`));
         
-        if (columns.length >= 8 && columns.length <= 10) {
-          // Fichier complet (9 colonnes ± 1)
+        // Logique de détection améliorée
+        if (columns.length >= 8) {
+          // Fichier complet (9 colonnes ou plus)
           this.fileType = 'full';
-          console.log('✅ Type détecté: Fichier complet (9 colonnes)');
+          console.log('✅ Type détecté: Fichier complet (9+ colonnes)');
         } else if (columns.length >= 2 && columns.length <= 4) {
-          // Fichier de statut (2 colonnes ± 2)
+          // Fichier de statut (2-4 colonnes)
           this.fileType = 'statut';
-          console.log('✅ Type détecté: Fichier de statut (2 colonnes)');
+          console.log('✅ Type détecté: Fichier de statut (2-4 colonnes)');
         } else {
           // Type indéterminé
           this.fileType = null;
           console.log('❓ Type indéterminé, nombre de colonnes:', columns.length);
+          console.log('   - Vérifiez que la première ligne contient les en-têtes');
+          console.log('   - Assurez-vous que le fichier utilise des séparateurs standards (, ou ;)');
         }
+        
+        // Forcer l'affichage du bouton Valider si le fichier semble être un fichier complet
+        if (this.fileType === null && columns.length >= 5) {
+          console.log('⚠️ Type indéterminé mais nombre de colonnes élevé, forçage en type "full"');
+          this.fileType = 'full';
+        }
+      } else {
+        console.log('❌ Fichier vide ou illisible');
+        this.fileType = null;
       }
     };
+    
+    // Gérer les erreurs de lecture
+    reader.onerror = () => {
+      console.error('❌ Erreur lors de la lecture du fichier');
+      this.fileType = null;
+    };
+    
     reader.readAsText(file);
+  }
+
+  forceValidateAsFullFile(): void {
+    if (!this.selectedFile) {
+      this.uploadMessage = { type: 'error', text: 'Aucun fichier sélectionné' };
+      return;
+    }
+    
+    console.log('🔧 Forçage du type de fichier en "full" pour:', this.selectedFile.name);
+    this.fileType = 'full';
+    this.uploadMessage = { type: 'success', text: 'Type de fichier forcé en "fichier complet". Vous pouvez maintenant valider le fichier.' };
   }
 
   validateFile(): void {
