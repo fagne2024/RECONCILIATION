@@ -80,6 +80,31 @@
               <i class="fas" [ngClass]="fileType === 'full' ? 'fa-file-csv' : 'fa-exchange-alt'"></i>
               {{ fileType === 'full' ? 'Fichier complet (9 colonnes)' : 'Fichier de statut (2 colonnes)' }}
             </span>
+            <button 
+              type="button" 
+              class="btn btn-sm btn-outline-secondary ml-2" 
+              (click)="toggleFileType()"
+              title="Changer le type de fichier">
+              <i class="fas fa-edit"></i> Modifier
+            </button>
+          </div>
+          
+          <!-- Sélecteur de type de fichier (quand le type est indéterminé ou pour modification) -->
+          <div class="file-type-selector" *ngIf="selectedFile && (!fileType || showFileTypeSelector)">
+            <label class="form-label">Type de fichier :</label>
+            <div class="btn-group" role="group">
+              <input type="radio" class="btn-check" name="fileType" id="typeFull" value="full" 
+                     [(ngModel)]="fileType" (change)="onFileTypeChange('full')">
+              <label class="btn btn-outline-primary" for="typeFull">
+                <i class="fas fa-file-csv"></i> Fichier complet (9 colonnes)
+              </label>
+              
+              <input type="radio" class="btn-check" name="fileType" id="typeStatut" value="statut" 
+                     [(ngModel)]="fileType" (change)="onFileTypeChange('statut')">
+              <label class="btn btn-outline-info" for="typeStatut">
+                <i class="fas fa-exchange-alt"></i> Fichier de statut (2 colonnes)
+              </label>
+            </div>
           </div>
           
           <!-- Boutons pour fichier complet -->
@@ -117,15 +142,6 @@
           <div class="alert alert-warning" *ngIf="selectedFile && !fileType">
             <i class="fas fa-exclamation-triangle"></i>
             Type de fichier non reconnu. Assurez-vous que le fichier contient soit 9 colonnes (fichier complet) soit 2 colonnes (fichier de statut).
-            <div class="mt-2">
-              <button 
-                type="button" 
-                class="btn btn-warning btn-sm" 
-                (click)="forceValidateAsFullFile()"
-                [disabled]="isUploading">
-                <i class="fas fa-check"></i> Forcer la validation comme fichier complet
-              </button>
-            </div>
           </div>
         </div>
       

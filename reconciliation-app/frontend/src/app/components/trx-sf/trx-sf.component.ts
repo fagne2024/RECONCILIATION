@@ -63,6 +63,9 @@ export class TrxSfComponent implements OnInit, OnDestroy {
   isAdminUser = false;
   userAgency = '';
   
+  // Gestion du type de fichier
+  showFileTypeSelector = false;
+  
   constructor(
     private trxSfService: TrxSfService,
     private fb: FormBuilder,
@@ -241,6 +244,7 @@ export class TrxSfComponent implements OnInit, OnDestroy {
       this.uploadMessage = null;
       this.validationResult = null;
       this.fileType = null;
+      this.showFileTypeSelector = false;
       
       // Détecter automatiquement le type de fichier
       this.detectFileType(file);
@@ -248,135 +252,63 @@ export class TrxSfComponent implements OnInit, OnDestroy {
   }
   
   private detectFileType(file: File): void {
-    const lowerName = file.name.toLowerCase();
-
-    // Handle Excel files with SheetJS (XLSX) via dynamic import
-    if (lowerName.endsWith('.xlsx') || lowerName.endsWith('.xls')) {
-      console.log('🔍 Détection du type de fichier (Excel) pour:', file.name);
-      const reader = new FileReader();
-      reader.onload = async (e: any) => {
-        try {
-          const data = new Uint8Array(e.target.result);
-          // Dynamic import to avoid bundling XLSX in the main chunk
-          const XLSX = await import('xlsx');
-          const workbook = XLSX.read(data, { type: 'array' });
-          const firstSheetName = workbook.SheetNames[0];
-          const sheet = workbook.Sheets[firstSheetName];
-          // Get first row (headers) as array
-          const rows: any[] = XLSX.utils.sheet_to_json(sheet, { header: 1 });
-          const headers: any[] = Array.isArray(rows) && rows.length > 0 ? rows[0] : [];
-
-          console.log('   - Feuille:', firstSheetName);
-          console.log('   - Nombre de colonnes détectées (Excel):', headers.length);
-          console.log('   - En-têtes:', headers);
-
-          if (headers.length >= 8) {
-            this.fileType = 'full';
-            console.log('✅ Type détecté: Fichier complet (Excel, 9+ colonnes)');
-          } else if (headers.length >= 2 && headers.length <= 4) {
-            this.fileType = 'statut';
-            console.log('✅ Type détecté: Fichier de statut (Excel, 2-4 colonnes)');
-          } else {
-            this.fileType = null;
-            console.log('❓ Type Excel indéterminé, nombre de colonnes:', headers.length);
-          }
-
-          if (this.fileType === null && headers.length >= 5) {
-            console.log('⚠️ Type Excel indéterminé mais colonnes élevées, forçage en "full"');
-            this.fileType = 'full';
-          }
-        } catch (err) {
-          console.error('❌ Erreur lecture Excel:', err);
-          this.fileType = null;
-        }
-      };
-      reader.onerror = () => {
-        console.error('❌ Erreur lors de la lecture du fichier Excel');
-        this.fileType = null;
-      };
-      reader.readAsArrayBuffer(file);
+    console.log('🔍 Détection du type de fichier:', file.name);
+    
+    // Pour les fichiers Excel, on ne peut pas facilement détecter le nombre de colonnes
+    // sans parser le fichier. On va permettre à l'utilisateur de choisir le type.
+    const fileName = file.name.toLowerCase();
+    const isExcel = fileName.endsWith('.xls') || fileName.endsWith('.xlsx');
+    
+    if (isExcel) {
+      // Pour les fichiers Excel, on laisse l'utilisateur choisir
+      // Par défaut, on assume que c'est un fichier complet
+      this.fileType = 'full';
+      console.log('✅ Fichier Excel détecté - Type par défaut: Fichier complet (9 colonnes)');
       return;
     }
-
-    // Fallback: CSV/TXT detection as text
+    
+    // Pour les fichiers CSV, on peut analyser le contenu
     const reader = new FileReader();
     reader.onload = (e: any) => {
       const content = e.target.result;
       const lines = content.split('\n');
       
-      console.log('🔍 Détection du type de fichier pour:', file.name);
-      console.log('   - Taille du fichier:', file.size, 'bytes');
-      console.log('   - Nombre de lignes:', lines.length);
-      
       if (lines.length > 0) {
-        const firstLine = lines[0].trim();
+        const firstLine = lines[0];
+        const columns = firstLine.split(/[,;]/); // Détecter le séparateur
         
-        // Essayer différents séparateurs
-        const separators = [',', ';', '\t', '|'];
-        let bestSeparator = ',';
-        let maxColumns = 0;
-        
-        for (const sep of separators) {
-          const columns = firstLine.split(sep);
-          if (columns.length > maxColumns) {
-            maxColumns = columns.length;
-            bestSeparator = sep;
-          }
-        }
-        
-        const columns = firstLine.split(bestSeparator);
-        
-        console.log('   - Séparateur détecté:', bestSeparator);
+        console.log('🔍 Détection du type de fichier CSV:');
         console.log('   - Nombre de colonnes détectées:', columns.length);
         console.log('   - Première ligne:', firstLine);
-        console.log('   - Colonnes:', columns.map((col, i) => `${i}: "${col.trim()}"`));
         
-        // Logique de détection améliorée
-        if (columns.length >= 8) {
-          // Fichier complet (9 colonnes ou plus)
+        if (columns.length >= 8 && columns.length <= 10) {
+          // Fichier complet (9 colonnes ± 1)
           this.fileType = 'full';
-          console.log('✅ Type détecté: Fichier complet (9+ colonnes)');
+          console.log('✅ Type détecté: Fichier complet (9 colonnes)');
         } else if (columns.length >= 2 && columns.length <= 4) {
-          // Fichier de statut (2-4 colonnes)
+          // Fichier de statut (2 colonnes ± 2)
           this.fileType = 'statut';
-          console.log('✅ Type détecté: Fichier de statut (2-4 colonnes)');
+          console.log('✅ Type détecté: Fichier de statut (2 colonnes)');
         } else {
-          // Type indéterminé
-          this.fileType = null;
-          console.log('❓ Type indéterminé, nombre de colonnes:', columns.length);
-          console.log('   - Vérifiez que la première ligne contient les en-têtes');
-          console.log('   - Assurez-vous que le fichier utilise des séparateurs standards (, ou ;)');
-        }
-        
-        // Forcer l'affichage du bouton Valider si le fichier semble être un fichier complet
-        if (this.fileType === null && columns.length >= 5) {
-          console.log('⚠️ Type indéterminé mais nombre de colonnes élevé, forçage en type "full"');
+          // Type indéterminé - par défaut, on assume que c'est un fichier complet
           this.fileType = 'full';
+          console.log('❓ Type indéterminé, nombre de colonnes:', columns.length, '- Par défaut: Fichier complet');
         }
-      } else {
-        console.log('❌ Fichier vide ou illisible');
-        this.fileType = null;
       }
     };
-    
-    // Gérer les erreurs de lecture
-    reader.onerror = () => {
-      console.error('❌ Erreur lors de la lecture du fichier');
-      this.fileType = null;
-    };
-    
     reader.readAsText(file);
   }
 
-  forceValidateAsFullFile(): void {
-    if (!this.selectedFile) {
-      this.uploadMessage = { type: 'error', text: 'Aucun fichier sélectionné' };
-      return;
-    }
-    
-    console.log('🔧 Forçage du type de fichier en "full" pour:', this.selectedFile.name);
-    this.fileType = 'full';
-    this.uploadMessage = { type: 'success', text: 'Type de fichier forcé en "fichier complet". Vous pouvez maintenant valider le fichier.' };
+  toggleFileType(): void {
+    this.showFileTypeSelector = !this.showFileTypeSelector;
+  }
+
+  onFileTypeChange(type: 'full' | 'statut'): void {
+    this.fileType = type;
+    this.showFileTypeSelector = false;
+    this.validationResult = null;
+    this.uploadMessage = null;
+    console.log('🔄 Type de fichier changé manuellement vers:', type);
   }
 
   validateFile(): void {

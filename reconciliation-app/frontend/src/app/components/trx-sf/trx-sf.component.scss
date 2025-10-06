@@ -119,6 +119,41 @@
       font-weight: 600;
     }
 
+    .file-type-indicator {
+      margin: 15px 0;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+
+      .badge {
+        font-size: 0.9em;
+        padding: 8px 12px;
+      }
+    }
+
+    .file-type-selector {
+      margin: 15px 0;
+      padding: 15px;
+      background: #f8f9fa;
+      border-radius: 8px;
+      border: 1px solid #e9ecef;
+
+      .form-label {
+        font-weight: 600;
+        margin-bottom: 10px;
+        color: #495057;
+      }
+
+      .btn-group {
+        width: 100%;
+        
+        .btn {
+          flex: 1;
+          font-size: 0.9em;
+        }
+      }
+    }
+
     .upload-form {
       .file-input-group {
         display: flex;
