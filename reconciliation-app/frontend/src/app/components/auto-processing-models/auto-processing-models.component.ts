@@ -2557,9 +2557,15 @@ export class AutoProcessingModelsComponent implements OnInit {
 
   /**
    * Détermine la catégorie d'un modèle basée sur son nom
+   * RÈGLE SPÉCIALE: Tous les modèles commençant par "PM" sont des partenaires paiement
    */
   getModelCategory(model: AutoProcessingModel): string {
     const modelName = model.name.toLowerCase();
+    
+    // RÈGLE SPÉCIALE: Tous les modèles commençant par "PM" sont des partenaires paiement
+    if (modelName.startsWith('pm')) {
+      return 'Partenaire PAIEMENT';
+    }
     
     // Patterns pour Partenaire CASHIN
     const cashinPatterns = [

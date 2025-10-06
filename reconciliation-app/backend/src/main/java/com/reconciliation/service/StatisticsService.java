@@ -5,7 +5,6 @@ import com.reconciliation.repository.StatisticsRepository;
 import com.reconciliation.repository.OperationRepository;
 import com.reconciliation.repository.CompteRepository;
 import com.reconciliation.repository.AgencySummaryRepository;
-import com.reconciliation.repository.FraisTransactionRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -309,7 +308,7 @@ public class StatisticsService {
                 java.time.LocalDate startDateLocal = java.time.LocalDate.parse(start);
                 java.time.LocalDate endDateLocal = java.time.LocalDate.parse(end);
                 long totalDays = java.time.temporal.ChronoUnit.DAYS.between(startDateLocal, endDateLocal) + 1;
-                averageVolume = (totalDays > 0) ? (totalVolume / totalDays) : 0.0;
+                averageVolume = (totalDays > 0) ? ((totalVolume != null ? totalVolume : 0.0) / totalDays) : 0.0;
             } else {
                 // Si pas de filtres de dates, calculer sur toute la période disponible
                 String minDateStr = agencySummaryRepository.findMinDate();
@@ -625,10 +624,17 @@ public class StatisticsService {
     
     /**
      * Détermine si un service est lié aux paiements basé sur son nom
+     * RÈGLE SPÉCIALE: Tous les modèles commençant par "PM" sont des partenaires paiement
      */
     private boolean isPaymentService(String service) {
         if (service == null) return false;
         String serviceLower = service.toLowerCase();
+        
+        // RÈGLE SPÉCIALE: Tous les modèles commençant par "PM" sont des partenaires paiement
+        if (serviceLower.startsWith("pm")) {
+            return true;
+        }
+        
         return serviceLower.contains("paiement") ||
                serviceLower.contains("payment") ||
                serviceLower.contains("retrait") ||
