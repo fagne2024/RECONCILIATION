@@ -1843,12 +1843,24 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                 });
             });
 
-            const validRecords = ecartSoldeData.filter(record => 
-                record.idTransaction && 
-                record.idTransaction.trim() !== '' && 
-                record.agence && 
-                record.agence.trim() !== ''
-            );
+            // SOLUTION DE CONTOURNEMENT : Permettre les enregistrements sans agence
+            // et utiliser l'agence de l'utilisateur connecté comme fallback
+            const userAgency = this.appStateService.getUsername();
+            console.log('DEBUG: Agence utilisateur connecté:', userAgency);
+            
+            const validRecords = ecartSoldeData.filter(record => {
+                const hasIdTransaction = record.idTransaction && record.idTransaction.trim() !== '';
+                const hasAgency = record.agence && record.agence.trim() !== '';
+                
+                // Si pas d'agence mais qu'on a un ID transaction et une agence utilisateur, c'est valide
+                if (hasIdTransaction && !hasAgency && userAgency) {
+                    console.log('DEBUG: Enregistrement sans agence, utilisation de l\'agence utilisateur:', userAgency);
+                    record.agence = userAgency; // Assigner l'agence utilisateur
+                    return true;
+                }
+                
+                return hasIdTransaction && hasAgency;
+            });
 
             console.log('DEBUG: Nombre d\'enregistrements valides après filtrage:', validRecords.length);
 
@@ -2396,12 +2408,24 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                 });
             });
 
-            const validRecords = ecartSoldeData.filter(record => 
-                record.idTransaction && 
-                record.idTransaction.trim() !== '' && 
-                record.agence && 
-                record.agence.trim() !== ''
-            );
+            // SOLUTION DE CONTOURNEMENT : Permettre les enregistrements sans agence
+            // et utiliser l'agence de l'utilisateur connecté comme fallback
+            const userAgency = this.appStateService.getUsername();
+            console.log('DEBUG: Agence utilisateur connecté:', userAgency);
+            
+            const validRecords = ecartSoldeData.filter(record => {
+                const hasIdTransaction = record.idTransaction && record.idTransaction.trim() !== '';
+                const hasAgency = record.agence && record.agence.trim() !== '';
+                
+                // Si pas d'agence mais qu'on a un ID transaction et une agence utilisateur, c'est valide
+                if (hasIdTransaction && !hasAgency && userAgency) {
+                    console.log('DEBUG: Enregistrement sans agence, utilisation de l\'agence utilisateur:', userAgency);
+                    record.agence = userAgency; // Assigner l'agence utilisateur
+                    return true;
+                }
+                
+                return hasIdTransaction && hasAgency;
+            });
 
             console.log('DEBUG: Nombre d\'enregistrements valides après filtrage:', validRecords.length);
 
