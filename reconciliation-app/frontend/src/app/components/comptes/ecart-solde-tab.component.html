@@ -6,7 +6,10 @@
         Date: {{ formatDate(dateTransaction) }}
       </span>
       <span class="count-info">
-        {{ filteredEcartSoldes.length }} résultat(s)
+        Total: {{ filteredEcartSoldes.length }} résultat(s)
+      </span>
+      <span class="count-info" *ngIf="filteredEcartSoldes.length > pageSize">
+        Affichage: {{ (currentPage - 1) * pageSize + 1 }} - {{ Math.min(currentPage * pageSize, filteredEcartSoldes.length) }} sur {{ filteredEcartSoldes.length }}
       </span>
       <button class="btn btn-success export-btn" 
               (click)="exportEcartSoldes()"
@@ -55,7 +58,7 @@
         </tr>
       </thead>
       <tbody>
-        <tr *ngFor="let ecart of filteredEcartSoldes" class="data-row">
+        <tr *ngFor="let ecart of pagedEcartSoldes" class="data-row">
           <td class="id-cell">{{ ecart.idTransaction }}</td>
           <td class="phone-cell">{{ ecart.telephoneClient || '-' }}</td>
           <td class="amount-cell">{{ formatMontant(ecart.montant) }}</td>
@@ -105,5 +108,25 @@
         </tr>
       </tfoot>
     </table>
+
+    <!-- Pagination -->
+    <div class="pagination-container" *ngIf="totalPages > 1">
+      <button (click)="prevPage()" [disabled]="currentPage === 1" class="btn pagination-btn">
+        <i class="fas fa-chevron-left"></i> Précédent
+      </button>
+      
+      <div class="pagination-indicators">
+        <span *ngFor="let page of getVisiblePages()" 
+              class="page-indicator"
+              [class.active]="currentPage === page"
+              (click)="goToPage(page)">
+          {{ page }}
+        </span>
+      </div>
+      
+      <button (click)="nextPage()" [disabled]="currentPage === totalPages" class="btn pagination-btn">
+        Suivant <i class="fas fa-chevron-right"></i>
+      </button>
+    </div>
   </div>
 </div> 

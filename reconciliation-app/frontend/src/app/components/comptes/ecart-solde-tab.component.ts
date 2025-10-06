@@ -18,6 +18,12 @@ export class EcartSoldeTabComponent implements OnInit, OnDestroy {
   isLoading = false;
   error: string | null = null;
   
+  // Pagination
+  currentPage = 1;
+  pageSize = 10;
+  totalPages = 1;
+  Math = Math;
+  
   private subscription = new Subscription();
 
   constructor(private ecartSoldeService: EcartSoldeService) {}
@@ -87,6 +93,51 @@ export class EcartSoldeTabComponent implements OnInit, OnDestroy {
     filtered.sort((a, b) => new Date(b.dateTransaction).getTime() - new Date(a.dateTransaction).getTime());
 
     this.filteredEcartSoldes = filtered;
+    this.calculatePagination();
+  }
+
+  calculatePagination(): void {
+    this.totalPages = Math.ceil(this.filteredEcartSoldes.length / this.pageSize);
+    if (this.currentPage > this.totalPages) {
+      this.currentPage = this.totalPages || 1;
+    }
+  }
+
+  get pagedEcartSoldes(): EcartSolde[] {
+    const start = (this.currentPage - 1) * this.pageSize;
+    const end = start + this.pageSize;
+    return this.filteredEcartSoldes.slice(start, end);
+  }
+
+  nextPage(): void {
+    if (this.currentPage < this.totalPages) {
+      this.currentPage++;
+    }
+  }
+
+  prevPage(): void {
+    if (this.currentPage > 1) {
+      this.currentPage--;
+    }
+  }
+
+  goToPage(page: number): void {
+    if (page >= 1 && page <= this.totalPages) {
+      this.currentPage = page;
+    }
+  }
+
+  getVisiblePages(): number[] {
+    const pages: number[] = [];
+    const maxVisible = 5;
+    const start = Math.max(1, this.currentPage - Math.floor(maxVisible / 2));
+    const end = Math.min(this.totalPages, start + maxVisible - 1);
+    
+    for (let i = start; i <= end; i++) {
+      pages.push(i);
+    }
+    
+    return pages;
   }
 
   getStatutClass(statut: string): string {

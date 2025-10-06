@@ -810,6 +810,12 @@
 
                             <!-- Tableau des revenus journaliers -->
                             <div class="revenu-table-container">
+                                <div class="operations-summary">
+                                    <span><strong>Total:</strong> {{ revenuJournalierDataFiltered.length }} jour(s)</span>
+                                    <span *ngIf="revenuJournalierDataFiltered.length > revenuJournalierPageSize">
+                                        <strong>Affichage:</strong> {{ (revenuJournalierCurrentPage - 1) * revenuJournalierPageSize + 1 }} - {{ Math.min(revenuJournalierCurrentPage * revenuJournalierPageSize, revenuJournalierDataFiltered.length) }} sur {{ revenuJournalierDataFiltered.length }}
+                                    </span>
+                                </div>
                                 <table class="table table-bordered table-hover table-sm">
                                     <thead>
                                         <tr>
@@ -993,6 +999,12 @@
 
                             <!-- Tableau des contrôles revenu -->
                             <div class="control-revenu-table-container">
+                                <div class="operations-summary">
+                                    <span><strong>Total:</strong> {{ controlRevenuDataFiltered.length }} ligne(s)</span>
+                                    <span *ngIf="controlRevenuDataFiltered.length > controlRevenuPageSize">
+                                        <strong>Affichage:</strong> {{ (controlRevenuCurrentPage - 1) * controlRevenuPageSize + 1 }} - {{ Math.min(controlRevenuCurrentPage * controlRevenuPageSize, controlRevenuDataFiltered.length) }} sur {{ controlRevenuDataFiltered.length }}
+                                    </span>
+                                </div>
                                 <table class="table table-bordered table-hover table-sm">
                                     <thead>
                                         <tr>

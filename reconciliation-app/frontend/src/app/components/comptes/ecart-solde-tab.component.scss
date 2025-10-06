@@ -469,6 +469,73 @@
       }
     }
   }
+
+  // Styles pour la pagination
+  .pagination-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 15px;
+    margin-top: 20px;
+    padding: 15px 0;
+    border-top: 1px solid #e0e0e0;
+
+    .pagination-btn {
+      background: #007bff;
+      color: white;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: background-color 0.2s;
+
+      &:hover:not(:disabled) {
+        background: #0056b3;
+      }
+
+      &:disabled {
+        background: #6c757d;
+        cursor: not-allowed;
+        opacity: 0.6;
+      }
+    }
+
+    .pagination-indicators {
+      display: flex;
+      gap: 5px;
+
+      .page-indicator {
+        width: 32px;
+        height: 32px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 50%;
+        background: #e9ecef;
+        color: #495057;
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: 500;
+        transition: all 0.2s;
+        border: 1px solid #dee2e6;
+
+        &:hover {
+          background: #dee2e6;
+          color: #212529;
+        }
+
+        &.active {
+          background: #007bff;
+          color: white;
+          border-color: #007bff;
+        }
+      }
+    }
+  }
 }
 
 @keyframes spin {
