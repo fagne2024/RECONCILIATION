@@ -11,12 +11,18 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Service
 public class FraisTransactionService {
     
     @Autowired
     private FraisTransactionRepository fraisTransactionRepository;
+    
+    // Cache pour éviter les requêtes répétitives
+    private final Map<String, FraisTransactionEntity> fraisCache = new ConcurrentHashMap<>();
+    private volatile long lastCacheRefresh = 0;
+    private static final long CACHE_TTL = 300000; // 5 minutes en millisecondes
     
     /**
      * Créer un nouveau frais de transaction
@@ -40,7 +46,9 @@ public class FraisTransactionService {
         frais.setDateCreation(LocalDateTime.now());
         frais.setDateModification(LocalDateTime.now());
         
-        return fraisTransactionRepository.save(frais);
+        FraisTransactionEntity savedFrais = fraisTransactionRepository.save(frais);
+        invalidateCache(); // Invalider le cache après création
+        return savedFrais;
     }
     
     /**
@@ -68,7 +76,9 @@ public class FraisTransactionService {
         }
         frais.setDateModification(LocalDateTime.now());
         
-        return fraisTransactionRepository.save(frais);
+        FraisTransactionEntity savedFrais = fraisTransactionRepository.save(frais);
+        invalidateCache(); // Invalider le cache après modification
+        return savedFrais;
     }
     
     /**
@@ -108,9 +118,61 @@ public class FraisTransactionService {
     
     /**
      * Trouver le frais applicable pour un service et une agence donnés
+     * OPTIMISATION : Utilisation d'un cache pour éviter les requêtes répétitives
      */
     public Optional<FraisTransactionEntity> getFraisApplicable(String service, String agence) {
-        return fraisTransactionRepository.findFraisApplicable(service, agence);
+        // Vérifier si le cache doit être rafraîchi
+        refreshCacheIfNeeded();
+        
+        // Clé du cache : service + "|" + agence
+        String cacheKey = service + "|" + agence;
+        
+        // Vérifier d'abord dans le cache
+        if (fraisCache.containsKey(cacheKey)) {
+            System.out.println("DEBUG: Configuration frais trouvée dans le cache pour " + service + "/" + agence);
+            return Optional.of(fraisCache.get(cacheKey));
+        }
+        
+        // Si pas dans le cache, faire la requête
+        Optional<FraisTransactionEntity> fraisOpt = fraisTransactionRepository.findFraisApplicable(service, agence);
+        
+        // Mettre en cache si trouvé
+        if (fraisOpt.isPresent()) {
+            fraisCache.put(cacheKey, fraisOpt.get());
+            System.out.println("DEBUG: Configuration frais mise en cache pour " + service + "/" + agence);
+        }
+        
+        return fraisOpt;
+    }
+    
+    /**
+     * Rafraîchir le cache si nécessaire (TTL expiré)
+     */
+    private synchronized void refreshCacheIfNeeded() {
+        long currentTime = System.currentTimeMillis();
+        if (currentTime - lastCacheRefresh > CACHE_TTL) {
+            System.out.println("DEBUG: Rafraîchissement du cache des frais de transaction");
+            fraisCache.clear();
+            
+            // Recharger tous les frais actifs
+            List<FraisTransactionEntity> allFrais = fraisTransactionRepository.findByActifTrue();
+            for (FraisTransactionEntity frais : allFrais) {
+                String cacheKey = frais.getService() + "|" + frais.getAgence();
+                fraisCache.put(cacheKey, frais);
+            }
+            
+            lastCacheRefresh = currentTime;
+            System.out.println("DEBUG: Cache rafraîchi avec " + fraisCache.size() + " entrées");
+        }
+    }
+    
+    /**
+     * Invalider le cache (appelé lors des modifications)
+     */
+    private void invalidateCache() {
+        System.out.println("DEBUG: Invalidation du cache des frais de transaction");
+        fraisCache.clear();
+        lastCacheRefresh = 0;
     }
     
     /**
@@ -152,6 +214,7 @@ public class FraisTransactionService {
         Optional<FraisTransactionEntity> frais = fraisTransactionRepository.findById(id);
         if (frais.isPresent()) {
             fraisTransactionRepository.deleteById(id);
+            invalidateCache(); // Invalider le cache après suppression
             return true;
         }
         return false;
@@ -168,6 +231,7 @@ public class FraisTransactionService {
             entity.setActif(!entity.getActif());
             entity.setDateModification(LocalDateTime.now());
             fraisTransactionRepository.save(entity);
+            invalidateCache(); // Invalider le cache après changement de statut
             return true;
         }
         return false;
