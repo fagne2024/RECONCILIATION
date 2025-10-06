@@ -2563,7 +2563,16 @@ export class AutoProcessingModelsComponent implements OnInit {
     const modelName = model.name.toLowerCase();
     
     // RÈGLE SPÉCIALE: Tous les modèles commençant par "PM" sont des partenaires paiement
-    if (modelName.startsWith('pm')) {
+    // Vérifier plusieurs patterns pour capturer tous les cas :
+    // - "PMWAVECI" 
+    // - "Modèle basé sur PMWAVECI.xls"
+    // - "PMOMCI", "PMMTNCM", etc.
+    if (modelName.startsWith('pm') || 
+        modelName.includes('pmwaveci') || 
+        modelName.includes('pmom') ||
+        modelName.includes('pmmoovbf') ||
+        modelName.includes('pmmtncm') ||
+        /pm[a-z0-9]{4,}/.test(modelName)) {
       return 'Partenaire PAIEMENT';
     }
     
