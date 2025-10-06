@@ -248,6 +248,57 @@ export class TrxSfComponent implements OnInit, OnDestroy {
   }
   
   private detectFileType(file: File): void {
+    const lowerName = file.name.toLowerCase();
+
+    // Handle Excel files with SheetJS (XLSX) via dynamic import
+    if (lowerName.endsWith('.xlsx') || lowerName.endsWith('.xls')) {
+      console.log('🔍 Détection du type de fichier (Excel) pour:', file.name);
+      const reader = new FileReader();
+      reader.onload = async (e: any) => {
+        try {
+          const data = new Uint8Array(e.target.result);
+          // Dynamic import to avoid bundling XLSX in the main chunk
+          const XLSX = await import('xlsx');
+          const workbook = XLSX.read(data, { type: 'array' });
+          const firstSheetName = workbook.SheetNames[0];
+          const sheet = workbook.Sheets[firstSheetName];
+          // Get first row (headers) as array
+          const rows: any[] = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+          const headers: any[] = Array.isArray(rows) && rows.length > 0 ? rows[0] : [];
+
+          console.log('   - Feuille:', firstSheetName);
+          console.log('   - Nombre de colonnes détectées (Excel):', headers.length);
+          console.log('   - En-têtes:', headers);
+
+          if (headers.length >= 8) {
+            this.fileType = 'full';
+            console.log('✅ Type détecté: Fichier complet (Excel, 9+ colonnes)');
+          } else if (headers.length >= 2 && headers.length <= 4) {
+            this.fileType = 'statut';
+            console.log('✅ Type détecté: Fichier de statut (Excel, 2-4 colonnes)');
+          } else {
+            this.fileType = null;
+            console.log('❓ Type Excel indéterminé, nombre de colonnes:', headers.length);
+          }
+
+          if (this.fileType === null && headers.length >= 5) {
+            console.log('⚠️ Type Excel indéterminé mais colonnes élevées, forçage en "full"');
+            this.fileType = 'full';
+          }
+        } catch (err) {
+          console.error('❌ Erreur lecture Excel:', err);
+          this.fileType = null;
+        }
+      };
+      reader.onerror = () => {
+        console.error('❌ Erreur lors de la lecture du fichier Excel');
+        this.fileType = null;
+      };
+      reader.readAsArrayBuffer(file);
+      return;
+    }
+
+    // Fallback: CSV/TXT detection as text
     const reader = new FileReader();
     reader.onload = (e: any) => {
       const content = e.target.result;
