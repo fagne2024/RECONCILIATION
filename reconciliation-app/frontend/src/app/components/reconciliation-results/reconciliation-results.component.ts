@@ -4014,11 +4014,28 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
             return '';
         };
 
+        // Debug: Afficher toutes les colonnes disponibles
+        console.log('DEBUG: Colonnes disponibles dans record:', Object.keys(record));
+        console.log('DEBUG: Valeurs dans record:', record);
+
         // Recherche d'agence avec plusieurs noms possibles
-        const agency = getValueWithFallback(['Agence', 'agence', 'AGENCE', 'agency', 'Agency', 'AGENCY']);
+        let agency = getValueWithFallback(['Agence', 'agence', 'AGENCE', 'agency', 'Agency', 'AGENCY', 'codeProprietaire', 'CodeProprietaire', 'CODE_PROPRIETAIRE']);
+        console.log('DEBUG: Agence trouvée:', agency);
+        
+        // Si aucune agence n'est trouvée, utiliser l'agence de l'utilisateur connecté comme fallback
+        if (!agency || agency.trim() === '') {
+            const userAgency = this.appStateService.getUsername();
+            if (userAgency) {
+                agency = userAgency;
+                console.log('DEBUG: Aucune agence trouvée, utilisation de l\'agence utilisateur:', agency);
+            } else {
+                console.warn('DEBUG: Aucune agence trouvée et pas d\'agence utilisateur disponible');
+            }
+        }
         
         // Recherche de service avec plusieurs noms possibles
         const service = getValueWithFallback(['Service', 'service', 'SERVICE', 'serv', 'Serv']);
+        console.log('DEBUG: Service trouvé:', service);
         
         // Recherche de volume/montant avec plusieurs noms possibles
         const volumeStr = getValueWithFallback(['montant', 'Montant', 'MONTANT', 'amount', 'Amount', 'volume', 'Volume', 'VOLUME']);
