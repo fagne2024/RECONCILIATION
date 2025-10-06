@@ -13,7 +13,6 @@ import jakarta.servlet.http.HttpServletRequest;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
-import java.util.HashMap;
 
 @RestController
 @RequestMapping("/api/statistics")
@@ -160,6 +159,32 @@ public class StatisticsController {
             logger.error("Error fetching detailed metrics: {}", e.getMessage(), e);
             return ResponseEntity.internalServerError()
                 .body("Failed to fetch detailed metrics: " + e.getMessage());
+        }
+    }
+
+    @GetMapping("/transaction-created-stats")
+    public ResponseEntity<?> getTransactionCreatedStatsByService(
+            @RequestParam(required = false) List<String> agency,
+            @RequestParam(required = false) List<String> service,
+            @RequestParam(required = false) List<String> country,
+            @RequestParam(required = false) String timeFilter,
+            @RequestParam(required = false) String startDate,
+            @RequestParam(required = false) String endDate,
+            HttpServletRequest request) {
+        logger.info("=== TRANSACTION CREATED STATS REQUEST RECEIVED ===");
+        logger.info("Method: {}", request.getMethod());
+        logger.info("Origin: {}", request.getHeader("Origin"));
+        logger.info("Filters: agency={}, service={}, country={}, timeFilter={}, startDate={}, endDate={}", 
+            agency, service, country, timeFilter, startDate, endDate);
+        
+        try {
+            Map<String, Object> stats = statisticsService.getTransactionCreatedStatsByService(agency, service, country, timeFilter, startDate, endDate);
+            logger.info("Transaction created stats calculated successfully");
+            return ResponseEntity.ok(stats);
+        } catch (Exception e) {
+            logger.error("Error fetching transaction created stats: {}", e.getMessage(), e);
+            return ResponseEntity.internalServerError()
+                .body("Failed to fetch transaction created stats: " + e.getMessage());
         }
     }
 } 

@@ -682,4 +682,181 @@
 .graph-placeholder .chartjs-title {
   margin-bottom: 48px !important;
 }
+
+// Styles pour les statistiques des transactions créées
+.transaction-created-stats-section {
+  margin-top: 30px;
+  padding: 20px;
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.transaction-created-stats-section h4 {
+  color: #1976D2;
+  margin-bottom: 20px;
+  font-size: 1.3em;
+  border-bottom: 2px solid #E3F2FD;
+  padding-bottom: 10px;
+}
+
+.transaction-stats-container {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.global-stats-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 15px;
+  margin-bottom: 20px;
+}
+
+.summary-card {
+  background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+  border-radius: 10px;
+  padding: 20px;
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  border-left: 4px solid #1976D2;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.summary-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(25, 118, 210, 0.15);
+}
+
+.summary-icon {
+  font-size: 2em;
+  opacity: 0.8;
+}
+
+.summary-content {
+  flex: 1;
+}
+
+.summary-value {
+  font-size: 1.8em;
+  font-weight: bold;
+  color: #1976D2;
+  line-height: 1;
+  margin-bottom: 5px;
+}
+
+.summary-label {
+  font-size: 0.9em;
+  color: #666;
+  font-weight: 500;
+}
+
+.service-stats-table {
+  overflow-x: auto;
+  border-radius: 10px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.stats-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: white;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.stats-table thead {
+  background: linear-gradient(135deg, #1976D2 0%, #1565C0 100%);
+  color: white;
+}
+
+.stats-table th {
+  padding: 15px 12px;
+  text-align: left;
+  font-weight: 600;
+  font-size: 0.9em;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.stats-table tbody tr {
+  border-bottom: 1px solid #f0f0f0;
+  transition: background-color 0.2s ease;
+}
+
+.stats-table tbody tr:hover {
+  background-color: #f8f9fa;
+}
+
+.stats-table tbody tr:last-child {
+  border-bottom: none;
+}
+
+.stats-table td {
+  padding: 12px;
+  font-size: 0.9em;
+}
+
+.service-name {
+  font-weight: 600;
+  color: #333;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.volume-cell, .count-cell {
+  text-align: right;
+  font-weight: 500;
+}
+
+.volume-cell.cashin, .count-cell.cashin {
+  color: #4CAF50;
+}
+
+.volume-cell.payment, .count-cell.payment {
+  color: #FF9800;
+}
+
+.total-transactions {
+  text-align: center;
+  font-weight: 600;
+  color: #1976D2;
+  background: #E3F2FD;
+  border-radius: 6px;
+  padding: 4px 8px;
+}
+
+// Responsive design
+@media (max-width: 768px) {
+  .global-stats-summary {
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 10px;
+  }
+  
+  .summary-card {
+    padding: 15px;
+    gap: 10px;
+  }
+  
+  .summary-icon {
+    font-size: 1.5em;
+  }
+  
+  .summary-value {
+    font-size: 1.4em;
+  }
+  
+  .stats-table th,
+  .stats-table td {
+    padding: 8px 6px;
+    font-size: 0.8em;
+  }
+  
+  .service-name {
+    max-width: 120px;
+  }
+}
  

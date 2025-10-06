@@ -2,7 +2,7 @@ import { Component, OnInit, OnDestroy, ViewChild } from '@angular/core';
 import { Router, NavigationEnd } from '@angular/router';
 import { filter } from 'rxjs/operators';
 import { Subscription } from 'rxjs';
-import { DashboardService, DashboardMetrics, DetailedMetrics } from '../../services/dashboard.service';
+import { DashboardService, DashboardMetrics, DetailedMetrics, TransactionCreatedStats, ServiceStat } from '../../services/dashboard.service';
 import { AppStateService } from '../../services/app-state.service';
 import * as XLSX from 'xlsx';
 import { ChartConfiguration } from 'chart.js';
@@ -46,6 +46,11 @@ export class DashboardComponent implements OnInit, OnDestroy {
     detailedMetrics: DetailedMetrics | null = null;
     detailedLoading: boolean = false;
     detailedError: string | null = null;
+
+    // Statistiques des transactions créées
+    transactionCreatedStats: TransactionCreatedStats | null = null;
+    transactionCreatedLoading: boolean = false;
+    transactionCreatedError: string | null = null;
 
     // Filtres
     selectedAgency: string[] = [];
@@ -487,6 +492,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
         // Charger les métriques détaillées après un court délai pour s'assurer que les autres données sont chargées
         setTimeout(() => {
             this.loadDetailedMetrics();
+            this.loadTransactionCreatedStats();
         }, 500);
         
         // Écouter les changements de route pour recharger les données quand on revient sur le dashboard
@@ -707,6 +713,36 @@ export class DashboardComponent implements OnInit, OnDestroy {
         });
     }
 
+    private loadTransactionCreatedStats() {
+        this.transactionCreatedLoading = true;
+        this.transactionCreatedError = null;
+
+        const agencies = this.selectedAgency.length === 0 ? undefined : this.selectedAgency;
+        const services = this.selectedService.length === 0 ? undefined : this.selectedService;
+        const countries = this.selectedCountry.length === 0 ? undefined : this.selectedCountry;
+        const timeFilter = this.selectedTimeFilter !== 'Tous' ? this.selectedTimeFilter : undefined;
+
+        this.dashboardService.getTransactionCreatedStats(
+            agencies,
+            services,
+            countries,
+            timeFilter,
+            this.startDate || undefined,
+            this.endDate || undefined
+        ).subscribe({
+            next: (stats: TransactionCreatedStats) => {
+                this.transactionCreatedStats = stats;
+                this.transactionCreatedLoading = false;
+                console.log('Transaction created stats loaded:', stats);
+            },
+            error: (error) => {
+                console.error('Error loading transaction created stats:', error);
+                this.transactionCreatedError = 'Erreur lors du chargement des statistiques des transactions créées';
+                this.transactionCreatedLoading = false;
+            }
+        });
+    }
+
     filteredAgencySummary: any[] = [];
 
     updateDashboardIndicators() {
@@ -739,6 +775,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
         this.updateDashboardIndicators();
         // Recharger les métriques détaillées avec les nouveaux filtres
         this.loadDetailedMetrics();
+        this.loadTransactionCreatedStats();
         // Mettre à jour les graphiques
         this.updateBarChartData();
         
@@ -968,6 +1005,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
         
         // Recharger les métriques détaillées (toujours, même sans filtres)
         this.loadDetailedMetrics();
+        this.loadTransactionCreatedStats();
         
         // Afficher un message de confirmation
         setTimeout(() => {
@@ -1005,6 +1043,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
         this.endDate = '';
         this.showCustomDateInputs = false;
         this.loadDetailedMetrics();
+        this.loadTransactionCreatedStats();
         this.updateBarChartData();
     }
 

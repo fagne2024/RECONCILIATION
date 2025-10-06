@@ -273,5 +273,75 @@
                     </div>
                 </div>
             </div>
+
+            <!-- Statistiques des transactions créées par service -->
+            <div class="transaction-created-stats-section">
+                <h4>🔄 Transactions créées par service</h4>
+                <div *ngIf="transactionCreatedLoading" class="loading-message">
+                    Chargement des statistiques des transactions créées...
+                </div>
+                <div *ngIf="transactionCreatedError" class="error-message">
+                    {{ transactionCreatedError }}
+                </div>
+                <div *ngIf="transactionCreatedStats && !transactionCreatedLoading" class="transaction-stats-container">
+                    <!-- Résumé global -->
+                    <div class="global-stats-summary">
+                        <div class="summary-card">
+                            <div class="summary-icon">🏦</div>
+                            <div class="summary-content">
+                                <div class="summary-value">{{ transactionCreatedStats.totalServices }}</div>
+                                <div class="summary-label">Services actifs</div>
+                            </div>
+                        </div>
+                        <div class="summary-card">
+                            <div class="summary-icon">💰</div>
+                            <div class="summary-content">
+                                <div class="summary-value">{{ transactionCreatedStats.totalCashinVolume | number:'1.0-0' }}</div>
+                                <div class="summary-label">Volume Total Cashin</div>
+                            </div>
+                        </div>
+                        <div class="summary-card">
+                            <div class="summary-icon">💳</div>
+                            <div class="summary-content">
+                                <div class="summary-value">{{ transactionCreatedStats.totalPaymentVolume | number:'1.0-0' }}</div>
+                                <div class="summary-label">Volume Total Paiement</div>
+                            </div>
+                        </div>
+                        <div class="summary-card">
+                            <div class="summary-icon">📊</div>
+                            <div class="summary-content">
+                                <div class="summary-value">{{ transactionCreatedStats.totalTransactionCount }}</div>
+                                <div class="summary-label">Transactions créées</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Détail par service -->
+                    <div class="service-stats-table">
+                        <table class="stats-table">
+                            <thead>
+                                <tr>
+                                    <th>Service</th>
+                                    <th>Volume Cashin</th>
+                                    <th>Volume Paiement</th>
+                                    <th>Total Cashin</th>
+                                    <th>Total Paiement</th>
+                                    <th>Transactions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr *ngFor="let service of transactionCreatedStats.serviceStats">
+                                    <td class="service-name">{{ service.service }}</td>
+                                    <td class="volume-cell cashin">{{ service.totalCashinVolume | number:'1.0-0' }}</td>
+                                    <td class="volume-cell payment">{{ service.totalPaymentVolume | number:'1.0-0' }}</td>
+                                    <td class="count-cell cashin">{{ service.totalCashinCount }}</td>
+                                    <td class="count-cell payment">{{ service.totalPaymentCount }}</td>
+                                    <td class="total-transactions">{{ service.totalTransactions }}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>

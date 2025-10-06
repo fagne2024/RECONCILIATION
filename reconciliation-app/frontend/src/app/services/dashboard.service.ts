@@ -22,6 +22,25 @@ export interface DetailedMetrics {
     frequencyStats: FrequencyStat[];
 }
 
+export interface TransactionCreatedStats {
+    serviceStats: ServiceStat[];
+    totalServices: number;
+    totalCashinVolume: number;
+    totalPaymentVolume: number;
+    totalCashinCount: number;
+    totalPaymentCount: number;
+    totalTransactionCount: number;
+}
+
+export interface ServiceStat {
+    service: string;
+    totalCashinVolume: number;
+    totalPaymentVolume: number;
+    totalCashinCount: number;
+    totalPaymentCount: number;
+    totalTransactions: number;
+}
+
 export interface OperationStat {
     operationType: string;
     transactionCount: number;
@@ -87,5 +106,36 @@ export class DashboardService {
         }
         
         return this.http.get<DetailedMetrics>(`${this.apiUrl}/detailed-metrics${params}`);
+    }
+
+    getTransactionCreatedStats(
+        agencies?: string[], 
+        services?: string[], 
+        countries?: string[],
+        timeFilter?: string,
+        startDate?: string,
+        endDate?: string
+    ): Observable<TransactionCreatedStats> {
+        let params = '';
+        const queryParams = [];
+        
+        if (agencies && agencies.length > 0 && !agencies.includes('Tous')) {
+            agencies.forEach(agency => queryParams.push(`agency=${encodeURIComponent(agency)}`));
+        }
+        if (services && services.length > 0 && !services.includes('Tous')) {
+            services.forEach(service => queryParams.push(`service=${encodeURIComponent(service)}`));
+        }
+        if (countries && countries.length > 0 && !countries.includes('Tous')) {
+            countries.forEach(country => queryParams.push(`country=${encodeURIComponent(country)}`));
+        }
+        if (timeFilter) queryParams.push(`timeFilter=${encodeURIComponent(timeFilter)}`);
+        if (startDate) queryParams.push(`startDate=${encodeURIComponent(startDate)}`);
+        if (endDate) queryParams.push(`endDate=${encodeURIComponent(endDate)}`);
+        
+        if (queryParams.length > 0) {
+            params = '?' + queryParams.join('&');
+        }
+        
+        return this.http.get<TransactionCreatedStats>(`${this.apiUrl}/transaction-created-stats${params}`);
     }
 } 
