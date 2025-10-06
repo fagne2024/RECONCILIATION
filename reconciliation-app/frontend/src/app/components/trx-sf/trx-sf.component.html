@@ -60,9 +60,17 @@
       <div class="alert alert-info">
         <h6><i class="fas fa-info-circle"></i> Types de fichiers supportés :</h6>
         <ul>
-          <li><strong>Fichier complet (9 colonnes)</strong> : Utilisez "Valider" puis "Uploader" pour importer de nouvelles transactions</li>
+          <li><strong>Fichier complet (8 colonnes)</strong> : Utilisez "Valider" puis "Uploader" pour importer de nouvelles transactions</li>
           <li><strong>Fichier de statut (2 colonnes : Agence + Numero Trans GU)</strong> : Utilisez "Change Statut" pour mettre à jour le statut des transactions existantes</li>
         </ul>
+        <div class="template-buttons">
+          <button class="btn btn-outline-primary btn-sm" (click)="downloadTemplate('full')">
+            <i class="fas fa-download"></i> Télécharger modèle (complet)
+          </button>
+          <button class="btn btn-outline-info btn-sm ml-2" (click)="downloadTemplate('statut')">
+            <i class="fas fa-download"></i> Télécharger modèle (statut)
+          </button>
+        </div>
       </div>
     </div>
     <div class="upload-form">
@@ -78,7 +86,7 @@
           <div class="file-type-indicator" *ngIf="fileType">
             <span class="badge" [ngClass]="fileType === 'full' ? 'badge-primary' : 'badge-info'">
               <i class="fas" [ngClass]="fileType === 'full' ? 'fa-file-csv' : 'fa-exchange-alt'"></i>
-              {{ fileType === 'full' ? 'Fichier complet (9 colonnes)' : 'Fichier de statut (2 colonnes)' }}
+              {{ fileType === 'full' ? 'Fichier complet (8 colonnes)' : 'Fichier de statut (2 colonnes)' }}
             </span>
             <button 
               type="button" 
@@ -96,7 +104,7 @@
               <input type="radio" class="btn-check" name="fileType" id="typeFull" value="full" 
                      [(ngModel)]="fileType" (change)="onFileTypeChange('full')">
               <label class="btn btn-outline-primary" for="typeFull">
-                <i class="fas fa-file-csv"></i> Fichier complet (9 colonnes)
+                <i class="fas fa-file-csv"></i> Fichier complet (8 colonnes)
               </label>
               
               <input type="radio" class="btn-check" name="fileType" id="typeStatut" value="statut" 
@@ -141,7 +149,7 @@
           <!-- Message si type indéterminé -->
           <div class="alert alert-warning" *ngIf="selectedFile && !fileType">
             <i class="fas fa-exclamation-triangle"></i>
-            Type de fichier non reconnu. Assurez-vous que le fichier contient soit 9 colonnes (fichier complet) soit 2 colonnes (fichier de statut).
+            Type de fichier non reconnu. Assurez-vous que le fichier contient soit 8 colonnes (fichier complet) soit 2 colonnes (fichier de statut).
           </div>
         </div>
       
@@ -160,6 +168,27 @@
             <li>Doublons détectés : {{ validationResult.duplicates }}</li>
             <li>Nouveaux enregistrements : {{ validationResult.newRecords }}</li>
           </ul>
+        </div>
+      </div>
+
+      <div class="preview-info" *ngIf="previewHeaders.length > 0">
+        <div class="alert alert-secondary">
+          <h6>Aperçu local du fichier ({{ previewTotal }} ligne(s))</h6>
+          <div class="table-responsive">
+            <table class="table table-sm table-bordered">
+              <thead>
+                <tr>
+                  <th *ngFor="let h of previewHeaders">{{ h }}</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr *ngFor="let r of previewRows">
+                  <td *ngFor="let h of previewHeaders">{{ r[h] }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <small class="text-muted">Affichage des 5 premières lignes.</small>
         </div>
       </div>
       
@@ -421,8 +450,18 @@
   </div>
 
   <!-- Pagination -->
-  <div class="pagination-section" *ngIf="totalPages > 1 && !isLoading">
+  <div class="pagination-section" *ngIf="filteredTrxSfData.length > 0 && !isLoading">
     <div class="pagination-controls">
+      <div class="items-per-page">
+        <label>Lignes par page :</label>
+        <select [(ngModel)]="itemsPerPage" (change)="onItemsPerPageChange()" class="form-control">
+          <option [value]="10">10</option>
+          <option [value]="20">20</option>
+          <option [value]="50">50</option>
+          <option [value]="100">100</option>
+        </select>
+      </div>
+      
       <button 
         class="btn pagination-btn" 
         [disabled]="currentPage === 1"
@@ -449,8 +488,8 @@
     </div>
     
     <div class="pagination-info">
-      Page {{ currentPage }} sur {{ totalPages }} 
-      ({{ filteredTrxSfData.length }} éléments au total)
+      Affichage de {{ getStartIndex() + 1 }} à {{ getEndIndex() }} sur {{ filteredTrxSfData.length }} éléments
+      (Page {{ currentPage }} / {{ totalPages }})
     </div>
   </div>
 </div>

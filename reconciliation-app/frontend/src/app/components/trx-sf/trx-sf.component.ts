@@ -1,10 +1,12 @@
 import { Component, OnInit, OnDestroy, ViewChild, ElementRef } from '@angular/core';
 import { FormBuilder, FormGroup } from '@angular/forms';
-import { Subject } from 'rxjs';
+import { Subject, firstValueFrom } from 'rxjs';
 import { takeUntil } from 'rxjs/operators';
 import { TrxSfService, TrxSfData, TrxSfStatistics, ValidationResult } from '../../services/trx-sf.service';
 import { AppStateService } from '../../services/app-state.service';
 import { PopupService } from '../../services/popup.service';
+import { FraisTransactionService } from '../../services/frais-transaction.service';
+import { FraisTransaction } from '../../models/frais-transaction.model';
 
 @Component({
   selector: 'app-trx-sf',
@@ -22,11 +24,252 @@ export class TrxSfComponent implements OnInit, OnDestroy {
   
   // Upload
   selectedFile: File | null = null;
-  fileType: 'full' | 'statut' | null = null; // 'full' = 9 colonnes, 'statut' = 2 colonnes
+  fileType: 'full' | 'statut' | null = null; // 'full' = 8 colonnes, 'statut' = 2 colonnes
   isUploading = false;
   isChangingStatut = false;
   uploadMessage: { type: 'success' | 'error', text: string } | null = null;
   validationResult: any = null;
+  // Aperçu local lors de la validation
+  previewHeaders: string[] = [];
+  previewRows: any[] = [];
+  previewTotal: number = 0;
+  fraisConfigurations: FraisTransaction[] = [];
+
+  private readonly requiredFullHeaders: string[] = [
+    'id transaction',
+    'téléphone client',
+    'montant',
+    'service',
+    'agence',
+    'date transaction',
+    'numéro trans gu',
+    'pays'
+  ];
+
+  private formatExcelDateToIso(value: any): string {
+    // Excel serial date -> JS Date: days since 1899-12-30
+    if (typeof value === 'number' && !isNaN(value)) {
+      const excelEpoch = new Date(Date.UTC(1899, 11, 30));
+      const ms = value * 24 * 60 * 60 * 1000;
+      const date = new Date(excelEpoch.getTime() + ms);
+      const pad = (n: number) => String(n).padStart(2, '0');
+      return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+    }
+    // String dates: try to parse; if fails, return as-is
+    if (typeof value === 'string') {
+      const parsed = new Date(value);
+      if (!isNaN(parsed.getTime())) {
+        const pad = (n: number) => String(n).padStart(2, '0');
+        return `${parsed.getFullYear()}-${pad(parsed.getMonth() + 1)}-${pad(parsed.getDate())} ${pad(parsed.getHours())}:${pad(parsed.getMinutes())}:${pad(parsed.getSeconds())}`;
+      }
+      return value.trim();
+    }
+    return '';
+  }
+
+  private buildNormalizedCsv(headers: string[], rows: any[], isExcelSource: boolean): string {
+    // Map incoming headers (case-insensitive) to canonical keys
+    const headerMap = new Map<string, string>(); // canonical -> source header
+    const lowerToOriginal = new Map<string, string>();
+    headers.forEach(h => lowerToOriginal.set(h.trim().toLowerCase(), h));
+    this.requiredFullHeaders.forEach(canonical => {
+      const src = lowerToOriginal.get(canonical) || canonical; // fallback
+      headerMap.set(canonical, src);
+    });
+
+    const csvHeaders = [
+      'ID Transaction',
+      'Téléphone Client',
+      'Montant',
+      'Service',
+      'Agence',
+      'Date Transaction',
+      'Numéro Trans GU',
+      'Pays',
+      'Frais'
+    ];
+
+    const lines: string[] = [];
+    lines.push(csvHeaders.join(';'));
+
+    rows.forEach(r => {
+      const values: string[] = [];
+      this.requiredFullHeaders.forEach(canonical => {
+        const src = headerMap.get(canonical) as string;
+        let v: any = r[src] ?? r[canonical] ?? '';
+        if (canonical === 'date transaction') {
+          v = this.formatExcelDateToIso(v);
+        }
+        if (v === null || v === undefined) v = '';
+        const s = String(v).replace(/\r|\n|;/g, ' ').trim();
+        values.push(s);
+      });
+      // Calculer FRAIS selon service/agence et montant
+      const service = (r[headerMap.get('service') as string] || r['service'] || '').toString();
+      const agence = (r[headerMap.get('agence') as string] || r['agence'] || '').toString();
+      // Parsing robuste du montant
+      const montantRaw = (r[headerMap.get('montant') as string] || r['montant'] || '').toString();
+      const montantClean = montantRaw.replace(/[^0-9,.-]/g, '').replace(/,(?=\d{2}$)/, '.').replace(/,/g, '');
+      const montant = parseFloat(montantClean || '0') || 0;
+      const fraisCalcules = this.calculateFraisForTransaction(service, agence, montant);
+      values.push(fraisCalcules.toString());
+      lines.push(values.join(';'));
+    });
+
+    return lines.join('\n');
+  }
+
+  private async normalizeFullFile(file: File): Promise<File> {
+    const isCsv = file.name.toLowerCase().endsWith('.csv');
+    const isExcel = file.name.toLowerCase().endsWith('.xlsx') || file.name.toLowerCase().endsWith('.xls');
+
+    if (isCsv) {
+      const text: string = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (e: any) => resolve(e.target.result as string);
+        reader.onerror = () => reject(new Error('Erreur de lecture CSV'));
+        reader.readAsText(file, 'UTF-8');
+      });
+      const lines = text.split('\n').filter(l => l.trim());
+      const headerLine = lines[0] || '';
+      const headers = headerLine.split(/[,;]/).map(h => h.trim());
+      const rows: any[] = [];
+      for (let i = 1; i < lines.length; i++) {
+        const values = lines[i].split(/[,;]/).map(v => v.trim());
+        const row: any = {};
+        headers.forEach((h, idx) => row[h] = values[idx] ?? '');
+        rows.push(row);
+      }
+      // Construire un XLSX normalisé pour préserver l'ordre attendu Frais/Commentaire
+      const XLSX = await import('xlsx');
+      const aoa: any[] = [];
+      // Entêtes dans l'ordre: 8 colonnes + Frais (index 8) + Commentaire (index 9)
+      const xlsxHeaders = [
+        'ID Transaction',
+        'Téléphone Client',
+        'Montant',
+        'Service',
+        'Agence',
+        'Date Transaction',
+        'Numéro Trans GU',
+        'Pays',
+        'Frais',
+        'Commentaire'
+      ];
+      aoa.push(xlsxHeaders);
+      rows.forEach(r => {
+        const headerMap = new Map<string, string>();
+        const lowerToOriginal = new Map<string, string>();
+        headers.forEach(h => lowerToOriginal.set(h.trim().toLowerCase(), h));
+        this.requiredFullHeaders.forEach(canonical => {
+          const src = lowerToOriginal.get(canonical) || canonical;
+          headerMap.set(canonical, src);
+        });
+        const get = (key: string) => r[headerMap.get(key) as string] ?? r[key] ?? '';
+        const montantRaw = (get('montant') || '').toString();
+        const montantClean = montantRaw.replace(/[^0-9,.-]/g, '').replace(/,(?=\d{2}$)/, '.').replace(/,/g, '');
+        const montant = parseFloat(montantClean || '0') || 0;
+        const frais = this.calculateFraisForTransaction(String(get('service') || ''), String(get('agence') || ''), montant);
+        const row = [
+          String(get('id transaction')).trim(),
+          String(get('téléphone client')).trim(),
+          montant,
+          String(get('service')).trim(),
+          String(get('agence')).trim(),
+          this.formatExcelDateToIso(get('date transaction')),
+          String(get('numéro trans gu')).trim(),
+          String(get('pays')).trim(),
+          frais,
+          '' // commentaire vide
+        ];
+        aoa.push(row);
+      });
+      const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.aoa_to_sheet(aoa);
+      XLSX.utils.book_append_sheet(wb, ws, 'TRX_SF');
+      const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+      return new File([wbout], `${file.name.replace(/\.[^.]+$/, '')}_normalized.xlsx`, { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    }
+
+    if (isExcel) {
+      const { data, XLSX }: any = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = async (e: any) => {
+          try {
+            const arr = new Uint8Array(e.target.result as ArrayBuffer);
+            const mod = await import('xlsx');
+            resolve({ data: arr, XLSX: mod });
+          } catch (err) { reject(err); }
+        };
+        reader.onerror = () => reject(new Error('Erreur de lecture Excel'));
+        reader.readAsArrayBuffer(file);
+      });
+      const wb = XLSX.read(data, { type: 'array' });
+      const sheet = wb.Sheets[wb.SheetNames[0]];
+      const rowsAoA: any[] = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+      const headersRow: any[] = (rowsAoA && rowsAoA.length > 0) ? rowsAoA[0] : [];
+      const headersOriginal = headersRow.map((h: any) => String(h || '').trim());
+      const rows: any[] = [];
+      for (let r = 1; r < rowsAoA.length; r++) {
+        const values = rowsAoA[r] as any[];
+        const row: any = {};
+        headersOriginal.forEach((h, idx) => {
+          row[h] = (values && values.length > idx) ? values[idx] : '';
+        });
+        rows.push(row);
+      }
+      // Construire un XLSX normalisé pour respecter l'ordre attendu (Frais col 8, Commentaire col 9)
+      const aoa: any[] = [];
+      const xlsxHeaders = [
+        'ID Transaction',
+        'Téléphone Client',
+        'Montant',
+        'Service',
+        'Agence',
+        'Date Transaction',
+        'Numéro Trans GU',
+        'Pays',
+        'Frais',
+        'Commentaire'
+      ];
+      aoa.push(xlsxHeaders);
+      rows.forEach(r => {
+        const headerMap = new Map<string, string>();
+        const lowerToOriginal = new Map<string, string>();
+        headersOriginal.forEach(h => lowerToOriginal.set(String(h).trim().toLowerCase(), String(h).trim()));
+        this.requiredFullHeaders.forEach(canonical => {
+          const src = lowerToOriginal.get(canonical) || canonical;
+          headerMap.set(canonical, src);
+        });
+        const get = (key: string) => r[headerMap.get(key) as string] ?? r[key] ?? '';
+        const montantRaw = (get('montant') || '').toString();
+        const montantClean = montantRaw.replace(/[^0-9,.-]/g, '').replace(/,(?=\d{2}$)/, '.').replace(/,/g, '');
+        const montant = parseFloat(montantClean || '0') || 0;
+        const frais = this.calculateFraisForTransaction(String(get('service') || ''), String(get('agence') || ''), montant);
+        const row = [
+          String(get('id transaction')).trim(),
+          String(get('téléphone client')).trim(),
+          montant,
+          String(get('service')).trim(),
+          String(get('agence')).trim(),
+          this.formatExcelDateToIso(get('date transaction')),
+          String(get('numéro trans gu')).trim(),
+          String(get('pays')).trim(),
+          frais,
+          ''
+        ];
+        aoa.push(row);
+      });
+      const wb2 = XLSX.utils.book_new();
+      const ws2 = XLSX.utils.aoa_to_sheet(aoa);
+      XLSX.utils.book_append_sheet(wb2, ws2, 'TRX_SF');
+      const wbout2 = XLSX.write(wb2, { bookType: 'xlsx', type: 'array' });
+      return new File([wbout2], `${file.name.replace(/\.[^.]+$/, '')}_normalized.xlsx`, { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    }
+
+    // Fallback: return original
+    return file;
+  }
   
   // Filtres
   filterForm: FormGroup;
@@ -38,7 +281,7 @@ export class TrxSfComponent implements OnInit, OnDestroy {
   
   // Pagination
   currentPage = 1;
-  itemsPerPage = 20;
+  itemsPerPage = 10;
   totalPages = 1;
   
   // Statistiques
@@ -70,7 +313,8 @@ export class TrxSfComponent implements OnInit, OnDestroy {
     private trxSfService: TrxSfService,
     private fb: FormBuilder,
     private appState: AppStateService,
-    private popupService: PopupService
+    private popupService: PopupService,
+    private fraisService: FraisTransactionService
   ) {
     this.filterForm = this.fb.group({
       agence: [''],
@@ -85,11 +329,87 @@ export class TrxSfComponent implements OnInit, OnDestroy {
 
   ngOnInit(): void {
     this.loadTrxSfData();
+    this.loadFraisConfigurations();
     
     // Écouter les changements de filtres
     this.filterForm.valueChanges.subscribe(() => {
       this.applyFilters();
     });
+  }
+
+  private loadFraisConfigurations(): void {
+    this.fraisService.getAllFraisTransactionsActifs()
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: (configs) => {
+          this.fraisConfigurations = configs || [];
+          console.log('📋 Configurations de frais chargées:', this.fraisConfigurations.length);
+        },
+        error: (error) => {
+          console.warn('⚠️ Impossible de charger les configurations de frais:', error);
+          this.fraisConfigurations = [];
+        }
+      });
+  }
+
+  private calculateFraisForTransaction(service: string, agence: string, montant: number): number {
+    if (!this.fraisConfigurations || this.fraisConfigurations.length === 0) {
+      return 0;
+    }
+
+    const normalizeKey = (s: string) => (s || '')
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]/g, '')
+      .trim();
+
+    const nService = normalizeKey(service);
+    const nAgence = normalizeKey(agence);
+
+    const matchExact = this.fraisConfigurations.find(f =>
+      normalizeKey(f.service) === nService &&
+      normalizeKey(f.agence) === nAgence &&
+      f.actif
+    );
+
+    const matchServiceOnly = this.fraisConfigurations.find(f =>
+      normalizeKey(f.service) === nService && f.actif
+    );
+
+    const matchAgenceOnly = this.fraisConfigurations.find(f =>
+      normalizeKey(f.agence) === nAgence && f.actif
+    );
+
+    const matchServiceContains = this.fraisConfigurations.find(f =>
+      nService.includes(normalizeKey(f.service)) && f.actif
+    );
+
+    // Heuristique simple de meilleure correspondance par longueur
+    const scored = this.fraisConfigurations
+      .filter(f => f.actif)
+      .map(f => {
+        const ns = normalizeKey(f.service);
+        let score = 0;
+        if (nService.includes(ns)) score = ns.length;
+        else if (ns.includes(nService)) score = nService.length - 1;
+        return { f, score };
+      })
+      .filter(x => x.score > 0)
+      .sort((a, b) => b.score - a.score);
+
+    const bestServiceMatch = scored.length > 0 ? scored[0].f : undefined;
+
+    const config = matchExact || matchServiceOnly || matchAgenceOnly || matchServiceContains || bestServiceMatch;
+
+    if (!config) {
+      return 0;
+    }
+
+    if (config.typeCalcul === 'POURCENTAGE' && config.pourcentage) {
+      return Math.round((montant * (config.pourcentage / 100)) * 100) / 100;
+    }
+    return config.montantFrais || 0;
   }
 
   ngOnDestroy(): void {
@@ -263,7 +583,7 @@ export class TrxSfComponent implements OnInit, OnDestroy {
       // Pour les fichiers Excel, on laisse l'utilisateur choisir
       // Par défaut, on assume que c'est un fichier complet
       this.fileType = 'full';
-      console.log('✅ Fichier Excel détecté - Type par défaut: Fichier complet (9 colonnes)');
+      console.log('✅ Fichier Excel détecté - Type par défaut: Fichier complet (8 colonnes)');
       return;
     }
     
@@ -281,10 +601,10 @@ export class TrxSfComponent implements OnInit, OnDestroy {
         console.log('   - Nombre de colonnes détectées:', columns.length);
         console.log('   - Première ligne:', firstLine);
         
-        if (columns.length >= 8 && columns.length <= 10) {
-          // Fichier complet (9 colonnes ± 1)
+        if (columns.length >= 7 && columns.length <= 9) {
+          // Fichier complet (8 colonnes ± 1)
           this.fileType = 'full';
-          console.log('✅ Type détecté: Fichier complet (9 colonnes)');
+          console.log('✅ Type détecté: Fichier complet (8 colonnes)');
         } else if (columns.length >= 2 && columns.length <= 4) {
           // Fichier de statut (2 colonnes ± 2)
           this.fileType = 'statut';
@@ -317,10 +637,136 @@ export class TrxSfComponent implements OnInit, OnDestroy {
       return;
     }
 
+    // Validation côté frontend des 8 colonnes requises (full)
+    if (this.fileType === 'full') {
+      const required = [
+        ...this.requiredFullHeaders
+      ];
+
+      const file = this.selectedFile;
+      const isCsv = file.name.toLowerCase().endsWith('.csv');
+      const isExcel = file.name.toLowerCase().endsWith('.xlsx') || file.name.toLowerCase().endsWith('.xls');
+
+      const onHeaders = (headersLower: string[], headersOriginal: string[], getRows: () => any[]) => {
+        const missing = required.filter(h => !headersLower.includes(h));
+        if (missing.length > 0) {
+          this.uploadMessage = { type: 'error', text: `Colonnes manquantes: ${missing.join(', ')}` };
+          this.validationResult = null;
+          this.previewHeaders = [];
+          this.previewRows = [];
+          this.previewTotal = 0;
+          return;
+        }
+        // Construire un aperçu local (total et 5 premières lignes)
+        try {
+          const allRows = getRows();
+          this.previewTotal = allRows.length;
+          this.previewHeaders = headersOriginal;
+          this.previewRows = allRows.slice(0, 5);
+        } catch (e) {
+          console.warn('Aperçu local non disponible:', e);
+          this.previewHeaders = headersOriginal;
+          this.previewRows = [];
+          this.previewTotal = 0;
+        }
+        // Normaliser localement et valider côté backend avec le fichier normalisé
+        this.isUploading = true;
+        this.uploadMessage = null;
+        this.validationResult = null;
+        this.normalizeFullFile(file)
+          .then(normalizedFile => this.trxSfService.validateFile(normalizedFile)
+          .pipe(takeUntil(this.destroy$))
+          .subscribe({
+            next: (result) => {
+              this.validationResult = result;
+              this.isUploading = false;
+            },
+            error: (error) => {
+              console.error('Erreur lors de la validation:', error);
+              this.uploadMessage = { type: 'error', text: 'Erreur lors de la validation du fichier' };
+              this.isUploading = false;
+            }
+          }))
+          .catch(err => {
+            console.error('Erreur normalisation:', err);
+            this.uploadMessage = { type: 'error', text: 'Erreur lors de la normalisation du fichier' };
+            this.isUploading = false;
+          });
+      };
+
+      if (isCsv) {
+        const reader = new FileReader();
+        reader.onload = (e: any) => {
+          const text = e.target.result as string;
+          const lines = text.split('\n').filter(l => l.trim());
+          const firstLine = lines[0] || '';
+          const headers = firstLine.split(/[,;]/).map(h => h.trim());
+          const headersLower = headers.map(h => h.toLowerCase());
+          const getRows = () => {
+            const rows: any[] = [];
+            for (let i = 1; i < lines.length; i++) {
+              const values = lines[i].split(/[,;]/).map(v => v.trim());
+              if (values.length > 0) {
+                const row: any = {};
+                headers.forEach((h, idx) => {
+                  row[h] = values[idx] ?? '';
+                });
+                rows.push(row);
+              }
+            }
+            return rows;
+          };
+          onHeaders(headersLower, headers, getRows);
+        };
+        reader.onerror = () => {
+          this.uploadMessage = { type: 'error', text: 'Erreur de lecture du fichier' };
+        };
+        reader.readAsText(file, 'UTF-8');
+        return;
+      }
+
+      if (isExcel) {
+        const reader = new FileReader();
+        reader.onload = async (e: any) => {
+          try {
+            const data = new Uint8Array(e.target.result as ArrayBuffer);
+            const XLSX = await import('xlsx');
+            const wb = XLSX.read(data, { type: 'array' });
+            const sheet = wb.Sheets[wb.SheetNames[0]];
+            const rows: any[] = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+            const headersRow: any[] = (rows && rows.length > 0) ? rows[0] : [];
+            const headersOriginal = headersRow.map((h: any) => String(h || '').trim());
+            const headersLower = headersOriginal.map((h: any) => String(h || '').trim().toLowerCase());
+            const getRows = () => {
+              const dataRows: any[] = [];
+              for (let r = 1; r < rows.length; r++) {
+                const values = rows[r] as any[];
+                const row: any = {};
+                headersOriginal.forEach((h, idx) => {
+                  row[h] = (values && values.length > idx) ? values[idx] : '';
+                });
+                dataRows.push(row);
+              }
+              return dataRows;
+            };
+            onHeaders(headersLower, headersOriginal, getRows);
+          } catch (err) {
+            console.error('Erreur lecture Excel:', err);
+            this.uploadMessage = { type: 'error', text: 'Erreur lors de la lecture du fichier Excel' };
+          }
+        };
+        reader.onerror = () => {
+          this.uploadMessage = { type: 'error', text: 'Erreur de lecture du fichier Excel' };
+        };
+        reader.readAsArrayBuffer(file);
+        return;
+      }
+    }
+
+    // Par défaut (statut ou type indéterminé), on délègue au backend
     this.isUploading = true;
     this.uploadMessage = null;
     this.validationResult = null;
-
     this.trxSfService.validateFile(this.selectedFile)
       .pipe(takeUntil(this.destroy$))
       .subscribe({
@@ -345,25 +791,40 @@ export class TrxSfComponent implements OnInit, OnDestroy {
     this.isUploading = true;
     this.uploadMessage = null;
 
-    this.trxSfService.uploadFile(this.selectedFile)
-      .pipe(takeUntil(this.destroy$))
-      .subscribe({
-        next: (result) => {
+    const doUpload = (fileToSend: File) => {
+      this.trxSfService.uploadFile(fileToSend)
+        .pipe(takeUntil(this.destroy$))
+        .subscribe({
+          next: (result) => {
+            this.isUploading = false;
+            this.uploadMessage = { 
+              type: 'success', 
+              text: `Fichier uploadé avec succès. ${result.count} transactions importées.` 
+            };
+            this.selectedFile = null;
+            this.validationResult = null;
+            this.loadTrxSfData(); // Recharger les données
+          },
+          error: (error) => {
+            console.error('Erreur lors de l\'upload:', error);
+            this.isUploading = false;
+            this.uploadMessage = { type: 'error', text: 'Erreur lors de l\'upload du fichier' };
+          }
+        });
+    };
+
+    if (this.fileType === 'full') {
+      this.normalizeFullFile(this.selectedFile)
+        .then(normalized => doUpload(normalized))
+        .catch(err => {
+          console.error('Erreur normalisation:', err);
           this.isUploading = false;
-          this.uploadMessage = { 
-            type: 'success', 
-            text: `Fichier uploadé avec succès. ${result.count} transactions importées.` 
-          };
-          this.selectedFile = null;
-          this.validationResult = null;
-          this.loadTrxSfData(); // Recharger les données
-        },
-        error: (error) => {
-          console.error('Erreur lors de l\'upload:', error);
-          this.isUploading = false;
-          this.uploadMessage = { type: 'error', text: 'Erreur lors de l\'upload du fichier' };
-        }
-      });
+          this.uploadMessage = { type: 'error', text: 'Erreur lors de la normalisation du fichier' };
+        });
+      return;
+    }
+
+    doUpload(this.selectedFile);
   }
   
   changeStatutFile(): void {
@@ -467,6 +928,20 @@ export class TrxSfComponent implements OnInit, OnDestroy {
     this.currentPage = page;
   }
 
+  onItemsPerPageChange(): void {
+    this.calculateTotalPages();
+    this.currentPage = 1; // Retour à la première page
+  }
+
+  getStartIndex(): number {
+    return (this.currentPage - 1) * this.itemsPerPage;
+  }
+
+  getEndIndex(): number {
+    const endIndex = this.currentPage * this.itemsPerPage;
+    return Math.min(endIndex, this.filteredTrxSfData.length);
+  }
+
   getUniqueAgences(): string[] {
     return [...new Set(this.trxSfData.map(item => item.agence))].sort();
   }
@@ -556,13 +1031,173 @@ export class TrxSfComponent implements OnInit, OnDestroy {
     return pages;
   }
 
-  exportTrxSfData(): void {
-    // TODO: Implémenter l'export Excel
-    console.log('Export TRX SF data');
+  async exportTrxSfData(): Promise<void> {
+    if (this.filteredTrxSfData.length === 0) {
+      this.showTemporaryMessage('error', 'Aucune donnée à exporter');
+      return;
+    }
+
+    try {
+      // Demander le nom du fichier à l'utilisateur
+      const fileName = await this.promptFileName();
+      if (!fileName) {
+        console.log('Export annulé par l\'utilisateur');
+        return;
+      }
+
+      // Importer ExcelJS dynamiquement
+      const ExcelJS = (await import('exceljs')).Workbook;
+      const workbook = new ExcelJS();
+      const worksheet = workbook.addWorksheet('Transactions SF');
+
+      // Définir les colonnes
+      worksheet.columns = [
+        { header: 'ID Transaction', key: 'idTransaction', width: 20 },
+        { header: 'Téléphone Client', key: 'telephoneClient', width: 15 },
+        { header: 'Montant', key: 'montant', width: 15, style: { numFmt: '#,##0.00' } },
+        { header: 'Service', key: 'service', width: 20 },
+        { header: 'Agence', key: 'agence', width: 15 },
+        { header: 'Date Transaction', key: 'dateTransaction', width: 20 },
+        { header: 'Numéro Trans GU', key: 'numeroTransGu', width: 20 },
+        { header: 'Pays', key: 'pays', width: 10 },
+        { header: 'Statut', key: 'statut', width: 15 },
+        { header: 'Frais', key: 'frais', width: 15, style: { numFmt: '#,##0.00' } },
+        { header: 'Commentaire', key: 'commentaire', width: 30 },
+        { header: 'Date Import', key: 'dateImport', width: 20 }
+      ];
+
+      // Style de l'en-tête
+      worksheet.getRow(1).eachCell(cell => {
+        cell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FF1976D2' }
+        };
+        cell.font = { color: { argb: 'FFFFFFFF' }, bold: true };
+        cell.alignment = { horizontal: 'center', vertical: 'middle' };
+      });
+
+      // Ajouter les données
+      this.filteredTrxSfData.forEach((item, idx) => {
+        const excelRow = worksheet.addRow({
+          idTransaction: item.idTransaction,
+          telephoneClient: item.telephoneClient,
+          montant: item.montant,
+          service: item.service,
+          agence: item.agence,
+          dateTransaction: this.formatDate(item.dateTransaction),
+          numeroTransGu: item.numeroTransGu,
+          pays: item.pays,
+          statut: item.statut,
+          frais: item.frais,
+          commentaire: item.commentaire,
+          dateImport: this.formatDate(item.dateImport)
+        });
+
+        // Appliquer des couleurs selon le statut
+        const statutCell = excelRow.getCell('statut');
+        switch (item.statut) {
+          case 'EN_ATTENTE':
+            statutCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFEB3B' } };
+            statutCell.font = { color: { argb: 'FF000000' }, bold: true };
+            break;
+          case 'TRAITE':
+            statutCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF4CAF50' } };
+            statutCell.font = { color: { argb: 'FFFFFFFF' }, bold: true };
+            break;
+          case 'ERREUR':
+            statutCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF44336' } };
+            statutCell.font = { color: { argb: 'FFFFFFFF' }, bold: true };
+            break;
+        }
+      });
+
+      // Ajouter un résumé en bas
+      const summaryRow = worksheet.addRow([]);
+      const summaryRow2 = worksheet.addRow(['RÉSUMÉ', '', '', '', '', '', '', '', '', '', '', '']);
+      summaryRow2.eachCell(cell => {
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE0E0E0' } };
+        cell.font = { bold: true };
+      });
+
+      const totalMontant = this.filteredTrxSfData.reduce((sum, item) => sum + (item.montant || 0), 0);
+      const totalFrais = this.filteredTrxSfData.reduce((sum, item) => sum + (item.frais || 0), 0);
+      const enAttente = this.filteredTrxSfData.filter(item => item.statut === 'EN_ATTENTE').length;
+      const traite = this.filteredTrxSfData.filter(item => item.statut === 'TRAITE').length;
+      const erreur = this.filteredTrxSfData.filter(item => item.statut === 'ERREUR').length;
+
+      worksheet.addRow(['Total Montant', '', totalMontant.toFixed(2), '', '', '', '', '', '', '', '', '']);
+      worksheet.addRow(['Total Frais', '', '', '', '', '', '', '', '', totalFrais.toFixed(2), '', '']);
+      worksheet.addRow(['En Attente', '', '', '', '', '', '', '', enAttente, '', '', '']);
+      worksheet.addRow(['Traité', '', '', '', '', '', '', '', traite, '', '', '']);
+      worksheet.addRow(['Erreur', '', '', '', '', '', '', '', erreur, '', '', '']);
+      worksheet.addRow(['Total Transactions', '', '', '', '', '', '', '', this.filteredTrxSfData.length, '', '', '']);
+
+      // Générer et télécharger le fichier
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${fileName}.xlsx`;
+      link.click();
+      window.URL.revokeObjectURL(url);
+
+      this.showTemporaryMessage('success', `Export réussi : ${this.filteredTrxSfData.length} transactions exportées`);
+
+    } catch (error) {
+      console.error('Erreur lors de l\'export:', error);
+      this.showTemporaryMessage('error', 'Erreur lors de l\'export des données');
+    }
+  }
+
+  private async promptFileName(): Promise<string | null> {
+    return new Promise((resolve) => {
+      const fileName = prompt('Nom du fichier d\'export (sans extension):', 
+        `TRX_SF_${new Date().toISOString().split('T')[0]}`);
+      resolve(fileName);
+    });
   }
 
   refreshData(): void {
     this.loadTrxSfData();
+  }
+
+  // Téléchargement des modèles de fichiers (CSV)
+  downloadTemplate(type: 'full' | 'statut'): void {
+    const separator = ';';
+    let headers: string[] = [];
+    let fileName = '';
+
+    if (type === 'full') {
+      headers = [
+        'ID Transaction',
+        'Téléphone Client',
+        'Montant',
+        'Service',
+        'Agence',
+        'Date Transaction',
+        'Numéro Trans GU',
+        'Pays',
+        'Frais'
+      ];
+      fileName = 'MODELE_TRX_SF_COMPLET.csv';
+    } else {
+      headers = [
+        'Agence',
+        'Numéro Trans GU'
+      ];
+      fileName = 'MODELE_TRX_SF_STATUT.csv';
+    }
+
+    const content = headers.join(separator) + '\n';
+    const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = fileName;
+    link.click();
+    window.URL.revokeObjectURL(url);
   }
 
   // Méthodes pour la sélection multiple
@@ -763,16 +1398,17 @@ export class TrxSfComponent implements OnInit, OnDestroy {
     try {
       console.log('🔄 Début du traitement du fichier de vérification FRAIS...', file.name);
 
-      const reader = new FileReader();
-      reader.onload = (e: any) => {
-        try {
-          let donneesFichier: any[] = [];
+      const isCsv = file.name.toLowerCase().endsWith('.csv');
+      const isExcel = file.name.toLowerCase().endsWith('.xlsx') || file.name.toLowerCase().endsWith('.xls');
 
-          if (file.name.toLowerCase().endsWith('.csv')) {
-            // Traitement fichier CSV
+      if (isCsv) {
+        const reader = new FileReader();
+        reader.onload = (e: any) => {
+          try {
+            const donneesFichier: any[] = [];
             const csvText = e.target.result;
             const lignes = csvText.split('\n').filter((ligne: string) => ligne.trim());
-            
+
             if (lignes.length < 2) {
               throw new Error('Le fichier CSV doit contenir au moins un en-tête et une ligne de données');
             }
@@ -780,15 +1416,12 @@ export class TrxSfComponent implements OnInit, OnDestroy {
             const entetes = lignes[0].split(';').map((h: string) => h.trim().toLowerCase());
             console.log('📋 En-têtes CSV détectés:', entetes);
 
-            // Vérifier les colonnes requises
             const colonneRequises = ['type operation', 'code proprietaire', 'numero trans gu'];
             const colonnesManquantes = colonneRequises.filter(col => !entetes.includes(col));
-            
             if (colonnesManquantes.length > 0) {
               throw new Error(`Colonnes manquantes dans le fichier: ${colonnesManquantes.join(', ')}\nColonnes attendues: ${colonneRequises.join(', ')}`);
             }
 
-            // Traiter les données
             for (let i = 1; i < lignes.length; i++) {
               const valeurs = lignes[i].split(';').map((v: string) => v.trim());
               if (valeurs.length >= entetes.length) {
@@ -800,30 +1433,74 @@ export class TrxSfComponent implements OnInit, OnDestroy {
               }
             }
 
-          } else if (file.name.toLowerCase().endsWith('.xlsx') || file.name.toLowerCase().endsWith('.xls')) {
-            // Pour les fichiers Excel, on doit utiliser une bibliothèque comme SheetJS
-            this.popupService.showError('❌ Les fichiers Excel ne sont pas encore supportés. Veuillez utiliser un fichier CSV avec des séparateurs point-virgule (;)', 'Format Non Supporté');
+            console.log(`📊 ${donneesFichier.length} lignes trouvées dans le fichier`);
+            this.verifierEtMettreAJourStatuts(donneesFichier);
+          } catch (error) {
+            console.error('❌ Erreur lors du parsing du CSV:', error);
+            this.popupService.showError(`❌ Erreur lors du traitement du fichier:\n${error}`, 'Erreur de Traitement');
             this.isVerifyingFrais = false;
-            return;
           }
-
-          console.log(`📊 ${donneesFichier.length} lignes trouvées dans le fichier`);
-          this.verifierEtMettreAJourStatuts(donneesFichier);
-
-        } catch (error) {
-          console.error('❌ Erreur lors du parsing du fichier:', error);
-          this.popupService.showError(`❌ Erreur lors du traitement du fichier:\n${error}`, 'Erreur de Traitement');
+        };
+        reader.onerror = () => {
+          this.popupService.showError('❌ Erreur lors de la lecture du fichier', 'Erreur de Lecture');
           this.isVerifyingFrais = false;
-        }
-      };
+        };
+        reader.readAsText(file, 'UTF-8');
+        return;
+      }
 
-      reader.onerror = () => {
-        this.popupService.showError('❌ Erreur lors de la lecture du fichier', 'Erreur de Lecture');
-        this.isVerifyingFrais = false;
-      };
+      if (isExcel) {
+        const reader = new FileReader();
+        reader.onload = async (e: any) => {
+          try {
+            const data = new Uint8Array(e.target.result as ArrayBuffer);
+            const XLSX = await import('xlsx');
+            const wb = XLSX.read(data, { type: 'array' });
+            const sheetName = wb.SheetNames[0];
+            const sheet = wb.Sheets[sheetName];
 
-      reader.readAsText(file, 'UTF-8');
+            // Convertir en JSON en conservant la première ligne comme en-têtes
+            const rows: any[] = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+            if (!rows || rows.length === 0) {
+              throw new Error('La feuille Excel est vide');
+            }
 
+            // Normaliser les clés en minuscules
+            const donneesFichier = rows.map(row => {
+              const normalized: any = {};
+              Object.keys(row).forEach(k => {
+                normalized[String(k).trim().toLowerCase()] = row[k];
+              });
+              return normalized;
+            });
+
+            const entetes = Object.keys(donneesFichier[0]);
+            console.log('📋 En-têtes Excel détectés:', entetes);
+
+            const colonneRequises = ['type operation', 'code proprietaire', 'numero trans gu'];
+            const colonnesManquantes = colonneRequises.filter(col => !entetes.includes(col));
+            if (colonnesManquantes.length > 0) {
+              throw new Error(`Colonnes manquantes dans le fichier: ${colonnesManquantes.join(', ')}\nColonnes attendues: ${colonneRequises.join(', ')}`);
+            }
+
+            console.log(`📊 ${donneesFichier.length} lignes trouvées dans le fichier`);
+            this.verifierEtMettreAJourStatuts(donneesFichier);
+          } catch (error) {
+            console.error('❌ Erreur lors du parsing de l\'Excel:', error);
+            this.popupService.showError(`❌ Erreur lors du traitement du fichier:\n${error}`, 'Erreur de Traitement');
+            this.isVerifyingFrais = false;
+          }
+        };
+        reader.onerror = () => {
+          this.popupService.showError('❌ Erreur lors de la lecture du fichier Excel', 'Erreur de Lecture');
+          this.isVerifyingFrais = false;
+        };
+        reader.readAsArrayBuffer(file);
+        return;
+      }
+
+      this.popupService.showError('❌ Format de fichier non supporté. Utilisez CSV, XLS ou XLSX.', 'Format Non Supporté');
+      this.isVerifyingFrais = false;
     } catch (error) {
       console.error('❌ Erreur lors du traitement du fichier:', error);
       this.popupService.showError(`❌ Erreur lors du traitement du fichier: ${error}`, 'Erreur de Traitement');

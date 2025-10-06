@@ -626,6 +626,41 @@
       align-items: center;
       gap: 10px;
       margin-bottom: 10px;
+      flex-wrap: wrap;
+
+      .items-per-page {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 12px;
+        background-color: #f8f9fa;
+        border-radius: 6px;
+        border: 1px solid #dee2e6;
+
+        label {
+          font-size: 14px;
+          font-weight: 500;
+          color: #495057;
+          margin: 0;
+          white-space: nowrap;
+        }
+
+        .form-control {
+          padding: 6px 10px;
+          border: 1px solid #ced4da;
+          border-radius: 4px;
+          font-size: 14px;
+          background-color: white;
+          cursor: pointer;
+          min-width: 70px;
+
+          &:focus {
+            outline: none;
+            border-color: #007bff;
+            box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25);
+          }
+        }
+      }
 
       .pagination-btn {
         padding: 8px 16px;
