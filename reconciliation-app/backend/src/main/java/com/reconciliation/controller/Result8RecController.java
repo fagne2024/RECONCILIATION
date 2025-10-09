@@ -66,11 +66,23 @@ public class Result8RecController {
     public ResponseEntity<?> update(@PathVariable Long id, @RequestBody Result8RecEntity body) {
         return repository.findById(id)
                 .map(existing -> {
-                    existing.setStatus(body.getStatus());
-                    existing.setComment(body.getComment());
-                    existing.setGlpiId(body.getGlpiId());
+                    // Mettre à jour tous les champs modifiables
+                    if (body.getDate() != null) existing.setDate(body.getDate());
+                    if (body.getAgency() != null) existing.setAgency(body.getAgency());
+                    if (body.getService() != null) existing.setService(body.getService());
+                    if (body.getCountry() != null) existing.setCountry(body.getCountry());
+                    
+                    existing.setTotalTransactions(body.getTotalTransactions());
+                    existing.setTotalVolume(body.getTotalVolume());
+                    
+                    if (body.getStatus() != null) existing.setStatus(body.getStatus());
+                    if (body.getComment() != null) existing.setComment(body.getComment());
+                    if (body.getGlpiId() != null) existing.setGlpiId(body.getGlpiId());
+                    
                     Result8RecEntity saved = repository.save(existing);
-                    log.info("✅ result8rec mis à jour id={}", saved.getId());
+                    log.info("✅ result8rec mis à jour id={} - Date: {}, Agency: {}, Service: {}, Country: {}, Transactions: {}, Volume: {}", 
+                            saved.getId(), saved.getDate(), saved.getAgency(), saved.getService(), 
+                            saved.getCountry(), saved.getTotalTransactions(), saved.getTotalVolume());
                     return ResponseEntity.ok(saved);
                 })
                 .orElseGet(() -> ResponseEntity.notFound().build());

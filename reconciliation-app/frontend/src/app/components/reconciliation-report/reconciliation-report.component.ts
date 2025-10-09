@@ -38,6 +38,9 @@ export interface ReconciliationReportData {
             <div class="report-header">
                 <h2>📊 Rapport de Réconciliation <span class="badge" [ngClass]="currentSource === 'live' ? 'badge-live' : 'badge-db'">{{ currentSource === 'live' ? 'En cours' : 'Base sauvegardée' }}</span></h2>
                 <div class="report-actions">
+                    <button class="btn btn-add" (click)="addNewRow()" title="Ajouter une nouvelle ligne">
+                        ➕ Nouvelle ligne
+                    </button>
                     <button class="btn btn-export" (click)="exportToExcel()" [disabled]="!reportData.length">
                         📥 Exporter Excel
                     </button>
@@ -161,13 +164,55 @@ export interface ReconciliationReportData {
                         </tr>
                     </thead>
                     <tbody>
-                        <tr *ngFor="let item of paginatedData; trackBy: trackByItem">
-                            <td class="text-cell">{{formatDate(item.date)}}</td>
-                            <td class="text-cell">{{item.agency}}</td>
-                            <td class="text-cell">{{item.service}}</td>
-                            <td class="text-cell">{{item.country}}</td>
-                            <td class="number-cell">{{item.totalTransactions | number}}</td>
-                            <td class="number-cell">{{item.totalVolume | number}}</td>
+                        <tr *ngFor="let item of paginatedData; trackBy: trackByItem" [class.editing-row]="editingRow === item">
+                            <td class="text-cell">
+                                <ng-container *ngIf="editingRow !== item; else editDate">
+                                    {{formatDate(item.date)}}
+                                </ng-container>
+                                <ng-template #editDate>
+                                    <input [(ngModel)]="item.date" type="date" class="edit-input"/>
+                                </ng-template>
+                            </td>
+                            <td class="text-cell">
+                                <ng-container *ngIf="editingRow !== item; else editAgency">
+                                    {{item.agency}}
+                                </ng-container>
+                                <ng-template #editAgency>
+                                    <input [(ngModel)]="item.agency" class="edit-input" placeholder="Agence"/>
+                                </ng-template>
+                            </td>
+                            <td class="text-cell">
+                                <ng-container *ngIf="editingRow !== item; else editService">
+                                    {{item.service}}
+                                </ng-container>
+                                <ng-template #editService>
+                                    <input [(ngModel)]="item.service" class="edit-input" placeholder="Service"/>
+                                </ng-template>
+                            </td>
+                            <td class="text-cell">
+                                <ng-container *ngIf="editingRow !== item; else editCountry">
+                                    {{item.country}}
+                                </ng-container>
+                                <ng-template #editCountry>
+                                    <input [(ngModel)]="item.country" class="edit-input" placeholder="Pays"/>
+                                </ng-template>
+                            </td>
+                            <td class="number-cell">
+                                <ng-container *ngIf="editingRow !== item; else editTransactions">
+                                    {{item.totalTransactions | number}}
+                                </ng-container>
+                                <ng-template #editTransactions>
+                                    <input [(ngModel)]="item.totalTransactions" type="number" class="edit-input"/>
+                                </ng-template>
+                            </td>
+                            <td class="number-cell">
+                                <ng-container *ngIf="editingRow !== item; else editVolume">
+                                    {{item.totalVolume | number}}
+                                </ng-container>
+                                <ng-template #editVolume>
+                                    <input [(ngModel)]="item.totalVolume" type="number" class="edit-input"/>
+                                </ng-template>
+                            </td>
                             <td class="match-cell">{{item.matches | number}}</td>
                             <td class="bo-only-cell">{{item.boOnly | number}}</td>
                             <td class="partner-only-cell">{{item.partnerOnly | number}}</td>
@@ -179,28 +224,41 @@ export interface ReconciliationReportData {
                             </td>
                             <td class="text-cell">
                                 <div class="glpi-cell">
-                                    <ng-container *ngIf="item.glpiId && item.glpiId.trim(); else glpiInput">
+                                    <ng-container *ngIf="item.glpiId && item.glpiId.trim() && editingRow !== item; else glpiInput">
                                         <a class="glpi-link" [href]="glpiBaseUrl + item.glpiId" target="_blank" rel="noopener noreferrer" title="Ouvrir le ticket GLPI">{{item.glpiId}}</a>
                                     </ng-container>
                                     <ng-template #glpiInput>
-                                        <input [(ngModel)]="item.glpiId" placeholder="ID GLPI" class="filter-input"/>
+                                        <input [(ngModel)]="item.glpiId" placeholder="ID GLPI" class="edit-input"/>
                                     </ng-template>
                                 </div>
                             </td>
                             <td class="select-cell">
-                                <select [(ngModel)]="item.status" class="cell-select">
-                                    <option *ngFor="let s of statusOptions" [ngValue]="s">{{s}}</option>
-                                </select>
+                                <ng-container *ngIf="editingRow !== item; else editStatus">
+                                    <span [class]="getStatusClass(item.status)">{{item.status}}</span>
+                                </ng-container>
+                                <ng-template #editStatus>
+                                    <select [(ngModel)]="item.status" class="edit-select">
+                                        <option *ngFor="let s of statusOptions" [ngValue]="s">{{s}}</option>
+                                    </select>
+                                </ng-template>
                             </td>
                             <td class="select-cell">
-                                <select [(ngModel)]="item.comment" class="cell-select">
-                                    <option *ngFor="let c of commentOptions" [ngValue]="c">{{c}}</option>
-                                </select>
+                                <ng-container *ngIf="editingRow !== item; else editComment">
+                                    <span class="comment-text">{{item.comment}}</span>
+                                </ng-container>
+                                <ng-template #editComment>
+                                    <textarea [(ngModel)]="item.comment" class="edit-textarea" placeholder="Commentaire" rows="2"></textarea>
+                                </ng-template>
                             </td>
                             <td class="actions-cell">
-                                <button class="icon-btn icon-save" title="Sauvegarder" aria-label="Sauvegarder" (click)="confirmAndSave(item)">💾</button>
-                                <button class="icon-btn icon-save" title="Mettre à jour" aria-label="Mettre à jour" (click)="updateRow(item)" [disabled]="!item.id">✅</button>
-                                <button class="icon-btn icon-delete" title="Supprimer" aria-label="Supprimer" (click)="deleteRow(item)" [disabled]="!item.id">🗑️</button>
+                                <ng-container *ngIf="editingRow !== item; else editingActions">
+                                    <button class="icon-btn icon-edit" title="Modifier" aria-label="Modifier" (click)="startEdit(item)">✏️</button>
+                                    <button class="icon-btn icon-delete" title="Supprimer" aria-label="Supprimer" (click)="deleteRow(item)" [disabled]="!item.id">🗑️</button>
+                                </ng-container>
+                                <ng-template #editingActions>
+                                    <button class="icon-btn icon-save" title="Sauvegarder les modifications" aria-label="Sauvegarder" (click)="saveEdit(item)">💾</button>
+                                    <button class="icon-btn icon-cancel" title="Annuler" aria-label="Annuler" (click)="cancelEdit(item)">❌</button>
+                                </ng-template>
                             </td>
                         </tr>
                     </tbody>
@@ -363,6 +421,16 @@ export interface ReconciliationReportData {
 
         .btn-report:hover:not(:disabled) {
             background: #5a32a3;
+            transform: translateY(-1px);
+        }
+
+        .btn-add {
+            background: #17a2b8;
+            color: white;
+        }
+
+        .btn-add:hover:not(:disabled) {
+            background: #138496;
             transform: translateY(-1px);
         }
 
@@ -718,6 +786,98 @@ export interface ReconciliationReportData {
             border-color: #0056b3;
         }
 
+        /* Styles pour l'édition en ligne */
+        .editing-row {
+            background: #fff3cd !important;
+            border: 2px solid #ffc107 !important;
+        }
+
+        .editing-row:hover {
+            background: #fff3cd !important;
+        }
+
+        .edit-input, .edit-select, .edit-textarea {
+            width: 100%;
+            padding: 6px 8px;
+            border: 1px solid #007bff;
+            border-radius: 4px;
+            background: white;
+            font-size: 0.9rem;
+            box-sizing: border-box;
+        }
+
+        .edit-input:focus, .edit-select:focus, .edit-textarea:focus {
+            outline: none;
+            border-color: #0056b3;
+            box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25);
+        }
+
+        .edit-textarea {
+            resize: vertical;
+            min-height: 60px;
+            font-family: inherit;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            text-align: center;
+            min-width: 80px;
+        }
+
+        .status-ok {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .status-nok {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .status-reporting-incomplet {
+            background: #fff3cd;
+            color: #856404;
+        }
+
+        .status-reporting-indisponible {
+            background: #d1ecf1;
+            color: #0c5460;
+        }
+
+        .status-en-cours..... {
+            background: #e2e3e5;
+            color: #383d41;
+        }
+
+        .comment-text {
+            font-size: 0.85rem;
+            line-height: 1.3;
+            max-width: 150px;
+            word-wrap: break-word;
+        }
+
+        .icon-edit {
+            color: #007bff;
+        }
+
+        .icon-edit:hover {
+            background: rgba(0, 123, 255, 0.1);
+        }
+
+        .icon-cancel {
+            color: #6c757d;
+        }
+
+        .icon-cancel:hover {
+            background: rgba(108, 117, 125, 0.1);
+        }
+
+
+
 
         @media (max-width: 768px) {
             .report-filters {
@@ -778,6 +938,10 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
 
     statusOptions: string[] = ['OK', 'NOK', 'REPORTING INCOMPLET', 'REPORTING INDISPONIBLE', 'EN COURS.....'];
     commentOptions: string[] = ['ECARTS TRANSMIS', "PAS D'ECARTS CONSTATES", 'NOK'];
+    
+    // Propriétés pour l'édition en ligne
+    editingRow: ReconciliationReportData | null = null;
+    originalData: ReconciliationReportData | null = null;
 
     constructor(
         private route: ActivatedRoute,
@@ -1479,6 +1643,12 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         if (!confirmed) return;
 
         const payload = {
+            date: item.date,
+            agency: item.agency,
+            service: item.service,
+            country: item.country,
+            totalTransactions: item.totalTransactions,
+            totalVolume: item.totalVolume,
             status: item.status,
             comment: item.comment,
             glpiId: item.glpiId || ''
@@ -1492,6 +1662,8 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         .then(r => r.ok ? r.json() : Promise.reject(r))
         .then(() => {
             this.popupService.showSuccess('Ligne mise à jour avec succès');
+            // Rafraîchir les données après la mise à jour
+            this.loadSavedReportFromDatabase();
         })
         .catch(err => {
             console.error('❌ Erreur de mise à jour', err);
@@ -1761,5 +1933,106 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
 
     getPaginationStartIndex(): number {
         return (this.currentPage - 1) * this.itemsPerPage + 1;
+    }
+
+    // Méthodes pour l'édition en ligne
+    startEdit(item: ReconciliationReportData) {
+        // Sauvegarder une copie des données originales
+        this.originalData = { ...item };
+        this.editingRow = item;
+    }
+
+    cancelEdit(item: ReconciliationReportData) {
+        if (this.originalData) {
+            // Restaurer les données originales
+            Object.assign(item, this.originalData);
+        }
+        this.editingRow = null;
+        this.originalData = null;
+    }
+
+    async saveEdit(item: ReconciliationReportData) {
+        // Valider les données avant sauvegarde
+        if (!this.validateEditData(item)) {
+            return;
+        }
+
+        // Recalculer le taux de correspondance si nécessaire
+        this.recalculateMatchRate(item);
+
+        // Si c'est une nouvelle ligne (pas d'ID), sauvegarder
+        if (!item.id) {
+            await this.confirmAndSave(item);
+        } else {
+            // Si c'est une ligne existante, mettre à jour
+            await this.updateRow(item);
+        }
+
+        // Sortir du mode édition
+        this.editingRow = null;
+        this.originalData = null;
+    }
+
+    private validateEditData(item: ReconciliationReportData): boolean {
+        if (!item.date || !item.agency || !item.service || !item.country) {
+            this.popupService.showError('Données invalides', 'Veuillez remplir tous les champs obligatoires (Date, Agence, Service, Pays)');
+            return false;
+        }
+
+        if (item.totalTransactions < 0 || item.totalVolume < 0) {
+            this.popupService.showError('Données invalides', 'Les valeurs numériques ne peuvent pas être négatives');
+            return false;
+        }
+
+        return true;
+    }
+
+    private recalculateMatchRate(item: ReconciliationReportData) {
+        const total = item.matches + item.boOnly + item.partnerOnly + item.mismatches;
+        if (total > 0) {
+            item.matchRate = (item.matches / total) * 100;
+        } else {
+            item.matchRate = 0;
+        }
+        
+        // Ne pas écraser le statut et commentaire s'ils ont été modifiés manuellement
+        // On les garde tels quels pour respecter les modifications de l'utilisateur
+    }
+
+    // Méthode pour créer une nouvelle ligne
+    addNewRow() {
+        const newRow: ReconciliationReportData = {
+            date: new Date().toISOString().split('T')[0],
+            agency: '',
+            service: '',
+            country: '',
+            glpiId: '',
+            totalTransactions: 0,
+            totalVolume: 0,
+            matches: 0,
+            boOnly: 0,
+            partnerOnly: 0,
+            mismatches: 0,
+            matchRate: 0,
+            status: '',
+            comment: ''
+        };
+
+        // Ajouter au début du tableau
+        this.reportData.unshift(newRow);
+        
+        // Mettre à jour les données filtrées et la pagination
+        this.extractUniqueValues();
+        this.filterReport();
+        
+        // Commencer l'édition de la nouvelle ligne
+        this.startEdit(newRow);
+    }
+
+    // Méthode pour convertir le statut en classe CSS
+    getStatusClass(status: string): string {
+        if (!status) return 'status-badge';
+        const cleanStatus = status.toLowerCase().replace(/\s+/g, '-');
+        return `status-badge status-${cleanStatus}`;
     }
 }

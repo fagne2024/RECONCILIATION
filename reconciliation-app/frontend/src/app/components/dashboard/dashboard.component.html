@@ -14,6 +14,25 @@
         </div>
     </div>
 
+    <!-- Bande défilante des soldes par compte -->
+    <div class="scrolling-banner-wrapper" *ngIf="accountBalances && accountBalances.length > 0">
+        <div class="scrolling-banner-header">
+            <span class="banner-title">{{ bannerTitle }}</span>
+            <span class="accounts-count">{{ accountBalances.length / 2 }} comptes</span>
+        </div>
+        <div class="scrolling-banner-container">
+            <div class="scrolling-banner">
+                <div class="scrolling-content" [style.animation-duration]="getScrollDuration() + 's'">
+                    <div *ngFor="let balance of accountBalances" class="balance-item">
+                        <span class="country-flag">{{ balance.flag }}</span>
+                        <span class="account-name">{{ balance.accountName }}</span>
+                        <span class="account-balance">{{ balance.balance | number:'1.0-0' }} FCFA</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div class="dashboard-info">
         <div class="info-section">
             <h3>💡 Fonctionnalités principales</h3>

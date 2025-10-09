@@ -79,6 +79,7 @@ export class TraitementComponent implements OnInit, AfterViewInit {
   concatSeparator: string = ' ';
   concatOrderMode: boolean = false;
 
+  exportTypePrefix: string = '';
   exportTypeSuffix: string = '';
   exportTypeCustomSuffix: string = '';
   exportTypeDescription: string = '';
@@ -2871,8 +2872,11 @@ export class TraitementComponent implements OnInit, AfterViewInit {
           sufixe = this.exportTypeSuffix.replace(/[^a-zA-Z0-9_-]/g, '_');
           console.log(`🔧 Suffixe prédéfini utilisé: "${this.exportTypeSuffix}" → "${sufixe}"`);
         }
+        const prefixe = this.exportTypePrefix ? this.exportTypePrefix.replace(/[^a-zA-Z0-9_-]/g, '_') : '';
         const description = this.exportTypeDescription ? this.exportTypeDescription.replace(/[^a-zA-Z0-9_-]/g, '_') : '';
-        let baseFileName = safeType;
+        let baseFileName = '';
+        if (prefixe) baseFileName = prefixe + '_';
+        baseFileName += safeType;
         if (sufixe) baseFileName += `_` + sufixe;
         if (description) baseFileName += `_` + description;
 
@@ -3972,6 +3976,7 @@ export class TraitementComponent implements OnInit, AfterViewInit {
           concatCols: this.concatCols,
           concatNewCol: this.concatNewCol,
           concatSeparator: this.concatSeparator,
+          exportTypePrefix: this.exportTypePrefix,
           exportTypeSuffix: this.exportTypeSuffix,
           exportTypeCustomSuffix: this.exportTypeCustomSuffix,
           exportTypeDescription: this.exportTypeDescription,
@@ -4073,6 +4078,7 @@ export class TraitementComponent implements OnInit, AfterViewInit {
     this.concatCols = [];
     this.concatNewCol = '';
     this.concatSeparator = ' ';
+    this.exportTypePrefix = '';
     this.exportTypeSuffix = '';
     this.exportTypeCustomSuffix = '';
     this.exportTypeDescription = '';

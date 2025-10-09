@@ -816,6 +816,10 @@
         </div>
       </div>
       <div class="filter-group">
+        <label>Préfixe du fichier :</label>
+        <input type="text" [(ngModel)]="exportTypePrefix" placeholder="Préfixe (optionnel)" class="filter-input">
+      </div>
+      <div class="filter-group">
         <label>Suffixe du fichier :</label>
         <select [(ngModel)]="exportTypeSuffix" class="filter-input" (change)="onExportTypeSuffixChange()">
           <option value="">(aucun)</option>

@@ -8,6 +8,7 @@ import * as XLSX from 'xlsx';
 import { ChartConfiguration } from 'chart.js';
 import { AgencySummaryService } from '../../services/agency-summary.service';
 import { OperationService } from '../../services/operation.service';
+import { CompteService } from '../../services/compte.service';
 import { MatSelectModule } from '@angular/material/select';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatOptionModule } from '@angular/material/core';
@@ -164,6 +165,10 @@ export class DashboardComponent implements OnInit, OnDestroy {
     totalVolume: number = 0;
     totalTransactions: number = 0;
     totalClients: number = 0;
+
+    // Soldes par compte pour la bande défilante
+    accountBalances: Array<{accountName: string, countryCode: string, balance: number, flag: string}> = [];
+    bannerTitle: string = '💰 Soldes des comptes clients';
 
     // Ajout d'une fonction utilitaire pour filtrer par période
     private filterByPeriod<T extends { date?: string; dateOperation?: string }>(data: T[]): T[] {
@@ -480,7 +485,8 @@ export class DashboardComponent implements OnInit, OnDestroy {
         private dashboardService: DashboardService,
         private appStateService: AppStateService,
         private agencySummaryService: AgencySummaryService,
-        private operationService: OperationService
+        private operationService: OperationService,
+        private compteService: CompteService
     ) {}
 
     ngOnInit() {
@@ -488,6 +494,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
         this.loadFilterOptions();
         this.loadAgencySummaryData();
         this.loadAllOperations();
+        this.loadAccountBalances();
         
         // Charger les métriques détaillées après un court délai pour s'assurer que les autres données sont chargées
         setTimeout(() => {
@@ -1007,6 +1014,9 @@ export class DashboardComponent implements OnInit, OnDestroy {
         this.loadDetailedMetrics();
         this.loadTransactionCreatedStats();
         
+        // Recharger les soldes pour la bande défilante
+        this.loadAccountBalances();
+        
         // Afficher un message de confirmation
         setTimeout(() => {
             console.log('Dashboard metrics refreshed successfully');
@@ -1381,5 +1391,435 @@ export class DashboardComponent implements OnInit, OnDestroy {
         }
         alert('Vous avez cliqué sur : ' + label);
       }
+    }
+
+    // Fonction pour obtenir le drapeau d'un pays basé sur son code
+    getCountryFlag(countryCode: string): string {
+      const flagMap: {[key: string]: string} = {
+        // Afrique Centrale
+        'CM': '🇨🇲', // Cameroun
+        'CF': '🇨🇫', // Centrafrique
+        'TD': '🇹🇩', // Tchad
+        'CG': '🇨🇬', // Congo
+        'CD': '🇨🇩', // RDC (Congo Démocratique)
+        'GQ': '🇬🇶', // Guinée Équatoriale
+        'GA': '🇬🇦', // Gabon
+        'ST': '🇸🇹', // Sao Tomé-et-Principe
+        'AO': '🇦🇴', // Angola
+        
+        // Afrique de l'Ouest
+        'CI': '🇨🇮', // Côte d'Ivoire
+        'BF': '🇧🇫', // Burkina Faso
+        'SN': '🇸🇳', // Sénégal
+        'TG': '🇹🇬', // Togo
+        'BJ': '🇧🇯', // Bénin
+        'ML': '🇲🇱', // Mali
+        'NE': '🇳🇪', // Niger
+        'GN': '🇬🇳', // Guinée
+        'GW': '🇬🇼', // Guinée-Bissau
+        'SL': '🇸🇱', // Sierra Leone
+        'LR': '🇱🇷', // Liberia
+        'GH': '🇬🇭', // Ghana
+        'NG': '🇳🇬', // Nigeria
+        'MR': '🇲🇷', // Mauritanie
+        'GM': '🇬🇲', // Gambie
+        'CV': '🇨🇻', // Cap-Vert
+        
+        // Afrique de l'Est
+        'KE': '🇰🇪', // Kenya
+        'TZ': '🇹🇿', // Tanzanie
+        'UG': '🇺🇬', // Ouganda
+        'RW': '🇷🇼', // Rwanda
+        'BI': '🇧🇮', // Burundi
+        'ET': '🇪🇹', // Éthiopie
+        'SO': '🇸🇴', // Somalie
+        'DJ': '🇩🇯', // Djibouti
+        'ER': '🇪🇷', // Érythrée
+        'SS': '🇸🇸', // Soudan du Sud
+        'SD': '🇸🇩', // Soudan
+        'SC': '🇸🇨', // Seychelles
+        'MU': '🇲🇺', // Maurice
+        'KM': '🇰🇲', // Comores
+        'MG': '🇲🇬', // Madagascar
+        
+        // Afrique du Nord
+        'MA': '🇲🇦', // Maroc
+        'DZ': '🇩🇿', // Algérie
+        'TN': '🇹🇳', // Tunisie
+        'LY': '🇱🇾', // Libye
+        'EG': '🇪🇬', // Égypte
+        'EH': '🇪🇭', // Sahara Occidental
+        
+        // Afrique Australe
+        'ZA': '🇿🇦', // Afrique du Sud
+        'NA': '🇳🇦', // Namibie
+        'BW': '🇧🇼', // Botswana
+        'ZW': '🇿🇼', // Zimbabwe
+        'ZM': '🇿🇲', // Zambie
+        'MW': '🇲🇼', // Malawi
+        'MZ': '🇲🇿', // Mozambique
+        'SZ': '🇸🇿', // Eswatini
+        'LS': '🇱🇸', // Lesotho
+        
+        // Europe
+        'FR': '🇫🇷', // France
+        'GB': '🇬🇧', // Royaume-Uni
+        'DE': '🇩🇪', // Allemagne
+        'IT': '🇮🇹', // Italie
+        'ES': '🇪🇸', // Espagne
+        'PT': '🇵🇹', // Portugal
+        'BE': '🇧🇪', // Belgique
+        'NL': '🇳🇱', // Pays-Bas
+        'CH': '🇨🇭', // Suisse
+        'AT': '🇦🇹', // Autriche
+        'GR': '🇬🇷', // Grèce
+        'PL': '🇵🇱', // Pologne
+        'RO': '🇷🇴', // Roumanie
+        'CZ': '🇨🇿', // République Tchèque
+        'SE': '🇸🇪', // Suède
+        'NO': '🇳🇴', // Norvège
+        'DK': '🇩🇰', // Danemark
+        'FI': '🇫🇮', // Finlande
+        'IE': '🇮🇪', // Irlande
+        'RU': '🇷🇺', // Russie
+        'UA': '🇺🇦', // Ukraine
+        
+        // Amériques
+        'US': '🇺🇸', // États-Unis
+        'CA': '🇨🇦', // Canada
+        'MX': '🇲🇽', // Mexique
+        'BR': '🇧🇷', // Brésil
+        'AR': '🇦🇷', // Argentine
+        'CL': '🇨🇱', // Chili
+        'CO': '🇨🇴', // Colombie
+        'PE': '🇵🇪', // Pérou
+        'VE': '🇻🇪', // Venezuela
+        
+        // Asie
+        'CN': '🇨🇳', // Chine
+        'JP': '🇯🇵', // Japon
+        'IN': '🇮🇳', // Inde
+        'KR': '🇰🇷', // Corée du Sud
+        'SA': '🇸🇦', // Arabie Saoudite
+        'AE': '🇦🇪', // Émirats Arabes Unis
+        'TR': '🇹🇷', // Turquie
+        'IL': '🇮🇱', // Israël
+        'TH': '🇹🇭', // Thaïlande
+        'VN': '🇻🇳', // Vietnam
+        'SG': '🇸🇬', // Singapour
+        'MY': '🇲🇾', // Malaisie
+        'ID': '🇮🇩', // Indonésie
+        'PH': '🇵🇭', // Philippines
+        'PK': '🇵🇰', // Pakistan
+        'BD': '🇧🇩', // Bangladesh
+        'LK': '🇱🇰', // Sri Lanka
+        
+        // Océanie
+        'AU': '🇦🇺', // Australie
+        'NZ': '🇳🇿', // Nouvelle-Zélande
+        
+        // Moyen-Orient
+        'LB': '🇱🇧', // Liban
+        'JO': '🇯🇴', // Jordanie
+        'SY': '🇸🇾', // Syrie
+        'IQ': '🇮🇶', // Irak
+        'IR': '🇮🇷', // Iran
+        'KW': '🇰🇼', // Koweït
+        'QA': '🇶🇦', // Qatar
+        'BH': '🇧🇭', // Bahreïn
+        'OM': '🇴🇲', // Oman
+        'YE': '🇾🇪', // Yémen
+        
+        // Autres zones
+        'HT': '🇭🇹', // Haïti
+      };
+      return flagMap[countryCode?.toUpperCase()] || '🌍';
+    }
+
+    // Fonction pour extraire le code pays du nom du compte
+    private extractCountryCodeFromAccountName(accountName: string): string {
+      // Chercher les préfixes de pays dans le nom du compte
+      const upperName = accountName.toUpperCase();
+      console.log('[EXTRACT] Extraction pour:', accountName, '->', upperName);
+      
+      // Mapping des préfixes vers les codes pays
+      const prefixMap: {[key: string]: string} = {
+        'CI_': 'CI',
+        'CM_': 'CM',
+        'BF_': 'BF',
+        'SN_': 'SN',
+        'TG_': 'TG',
+        'BJ_': 'BJ',
+        'ML_': 'ML',
+        'NE_': 'NE',
+        'GN_': 'GN',
+        'CD_': 'CD',
+        'CG_': 'CG',
+        'GA_': 'GA',
+        'TD_': 'TD',
+        'CF_': 'CF',
+        'GQ_': 'GQ',
+      };
+      
+      // Chercher un préfixe correspondant
+      for (const [prefix, code] of Object.entries(prefixMap)) {
+        if (upperName.startsWith(prefix)) {
+          console.log('[EXTRACT] Trouvé préfixe:', prefix, '-> code:', code);
+          return code;
+        }
+      }
+      
+      // Chercher les suffixes de pays dans le nom du compte (plus spécifique)
+      const suffixMap: {[key: string]: string} = {
+        'CM': 'CM',
+        'CI': 'CI',
+        'BF': 'BF',
+        'SN': 'SN',
+        'TG': 'TG',
+        'BJ': 'BJ',
+        'ML': 'ML',
+        'NE': 'NE',
+        'GN': 'GN',
+      };
+      
+      // Chercher d'abord les suffixes exacts (plus précis)
+      for (const [suffix, code] of Object.entries(suffixMap)) {
+        if (upperName.endsWith(suffix)) {
+          console.log('[EXTRACT] Trouvé suffixe exact:', suffix, '-> code:', code);
+          return code;
+        }
+      }
+      
+      // Ensuite chercher les suffixes dans le nom (moins précis)
+      for (const [suffix, code] of Object.entries(suffixMap)) {
+        if (upperName.includes(suffix) && !upperName.startsWith(suffix + '_')) {
+          console.log('[EXTRACT] Trouvé suffixe dans nom:', suffix, '-> code:', code);
+          return code;
+        }
+      }
+      
+      console.log('[EXTRACT] Aucun code pays trouvé pour:', accountName);
+      return '';
+    }
+
+    // Fonction pour charger les soldes par compte (DEPUIS LES COMPTES DIRECTEMENT)
+    loadAccountBalances() {
+      // Récupérer TOUS les comptes depuis le service Compte
+      this.compteService.getAllComptes().subscribe({
+        next: (comptes: any[]) => {
+          console.log('[BALANCES] Comptes reçus:', comptes.length, 'comptes');
+          
+          // Filtrer les comptes clients (avec un solde > 0 et de type "client")
+          const comptesClients = comptes.filter(compte => {
+            const hasSolde = compte.solde && compte.solde > 0;
+            const isClientType = compte.type === 'client' || compte.categorie === 'client';
+            
+            console.log('[BALANCES] Compte:', compte.numeroCompte, 
+              '- Type:', compte.type, 
+              '- Catégorie:', compte.categorie, 
+              '- Solde:', compte.solde,
+              '- Est client:', isClientType);
+            
+            return hasSolde && isClientType;
+          });
+          
+          console.log('[BALANCES] Comptes clients avec solde:', comptesClients.length, 'comptes');
+          
+          // Si aucun compte client trouvé, afficher tous les comptes avec solde > 0
+          if (comptesClients.length === 0) {
+            console.log('[BALANCES] ⚠️ Aucun compte client trouvé, affichage de tous les comptes avec solde');
+            const allComptesWithSolde = comptes.filter(compte => compte.solde && compte.solde > 0);
+            console.log('[BALANCES] Comptes avec solde (tous types):', allComptesWithSolde.length, 'comptes');
+            
+            // Convertir tous les comptes avec solde
+            this.accountBalances = allComptesWithSolde.map(compte => {
+              const accountName = compte.numeroCompte || compte.codeProprietaire;
+              let country = compte.pays;
+              
+              if (!country || country.trim() === '') {
+                country = this.extractCountryCodeFromAccountName(accountName);
+              }
+              
+              return {
+                accountName: accountName,
+                countryCode: country || '',
+                balance: compte.solde || 0,
+                flag: this.getCountryFlag(country || '')
+              };
+            });
+            
+            this.bannerTitle = '💰 Soldes de tous les comptes';
+          } else {
+            // Convertir en format pour l'affichage
+            this.accountBalances = comptesClients.map(compte => {
+              const accountName = compte.numeroCompte || compte.codeProprietaire;
+              let country = compte.pays;
+              
+              // Si le code pays n'est pas dans les données, l'extraire du nom du compte
+              if (!country || country.trim() === '') {
+                console.log('[BALANCES] Pays manquant pour:', accountName, '- extraction depuis le nom');
+                country = this.extractCountryCodeFromAccountName(accountName);
+                console.log('[BALANCES] Pays extrait:', country, 'pour:', accountName);
+              } else {
+                console.log('[BALANCES] Pays trouvé dans données:', country, 'pour:', accountName);
+              }
+              
+              return {
+                accountName: accountName,
+                countryCode: country || '',
+                balance: compte.solde || 0,
+                flag: this.getCountryFlag(country || '')
+              };
+            });
+            
+            this.bannerTitle = '💰 Soldes des comptes clients';
+          }
+          
+          // Filtrer les comptes avec solde > 0
+          this.accountBalances = this.accountBalances.filter(b => b.balance > 0);
+          
+          // Trier par solde décroissant
+          this.accountBalances.sort((a, b) => b.balance - a.balance);
+          
+          console.log('[BALANCES] Nombre de comptes après filtrage:', this.accountBalances.length);
+          console.log('[BALANCES] Tous les comptes avec codes pays:', this.accountBalances.map(b => 
+            `${b.flag} [${b.countryCode}] ${b.accountName}: ${b.balance.toLocaleString()}`
+          ));
+          
+          
+          // Dupliquer pour effet de boucle infinie
+          this.accountBalances = [...this.accountBalances, ...this.accountBalances];
+          
+          console.log('[BALANCES] Total items dans la bande (avec duplication):', this.accountBalances.length);
+        },
+        error: (err) => {
+          console.error('Erreur lors du chargement des soldes:', err);
+          // Fallback: essayer avec agencySummaryService
+          this.loadAccountBalancesFromSummary();
+        }
+      });
+    }
+    
+    // Méthode de fallback utilisant agencySummaryService
+    // NOTE: Cette méthode ne peut pas filtrer par type d'opération car agencySummaryService
+    // ne fournit pas le détail des types d'opérations, seulement les totaux par agence
+    private loadAccountBalancesFromSummary() {
+      this.agencySummaryService.getAllSummaries().subscribe({
+        next: (data: any[]) => {
+          console.log('[BALANCES FALLBACK] Données reçues:', data.length, 'enregistrements');
+          
+          const balancesByAccount: {[key: string]: {balance: number, countryCode: string}} = {};
+          
+          data.forEach((item: any) => {
+            const accountName = item.agency;
+            let country = item.pays || item.country;
+            
+            if (accountName && accountName.trim() !== '') {
+              // Si le code pays n'est pas dans les données, l'extraire du nom du compte
+              if (!country || country.trim() === '') {
+                country = this.extractCountryCodeFromAccountName(accountName);
+              }
+              
+              if (!balancesByAccount[accountName]) {
+                balancesByAccount[accountName] = {
+                  balance: 0,
+                  countryCode: country || ''
+                };
+              }
+              balancesByAccount[accountName].balance += Number(item.totalVolume) || 0;
+              if (!balancesByAccount[accountName].countryCode && country) {
+                balancesByAccount[accountName].countryCode = country;
+              }
+            }
+          });
+          
+          this.accountBalances = Object.keys(balancesByAccount)
+            .map(accountName => ({
+              accountName: accountName,
+              countryCode: balancesByAccount[accountName].countryCode,
+              balance: balancesByAccount[accountName].balance,
+              flag: this.getCountryFlag(balancesByAccount[accountName].countryCode)
+            }))
+            .filter(b => b.balance > 0);
+          
+          this.accountBalances.sort((a, b) => b.balance - a.balance);
+          this.accountBalances = [...this.accountBalances, ...this.accountBalances];
+          
+          console.log('[BALANCES FALLBACK] Comptes chargés:', this.accountBalances.length / 2);
+          console.log('[BALANCES FALLBACK] Tous les comptes avec codes pays:', this.accountBalances.slice(0, this.accountBalances.length / 2).map(b => 
+            `${b.flag} [${b.countryCode}] ${b.accountName}: ${b.balance.toLocaleString()}`
+          ));
+        },
+        error: (err) => {
+          console.error('Erreur lors du chargement des soldes (fallback):', err);
+        }
+      });
+    }
+
+    // Fonction pour calculer la durée d'animation en fonction du nombre de comptes
+    getScrollDuration(): number {
+      // Diviser par 2 car on a dupliqué les comptes
+      const uniqueAccountsCount = this.accountBalances.length / 2;
+      // Durée de base: 60s, puis ajouter 3s par compte supplémentaire
+      // Minimum 60s, maximum 300s (5 minutes)
+      const duration = Math.min(300, Math.max(60, 60 + (uniqueAccountsCount - 5) * 3));
+      return duration;
+    }
+
+    // Fonction pour obtenir le nom complet du pays
+    getCountryName(countryCode: string): string {
+      const countryNames: {[key: string]: string} = {
+        // Afrique Centrale
+        'CM': 'Cameroun', 'CF': 'Centrafrique', 'TD': 'Tchad', 'CG': 'Congo',
+        'CD': 'RDC', 'GQ': 'Guinée Équatoriale', 'GA': 'Gabon', 'ST': 'Sao Tomé', 'AO': 'Angola',
+        
+        // Afrique de l'Ouest
+        'CI': 'Côte d\'Ivoire', 'BF': 'Burkina Faso', 'SN': 'Sénégal', 'TG': 'Togo',
+        'BJ': 'Bénin', 'ML': 'Mali', 'NE': 'Niger', 'GN': 'Guinée', 'GW': 'Guinée-Bissau',
+        'SL': 'Sierra Leone', 'LR': 'Liberia', 'GH': 'Ghana', 'NG': 'Nigeria',
+        'MR': 'Mauritanie', 'GM': 'Gambie', 'CV': 'Cap-Vert',
+        
+        // Afrique de l'Est
+        'KE': 'Kenya', 'TZ': 'Tanzanie', 'UG': 'Ouganda', 'RW': 'Rwanda', 'BI': 'Burundi',
+        'ET': 'Éthiopie', 'SO': 'Somalie', 'DJ': 'Djibouti', 'ER': 'Érythrée',
+        'SS': 'Soudan du Sud', 'SD': 'Soudan', 'SC': 'Seychelles', 'MU': 'Maurice',
+        'KM': 'Comores', 'MG': 'Madagascar',
+        
+        // Afrique du Nord
+        'MA': 'Maroc', 'DZ': 'Algérie', 'TN': 'Tunisie', 'LY': 'Libye', 'EG': 'Égypte',
+        'EH': 'Sahara Occidental',
+        
+        // Afrique Australe
+        'ZA': 'Afrique du Sud', 'NA': 'Namibie', 'BW': 'Botswana', 'ZW': 'Zimbabwe',
+        'ZM': 'Zambie', 'MW': 'Malawi', 'MZ': 'Mozambique', 'SZ': 'Eswatini', 'LS': 'Lesotho',
+        
+        // Europe
+        'FR': 'France', 'GB': 'Royaume-Uni', 'DE': 'Allemagne', 'IT': 'Italie',
+        'ES': 'Espagne', 'PT': 'Portugal', 'BE': 'Belgique', 'NL': 'Pays-Bas',
+        'CH': 'Suisse', 'AT': 'Autriche', 'GR': 'Grèce', 'PL': 'Pologne',
+        'RO': 'Roumanie', 'CZ': 'Rép. Tchèque', 'SE': 'Suède', 'NO': 'Norvège',
+        'DK': 'Danemark', 'FI': 'Finlande', 'IE': 'Irlande', 'RU': 'Russie', 'UA': 'Ukraine',
+        
+        // Amériques
+        'US': 'États-Unis', 'CA': 'Canada', 'MX': 'Mexique', 'BR': 'Brésil',
+        'AR': 'Argentine', 'CL': 'Chili', 'CO': 'Colombie', 'PE': 'Pérou', 'VE': 'Venezuela',
+        
+        // Asie
+        'CN': 'Chine', 'JP': 'Japon', 'IN': 'Inde', 'KR': 'Corée du Sud',
+        'SA': 'Arabie Saoudite', 'AE': 'Émirats', 'TR': 'Turquie', 'IL': 'Israël',
+        'TH': 'Thaïlande', 'VN': 'Vietnam', 'SG': 'Singapour', 'MY': 'Malaisie',
+        'ID': 'Indonésie', 'PH': 'Philippines', 'PK': 'Pakistan', 'BD': 'Bangladesh', 'LK': 'Sri Lanka',
+        
+        // Océanie
+        'AU': 'Australie', 'NZ': 'Nouvelle-Zélande',
+        
+        // Moyen-Orient
+        'LB': 'Liban', 'JO': 'Jordanie', 'SY': 'Syrie', 'IQ': 'Irak', 'IR': 'Iran',
+        'KW': 'Koweït', 'QA': 'Qatar', 'BH': 'Bahreïn', 'OM': 'Oman', 'YE': 'Yémen',
+        
+        // Autres
+        'HT': 'Haïti',
+      };
+      return countryNames[countryCode?.toUpperCase()] || countryCode;
     }
 } 

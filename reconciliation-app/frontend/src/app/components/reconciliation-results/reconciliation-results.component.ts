@@ -1788,16 +1788,35 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                 // Extraire les informations d'agence et de service
                 const agencyInfo = this.getBoOnlyAgencyAndService(record);
                 
-                // Fonction helper pour formater la date au format ISO
+                // Fonction helper pour convertir les dates (y compris format Excel) au format ISO
                 const formatDateForBackend = (dateStr: string): string => {
                     if (!dateStr) return '';
                     
-                    // Si la date est déjà au format ISO, la retourner
-                    if (dateStr.includes('T')) return dateStr;
+                    // Si la date contient déjà des caractères de format date (tirets, T, espaces suivis de chiffres), ne pas traiter comme Excel
+                    if (dateStr.includes('-') || dateStr.includes('T') || /\d{4}/.test(dateStr)) {
+                        // Si la date est déjà au format ISO, la retourner
+                        if (dateStr.includes('T')) return dateStr;
+                        
+                        // Convertir le format "2025-07-09 12:40:18.0" en "2025-07-09T12:40:18"
+                        const cleanedDate = dateStr.replace(/\.\d+$/, ''); // Enlever les millisecondes
+                        return cleanedDate.replace(' ', 'T');
+                    }
                     
-                    // Convertir le format "2025-07-09 12:40:18.0" en "2025-07-09T12:40:18"
-                    const cleanedDate = dateStr.replace(/\.\d+$/, ''); // Enlever les millisecondes
-                    return cleanedDate.replace(' ', 'T');
+                    // Vérifier si c'est un numéro de série Excel pur (nombre décimal sans autre caractère)
+                    const numValue = parseFloat(dateStr);
+                    const numStr = numValue.toString();
+                    // Vérifier que la conversion en nombre et retour en string donne la même chose (ou presque)
+                    if (!isNaN(numValue) && numValue > 0 && numValue < 100000 && Math.abs(parseFloat(dateStr) - numValue) < 0.0001) {
+                        // C'est probablement un numéro de série Excel
+                        const excelEpoch = new Date(1900, 0, 1).getTime();
+                        const millisecondsPerDay = 86400000;
+                        const jsDate = new Date(excelEpoch + (numValue - 2) * millisecondsPerDay);
+                        console.log(`📅 Conversion Excel → JS: ${dateStr} → ${jsDate.toISOString()}`);
+                        return jsDate.toISOString();
+                    }
+                    
+                    // Par défaut, retourner la chaîne telle quelle
+                    return dateStr;
                 };
 
                 // Créer l'objet EcartSolde avec les données mappées
@@ -1947,16 +1966,35 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                 // Extraire les informations d'agence et de service
                 const agencyInfo = this.getBoOnlyAgencyAndService(record);
                 
-                // Fonction helper pour formater la date au format ISO
+                // Fonction helper pour convertir les dates (y compris format Excel) au format ISO
                 const formatDateForBackend = (dateStr: string): string => {
                     if (!dateStr) return '';
                     
-                    // Si la date est déjà au format ISO, la retourner
-                    if (dateStr.includes('T')) return dateStr;
+                    // Si la date contient déjà des caractères de format date (tirets, T, espaces suivis de chiffres), ne pas traiter comme Excel
+                    if (dateStr.includes('-') || dateStr.includes('T') || /\d{4}/.test(dateStr)) {
+                        // Si la date est déjà au format ISO, la retourner
+                        if (dateStr.includes('T')) return dateStr;
+                        
+                        // Convertir le format "2025-07-09 12:40:18.0" en "2025-07-09T12:40:18"
+                        const cleanedDate = dateStr.replace(/\.\d+$/, ''); // Enlever les millisecondes
+                        return cleanedDate.replace(' ', 'T');
+                    }
                     
-                    // Convertir le format "2025-07-09 12:40:18.0" en "2025-07-09T12:40:18"
-                    const cleanedDate = dateStr.replace(/\.\d+$/, ''); // Enlever les millisecondes
-                    return cleanedDate.replace(' ', 'T');
+                    // Vérifier si c'est un numéro de série Excel pur (nombre décimal sans autre caractère)
+                    const numValue = parseFloat(dateStr);
+                    const numStr = numValue.toString();
+                    // Vérifier que la conversion en nombre et retour en string donne la même chose (ou presque)
+                    if (!isNaN(numValue) && numValue > 0 && numValue < 100000 && Math.abs(parseFloat(dateStr) - numValue) < 0.0001) {
+                        // C'est probablement un numéro de série Excel
+                        const excelEpoch = new Date(1900, 0, 1).getTime();
+                        const millisecondsPerDay = 86400000;
+                        const jsDate = new Date(excelEpoch + (numValue - 2) * millisecondsPerDay);
+                        console.log(`📅 Conversion Excel → JS: ${dateStr} → ${jsDate.toISOString()}`);
+                        return jsDate.toISOString();
+                    }
+                    
+                    // Par défaut, retourner la chaîne telle quelle
+                    return dateStr;
                 };
 
                 // Calculer automatiquement les frais selon la configuration du service
@@ -2097,16 +2135,35 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                 // Extraire les informations d'agence et de service
                 const agencyInfo = this.getPartnerOnlyAgencyAndService(record);
                 
-                // Fonction helper pour formater la date au format ISO
+                // Fonction helper pour convertir les dates (y compris format Excel) au format ISO
                 const formatDateForBackend = (dateStr: string): string => {
                     if (!dateStr) return '';
                     
-                    // Si la date est déjà au format ISO, la retourner
-                    if (dateStr.includes('T')) return dateStr;
+                    // Si la date contient déjà des caractères de format date (tirets, T, espaces suivis de chiffres), ne pas traiter comme Excel
+                    if (dateStr.includes('-') || dateStr.includes('T') || /\d{4}/.test(dateStr)) {
+                        // Si la date est déjà au format ISO, la retourner
+                        if (dateStr.includes('T')) return dateStr;
+                        
+                        // Convertir le format "2025-07-09 12:40:18.0" en "2025-07-09T12:40:18"
+                        const cleanedDate = dateStr.replace(/\.\d+$/, ''); // Enlever les millisecondes
+                        return cleanedDate.replace(' ', 'T');
+                    }
                     
-                    // Convertir le format "2025-07-09 12:40:18.0" en "2025-07-09T12:40:18"
-                    const cleanedDate = dateStr.replace(/\.\d+$/, ''); // Enlever les millisecondes
-                    return cleanedDate.replace(' ', 'T');
+                    // Vérifier si c'est un numéro de série Excel pur (nombre décimal sans autre caractère)
+                    const numValue = parseFloat(dateStr);
+                    const numStr = numValue.toString();
+                    // Vérifier que la conversion en nombre et retour en string donne la même chose (ou presque)
+                    if (!isNaN(numValue) && numValue > 0 && numValue < 100000 && Math.abs(parseFloat(dateStr) - numValue) < 0.0001) {
+                        // C'est probablement un numéro de série Excel
+                        const excelEpoch = new Date(1900, 0, 1).getTime();
+                        const millisecondsPerDay = 86400000;
+                        const jsDate = new Date(excelEpoch + (numValue - 2) * millisecondsPerDay);
+                        console.log(`📅 Conversion Excel → JS: ${dateStr} → ${jsDate.toISOString()}`);
+                        return jsDate.toISOString();
+                    }
+                    
+                    // Par défaut, retourner la chaîne telle quelle
+                    return dateStr;
                 };
 
                 // Calculer automatiquement les frais selon la configuration du service
@@ -2341,16 +2398,35 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                 // Déterminer la nature de l'écart
                 const ecartNature = this.determineEcartNature(record);
                 
-                // Fonction helper pour formater la date au format ISO
+                // Fonction helper pour convertir les dates (y compris format Excel) au format ISO
                 const formatDateForBackend = (dateStr: string): string => {
                     if (!dateStr) return '';
                     
-                    // Si la date est déjà au format ISO, la retourner
-                    if (dateStr.includes('T')) return dateStr;
+                    // Si la date contient déjà des caractères de format date (tirets, T, espaces suivis de chiffres), ne pas traiter comme Excel
+                    if (dateStr.includes('-') || dateStr.includes('T') || /\d{4}/.test(dateStr)) {
+                        // Si la date est déjà au format ISO, la retourner
+                        if (dateStr.includes('T')) return dateStr;
+                        
+                        // Convertir le format "2025-07-09 12:40:18.0" en "2025-07-09T12:40:18"
+                        const cleanedDate = dateStr.replace(/\.\d+$/, ''); // Enlever les millisecondes
+                        return cleanedDate.replace(' ', 'T');
+                    }
                     
-                    // Convertir le format "2025-07-09 12:40:18.0" en "2025-07-09T12:40:18"
-                    const cleanedDate = dateStr.replace(/\.\d+$/, ''); // Enlever les millisecondes
-                    return cleanedDate.replace(' ', 'T');
+                    // Vérifier si c'est un numéro de série Excel pur (nombre décimal sans autre caractère)
+                    const numValue = parseFloat(dateStr);
+                    const numStr = numValue.toString();
+                    // Vérifier que la conversion en nombre et retour en string donne la même chose (ou presque)
+                    if (!isNaN(numValue) && numValue > 0 && numValue < 100000 && Math.abs(parseFloat(dateStr) - numValue) < 0.0001) {
+                        // C'est probablement un numéro de série Excel
+                        const excelEpoch = new Date(1900, 0, 1).getTime();
+                        const millisecondsPerDay = 86400000;
+                        const jsDate = new Date(excelEpoch + (numValue - 2) * millisecondsPerDay);
+                        console.log(`📅 Conversion Excel → JS: ${dateStr} → ${jsDate.toISOString()}`);
+                        return jsDate.toISOString();
+                    }
+                    
+                    // Par défaut, retourner la chaîne telle quelle
+                    return dateStr;
                 };
 
                 // Créer l'objet EcartSolde avec les données mappées
@@ -2529,11 +2605,44 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                     return isNaN(parsed) ? 0 : parsed;
                 };
 
+                // Fonction helper pour convertir les numéros de série Excel en dates JavaScript
+                const parseExcelDate = (dateValue: string): Date => {
+                    // Si la valeur est vide, retourner la date actuelle
+                    if (!dateValue || dateValue.trim() === '') {
+                        return new Date();
+                    }
+                    
+                    // Si la date contient déjà des caractères de format date, la parser normalement
+                    if (dateValue.includes('-') || dateValue.includes('T') || dateValue.includes('/') || /\d{4}/.test(dateValue)) {
+                        const parsedDate = new Date(dateValue);
+                        if (!isNaN(parsedDate.getTime())) {
+                            console.log(`📅 Date texte parsée: ${dateValue} → ${parsedDate.toISOString()}`);
+                            return parsedDate;
+                        }
+                    }
+                    
+                    // Vérifier si c'est un numéro de série Excel pur (nombre décimal)
+                    const numValue = parseFloat(dateValue);
+                    if (!isNaN(numValue) && numValue > 0 && numValue < 100000 && Math.abs(parseFloat(dateValue) - numValue) < 0.0001) {
+                        // C'est probablement un numéro de série Excel
+                        // Excel epoch: 1er janvier 1900 (avec correction pour le bug du 29 février 1900)
+                        const excelEpoch = new Date(1900, 0, 1).getTime();
+                        const millisecondsPerDay = 86400000;
+                        // Soustraire 2 pour corriger le bug Excel (29/02/1900) et l'index qui commence à 1
+                        const jsDate = new Date(excelEpoch + (numValue - 2) * millisecondsPerDay);
+                        console.log(`📅 Conversion Excel → JS: ${dateValue} → ${jsDate.toISOString()}`);
+                        return jsDate;
+                    }
+                    
+                    // Si tout échoue, retourner la date actuelle
+                    console.warn(`⚠️ Date non reconnue: "${dateValue}", utilisation de la date actuelle`);
+                    return new Date();
+                };
+                
                 // Construire la date d'opération au format LocalDateTime
                 const dateOperationStr = getValueWithFallback(['Date opération', 'dateOperation', 'date_operation']);
-                const dateOperation = dateOperationStr ? 
-                    new Date(dateOperationStr).toISOString() : 
-                    new Date().toISOString();
+                const parsedDate = parseExcelDate(dateOperationStr);
+                const dateOperation = parsedDate.toISOString();
 
                 return {
                     id: undefined, // Sera assigné par le backend

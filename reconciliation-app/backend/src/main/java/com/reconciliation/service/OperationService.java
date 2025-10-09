@@ -769,20 +769,10 @@ public class OperationService {
                 this.createOperationWithInverseImpact(annulationRequest, operation.getTypeOperation());
                 
                 // 2. Annuler automatiquement les frais liés à cette opération
+                // UNIQUEMENT les frais qui ont un lien direct via parentOperationId
                 List<OperationEntity> fraisOperations = operationRepository.findFraisByParentOperationId(operation.getId());
-                System.out.println("DEBUG: 🔍 Recherche des frais pour l'opération ID: " + operation.getId());
-                System.out.println("DEBUG: 📊 Nombre de frais trouvés: " + fraisOperations.size());
-                
-                // Si aucun frais trouvé par parentOperationId, essayer de les trouver par bordereau
-                if (fraisOperations.isEmpty()) {
-                    System.out.println("DEBUG: 🔍 Aucun frais trouvé par parentOperationId, recherche par bordereau...");
-                    String bordereauPattern = "FEES_SUMMARY_" + operation.getDateOperation().toLocalDate().toString() + "_" + operation.getCodeProprietaire();
-                    List<OperationEntity> fraisByBordereau = operationRepository.findByNomBordereauContaining(bordereauPattern).stream()
-                        .filter(op -> "FRAIS_TRANSACTION".equals(op.getTypeOperation()))
-                        .collect(Collectors.toList());
-                    System.out.println("DEBUG: 📊 Nombre de frais trouvés par bordereau: " + fraisByBordereau.size());
-                    fraisOperations = fraisByBordereau;
-                }
+                System.out.println("DEBUG: 🔍 Recherche des frais liés à l'opération ID: " + operation.getId() + " via parentOperationId");
+                System.out.println("DEBUG: 📊 Nombre de frais trouvés (liés directement): " + fraisOperations.size());
                 
                 for (OperationEntity fraisOp : fraisOperations) {
                     System.out.println("DEBUG: 💰 Traitement du frais ID: " + fraisOp.getId() + ", Statut: " + fraisOp.getStatut() + ", ParentOperationId: " + fraisOp.getParentOperationId());
