@@ -168,6 +168,60 @@ export class OperationsComponent implements OnInit, OnDestroy {
     // Propriété pour gérer l'affichage automatique des frais
     showFraisAutomatically: boolean = false;
 
+    // Propriétés pour les popups personnalisés
+    showApproClientPopup = false;
+    showCompenseClientPopup = false;
+    showNivellementPopup = false;
+    showRegularisationSoldePopup = false;
+
+    // Données filtrées pour chaque popup
+    approClientOperations: Operation[] = [];
+    compenseClientOperations: Operation[] = [];
+    nivellementOperations: Operation[] = [];
+    regularisationSoldeOperations: Operation[] = [];
+
+    // Listes de codes propriétaires filtrées par pays pour chaque popup
+    approClientFilteredCodeProprietaireList: string[] = [];
+    compenseClientFilteredCodeProprietaireList: string[] = [];
+    nivellementFilteredCodeProprietaireList: string[] = [];
+    regularisationSoldeFilteredCodeProprietaireList: string[] = [];
+
+    // Filtres pour chaque popup
+    approClientFilters = {
+        pays: '',
+        codeProprietaire: '',
+        dateDebut: '',
+        dateFin: '',
+        service: ''
+    };
+    compenseClientFilters = {
+        pays: '',
+        codeProprietaire: '',
+        dateDebut: '',
+        dateFin: '',
+        service: ''
+    };
+    nivellementFilters = {
+        pays: '',
+        codeProprietaire: '',
+        dateDebut: '',
+        dateFin: '',
+        service: ''
+    };
+    regularisationSoldeFilters = {
+        pays: '',
+        codeProprietaire: '',
+        dateDebut: '',
+        dateFin: '',
+        service: ''
+    };
+
+    // État d'export pour chaque popup
+    isExportingApproClient = false;
+    isExportingCompenseClient = false;
+    isExportingNivellement = false;
+    isExportingRegularisationSolde = false;
+
     private subscription = new Subscription();
 
     constructor(
@@ -838,6 +892,7 @@ export class OperationsComponent implements OnInit, OnDestroy {
         const soldeAvant = this.addForm.get('soldeAvant')?.value || 0;
         const montant = this.addForm.get('montant')?.value || 0;
         const typeOperation = this.addForm.get('typeOperation')?.value;
+        const service = this.addForm.get('service')?.value || '';
         let soldeApres = soldeAvant;
 
         // Logique inversée : total_cashin débite, total_paiement crédite
@@ -861,6 +916,16 @@ export class OperationsComponent implements OnInit, OnDestroy {
             soldeApres = soldeAvant + montant;
         } else if (typeOperation === 'annulation_partenaire' || typeOperation === 'annulation_bo' || typeOperation === 'transaction_cree') {
             soldeApres = soldeAvant - montant;
+        } else if (typeOperation === 'tsop') {
+            // TSOP: dépend du service (même logique que transaction_cree)
+            const serviceLower = service.toLowerCase();
+            if (serviceLower.includes('cashin')) {
+                soldeApres = soldeAvant - montant; // Débit
+            } else if (serviceLower.includes('paiement')) {
+                soldeApres = soldeAvant + montant; // Crédit
+            } else {
+                soldeApres = soldeAvant - montant; // Par défaut: débit
+            }
         } else {
             soldeApres = soldeAvant - montant;
         }
@@ -1064,12 +1129,23 @@ export class OperationsComponent implements OnInit, OnDestroy {
     getImpactDirection(): 'positive' | 'negative' {
         const montant = this.editForm.get('montant')?.value || 0;
         const typeOperation = this.editForm.get('typeOperation')?.value;
+        const service = this.editForm.get('service')?.value || '';
         
         if (typeOperation === 'Appro_client' || typeOperation === 'Appro_fournisseur' || typeOperation === 'total_paiement') {
             return montant >= 0 ? 'positive' : 'negative';
         } else if (typeOperation === 'total_cashin' || typeOperation === 'Compense_client' || typeOperation === 'Compense_fournisseur' || typeOperation === 'annulation_partenaire' || 
                    typeOperation === 'annulation_bo' || typeOperation === 'transaction_cree') {
             return montant <= 0 ? 'positive' : 'negative';
+        } else if (typeOperation === 'tsop') {
+            // TSOP: dépend du service
+            const serviceLower = service.toLowerCase();
+            if (serviceLower.includes('cashin')) {
+                return montant <= 0 ? 'positive' : 'negative'; // Débit (comme cashin)
+            } else if (serviceLower.includes('paiement')) {
+                return montant >= 0 ? 'positive' : 'negative'; // Crédit (comme paiement)
+            } else {
+                return montant <= 0 ? 'positive' : 'negative'; // Par défaut: débit
+            }
         } else {
             return montant >= 0 ? 'positive' : 'negative';
         }
@@ -1079,6 +1155,7 @@ export class OperationsComponent implements OnInit, OnDestroy {
         const soldeAvant = this.editingOperation?.soldeAvant || 0;
         const montant = this.editForm.get('montant')?.value || 0;
         const typeOperation = this.editForm.get('typeOperation')?.value;
+        const service = this.editForm.get('service')?.value || '';
         
         let impact = 0;
         if (typeOperation === 'Appro_client' || typeOperation === 'Appro_fournisseur' || typeOperation === 'total_paiement') {
@@ -1086,6 +1163,16 @@ export class OperationsComponent implements OnInit, OnDestroy {
         } else if (typeOperation === 'total_cashin' || typeOperation === 'Compense_client' || typeOperation === 'Compense_fournisseur' || typeOperation === 'annulation_partenaire' || 
                    typeOperation === 'annulation_bo' || typeOperation === 'transaction_cree') {
             impact = -Math.abs(montant);
+        } else if (typeOperation === 'tsop') {
+            // TSOP: dépend du service
+            const serviceLower = service.toLowerCase();
+            if (serviceLower.includes('cashin')) {
+                impact = -Math.abs(montant); // Débit
+            } else if (serviceLower.includes('paiement')) {
+                impact = montant; // Crédit
+            } else {
+                impact = -Math.abs(montant); // Par défaut: débit
+            }
         } else {
             impact = montant; // Ajustement, nivellement, régularisation_solde
         }
@@ -1128,12 +1215,23 @@ export class OperationsComponent implements OnInit, OnDestroy {
     getAddImpactDirection(): 'positive' | 'negative' {
         const montant = this.addForm.get('montant')?.value || 0;
         const typeOperation = this.addForm.get('typeOperation')?.value;
+        const service = this.addForm.get('service')?.value || '';
         
         if (typeOperation === 'Appro_client' || typeOperation === 'Appro_fournisseur' || typeOperation === 'total_paiement') {
             return montant >= 0 ? 'positive' : 'negative';
         } else if (typeOperation === 'total_cashin' || typeOperation === 'Compense_client' || typeOperation === 'Compense_fournisseur' || typeOperation === 'annulation_partenaire' || 
                    typeOperation === 'annulation_bo' || typeOperation === 'transaction_cree') {
             return montant <= 0 ? 'positive' : 'negative';
+        } else if (typeOperation === 'tsop') {
+            // TSOP: dépend du service
+            const serviceLower = service.toLowerCase();
+            if (serviceLower.includes('cashin')) {
+                return montant <= 0 ? 'positive' : 'negative'; // Débit (comme cashin)
+            } else if (serviceLower.includes('paiement')) {
+                return montant >= 0 ? 'positive' : 'negative'; // Crédit (comme paiement)
+            } else {
+                return montant <= 0 ? 'positive' : 'negative'; // Par défaut: débit
+            }
         } else {
             return montant >= 0 ? 'positive' : 'negative';
         }
@@ -1143,6 +1241,7 @@ export class OperationsComponent implements OnInit, OnDestroy {
         const soldeAvant = this.addForm.get('soldeAvant')?.value || 0;
         const montant = this.addForm.get('montant')?.value || 0;
         const typeOperation = this.addForm.get('typeOperation')?.value;
+        const service = this.addForm.get('service')?.value || '';
         
         let impact = 0;
         if (typeOperation === 'Appro_client' || typeOperation === 'Appro_fournisseur' || typeOperation === 'total_paiement') {
@@ -1150,6 +1249,16 @@ export class OperationsComponent implements OnInit, OnDestroy {
         } else if (typeOperation === 'total_cashin' || typeOperation === 'Compense_client' || typeOperation === 'Compense_fournisseur' || typeOperation === 'annulation_partenaire' || 
                    typeOperation === 'annulation_bo' || typeOperation === 'transaction_cree') {
             impact = -Math.abs(montant);
+        } else if (typeOperation === 'tsop') {
+            // TSOP: dépend du service
+            const serviceLower = service.toLowerCase();
+            if (serviceLower.includes('cashin')) {
+                impact = -Math.abs(montant); // Débit
+            } else if (serviceLower.includes('paiement')) {
+                impact = montant; // Crédit
+            } else {
+                impact = -Math.abs(montant); // Par défaut: débit
+            }
         } else {
             impact = montant; // Ajustement, nivellement, régularisation_solde
         }
@@ -1225,12 +1334,21 @@ export class OperationsComponent implements OnInit, OnDestroy {
     async deleteOperation(id: number) {
         const confirmed = await this.popupService.showConfirm('Êtes-vous sûr de vouloir supprimer cette opération ?', 'Confirmation de suppression');
         if (confirmed) {
+            console.log('🗑️ Suppression de l\'opération ID:', id);
             this.operationService.deleteOperation(id).subscribe({
-                next: () => {
-                    this.loadOperations();
+                next: (success) => {
+                    if (success) {
+                        console.log('✅ Opération supprimée avec succès');
+                        this.popupService.showSuccess('Opération supprimée avec succès');
+                        this.loadOperations();
+                    } else {
+                        console.warn('⚠️ Opération non trouvée');
+                        this.popupService.showWarning('Opération non trouvée');
+                    }
                 },
                 error: (err) => {
-                    console.error('Erreur lors de la suppression', err);
+                    console.error('❌ Erreur lors de la suppression:', err);
+                    this.popupService.showError('Erreur lors de la suppression de l\'opération');
                 }
             });
         }
@@ -1243,6 +1361,9 @@ export class OperationsComponent implements OnInit, OnDestroy {
             this.selectedOperations.clear();
             this.selectedOperationIds.clear();
             this.allSelected = false;
+            console.log('❌ Mode sélection désactivé');
+        } else {
+            console.log('✅ Mode sélection activé');
         }
     }
 
@@ -1300,39 +1421,60 @@ export class OperationsComponent implements OnInit, OnDestroy {
 
     async deleteSelectedOperations() {
         if (this.selectedOperationIds.size === 0) {
+            this.popupService.showWarning('Aucune opération sélectionnée');
             return;
         }
 
         const count = this.selectedOperationIds.size;
-        const message = `Êtes-vous sûr de vouloir supprimer ${count} opération(s) sélectionnée(s) ?`;
+        const message = `Êtes-vous sûr de vouloir supprimer ${count} opération(s) sélectionnée(s) ?\n\nCette action est irréversible.`;
         
         const confirmed = await this.popupService.showConfirm(message, 'Confirmation de suppression multiple');
         if (confirmed) {
             this.isDeletingMultiple = true;
             const operationIds = Array.from(this.selectedOperationIds);
             
+            console.log('🗑️ Suppression en masse de', count, 'opération(s)');
+            console.log('📋 IDs:', operationIds);
+            
             // Utiliser la méthode de suppression en lot
             this.operationService.deleteOperations(operationIds).subscribe({
                 next: (result) => {
                     this.isDeletingMultiple = false;
+                    console.log('📊 Résultat de la suppression:', result);
+                    
+                    if (result.success || result.deletedCount > 0) {
+                        const successMessage = `✅ ${result.deletedCount} opération(s) supprimée(s) avec succès`;
+                        const errorMessage = result.errors.length > 0 ? 
+                            `\n⚠️ ${result.errors.length} erreur(s): ${result.errors.slice(0, 3).join(', ')}` : '';
+                        
+                        this.popupService.showSuccess(successMessage + errorMessage);
+                        console.log('✅', successMessage);
+                        
+                        if (result.errors.length > 0) {
+                            console.warn('⚠️ Erreurs:', result.errors);
+                        }
+                    } else {
+                        this.popupService.showError(`Échec de la suppression : ${result.errors.join(', ')}`);
+                        console.error('❌ Échec de la suppression:', result.errors);
+                    }
+                    
+                    // Réinitialiser la sélection et recharger
                     this.selectedOperations.clear();
                     this.selectedOperationIds.clear();
                     this.allSelected = false;
                     this.isSelectionMode = false;
                     this.loadOperations();
-                    
-                    if (result.success) {
-                        this.popupService.showSuccess(`${result.deletedCount} opération(s) supprimée(s) avec succès`);
-                    } else {
-                        this.popupService.showError(`Erreur lors de la suppression : ${result.errors.join(', ')}`);
-                    }
                 },
                 error: (err) => {
-                    console.error('Erreur lors de la suppression en lot', err);
+                    console.error('❌ Erreur lors de la suppression en lot:', err);
                     this.isDeletingMultiple = false;
-                    this.popupService.showError('Erreur lors de la suppression des opérations');
+                    
+                    const errorMsg = err.error?.message || err.message || 'Erreur inconnue';
+                    this.popupService.showError(`Erreur lors de la suppression: ${errorMsg}`);
                 }
             });
+        } else {
+            console.log('❌ Suppression annulée par l\'utilisateur');
         }
     }
 
@@ -2264,6 +2406,18 @@ export class OperationsComponent implements OnInit, OnDestroy {
                         credit = frais;
                     }
                     break;
+                case 'tsop':
+                    // Annulation TSOP: inverse la logique normale
+                    if (service.includes('cashin')) {
+                        // L'opération d'origine était en débit, l'annulation est en crédit
+                        credit = montant + frais;
+                        debit = 0;
+                    } else if (service.includes('paiement')) {
+                        // L'opération d'origine était en crédit, l'annulation est en débit
+                        debit = montant;
+                        credit = frais;
+                    }
+                    break;
                 case 'bo':
                     if (service.includes('cashin')) {
                         debit = 0;
@@ -2354,6 +2508,18 @@ export class OperationsComponent implements OnInit, OnDestroy {
                 }
                 break;
             case 'transaction_cree':
+                if (service.includes('cashin')) {
+                    debit = montant + frais;
+                    credit = 0;
+                } else if (service.includes('paiement')) {
+                    debit = frais;
+                    credit = montant;
+                }
+                break;
+            case 'tsop':
+                // TSOP: Si service est CASHIN → montant en débit, frais en débit
+                //       Si service est PAIEMENT → montant en crédit, frais en débit
+                //       Les frais sont toujours en débit
                 if (service.includes('cashin')) {
                     debit = montant + frais;
                     credit = 0;
@@ -2694,5 +2860,438 @@ export class OperationsComponent implements OnInit, OnDestroy {
     // Méthode pour remplacer Math.min dans le template
     getMin(a: number, b: number): number {
         return Math.min(a, b);
+    }
+
+    // === Méthodes pour les popups personnalisés ===
+
+    // Ouvrir le popup Appro Client
+    openApproClientPopup() {
+        this.showApproClientPopup = true;
+        this.updateApproClientFilteredCodeProprietaireList();
+        this.loadApproClientOperations();
+    }
+
+    // Ouvrir le popup Compense Client
+    openCompenseClientPopup() {
+        this.showCompenseClientPopup = true;
+        this.updateCompenseClientFilteredCodeProprietaireList();
+        this.loadCompenseClientOperations();
+    }
+
+    // Ouvrir le popup Nivellement
+    openNivellementPopup() {
+        this.showNivellementPopup = true;
+        this.updateNivellementFilteredCodeProprietaireList();
+        this.loadNivellementOperations();
+    }
+
+    // Ouvrir le popup Régularisation de Solde
+    openRegularisationSoldePopup() {
+        this.showRegularisationSoldePopup = true;
+        this.updateRegularisationSoldeFilteredCodeProprietaireList();
+        this.loadRegularisationSoldeOperations();
+    }
+
+    // Charger les opérations Appro Client
+    loadApproClientOperations() {
+        this.approClientOperations = this.operations.filter(op => 
+            op.typeOperation === 'Appro_client' || op.typeOperation === 'appro_client'
+        );
+        this.applyApproClientFilters();
+    }
+
+    // Charger les opérations Compense Client
+    loadCompenseClientOperations() {
+        this.compenseClientOperations = this.operations.filter(op => 
+            op.typeOperation === 'Compense_client' || op.typeOperation === 'compense_client'
+        );
+        this.applyCompenseClientFilters();
+    }
+
+    // Charger les opérations Nivellement
+    loadNivellementOperations() {
+        this.nivellementOperations = this.operations.filter(op => 
+            op.typeOperation === 'nivellement'
+        );
+        this.applyNivellementFilters();
+    }
+
+    // Charger les opérations Régularisation de Solde
+    loadRegularisationSoldeOperations() {
+        this.regularisationSoldeOperations = this.operations.filter(op => 
+            op.typeOperation === 'régularisation_solde'
+        );
+        this.applyRegularisationSoldeFilters();
+    }
+
+    // Appliquer les filtres Appro Client
+    applyApproClientFilters() {
+        // Mettre à jour la liste des codes propriétaires disponibles
+        this.updateApproClientFilteredCodeProprietaireList();
+        
+        let filtered = this.operations.filter(op => 
+            op.typeOperation === 'Appro_client' || op.typeOperation === 'appro_client'
+        );
+
+        if (this.approClientFilters.pays) {
+            filtered = filtered.filter(op => op.pays === this.approClientFilters.pays);
+        }
+        if (this.approClientFilters.codeProprietaire) {
+            filtered = filtered.filter(op => op.codeProprietaire?.includes(this.approClientFilters.codeProprietaire));
+        }
+        if (this.approClientFilters.service) {
+            filtered = filtered.filter(op => op.service?.includes(this.approClientFilters.service));
+        }
+        if (this.approClientFilters.dateDebut) {
+            filtered = filtered.filter(op => op.dateOperation >= this.approClientFilters.dateDebut);
+        }
+        if (this.approClientFilters.dateFin) {
+            filtered = filtered.filter(op => op.dateOperation <= this.approClientFilters.dateFin);
+        }
+
+        this.approClientOperations = filtered;
+    }
+
+    // Appliquer les filtres Compense Client
+    applyCompenseClientFilters() {
+        // Mettre à jour la liste des codes propriétaires disponibles
+        this.updateCompenseClientFilteredCodeProprietaireList();
+        
+        let filtered = this.operations.filter(op => 
+            op.typeOperation === 'Compense_client' || op.typeOperation === 'compense_client'
+        );
+
+        if (this.compenseClientFilters.pays) {
+            filtered = filtered.filter(op => op.pays === this.compenseClientFilters.pays);
+        }
+        if (this.compenseClientFilters.codeProprietaire) {
+            filtered = filtered.filter(op => op.codeProprietaire?.includes(this.compenseClientFilters.codeProprietaire));
+        }
+        if (this.compenseClientFilters.service) {
+            filtered = filtered.filter(op => op.service?.includes(this.compenseClientFilters.service));
+        }
+        if (this.compenseClientFilters.dateDebut) {
+            filtered = filtered.filter(op => op.dateOperation >= this.compenseClientFilters.dateDebut);
+        }
+        if (this.compenseClientFilters.dateFin) {
+            filtered = filtered.filter(op => op.dateOperation <= this.compenseClientFilters.dateFin);
+        }
+
+        this.compenseClientOperations = filtered;
+    }
+
+    // Appliquer les filtres Nivellement
+    applyNivellementFilters() {
+        // Mettre à jour la liste des codes propriétaires disponibles
+        this.updateNivellementFilteredCodeProprietaireList();
+        
+        let filtered = this.operations.filter(op => 
+            op.typeOperation === 'nivellement'
+        );
+
+        if (this.nivellementFilters.pays) {
+            filtered = filtered.filter(op => op.pays === this.nivellementFilters.pays);
+        }
+        if (this.nivellementFilters.codeProprietaire) {
+            filtered = filtered.filter(op => op.codeProprietaire?.includes(this.nivellementFilters.codeProprietaire));
+        }
+        if (this.nivellementFilters.service) {
+            filtered = filtered.filter(op => op.service?.includes(this.nivellementFilters.service));
+        }
+        if (this.nivellementFilters.dateDebut) {
+            filtered = filtered.filter(op => op.dateOperation >= this.nivellementFilters.dateDebut);
+        }
+        if (this.nivellementFilters.dateFin) {
+            filtered = filtered.filter(op => op.dateOperation <= this.nivellementFilters.dateFin);
+        }
+
+        this.nivellementOperations = filtered;
+    }
+
+    // Appliquer les filtres Régularisation de Solde
+    applyRegularisationSoldeFilters() {
+        let filtered = this.operations.filter(op => 
+            op.typeOperation === 'régularisation_solde'
+        );
+
+        if (this.regularisationSoldeFilters.pays) {
+            filtered = filtered.filter(op => op.pays === this.regularisationSoldeFilters.pays);
+        }
+        if (this.regularisationSoldeFilters.codeProprietaire) {
+            filtered = filtered.filter(op => op.codeProprietaire === this.regularisationSoldeFilters.codeProprietaire);
+        }
+        if (this.regularisationSoldeFilters.service) {
+            filtered = filtered.filter(op => op.service?.includes(this.regularisationSoldeFilters.service));
+        }
+        if (this.regularisationSoldeFilters.dateDebut) {
+            filtered = filtered.filter(op => op.dateOperation >= this.regularisationSoldeFilters.dateDebut);
+        }
+        if (this.regularisationSoldeFilters.dateFin) {
+            filtered = filtered.filter(op => op.dateOperation <= this.regularisationSoldeFilters.dateFin);
+        }
+
+        this.regularisationSoldeOperations = filtered;
+    }
+
+    // Exporter Appro Client
+    async exportApproClientOperations() {
+        this.isExportingApproClient = true;
+        try {
+            await this.exportOperationsToExcel(this.approClientOperations, 'Appro_Client');
+            await this.popupService.showSuccess('Export réussi', 'Succès');
+        } catch (error) {
+            console.error('Erreur lors de l\'export:', error);
+            await this.popupService.showError('Erreur lors de l\'export', 'Erreur');
+        } finally {
+            this.isExportingApproClient = false;
+        }
+    }
+
+    // Exporter Compense Client
+    async exportCompenseClientOperations() {
+        this.isExportingCompenseClient = true;
+        try {
+            await this.exportOperationsToExcel(this.compenseClientOperations, 'Compense_Client');
+            await this.popupService.showSuccess('Export réussi', 'Succès');
+        } catch (error) {
+            console.error('Erreur lors de l\'export:', error);
+            await this.popupService.showError('Erreur lors de l\'export', 'Erreur');
+        } finally {
+            this.isExportingCompenseClient = false;
+        }
+    }
+
+    // Exporter Nivellement
+    async exportNivellementOperations() {
+        this.isExportingNivellement = true;
+        try {
+            await this.exportOperationsToExcel(this.nivellementOperations, 'Nivellement');
+            await this.popupService.showSuccess('Export réussi', 'Succès');
+        } catch (error) {
+            console.error('Erreur lors de l\'export:', error);
+            await this.popupService.showError('Erreur lors de l\'export', 'Erreur');
+        } finally {
+            this.isExportingNivellement = false;
+        }
+    }
+
+    // Exporter Régularisation de Solde
+    async exportRegularisationSoldeOperations() {
+        this.isExportingRegularisationSolde = true;
+        try {
+            await this.exportOperationsToExcel(this.regularisationSoldeOperations, 'Regularisation_Solde');
+            await this.popupService.showSuccess('Export réussi', 'Succès');
+        } catch (error) {
+            console.error('Erreur lors de l\'export:', error);
+            await this.popupService.showError('Erreur lors de l\'export', 'Erreur');
+        } finally {
+            this.isExportingRegularisationSolde = false;
+        }
+    }
+
+    // Méthode générique pour exporter des opérations vers Excel
+    private async exportOperationsToExcel(operations: Operation[], fileName: string): Promise<void> {
+        const workbook = new ExcelJS.Workbook();
+        const worksheet = workbook.addWorksheet('Opérations');
+
+        // Définir les colonnes
+        worksheet.columns = [
+            { header: 'ID', key: 'id', width: 10 },
+            { header: 'Type d\'opération', key: 'typeOperation', width: 20 },
+            { header: 'Date', key: 'dateOperation', width: 15 },
+            { header: 'Code Propriétaire', key: 'codeProprietaire', width: 20 },
+            { header: 'Service', key: 'service', width: 20 },
+            { header: 'Montant', key: 'montant', width: 15 },
+            { header: 'Solde Avant', key: 'soldeAvant', width: 15 },
+            { header: 'Solde Après', key: 'soldeApres', width: 15 },
+            { header: 'Banque', key: 'banque', width: 20 },
+            { header: 'Bordereau', key: 'nomBordereau', width: 20 },
+            { header: 'Statut', key: 'statut', width: 15 },
+            { header: 'Pays', key: 'pays', width: 10 },
+            { header: 'Référence', key: 'reference', width: 25 }
+        ];
+
+        // Style de l'en-tête
+        worksheet.getRow(1).font = { bold: true };
+        worksheet.getRow(1).fill = {
+            type: 'pattern',
+            pattern: 'solid',
+            fgColor: { argb: 'FF4472C4' }
+        };
+        worksheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
+
+        // Ajouter les données
+        operations.forEach(op => {
+            worksheet.addRow({
+                id: op.id,
+                typeOperation: op.typeOperation,
+                dateOperation: op.dateOperation,
+                codeProprietaire: op.codeProprietaire,
+                service: op.service,
+                montant: op.montant,
+                soldeAvant: op.soldeAvant,
+                soldeApres: op.soldeApres,
+                banque: op.banque,
+                nomBordereau: op.nomBordereau,
+                statut: op.statut,
+                pays: op.pays,
+                reference: op.reference
+            });
+        });
+
+        // Générer le fichier et le télécharger
+        const buffer = await workbook.xlsx.writeBuffer();
+        const blob = new Blob([buffer], { 
+            type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
+        });
+        const date = new Date().toISOString().split('T')[0];
+        saveAs(blob, `${fileName}_${date}.xlsx`);
+    }
+
+    // Calculer le total des montants pour Appro Client
+    getTotalApproClient(): number {
+        return this.approClientOperations.reduce((sum, op) => sum + (op.montant || 0), 0);
+    }
+
+    // Calculer le total des montants pour Compense Client
+    getTotalCompenseClient(): number {
+        return this.compenseClientOperations.reduce((sum, op) => sum + (op.montant || 0), 0);
+    }
+
+    // Calculer le total des montants pour Nivellement
+    getTotalNivellement(): number {
+        return this.nivellementOperations.reduce((sum, op) => sum + (op.montant || 0), 0);
+    }
+
+    // Calculer le total des montants pour Régularisation Solde
+    getTotalRegularisationSolde(): number {
+        return this.regularisationSoldeOperations.reduce((sum, op) => sum + (op.montant || 0), 0);
+    }
+
+    // Fermer les popups
+    closeApproClientPopup() {
+        this.showApproClientPopup = false;
+        this.approClientFilters = {
+            pays: '',
+            codeProprietaire: '',
+            dateDebut: '',
+            dateFin: '',
+            service: ''
+        };
+    }
+
+    closeCompenseClientPopup() {
+        this.showCompenseClientPopup = false;
+        this.compenseClientFilters = {
+            pays: '',
+            codeProprietaire: '',
+            dateDebut: '',
+            dateFin: '',
+            service: ''
+        };
+    }
+
+    closeNivellementPopup() {
+        this.showNivellementPopup = false;
+        this.nivellementFilters = {
+            pays: '',
+            codeProprietaire: '',
+            dateDebut: '',
+            dateFin: '',
+            service: ''
+        };
+    }
+
+    closeRegularisationSoldePopup() {
+        this.showRegularisationSoldePopup = false;
+        this.regularisationSoldeFilters = {
+            pays: '',
+            codeProprietaire: '',
+            dateDebut: '',
+            dateFin: '',
+            service: ''
+        };
+    }
+
+    // Mettre à jour la liste des codes propriétaires pour Appro Client en fonction du pays sélectionné
+    updateApproClientFilteredCodeProprietaireList() {
+        let operations = this.operations.filter(op => 
+            op.typeOperation === 'Appro_client' || op.typeOperation === 'appro_client'
+        );
+        
+        // Si un pays est sélectionné, filtrer les opérations par pays
+        if (this.approClientFilters.pays) {
+            operations = operations.filter(op => op.pays === this.approClientFilters.pays);
+        }
+        
+        // Extraire les codes propriétaires uniques
+        const codes = [...new Set(operations.map(op => op.codeProprietaire).filter(code => !!code))];
+        this.approClientFilteredCodeProprietaireList = codes.sort();
+        
+        // Si le code propriétaire actuel n'est plus dans la liste filtrée, le réinitialiser
+        if (this.approClientFilters.codeProprietaire && 
+            !this.approClientFilteredCodeProprietaireList.some(code => code.includes(this.approClientFilters.codeProprietaire))) {
+            this.approClientFilters.codeProprietaire = '';
+        }
+    }
+
+    // Mettre à jour la liste des codes propriétaires pour Compense Client en fonction du pays sélectionné
+    updateCompenseClientFilteredCodeProprietaireList() {
+        let operations = this.operations.filter(op => 
+            op.typeOperation === 'Compense_client' || op.typeOperation === 'compense_client'
+        );
+        
+        // Si un pays est sélectionné, filtrer les opérations par pays
+        if (this.compenseClientFilters.pays) {
+            operations = operations.filter(op => op.pays === this.compenseClientFilters.pays);
+        }
+        
+        // Extraire les codes propriétaires uniques
+        const codes = [...new Set(operations.map(op => op.codeProprietaire).filter(code => !!code))];
+        this.compenseClientFilteredCodeProprietaireList = codes.sort();
+        
+        // Si le code propriétaire actuel n'est plus dans la liste filtrée, le réinitialiser
+        if (this.compenseClientFilters.codeProprietaire && 
+            !this.compenseClientFilteredCodeProprietaireList.some(code => code.includes(this.compenseClientFilters.codeProprietaire))) {
+            this.compenseClientFilters.codeProprietaire = '';
+        }
+    }
+
+    // Mettre à jour la liste des codes propriétaires pour Nivellement en fonction du pays sélectionné
+    updateNivellementFilteredCodeProprietaireList() {
+        let operations = this.operations.filter(op => 
+            op.typeOperation === 'nivellement'
+        );
+        
+        // Si un pays est sélectionné, filtrer les opérations par pays
+        if (this.nivellementFilters.pays) {
+            operations = operations.filter(op => op.pays === this.nivellementFilters.pays);
+        }
+        
+        // Extraire les codes propriétaires uniques
+        const codes = [...new Set(operations.map(op => op.codeProprietaire).filter(code => !!code))];
+        this.nivellementFilteredCodeProprietaireList = codes.sort();
+        
+        // Si le code propriétaire actuel n'est plus dans la liste filtrée, le réinitialiser
+        if (this.nivellementFilters.codeProprietaire && 
+            !this.nivellementFilteredCodeProprietaireList.some(code => code.includes(this.nivellementFilters.codeProprietaire))) {
+            this.nivellementFilters.codeProprietaire = '';
+        }
+    }
+
+    // Mettre à jour la liste des codes propriétaires pour Régularisation Solde en fonction du pays sélectionné
+    updateRegularisationSoldeFilteredCodeProprietaireList() {
+        let operations = this.operations.filter(op => 
+            op.typeOperation === 'régularisation_solde'
+        );
+        
+        // Si un pays est sélectionné, filtrer les opérations par pays
+        if (this.regularisationSoldeFilters.pays) {
+            operations = operations.filter(op => op.pays === this.regularisationSoldeFilters.pays);
+        }
+        
+        // Extraire les codes propriétaires uniques
+        const codes = [...new Set(operations.map(op => op.codeProprietaire).filter(code => !!code))];
+        this.regularisationSoldeFilteredCodeProprietaireList = codes.sort();
     }
 } 

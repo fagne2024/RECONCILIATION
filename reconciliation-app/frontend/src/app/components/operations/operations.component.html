@@ -15,6 +15,18 @@
             </div>
         </div>
         <div class="header-actions">
+            <button class="btn-operation-type" (click)="openApproClientPopup()" title="Voir Appro Client">
+                <i class="fas fa-money-bill-wave"></i> Appro Client
+            </button>
+            <button class="btn-operation-type" (click)="openCompenseClientPopup()" title="Voir Compense Client">
+                <i class="fas fa-exchange-alt"></i> Compense Client
+            </button>
+            <button class="btn-operation-type" (click)="openNivellementPopup()" title="Voir Nivellement">
+                <i class="fas fa-balance-scale"></i> Nivellement
+            </button>
+            <button class="btn-operation-type" (click)="openRegularisationSoldePopup()" title="Voir Régularisation Solde">
+                <i class="fas fa-calculator"></i> Régularisation Solde
+            </button>
             <button class="btn-secondary" (click)="refreshData()" title="Actualiser les données">
                 <i class="fas fa-sync-alt"></i>
             </button>
@@ -806,23 +818,38 @@
             </button>
         </div>
 
+        <!-- Message d'aide pour le mode sélection -->
+        <div *ngIf="isSelectionMode && !hasSelectedOperations" class="selection-help-bar">
+            <div class="help-content">
+                <i class="fas fa-info-circle"></i>
+                <span>Mode sélection activé. Cliquez sur les cases à cocher pour sélectionner des opérations. Vous pouvez utiliser la case en haut pour tout sélectionner.</span>
+            </div>
+            <button class="btn-link" (click)="selectAllOperations()" title="Tout sélectionner">
+                <i class="fas fa-check-double"></i> Tout sélectionner
+            </button>
+        </div>
+
         <!-- Barre d'actions pour la sélection multiple -->
         <div *ngIf="isSelectionMode && hasSelectedOperations" class="selection-actions-bar">
             <div class="selection-info">
                 <i class="fas fa-check-circle"></i>
-                <span>{{ selectedOperationsCount }} opération(s) sélectionnée(s)</span>
+                <span><strong>{{ selectedOperationsCount }}</strong> opération(s) sélectionnée(s)</span>
             </div>
             <div class="selection-actions">
+                <button class="btn-secondary" (click)="selectAllOperations()" title="Tout sélectionner" *ngIf="selectedOperationsCount < filteredOperations.length">
+                    <i class="fas fa-check-double"></i>
+                    Tout sélectionner ({{ filteredOperations.length }})
+                </button>
                 <button class="btn-secondary" (click)="deselectAllOperations()" title="Tout désélectionner">
                     <i class="fas fa-times"></i>
                     Désélectionner tout
                 </button>
-                <button class="btn-danger" 
+                <button class="btn-danger btn-lg" 
                         (click)="deleteSelectedOperations()" 
                         [disabled]="isDeletingMultiple"
                         title="Supprimer les opérations sélectionnées">
-                    <i class="fas fa-trash"></i>
-                    {{ isDeletingMultiple ? 'Suppression...' : 'Supprimer sélection (' + selectedOperationsCount + ')' }}
+                    <i class="fas fa-trash-alt"></i>
+                    {{ isDeletingMultiple ? '⏳ Suppression en cours...' : '🗑️ Supprimer (' + selectedOperationsCount + ')' }}
                 </button>
             </div>
         </div>
@@ -1273,6 +1300,401 @@
       <button type="button" class="btn btn-info" (click)="exportOperationDetails(modalSelectedOperation!)" *ngIf="modalSelectedOperation">
         <i class="fas fa-file-excel"></i> Exporter
       </button>
+    </div>
+  </div>
+</div>
+
+<!-- Popup Appro Client -->
+<div *ngIf="showApproClientPopup" class="custom-popup-overlay" (click)="closeApproClientPopup()">
+  <div class="custom-popup-content" (click)="$event.stopPropagation()">
+    <div class="popup-header">
+      <h3><i class="fas fa-money-bill-wave"></i> Appro Client</h3>
+      <button class="close-btn" (click)="closeApproClientPopup()">
+        <i class="fas fa-times"></i>
+      </button>
+    </div>
+    
+    <div class="popup-filters">
+      <div class="filter-row">
+        <div class="filter-field">
+          <label>Pays</label>
+          <select [(ngModel)]="approClientFilters.pays" (change)="applyApproClientFilters()" class="filter-select">
+            <option value="">Tous</option>
+            <option *ngFor="let pays of paysList" [value]="pays">{{ pays }}</option>
+          </select>
+        </div>
+        <div class="filter-field">
+          <label>Code Propriétaire</label>
+          <input type="text" 
+                 list="approClientCodeProprietaireList"
+                 [(ngModel)]="approClientFilters.codeProprietaire" 
+                 (input)="applyApproClientFilters()" 
+                 class="filter-input" 
+                 placeholder="Rechercher ou sélectionner...">
+          <datalist id="approClientCodeProprietaireList">
+            <option *ngFor="let code of approClientFilteredCodeProprietaireList" [value]="code">{{ code }}</option>
+          </datalist>
+        </div>
+        <div class="filter-field">
+          <label>Service</label>
+          <input type="text" [(ngModel)]="approClientFilters.service" (input)="applyApproClientFilters()" class="filter-input" placeholder="Rechercher...">
+        </div>
+      </div>
+      <div class="filter-row">
+        <div class="filter-field">
+          <label>Date Début</label>
+          <input type="date" [(ngModel)]="approClientFilters.dateDebut" (change)="applyApproClientFilters()" class="filter-input">
+        </div>
+        <div class="filter-field">
+          <label>Date Fin</label>
+          <input type="date" [(ngModel)]="approClientFilters.dateFin" (change)="applyApproClientFilters()" class="filter-input">
+        </div>
+        <div class="filter-actions">
+          <button class="btn-export" (click)="exportApproClientOperations()" [disabled]="isExportingApproClient">
+            <i class="fas fa-file-excel"></i> {{ isExportingApproClient ? 'Export...' : 'Exporter' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="popup-body">
+      <div class="results-summary">
+        <div class="summary-item">
+          <span class="summary-label">Opérations trouvées :</span>
+          <span class="summary-value">{{ approClientOperations.length }}</span>
+        </div>
+        <div class="summary-item">
+          <span class="summary-label">Montant Total :</span>
+          <span class="summary-value total-amount">{{ getTotalApproClient() | number:'1.2-2' }}</span>
+        </div>
+      </div>
+      <div class="operations-table-container">
+        <table class="operations-table">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Code Propriétaire</th>
+              <th>Service</th>
+              <th>Montant</th>
+              <th>Pays</th>
+              <th>Statut</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let op of approClientOperations">
+              <td>{{ op.dateOperation | date:'dd/MM/yyyy' }}</td>
+              <td>{{ op.codeProprietaire }}</td>
+              <td>{{ op.service || '-' }}</td>
+              <td class="amount">{{ op.montant | number:'1.2-2' }}</td>
+              <td>{{ op.pays }}</td>
+              <td><span class="status-badge" [ngClass]="getStatusClass(op.statut)">{{ op.statut }}</span></td>
+            </tr>
+            <tr *ngIf="approClientOperations.length === 0">
+              <td colspan="6" class="no-data">Aucune opération trouvée</td>
+            </tr>
+            <tr *ngIf="approClientOperations.length > 0" class="total-row">
+              <td colspan="3" class="total-label">Total</td>
+              <td class="total-amount">{{ getTotalApproClient() | number:'1.2-2' }}</td>
+              <td colspan="2"></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Popup Compense Client -->
+<div *ngIf="showCompenseClientPopup" class="custom-popup-overlay" (click)="closeCompenseClientPopup()">
+  <div class="custom-popup-content" (click)="$event.stopPropagation()">
+    <div class="popup-header">
+      <h3><i class="fas fa-exchange-alt"></i> Compense Client</h3>
+      <button class="close-btn" (click)="closeCompenseClientPopup()">
+        <i class="fas fa-times"></i>
+      </button>
+    </div>
+    
+    <div class="popup-filters">
+      <div class="filter-row">
+        <div class="filter-field">
+          <label>Pays</label>
+          <select [(ngModel)]="compenseClientFilters.pays" (change)="applyCompenseClientFilters()" class="filter-select">
+            <option value="">Tous</option>
+            <option *ngFor="let pays of paysList" [value]="pays">{{ pays }}</option>
+          </select>
+        </div>
+        <div class="filter-field">
+          <label>Code Propriétaire</label>
+          <input type="text" 
+                 list="compenseClientCodeProprietaireList"
+                 [(ngModel)]="compenseClientFilters.codeProprietaire" 
+                 (input)="applyCompenseClientFilters()" 
+                 class="filter-input" 
+                 placeholder="Rechercher ou sélectionner...">
+          <datalist id="compenseClientCodeProprietaireList">
+            <option *ngFor="let code of compenseClientFilteredCodeProprietaireList" [value]="code">{{ code }}</option>
+          </datalist>
+        </div>
+        <div class="filter-field">
+          <label>Service</label>
+          <input type="text" [(ngModel)]="compenseClientFilters.service" (input)="applyCompenseClientFilters()" class="filter-input" placeholder="Rechercher...">
+        </div>
+      </div>
+      <div class="filter-row">
+        <div class="filter-field">
+          <label>Date Début</label>
+          <input type="date" [(ngModel)]="compenseClientFilters.dateDebut" (change)="applyCompenseClientFilters()" class="filter-input">
+        </div>
+        <div class="filter-field">
+          <label>Date Fin</label>
+          <input type="date" [(ngModel)]="compenseClientFilters.dateFin" (change)="applyCompenseClientFilters()" class="filter-input">
+        </div>
+        <div class="filter-actions">
+          <button class="btn-export" (click)="exportCompenseClientOperations()" [disabled]="isExportingCompenseClient">
+            <i class="fas fa-file-excel"></i> {{ isExportingCompenseClient ? 'Export...' : 'Exporter' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="popup-body">
+      <div class="results-summary">
+        <div class="summary-item">
+          <span class="summary-label">Opérations trouvées :</span>
+          <span class="summary-value">{{ compenseClientOperations.length }}</span>
+        </div>
+        <div class="summary-item">
+          <span class="summary-label">Montant Total :</span>
+          <span class="summary-value total-amount">{{ getTotalCompenseClient() | number:'1.2-2' }}</span>
+        </div>
+      </div>
+      <div class="operations-table-container">
+        <table class="operations-table">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Code Propriétaire</th>
+              <th>Service</th>
+              <th>Montant</th>
+              <th>Pays</th>
+              <th>Statut</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let op of compenseClientOperations">
+              <td>{{ op.dateOperation | date:'dd/MM/yyyy' }}</td>
+              <td>{{ op.codeProprietaire }}</td>
+              <td>{{ op.service || '-' }}</td>
+              <td class="amount">{{ op.montant | number:'1.2-2' }}</td>
+              <td>{{ op.pays }}</td>
+              <td><span class="status-badge" [ngClass]="getStatusClass(op.statut)">{{ op.statut }}</span></td>
+            </tr>
+            <tr *ngIf="compenseClientOperations.length === 0">
+              <td colspan="6" class="no-data">Aucune opération trouvée</td>
+            </tr>
+            <tr *ngIf="compenseClientOperations.length > 0" class="total-row">
+              <td colspan="3" class="total-label">Total</td>
+              <td class="total-amount">{{ getTotalCompenseClient() | number:'1.2-2' }}</td>
+              <td colspan="2"></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Popup Nivellement -->
+<div *ngIf="showNivellementPopup" class="custom-popup-overlay" (click)="closeNivellementPopup()">
+  <div class="custom-popup-content" (click)="$event.stopPropagation()">
+    <div class="popup-header">
+      <h3><i class="fas fa-balance-scale"></i> Nivellement</h3>
+      <button class="close-btn" (click)="closeNivellementPopup()">
+        <i class="fas fa-times"></i>
+      </button>
+    </div>
+    
+    <div class="popup-filters">
+      <div class="filter-row">
+        <div class="filter-field">
+          <label>Pays</label>
+          <select [(ngModel)]="nivellementFilters.pays" (change)="applyNivellementFilters()" class="filter-select">
+            <option value="">Tous</option>
+            <option *ngFor="let pays of paysList" [value]="pays">{{ pays }}</option>
+          </select>
+        </div>
+        <div class="filter-field">
+          <label>Code Propriétaire</label>
+          <input type="text" 
+                 list="nivellementCodeProprietaireList"
+                 [(ngModel)]="nivellementFilters.codeProprietaire" 
+                 (input)="applyNivellementFilters()" 
+                 class="filter-input" 
+                 placeholder="Rechercher ou sélectionner...">
+          <datalist id="nivellementCodeProprietaireList">
+            <option *ngFor="let code of nivellementFilteredCodeProprietaireList" [value]="code">{{ code }}</option>
+          </datalist>
+        </div>
+        <div class="filter-field">
+          <label>Service</label>
+          <input type="text" [(ngModel)]="nivellementFilters.service" (input)="applyNivellementFilters()" class="filter-input" placeholder="Rechercher...">
+        </div>
+      </div>
+      <div class="filter-row">
+        <div class="filter-field">
+          <label>Date Début</label>
+          <input type="date" [(ngModel)]="nivellementFilters.dateDebut" (change)="applyNivellementFilters()" class="filter-input">
+        </div>
+        <div class="filter-field">
+          <label>Date Fin</label>
+          <input type="date" [(ngModel)]="nivellementFilters.dateFin" (change)="applyNivellementFilters()" class="filter-input">
+        </div>
+        <div class="filter-actions">
+          <button class="btn-export" (click)="exportNivellementOperations()" [disabled]="isExportingNivellement">
+            <i class="fas fa-file-excel"></i> {{ isExportingNivellement ? 'Export...' : 'Exporter' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="popup-body">
+      <div class="results-summary">
+        <div class="summary-item">
+          <span class="summary-label">Opérations trouvées :</span>
+          <span class="summary-value">{{ nivellementOperations.length }}</span>
+        </div>
+        <div class="summary-item">
+          <span class="summary-label">Montant Total :</span>
+          <span class="summary-value total-amount">{{ getTotalNivellement() | number:'1.2-2' }}</span>
+        </div>
+      </div>
+      <div class="operations-table-container">
+        <table class="operations-table">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Code Propriétaire</th>
+              <th>Service</th>
+              <th>Montant</th>
+              <th>Pays</th>
+              <th>Statut</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let op of nivellementOperations">
+              <td>{{ op.dateOperation | date:'dd/MM/yyyy' }}</td>
+              <td>{{ op.codeProprietaire }}</td>
+              <td>{{ op.service || '-' }}</td>
+              <td class="amount">{{ op.montant | number:'1.2-2' }}</td>
+              <td>{{ op.pays }}</td>
+              <td><span class="status-badge" [ngClass]="getStatusClass(op.statut)">{{ op.statut }}</span></td>
+            </tr>
+            <tr *ngIf="nivellementOperations.length === 0">
+              <td colspan="6" class="no-data">Aucune opération trouvée</td>
+            </tr>
+            <tr *ngIf="nivellementOperations.length > 0" class="total-row">
+              <td colspan="3" class="total-label">Total</td>
+              <td class="total-amount">{{ getTotalNivellement() | number:'1.2-2' }}</td>
+              <td colspan="2"></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Popup Régularisation Solde -->
+<div *ngIf="showRegularisationSoldePopup" class="custom-popup-overlay" (click)="closeRegularisationSoldePopup()">
+  <div class="custom-popup-content" (click)="$event.stopPropagation()">
+    <div class="popup-header">
+      <h3><i class="fas fa-calculator"></i> Régularisation Solde</h3>
+      <button class="close-btn" (click)="closeRegularisationSoldePopup()">
+        <i class="fas fa-times"></i>
+      </button>
+    </div>
+    
+    <div class="popup-filters">
+      <div class="filter-row">
+        <div class="filter-field">
+          <label>Pays</label>
+          <select [(ngModel)]="regularisationSoldeFilters.pays" (change)="applyRegularisationSoldeFilters()" class="filter-select">
+            <option value="">Tous</option>
+            <option *ngFor="let pays of paysList" [value]="pays">{{ pays }}</option>
+          </select>
+        </div>
+        <div class="filter-field">
+          <label>Code Propriétaire</label>
+          <select [(ngModel)]="regularisationSoldeFilters.codeProprietaire" (change)="applyRegularisationSoldeFilters()" class="filter-select">
+            <option value="">Tous</option>
+            <option *ngFor="let code of codeProprietaireList" [value]="code">{{ code }}</option>
+          </select>
+        </div>
+        <div class="filter-field">
+          <label>Service</label>
+          <input type="text" [(ngModel)]="regularisationSoldeFilters.service" (input)="applyRegularisationSoldeFilters()" class="filter-input" placeholder="Rechercher...">
+        </div>
+      </div>
+      <div class="filter-row">
+        <div class="filter-field">
+          <label>Date Début</label>
+          <input type="date" [(ngModel)]="regularisationSoldeFilters.dateDebut" (change)="applyRegularisationSoldeFilters()" class="filter-input">
+        </div>
+        <div class="filter-field">
+          <label>Date Fin</label>
+          <input type="date" [(ngModel)]="regularisationSoldeFilters.dateFin" (change)="applyRegularisationSoldeFilters()" class="filter-input">
+        </div>
+        <div class="filter-actions">
+          <button class="btn-export" (click)="exportRegularisationSoldeOperations()" [disabled]="isExportingRegularisationSolde">
+            <i class="fas fa-file-excel"></i> {{ isExportingRegularisationSolde ? 'Export...' : 'Exporter' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="popup-body">
+      <div class="results-summary">
+        <div class="summary-item">
+          <span class="summary-label">Opérations trouvées :</span>
+          <span class="summary-value">{{ regularisationSoldeOperations.length }}</span>
+        </div>
+        <div class="summary-item">
+          <span class="summary-label">Montant Total :</span>
+          <span class="summary-value total-amount">{{ getTotalRegularisationSolde() | number:'1.2-2' }}</span>
+        </div>
+      </div>
+      <div class="operations-table-container">
+        <table class="operations-table">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Code Propriétaire</th>
+              <th>Service</th>
+              <th>Montant</th>
+              <th>Pays</th>
+              <th>Statut</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let op of regularisationSoldeOperations">
+              <td>{{ op.dateOperation | date:'dd/MM/yyyy' }}</td>
+              <td>{{ op.codeProprietaire }}</td>
+              <td>{{ op.service || '-' }}</td>
+              <td class="amount">{{ op.montant | number:'1.2-2' }}</td>
+              <td>{{ op.pays }}</td>
+              <td><span class="status-badge" [ngClass]="getStatusClass(op.statut)">{{ op.statut }}</span></td>
+            </tr>
+            <tr *ngIf="regularisationSoldeOperations.length === 0">
+              <td colspan="6" class="no-data">Aucune opération trouvée</td>
+            </tr>
+            <tr *ngIf="regularisationSoldeOperations.length > 0" class="total-row">
+              <td colspan="3" class="total-label">Total</td>
+              <td class="total-amount">{{ getTotalRegularisationSolde() | number:'1.2-2' }}</td>
+              <td colspan="2"></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </div>
   </div>
 </div> 
