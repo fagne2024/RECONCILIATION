@@ -1151,6 +1151,56 @@ export class TrxSfComponent implements OnInit, OnDestroy {
     }
   }
 
+  async exportNumeroTransGuOnly(): Promise<void> {
+    if (this.filteredTrxSfData.length === 0) {
+      this.showTemporaryMessage('error', 'Aucune donnée à exporter');
+      return;
+    }
+
+    try {
+      const fileName = await this.promptFileName();
+      if (!fileName) {
+        return;
+      }
+
+      const ExcelJS = (await import('exceljs')).Workbook;
+      const workbook = new ExcelJS();
+      const worksheet = workbook.addWorksheet('Numéro Trans GU');
+
+      worksheet.columns = [
+        { header: 'Numéro Trans GU', key: 'numeroTransGu', width: 25 }
+      ];
+
+      worksheet.getRow(1).eachCell(cell => {
+        cell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FF1976D2' }
+        };
+        cell.font = { color: { argb: 'FFFFFFFF' }, bold: true };
+        cell.alignment = { horizontal: 'center', vertical: 'middle' };
+      });
+
+      this.filteredTrxSfData.forEach(item => {
+        worksheet.addRow({ numeroTransGu: item.numeroTransGu || '' });
+      });
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${fileName}_NUMERO_TRANS_GU.xlsx`;
+      link.click();
+      window.URL.revokeObjectURL(url);
+
+      this.showTemporaryMessage('success', `Export réussi : ${this.filteredTrxSfData.length} numéro(s) exporté(s)`);
+    } catch (error) {
+      console.error('Erreur lors de l\'export Numéro Trans GU:', error);
+      this.showTemporaryMessage('error', 'Erreur lors de l\'export des Numéro Trans GU');
+    }
+  }
+
   private async promptFileName(): Promise<string | null> {
     return new Promise((resolve) => {
       const fileName = prompt('Nom du fichier d\'export (sans extension):', 
