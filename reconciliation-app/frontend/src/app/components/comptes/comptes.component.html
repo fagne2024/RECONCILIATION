@@ -440,6 +440,13 @@
                         <i class="fas fa-chart-bar"></i>
                         Control Revenu
                     </button>
+                    <button class="tab-button" 
+                            [class.active]="activeTab === 'ecart-frais'"
+                            (click)="switchTab('ecart-frais')"
+                            *ngIf="showEcartFraisTab">
+                        <i class="fas fa-receipt"></i>
+                        Écart Frais
+                    </button>
                 </div>
 
                 <!-- Contenu de l'onglet Opérations -->
@@ -837,7 +844,9 @@
                                             <td class="frais-paiement">{{ revenu.fraisPaiement | number:'1.2-2' }}</td>
                                             <td class="revenu-total">{{ revenu.revenuTotal | number:'1.2-2' }}</td>
                                             <td class="ecart-frais" [ngClass]="{'negative': revenu.ecartFrais < 0, 'positive': revenu.ecartFrais > 0}">
-                                                {{ revenu.ecartFrais | number:'1.2-2' }}
+                                                <a href="#" (click)="$event.preventDefault(); navigateToEcartFrais(revenu.date)" title="Voir Écart Frais (onglet)">
+                                                    {{ revenu.ecartFrais | number:'1.2-2' }}
+                                                </a>
                                             </td>
                                         </tr>
                                     </tbody>
@@ -865,6 +874,158 @@
                             </div>
                         </div>
                     </div>
+                </div>
+
+                <!-- Onglet Écart Frais (TRX SF par date/agence) - STYLE IMPACT OP -->
+                <div class="tab-content" *ngIf="activeTab === 'ecart-frais'">
+                  <div class="ecart-frais-container-impact">
+                    <!-- En-tête -->
+                    <div class="header">
+                      <h2>Détail des Frais de Transaction - {{ ecartFraisAgence }} - {{ formatDate(ecartFraisDate).split(' ')[0] }}</h2>
+                      <div class="header-actions">
+                        <button class="btn btn-success" (click)="exportEcartFrais()" [disabled]="ecartFraisItems.length === 0">
+                          <i class="fas fa-download"></i> Exporter
+                        </button>
+                      </div>
+                    </div>
+
+                    <!-- Statistiques -->
+                    <div class="stats-section" *ngIf="!isLoadingEcartFrais && ecartFraisItems.length > 0">
+                      <div class="stats-grid">
+                        <div class="stat-card">
+                          <div class="stat-value">{{ ecartFraisItems.length }}</div>
+                          <div class="stat-label">Total transactions</div>
+                        </div>
+                        <div class="stat-card stat-montant">
+                          <div class="stat-value">{{ getTotalMontantEcartTrxSf() | number:'1.2-2' }}</div>
+                          <div class="stat-label">Montant total</div>
+                        </div>
+                        <div class="stat-card stat-frais">
+                          <div class="stat-value">{{ getTotalFraisEcartTrxSf() | number:'1.2-2' }}</div>
+                          <div class="stat-label">Total frais</div>
+                        </div>
+                        <div class="stat-card stat-services">
+                          <div class="stat-value">{{ getUniqueServicesCount() }}</div>
+                          <div class="stat-label">Services uniques</div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <!-- Tableau des frais -->
+                    <div class="table-section">
+                      <div class="table-header">
+                        <h3>Liste des Transactions</h3>
+                        <div class="table-info">
+                          Affichage {{ (ecartFraisCurrentPage - 1) * ecartFraisPageSize + 1 }} - {{ Math.min(ecartFraisCurrentPage * ecartFraisPageSize, ecartFraisItems.length) }} 
+                          sur {{ ecartFraisItems.length }} transactions
+                        </div>
+                        <div class="page-size-controls">
+                          <label>Affichage:</label>
+                          <select [(ngModel)]="ecartFraisPageSize" (change)="onChangeEcartFraisPageSize(ecartFraisPageSize)" class="form-control page-size-select">
+                            <option [ngValue]="10">10</option>
+                            <option [ngValue]="20">20</option>
+                            <option [ngValue]="50">50</option>
+                            <option [ngValue]="100">100</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      <div class="table-container" *ngIf="!isLoadingEcartFrais">
+                        <table class="ecart-frais-table">
+                          <thead>
+                            <tr>
+                              <th><i class="fas fa-hashtag"></i> ID Transaction</th>
+                              <th><i class="fas fa-cog"></i> Service</th>
+                              <th><i class="fas fa-building"></i> Agence</th>
+                              <th><i class="fas fa-calendar"></i> Date</th>
+                              <th><i class="fas fa-barcode"></i> Numéro Trans GU</th>
+                              <th><i class="fas fa-globe"></i> Pays</th>
+                              <th><i class="fas fa-coins"></i> Montant</th>
+                              <th><i class="fas fa-receipt"></i> Frais</th>
+                              <th><i class="fas fa-info-circle"></i> Statut</th>
+                              <th><i class="fas fa-comment"></i> Commentaire</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <tr *ngFor="let it of pagedEcartFraisItems"
+                                [ngClass]="{
+                                  'statut-en-attente': it.statut==='EN_ATTENTE',
+                                  'statut-traite': it.statut==='TRAITE',
+                                  'statut-erreur': it.statut==='ERREUR'
+                                }">
+                              <td>{{ it.idTransaction }}</td>
+                              <td>{{ it.service }}</td>
+                              <td>{{ it.agence }}</td>
+                              <td>{{ formatDate(it.dateTransaction) }}</td>
+                              <td>{{ it.numeroTransGu }}</td>
+                              <td>{{ it.pays }}</td>
+                              <td class="montant-positif">{{ it.montant | number:'1.2-2' }}</td>
+                              <td class="frais-value">{{ it.frais | number:'1.2-2' }}</td>
+                              <td>
+                                <span class="status-badge" 
+                                      [ngClass]="{
+                                        'status-en-attente': it.statut === 'EN_ATTENTE',
+                                        'status-traite': it.statut === 'TRAITE',
+                                        'status-erreur': it.statut === 'ERREUR'
+                                      }">
+                                  <i class="fas" 
+                                     [ngClass]="{
+                                       'fa-clock': it.statut === 'EN_ATTENTE',
+                                       'fa-check-circle': it.statut === 'TRAITE',
+                                       'fa-times-circle': it.statut === 'ERREUR'
+                                     }"></i>
+                                  {{ it.statut }}
+                                </span>
+                              </td>
+                              <td>{{ it.commentaire || '-' }}</td>
+                            </tr>
+                          </tbody>
+                          <tfoot>
+                            <tr>
+                              <td colspan="6" style="text-align: right; font-weight: bold;">
+                                <i class="fas fa-calculator"></i> TOTAL
+                              </td>
+                              <td class="montant-positif" style="font-weight: bold;">
+                                <i class="fas fa-coins"></i> {{ getTotalMontantEcartTrxSf() | number:'1.2-2' }}
+                              </td>
+                              <td class="frais-value" style="font-weight: bold;">
+                                <i class="fas fa-receipt"></i> {{ getTotalFraisEcartTrxSf() | number:'1.2-2' }}
+                              </td>
+                              <td colspan="2"></td>
+                            </tr>
+                          </tfoot>
+                        </table>
+                      </div>
+
+                      <!-- Loading -->
+                      <div class="loading-container" *ngIf="isLoadingEcartFrais">
+                        <div class="loading-spinner">
+                          <i class="fas fa-spinner fa-spin"></i>
+                          <span>Chargement en cours...</span>
+                        </div>
+                      </div>
+
+                      <!-- Pagination -->
+                      <div class="pagination" *ngIf="ecartFraisTotalPages > 1">
+                        <button (click)="prevEcartFraisPage()" [disabled]="ecartFraisCurrentPage === 1" class="btn pagination-btn">
+                          <i class="fas fa-chevron-left"></i> Précédent
+                        </button>
+                        
+                        <div class="pagination-indicators">
+                          <span *ngFor="let page of getVisibleEcartFraisPages()" 
+                                class="page-indicator"
+                                [class.active]="ecartFraisCurrentPage === page"
+                                (click)="goToEcartFraisPage(page)">
+                            {{ page }}
+                          </span>
+                        </div>
+                        
+                        <button (click)="nextEcartFraisPage()" [disabled]="ecartFraisCurrentPage === ecartFraisTotalPages" class="btn pagination-btn">
+                          Suivant <i class="fas fa-chevron-right"></i>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
                 </div>
 
                 <!-- Contenu de l'onglet Control Revenu -->
