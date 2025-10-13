@@ -189,6 +189,17 @@ export class ComptesComponent implements OnInit, OnDestroy {
     dateViewData: any[] = [];
     isLoadingDateView = false;
     isLoadingControlRevenu = false;
+
+    // Propriétés pour l'onglet Écart Frais (TRX SF par date/agence)
+    showEcartFraisTab = false;
+    ecartFraisDate: string = '';
+    ecartFraisAgence: string = '';
+    ecartFraisItems: import('../../services/trx-sf.service').TrxSfData[] = [];
+    isLoadingEcartFrais = false;
+    // Pagination Écart Frais
+    ecartFraisCurrentPage = 1;
+    ecartFraisPageSize = 10;
+    ecartFraisTotalPages = 1;
     
     // Pagination pour le revenu journalier
     revenuJournalierCurrentPage = 1;
@@ -1503,12 +1514,12 @@ export class ComptesComponent implements OnInit, OnDestroy {
         // Créer un tableau complet avec en-tête et données
         const tableData = [];
         // En-tête avec informations du compte
-        tableData.push(['RELEVÉ DE COMPTE', '', '', '', '', '', '', '', '']);
-        tableData.push(['', '', '', '', '', '', '', '', '']);
-        tableData.push(['Numéro de compte:', this.selectedCompte.numeroCompte, '', 'Solde actuel:', this.selectedCompte.solde, '', '', '', '']);
-        tableData.push(['Pays:', this.selectedCompte.pays, '', 'Code propriétaire:', this.selectedCompte.codeProprietaire || '-', '', '', '', '']);
-        tableData.push(['Dernière mise à jour:', this.formatDate(this.selectedCompte.dateDerniereMaj), '', '', '', '', '', '', '']);
-        tableData.push(['', '', '', '', '', '', '', '', '']);
+        tableData.push(['RELEVÉ DE COMPTE', '', '', '', '', '', '']);
+        tableData.push(['', '', '', '', '', '', '']);
+        tableData.push(['Numéro de compte:', this.selectedCompte.numeroCompte, '', 'Solde actuel:', this.selectedCompte.solde, '', '']);
+        tableData.push(['Pays:', this.selectedCompte.pays, '', 'Code propriétaire:', this.selectedCompte.codeProprietaire || '-', '', '']);
+        tableData.push(['Dernière mise à jour:', this.formatDate(this.selectedCompte.dateDerniereMaj), '', '', '', '', '']);
+        tableData.push(['', '', '', '', '', '', '']);
         // Informations sur les filtres appliqués
         let filterInfo = 'Historique complet';
         if (this.releveDateDebut === 'custom' && (this.releveDateDebutCustom || this.releveDateFinCustom)) {
@@ -1520,8 +1531,8 @@ export class ComptesComponent implements OnInit, OnDestroy {
         if (this.releveTypeOperation) {
             filterInfo += ` | Type: ${this.getOperationTypeLabel(this.releveTypeOperation)}`;
         }
-        tableData.push([filterInfo, '', '', '', '', '', '', '', '']);
-        tableData.push(['', '', '', '', '', '', '', '', '']);
+        tableData.push([filterInfo, '', '', '', '', '', '']);
+        tableData.push(['', '', '', '', '', '', '']);
         // En-tête du tableau des opérations
         tableData.push([
             'Date',
@@ -1530,14 +1541,16 @@ export class ComptesComponent implements OnInit, OnDestroy {
             'Crédit',
             'Solde avant',
             'Solde après',
-            'Service',
-            'Banque',
-            'Bordereau'
+            'Service'
         ]);
+        // Utiliser la même logique que l'affichage : opérations groupées puis aplaties
+        const allGroupedOperations = this.getGroupedReleveOperations();
+        const allOperations = allGroupedOperations.flatMap(group => [group.main, ...group.frais]);
+        
         // Ajout d'une méthode utilitaire pour grouper les opérations par date et calculer les soldes d'ouverture/clôture
         const dailyBalances = this.getDailyBalances(this.releveOperations);
         let lastDate = '';
-        this.releveOperations.forEach((op, idx) => {
+        allOperations.forEach((op, idx) => {
             const date = op.dateOperation ? op.dateOperation.split('T')[0] : '';
             if (date && date !== lastDate) {
                 // Ligne solde d'ouverture
@@ -1546,10 +1559,10 @@ export class ComptesComponent implements OnInit, OnDestroy {
                     'Solde d\'ouverture',
                     '', '',
                     this.formatMontant(dailyBalances[date]?.opening ?? ''),
-                    '', '', '', ''
+                    '', ''
                 ]);
                 // Ligne d'espacement
-                tableData.push(['', '', '', '', '', '', '', '', '']);
+                tableData.push(['', '', '', '', '', '', '']);
                 lastDate = date;
             }
             // Calcul Débit/Crédit selon la logique métier (exclusif)
@@ -1578,37 +1591,35 @@ export class ComptesComponent implements OnInit, OnDestroy {
                 credit,
                 this.formatMontant(op.soldeAvant),
                 this.formatMontant(op.soldeApres),
-                op.service || '-',
-                op.banque || '-',
-                op.nomBordereau || '-'
+                op.service || '-'
             ]);
             // Ajout de la ligne de solde de clôture UNIQUEMENT si c'est la dernière opération de la journée
-            const isLastOfDay = idx === this.releveOperations.length - 1 ||
-                (this.releveOperations[idx + 1] && (this.releveOperations[idx + 1].dateOperation ? this.releveOperations[idx + 1].dateOperation.split('T')[0] : '') !== date);
+            const isLastOfDay = idx === allOperations.length - 1 ||
+                (allOperations[idx + 1] && (allOperations[idx + 1].dateOperation ? allOperations[idx + 1].dateOperation.split('T')[0] : '') !== date);
             if (isLastOfDay) {
                 // Ligne d'espacement avant
-                tableData.push(['', '', '', '', '', '', '', '', '']);
+                tableData.push(['', '', '', '', '', '', '']);
                 tableData.push([
                     this.formatDate(date),
                     'Solde de clôture',
                     '', '',
                     this.formatMontant(dailyBalances[date]?.closing ?? ''),
-                    '', '', '', ''
+                    '', ''
                 ]);
                 // Ligne d'espacement après
-                tableData.push(['', '', '', '', '', '', '', '', '']);
+                tableData.push(['', '', '', '', '', '', '']);
             }
         });
         // Ajouter un résumé en bas
-        tableData.push(['', '', '', '', '', '', '', '', '']);
-        tableData.push(['RÉSUMÉ', '', '', '', '', '', '', '', '']);
-        tableData.push(['Total opérations:', this.releveOperations.length, '', '', '', '', '', '', '']);
+        tableData.push(['', '', '', '', '', '', '']);
+        tableData.push(['RÉSUMÉ', '', '', '', '', '', '']);
+        tableData.push(['Total opérations:', allOperations.length, '', '', '', '', '']);
 
         // Calculs totaux par type et totaux débit/crédit
         const totalsByType: { [type: string]: { debit: number, credit: number } } = {};
         let totalDebit = 0;
         let totalCredit = 0;
-        this.releveOperations.forEach(op => {
+        allOperations.forEach(op => {
             const { debit, credit } = this.getDebitCreditForOperation(op);
             const typeLabel = this.getOperationTypeLabel(op.typeOperation);
             if (!totalsByType[typeLabel]) totalsByType[typeLabel] = { debit: 0, credit: 0 };
@@ -1623,31 +1634,31 @@ export class ComptesComponent implements OnInit, OnDestroy {
                 '',
                 this.formatMontant(total.debit),
                 this.formatMontant(total.credit),
-                '', '', '', '', ''
+                '', '', ''
             ]);
         });
-        tableData.push(['', '', '', '', '', '', '', '', '']);
-        tableData.push(['Total Débit:', this.formatMontant(totalDebit), '', '', '', '', '', '', '']);
-        tableData.push(['Total Crédit:', this.formatMontant(totalCredit), '', '', '', '', '', '', '']);
-        tableData.push(['Différence (Débit - Crédit):', this.formatMontant(Math.abs(totalDebit - totalCredit)), '', '', '', '', '', '', '']);
+        tableData.push(['', '', '', '', '', '', '']);
+        tableData.push(['Total Débit:', this.formatMontant(totalDebit), '', '', '', '', '']);
+        tableData.push(['Total Crédit:', this.formatMontant(totalCredit), '', '', '', '', '']);
+        tableData.push(['Différence (Débit - Crédit):', this.formatMontant(Math.abs(totalDebit - totalCredit)), '', '', '', '', '']);
         // Ajouter solde d'ouverture et solde final de la période choisie
         if (this.releveOperations.length > 0) {
-            tableData.push(['', '', '', '', '', '', '', '', '']);
+            tableData.push(['', '', '', '', '', '', '']);
             tableData.push([
                 `Solde d'ouverture global (${this.getGlobalOpeningBalanceDate()}):`,
-                this.formatMontant(this.getGlobalOpeningBalance()), '', '', '', '', '', '', ''
+                this.formatMontant(this.getGlobalOpeningBalance()), '', '', '', '', ''
             ]);
             tableData.push([
                 `Solde de clôture global (${this.getGlobalClosingBalanceDate()}):`,
-                this.formatMontant(this.getGlobalClosingBalance()), '', '', '', '', '', '', ''
+                this.formatMontant(this.getGlobalClosingBalance()), '', '', '', '', ''
             ]);
             tableData.push([
                 'Différence solde ouverture/clôture:',
-                this.formatMontant(Math.abs(this.getGlobalClosingBalance() - this.getGlobalOpeningBalance())), '', '', '', '', '', '', ''
+                this.formatMontant(Math.abs(this.getGlobalClosingBalance() - this.getGlobalOpeningBalance())), '', '', '', '', ''
             ]);
             // Calcul de l'écart (après toutes les autres lignes)
             let ecart = Math.abs(totalDebit - totalCredit) - Math.abs(this.getGlobalClosingBalance() - this.getGlobalOpeningBalance());
-            tableData.push(['ECART:', this.formatMontant(ecart), '', '', '', '', '', '', '']);
+            tableData.push(['ECART:', this.formatMontant(ecart), '', '', '', '', '']);
         }
         // Formater toutes les lignes du tableau
         const formattedTableData = tableData.map(row => row.map(cell => this.formatMontant(cell)));
@@ -2081,6 +2092,12 @@ export class ComptesComponent implements OnInit, OnDestroy {
         } else if (tabName === 'control-revenu') {
             this.showControlRevenuTab = true;
             this.loadControlRevenu();
+        } else if (tabName === 'ecart-frais') {
+            this.showEcartFraisTab = true;
+            // si une date est déjà sélectionnée, s'assurer que les données sont présentes
+            if (this.ecartFraisDate && this.selectedCompte && this.ecartFraisItems.length === 0) {
+                this.fetchEcartFraisData(this.selectedCompte.numeroCompte, this.ecartFraisDate);
+            }
         }
     }
 
@@ -2190,6 +2207,199 @@ export class ComptesComponent implements OnInit, OnDestroy {
             this.applyRevenuJournalierFilters();
 
             this.isLoadingRevenuJournalier = false;
+        });
+    }
+
+    // Naviguer vers l'onglet Écart Frais (date/agence) depuis Revenu Journalier
+    navigateToEcartFrais(date: string): void {
+        if (!this.selectedCompte) return;
+        const agence = this.selectedCompte.numeroCompte || '';
+        this.ecartFraisDate = date;
+        this.ecartFraisAgence = agence;
+        this.activeTab = 'ecart-frais';
+        this.showEcartFraisTab = true;
+        this.fetchEcartFraisData(agence, date);
+    }
+
+    private fetchEcartFraisData(agence: string, date: string): void {
+        this.isLoadingEcartFrais = true;
+        this.ecartFraisItems = [];
+        this.trxSfService.getTrxSfs({ agence, dateDebut: date, dateFin: date, statut: 'EN_ATTENTE' }).subscribe({
+            next: (rows) => {
+                this.ecartFraisItems = rows || [];
+                this.isLoadingEcartFrais = false;
+                this.calculateEcartFraisPagination();
+            },
+            error: () => {
+                this.ecartFraisItems = [];
+                this.isLoadingEcartFrais = false;
+                this.calculateEcartFraisPagination();
+            }
+        });
+    }
+
+    // Total des frais TRX SF listés dans le popup
+    getTotalFraisEcartTrxSf(): number {
+        return (this.ecartFraisItems || []).reduce((sum, it) => sum + (it.frais || 0), 0);
+    }
+
+    // Total des montants TRX SF listés dans l'onglet Écart Frais
+    getTotalMontantEcartTrxSf(): number {
+        return (this.ecartFraisItems || []).reduce((sum, it) => sum + (it.montant || 0), 0);
+    }
+
+    // Pagination Écart Frais
+    private calculateEcartFraisPagination(): void {
+        this.ecartFraisCurrentPage = 1;
+        const total = this.ecartFraisItems.length;
+        this.ecartFraisTotalPages = Math.max(1, Math.ceil(total / this.ecartFraisPageSize));
+    }
+
+    get pagedEcartFraisItems(): import('../../services/trx-sf.service').TrxSfData[] {
+        const startIndex = (this.ecartFraisCurrentPage - 1) * this.ecartFraisPageSize;
+        const endIndex = startIndex + this.ecartFraisPageSize;
+        return (this.ecartFraisItems || []).slice(startIndex, endIndex);
+    }
+
+    prevEcartFraisPage(): void {
+        if (this.ecartFraisCurrentPage > 1) {
+            this.ecartFraisCurrentPage--;
+        }
+    }
+
+    nextEcartFraisPage(): void {
+        if (this.ecartFraisCurrentPage < this.ecartFraisTotalPages) {
+            this.ecartFraisCurrentPage++;
+        }
+    }
+
+    goToEcartFraisPage(page: number): void {
+        if (page >= 1 && page <= this.ecartFraisTotalPages) {
+            this.ecartFraisCurrentPage = page;
+        }
+    }
+
+    onChangeEcartFraisPageSize(size: number): void {
+        this.ecartFraisPageSize = size;
+        this.calculateEcartFraisPagination();
+    }
+
+    getVisibleEcartFraisPages(): number[] {
+        const totalPages = this.ecartFraisTotalPages;
+        const currentPage = this.ecartFraisCurrentPage;
+        const maxVisible = 5;
+        if (totalPages <= maxVisible) {
+            return Array.from({ length: totalPages }, (_, i) => i + 1);
+        }
+        let start = Math.max(1, currentPage - Math.floor(maxVisible / 2));
+        let end = Math.min(totalPages, start + maxVisible - 1);
+        if (end - start + 1 < maxVisible) {
+            start = Math.max(1, end - maxVisible + 1);
+        }
+        return Array.from({ length: end - start + 1 }, (_, i) => start + i);
+    }
+
+    // Obtenir le nombre de services uniques dans ecartFraisItems
+    getUniqueServicesCount(): number {
+        if (!this.ecartFraisItems || this.ecartFraisItems.length === 0) {
+            return 0;
+        }
+        const uniqueServices = new Set(this.ecartFraisItems.map(item => item.service));
+        return uniqueServices.size;
+    }
+
+    // Exporter les données d'écart frais vers Excel
+    exportEcartFrais(): void {
+        if (!this.ecartFraisItems || this.ecartFraisItems.length === 0) {
+            this.popupService.showError('Aucune donnée à exporter');
+            return;
+        }
+
+        this.isExporting = true;
+
+        // Créer un nouveau classeur
+        const workbook = new ExcelJS.Workbook();
+        const worksheet = workbook.addWorksheet('Écart Frais');
+
+        // Définir les colonnes
+        worksheet.columns = [
+            { header: 'ID Transaction', key: 'idTransaction', width: 30 },
+            { header: 'Service', key: 'service', width: 25 },
+            { header: 'Agence', key: 'agence', width: 20 },
+            { header: 'Date', key: 'date', width: 20 },
+            { header: 'Numéro Trans GU', key: 'numeroTransGu', width: 25 },
+            { header: 'Pays', key: 'pays', width: 10 },
+            { header: 'Montant', key: 'montant', width: 15 },
+            { header: 'Frais', key: 'frais', width: 15 },
+            { header: 'Statut', key: 'statut', width: 15 },
+            { header: 'Commentaire', key: 'commentaire', width: 30 }
+        ];
+
+        // Appliquer le style de l'en-tête
+        worksheet.getRow(1).font = { bold: true, size: 12 };
+        worksheet.getRow(1).fill = {
+            type: 'pattern',
+            pattern: 'solid',
+            fgColor: { argb: 'FF667EEA' }
+        };
+        worksheet.getRow(1).alignment = { vertical: 'middle', horizontal: 'center' };
+        worksheet.getRow(1).height = 25;
+
+        // Ajouter les données
+        this.ecartFraisItems.forEach(item => {
+            worksheet.addRow({
+                idTransaction: item.idTransaction || '',
+                service: item.service || '',
+                agence: item.agence || '',
+                date: this.formatDate(item.dateTransaction || ''),
+                numeroTransGu: item.numeroTransGu || '',
+                pays: item.pays || '',
+                montant: item.montant || 0,
+                frais: item.frais || 0,
+                statut: item.statut || '',
+                commentaire: item.commentaire || ''
+            });
+        });
+
+        // Ajouter une ligne de total
+        const totalRow = worksheet.addRow({
+            idTransaction: '',
+            service: '',
+            agence: '',
+            date: '',
+            numeroTransGu: '',
+            pays: 'TOTAL',
+            montant: this.getTotalMontantEcartTrxSf(),
+            frais: this.getTotalFraisEcartTrxSf(),
+            statut: '',
+            commentaire: ''
+        });
+
+        totalRow.font = { bold: true, size: 12 };
+        totalRow.fill = {
+            type: 'pattern',
+            pattern: 'solid',
+            fgColor: { argb: 'FFF3F4F6' }
+        };
+
+        // Formater les colonnes de montants
+        worksheet.getColumn('montant').numFmt = '#,##0.00';
+        worksheet.getColumn('frais').numFmt = '#,##0.00';
+
+        // Générer le fichier Excel
+        workbook.xlsx.writeBuffer().then((buffer: ArrayBuffer) => {
+            const blob = new Blob([buffer], {
+                type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+            });
+            const date = this.formatDate(this.ecartFraisDate).split(' ')[0].replace(/\//g, '-');
+            const fileName = `Ecart_Frais_${this.ecartFraisAgence}_${date}.xlsx`;
+            saveAs(blob, fileName);
+            this.popupService.showSuccess(`Exportation réussie: ${fileName}`);
+        }).catch((error: any) => {
+            console.error('Erreur lors de l\'exportation:', error);
+            this.popupService.showError('Erreur lors de l\'exportation des données');
+        }).finally(() => {
+            this.isExporting = false;
         });
     }
 
