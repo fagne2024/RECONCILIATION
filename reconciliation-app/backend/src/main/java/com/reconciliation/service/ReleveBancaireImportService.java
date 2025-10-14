@@ -245,7 +245,28 @@ public class ReleveBancaireImportService {
         if (c == null) return null;
         try {
             if (c.getCellType() == CellType.NUMERIC) return c.getNumericCellValue();
-            String s = c.toString().replace(" ", "").replace(",", ".");
+            String s = c.toString();
+            if (s == null) return null;
+            s = s.trim();
+            if (s.isEmpty()) return null;
+            // Supprimer libellés et devises
+            s = s.replaceAll("[A-Za-z\\u00C0-\\u017F]", "");
+            // Garder seulement chiffres, séparateurs et signe
+            s = s.replaceAll("[^0-9,.-]", "");
+            if (s.isEmpty()) return null;
+            // Déterminer séparateur décimal (dernier ',' ou '.')
+            int lastComma = s.lastIndexOf(',');
+            int lastDot = s.lastIndexOf('.');
+            char decimalSep = (lastComma > lastDot) ? ',' : '.';
+            // Retirer tous les séparateurs de milliers (l'autre séparateur)
+            if (decimalSep == ',') {
+                s = s.replace(".", "");
+                s = s.replace(',', '.');
+            } else {
+                s = s.replace(",", "");
+            }
+            // Nettoyer doublons de signes
+            s = s.replaceAll("--", "-");
             return s.isBlank() ? null : Double.parseDouble(s);
         } catch (Exception e) { return null; }
     }
@@ -258,12 +279,18 @@ public class ReleveBancaireImportService {
             if (DateUtil.isCellDateFormatted(c)) {
                 return c.getLocalDateTimeCellValue().toLocalDate();
             }
-            String s = c.toString().trim();
+            String s = c.toString();
+            if (s == null) return null;
+            s = s.trim();
             if (s.isBlank()) return null;
             // Try multiple patterns
-            String[] patterns = {"dd/MM/yyyy", "dd-MM-yyyy", "yyyy-MM-dd", "dd MMM yy", "dd MMM yyyy"};
-            for (String p : patterns) {
+            String[] patternsFr = {"dd/MM/yyyy", "dd-MM-yyyy", "yyyy-MM-dd", "dd MMM yy", "dd MMM yyyy", "dd-MMM-yy", "dd-MMM-yyyy"};
+            String[] patternsEn = {"dd/MMM/yy", "dd/MMM/yyyy", "dd-MMM-yy", "dd-MMM-yyyy"};
+            for (String p : patternsFr) {
                 try { return LocalDate.parse(s, DateTimeFormatter.ofPattern(p, Locale.FRENCH)); } catch (Exception ignore) {}
+            }
+            for (String p : patternsEn) {
+                try { return LocalDate.parse(s, DateTimeFormatter.ofPattern(p, Locale.ENGLISH)); } catch (Exception ignore) {}
             }
         } catch (Exception ignore) {}
         return null;
