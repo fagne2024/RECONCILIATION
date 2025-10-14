@@ -318,16 +318,16 @@ public class ReleveBancaireImportService {
             if (s == null) return null;
             s = s.trim();
             if (s.isBlank()) return null;
-            // Try multiple patterns
+            // Try multiple patterns (case-insensitive)
             // Normaliser multiples espaces/points au besoin
             s = s.replaceAll("\\s+", " ").replace('.', '-').replace('/', '-');
             String[] patternsFr = {"dd-MM-yyyy", "yyyy-MM-dd", "dd MMM yy", "dd MMM yyyy", "dd-MMM-yy", "dd-MMM-yyyy", "ddMMyyyy", "yyyyMMdd"};
             String[] patternsEn = {"dd-MMM-yy", "dd-MMM-yyyy", "dd MMM yy", "dd MMM yyyy"};
             for (String p : patternsFr) {
-                try { return LocalDate.parse(s, DateTimeFormatter.ofPattern(p, Locale.FRENCH)); } catch (Exception ignore) {}
+                try { return parseCaseInsensitive(s, p, Locale.FRENCH); } catch (Exception ignore) {}
             }
             for (String p : patternsEn) {
-                try { return LocalDate.parse(s, DateTimeFormatter.ofPattern(p, Locale.ENGLISH)); } catch (Exception ignore) {}
+                try { return parseCaseInsensitive(s, p, Locale.ENGLISH); } catch (Exception ignore) {}
             }
             // 3) Fallback: extraire jour/mois/année chiffres si présent
             String digits = s.replaceAll("[^0-9]", "");
@@ -338,6 +338,14 @@ public class ReleveBancaireImportService {
             }
         } catch (Exception ignore) {}
         return null;
+    }
+
+    private static LocalDate parseCaseInsensitive(String input, String pattern, Locale locale) {
+        java.time.format.DateTimeFormatter f = new java.time.format.DateTimeFormatterBuilder()
+                .parseCaseInsensitive()
+                .appendPattern(pattern)
+                .toFormatter(locale);
+        return LocalDate.parse(input, f);
     }
 }
 
