@@ -5,6 +5,8 @@ import { OperationBancaireService } from '../../services/operation-bancaire.serv
 import { Compte } from '../../models/compte.model';
 import { CompteService } from '../../services/compte.service';
 import { OperationService } from '../../services/operation.service';
+import { ReleveBancaireService } from '../../services/releve-bancaire.service';
+import { ReleveBancaireRow } from '../../models/releve-bancaire.model';
 
 // Interface locale pour les opérations bancaires avec Date
 interface OperationBancaireDisplay extends Omit<OperationBancaire, 'dateOperation'> {
@@ -82,7 +84,8 @@ export class BanqueComponent implements OnInit {
     private router: Router,
     private operationBancaireService: OperationBancaireService,
     private compteService: CompteService,
-    private operationService: OperationService
+    private operationService: OperationService,
+    private releveService: ReleveBancaireService
   ) { }
 
   ngOnInit(): void {
@@ -208,6 +211,35 @@ export class BanqueComponent implements OnInit {
         el.scrollIntoView({ behavior: 'smooth', block: 'start' });
       }
     }, 0);
+  }
+
+  // Relevé bancaire import
+  releveSelectedFile: File | null = null;
+  releveUploading = false;
+  releveBatchId: string | null = null;
+  releveRows: ReleveBancaireRow[] = [];
+
+  onReleveFileSelected(event: Event) {
+    const input = event.target as HTMLInputElement;
+    this.releveSelectedFile = input.files && input.files.length ? input.files[0] : null;
+  }
+
+  uploadReleve() {
+    if (!this.releveSelectedFile) return;
+    this.releveUploading = true;
+    this.releveBatchId = null;
+    this.releveRows = [];
+    this.releveService.upload(this.releveSelectedFile).subscribe({
+      next: (res) => {
+        this.releveBatchId = res.batchId;
+        this.releveRows = res.rows || [];
+        this.releveUploading = false;
+      },
+      error: () => {
+        this.releveUploading = false;
+        alert('Import du relevé bancaire échoué');
+      }
+    });
   }
 
   // Chargement des données

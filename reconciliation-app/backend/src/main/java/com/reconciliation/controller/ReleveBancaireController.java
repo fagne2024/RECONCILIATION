@@ -7,12 +7,13 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.bind.annotation.RequestMethod;
 
 import java.util.List;
 
 @RestController
 @RequestMapping("/api/releve-bancaire")
-@CrossOrigin(origins = "*")
+@CrossOrigin(origins = {"http://localhost:4200", "*"}, allowedHeaders = "*", methods = {RequestMethod.GET, RequestMethod.POST, RequestMethod.OPTIONS})
 public class ReleveBancaireController {
 
     @Autowired
@@ -20,7 +21,7 @@ public class ReleveBancaireController {
     @Autowired
     private ReleveBancaireRepository repository;
 
-    @PostMapping("/upload")
+    @PostMapping(value = "/upload", consumes = {"multipart/form-data"})
     public ResponseEntity<java.util.Map<String, Object>> upload(@RequestParam("file") MultipartFile file) {
         try {
             List<ReleveBancaireRow> rows = importService.parseFile(file);
