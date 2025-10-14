@@ -245,7 +245,11 @@ export class BanqueComponent implements OnInit {
     this.releveService.upload(this.releveSelectedFile).subscribe({
       next: (res) => {
         this.releveBatchId = res.batchId;
-        this.releveRows = res.rows || [];
+        this.releveRows = (res.rows || []).map(r => ({
+          ...r,
+          dateComptable: r.dateComptable ? new Date(r.dateComptable as any) : undefined,
+          dateValeur: r.dateValeur ? new Date(r.dateValeur as any) : undefined
+        }));
         this.releveUploading = false;
         this.releveMessageKind = 'success';
         const baseMsg = `Fichier importé avec succès (${res.count} lignes).`;
@@ -296,8 +300,8 @@ export class BanqueComponent implements OnInit {
           numeroCompte: it.numeroCompte,
           ['nomCompte']: it.nomCompte,
           banque: it.banque,
-          dateComptable: it.dateComptable,
-          dateValeur: it.dateValeur,
+          dateComptable: it.dateComptable ? new Date(it.dateComptable) : undefined,
+          dateValeur: it.dateValeur ? new Date(it.dateValeur) : undefined,
           libelle: it.libelle,
           debit: it.debit,
           credit: it.credit,
