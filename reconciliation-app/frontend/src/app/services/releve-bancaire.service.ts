@@ -20,6 +20,10 @@ export class ReleveBancaireService {
     const url = batchId ? `${this.apiUrl}/list?batchId=${encodeURIComponent(batchId)}` : `${this.apiUrl}/list`;
     return this.http.get<any>(url);
   }
+
+  update(id: number, payload: Partial<ReleveBancaireRow>): Observable<ReleveBancaireRow> {
+    return this.http.put<ReleveBancaireRow>(`${this.apiUrl}/${id}`, payload);
+  }
 }
 
 

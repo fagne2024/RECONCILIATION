@@ -18,7 +18,7 @@
         <div class="stat-card">
           <div class="stat-icon">📈</div>
           <div class="stat-info">
-            <h3>Transactions</h3>
+            <h3>Opérations bancaires</h3>
             <p class="stat-value">{{ totalOperations }}</p>
           </div>
         </div>
@@ -116,6 +116,7 @@
                 <th class="right">Montant</th>
                 <th>Chèque</th>
                 <th>Devise</th>
+                <th class="actions-col">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -131,6 +132,11 @@
                 <td class="right"><span class="amount" [class.debit]="!!r.montant && r.montant < 0" [class.credit]="!!r.montant && r.montant > 0">{{ r.montant !== null && r.montant !== undefined ? (r.montant | number:'1.0-0') : '-' }}</span></td>
                 <td>{{ r.numeroCheque || '-' }}</td>
                 <td>{{ r.devise || '-' }}</td>
+                <td class="actions-col">
+                  <button class="btn-outline" (click)="openReleveEdit(r)" [disabled]="!r.id" title="Modifier cette ligne">
+                    <i class="fas fa-edit"></i> Modifier
+                  </button>
+                </td>
               </tr>
             </tbody>
           </table>
@@ -147,6 +153,263 @@
         </div>
       </div>
     </div>
+
+    <!-- Section Réconciliation Banque -->
+    <div class="banque-section" *ngIf="activeSection === 'securite'">
+      <h2>🔁 Réconciliation Banque</h2>
+      <div class="reconcile-toolbar">
+        <div class="filter-group">
+          <label>Pays</label>
+          <select [(ngModel)]="reconPays">
+            <option value="">Choisir un pays</option>
+            <option *ngFor="let pays of reconPaysOptions" [value]="pays">{{ pays }}</option>
+          </select>
+        </div>
+        <div class="filter-group">
+          <label>Date</label>
+          <input type="date" [(ngModel)]="reconDate">
+          <small class="muted">Optionnelle</small>
+        </div>
+        <button class="btn-primary" (click)="reconcile()" [disabled]="reconciling || !reconPays">
+          <i class="fas fa-link" [class.spin]="reconciling"></i>
+          Réconcilier
+        </button>
+        
+        <div class="filter-group" style="margin-left:auto;">
+          <label>Vue</label>
+          <select [(ngModel)]="reconView" (change)="updatePagedReconciliationResults()">
+            <option value="operation">Écarts Opération (BO)</option>
+            <option value="releve">Écarts Banque (Relevé)</option>
+            <option value="corr_operation">Correspondances (Opérations)</option>
+            <option value="corr_releve">Correspondances (Relevé)</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="table-container" *ngIf="reconDiffRows.length">
+        <!-- Filtres Réconciliation -->
+        <div class="table-filters">
+          <div class="filter-group" *ngIf="reconView==='operation' || reconView==='corr_operation'">
+            <label>Type d'opération</label>
+            <select [(ngModel)]="reconFilters.typeOperation" (change)="applyReconFilters()">
+              <option value="">Tous</option>
+              <option *ngFor="let type of typesOperation" [value]="type">{{ type }}</option>
+            </select>
+          </div>
+          <div class="filter-group" *ngIf="reconView==='operation' || reconView==='corr_operation'">
+            <label>Statut</label>
+            <select [(ngModel)]="reconFilters.statut" (change)="applyReconFilters()">
+              <option value="">Tous</option>
+              <option *ngFor="let s of statutsList" [value]="s">{{ s }}</option>
+            </select>
+          </div>
+          <div class="filter-group">
+            <label>Banque</label>
+            <input type="text" [(ngModel)]="reconFilters.banque" (input)="applyReconFilters()" placeholder="Ex: BOA, SG...">
+          </div>
+          <div class="filter-group">
+            <label>Recherche</label>
+            <input type="text" [(ngModel)]="reconFilters.search" (input)="applyReconFilters()" placeholder="Bénéficiaire / Réf / Libellé / Compte">
+          </div>
+          <div class="filter-group">
+            <label>Montant min</label>
+            <input type="number" [(ngModel)]="reconFilters.montantMin" (input)="applyReconFilters()">
+          </div>
+          <div class="filter-group">
+            <label>Montant max</label>
+            <input type="number" [(ngModel)]="reconFilters.montantMax" (input)="applyReconFilters()">
+          </div>
+          <button class="btn-clear-filters" (click)="clearReconFilters()">
+            <i class="fas fa-times"></i>
+            Effacer
+          </button>
+        </div>
+
+        <div class="pagination-controls">
+          <div class="page-size-selector">
+            <label>Afficher</label>
+            <select [(ngModel)]="reconPageSize" (change)="onReconPageSizeChange()">
+              <option [value]="5">5 lignes</option>
+              <option [value]="10">10 lignes</option>
+              <option [value]="20">20 lignes</option>
+              <option [value]="50">50 lignes</option>
+              <option [value]="100">100 lignes</option>
+            </select>
+          </div>
+          <div class="total-count">
+            <i class="fas fa-list"></i>
+            <span *ngIf="reconView==='operation'">{{ filteredLeftOps.length }} ligne(s) au total</span>
+            <span *ngIf="reconView==='releve'">{{ filteredRightReleves.length }} ligne(s) au total</span>
+            <span *ngIf="reconView==='corr_operation'">{{ filteredMatchedOps.length }} correspondance(s)</span>
+            <span *ngIf="reconView==='corr_releve'">{{ filteredMatchedReleves.length }} correspondance(s)</span>
+          </div>
+        </div>
+        
+        <table class="operations-table" *ngIf="reconView==='operation'">
+          <thead>
+            <tr>
+              <th>Pays</th>
+              <th>Code Pays</th>
+              <th>Mois</th>
+              <th>Date Opération</th>
+              <th>Agence</th>
+              <th>Type Opération</th>
+              <th>Nom du Bénéficiaire</th>
+              <th>Compte</th>
+              <th>Montant</th>
+              <th>Mode de Paiement</th>
+              <th>Référence</th>
+              <th>ID GLPI</th>
+              <th>Banque</th>
+              <th>Statut</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let op of pagedLeftOps">
+              <td>{{ op.pays }}</td>
+              <td>{{ op.codePays }}</td>
+              <td>{{ op.mois }}</td>
+              <td>{{ op.dateOperation | date:'dd/MM/yyyy' }}</td>
+              <td>{{ op.agence }}</td>
+              <td>{{ op.typeOperation }}</td>
+              <td>{{ op.nomBeneficiaire }}</td>
+              <td>{{ op.compteADebiter }}</td>
+              <td>{{ op.montant | currency:'XAF':'symbol':'1.0-0' }}</td>
+              <td>{{ op.modePaiement }}</td>
+              <td>{{ op.reference }}</td>
+              <td>{{ op.idGlpi || '-' }}</td>
+              <td>{{ op.bo }}</td>
+              <td>{{ op.statut }}</td>
+            </tr>
+          </tbody>
+        </table>
+        
+        <table class="operations-table" *ngIf="reconView==='releve'">
+          <thead>
+            <tr>
+              <th>Numéro de compte</th>
+              <th>Nom du compte</th>
+              <th>Banque</th>
+              <th>Date comptable</th>
+              <th>Date de valeur</th>
+              <th>Libellé / Narration</th>
+              <th class="right">Débit</th>
+              <th class="right">Crédit</th>
+              <th class="right">Montant</th>
+              <th>Chèque</th>
+              <th>Devise</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let r of pagedRightReleves">
+              <td><code>{{ r.numeroCompte || '-' }}</code></td>
+              <td>{{ r.nomCompte || '-' }}</td>
+              <td>{{ r.banque || '-' }}</td>
+              <td>{{ r.dateComptable ? (r.dateComptable | date:'dd/MM/yyyy') : '-' }}</td>
+              <td>{{ r.dateValeur ? (r.dateValeur | date:'dd/MM/yyyy') : '-' }}</td>
+              <td class="libelle-cell" [title]="r.libelle">{{ r.libelle || '-' }}</td>
+              <td class="right">{{ r.debit !== null && r.debit !== undefined ? (r.debit | number:'1.0-0') : '-' }}</td>
+              <td class="right">{{ r.credit !== null && r.credit !== undefined ? (r.credit | number:'1.0-0') : '-' }}</td>
+              <td class="right">{{ r.montant !== null && r.montant !== undefined ? (r.montant | number:'1.0-0') : '-' }}</td>
+              <td>{{ r.numeroCheque || '-' }}</td>
+              <td>{{ r.devise || '-' }}</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <table class="operations-table" *ngIf="reconView==='corr_operation'">
+          <thead>
+            <tr>
+              <th>Pays</th>
+              <th>Code Pays</th>
+              <th>Mois</th>
+              <th>Date Opération</th>
+              <th>Agence</th>
+              <th>Type Opération</th>
+              <th>Nom du Bénéficiaire</th>
+              <th>Compte</th>
+              <th>Montant</th>
+              <th>Mode de Paiement</th>
+              <th>Référence</th>
+              <th>ID GLPI</th>
+              <th>Banque</th>
+              <th>Statut</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let op of pagedMatchedOps">
+              <td>{{ op.pays }}</td>
+              <td>{{ op.codePays }}</td>
+              <td>{{ op.mois }}</td>
+              <td>{{ op.dateOperation | date:'dd/MM/yyyy' }}</td>
+              <td>{{ op.agence }}</td>
+              <td>{{ op.typeOperation }}</td>
+              <td>{{ op.nomBeneficiaire }}</td>
+              <td>{{ op.compteADebiter }}</td>
+              <td>{{ op.montant | currency:'XAF':'symbol':'1.0-0' }}</td>
+              <td>{{ op.modePaiement }}</td>
+              <td>{{ op.reference }}</td>
+              <td>{{ op.idGlpi || '-' }}</td>
+              <td>{{ op.bo }}</td>
+              <td>{{ op.statut }}</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <table class="operations-table" *ngIf="reconView==='corr_releve'">
+          <thead>
+            <tr>
+              <th>Numéro de compte</th>
+              <th>Nom du compte</th>
+              <th>Banque</th>
+              <th>Date comptable</th>
+              <th>Date de valeur</th>
+              <th>Libellé / Narration</th>
+              <th class="right">Débit</th>
+              <th class="right">Crédit</th>
+              <th class="right">Montant</th>
+              <th>Chèque</th>
+              <th>Devise</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let r of pagedMatchedReleves">
+              <td><code>{{ r.numeroCompte || '-' }}</code></td>
+              <td>{{ r.nomCompte || '-' }}</td>
+              <td>{{ r.banque || '-' }}</td>
+              <td>{{ r.dateComptable ? (r.dateComptable | date:'dd/MM/yyyy') : '-' }}</td>
+              <td>{{ r.dateValeur ? (r.dateValeur | date:'dd/MM/yyyy') : '-' }}</td>
+              <td class="libelle-cell" [title]="r.libelle">{{ r.libelle || '-' }}</td>
+              <td class="right">{{ r.debit !== null && r.debit !== undefined ? (r.debit | number:'1.0-0') : '-' }}</td>
+              <td class="right">{{ r.credit !== null && r.credit !== undefined ? (r.credit | number:'1.0-0') : '-' }}</td>
+              <td class="right">{{ r.montant !== null && r.montant !== undefined ? (r.montant | number:'1.0-0') : '-' }}</td>
+              <td>{{ r.numeroCheque || '-' }}</td>
+              <td>{{ r.devise || '-' }}</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="pagination" *ngIf="(reconView==='operation' ? reconOpTotalPages : reconRevTotalPages) > 1">
+          <button (click)="reconPrevPage()" [disabled]="(reconView==='operation' ? reconOpPage===1 : reconRevPage===1)">
+            <i class="fas fa-chevron-left"></i> Précédent
+          </button>
+          <div class="pagination-indicators">
+            <span *ngFor="let page of getReconVisiblePages()" class="page-indicator" [class.active]="reconPage === page" (click)="reconGoToPage(page)">{{ page }}</span>
+          </div>
+          <button (click)="reconNextPage()" [disabled]="(
+            reconView==='operation' ? reconOpPage===reconOpTotalPages : (
+            reconView==='releve' ? reconRevPage===reconRevTotalPages : (
+            reconView==='corr_operation' ? reconCorrOpPage===reconCorrOpTotalPages : reconCorrRevPage===reconCorrRevTotalPages)))">
+            Suivant <i class="fas fa-chevron-right"></i>
+          </button>
+        </div>
+      </div>
+      <div *ngIf="!reconDiffRows.length" class="empty-row">
+        Aucune donnée. Sélectionnez un pays et une date puis lancez la réconciliation.
+      </div>
+    </div>
+
+    
 
     <div class="banque-section" *ngIf="!showOperations && activeSection === 'home'">
       <div class="section-header">
@@ -486,6 +749,82 @@
         <button class="btn-primary" (click)="closeDetailPopup(); editOperation(selectedOperation!)">
           <i class="fas fa-edit"></i> Modifier
         </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Popup Édition Relevé -->
+  <div class="modern-popup-overlay" *ngIf="showReleveEditPopup" (click)="closeReleveEdit()">
+    <div class="modern-popup edit-popup" (click)="$event.stopPropagation()">
+      <div class="popup-header">
+        <h2><i class="fas fa-edit"></i> Modifier la ligne de relevé</h2>
+        <button class="close-btn" (click)="closeReleveEdit()">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+      <div class="popup-content">
+        <form class="edit-form">
+          <div class="form-row">
+            <div class="form-group">
+              <label>Numéro de compte</label>
+              <input type="text" [(ngModel)]="releveEditForm.numeroCompte" name="rv_numeroCompte">
+            </div>
+            <div class="form-group">
+              <label>Nom du compte</label>
+              <input type="text" [(ngModel)]="releveEditForm.nomCompte" name="rv_nomCompte">
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Banque</label>
+              <input type="text" [(ngModel)]="releveEditForm.banque" name="rv_banque">
+            </div>
+            <div class="form-group">
+              <label>Chèque</label>
+              <input type="text" [(ngModel)]="releveEditForm.numeroCheque" name="rv_numeroCheque">
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Date comptable</label>
+              <input type="date" [(ngModel)]="releveEditForm.dateComptable" name="rv_dateComptable">
+            </div>
+            <div class="form-group">
+              <label>Date de valeur</label>
+              <input type="date" [(ngModel)]="releveEditForm.dateValeur" name="rv_dateValeur">
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Débit</label>
+              <input type="number" [(ngModel)]="releveEditForm.debit" name="rv_debit">
+            </div>
+            <div class="form-group">
+              <label>Crédit</label>
+              <input type="number" [(ngModel)]="releveEditForm.credit" name="rv_credit">
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Montant</label>
+              <input type="number" [(ngModel)]="releveEditForm.montant" name="rv_montant">
+            </div>
+            <div class="form-group">
+              <label>Devise</label>
+              <input type="text" [(ngModel)]="releveEditForm.devise" name="rv_devise">
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group" style="grid-column: 1 / -1;">
+              <label>Libellé / Narration</label>
+              <input type="text" [(ngModel)]="releveEditForm.libelle" name="rv_libelle">
+            </div>
+          </div>
+        </form>
+      </div>
+      <div class="popup-footer">
+        <button class="btn-secondary" (click)="closeReleveEdit()"><i class="fas fa-times"></i> Annuler</button>
+        <button class="btn-primary" (click)="saveReleveEdit()"><i class="fas fa-save"></i> Enregistrer</button>
       </div>
     </div>
   </div>

@@ -1,4 +1,5 @@
 export interface ReleveBancaireRow {
+  id?: number;
   numeroCompte?: string;
   nomCompte?: string;
   banque?: string; // code propriétaire

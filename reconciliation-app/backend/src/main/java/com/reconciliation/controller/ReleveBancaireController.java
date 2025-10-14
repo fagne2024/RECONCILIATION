@@ -12,7 +12,7 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/api/releve-bancaire")
-@CrossOrigin(origins = {"*"}, allowedHeaders = "*", methods = {RequestMethod.GET, RequestMethod.POST, RequestMethod.OPTIONS}, allowCredentials = "false")
+@CrossOrigin(origins = {"*"}, allowedHeaders = "*", methods = {RequestMethod.GET, RequestMethod.POST, RequestMethod.PUT, RequestMethod.OPTIONS}, allowCredentials = "false")
 public class ReleveBancaireController {
 
     @Autowired
@@ -48,6 +48,37 @@ public class ReleveBancaireController {
             return ResponseEntity.ok(repository.findAll());
         }
         return ResponseEntity.ok(repository.findAll().stream().filter(e -> batchId.equals(e.getBatchId())).toList());
+    }
+
+    @PutMapping("/{id}")
+    public ResponseEntity<?> update(@PathVariable("id") Long id, @RequestBody com.reconciliation.entity.ReleveBancaireEntity payload) {
+        var opt = repository.findById(id);
+        if (opt.isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+        var entity = opt.get();
+        // Champs éditables
+        entity.setNumeroCompte(payload.getNumeroCompte());
+        entity.setNomCompte(payload.getNomCompte());
+        entity.setBanque(payload.getBanque());
+        entity.setDateComptable(payload.getDateComptable());
+        entity.setDateValeur(payload.getDateValeur());
+        entity.setLibelle(payload.getLibelle());
+        entity.setDebit(payload.getDebit());
+        entity.setCredit(payload.getCredit());
+        entity.setMontant(payload.getMontant());
+        entity.setNumeroCheque(payload.getNumeroCheque());
+        entity.setDevise(payload.getDevise());
+        entity.setSoldeCourant(payload.getSoldeCourant());
+        entity.setSoldeDisponibleCloture(payload.getSoldeDisponibleCloture());
+        entity.setSoldeDisponibleOuverture(payload.getSoldeDisponibleOuverture());
+        entity.setSoldeComptableOuverture(payload.getSoldeComptableOuverture());
+        entity.setSoldeComptableCloture(payload.getSoldeComptableCloture());
+        entity.setDepotTotal(payload.getDepotTotal());
+        entity.setTotalRetraits(payload.getTotalRetraits());
+        // Non modifiés: id, uploadedAt, batchId, sourceFilename
+        repository.save(entity);
+        return ResponseEntity.ok(entity);
     }
 }
 
