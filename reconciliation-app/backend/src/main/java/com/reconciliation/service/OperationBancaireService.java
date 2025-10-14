@@ -6,13 +6,14 @@ import com.reconciliation.repository.OperationBancaireRepository;
 import com.reconciliation.dto.OperationBancaireCreateRequest;
 import com.reconciliation.dto.OperationBancaireUpdateRequest;
 import org.springframework.beans.factory.annotation.Autowired;
+import com.reconciliation.entity.CompteEntity;
+import com.reconciliation.repository.CompteRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
@@ -24,6 +25,8 @@ public class OperationBancaireService {
     
     @Autowired
     private OperationBancaireRepository operationBancaireRepository;
+    @Autowired
+    private CompteRepository compteRepository;
     
     // Récupérer toutes les opérations bancaires
     public List<OperationBancaire> getAllOperationsBancaires() {
@@ -129,6 +132,8 @@ public class OperationBancaireService {
         OperationBancaireEntity entity = operationBancaireRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Opération bancaire non trouvée avec ID: " + id));
         
+        String previousStatut = entity.getStatut();
+
         if (request.getPays() != null) entity.setPays(request.getPays());
         if (request.getCodePays() != null) entity.setCodePays(request.getCodePays());
         if (request.getMois() != null) entity.setMois(request.getMois());
@@ -158,8 +163,50 @@ public class OperationBancaireService {
         if (request.getOperationId() != null) entity.setOperationId(request.getOperationId());
         
         OperationBancaireEntity savedEntity = operationBancaireRepository.save(entity);
-        
+        // Impacter le compte si le statut devient Validée
+        if (!"Validée".equalsIgnoreCase(previousStatut) && "Validée".equalsIgnoreCase(savedEntity.getStatut())) {
+            appliquerImpactSurCompte(savedEntity);
+        }
+
         return convertToModel(savedEntity);
+    }
+
+    private void appliquerImpactSurCompte(OperationBancaireEntity ob) {
+        try {
+            String numero = ob.getCompteADebiter();
+            if (numero == null || numero.isEmpty()) {
+                logger.warn("⚠️ Aucun compte spécifié pour l'opération bancaire {}", ob.getId());
+                return;
+            }
+            Optional<CompteEntity> opt = compteRepository.findByNumeroCompte(numero);
+            if (opt.isEmpty()) {
+                logger.warn("⚠️ Compte {} introuvable pour l'opération bancaire {}", numero, ob.getId());
+                return;
+            }
+            CompteEntity compte = opt.get();
+            double soldeInitial = compte.getSolde();
+            double montant = ob.getMontant() != null ? ob.getMontant() : 0.0;
+
+            double soldeFinal = soldeInitial;
+            String type = ob.getTypeOperation() != null ? ob.getTypeOperation().toLowerCase() : "";
+            if (type.contains("appro")) {
+                soldeFinal = soldeInitial + montant; // crédit
+            } else if (type.contains("compens") || type.contains("compense") || type.contains("compensation")) {
+                soldeFinal = soldeInitial - montant; // débit
+            } else if (type.contains("nivellement")) {
+                soldeFinal = soldeInitial + montant; // signe du montant décide
+            } else {
+                logger.info("ℹ️ Type '{}' non impactant, pas d'ajustement de solde", ob.getTypeOperation());
+                return;
+            }
+
+            compte.setSolde(soldeFinal);
+            compte.setDateDerniereMaj(LocalDateTime.now());
+            compteRepository.save(compte);
+            logger.info("✅ Solde compte mis à jour suite validation op bancaire {}: {} -> {}", ob.getId(), soldeInitial, soldeFinal);
+        } catch (Exception e) {
+            logger.error("❌ Erreur lors de l'impact sur le compte pour op bancaire {}: {}", ob.getId(), e.getMessage(), e);
+        }
     }
     
     // Supprimer une opération bancaire

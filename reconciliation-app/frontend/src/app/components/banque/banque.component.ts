@@ -120,6 +120,7 @@ export class BanqueComponent implements OnInit {
   totalOperations = 0;
   totalComptes = 0;
   totalEnAttente = 0;
+  totalTicketsACreer = 0; // Opérations bancaires sans ID GLPI
 
   loadDashboardStats() {
     // Comptes Banque uniquement
@@ -137,6 +138,7 @@ export class BanqueComponent implements OnInit {
         const list = ops || [];
         this.totalOperations = list.length;
         this.totalEnAttente = list.filter(o => (o.statut || '').toLowerCase() === 'en attente' || (o.statut || '').toLowerCase() === 'en cours').length;
+        this.totalTicketsACreer = list.filter(o => !o.idGlpi || o.idGlpi.trim() === '').length;
       }
     });
   }

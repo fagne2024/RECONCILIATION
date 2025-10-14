@@ -24,6 +24,7 @@ import com.reconciliation.entity.FraisTransactionEntity;
 import com.reconciliation.repository.AgencySummaryRepository;
 import com.reconciliation.entity.AgencySummaryEntity;
 import com.reconciliation.dto.OperationBancaireCreateRequest;
+import com.reconciliation.repository.OperationBancaireRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -49,6 +50,9 @@ public class OperationService {
     
     @Autowired
     private OperationBancaireService operationBancaireService;
+
+    @Autowired
+    private OperationBancaireRepository operationBancaireRepository;
     
     @Autowired
     @Lazy
@@ -756,6 +760,22 @@ public class OperationService {
             
             operation.setStatut(nouveauStatut);
             operationRepository.save(operation);
+
+            // Synchroniser le statut sur l'opération bancaire liée
+            try {
+                List<com.reconciliation.entity.OperationBancaireEntity> obList = operationBancaireRepository.findByOperationId(operation.getId());
+                for (com.reconciliation.entity.OperationBancaireEntity ob : obList) {
+                    // Règle: si l'opération est Annulée -> statut bancaire Rejetée
+                    if ("Annulée".equalsIgnoreCase(nouveauStatut)) {
+                        ob.setStatut("Rejetée");
+                    } else {
+                        ob.setStatut(nouveauStatut);
+                    }
+                    operationBancaireRepository.save(ob);
+                }
+            } catch (Exception e) {
+                logger.warn("⚠️ Synchronisation statut opérations bancaires liée à {} impossible: {}", id, e.getMessage());
+            }
 
             // Suppression dans agency_summary si statut Annulée ou Rejetée ET type concerné
             if (("Annulée".equals(nouveauStatut) || "Rejetée".equals(nouveauStatut)) &&
