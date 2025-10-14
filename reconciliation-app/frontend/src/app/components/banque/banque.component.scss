@@ -233,6 +233,7 @@
 }
 
 .releve-table-wrapper { max-height: none; overflow: visible; }
+.operations-table .libelle-cell { max-width: 500px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .releve-table {
   .libelle-cell { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 500px; display: inline-block; }
   .amount { font-weight: 700; }
