@@ -21,7 +21,7 @@ public class ReleveBancaireController {
     private ReleveBancaireRepository repository;
 
     @PostMapping("/upload")
-    public ResponseEntity<List<ReleveBancaireRow>> upload(@RequestParam("file") MultipartFile file) {
+    public ResponseEntity<java.util.Map<String, Object>> upload(@RequestParam("file") MultipartFile file) {
         try {
             List<ReleveBancaireRow> rows = importService.parseFile(file);
             // Persiste sans impacts
@@ -29,7 +29,11 @@ public class ReleveBancaireController {
             var entities = importService.toEntities(rows, file.getOriginalFilename());
             for (var e : entities) { e.setBatchId(batchId); }
             repository.saveAll(entities);
-            return ResponseEntity.ok(rows);
+            java.util.Map<String, Object> payload = new java.util.HashMap<>();
+            payload.put("batchId", batchId);
+            payload.put("rows", rows);
+            payload.put("count", rows.size());
+            return ResponseEntity.ok(payload);
         } catch (Exception e) {
             return ResponseEntity.badRequest().build();
         }
