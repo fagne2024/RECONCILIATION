@@ -226,6 +226,14 @@ export class BanqueComponent implements OnInit {
   releveMessage: string | null = null;
   releveMessageKind: 'info' | 'success' | 'error' = 'info';
 
+  // Total pages calculé pour la pagination de l'aperçu
+  get releveTotalPages(): number {
+    const size = this.relevePageSize || 10;
+    const total = this.releveRows ? this.releveRows.length : 0;
+    const pages = Math.ceil(total / size);
+    return pages > 0 ? pages : 1;
+  }
+
   onReleveFileSelected(event: Event) {
     const input = event.target as HTMLInputElement;
     this.releveSelectedFile = input.files && input.files.length ? input.files[0] : null;
