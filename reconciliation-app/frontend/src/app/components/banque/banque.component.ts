@@ -188,6 +188,17 @@ export class BanqueComponent implements OnInit {
   comptesBanqueError = '';
   comptesSearch = '';
   selectedCompteNumero: string | null = null;
+  // Popup opérations du compte
+  showCompteOpsPopup = false;
+  compteOpsNumero: string | null = null;
+  compteOpsAll: OperationBancaireDisplay[] = [];
+  compteOpsFiltered: OperationBancaireDisplay[] = [];
+  compteOpsPaged: OperationBancaireDisplay[] = [];
+  compteOpsPage = 1;
+  compteOpsPageSize = 10;
+  compteOpsTotalPages = 1;
+  compteOpsDateFrom = '';
+  compteOpsDateTo = '';
 
   loadComptesBanque() {
     this.loadingComptesBanque = true;
@@ -257,6 +268,183 @@ export class BanqueComponent implements OnInit {
   toggleCompte(compte: Compte) {
     const num = compte.numeroCompte;
     this.selectedCompteNumero = this.selectedCompteNumero === num ? null : num;
+  }
+
+  openCompteRelevePopup(compte: Compte) {
+    const numero = compte?.numeroCompte || '';
+    this.compteOpsNumero = numero;
+    // Filtrer toutes les opérations par numéro de compte
+    this.compteOpsAll = (this.operations || []).filter(op => (op.compteADebiter || '') === numero)
+      .sort((a, b) => (b.dateOperation as any).getTime() - (a.dateOperation as any).getTime());
+    // Reset filtres et pagination
+    this.compteOpsDateFrom = '';
+    this.compteOpsDateTo = '';
+    this.compteOpsPageSize = 10;
+    this.compteOpsPage = 1;
+    this.applyCompteOpsFilters();
+    this.showCompteOpsPopup = true;
+  }
+
+  closeCompteRelevePopup() {
+    this.showCompteOpsPopup = false;
+  }
+
+  applyCompteOpsFilters() {
+    const from = this.compteOpsDateFrom ? new Date(this.compteOpsDateFrom) : null;
+    const to = this.compteOpsDateTo ? new Date(this.compteOpsDateTo) : null;
+    this.compteOpsFiltered = (this.compteOpsAll || []).filter(op => {
+      let ok = true;
+      if (from) ok = ok && (op.dateOperation >= from);
+      if (to) ok = ok && (op.dateOperation <= to);
+      return ok;
+    });
+    this.compteOpsPage = 1;
+    this.updateCompteOpsPaged();
+  }
+
+  onCompteOpsPageSizeChange() {
+    this.compteOpsPage = 1;
+    this.updateCompteOpsPaged();
+  }
+
+  updateCompteOpsPaged() {
+    const total = this.compteOpsFiltered.length;
+    this.compteOpsTotalPages = Math.ceil(total / this.compteOpsPageSize) || 1;
+    const start = (this.compteOpsPage - 1) * this.compteOpsPageSize;
+    this.compteOpsPaged = this.compteOpsFiltered.slice(start, start + this.compteOpsPageSize);
+  }
+
+  compteOpsNextPage() {
+    if (this.compteOpsPage < this.compteOpsTotalPages) {
+      this.compteOpsPage++;
+      this.updateCompteOpsPaged();
+    }
+  }
+
+  compteOpsPrevPage() {
+    if (this.compteOpsPage > 1) {
+      this.compteOpsPage--;
+      this.updateCompteOpsPaged();
+    }
+  }
+
+  compteOpsGoToPage(page: number) {
+    if (page >= 1 && page <= this.compteOpsTotalPages) {
+      this.compteOpsPage = page;
+      this.updateCompteOpsPaged();
+    }
+  }
+
+  getCompteOpsVisiblePages(): number[] {
+    const maxVisible = 5;
+    const pages: number[] = [];
+    const total = this.compteOpsTotalPages;
+    const current = this.compteOpsPage;
+    if (total <= maxVisible) {
+      for (let i = 1; i <= total; i++) pages.push(i);
+    } else {
+      let start = Math.max(1, current - 2);
+      let end = Math.min(total, start + maxVisible - 1);
+      if (end - start < maxVisible - 1) start = Math.max(1, end - maxVisible + 1);
+      for (let i = start; i <= end; i++) pages.push(i);
+    }
+    return pages;
+  }
+
+  // =========================
+  // Débit/Crédit affichage (règles métier)
+  // =========================
+  private getOperationDirection(op: OperationBancaireDisplay): 'debit' | 'credit' {
+    const type = (op.typeOperation || '').toLowerCase();
+    if (type.includes('appro')) return 'credit';
+    if (type.includes('compens')) return 'debit';
+    if (type.includes('nivel')) return (op.montant || 0) < 0 ? 'debit' : 'credit';
+    return (op.montant || 0) < 0 ? 'debit' : 'credit';
+  }
+
+  getDebitForOperation(op: OperationBancaireDisplay): number | null {
+    const dir = this.getOperationDirection(op);
+    if (dir === 'debit') return Math.abs(op.montant || 0);
+    return null;
+  }
+
+  getCreditForOperation(op: OperationBancaireDisplay): number | null {
+    const dir = this.getOperationDirection(op);
+    if (dir === 'credit') return Math.abs(op.montant || 0);
+    return null;
+  }
+
+  async exportCompteOps() {
+    const rows = this.compteOpsFiltered || [];
+    const account = this.compteOpsNumero || '';
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const now = new Date();
+    const ts = `${now.getFullYear()}${pad(now.getMonth()+1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}`;
+    const filename = `releve_compte_${account || 'NA'}_${ts}.xlsx`;
+
+    const formatDate = (d: Date) => {
+      if (!d) return '';
+      const dd = pad(d.getDate());
+      const mm = pad(d.getMonth()+1);
+      const yyyy = d.getFullYear();
+      return `${dd}/${mm}/${yyyy}`;
+    };
+
+    const header = [
+      'Compte', 'Date', 'Type', 'Agence', 'Bénéficiaire', 'Débit', 'Crédit', 'Référence', 'Statut'
+    ];
+    const aoa: any[] = [];
+    aoa.push(header);
+    rows.forEach(op => {
+      const debit = this.getDebitForOperation(op);
+      const credit = this.getCreditForOperation(op);
+      aoa.push([
+        account,
+        formatDate(op.dateOperation as Date),
+        op.typeOperation || '',
+        op.agence || '',
+        op.nomBeneficiaire || '',
+        debit !== null ? debit : '',
+        credit !== null ? credit : '',
+        op.reference || '',
+        op.statut || ''
+      ]);
+    });
+
+    const XLSX: any = await import('xlsx');
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+
+    // Largeur des colonnes
+    (ws['!cols'] as any) = [
+      { wch: 22 }, { wch: 12 }, { wch: 20 }, { wch: 14 }, { wch: 26 }, { wch: 14 }, { wch: 14 }, { wch: 18 }, { wch: 14 }
+    ];
+
+    // Styles en-tête
+    for (let c = 0; c < header.length; c++) {
+      const cell = ws[XLSX.utils.encode_cell({ r: 0, c })];
+      if (cell) cell.s = { fill: { fgColor: { rgb: 'D9E1F2' } }, font: { bold: true } };
+    }
+    // Zebra rows + formats
+    for (let r = 1; r < aoa.length; r++) {
+      const isAlt = r % 2 === 1;
+      for (let c = 0; c < header.length; c++) {
+        const addr = XLSX.utils.encode_cell({ r, c });
+        const cell = ws[addr];
+        if (!cell) continue;
+        const style: any = {};
+        if (isAlt) style.fill = { fgColor: { rgb: 'F8F9FA' } };
+        if (c === 5 || c === 6) {
+          style.numFmt = '#,##0';
+          style.alignment = { horizontal: 'right' };
+        }
+        // Appliquer style cumulatif si déjà présent
+        cell.s = Object.assign({}, cell.s || {}, style);
+      }
+    }
+
+    XLSX.utils.book_append_sheet(wb, ws, 'Relevé compte');
+    XLSX.writeFile(wb, filename);
   }
 
   // Navigation
@@ -732,10 +920,15 @@ export class BanqueComponent implements OnInit {
       return { date, montantAbs, banque, sens };
     });
 
-    // Préparer les lignes de relevé filtrées (par dateComptable si fournie)
-    const relevéFiltered = this.releveRows.filter(r => !ymd || this.normalizeDateToYmd(r.dateComptable as any) === ymd);
+    // Préparer les lignes de relevé filtrées (utiliser dateValeur si dispo, sinon dateComptable)
+    const relevéFiltered = this.releveRows.filter(r => {
+      if (!ymd) return true;
+      const dateToUse = r.dateValeur ? r.dateValeur : r.dateComptable;
+      return this.normalizeDateToYmd(dateToUse as any) === ymd;
+    });
     const revWithKey = this.buildKeysWithIndexes(relevéFiltered, (r) => {
-      const date = this.normalizeDateToYmd(r.dateComptable as any);
+      const dateToUse = r.dateValeur ? r.dateValeur : r.dateComptable;
+      const date = this.normalizeDateToYmd(dateToUse as any);
       const debit = r.debit || 0;
       const credit = r.credit || 0;
       const sens: 'debit' | 'credit' = debit > 0 ? 'debit' : 'credit';
@@ -794,10 +987,12 @@ export class BanqueComponent implements OnInit {
         diffs.push({ right: row });
       }
     });
-    // Trier par date (gauche puis droite), banque puis montant si disponibles
+    // Trier par date (gauche puis droite, avec relevé: dateValeur si dispo sinon dateComptable), banque puis montant si disponibles
     diffs.sort((a, b) => {
-      const aDate = a.left?.dateOperation ? new Date(a.left.dateOperation).getTime() : (a.right?.dateComptable ? new Date(a.right.dateComptable as any).getTime() : 0);
-      const bDate = b.left?.dateOperation ? new Date(b.left.dateOperation).getTime() : (b.right?.dateComptable ? new Date(b.right.dateComptable as any).getTime() : 0);
+      const aRightDate = a.right?.dateValeur ? new Date(a.right.dateValeur as any).getTime() : (a.right?.dateComptable ? new Date(a.right.dateComptable as any).getTime() : 0);
+      const bRightDate = b.right?.dateValeur ? new Date(b.right.dateValeur as any).getTime() : (b.right?.dateComptable ? new Date(b.right.dateComptable as any).getTime() : 0);
+      const aDate = a.left?.dateOperation ? new Date(a.left.dateOperation).getTime() : aRightDate;
+      const bDate = b.left?.dateOperation ? new Date(b.left.dateOperation).getTime() : bRightDate;
       if (aDate !== bDate) return aDate - bDate;
       const aBanque = (a.left?.bo || a.right?.banque || '').toString();
       const bBanque = (b.left?.bo || b.right?.banque || '').toString();
