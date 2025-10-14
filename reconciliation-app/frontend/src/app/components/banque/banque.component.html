@@ -91,11 +91,21 @@
         <span class="muted">{{ releveRows.length }} ligne(s) importée(s)</span>
       </div>
 
+      <div *ngIf="releveMessage" class="releve-alert" [ngClass]="releveMessageKind">
+        <i class="fas" [ngClass]="{
+          'fa-info-circle': releveMessageKind==='info',
+          'fa-check-circle': releveMessageKind==='success',
+          'fa-exclamation-triangle': releveMessageKind==='error'
+        }"></i>
+        <span>{{ releveMessage }}</span>
+      </div>
+
       <div class="releve-table-wrapper" *ngIf="releveRows.length">
         <table class="fancy-table releve-table">
           <thead>
             <tr>
               <th class="col-num">Numéro de compte</th>
+              <th class="col-num">Nom du compte</th>
               <th class="col-date">Date comptable</th>
               <th class="col-date">Date de valeur</th>
               <th>Libellé / Narration</th>
@@ -109,6 +119,7 @@
           <tbody>
             <tr *ngFor="let r of releveRows | slice:0:100">
               <td><code>{{ r.numeroCompte }}</code></td>
+              <td>{{ r['nomCompte'] }}</td>
               <td>{{ r.dateComptable | date:'dd/MM/yyyy' }}</td>
               <td>{{ r.dateValeur | date:'dd/MM/yyyy' }}</td>
               <td class="libelle-cell" [title]="r.libelle">{{ r.libelle }}</td>

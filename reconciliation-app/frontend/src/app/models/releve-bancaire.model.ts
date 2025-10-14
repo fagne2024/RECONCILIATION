@@ -17,6 +17,9 @@ export interface ReleveUploadResponse {
   batchId: string;
   count: number;
   rows: ReleveBancaireRow[];
+  totalRead: number;
+  duplicatesIgnored: number;
+  unmappedHeaders: string[];
 }
 
 

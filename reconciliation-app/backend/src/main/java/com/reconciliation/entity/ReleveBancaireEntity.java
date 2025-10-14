@@ -15,6 +15,9 @@ public class ReleveBancaireEntity {
     @Column(name = "numero_compte")
     private String numeroCompte;
 
+    @Column(name = "nom_compte")
+    private String nomCompte;
+
     @Column(name = "date_comptable")
     private LocalDate dateComptable;
 
@@ -73,6 +76,8 @@ public class ReleveBancaireEntity {
     public void setId(Long id) { this.id = id; }
     public String getNumeroCompte() { return numeroCompte; }
     public void setNumeroCompte(String numeroCompte) { this.numeroCompte = numeroCompte; }
+    public String getNomCompte() { return nomCompte; }
+    public void setNomCompte(String nomCompte) { this.nomCompte = nomCompte; }
     public LocalDate getDateComptable() { return dateComptable; }
     public void setDateComptable(LocalDate dateComptable) { this.dateComptable = dateComptable; }
     public LocalDate getDateValeur() { return dateValeur; }

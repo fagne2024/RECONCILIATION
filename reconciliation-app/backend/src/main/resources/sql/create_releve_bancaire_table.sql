@@ -1,6 +1,7 @@
 CREATE TABLE IF NOT EXISTS releve_bancaire (
   id BIGINT AUTO_INCREMENT PRIMARY KEY,
   numero_compte VARCHAR(255),
+  nom_compte VARCHAR(512),
   date_comptable DATE,
   date_valeur DATE,
   libelle TEXT,

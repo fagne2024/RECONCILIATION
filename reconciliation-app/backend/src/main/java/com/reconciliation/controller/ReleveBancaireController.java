@@ -1,6 +1,5 @@
 package com.reconciliation.controller;
 
-import com.reconciliation.dto.ReleveBancaireRow;
 import com.reconciliation.service.ReleveBancaireImportService;
 import com.reconciliation.repository.ReleveBancaireRepository;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -24,16 +23,19 @@ public class ReleveBancaireController {
     @PostMapping(value = "/upload", consumes = {"multipart/form-data"})
     public ResponseEntity<java.util.Map<String, Object>> upload(@RequestParam("file") MultipartFile file) {
         try {
-            List<ReleveBancaireRow> rows = importService.parseFile(file);
+            var result = importService.parseFileWithAlerts(file);
             // Persiste sans impacts
             String batchId = java.util.UUID.randomUUID().toString();
-            var entities = importService.toEntities(rows, file.getOriginalFilename());
+            var entities = importService.toEntities(result.rows, file.getOriginalFilename());
             for (var e : entities) { e.setBatchId(batchId); }
             repository.saveAll(entities);
             java.util.Map<String, Object> payload = new java.util.HashMap<>();
             payload.put("batchId", batchId);
-            payload.put("rows", rows);
-            payload.put("count", rows.size());
+            payload.put("rows", result.rows);
+            payload.put("count", result.rows.size());
+            payload.put("totalRead", result.totalRead);
+            payload.put("duplicatesIgnored", result.duplicatesIgnored);
+            payload.put("unmappedHeaders", result.unmappedHeaders);
             return ResponseEntity.ok(payload);
         } catch (Exception e) {
             return ResponseEntity.badRequest().build();

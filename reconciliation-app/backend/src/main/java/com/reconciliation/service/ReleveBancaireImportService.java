@@ -17,14 +17,27 @@ public class ReleveBancaireImportService {
 
     private static final Map<String, String> HEADER_ALIASES = buildAliases();
 
-    public List<ReleveBancaireRow> parseFile(MultipartFile file) throws Exception {
+    public com.reconciliation.dto.ReleveImportResult parseFileWithAlerts(MultipartFile file) throws Exception {
         String filename = file.getOriginalFilename() != null ? file.getOriginalFilename().toLowerCase() : "";
         try (InputStream is = file.getInputStream(); Workbook wb = createWorkbook(filename, is)) {
             Sheet sheet = wb.getSheetAt(0);
-            if (sheet == null) return Collections.emptyList();
+            if (sheet == null) return new com.reconciliation.dto.ReleveImportResult(new ArrayList<>(), 0, 0, new ArrayList<>());
 
             // Detect headers row and map columns
-            Map<String, Integer> colIndex = mapHeaders(sheet.getRow(sheet.getFirstRowNum()));
+            Row header = sheet.getRow(sheet.getFirstRowNum());
+            Map<String, Integer> colIndex = mapHeaders(header);
+            List<String> unmapped = new ArrayList<>();
+            if (header != null) {
+                for (int i = header.getFirstCellNum(); i < header.getLastCellNum(); i++) {
+                    Cell c = header.getCell(i);
+                    String raw = (c != null) ? c.toString() : null;
+                    if (raw == null) continue;
+                    String norm = normalize(raw);
+                    if (!HEADER_ALIASES.containsKey(norm)) {
+                        unmapped.add(raw);
+                    }
+                }
+            }
             List<ReleveBancaireRow> rows = new ArrayList<>();
             for (int r = sheet.getFirstRowNum() + 1; r <= sheet.getLastRowNum(); r++) {
                 Row row = sheet.getRow(r);
@@ -56,6 +69,7 @@ public class ReleveBancaireImportService {
                 boolean allEmpty = (dto.numeroCompte == null || dto.numeroCompte.isBlank()) && dto.libelle == null && dto.debit == null && dto.credit == null;
                 if (!allEmpty) rows.add(dto);
             }
+            int totalRead = rows.size();
             // Déduplication basique (par numéroCompte + dateComptable + dateValeur + libelle + montant)
             LinkedHashSet<String> seen = new LinkedHashSet<>();
             List<ReleveBancaireRow> deduped = new ArrayList<>();
@@ -68,7 +82,8 @@ public class ReleveBancaireImportService {
                         String.valueOf(r.montant != null ? Math.round(r.montant * 100) : 0));
                 if (seen.add(key)) deduped.add(r);
             }
-            return deduped;
+            int duplicatesIgnored = totalRead - deduped.size();
+            return new com.reconciliation.dto.ReleveImportResult(deduped, totalRead, duplicatesIgnored, unmapped);
         }
     }
 
@@ -77,7 +92,12 @@ public class ReleveBancaireImportService {
         List<com.reconciliation.entity.ReleveBancaireEntity> list = new ArrayList<>();
         for (ReleveBancaireRow dto : rows) {
             com.reconciliation.entity.ReleveBancaireEntity e = new com.reconciliation.entity.ReleveBancaireEntity();
+            // Normalisation / nettoyage minimal
+            if (dto.numeroCompte != null) dto.numeroCompte = dto.numeroCompte.replaceAll("[^0-9A-Za-z]", "");
+            if (dto.devise != null) dto.devise = dto.devise.trim().toUpperCase();
+
             e.setNumeroCompte(dto.numeroCompte);
+            e.setNomCompte(dto.nomCompte);
             e.setDateComptable(dto.dateComptable);
             e.setDateValeur(dto.dateValeur);
             e.setLibelle(dto.libelle);
@@ -89,6 +109,10 @@ public class ReleveBancaireImportService {
             e.setSoldeCourant(dto.soldeCourant);
             e.setSoldeDisponibleCloture(dto.soldeDisponibleCloture);
             e.setSoldeDisponibleOuverture(dto.soldeDisponibleOuverture);
+            e.setSoldeComptableOuverture(dto.soldeComptableOuverture);
+            e.setSoldeComptableCloture(dto.soldeComptableCloture);
+            e.setDepotTotal(dto.depotTotal);
+            e.setTotalRetraits(dto.totalRetraits);
             e.setSourceFilename(filename);
             e.setUploadedAt(java.time.LocalDateTime.now());
             list.add(e);

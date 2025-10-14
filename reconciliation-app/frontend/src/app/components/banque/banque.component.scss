@@ -225,6 +225,13 @@
 .batch-bar { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
 .batch-badge { background: #f1f5ff; color: #1e40af; border: 1px solid #c7d2fe; padding: 4px 8px; border-radius: 999px; font-weight: 700; font-size: 12px; }
 
+.releve-alert {
+  display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-radius: 8px; margin-bottom: 10px; font-weight: 600;
+  &.info { background: #e0f2fe; color: #075985; border: 1px solid #bae6fd; }
+  &.success { background: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0; }
+  &.error { background: #fee2e2; color: #991b1b; border: 1px solid #fecaca; }
+}
+
 .releve-table-wrapper { max-height: 420px; overflow: auto; }
 .releve-table {
   .libelle-cell { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 500px; display: inline-block; }

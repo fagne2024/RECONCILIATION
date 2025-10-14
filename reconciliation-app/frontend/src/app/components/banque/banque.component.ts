@@ -219,10 +219,16 @@ export class BanqueComponent implements OnInit {
   releveUploading = false;
   releveBatchId: string | null = null;
   releveRows: ReleveBancaireRow[] = [];
+  releveMessage: string | null = null;
+  releveMessageKind: 'info' | 'success' | 'error' = 'info';
 
   onReleveFileSelected(event: Event) {
     const input = event.target as HTMLInputElement;
     this.releveSelectedFile = input.files && input.files.length ? input.files[0] : null;
+    if (this.releveSelectedFile) {
+      this.releveMessageKind = 'info';
+      this.releveMessage = `Fichier sélectionné: ${this.releveSelectedFile.name}`;
+    }
   }
 
   uploadReleve() {
@@ -230,15 +236,30 @@ export class BanqueComponent implements OnInit {
     this.releveUploading = true;
     this.releveBatchId = null;
     this.releveRows = [];
+    this.releveMessageKind = 'info';
+    this.releveMessage = 'Import en cours...';
     this.releveService.upload(this.releveSelectedFile).subscribe({
       next: (res) => {
         this.releveBatchId = res.batchId;
         this.releveRows = res.rows || [];
         this.releveUploading = false;
+        this.releveMessageKind = 'success';
+        const baseMsg = `Fichier importé avec succès (${res.count} lignes).`;
+        const dupMsg = res.duplicatesIgnored ? ` ${res.duplicatesIgnored} doublon(s) ignoré(s).` : '';
+        this.releveMessage = `${baseMsg}${dupMsg} Batch: ${this.releveBatchId}`;
+        // Alerts
+        const msgs: string[] = [];
+        if (res.duplicatesIgnored) msgs.push(`${res.duplicatesIgnored} doublon(s) ignoré(s)`);
+        if (res.unmappedHeaders && res.unmappedHeaders.length) msgs.push(`Colonnes non reconnues: ${res.unmappedHeaders.join(', ')}`);
+        if (res.totalRead && res.count !== undefined) msgs.push(`Lues: ${res.totalRead}, conservées: ${res.count}`);
+        if (msgs.length) {
+          this.releveMessage += ` | ${msgs.join(' | ')}`;
+        }
       },
       error: () => {
         this.releveUploading = false;
-        alert('Import du relevé bancaire échoué');
+        this.releveMessageKind = 'error';
+        this.releveMessage = 'Import du relevé bancaire échoué';
       }
     });
   }
