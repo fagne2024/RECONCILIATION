@@ -512,12 +512,14 @@
     .operations-table {
       width: 100%;
       border-collapse: collapse;
-      background: white;
+      background: #ffffff;
+      color: #111827 !important;
 
       th, td {
         padding: 12px;
         text-align: left;
         border-bottom: 1px solid #dee2e6;
+        color: #111827 !important;
       }
 
       th {
@@ -533,7 +535,14 @@
       td {
         vertical-align: middle;
         font-size: 14px;
+        color: #111827 !important;
       }
+
+      td code { background: #f1f3f5; color: #111827 !important; padding: 2px 6px; border-radius: 4px; }
+      .amount { color: #111827 !important; font-weight: 700; }
+      .amount.debit { color: #b91c1c !important; }
+      .amount.credit { color: #065f46 !important; }
+      .libelle-cell { color: #111827 !important; }
 
       .badge {
         padding: 4px 8px;
