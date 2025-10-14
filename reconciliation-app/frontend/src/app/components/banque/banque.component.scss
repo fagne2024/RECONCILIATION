@@ -245,6 +245,10 @@
   .col-small { width: 90px; }
 }
 
+.pagination.small { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.pagination.small button { @extend .btn-outline; padding: 4px 8px; }
+.pagination.small select { border: 1px solid #d0d7de; border-radius: 6px; padding: 4px 6px; }
+
 .comptes-toolbar {
   display: flex; justify-content: space-between; align-items: center;
   margin-bottom: 10px;

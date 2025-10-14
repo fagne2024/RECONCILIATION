@@ -219,6 +219,9 @@ export class BanqueComponent implements OnInit {
   releveUploading = false;
   releveBatchId: string | null = null;
   releveRows: ReleveBancaireRow[] = [];
+  // Pagination Relevé
+  relevePage = 1;
+  relevePageSize = 10;
   releveMessage: string | null = null;
   releveMessageKind: 'info' | 'success' | 'error' = 'info';
 
@@ -290,6 +293,7 @@ export class BanqueComponent implements OnInit {
         // Convertir vers modèle d'affichage
         this.releveRows = groups[latestBatchId].map((it: any) => ({
           numeroCompte: it.numeroCompte,
+          ['nomCompte']: it.nomCompte,
           dateComptable: it.dateComptable,
           dateValeur: it.dateValeur,
           libelle: it.libelle,
@@ -302,6 +306,7 @@ export class BanqueComponent implements OnInit {
           soldeDisponibleCloture: it.soldeDisponibleCloture,
           soldeDisponibleOuverture: it.soldeDisponibleOuverture
         } as ReleveBancaireRow));
+        this.relevePage = 1;
       },
       error: () => {
         // silencieux pour ne pas gêner l'ouverture

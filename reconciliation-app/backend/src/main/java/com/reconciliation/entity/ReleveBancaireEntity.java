@@ -63,6 +63,9 @@ public class ReleveBancaireEntity {
     @Column(name = "total_retraits")
     private Double totalRetraits;
 
+    @Column(name = "banque")
+    private String banque;
+
     @Column(name = "source_filename")
     private String sourceFilename;
 
@@ -108,6 +111,8 @@ public class ReleveBancaireEntity {
     public void setDepotTotal(Double depotTotal) { this.depotTotal = depotTotal; }
     public Double getTotalRetraits() { return totalRetraits; }
     public void setTotalRetraits(Double totalRetraits) { this.totalRetraits = totalRetraits; }
+    public String getBanque() { return banque; }
+    public void setBanque(String banque) { this.banque = banque; }
     public String getSourceFilename() { return sourceFilename; }
     public void setSourceFilename(String sourceFilename) { this.sourceFilename = sourceFilename; }
     public LocalDateTime getUploadedAt() { return uploadedAt; }

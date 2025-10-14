@@ -5,6 +5,7 @@ import java.time.LocalDate;
 public class ReleveBancaireRow {
     public String nomCompte;
     public String numeroCompte;
+    public String banque; // code propriétaire par défaut
     public LocalDate dateComptable;
     public LocalDate dateValeur;
     public String libelle;

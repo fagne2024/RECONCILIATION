@@ -1,5 +1,7 @@
 export interface ReleveBancaireRow {
   numeroCompte?: string;
+  nomCompte?: string;
+  banque?: string; // code propriétaire
   dateComptable?: string; // ISO date string
   dateValeur?: string;    // ISO date string
   libelle?: string;

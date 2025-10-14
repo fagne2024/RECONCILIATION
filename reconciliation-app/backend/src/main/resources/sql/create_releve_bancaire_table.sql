@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS releve_bancaire (
   solde_comptable_cloture DOUBLE,
   depot_total DOUBLE,
   total_retraits DOUBLE,
+  banque VARCHAR(255),
   source_filename VARCHAR(512),
   uploaded_at DATETIME,
   batch_id VARCHAR(100)

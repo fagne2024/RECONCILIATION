@@ -1,6 +1,8 @@
 package com.reconciliation.service;
 
 import com.reconciliation.dto.ReleveBancaireRow;
+import com.reconciliation.repository.CompteRepository;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.apache.poi.hssf.usermodel.HSSFWorkbook;
@@ -16,6 +18,9 @@ import java.util.*;
 public class ReleveBancaireImportService {
 
     private static final Map<String, String> HEADER_ALIASES = buildAliases();
+
+    @Autowired
+    private CompteRepository compteRepository;
 
     public com.reconciliation.dto.ReleveImportResult parseFileWithAlerts(MultipartFile file) throws Exception {
         String filename = file.getOriginalFilename() != null ? file.getOriginalFilename().toLowerCase() : "";
@@ -115,6 +120,26 @@ public class ReleveBancaireImportService {
             e.setSoldeComptableCloture(dto.soldeComptableCloture);
             e.setDepotTotal(dto.depotTotal);
             e.setTotalRetraits(dto.totalRetraits);
+            // Déterminer la banque: codeProprietaire depuis le compte si existant, sinon heuristique nomCompte
+            try {
+                if (dto.numeroCompte != null && !dto.numeroCompte.isBlank()) {
+                    var compteOpt = compteRepository.findByNumeroCompte(dto.numeroCompte);
+                    if (compteOpt.isPresent()) {
+                        var compte = compteOpt.get();
+                        if (compte.getCodeProprietaire() != null && !compte.getCodeProprietaire().isBlank()) {
+                            e.setBanque(compte.getCodeProprietaire());
+                            dto.banque = compte.getCodeProprietaire();
+                        }
+                    }
+                }
+                if (e.getBanque() == null && dto.nomCompte != null && !dto.nomCompte.isBlank()) {
+                    String candidate = dto.nomCompte.trim().replaceAll("[0-9]", "").replaceAll("\\s+", " ").trim();
+                    if (candidate.length() >= 3) {
+                        e.setBanque(candidate);
+                        dto.banque = candidate;
+                    }
+                }
+            } catch (Exception ignore) {}
             e.setSourceFilename(filename);
             e.setUploadedAt(java.time.LocalDateTime.now());
             list.add(e);
