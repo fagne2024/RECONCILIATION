@@ -84,6 +84,21 @@ public class ReleveBancaireImportService {
             return new XSSFWorkbook(is);
         } else if (filename.endsWith(".xls")) {
             return new HSSFWorkbook(is);
+        } else if (filename.endsWith(".csv")) {
+            // Convert CSV to a Workbook-like structure for reuse
+            List<String> lines = new java.io.BufferedReader(new java.io.InputStreamReader(is)).lines().toList();
+            org.apache.poi.ss.usermodel.Workbook wb = new XSSFWorkbook();
+            org.apache.poi.ss.usermodel.Sheet sheet = wb.createSheet();
+            int r = 0;
+            for (String line : lines) {
+                Row row = sheet.createRow(r++);
+                String[] parts = line.split(",");
+                for (int i = 0; i < parts.length; i++) {
+                    Cell cell = row.createCell(i, CellType.STRING);
+                    cell.setCellValue(parts[i]);
+                }
+            }
+            return wb;
         } else {
             // Tenter CSV via Apache POI (simple): fallback simple en lisant comme texte
             throw new IllegalArgumentException("Format non supporté: " + filename);

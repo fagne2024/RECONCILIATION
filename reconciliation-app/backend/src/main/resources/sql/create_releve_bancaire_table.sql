@@ -13,7 +13,8 @@ CREATE TABLE IF NOT EXISTS releve_bancaire (
   solde_disponible_cloture DOUBLE,
   solde_disponible_ouverture DOUBLE,
   source_filename VARCHAR(512),
-  uploaded_at DATETIME
+  uploaded_at DATETIME,
+  batch_id VARCHAR(100)
 );
 
 

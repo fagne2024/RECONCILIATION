@@ -25,12 +25,22 @@ public class ReleveBancaireController {
         try {
             List<ReleveBancaireRow> rows = importService.parseFile(file);
             // Persiste sans impacts
+            String batchId = java.util.UUID.randomUUID().toString();
             var entities = importService.toEntities(rows, file.getOriginalFilename());
+            for (var e : entities) { e.setBatchId(batchId); }
             repository.saveAll(entities);
             return ResponseEntity.ok(rows);
         } catch (Exception e) {
             return ResponseEntity.badRequest().build();
         }
+    }
+
+    @GetMapping("/list")
+    public ResponseEntity<List<com.reconciliation.entity.ReleveBancaireEntity>> list(@RequestParam(value = "batchId", required = false) String batchId) {
+        if (batchId == null || batchId.isBlank()) {
+            return ResponseEntity.ok(repository.findAll());
+        }
+        return ResponseEntity.ok(repository.findAll().stream().filter(e -> batchId.equals(e.getBatchId())).toList());
     }
 }
 
