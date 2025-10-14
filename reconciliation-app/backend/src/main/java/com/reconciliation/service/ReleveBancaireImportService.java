@@ -24,7 +24,9 @@ public class ReleveBancaireImportService {
             if (sheet == null) return new com.reconciliation.dto.ReleveImportResult(new ArrayList<>(), 0, 0, new ArrayList<>());
 
             // Detect headers row and map columns
-            Row header = sheet.getRow(sheet.getFirstRowNum());
+            // Trouver dynamiquement la ligne d'entêtes (fichiers avec bannières hautes)
+            int headerRowIdx = findBestHeaderRow(sheet, 50);
+            Row header = sheet.getRow(headerRowIdx);
             Map<String, Integer> colIndex = mapHeaders(header);
             List<String> unmapped = new ArrayList<>();
             if (header != null) {
@@ -39,7 +41,7 @@ public class ReleveBancaireImportService {
                 }
             }
             List<ReleveBancaireRow> rows = new ArrayList<>();
-            for (int r = sheet.getFirstRowNum() + 1; r <= sheet.getLastRowNum(); r++) {
+            for (int r = headerRowIdx + 1; r <= sheet.getLastRowNum(); r++) {
                 Row row = sheet.getRow(r);
                 if (row == null) continue;
                 ReleveBancaireRow dto = new ReleveBancaireRow();
@@ -172,6 +174,30 @@ public class ReleveBancaireImportService {
                 .replace("ô", "o")
                 .replaceAll("[^a-z0-9]", "")
                 .trim();
+    }
+
+    // Recherche la meilleure ligne d'entêtes en scannant les N premières lignes
+    private static int findBestHeaderRow(Sheet sheet, int maxScan) {
+        int first = sheet.getFirstRowNum();
+        int last = Math.min(sheet.getLastRowNum(), first + Math.max(5, maxScan));
+        int bestRow = first;
+        int bestScore = -1;
+        for (int r = first; r <= last; r++) {
+            Row row = sheet.getRow(r);
+            if (row == null) continue;
+            int score = 0;
+            for (int i = row.getFirstCellNum(); i < row.getLastCellNum(); i++) {
+                Cell c = row.getCell(i);
+                String raw = (c != null) ? c.toString() : null;
+                if (raw == null) continue;
+                String norm = normalize(raw);
+                if (HEADER_ALIASES.containsKey(norm)) score++;
+            }
+            if (score > bestScore) { bestScore = score; bestRow = r; }
+            // Court-circuit si score suffisant
+            if (score >= 6) break;
+        }
+        return bestRow;
     }
 
     private static Map<String, String> buildAliases() {
