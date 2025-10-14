@@ -55,6 +55,30 @@ public class ReleveBancaireImportService {
         }
     }
 
+    // Convert rows to entities (for persistence layer)
+    public List<com.reconciliation.entity.ReleveBancaireEntity> toEntities(List<ReleveBancaireRow> rows, String filename) {
+        List<com.reconciliation.entity.ReleveBancaireEntity> list = new ArrayList<>();
+        for (ReleveBancaireRow dto : rows) {
+            com.reconciliation.entity.ReleveBancaireEntity e = new com.reconciliation.entity.ReleveBancaireEntity();
+            e.setNumeroCompte(dto.numeroCompte);
+            e.setDateComptable(dto.dateComptable);
+            e.setDateValeur(dto.dateValeur);
+            e.setLibelle(dto.libelle);
+            e.setDebit(dto.debit);
+            e.setCredit(dto.credit);
+            e.setMontant(dto.montant);
+            e.setNumeroCheque(dto.numeroCheque);
+            e.setDevise(dto.devise);
+            e.setSoldeCourant(dto.soldeCourant);
+            e.setSoldeDisponibleCloture(dto.soldeDisponibleCloture);
+            e.setSoldeDisponibleOuverture(dto.soldeDisponibleOuverture);
+            e.setSourceFilename(filename);
+            e.setUploadedAt(java.time.LocalDateTime.now());
+            list.add(e);
+        }
+        return list;
+    }
+
     private static Workbook createWorkbook(String filename, InputStream is) throws Exception {
         if (filename.endsWith(".xlsx") || filename.endsWith(".xlsm")) {
             return new XSSFWorkbook(is);
