@@ -15,6 +15,7 @@ import * as XLSX from 'xlsx';
 export class ImpactOPComponent implements OnInit, OnDestroy {
   impactOPs: ImpactOP[] = [];
   filteredImpactOPs: ImpactOP[] = [];
+  uniqueNumeroTransKeys: Set<string> = new Set();
   isLoading = false;
   isUploading = false;
   currentPage = 1;
@@ -59,6 +60,14 @@ export class ImpactOPComponent implements OnInit, OnDestroy {
     erreur: 0,
     montantTotal: 0
   };
+  // Statistiques globales (côté serveur, non filtrées)
+  globalStats = {
+    total: 0,
+    enAttente: 0,
+    traite: 0,
+    erreur: 0,
+    montantTotal: 0
+  };
 
   private subscription = new Subscription();
 
@@ -73,6 +82,7 @@ export class ImpactOPComponent implements OnInit, OnDestroy {
       typeOperation: [''],
       groupeReseau: [''],
       numeroTransGu: [''],
+      uniciteNumero: [''],
       statut: [''],
       dateDebut: [''],
       dateFin: [''],
@@ -133,7 +143,10 @@ export class ImpactOPComponent implements OnInit, OnDestroy {
         next: (data) => {
           this.impactOPs = data;
           this.filteredImpactOPs = [...data];
+          // Calculer/assigner le commentaire selon les règles métier (sans écraser un commentaire existant)
+          this.applyComputedComments();
           this.calculatePagination();
+          this.recalculateFilteredStats();
           this.isLoading = false;
         },
         error: (error) => {
@@ -164,13 +177,45 @@ export class ImpactOPComponent implements OnInit, OnDestroy {
     this.subscription.add(
       this.impactOPService.getImpactOPStats().subscribe({
         next: (data) => {
-          this.stats = data;
+          this.globalStats = data;
         },
         error: (error) => {
           console.error('Erreur lors du chargement des statistiques:', error);
         }
       })
     );
+  }
+
+  private recalculateFilteredStats(): void {
+    const items = this.filteredImpactOPs || [];
+    const total = items.length;
+    let enAttente = 0;
+    let traite = 0;
+    let erreur = 0;
+    let montantTotal = 0;
+
+    for (const it of items) {
+      const statut = (it.statut || 'EN_ATTENTE');
+      if (statut === 'EN_ATTENTE') enAttente++;
+      else if (statut === 'TRAITE') traite++;
+      else if (statut === 'ERREUR') erreur++;
+      montantTotal += (it.montant || 0);
+    }
+
+    this.stats = { total, enAttente, traite, erreur, montantTotal };
+
+    // Recalculer les Numéro Trans GU uniques à partir de la liste filtrée (normalisés)
+    const countMap = new Map<string, number>();
+    items.forEach(item => {
+      const key = this.normalizeNumeroTrans(this.getNumeroTransRaw(item));
+      if (!key) return;
+      countMap.set(key, (countMap.get(key) || 0) + 1);
+    });
+    const uniques = new Set<string>();
+    countMap.forEach((count, key) => {
+      if (count === 1) uniques.add(key);
+    });
+    this.uniqueNumeroTransKeys = uniques;
   }
 
   setupFilterListener() {
@@ -218,8 +263,36 @@ export class ImpactOPComponent implements OnInit, OnDestroy {
     this.subscription.add(
       this.impactOPService.getImpactOPs(filter).subscribe({
         next: (data) => {
-          this.filteredImpactOPs = data;
+          // Filtre côté client pour l'unicité du Numéro Trans GU si demandé
+          let list = data;
+          const uniciteMode = filterValue.uniciteNumero?.toString().toUpperCase();
+          if (uniciteMode === 'UNIQUE' || uniciteMode === 'DUPLICATE') {
+            // Compter les occurrences normalisées de chaque Numéro Trans GU
+            const countMap = new Map<string, number>();
+            for (const it of list) {
+              const key = this.normalizeNumeroTrans(this.getNumeroTransRaw(it));
+              if (!key) continue;
+              countMap.set(key, (countMap.get(key) || 0) + 1);
+            }
+            // Filtrer selon le mode
+            if (uniciteMode === 'UNIQUE') {
+              list = list.filter(it => {
+                const key = this.normalizeNumeroTrans(this.getNumeroTransRaw(it));
+                return !!key && countMap.get(key) === 1;
+              });
+            } else if (uniciteMode === 'DUPLICATE') {
+              list = list.filter(it => {
+                const key = this.normalizeNumeroTrans(this.getNumeroTransRaw(it));
+                return !!key && (countMap.get(key) || 0) >= 2;
+              });
+            }
+          }
+
+          this.filteredImpactOPs = list;
+          // Recalculer les commentaires après filtrage/chargement
+          this.applyComputedComments();
           this.calculatePagination();
+          this.recalculateFilteredStats();
           this.isLoading = false;
         },
         error: (error) => {
@@ -367,6 +440,7 @@ export class ImpactOPComponent implements OnInit, OnDestroy {
 
           this.showTemporaryMessage('success', `Statut mis à jour: ${newStatut}`);
           this.loadStats();
+          this.recalculateFilteredStats();
         },
         error: (error) => {
           console.error('Erreur lors de la mise à jour du statut:', error);
@@ -413,6 +487,7 @@ export class ImpactOPComponent implements OnInit, OnDestroy {
             console.log(`✅ Statut Impact OP mis à jour avec succès: ${oldStatut} → ${newStatut}`, updatedImpactOP);
             this.showTemporaryMessage('success', `Statut mis à jour: ${newStatut}`);
             this.loadStats();
+            this.recalculateFilteredStats();
           },
           error: (error) => {
             console.error('❌ Erreur détaillée lors de la mise à jour du statut Impact OP:', error);
@@ -482,6 +557,7 @@ export class ImpactOPComponent implements OnInit, OnDestroy {
 
           this.showTemporaryMessage('success', `Statut mis à jour: ${this.newStatut}`);
           this.loadStats();
+          this.recalculateFilteredStats();
           this.closeCommentModal();
         },
         error: (error) => {
@@ -502,6 +578,7 @@ export class ImpactOPComponent implements OnInit, OnDestroy {
               this.filteredImpactOPs = this.filteredImpactOPs.filter(op => op.id !== id);
               this.calculatePagination();
               this.loadStats();
+            this.recalculateFilteredStats();
               this.showTemporaryMessage('success', 'Impact OP supprimé avec succès');
             } else {
               this.showTemporaryMessage('error', 'Erreur lors de la suppression');
@@ -521,8 +598,11 @@ export class ImpactOPComponent implements OnInit, OnDestroy {
     
     if (impactOP.id) {
       // Mise à jour d'un impact existant
+      // Appliquer la logique de commentaire avant envoi
+      const updated: ImpactOP = { ...impactOP };
+      updated.commentaire = this.computeCommentForSingle(updated, this.impactOPs);
       this.subscription.add(
-        this.impactOPService.updateImpactOP(impactOP.id, impactOP).subscribe({
+        this.impactOPService.updateImpactOP(updated.id!, updated).subscribe({
           next: (updatedImpact) => {
             this.showTemporaryMessage('success', 'Impact OP mis à jour avec succès');
             this.loadImpactOPs();
@@ -540,8 +620,11 @@ export class ImpactOPComponent implements OnInit, OnDestroy {
     } else {
       // Création d'un nouvel impact
       const { id, ...impactWithoutId } = impactOP;
+      const toCreate: ImpactOP = { ...impactWithoutId } as ImpactOP;
+      // Inclure les éléments déjà en mémoire pour que le groupe soit cohérent
+      toCreate.commentaire = this.computeCommentForSingle(toCreate, [...this.impactOPs, toCreate]);
       this.subscription.add(
-        this.impactOPService.createImpactOP(impactWithoutId).subscribe({
+        this.impactOPService.createImpactOP(toCreate).subscribe({
           next: (newImpact) => {
             this.showTemporaryMessage('success', 'Impact OP créé avec succès');
             this.loadImpactOPs();
@@ -643,6 +726,150 @@ export class ImpactOPComponent implements OnInit, OnDestroy {
     );
   }
 
+  // ===================== Commentaires calculés =====================
+  private applyComputedComments(): void {
+    if (!this.impactOPs || this.impactOPs.length === 0) {
+      return;
+    }
+
+    // Grouper par Numéro Trans GU (en respectant la casse d'origine)
+    const groups = new Map<string, ImpactOP[]>();
+    this.impactOPs.forEach(item => {
+      const key = (item.numeroTransGU || '').trim();
+      if (!groups.has(key)) {
+        groups.set(key, []);
+      }
+      groups.get(key)!.push(item);
+    });
+
+    const hasBothTypes = (items: ImpactOP[]): boolean => {
+      const types = new Set(items.map(it => it.typeOperation));
+      return types.has('IMPACT_COMPTIMPACT-COMPTE-GENERAL') && types.has('FRAIS_TRANSACTION');
+    };
+
+    // 1) Règle prioritaire: si un même Numéro Trans GU contient les deux types,
+    //    forcer les commentaires, même s'ils existent déjà côté données.
+    groups.forEach((items) => {
+      if (items.length >= 2 && hasBothTypes(items)) {
+        items.forEach(it => {
+          if (it.typeOperation === 'IMPACT_COMPTIMPACT-COMPTE-GENERAL') {
+            it.commentaire = 'Impact TRX';
+          } else if (it.typeOperation === 'FRAIS_TRANSACTION') {
+            it.commentaire = 'Impact FRAIS';
+          }
+        });
+      }
+    });
+
+    const computeForItem = (item: ImpactOP, group: ImpactOP[]): string => {
+      const size = group.length;
+      const type = item.typeOperation;
+
+      if (size >= 2 && hasBothTypes(group)) {
+        if (type === 'IMPACT_COMPTIMPACT-COMPTE-GENERAL') return 'Impact TRX';
+        if (type === 'FRAIS_TRANSACTION') return 'Impact FRAIS';
+        return '';
+      }
+
+      if (size === 1) {
+        if (type === 'FRAIS_TRANSACTION') return 'REGUL FRAIS';
+        if (type === 'IMPACT_COMPTIMPACT-COMPTE-GENERAL') return 'SANS FRAIS';
+        return '';
+      }
+
+      // Cas non spécifié (plus de 2 éléments sans les deux types)
+      return item.commentaire || '';
+    };
+
+    // 2) Pour les autres cas, appliquer la règle à TOUTES les lignes
+    //    (écraser le commentaire existant si la règle retourne une valeur non vide)
+    this.impactOPs.forEach(item => {
+      const key = (item.numeroTransGU || '').trim();
+      const group = groups.get(key) || [];
+      const computed = computeForItem(item, group);
+      if (computed) {
+        item.commentaire = computed;
+      }
+    });
+
+    // Aligner la liste filtrée
+    this.filteredImpactOPs.forEach(item => {
+      const source = this.impactOPs.find(x => x.id === item.id);
+      if (source) {
+        item.commentaire = source.commentaire;
+      } else {
+        // Au cas où l'objet diffère (sans id), recalcul local
+        const key = (item.numeroTransGU || '').trim();
+        const group = groups.get(key) || [];
+        const computed = computeForItem(item, group);
+        if (computed) {
+          item.commentaire = computed;
+        }
+      }
+    });
+
+    // Calculer les Numéro Trans GU uniques sur la liste filtrée (normalisés)
+    const countMap = new Map<string, number>();
+    this.filteredImpactOPs.forEach(item => {
+      const key = this.normalizeNumeroTrans(this.getNumeroTransRaw(item));
+      if (!key) return;
+      countMap.set(key, (countMap.get(key) || 0) + 1);
+    });
+    const uniques = new Set<string>();
+    countMap.forEach((count, key) => {
+      if (count === 1) uniques.add(key);
+    });
+    this.uniqueNumeroTransKeys = uniques;
+  }
+
+  isUniqueNumero(item: ImpactOP): boolean {
+    const key = this.normalizeNumeroTrans(this.getNumeroTransRaw(item));
+    return !!key && this.uniqueNumeroTransKeys.has(key);
+  }
+
+  // Helpers de normalisation Numéro Trans GU
+  private getNumeroTransRaw(item: ImpactOP): string {
+    const anyItem: any = item as any;
+    // Tolérer numeroTransGU et numeroTransGu
+    return (anyItem?.numeroTransGU ?? anyItem?.numeroTransGu ?? '') as string;
+  }
+
+  private normalizeNumeroTrans(value: string): string {
+    const raw = (value ?? '').toString().trim();
+    if (!raw) return '';
+    // Supprimer espaces, tirets, underscores, slashes et mettre en majuscules
+    const cleaned = raw.replace(/[\s\-_/]/g, '');
+    return cleaned.toUpperCase();
+  }
+
+  // Calculer le commentaire pour un élément spécifique en réutilisant la même logique
+  private computeCommentForSingle(item: ImpactOP, allItems: ImpactOP[]): string {
+    const key = (item.numeroTransGU || '').trim();
+    const group = allItems.filter(x => (x.numeroTransGU || '').trim() === key);
+
+    const hasBothTypes = (items: ImpactOP[]): boolean => {
+      const types = new Set(items.map(it => it.typeOperation));
+      return types.has('IMPACT_COMPTIMPACT-COMPTE-GENERAL') && types.has('FRAIS_TRANSACTION');
+    };
+
+    const size = group.length;
+    const type = item.typeOperation;
+
+    if (size >= 2 && hasBothTypes(group)) {
+      if (type === 'IMPACT_COMPTIMPACT-COMPTE-GENERAL') return 'Impact TRX';
+      if (type === 'FRAIS_TRANSACTION') return 'Impact FRAIS';
+      return '';
+    }
+
+    if (size === 1) {
+      if (type === 'FRAIS_TRANSACTION') return 'REGUL FRAIS';
+      if (type === 'IMPACT_COMPTIMPACT-COMPTE-GENERAL') return 'SANS FRAIS';
+      return '';
+    }
+
+    return item.commentaire || '';
+  }
+
   // Méthodes pour la sélection multiple
   toggleSelectionMode(): void {
     this.isSelectionMode = !this.isSelectionMode;
@@ -722,6 +949,7 @@ export class ImpactOPComponent implements OnInit, OnDestroy {
         console.log(`🎉 SUCCÈS COMPLET: ${selectedIds.length} impacts OP mis à jour avec le statut ${this.selectedStatut}`, results);
         this.clearSelection();
         this.loadStats();
+        this.recalculateFilteredStats();
         this.isUpdatingMultipleStatuts = false;
         this.showTemporaryMessage('success', `${selectedIds.length} impact(s) OP mis à jour avec succès`);
         return;
@@ -766,6 +994,42 @@ export class ImpactOPComponent implements OnInit, OnDestroy {
     processNextId(0);
   }
 
+  deleteSelected(): void {
+    if (this.selectedItems.size === 0) {
+      this.popupService.showWarning('Veuillez sélectionner au moins un impact OP.', 'Sélection Requise');
+      return;
+    }
+
+    const count = this.selectedItems.size;
+    const confirmDelete = confirm(`Supprimer définitivement ${count} impact(s) OP sélectionné(s) ?`);
+    if (!confirmDelete) return;
+
+    const ids = Array.from(this.selectedItems);
+    this.isLoading = true;
+    this.subscription.add(
+      this.impactOPService.deleteImpactOPs(ids).subscribe({
+        next: (res) => {
+          // Retirer côté client
+          this.impactOPs = this.impactOPs.filter(op => !op.id || !this.selectedItems.has(op.id));
+          this.filteredImpactOPs = this.filteredImpactOPs.filter(op => !op.id || !this.selectedItems.has(op.id));
+          this.clearSelection();
+          this.calculatePagination();
+          this.loadStats();
+          this.recalculateFilteredStats();
+          const msg = res?.deletedCount ? `${res.deletedCount} supprimé(s)` : 'Suppression terminée';
+          this.showTemporaryMessage(res?.success ? 'success' : 'error', msg);
+        },
+        error: (error) => {
+          console.error('Erreur suppression en masse Impact OP:', error);
+          this.showTemporaryMessage('error', 'Erreur lors de la suppression en masse');
+        },
+        complete: () => {
+          this.isLoading = false;
+        }
+      })
+    );
+  }
+
   // Test de connectivité API
   testApiConnectivity() {
     console.log('🧪 Test de connectivité API Impact OP...');
@@ -785,5 +1049,66 @@ export class ImpactOPComponent implements OnInit, OnDestroy {
         }
       })
     );
+  }
+
+  downloadTemplate(): void {
+    const templateData = [
+      {
+        'Type Opération': 'CASH IN',
+        'Montant': '50000',
+        'Solde avant': '100000',
+        'Solde après': '150000',
+        'Code propriétaire': 'PROP001',
+        'Date opération': '2025-01-15 10:30:00',
+        'Numéro Trans GU': 'GU123456789',
+        'groupe de réseau': 'ORANGE'
+      },
+      {
+        'Type Opération': 'PAIEMENT',
+        'Montant': '25000',
+        'Solde avant': '150000',
+        'Solde après': '125000',
+        'Code propriétaire': 'PROP002',
+        'Date opération': '2025-01-15 14:45:00',
+        'Numéro Trans GU': 'GU987654321',
+        'groupe de réseau': 'MTN'
+      }
+    ];
+
+    const workbook = XLSX.utils.book_new();
+    const worksheet = XLSX.utils.json_to_sheet(templateData);
+
+    // Définir la largeur des colonnes
+    const columnWidths = [
+      { wch: 18 }, { wch: 12 }, { wch: 15 }, { wch: 15 }, { wch: 18 }, { wch: 20 }, { wch: 18 }, { wch: 18 }
+    ];
+    worksheet['!cols'] = columnWidths;
+
+    // Styler l'en-tête
+    const range = XLSX.utils.decode_range(worksheet['!ref'] || 'A1');
+    for (let C = range.s.c; C <= range.e.c; C++) {
+      const cellAddress = XLSX.utils.encode_cell({ r: 0, c: C });
+      if (!worksheet[cellAddress]) continue;
+      worksheet[cellAddress].s = {
+        font: { bold: true, color: { rgb: 'FFFFFF' } },
+        fill: { fgColor: { rgb: '0066CC' } },
+        alignment: { horizontal: 'center' }
+      };
+    }
+
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Modèle Impact OP');
+
+    const excelBuffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+    const blob = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', 'modele-impact-op.xlsx');
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    this.popupService.showSuccess('Modèle de fichier Impact OP téléchargé avec succès!', 'Téléchargement Réussi');
   }
 } 

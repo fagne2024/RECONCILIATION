@@ -13,26 +13,38 @@
 
   <!-- Section Statistiques -->
   <div class="stats-section">
+    <div class="stats-header">
+      <h3>Statistiques (Filtres appliqués)</h3>
+      <div class="stats-info">
+        <i class="fas fa-info-circle"></i>
+        <span>Les statistiques ci-dessous reflètent les filtres appliqués</span>
+      </div>
+    </div>
     <div class="stats-grid">
       <div class="stat-card stat-total">
+        <div class="stat-icon"><i class="fas fa-list"></i></div>
         <div class="stat-value">{{ filteredEcartSoldes.length }}</div>
-        <div class="stat-label">TOTAL</div>
+        <div class="stat-label">NOMBRE DE LIGNES</div>
       </div>
       <div class="stat-card stat-en-attente">
+        <div class="stat-icon"><i class="fas fa-clock"></i></div>
         <div class="stat-value">{{ getStatutCount('EN_ATTENTE') }}</div>
         <div class="stat-label">EN ATTENTE</div>
       </div>
       <div class="stat-card stat-traite">
+        <div class="stat-icon"><i class="fas fa-check-circle"></i></div>
         <div class="stat-value">{{ getStatutCount('TRAITE') }}</div>
         <div class="stat-label">TRAITÉ</div>
       </div>
       <div class="stat-card stat-erreur">
+        <div class="stat-icon"><i class="fas fa-exclamation-circle"></i></div>
         <div class="stat-value">{{ getStatutCount('ERREUR') }}</div>
         <div class="stat-label">ERREUR</div>
       </div>
       <div class="stat-card stat-montant">
+        <div class="stat-icon"><i class="fas fa-coins"></i></div>
         <div class="stat-value">{{ formatMontantTotal() }}</div>
-        <div class="stat-label">MONTANT TOTAL</div>
+        <div class="stat-label">VOLUME TOTAL</div>
       </div>
     </div>
   </div>
@@ -48,6 +60,13 @@
           (change)="onFileSelected($event)"
           accept=".csv,.xlsx,.xls"
           #fileInput>
+        <button 
+          type="button" 
+          class="btn btn-info" 
+          (click)="downloadTemplate()"
+          title="Télécharger le modèle de fichier">
+          <i class="fas fa-download"></i> Télécharger Modèle
+        </button>
         <button 
           type="button" 
           class="btn btn-primary" 
@@ -157,9 +176,22 @@
   <!-- Tableau des données -->
   <div class="table-section">
     <div class="table-header">
-      <h3>Écarts de Solde ({{ filteredEcartSoldes.length }} enregistrements)</h3>
+      <div class="table-header-left">
+        <h3>Écarts de Solde</h3>
+        <div class="table-summary">
+          <span class="summary-item">
+            <i class="fas fa-list"></i>
+            <strong>{{ filteredEcartSoldes.length }}</strong> ligne(s)
+          </span>
+          <span class="summary-separator">•</span>
+          <span class="summary-item">
+            <i class="fas fa-coins"></i>
+            <strong>{{ formatMontantTotal() }}</strong>
+          </span>
+        </div>
+      </div>
       <div class="table-info">
-        Affichage des écarts de solde filtrés
+        {{ ecartSoldes.length === filteredEcartSoldes.length ? 'Tous les enregistrements' : 'Résultats filtrés' }}
       </div>
       
       <!-- Contrôles de sélection multiple -->

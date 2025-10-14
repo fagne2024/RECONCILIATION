@@ -75,6 +75,15 @@ export class ImpactOPService {
     );
   }
 
+  // Supprimer plusieurs impacts OP
+  deleteImpactOPs(ids: number[]): Observable<{ success: boolean; deletedCount: number; errors: string[] }> {
+    const body = { ids } as { ids: number[] };
+    return this.http.post<{ success: boolean; deletedCount: number; errors: string[] }>(
+      `${this.apiUrl}/impact-op/delete-batch`,
+      body
+    );
+  }
+
   // Valider un fichier d'impacts OP
   validateImpactOPFile(file: File): Observable<ImpactOPValidationResult> {
     const formData = new FormData();

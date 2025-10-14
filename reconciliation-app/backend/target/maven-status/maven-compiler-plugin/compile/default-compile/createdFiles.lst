@@ -1,4 +1,3 @@
-com\reconciliation\config\CorsConfig.class
 com\reconciliation\service\ConfigurableReconciliationService$ReconciliationLogicType.class
 com\reconciliation\model\ReconciliationProgress.class
 com\reconciliation\entity\FraisTransactionEntity.class

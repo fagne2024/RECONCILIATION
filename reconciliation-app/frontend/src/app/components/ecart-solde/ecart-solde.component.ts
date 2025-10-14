@@ -799,4 +799,65 @@ export class EcartSoldeComponent implements OnInit, OnDestroy {
         this.showTemporaryMessage('error', 'Erreur lors de la mise à jour des statuts.');
       });
   }
+
+  downloadTemplate(): void {
+    const templateData = [
+      {
+        'ID Transaction': 'TRX123456',
+        'Téléphone Client': '22507123456',
+        'Montant': '10000',
+        'Service': 'CASH IN',
+        'Agence': 'AGENCE_001',
+        'Date Transaction': '2025-01-15 10:30:00',
+        'Numéro Trans GU': 'GU123456789',
+        'Pays': 'COTE D\'IVOIRE'
+      },
+      {
+        'ID Transaction': 'TRX789012',
+        'Téléphone Client': '22501987654',
+        'Montant': '25000',
+        'Service': 'PAIEMENT',
+        'Agence': 'AGENCE_002',
+        'Date Transaction': '2025-01-15 14:45:00',
+        'Numéro Trans GU': 'GU987654321',
+        'Pays': 'SENEGAL'
+      }
+    ];
+
+    const workbook = XLSX.utils.book_new();
+    const worksheet = XLSX.utils.json_to_sheet(templateData);
+
+    // Définir la largeur des colonnes
+    const columnWidths = [
+      { wch: 15 }, { wch: 15 }, { wch: 12 }, { wch: 15 }, { wch: 15 }, { wch: 20 }, { wch: 15 }, { wch: 15 }
+    ];
+    worksheet['!cols'] = columnWidths;
+
+    // Styler l'en-tête
+    const range = XLSX.utils.decode_range(worksheet['!ref'] || 'A1');
+    for (let C = range.s.c; C <= range.e.c; C++) {
+      const cellAddress = XLSX.utils.encode_cell({ r: 0, c: C });
+      if (!worksheet[cellAddress]) continue;
+      worksheet[cellAddress].s = {
+        font: { bold: true, color: { rgb: 'FFFFFF' } },
+        fill: { fgColor: { rgb: '0066CC' } },
+        alignment: { horizontal: 'center' }
+      };
+    }
+
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Modèle TSOP');
+
+    const excelBuffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+    const blob = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', 'modele-tsop.xlsx');
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    this.popupService.showSuccess('Modèle de fichier TSOP téléchargé avec succès!', 'Téléchargement Réussi');
+  }
 } 

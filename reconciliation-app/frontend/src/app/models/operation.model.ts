@@ -69,7 +69,8 @@ export enum TypeOperation {
     FRAIS_TRANSACTION = 'FRAIS_TRANSACTION',
     ANNULATION_PARTENAIRE = 'annulation_partenaire',
     ANNULATION_BO = 'annulation_bo',
-    TRANSACTION_CREE = 'transaction_cree'
+    TRANSACTION_CREE = 'transaction_cree',
+    TSOP = 'tsop'
 }
 
 export enum StatutOperation {

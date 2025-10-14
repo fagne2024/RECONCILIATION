@@ -211,8 +211,9 @@ public class EcartSoldeService {
         
         entity.setIdTransaction(ecartSolde.getIdTransaction());
         entity.setTelephoneClient(ecartSolde.getTelephoneClient());
-        entity.setMontant(ecartSolde.getMontant());
+        // Forcer le signe du montant en fonction du service (CASHIN -> négatif)
         entity.setService(ecartSolde.getService());
+        entity.setMontant(normalizeMontantByService(ecartSolde.getMontant(), ecartSolde.getService()));
         entity.setAgence(ecartSolde.getAgence());
         entity.setDateTransaction(ecartSolde.getDateTransaction());
         entity.setNumeroTransGu(ecartSolde.getNumeroTransGu());
@@ -746,8 +747,9 @@ public class EcartSoldeService {
         entity.setId(model.getId());
         entity.setIdTransaction(model.getIdTransaction());
         entity.setTelephoneClient(model.getTelephoneClient());
-        entity.setMontant(model.getMontant());
+        // Forcer le signe du montant en fonction du service (CASHIN -> négatif)
         entity.setService(model.getService());
+        entity.setMontant(normalizeMontantByService(model.getMontant(), model.getService()));
         entity.setAgence(model.getAgence());
         entity.setDateTransaction(model.getDateTransaction());
         entity.setNumeroTransGu(model.getNumeroTransGu());
@@ -756,5 +758,15 @@ public class EcartSoldeService {
         entity.setStatut(model.getStatut());
         entity.setCommentaire(model.getCommentaire());
         return entity;
+    }
+
+    // Normalise le montant selon le service: si le service contient "cashin", le montant doit être négatif
+    private double normalizeMontantByService(Double montant, String service) {
+        double value = montant != null ? montant : 0.0;
+        String s = service != null ? service.toLowerCase() : "";
+        if (s.contains("cashin")) {
+            return -Math.abs(value);
+        }
+        return value;
     }
 } 

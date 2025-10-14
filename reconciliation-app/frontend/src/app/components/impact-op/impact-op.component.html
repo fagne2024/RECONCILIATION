@@ -16,23 +16,23 @@
     <div class="stats-grid">
       <div class="stat-card">
         <div class="stat-value">{{ stats.total }}</div>
-        <div class="stat-label">Total</div>
+        <div class="stat-label">Total (filtré)</div>
       </div>
       <div class="stat-card stat-en-attente">
         <div class="stat-value">{{ stats.enAttente }}</div>
-        <div class="stat-label">En attente</div>
+        <div class="stat-label">En attente (filtré)</div>
       </div>
       <div class="stat-card stat-traite">
         <div class="stat-value">{{ stats.traite }}</div>
-        <div class="stat-label">Traité</div>
+        <div class="stat-label">Traité (filtré)</div>
       </div>
       <div class="stat-card stat-erreur">
         <div class="stat-value">{{ stats.erreur }}</div>
-        <div class="stat-label">Erreur</div>
+        <div class="stat-label">Erreur (filtré)</div>
       </div>
       <div class="stat-card stat-montant">
         <div class="stat-value">{{ formatMontant(stats.montantTotal) }}</div>
-        <div class="stat-label">Montant total</div>
+        <div class="stat-label">Montant total (filtré)</div>
       </div>
     </div>
   </div>
@@ -48,6 +48,13 @@
           (change)="onFileSelected($event)"
           accept=".csv,.xlsx,.xls"
           #fileInput>
+        <button 
+          type="button" 
+          class="btn btn-info" 
+          (click)="downloadTemplate()"
+          title="Télécharger le modèle de fichier">
+          <i class="fas fa-download"></i> Télécharger Modèle
+        </button>
         <button 
           type="button" 
           class="btn btn-primary" 
@@ -126,6 +133,15 @@
         </div>
         
         <div class="filter-group">
+          <label>Unicité Numéro Trans GU:</label>
+          <select formControlName="uniciteNumero" class="form-control">
+            <option value="">Tous (uniques et doublons)</option>
+            <option value="UNIQUE">Uniquement les uniques</option>
+            <option value="DUPLICATE">Uniquement les doublons</option>
+          </select>
+        </div>
+        
+        <div class="filter-group">
           <label>Statut:</label>
           <select formControlName="statut" class="form-control">
             <option value="">Tous les statuts</option>
@@ -179,6 +195,12 @@
           <span class="selected-count">{{ getSelectedCount() }} sélectionné(s)</span>
         </div>
         <div class="selection-actions">
+          <button class="btn btn-danger"
+                  (click)="deleteSelected()"
+                  [disabled]="getSelectedCount() === 0 || isUpdatingMultipleStatuts">
+            <i class="fas fa-trash"></i>
+            Supprimer sélection
+          </button>
           <select [(ngModel)]="selectedStatut" class="form-control status-select">
             <option value="EN_ATTENTE">En attente</option>
             <option value="TRAITE">Traité</option>
@@ -222,11 +244,14 @@
             <th>Numéro Trans GU</th>
             <th>Groupe de réseau</th>
             <th>Statut</th>
+            <th>Commentaire</th>
             <th>Actions</th>
           </tr>
         </thead>
         <tbody>
-          <tr *ngFor="let impact of pagedImpactOPs" [ngClass]="getStatutClass(impact.statut || 'EN_ATTENTE')" [class.selected]="isItemSelected(impact)">
+          <tr *ngFor="let impact of pagedImpactOPs" 
+              [ngClass]="[getStatutClass(impact.statut || 'EN_ATTENTE'), isUniqueNumero(impact) ? 'unique-numero' : '']"
+              [class.selected]="isItemSelected(impact)">
             <td *ngIf="isSelectionMode" class="checkbox-cell">
               <input type="checkbox" 
                      [checked]="isItemSelected(impact)" 
@@ -241,7 +266,13 @@
             <td>{{ formatMontant(impact.soldeApres) }}</td>
             <td>{{ impact.codeProprietaire }}</td>
             <td>{{ formatDate(impact.dateOperation) }}</td>
-            <td>{{ impact.numeroTransGU }}</td>
+            <td>
+              <span class="numero-trans-gu"
+                    [ngClass]="{ 'unique': isUniqueNumero(impact) }"
+                    [title]="isUniqueNumero(impact) ? 'Numéro Trans GU unique (dans la liste filtrée)' : ''">
+                {{ impact.numeroTransGU }}
+              </span>
+            </td>
             <td>{{ impact.groupeReseau }}</td>
             <td>
               <select 
@@ -254,6 +285,7 @@
                 <option value="ERREUR">Erreur</option>
               </select>
             </td>
+            <td>{{ impact.commentaire || '-' }}</td>
             <td>
               <div class="action-buttons">
                 <button class="btn btn-sm btn-success" (click)="saveImpactOP(impact)" title="Enregistrer">

@@ -1839,7 +1839,12 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                     idTransaction: ecartSolde.idTransaction,
                     agence: ecartSolde.agence,
                     service: ecartSolde.service,
-                    montant: ecartSolde.montant,
+                    // Forcer montant négatif si service contient CASHIN
+                    montant: (() => {
+                        const s = (ecartSolde.service || '').toLowerCase();
+                        const m = Number(ecartSolde.montant) || 0;
+                        return s.includes('cashin') ? -Math.abs(m) : m;
+                    })(),
                     agencyInfo: agencyInfo
                 });
 
@@ -2449,7 +2454,12 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                     idTransaction: ecartSolde.idTransaction,
                     agence: ecartSolde.agence,
                     service: ecartSolde.service,
-                    montant: ecartSolde.montant,
+                    // Forcer montant négatif si service contient CASHIN
+                    montant: (() => {
+                        const s = (ecartSolde.service || '').toLowerCase();
+                        const m = Number(ecartSolde.montant) || 0;
+                        return s.includes('cashin') ? -Math.abs(m) : m;
+                    })(),
                     agencyInfo: agencyInfo
                 });
 

@@ -23,6 +23,7 @@ import com.reconciliation.dto.OperationCreateRequest;
 import com.reconciliation.entity.FraisTransactionEntity;
 import com.reconciliation.repository.AgencySummaryRepository;
 import com.reconciliation.entity.AgencySummaryEntity;
+import com.reconciliation.dto.OperationBancaireCreateRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -45,6 +46,9 @@ public class OperationService {
     
     @Autowired
     private CompteRegroupementService compteRegroupementService;
+    
+    @Autowired
+    private OperationBancaireService operationBancaireService;
     
     @Autowired
     @Lazy
@@ -454,6 +458,17 @@ public class OperationService {
         // Pour toutes les opérations qui ont un service défini et qui ne sont pas déjà des frais
         if (entity.getService() != null && !"FRAIS_TRANSACTION".equals(entity.getTypeOperation())) {
             createFraisTransactionAutomatique(savedEntity);
+        }
+        
+        // Créer automatiquement une opération bancaire pour les types Compense_client, Appro_client et nivellement
+        logger.info("🔍 Vérification du type d'opération pour création bancaire: {}", entity.getTypeOperation());
+        if ("Compense_client".equals(entity.getTypeOperation()) || 
+            "Appro_client".equals(entity.getTypeOperation()) || 
+            "nivellement".equals(entity.getTypeOperation())) {
+            logger.info("✅ Type d'opération détecté pour création bancaire automatique: {}", entity.getTypeOperation());
+            createOperationBancaireAutomatique(savedEntity, compte);
+        } else {
+            logger.info("ℹ️ Type d'opération non éligible pour création bancaire: {}", entity.getTypeOperation());
         }
         
         return convertToModel(savedEntity);
@@ -906,6 +921,21 @@ public class OperationService {
                 }
             }
             // Par défaut, comportement précédent
+            return -montant;
+        }
+        // TSOP: même logique que transaction_cree
+        // Si service est CASHIN → montant en débit (négatif)
+        // Si service est PAIEMENT → montant en crédit (positif)
+        if ("tsop".equals(typeOperation) || typeOperation.toUpperCase().contains("TSOP")) {
+            if (service != null) {
+                String s = service.toLowerCase();
+                if (s.contains("cashin") || s.contains("send") || s.contains("airtime")) {
+                    return -montant;
+                } else if (s.contains("paiement")) {
+                    return montant;
+                }
+            }
+            // Par défaut, comportement comme cashin (débit)
             return -montant;
         }
         if (isDebitOperation(typeOperation)) {
@@ -1659,12 +1689,17 @@ public class OperationService {
         String dateFormatted = dateOperation.format(java.time.format.DateTimeFormatter.ofPattern("ddMMyy"));
         
         // Compter le nombre d'opérations Compense_client existantes pour cette agence et cette journée
-        // en excluant l'opération en cours de modification
-        Long existingCount = operationRepository.countCompenseOperationsByCodeProprietaireAndDateExcludingId(
-            codeProprietaire, 
-            dateOperation,
-            operationIdToExclude
-        );
+        // Utiliser la requête adaptée selon que l'on exclut une opération ou non
+        Long existingCount = (operationIdToExclude == null)
+            ? operationRepository.countCompenseOperationsByCodeProprietaireAndDate(
+                codeProprietaire,
+                dateOperation
+              )
+            : operationRepository.countCompenseOperationsByCodeProprietaireAndDateExcludingId(
+                codeProprietaire,
+                dateOperation,
+                operationIdToExclude
+              );
         
         // Le numéro sera le nombre d'opérations existantes + 1
         int numero = existingCount.intValue() + 1;
@@ -1691,12 +1726,17 @@ public class OperationService {
         String dateFormatted = dateOperation.format(java.time.format.DateTimeFormatter.ofPattern("ddMMyy"));
         
         // Compter le nombre d'opérations Appro_client existantes pour cette agence et cette journée
-        // en excluant l'opération en cours de modification
-        Long existingCount = operationRepository.countApproClientOperationsByCodeProprietaireAndDateExcludingId(
-            codeProprietaire, 
-            dateOperation,
-            operationIdToExclude
-        );
+        // Utiliser la requête adaptée selon que l'on exclut une opération ou non
+        Long existingCount = (operationIdToExclude == null)
+            ? operationRepository.countApproClientOperationsByCodeProprietaireAndDate(
+                codeProprietaire,
+                dateOperation
+              )
+            : operationRepository.countApproClientOperationsByCodeProprietaireAndDateExcludingId(
+                codeProprietaire,
+                dateOperation,
+                operationIdToExclude
+              );
         
         // Le numéro sera le nombre d'opérations existantes + 1
         int numero = existingCount.intValue() + 1;
@@ -1723,12 +1763,17 @@ public class OperationService {
         String dateFormatted = dateOperation.format(java.time.format.DateTimeFormatter.ofPattern("ddMMyy"));
         
         // Compter le nombre d'opérations Appro_fournisseur existantes pour cette agence et cette journée
-        // en excluant l'opération en cours de modification
-        Long existingCount = operationRepository.countApproFournisseurOperationsByCodeProprietaireAndDateExcludingId(
-            codeProprietaire, 
-            dateOperation,
-            operationIdToExclude
-        );
+        // Utiliser la requête adaptée selon que l'on exclut une opération ou non
+        Long existingCount = (operationIdToExclude == null)
+            ? operationRepository.countApproFournisseurOperationsByCodeProprietaireAndDate(
+                codeProprietaire,
+                dateOperation
+              )
+            : operationRepository.countApproFournisseurOperationsByCodeProprietaireAndDateExcludingId(
+                codeProprietaire,
+                dateOperation,
+                operationIdToExclude
+              );
         
         // Le numéro sera le nombre d'opérations existantes + 1
         int numero = existingCount.intValue() + 1;
@@ -1755,12 +1800,17 @@ public class OperationService {
         String dateFormatted = dateOperation.format(java.time.format.DateTimeFormatter.ofPattern("ddMMyy"));
         
         // Compter le nombre d'opérations Compense_fournisseur existantes pour cette agence et cette journée
-        // en excluant l'opération en cours de modification
-        Long existingCount = operationRepository.countCompenseFournisseurOperationsByCodeProprietaireAndDateExcludingId(
-            codeProprietaire, 
-            dateOperation,
-            operationIdToExclude
-        );
+        // Utiliser la requête adaptée selon que l'on exclut une opération ou non
+        Long existingCount = (operationIdToExclude == null)
+            ? operationRepository.countCompenseFournisseurOperationsByCodeProprietaireAndDate(
+                codeProprietaire,
+                dateOperation
+              )
+            : operationRepository.countCompenseFournisseurOperationsByCodeProprietaireAndDateExcludingId(
+                codeProprietaire,
+                dateOperation,
+                operationIdToExclude
+              );
         
         // Le numéro sera le nombre d'opérations existantes + 1
         int numero = existingCount.intValue() + 1;
@@ -1787,14 +1837,16 @@ public class OperationService {
         String dateFormatted = dateOperation.format(java.time.format.DateTimeFormatter.ofPattern("ddMMyy"));
         
         // Compter le nombre d'opérations nivellement existantes pour cette journée
-        // en excluant l'opération en cours de modification
-        Long existingCount = operationRepository.countNivellementOperationsByDateExcludingId(dateOperation, operationIdToExclude);
+        // Utiliser la requête adaptée selon que l'on exclut une opération ou non
+        Long existingCount = (operationIdToExclude == null)
+            ? operationRepository.countNivellementOperationsByDate(dateOperation)
+            : operationRepository.countNivellementOperationsByDateExcludingId(dateOperation, operationIdToExclude);
         
         // Le numéro sera le nombre d'opérations existantes + 1
         int numero = existingCount.intValue() + 1;
         
-        // Construire la référence
-        String reference = String.format("NIVELLEMENTHT-%s-NIV%d", dateFormatted, numero);
+        // Construire la référence (suffixe NV pour Nivellement)
+        String reference = String.format("NIVELLEMENTHT-%s-NV%d", dateFormatted, numero);
         
         System.out.println("DEBUG: Génération référence Nivellement: " + reference);
         System.out.println("DEBUG: Date formatée: " + dateFormatted);
@@ -1862,5 +1914,192 @@ public class OperationService {
         }
     }
     
+    /**
+     * Récupère le numéro de compte en se basant sur le code propriétaire
+     * Exemple : Si BANQUE = "ECOBANK CM", cherche un compte avec code_proprietaire = "ECOBANK CM"
+     * et retourne son numéro de compte (ex: "123456098765")
+     * 
+     * @param codeProprietaireRecherche Le code propriétaire à chercher (provient de la colonne BANQUE de l'opération)
+     * @return Le numéro de compte correspondant, ou null si non trouvé
+     */
+    private String recupererNumeroCompteParCodeProprietaire(String codeProprietaireRecherche) {
+        try {
+            if (codeProprietaireRecherche == null || codeProprietaireRecherche.trim().isEmpty()) {
+                logger.debug("🔍 Code propriétaire null ou vide, impossible de récupérer le numéro de compte");
+                return null;
+            }
+            
+            logger.info("🔍 Recherche du compte avec code_proprietaire = '{}'", codeProprietaireRecherche);
+            
+            // Chercher un compte avec le code propriétaire correspondant
+            List<CompteEntity> comptes = compteRepository.findAll();
+            
+            // Priorité 1: Correspondance exacte du code propriétaire (catégorie Banque de préférence)
+            for (CompteEntity compte : comptes) {
+                if (codeProprietaireRecherche.equals(compte.getCodeProprietaire()) && 
+                    "Banque".equalsIgnoreCase(compte.getCategorie())) {
+                    logger.info("✅ Compte trouvé (catégorie Banque) : code_proprietaire='{}' -> numéro_compte='{}'", 
+                               codeProprietaireRecherche, compte.getNumeroCompte());
+                    return compte.getNumeroCompte();
+                }
+            }
+            
+            // Priorité 2: Correspondance exacte du code propriétaire (toutes catégories)
+            for (CompteEntity compte : comptes) {
+                if (codeProprietaireRecherche.equals(compte.getCodeProprietaire())) {
+                    logger.info("✅ Compte trouvé : code_proprietaire='{}' -> numéro_compte='{}' (catégorie: {})", 
+                               codeProprietaireRecherche, compte.getNumeroCompte(), compte.getCategorie());
+                    return compte.getNumeroCompte();
+                }
+            }
+            
+            // Priorité 3: Recherche partielle (code propriétaire contient la valeur recherchée)
+            for (CompteEntity compte : comptes) {
+                if (compte.getCodeProprietaire() != null && 
+                    compte.getCodeProprietaire().toUpperCase().contains(codeProprietaireRecherche.toUpperCase()) &&
+                    "Banque".equalsIgnoreCase(compte.getCategorie())) {
+                    logger.info("✅ Compte trouvé (correspondance partielle) : code_proprietaire='{}' contient '{}' -> numéro_compte='{}'", 
+                               compte.getCodeProprietaire(), codeProprietaireRecherche, compte.getNumeroCompte());
+                    return compte.getNumeroCompte();
+                }
+            }
+            
+            logger.warn("⚠️ Aucun compte trouvé avec code_proprietaire = '{}'", codeProprietaireRecherche);
+            logger.warn("💡 Vérifiez que le compte existe avec exactement ce code propriétaire dans la base de données");
+            return null;
+            
+        } catch (Exception e) {
+            logger.error("❌ Erreur lors de la récupération du numéro de compte pour code_proprietaire='{}': {}", 
+                        codeProprietaireRecherche, e.getMessage(), e);
+            return null;
+        }
+    }
+    
+    /**
+     * Crée automatiquement une opération bancaire pour les types Compense_client, Appro_client et nivellement
+     * L'opération bancaire est créée avec les informations disponibles du formulaire
+     * Les autres colonnes devront être complétées manuellement
+     */
+    private void createOperationBancaireAutomatique(OperationEntity operation, CompteEntity compte) {
+        try {
+            logger.info("🏦 Création automatique d'une opération bancaire pour l'opération ID: {} (Type: {})", 
+                       operation.getId(), operation.getTypeOperation());
+            
+            OperationBancaireCreateRequest request = new OperationBancaireCreateRequest();
+            
+            // Remplir les informations disponibles depuis l'opération
+            request.setPays(operation.getPays() != null ? operation.getPays() : "");
+            
+            // Déterminer le code pays à partir du pays
+            String codePays = "";
+            if (operation.getPays() != null) {
+                switch (operation.getPays().toUpperCase()) {
+                    case "CÔTE D'IVOIRE":
+                    case "COTE D'IVOIRE":
+                        codePays = "CI";
+                        break;
+                    case "MALI":
+                        codePays = "ML";
+                        break;
+                    case "BURKINA FASO":
+                        codePays = "BF";
+                        break;
+                    case "SÉNÉGAL":
+                    case "SENEGAL":
+                        codePays = "SN";
+                        break;
+                    case "TOGO":
+                        codePays = "TG";
+                        break;
+                    case "CAMEROUN":
+                    case "CAMEROON":
+                        codePays = "CM";
+                        break;
+                    default:
+                        codePays = operation.getPays().substring(0, Math.min(2, operation.getPays().length())).toUpperCase();
+                }
+            }
+            request.setCodePays(codePays);
+            
+            // Formater le mois à partir de la date d'opération
+            if (operation.getDateOperation() != null) {
+                String mois = operation.getDateOperation().format(
+                    java.time.format.DateTimeFormatter.ofPattern("MMMM yyyy", java.util.Locale.FRENCH));
+                request.setMois(mois);
+                request.setDateOperation(operation.getDateOperation().toString());
+            } else {
+                request.setDateOperation(LocalDateTime.now().toString());
+            }
+            
+            // Utiliser le code propriétaire comme agence (qui représente le compte/agence)
+            request.setAgence(operation.getCodeProprietaire() != null ? operation.getCodeProprietaire() : compte.getNumeroCompte());
+            
+            // Type d'opération bancaire basé sur le type d'opération
+            String typeOperationBancaire = "";
+            switch (operation.getTypeOperation()) {
+                case "Compense_client":
+                    typeOperationBancaire = "Compensation Client";
+                    break;
+                case "Appro_client":
+                    typeOperationBancaire = "Approvisionnement";
+                    break;
+                case "nivellement":
+                    typeOperationBancaire = "Nivellement";
+                    break;
+                default:
+                    typeOperationBancaire = operation.getTypeOperation();
+            }
+            request.setTypeOperation(typeOperationBancaire);
+            
+            // Montant de l'opération
+            request.setMontant(operation.getMontant());
+            
+            // Référence de l'opération si disponible
+            request.setReference(operation.getReference());
+            
+            // Banque si disponible
+            request.setBo(operation.getBanque());
+            
+            // Récupérer le numéro de compte basé sur le code propriétaire (BANQUE)
+            // La valeur de la colonne BANQUE de l'opération correspond au code_proprietaire du compte à chercher
+            String numeroCompte = recupererNumeroCompteParCodeProprietaire(operation.getBanque());
+            if (numeroCompte != null && !numeroCompte.isEmpty()) {
+                request.setCompteADebiter(numeroCompte);
+                logger.info("📋 Numéro de compte récupéré automatiquement: {} pour BANQUE: {}", 
+                           numeroCompte, operation.getBanque());
+            } else {
+                logger.warn("⚠️ Aucun numéro de compte trouvé pour BANQUE: {}", operation.getBanque());
+            }
+            
+            // Nom du bénéficiaire par défaut : Agence + Pays
+            String nomBeneficiaire = (operation.getCodeProprietaire() != null ? operation.getCodeProprietaire() : "") + 
+                                    " " + 
+                                    (operation.getPays() != null ? operation.getPays() : "");
+            request.setNomBeneficiaire(nomBeneficiaire.trim());
+            logger.info("👤 Nom bénéficiaire généré: {}", nomBeneficiaire.trim());
+            
+            // Mode de paiement par défaut : Virement
+            request.setModePaiement("Virement bancaire");
+            
+            // Statut par défaut "En attente" car les autres informations doivent être complétées manuellement
+            request.setStatut("En attente");
+            
+            // Lien avec l'opération d'origine
+            request.setOperationId(operation.getId());
+            
+            // Le champ suivant devra être rempli manuellement :
+            // - idGlpi
+            
+            // Créer l'opération bancaire
+            operationBancaireService.createOperationBancaire(request);
+            
+            logger.info("✅ Opération bancaire créée automatiquement avec succès pour l'opération ID: {}", operation.getId());
+            
+        } catch (Exception e) {
+            logger.error("❌ Erreur lors de la création automatique de l'opération bancaire pour l'opération ID: {} - {}", 
+                        operation.getId(), e.getMessage(), e);
+            // Ne pas propager l'erreur pour ne pas bloquer la création de l'opération
+        }
+    }
 
 } 

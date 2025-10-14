@@ -12,21 +12,28 @@
           <div class="stat-icon">💰</div>
           <div class="stat-info">
             <h3>Solde Total</h3>
-            <p class="stat-value">0 FCFA</p>
+            <p class="stat-value">{{ totalSoldeComptes | number:'1.0-0' }} FCFA</p>
           </div>
         </div>
         <div class="stat-card">
           <div class="stat-icon">📈</div>
           <div class="stat-info">
             <h3>Transactions</h3>
-            <p class="stat-value">0</p>
+            <p class="stat-value">{{ totalOperations }}</p>
           </div>
         </div>
         <div class="stat-card">
           <div class="stat-icon">🏛️</div>
           <div class="stat-info">
             <h3>Comptes</h3>
-            <p class="stat-value">0</p>
+            <p class="stat-value">{{ totalComptes }}</p>
+          </div>
+        </div>
+        <div class="stat-card warning">
+          <div class="stat-icon">⏳</div>
+          <div class="stat-info">
+            <h3>En attente / En cours</h3>
+            <p class="stat-value">{{ totalEnAttente }}</p>
           </div>
         </div>
       </div>
@@ -35,7 +42,7 @@
     <div class="banque-section">
       <h2>🔧 Fonctionnalités</h2>
       <div class="banque-features">
-        <div class="feature-card">
+        <div class="feature-card" (click)="highlightBankAccounts()" (dblclick)="goToComptes()" title="Cliquez pour voir les comptes Banque ici, double-cliquez pour ouvrir la page Comptes">
           <div class="feature-icon">💳</div>
           <h3>Gestion des Comptes</h3>
           <p>Créer et gérer les comptes bancaires</p>
@@ -45,12 +52,12 @@
           <h3>Opérations</h3>
           <p>Effectuer des virements et paiements</p>
         </div>
-        <div class="feature-card">
+        <div class="feature-card" (click)="openRapports()">
           <div class="feature-icon">📋</div>
           <h3>Rapports</h3>
           <p>Générer des rapports bancaires</p>
         </div>
-        <div class="feature-card">
+        <div class="feature-card" (click)="openSecurite()">
           <div class="feature-icon">🔒</div>
           <h3>Sécurité</h3>
           <p>Gestion des autorisations et sécurité</p>
@@ -58,11 +65,86 @@
       </div>
     </div>
 
-    <div class="banque-section">
-      <h2>📝 Informations</h2>
-      <div class="banque-info">
-        <p>Ce module est en cours de développement.</p>
-        <p>Les fonctionnalités bancaires seront bientôt disponibles.</p>
+    <div class="banque-section" *ngIf="!showOperations">
+      <div class="section-header">
+        <h2>🏦 Comptes de Banque</h2>
+        <button class="btn-refresh" (click)="loadComptesBanque()" [disabled]="loadingComptesBanque">
+          <i class="fas fa-sync-alt" [class.spin]="loadingComptesBanque"></i>
+          Actualiser
+        </button>
+      </div>
+
+      <div *ngIf="comptesBanqueError" class="error-box">
+        {{ comptesBanqueError }}
+      </div>
+
+      <div class="table-container small" *ngIf="!comptesBanqueError">
+        <div class="comptes-toolbar">
+          <div class="search-box">
+            <i class="fas fa-search"></i>
+            <input type="text" [(ngModel)]="comptesSearch" placeholder="Rechercher (compte, code, pays, type)...">
+          </div>
+          <div class="legend">
+            <span class="badge badge-banque">Banque</span>
+            <span class="dot"></span>
+            <span class="muted">{{ comptesBanqueDisplayed.length }} compte(s)</span>
+          </div>
+        </div>
+
+        <table class="fancy-table comptes-table">
+          <thead>
+            <tr>
+              <th>Numéro de Compte</th>
+              <th>Code Propriétaire</th>
+              <th>Pays</th>
+              <th>Catégorie</th>
+              <th>Type</th>
+              <th class="right">Solde</th>
+              <th>Dernière MAJ</th>
+              <th class="actions-col">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngIf="loadingComptesBanque">
+              <td colspan="8" class="loading-row">
+                <i class="fas fa-spinner spin"></i> Chargement des comptes Banque...
+              </td>
+            </tr>
+            <tr *ngIf="!loadingComptesBanque && comptesBanqueDisplayed.length === 0">
+              <td colspan="8" class="empty-row">
+                Aucun compte de catégorie Banque trouvé.
+              </td>
+            </tr>
+            <tr *ngFor="let c of comptesBanqueDisplayed" [class.expanded]="selectedCompteNumero === c.numeroCompte">
+              <td (click)="toggleCompte(c)" class="clickable">
+                <div class="cell-main">
+                  <code>{{ c.numeroCompte }}</code>
+                  <button class="btn-copy" title="Copier" (click)="$event.stopPropagation(); copyToClipboard(c.numeroCompte)">
+                    <i class="fas fa-copy"></i>
+                  </button>
+                </div>
+                <div class="cell-sub" *ngIf="selectedCompteNumero === c.numeroCompte">{{ c.categorie || '-' }} • {{ c.type || '-' }}</div>
+              </td>
+              <td *ngIf="selectedCompteNumero === c.numeroCompte">
+                <span class="chip chip-owner">{{ c.codeProprietaire || '-' }}</span>
+              </td>
+              <td *ngIf="selectedCompteNumero === c.numeroCompte">
+                <span class="chip chip-country">
+                  <i class="fas fa-globe-africa"></i> {{ c.pays }}
+                </span>
+              </td>
+              <td *ngIf="selectedCompteNumero === c.numeroCompte">{{ c.categorie || '-' }}</td>
+              <td *ngIf="selectedCompteNumero === c.numeroCompte">{{ c.type || '-' }}</td>
+              <td class="right" *ngIf="selectedCompteNumero === c.numeroCompte">
+                <span class="amount" [class.negative]="c.solde < 0">{{ c.solde | number:'1.2-2' }}</span>
+              </td>
+              <td *ngIf="selectedCompteNumero === c.numeroCompte">{{ c.dateDerniereMaj | date:'dd/MM/yyyy HH:mm' }}</td>
+              <td class="actions-col" *ngIf="selectedCompteNumero === c.numeroCompte">
+                <button class="btn-outline" (click)="copyToClipboard(c.numeroCompte)"><i class="fas fa-copy"></i> Copier</button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
       </div>
     </div>
   </div>
@@ -115,6 +197,24 @@
         </button>
       </div>
 
+      <!-- Contrôles de pagination -->
+      <div class="pagination-controls">
+        <div class="page-size-selector">
+          <label>Afficher</label>
+          <select [(ngModel)]="pageSize" (change)="onPageSizeChange()">
+            <option [value]="5">5 lignes</option>
+            <option [value]="10">10 lignes</option>
+            <option [value]="20">20 lignes</option>
+            <option [value]="50">50 lignes</option>
+            <option [value]="100">100 lignes</option>
+          </select>
+        </div>
+        <div class="total-count">
+          <i class="fas fa-list"></i>
+          <span>{{ filteredOperations.length }} opération(s) au total</span>
+        </div>
+      </div>
+
       <!-- Tableau -->
       <div class="table-container">
         <table class="operations-table">
@@ -127,12 +227,12 @@
               <th>Agence</th>
               <th>Type Opération</th>
               <th>Nom du Bénéficiaire</th>
-              <th>Compte à Débiter</th>
+              <th>Compte</th>
               <th>Montant</th>
               <th>Mode de Paiement</th>
               <th>Référence</th>
               <th>ID GLPI</th>
-              <th>BO</th>
+              <th>Banque</th>
               <th>Statut</th>
               <th>Actions</th>
             </tr>
@@ -154,7 +254,23 @@
               <td>{{ operation.montant | currency:'XAF':'symbol':'1.0-0' }}</td>
               <td>{{ operation.modePaiement }}</td>
               <td>{{ operation.reference }}</td>
-              <td>{{ operation.idGlpi }}</td>
+              <td class="glpi-cell">
+                <button 
+                  *ngIf="!operation.idGlpi || operation.idGlpi.trim() === ''" 
+                  class="btn-glpi-create"
+                  (click)="openGlpiCreate()"
+                  title="Créer un ticket GLPI">
+                  <i class="fas fa-plus-circle"></i> Créer
+                </button>
+                <a 
+                  *ngIf="operation.idGlpi && operation.idGlpi.trim() !== ''"
+                  [href]="getGlpiTicketUrl(operation.idGlpi)"
+                  target="_blank"
+                  class="glpi-link"
+                  title="Ouvrir le ticket GLPI {{ operation.idGlpi }}">
+                  <i class="fas fa-ticket-alt"></i> {{ operation.idGlpi }}
+                </a>
+              </td>
               <td>{{ operation.bo }}</td>
               <td>
                 <span class="badge status-{{ operation.statut.toLowerCase() }}">
@@ -194,6 +310,211 @@
         
         <button (click)="nextPage()" [disabled]="currentPage === totalPages">
           Suivant <i class="fas fa-chevron-right"></i>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Popup Détails -->
+  <div class="modern-popup-overlay" *ngIf="showDetailPopup" (click)="closeDetailPopup()">
+    <div class="modern-popup detail-popup" (click)="$event.stopPropagation()">
+      <div class="popup-header">
+        <h2><i class="fas fa-info-circle"></i> Détails de l'opération bancaire</h2>
+        <button class="close-btn" (click)="closeDetailPopup()">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+
+      <div class="popup-content" *ngIf="selectedOperation">
+        <div class="detail-grid">
+          <div class="detail-item">
+            <label><i class="fas fa-globe"></i> Pays</label>
+            <span>{{ selectedOperation.pays || 'Non renseigné' }}</span>
+          </div>
+          <div class="detail-item">
+            <label><i class="fas fa-flag"></i> Code Pays</label>
+            <span>{{ selectedOperation.codePays || 'Non renseigné' }}</span>
+          </div>
+          <div class="detail-item">
+            <label><i class="fas fa-calendar"></i> Mois</label>
+            <span>{{ selectedOperation.mois || 'Non renseigné' }}</span>
+          </div>
+          <div class="detail-item">
+            <label><i class="fas fa-clock"></i> Date Opération</label>
+            <span>{{ selectedOperation.dateOperation | date:'dd/MM/yyyy HH:mm' }}</span>
+          </div>
+          <div class="detail-item">
+            <label><i class="fas fa-building"></i> Agence</label>
+            <span>{{ selectedOperation.agence }}</span>
+          </div>
+          <div class="detail-item">
+            <label><i class="fas fa-tags"></i> Type Opération</label>
+            <span class="badge">{{ selectedOperation.typeOperation }}</span>
+          </div>
+          <div class="detail-item">
+            <label><i class="fas fa-user"></i> Nom Bénéficiaire</label>
+            <span>{{ selectedOperation.nomBeneficiaire || 'Non renseigné' }}</span>
+          </div>
+          <div class="detail-item">
+            <label><i class="fas fa-credit-card"></i> Compte</label>
+            <span>{{ selectedOperation.compteADebiter || 'Non renseigné' }}</span>
+          </div>
+          <div class="detail-item">
+            <label><i class="fas fa-money-bill-wave"></i> Montant</label>
+            <span class="montant">{{ selectedOperation.montant | currency:'XAF':'symbol':'1.0-0' }}</span>
+          </div>
+          <div class="detail-item">
+            <label><i class="fas fa-wallet"></i> Mode de Paiement</label>
+            <span>{{ selectedOperation.modePaiement || 'Non renseigné' }}</span>
+          </div>
+          <div class="detail-item">
+            <label><i class="fas fa-hashtag"></i> Référence</label>
+            <span>{{ selectedOperation.reference || 'Non renseignée' }}</span>
+          </div>
+          <div class="detail-item">
+            <label><i class="fas fa-ticket-alt"></i> ID GLPI</label>
+            <span>
+              <a *ngIf="selectedOperation.idGlpi && selectedOperation.idGlpi.trim() !== ''" 
+                 [href]="getGlpiTicketUrl(selectedOperation.idGlpi)"
+                 target="_blank"
+                 class="glpi-link-small">
+                {{ selectedOperation.idGlpi }}
+              </a>
+              <span *ngIf="!selectedOperation.idGlpi || selectedOperation.idGlpi.trim() === ''">Non renseigné</span>
+            </span>
+          </div>
+          <div class="detail-item">
+            <label><i class="fas fa-university"></i> Banque</label>
+            <span>{{ selectedOperation.bo || 'Non renseigné' }}</span>
+          </div>
+          <div class="detail-item">
+            <label><i class="fas fa-info-circle"></i> Statut</label>
+            <span class="badge status-{{ selectedOperation.statut?.toLowerCase() }}">
+              {{ selectedOperation.statut }}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <div class="popup-footer">
+        <button class="btn-secondary" (click)="closeDetailPopup()">
+          <i class="fas fa-times"></i> Fermer
+        </button>
+        <button class="btn-primary" (click)="closeDetailPopup(); editOperation(selectedOperation!)">
+          <i class="fas fa-edit"></i> Modifier
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Popup Édition -->
+  <div class="modern-popup-overlay" *ngIf="showEditPopup" (click)="closeEditPopup()">
+    <div class="modern-popup edit-popup" (click)="$event.stopPropagation()">
+      <div class="popup-header">
+        <h2><i class="fas fa-edit"></i> Modifier l'opération bancaire</h2>
+        <button class="close-btn" (click)="closeEditPopup()">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+
+      <div class="popup-content">
+        <form class="edit-form">
+          <div class="form-row">
+            <div class="form-group">
+              <label><i class="fas fa-globe"></i> Pays *</label>
+              <select [(ngModel)]="editForm.pays" name="pays" required>
+                <option value="">Sélectionnez un pays</option>
+                <option *ngFor="let pays of paysList" [value]="pays">{{ pays }}</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label><i class="fas fa-flag"></i> Code Pays</label>
+              <input type="text" [(ngModel)]="editForm.codePays" name="codePays" placeholder="CI, ML, BF...">
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label><i class="fas fa-calendar"></i> Mois</label>
+              <input type="text" [(ngModel)]="editForm.mois" name="mois" placeholder="Octobre 2024">
+            </div>
+            <div class="form-group">
+              <label><i class="fas fa-clock"></i> Date Opération *</label>
+              <input type="date" [(ngModel)]="editForm.dateOperation" name="dateOperation" required>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label><i class="fas fa-building"></i> Agence *</label>
+              <input type="text" [(ngModel)]="editForm.agence" name="agence" required placeholder="Code agence">
+            </div>
+            <div class="form-group">
+              <label><i class="fas fa-tags"></i> Type Opération *</label>
+              <select [(ngModel)]="editForm.typeOperation" name="typeOperation" required>
+                <option value="">Sélectionnez un type</option>
+                <option *ngFor="let type of typesOperation" [value]="type">{{ type }}</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label><i class="fas fa-user"></i> Nom Bénéficiaire</label>
+              <input type="text" [(ngModel)]="editForm.nomBeneficiaire" name="nomBeneficiaire" placeholder="Nom du bénéficiaire">
+            </div>
+            <div class="form-group">
+              <label><i class="fas fa-credit-card"></i> Compte</label>
+              <input type="text" [(ngModel)]="editForm.compteADebiter" name="compteADebiter" placeholder="Numéro de compte">
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label><i class="fas fa-money-bill-wave"></i> Montant *</label>
+              <input type="number" [(ngModel)]="editForm.montant" name="montant" required placeholder="0">
+            </div>
+            <div class="form-group">
+              <label><i class="fas fa-wallet"></i> Mode de Paiement</label>
+              <select [(ngModel)]="editForm.modePaiement" name="modePaiement">
+                <option value="">Sélectionnez un mode</option>
+                <option *ngFor="let mode of modesPaiement" [value]="mode">{{ mode }}</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label><i class="fas fa-hashtag"></i> Référence</label>
+              <input type="text" [(ngModel)]="editForm.reference" name="reference" placeholder="Référence de l'opération">
+            </div>
+            <div class="form-group">
+              <label><i class="fas fa-ticket-alt"></i> ID GLPI</label>
+              <input type="text" [(ngModel)]="editForm.idGlpi" name="idGlpi" placeholder="ID du ticket GLPI">
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label><i class="fas fa-university"></i> Banque</label>
+              <input type="text" [(ngModel)]="editForm.bo" name="bo" placeholder="Nom de la banque">
+            </div>
+            <div class="form-group">
+              <label><i class="fas fa-info-circle"></i> Statut *</label>
+              <select [(ngModel)]="editForm.statut" name="statut" required>
+                <option *ngFor="let statut of statutsList" [value]="statut">{{ statut }}</option>
+              </select>
+            </div>
+          </div>
+        </form>
+      </div>
+
+      <div class="popup-footer">
+        <button class="btn-secondary" (click)="closeEditPopup()">
+          <i class="fas fa-times"></i> Annuler
+        </button>
+        <button class="btn-primary" (click)="saveOperation()">
+          <i class="fas fa-save"></i> Enregistrer
         </button>
       </div>
     </div>

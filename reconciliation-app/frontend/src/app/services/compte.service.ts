@@ -85,27 +85,45 @@ export class CompteService {
     // Filtrer les comptes avec des paramètres
     filterComptes(filter: CompteFilter): Observable<Compte[]> {
         let params = new HttpParams();
-        
-        if (filter.pays && Array.isArray(filter.pays)) {
-            filter.pays.forEach((p: string) => {
-                params = params.append('pays', p);
-            });
+
+        // pays: string | string[]
+        if (filter.pays) {
+            if (Array.isArray(filter.pays)) {
+                filter.pays.forEach((p: string) => {
+                    params = params.append('pays', p);
+                });
+            } else {
+                params = params.set('pays', filter.pays);
+            }
         }
-        if (filter.codeProprietaire && Array.isArray(filter.codeProprietaire)) {
-            filter.codeProprietaire.forEach((c: string) => {
-                params = params.append('codeProprietaire', c);
-            });
+
+        // codeProprietaire: string | string[]
+        if (filter.codeProprietaire) {
+            if (Array.isArray(filter.codeProprietaire)) {
+                filter.codeProprietaire.forEach((c: string) => {
+                    params = params.append('codeProprietaire', c);
+                });
+            } else {
+                params = params.set('codeProprietaire', filter.codeProprietaire);
+            }
         }
+
         if (filter.dateDebut) {
             params = params.set('dateDebut', filter.dateDebut);
         }
         if (filter.dateFin) {
             params = params.set('dateFin', filter.dateFin);
         }
-        if (filter.categorie && Array.isArray(filter.categorie)) {
-            filter.categorie.forEach((c: string) => {
-                params = params.append('categorie', c);
-            });
+
+        // categorie: string | string[]
+        if (filter.categorie) {
+            if (Array.isArray(filter.categorie)) {
+                filter.categorie.forEach((c: string) => {
+                    params = params.append('categorie', c);
+                });
+            } else {
+                params = params.set('categorie', filter.categorie);
+            }
         }
 
         return this.http.get<Compte[]>(`${this.apiUrl}/filter`, { params });

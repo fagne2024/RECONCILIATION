@@ -40,9 +40,32 @@
   .stats-section {
     margin-bottom: 30px;
 
+    .stats-header {
+      margin-bottom: 15px;
+      
+      h3 {
+        margin: 0 0 8px 0;
+        color: #2c3e50;
+        font-size: 20px;
+        font-weight: 600;
+      }
+
+      .stats-info {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        color: #7f8c8d;
+        font-size: 14px;
+
+        i {
+          color: #3498db;
+        }
+      }
+    }
+
     .stats-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
       gap: 15px;
 
       .stat-card {
@@ -51,10 +74,23 @@
         border-radius: 10px;
         box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
         text-align: center;
-        transition: transform 0.3s ease;
+        transition: transform 0.3s ease, box-shadow 0.3s ease;
+        position: relative;
+        overflow: hidden;
 
         &:hover {
-          transform: translateY(-2px);
+          transform: translateY(-3px);
+          box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15);
+        }
+
+        .stat-icon {
+          font-size: 24px;
+          margin-bottom: 10px;
+          opacity: 0.8;
+
+          i {
+            display: inline-block;
+          }
         }
 
         .stat-value {
@@ -62,38 +98,40 @@
           font-weight: bold;
           color: #2c3e50;
           margin-bottom: 5px;
+          word-break: break-word;
         }
 
         .stat-label {
-          font-size: 14px;
+          font-size: 12px;
           color: #7f8c8d;
           text-transform: uppercase;
           letter-spacing: 0.5px;
+          font-weight: 600;
         }
 
         &.stat-total {
           border-left: 4px solid #2c3e50;
-          .stat-value { color: #2c3e50; }
+          .stat-value, .stat-icon { color: #2c3e50; }
         }
 
         &.stat-en-attente {
           border-left: 4px solid #f39c12;
-          .stat-value { color: #f39c12; }
+          .stat-value, .stat-icon { color: #f39c12; }
         }
 
         &.stat-traite {
           border-left: 4px solid #27ae60;
-          .stat-value { color: #27ae60; }
+          .stat-value, .stat-icon { color: #27ae60; }
         }
 
         &.stat-erreur {
           border-left: 4px solid #e74c3c;
-          .stat-value { color: #e74c3c; }
+          .stat-value, .stat-icon { color: #e74c3c; }
         }
 
         &.stat-montant {
           border-left: 4px solid #3498db;
-          .stat-value { color: #3498db; }
+          .stat-value, .stat-icon { color: #3498db; }
         }
       }
     }
@@ -282,16 +320,58 @@
       display: flex;
       justify-content: space-between;
       align-items: center;
+      flex-wrap: wrap;
+      gap: 15px;
 
-      h3 {
-        margin: 0;
-        color: #2c3e50;
-        font-size: 18px;
+      .table-header-left {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+
+        h3 {
+          margin: 0;
+          color: #2c3e50;
+          font-size: 20px;
+          font-weight: 600;
+        }
+
+        .table-summary {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          font-size: 15px;
+
+          .summary-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            color: #2c3e50;
+
+            i {
+              color: #3498db;
+              font-size: 14px;
+            }
+
+            strong {
+              color: #2c3e50;
+              font-weight: 600;
+            }
+          }
+
+          .summary-separator {
+            color: #bdc3c7;
+            font-weight: bold;
+          }
+        }
       }
 
       .table-info {
         color: #7f8c8d;
         font-size: 14px;
+        padding: 6px 12px;
+        background-color: #f8f9fa;
+        border-radius: 20px;
+        font-weight: 500;
       }
     }
 
@@ -635,10 +715,31 @@
       grid-template-columns: 1fr;
     }
 
+    .stats-section .stats-header {
+      h3 {
+        font-size: 18px;
+      }
+
+      .stats-info {
+        font-size: 12px;
+      }
+    }
+
     .table-section .table-header {
       flex-direction: column;
       gap: 10px;
       align-items: stretch;
+
+      .table-header-left {
+        h3 {
+          font-size: 18px;
+        }
+
+        .table-summary {
+          font-size: 13px;
+          flex-wrap: wrap;
+        }
+      }
     }
 
     .table-container {

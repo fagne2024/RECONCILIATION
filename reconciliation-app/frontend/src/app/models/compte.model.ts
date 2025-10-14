@@ -31,9 +31,9 @@ export interface CompteUpdateRequest {
 }
 
 export interface CompteFilter {
-    pays?: string;
+    pays?: string | string[];
     dateDebut?: string;
     dateFin?: string;
-    codeProprietaire?: string;
-    categorie?: string;
+    codeProprietaire?: string | string[];
+    categorie?: string | string[];
 } 

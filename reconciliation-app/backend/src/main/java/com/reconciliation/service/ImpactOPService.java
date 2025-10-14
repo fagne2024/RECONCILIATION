@@ -125,6 +125,40 @@ public class ImpactOPService {
     }
 
     /**
+     * Supprimer plusieurs impacts OP en une seule requête
+     */
+    public Map<String, Object> deleteImpactOPs(List<Long> ids) {
+        Map<String, Object> result = new HashMap<>();
+        List<String> errors = new ArrayList<>();
+        int deletedCount = 0;
+
+        if (ids == null || ids.isEmpty()) {
+            result.put("success", false);
+            result.put("deletedCount", 0);
+            result.put("errors", List.of("Aucun ID fourni"));
+            return result;
+        }
+
+        for (Long id : ids) {
+            try {
+                if (impactOPRepository.existsById(id)) {
+                    impactOPRepository.deleteById(id);
+                    deletedCount++;
+                } else {
+                    errors.add("Impact OP ID " + id + " non trouvé");
+                }
+            } catch (Exception e) {
+                errors.add("Erreur lors de la suppression de l'impact OP ID " + id + ": " + e.getMessage());
+            }
+        }
+
+        result.put("success", errors.isEmpty() || deletedCount > 0);
+        result.put("deletedCount", deletedCount);
+        result.put("errors", errors);
+        return result;
+    }
+
+    /**
      * Mettre à jour tous les commentaires des impacts OP existants
      */
     public Map<String, Object> updateAllComments() {

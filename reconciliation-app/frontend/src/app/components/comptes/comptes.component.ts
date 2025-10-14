@@ -9,7 +9,7 @@ import { OperationService } from '../../services/operation.service';
 import { Operation } from '../../models/operation.model';
 import * as XLSX from 'xlsx';
 import { MatSelect } from '@angular/material/select';
-import { Router } from '@angular/router';
+import { Router, ActivatedRoute } from '@angular/router';
 import { EcartSoldeService } from '../../services/ecart-solde.service';
 import { ImpactOPService } from '../../services/impact-op.service';
 import { TrxSfService } from '../../services/trx-sf.service';
@@ -240,6 +240,7 @@ export class ComptesComponent implements OnInit, OnDestroy {
         private fraisTransactionService: FraisTransactionService,
         private fb: FormBuilder,
         private router: Router,
+        private route: ActivatedRoute,
         private ecartSoldeService: EcartSoldeService,
         private impactOPService: ImpactOPService,
         private trxSfService: TrxSfService,
@@ -279,6 +280,21 @@ export class ComptesComponent implements OnInit, OnDestroy {
         this.loadOperationsPeriode();
         this.filteredPaysList = this.paysList;
         this.filteredCodeProprietaireList = this.codeProprietaireList;
+        this.filteredCategorieList = this.compteCategories;
+        
+        // Vérifier s'il y a un filtre de catégorie dans les paramètres de la route
+        this.route.queryParams.subscribe(params => {
+            if (params['filterCategorie']) {
+                const categorie = params['filterCategorie'];
+                // Attendre que les comptes soient chargés avant d'appliquer le filtre
+                setTimeout(() => {
+                    this.selectedCategories = [categorie];
+                    this.filterForm.controls['categorie'].setValue([categorie]);
+                    this.applyFilters();
+                }, 500);
+            }
+        });
+        
         this.paysSearchCtrl.valueChanges.subscribe((search: string | null) => {
             const s = (search || '').toLowerCase();
             // Utiliser directement getFilteredPays() pour avoir les données les plus récentes

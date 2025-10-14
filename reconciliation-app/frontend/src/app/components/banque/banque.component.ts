@@ -1,22 +1,14 @@
 import { Component, OnInit } from '@angular/core';
+import { Router } from '@angular/router';
+import { OperationBancaire } from '../../models/operation-bancaire.model';
+import { OperationBancaireService } from '../../services/operation-bancaire.service';
+import { Compte } from '../../models/compte.model';
+import { CompteService } from '../../services/compte.service';
+import { OperationService } from '../../services/operation.service';
 
-// Interface pour les opérations bancaires
-interface OperationBancaire {
-  id: number;
-  pays: string;
-  codePays: string;
-  mois: string;
+// Interface locale pour les opérations bancaires avec Date
+interface OperationBancaireDisplay extends Omit<OperationBancaire, 'dateOperation'> {
   dateOperation: Date;
-  agence: string;
-  typeOperation: string;
-  nomBeneficiaire: string;
-  compteADebiter: string;
-  montant: number;
-  modePaiement: string;
-  reference: string;
-  idGlpi: string;
-  bo: string;
-  statut: string;
 }
 
 // Interface pour les filtres
@@ -36,11 +28,12 @@ interface FiltresOperation {
 export class BanqueComponent implements OnInit {
   // État d'affichage
   showOperations = false;
+  activeSection: 'home' | 'operations' | 'comptes' | 'rapports' | 'securite' = 'home';
 
   // Données des opérations
-  operations: OperationBancaire[] = [];
-  filteredOperations: OperationBancaire[] = [];
-  pagedOperations: OperationBancaire[] = [];
+  operations: OperationBancaireDisplay[] = [];
+  filteredOperations: OperationBancaireDisplay[] = [];
+  pagedOperations: OperationBancaireDisplay[] = [];
 
   // Filtres
   filters: FiltresOperation = {
@@ -52,124 +45,190 @@ export class BanqueComponent implements OnInit {
   };
 
   // Listes pour les filtres
-  paysList: string[] = ['Côte d\'Ivoire', 'Mali', 'Burkina Faso', 'Sénégal', 'Togo'];
-  typesOperation: string[] = ['Virement', 'Paiement', 'Retrait', 'Dépôt'];
+  paysList: string[] = ['Côte d\'Ivoire', 'Mali', 'Burkina Faso', 'Sénégal', 'Togo', 'Cameroun'];
+  typesOperation: string[] = ['Compensation Client', 'Approvisionnement', 'Nivellement', 'Virement', 'Paiement', 'Retrait', 'Dépôt'];
   statutsList: string[] = ['Validée', 'En attente', 'Rejetée', 'En cours'];
+  modesPaiement: string[] = ['Virement bancaire', 'Chèque', 'Espèces', 'Mobile Money'];
 
   // Pagination
   currentPage = 1;
   pageSize = 10;
   totalPages = 1;
 
-  constructor() { }
+  // Popups
+  showDetailPopup = false;
+  showEditPopup = false;
+  selectedOperation: OperationBancaireDisplay | null = null;
+
+  // Formulaire d'édition
+  editForm: any = {
+    pays: '',
+    codePays: '',
+    mois: '',
+    dateOperation: '',
+    agence: '',
+    typeOperation: '',
+    nomBeneficiaire: '',
+    compteADebiter: '',
+    montant: 0,
+    modePaiement: '',
+    reference: '',
+    idGlpi: '',
+    bo: '',
+    statut: ''
+  };
+
+  constructor(
+    private router: Router,
+    private operationBancaireService: OperationBancaireService,
+    private compteService: CompteService,
+    private operationService: OperationService
+  ) { }
 
   ngOnInit(): void {
     console.log('Composant BANQUE initialisé');
     this.loadOperations();
+    this.loadComptesBanque();
+    this.loadDashboardStats();
+  }
+
+  // Comptes de catégorie Banque (section Informations)
+  comptesBanque: Compte[] = [];
+  loadingComptesBanque = false;
+  comptesBanqueError = '';
+  comptesSearch = '';
+  selectedCompteNumero: string | null = null;
+
+  loadComptesBanque() {
+    this.loadingComptesBanque = true;
+    this.comptesBanqueError = '';
+    this.compteService.filterComptes({ categorie: ['Banque'] }).subscribe({
+      next: (comptes) => {
+        this.comptesBanque = (comptes || []).sort((a, b) => (a.codeProprietaire || '').localeCompare(b.codeProprietaire || ''));
+        this.loadingComptesBanque = false;
+      },
+      error: (err) => {
+        console.error('Erreur chargement comptes Banque', err);
+        this.comptesBanqueError = 'Erreur lors du chargement des comptes Banque';
+        this.loadingComptesBanque = false;
+      }
+    });
+  }
+
+  // Dashboard stats
+  totalSoldeComptes = 0;
+  totalOperations = 0;
+  totalComptes = 0;
+  totalEnAttente = 0;
+
+  loadDashboardStats() {
+    // Comptes Banque uniquement
+    this.compteService.filterComptes({ categorie: 'Banque' }).subscribe({
+      next: (comptes) => {
+        const list = comptes || [];
+        this.totalComptes = list.length;
+        this.totalSoldeComptes = list.reduce((sum, c) => sum + (c.solde || 0), 0);
+      }
+    });
+
+    // Opérations bancaires uniquement
+    this.operationBancaireService.getAllOperationsBancaires().subscribe({
+      next: (ops) => {
+        const list = ops || [];
+        this.totalOperations = list.length;
+        this.totalEnAttente = list.filter(o => (o.statut || '').toLowerCase() === 'en attente' || (o.statut || '').toLowerCase() === 'en cours').length;
+      }
+    });
+  }
+
+  get comptesBanqueDisplayed(): Compte[] {
+    const term = (this.comptesSearch || '').toLowerCase().trim();
+    if (!term) return this.comptesBanque;
+    return this.comptesBanque.filter(c =>
+      (c.numeroCompte || '').toLowerCase().includes(term) ||
+      (c.codeProprietaire || '').toLowerCase().includes(term) ||
+      (c.pays || '').toLowerCase().includes(term) ||
+      (c.type || '').toLowerCase().includes(term) ||
+      (c.categorie || '').toLowerCase().includes(term)
+    );
+  }
+
+  copyToClipboard(value: string | undefined) {
+    if (!value) return;
+    if (navigator && navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(value).then(() => {
+        console.log('Copié:', value);
+      });
+    }
+  }
+
+  toggleCompte(compte: Compte) {
+    const num = compte.numeroCompte;
+    this.selectedCompteNumero = this.selectedCompteNumero === num ? null : num;
   }
 
   // Navigation
   showOperationsTable() {
     this.showOperations = true;
+    this.activeSection = 'operations';
   }
 
   hideOperationsTable() {
     this.showOperations = false;
+    this.activeSection = 'home';
+  }
+
+  goToComptes() {
+    this.activeSection = 'comptes';
+    this.router.navigate(['/comptes'], { queryParams: { filterCategorie: 'Banque' } });
+  }
+
+  openRapports() {
+    this.activeSection = 'rapports';
+  }
+
+  openSecurite() {
+    this.activeSection = 'securite';
+  }
+
+  // Met en avant et reste sur la liste des comptes Banque dans la page Banque
+  highlightBankAccounts() {
+    // Reste sur la page Banque et affiche la section Comptes de Banque
+    this.activeSection = 'home';
+    this.showOperations = false;
+    // Si la liste est vide, charger; sinon, faire un petit scroll
+    if (!this.comptesBanque || this.comptesBanque.length === 0) {
+      this.loadComptesBanque();
+    }
+    setTimeout(() => {
+      const el = document.querySelector('.section-header h2');
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    }, 0);
   }
 
   // Chargement des données
   loadOperations() {
-    // Données de test - à remplacer par un appel API
-    this.operations = [
-      {
-        id: 1,
-        pays: 'Côte d\'Ivoire',
-        codePays: 'CI',
-        mois: 'Janvier 2024',
-        dateOperation: new Date('2024-01-15'),
-        agence: 'Abidjan Centre',
-        typeOperation: 'Virement',
-        nomBeneficiaire: 'Jean Dupont',
-        compteADebiter: 'CI0012345678',
-        montant: 500000,
-        modePaiement: 'Virement bancaire',
-        reference: 'REF001',
-        idGlpi: 'GLPI001',
-        bo: 'BO001',
-        statut: 'Validée'
+    // Charger les opérations bancaires depuis le service
+    this.operationBancaireService.getAllOperationsBancaires().subscribe({
+      next: (operations) => {
+        // Convertir les dates string en objets Date
+        this.operations = operations.map(op => ({
+          ...op,
+          dateOperation: new Date(op.dateOperation)
+        }));
+        this.filteredOperations = [...this.operations];
+        this.updatePagedOperations();
+        console.log('Opérations bancaires chargées:', this.operations.length);
       },
-      {
-        id: 2,
-        pays: 'Mali',
-        codePays: 'ML',
-        mois: 'Janvier 2024',
-        dateOperation: new Date('2024-01-16'),
-        agence: 'Bamako Centre',
-        typeOperation: 'Paiement',
-        nomBeneficiaire: 'Marie Koné',
-        compteADebiter: 'ML0098765432',
-        montant: 250000,
-        modePaiement: 'Chèque',
-        reference: 'REF002',
-        idGlpi: 'GLPI002',
-        bo: 'BO002',
-        statut: 'En attente'
-      },
-      {
-        id: 3,
-        pays: 'Burkina Faso',
-        codePays: 'BF',
-        mois: 'Janvier 2024',
-        dateOperation: new Date('2024-01-17'),
-        agence: 'Ouagadougou Centre',
-        typeOperation: 'Retrait',
-        nomBeneficiaire: 'Pierre Ouédraogo',
-        compteADebiter: 'BF0055667788',
-        montant: 100000,
-        modePaiement: 'Espèces',
-        reference: 'REF003',
-        idGlpi: 'GLPI003',
-        bo: 'BO003',
-        statut: 'Validée'
-      },
-      {
-        id: 4,
-        pays: 'Sénégal',
-        codePays: 'SN',
-        mois: 'Janvier 2024',
-        dateOperation: new Date('2024-01-18'),
-        agence: 'Dakar Centre',
-        typeOperation: 'Dépôt',
-        nomBeneficiaire: 'Fatou Diop',
-        compteADebiter: 'SN0011223344',
-        montant: 750000,
-        modePaiement: 'Virement bancaire',
-        reference: 'REF004',
-        idGlpi: 'GLPI004',
-        bo: 'BO004',
-        statut: 'En cours'
-      },
-      {
-        id: 5,
-        pays: 'Togo',
-        codePays: 'TG',
-        mois: 'Janvier 2024',
-        dateOperation: new Date('2024-01-19'),
-        agence: 'Lomé Centre',
-        typeOperation: 'Virement',
-        nomBeneficiaire: 'Kossi Adjo',
-        compteADebiter: 'TG0099887766',
-        montant: 300000,
-        modePaiement: 'Virement bancaire',
-        reference: 'REF005',
-        idGlpi: 'GLPI005',
-        bo: 'BO005',
-        statut: 'Rejetée'
+      error: (error) => {
+        console.error('Erreur lors du chargement des opérations bancaires:', error);
+        this.operations = [];
+        this.filteredOperations = [];
+        this.updatePagedOperations();
       }
-    ];
-
-    this.filteredOperations = [...this.operations];
-    this.updatePagedOperations();
+    });
   }
 
   // Filtrage
@@ -214,6 +273,11 @@ export class BanqueComponent implements OnInit {
     this.totalPages = Math.ceil(this.filteredOperations.length / this.pageSize);
     const startIndex = (this.currentPage - 1) * this.pageSize;
     this.pagedOperations = this.filteredOperations.slice(startIndex, startIndex + this.pageSize);
+  }
+
+  onPageSizeChange() {
+    this.currentPage = 1; // Retour à la première page lors du changement de taille
+    this.updatePagedOperations();
   }
 
   nextPage() {
@@ -262,20 +326,118 @@ export class BanqueComponent implements OnInit {
   }
 
   // Actions sur les opérations
-  viewOperation(operation: OperationBancaire) {
-    console.log('Voir opération:', operation);
-    // Implémenter la logique pour voir les détails
+  viewOperation(operation: OperationBancaireDisplay) {
+    this.selectedOperation = operation;
+    this.showDetailPopup = true;
   }
 
-  editOperation(operation: OperationBancaire) {
-    console.log('Modifier opération:', operation);
-    // Implémenter la logique pour modifier
+  closeDetailPopup() {
+    this.showDetailPopup = false;
+    this.selectedOperation = null;
+  }
+
+  editOperation(operation: OperationBancaireDisplay) {
+    this.selectedOperation = operation;
+    // Pré-remplir le formulaire
+    this.editForm = {
+      pays: operation.pays || '',
+      codePays: operation.codePays || '',
+      mois: operation.mois || '',
+      dateOperation: this.formatDateForInput(operation.dateOperation),
+      agence: operation.agence || '',
+      typeOperation: operation.typeOperation || '',
+      nomBeneficiaire: operation.nomBeneficiaire || '',
+      compteADebiter: operation.compteADebiter || '',
+      montant: operation.montant || 0,
+      modePaiement: operation.modePaiement || '',
+      reference: operation.reference || '',
+      idGlpi: operation.idGlpi || '',
+      bo: operation.bo || '',
+      statut: operation.statut || 'En attente'
+    };
+    this.showEditPopup = true;
+  }
+
+  closeEditPopup() {
+    this.showEditPopup = false;
+    this.selectedOperation = null;
+  }
+
+  saveOperation() {
+    if (!this.selectedOperation || !this.selectedOperation.id) return;
+
+    const updateData = {
+      pays: this.editForm.pays,
+      codePays: this.editForm.codePays,
+      mois: this.editForm.mois,
+      dateOperation: this.editForm.dateOperation,
+      agence: this.editForm.agence,
+      typeOperation: this.editForm.typeOperation,
+      nomBeneficiaire: this.editForm.nomBeneficiaire,
+      compteADebiter: this.editForm.compteADebiter,
+      montant: this.editForm.montant,
+      modePaiement: this.editForm.modePaiement,
+      reference: this.editForm.reference,
+      idGlpi: this.editForm.idGlpi,
+      bo: this.editForm.bo,
+      statut: this.editForm.statut
+    };
+
+    this.operationBancaireService.updateOperationBancaire(this.selectedOperation.id, updateData).subscribe({
+      next: () => {
+        console.log('Opération bancaire modifiée avec succès');
+        this.loadOperations();
+        this.closeEditPopup();
+        alert('✅ Opération bancaire modifiée avec succès');
+      },
+      error: (error) => {
+        console.error('Erreur lors de la modification:', error);
+        alert('❌ Erreur lors de la modification de l\'opération bancaire');
+      }
+    });
   }
 
   deleteOperation(id: number) {
-    if (confirm('Êtes-vous sûr de vouloir supprimer cette opération ?')) {
-      console.log('Supprimer opération:', id);
-      // Implémenter la logique pour supprimer
+    const operation = this.operations.find(op => op.id === id);
+    const confirmMessage = operation 
+      ? `Êtes-vous sûr de vouloir supprimer cette opération bancaire ?\n\nType: ${operation.typeOperation}\nAgence: ${operation.agence}\nMontant: ${operation.montant} FCFA`
+      : 'Êtes-vous sûr de vouloir supprimer cette opération bancaire ?';
+
+    if (confirm(confirmMessage)) {
+      this.operationBancaireService.deleteOperationBancaire(id).subscribe({
+        next: (success) => {
+          if (success) {
+            console.log('Opération bancaire supprimée avec succès');
+            this.loadOperations();
+            alert('✅ Opération bancaire supprimée avec succès');
+          }
+        },
+        error: (error) => {
+          console.error('Erreur lors de la suppression de l\'opération bancaire:', error);
+          alert('❌ Erreur lors de la suppression de l\'opération bancaire');
+        }
+      });
     }
+  }
+
+  // Helper pour formater la date pour l'input
+  private formatDateForInput(date: Date): string {
+    if (!date) return '';
+    const d = new Date(date);
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+
+  // Ouvrir GLPI pour créer un nouveau ticket
+  openGlpiCreate() {
+    const glpiCreateUrl = 'https://glpi.intouchgroup.net/glpi/front/ticket.form.php';
+    window.open(glpiCreateUrl, '_blank');
+  }
+
+  // Obtenir l'URL du ticket GLPI avec l'ID
+  getGlpiTicketUrl(idGlpi: string): string {
+    return `https://glpi.intouchgroup.net/glpi/front/ticket.form.php?id=${idGlpi}`;
   }
 } 
