@@ -276,21 +276,39 @@ public class ReleveBancaireImportService {
         Cell c = row.getCell(idx);
         if (c == null) return null;
         try {
+            // 1) Vrai format date Excel
             if (DateUtil.isCellDateFormatted(c)) {
                 return c.getLocalDateTimeCellValue().toLocalDate();
+            }
+            // 2) Valeur numérique Excel (saisie comme nombre, non formatée)
+            if (c.getCellType() == CellType.NUMERIC) {
+                double v = c.getNumericCellValue();
+                if (DateUtil.isValidExcelDate(v)) {
+                    java.util.Date d = DateUtil.getJavaDate(v);
+                    return d.toInstant().atZone(java.time.ZoneId.systemDefault()).toLocalDate();
+                }
             }
             String s = c.toString();
             if (s == null) return null;
             s = s.trim();
             if (s.isBlank()) return null;
             // Try multiple patterns
-            String[] patternsFr = {"dd/MM/yyyy", "dd-MM-yyyy", "yyyy-MM-dd", "dd MMM yy", "dd MMM yyyy", "dd-MMM-yy", "dd-MMM-yyyy"};
-            String[] patternsEn = {"dd/MMM/yy", "dd/MMM/yyyy", "dd-MMM-yy", "dd-MMM-yyyy"};
+            // Normaliser multiples espaces/points au besoin
+            s = s.replaceAll("\\s+", " ").replace('.', '-').replace('/', '-');
+            String[] patternsFr = {"dd-MM-yyyy", "yyyy-MM-dd", "dd MMM yy", "dd MMM yyyy", "dd-MMM-yy", "dd-MMM-yyyy", "ddMMyyyy", "yyyyMMdd"};
+            String[] patternsEn = {"dd-MMM-yy", "dd-MMM-yyyy", "dd MMM yy", "dd MMM yyyy"};
             for (String p : patternsFr) {
                 try { return LocalDate.parse(s, DateTimeFormatter.ofPattern(p, Locale.FRENCH)); } catch (Exception ignore) {}
             }
             for (String p : patternsEn) {
                 try { return LocalDate.parse(s, DateTimeFormatter.ofPattern(p, Locale.ENGLISH)); } catch (Exception ignore) {}
+            }
+            // 3) Fallback: extraire jour/mois/année chiffres si présent
+            String digits = s.replaceAll("[^0-9]", "");
+            if (digits.length() == 8) {
+                // ddMMyyyy
+                String dd = digits.substring(0,2), mm = digits.substring(2,4), yyyy = digits.substring(4,8);
+                return LocalDate.parse(dd+"-"+mm+"-"+yyyy, DateTimeFormatter.ofPattern("dd-MM-yyyy"));
             }
         } catch (Exception ignore) {}
         return null;

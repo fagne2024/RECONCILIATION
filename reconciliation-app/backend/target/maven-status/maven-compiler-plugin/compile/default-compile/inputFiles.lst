@@ -32,6 +32,7 @@ C:\Users\YamarNDAO\OneDrive - Intouchgroup\Bureau\PAD\reconciliation-app\backend
 C:\Users\YamarNDAO\OneDrive - Intouchgroup\Bureau\PAD\reconciliation-app\backend\src\main\java\com\reconciliation\model\EcartSolde.java
 C:\Users\YamarNDAO\OneDrive - Intouchgroup\Bureau\PAD\reconciliation-app\backend\src\main\java\com\reconciliation\controller\OperationBancaireController.java
 C:\Users\YamarNDAO\OneDrive - Intouchgroup\Bureau\PAD\reconciliation-app\backend\src\main\java\com\reconciliation\entity\JsonConverter.java
+C:\Users\YamarNDAO\OneDrive - Intouchgroup\Bureau\PAD\reconciliation-app\backend\src\main\java\com\reconciliation\dto\ReleveImportResult.java
 C:\Users\YamarNDAO\OneDrive - Intouchgroup\Bureau\PAD\reconciliation-app\backend\src\main\java\com\reconciliation\dto\AgencySummarySaveRequest.java
 C:\Users\YamarNDAO\OneDrive - Intouchgroup\Bureau\PAD\reconciliation-app\backend\src\main\java\com\reconciliation\service\OperationBancaireService.java
 C:\Users\YamarNDAO\OneDrive - Intouchgroup\Bureau\PAD\reconciliation-app\backend\src\main\java\com\reconciliation\controller\SqlController.java
