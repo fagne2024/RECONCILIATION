@@ -30,6 +30,7 @@ public class ReleveBancaireImportService {
                 Row row = sheet.getRow(r);
                 if (row == null) continue;
                 ReleveBancaireRow dto = new ReleveBancaireRow();
+                dto.nomCompte = getString(row, colIndex.get("nomCompte"));
                 dto.numeroCompte = getString(row, colIndex.get("numeroCompte"));
                 dto.dateComptable = getDate(row, colIndex.get("dateComptable"));
                 dto.dateValeur = getDate(row, colIndex.get("dateValeur"));
@@ -47,11 +48,27 @@ public class ReleveBancaireImportService {
                 dto.soldeCourant = getNumber(row, colIndex.get("soldeCourant"));
                 dto.soldeDisponibleCloture = getNumber(row, colIndex.get("soldeDisponibleCloture"));
                 dto.soldeDisponibleOuverture = getNumber(row, colIndex.get("soldeDisponibleOuverture"));
+                dto.soldeComptableOuverture = getNumber(row, colIndex.get("soldeComptableOuverture"));
+                dto.soldeComptableCloture = getNumber(row, colIndex.get("soldeComptableCloture"));
+                dto.depotTotal = getNumber(row, colIndex.get("depotTotal"));
+                dto.totalRetraits = getNumber(row, colIndex.get("totalRetraits"));
 
                 boolean allEmpty = (dto.numeroCompte == null || dto.numeroCompte.isBlank()) && dto.libelle == null && dto.debit == null && dto.credit == null;
                 if (!allEmpty) rows.add(dto);
             }
-            return rows;
+            // Déduplication basique (par numéroCompte + dateComptable + dateValeur + libelle + montant)
+            LinkedHashSet<String> seen = new LinkedHashSet<>();
+            List<ReleveBancaireRow> deduped = new ArrayList<>();
+            for (ReleveBancaireRow r : rows) {
+                String key = String.join("|",
+                        safe(r.numeroCompte),
+                        safeDate(r.dateComptable),
+                        safeDate(r.dateValeur),
+                        safe(r.libelle),
+                        String.valueOf(r.montant != null ? Math.round(r.montant * 100) : 0));
+                if (seen.add(key)) deduped.add(r);
+            }
+            return deduped;
         }
     }
 
@@ -78,6 +95,9 @@ public class ReleveBancaireImportService {
         }
         return list;
     }
+
+    private static String safe(String s) { return s == null ? "" : s.trim(); }
+    private static String safeDate(LocalDate d) { return d == null ? "" : d.toString(); }
 
     private static Workbook createWorkbook(String filename, InputStream is) throws Exception {
         if (filename.endsWith(".xlsx") || filename.endsWith(".xlsm")) {
@@ -133,6 +153,8 @@ public class ReleveBancaireImportService {
     private static Map<String, String> buildAliases() {
         Map<String, String> m = new HashMap<>();
         // Canonical keys → our fields
+        m.put("nomducompte", "nomCompte");
+        m.put("nomcompte", "nomCompte");
         m.put("numerodecompte", "numeroCompte");
         m.put("numerocompte", "numeroCompte");
         m.put("compte", "numeroCompte");
@@ -174,6 +196,13 @@ public class ReleveBancaireImportService {
 
         m.put("soldedisponiblealouverture", "soldeDisponibleOuverture");
         m.put("soldedisponiblealouvertureducompte", "soldeDisponibleOuverture");
+
+        m.put("soldecomptabledouverture", "soldeComptableOuverture");
+        m.put("soldecomptablealouverture", "soldeComptableOuverture");
+        m.put("soldecomptabledecloture", "soldeComptableCloture");
+        m.put("depototal", "depotTotal");
+        m.put("depottotal", "depotTotal");
+        m.put("totaldesretraits", "totalRetraits");
         return m;
     }
 

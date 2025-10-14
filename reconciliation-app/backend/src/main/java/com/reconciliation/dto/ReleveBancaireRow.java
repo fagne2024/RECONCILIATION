@@ -3,6 +3,7 @@ package com.reconciliation.dto;
 import java.time.LocalDate;
 
 public class ReleveBancaireRow {
+    public String nomCompte;
     public String numeroCompte;
     public LocalDate dateComptable;
     public LocalDate dateValeur;
@@ -15,6 +16,10 @@ public class ReleveBancaireRow {
     public Double soldeCourant;
     public Double soldeDisponibleCloture;
     public Double soldeDisponibleOuverture;
+    public Double soldeComptableOuverture;
+    public Double soldeComptableCloture;
+    public Double depotTotal;
+    public Double totalRetraits;
 }
 
 

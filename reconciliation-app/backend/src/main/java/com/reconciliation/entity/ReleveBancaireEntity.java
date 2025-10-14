@@ -48,6 +48,18 @@ public class ReleveBancaireEntity {
     @Column(name = "solde_disponible_ouverture")
     private Double soldeDisponibleOuverture;
 
+    @Column(name = "solde_comptable_ouverture")
+    private Double soldeComptableOuverture;
+
+    @Column(name = "solde_comptable_cloture")
+    private Double soldeComptableCloture;
+
+    @Column(name = "depot_total")
+    private Double depotTotal;
+
+    @Column(name = "total_retraits")
+    private Double totalRetraits;
+
     @Column(name = "source_filename")
     private String sourceFilename;
 
@@ -83,6 +95,14 @@ public class ReleveBancaireEntity {
     public void setSoldeDisponibleCloture(Double soldeDisponibleCloture) { this.soldeDisponibleCloture = soldeDisponibleCloture; }
     public Double getSoldeDisponibleOuverture() { return soldeDisponibleOuverture; }
     public void setSoldeDisponibleOuverture(Double soldeDisponibleOuverture) { this.soldeDisponibleOuverture = soldeDisponibleOuverture; }
+    public Double getSoldeComptableOuverture() { return soldeComptableOuverture; }
+    public void setSoldeComptableOuverture(Double soldeComptableOuverture) { this.soldeComptableOuverture = soldeComptableOuverture; }
+    public Double getSoldeComptableCloture() { return soldeComptableCloture; }
+    public void setSoldeComptableCloture(Double soldeComptableCloture) { this.soldeComptableCloture = soldeComptableCloture; }
+    public Double getDepotTotal() { return depotTotal; }
+    public void setDepotTotal(Double depotTotal) { this.depotTotal = depotTotal; }
+    public Double getTotalRetraits() { return totalRetraits; }
+    public void setTotalRetraits(Double totalRetraits) { this.totalRetraits = totalRetraits; }
     public String getSourceFilename() { return sourceFilename; }
     public void setSourceFilename(String sourceFilename) { this.sourceFilename = sourceFilename; }
     public LocalDateTime getUploadedAt() { return uploadedAt; }

@@ -190,6 +190,7 @@ export class BanqueComponent implements OnInit {
 
   openRapports() {
     this.activeSection = 'rapports';
+    this.loadLatestReleveBatch();
   }
 
   openSecurite() {
@@ -238,6 +239,51 @@ export class BanqueComponent implements OnInit {
       error: () => {
         this.releveUploading = false;
         alert('Import du relevé bancaire échoué');
+      }
+    });
+  }
+
+  loadLatestReleveBatch() {
+    this.releveService.list().subscribe({
+      next: (all) => {
+        const rows = Array.isArray(all) ? all : [];
+        if (!rows.length) { this.releveRows = []; this.releveBatchId = null; return; }
+        // Grouper par batchId
+        const groups: Record<string, any[]> = {};
+        rows.forEach((r: any) => {
+          const bid = r.batchId || 'default';
+          if (!groups[bid]) groups[bid] = [];
+          groups[bid].push(r);
+        });
+        // Trouver le batch le plus récent via uploadedAt
+        let latestBatchId = Object.keys(groups)[0];
+        let latestDate = new Date(0);
+        Object.entries(groups).forEach(([bid, items]) => {
+          const d = items.reduce((max: Date, it: any) => {
+            const cur = it.uploadedAt ? new Date(it.uploadedAt) : new Date(0);
+            return cur > max ? cur : max;
+          }, new Date(0));
+          if (d > latestDate) { latestDate = d; latestBatchId = bid; }
+        });
+        this.releveBatchId = latestBatchId;
+        // Convertir vers modèle d'affichage
+        this.releveRows = groups[latestBatchId].map((it: any) => ({
+          numeroCompte: it.numeroCompte,
+          dateComptable: it.dateComptable,
+          dateValeur: it.dateValeur,
+          libelle: it.libelle,
+          debit: it.debit,
+          credit: it.credit,
+          montant: it.montant,
+          numeroCheque: it.numeroCheque,
+          devise: it.devise,
+          soldeCourant: it.soldeCourant,
+          soldeDisponibleCloture: it.soldeDisponibleCloture,
+          soldeDisponibleOuverture: it.soldeDisponibleOuverture
+        } as ReleveBancaireRow));
+      },
+      error: () => {
+        // silencieux pour ne pas gêner l'ouverture
       }
     });
   }

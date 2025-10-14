@@ -208,6 +208,36 @@
   .chip-country { background: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0; }
 }
 
+// Relevé - styles
+.releve-header {
+  display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;
+  .actions { display: inline-flex; gap: 10px; }
+  .file-btn {
+    display: inline-flex; align-items: center; gap: 8px; cursor: pointer;
+    background: #eef2f7; border: 1px dashed #cbd5e1; padding: 8px 12px; border-radius: 8px; color: #334155;
+    input { display: none; }
+    &:hover { background: #e2e8f0; }
+  }
+  .btn-primary { @extend .btn-outline; border-color: #2e7d32; color: #fff; background: linear-gradient(135deg,#2e7d32,#4caf50); }
+  .btn-primary:hover { background: linear-gradient(135deg,#1b5e20,#388e3c); }
+}
+
+.batch-bar { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.batch-badge { background: #f1f5ff; color: #1e40af; border: 1px solid #c7d2fe; padding: 4px 8px; border-radius: 999px; font-weight: 700; font-size: 12px; }
+
+.releve-table-wrapper { max-height: 420px; overflow: auto; }
+.releve-table {
+  .libelle-cell { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 500px; display: inline-block; }
+  .amount { font-weight: 700; }
+  .amount.debit { color: #b91c1c; }
+  .amount.credit { color: #065f46; }
+  .chip-currency { background: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0; padding: 2px 8px; border-radius: 999px; font-weight: 700; font-size: 12px; }
+  .col-num { width: 160px; }
+  .col-date { width: 140px; }
+  .col-amount { width: 120px; }
+  .col-small { width: 90px; }
+}
+
 .comptes-toolbar {
   display: flex; justify-content: space-between; align-items: center;
   margin-bottom: 10px;
