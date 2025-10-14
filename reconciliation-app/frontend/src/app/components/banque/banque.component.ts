@@ -460,16 +460,19 @@ export class BanqueComponent implements OnInit {
 
   goToComptes() {
     this.activeSection = 'comptes';
+    this.showOperations = false;
     this.router.navigate(['/comptes'], { queryParams: { filterCategorie: 'Banque' } });
   }
 
   openRapports() {
     this.activeSection = 'rapports';
+    this.showOperations = false;
     this.loadLatestReleveBatch();
   }
 
   openSecurite() {
     this.activeSection = 'securite';
+    this.showOperations = false;
     this.loadLatestReleveBatch();
   }
 

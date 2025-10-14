@@ -580,7 +580,7 @@
   </div>
 
   <!-- Tableau des opérations bancaires -->
-  <div class="banque-section operations-section" *ngIf="showOperations">
+  <div class="banque-section operations-section" *ngIf="showOperations && activeSection === 'operations'">
     <div class="operations-header">
       <h2>📋 Opérations Bancaires</h2>
       <button class="btn-back" (click)="hideOperationsTable()">
