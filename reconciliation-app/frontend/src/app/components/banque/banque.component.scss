@@ -232,7 +232,7 @@
   &.error { background: #fee2e2; color: #991b1b; border: 1px solid #fecaca; }
 }
 
-.releve-table-wrapper { max-height: 420px; overflow: auto; }
+.releve-table-wrapper { max-height: 420px; overflow-x: hidden; overflow-y: auto; }
 .releve-table {
   .libelle-cell { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 500px; display: inline-block; }
   .amount { font-weight: 700; }

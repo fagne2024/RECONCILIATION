@@ -93,6 +93,7 @@ export class BanqueComponent implements OnInit {
     this.loadOperations();
     this.loadComptesBanque();
     this.loadDashboardStats();
+    this.loadLatestReleveBatch();
   }
 
   // Comptes de catégorie Banque (section Informations)
@@ -294,6 +295,7 @@ export class BanqueComponent implements OnInit {
         this.releveRows = groups[latestBatchId].map((it: any) => ({
           numeroCompte: it.numeroCompte,
           ['nomCompte']: it.nomCompte,
+          banque: it.banque,
           dateComptable: it.dateComptable,
           dateValeur: it.dateValeur,
           libelle: it.libelle,
