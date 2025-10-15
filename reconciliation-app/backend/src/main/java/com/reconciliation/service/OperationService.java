@@ -1725,7 +1725,7 @@ public class OperationService {
         int numero = existingCount.intValue() + 1;
         
         // Construire la référence
-        String reference = String.format("%s-%s-CP%d", codeProprietaire, dateFormatted, numero);
+        String reference = String.format("%s-%sCP%d", codeProprietaire, dateFormatted, numero);
         
         System.out.println("DEBUG: Génération référence Compense_client: " + reference);
         System.out.println("DEBUG: Code propriétaire: " + codeProprietaire);
@@ -1762,7 +1762,7 @@ public class OperationService {
         int numero = existingCount.intValue() + 1;
         
         // Construire la référence
-        String reference = String.format("%s-%s-AP%d", codeProprietaire, dateFormatted, numero);
+        String reference = String.format("%s-%sAP%d", codeProprietaire, dateFormatted, numero);
         
         System.out.println("DEBUG: Génération référence Appro_client: " + reference);
         System.out.println("DEBUG: Code propriétaire: " + codeProprietaire);
@@ -1866,7 +1866,7 @@ public class OperationService {
         int numero = existingCount.intValue() + 1;
         
         // Construire la référence (suffixe NV pour Nivellement)
-        String reference = String.format("NIVELLEMENTHT-%s-NV%d", dateFormatted, numero);
+        String reference = String.format("NIVELLEMENTHT-%sNV%d", dateFormatted, numero);
         
         System.out.println("DEBUG: Génération référence Nivellement: " + reference);
         System.out.println("DEBUG: Date formatée: " + dateFormatted);

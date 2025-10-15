@@ -133,8 +133,8 @@
                 <td>{{ r.numeroCheque || '-' }}</td>
                 <td>{{ r.devise || '-' }}</td>
                 <td class="actions-col">
-                  <button class="btn-outline" (click)="openReleveEdit(r)" [disabled]="!r.id" title="Modifier cette ligne">
-                    <i class="fas fa-edit"></i> Modifier
+                  <button class="btn-icon" (click)="openReleveEdit(r)" [disabled]="!r.id" title="Modifier cette ligne">
+                    <i class="fas fa-edit"></i>
                   </button>
                 </td>
               </tr>
@@ -142,9 +142,11 @@
           </table>
         </div>
         <div class="pagination small">
-          <button (click)="relevePage = relevePage - 1" [disabled]="relevePage===1"><i class="fas fa-chevron-left"></i></button>
-          <span>Page {{ relevePage }} / {{ releveTotalPages }}</span>
-          <button (click)="relevePage = relevePage + 1" [disabled]="relevePage >= releveTotalPages"><i class="fas fa-chevron-right"></i></button>
+          <div class="btn-group">
+            <button (click)="relevePage = relevePage - 1" [disabled]="relevePage===1"><i class="fas fa-chevron-left"></i></button>
+            <button (click)="relevePage = relevePage + 1" [disabled]="relevePage >= releveTotalPages"><i class="fas fa-chevron-right"></i></button>
+          </div>
+          <span class="muted">Page {{ relevePage }} / {{ releveTotalPages }}</span>
           <select [(ngModel)]="relevePageSize" (change)="relevePage = 1">
             <option [value]="10">10</option>
             <option [value]="20">20</option>
@@ -166,9 +168,8 @@
           </select>
         </div>
         <div class="filter-group">
-          <label>Date</label>
+          <label>Date <span class="muted">(Optionnelle)</span></label>
           <input type="date" [(ngModel)]="reconDate">
-          <small class="muted">Optionnelle</small>
         </div>
         <button class="btn-primary" (click)="reconcile()" [disabled]="reconciling || !reconPays">
           <i class="fas fa-link" [class.spin]="reconciling"></i>
@@ -389,19 +390,30 @@
           </tbody>
         </table>
 
-        <div class="pagination" *ngIf="(reconView==='operation' ? reconOpTotalPages : reconRevTotalPages) > 1">
-          <button (click)="reconPrevPage()" [disabled]="(reconView==='operation' ? reconOpPage===1 : reconRevPage===1)">
-            <i class="fas fa-chevron-left"></i> Précédent
-          </button>
-          <div class="pagination-indicators">
-            <span *ngFor="let page of getReconVisiblePages()" class="page-indicator" [class.active]="reconPage === page" (click)="reconGoToPage(page)">{{ page }}</span>
+        <div class="pagination small center" *ngIf="(reconView==='operation' ? reconOpTotalPages : reconView==='releve' ? reconRevTotalPages : reconView==='corr_operation' ? reconCorrOpTotalPages : reconCorrRevTotalPages) > 1">
+          <div class="btn-group">
+            <button (click)="reconPrevPage()" [disabled]="(reconView==='operation' ? reconOpPage===1 : reconView==='releve' ? reconRevPage===1 : reconView==='corr_operation' ? reconCorrOpPage===1 : reconCorrRevPage===1)">
+              <i class="fas fa-chevron-left"></i>
+            </button>
+            <button (click)="reconNextPage()" [disabled]="(
+              reconView==='operation' ? reconOpPage===reconOpTotalPages : (
+              reconView==='releve' ? reconRevPage===reconRevTotalPages : (
+              reconView==='corr_operation' ? reconCorrOpPage===reconCorrOpTotalPages : reconCorrRevPage===reconCorrRevTotalPages)))">
+              <i class="fas fa-chevron-right"></i>
+            </button>
           </div>
-          <button (click)="reconNextPage()" [disabled]="(
-            reconView==='operation' ? reconOpPage===reconOpTotalPages : (
-            reconView==='releve' ? reconRevPage===reconRevTotalPages : (
-            reconView==='corr_operation' ? reconCorrOpPage===reconCorrOpTotalPages : reconCorrRevPage===reconCorrRevTotalPages)))">
-            Suivant <i class="fas fa-chevron-right"></i>
-          </button>
+          <span class="muted">
+            Page {{ reconView==='operation' ? reconOpPage : (reconView==='releve' ? reconRevPage : (reconView==='corr_operation' ? reconCorrOpPage : reconCorrRevPage)) }}
+            /
+            {{ reconView==='operation' ? reconOpTotalPages : (reconView==='releve' ? reconRevTotalPages : (reconView==='corr_operation' ? reconCorrOpTotalPages : reconCorrRevTotalPages)) }}
+          </span>
+          <select [(ngModel)]="reconPageSize" (change)="onReconPageSizeChange()">
+            <option [value]="5">5</option>
+            <option [value]="10">10</option>
+            <option [value]="20">20</option>
+            <option [value]="50">50</option>
+            <option [value]="100">100</option>
+          </select>
         </div>
       </div>
       <div *ngIf="!reconDiffRows.length" class="empty-row">
@@ -669,7 +681,7 @@
           </thead>
           <tbody>
             <tr *ngFor="let operation of pagedOperations">
-              <td>{{ operation.pays }}</td>
+              <td>{{ getPaysDisplay(operation) }}</td>
               <td>{{ operation.codePays }}</td>
               <td>{{ operation.mois }}</td>
               <td>{{ operation.dateOperation | date:'dd/MM/yyyy' }}</td>

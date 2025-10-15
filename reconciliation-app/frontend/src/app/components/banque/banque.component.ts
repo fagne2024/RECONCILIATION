@@ -61,6 +61,24 @@ export class BanqueComponent implements OnInit {
   statutsList: string[] = ['Validée', 'En attente', 'Rejetée', 'En cours'];
   modesPaiement: string[] = ['Virement bancaire', 'Chèque', 'Espèces', 'Mobile Money'];
 
+  // Mapping codes pays -> noms pays
+  private paysCodeToName: Record<string, string> = {
+    'CI': "Côte d'Ivoire",
+    'SN': 'Sénégal',
+    'GN': 'Guinée',
+    'BF': 'Burkina Faso',
+    'GA': 'Gabon'
+  };
+
+  getPaysDisplay(op: OperationBancaireDisplay): string {
+    const raw = (op.pays || op.codePays || '').trim();
+    if (!raw) return '-';
+    // Si déjà un nom complet, le retourner tel quel
+    if (raw.length > 3 || raw.includes(' ')) return raw;
+    const code = raw.toUpperCase();
+    return this.paysCodeToName[code] || raw;
+  }
+
   // Pagination
   currentPage = 1;
   pageSize = 10;
@@ -948,20 +966,44 @@ export class BanqueComponent implements OnInit {
 
     const allKeys = new Set<string>([...opMap.keys(), ...revMap.keys()]);
     const results: Array<{ date: string; montant: number; banque: string; sensIndex: string; source: 'OPERATION'|'RELEVE'|'BOTH'; suspens?: 'Suspens BO'|'Suspens Banque'|''; }> = [];
-    const pairs: Array<{ date: string; montant: number; banque: string; sensIndex: string; }> = [];
+    const pairs: Array<{ key: string; date: string; montant: number; banque: string; sensIndex: string; }> = [];
 
     allKeys.forEach(key => {
-      const inOp = opMap.has(key);
-      const inRev = revMap.has(key);
-      const [date, montantStr, banque, sensIndex] = key.split('|');
-      const montant = Number(montantStr);
+      const opEntry = opMap.get(key);
+      const revEntry = revMap.get(key);
+      const inOp = !!opEntry;
+      const inRev = !!revEntry;
+
+      // Reconstituer les attributs d'affichage depuis la source disponible
+      let date = '';
+      let montantAbs = 0;
+      let banque = '';
+      let sensIndex = '';
+
+      if (opEntry) {
+        const op = opEntry.op as OperationBancaireDisplay & { sensIndex: string };
+        date = this.normalizeDateToYmd(op.dateOperation);
+        montantAbs = Math.abs(op.montant || 0);
+        banque = ((op.bo || '').trim() || '').toUpperCase();
+        sensIndex = op.sensIndex;
+      } else if (revEntry) {
+        const r = revEntry.row as ReleveBancaireRow & { sensIndex: string };
+        const dateToUse = r.dateValeur ? r.dateValeur : r.dateComptable;
+        date = this.normalizeDateToYmd(dateToUse as any);
+        const debit = r.debit || 0;
+        const credit = r.credit || 0;
+        montantAbs = debit > 0 ? Math.abs(debit) : Math.abs(credit || (r.montant || 0));
+        banque = ((r.banque || '').trim() || '').toUpperCase();
+        sensIndex = r.sensIndex;
+      }
+
       if (inOp && inRev) {
-        results.push({ date, montant, banque, sensIndex, source: 'BOTH', suspens: '' });
-        pairs.push({ date, montant, banque, sensIndex });
+        results.push({ date, montant: montantAbs, banque, sensIndex, source: 'BOTH', suspens: '' });
+        pairs.push({ key, date, montant: montantAbs, banque, sensIndex });
       } else if (inOp && !inRev) {
-        results.push({ date, montant, banque, sensIndex, source: 'OPERATION', suspens: 'Suspens BO' });
+        results.push({ date, montant: montantAbs, banque, sensIndex, source: 'OPERATION', suspens: 'Suspens BO' });
       } else if (!inOp && inRev) {
-        results.push({ date, montant, banque, sensIndex, source: 'RELEVE', suspens: 'Suspens Banque' });
+        results.push({ date, montant: montantAbs, banque, sensIndex, source: 'RELEVE', suspens: 'Suspens Banque' });
       }
     });
 
@@ -974,7 +1016,6 @@ export class BanqueComponent implements OnInit {
     });
 
     this.reconciliationResults = results;
-    this.matchedPairs = pairs;
 
     // Construire les lignes d'écarts: gauche = opérations seules, droite = relevé seul
     const diffs: Array<{ left?: (OperationBancaireDisplay & { key?: string }); right?: (ReleveBancaireRow & { key?: string }) }> = [];
@@ -1009,17 +1050,11 @@ export class BanqueComponent implements OnInit {
     this.rightOnlyReleves = diffs.filter(d => !!d.right).map(d => d.right!) as ReleveBancaireRow[];
 
     // Correspondances complètes (toutes colonnes)
-    const matchedOps: OperationBancaireDisplay[] = [];
-    const matchedRevs: ReleveBancaireRow[] = [];
-    pairs.forEach(p => {
-      const key = `${p.date}|${p.montant}|${p.banque}|${p.sensIndex}`;
-      const opEntry = opMap.get(key);
-      const revEntry = revMap.get(key);
-      if (opEntry?.op) matchedOps.push(opEntry.op);
-      if (revEntry?.row) matchedRevs.push(revEntry.row);
-    });
-    this.matchedOperations = matchedOps;
-    this.matchedReleves = matchedRevs;
+    const bothKeys = Array.from(allKeys).filter(k => opMap.has(k) && revMap.has(k));
+    this.matchedOperations = bothKeys.map(k => opMap.get(k)!.op);
+    this.matchedReleves = bothKeys.map(k => revMap.get(k)!.row);
+    // Paires correspondantes pour affichage synthétique
+    this.matchedPairs = pairs.filter(p => bothKeys.includes(p.key)).map(p => ({ date: p.date, montant: p.montant, banque: p.banque, sensIndex: p.sensIndex }));
 
     // Choisir la vue par défaut selon la présence d'écarts
     if (this.leftOnlyOperations.length > 0) {
