@@ -2,6 +2,36 @@ import { Injectable } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { environment } from '../../environments/environment';
+
+@Injectable({ providedIn: 'root' })
+export class OperationServiceApi {
+  private apiUrl = `${environment.apiUrl}/reconciliation`;
+  constructor(private http: HttpClient) {}
+
+  markOk(key: string): Observable<{ success: boolean }> {
+    const params = new HttpParams().set('key', key);
+    return this.http.post<{ success: boolean }>(`${this.apiUrl}/mark-ok`, null, { params });
+  }
+
+  getOkKeys(): Observable<string[]> {
+    return this.http.get<string[]>(`${this.apiUrl}/ok-keys`);
+  }
+
+  unmarkOk(key: string): Observable<{ success: boolean }> {
+    const params = new HttpParams().set('key', key);
+    return this.http.delete<{ success: boolean }>(`${this.apiUrl}/mark-ok`, { params });
+  }
+
+  saveReconStatus(key: string, status: 'OK' | 'KO'): Observable<{ success: boolean }> {
+    const params = new HttpParams().set('key', key).set('status', status);
+    return this.http.post<{ success: boolean }>(`${this.apiUrl}/status`, null, { params });
+  }
+
+  listReconStatus(): Observable<Record<string, 'OK' | 'KO'>> {
+    return this.http.get<Record<string, 'OK' | 'KO'>>(`${this.apiUrl}/status`);
+  }
+}
+
 import { Operation, OperationCreateRequest, OperationUpdateRequest, OperationFilter } from '../models/operation.model';
 
 @Injectable({
@@ -133,12 +163,12 @@ export class OperationService {
 
     // Rejeter une opération
     rejectOperation(id: number): Observable<boolean> {
-        return this.http.put<boolean>(`${this.apiUrl}/${id}/reject`, {});
+        return this.http.put<boolean>(`${this.apiUrl}/reject/${id}`, {});
     }
 
     // Annuler une opération
     cancelOperation(id: number): Observable<boolean> {
-        return this.http.put<boolean>(`${this.apiUrl}/${id}/cancel`, {});
+        return this.http.put<boolean>(`${this.apiUrl}/cancel/${id}`, {});
     }
 
     // Supprimer une opération

@@ -8,6 +8,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -20,6 +21,10 @@ public class OperationBancaireController {
     
     @Autowired
     private OperationBancaireService operationBancaireService;
+    @Autowired
+    private com.reconciliation.service.OperationBancaireImportService importService;
+    @Autowired
+    private com.reconciliation.repository.OperationBancaireRepository operationBancaireRepository;
     
     // Récupérer toutes les opérations bancaires
     @GetMapping
@@ -162,6 +167,45 @@ public class OperationBancaireController {
     public ResponseEntity<List<String>> getDistinctTypesOperation() {
         List<String> types = operationBancaireService.getDistinctTypesOperation();
         return ResponseEntity.ok(types);
+    }
+
+    // Mettre à jour le recon_status (OK/KO)
+    @PutMapping("/{id}/recon-status")
+    public ResponseEntity<?> updateReconStatus(@PathVariable Long id, @RequestParam("status") String status) {
+        return operationBancaireRepository.findById(id)
+                .map(entity -> {
+                    entity.setReconStatus(status);
+                    operationBancaireRepository.save(entity);
+                    return ResponseEntity.ok().build();
+                })
+                .orElse(ResponseEntity.notFound().build());
+    }
+    // Import Excel/CSV d'opérations bancaires
+    @PostMapping(value = "/upload", consumes = {"multipart/form-data"})
+    public ResponseEntity<java.util.Map<String, Object>> upload(@RequestParam("file") MultipartFile file) {
+        try {
+            var res = importService.importFile(file);
+            java.util.Map<String, Object> payload = new java.util.HashMap<>();
+            payload.put("totalRead", res.totalRead);
+            payload.put("saved", res.saved);
+            payload.put("errors", res.errors);
+            return ResponseEntity.ok(payload);
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
+        }
+    }
+
+    // Télécharger le modèle Excel à utiliser
+    @GetMapping(value = "/template", produces = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    public ResponseEntity<byte[]> downloadTemplate() {
+        try {
+            byte[] bytes = importService.generateTemplate();
+            return ResponseEntity.ok()
+                    .header(org.springframework.http.HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=modele-operations-bancaires.xlsx")
+                    .body(bytes);
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
     }
 }
 

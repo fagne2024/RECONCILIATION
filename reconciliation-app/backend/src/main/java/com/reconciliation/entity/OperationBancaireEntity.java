@@ -52,6 +52,9 @@ public class OperationBancaireEntity {
     
     @Column(name = "statut", nullable = false)
     private String statut;
+
+    @Column(name = "recon_status")
+    private String reconStatus; // OK/KO/null
     
     @Column(name = "operation_id")
     private Long operationId;
@@ -199,6 +202,14 @@ public class OperationBancaireEntity {
     
     public void setStatut(String statut) {
         this.statut = statut;
+    }
+
+    public String getReconStatus() {
+        return reconStatus;
+    }
+
+    public void setReconStatus(String reconStatus) {
+        this.reconStatus = reconStatus;
     }
     
     public Long getOperationId() {

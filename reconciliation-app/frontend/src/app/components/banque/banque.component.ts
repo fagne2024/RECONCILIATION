@@ -5,6 +5,7 @@ import { OperationBancaireService } from '../../services/operation-bancaire.serv
 import { Compte } from '../../models/compte.model';
 import { CompteService } from '../../services/compte.service';
 import { OperationService } from '../../services/operation.service';
+import { OperationServiceApi } from '../../services/operation.service';
 import { ReleveBancaireService } from '../../services/releve-bancaire.service';
 import { ReleveBancaireRow } from '../../models/releve-bancaire.model';
 
@@ -166,6 +167,243 @@ export class BanqueComponent implements OnInit {
   correspondanceFilterBanque = '';
   correspondanceFilterMontant: number | null = null;
 
+  // Réconciliation: overrides de statut (OK/KO) par clé
+  private reconStatusOverrides: Record<string, 'OK' | 'KO'> = {};
+  // Index de secours par clé de base (sans index, e.g. debit1->debit)
+  private reconStatusBaseOverrides: Record<string, 'OK' | 'KO'> = {};
+  // Popup liste des OK définitifs
+  showOkListPopup = false;
+  okKeysList: string[] = [];
+  okListLoading = false;
+
+  // Ensemble persistant des clés marquées définitivement comme OK (à ignorer)
+  private reconOkKeySet: Set<string> = new Set<string>();
+
+  // Filtres Statut Réconciliation (UI)
+  reconStatusFilter: '' | 'OK' | 'KO' = '';
+  releveStatusFilter: '' | 'OK' | 'KO' = '';
+  operationsReconStatusFilter: '' | 'OK' | 'KO' = '';
+
+  private loadReconOkKeys() {
+    try {
+      const raw = localStorage.getItem('recon.ok.keys');
+      if (raw) {
+        const arr = JSON.parse(raw);
+        if (Array.isArray(arr)) this.reconOkKeySet = new Set(arr as string[]);
+      }
+    } catch {}
+  }
+
+  private saveReconOkKeys() {
+    try {
+      localStorage.setItem('recon.ok.keys', JSON.stringify(Array.from(this.reconOkKeySet)));
+    } catch {}
+  }
+
+  private applyOkStatusesToOpAndRev() {
+    try {
+      const keyToOp: Record<string, any> = (this as any).keyToOp || {};
+      const keyToRev: Record<string, any> = (this as any).keyToRev || {};
+      // 1) Appliquer les OK définitifs
+      this.reconOkKeySet.forEach(k => {
+        const op = keyToOp[k];
+        if (op && op.id !== undefined) this.opStatusOverrides[String(op.id)] = 'OK';
+        const rev = keyToRev[k];
+        if (rev && rev.id !== undefined) this.releveStatusOverrides[String(rev.id)] = 'OK';
+      });
+      // 2) Appliquer les statuts persistés (OK/KO) issus du backend
+      Object.entries(this.reconStatusOverrides || {}).forEach(([k, v]) => {
+        const status = v === 'OK' ? 'OK' : 'KO';
+        const op = keyToOp[k];
+        if (op && op.id !== undefined) this.opStatusOverrides[String(op.id)] = status;
+        const rev = keyToRev[k];
+        if (rev && rev.id !== undefined) this.releveStatusOverrides[String(rev.id)] = status;
+      });
+    } catch {}
+  }
+
+  // Liste des OK définitifs (popup)
+  openOkList() {
+    this.showOkListPopup = true;
+    this.loadOkKeysList();
+  }
+
+  closeOkList() {
+    this.showOkListPopup = false;
+  }
+
+  private loadOkKeysList() {
+    this.okListLoading = true;
+    this.operationApi.getOkKeys().subscribe({
+      next: (keys) => {
+        this.okKeysList = Array.isArray(keys) ? keys.slice().sort() : [];
+        this.okListLoading = false;
+      },
+      error: () => {
+        this.okKeysList = [];
+        this.okListLoading = false;
+      }
+    });
+  }
+
+  unmarkOkFromList(key: string) {
+    if (!key) return;
+    this.operationApi.unmarkOk(key).subscribe({
+      next: () => {
+        this.reconOkKeySet.delete(key);
+        this.saveReconOkKeys();
+        this.okKeysList = this.okKeysList.filter(k => k !== key);
+        this.updatePagedReconciliationResults();
+      },
+      error: () => {
+        this.reconOkKeySet.delete(key);
+        this.saveReconOkKeys();
+        this.okKeysList = this.okKeysList.filter(k => k !== key);
+        this.updatePagedReconciliationResults();
+      }
+    });
+  }
+
+  markAsOkPermanentByKey(key?: string) {
+    if (!key) return;
+    this.operationApi.markOk(key).subscribe({
+      next: () => {
+        this.reconOkKeySet.add(key);
+        this.saveReconOkKeys();
+        this.applyOkStatusesToOpAndRev();
+        try { this.operationApi.saveReconStatus(key, 'OK').subscribe(); } catch {}
+        this.updatePagedReconciliationResults();
+        // Persister reconStatus sur opération et relevé si connus
+        // Persistance côté base au niveau des résultats seulement (clé mark-ok déjà enregistrée)
+      },
+      error: () => {
+        this.reconOkKeySet.add(key);
+        this.saveReconOkKeys();
+        this.applyOkStatusesToOpAndRev();
+        try { this.operationApi.saveReconStatus(key, 'OK').subscribe(); } catch {}
+        this.updatePagedReconciliationResults();
+        // Persistance côté base au niveau des résultats seulement (clé mark-ok déjà enregistrée)
+      }
+    });
+  }
+
+  unmarkOkByKey(key?: string) {
+    if (!key) return;
+    this.operationApi.unmarkOk(key).subscribe({
+      next: () => {
+        this.reconOkKeySet.delete(key);
+        this.saveReconOkKeys();
+        this.applyOkStatusesToOpAndRev();
+        this.updatePagedReconciliationResults();
+      },
+      error: () => {
+        this.reconOkKeySet.delete(key);
+        this.saveReconOkKeys();
+        this.applyOkStatusesToOpAndRev();
+        this.updatePagedReconciliationResults();
+      }
+    });
+  }
+
+  // Statuts pour tableau Opérations (indexés par id)
+  private opStatusOverrides: Record<string, 'OK' | 'KO'> = {};
+  getOperationReconStatus(op: OperationBancaireDisplay): 'OK' | 'KO' {
+    const key = op && (op as any).id !== undefined ? String((op as any).id) : '';
+    // 1) override direct par id
+    const direct = key ? this.opStatusOverrides[key] : undefined;
+    if (direct) return direct;
+    // 2) fallback: dériver la clé de base et regarder les statuts persistés
+    const base = this.buildBaseReconKeyForOperation(op);
+    return this.reconStatusBaseOverrides[base] || 'KO';
+  }
+  // Désactivé: la modification doit se faire uniquement dans Correspondances
+  toggleOperationReconStatus(op: OperationBancaireDisplay) { return; }
+
+  // Statuts pour tableau Relevé (indexés par id)
+  private releveStatusOverrides: Record<string, 'OK' | 'KO'> = {};
+  getReleveReconStatus(row: ReleveBancaireRow): 'OK' | 'KO' {
+    const key = row && (row as any).id !== undefined ? String((row as any).id) : '';
+    // 1) override direct par id
+    const direct = key ? this.releveStatusOverrides[key] : undefined;
+    if (direct) return direct;
+    // 2) fallback via clé de base
+    const base = this.buildBaseReconKeyForReleve(row);
+    return this.reconStatusBaseOverrides[base] || 'KO';
+    }
+  // Désactivé: la modification doit se faire uniquement dans Correspondances
+  toggleReleveReconStatus(row: ReleveBancaireRow) { return; }
+
+  getReconStatusByKey(key: string | undefined, defaultStatus: 'OK' | 'KO'): 'OK' | 'KO' {
+    if (!key) return defaultStatus;
+    const direct = this.reconStatusOverrides[key];
+    if (direct) return direct;
+    // fallback: utiliser la clé de base (sans le suffixe numérique)
+    const baseKey = this.toBaseReconKey(key);
+    return this.reconStatusBaseOverrides[baseKey] || defaultStatus;
+  }
+
+  private toBaseReconKey(key: string): string {
+    // format: yyyymmdd<montant><BANQUE><debit|credit><index>
+    // on retire les chiffres de fin après debit/credit
+    const m = key.match(/(debit|credit)\d+$/i);
+    if (!m) return key;
+    return key.replace(/(debit|credit)\d+$/i, (s) => s.replace(/\d+$/, ''));
+  }
+
+  // Dériver une clé de base pour une opération, sans index en fin
+  private buildBaseReconKeyForOperation(op: OperationBancaireDisplay): string {
+    const date = this.normalizeDateToYmd(op.dateOperation);
+    const montantAbs = Math.abs(op.montant || 0);
+    const banque = ((op.bo || '').trim() || '').toUpperCase().replace(/[\s-]/g, '');
+    const sens = this.determineOperationSens(op as OperationBancaireDisplay); // 'debit' | 'credit'
+    const dateNoDash = (date || '').replace(/-/g, '');
+    const montantDigits = String(montantAbs).replace(/\D/g, '');
+    return `${dateNoDash}${montantDigits}${banque}${sens}`;
+  }
+
+  // Dériver une clé de base pour une ligne de relevé, sans index
+  private buildBaseReconKeyForReleve(r: ReleveBancaireRow): string {
+    const dateRaw: any = r.dateValeur || r.dateComptable || '';
+    const date = this.normalizeDateToYmd(dateRaw as any);
+    const amount = this.getReleveMontantAbs(r);
+    const banque = ((r.banque || '').trim() || '').toUpperCase().replace(/[\s-]/g, '');
+    const sens: 'debit' | 'credit' = (r.debit && r.debit > 0) ? 'debit' : 'credit';
+    const dateNoDash = (date || '').replace(/-/g, '');
+    const montantDigits = String(amount).replace(/\D/g, '');
+    return `${dateNoDash}${montantDigits}${banque}${sens}`;
+  }
+
+  toggleReconStatusByKey(key: string | undefined, defaultStatus: 'OK' | 'KO') {
+    if (!key) return;
+    const current = this.getReconStatusByKey(key, defaultStatus);
+    const next: 'OK' | 'KO' = current === 'OK' ? 'KO' : 'OK';
+    console.log('[RECON] toggle status', { key, current, next, defaultStatus });
+    // Ne stocker que si différent du défaut
+    if (next === defaultStatus) {
+      delete this.reconStatusOverrides[key];
+    } else {
+      this.reconStatusOverrides[key] = next;
+    }
+    // Propager aux tableaux Op/Relevé si présents
+    const opAny: any = (this as any).keyToOp && (this as any).keyToOp[key];
+    if (opAny && opAny.id !== undefined) {
+      const opId = String(opAny.id);
+      this.opStatusOverrides[opId] = next;
+    }
+    const revAny: any = (this as any).keyToRev && (this as any).keyToRev[key];
+    if (revAny && revAny.id !== undefined) {
+      const revId = String(revAny.id);
+      this.releveStatusOverrides[revId] = next;
+    }
+    // Persister statut correspondance
+    try {
+      this.operationApi.saveReconStatus(key, next).subscribe({
+        next: () => console.log('[RECON] status saved', { key, next }),
+        error: (err) => console.warn('[RECON] status save failed', { key, next, err })
+      });
+    } catch (e) { console.warn('[RECON] status save threw', e); }
+  }
+
   // Formulaire d'édition
   editForm: any = {
     pays: '',
@@ -189,11 +427,47 @@ export class BanqueComponent implements OnInit {
     private operationBancaireService: OperationBancaireService,
     private compteService: CompteService,
     private operationService: OperationService,
-    private releveService: ReleveBancaireService
+    private releveService: ReleveBancaireService,
+    private operationApi: OperationServiceApi
   ) { }
 
   ngOnInit(): void {
     console.log('Composant BANQUE initialisé');
+    this.loadReconOkKeys();
+    // Charger aussi les clés OK depuis le backend (si disponibles)
+    try {
+      this.operationApi.getOkKeys().subscribe({
+        next: (keys) => {
+          if (Array.isArray(keys)) {
+            keys.forEach(k => this.reconOkKeySet.add(k));
+            this.saveReconOkKeys();
+            console.log('[RECON] OK keys loaded:', keys.length, keys.slice(0, 10));
+          }
+        },
+        error: (err) => console.warn('[RECON] OK keys load failed:', err)
+      });
+      // Charger les statuts recon persistés en base et les appliquer
+      this.operationApi.listReconStatus().subscribe({
+        next: (map) => {
+          console.log('[RECON] Status map loaded:', map);
+          if (map && typeof map === 'object') {
+            this.reconStatusOverrides = {} as any;
+            this.reconStatusBaseOverrides = {} as any;
+            Object.entries(map).forEach(([k, v]) => {
+              const val = (v as any) === 'OK' ? 'OK' : 'KO';
+              this.reconStatusOverrides[k] = val;
+              const base = this.toBaseReconKey(k);
+              // ne pas écraser un OK par KO si plusieurs clés mappent sur la même base
+              if (!this.reconStatusBaseOverrides[base] || this.reconStatusBaseOverrides[base] === 'KO') {
+                this.reconStatusBaseOverrides[base] = val;
+              }
+            });
+            this.updatePagedReconciliationResults();
+          }
+        },
+        error: (err) => console.warn('[RECON] Status map load failed:', err)
+      });
+    } catch (e) { console.warn('[RECON] init load threw', e); }
     this.loadOperations();
     this.loadComptesBanque();
     this.loadDashboardStats();
@@ -576,6 +850,29 @@ export class BanqueComponent implements OnInit {
     });
   }
 
+  downloadReleveTemplate() {
+    this.releveService.downloadTemplate().subscribe({
+      next: (blob) => {
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'modele-releve-bancaire.xlsx';
+        a.click();
+        window.URL.revokeObjectURL(url);
+      },
+      error: () => {
+        alert('Impossible de télécharger le modèle de relevé');
+      }
+    });
+  }
+
+  // Relevé Import: lignes filtrées par Statut Réconciliation (OK/KO)
+  get filteredReleveRowsForImport(): ReleveBancaireRow[] {
+    if (!this.releveStatusFilter) return this.releveRows;
+    const target = this.releveStatusFilter;
+    return (this.releveRows || []).filter(r => this.getReleveReconStatus(r) === target);
+  }
+
   loadLatestReleveBatch() {
     this.releveService.list().subscribe({
       next: (all) => {
@@ -718,12 +1015,67 @@ export class BanqueComponent implements OnInit {
     });
   }
 
+  // =========================
+  // Import Opérations Bancaires (Excel/CSV)
+  // =========================
+  opbSelectedFile: File | null = null;
+  opbUploading = false;
+  opbMessage: string | null = null;
+  opbMessageKind: 'info' | 'success' | 'error' = 'info';
+
+  onOpbFileSelected(event: Event) {
+    const input = event.target as HTMLInputElement;
+    this.opbSelectedFile = input.files && input.files.length ? input.files[0] : null;
+    if (this.opbSelectedFile) {
+      this.opbMessageKind = 'info';
+      this.opbMessage = `Fichier sélectionné: ${this.opbSelectedFile.name}`;
+    }
+  }
+
+  uploadOpb() {
+    if (!this.opbSelectedFile) return;
+    this.opbUploading = true;
+    this.opbMessageKind = 'info';
+    this.opbMessage = 'Import des opérations en cours...';
+    this.operationBancaireService.upload(this.opbSelectedFile).subscribe({
+      next: (res) => {
+        this.opbUploading = false;
+        const errs = (res && Array.isArray(res.errors)) ? res.errors.length : 0;
+        this.opbMessageKind = 'success';
+        this.opbMessage = `Import terminé. Lues: ${res.totalRead || 0}, enregistrées: ${res.saved || 0}${errs ? `, erreurs: ${errs}` : ''}`;
+        this.loadOperations();
+      },
+      error: () => {
+        this.opbUploading = false;
+        this.opbMessageKind = 'error';
+        this.opbMessage = 'Échec de l\'import des opérations bancaires';
+      }
+    });
+  }
+
+  downloadOpbTemplate() {
+    this.operationBancaireService.downloadTemplate().subscribe({
+      next: (blob) => {
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'modele-operations-bancaires.xlsx';
+        a.click();
+        window.URL.revokeObjectURL(url);
+      },
+      error: () => {
+        alert('Impossible de télécharger le modèle');
+      }
+    });
+  }
+
   // Filtrage
   applyFilters() {
     this.filteredOperations = this.operations.filter(operation => {
       const matchPays = !this.filters.pays || operation.pays === this.filters.pays;
       const matchType = !this.filters.typeOperation || operation.typeOperation === this.filters.typeOperation;
       const matchStatut = !this.filters.statut || operation.statut === this.filters.statut;
+      const matchReconStatut = !this.operationsReconStatusFilter || this.getOperationReconStatus(operation) === this.operationsReconStatusFilter;
       
       let matchDate = true;
       if (this.filters.dateDebut) {
@@ -735,7 +1087,7 @@ export class BanqueComponent implements OnInit {
         matchDate = matchDate && operation.dateOperation <= dateFin;
       }
 
-      return matchPays && matchType && matchStatut && matchDate;
+      return matchPays && matchType && matchStatut && matchDate && matchReconStatut;
     });
 
     this.currentPage = 1;
@@ -1053,6 +1405,12 @@ export class BanqueComponent implements OnInit {
     const bothKeys = Array.from(allKeys).filter(k => opMap.has(k) && revMap.has(k));
     this.matchedOperations = bothKeys.map(k => opMap.get(k)!.op);
     this.matchedReleves = bothKeys.map(k => revMap.get(k)!.row);
+    // Index pour action rapide
+    (this as any).keyToOp = {};
+    (this as any).keyToRev = {};
+    bothKeys.forEach(k => { (this as any).keyToOp[k] = opMap.get(k)!.op; (this as any).keyToRev[k] = revMap.get(k)!.row; });
+    // Appliquer statuts OK aux tableaux d'affichage (synchronisation)
+    this.applyOkStatusesToOpAndRev();
     // Paires correspondantes pour affichage synthétique
     this.matchedPairs = pairs.filter(p => bothKeys.includes(p.key)).map(p => ({ date: p.date, montant: p.montant, banque: p.banque, sensIndex: p.sensIndex }));
 
@@ -1152,6 +1510,7 @@ export class BanqueComponent implements OnInit {
 
     // Opérations (écarts seulement gauche)
     this.filteredLeftOps = (this.leftOnlyOperations || []).filter(op => {
+      if ((op as any).key && this.reconOkKeySet.has((op as any).key)) return false; // ignorer marqués OK
       const okType = !f.typeOperation || (op.typeOperation || '') === f.typeOperation;
       const okStatut = !f.statut || (op.statut || '') === f.statut;
       const okBanque = matchBanque(op.bo);
@@ -1163,6 +1522,7 @@ export class BanqueComponent implements OnInit {
 
     // Relevés (écarts seulement droite)
     this.filteredRightReleves = (this.rightOnlyReleves || []).filter(r => {
+      if ((r as any).key && this.reconOkKeySet.has((r as any).key)) return false; // ignorer marqués OK
       const amount = this.getReleveMontantAbs(r);
       const okBanque = matchBanque(r.banque);
       const okAmount = matchAmount(amount);
@@ -1173,6 +1533,7 @@ export class BanqueComponent implements OnInit {
 
     // Correspondances opérations
     this.filteredMatchedOps = (this.matchedOperations || []).filter(op => {
+      if ((op as any).key && this.reconOkKeySet.has((op as any).key)) return false; // ignorer marqués OK
       const okType = !f.typeOperation || (op.typeOperation || '') === f.typeOperation;
       const okStatut = !f.statut || (op.statut || '') === f.statut;
       const okBanque = matchBanque(op.bo);
@@ -1184,6 +1545,7 @@ export class BanqueComponent implements OnInit {
 
     // Correspondances relevé
     this.filteredMatchedReleves = (this.matchedReleves || []).filter(r => {
+      if ((r as any).key && this.reconOkKeySet.has((r as any).key)) return false; // ignorer marqués OK
       const amount = this.getReleveMontantAbs(r);
       const okBanque = matchBanque(r.banque);
       const okAmount = matchAmount(amount);

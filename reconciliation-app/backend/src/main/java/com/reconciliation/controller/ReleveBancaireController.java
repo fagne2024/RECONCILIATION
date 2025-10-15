@@ -19,6 +19,8 @@ public class ReleveBancaireController {
     private ReleveBancaireImportService importService;
     @Autowired
     private ReleveBancaireRepository repository;
+    @Autowired
+    private ReleveBancaireImportService importServiceService;
 
     @PostMapping(value = "/upload", consumes = {"multipart/form-data"})
     public ResponseEntity<java.util.Map<String, Object>> upload(@RequestParam("file") MultipartFile file) {
@@ -79,6 +81,44 @@ public class ReleveBancaireController {
         // Non modifiés: id, uploadedAt, batchId, sourceFilename
         repository.save(entity);
         return ResponseEntity.ok(entity);
+    }
+
+    @PutMapping("/{id}/recon-status")
+    public ResponseEntity<?> updateReconStatus(@PathVariable("id") Long id, @RequestParam("status") String status) {
+        var opt = repository.findById(id);
+        if (opt.isEmpty()) return ResponseEntity.notFound().build();
+        var entity = opt.get();
+        entity.setReconStatus(status);
+        repository.save(entity);
+        return ResponseEntity.ok().build();
+    }
+
+    @GetMapping(value = "/template", produces = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    public ResponseEntity<byte[]> downloadTemplate() {
+        try {
+            // Générer un classeur simple avec entêtes standard
+            org.apache.poi.ss.usermodel.Workbook wb = new org.apache.poi.xssf.usermodel.XSSFWorkbook();
+            org.apache.poi.ss.usermodel.Sheet sheet = wb.createSheet("Releve");
+            String[] headers = new String[] {
+                "Numero de compte", "Nom du compte", "Date comptable", "Date de valeur",
+                "Libelle", "Debit", "Credit", "Montant", "Numero cheque", "Devise"
+            };
+            org.apache.poi.ss.usermodel.Row row0 = sheet.createRow(0);
+            for (int i = 0; i < headers.length; i++) {
+                org.apache.poi.ss.usermodel.Cell cell = row0.createCell(i, org.apache.poi.ss.usermodel.CellType.STRING);
+                cell.setCellValue(headers[i]);
+                sheet.setColumnWidth(i, 20 * 256);
+            }
+            java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
+            wb.write(bos);
+            wb.close();
+            byte[] bytes = bos.toByteArray();
+            return ResponseEntity.ok()
+                    .header(org.springframework.http.HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=modele-releve-bancaire.xlsx")
+                    .body(bytes);
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().build();
+        }
     }
 }
 

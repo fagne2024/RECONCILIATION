@@ -83,6 +83,9 @@
           <button class="btn-primary" [disabled]="releveUploading || !releveSelectedFile" (click)="uploadReleve()">
             <i class="fas fa-upload" [class.spin]="releveUploading"></i> Importer
           </button>
+          <button class="btn-primary" (click)="downloadReleveTemplate()" title="Télécharger le modèle">
+            <i class="fas fa-file-excel"></i> Modèle
+          </button>
         </div>
       </div>
 
@@ -116,11 +119,12 @@
                 <th class="right">Montant</th>
                 <th>Chèque</th>
                 <th>Devise</th>
+                <th>Statut Réconciliation</th>
                 <th class="actions-col">Actions</th>
               </tr>
             </thead>
             <tbody>
-              <tr *ngFor="let r of releveRows | slice:(relevePage-1)*relevePageSize : (relevePage-1)*relevePageSize + relevePageSize">
+              <tr *ngFor="let r of filteredReleveRowsForImport | slice:(relevePage-1)*relevePageSize : (relevePage-1)*relevePageSize + relevePageSize">
                 <td><code>{{ r.numeroCompte || '-' }}</code></td>
                 <td>{{ r.nomCompte || '-' }}</td>
                 <td>{{ r.banque || '-' }}</td>
@@ -131,7 +135,11 @@
                 <td class="right"><span class="amount credit">{{ r.credit !== null && r.credit !== undefined ? (r.credit | number:'1.0-0') : '-' }}</span></td>
                 <td class="right"><span class="amount" [class.debit]="!!r.montant && r.montant < 0" [class.credit]="!!r.montant && r.montant > 0">{{ r.montant !== null && r.montant !== undefined ? (r.montant | number:'1.0-0') : '-' }}</span></td>
                 <td>{{ r.numeroCheque || '-' }}</td>
-                <td>{{ r.devise || '-' }}</td>
+              <td>{{ r.devise || '-' }}</td>
+              <td>
+                <span class="badge status-ok" *ngIf="getReleveReconStatus(r)==='OK'">OK</span>
+                <span class="badge status-ko" *ngIf="getReleveReconStatus(r)==='KO'">KO</span>
+              </td>
                 <td class="actions-col">
                   <button class="btn-icon" (click)="openReleveEdit(r)" [disabled]="!r.id" title="Modifier cette ligne">
                     <i class="fas fa-edit"></i>
@@ -152,6 +160,14 @@
             <option [value]="20">20</option>
             <option [value]="50">50</option>
           </select>
+          <div class="filter-group" style="margin-left: 8px;">
+            <label>Statut Réconciliation</label>
+            <select [(ngModel)]="releveStatusFilter" (change)="relevePage = 1">
+              <option value="">Tous</option>
+              <option value="OK">OK</option>
+              <option value="KO">KO</option>
+            </select>
+          </div>
         </div>
       </div>
     </div>
@@ -204,6 +220,9 @@
               <option *ngFor="let s of statutsList" [value]="s">{{ s }}</option>
             </select>
           </div>
+          <button class="btn-outline" *ngIf="reconView==='corr_operation' || reconView==='corr_releve'" (click)="openOkList()" title="Voir les OK définitifs">
+            <i class="fas fa-list-check"></i> OK définitifs
+          </button>
           <div class="filter-group">
             <label>Banque</label>
             <input type="text" [(ngModel)]="reconFilters.banque" (input)="applyReconFilters()" placeholder="Ex: BOA, SG...">
@@ -281,6 +300,7 @@
               <td>{{ op.idGlpi || '-' }}</td>
               <td>{{ op.bo }}</td>
               <td>{{ op.statut }}</td>
+              
             </tr>
           </tbody>
         </table>
@@ -314,6 +334,7 @@
               <td class="right">{{ r.montant !== null && r.montant !== undefined ? (r.montant | number:'1.0-0') : '-' }}</td>
               <td>{{ r.numeroCheque || '-' }}</td>
               <td>{{ r.devise || '-' }}</td>
+              
             </tr>
           </tbody>
         </table>
@@ -335,6 +356,7 @@
               <th>ID GLPI</th>
               <th>Banque</th>
               <th>Statut</th>
+              <th>Statut Réconciliation</th>
             </tr>
           </thead>
           <tbody>
@@ -353,6 +375,13 @@
               <td>{{ op.idGlpi || '-' }}</td>
               <td>{{ op.bo }}</td>
               <td>{{ op.statut }}</td>
+              <td class="right">
+                <span class="badge status-ok" *ngIf="getReconStatusByKey(op.key, 'OK')==='OK'">OK</span>
+                <span class="badge status-ko" *ngIf="getReconStatusByKey(op.key, 'OK')==='KO'">KO</span>
+                <button class="btn-icon" (click)="toggleReconStatusByKey(op.key, 'OK')" title="Basculer OK/KO"><i class="fas fa-exchange-alt"></i></button>
+                <button class="btn-icon" (click)="markAsOkPermanentByKey(op.key)" title="Marquer définitivement OK (ignorer)"><i class="fas fa-check-double"></i></button>
+                <button class="btn-icon" (click)="unmarkOkByKey(op.key)" title="Annuler 'OK définitif'"><i class="fas fa-undo"></i></button>
+              </td>
             </tr>
           </tbody>
         </table>
@@ -371,6 +400,7 @@
               <th class="right">Montant</th>
               <th>Chèque</th>
               <th>Devise</th>
+              <th>Statut Réconciliation</th>
             </tr>
           </thead>
           <tbody>
@@ -386,6 +416,13 @@
               <td class="right">{{ r.montant !== null && r.montant !== undefined ? (r.montant | number:'1.0-0') : '-' }}</td>
               <td>{{ r.numeroCheque || '-' }}</td>
               <td>{{ r.devise || '-' }}</td>
+              <td class="right">
+                <span class="badge status-ok" *ngIf="getReconStatusByKey(r.key, 'OK')==='OK'">OK</span>
+                <span class="badge status-ko" *ngIf="getReconStatusByKey(r.key, 'OK')==='KO'">KO</span>
+                <button class="btn-icon" (click)="toggleReconStatusByKey(r.key, 'OK')" title="Basculer OK/KO"><i class="fas fa-exchange-alt"></i></button>
+                <button class="btn-icon" (click)="markAsOkPermanentByKey(r.key)" title="Marquer définitivement OK (ignorer)"><i class="fas fa-check-double"></i></button>
+                <button class="btn-icon" (click)="unmarkOkByKey(r.key)" title="Annuler 'OK définitif'"><i class="fas fa-undo"></i></button>
+              </td>
             </tr>
           </tbody>
         </table>
@@ -601,6 +638,32 @@
       </button>
     </div>
 
+      <!-- Import / Modèle -->
+      <div class="releve-header" style="margin-bottom: 12px;">
+        <h3>Importer des opérations (Excel/CSV)</h3>
+        <div class="actions">
+          <label class="file-btn">
+            <input type="file" (change)="onOpbFileSelected($event)" accept=".xlsx,.xls,.csv" />
+            <i class="fas fa-file-upload"></i> Choisir un fichier
+          </label>
+          <button class="btn-primary" [disabled]="opbUploading || !opbSelectedFile" (click)="uploadOpb()">
+            <i class="fas fa-upload" [class.spin]="opbUploading"></i> Importer
+          </button>
+          <button class="btn-primary" (click)="downloadOpbTemplate()" title="Télécharger le modèle">
+            <i class="fas fa-file-excel"></i> Modèle
+          </button>
+        </div>
+      </div>
+
+      <div *ngIf="opbMessage" class="releve-alert" [ngClass]="opbMessageKind" style="margin-bottom: 12px;">
+        <i class="fas" [ngClass]="{
+          'fa-info-circle': opbMessageKind==='info',
+          'fa-check-circle': opbMessageKind==='success',
+          'fa-exclamation-triangle': opbMessageKind==='error'
+        }"></i>
+        <span>{{ opbMessage }}</span>
+      </div>
+
     <div class="operations-table-container">
       <!-- Filtres -->
       <div class="table-filters">
@@ -623,6 +686,14 @@
           <select [(ngModel)]="filters.statut" (change)="applyFilters()">
             <option value="">Tous les statuts</option>
             <option *ngFor="let statut of statutsList" [value]="statut">{{ statut }}</option>
+          </select>
+        </div>
+        <div class="filter-group">
+          <label>Statut Réconciliation</label>
+          <select [(ngModel)]="operationsReconStatusFilter" (change)="applyFilters()">
+            <option value="">Tous</option>
+            <option value="OK">OK</option>
+            <option value="KO">KO</option>
           </select>
         </div>
         <div class="filter-group">
@@ -677,6 +748,7 @@
               <th>Banque</th>
               <th>Statut</th>
               <th>Actions</th>
+              <th>Statut Réconciliation</th>
             </tr>
           </thead>
           <tbody>
@@ -729,6 +801,10 @@
                 <button class="btn-icon btn-danger" (click)="deleteOperation(operation.id)" title="Supprimer">
                   <i class="fas fa-trash"></i>
                 </button>
+              </td>
+              <td class="right">
+                <span class="badge status-ok" *ngIf="getOperationReconStatus(operation)==='OK'">OK</span>
+                <span class="badge status-ko" *ngIf="getOperationReconStatus(operation)==='KO'">KO</span>
               </td>
             </tr>
           </tbody>
@@ -845,6 +921,41 @@
         <button class="btn-primary" (click)="closeDetailPopup(); editOperation(selectedOperation!)">
           <i class="fas fa-edit"></i> Modifier
         </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Popup Liste OK définitifs -->
+  <div class="modern-popup-overlay" *ngIf="showOkListPopup" (click)="closeOkList()">
+    <div class="modern-popup detail-popup" (click)="$event.stopPropagation()">
+      <div class="popup-header">
+        <h2><i class="fas fa-list-check"></i> Clés OK définitifs</h2>
+        <button class="close-btn" (click)="closeOkList()">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+      <div class="popup-content">
+        <div *ngIf="okListLoading" class="empty-row"><i class="fas fa-spinner spin"></i> Chargement...</div>
+        <div *ngIf="!okListLoading && okKeysList.length===0" class="empty-row">Aucune clé OK définitive.</div>
+        <table class="operations-table" *ngIf="!okListLoading && okKeysList.length">
+          <thead>
+            <tr>
+              <th>Clé</th>
+              <th class="actions-col">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let k of okKeysList">
+              <td><code>{{ k }}</code></td>
+              <td class="actions">
+                <button class="btn-icon" (click)="unmarkOkFromList(k)" title="Annuler 'OK définitif'"><i class="fas fa-undo"></i></button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="popup-footer">
+        <button class="btn-secondary" (click)="closeOkList()"><i class="fas fa-times"></i> Fermer</button>
       </div>
     </div>
   </div>

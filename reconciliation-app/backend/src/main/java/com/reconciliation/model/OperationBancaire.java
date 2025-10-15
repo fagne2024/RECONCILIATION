@@ -18,6 +18,7 @@ public class OperationBancaire {
     private String idGlpi;
     private String bo;
     private String statut;
+    private String reconStatus; // OK/KO
     private Long operationId;
     
     // Constructeurs
@@ -42,6 +43,7 @@ public class OperationBancaire {
         this.idGlpi = idGlpi;
         this.bo = bo;
         this.statut = statut;
+        this.reconStatus = null;
         this.operationId = operationId;
     }
     
@@ -164,6 +166,14 @@ public class OperationBancaire {
     
     public void setStatut(String statut) {
         this.statut = statut;
+    }
+
+    public String getReconStatus() {
+        return reconStatus;
+    }
+
+    public void setReconStatus(String reconStatus) {
+        this.reconStatus = reconStatus;
     }
     
     public Long getOperationId() {

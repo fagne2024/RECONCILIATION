@@ -658,6 +658,10 @@
         }
       }
 
+    // Badges statut Réconciliation
+    .status-ok { background: #e8f5e8; color: #2e7d32; border: 1px solid #a7f3d0; }
+    .status-ko { background: #ffebee; color: #d32f2f; border: 1px solid #fecaca; }
+
       // Styles pour la cellule GLPI
       .glpi-cell {
         .btn-glpi-create {

@@ -65,6 +65,22 @@ export class OperationBancaireService {
         return this.http.delete<boolean>(`${this.apiUrl}/${id}`);
     }
 
+    // Importer des opérations bancaires depuis un fichier (Excel/CSV)
+    upload(file: File): Observable<{ totalRead: number; saved: number; errors: string[] }>{
+        const form = new FormData();
+        form.append('file', file);
+        return this.http.post<{ totalRead: number; saved: number; errors: string[] }>(`${this.apiUrl}/upload`, form);
+    }
+
+  updateReconStatus(id: number, status: 'OK' | 'KO'): Observable<any> {
+    return this.http.put(`${this.apiUrl}/${id}/recon-status?status=${encodeURIComponent(status)}`, {});
+  }
+
+    // Télécharger le modèle Excel à utiliser pour l'import
+    downloadTemplate(): Observable<Blob> {
+        return this.http.get(`${this.apiUrl}/template`, { responseType: 'blob' });
+    }
+
     // Filtrer les opérations bancaires avec des paramètres
     filterOperationsBancaires(filter: OperationBancaireFilter): Observable<OperationBancaire[]> {
         let params = new HttpParams();

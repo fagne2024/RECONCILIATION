@@ -24,6 +24,14 @@ export class ReleveBancaireService {
   update(id: number, payload: Partial<ReleveBancaireRow>): Observable<ReleveBancaireRow> {
     return this.http.put<ReleveBancaireRow>(`${this.apiUrl}/${id}`, payload);
   }
+
+  updateReconStatus(id: number, status: 'OK' | 'KO'): Observable<any> {
+    return this.http.put(`${this.apiUrl}/${id}/recon-status?status=${encodeURIComponent(status)}`, {});
+  }
+
+  downloadTemplate(): Observable<Blob> {
+    return this.http.get(`${this.apiUrl}/template`, { responseType: 'blob' });
+  }
 }
 
 

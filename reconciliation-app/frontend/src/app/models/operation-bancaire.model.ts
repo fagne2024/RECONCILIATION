@@ -15,6 +15,7 @@ export interface OperationBancaire {
     bo?: string;
     statut: string;
     operationId?: number; // Lien avec l'opération d'origine
+    reconStatus?: 'OK' | 'KO';
 }
 
 export interface OperationBancaireCreateRequest {

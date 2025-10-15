@@ -75,6 +75,9 @@ public class ReleveBancaireEntity {
     @Column(name = "batch_id")
     private String batchId;
 
+    @Column(name = "recon_status")
+    private String reconStatus; // OK/KO/null
+
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
     public String getNumeroCompte() { return numeroCompte; }
@@ -119,6 +122,9 @@ public class ReleveBancaireEntity {
     public void setUploadedAt(LocalDateTime uploadedAt) { this.uploadedAt = uploadedAt; }
     public String getBatchId() { return batchId; }
     public void setBatchId(String batchId) { this.batchId = batchId; }
+
+    public String getReconStatus() { return reconStatus; }
+    public void setReconStatus(String reconStatus) { this.reconStatus = reconStatus; }
 }
 
 

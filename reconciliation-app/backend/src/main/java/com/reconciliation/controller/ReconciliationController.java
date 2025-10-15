@@ -38,6 +38,10 @@ import com.reconciliation.model.Compte;
 import com.reconciliation.model.Operation;
 import com.reconciliation.entity.CompteEntity;
 import org.springframework.beans.factory.annotation.Autowired;
+import com.reconciliation.repository.ReconciliationOkRepository;
+import com.reconciliation.entity.ReconciliationOkEntity;
+import com.reconciliation.entity.ReconciliationStatusEntity;
+import com.reconciliation.repository.ReconciliationStatusRepository;
 
 @Slf4j
 @RestController
@@ -64,11 +68,81 @@ public class ReconciliationController {
     private CompteService compteService;
     @Autowired
     private CompteRegroupementService compteRegroupementService;
+    @Autowired
+    private ReconciliationOkRepository reconOkRepository;
+    @Autowired
+    private ReconciliationStatusRepository reconStatusRepository;
 
     @GetMapping("/test")
     public ResponseEntity<String> test() {
         log.info("Test endpoint called");
         return ResponseEntity.ok("Serveur fonctionne - CORS OK");
+    }
+
+    // Marquer une clé de réconciliation comme OK (à ignorer)
+    @PostMapping("/mark-ok")
+    public ResponseEntity<Map<String, Object>> markOk(@RequestParam("key") String key) {
+        if (key == null || key.trim().isEmpty()) {
+            return ResponseEntity.badRequest().body(java.util.Map.of("success", false, "message", "Key manquante"));
+        }
+        if (!reconOkRepository.existsByKeyValue(key)) {
+            reconOkRepository.save(new ReconciliationOkEntity(key.trim()));
+        }
+        return ResponseEntity.ok(java.util.Map.of("success", true));
+    }
+
+    // Récupérer toutes les clés OK
+    @GetMapping("/ok-keys")
+    public ResponseEntity<java.util.List<String>> getOkKeys() {
+        java.util.List<String> keys = reconOkRepository.findAll().stream().map(ReconciliationOkEntity::getKeyValue).toList();
+        return ResponseEntity.ok(keys);
+    }
+
+    // Annuler une clé OK (revenir sur l'action)
+    @DeleteMapping("/mark-ok")
+    public ResponseEntity<Map<String, Object>> unmarkOk(@RequestParam("key") String key) {
+        try {
+            if (key == null || key.trim().isEmpty()) {
+                return ResponseEntity.badRequest().body(java.util.Map.of("success", false, "message", "Key manquante"));
+            }
+            String cleaned = key.trim();
+            var opt = reconOkRepository.findByKeyValue(cleaned);
+            opt.ifPresent(reconOkRepository::delete);
+            return ResponseEntity.ok(java.util.Map.of("success", true));
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().body(java.util.Map.of("success", false, "message", e.getMessage()));
+        }
+    }
+
+    // Enregistrer le statut (OK/KO) d'une clé de correspondance
+    @PostMapping("/status")
+    public ResponseEntity<Map<String, Object>> saveStatus(@RequestParam("key") String key, @RequestParam("status") String status) {
+        if (key == null || key.trim().isEmpty()) {
+            return ResponseEntity.badRequest().body(java.util.Map.of("success", false, "message", "Key manquante"));
+        }
+        String s = status != null ? status.trim().toUpperCase() : "";
+        if (!s.equals("OK") && !s.equals("KO")) {
+            return ResponseEntity.badRequest().body(java.util.Map.of("success", false, "message", "Status invalide"));
+        }
+        log.info("[RECON] saveStatus key={} status={}", key, s);
+        String cleaned = key.trim();
+        var opt = reconStatusRepository.findByKeyValue(cleaned);
+        ReconciliationStatusEntity entity = opt.orElseGet(ReconciliationStatusEntity::new);
+        entity.setKeyValue(cleaned);
+        entity.setKeyStr(cleaned); // compat: anciennes bases avec colonne key_str NOT NULL
+        entity.setStatus(s);
+        reconStatusRepository.save(entity);
+        log.info("[RECON] saveStatus persisted key={} status={}", key, s);
+        return ResponseEntity.ok(java.util.Map.of("success", true));
+    }
+
+    // Liste des statuts enregistrés
+    @GetMapping("/status")
+    public ResponseEntity<java.util.Map<String, String>> listStatus() {
+        java.util.Map<String, String> map = new java.util.HashMap<>();
+        reconStatusRepository.findAll().forEach(e -> map.put(e.getKeyValue(), e.getStatus()));
+        log.info("[RECON] listStatus size={}", map.size());
+        return ResponseEntity.ok(map);
     }
 
     @PostMapping("/reconcile")
