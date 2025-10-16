@@ -81,12 +81,7 @@ public class ReleveBancaireImportService {
             LinkedHashSet<String> seen = new LinkedHashSet<>();
             List<ReleveBancaireRow> deduped = new ArrayList<>();
             for (ReleveBancaireRow r : rows) {
-                String key = String.join("|",
-                        safe(r.numeroCompte),
-                        safeDate(r.dateComptable),
-                        safeDate(r.dateValeur),
-                        safe(r.libelle),
-                        String.valueOf(r.montant != null ? Math.round(r.montant * 100) : 0));
+                String key = buildDedupKey(r.numeroCompte, r.dateComptable, r.dateValeur, r.libelle, r.montant);
                 if (seen.add(key)) deduped.add(r);
             }
             int duplicatesIgnored = totalRead - deduped.size();
@@ -142,6 +137,9 @@ public class ReleveBancaireImportService {
             } catch (Exception ignore) {}
             e.setSourceFilename(filename);
             e.setUploadedAt(java.time.LocalDateTime.now());
+            // Définir la clé de déduplication stable
+            String dedupKey = buildDedupKey(e.getNumeroCompte(), e.getDateComptable(), e.getDateValeur(), e.getLibelle(), e.getMontant());
+            e.setDedupKey(dedupKey);
             list.add(e);
         }
         return list;
@@ -149,6 +147,25 @@ public class ReleveBancaireImportService {
 
     private static String safe(String s) { return s == null ? "" : s.trim(); }
     private static String safeDate(LocalDate d) { return d == null ? "" : d.toString(); }
+
+    private static String normalizeText(String s) {
+        if (s == null) return "";
+        String t = s.trim().toLowerCase();
+        // supprimer accents de base
+        t = java.text.Normalizer.normalize(t, java.text.Normalizer.Form.NFD).replaceAll("\\p{M}", "");
+        // retrait espaces multiples
+        t = t.replaceAll("\\s+", " ");
+        return t;
+    }
+
+    private static String buildDedupKey(String numeroCompte, LocalDate dateComptable, LocalDate dateValeur, String libelle, Double montant) {
+        String num = safe(numeroCompte);
+        String dc = safeDate(dateComptable);
+        String dv = safeDate(dateValeur);
+        String lib = normalizeText(libelle);
+        long cents = Math.round((montant == null ? 0d : montant) * 100d);
+        return String.join("|", num, dc, dv, lib, String.valueOf(cents));
+    }
 
     private static Workbook createWorkbook(String filename, InputStream is) throws Exception {
         if (filename.endsWith(".xlsx") || filename.endsWith(".xlsm")) {

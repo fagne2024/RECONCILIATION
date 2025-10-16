@@ -20,7 +20,8 @@ CREATE TABLE IF NOT EXISTS releve_bancaire (
   banque VARCHAR(255),
   source_filename VARCHAR(512),
   uploaded_at DATETIME,
-  batch_id VARCHAR(100)
+  batch_id VARCHAR(100),
+  dedup_key VARCHAR(512) UNIQUE
 );
 
 

@@ -581,6 +581,14 @@ export class BanqueComponent implements OnInit {
     this.compteService.filterComptes({ categorie: ['Banque'] }).subscribe({
       next: (comptes) => {
         this.comptesBanque = (comptes || []).sort((a, b) => (a.codeProprietaire || '').localeCompare(b.codeProprietaire || ''));
+        // Construire la table de correspondance compte -> pays
+        const map: Record<string, string> = {};
+        (this.comptesBanque || []).forEach(c => {
+          const num = (c.numeroCompte || '').trim();
+          const pays = (c.pays || '').trim();
+          if (num && pays) map[num] = pays;
+        });
+        this.accountCountryMap = map;
         this.loadingComptesBanque = false;
       },
       error: (err) => {
@@ -597,6 +605,9 @@ export class BanqueComponent implements OnInit {
   totalComptes = 0;
   totalEnAttente = 0;
   totalTicketsACreer = 0; // Opérations bancaires sans ID GLPI
+
+  // Mapping numéro de compte -> pays pour cloisonnement par pays sur relevés
+  private accountCountryMap: Record<string, string> = {};
 
   loadDashboardStats() {
     // Comptes Banque uniquement
@@ -1080,11 +1091,31 @@ export class BanqueComponent implements OnInit {
           dateOperation: new Date(op.dateOperation)
         }));
         this.filteredOperations = [...this.operations];
-        // Pays pour réconciliation basés sur les opérations
-        const uniquePays = Array.from(new Set(this.operations.map(o => o.pays).filter(p => !!p))) as string[];
-        this.reconPaysOptions = uniquePays.sort((a, b) => a.localeCompare(b));
+        // Pays pour réconciliation basés sur les opérations (noms complets uniquement, pas de codes)
+        const namesSet = new Set<string>();
+        (this.operations || []).forEach(o => {
+          const paysName = (o.pays && o.pays.trim())
+            ? o.pays.trim()
+            : (() => {
+                const code = (o as any).codePays ? String((o as any).codePays).toUpperCase().trim() : '';
+                return code && this.paysCodeToName[code] ? this.paysCodeToName[code] : '';
+              })();
+          if (paysName) namesSet.add(paysName);
+        });
+        this.reconPaysOptions = Array.from(namesSet).sort((a, b) => a.localeCompare(b));
         if (!this.reconPays && this.reconPaysOptions.length === 1) {
           this.reconPays = this.reconPaysOptions[0];
+        }
+        // Si une valeur précédente est un code (ex: "CI"), migrer vers le nom complet s'il existe
+        if (this.reconPays && !this.reconPaysOptions.includes(this.reconPays)) {
+          const codeGuess = this.reconPays.length <= 3 ? this.reconPays.toUpperCase() : '';
+          const mapped = codeGuess && this.paysCodeToName[codeGuess] ? this.paysCodeToName[codeGuess] : '';
+          if (mapped && this.reconPaysOptions.includes(mapped)) {
+            this.reconPays = mapped;
+          } else if (this.reconPays.length <= 3) {
+            // Si code inconnu, on réinitialise pour éviter d'afficher un code dans la liste
+            this.reconPays = '';
+          }
         }
         this.updatePagedOperations();
         console.log('Opérations bancaires chargées:', this.operations.length);
@@ -1291,6 +1322,28 @@ export class BanqueComponent implements OnInit {
     return `${year}-${month}-${day}`;
   }
 
+  // Derive 2-letter country code from banque field (last two letters)
+  private deriveCountryCodeFromBanque(banque?: string | null): string {
+    const raw = (banque || '').toString().trim();
+    if (!raw) return '';
+    // Keep only letters, then take last two
+    const letters = raw.replace(/[^A-Za-z]/g, '');
+    if (letters.length < 2) return '';
+    return letters.slice(-2).toUpperCase();
+  }
+
+  // Normalize selected recon country (may be code or full name) to 2-letter code
+  private getReconCountryCode(): string {
+    const val = (this.reconPays || '').trim();
+    if (!val) return '';
+    // If it's already a short code (<=3), assume code
+    if (val.length <= 3) return val.toUpperCase();
+    // Try reverse lookup from mapping
+    const entry = Object.entries(this.paysCodeToName).find(([, name]) => name.toLowerCase() === val.toLowerCase());
+    if (entry) return entry[0].toUpperCase();
+    return val.toUpperCase();
+  }
+
   private determineSensFromAmount(amount: number | undefined | null): 'debit' | 'credit' {
     if (!amount) return 'credit';
     return amount < 0 ? 'debit' : 'credit';
@@ -1367,7 +1420,17 @@ export class BanqueComponent implements OnInit {
 
     // Préparer les opérations filtrées (par pays + date)
     const ymd = this.reconDate || '';
-    const opsFiltered = this.operations.filter(op => (op.pays === this.reconPays) && (!ymd || this.normalizeDateToYmd(op.dateOperation) === ymd));
+    const opsFiltered = this.operations.filter(op => {
+      const opName = (op.pays && op.pays.trim())
+        ? op.pays.trim()
+        : (() => {
+            const code = (op as any).codePays ? String((op as any).codePays).toUpperCase().trim() : '';
+            return code && this.paysCodeToName[code] ? this.paysCodeToName[code] : '';
+          })();
+      const matchCountry = opName === this.reconPays;
+      const matchDate = !ymd || this.normalizeDateToYmd(op.dateOperation) === ymd;
+      return matchCountry && matchDate;
+    });
     const opsWithKey = this.buildKeysWithIndexes(opsFiltered, (op) => {
       const date = this.normalizeDateToYmd(op.dateOperation);
       const montantAbs = Math.abs(op.montant || 0);
@@ -1376,8 +1439,12 @@ export class BanqueComponent implements OnInit {
       return { date, montantAbs, banque, sens };
     });
 
-    // Préparer les lignes de relevé filtrées (utiliser dateValeur si dispo, sinon dateComptable)
+    // Préparer les lignes de relevé filtrées (par pays via deux dernières lettres de banque, puis date)
+    const reconCode = this.getReconCountryCode();
     const relevéFiltered = this.releveRows.filter(r => {
+      const rowCode = this.deriveCountryCodeFromBanque(r.banque);
+      if (reconCode && rowCode !== reconCode) return false;
+      // Filtre date (optionnel)
       if (!ymd) return true;
       const dateToUse = r.dateValeur ? r.dateValeur : r.dateComptable;
       return this.normalizeDateToYmd(dateToUse as any) === ymd;

@@ -19,24 +19,53 @@ public class ReleveBancaireController {
     private ReleveBancaireImportService importService;
     @Autowired
     private ReleveBancaireRepository repository;
-    @Autowired
-    private ReleveBancaireImportService importServiceService;
 
     @PostMapping(value = "/upload", consumes = {"multipart/form-data"})
     public ResponseEntity<java.util.Map<String, Object>> upload(@RequestParam("file") MultipartFile file) {
         try {
             var result = importService.parseFileWithAlerts(file);
-            // Persiste sans impacts
             String batchId = java.util.UUID.randomUUID().toString();
             var entities = importService.toEntities(result.rows, file.getOriginalFilename());
-            for (var e : entities) { e.setBatchId(batchId); }
-            repository.saveAll(entities);
+
+            // Déduplication côté base via dedupKey: construire l'ensemble des clés et filtrer celles déjà existantes
+            java.util.Set<String> allKeys = new java.util.HashSet<>();
+            for (var e : entities) { if (e.getDedupKey() != null) allKeys.add(e.getDedupKey()); }
+            java.util.List<com.reconciliation.entity.ReleveBancaireEntity> existing = allKeys.isEmpty()
+                    ? java.util.List.of()
+                    : repository.findByDedupKeyIn(allKeys);
+            java.util.Set<String> existingKeys = new java.util.HashSet<>();
+            for (var ex : existing) { if (ex.getDedupKey() != null) existingKeys.add(ex.getDedupKey()); }
+
+            java.util.List<com.reconciliation.entity.ReleveBancaireEntity> toInsert = new java.util.ArrayList<>();
+            for (var e : entities) {
+                if (e.getDedupKey() != null && !existingKeys.contains(e.getDedupKey())) {
+                    e.setBatchId(batchId);
+                    toInsert.add(e);
+                }
+            }
+
+            int saved = 0;
+            if (!toInsert.isEmpty()) {
+                try {
+                    repository.saveAll(toInsert);
+                    saved = toInsert.size();
+                } catch (Exception ex) {
+                    // En cas de contrainte d'unicité (races), tenter une insertion unitaire tolérante
+                    for (var e : toInsert) {
+                        try { repository.save(e); saved++; } catch (Exception ignore) {}
+                    }
+                }
+            }
+
             java.util.Map<String, Object> payload = new java.util.HashMap<>();
             payload.put("batchId", batchId);
+            // Retourner les lignes analysées (pour l'aperçu), mais compter seulement celles insérées
             payload.put("rows", result.rows);
-            payload.put("count", result.rows.size());
+            payload.put("count", saved);
             payload.put("totalRead", result.totalRead);
-            payload.put("duplicatesIgnored", result.duplicatesIgnored);
+            // Ajouter les doublons ignorés côté base au compteur existant
+            int dbDuplicates = entities.size() - saved;
+            payload.put("duplicatesIgnored", result.duplicatesIgnored + Math.max(dbDuplicates, 0));
             payload.put("unmappedHeaders", result.unmappedHeaders);
             return ResponseEntity.ok(payload);
         } catch (Exception e) {
