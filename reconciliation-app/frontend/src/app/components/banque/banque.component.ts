@@ -562,6 +562,22 @@ export class BanqueComponent implements OnInit {
   loadingComptesBanque = false;
   comptesBanqueError = '';
   comptesSearch = '';
+  // Pagination liste des comptes
+  comptesListPage = 1;
+  comptesListPageSize = 10;
+  get comptesListTotalPages(): number {
+    const total = this.comptesBanqueDisplayed.length;
+    return Math.ceil(total / this.comptesListPageSize) || 1;
+  }
+  comptesListPrevPage() {
+    if (this.comptesListPage > 1) this.comptesListPage--;
+  }
+  comptesListNextPage() {
+    if (this.comptesListPage < this.comptesListTotalPages) this.comptesListPage++;
+  }
+  onComptesListPageSizeChange() {
+    this.comptesListPage = 1;
+  }
   selectedCompteNumero: string | null = null;
   // Popup opérations du compte
   showCompteOpsPopup = false;
@@ -574,6 +590,9 @@ export class BanqueComponent implements OnInit {
   compteOpsTotalPages = 1;
   compteOpsDateFrom = '';
   compteOpsDateTo = '';
+  // Soldes relevé pour le compte affiché (si disponibles depuis relevé importé)
+  compteReleveSoldeOuverture: number | null = null;
+  compteReleveSoldeCloture: number | null = null;
 
   loadComptesBanque() {
     this.loadingComptesBanque = true;
@@ -668,6 +687,29 @@ export class BanqueComponent implements OnInit {
     this.compteOpsPageSize = 10;
     this.compteOpsPage = 1;
     this.applyCompteOpsFilters();
+    // Calculer solde d'ouverture / de clôture à partir des lignes de relevé importées
+    try {
+      const rowsForAccount = (this.releveRows || []).filter(r => (r.numeroCompte || '').trim() === numero.trim());
+      const firstNonNull = (...vals: Array<number | null | undefined>) => {
+        for (const v of vals) { if (typeof v === 'number' && !isNaN(v)) return v; }
+        return null;
+      };
+      let ouverture: number | null = null;
+      let cloture: number | null = null;
+      for (const r of rowsForAccount) {
+        if (ouverture === null) {
+          ouverture = firstNonNull(r.soldeDisponibleOuverture as any, r.soldeComptableOuverture as any);
+        }
+        if (cloture === null) {
+          cloture = firstNonNull(r.soldeDisponibleCloture as any, r.soldeComptableCloture as any, r.soldeCourant as any);
+        }
+        if (ouverture !== null && cloture !== null) break;
+      }
+      // Fallback: si aucun relevé n'a de solde, utiliser le solde du compte comme clôture
+      if (cloture === null && typeof compte.solde === 'number') cloture = compte.solde as any;
+      this.compteReleveSoldeOuverture = ouverture;
+      this.compteReleveSoldeCloture = cloture;
+    } catch {}
     this.showCompteOpsPopup = true;
   }
 
@@ -796,6 +838,13 @@ export class BanqueComponent implements OnInit {
         op.statut || ''
       ]);
     });
+
+    // Ajouter un résumé des soldes en bas si disponibles
+    aoa.push([]);
+    if (this.compteReleveSoldeOuverture !== null || this.compteReleveSoldeCloture !== null) {
+      aoa.push(['Solde d\'ouverture', this.compteReleveSoldeOuverture !== null ? this.compteReleveSoldeOuverture : '']);
+      aoa.push(['Solde de clôture', this.compteReleveSoldeCloture !== null ? this.compteReleveSoldeCloture : '']);
+    }
 
     const XLSX: any = await import('xlsx');
     const wb = XLSX.utils.book_new();

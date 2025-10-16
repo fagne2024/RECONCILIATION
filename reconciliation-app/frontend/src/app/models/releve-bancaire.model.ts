@@ -14,6 +14,8 @@ export interface ReleveBancaireRow {
   soldeCourant?: number;
   soldeDisponibleCloture?: number;
   soldeDisponibleOuverture?: number;
+  soldeComptableOuverture?: number;
+  soldeComptableCloture?: number;
   reconStatus?: 'OK' | 'KO';
 }
 

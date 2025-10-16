@@ -530,7 +530,7 @@
                 Aucun compte de catégorie Banque trouvé.
               </td>
             </tr>
-            <tr *ngFor="let c of comptesBanqueDisplayed" [class.expanded]="selectedCompteNumero === c.numeroCompte">
+            <tr *ngFor="let c of (comptesBanqueDisplayed | slice:(comptesListPage-1)*comptesListPageSize : (comptesListPage-1)*comptesListPageSize + comptesListPageSize)" [class.expanded]="selectedCompteNumero === c.numeroCompte">
               <td (click)="toggleCompte(c)" class="clickable">
                 <div class="cell-main">
                   <code>{{ c.numeroCompte }}</code>
@@ -540,26 +540,39 @@
                 </div>
                 <div class="cell-sub" *ngIf="selectedCompteNumero === c.numeroCompte">{{ c.categorie || '-' }} • {{ c.type || '-' }}</div>
               </td>
-              <td *ngIf="selectedCompteNumero === c.numeroCompte">
+              <td>
                 <span class="chip chip-owner">{{ c.codeProprietaire || '-' }}</span>
               </td>
-              <td *ngIf="selectedCompteNumero === c.numeroCompte">
+              <td>
                 <span class="chip chip-country">
                   <i class="fas fa-globe-africa"></i> {{ c.pays }}
                 </span>
               </td>
-              <td *ngIf="selectedCompteNumero === c.numeroCompte">{{ c.categorie || '-' }}</td>
-              <td *ngIf="selectedCompteNumero === c.numeroCompte">{{ c.type || '-' }}</td>
-              <td class="right" *ngIf="selectedCompteNumero === c.numeroCompte">
+              <td>{{ c.categorie || '-' }}</td>
+              <td>{{ c.type || '-' }}</td>
+              <td class="right">
                 <span class="amount" [class.negative]="c.solde < 0">{{ c.solde | number:'1.2-2' }}</span>
               </td>
-              <td *ngIf="selectedCompteNumero === c.numeroCompte">{{ c.dateDerniereMaj | date:'dd/MM/yyyy HH:mm' }}</td>
-              <td class="actions-col" *ngIf="selectedCompteNumero === c.numeroCompte">
+              <td>{{ c.dateDerniereMaj | date:'dd/MM/yyyy HH:mm' }}</td>
+              <td class="actions-col">
                 <button class="btn-outline" (click)="openCompteRelevePopup(c)" title="Voir opérations du compte"><i class="fas fa-receipt"></i> Relevé</button>
               </td>
             </tr>
           </tbody>
         </table>
+        <div class="pagination small" *ngIf="comptesListTotalPages > 1">
+          <div class="btn-group">
+            <button (click)="comptesListPrevPage()" [disabled]="comptesListPage===1"><i class="fas fa-chevron-left"></i></button>
+            <button (click)="comptesListNextPage()" [disabled]="comptesListPage>=comptesListTotalPages"><i class="fas fa-chevron-right"></i></button>
+          </div>
+          <span class="muted">Page {{ comptesListPage }} / {{ comptesListTotalPages }}</span>
+          <select [(ngModel)]="comptesListPageSize" (change)="onComptesListPageSizeChange()">
+            <option [value]="10">10</option>
+            <option [value]="20">20</option>
+            <option [value]="50">50</option>
+            <option [value]="100">100</option>
+          </select>
+        </div>
       </div>
     </div>
   </div>
@@ -575,6 +588,16 @@
       </div>
       <div class="popup-content">
         <div class="operations-table-container">
+          <div class="balances" *ngIf="compteReleveSoldeOuverture !== null || compteReleveSoldeCloture !== null" style="margin: 8px 0; display:flex; gap:16px;">
+            <div class="balance-item">
+              <strong>Solde d'ouverture:</strong>
+              <span>{{ compteReleveSoldeOuverture !== null ? (compteReleveSoldeOuverture | number:'1.0-0') : '-' }}</span>
+            </div>
+            <div class="balance-item">
+              <strong>Solde de clôture:</strong>
+              <span>{{ compteReleveSoldeCloture !== null ? (compteReleveSoldeCloture | number:'1.0-0') : '-' }}</span>
+            </div>
+          </div>
           <div class="table-filters">
             <div class="filter-group">
               <label>Date début</label>
