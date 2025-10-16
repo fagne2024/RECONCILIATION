@@ -588,14 +588,10 @@
       </div>
       <div class="popup-content">
         <div class="operations-table-container">
-          <div class="balances" *ngIf="compteReleveSoldeOuverture !== null || compteReleveSoldeCloture !== null" style="margin: 8px 0; display:flex; gap:16px;">
+          <div class="balances" *ngIf="compteReleveSoldeOuverture !== null" style="margin: 8px 0;">
             <div class="balance-item">
               <strong>Solde d'ouverture:</strong>
-              <span>{{ compteReleveSoldeOuverture !== null ? (compteReleveSoldeOuverture | number:'1.0-0') : '-' }}</span>
-            </div>
-            <div class="balance-item">
-              <strong>Solde de clôture:</strong>
-              <span>{{ compteReleveSoldeCloture !== null ? (compteReleveSoldeCloture | number:'1.0-0') : '-' }}</span>
+              <span class="balance-highlight" style="background:#E7F3FF; padding:4px 8px; border-radius:6px; font-weight:bold;">{{ compteReleveSoldeOuverture !== null ? (compteReleveSoldeOuverture | number:'1.0-0') : '-' }}</span>
             </div>
           </div>
           <div class="table-filters">
@@ -655,6 +651,10 @@
                 </tr>
               </tbody>
             </table>
+          </div>
+          <div *ngIf="compteReleveSoldeCloture !== null" style="margin: 8px 0; text-align: right;">
+            <strong>Solde de clôture:</strong>
+            <span class="balance-highlight" style="background:#FFF3CD; padding:4px 8px; border-radius:6px; font-weight:bold;">{{ compteReleveSoldeCloture !== null ? (compteReleveSoldeCloture | number:'1.0-0') : '-' }}</span>
           </div>
           <div class="pagination" *ngIf="compteOpsTotalPages > 1">
             <button (click)="compteOpsPrevPage()" [disabled]="compteOpsPage===1"><i class="fas fa-chevron-left"></i> Précédent</button>
