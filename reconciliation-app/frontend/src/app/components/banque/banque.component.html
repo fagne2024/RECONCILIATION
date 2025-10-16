@@ -263,6 +263,18 @@
             <span *ngIf="reconView==='corr_operation'">{{ filteredMatchedOps.length }} correspondance(s)</span>
             <span *ngIf="reconView==='corr_releve'">{{ filteredMatchedReleves.length }} correspondance(s)</span>
           </div>
+          <div class="bulk-actions" *ngIf="reconView==='corr_operation' || reconView==='corr_releve'">
+            <button class="btn-outline" (click)="toggleSelectAllCurrentPage()" title="Sélectionner/Désélectionner la page">
+              <i class="fas" [ngClass]="{ 'fa-square': !selectAllOnPage, 'fa-check-square': selectAllOnPage }"></i>
+              {{ selectAllOnPage ? 'Tout désélectionner' : 'Sélectionner la page' }}
+            </button>
+            <button class="btn-primary" (click)="bulkMarkOkDefinitif()" [disabled]="selectedReconKeys.size===0" title="Marquer OK définitif (plusieurs)">
+              <i class="fas fa-check-double"></i> OK définitif ({{ selectedReconKeys.size }})
+            </button>
+            <button class="btn-outline" (click)="bulkUnmarkOk()" [disabled]="selectedReconKeys.size===0" title="Annuler OK définitif (plusieurs)">
+              <i class="fas fa-undo"></i> Annuler ({{ selectedReconKeys.size }})
+            </button>
+          </div>
         </div>
         
         <table class="operations-table" *ngIf="reconView==='operation'">
@@ -342,6 +354,7 @@
         <table class="operations-table" *ngIf="reconView==='corr_operation'">
           <thead>
             <tr>
+              <th style="width:34px;"></th>
               <th>Pays</th>
               <th>Code Pays</th>
               <th>Mois</th>
@@ -361,6 +374,9 @@
           </thead>
           <tbody>
             <tr *ngFor="let op of pagedMatchedOps">
+              <td>
+                <input type="checkbox" [checked]="isKeySelected(op.key)" (change)="toggleSelectKey(op.key)">
+              </td>
               <td>{{ op.pays }}</td>
               <td>{{ op.codePays }}</td>
               <td>{{ op.mois }}</td>
@@ -389,6 +405,7 @@
         <table class="operations-table" *ngIf="reconView==='corr_releve'">
           <thead>
             <tr>
+              <th style="width:34px;"></th>
               <th>Numéro de compte</th>
               <th>Nom du compte</th>
               <th>Banque</th>
@@ -405,6 +422,9 @@
           </thead>
           <tbody>
             <tr *ngFor="let r of pagedMatchedReleves">
+              <td>
+                <input type="checkbox" [checked]="isKeySelected(r.key)" (change)="toggleSelectKey(r.key)">
+              </td>
               <td><code>{{ r.numeroCompte || '-' }}</code></td>
               <td>{{ r.nomCompte || '-' }}</td>
               <td>{{ r.banque || '-' }}</td>
@@ -546,7 +566,7 @@
 
   <!-- Popup opérations par compte -->
   <div class="modern-popup-overlay" *ngIf="showCompteOpsPopup" (click)="closeCompteRelevePopup()">
-    <div class="modern-popup detail-popup" (click)="$event.stopPropagation()">
+    <div class="modern-popup detail-popup compte-releve-popup" (click)="$event.stopPropagation()">
       <div class="popup-header">
         <h2><i class="fas fa-receipt"></i> Opérations du compte <code>{{ compteOpsNumero }}</code></h2>
         <button class="close-btn" (click)="closeCompteRelevePopup()">
@@ -564,7 +584,7 @@
               <label>Date fin</label>
               <input type="date" [(ngModel)]="compteOpsDateTo" (change)="applyCompteOpsFilters()">
             </div>
-            <button class="btn-outline" style="margin-left:auto;" (click)="exportCompteOps()" title="Exporter CSV">
+            <button class="btn-export" style="margin-left:auto;" (click)="exportCompteOps()" title="Exporter CSV">
               <i class="fas fa-file-export"></i> Exporter
             </button>
             <div class="page-size-selector">
@@ -623,7 +643,7 @@
         </div>
       </div>
       <div class="popup-footer">
-        <button class="btn-secondary" (click)="closeCompteRelevePopup()"><i class="fas fa-times"></i> Fermer</button>
+        <button class="btn-secondary btn-close" (click)="closeCompteRelevePopup()"><i class="fas fa-times"></i> Fermer</button>
       </div>
     </div>
   </div>

@@ -30,6 +30,18 @@ export class OperationServiceApi {
   listReconStatus(): Observable<Record<string, 'OK' | 'KO'>> {
     return this.http.get<Record<string, 'OK' | 'KO'>>(`${this.apiUrl}/status`);
   }
+
+  markOkBulk(keys: string[]): Observable<{ success: boolean; created: number }> {
+    return this.http.post<{ success: boolean; created: number }>(`${this.apiUrl}/mark-ok/bulk`, { keys: keys || [] });
+  }
+
+  unmarkOkBulk(keys: string[]): Observable<{ success: boolean; deleted: number }> {
+    return this.http.post<{ success: boolean; deleted: number }>(`${this.apiUrl}/unmark-ok/bulk`, { keys: keys || [] });
+  }
+
+  saveReconStatusBulk(entries: Array<{ key: string; status: 'OK' | 'KO' }>): Observable<{ success: boolean; saved: number }> {
+    return this.http.post<{ success: boolean; saved: number }>(`${this.apiUrl}/status/bulk`, { entries: entries || [] });
+  }
 }
 
 import { Operation, OperationCreateRequest, OperationUpdateRequest, OperationFilter } from '../models/operation.model';
@@ -163,12 +175,12 @@ export class OperationService {
 
     // Rejeter une opération
     rejectOperation(id: number): Observable<boolean> {
-        return this.http.put<boolean>(`${this.apiUrl}/reject/${id}`, {});
+        return this.http.put<boolean>(`${this.apiUrl}/${id}/reject`, {});
     }
 
     // Annuler une opération
     cancelOperation(id: number): Observable<boolean> {
-        return this.http.put<boolean>(`${this.apiUrl}/cancel/${id}`, {});
+        return this.http.put<boolean>(`${this.apiUrl}/${id}/cancel`, {});
     }
 
     // Supprimer une opération

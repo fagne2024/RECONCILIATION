@@ -91,6 +91,31 @@ public class ReconciliationController {
         return ResponseEntity.ok(java.util.Map.of("success", true));
     }
 
+    // Marquer plusieurs clés comme OK (bulk)
+    @PostMapping("/mark-ok/bulk")
+    public ResponseEntity<Map<String, Object>> markOkBulk(@RequestBody Map<String, Object> body) {
+        try {
+            Object keysObj = body != null ? body.get("keys") : null;
+            if (!(keysObj instanceof List)) {
+                return ResponseEntity.badRequest().body(java.util.Map.of("success", false, "message", "Liste 'keys' requise"));
+            }
+            @SuppressWarnings("unchecked") List<Object> keysList = (List<Object>) keysObj;
+            int created = 0;
+            for (Object kObj : keysList) {
+                if (kObj == null) continue;
+                String key = kObj.toString().trim();
+                if (key.isEmpty()) continue;
+                if (!reconOkRepository.existsByKeyValue(key)) {
+                    reconOkRepository.save(new ReconciliationOkEntity(key));
+                    created++;
+                }
+            }
+            return ResponseEntity.ok(java.util.Map.of("success", true, "created", created));
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().body(java.util.Map.of("success", false, "message", e.getMessage()));
+        }
+    }
+
     // Récupérer toutes les clés OK
     @GetMapping("/ok-keys")
     public ResponseEntity<java.util.List<String>> getOkKeys() {
@@ -109,6 +134,32 @@ public class ReconciliationController {
             var opt = reconOkRepository.findByKeyValue(cleaned);
             opt.ifPresent(reconOkRepository::delete);
             return ResponseEntity.ok(java.util.Map.of("success", true));
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().body(java.util.Map.of("success", false, "message", e.getMessage()));
+        }
+    }
+
+    // Annuler plusieurs clés OK (bulk)
+    @PostMapping("/unmark-ok/bulk")
+    public ResponseEntity<Map<String, Object>> unmarkOkBulk(@RequestBody Map<String, Object> body) {
+        try {
+            Object keysObj = body != null ? body.get("keys") : null;
+            if (!(keysObj instanceof List)) {
+                return ResponseEntity.badRequest().body(java.util.Map.of("success", false, "message", "Liste 'keys' requise"));
+            }
+            @SuppressWarnings("unchecked") List<Object> keysList = (List<Object>) keysObj;
+            int deleted = 0;
+            for (Object kObj : keysList) {
+                if (kObj == null) continue;
+                String key = kObj.toString().trim();
+                if (key.isEmpty()) continue;
+                var opt = reconOkRepository.findByKeyValue(key);
+                if (opt.isPresent()) {
+                    reconOkRepository.delete(opt.get());
+                    deleted++;
+                }
+            }
+            return ResponseEntity.ok(java.util.Map.of("success", true, "deleted", deleted));
         } catch (Exception e) {
             return ResponseEntity.internalServerError().body(java.util.Map.of("success", false, "message", e.getMessage()));
         }
@@ -134,6 +185,41 @@ public class ReconciliationController {
         reconStatusRepository.save(entity);
         log.info("[RECON] saveStatus persisted key={} status={}", key, s);
         return ResponseEntity.ok(java.util.Map.of("success", true));
+    }
+
+    // Enregistrer le statut pour plusieurs clés (bulk)
+    @PostMapping("/status/bulk")
+    public ResponseEntity<Map<String, Object>> saveStatusBulk(@RequestBody Map<String, Object> body) {
+        try {
+            if (body == null) {
+                return ResponseEntity.badRequest().body(java.util.Map.of("success", false, "message", "Body requis"));
+            }
+            Object entriesObj = body.get("entries");
+            if (!(entriesObj instanceof List)) {
+                return ResponseEntity.badRequest().body(java.util.Map.of("success", false, "message", "Liste 'entries' requise"));
+            }
+            @SuppressWarnings("unchecked") List<Map<String, Object>> entries = (List<Map<String, Object>>) entriesObj;
+            int saved = 0;
+            for (Map<String, Object> entry : entries) {
+                Object k = entry.get("key");
+                Object s = entry.get("status");
+                if (k == null || s == null) continue;
+                String key = k.toString().trim();
+                String status = s.toString().trim().toUpperCase();
+                if (key.isEmpty()) continue;
+                if (!status.equals("OK") && !status.equals("KO")) continue;
+                var opt = reconStatusRepository.findByKeyValue(key);
+                ReconciliationStatusEntity entity = opt.orElseGet(ReconciliationStatusEntity::new);
+                entity.setKeyValue(key);
+                entity.setKeyStr(key);
+                entity.setStatus(status);
+                reconStatusRepository.save(entity);
+                saved++;
+            }
+            return ResponseEntity.ok(java.util.Map.of("success", true, "saved", saved));
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().body(java.util.Map.of("success", false, "message", e.getMessage()));
+        }
     }
 
     // Liste des statuts enregistrés

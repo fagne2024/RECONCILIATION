@@ -167,6 +167,10 @@ export class BanqueComponent implements OnInit {
   correspondanceFilterBanque = '';
   correspondanceFilterMontant: number | null = null;
 
+  // Sélection multiple pour actions OK définitif (corr_operation / corr_releve)
+  selectedReconKeys: Set<string> = new Set<string>();
+  selectAllOnPage = false;
+
   // Réconciliation: overrides de statut (OK/KO) par clé
   private reconStatusOverrides: Record<string, 'OK' | 'KO'> = {};
   // Index de secours par clé de base (sans index, e.g. debit1->debit)
@@ -402,6 +406,85 @@ export class BanqueComponent implements OnInit {
         error: (err) => console.warn('[RECON] status save failed', { key, next, err })
       });
     } catch (e) { console.warn('[RECON] status save threw', e); }
+  }
+
+  // Gestion sélection multi
+  toggleSelectKey(key?: string) {
+    if (!key) return;
+    if (this.selectedReconKeys.has(key)) this.selectedReconKeys.delete(key); else this.selectedReconKeys.add(key);
+  }
+
+  isKeySelected(key?: string): boolean {
+    return !!key && this.selectedReconKeys.has(key);
+  }
+
+  toggleSelectAllCurrentPage() {
+    const list = this.reconView === 'corr_operation' ? this.pagedMatchedOps : this.pagedMatchedReleves;
+    const keys = list.map((it: any) => it.key).filter((k: any) => !!k);
+    const allSelected = keys.every((k: string) => this.selectedReconKeys.has(k));
+    if (allSelected) {
+      keys.forEach(k => this.selectedReconKeys.delete(k));
+      this.selectAllOnPage = false;
+    } else {
+      keys.forEach(k => this.selectedReconKeys.add(k));
+      this.selectAllOnPage = true;
+    }
+  }
+
+  clearSelection() {
+    this.selectedReconKeys.clear();
+    this.selectAllOnPage = false;
+  }
+
+  // Actions bulk: marquer OK définitif et annuler
+  bulkMarkOkDefinitif() {
+    const keys = Array.from(this.selectedReconKeys);
+    if (!keys.length) { alert('Sélectionnez au moins une ligne.'); return; }
+    this.operationApi.markOkBulk(keys).subscribe({
+      next: () => {
+        keys.forEach(k => this.reconOkKeySet.add(k));
+        this.saveReconOkKeys();
+        try {
+          const entries = keys.map(k => ({ key: k, status: 'OK' as const }));
+          this.operationApi.saveReconStatusBulk(entries).subscribe();
+        } catch {}
+        this.applyOkStatusesToOpAndRev();
+        this.updatePagedReconciliationResults();
+        this.clearSelection();
+      },
+      error: () => {
+        keys.forEach(k => this.reconOkKeySet.add(k));
+        this.saveReconOkKeys();
+        try {
+          const entries = keys.map(k => ({ key: k, status: 'OK' as const }));
+          this.operationApi.saveReconStatusBulk(entries).subscribe();
+        } catch {}
+        this.applyOkStatusesToOpAndRev();
+        this.updatePagedReconciliationResults();
+        this.clearSelection();
+      }
+    });
+  }
+
+  bulkUnmarkOk() {
+    const keys = Array.from(this.selectedReconKeys);
+    if (!keys.length) { alert('Sélectionnez au moins une ligne.'); return; }
+    this.operationApi.unmarkOkBulk(keys).subscribe({
+      next: () => {
+        keys.forEach(k => this.reconOkKeySet.delete(k));
+        this.saveReconOkKeys();
+        this.applyOkStatusesToOpAndRev();
+        this.updatePagedReconciliationResults();
+        this.clearSelection();
+      },
+      error: () => {
+        keys.forEach(k => this.reconOkKeySet.delete(k));
+        this.saveReconOkKeys();
+        this.applyOkStatusesToOpAndRev();
+        this.updatePagedReconciliationResults();
+        this.clearSelection();
+      }
+    });
   }
 
   // Formulaire d'édition

@@ -994,6 +994,78 @@
   }
 }
 
+// Agrandir le popup du relevé des comptes pour éviter la barre de défilement horizontale
+.modern-popup.compte-releve-popup {
+  width: 1100px; // plus large que 800px par défaut
+  max-width: 95vw; // occuper plus d'espace sur l'écran large
+  max-height: 92vh;
+}
+
+// Assurer que le contenu du tableau s'adapte et n'impose pas de scroll horizontal
+.modern-popup.compte-releve-popup .popup-content .table-container {
+  overflow-x: auto; // fallback si trop de colonnes
+}
+
+// Élargir certaines colonnes pour réduire le wrapping et la création de barres
+.modern-popup.compte-releve-popup .operations-table th,
+.modern-popup.compte-releve-popup .operations-table td {
+  white-space: nowrap;
+}
+
+// Bouton Export dédié dans le popup compte-relevé
+.modern-popup.compte-releve-popup .btn-export {
+  background: linear-gradient(135deg, #1e88e5 0%, #42a5f5 100%);
+  color: #fff;
+  border: none;
+  padding: 8px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  box-shadow: 0 2px 8px rgba(30, 136, 229, 0.35);
+  transition: transform 0.15s ease, box-shadow 0.2s ease, filter 0.2s;
+
+  i { font-size: 14px; }
+
+  &:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 18px rgba(30, 136, 229, 0.4);
+    filter: brightness(1.02);
+  }
+
+  &:active {
+    transform: translateY(0);
+    box-shadow: 0 2px 8px rgba(30, 136, 229, 0.35);
+  }
+}
+
+// Bouton Fermer accentué dans le footer du popup compte-relevé
+.modern-popup.compte-releve-popup .popup-footer .btn-close {
+  background: #6c757d;
+  color: #fff;
+  border: none;
+  padding: 10px 18px;
+  border-radius: 6px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  transition: background-color .2s ease, transform .15s ease, box-shadow .2s ease;
+
+  &:hover {
+    background: #5a6268;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(108, 117, 125, 0.35);
+  }
+
+  &:active {
+    transform: translateY(0);
+    box-shadow: none;
+  }
+}
+
 @keyframes slideUp {
   from {
     transform: translateY(50px);
