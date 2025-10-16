@@ -689,7 +689,9 @@ export class BanqueComponent implements OnInit {
     this.applyCompteOpsFilters();
     // Calculer solde d'ouverture / de clôture à partir des lignes de relevé importées
     try {
-      const rowsForAccount = (this.releveRows || []).filter(r => (r.numeroCompte || '').trim() === numero.trim());
+      const normalizeAcc = (s: string) => (s || '').replace(/[^0-9A-Za-z]/g, '').toUpperCase().trim();
+      const target = normalizeAcc(numero);
+      const rowsForAccount = (this.releveRows || []).filter(r => normalizeAcc(r.numeroCompte || '') === target);
       const firstNonNull = (...vals: Array<number | null | undefined>) => {
         for (const v of vals) { if (typeof v === 'number' && !isNaN(v)) return v; }
         return null;
