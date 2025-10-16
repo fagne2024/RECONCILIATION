@@ -153,12 +153,12 @@
       <div class="filter-row">
         <div class="filter-group">
           <label>Date début:</label>
-          <input type="datetime-local" formControlName="dateDebut" class="form-control">
+          <input type="date" formControlName="dateDebut" class="form-control" (change)="onDateChange('dateDebut')">
         </div>
         
         <div class="filter-group">
           <label>Date fin:</label>
-          <input type="datetime-local" formControlName="dateFin" class="form-control">
+          <input type="date" formControlName="dateFin" class="form-control" (change)="onDateChange('dateFin')">
         </div>
         
         <div class="filter-group">

@@ -180,6 +180,12 @@ export class EcartSoldeComponent implements OnInit, OnDestroy {
 
   applyFilters() {
     const filters = this.filterForm.value;
+    // Construire bornes jour pour robustesse
+    const start = filters.dateDebut ? new Date(filters.dateDebut) : null;
+    const end = filters.dateFin ? new Date(filters.dateFin) : null;
+    if (start) { start.setHours(0, 0, 0, 0); }
+    if (end) { end.setHours(23, 59, 59, 999); }
+
     this.filteredEcartSoldes = this.ecartSoldes.filter(ecart => {
       let match = true;
       
@@ -203,13 +209,14 @@ export class EcartSoldeComponent implements OnInit, OnDestroy {
         match = false;
       }
       
-      if (filters.dateDebut && ecart.dateTransaction < filters.dateDebut) {
-        match = false;
-      }
-      
-      if (filters.dateFin && ecart.dateTransaction > filters.dateFin) {
-        match = false;
-      }
+    if (start) {
+      const ecartDate = this.safeDate(ecart.dateTransaction);
+      if (ecartDate < start) match = false;
+    }
+    if (end) {
+      const ecartDate = this.safeDate(ecart.dateTransaction);
+      if (ecartDate > end) match = false;
+    }
       
       return match;
     });
@@ -226,6 +233,17 @@ export class EcartSoldeComponent implements OnInit, OnDestroy {
     this.filteredEcartSoldes = [...this.ecartSoldes];
     this.currentPage = 1;
     this.calculatePagination();
+  }
+
+  onDateChange(controlName: 'dateDebut' | 'dateFin') {
+    const value: string = this.filterForm.get(controlName)?.value;
+    const other: 'dateDebut' | 'dateFin' = controlName === 'dateDebut' ? 'dateFin' : 'dateDebut';
+    const otherVal = this.filterForm.get(other)?.value;
+    if (value && !otherVal) {
+      this.filterForm.patchValue({ [other]: value });
+    } else {
+      this.applyFilters();
+    }
   }
 
   calculatePagination() {
@@ -529,7 +547,7 @@ export class EcartSoldeComponent implements OnInit, OnDestroy {
 
   formatDate(dateString: string): string {
     if (!dateString) return '';
-    return new Date(dateString).toLocaleString('fr-FR');
+    return this.safeDate(dateString).toLocaleString('fr-FR');
   }
 
   formatMontant(montant: number): string {
@@ -538,6 +556,28 @@ export class EcartSoldeComponent implements OnInit, OnDestroy {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2
     }).format(montant) + ' F CFA';
+  }
+
+  private safeDate(value: string): Date {
+    if (!value) return new Date('1970-01-01T00:00:00');
+    const iso = new Date(value);
+    if (!isNaN(iso.getTime())) return iso;
+    const ymdHms = value.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})$/);
+    if (ymdHms) {
+      const [_, y, m, d, h, mi, s] = ymdHms;
+      return new Date(Number(y), Number(m) - 1, Number(d), Number(h), Number(mi), Number(s));
+    }
+    const dmy = value.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+    if (dmy) {
+      const [_, d, m, y] = dmy;
+      return new Date(Number(y), Number(m) - 1, Number(d));
+    }
+    const ymd = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (ymd) {
+      const [_, y, m, d] = ymd;
+      return new Date(Number(y), Number(m) - 1, Number(d));
+    }
+    return new Date(value);
   }
 
   formatMontantFrais(montant: number): string {

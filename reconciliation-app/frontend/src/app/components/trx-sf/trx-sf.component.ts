@@ -538,12 +538,19 @@ export class TrxSfComponent implements OnInit, OnDestroy {
       filtered = filtered.filter(item => item.statut === filters.statut);
     }
     
-    if (filters.dateDebut) {
-      filtered = filtered.filter(item => new Date(item.dateTransaction) >= new Date(filters.dateDebut));
-    }
+    // Dates: utiliser bornes de journée pour éviter que le filtre reste sans effet
+    const hasStart = !!filters.dateDebut;
+    const hasEnd = !!filters.dateFin;
+    const start = hasStart ? new Date(filters.dateDebut) : null;
+    const end = hasEnd ? new Date(filters.dateFin) : null;
+    if (start) { start.setHours(0, 0, 0, 0); }
+    if (end) { end.setHours(23, 59, 59, 999); }
     
-    if (filters.dateFin) {
-      filtered = filtered.filter(item => new Date(item.dateTransaction) <= new Date(filters.dateFin));
+    if (start) {
+      filtered = filtered.filter(item => this.safeDate(item.dateTransaction) >= start!);
+    }
+    if (end) {
+      filtered = filtered.filter(item => this.safeDate(item.dateTransaction) <= end!);
     }
     
     this.filteredTrxSfData = filtered;
@@ -555,6 +562,49 @@ export class TrxSfComponent implements OnInit, OnDestroy {
   clearFilters(): void {
     this.filterForm.reset();
     this.applyFilters();
+  }
+
+  onDateChange(controlName: 'dateDebut' | 'dateFin'): void {
+    const value: string = this.filterForm.get(controlName)?.value;
+    if (!value) {
+      this.applyFilters();
+      return;
+    }
+    const other: 'dateDebut' | 'dateFin' = controlName === 'dateDebut' ? 'dateFin' : 'dateDebut';
+    const otherVal = this.filterForm.get(other)?.value;
+    if (!otherVal) {
+      // Si l'autre borne est vide, la caler sur la même date pour appliquer immédiatement
+      this.filterForm.patchValue({ [other]: value });
+    } else {
+      this.applyFilters();
+    }
+  }
+
+  private safeDate(value: string): Date {
+    // Gère formats: ISO, 'YYYY-MM-DD HH:mm:ss', 'DD/MM/YYYY', 'YYYY-MM-DD'
+    if (!value) return new Date('1970-01-01T00:00:00');
+    // ISO direct
+    const iso = new Date(value);
+    if (!isNaN(iso.getTime())) return iso;
+    // YYYY-MM-DD HH:mm:ss
+    const ymdHms = value.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})$/);
+    if (ymdHms) {
+      const [_, y, m, d, h, mi, s] = ymdHms;
+      return new Date(Number(y), Number(m) - 1, Number(d), Number(h), Number(mi), Number(s));
+    }
+    // DD/MM/YYYY
+    const dmy = value.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+    if (dmy) {
+      const [_, d, m, y] = dmy;
+      return new Date(Number(y), Number(m) - 1, Number(d));
+    }
+    // YYYY-MM-DD
+    const ymd = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (ymd) {
+      const [_, y, m, d] = ymd;
+      return new Date(Number(y), Number(m) - 1, Number(d));
+    }
+    return new Date(value);
   }
 
   onFileSelected(event: any): void {

@@ -1654,9 +1654,6 @@ export class OperationsComponent implements OnInit, OnDestroy {
         // Mettre à jour les listes filtrées avec cloisonnement
         this.updateFilteredLists();
         
-        // Appliquer les filtres directement
-        this.applyFilters();
-        
         // Forcer la détection de changement pour mettre à jour l'interface
         this.cdr.detectChanges();
         
@@ -2587,13 +2584,11 @@ export class OperationsComponent implements OnInit, OnDestroy {
             dateFin = '';
         }
         this.filterForm.patchValue({ dateDebut, dateFin });
-        this.applyFilters();
     }
 
     // Méthode pour appliquer le filtre à la sélection
     onCodeProprietaireSelected(value: string) {
       this.filterForm.patchValue({ codeProprietaire: [value] });
-      this.applyFilters();
     }
 
     // Résumé global et par type pour le footer (sur toutes les opérations filtrées)

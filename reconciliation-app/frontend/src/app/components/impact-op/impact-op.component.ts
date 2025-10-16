@@ -247,10 +247,16 @@ export class ImpactOPComponent implements OnInit, OnDestroy {
       filter.statut = filterValue.statut;
     }
     if (filterValue.dateDebut) {
-      filter.dateDebut = filterValue.dateDebut;
+      // Envoyer début de journée au format attendu par l'API (YYYY-MM-DD HH:mm:ss)
+      const d = new Date(filterValue.dateDebut);
+      d.setHours(0, 0, 0, 0);
+      filter.dateDebut = this.formatForApi(d);
     }
     if (filterValue.dateFin) {
-      filter.dateFin = filterValue.dateFin;
+      // Envoyer fin de journée (YYYY-MM-DD HH:mm:ss)
+      const d = new Date(filterValue.dateFin);
+      d.setHours(23, 59, 59, 999);
+      filter.dateFin = this.formatForApi(d);
     }
     if (filterValue.montantMin) {
       filter.montantMin = parseFloat(filterValue.montantMin);
@@ -306,6 +312,29 @@ export class ImpactOPComponent implements OnInit, OnDestroy {
   clearFilters() {
     this.filterForm.reset();
     this.applyFilters();
+  }
+
+  onDateChange(controlName: 'dateDebut' | 'dateFin') {
+    const value: string = this.filterForm.get(controlName)?.value;
+    const other: 'dateDebut' | 'dateFin' = controlName === 'dateDebut' ? 'dateFin' : 'dateDebut';
+    const otherVal = this.filterForm.get(other)?.value;
+    if (value && !otherVal) {
+      this.filterForm.patchValue({ [other]: value });
+    } else {
+      this.applyFilters();
+    }
+  }
+
+  private pad2(n: number): string { return String(n).padStart(2, '0'); }
+  private formatForApi(d: Date): string {
+    // YYYY-MM-DD HH:mm:ss (sans fuseau, côté serveur ce format est le plus courant)
+    const y = d.getFullYear();
+    const m = this.pad2(d.getMonth() + 1);
+    const day = this.pad2(d.getDate());
+    const h = this.pad2(d.getHours());
+    const mi = this.pad2(d.getMinutes());
+    const s = this.pad2(d.getSeconds());
+    return `${y}-${m}-${day} ${h}:${mi}:${s}`;
   }
 
   calculatePagination() {
