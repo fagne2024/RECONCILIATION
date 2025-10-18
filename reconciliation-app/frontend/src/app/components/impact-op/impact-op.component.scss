@@ -394,6 +394,11 @@
                 min-width: 30px;
                 height: 30px;
 
+                .btn-label {
+                  margin-left: 6px;
+                  white-space: nowrap;
+                }
+
                 &:hover {
                   transform: translateY(-1px);
                   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);

@@ -16,6 +16,9 @@ import { saveAs } from 'file-saver';
 import { HttpClient } from '@angular/common/http';
 import { Subscription, firstValueFrom } from 'rxjs';
 import { PopupService } from '../../services/popup.service';
+import { CompteService } from '../../services/compte.service';
+import { OperationService } from '../../services/operation.service';
+import { OperationCreateRequest } from '../../models/operation.model';
 
 interface ApiError {
     error?: {
@@ -448,8 +451,11 @@ interface ApiError {
                             <button (click)="nextPage('partnerOnly')" [disabled]="partnerOnlyPage === getTotalPages('partnerOnly')">Suivant</button>
                         </div>
                         <div class="unmatched-card" *ngFor="let record of getPagedPartnerOnly()">
-                            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-                                <div style="font-weight:600;color:#1976D2;">Ligne partenaire</div>
+                            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;gap:8px;">
+                                <div style="display:flex;align-items:center;gap:10px;">
+                                    <div style="font-weight:600;color:#1976D2;">Ligne partenaire</div>
+                                    <button (click)="createOperationFromPartnerRecord(record)" class="save-button" [disabled]="!isPartnerRecordEligible(record)" title="Créer OP">➕ Créer OP</button>
+                                </div>
                                 <label style="display:flex;align-items:center;gap:6px;">
                                     <input type="checkbox" [checked]="isPartnerRecordSelected(record)" (change)="togglePartnerSelection(record, $event)">
                                     <span>Sélectionner</span>
@@ -2740,7 +2746,9 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
         private popupService: PopupService,
         private exportOptimizationService: ExportOptimizationService,
         private reconciliationSummaryService: ReconciliationSummaryService,
-        private reconciliationTabsService: ReconciliationTabsService
+        private reconciliationTabsService: ReconciliationTabsService,
+        private compteService: CompteService,
+        private operationService: OperationService
     ) {}
 
     ngOnInit() {
@@ -5398,5 +5406,124 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
         }
 
         return csvContent;
+    }
+
+    // === Création OP depuis ECART Partenaire ===
+    isPartnerRecordEligible(record: Record<string, string>): boolean {
+        const rawType = this.getFromRecord(record, ['Type Opération', 'typeOperation', 'type_operation']);
+        const t = this.normalizeType(rawType);
+        return ['compens','appro','nivel','regularis'].some(p => t.includes(p));
+    }
+
+    async createOperationFromPartnerRecord(record: Record<string, string>) {
+        try {
+            const rawType = this.getFromRecord(record, ['Type Opération', 'typeOperation', 'type_operation']);
+            const normalized = this.normalizeType(rawType);
+            const typeOperation = normalized.includes('compens') ? 'Compense_client'
+                                  : normalized.includes('appro') ? 'Appro_client'
+                                  : normalized.includes('nivel') ? 'nivellement'
+                                  : normalized.includes('regularis') ? 'régularisation_solde'
+                                  : rawType || 'ajustement';
+
+            const { agency } = this.getPartnerOnlyAgencyAndService(record);
+            const codeProprietaire = (this.getFromRecord(record, ['Agence','agency','Code propriétaire','Code proprietaire','codeProprietaire','code_proprietaire']) || agency || '').trim();
+            if (!codeProprietaire) {
+                await this.popupService.showWarning('Code propriétaire introuvable pour cette ligne');
+                return;
+            }
+
+            // Nettoyer les séparateurs de milliers pour éviter d'obtenir 200 au lieu de 200000000
+            const rawAmountStr = this.getFromRecord(record, ['Montant','montant','amount']) || String(this.getPartnerOnlyVolume(record) || '0');
+            const normalizedAmount = parseFloat(String(rawAmountStr).replace(/[,\s]/g, '')) || 0;
+            const montant = Math.abs(normalizedAmount);
+            const rawDate = this.getFromRecord(record, ['Date opération','Date','dateOperation','date_operation','DATE']);
+            const dateStr = this.extractIsoDay(rawDate) || this.extractIsoDay(this.getPartnerOnlyDate(record)) || this.toIsoLocalDate(new Date().toISOString());
+            const nomBordereau = this.getFromRecord(record, ['Numéro Trans GU','Numero Trans GU','numeroTransGU','numero_trans_gu']);
+
+            const banqueInput = await this.popupService.showTextInput('Banque (code propriétaire) :', 'Créer OP', codeProprietaire, 'Ex: CIELCM0001');
+            const banque = (banqueInput || '').trim();
+            if (!banque) {
+                await this.popupService.showWarning('Banque obligatoire');
+                return;
+            }
+
+            const comptes = await this.compteService.getComptesByCodeProprietaire(codeProprietaire).toPromise();
+            if (!comptes || !comptes.length) {
+                await this.popupService.showError(`Aucun compte trouvé pour le code propriétaire: ${codeProprietaire}`);
+                return;
+            }
+            const compteId = comptes[0].id!;
+
+            try {
+                const day = this.extractIsoDay(dateStr) || this.toIsoLocalDate(dateStr);
+                const dateDebut = `${day} 00:00:00`;
+                const dateFin = `${day} 23:59:59`;
+                const existing = await this.operationService.getOperationsByCompte(codeProprietaire, dateDebut, dateFin, typeOperation).toPromise();
+                const hasDuplicate = (existing || []).some(op => (op.nomBordereau || '') === (nomBordereau || ''));
+                if (hasDuplicate) {
+                    await this.popupService.showWarning('Cette opération existe déjà (doublon détecté)');
+                    return;
+                }
+            } catch (e) {
+                console.warn('Vérification de doublon échouée, poursuite prudente', e);
+            }
+
+            const payload: OperationCreateRequest = {
+                compteId,
+                typeOperation,
+                montant,
+                banque,
+                nomBordereau: nomBordereau || undefined,
+                dateOperation: this.toIsoLocalDate(dateStr)
+            };
+
+            await new Promise<void>((resolve, reject) => {
+                this.operationService.createOperation(payload).subscribe({
+                    next: async () => { await this.popupService.showSuccess('Opération créée'); resolve(); },
+                    error: async (err) => { console.error(err); await this.popupService.showError("Échec de création de l'opération"); reject(err); }
+                });
+            });
+        } catch (e) {
+            console.error(e);
+            await this.popupService.showError('Erreur lors de la création de l\'opération');
+        }
+    }
+
+    private extractIsoDay(input: string): string {
+        const s = String(input || '').trim();
+        if (!s) return '';
+        let m = s.match(/(\d{4})-(\d{2})-(\d{2})/);
+        if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+        m = s.match(/(\d{2})-(\d{2})-(\d{4})/);
+        if (m) return `${m[3]}-${m[2]}-${m[1]}`;
+        m = s.match(/(\d{2})\/(\d{2})\/(\d{4})/);
+        if (m) return `${m[3]}-${m[2]}-${m[1]}`;
+        m = s.match(/(\d{4})\/(\d{2})\/(\d{2})/);
+        if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+        return '';
+    }
+
+    private getFromRecord(record: Record<string, string>, keys: string[]): string {
+        for (const k of keys) {
+            const v = record[k];
+            if (v !== undefined && v !== null && String(v).trim() !== '') return String(v);
+        }
+        return '';
+    }
+
+    private normalizeType(input: string): string {
+        return (input || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    }
+
+    private toIsoLocalDate(input: string): string {
+        try {
+            const d = new Date(input);
+            if (!isNaN(d.getTime())) return d.toISOString().split('T')[0];
+        } catch {}
+        return input;
+    }
+
+    private formatCurrency(amount: number): string {
+        return new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'XOF', minimumFractionDigits: 2 }).format(amount || 0);
     }
 } 

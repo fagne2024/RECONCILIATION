@@ -12,6 +12,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
+import org.springframework.http.HttpStatus;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -33,6 +35,9 @@ public class OperationController {
     
     @Autowired
     private OperationBusinessService operationBusinessService;
+
+    @Autowired
+    private com.reconciliation.service.OperationImportService operationImportService;
     
     @GetMapping
     public ResponseEntity<List<Operation>> getAllOperations() {
@@ -48,6 +53,34 @@ public class OperationController {
         } catch (Exception e) {
             logger.error("[API] Erreur dans /operations/with-frais: {}", e.getMessage(), e);
             return ResponseEntity.badRequest().build();
+        }
+    }
+
+    // Import Excel/CSV d'opérations (transaction_cree / annulation_bo)
+    @PostMapping(value = "/upload", consumes = {"multipart/form-data"})
+    public ResponseEntity<java.util.Map<String, Object>> upload(@RequestParam("file") MultipartFile file) {
+        try {
+            var res = operationImportService.importFile(file);
+            java.util.Map<String, Object> payload = new java.util.HashMap<>();
+            payload.put("totalRead", res.totalRead);
+            payload.put("saved", res.saved);
+            payload.put("errors", res.errors);
+            return ResponseEntity.ok(payload);
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
+        }
+    }
+
+    // Télécharger le modèle Excel à utiliser pour l'upload
+    @GetMapping(value = "/template", produces = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    public ResponseEntity<byte[]> downloadTemplate() {
+        try {
+            byte[] bytes = operationImportService.generateTemplate();
+            return ResponseEntity.ok()
+                    .header(org.springframework.http.HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=modele-operations.xlsx")
+                    .body(bytes);
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
     }
     

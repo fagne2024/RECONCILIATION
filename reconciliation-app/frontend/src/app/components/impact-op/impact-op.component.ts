@@ -3,6 +3,9 @@ import { FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { Subscription, forkJoin, concatMap, delay, of } from 'rxjs';
 import { ActivatedRoute } from '@angular/router';
 import { ImpactOP, ImpactOPFilter, ImpactOPValidationResult } from '../../models/impact-op.model';
+import { CompteService } from '../../services/compte.service';
+import { OperationService } from '../../services/operation.service';
+import { OperationCreateRequest, TypeOperation } from '../../models/operation.model';
 import { ImpactOPService } from '../../services/impact-op.service';
 import { PopupService } from '../../services/popup.service';
 import * as XLSX from 'xlsx';
@@ -75,7 +78,9 @@ export class ImpactOPComponent implements OnInit, OnDestroy {
     private impactOPService: ImpactOPService,
     private fb: FormBuilder,
     private route: ActivatedRoute,
-    private popupService: PopupService
+    private popupService: PopupService,
+    private compteService: CompteService,
+    private operationService: OperationService
   ) {
     this.filterForm = this.fb.group({
       codeProprietaire: [''],
@@ -135,6 +140,110 @@ export class ImpactOPComponent implements OnInit, OnDestroy {
   ngOnDestroy() {
     this.subscription.unsubscribe();
   }
+
+  isImpactEligible(impact: ImpactOP): boolean {
+    if (!impact) return false;
+    const raw = (impact.typeOperation || '').toString();
+    const t = this.normalizeType(raw);
+    // Large coverage: compense/compensation, appro/approvisionnement, nivellement, regularisation de solde (with/without accents)
+    const patterns = ['compens', 'appro', 'nivel', 'regularis'];
+    return patterns.some(p => t.includes(p));
+  }
+
+  private normalizeType(input: string): string {
+    const s = (input || '').trim().toLowerCase();
+    // Remove accents
+    return s.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  }
+
+  async createOperationFromImpact(impact: ImpactOP) {
+    if (!this.isImpactEligible(impact)) {
+      this.popupService.showWarning("Type d'opération non éligible");
+      return;
+    }
+    // Demander la banque (pré-remplie avec code propriétaire)
+    const banqueInput = await this.popupService.showTextInput('Banque (code propriétaire) :', 'Créer OP', (impact.codeProprietaire || '').trim(), 'Ex: CIELCM0001');
+    const banque = (banqueInput || '').trim();
+    if (!banque) {
+      await this.popupService.showWarning('Banque obligatoire');
+      return;
+    }
+
+    // Résoudre compteId via codeProprietaire
+    let compteId: number | undefined;
+    try {
+      const comptes = await this.compteService.getComptesByCodeProprietaire(impact.codeProprietaire).toPromise();
+      if (!comptes || !comptes.length) {
+        await this.popupService.showError(`Aucun compte trouvé pour le code propriétaire: ${impact.codeProprietaire}`);
+        return;
+      }
+      // On prend le premier pour ce code propriétaire
+      compteId = comptes[0].id;
+    } catch (e) {
+      console.error(e);
+      await this.popupService.showError('Erreur lors de la récupération du compte');
+      return;
+    }
+
+    // Type d'opération à utiliser
+    const typeOperation = impact.typeOperation as string;
+
+    // Vérifier doublon: opérations du compte à la date, même type et même nomBordereau
+    try {
+      const day = this.toIsoLocalDate(impact.dateOperation);
+      const dateDebut = `${day} 00:00:00`;
+      const dateFin = `${day} 23:59:59`;
+      const existing = await this.operationService.getOperationsByCompte(impact.codeProprietaire, dateDebut, dateFin, typeOperation).toPromise();
+      const hasDuplicate = (existing || []).some(op => (op.nomBordereau || '') === (impact.numeroTransGU || ''));
+      if (hasDuplicate) {
+        await this.popupService.showWarning("Cette opération existe déjà (doublon détecté)");
+        return;
+      }
+    } catch (e) {
+      console.warn('Vérification de doublon échouée, poursuite prudente', e);
+    }
+    const payload: OperationCreateRequest = {
+      compteId: compteId!,
+      typeOperation,
+      montant: Math.abs(Number(String(impact.montant || 0).toString().replace(/[,\s]/g, '')) || 0),
+      banque: banque || undefined,
+      nomBordereau: impact.numeroTransGU || undefined,
+      service: undefined,
+      reference: undefined,
+      dateOperation: this.toIsoLocalDate(impact.dateOperation)
+    };
+
+    this.isLoading = true;
+    this.subscription.add(
+      this.operationService.createOperation(payload).subscribe({
+        next: async () => {
+          await this.popupService.showSuccess('Opération créée et compte impacté');
+          // Marquer l'impact comme traité pour éviter multi-validation
+          impact.statut = 'TRAITE';
+          this.isLoading = false;
+        },
+        error: async (err) => {
+          console.error(err);
+          await this.popupService.showError("Échec de création de l'opération");
+          this.isLoading = false;
+        }
+      })
+    );
+  }
+
+  private toIsoLocalDate(input: string): string {
+    // input peut être ISO ou autre; on normalise en YYYY-MM-DD
+    try {
+      const d = new Date(input);
+      if (!isNaN(d.getTime())) {
+        return d.toISOString().split('T')[0];
+      }
+    } catch {}
+    // fallback: renvoyer tel quel si déjà formaté
+    return input;
+  }
+
+  // Suppression du prompt banque: la banque est déduite automatiquement du code propriétaire
 
   loadImpactOPs() {
     this.isLoading = true;

@@ -142,6 +142,11 @@
                class="reorder-btn">
          {{ isColumnReorderMode ? '🔄 Mode réorganisation actif' : '📋 Réorganiser les colonnes' }}
        </button>
+       <button type="button" 
+               (click)="resetColumnOrder()" 
+               class="reorder-btn" title="Réinitialiser l'ordre des colonnes">
+         ♻️ Réinitialiser l'ordre
+       </button>
        
        <div *ngIf="isColumnReorderMode" class="reorder-actions">
          <button type="button" (click)="applyColumnReorder()" class="apply-btn">✅ Appliquer</button>

@@ -20,6 +20,7 @@ import { EcartSoldeComponent } from './components/ecart-solde/ecart-solde.compon
 import { ImpactOPComponent } from './components/impact-op/impact-op.component';
 import { TrxSfComponent } from './components/trx-sf/trx-sf.component';
 import { ServiceBalanceComponent } from './components/service-balance/service-balance.component';
+import { ComptabiliteComponent } from './components/comptabilite/comptabilite.component';
 
 
 import { AutoProcessingModelsComponent } from './components/auto-processing-models/auto-processing-models.component';
@@ -56,6 +57,7 @@ const routes: Routes = [
 
   { path: 'auto-processing-models', component: AutoProcessingModelsComponent },
   { path: 'banque', component: BanqueComponent },
+  { path: 'comptabilite', component: ComptabiliteComponent },
   { path: 'reconciliation-report', component: ReconciliationReportComponent },
   { path: 'report-dashboard', component: ReportDashboardComponent },
 ];

@@ -274,4 +274,16 @@ export class OperationService {
     getDistinctServiceByCodeProprietaire(codeProprietaire: string): Observable<string[]> {
         return this.http.get<string[]>(`${this.apiUrl}/service/list/${codeProprietaire}`);
     }
+
+    // Upload d'opérations (transaction_cree / annulation_bo)
+    uploadOperations(file: File): Observable<{ totalRead: number; saved: number; errors: string[] }>{
+        const form = new FormData();
+        form.append('file', file);
+        return this.http.post<{ totalRead: number; saved: number; errors: string[] }>(`${this.apiUrl}/upload`, form);
+    }
+
+    // Télécharger le modèle d'import
+    downloadOperationsTemplate(): Observable<Blob> {
+        return this.http.get(`${this.apiUrl}/template`, { responseType: 'blob' });
+    }
 } 

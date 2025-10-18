@@ -288,6 +288,10 @@
             <td>{{ impact.commentaire || '-' }}</td>
             <td>
               <div class="action-buttons">
+                <button class="btn btn-sm btn-primary" (click)="createOperationFromImpact(impact)" [disabled]="!isImpactEligible(impact)" title="Créer OP">
+                  <i class="fas fa-plus-circle"></i>
+                  <span class="btn-label">Créer OP</span>
+                </button>
                 <button class="btn btn-sm btn-success" (click)="saveImpactOP(impact)" title="Enregistrer">
                   <i class="fas fa-save"></i>
                 </button>

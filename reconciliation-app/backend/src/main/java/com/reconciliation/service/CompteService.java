@@ -26,6 +26,9 @@ public class CompteService {
     
     @Autowired
     private OperationRepository operationRepository;
+
+    @Autowired
+    private CompteRegroupementService compteRegroupementService;
     
     public List<Compte> getAllComptes() {
         return compteRepository.findAll().stream()
@@ -304,6 +307,19 @@ public class CompteService {
         compte.setAgence(entity.getAgence());
         compte.setType(entity.getType()); // Ajout
         compte.setCategorie(entity.getCategorie()); // Ajout
+        // Indicateurs de fusion: consolide (compte regroupé) et regroupe (compte original regroupé)
+        try {
+            boolean isConsolide = compteRegroupementService != null && compte.getId() != null
+                    ? compteRegroupementService.isCompteConsolide(compte.getId())
+                    : false;
+            boolean isRegroupe = compteRegroupementService != null && compte.getId() != null
+                    ? compteRegroupementService.isCompteRegroupe(compte.getId())
+                    : false;
+            compte.setConsolide(isConsolide);
+            compte.setRegroupe(isRegroupe);
+        } catch (Exception ignored) {
+            // En cas d'indisponibilité, ne pas bloquer la conversion
+        }
         return compte;
     }
     

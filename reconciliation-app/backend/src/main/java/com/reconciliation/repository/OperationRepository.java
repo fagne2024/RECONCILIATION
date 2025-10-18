@@ -37,7 +37,7 @@ public interface OperationRepository extends JpaRepository<OperationEntity, Long
     @Query("SELECT o FROM OperationEntity o WHERE o.codeProprietaire = :codeProprietaire")
     List<OperationEntity> findByCodeProprietaire(@Param("codeProprietaire") String codeProprietaire);
     
-    @Query("SELECT o FROM OperationEntity o WHERE o.nomBordereau LIKE %:nomBordereau%")
+    @Query("SELECT o FROM OperationEntity o WHERE LOWER(o.nomBordereau) LIKE CONCAT('%', LOWER(:nomBordereau), '%')")
     List<OperationEntity> findByNomBordereauContaining(@Param("nomBordereau") String nomBordereau);
     
     @Query("SELECT DISTINCT o.codeProprietaire FROM OperationEntity o WHERE o.codeProprietaire IS NOT NULL AND o.codeProprietaire != '' ORDER BY o.codeProprietaire")
@@ -86,6 +86,32 @@ public interface OperationRepository extends JpaRepository<OperationEntity, Long
             @Param("dateDebut") LocalDateTime dateDebut,
             @Param("dateFin") LocalDateTime dateFin,
             @Param("typeOperation") String typeOperation);
+
+    @Query("SELECT o FROM OperationEntity o WHERE o.compte.numeroCompte IN :numeros " +
+           "AND (:dateDebut IS NULL OR o.dateOperation >= :dateDebut) " +
+           "AND (:dateFin IS NULL OR o.dateOperation <= :dateFin) " +
+           "AND (:typeOperation IS NULL OR o.typeOperation = :typeOperation) " +
+           "AND o.typeOperation NOT LIKE 'annulation_%' " +
+           "AND (o.statut IS NULL OR o.statut != 'Annulée') " +
+           "ORDER BY o.dateOperation DESC")
+    List<OperationEntity> findByCompteNumeroInAndFiltersOrderByDateOperationDesc(
+            @Param("numeros") List<String> numeros,
+            @Param("dateDebut") LocalDateTime dateDebut,
+            @Param("dateFin") LocalDateTime dateFin,
+            @Param("typeOperation") String typeOperation);
+
+    @Query("SELECT o FROM OperationEntity o WHERE o.compte.numeroCompte IN :numeros " +
+           "AND (:dateDebut IS NULL OR o.dateOperation >= :dateDebut) " +
+           "AND (:dateFin IS NULL OR o.dateOperation <= :dateFin) " +
+           "AND (:typeOperation IS NULL OR o.typeOperation = :typeOperation) " +
+           "AND o.typeOperation NOT LIKE 'annulation_%' " +
+           "AND (o.statut IS NULL OR o.statut != 'Annulée') " +
+           "ORDER BY o.dateOperation ASC")
+    List<OperationEntity> findByCompteNumeroInAndFiltersOrderByDateOperationAsc(
+            @Param("numeros") List<String> numeros,
+            @Param("dateDebut") LocalDateTime dateDebut,
+            @Param("dateFin") LocalDateTime dateFin,
+            @Param("typeOperation") String typeOperation);
     
     @Query("SELECT o FROM OperationEntity o WHERE o.typeOperation = :typeOperation ORDER BY o.dateOperation DESC")
     List<OperationEntity> findByTypeOperationOrderByDateOperationDesc(@Param("typeOperation") String typeOperation);
@@ -113,13 +139,13 @@ public interface OperationRepository extends JpaRepository<OperationEntity, Long
     
     @Query("SELECT o FROM OperationEntity o WHERE " +
            "(:compteId IS NULL OR o.compte.id = :compteId) AND " +
-           "(:typeOperation IS NULL OR o.typeOperation = :typeOperation) AND " +
-           "(:pays IS NULL OR o.pays = :pays) AND " +
-           "(:statut IS NULL OR o.statut = :statut) AND " +
-           "(:banque IS NULL OR o.banque = :banque) AND " +
-           "(:codeProprietaire IS NULL OR o.codeProprietaire = :codeProprietaire) AND " +
-           "(:service IS NULL OR o.service = :service) AND " +
-           "(:nomBordereau IS NULL OR o.nomBordereau LIKE %:nomBordereau%) AND " +
+           "(:typeOperation IS NULL OR LOWER(o.typeOperation) = LOWER(:typeOperation)) AND " +
+           "(:pays IS NULL OR LOWER(o.pays) = LOWER(:pays)) AND " +
+           "(:statut IS NULL OR LOWER(o.statut) = LOWER(:statut)) AND " +
+           "(:banque IS NULL OR LOWER(o.banque) = LOWER(:banque)) AND " +
+           "(:codeProprietaire IS NULL OR LOWER(o.codeProprietaire) = LOWER(:codeProprietaire)) AND " +
+           "(:service IS NULL OR LOWER(o.service) = LOWER(:service)) AND " +
+           "(:nomBordereau IS NULL OR LOWER(o.nomBordereau) LIKE CONCAT('%', LOWER(:nomBordereau), '%')) AND " +
            "(:dateDebut IS NULL OR o.dateOperation >= :dateDebut) AND " +
            "(:dateFin IS NULL OR o.dateOperation <= :dateFin) " +
            "ORDER BY o.dateOperation DESC")

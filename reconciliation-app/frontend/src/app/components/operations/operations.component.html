@@ -15,6 +15,15 @@
             </div>
         </div>
         <div class="header-actions">
+            <button class="btn-operation-type" (click)="openUploadModal('transaction_cree')" title="Créer TRX via fichier">
+                <i class="fas fa-file-upload"></i> Créer TRX
+            </button>
+            <button class="btn-operation-type" (click)="openUploadModal('annulation_bo')" title="Annuler TRX via fichier">
+                <i class="fas fa-undo"></i> Annuler TRX
+            </button>
+            <button class="btn-secondary" (click)="downloadTemplate()" title="Télécharger le modèle d'import">
+                <i class="fas fa-download"></i> Modèle
+            </button>
             <button class="btn-operation-type" (click)="openApproClientPopup()" title="Voir Appro Client">
                 <i class="fas fa-money-bill-wave"></i> Appro Client
             </button>
@@ -33,6 +42,48 @@
             <button class="btn-primary" (click)="showAddForm = true" *ngIf="!showAddForm && !showEditForm">
                 <i class="fas fa-plus"></i> Ajouter une opération
             </button>
+        </div>
+    </div>
+
+    <!-- Modal Upload Operations -->
+    <div *ngIf="showUploadModal" class="modal-overlay" (click)="closeUploadModal($event)">
+        <div class="modal-container" (click)="$event.stopPropagation()">
+            <div class="modal-header">
+                <h3>
+                    <i class="fas" [ngClass]="uploadType === 'transaction_cree' ? 'fa-plus-circle' : 'fa-ban'"></i>
+                    {{ uploadType === 'transaction_cree' ? 'Créer transactions via fichier' : 'Annuler transactions via fichier' }}
+                </h3>
+                <button type="button" class="modal-close" (click)="hideUploadModal()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="form-section">
+                    <div class="form-row">
+                        <div class="form-group full-width">
+                            <label>Fichier (xlsx, xls, csv)</label>
+                            <input type="file" (change)="onFileSelected($event)" accept=".xlsx,.xls,.csv">
+                            <div class="help-text">
+                                Utilisez le bouton "Modèle" pour télécharger un exemple de fichier attendu.
+                            </div>
+                        </div>
+                    </div>
+                    <div class="info-message" *ngIf="uploadMessage">
+                        <i class="fas" [ngClass]="uploadMessage.type === 'success' ? 'fa-check-circle' : 'fa-exclamation-triangle'"></i>
+                        <p>{{ uploadMessage.text }}</p>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <div class="modal-actions">
+                    <button type="button" class="btn-secondary" (click)="hideUploadModal()">
+                        <i class="fas fa-times"></i> Fermer
+                    </button>
+                    <button type="button" class="btn-primary" [disabled]="!selectedFile || isUploading" (click)="uploadOperationsFile()">
+                        <i class="fas fa-upload"></i> {{ isUploading ? 'Upload...' : 'Uploader' }}
+                    </button>
+                </div>
+            </div>
         </div>
     </div>
 

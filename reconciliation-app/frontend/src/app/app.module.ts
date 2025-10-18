@@ -63,6 +63,7 @@ import { ModernPopupComponent } from './components/modern-popup/modern-popup.com
 import { ProgressIndicatorComponent } from './components/progress-indicator/progress-indicator.component';
 import { ReconciliationReportComponent } from './components/reconciliation-report/reconciliation-report.component';
 import { ReportDashboardComponent } from './components/report-dashboard/report-dashboard.component';
+import { ComptabiliteComponent } from './components/comptabilite/comptabilite.component';
 
 @NgModule({
     declarations: [
@@ -100,7 +101,8 @@ import { ReportDashboardComponent } from './components/report-dashboard/report-d
                 ModernPopupComponent,
                 ProgressIndicatorComponent,
                 ReconciliationReportComponent,
-                ReportDashboardComponent
+                ReportDashboardComponent,
+                ComptabiliteComponent
     ],
     imports: [
         BrowserModule,

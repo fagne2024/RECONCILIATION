@@ -71,6 +71,13 @@ export class PopupService {
     return ModernPopupComponent.showConfirm(message, title);
   }
 
+  /**
+   * Affiche un popup avec un champ texte et retourne la saisie (ou null si annulé)
+   */
+  showTextInput(message: string, title: string = 'Saisie', defaultValue: string = '', placeholder: string = ''): Promise<string | null> {
+    return ModernPopupComponent.showTextInput(message, title, defaultValue, placeholder);
+  }
+
   private getTitleForType(type: string): string {
     switch (type) {
       case 'success': return 'Succès';

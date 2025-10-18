@@ -77,6 +77,13 @@
             </a>
         </li>
 
+        <li *ngIf="isMenuAllowed('Comptabilité')">
+            <a routerLink="/comptabilite" routerLinkActive="active">
+                <i class="fas fa-book menu-icon"></i>
+                <span>Comptabilité</span>
+            </a>
+        </li>
+
         <li *ngIf="isMenuAllowed('Modèles')">
             <a routerLink="/auto-processing-models" routerLinkActive="active">
                 <i class="fas fa-cogs menu-icon models"></i>

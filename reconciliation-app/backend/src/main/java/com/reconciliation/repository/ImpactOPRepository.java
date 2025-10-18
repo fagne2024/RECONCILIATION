@@ -16,10 +16,10 @@ public interface ImpactOPRepository extends JpaRepository<ImpactOPEntity, Long> 
      * Rechercher les impacts OP avec filtres
      */
     @Query("SELECT i FROM ImpactOPEntity i WHERE " +
-           "(:codeProprietaire IS NULL OR i.codeProprietaire = :codeProprietaire) AND " +
-           "(:typeOperation IS NULL OR i.typeOperation = :typeOperation) AND " +
-           "(:groupeReseau IS NULL OR i.groupeReseau = :groupeReseau) AND " +
-           "(:numeroTransGU IS NULL OR i.numeroTransGU = :numeroTransGU) AND " +
+           "(:codeProprietaire IS NULL OR LOWER(i.codeProprietaire) = LOWER(:codeProprietaire)) AND " +
+           "(:typeOperation IS NULL OR LOWER(i.typeOperation) = LOWER(:typeOperation)) AND " +
+           "(:groupeReseau IS NULL OR LOWER(i.groupeReseau) = LOWER(:groupeReseau)) AND " +
+           "(:numeroTransGU IS NULL OR LOWER(i.numeroTransGU) = LOWER(:numeroTransGU)) AND " +
            "(:statut IS NULL OR i.statut = :statut) AND " +
            "(:dateDebut IS NULL OR i.dateOperation >= :dateDebut) AND " +
            "(:dateFin IS NULL OR i.dateOperation <= :dateFin) AND " +

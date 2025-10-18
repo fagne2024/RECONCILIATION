@@ -16,6 +16,7 @@ import * as XLSX from 'xlsx';
 })
 export class TraitementComponent implements OnInit, AfterViewInit {
   readonly LOCAL_STORAGE_KEY = 'traitement_data';
+  readonly LOCAL_STORAGE_COLUMN_ORDER_KEY = 'traitement_column_order';
   selectedFiles: File[] = [];
   combinedRows: any[] = [];
   columns: string[] = [];
@@ -3937,6 +3938,10 @@ export class TraitementComponent implements OnInit, AfterViewInit {
       Object.assign(this, data);
       this.updateDisplayedRows();
     }
+    // Appliquer l'ordre des colonnes sauvegardé si disponible
+    if (this.columns && this.columns.length) {
+      this.applySavedColumnOrderFromStorage();
+    }
   }
 
   ngAfterViewInit() {
@@ -4167,6 +4172,7 @@ export class TraitementComponent implements OnInit, AfterViewInit {
       this.columns = [...this.reorderedColumns];
       this.isColumnReorderMode = false;
       this.showSuccess('reorder', 'Ordre des colonnes appliqué avec succès');
+      this.saveColumnOrderToStorage();
     }
   }
 
@@ -4175,6 +4181,54 @@ export class TraitementComponent implements OnInit, AfterViewInit {
     this.reorderedColumns = [...this.columns];
     this.draggedColumn = null;
     this.dragOverColumn = null;
+  }
+
+  resetColumnOrder() {
+    // Supprimer l'ordre personnalisé et rétablir l'ordre par défaut détecté
+    try {
+      localStorage.removeItem(this.LOCAL_STORAGE_COLUMN_ORDER_KEY);
+    } catch {}
+    if (this.allColumns && this.allColumns.length) {
+      this.columns = [...this.allColumns];
+      if (this.isColumnReorderMode) {
+        this.reorderedColumns = [...this.columns];
+      }
+      this.updateDisplayedRows();
+      this.showSuccess('reorder', 'Ordre des colonnes réinitialisé');
+    }
+  }
+
+  private saveColumnOrderToStorage() {
+    try {
+      const dataString = JSON.stringify(this.columns || []);
+      if (dataString.length < 200_000) {
+        localStorage.setItem(this.LOCAL_STORAGE_COLUMN_ORDER_KEY, dataString);
+      }
+    } catch (e) {
+      // best-effort
+    }
+  }
+
+  private applySavedColumnOrderFromStorage() {
+    try {
+      const str = localStorage.getItem(this.LOCAL_STORAGE_COLUMN_ORDER_KEY);
+      if (!str) return;
+      const savedOrder: string[] = JSON.parse(str) || [];
+      if (!Array.isArray(savedOrder) || !this.columns || this.columns.length === 0) return;
+      // Conserver uniquement les colonnes présentes et dans l'ordre sauvegardé, puis ajouter les colonnes manquantes à la fin
+      const set = new Set(this.columns);
+      const ordered = savedOrder.filter(c => set.has(c));
+      const missing = this.columns.filter(c => !ordered.includes(c));
+      const newOrder = [...ordered, ...missing];
+      if (newOrder.length === this.columns.length) {
+        this.columns = newOrder;
+        if (this.isColumnReorderMode) {
+          this.reorderedColumns = [...this.columns];
+        }
+      }
+    } catch (e) {
+      // ignore storage parse errors
+    }
   }
 
   moveColumnUp(column: string) {

@@ -12,6 +12,8 @@ public class Compte {
     private String agence;
     private String type;
     private String categorie;
+    private Boolean consolide;
+    private Boolean regroupe;
     
     // Constructeurs
     public Compte() {}
@@ -105,6 +107,22 @@ public class Compte {
         this.categorie = categorie;
     }
     
+    public Boolean getConsolide() {
+        return consolide;
+    }
+    
+    public void setConsolide(Boolean consolide) {
+        this.consolide = consolide;
+    }
+    
+    public Boolean getRegroupe() {
+        return regroupe;
+    }
+    
+    public void setRegroupe(Boolean regroupe) {
+        this.regroupe = regroupe;
+    }
+    
     @Override
     public String toString() {
         return "Compte{" +
@@ -117,6 +135,8 @@ public class Compte {
                 ", agence='" + agence + '\'' +
                 ", type='" + type + '\'' +
                 ", categorie='" + categorie + '\'' +
+                ", consolide=" + consolide +
+                ", regroupe=" + regroupe +
                 '}';
     }
 } 

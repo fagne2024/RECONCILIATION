@@ -8,6 +8,8 @@ export interface Compte {
     agence?: string;
     type?: string; // Ajouté : TOP20, B2B, G&I
     categorie?: string; // Ajouté : Client, Service, Banque
+    consolide?: boolean;
+    regroupe?: boolean;
 }
 
 export interface CompteCreateRequest {

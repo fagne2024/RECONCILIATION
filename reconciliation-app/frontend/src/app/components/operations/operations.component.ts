@@ -91,6 +91,13 @@ export class OperationsComponent implements OnInit, OnDestroy {
     // Propriétés pour le modal de détails d'opération
     showOperationDetailsModal = false;
     modalSelectedOperation: Operation | null = null;
+
+    // Upload d'opérations (transaction_cree / annulation_bo)
+    showUploadModal = false;
+    uploadType: 'transaction_cree' | 'annulation_bo' = 'transaction_cree';
+    selectedFile: File | null = null;
+    isUploading = false;
+    uploadMessage: { type: 'success' | 'error', text: string } | null = null;
     
     // Propriété pour les numéros de comptes (pour l'autocomplétion)
     get comptesNumeros(): string[] {
@@ -375,6 +382,65 @@ export class OperationsComponent implements OnInit, OnDestroy {
 
     ngOnDestroy() {
         this.subscription.unsubscribe();
+    }
+
+    // --- Upload operations via fichier ---
+    openUploadModal(type: 'transaction_cree' | 'annulation_bo') {
+        this.uploadType = type;
+        this.selectedFile = null;
+        this.uploadMessage = null;
+        this.showUploadModal = true;
+    }
+
+    hideUploadModal() {
+        this.showUploadModal = false;
+    }
+
+    closeUploadModal(event: MouseEvent) {
+        if ((event.target as HTMLElement).classList.contains('modal-overlay')) {
+            this.hideUploadModal();
+        }
+    }
+
+    onFileSelected(event: any) {
+        const file = event.target.files && event.target.files[0];
+        this.selectedFile = file || null;
+    }
+
+    downloadTemplate() {
+        this.operationService.downloadOperationsTemplate().subscribe({
+            next: (blob) => {
+                saveAs(blob, 'modele-operations.xlsx');
+            },
+            error: () => {
+                this.popupService.showError('Erreur lors du téléchargement du modèle');
+            }
+        });
+    }
+
+    uploadOperationsFile() {
+        if (!this.selectedFile) {
+            this.uploadMessage = { type: 'error', text: 'Aucun fichier sélectionné' };
+            return;
+        }
+        this.isUploading = true;
+        this.uploadMessage = null;
+
+        this.operationService.uploadOperations(this.selectedFile).subscribe({
+            next: (res) => {
+                this.isUploading = false;
+                const msg = `${res.saved} opérations importées sur ${res.totalRead}.` + (res.errors?.length ? ` Erreurs: ${res.errors.length}` : '');
+                this.uploadMessage = { type: 'success', text: msg };
+                this.selectedFile = null;
+                this.showUploadModal = false;
+                this.refreshData();
+            },
+            error: (err) => {
+                console.error('Erreur upload opérations:', err);
+                this.isUploading = false;
+                this.uploadMessage = { type: 'error', text: 'Erreur lors de l\'upload du fichier' };
+            }
+        });
     }
 
     loadOperations() {

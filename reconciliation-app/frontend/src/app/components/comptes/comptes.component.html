@@ -268,7 +268,7 @@
                 <button class="arrow-btn left" (click)="prevCriticalPage()" [disabled]="criticalPage === 1">&#8592;</button>
                 <div class="critical-cards-list">
                     <div class="critical-card" *ngFor="let item of pagedComptesCritiques">
-                        <div class="card-header">{{ item.compte.numeroCompte }}</div>
+                        <div class="card-header">{{ item.compte.codeProprietaire || item.compte.numeroCompte }}</div>
                         <div class="card-solde">
                             <span>Solde :</span>
                             <span class="solde-value">{{ item.compte.solde | number:'1.2-2' }}</span>

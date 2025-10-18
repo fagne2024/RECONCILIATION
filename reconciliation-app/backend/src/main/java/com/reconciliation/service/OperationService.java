@@ -12,6 +12,7 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.context.annotation.Lazy;
 
 import java.time.LocalDateTime;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
@@ -76,6 +77,25 @@ public class OperationService {
     }
     
     public List<Operation> getOperationsByCompte(String numeroCompte, LocalDateTime dateDebut, LocalDateTime dateFin, String typeOperation) {
+        // Vérifier si le compte est consolidé pour agréger les opérations des services sous-jacents
+        try {
+            CompteEntity compte = compteRepository.findByNumeroCompte(numeroCompte).orElse(null);
+            if (compte != null && compteRegroupementService != null && compteRegroupementService.isCompteConsolide(compte.getId())) {
+                // Compte consolidé : récupérer les services depuis codeProprietaire
+                String codeProprietaire = compte.getCodeProprietaire();
+                if (codeProprietaire != null && !codeProprietaire.trim().isEmpty()) {
+                    List<String> services = Arrays.asList(codeProprietaire.split(","));
+                    return operationRepository.findByCompteNumeroInAndFiltersOrderByDateOperationDesc(
+                            services, dateDebut, dateFin, typeOperation).stream()
+                            .map(this::convertToModel)
+                            .collect(Collectors.toList());
+                }
+            }
+        } catch (Exception e) {
+            logger.warn("Erreur lors de la vérification du compte consolidé pour {}: {}", numeroCompte, e.getMessage());
+        }
+        
+        // Compte normal ou erreur : comportement standard
         return operationRepository.findByCompteNumeroCompteAndFiltersOrderByDateOperationDesc(
                 numeroCompte, dateDebut, dateFin, typeOperation).stream()
                 .map(this::convertToModel)
@@ -83,6 +103,25 @@ public class OperationService {
     }
     
     public List<Operation> getOperationsByCompteForReleve(String numeroCompte, LocalDateTime dateDebut, LocalDateTime dateFin, String typeOperation) {
+        // Vérifier si le compte est consolidé pour agréger les opérations des services sous-jacents
+        try {
+            CompteEntity compte = compteRepository.findByNumeroCompte(numeroCompte).orElse(null);
+            if (compte != null && compteRegroupementService != null && compteRegroupementService.isCompteConsolide(compte.getId())) {
+                // Compte consolidé : récupérer les services depuis codeProprietaire
+                String codeProprietaire = compte.getCodeProprietaire();
+                if (codeProprietaire != null && !codeProprietaire.trim().isEmpty()) {
+                    List<String> services = Arrays.asList(codeProprietaire.split(","));
+                    return operationRepository.findByCompteNumeroInAndFiltersOrderByDateOperationAsc(
+                            services, dateDebut, dateFin, typeOperation).stream()
+                            .map(this::convertToModel)
+                            .collect(Collectors.toList());
+                }
+            }
+        } catch (Exception e) {
+            logger.warn("Erreur lors de la vérification du compte consolidé pour {}: {}", numeroCompte, e.getMessage());
+        }
+        
+        // Compte normal ou erreur : comportement standard
         return operationRepository.findByCompteNumeroCompteAndFiltersOrderByDateOperationAsc(
                 numeroCompte, dateDebut, dateFin, typeOperation).stream()
                 .map(this::convertToModel)
@@ -464,11 +503,12 @@ public class OperationService {
             createFraisTransactionAutomatique(savedEntity);
         }
         
-        // Créer automatiquement une opération bancaire pour les types Compense_client, Appro_client et nivellement
+        // Créer automatiquement une opération bancaire pour les types Compense_client, Appro_client, nivellement et régularisation_solde
         logger.info("🔍 Vérification du type d'opération pour création bancaire: {}", entity.getTypeOperation());
         if ("Compense_client".equals(entity.getTypeOperation()) || 
             "Appro_client".equals(entity.getTypeOperation()) || 
-            "nivellement".equals(entity.getTypeOperation())) {
+            "nivellement".equals(entity.getTypeOperation()) ||
+            "régularisation_solde".equals(entity.getTypeOperation())) {
             logger.info("✅ Type d'opération détecté pour création bancaire automatique: {}", entity.getTypeOperation());
             createOperationBancaireAutomatique(savedEntity, compte);
         } else {
@@ -2065,6 +2105,9 @@ public class OperationService {
                     break;
                 case "nivellement":
                     typeOperationBancaire = "Nivellement";
+                    break;
+                case "régularisation_solde":
+                    typeOperationBancaire = "Régularisation Solde";
                     break;
                 default:
                     typeOperationBancaire = operation.getTypeOperation();

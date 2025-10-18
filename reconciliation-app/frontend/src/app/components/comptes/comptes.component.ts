@@ -624,7 +624,15 @@ export class ComptesComponent implements OnInit, OnDestroy {
 
         // Calcul dynamique de la moyenne du volume journalier sur la période choisie pour chaque compte
         const jours = this.periodeJours;
-        this.comptesCritiques = this.comptes.map(c => {
+        // Ne considérer que: (a) services fusionnés (consolidés) ET (b) toujours inclure Clients et Banques
+        const comptesEligibles = this.comptes.filter(c => {
+            const isClient = c.categorie === 'Client';
+            const isBanque = c.categorie === 'Banque';
+            const isServiceConsolide = c.categorie === 'Service' && (c.consolide === true);
+            return isClient || isBanque || isServiceConsolide;
+        });
+
+        this.comptesCritiques = comptesEligibles.map(c => {
             // Regrouper les opérations par jour, types 'total_cashin', 'Compense_client' et 'Compense_fournisseur' (débits)
             const opsCompte = this.operations.filter(op => op.compteId === c.id && 
                 (op.typeOperation === 'total_cashin' || op.typeOperation === 'Compense_client' || op.typeOperation === 'Compense_fournisseur'));
@@ -716,12 +724,12 @@ export class ComptesComponent implements OnInit, OnDestroy {
 
             worksheet.columns = [
                 { header: 'Position', key: 'position', width: 10 },
-                { header: 'Numéro de Compte', key: 'numeroCompte', width: 20 },
+                { header: 'Code Propriétaire', key: 'codeProprietaire', width: 22 },
                 { header: 'Solde Actuel', key: 'solde', width: 15 },
                 { header: `Moyenne Volume (${this.periodeJours}j)`, key: 'moyenneVolume', width: 20 },
                 { header: 'Ratio Criticité', key: 'ratioCriticite', width: 15 },
                 { header: 'Pays', key: 'pays', width: 15 },
-                { header: 'Code Propriétaire', key: 'codeProprietaire', width: 20 },
+                { header: 'Numéro de Compte', key: 'numeroCompte', width: 20 },
                 { header: 'Date Dernière MAJ', key: 'dateDerniereMaj', width: 20 }
             ];
 
@@ -740,12 +748,12 @@ export class ComptesComponent implements OnInit, OnDestroy {
                 const ratioCriticite = item.compte.solde / item.moyenneVolume;
                 const row = worksheet.addRow({
                     position: idx + 1,
-                    numeroCompte: item.compte.numeroCompte,
+                    codeProprietaire: item.compte.codeProprietaire || '-',
                     solde: item.compte.solde,
                     moyenneVolume: item.moyenneVolume,
                     ratioCriticite: ratioCriticite.toFixed(2),
                     pays: item.compte.pays,
-                    codeProprietaire: item.compte.codeProprietaire || '-',
+                    numeroCompte: item.compte.numeroCompte,
                     dateDerniereMaj: this.formatDate(item.compte.dateDerniereMaj)
                 });
 
