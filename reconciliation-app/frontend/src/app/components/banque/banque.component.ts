@@ -68,14 +68,21 @@ export class BanqueComponent implements OnInit {
     'SN': 'Sénégal',
     'GN': 'Guinée',
     'BF': 'Burkina Faso',
-    'GA': 'Gabon'
+    'GA': 'Gabon',
+    'TG': 'Togo',
+    'CM': 'Cameroun'
   };
 
   getPaysDisplay(op: OperationBancaireDisplay): string {
     const raw = (op.pays || op.codePays || '').trim();
     if (!raw) return '-';
     // Si déjà un nom complet, le retourner tel quel
-    if (raw.length > 3 || raw.includes(' ')) return raw;
+    if (raw.length > 3 || raw.includes(' ')) {
+      // Normaliser pour traiter les variantes "Côte d’Ivoire" vs "Cote d'Ivoire"
+      const norm = this.normalizeCountryName(raw);
+      const entry = Object.entries(this.paysCodeToName).find(([, name]) => this.normalizeCountryName(name) === norm);
+      return entry ? entry[1] : raw;
+    }
     const code = raw.toUpperCase();
     return this.paysCodeToName[code] || raw;
   }
@@ -157,6 +164,8 @@ export class BanqueComponent implements OnInit {
   reconRevTotalPages = 1;
   reconCorrOpTotalPages = 1;
   reconCorrRevTotalPages = 1;
+  // Option d'affichage: inclure les lignes marquées OK
+  showOkMarked = false;
   matchedPairs: Array<{
     date: string;
     montant: number;
@@ -183,6 +192,11 @@ export class BanqueComponent implements OnInit {
   // Ensemble persistant des clés marquées définitivement comme OK (à ignorer)
   private reconOkKeySet: Set<string> = new Set<string>();
 
+  // Compteur des OK définitifs (clé unique, sans doublons)
+  get totalOkDefinitifs(): number {
+    try { return this.reconOkKeySet ? this.reconOkKeySet.size : 0; } catch { return 0; }
+  }
+
   // Filtres Statut Réconciliation (UI)
   reconStatusFilter: '' | 'OK' | 'KO' = '';
   releveStatusFilter: '' | 'OK' | 'KO' = '';
@@ -202,6 +216,17 @@ export class BanqueComponent implements OnInit {
     try {
       localStorage.setItem('recon.ok.keys', JSON.stringify(Array.from(this.reconOkKeySet)));
     } catch {}
+  }
+
+  // Vérifie s'il existe une clé marquée OK définitif correspondant à une clé de base (sans index)
+  private hasOkByBase(baseKey: string): boolean {
+    try {
+      const target = this.toBaseReconKey(baseKey);
+      for (const k of Array.from(this.reconOkKeySet)) {
+        if (this.toBaseReconKey(k) === target) return true;
+      }
+    } catch {}
+    return false;
   }
 
   private applyOkStatusesToOpAndRev() {
@@ -276,6 +301,7 @@ export class BanqueComponent implements OnInit {
         this.saveReconOkKeys();
         this.applyOkStatusesToOpAndRev();
         try { this.operationApi.saveReconStatus(key, 'OK').subscribe(); } catch {}
+        this.updateEntityStatusesForKey(key, 'OK');
         this.updatePagedReconciliationResults();
         // Persister reconStatus sur opération et relevé si connus
         // Persistance côté base au niveau des résultats seulement (clé mark-ok déjà enregistrée)
@@ -285,6 +311,7 @@ export class BanqueComponent implements OnInit {
         this.saveReconOkKeys();
         this.applyOkStatusesToOpAndRev();
         try { this.operationApi.saveReconStatus(key, 'OK').subscribe(); } catch {}
+        this.updateEntityStatusesForKey(key, 'OK');
         this.updatePagedReconciliationResults();
         // Persistance côté base au niveau des résultats seulement (clé mark-ok déjà enregistrée)
       }
@@ -316,9 +343,16 @@ export class BanqueComponent implements OnInit {
     // 1) override direct par id
     const direct = key ? this.opStatusOverrides[key] : undefined;
     if (direct) return direct;
-    // 2) fallback: dériver la clé de base et regarder les statuts persistés
+    // 2) priorité aux OK définitifs par base
     const base = this.buildBaseReconKeyForOperation(op);
-    return this.reconStatusBaseOverrides[base] || 'KO';
+    if (this.hasOkByBase(base)) {
+      try { console.debug('[RECON][DBG][OP] OK via OK-def base', { id: (op as any).id, base }); } catch {}
+      return 'OK';
+    }
+    // 3) fallback: statuts persistés
+    const status = this.reconStatusBaseOverrides[base] || 'KO';
+    try { console.debug('[RECON][DBG][OP] status via persisted map/base', { id: (op as any).id, base, status }); } catch {}
+    return status;
   }
   // Désactivé: la modification doit se faire uniquement dans Correspondances
   toggleOperationReconStatus(op: OperationBancaireDisplay) { return; }
@@ -330,20 +364,32 @@ export class BanqueComponent implements OnInit {
     // 1) override direct par id
     const direct = key ? this.releveStatusOverrides[key] : undefined;
     if (direct) return direct;
-    // 2) fallback via clé de base
+    // 2) priorité aux OK définitifs par base (date valeur puis date comptable)
     const base = this.buildBaseReconKeyForReleve(row);
-    return this.reconStatusBaseOverrides[base] || 'KO';
+    if (this.hasOkByBase(base)) { try { console.debug('[RECON][DBG][RV] OK via OK-def baseValue', { id: (row as any).id, base }); } catch {} return 'OK'; }
+    const altBase = this.buildBaseReconKeyForReleveUsingDateComptable(row);
+    if (this.hasOkByBase(altBase)) { try { console.debug('[RECON][DBG][RV] OK via OK-def baseComptable', { id: (row as any).id, altBase }); } catch {} return 'OK'; }
+    // 3) fallback via statuts persistés
+    const status = this.reconStatusBaseOverrides[base];
+    if (status) { try { console.debug('[RECON][DBG][RV] status via persisted baseValue', { id: (row as any).id, base, status }); } catch {} return status; }
+    const altStatus = this.reconStatusBaseOverrides[altBase] || 'KO';
+    try { console.debug('[RECON][DBG][RV] status via persisted baseComptable', { id: (row as any).id, altBase, status: altStatus }); } catch {}
+    return altStatus;
     }
   // Désactivé: la modification doit se faire uniquement dans Correspondances
   toggleReleveReconStatus(row: ReleveBancaireRow) { return; }
 
   getReconStatusByKey(key: string | undefined, defaultStatus: 'OK' | 'KO'): 'OK' | 'KO' {
     if (!key) return defaultStatus;
+    // Priorité: si la base de cette clé est marquée OK définitif, retourner OK
+    try { const baseKey = this.toBaseReconKey(key); if (this.hasOkByBase(baseKey)) { try { console.debug('[RECON][DBG][KEY] OK via OK-def base', { key, baseKey }); } catch {} return 'OK'; } } catch {}
     const direct = this.reconStatusOverrides[key];
     if (direct) return direct;
     // fallback: utiliser la clé de base (sans le suffixe numérique)
     const baseKey = this.toBaseReconKey(key);
-    return this.reconStatusBaseOverrides[baseKey] || defaultStatus;
+    const status = this.reconStatusBaseOverrides[baseKey] || defaultStatus;
+    try { console.debug('[RECON][DBG][KEY] status via persisted/base', { key, baseKey, status }); } catch {}
+    return status;
   }
 
   private toBaseReconKey(key: string): string {
@@ -369,7 +415,26 @@ export class BanqueComponent implements OnInit {
   private buildBaseReconKeyForReleve(r: ReleveBancaireRow): string {
     const dateRaw: any = r.dateValeur || r.dateComptable || '';
     const date = this.normalizeDateToYmd(dateRaw as any);
-    const amount = this.getReleveMontantAbs(r);
+    // IMPORTANT: la clé côté relevé doit s'appuyer sur Débit/Crédit (absolu),
+    // pas sur le champ Montant éventuel (qui peut inclure des frais ou un signe)
+    const debit = (r.debit || 0) > 0 ? Math.abs(r.debit as number) : 0;
+    const credit = (r.credit || 0) > 0 ? Math.abs(r.credit as number) : 0;
+    const amount = debit > 0 ? debit : (credit > 0 ? credit : 0);
+    try { console.debug('[RECON][DBG][RV][BASE] amount used for key', { id: (r as any).id, debit, credit, amount }); } catch {}
+    const banque = ((r.banque || '').trim() || '').toUpperCase().replace(/[\s-]/g, '');
+    const sens: 'debit' | 'credit' = (r.debit && r.debit > 0) ? 'debit' : 'credit';
+    const dateNoDash = (date || '').replace(/-/g, '');
+    const montantDigits = String(amount).replace(/\D/g, '');
+    return `${dateNoDash}${montantDigits}${banque}${sens}`;
+  }
+
+  // Variante: construire la clé de base en forçant l'utilisation de la date comptable
+  private buildBaseReconKeyForReleveUsingDateComptable(r: ReleveBancaireRow): string {
+    const date = this.normalizeDateToYmd(r.dateComptable as any);
+    const debit = (r.debit || 0) > 0 ? Math.abs(r.debit as number) : 0;
+    const credit = (r.credit || 0) > 0 ? Math.abs(r.credit as number) : 0;
+    const amount = debit > 0 ? debit : (credit > 0 ? credit : 0);
+    try { console.debug('[RECON][DBG][RV][BASE-ALT] amount used for key', { id: (r as any).id, debit, credit, amount }); } catch {}
     const banque = ((r.banque || '').trim() || '').toUpperCase().replace(/[\s-]/g, '');
     const sens: 'debit' | 'credit' = (r.debit && r.debit > 0) ? 'debit' : 'credit';
     const dateNoDash = (date || '').replace(/-/g, '');
@@ -406,6 +471,12 @@ export class BanqueComponent implements OnInit {
         error: (err) => console.warn('[RECON] status save failed', { key, next, err })
       });
     } catch (e) { console.warn('[RECON] status save threw', e); }
+
+    // Persister recon_status au niveau des entités liées (si présents)
+    try { this.updateEntityStatusesForKey(key, next); } catch (e) { try { console.warn('[RECON] entity status update threw', e); } catch {} }
+
+    // Mettre à jour le total des suspens KO après bascule
+    this.updateTotalSuspensKO();
   }
 
   // Gestion sélection multi
@@ -449,6 +520,8 @@ export class BanqueComponent implements OnInit {
           this.operationApi.saveReconStatusBulk(entries).subscribe();
         } catch {}
         this.applyOkStatusesToOpAndRev();
+        // Mettre à jour le recon_status des entités liées (opération & relevé) si identifiants connus
+        try { keys.forEach(k => this.updateEntityStatusesForKey(k, 'OK')); } catch {}
         this.updatePagedReconciliationResults();
         this.clearSelection();
       },
@@ -460,10 +533,27 @@ export class BanqueComponent implements OnInit {
           this.operationApi.saveReconStatusBulk(entries).subscribe();
         } catch {}
         this.applyOkStatusesToOpAndRev();
+        try { keys.forEach(k => this.updateEntityStatusesForKey(k, 'OK')); } catch {}
         this.updatePagedReconciliationResults();
         this.clearSelection();
       }
     });
+  }
+
+  // Mettre à jour le recon_status des entités côté base si l'identifiant est disponible
+  private updateEntityStatusesForKey(key: string, status: 'OK' | 'KO') {
+    try {
+      const opAny: any = (this as any).keyToOp && (this as any).keyToOp[key];
+      if (opAny && opAny.id !== undefined) {
+        this.operationBancaireService.updateReconStatus(opAny.id, status).subscribe({ next: () => {}, error: () => {} });
+      }
+    } catch {}
+    try {
+      const revAny: any = (this as any).keyToRev && (this as any).keyToRev[key];
+      if (revAny && revAny.id !== undefined) {
+        this.releveService.updateReconStatus(revAny.id, status).subscribe({ next: () => {}, error: () => {} });
+      }
+    } catch {}
   }
 
   bulkUnmarkOk() {
@@ -514,6 +604,29 @@ export class BanqueComponent implements OnInit {
     private operationApi: OperationServiceApi
   ) { }
 
+  private normalizeCountryName(input: string): string {
+    return (input || '')
+      .toString()
+      .trim()
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '') // remove accents
+      .replace(/[’']/g, '') // remove apostrophes variants
+      .replace(/\s+/g, ' ');
+  }
+
+  private resolveDisplayCountryName(input: string): string {
+    const raw = (input || '').toString().trim();
+    if (!raw) return '';
+    if (raw.length <= 3) {
+      const code = raw.toUpperCase();
+      return this.paysCodeToName[code] || raw;
+    }
+    const norm = this.normalizeCountryName(raw);
+    const entry = Object.entries(this.paysCodeToName).find(([, name]) => this.normalizeCountryName(name) === norm);
+    return entry ? entry[1] : raw;
+  }
+
   ngOnInit(): void {
     console.log('Composant BANQUE initialisé');
     this.loadReconOkKeys();
@@ -557,6 +670,13 @@ export class BanqueComponent implements OnInit {
     this.loadLatestReleveBatch();
   }
 
+  onReconPaysChange() {
+    try {
+      const code = this.getReconCountryCode();
+      console.log('[RECON][DBG] Country changed', { reconPays: this.reconPays, reconCode: code });
+    } catch {}
+  }
+
   // Comptes de catégorie Banque (section Informations)
   comptesBanque: Compte[] = [];
   loadingComptesBanque = false;
@@ -564,7 +684,7 @@ export class BanqueComponent implements OnInit {
   comptesSearch = '';
   // Pagination liste des comptes
   comptesListPage = 1;
-  comptesListPageSize = 10;
+  comptesListPageSize = 7;
   get comptesListTotalPages(): number {
     const total = this.comptesBanqueDisplayed.length;
     return Math.ceil(total / this.comptesListPageSize) || 1;
@@ -624,6 +744,10 @@ export class BanqueComponent implements OnInit {
   totalComptes = 0;
   totalEnAttente = 0;
   totalTicketsACreer = 0; // Opérations bancaires sans ID GLPI
+  // Suspens (écarts) comptage global
+  totalSuspensBO = 0;
+  totalSuspensBanque = 0;
+  totalSuspens = 0;
 
   // Mapping numéro de compte -> pays pour cloisonnement par pays sur relevés
   private accountCountryMap: Record<string, string> = {};
@@ -647,6 +771,23 @@ export class BanqueComponent implements OnInit {
         this.totalTicketsACreer = list.filter(o => (!o.idGlpi || o.idGlpi.trim() === '') && (((o.statut || '').toLowerCase() === 'en attente') || ((o.statut || '').toLowerCase() === 'en cours'))).length;
       }
     });
+  }
+
+  // Calcul du nombre de suspens = toutes lignes KO (opérations + relevés)
+  private updateTotalSuspensKO() {
+    try {
+      // Compter KO côté opérations (tableau principal des opérations)
+      const koOps = (this.operations || []).filter(op => this.getOperationReconStatus(op) === 'KO').length;
+      // Compter KO côté relevés (toutes lignes du batch courant)
+      const koReleves = (this.releveRows || []).filter(r => this.getReleveReconStatus(r) === 'KO').length;
+      this.totalSuspensBO = koOps;
+      this.totalSuspensBanque = koReleves;
+      this.totalSuspens = koOps + koReleves;
+    } catch {
+      this.totalSuspensBO = 0;
+      this.totalSuspensBanque = 0;
+      this.totalSuspens = 0;
+    }
   }
 
   get comptesBanqueDisplayed(): Compte[] {
@@ -884,6 +1025,79 @@ export class BanqueComponent implements OnInit {
     XLSX.writeFile(wb, filename);
   }
 
+  // Export des opérations bancaires filtrées (Excel)
+  async exportOperations() {
+    const rows = this.filteredOperations || [];
+    if (!rows.length) return;
+
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const now = new Date();
+    const ts = `${now.getFullYear()}${pad(now.getMonth()+1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}`;
+    const filename = `operations_bancaires_${ts}.xlsx`;
+
+    const formatDate = (d: Date) => {
+      if (!d) return '';
+      const dd = pad(d.getDate());
+      const mm = pad(d.getMonth()+1);
+      const yyyy = d.getFullYear();
+      return `${dd}/${mm}/${yyyy}`;
+    };
+
+    const header = [
+      'Pays', 'Code Pays', 'Mois', 'Date Opération', 'Agence', 'Type Opération',
+      'Nom du Bénéficiaire', 'Compte', 'Montant', 'Mode de Paiement', 'Référence',
+      'ID GLPI', 'Banque', 'Statut'
+    ];
+
+    const aoa: any[] = [];
+    aoa.push(header);
+    rows.forEach(op => {
+      aoa.push([
+        this.getPaysDisplay(op),
+        op.codePays || '',
+        op.mois || '',
+        formatDate(op.dateOperation as Date),
+        op.agence || '',
+        op.typeOperation || '',
+        op.nomBeneficiaire || '',
+        op.compteADebiter || '',
+        op.montant ?? '',
+        op.modePaiement || '',
+        op.reference || '',
+        op.idGlpi || '',
+        op.bo || '',
+        op.statut || ''
+      ]);
+    });
+
+    const XLSX: any = await import('xlsx');
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+
+    // Largeur des colonnes
+    (ws['!cols'] as any) = [
+      { wch: 14 }, { wch: 10 }, { wch: 10 }, { wch: 14 }, { wch: 12 }, { wch: 22 },
+      { wch: 24 }, { wch: 18 }, { wch: 14 }, { wch: 18 }, { wch: 18 }, { wch: 12 }, { wch: 14 }, { wch: 12 }
+    ];
+
+    // En-têtes colorés
+    for (let c = 0; c < header.length; c++) {
+      const cell = ws[XLSX.utils.encode_cell({ r: 0, c })];
+      if (cell) cell.s = { fill: { fgColor: { rgb: 'D9E1F2' } }, font: { bold: true } };
+    }
+
+    // Mise en forme
+    for (let r = 1; r < aoa.length; r++) {
+      // Montant en colonne 8 (index 8)
+      const addr = XLSX.utils.encode_cell({ r, c: 8 });
+      const cell = ws[addr];
+      if (cell) cell.s = Object.assign({}, cell.s || {}, { numFmt: '#,##0', alignment: { horizontal: 'right' } });
+    }
+
+    XLSX.utils.book_append_sheet(wb, ws, 'Opérations');
+    XLSX.writeFile(wb, filename);
+  }
+
   // Navigation
   showOperationsTable() {
     this.showOperations = true;
@@ -935,6 +1149,12 @@ export class BanqueComponent implements OnInit {
   releveUploading = false;
   releveBatchId: string | null = null;
   releveRows: ReleveBancaireRow[] = [];
+  // Tous les relevés (tous lots)
+  releveAllRows: ReleveBancaireRow[] = [];
+  // Liste des lots disponibles
+  releveBatchOptions: Array<{ id: string; label: string; count: number }> = [];
+  // Filtre de lot sélectionné (ALL = tous les lots)
+  releveSelectedBatchId: string = 'ALL';
   // Pagination Relevé
   relevePage = 1;
   relevePageSize = 10;
@@ -944,7 +1164,7 @@ export class BanqueComponent implements OnInit {
   // Total pages calculé pour la pagination de l'aperçu
   get releveTotalPages(): number {
     const size = this.relevePageSize || 10;
-    const total = this.releveRows ? this.releveRows.length : 0;
+    const total = (this.filteredReleveRowsForImport || []).length;
     const pages = Math.ceil(total / size);
     return pages > 0 ? pages : 1;
   }
@@ -1013,16 +1233,21 @@ export class BanqueComponent implements OnInit {
 
   // Relevé Import: lignes filtrées par Statut Réconciliation (OK/KO)
   get filteredReleveRowsForImport(): ReleveBancaireRow[] {
-    if (!this.releveStatusFilter) return this.releveRows;
+    // Source: tous les relevés puis filtrage par lot
+    let base = this.releveAllRows || [];
+    if (this.releveSelectedBatchId && this.releveSelectedBatchId !== 'ALL') {
+      base = base.filter((r: any) => (r && (r as any).batchId) === this.releveSelectedBatchId);
+    }
+    if (!this.releveStatusFilter) return base;
     const target = this.releveStatusFilter;
-    return (this.releveRows || []).filter(r => this.getReleveReconStatus(r) === target);
+    return base.filter(r => this.getReleveReconStatus(r) === target);
   }
 
   loadLatestReleveBatch() {
     this.releveService.list().subscribe({
       next: (all) => {
         const rows = Array.isArray(all) ? all : [];
-        if (!rows.length) { this.releveRows = []; this.releveBatchId = null; return; }
+        if (!rows.length) { this.releveRows = []; this.releveAllRows = []; this.releveBatchId = null; this.releveBatchOptions = []; this.releveSelectedBatchId = 'ALL'; return; }
         // Grouper par batchId
         const groups: Record<string, any[]> = {};
         rows.forEach((r: any) => {
@@ -1030,19 +1255,27 @@ export class BanqueComponent implements OnInit {
           if (!groups[bid]) groups[bid] = [];
           groups[bid].push(r);
         });
-        // Trouver le batch le plus récent via uploadedAt
-        let latestBatchId = Object.keys(groups)[0];
-        let latestDate = new Date(0);
+        // Trouver le batch le plus récent, avec fallback si uploadedAt manquant
+        const hasUploadedAt = rows.some((it: any) => !!it.uploadedAt);
+        let bestBatchId = Object.keys(groups)[0];
+        let bestScore = -Infinity;
         Object.entries(groups).forEach(([bid, items]) => {
-          const d = items.reduce((max: Date, it: any) => {
+          const maxDate = items.reduce((max: Date, it: any) => {
             const cur = it.uploadedAt ? new Date(it.uploadedAt) : new Date(0);
             return cur > max ? cur : max;
           }, new Date(0));
-          if (d > latestDate) { latestDate = d; latestBatchId = bid; }
+          const maxId = items.reduce((m: number, it: any) => {
+            const id = typeof it.id === 'number' ? it.id : 0;
+            return id > m ? id : m;
+          }, 0);
+          const score = (hasUploadedAt ? maxDate.getTime() : 0) + maxId;
+          if (score > bestScore) { bestScore = score; bestBatchId = bid; }
         });
-        this.releveBatchId = latestBatchId;
-        // Convertir vers modèle d'affichage
-        this.releveRows = groups[latestBatchId].map((it: any) => ({
+        this.releveBatchId = bestBatchId;
+        // Construire options de lot
+        this.releveBatchOptions = Object.keys(groups).map(bid => ({ id: bid, label: `${bid} (${groups[bid].length})`, count: groups[bid].length }));
+        // Convertir vers modèle d'affichage: TOUTES les lignes, en conservant batchId
+        this.releveAllRows = Object.entries(groups).flatMap(([bid, list]) => list.map((it: any) => ({
           id: it.id,
           numeroCompte: it.numeroCompte,
           ['nomCompte']: it.nomCompte,
@@ -1057,12 +1290,28 @@ export class BanqueComponent implements OnInit {
           devise: it.devise,
           soldeCourant: it.soldeCourant,
           soldeDisponibleCloture: it.soldeDisponibleCloture,
-          soldeDisponibleOuverture: it.soldeDisponibleOuverture
-        } as ReleveBancaireRow));
+          soldeDisponibleOuverture: it.soldeDisponibleOuverture,
+          // Conserver le batchId pour filtrer
+          ...( { batchId: bid } as any )
+        } as ReleveBancaireRow & any )));
+        // Par défaut, afficher tous les lots
+        this.releveSelectedBatchId = 'ALL';
+        // Compat: releveRows = dernier lot (pour usages hérités au besoin)
+        this.releveRows = this.releveAllRows.filter((r: any) => r.batchId === bestBatchId);
         this.relevePage = 1;
+        this.updateTotalSuspensKO();
       },
-      error: () => {
-        // silencieux pour ne pas gêner l'ouverture
+      error: (err) => {
+        // Afficher un message explicite en cas d'échec
+        try {
+          this.releveMessageKind = 'error';
+          this.releveMessage = 'Impossible de charger les relevés. Vérifiez la connexion à l\'API.';
+        } catch {}
+        console.warn('Erreur chargement /releve-bancaire/list', err);
+        this.releveRows = [];
+        this.releveAllRows = [];
+        this.releveBatchOptions = [];
+        this.releveSelectedBatchId = 'ALL';
       }
     });
   }
@@ -1169,6 +1418,7 @@ export class BanqueComponent implements OnInit {
           }
         }
         this.updatePagedOperations();
+        this.updateTotalSuspensKO();
         console.log('Opérations bancaires chargées:', this.operations.length);
       },
       error: (error) => {
@@ -1176,6 +1426,7 @@ export class BanqueComponent implements OnInit {
         this.operations = [];
         this.filteredOperations = [];
         this.updatePagedOperations();
+        this.updateTotalSuspensKO();
       }
     });
   }
@@ -1373,14 +1624,47 @@ export class BanqueComponent implements OnInit {
     return `${year}-${month}-${day}`;
   }
 
-  // Derive 2-letter country code from banque field (last two letters)
+  // Derive 2-letter country code from banque field with robust heuristics
   private deriveCountryCodeFromBanque(banque?: string | null): string {
     const raw = (banque || '').toString().trim();
     if (!raw) return '';
-    // Keep only letters, then take last two
+    const norm = raw
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '') // remove accents
+      .toLowerCase();
+
+    // Explicit name detection
+    const nameToCode: Array<[string | RegExp, string]> = [
+      [/cote\s*\s*d\s*ivoire|cote d ivoire|cote d'ivoire|cotedivoire/, 'CI'],
+      ['cameroun', 'CM'],
+      ['senegal', 'SN'],
+      ['burkina', 'BF'],
+      ['gabon', 'GA'],
+      ['guinee', 'GN'],
+      ['togo', 'TG']
+    ];
+    for (const [needle, code] of nameToCode) {
+      if (typeof needle === 'string') {
+        if (norm.includes(needle)) return code;
+      } else {
+        if (needle.test(norm)) return code;
+      }
+    }
+
+    // Try to detect a trailing 2-letter code token (e.g., "/CI", "-SN", "(BF)")
+    const tokenMatch = norm.match(/(^|[^a-z])([a-z]{2})([^a-z]|$)/);
+    if (tokenMatch) {
+      const candidate = tokenMatch[2].toUpperCase();
+      if (this.paysCodeToName[candidate]) return candidate;
+    }
+
+    // Fallback: keep only letters, take last two
     const letters = raw.replace(/[^A-Za-z]/g, '');
-    if (letters.length < 2) return '';
-    return letters.slice(-2).toUpperCase();
+    if (letters.length >= 2) {
+      const tail = letters.slice(-2).toUpperCase();
+      if (this.paysCodeToName[tail]) return tail;
+    }
+    return '';
   }
 
   // Normalize selected recon country (may be code or full name) to 2-letter code
@@ -1389,8 +1673,9 @@ export class BanqueComponent implements OnInit {
     if (!val) return '';
     // If it's already a short code (<=3), assume code
     if (val.length <= 3) return val.toUpperCase();
-    // Try reverse lookup from mapping
-    const entry = Object.entries(this.paysCodeToName).find(([, name]) => name.toLowerCase() === val.toLowerCase());
+    // Try reverse lookup from mapping with normalization (accents/apostrophes)
+    const normVal = this.normalizeCountryName(val);
+    const entry = Object.entries(this.paysCodeToName).find(([, name]) => this.normalizeCountryName(name) === normVal);
     if (entry) return entry[0].toUpperCase();
     return val.toUpperCase();
   }
@@ -1412,6 +1697,35 @@ export class BanqueComponent implements OnInit {
       return this.determineSensFromAmount(op.montant);
     }
     return this.determineSensFromAmount(op.montant);
+  }
+
+  // Resolve a display country name from arbitrary text (banque field), using robust heuristics
+  private deriveCountryNameFromBanque(banque?: string | null): string {
+    const raw = (banque || '').toString().trim();
+    if (!raw) return '';
+    const norm = this.normalizeCountryName(raw);
+    const normSimple = norm.replace(/\s+/g, '');
+    // 1) Try to match known display names by inclusion
+    for (const [, displayName] of Object.entries(this.paysCodeToName)) {
+      const dn = this.normalizeCountryName(displayName);
+      const dnSimple = dn.replace(/\s+/g, '');
+      if (normSimple.includes(dnSimple)) return displayName;
+    }
+    // 2) Try to extract a 2-letter code token and map to name
+    const tokenMatch = norm.match(/(^|[^a-z])([a-z]{2})([^a-z]|$)/);
+    if (tokenMatch) {
+      const code = tokenMatch[2].toUpperCase();
+      const name = this.paysCodeToName[code];
+      if (name) return name;
+    }
+    // 3) Fallback: last-two-letters as code
+    const lettersOnly = raw.replace(/[^A-Za-z]/g, '');
+    if (lettersOnly.length >= 2) {
+      const code = lettersOnly.slice(-2).toUpperCase();
+      const name = this.paysCodeToName[code];
+      if (name) return name;
+    }
+    return '';
   }
 
   getReleveMontant(r: ReleveBancaireRow): number {
@@ -1471,13 +1785,40 @@ export class BanqueComponent implements OnInit {
 
     // Préparer les opérations filtrées (par pays + date)
     const ymd = this.reconDate || '';
+    try {
+      const reconCodeDbg = this.getReconCountryCode();
+      console.log('[RECON][DBG] Inputs', {
+        reconPays: this.reconPays,
+        reconCode: reconCodeDbg,
+        reconDate: ymd || '(all)',
+        selectedBatch: this.releveSelectedBatchId || 'ALL',
+        opsCount: (this.operations || []).length,
+        releveAllCount: (this.releveAllRows || []).length
+      });
+      const opsCountryCounts: Record<string, number> = {};
+      (this.operations || []).forEach(op => {
+        const name = this.resolveDisplayCountryName((op.pays as any) || (op as any).codePays || '');
+        if (!name) return;
+        opsCountryCounts[name] = (opsCountryCounts[name] || 0) + 1;
+      });
+      console.log('[RECON][DBG] Ops by country', opsCountryCounts);
+      const revCountryCounts: Record<string, number> = {};
+      ((this.releveAllRows || []) as any[]).forEach(r => {
+        const nm = this.deriveCountryNameFromBanque((r as any).banque);
+        const cd = this.deriveCountryCodeFromBanque((r as any).banque);
+        const key = nm || (cd ? `code:${cd}` : 'unknown');
+        revCountryCounts[key] = (revCountryCounts[key] || 0) + 1;
+      });
+      console.log('[RECON][DBG] Releves by country/name', revCountryCounts);
+    } catch {}
     const opsFiltered = this.operations.filter(op => {
-      const opName = (op.pays && op.pays.trim())
-        ? op.pays.trim()
-        : (() => {
-            const code = (op as any).codePays ? String((op as any).codePays).toUpperCase().trim() : '';
-            return code && this.paysCodeToName[code] ? this.paysCodeToName[code] : '';
-          })();
+      // Déterminer le nom de pays à afficher depuis les opérations (comme pour le Cameroun qui fonctionne)
+      const opName = (() => {
+        const rawPays = (op.pays || '').toString().trim();
+        if (rawPays) return this.resolveDisplayCountryName(rawPays);
+        const code = (op as any).codePays ? String((op as any).codePays).toUpperCase().trim() : '';
+        return code && this.paysCodeToName[code] ? this.paysCodeToName[code] : '';
+      })();
       const matchCountry = opName === this.reconPays;
       const matchDate = !ymd || this.normalizeDateToYmd(op.dateOperation) === ymd;
       return matchCountry && matchDate;
@@ -1490,16 +1831,41 @@ export class BanqueComponent implements OnInit {
       return { date, montantAbs, banque, sens };
     });
 
-    // Préparer les lignes de relevé filtrées (par pays via deux dernières lettres de banque, puis date)
+    // Préparer les lignes de relevé filtrées (source: tous lots, filtre lot optionnel), puis pays/date
     const reconCode = this.getReconCountryCode();
-    const relevéFiltered = this.releveRows.filter(r => {
-      const rowCode = this.deriveCountryCodeFromBanque(r.banque);
-      if (reconCode && rowCode !== reconCode) return false;
+    const baseReleves: Array<ReleveBancaireRow & any> = (this.releveAllRows || []) as any;
+    const sourceReleves = (this.releveSelectedBatchId && this.releveSelectedBatchId !== 'ALL')
+      ? baseReleves.filter(r => r && r.batchId === this.releveSelectedBatchId)
+      : baseReleves;
+    try {
+      console.log('[RECON][DBG] Base/source releves counts', {
+        base: baseReleves.length,
+        source: sourceReleves.length,
+        selectedBatch: this.releveSelectedBatchId || 'ALL'
+      });
+    } catch {}
+    const relevéFiltered = sourceReleves.filter(r => {
+      // Faire correspondre par nom pays affiché comme pour le Cameroun
+      const rowDisplayName = this.deriveCountryNameFromBanque(r.banque);
+      const matchCountry = rowDisplayName ? (rowDisplayName === this.reconPays) : (() => {
+        const rowCode = this.deriveCountryCodeFromBanque(r.banque);
+        const expectedCode = reconCode;
+        return !expectedCode || rowCode === expectedCode;
+      })();
+      if (!matchCountry) return false;
       // Filtre date (optionnel)
       if (!ymd) return true;
       const dateToUse = r.dateValeur ? r.dateValeur : r.dateComptable;
       return this.normalizeDateToYmd(dateToUse as any) === ymd;
     });
+
+    try {
+      console.log('[RECON][DBG] Filtered counts', {
+        opsFiltered: opsFiltered.length,
+        relevesFiltered: relevéFiltered.length,
+        view: this.reconView
+      });
+    } catch {}
     const revWithKey = this.buildKeysWithIndexes(relevéFiltered, (r) => {
       const dateToUse = r.dateValeur ? r.dateValeur : r.dateComptable;
       const date = this.normalizeDateToYmd(dateToUse as any);
@@ -1518,6 +1884,9 @@ export class BanqueComponent implements OnInit {
     revWithKey.forEach(r => revMap.set((r as any).key, { row: r as any }));
 
     const allKeys = new Set<string>([...opMap.keys(), ...revMap.keys()]);
+    try {
+      console.log('[RECON][DBG] opMap/ revMap sizes', { opMap: opMap.size, revMap: revMap.size, allKeys: allKeys.size });
+    } catch {}
     const results: Array<{ date: string; montant: number; banque: string; sensIndex: string; source: 'OPERATION'|'RELEVE'|'BOTH'; suspens?: 'Suspens BO'|'Suspens Banque'|''; }> = [];
     const pairs: Array<{ key: string; date: string; montant: number; banque: string; sensIndex: string; }> = [];
 
@@ -1569,6 +1938,12 @@ export class BanqueComponent implements OnInit {
     });
 
     this.reconciliationResults = results;
+    try {
+      const counts = results.reduce((acc, it) => { acc[it.source] = (acc[it.source] || 0) + 1; return acc; }, {} as any);
+      console.log('[RECON][DBG] result counts by source', counts);
+    } catch {}
+    // Mettre à jour le tableau de bord selon les statuts KO actuels
+    this.updateTotalSuspensKO();
 
     // Construire les lignes d'écarts: gauche = opérations seules, droite = relevé seul
     const diffs: Array<{ left?: (OperationBancaireDisplay & { key?: string }); right?: (ReleveBancaireRow & { key?: string }) }> = [];
@@ -1614,6 +1989,9 @@ export class BanqueComponent implements OnInit {
     this.applyOkStatusesToOpAndRev();
     // Paires correspondantes pour affichage synthétique
     this.matchedPairs = pairs.filter(p => bothKeys.includes(p.key)).map(p => ({ date: p.date, montant: p.montant, banque: p.banque, sensIndex: p.sensIndex }));
+    try {
+      console.log('[RECON][DBG] matchedPairs length', this.matchedPairs.length);
+    } catch {}
 
     // Choisir la vue par défaut selon la présence d'écarts
     if (this.leftOnlyOperations.length > 0) {
@@ -1687,6 +2065,14 @@ export class BanqueComponent implements OnInit {
   // Réconciliation - Pagination
   // =========================
   updatePagedReconciliationResults() {
+    try {
+      console.log('[RECON][DBG] updatePagedReconciliationResults', {
+        reconView: this.reconView,
+        reconPays: this.reconPays,
+        reconCode: this.getReconCountryCode(),
+        reconDate: this.reconDate || '(all)'
+      });
+    } catch {}
     // Appliquer les filtres recon avant pagination
     const f = this.reconFilters;
 
@@ -1711,7 +2097,7 @@ export class BanqueComponent implements OnInit {
 
     // Opérations (écarts seulement gauche)
     this.filteredLeftOps = (this.leftOnlyOperations || []).filter(op => {
-      if ((op as any).key && this.reconOkKeySet.has((op as any).key)) return false; // ignorer marqués OK
+      if (!this.showOkMarked && (op as any).key && this.reconOkKeySet.has((op as any).key)) return false; // ignorer marqués OK
       const okType = !f.typeOperation || (op.typeOperation || '') === f.typeOperation;
       const okStatut = !f.statut || (op.statut || '') === f.statut;
       const okBanque = matchBanque(op.bo);
@@ -1723,7 +2109,7 @@ export class BanqueComponent implements OnInit {
 
     // Relevés (écarts seulement droite)
     this.filteredRightReleves = (this.rightOnlyReleves || []).filter(r => {
-      if ((r as any).key && this.reconOkKeySet.has((r as any).key)) return false; // ignorer marqués OK
+      if (!this.showOkMarked && (r as any).key && this.reconOkKeySet.has((r as any).key)) return false; // ignorer marqués OK
       const amount = this.getReleveMontantAbs(r);
       const okBanque = matchBanque(r.banque);
       const okAmount = matchAmount(amount);
@@ -1734,7 +2120,7 @@ export class BanqueComponent implements OnInit {
 
     // Correspondances opérations
     this.filteredMatchedOps = (this.matchedOperations || []).filter(op => {
-      if ((op as any).key && this.reconOkKeySet.has((op as any).key)) return false; // ignorer marqués OK
+      if (!this.showOkMarked && (op as any).key && this.reconOkKeySet.has((op as any).key)) return false; // ignorer marqués OK
       const okType = !f.typeOperation || (op.typeOperation || '') === f.typeOperation;
       const okStatut = !f.statut || (op.statut || '') === f.statut;
       const okBanque = matchBanque(op.bo);
@@ -1746,7 +2132,7 @@ export class BanqueComponent implements OnInit {
 
     // Correspondances relevé
     this.filteredMatchedReleves = (this.matchedReleves || []).filter(r => {
-      if ((r as any).key && this.reconOkKeySet.has((r as any).key)) return false; // ignorer marqués OK
+      if (!this.showOkMarked && (r as any).key && this.reconOkKeySet.has((r as any).key)) return false; // ignorer marqués OK
       const amount = this.getReleveMontantAbs(r);
       const okBanque = matchBanque(r.banque);
       const okAmount = matchAmount(amount);

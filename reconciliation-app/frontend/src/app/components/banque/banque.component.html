@@ -43,6 +43,13 @@
             <p class="stat-value">{{ totalTicketsACreer }}</p>
           </div>
         </div>
+        <div class="stat-card">
+          <div class="stat-icon">🧩</div>
+          <div class="stat-info">
+            <h3>Suspens</h3>
+            <p class="stat-value">{{ totalSuspens }}</p>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -86,6 +93,13 @@
           <button class="btn-primary" (click)="downloadReleveTemplate()" title="Télécharger le modèle">
             <i class="fas fa-file-excel"></i> Modèle
           </button>
+          <div class="filter-group" style="margin-left:12px;">
+            <label>Lot</label>
+            <select [(ngModel)]="releveSelectedBatchId" (change)="relevePage = 1">
+              <option value="ALL">Tous les lots</option>
+              <option *ngFor="let b of releveBatchOptions" [value]="b.id">{{ b.label }}</option>
+            </select>
+          </div>
         </div>
       </div>
 
@@ -178,7 +192,7 @@
       <div class="reconcile-toolbar">
         <div class="filter-group">
           <label>Pays</label>
-          <select [(ngModel)]="reconPays">
+          <select [(ngModel)]="reconPays" (change)="onReconPaysChange()">
             <option value="">Choisir un pays</option>
             <option *ngFor="let pays of reconPaysOptions" [value]="pays">{{ pays }}</option>
           </select>
@@ -195,17 +209,25 @@
         <div class="filter-group" style="margin-left:auto;">
           <label>Vue</label>
           <select [(ngModel)]="reconView" (change)="updatePagedReconciliationResults()">
-            <option value="operation">Écarts Opération (BO)</option>
-            <option value="releve">Écarts Banque (Relevé)</option>
-            <option value="corr_operation">Correspondances (Opérations)</option>
-            <option value="corr_releve">Correspondances (Relevé)</option>
+            <option value="operation">Suspens BO</option>
+            <option value="releve">Suspens Banque</option>
+            <option value="corr_operation">Correspondances (BO)</option>
+            <option value="corr_releve">Correspondances (Banque)</option>
           </select>
+        </div>
+        <div class="filter-group" style="margin-left:12px;">
+          <label>Inclure OK</label>
+          <input type="checkbox" [(ngModel)]="showOkMarked" (change)="updatePagedReconciliationResults()" />
         </div>
       </div>
 
-      <div class="table-container" *ngIf="reconDiffRows.length">
+      <div class="table-container" *ngIf="reconDiffRows.length || (matchedPairs && matchedPairs.length)">
         <!-- Filtres Réconciliation -->
         <div class="table-filters">
+          <div class="filter-group" style="margin-right:12px; align-items:center; display:flex; gap:6px;">
+            <label>OK définitifs</label>
+            <span class="badge status-ok">{{ totalOkDefinitifs }}</span>
+          </div>
           <div class="filter-group" *ngIf="reconView==='operation' || reconView==='corr_operation'">
             <label>Type d'opération</label>
             <select [(ngModel)]="reconFilters.typeOperation" (change)="applyReconFilters()">
@@ -514,7 +536,7 @@
               <th>Pays</th>
               <th>Catégorie</th>
               <th>Type</th>
-              <th class="right">Solde</th>
+              <th class="center">Solde</th>
               <th>Dernière MAJ</th>
               <th class="actions-col">Actions</th>
             </tr>
@@ -550,7 +572,7 @@
               </td>
               <td>{{ c.categorie || '-' }}</td>
               <td>{{ c.type || '-' }}</td>
-              <td class="right">
+              <td class="center">
                 <span class="amount" [class.negative]="c.solde < 0">{{ c.solde | number:'1.2-2' }}</span>
               </td>
               <td>{{ c.dateDerniereMaj | date:'dd/MM/yyyy HH:mm' }}</td>
@@ -567,6 +589,7 @@
           </div>
           <span class="muted">Page {{ comptesListPage }} / {{ comptesListTotalPages }}</span>
           <select [(ngModel)]="comptesListPageSize" (change)="onComptesListPageSizeChange()">
+            <option [value]="7">7</option>
             <option [value]="10">10</option>
             <option [value]="20">20</option>
             <option [value]="50">50</option>
@@ -768,6 +791,11 @@
         <div class="total-count">
           <i class="fas fa-list"></i>
           <span>{{ filteredOperations.length }} opération(s) au total</span>
+        </div>
+        <div style="margin-left:auto; display:flex; gap:8px; align-items:center;">
+          <button class="btn btn-success" (click)="exportOperations()" [disabled]="filteredOperations.length === 0" title="Exporter (Excel)">
+            <i class="fas fa-file-excel"></i> Exporter
+          </button>
         </div>
       </div>
 

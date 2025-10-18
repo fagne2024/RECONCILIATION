@@ -135,7 +135,8 @@
 
 .table-container.small {
   max-height: 360px;
-  overflow: auto;
+  overflow-x: auto;
+  overflow-y: hidden;
 }
 
 .comptes-table code {
@@ -185,6 +186,7 @@
   tbody tr td:last-child  { border-right: 1px solid #eef2f7; border-top-right-radius: 8px; border-bottom-right-radius: 8px; }
 
   .right { text-align: right; }
+  .center { text-align: center; }
   .amount { font-weight: 700; color: #2e7d32; }
   .amount.negative { color: #c62828; }
 
@@ -199,7 +201,10 @@
   .btn-copy:hover { background: #dfe6ee; }
 
   .btn-outline {
-    padding: 6px 10px; border: 1px solid #d0d7de; background: #fff; color: #1f2937; border-radius: 6px; cursor: pointer;
+    @extend .btn;
+    background: #ffffff;
+    color: #1f2937;
+    border-color: #d0d7de;
   }
   .btn-outline:hover { background: #f8fafc; }
 
@@ -218,7 +223,7 @@
     input { display: none; }
     &:hover { background: #e2e8f0; }
   }
-  .btn-primary { @extend .btn-outline; border-color: #2e7d32; color: #fff; background: linear-gradient(135deg,#2e7d32,#4caf50); }
+  .btn-primary { @extend .btn; @extend .btn-success; }
   .btn-primary:hover { background: linear-gradient(135deg,#1b5e20,#388e3c); }
 }
 
@@ -298,6 +303,33 @@
   &:hover { background: #f8f9fa; color: #111827; }
 }
 
+// Boutons génériques modernes
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-weight: 700;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.2s ease, filter 0.2s;
+
+  i { font-size: 14px; }
+
+  &:hover { transform: translateY(-1px); }
+  &:active { transform: translateY(0); }
+  &:disabled { opacity: .6; cursor: not-allowed; }
+}
+
+.btn-success {
+  background: linear-gradient(135deg, #217346 0%, #2e7d32 100%);
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(33, 115, 70, 0.25);
+
+  &:hover { filter: brightness(1.03); box-shadow: 0 6px 16px rgba(33, 115, 70, 0.35); }
+}
+
 .releve-table-wrapper { max-height: none; overflow: visible; }
 .operations-table .libelle-cell { max-width: 500px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .releve-table {
@@ -319,7 +351,7 @@
 }
 
 .pagination.small { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
-.pagination.small button { @extend .btn-outline; padding: 4px 8px; }
+  .pagination.small button { @extend .btn-outline; padding: 4px 8px; }
 .pagination.small select { border: 1px solid #d0d7de; border-radius: 6px; padding: 4px 6px; }
 .pagination.small { justify-content: flex-end; }
 .pagination.small.center { justify-content: center; }

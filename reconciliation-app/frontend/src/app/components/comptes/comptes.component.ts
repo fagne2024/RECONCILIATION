@@ -29,7 +29,7 @@ export class ComptesComponent implements OnInit, OnDestroy {
     comptes: Compte[] = [];
     pagedComptes: Compte[] = [];
     currentPage = 1;
-    pageSize = 10;
+    pageSize = 7;
     totalPages = 1;
     isLoading = false;
     isAdding = false;
