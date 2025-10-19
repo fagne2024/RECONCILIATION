@@ -229,6 +229,23 @@ export class OperationsComponent implements OnInit, OnDestroy {
     isExportingNivellement = false;
     isExportingRegularisationSolde = false;
 
+    // Pagination pour chaque popup
+    approClientCurrentPage = 1;
+    approClientPageSize = 5;
+    approClientTotalPages = 1;
+    
+    compenseClientCurrentPage = 1;
+    compenseClientPageSize = 5;
+    compenseClientTotalPages = 1;
+    
+    nivellementCurrentPage = 1;
+    nivellementPageSize = 5;
+    nivellementTotalPages = 1;
+    
+    regularisationSoldeCurrentPage = 1;
+    regularisationSoldePageSize = 5;
+    regularisationSoldeTotalPages = 1;
+
     private subscription = new Subscription();
 
     constructor(
@@ -3054,6 +3071,30 @@ export class OperationsComponent implements OnInit, OnDestroy {
         }
 
         this.approClientOperations = filtered;
+        
+        // Calculer la pagination
+        this.approClientTotalPages = Math.ceil(filtered.length / this.approClientPageSize);
+        this.approClientCurrentPage = 1; // Reset à la première page
+    }
+
+    // Obtenir les opérations Appro Client paginées
+    getApproClientPagedOperations(): Operation[] {
+        const startIndex = (this.approClientCurrentPage - 1) * this.approClientPageSize;
+        const endIndex = startIndex + this.approClientPageSize;
+        return this.approClientOperations.slice(startIndex, endIndex);
+    }
+
+    // Navigation pagination Appro Client
+    nextApproClientPage() {
+        if (this.approClientCurrentPage < this.approClientTotalPages) {
+            this.approClientCurrentPage++;
+        }
+    }
+
+    prevApproClientPage() {
+        if (this.approClientCurrentPage > 1) {
+            this.approClientCurrentPage--;
+        }
     }
 
     // Appliquer les filtres Compense Client
@@ -3082,6 +3123,30 @@ export class OperationsComponent implements OnInit, OnDestroy {
         }
 
         this.compenseClientOperations = filtered;
+        
+        // Calculer la pagination
+        this.compenseClientTotalPages = Math.ceil(filtered.length / this.compenseClientPageSize);
+        this.compenseClientCurrentPage = 1; // Reset à la première page
+    }
+
+    // Obtenir les opérations Compense Client paginées
+    getCompenseClientPagedOperations(): Operation[] {
+        const startIndex = (this.compenseClientCurrentPage - 1) * this.compenseClientPageSize;
+        const endIndex = startIndex + this.compenseClientPageSize;
+        return this.compenseClientOperations.slice(startIndex, endIndex);
+    }
+
+    // Navigation pagination Compense Client
+    nextCompenseClientPage() {
+        if (this.compenseClientCurrentPage < this.compenseClientTotalPages) {
+            this.compenseClientCurrentPage++;
+        }
+    }
+
+    prevCompenseClientPage() {
+        if (this.compenseClientCurrentPage > 1) {
+            this.compenseClientCurrentPage--;
+        }
     }
 
     // Appliquer les filtres Nivellement
@@ -3110,6 +3175,30 @@ export class OperationsComponent implements OnInit, OnDestroy {
         }
 
         this.nivellementOperations = filtered;
+        
+        // Calculer la pagination
+        this.nivellementTotalPages = Math.ceil(filtered.length / this.nivellementPageSize);
+        this.nivellementCurrentPage = 1; // Reset à la première page
+    }
+
+    // Obtenir les opérations Nivellement paginées
+    getNivellementPagedOperations(): Operation[] {
+        const startIndex = (this.nivellementCurrentPage - 1) * this.nivellementPageSize;
+        const endIndex = startIndex + this.nivellementPageSize;
+        return this.nivellementOperations.slice(startIndex, endIndex);
+    }
+
+    // Navigation pagination Nivellement
+    nextNivellementPage() {
+        if (this.nivellementCurrentPage < this.nivellementTotalPages) {
+            this.nivellementCurrentPage++;
+        }
+    }
+
+    prevNivellementPage() {
+        if (this.nivellementCurrentPage > 1) {
+            this.nivellementCurrentPage--;
+        }
     }
 
     // Appliquer les filtres Régularisation de Solde
@@ -3135,6 +3224,30 @@ export class OperationsComponent implements OnInit, OnDestroy {
         }
 
         this.regularisationSoldeOperations = filtered;
+        
+        // Calculer la pagination
+        this.regularisationSoldeTotalPages = Math.ceil(filtered.length / this.regularisationSoldePageSize);
+        this.regularisationSoldeCurrentPage = 1; // Reset à la première page
+    }
+
+    // Obtenir les opérations Régularisation Solde paginées
+    getRegularisationSoldePagedOperations(): Operation[] {
+        const startIndex = (this.regularisationSoldeCurrentPage - 1) * this.regularisationSoldePageSize;
+        const endIndex = startIndex + this.regularisationSoldePageSize;
+        return this.regularisationSoldeOperations.slice(startIndex, endIndex);
+    }
+
+    // Navigation pagination Régularisation Solde
+    nextRegularisationSoldePage() {
+        if (this.regularisationSoldeCurrentPage < this.regularisationSoldeTotalPages) {
+            this.regularisationSoldeCurrentPage++;
+        }
+    }
+
+    prevRegularisationSoldePage() {
+        if (this.regularisationSoldeCurrentPage > 1) {
+            this.regularisationSoldeCurrentPage--;
+        }
     }
 
     // Exporter Appro Client

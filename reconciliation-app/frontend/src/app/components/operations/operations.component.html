@@ -1436,7 +1436,7 @@
             </tr>
           </thead>
           <tbody>
-            <tr *ngFor="let op of approClientOperations">
+            <tr *ngFor="let op of getApproClientPagedOperations()">
               <td>{{ op.dateOperation | date:'dd/MM/yyyy' }}</td>
               <td>{{ op.codeProprietaire }}</td>
               <td>{{ op.service || '-' }}</td>
@@ -1454,6 +1454,26 @@
             </tr>
           </tbody>
         </table>
+      </div>
+      
+      <!-- Pagination Appro Client -->
+      <div *ngIf="approClientOperations.length > 0" class="pagination-container">
+        <div class="pagination-info">
+          <span>Page {{ approClientCurrentPage }} sur {{ approClientTotalPages }}</span>
+          <span>{{ approClientOperations.length }} opérations au total</span>
+        </div>
+        <div class="pagination-controls">
+          <button class="btn-pagination" (click)="prevApproClientPage()" [disabled]="approClientCurrentPage === 1">
+            <i class="fas fa-chevron-left"></i> Précédent
+          </button>
+          <div class="pagination-indicator">
+            <i class="fas fa-list"></i>
+            {{ approClientCurrentPage }}/{{ approClientTotalPages }}
+          </div>
+          <button class="btn-pagination" (click)="nextApproClientPage()" [disabled]="approClientCurrentPage === approClientTotalPages">
+            Suivant <i class="fas fa-chevron-right"></i>
+          </button>
+        </div>
       </div>
     </div>
   </div>
@@ -1536,7 +1556,7 @@
             </tr>
           </thead>
           <tbody>
-            <tr *ngFor="let op of compenseClientOperations">
+            <tr *ngFor="let op of getCompenseClientPagedOperations()">
               <td>{{ op.dateOperation | date:'dd/MM/yyyy' }}</td>
               <td>{{ op.codeProprietaire }}</td>
               <td>{{ op.service || '-' }}</td>
@@ -1554,6 +1574,26 @@
             </tr>
           </tbody>
         </table>
+      </div>
+      
+      <!-- Pagination Compense Client -->
+      <div *ngIf="compenseClientOperations.length > 0" class="pagination-container">
+        <div class="pagination-info">
+          <span>Page {{ compenseClientCurrentPage }} sur {{ compenseClientTotalPages }}</span>
+          <span>{{ compenseClientOperations.length }} opérations au total</span>
+        </div>
+        <div class="pagination-controls">
+          <button class="btn-pagination" (click)="prevCompenseClientPage()" [disabled]="compenseClientCurrentPage === 1">
+            <i class="fas fa-chevron-left"></i> Précédent
+          </button>
+          <div class="pagination-indicator">
+            <i class="fas fa-list"></i>
+            {{ compenseClientCurrentPage }}/{{ compenseClientTotalPages }}
+          </div>
+          <button class="btn-pagination" (click)="nextCompenseClientPage()" [disabled]="compenseClientCurrentPage === compenseClientTotalPages">
+            Suivant <i class="fas fa-chevron-right"></i>
+          </button>
+        </div>
       </div>
     </div>
   </div>
@@ -1636,7 +1676,7 @@
             </tr>
           </thead>
           <tbody>
-            <tr *ngFor="let op of nivellementOperations">
+            <tr *ngFor="let op of getNivellementPagedOperations()">
               <td>{{ op.dateOperation | date:'dd/MM/yyyy' }}</td>
               <td>{{ op.codeProprietaire }}</td>
               <td>{{ op.service || '-' }}</td>
@@ -1654,6 +1694,26 @@
             </tr>
           </tbody>
         </table>
+      </div>
+      
+      <!-- Pagination Nivellement -->
+      <div *ngIf="nivellementOperations.length > 0" class="pagination-container">
+        <div class="pagination-info">
+          <span>Page {{ nivellementCurrentPage }} sur {{ nivellementTotalPages }}</span>
+          <span>{{ nivellementOperations.length }} opérations au total</span>
+        </div>
+        <div class="pagination-controls">
+          <button class="btn-pagination" (click)="prevNivellementPage()" [disabled]="nivellementCurrentPage === 1">
+            <i class="fas fa-chevron-left"></i> Précédent
+          </button>
+          <div class="pagination-indicator">
+            <i class="fas fa-list"></i>
+            {{ nivellementCurrentPage }}/{{ nivellementTotalPages }}
+          </div>
+          <button class="btn-pagination" (click)="nextNivellementPage()" [disabled]="nivellementCurrentPage === nivellementTotalPages">
+            Suivant <i class="fas fa-chevron-right"></i>
+          </button>
+        </div>
       </div>
     </div>
   </div>
@@ -1731,7 +1791,7 @@
             </tr>
           </thead>
           <tbody>
-            <tr *ngFor="let op of regularisationSoldeOperations">
+            <tr *ngFor="let op of getRegularisationSoldePagedOperations()">
               <td>{{ op.dateOperation | date:'dd/MM/yyyy' }}</td>
               <td>{{ op.codeProprietaire }}</td>
               <td>{{ op.service || '-' }}</td>
@@ -1749,6 +1809,26 @@
             </tr>
           </tbody>
         </table>
+      </div>
+      
+      <!-- Pagination Régularisation Solde -->
+      <div *ngIf="regularisationSoldeOperations.length > 0" class="pagination-container">
+        <div class="pagination-info">
+          <span>Page {{ regularisationSoldeCurrentPage }} sur {{ regularisationSoldeTotalPages }}</span>
+          <span>{{ regularisationSoldeOperations.length }} opérations au total</span>
+        </div>
+        <div class="pagination-controls">
+          <button class="btn-pagination" (click)="prevRegularisationSoldePage()" [disabled]="regularisationSoldeCurrentPage === 1">
+            <i class="fas fa-chevron-left"></i> Précédent
+          </button>
+          <div class="pagination-indicator">
+            <i class="fas fa-list"></i>
+            {{ regularisationSoldeCurrentPage }}/{{ regularisationSoldeTotalPages }}
+          </div>
+          <button class="btn-pagination" (click)="nextRegularisationSoldePage()" [disabled]="regularisationSoldeCurrentPage === regularisationSoldeTotalPages">
+            Suivant <i class="fas fa-chevron-right"></i>
+          </button>
+        </div>
       </div>
     </div>
   </div>
