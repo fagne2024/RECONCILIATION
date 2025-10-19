@@ -449,9 +449,9 @@ export class OperationsComponent implements OnInit, OnDestroy {
             next: (operations) => {
                 setTimeout(() => {
                 this.operations = operations;
-                this.filteredOperations = operations;
                 this.associatedFrais = []; // Initialiser les frais associés
                 this.addFormServiceList = this.serviceList; // Initialiser les services pour le formulaire d'ajout
+                this.applyFilters(); // Appliquer les filtres pour inclure les frais
                 this.updatePagedOperations();
                 this.calculateStats();
                 this.loadReferenceListFromOperations();
@@ -1683,12 +1683,29 @@ export class OperationsComponent implements OnInit, OnDestroy {
             filteredMainOperationIds.has(op.parentOperationId)
         );
         
+        // Récupérer les frais orphelins (sans parentOperationId)
+        const orphanFrais = this.operations.filter(op => 
+            op.typeOperation === 'FRAIS_TRANSACTION' && 
+            (!op.parentOperationId || op.parentOperationId === null)
+        );
+        
+        // Debug: Vérifier les frais
+        console.log('=== DEBUG FRAIS ===');
+        console.log('Total opérations:', this.operations.length);
+        console.log('Types d\'opérations:', [...new Set(this.operations.map(op => op.typeOperation))]);
+        const allFrais = this.operations.filter(op => op.typeOperation === 'FRAIS_TRANSACTION');
+        console.log('Toutes les opérations FRAIS_TRANSACTION:', allFrais.length);
+        console.log('Frais associés:', associatedFrais.length);
+        console.log('Frais orphelins:', orphanFrais.length);
+        if (allFrais.length > 0) {
+            console.log('Premier frais:', allFrais[0]);
+        }
+        
         // Stocker les frais associés séparément pour éviter le double affichage
         this.associatedFrais = associatedFrais;
         
-        // Ne garder que les opérations principales dans filteredOperations
-        // Les frais seront ajoutés lors de la pagination
-        this.filteredOperations = filteredMainOperations;
+        // Inclure TOUS les frais dans filteredOperations (orphelins + associés)
+        this.filteredOperations = [...filteredMainOperations, ...allFrais];
         
         console.log('Opérations principales filtrées:', filteredMainOperations.length);
         console.log('Frais associés trouvés:', associatedFrais.length);
@@ -2032,6 +2049,10 @@ export class OperationsComponent implements OnInit, OnDestroy {
         // Récupérer les opérations principales de cette page
         const mainOperationsOnPage = mainOperations.slice(startIndex, endIndex);
         
+        // Debug pagination
+        console.log('=== DEBUG PAGINATION ===');
+        console.log('Opérations principales sur cette page:', mainOperationsOnPage.length);
+        
         // Récupérer les IDs des opérations principales de cette page
         const mainOperationIdsOnPage = new Set(mainOperationsOnPage.map(op => op.id).filter(id => id !== undefined));
         
@@ -2054,6 +2075,20 @@ export class OperationsComponent implements OnInit, OnDestroy {
             );
             reorganizedOperations.push(...associatedFrais);
         });
+        
+        // Ajouter les frais orphelins (sans parentOperationId) à la fin
+        const orphanFrais = this.filteredOperations.filter(op => 
+            op.typeOperation === 'FRAIS_TRANSACTION' && 
+            (!op.parentOperationId || op.parentOperationId === null)
+        );
+        const orphanFraisOnPage = orphanFrais.slice(startIndex, endIndex);
+        reorganizedOperations.push(...orphanFraisOnPage);
+        
+        // Debug final
+        console.log('Frais associés sur cette page:', fraisForThisPage.length);
+        console.log('Frais orphelins sur cette page:', orphanFraisOnPage.length);
+        console.log('Total opérations affichées:', reorganizedOperations.length);
+        console.log('Types dans pagedOperations:', [...new Set(reorganizedOperations.map(op => op.typeOperation))]);
         
         this.pagedOperations = reorganizedOperations;
         
@@ -2467,6 +2502,10 @@ export class OperationsComponent implements OnInit, OnDestroy {
                         // L'opération d'origine était en crédit, l'annulation est en débit
                         debit = montant;
                         credit = frais;
+                    } else {
+                        // Par défaut pour les autres services, l'annulation est en crédit
+                        credit = montant + frais;
+                        debit = 0;
                     }
                     break;
                 case 'tsop':
@@ -2577,6 +2616,10 @@ export class OperationsComponent implements OnInit, OnDestroy {
                 } else if (service.includes('paiement')) {
                     debit = frais;
                     credit = montant;
+                } else {
+                    // Par défaut pour les autres services (comme CELCM0001), considérer comme un débit
+                    debit = montant + frais;
+                    credit = 0;
                 }
                 break;
             case 'tsop':

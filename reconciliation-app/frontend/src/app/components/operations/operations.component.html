@@ -1017,15 +1017,19 @@
                         </td>
                         
                         <td class="amount-cell debit">
-                            <span class="amount-value" [ngClass]="getDebitCreditForOperation(op).debit > 0 ? 'montant-negatif' : 'montant-positif'">
-                                {{ getDebitCreditForOperation(op).debit > 0 ? (getDebitCreditForOperation(op).debit | number:'1.2-2') : '-' }}
-                            </span>
+                            <ng-container *ngIf="getDebitCreditForOperation(op) as debitCredit">
+                                <span class="amount-value" [ngClass]="debitCredit.debit > 0 ? 'montant-negatif' : 'montant-positif'">
+                                    {{ debitCredit.debit > 0 ? (debitCredit.debit | number:'1.2-2') : '-' }}
+                                </span>
+                            </ng-container>
                         </td>
                         
                         <td class="amount-cell credit">
-                            <span class="amount-value" [ngClass]="getDebitCreditForOperation(op).credit > 0 ? 'montant-positif' : 'montant-negatif'">
-                                {{ getDebitCreditForOperation(op).credit > 0 ? (getDebitCreditForOperation(op).credit | number:'1.2-2') : '-' }}
-                            </span>
+                            <ng-container *ngIf="getDebitCreditForOperation(op) as debitCredit">
+                                <span class="amount-value" [ngClass]="debitCredit.credit > 0 ? 'montant-positif' : 'montant-negatif'">
+                                    {{ debitCredit.credit > 0 ? (debitCredit.credit | number:'1.2-2') : '-' }}
+                                </span>
+                            </ng-container>
                         </td>
                         
                         <td class="amount-cell">

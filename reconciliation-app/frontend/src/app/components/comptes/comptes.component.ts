@@ -1804,6 +1804,8 @@ export class ComptesComponent implements OnInit, OnDestroy {
         if (type === 'transaction_cree') {
             if (service && service.toLowerCase().includes('cashin')) return true;
             if (service && service.toLowerCase().includes('paiement')) return false;
+            // Par défaut pour transaction_cree, considérer comme un débit si le service n'est pas reconnu
+            return true;
         }
         if (type === 'Compense_client') return true;
         if (type === 'Compense_fournisseur') return true;
@@ -1832,6 +1834,8 @@ export class ComptesComponent implements OnInit, OnDestroy {
         if (type === 'transaction_cree') {
             if (service && service.toLowerCase().includes('paiement')) return true;
             if (service && service.toLowerCase().includes('cashin')) return false;
+            // Par défaut pour transaction_cree, ne pas considérer comme un crédit si le service n'est pas reconnu
+            return false;
         }
         if (type === 'Appro_client') return true;
         if (type === 'Appro_fournisseur') return true;
