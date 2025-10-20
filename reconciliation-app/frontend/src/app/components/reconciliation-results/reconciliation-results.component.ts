@@ -470,6 +470,13 @@ interface ApiError {
                                     <span class="label">Date:</span>
                                     <span class="value">{{getPartnerOnlyDate(record)}}</span>
                                 </div>
+                                <div class="info-row">
+                                    <span class="label">Source:</span>
+                                    <span class="value" style="display:flex;align-items:center;gap:6px;">
+                                        <input type="checkbox" checked disabled>
+                                        {{ record['SOURCE'] || 'PARTENAIRE' }}
+                                    </span>
+                                </div>
                                 <div class="data-row" *ngFor="let key of getPartnerOnlyKeys(record)">
                                     <span class="label">{{key}}:</span>
                                     <span class="value">{{record[key]}}</span>
@@ -4883,12 +4890,15 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
             });
         }
 
+        // Forcer l'inclusion de la colonne SOURCE pour identification d'origine
+        allColumns.add('SOURCE');
         this.availableColumns = Array.from(allColumns).sort();
         
         // Initialiser toutes les colonnes comme non sélectionnées par défaut
         this.selectedColumns = {};
         this.availableColumns.forEach(col => {
-            this.selectedColumns[col] = false;
+            // Cocher par défaut les colonnes définies dans defaultColumns
+            this.selectedColumns[col] = this.defaultColumns.includes(col);
         });
 
         // Si pas de colonnes partenaire disponibles, afficher un message informatif
@@ -4954,7 +4964,12 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
             let csvContent = '';
             
             // Obtenir les colonnes sélectionnées pour les écarts Partenaire
-            const selectedPartnerColumns = this.availableColumns.filter(col => this.selectedColumns[col]);
+            let selectedPartnerColumns = this.availableColumns.filter(col => this.selectedColumns[col]);
+            // Forcer SOURCE en dernière position s'il est sélectionné
+            if (selectedPartnerColumns.includes('SOURCE')) {
+                selectedPartnerColumns = selectedPartnerColumns.filter(c => c !== 'SOURCE');
+                selectedPartnerColumns.push('SOURCE');
+            }
             
             // Debug pour vérifier les données
             console.log('🔍 Debug Export Rapport:');
@@ -5028,7 +5043,7 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
                                 case 'Agence': value = partnerItem.Agence || ''; break;
                                 case 'Date': value = partnerItem.Date || ''; break;
                                 case 'HEURE': value = partnerItem.Heure || ''; break;
-                                case 'SOURCE': value = partnerItem.SOURCE || ''; break;
+                                case 'SOURCE': value = partnerItem.SOURCE || 'PARTENAIRE'; break;
                                 default: value = ''; break;
                             }
                         }
@@ -5140,6 +5155,11 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
             };
 
             const boColumnsCount = boHeader.split(';').length;
+            // Forcer SOURCE en dernière position pour Excel également
+            if (selectedPartnerColumns.includes('SOURCE')) {
+                selectedPartnerColumns = selectedPartnerColumns.filter(c => c !== 'SOURCE');
+                selectedPartnerColumns.push('SOURCE');
+            }
             const partnerColumnsCount = selectedPartnerColumns.length;
             const spacing = 2; // 2 colonnes d'espacement
             const topSpacing = 2; // 2 lignes d'espacement en haut
@@ -5175,7 +5195,7 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
 
             // Ligne 5: En-têtes
             const boHeaders = boHeader.split(';');
-            const partnerHeaders = partnerHeader.split(';');
+            const partnerHeaders = partnerHeader ? partnerHeader.split(';') : [];
 
             boHeaders.forEach((header, index) => {
                 const cell = worksheet.getCell(topSpacing + 3, index + 1);
@@ -5229,7 +5249,7 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
                                 case 'Agence': value = partnerItem.Agence || ''; break;
                                 case 'Date': value = partnerItem.Date || ''; break;
                                 case 'HEURE': value = partnerItem.Heure || ''; break;
-                                case 'SOURCE': value = partnerItem.SOURCE || ''; break;
+                                case 'SOURCE': value = partnerItem.SOURCE || 'PARTENAIRE'; break;
                                 default: value = ''; break;
                             }
                         }
@@ -5264,7 +5284,13 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
         } catch (error) {
             console.error('❌ Erreur lors de la création du fichier Excel:', error);
             // Fallback vers CSV si Excel échoue
-            const csvContent = this.generateCsvContent(report, selectedPartnerColumns, boHeader, partnerHeader);
+            // S'assurer que SOURCE est en dernière position aussi pour le fallback CSV
+            let csvCols = [...selectedPartnerColumns];
+            if (csvCols.includes('SOURCE')) {
+                csvCols = csvCols.filter(c => c !== 'SOURCE');
+                csvCols.push('SOURCE');
+            }
+            const csvContent = this.generateCsvContent(report, csvCols, boHeader, csvCols.join(';'));
             const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
             const link = document.createElement('a');
             const url = URL.createObjectURL(blob);
@@ -5390,7 +5416,7 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
                             case 'Agence': value = partnerItem.Agence || ''; break;
                             case 'Date': value = partnerItem.Date || ''; break;
                             case 'HEURE': value = partnerItem.Heure || ''; break;
-                            case 'SOURCE': value = partnerItem.SOURCE || ''; break;
+                            case 'SOURCE': value = partnerItem.SOURCE || 'PARTENAIRE'; break;
                             default: value = ''; break;
                         }
                     }

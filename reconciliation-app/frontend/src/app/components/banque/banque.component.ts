@@ -8,6 +8,7 @@ import { OperationService } from '../../services/operation.service';
 import { OperationServiceApi } from '../../services/operation.service';
 import { ReleveBancaireService } from '../../services/releve-bancaire.service';
 import { ReleveBancaireRow } from '../../models/releve-bancaire.model';
+import { ExportOptimizationService } from '../../services/export-optimization.service';
 
 // Interface locale pour les opérations bancaires avec Date
 interface OperationBancaireDisplay extends Omit<OperationBancaire, 'dateOperation'> {
@@ -601,7 +602,8 @@ export class BanqueComponent implements OnInit {
     private compteService: CompteService,
     private operationService: OperationService,
     private releveService: ReleveBancaireService,
-    private operationApi: OperationServiceApi
+    private operationApi: OperationServiceApi,
+    private exportOptimizationService: ExportOptimizationService
   ) { }
 
   private normalizeCountryName(input: string): string {
@@ -1229,6 +1231,73 @@ export class BanqueComponent implements OnInit {
         alert('Impossible de télécharger le modèle de relevé');
       }
     });
+  }
+
+  // Export CSV des relevés (séparateur ;) selon le lot et filtre de statut courants
+  exportReleveCSV() {
+    const rows = this.filteredReleveRowsForImport || [];
+    if (!rows.length) {
+      alert('Aucune ligne de relevé à exporter.');
+      return;
+    }
+
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const now = new Date();
+    const ts = `${now.getFullYear()}${pad(now.getMonth()+1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}`;
+    const lot = (this.releveSelectedBatchId && this.releveSelectedBatchId !== 'ALL') ? this.releveSelectedBatchId : 'ALL';
+    const filename = `releve_bancaire_${lot}_${ts}.csv`;
+
+    const columns = [
+      'batchId',
+      'banque',
+      'numeroCompte',
+      'nomCompte',
+      'dateComptable',
+      'dateValeur',
+      'libelle',
+      'debit',
+      'credit',
+      'montant',
+      'numeroCheque',
+      'devise',
+      'soldeCourant',
+      'soldeDisponibleOuverture',
+      'soldeDisponibleCloture',
+      'soldeComptableOuverture',
+      'soldeComptableCloture',
+      'reconStatus'
+    ];
+
+    const exportRows = rows.map((r: any) => ({
+      batchId: r.batchId || this.releveBatchId || '',
+      banque: r.banque || '',
+      numeroCompte: r.numeroCompte || '',
+      nomCompte: r.nomCompte || '',
+      dateComptable: this.normalizeDateToYmd(r.dateComptable as any),
+      dateValeur: this.normalizeDateToYmd(r.dateValeur as any),
+      libelle: r.libelle || '',
+      debit: typeof r.debit === 'number' ? r.debit : '',
+      credit: typeof r.credit === 'number' ? r.credit : '',
+      montant: typeof r.montant === 'number' ? r.montant : '',
+      numeroCheque: r.numeroCheque || '',
+      devise: r.devise || '',
+      soldeCourant: typeof r.soldeCourant === 'number' ? r.soldeCourant : '',
+      soldeDisponibleOuverture: typeof r.soldeDisponibleOuverture === 'number' ? r.soldeDisponibleOuverture : '',
+      soldeDisponibleCloture: typeof r.soldeDisponibleCloture === 'number' ? r.soldeDisponibleCloture : '',
+      soldeComptableOuverture: typeof r.soldeComptableOuverture === 'number' ? r.soldeComptableOuverture : '',
+      soldeComptableCloture: typeof r.soldeComptableCloture === 'number' ? r.soldeComptableCloture : '',
+      reconStatus: this.getReleveReconStatus(r)
+    }));
+
+    const isLargeDataset = exportRows.length > 10000;
+    if (isLargeDataset) {
+      this.exportOptimizationService.exportCSVOptimized(exportRows, columns, filename, {
+        chunkSize: 5000,
+        useWebWorker: true
+      });
+    } else {
+      this.exportOptimizationService.exportQuick(exportRows, columns, filename, 'csv');
+    }
   }
 
   // Relevé Import: lignes filtrées par Statut Réconciliation (OK/KO)

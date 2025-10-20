@@ -93,6 +93,9 @@
           <button class="btn-primary" (click)="downloadReleveTemplate()" title="Télécharger le modèle">
             <i class="fas fa-file-excel"></i> Modèle
           </button>
+          <button class="btn-primary" (click)="exportReleveCSV()" [disabled]="!(filteredReleveRowsForImport && filteredReleveRowsForImport.length)" title="Exporter le relevé (CSV ;)">
+            <i class="fas fa-file-export"></i> Export CSV
+          </button>
           <div class="filter-group" style="margin-left:12px;">
             <label>Lot</label>
             <select [(ngModel)]="releveSelectedBatchId" (change)="relevePage = 1">
