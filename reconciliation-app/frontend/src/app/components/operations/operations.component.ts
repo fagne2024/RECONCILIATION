@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy, ViewChild, ChangeDetectorRef } from '@angular/core';
+import { Component, OnInit, OnDestroy, ViewChild, ChangeDetectorRef, AfterViewInit } from '@angular/core';
 import { FormBuilder, FormGroup, Validators, FormControl } from '@angular/forms';
 import { Subscription } from 'rxjs';
 import { OperationService } from '../../services/operation.service';
@@ -15,7 +15,7 @@ import { MatSelect } from '@angular/material/select';
     templateUrl: './operations.component.html',
     styleUrls: ['./operations.component.scss']
 })
-export class OperationsComponent implements OnInit, OnDestroy {
+export class OperationsComponent implements OnInit, OnDestroy, AfterViewInit {
     operations: Operation[] = [];
     filteredOperations: Operation[] = [];
     pagedOperations: Operation[] = [];
@@ -401,6 +401,11 @@ export class OperationsComponent implements OnInit, OnDestroy {
 
     ngOnDestroy() {
         this.subscription.unsubscribe();
+    }
+
+    ngAfterViewInit() {
+        // Evite NG0100 quand des listes liées au template évoluent durant le 1er cycle
+        try { this.cdr.detectChanges(); } catch {}
     }
 
     // --- Upload operations via fichier ---
@@ -1720,10 +1725,18 @@ Mises à jour: ${updated}/${total}${failed > 0 ? `\nEchecs: ${failed}` : ''}`;
                 }
             }
             
-            // Filtre par code propriétaire
+            // Filtre par code propriétaire (normalisation insensible à la casse et aux espaces)
             if (selectedCodesProprietaire && selectedCodesProprietaire.length > 0) {
-                if (!selectedCodesProprietaire.includes(op.codeProprietaire)) {
-                    console.log(`Opération ${op.id} exclue: codeProprietaire ${op.codeProprietaire} pas dans ${selectedCodesProprietaire}`);
+                const normalize = (v: any) => (v ?? '')
+                    .toString()
+                    .replace(/\u00A0/g, ' ') // NBSP -> space
+                    .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // remove accents
+                    .trim()
+                    .toLowerCase();
+                const selectedNorm = new Set(selectedCodesProprietaire.map(normalize));
+                const opCode = normalize(op.codeProprietaire);
+                if (!selectedNorm.has(opCode)) {
+                    console.log(`Opération ${op.id} exclue: codeProprietaire ${op.codeProprietaire} pas dans ${Array.from(selectedNorm).join(',')}`);
                     return false;
                 }
             }
