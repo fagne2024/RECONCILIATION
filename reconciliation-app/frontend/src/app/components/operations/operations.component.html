@@ -895,6 +895,28 @@
                     <i class="fas fa-times"></i>
                     Désélectionner tout
                 </button>
+                <div class="bulk-status-actions">
+                    <select [(ngModel)]="selectedTargetStatut" [disabled]="isBulkUpdatingStatus">
+                        <option value="" disabled selected>Choisir un statut</option>
+                        <option *ngFor="let st of statutOperations" [value]="st">{{ st }}</option>
+                    </select>
+                    <button class="btn-primary" 
+                            (click)="bulkChangeSelectedOperationsStatus()"
+                            [disabled]="isBulkUpdatingStatus || !selectedTargetStatut"
+                            title="Changer le statut des opérations sélectionnées">
+                        <i class="fas fa-exchange-alt"></i>
+                        {{ isBulkUpdatingStatus ? '⏳ Changement...' : 'Changer statut' }}
+                    </button>
+                    <button class="btn-success" (click)="quickBulkChange('Validée')" [disabled]="isBulkUpdatingStatus || !hasSelectedOperations" title="Valider sélection">
+                        <i class="fas fa-check"></i> Valider
+                    </button>
+                    <button class="btn-warning" (click)="quickBulkChange('Rejetée')" [disabled]="isBulkUpdatingStatus || !hasSelectedOperations" title="Rejeter sélection">
+                        <i class="fas fa-ban"></i> Rejeter
+                    </button>
+                    <button class="btn-danger" (click)="quickBulkCancel()" [disabled]="isBulkUpdatingStatus || !hasSelectedOperations" title="Annuler (créera des opérations d’annulation)">
+                        <i class="fas fa-undo"></i> Annuler
+                    </button>
+                </div>
                 <button class="btn-danger btn-lg" 
                         (click)="deleteSelectedOperations()" 
                         [disabled]="isDeletingMultiple"

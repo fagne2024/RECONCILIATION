@@ -209,6 +209,26 @@ public class OperationBancaireService {
         }
     }
     
+    // Mettre à jour en lot le statut des opérations bancaires
+    @Transactional
+    public int bulkUpdateStatut(List<Long> ids, String nouveauStatut) {
+        if (ids == null || ids.isEmpty() || nouveauStatut == null || nouveauStatut.isEmpty()) {
+            return 0;
+        }
+        List<OperationBancaireEntity> operations = operationBancaireRepository.findAllById(ids);
+        int updated = 0;
+        for (OperationBancaireEntity entity : operations) {
+            String previous = entity.getStatut();
+            entity.setStatut(nouveauStatut);
+            OperationBancaireEntity saved = operationBancaireRepository.save(entity);
+            if (!"Validée".equalsIgnoreCase(previous) && "Validée".equalsIgnoreCase(nouveauStatut)) {
+                appliquerImpactSurCompte(saved);
+            }
+            updated++;
+        }
+        return updated;
+    }
+
     // Supprimer une opération bancaire
     @Transactional
     public boolean deleteOperationBancaire(Long id) {

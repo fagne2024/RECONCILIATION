@@ -9,6 +9,7 @@ import { OperationServiceApi } from '../../services/operation.service';
 import { ReleveBancaireService } from '../../services/releve-bancaire.service';
 import { ReleveBancaireRow } from '../../models/releve-bancaire.model';
 import { ExportOptimizationService } from '../../services/export-optimization.service';
+import { PopupService } from '../../services/popup.service';
 
 // Interface locale pour les opérations bancaires avec Date
 interface OperationBancaireDisplay extends Omit<OperationBancaire, 'dateOperation'> {
@@ -177,6 +178,13 @@ export class BanqueComponent implements OnInit {
   correspondanceFilterBanque = '';
   correspondanceFilterMontant: number | null = null;
 
+  // Sélection multiple sur la vue opérations bancaires (reconView==='operation')
+  isSelectionModeOps = false;
+  selectedOpIds: Set<number> = new Set<number>();
+  selectAllOpsOnPage = false;
+  isBulkUpdatingOps = false;
+  selectedOpsTargetStatut: string = '';
+
   // Sélection multiple pour actions OK définitif (corr_operation / corr_releve)
   selectedReconKeys: Set<string> = new Set<string>();
   selectAllOnPage = false;
@@ -196,6 +204,173 @@ export class BanqueComponent implements OnInit {
   // Compteur des OK définitifs (clé unique, sans doublons)
   get totalOkDefinitifs(): number {
     try { return this.reconOkKeySet ? this.reconOkKeySet.size : 0; } catch { return 0; }
+  }
+
+  // Helpers sélection multi (vue opérations)
+  toggleSelectionModeOps() {
+    this.isSelectionModeOps = !this.isSelectionModeOps;
+    if (!this.isSelectionModeOps) {
+      this.selectedOpIds.clear();
+      this.selectAllOpsOnPage = false;
+      this.selectedOpsTargetStatut = '';
+    }
+  }
+
+  isOpSelected(op: OperationBancaireDisplay): boolean {
+    return !!op && typeof (op as any).id === 'number' && this.selectedOpIds.has((op as any).id);
+  }
+
+  toggleOpSelection(op: OperationBancaireDisplay) {
+    const id = (op as any).id as number | undefined;
+    if (typeof id !== 'number') return;
+    if (this.selectedOpIds.has(id)) this.selectedOpIds.delete(id); else this.selectedOpIds.add(id);
+  }
+
+  selectAllOpsCurrentPage() {
+    (this.pagedLeftOps || []).forEach(op => {
+      const id = (op as any).id as number | undefined;
+      if (typeof id === 'number') this.selectedOpIds.add(id);
+    });
+    this.selectAllOpsOnPage = true;
+  }
+
+  deselectAllOps() {
+    this.selectedOpIds.clear();
+    this.selectAllOpsOnPage = false;
+  }
+
+  get hasSelectedOps(): boolean {
+    return this.selectedOpIds.size > 0;
+  }
+
+  async bulkChangeSelectedOpsStatus() {
+    if (!this.hasSelectedOps) { this.popupService.showWarning('Aucune opération sélectionnée'); return; }
+    if (!this.selectedOpsTargetStatut) { this.popupService.showWarning('Choisissez un statut cible'); return; }
+    const count = this.selectedOpIds.size;
+    const ok = await this.popupService.showConfirm(
+      `Changer le statut de ${count} opération(s) vers "${this.selectedOpsTargetStatut}" ?`,
+      'Confirmation changement de statut'
+    );
+    if (!ok) return;
+    try {
+      this.isBulkUpdatingOps = true;
+      const ids = Array.from(this.selectedOpIds.values());
+      const updated = await this.operationBancaireService.bulkUpdateStatut(ids, this.selectedOpsTargetStatut).toPromise();
+      const total = ids.length;
+      const failed = Math.max(0, total - (updated || 0));
+      const msg = `Statut cible: "${this.selectedOpsTargetStatut}"\nMises à jour: ${updated}/${total}${failed > 0 ? `\nEchecs: ${failed}` : ''}`;
+      this.popupService.showSuccess(msg, 'Changement de statut (bulk)');
+      // reset
+      this.selectedOpIds.clear();
+      this.selectAllOpsOnPage = false;
+      this.selectedOpsTargetStatut = '';
+      this.isSelectionModeOps = false;
+      // reload
+      this.loadOperations();
+      this.updatePagedReconciliationResults();
+    } catch (e) {
+      alert('❌ Erreur lors de la mise à jour en masse des statuts');
+    } finally {
+      this.isBulkUpdatingOps = false;
+    }
+  }
+
+  quickBulkOps(status: string) {
+    this.selectedOpsTargetStatut = status;
+    this.bulkChangeSelectedOpsStatus();
+  }
+
+  // Sélection multiple sur la liste principale (hors réconciliation)
+  isSelectionModeMain = false;
+  selectedMainOpIds: Set<number> = new Set<number>();
+  selectAllMainOnPage = false;
+  isBulkUpdatingMain = false;
+  selectedMainTargetStatut: string = '';
+
+  toggleSelectionModeMain() {
+    this.isSelectionModeMain = !this.isSelectionModeMain;
+    if (!this.isSelectionModeMain) {
+      this.selectedMainOpIds.clear();
+      this.selectAllMainOnPage = false;
+      this.selectedMainTargetStatut = '';
+    }
+  }
+
+  isMainOpSelected(op: OperationBancaireDisplay): boolean {
+    return !!op && typeof (op as any).id === 'number' && this.selectedMainOpIds.has((op as any).id);
+  }
+
+  toggleMainOpSelection(op: OperationBancaireDisplay) {
+    const id = (op as any).id as number | undefined;
+    if (typeof id !== 'number') return;
+    if (this.selectedMainOpIds.has(id)) this.selectedMainOpIds.delete(id); else this.selectedMainOpIds.add(id);
+  }
+
+  private areAllMainOnPageSelected(): boolean {
+    try {
+      const page = this.pagedOperations || [];
+      if (!page.length) return false;
+      return page.every(op => typeof (op as any).id === 'number' && this.selectedMainOpIds.has((op as any).id));
+    } catch { return false; }
+  }
+
+  toggleSelectAllMainHeader() {
+    const allSelected = this.areAllMainOnPageSelected();
+    if (allSelected) {
+      (this.pagedOperations || []).forEach(op => {
+        const id = (op as any).id as number | undefined;
+        if (typeof id === 'number') this.selectedMainOpIds.delete(id);
+      });
+      this.selectAllMainOnPage = false;
+    } else {
+      (this.pagedOperations || []).forEach(op => {
+        const id = (op as any).id as number | undefined;
+        if (typeof id === 'number') this.selectedMainOpIds.add(id);
+      });
+      this.selectAllMainOnPage = true;
+    }
+  }
+
+  deselectAllMain() {
+    this.selectedMainOpIds.clear();
+    this.selectAllMainOnPage = false;
+  }
+
+  get hasSelectedMainOps(): boolean { return this.selectedMainOpIds.size > 0; }
+
+  async bulkChangeSelectedMainStatus() {
+    if (!this.hasSelectedMainOps) { this.popupService.showWarning('Aucune opération sélectionnée'); return; }
+    if (!this.selectedMainTargetStatut) { this.popupService.showWarning('Choisissez un statut cible'); return; }
+    const count = this.selectedMainOpIds.size;
+    const ok = await this.popupService.showConfirm(
+      `Changer le statut de ${count} opération(s) vers "${this.selectedMainTargetStatut}" ?`,
+      'Confirmation changement de statut'
+    );
+    if (!ok) return;
+    try {
+      this.isBulkUpdatingMain = true;
+      const ids = Array.from(this.selectedMainOpIds.values());
+      const updated = await this.operationBancaireService.bulkUpdateStatut(ids, this.selectedMainTargetStatut).toPromise();
+      const total = ids.length;
+      const failed = Math.max(0, total - (updated || 0));
+      const msg = `Statut cible: "${this.selectedMainTargetStatut}"\nMises à jour: ${updated}/${total}${failed > 0 ? `\nEchecs: ${failed}` : ''}`;
+      this.popupService.showSuccess(msg, 'Changement de statut (bulk)');
+      // reset + reload
+      this.selectedMainOpIds.clear();
+      this.selectAllMainOnPage = false;
+      this.selectedMainTargetStatut = '';
+      this.isSelectionModeMain = false;
+      this.loadOperations();
+    } catch (e) {
+      this.popupService.showError('Erreur lors de la mise à jour en masse des statuts', 'Erreur');
+    } finally {
+      this.isBulkUpdatingMain = false;
+    }
+  }
+
+  quickBulkMain(status: string) {
+    this.selectedMainTargetStatut = status;
+    this.bulkChangeSelectedMainStatus();
   }
 
   // Filtres Statut Réconciliation (UI)
@@ -603,7 +778,8 @@ export class BanqueComponent implements OnInit {
     private operationService: OperationService,
     private releveService: ReleveBancaireService,
     private operationApi: OperationServiceApi,
-    private exportOptimizationService: ExportOptimizationService
+    private exportOptimizationService: ExportOptimizationService,
+    private popupService: PopupService
   ) { }
 
   private normalizeCountryName(input: string): string {

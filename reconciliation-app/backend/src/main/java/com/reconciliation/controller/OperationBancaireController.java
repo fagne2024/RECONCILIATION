@@ -26,11 +26,19 @@ public class OperationBancaireController {
     @Autowired
     private com.reconciliation.repository.OperationBancaireRepository operationBancaireRepository;
     
+    
     // Récupérer toutes les opérations bancaires
     @GetMapping
     public ResponseEntity<List<OperationBancaire>> getAllOperationsBancaires() {
         List<OperationBancaire> operations = operationBancaireService.getAllOperationsBancaires();
         return ResponseEntity.ok(operations);
+    }
+
+    // Mise à jour en lot des statuts
+    @PutMapping("/bulk-statut")
+    public ResponseEntity<Integer> bulkUpdateStatut(@RequestBody com.reconciliation.dto.BulkUpdateStatutRequest request) {
+        int updated = operationBancaireService.bulkUpdateStatut(request.getIds(), request.getStatut());
+        return ResponseEntity.ok(updated);
     }
     
     // Récupérer une opération bancaire par ID

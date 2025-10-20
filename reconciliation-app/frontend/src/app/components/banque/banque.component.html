@@ -300,11 +300,50 @@
               <i class="fas fa-undo"></i> Annuler ({{ selectedReconKeys.size }})
             </button>
           </div>
+          <!-- Actions sélection pour vue opérations -->
+          <div class="bulk-actions" *ngIf="reconView==='operation'">
+            <button class="btn-outline" (click)="toggleSelectionModeOps()">
+              <i class="fas fa-check-square"></i>
+              {{ isSelectionModeOps ? 'Quitter la sélection' : 'Sélection multiple' }}
+              <span *ngIf="isSelectionModeOps && hasSelectedOps" class="badge" style="margin-left:6px;">{{ selectedOpIds.size }}</span>
+            </button>
+            <ng-container *ngIf="isSelectionModeOps">
+              <button class="btn-outline" (click)="selectAllOpsCurrentPage()" [disabled]="selectAllOpsOnPage">
+                <i class="fas fa-check-double"></i>
+                Sélectionner la page
+              </button>
+              <button class="btn-outline" (click)="deselectAllOps()" [disabled]="!hasSelectedOps">
+                <i class="fas fa-times"></i>
+                Désélectionner tout
+              </button>
+              <select [(ngModel)]="selectedOpsTargetStatut" [disabled]="isBulkUpdatingOps" style="margin-left:8px;">
+                <option value="" disabled selected>Choisir un statut</option>
+                <option *ngFor="let s of statutsList" [value]="s">{{ s }}</option>
+              </select>
+              <button class="btn-primary" (click)="bulkChangeSelectedOpsStatus()" [disabled]="isBulkUpdatingOps || !hasSelectedOps || !selectedOpsTargetStatut">
+                <i class="fas fa-exchange-alt"></i>
+                {{ isBulkUpdatingOps ? '⏳ Changement...' : 'Changer statut (' + selectedOpIds.size + ')' }}
+              </button>
+              <button class="btn-success" (click)="quickBulkOps('Validée')" [disabled]="isBulkUpdatingOps || !hasSelectedOps">
+                <i class="fas fa-check"></i> Valider
+              </button>
+              <button class="btn-warning" (click)="quickBulkOps('Rejetée')" [disabled]="isBulkUpdatingOps || !hasSelectedOps">
+                <i class="fas fa-ban"></i> Rejeter
+              </button>
+            </ng-container>
+          </div>
         </div>
         
         <table class="operations-table" *ngIf="reconView==='operation'">
           <thead>
             <tr>
+              <th style="width:34px;" *ngIf="isSelectionModeOps">
+                <input type="checkbox"
+                       [checked]="selectAllOpsOnPage && (pagedLeftOps.length>0)"
+                       [indeterminate]="hasSelectedOps && !selectAllOpsOnPage"
+                       (change)="toggleSelectAllOpsHeader()"
+                       title="Sélectionner/Désélectionner la page">
+              </th>
               <th>Pays</th>
               <th>Code Pays</th>
               <th>Mois</th>
@@ -322,7 +361,10 @@
             </tr>
           </thead>
           <tbody>
-            <tr *ngFor="let op of pagedLeftOps">
+            <tr *ngFor="let op of pagedLeftOps" [class.selected]="isOpSelected(op)">
+              <td *ngIf="isSelectionModeOps">
+                <input type="checkbox" [checked]="isOpSelected(op)" (change)="toggleOpSelection(op)">
+              </td>
               <td>{{ op.pays }}</td>
               <td>{{ op.codePays }}</td>
               <td>{{ op.mois }}</td>
@@ -796,6 +838,27 @@
           <span>{{ filteredOperations.length }} opération(s) au total</span>
         </div>
         <div style="margin-left:auto; display:flex; gap:8px; align-items:center;">
+          <button class="btn-outline" (click)="toggleSelectionModeMain()">
+            <i class="fas fa-check-square"></i>
+            {{ isSelectionModeMain ? 'Quitter la sélection' : 'Sélection multiple' }}
+            <span *ngIf="isSelectionModeMain && hasSelectedMainOps" class="badge" style="margin-left:6px;">{{ selectedMainOpIds.size }}</span>
+          </button>
+          <ng-container *ngIf="isSelectionModeMain">
+            <select [(ngModel)]="selectedMainTargetStatut" [disabled]="isBulkUpdatingMain">
+              <option value="" disabled selected>Choisir un statut</option>
+              <option *ngFor="let s of statutsList" [value]="s">{{ s }}</option>
+            </select>
+            <button class="btn-primary" (click)="bulkChangeSelectedMainStatus()" [disabled]="isBulkUpdatingMain || !hasSelectedMainOps || !selectedMainTargetStatut">
+              <i class="fas fa-exchange-alt"></i>
+              {{ isBulkUpdatingMain ? '⏳ Changement...' : 'Changer statut (' + selectedMainOpIds.size + ')' }}
+            </button>
+            <button class="btn-success" (click)="quickBulkMain('Validée')" [disabled]="isBulkUpdatingMain || !hasSelectedMainOps">
+              <i class="fas fa-check"></i> Valider
+            </button>
+            <button class="btn-warning" (click)="quickBulkMain('Rejetée')" [disabled]="isBulkUpdatingMain || !hasSelectedMainOps">
+              <i class="fas fa-ban"></i> Rejeter
+            </button>
+          </ng-container>
           <button class="btn btn-success" (click)="exportOperations()" [disabled]="filteredOperations.length === 0" title="Exporter (Excel)">
             <i class="fas fa-file-excel"></i> Exporter
           </button>
@@ -807,6 +870,13 @@
         <table class="operations-table">
           <thead>
             <tr>
+              <th style="width:34px;" *ngIf="isSelectionModeMain">
+                <input type="checkbox"
+                       [checked]="selectAllMainOnPage && (pagedOperations.length>0)"
+                       [indeterminate]="hasSelectedMainOps && !selectAllMainOnPage"
+                       (change)="toggleSelectAllMainHeader()"
+                       title="Sélectionner/Désélectionner la page">
+              </th>
               <th>Pays</th>
               <th>Code Pays</th>
               <th>Mois</th>
@@ -826,7 +896,10 @@
             </tr>
           </thead>
           <tbody>
-            <tr *ngFor="let operation of pagedOperations">
+            <tr *ngFor="let operation of pagedOperations" [class.selected]="isMainOpSelected(operation)">
+              <td *ngIf="isSelectionModeMain">
+                <input type="checkbox" [checked]="isMainOpSelected(operation)" (change)="toggleMainOpSelection(operation)">
+              </td>
               <td>{{ getPaysDisplay(operation) }}</td>
               <td>{{ operation.codePays }}</td>
               <td>{{ operation.mois }}</td>

@@ -60,6 +60,11 @@ export class OperationBancaireService {
         return this.http.put<OperationBancaire>(`${this.apiUrl}/${id}`, operation);
     }
 
+    // Mettre à jour en lot le statut des opérations bancaires
+    bulkUpdateStatut(ids: number[], statut: string): Observable<number> {
+        return this.http.put<number>(`${this.apiUrl}/bulk-statut`, { ids, statut });
+    }
+
     // Supprimer une opération bancaire
     deleteOperationBancaire(id: number): Observable<boolean> {
         return this.http.delete<boolean>(`${this.apiUrl}/${id}`);

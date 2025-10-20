@@ -110,6 +110,8 @@ export class OperationsComponent implements OnInit, OnDestroy {
     isSelectionMode = false;
     isDeletingMultiple = false;
     allSelected: boolean = false;
+    isBulkUpdatingStatus = false;
+    selectedTargetStatut: string = '';
 
     // Propriété pour les options de comptes avec ID et nom
     get compteOptions(): { value: number, label: string }[] {
@@ -1500,6 +1502,64 @@ export class OperationsComponent implements OnInit, OnDestroy {
 
     get hasSelectedOperations(): boolean {
         return this.selectedOperationIds.size > 0;
+    }
+
+    async bulkChangeSelectedOperationsStatus() {
+        if (!this.hasSelectedOperations) {
+            this.popupService.showWarning('Aucune opération sélectionnée');
+            return;
+        }
+        if (!this.selectedTargetStatut) {
+            this.popupService.showWarning('Veuillez choisir un statut cible');
+            return;
+        }
+        const count = this.selectedOperationIds.size;
+        const confirmed = await this.popupService.showConfirm(
+            `Changer le statut de ${count} opération(s) vers "${this.selectedTargetStatut}" ?`,
+            'Confirmation changement de statut'
+        );
+        if (!confirmed) return;
+        try {
+            this.isBulkUpdatingStatus = true;
+            const ids = Array.from(this.selectedOperationIds);
+            const updated = await this.operationService.bulkUpdateOperationStatut(ids, this.selectedTargetStatut).toPromise();
+            const total = ids.length;
+            const failed = Math.max(0, total - (updated || 0));
+            const msg = `Statut cible: "${this.selectedTargetStatut}"
+Mises à jour: ${updated}/${total}${failed > 0 ? `\nEchecs: ${failed}` : ''}`;
+            this.popupService.showSuccess(msg, 'Changement de statut (bulk)');
+            // Reset sélection et recharger
+            this.selectedOperations.clear();
+            this.selectedOperationIds.clear();
+            this.allSelected = false;
+            this.isSelectionMode = false;
+            this.selectedTargetStatut = '';
+            this.loadOperations();
+        } catch (e) {
+            this.popupService.showError('Erreur lors de la mise à jour en masse du statut.', 'Erreur');
+        } finally {
+            this.isBulkUpdatingStatus = false;
+        }
+    }
+
+    quickBulkChange(status: string) {
+        this.selectedTargetStatut = status;
+        this.bulkChangeSelectedOperationsStatus();
+    }
+
+    async quickBulkCancel() {
+        if (!this.hasSelectedOperations) {
+            this.popupService.showWarning('Aucune opération sélectionnée');
+            return;
+        }
+        const count = this.selectedOperationIds.size;
+        const confirmed = await this.popupService.showConfirm(
+            `Vous allez annuler ${count} opération(s).\n\nConséquences:\n- Statut basculé à "Annulée"\n- Création d'opérations d'annulation (impact inverse)\n- Recalcul des soldes chronologiques\n\nConfirmez-vous ?`,
+            'Confirmation d’annulation en masse'
+        );
+        if (!confirmed) return;
+        this.selectedTargetStatut = 'Annulée';
+        this.bulkChangeSelectedOperationsStatus();
     }
 
     async deleteSelectedOperations() {

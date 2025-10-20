@@ -173,6 +173,11 @@ export class OperationService {
         return this.http.put<boolean>(`${this.apiUrl}/${id}/statut`, nouveauStatut);
     }
 
+    // Mettre à jour en lot le statut des opérations
+    bulkUpdateOperationStatut(ids: number[], statut: string): Observable<number> {
+        return this.http.put<number>(`${this.apiUrl}/bulk-statut`, { ids, statut });
+    }
+
     // Rejeter une opération
     rejectOperation(id: number): Observable<boolean> {
         return this.http.put<boolean>(`${this.apiUrl}/${id}/reject`, {});

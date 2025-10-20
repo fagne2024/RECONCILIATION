@@ -274,6 +274,13 @@ public class OperationController {
         return updated ? ResponseEntity.ok(true) : ResponseEntity.notFound().build();
     }
     
+    // Mise à jour en lot des statuts d'opérations
+    @PutMapping("/bulk-statut")
+    public ResponseEntity<Integer> bulkUpdateOperationStatut(@RequestBody com.reconciliation.dto.BulkUpdateStatutRequest request) {
+        int updated = operationService.bulkUpdateOperationStatut(request.getIds(), request.getStatut());
+        return ResponseEntity.ok(updated);
+    }
+    
     @PutMapping("/{id}/validate")
     public ResponseEntity<Boolean> validateOperation(@PathVariable Long id) {
         boolean validated = operationBusinessService.validateOperation(id);

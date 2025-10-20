@@ -881,6 +881,25 @@ public class OperationService {
         return false;
     }
     
+    @Transactional
+    public int bulkUpdateOperationStatut(List<Long> ids, String nouveauStatut) {
+        if (ids == null || ids.isEmpty() || nouveauStatut == null || nouveauStatut.isEmpty()) {
+            return 0;
+        }
+        int updated = 0;
+        for (Long id : ids) {
+            try {
+                boolean ok = updateOperationStatut(id, nouveauStatut);
+                if (ok) {
+                    updated++;
+                }
+            } catch (Exception ex) {
+                logger.warn("⚠️ Echec maj statut pour operation {}: {}", id, ex.getMessage());
+            }
+        }
+        return updated;
+    }
+    
     /**
      * Détermine si une opération est un débit (diminue le solde)
      */
