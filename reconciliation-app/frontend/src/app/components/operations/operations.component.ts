@@ -1472,7 +1472,7 @@ export class OperationsComponent implements OnInit, OnDestroy, AfterViewInit {
     }
 
     selectAllOperations() {
-        // Sélectionner toutes les opérations de toutes les pages
+        // Sélectionner toutes les opérations filtrées (pas seulement celles de la page courante)
         this.filteredOperations.forEach(op => {
             if (op.id) {
                 this.selectedOperationIds.add(op.id);
@@ -1480,6 +1480,7 @@ export class OperationsComponent implements OnInit, OnDestroy, AfterViewInit {
             }
         });
         this.allSelected = true;
+        console.log(`✅ ${this.selectedOperationIds.size} opérations sélectionnées (filtrées)`);
     }
 
     deselectAllOperations() {

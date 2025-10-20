@@ -227,11 +227,13 @@ export class BanqueComponent implements OnInit {
   }
 
   selectAllOpsCurrentPage() {
-    (this.pagedLeftOps || []).forEach(op => {
+    // Sélectionner toutes les opérations filtrées (pas seulement celles de la page courante)
+    (this.leftOps || []).forEach(op => {
       const id = (op as any).id as number | undefined;
       if (typeof id === 'number') this.selectedOpIds.add(id);
     });
     this.selectAllOpsOnPage = true;
+    console.log(`✅ ${this.selectedOpIds.size} opérations bancaires sélectionnées (filtrées)`);
   }
 
   deselectAllOps() {
