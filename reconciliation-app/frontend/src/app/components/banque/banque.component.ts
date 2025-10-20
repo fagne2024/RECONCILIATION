@@ -228,7 +228,7 @@ export class BanqueComponent implements OnInit {
 
   selectAllOpsCurrentPage() {
     // Sélectionner toutes les opérations filtrées (pas seulement celles de la page courante)
-    (this.leftOps || []).forEach(op => {
+    (this.operations || []).forEach(op => {
       const id = (op as any).id as number | undefined;
       if (typeof id === 'number') this.selectedOpIds.add(id);
     });
