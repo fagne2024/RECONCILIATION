@@ -783,11 +783,14 @@ export class OperationsComponent implements OnInit, OnDestroy, AfterViewInit {
                 next: (codes: string[]) => {
                     console.log('Codes propriétaires reçus:', codes);
                     this.codeProprietaireList = codes;
-                    
-                    // Mettre à jour les listes filtrées avec cloisonnement
+                    // Initialiser immédiatement la liste filtrée pour éviter l'état vide
+                    this.filteredCodeProprietaireList = (codes || []).slice();
+                    try { this.cdr.detectChanges(); } catch {}
+
+                    // Mettre à jour les listes filtrées avec cloisonnement (si nécessaire)
                     setTimeout(() => {
-                        this.updateFilteredLists();
-                    }, 100);
+                        try { this.updateFilteredLists(); } catch {}
+                    }, 0);
                     
                     console.log('codeProprietaireList mis à jour:', this.codeProprietaireList);
                     console.log('filteredCodeProprietaireList mis à jour:', this.filteredCodeProprietaireList);
