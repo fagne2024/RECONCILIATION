@@ -24,6 +24,8 @@ public class OperationImportService {
     private OperationService operationService;
     @Autowired
     private CompteRepository compteRepository;
+    @Autowired
+    private com.reconciliation.repository.OperationRepository operationRepository;
 
     public static class ImportResult {
         public int totalRead;
@@ -41,14 +43,40 @@ public class OperationImportService {
 
             Row header = sheet.getRow(0);
             Map<String, Integer> idx = mapHeaders(header);
+            System.out.println("DEBUG: En-têtes détectés: " + idx.keySet());
+            System.out.println("DEBUG: Mapping des colonnes: " + idx);
 
             int last = sheet.getLastRowNum();
+            System.out.println("DEBUG: Dernière ligne détectée: " + last);
+            
+            // Approche simplifiée : traiter toutes les lignes jusqu'à la dernière détectée
             for (int r = 1; r <= last; r++) {
                 Row row = sheet.getRow(r);
-                if (row == null) continue;
+                if (row == null) {
+                    System.out.println("DEBUG: Ligne " + r + " est null, ignorée");
+                    continue;
+                }
+                
+                // Vérifier si la ligne a du contenu (au moins une cellule non vide)
+                boolean hasContent = false;
+                for (int j = 0; j < row.getLastCellNum(); j++) {
+                    Cell cell = row.getCell(j);
+                    if (cell != null && !cell.toString().trim().isEmpty()) {
+                        hasContent = true;
+                        break;
+                    }
+                }
+                
+                if (!hasContent) {
+                    System.out.println("DEBUG: Ligne " + r + " est vide, ignorée");
+                    continue;
+                }
+                
+                System.out.println("DEBUG: Traitement ligne " + r);
                 result.totalRead++;
                 try {
                     String numeroCompte = getString(row, idx.get("numero_compte"));
+                    System.out.println("DEBUG: Ligne " + r + " - numero_compte: " + numeroCompte);
                     if (numeroCompte == null || numeroCompte.isBlank()) {
                         throw new IllegalArgumentException("numero_compte manquant");
                     }
@@ -58,14 +86,17 @@ public class OperationImportService {
                     }
 
                     String typeOperation = normalizeType(getString(row, idx.get("type_operation")));
+                    System.out.println("DEBUG: Ligne " + r + " - type_operation: " + typeOperation);
                     if (!"transaction_cree".equals(typeOperation) && !"annulation_bo".equals(typeOperation)) {
                         throw new IllegalArgumentException("type_operation invalide (autorisé: transaction_cree, annulation_bo)");
                     }
 
                     Double montant = getDouble(row, idx.get("montant"));
                     if (montant == null) montant = 0.0;
+                    System.out.println("DEBUG: Ligne " + r + " - montant: " + montant);
                     String banque = getString(row, idx.get("banque"));
                     String service = getString(row, idx.get("service"));
+                    System.out.println("DEBUG: Ligne " + r + " - service: " + service);
                     if (service == null || service.isBlank()) {
                         throw new IllegalArgumentException("service manquant (obligatoire pour générer la logique des 4 opérations)");
                     }
@@ -85,12 +116,22 @@ public class OperationImportService {
                     req.setDateOperation(isoDate);
                     req.setRecordCount(recordCount);
 
+                    // Vérifier les doublons avant de créer l'opération
+                    if (isDuplicate(req)) {
+                        result.errors.add("Ligne " + (r + 1) + ": Doublon détecté (même compte, type, montant, service, date)");
+                        System.out.println("DEBUG: Doublon détecté pour ligne " + r);
+                        continue;
+                    }
+
                     operationService.createOperation(req);
                     result.saved++;
+                    System.out.println("DEBUG: Opération créée avec succès pour ligne " + r);
                 } catch (Exception ex) {
                     result.errors.add("Ligne " + (r + 1) + ": " + ex.getMessage());
+                    System.out.println("DEBUG: Erreur ligne " + r + ": " + ex.getMessage());
                 }
             }
+            System.out.println("DEBUG: Import terminé - Total lu: " + result.totalRead + ", Sauvé: " + result.saved + ", Erreurs: " + result.errors.size());
             return result;
         }
     }
@@ -110,10 +151,18 @@ public class OperationImportService {
             int r = 0;
             for (String line : lines) {
                 Row row = sheet.createRow(r++);
-                String[] parts = line.split(",");
+                // Essayer d'abord le point-virgule, puis la virgule comme fallback
+                String[] parts;
+                if (line.contains(";")) {
+                    parts = line.split(";");
+                    System.out.println("DEBUG: Parsing CSV avec point-virgule: " + line);
+                } else {
+                    parts = line.split(",");
+                    System.out.println("DEBUG: Parsing CSV avec virgule: " + line);
+                }
                 for (int i = 0; i < parts.length; i++) {
                     Cell cell = row.createCell(i, CellType.STRING);
-                    cell.setCellValue(parts[i]);
+                    cell.setCellValue(parts[i].trim());
                 }
             }
             return wb;
@@ -243,6 +292,27 @@ public class OperationImportService {
             wb.write(bos);
             wb.close();
             return bos.toByteArray();
+        }
+    }
+
+    /**
+     * Vérifie si une opération est un doublon basé sur les critères principaux
+     */
+    private boolean isDuplicate(OperationCreateRequest request) {
+        try {
+            // Rechercher des opérations existantes avec les mêmes critères
+            List<com.reconciliation.entity.OperationEntity> existingOps = operationRepository.findByCompteIdAndTypeOperationAndMontantAndServiceAndDateOperation(
+                request.getCompteId(),
+                request.getTypeOperation(),
+                request.getMontant(),
+                request.getService(),
+                java.time.LocalDateTime.parse(request.getDateOperation())
+            );
+            
+            return !existingOps.isEmpty();
+        } catch (Exception e) {
+            System.out.println("DEBUG: Erreur lors de la vérification des doublons: " + e.getMessage());
+            return false; // En cas d'erreur, on laisse passer pour éviter de bloquer l'import
         }
     }
 }

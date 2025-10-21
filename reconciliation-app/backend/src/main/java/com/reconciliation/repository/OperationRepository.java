@@ -65,8 +65,6 @@ public interface OperationRepository extends JpaRepository<OperationEntity, Long
            "AND (:dateDebut IS NULL OR o.dateOperation >= :dateDebut) " +
            "AND (:dateFin IS NULL OR o.dateOperation <= :dateFin) " +
            "AND (:typeOperation IS NULL OR o.typeOperation = :typeOperation) " +
-           "AND o.typeOperation NOT LIKE 'annulation_%' " +
-           "AND (o.statut IS NULL OR o.statut != 'Annulée') " +
            "ORDER BY o.dateOperation DESC")
     List<OperationEntity> findByCompteNumeroCompteAndFiltersOrderByDateOperationDesc(
             @Param("numeroCompte") String numeroCompte,
@@ -78,8 +76,6 @@ public interface OperationRepository extends JpaRepository<OperationEntity, Long
            "AND (:dateDebut IS NULL OR o.dateOperation >= :dateDebut) " +
            "AND (:dateFin IS NULL OR o.dateOperation <= :dateFin) " +
            "AND (:typeOperation IS NULL OR o.typeOperation = :typeOperation) " +
-           "AND o.typeOperation NOT LIKE 'annulation_%' " +
-           "AND (o.statut IS NULL OR o.statut != 'Annulée') " +
            "ORDER BY o.dateOperation ASC")
     List<OperationEntity> findByCompteNumeroCompteAndFiltersOrderByDateOperationAsc(
             @Param("numeroCompte") String numeroCompte,
@@ -91,8 +87,6 @@ public interface OperationRepository extends JpaRepository<OperationEntity, Long
            "AND (:dateDebut IS NULL OR o.dateOperation >= :dateDebut) " +
            "AND (:dateFin IS NULL OR o.dateOperation <= :dateFin) " +
            "AND (:typeOperation IS NULL OR o.typeOperation = :typeOperation) " +
-           "AND o.typeOperation NOT LIKE 'annulation_%' " +
-           "AND (o.statut IS NULL OR o.statut != 'Annulée') " +
            "ORDER BY o.dateOperation DESC")
     List<OperationEntity> findByCompteNumeroInAndFiltersOrderByDateOperationDesc(
             @Param("numeros") List<String> numeros,
@@ -104,8 +98,6 @@ public interface OperationRepository extends JpaRepository<OperationEntity, Long
            "AND (:dateDebut IS NULL OR o.dateOperation >= :dateDebut) " +
            "AND (:dateFin IS NULL OR o.dateOperation <= :dateFin) " +
            "AND (:typeOperation IS NULL OR o.typeOperation = :typeOperation) " +
-           "AND o.typeOperation NOT LIKE 'annulation_%' " +
-           "AND (o.statut IS NULL OR o.statut != 'Annulée') " +
            "ORDER BY o.dateOperation ASC")
     List<OperationEntity> findByCompteNumeroInAndFiltersOrderByDateOperationAsc(
             @Param("numeros") List<String> numeros,
@@ -316,5 +308,19 @@ public interface OperationRepository extends JpaRepository<OperationEntity, Long
     List<OperationEntity> findByCompteIdAndStatutNotOrderByDateOperationDesc(
         @Param("compteId") Long compteId, 
         @Param("statutExclu") String statutExclu
+    );
+
+    // Méthode pour détecter les doublons lors de l'import
+    @Query("SELECT o FROM OperationEntity o WHERE o.compte.id = :compteId " +
+           "AND o.typeOperation = :typeOperation " +
+           "AND o.montant = :montant " +
+           "AND o.service = :service " +
+           "AND o.dateOperation = :dateOperation")
+    List<OperationEntity> findByCompteIdAndTypeOperationAndMontantAndServiceAndDateOperation(
+        @Param("compteId") Long compteId,
+        @Param("typeOperation") String typeOperation,
+        @Param("montant") Double montant,
+        @Param("service") String service,
+        @Param("dateOperation") LocalDateTime dateOperation
     );
 } 

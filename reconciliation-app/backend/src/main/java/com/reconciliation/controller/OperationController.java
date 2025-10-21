@@ -160,6 +160,8 @@ public class OperationController {
             
             List<Operation> operations = operationService.getOperationsByCompteForReleve(numeroCompte, debut, fin, typeOperation);
             logger.info("[API] /operations/compte/numero/releve retourne {} opérations", operations.size());
+            
+            
             return ResponseEntity.ok(operations);
         } catch (Exception e) {
             logger.error("[API] Erreur dans /operations/compte/numero/releve: {}", e.getMessage(), e);
@@ -556,7 +558,8 @@ public class OperationController {
         try {
             logger.info("Demande de recalcul du solde de clôture pour le compte {}", compteId);
             
-            operationService.recalculerSoldeClotureCompte(compteId);
+            // Note: Le recalcul automatique du solde est désactivé pour éviter d'écraser les soldes corrects
+            // operationService.recalculerSoldeClotureCompte(compteId);
             
             Map<String, Object> response = new HashMap<>();
             response.put("success", true);

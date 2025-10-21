@@ -64,7 +64,7 @@
                             <label>Fichier (xlsx, xls, csv)</label>
                             <input type="file" (change)="onFileSelected($event)" accept=".xlsx,.xls,.csv">
                             <div class="help-text">
-                                Utilisez le bouton "Modèle" pour télécharger un exemple de fichier attendu.
+                                Utilisez le bouton "Modèle" ci-dessous pour télécharger un exemple de fichier attendu.
                             </div>
                         </div>
                     </div>
@@ -78,6 +78,9 @@
                 <div class="modal-actions">
                     <button type="button" class="btn-secondary" (click)="hideUploadModal()">
                         <i class="fas fa-times"></i> Fermer
+                    </button>
+                    <button type="button" class="btn-info" (click)="downloadTemplate()" title="Télécharger le modèle de fichier">
+                        <i class="fas fa-download"></i> Modèle
                     </button>
                     <button type="button" class="btn-primary" [disabled]="!selectedFile || isUploading" (click)="uploadOperationsFile()">
                         <i class="fas fa-upload"></i> {{ isUploading ? 'Upload...' : 'Uploader' }}
@@ -913,7 +916,7 @@
                     <button class="btn-warning" (click)="quickBulkChange('Rejetée')" [disabled]="isBulkUpdatingStatus || !hasSelectedOperations" title="Rejeter sélection">
                         <i class="fas fa-ban"></i> Rejeter
                     </button>
-                    <button class="btn-danger" (click)="quickBulkCancel()" [disabled]="isBulkUpdatingStatus || !hasSelectedOperations" title="Annuler (créera des opérations d’annulation)">
+                    <button class="btn-danger" (click)="quickBulkCancel()" [disabled]="isBulkUpdatingStatus || !hasSelectedOperations || !hasCancelableOperations" title="Annuler (créera des opérations d'annulation)">
                         <i class="fas fa-undo"></i> Annuler
                     </button>
                 </div>
@@ -1059,7 +1062,7 @@
                         </td>
                         
                         <td class="amount-cell">
-                            <span *ngIf="op.statut === 'Validée'; else notCalculated" class="amount-value">
+                            <span *ngIf="op.statut === 'Validée' || op.statut === 'Annulée'; else notCalculated" class="amount-value">
                                 {{ op.soldeApres | number:'1.2-2' }}
                             </span>
                             <ng-template #notCalculated>
@@ -1106,9 +1109,12 @@
                                         title="Modifier l'opération">
                                     <i class="fas fa-edit"></i>
                                 </button>
-                                <button class="btn btn-sm btn-warning" 
+                                <button class="btn btn-sm" 
+                                        [class.btn-warning]="canCancelOperation(op)"
+                                        [class.btn-secondary]="!canCancelOperation(op)"
+                                        [disabled]="!canCancelOperation(op)"
                                         (click)="annulerOperation(op.id!); $event.stopPropagation()" 
-                                        title="Annuler l'opération">
+                                        [title]="canCancelOperation(op) ? 'Annuler l\'opération' : 'Opération déjà annulée'">
                                     <i class="fas fa-times"></i>
                                 </button>
                                 <button class="btn btn-sm btn-danger" 

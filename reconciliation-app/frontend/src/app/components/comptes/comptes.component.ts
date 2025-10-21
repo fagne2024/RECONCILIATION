@@ -1720,9 +1720,9 @@ export class ComptesComponent implements OnInit, OnDestroy {
         let globalOpeningSet = false;
         let globalOpening = 0;
         Object.entries(grouped).forEach(([date, ops], idx) => {
-            // Filtrer les opérations valides (non annulées) pour le calcul du solde de clôture
-            // Inclure les opérations "En attente" car elles peuvent être validées
-            const opsValides = ops.filter(op => op.statut !== 'Annulée' && op.statut !== 'Rejetée');
+            // Inclure toutes les opérations (y compris les annulations) pour le calcul du solde de clôture
+            // Les opérations d'annulation font partie de l'historique et affectent le solde
+            const opsValides = ops.filter(op => op.statut !== 'Rejetée');
             
             if (opsValides.length === 0) {
                 // Si toutes les opérations sont annulées, utiliser le solde d'ouverture

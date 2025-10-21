@@ -1513,6 +1513,13 @@ export class OperationsComponent implements OnInit, OnDestroy, AfterViewInit {
         return this.selectedOperationIds.size > 0;
     }
 
+    get hasCancelableOperations(): boolean {
+        return Array.from(this.selectedOperationIds).some(id => {
+            const operation = this.operations.find(op => op.id === id);
+            return operation ? this.canCancelOperation(operation) : false;
+        });
+    }
+
     async bulkChangeSelectedOperationsStatus() {
         if (!this.hasSelectedOperations) {
             this.popupService.showWarning('Aucune opération sélectionnée');
@@ -1544,6 +1551,7 @@ Mises à jour: ${updated}/${total}${failed > 0 ? `\nEchecs: ${failed}` : ''}`;
             this.isSelectionMode = false;
             this.selectedTargetStatut = '';
             this.loadOperations();
+            this.loadComptes(); // Recharger les comptes pour mettre à jour les soldes
         } catch (e) {
             this.popupService.showError('Erreur lors de la mise à jour en masse du statut.', 'Erreur');
         } finally {
@@ -1559,6 +1567,11 @@ Mises à jour: ${updated}/${total}${failed > 0 ? `\nEchecs: ${failed}` : ''}`;
     async quickBulkCancel() {
         if (!this.hasSelectedOperations) {
             this.popupService.showWarning('Aucune opération sélectionnée');
+            return;
+        }
+        
+        if (!this.hasCancelableOperations) {
+            this.popupService.showWarning('Aucune opération sélectionnée ne peut être annulée (toutes sont déjà annulées)');
             return;
         }
         const count = this.selectedOperationIds.size;
@@ -1616,6 +1629,7 @@ Mises à jour: ${updated}/${total}${failed > 0 ? `\nEchecs: ${failed}` : ''}`;
                     this.allSelected = false;
                     this.isSelectionMode = false;
                     this.loadOperations();
+                    this.loadComptes(); // Recharger les comptes pour mettre à jour les soldes
                 },
                 error: (err) => {
                     console.error('❌ Erreur lors de la suppression en lot:', err);
@@ -1646,7 +1660,54 @@ Mises à jour: ${updated}/${total}${failed > 0 ? `\nEchecs: ${failed}` : ''}`;
         });
     }
 
+    /**
+     * Vérifie si une opération peut être annulée
+     */
+    canCancelOperation(operation: Operation): boolean {
+        // Ne peut pas annuler si déjà annulée
+        if (operation.statut === 'Annulée') {
+            return false;
+        }
+        
+        // Ne peut pas annuler si le type commence déjà par 'annulation_'
+        if (operation.typeOperation && operation.typeOperation.startsWith('annulation_')) {
+            return false;
+        }
+        
+        return true;
+    }
+
+    /**
+     * Vérifie si une opération originale a été annulée
+     */
+    isOriginalOperationCancelled(operation: Operation): boolean {
+        // Si l'opération est déjà une annulation, ne pas la masquer
+        if (operation.typeOperation && operation.typeOperation.startsWith('annulation_')) {
+            return false;
+        }
+        
+        // Chercher s'il existe une opération d'annulation correspondante
+        const cancellationType = `annulation_${operation.typeOperation}`;
+        const hasCancellation = this.operations.some(op => 
+            op.typeOperation === cancellationType &&
+            op.compteId === operation.compteId &&
+            op.montant === operation.montant &&
+            op.service === operation.service &&
+            op.dateOperation === operation.dateOperation &&
+            op.statut === 'Annulée'
+        );
+        
+        return hasCancellation;
+    }
+
     async annulerOperation(id: number) {
+        // Trouver l'opération pour vérifier si elle peut être annulée
+        const operation = this.operations.find(op => op.id === id);
+        if (operation && !this.canCancelOperation(operation)) {
+            this.popupService.showError('Cette opération est déjà annulée et ne peut pas être annulée à nouveau.', 'Annulation Impossible');
+            return;
+        }
+
         const confirmed = await this.popupService.showConfirm(
             'Êtes-vous sûr de vouloir annuler cette opération ? Cette action changera le statut à "Annulée" et préfixera le type avec "annulation_".',
             'Confirmation d\'Annulation'
@@ -1657,6 +1718,7 @@ Mises à jour: ${updated}/${total}${failed > 0 ? `\nEchecs: ${failed}` : ''}`;
                 next: (success) => {
                     if (success) {
                         this.loadOperations();
+                        this.loadComptes(); // Recharger les comptes pour mettre à jour les soldes
                         this.popupService.showSuccess('Opération annulée avec succès. Le statut a été changé à "Annulée".', 'Annulation Réussie');
                     } else {
                         this.popupService.showError('Impossible d\'annuler cette opération.', 'Annulation Impossible');
@@ -1688,6 +1750,12 @@ Mises à jour: ${updated}/${total}${failed > 0 ? `\nEchecs: ${failed}` : ''}`;
         // Filtrer les opérations principales
         let filteredMainOperations = this.operations.filter(op => {
             let keepOperation = true;
+            
+            // Masquer les opérations originales qui ont été annulées
+            if (this.isOriginalOperationCancelled(op)) {
+                console.log(`Opération ${op.id} masquée: opération originale annulée`);
+                return false;
+            }
             
             // Filtre par type d'opération
             if (selectedTypesOperation && selectedTypesOperation.length > 0) {
@@ -1798,12 +1866,12 @@ Mises à jour: ${updated}/${total}${failed > 0 ? `\nEchecs: ${failed}` : ''}`;
         // Stocker les frais associés séparément pour éviter le double affichage
         this.associatedFrais = associatedFrais;
         
-        // Inclure TOUS les frais dans filteredOperations (orphelins + associés)
-        this.filteredOperations = [...filteredMainOperations, ...allFrais];
+        // Ne garder que les opérations principales dans filteredOperations pour la pagination
+        this.filteredOperations = filteredMainOperations;
         
         console.log('Opérations principales filtrées:', filteredMainOperations.length);
         console.log('Frais associés trouvés:', associatedFrais.length);
-        console.log('Total opérations + frais:', this.filteredOperations.length);
+        console.log('Total opérations principales (pour pagination):', this.filteredOperations.length);
         console.log('Premières opérations filtrées:', this.filteredOperations.slice(0, 3));
         
         // Appliquer le tri
@@ -1819,7 +1887,7 @@ Mises à jour: ${updated}/${total}${failed > 0 ? `\nEchecs: ${failed}` : ''}`;
         // Forcer la détection de changement
         this.cdr.markForCheck();
         
-        console.log(`Filtres appliqués: ${this.filteredOperations.length} opérations trouvées (${filteredMainOperations.length} principales + ${associatedFrais.length} frais)`);
+        console.log(`Filtres appliqués: ${this.filteredOperations.length} opérations principales trouvées`);
         console.log('=== FIN applyFilters() ===');
     }
 

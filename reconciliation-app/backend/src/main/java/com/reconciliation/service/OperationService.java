@@ -122,8 +122,11 @@ public class OperationService {
         }
         
         // Compte normal ou erreur : comportement standard
-        return operationRepository.findByCompteNumeroCompteAndFiltersOrderByDateOperationAsc(
-                numeroCompte, dateDebut, dateFin, typeOperation).stream()
+        List<OperationEntity> operationsEntities = operationRepository.findByCompteNumeroCompteAndFiltersOrderByDateOperationAsc(
+                numeroCompte, dateDebut, dateFin, typeOperation);
+        
+        
+        return operationsEntities.stream()
                 .map(this::convertToModel)
                 .collect(Collectors.toList());
     }
@@ -630,39 +633,26 @@ public class OperationService {
             CompteEntity compte = compteRepository.findById(compteId)
                 .orElseThrow(() -> new RuntimeException("Compte non trouvé: " + compteId));
             
-            // Récupérer toutes les opérations valides (excluant les annulations et statut annulée)
+            // Récupérer toutes les opérations (incluant les annulations et tous les statuts)
             // Utiliser findAll puis filtrer par compte pour éviter les filtres automatiques
             List<OperationEntity> operationsValides = operationRepository
                 .findAll()
                 .stream()
                 .filter(op -> compteId.equals(op.getCompte().getId()))
-                .filter(op -> !op.getTypeOperation().startsWith("annulation_"))
-                .filter(op -> op.getStatut() == null || !op.getStatut().equals("Annulée"))
                 .sorted((op1, op2) -> op1.getDateOperation().compareTo(op2.getDateOperation()))
                 .collect(Collectors.toList());
             
+            
             if (!operationsValides.isEmpty()) {
-                // Calculer le solde de clôture en partant du solde initial et en appliquant chaque opération
-                double soldeCloture = 0.0; // Solde initial
+                // Le solde de clôture est le solde après de la dernière opération
+                double soldeCloture = operationsValides.get(operationsValides.size() - 1).getSoldeApres();
                 
-                for (OperationEntity operation : operationsValides) {
-                    double impact = calculateImpact(operation.getTypeOperation(), operation.getMontant(), operation.getService());
-                    soldeCloture += impact;
-                    
-                    // Mettre à jour les soldes de l'opération pour cohérence
-                    operation.setSoldeAvant(soldeCloture - impact);
-                    operation.setSoldeApres(soldeCloture);
-                    operationRepository.save(operation);
-                }
                 
-                // Mettre à jour le solde du compte avec le solde de clôture calculé
-                double ancienSolde = compte.getSolde();
+                
+                // Mettre à jour le solde du compte avec le solde de clôture
                 compte.setSolde(soldeCloture);
                 compte.setDateDerniereMaj(LocalDateTime.now());
                 compteRepository.save(compte);
-                
-                logger.info("✅ Solde de clôture recalculé pour le compte {}: {} (ancien: {}) basé sur {} opérations valides", 
-                           compte.getNumeroCompte(), soldeCloture, ancienSolde, operationsValides.size());
                 
                 // Synchroniser les comptes consolidés si ce compte est regroupé
                 synchroniserComptesConsolides(compteId);
@@ -755,48 +745,11 @@ public class OperationService {
                     operationRepository.saveAll(operationsSuivantes);
                 }
                 
-                // Recalculer le solde de clôture pour s'assurer de la cohérence
-                recalculerSoldeClotureCompte(compte.getId());
+                // Synchroniser les comptes consolidés si ce compte est regroupé
+                synchroniserComptesConsolides(compte.getId());
             }
             
-            // Si l'opération est annulée, mettre à jour le soldeApres et recalculer les opérations suivantes
-            if ("Annulée".equals(nouveauStatut)) {
-                CompteEntity compte = operation.getCompte();
-                if (compte != null) {
-                    // Récupérer le solde en cours du compte au moment de l'annulation
-                    double soldeEnCours = compte.getSolde();
-                    
-                    // Calculer l'impact de l'opération annulée
-                    double impactAnnule = calculateImpact(operation.getTypeOperation(), operation.getMontant(), operation.getService());
-                    
-                    // Mettre à jour le soldeAvant avec le solde en cours et le soldeApres avec l'impact
-                    operation.setSoldeAvant(soldeEnCours);
-                    operation.setSoldeApres(soldeEnCours + impactAnnule);
-                    
-                    logger.info("🔄 Opération annulée ID: {} - Solde avant: {}, Impact: {}, Solde après: {}", 
-                               operation.getId(), operation.getSoldeAvant(), impactAnnule, operation.getSoldeApres());
-                    
-                    // Recalculer toutes les opérations suivantes chronologiquement
-                    List<OperationEntity> operationsSuivantes = operationRepository
-                        .findByCompteIdAndDateOperationAfterOrderByDateOperationAsc(compte.getId(), operation.getDateOperation());
-                    
-                    double soldeCourant = operation.getSoldeApres();
-                    for (OperationEntity opSuivante : operationsSuivantes) {
-                        opSuivante.setSoldeAvant(soldeCourant);
-                        double impactOpSuivante = calculateImpact(opSuivante.getTypeOperation(), opSuivante.getMontant(), opSuivante.getService());
-                        soldeCourant += impactOpSuivante;
-                        opSuivante.setSoldeApres(soldeCourant);
-                    }
-                    
-                    if (!operationsSuivantes.isEmpty()) {
-                        operationRepository.saveAll(operationsSuivantes);
-                    }
-                    
-                    // Recalculer le solde de clôture pour s'assurer de la cohérence
-                    recalculerSoldeClotureCompte(compte.getId());
-                    logger.info("✅ Solde de clôture recalculé après annulation de l'opération ID: {}", id);
-                }
-            }
+            // Logique d'annulation obsolète supprimée - gérée par la logique simplifiée ci-dessous
             
             operation.setStatut(nouveauStatut);
             operationRepository.save(operation);
@@ -826,53 +779,108 @@ public class OperationService {
                 agencySummaryRepository.deleteByDateAndAgencyAndService(date, agency, service);
             }
 
-            // Création de l'opération d'annulation si le statut devient "Annulée"
+            // Création d'une nouvelle ligne d'annulation si le statut devient "Annulée"
             if ("Annulée".equals(nouveauStatut)) {
-                // 1. Créer l'opération d'annulation pour l'opération nominale avec impact inverse
-                OperationCreateRequest annulationRequest = new OperationCreateRequest();
-                annulationRequest.setCompteId(operation.getCompte().getId());
-                annulationRequest.setTypeOperation("annulation_" + operation.getTypeOperation());
-                annulationRequest.setMontant(operation.getMontant());
-                annulationRequest.setBanque(operation.getBanque());
-                annulationRequest.setNomBordereau("ANNULATION_" + (operation.getNomBordereau() != null ? operation.getNomBordereau() : ""));
-                annulationRequest.setService(operation.getService());
-                annulationRequest.setDateOperation(java.time.LocalDateTime.now().toString());
-                annulationRequest.setRecordCount(operation.getRecordCount());
-                annulationRequest.setParentOperationId(operation.getId());
-                
-                // Création de l'opération d'annulation avec impact inverse sur le solde
-                this.createOperationWithInverseImpact(annulationRequest, operation.getTypeOperation());
-                
-                // 2. Annuler automatiquement les frais liés à cette opération
-                // UNIQUEMENT les frais qui ont un lien direct via parentOperationId
-                List<OperationEntity> fraisOperations = operationRepository.findFraisByParentOperationId(operation.getId());
-                System.out.println("DEBUG: 🔍 Recherche des frais liés à l'opération ID: " + operation.getId() + " via parentOperationId");
-                System.out.println("DEBUG: 📊 Nombre de frais trouvés (liés directement): " + fraisOperations.size());
-                
-                for (OperationEntity fraisOp : fraisOperations) {
-                    System.out.println("DEBUG: 💰 Traitement du frais ID: " + fraisOp.getId() + ", Statut: " + fraisOp.getStatut() + ", ParentOperationId: " + fraisOp.getParentOperationId());
-                    if (!"Annulée".equals(fraisOp.getStatut())) {
-                        System.out.println("DEBUG: ✅ Annulation du frais ID: " + fraisOp.getId());
-                        // Créer une opération d'annulation pour chaque frais avec impact inverse
-                        OperationCreateRequest annulationFraisRequest = new OperationCreateRequest();
-                        annulationFraisRequest.setCompteId(fraisOp.getCompte().getId());
-                        annulationFraisRequest.setTypeOperation("annulation_FRAIS_TRANSACTION");
-                        annulationFraisRequest.setMontant(fraisOp.getMontant());
-                        annulationFraisRequest.setBanque(fraisOp.getBanque());
-                        annulationFraisRequest.setNomBordereau("ANNULATION_FRAIS_" + (fraisOp.getNomBordereau() != null ? fraisOp.getNomBordereau() : ""));
-                        annulationFraisRequest.setService(fraisOp.getService());
-                        annulationFraisRequest.setDateOperation(java.time.LocalDateTime.now().toString());
-                        annulationFraisRequest.setRecordCount(fraisOp.getRecordCount());
-                        annulationFraisRequest.setParentOperationId(fraisOp.getId());
-                        // Création de l'opération d'annulation des frais avec impact inverse
-                        this.createOperationWithInverseImpact(annulationFraisRequest, "FRAIS_TRANSACTION");
-                        
-                        // Marquer le frais comme annulé
-                        fraisOp.setStatut("Annulée");
-                        operationRepository.save(fraisOp);
-                        System.out.println("DEBUG: ✅ Frais ID: " + fraisOp.getId() + " marqué comme annulé");
-                    } else {
-                        System.out.println("DEBUG: ⚠️ Frais ID: " + fraisOp.getId() + " déjà annulé, ignoré");
+                CompteEntity compte = operation.getCompte();
+                if (compte != null) {
+                    try {
+                    // 1. Créer une nouvelle opération d'annulation
+                    String typeOriginal = operation.getTypeOperation();
+                    String typeAnnulation = "annulation_" + typeOriginal;
+                    
+                    // 2. Créer le nom du bordereau pour l'annulation
+                    String nomBordereauOriginal = operation.getNomBordereau();
+                    String nomBordereauAnnulation = "ANNULATION_" + nomBordereauOriginal;
+                    
+                    // 3. Calculer l'impact inverse et créer la nouvelle ligne
+                    double soldeActuel = compte.getSolde();
+                    double impactOriginal = calculateImpact(typeOriginal, operation.getMontant(), operation.getService());
+                    double impactInverse = -impactOriginal; // Impact inverse
+                    double soldeApres = soldeActuel + impactInverse;
+                    
+                    logger.info("🔄 Création ligne d'annulation - Solde actuel: {}, Impact inverse: {}, Solde après: {}", 
+                               soldeActuel, impactInverse, soldeApres);
+                    
+                    // 4. Créer la nouvelle opération d'annulation
+                    OperationEntity operationAnnulation = new OperationEntity();
+                    operationAnnulation.setCompte(compte);
+                    operationAnnulation.setTypeOperation(typeAnnulation);
+                    operationAnnulation.setMontant(operation.getMontant() != null ? operation.getMontant() : 0.0);
+                    operationAnnulation.setService(operation.getService());
+                    operationAnnulation.setDateOperation(operation.getDateOperation());
+                    operationAnnulation.setNomBordereau(nomBordereauAnnulation);
+                    operationAnnulation.setCodeProprietaire(operation.getCodeProprietaire());
+                    operationAnnulation.setPays(operation.getPays());
+                    operationAnnulation.setStatut("Annulée");
+                    operationAnnulation.setSoldeAvant(soldeActuel);
+                    operationAnnulation.setSoldeApres(soldeApres);
+                    operationAnnulation.setReference(operation.getReference());
+                    
+                    // 5. Sauvegarder la nouvelle opération d'annulation
+                    operationRepository.save(operationAnnulation);
+                    
+                    logger.info("✅ Nouvelle ligne d'annulation créée - Type: {}, Montant: {}, Solde: {} → {}", 
+                               typeAnnulation, operation.getMontant(), soldeActuel, soldeApres);
+                    
+                    // 6. Annuler automatiquement les frais liés à l'opération originale
+                    List<OperationEntity> fraisOperations = operationRepository.findFraisByParentOperationId(operation.getId());
+                    logger.info("🔍 Recherche des frais liés à l'opération ID: {} - Nombre trouvé: {}", 
+                               operation.getId(), fraisOperations.size());
+                    
+                    // Variable pour suivre le solde final après toutes les annulations
+                    double soldeFinal = soldeApres;
+                    
+                    for (OperationEntity fraisOp : fraisOperations) {
+                        if (!"Annulée".equals(fraisOp.getStatut())) {
+                            logger.info("💰 Création ligne d'annulation pour frais ID: {}", fraisOp.getId());
+                            
+                            // Vérifications de sécurité
+                            if (fraisOp.getMontant() == null) {
+                                logger.warn("⚠️ Frais ID: {} a un montant null, ignoré", fraisOp.getId());
+                                continue;
+                            }
+                            
+                            // Créer une nouvelle ligne d'annulation pour le frais
+                            OperationEntity fraisAnnulation = new OperationEntity();
+                            fraisAnnulation.setCompte(compte);
+                            fraisAnnulation.setTypeOperation("annulation_FRAIS_TRANSACTION");
+                            fraisAnnulation.setMontant(fraisOp.getMontant());
+                            fraisAnnulation.setService(fraisOp.getService());
+                            fraisAnnulation.setDateOperation(fraisOp.getDateOperation());
+                            fraisAnnulation.setNomBordereau("ANNULATION_FRAIS_" + (fraisOp.getNomBordereau() != null ? fraisOp.getNomBordereau() : ""));
+                            fraisAnnulation.setCodeProprietaire(fraisOp.getCodeProprietaire());
+                            fraisAnnulation.setPays(fraisOp.getPays());
+                            fraisAnnulation.setStatut("Annulée");
+                            fraisAnnulation.setSoldeAvant(soldeFinal); // Solde après les annulations précédentes
+                            double soldeApresFrais = soldeFinal + fraisOp.getMontant(); // Impact inverse des frais
+                            fraisAnnulation.setSoldeApres(soldeApresFrais);
+                            fraisAnnulation.setReference(fraisOp.getReference());
+                            
+                            // Mettre à jour le solde final
+                            soldeFinal = soldeApresFrais;
+                            
+                            // Sauvegarder la nouvelle ligne d'annulation des frais
+                            operationRepository.save(fraisAnnulation);
+                            
+                            logger.info("✅ Ligne d'annulation frais créée - Type: {}, Montant: {}, Solde: {} → {}", 
+                                       "annulation_FRAIS_TRANSACTION", fraisOp.getMontant(), 
+                                       fraisAnnulation.getSoldeAvant(), fraisAnnulation.getSoldeApres());
+                        } else {
+                            logger.info("⚠️ Frais ID: {} déjà annulé, ignoré", fraisOp.getId());
+                        }
+                    }
+                    
+                    // 7. Mettre à jour le solde du compte avec le solde après de la dernière ligne d'annulation
+                    compte.setSolde(soldeFinal);
+                    compte.setDateDerniereMaj(LocalDateTime.now());
+                    compteRepository.save(compte);
+                    
+                    // 8. Synchroniser les comptes consolidés si ce compte est regroupé
+                    synchroniserComptesConsolides(compte.getId());
+                    
+                    } catch (Exception e) {
+                        logger.error("❌ Erreur lors de la création des lignes d'annulation pour l'opération ID: {}: {}", id, e.getMessage(), e);
+                        throw new RuntimeException("Erreur lors de l'annulation de l'opération", e);
                     }
                 }
             }
@@ -1243,21 +1251,18 @@ public class OperationService {
             soldeApres = soldeAvant - montantFraisFinal; // Débiter les frais (comportement par défaut)
         }
         fraisOperation.setSoldeAvant(soldeAvant);
-        // Vérifier si le solde est suffisant pour les frais
-        if (soldeApres < 0) {
-            fraisOperation.setStatut("En attente");
-            fraisOperation.setSoldeApres(soldeAvant);
-        } else {
-            fraisOperation.setStatut("Validée");
-            fraisOperation.setSoldeApres(soldeApres);
-            CompteEntity compte = operation.getCompte();
-            compte.setSolde(soldeApres);
-            compte.setDateDerniereMaj(java.time.LocalDateTime.now());
-            compteRepository.save(compte);
-            
-            // Synchroniser les comptes consolidés si ce compte est regroupé
-            synchroniserComptesConsolides(compte.getId());
-        }
+        // Les frais automatiques sont toujours validés par défaut
+        fraisOperation.setStatut("Validée");
+        fraisOperation.setSoldeApres(soldeApres);
+        
+        // Mettre à jour le solde du compte
+        CompteEntity compte = operation.getCompte();
+        compte.setSolde(soldeApres);
+        compte.setDateDerniereMaj(java.time.LocalDateTime.now());
+        compteRepository.save(compte);
+        
+        // Synchroniser les comptes consolidés si ce compte est regroupé
+        synchroniserComptesConsolides(compte.getId());
         
         System.out.println("DEBUG: 📝 Création de l'opération FRAIS_TRANSACTION:");
         System.out.println("  - Montant: " + montantFrais);
@@ -1496,12 +1501,11 @@ public class OperationService {
     }
     
     /**
-     * Récupérer toutes les opérations enrichies avec leurs frais, excluant les annulations
+     * Récupérer toutes les opérations enrichies avec leurs frais, incluant les annulations
      * Utilisé pour les relevés de compte et calculs de solde
      */
     public List<Operation> getAllOperationsWithFraisForAccountStatement() {
         return operationRepository.findAllOrderByDateOperationDesc().stream()
-                .filter(op -> !op.getTypeOperation().startsWith("annulation_"))
                 .filter(op -> op.getStatut() == null || !op.getStatut().equals("Annulée"))
                 .map(this::convertToModel)
                 .map(this::enrichOperationWithFrais)
@@ -1653,7 +1657,9 @@ public class OperationService {
     /**
      * Crée une opération avec un impact inverse sur le solde (pour les annulations)
      * L'impact inverse annule l'effet de l'opération originale
+     * @deprecated Cette méthode n'est plus utilisée. La logique d'annulation modifie maintenant directement les opérations existantes.
      */
+    @Deprecated
     @Transactional
     private Operation createOperationWithInverseImpact(OperationCreateRequest request, String typeOperationOriginale) {
         CompteEntity compte = compteRepository.findById(request.getCompteId())
@@ -1717,7 +1723,7 @@ public class OperationService {
             for (CompteEntity compte : tousLesComptes) {
                 try {
                     double soldeAvant = compte.getSolde();
-                    recalculerSoldeClotureCompte(compte.getId());
+                    synchroniserComptesConsolides(compte.getId());
                     
                     // Recharger le compte pour vérifier le nouveau solde
                     CompteEntity compteApres = compteRepository.findById(compte.getId()).orElse(null);
