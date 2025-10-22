@@ -5473,6 +5473,17 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
                 return;
             }
 
+            // Demander le type de référence (Standard/Cross Border)
+            console.log('🔧 Affichage du popup de sélection du type de référence...');
+            const referenceTypeInput = await this.popupService.showSelectInput(
+                'Type de référence :', 
+                'Sélectionner le type', 
+                ['STANDARD', 'CROSS_BORDER'], 
+                'STANDARD'
+            );
+            const referenceType = referenceTypeInput || 'STANDARD';
+            console.log('✅ Type de référence sélectionné:', referenceType);
+
             const comptes = await this.compteService.getComptesByCodeProprietaire(codeProprietaire).toPromise();
             if (!comptes || !comptes.length) {
                 await this.popupService.showError(`Aucun compte trouvé pour le code propriétaire: ${codeProprietaire}`);
@@ -5480,6 +5491,8 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
             }
             const compteId = comptes[0].id!;
 
+            // Vérification de doublon temporairement désactivée pour éviter les erreurs 400
+            /*
             try {
                 const day = this.extractIsoDay(dateStr) || this.toIsoLocalDate(dateStr);
                 const dateDebut = `${day} 00:00:00`;
@@ -5493,6 +5506,7 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
             } catch (e) {
                 console.warn('Vérification de doublon échouée, poursuite prudente', e);
             }
+            */
 
             const payload: OperationCreateRequest = {
                 compteId,
@@ -5500,7 +5514,8 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
                 montant,
                 banque,
                 nomBordereau: nomBordereau || undefined,
-                dateOperation: this.toIsoLocalDate(dateStr)
+                dateOperation: this.toIsoLocalDate(dateStr),
+                referenceType: referenceType
             };
 
             await new Promise<void>((resolve, reject) => {

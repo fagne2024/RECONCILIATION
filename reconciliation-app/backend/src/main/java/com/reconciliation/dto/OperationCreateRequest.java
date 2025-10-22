@@ -10,6 +10,7 @@ public class OperationCreateRequest {
     private String dateOperation;
     private Integer recordCount;
     private Long parentOperationId;
+    private String referenceType; // "STANDARD" ou "CROSS_BORDER"
     
     // Constructeurs
     public OperationCreateRequest() {}
@@ -96,5 +97,13 @@ public class OperationCreateRequest {
 
     public void setParentOperationId(Long parentOperationId) {
         this.parentOperationId = parentOperationId;
+    }
+
+    public String getReferenceType() {
+        return referenceType;
+    }
+
+    public void setReferenceType(String referenceType) {
+        this.referenceType = referenceType;
     }
 } 

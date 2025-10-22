@@ -25,6 +25,7 @@ export interface OperationCreateRequest {
     service?: string;
     reference?: string;
     dateOperation: string;
+    referenceType?: string; // "STANDARD" ou "CROSS_BORDER"
 }
 
 export interface OperationUpdateRequest {

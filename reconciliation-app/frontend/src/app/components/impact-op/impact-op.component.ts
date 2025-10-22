@@ -169,8 +169,20 @@ export class ImpactOPComponent implements OnInit, OnDestroy {
       return;
     }
 
+    // Demander le type de référence (Standard/Cross Border)
+    console.log('🔧 Affichage du popup de sélection du type de référence...');
+    const referenceTypeInput = await this.popupService.showSelectInput(
+      'Type de référence :', 
+      'Sélectionner le type', 
+      ['STANDARD', 'CROSS_BORDER'], 
+      'STANDARD'
+    );
+    const referenceType = referenceTypeInput || 'STANDARD';
+    console.log('✅ Type de référence sélectionné:', referenceType);
+
     // Résoudre compteId via codeProprietaire
     let compteId: number | undefined;
+    let numeroCompte: string | undefined;
     try {
       const comptes = await this.compteService.getComptesByCodeProprietaire(impact.codeProprietaire).toPromise();
       if (!comptes || !comptes.length) {
@@ -179,6 +191,7 @@ export class ImpactOPComponent implements OnInit, OnDestroy {
       }
       // On prend le premier pour ce code propriétaire
       compteId = comptes[0].id;
+      numeroCompte = comptes[0].numeroCompte;
     } catch (e) {
       console.error(e);
       await this.popupService.showError('Erreur lors de la récupération du compte');
@@ -188,20 +201,6 @@ export class ImpactOPComponent implements OnInit, OnDestroy {
     // Type d'opération à utiliser
     const typeOperation = impact.typeOperation as string;
 
-    // Vérifier doublon: opérations du compte à la date, même type et même nomBordereau
-    try {
-      const day = this.toIsoLocalDate(impact.dateOperation);
-      const dateDebut = `${day} 00:00:00`;
-      const dateFin = `${day} 23:59:59`;
-      const existing = await this.operationService.getOperationsByCompte(impact.codeProprietaire, dateDebut, dateFin, typeOperation).toPromise();
-      const hasDuplicate = (existing || []).some(op => (op.nomBordereau || '') === (impact.numeroTransGU || ''));
-      if (hasDuplicate) {
-        await this.popupService.showWarning("Cette opération existe déjà (doublon détecté)");
-        return;
-      }
-    } catch (e) {
-      console.warn('Vérification de doublon échouée, poursuite prudente', e);
-    }
     const payload: OperationCreateRequest = {
       compteId: compteId!,
       typeOperation,
@@ -210,7 +209,8 @@ export class ImpactOPComponent implements OnInit, OnDestroy {
       nomBordereau: impact.numeroTransGU || undefined,
       service: undefined,
       reference: undefined,
-      dateOperation: this.toIsoLocalDate(impact.dateOperation)
+      dateOperation: this.toIsoLocalDate(impact.dateOperation),
+      referenceType: referenceType
     };
 
     this.isLoading = true;

@@ -450,4 +450,93 @@ export class ModernPopupComponent implements OnInit, OnDestroy {
       overlay.addEventListener('click', (e) => { if (e.target === overlay) close(null); });
     });
   }
+
+  // Popup avec sélection (select)
+  static showSelectInput(message: string, title: string = 'Sélection', options: string[] = [], defaultValue: string = ''): Promise<string | null> {
+    return new Promise((resolve) => {
+      const overlay = document.createElement('div');
+      overlay.className = 'modern-popup-overlay';
+      
+      const optionsHtml = options.map(option => 
+        `<option value="${option}" ${option === defaultValue ? 'selected' : ''}>${option}</option>`
+      ).join('');
+      
+      overlay.innerHTML = `
+        <div class="modern-popup">
+          <div class="popup-header">
+            <h3 class="popup-title">${title}</h3>
+            <button class="popup-close">×</button>
+          </div>
+          <div class="popup-content">
+            <p class="popup-message">${message}</p>
+            <select class="popup-select">
+              ${optionsHtml}
+            </select>
+          </div>
+          <div class="popup-actions">
+            <button class="popup-btn popup-btn-cancel">Annuler</button>
+            <button class="popup-btn popup-btn-confirm popup-btn-info">Valider</button>
+          </div>
+        </div>
+      `;
+
+      const style = document.createElement('style');
+      style.textContent = `
+        .modern-popup-overlay {
+          position: fixed;
+          top: 0; left: 0; width: 100%; height: 100%;
+          background: rgba(0,0,0,.5);
+          display: flex; justify-content: center; align-items: center;
+          z-index: 9999; animation: fadeIn .3s ease-out;
+        }
+        .modern-popup { background: #fff; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,.3); max-width: 420px; width: 92%; animation: slideIn .3s ease-out; }
+        .popup-header { display: flex; justify-content: space-between; align-items: center; padding: 20px 20px 0 20px; }
+        .popup-title { margin: 0; font-size: 18px; font-weight: 600; color: #333; }
+        .popup-close { background: none; border: none; font-size: 24px; cursor: pointer; color: #999; padding: 0; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; border-radius: 50%; transition: all .2s; }
+        .popup-close:hover { background: #f5f5f5; color: #666; }
+        .popup-content { padding: 20px; }
+        .popup-message { margin: 0 0 10px 0; color: #555; line-height: 1.5; }
+        .popup-actions { display: flex; justify-content: flex-end; gap: 10px; padding: 0 20px 20px 20px; }
+        .popup-btn { padding: 10px 20px; border: none; border-radius: 6px; cursor: pointer; font-weight: 500; transition: all .2s; min-width: 80px; }
+        .popup-btn-cancel { background: #f5f5f5; color: #666; }
+        .popup-btn-cancel:hover { background: #e5e5e5; }
+        .popup-btn-info { background: #007bff; color: #fff; }
+        .popup-btn-info:hover { background: #0056b3; }
+        .popup-select { width: 100%; padding: 10px 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px; box-sizing: border-box; background: white; }
+        .popup-select:focus { outline: none; border-color: #3498db; box-shadow: 0 0 0 2px rgba(52,152,219,.2); }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes slideIn { from { opacity: 0; transform: translateY(-20px) scale(.95); } to { opacity: 1; transform: translateY(0) scale(1); } }
+      `;
+
+      document.head.appendChild(style);
+      document.body.appendChild(overlay);
+      document.body.style.overflow = 'hidden';
+
+      const cleanup = () => {
+        document.body.style.overflow = 'auto';
+        if (style.parentNode) style.parentNode.removeChild(style);
+      };
+
+      const close = (result: string | null) => {
+        overlay.remove();
+        cleanup();
+        document.removeEventListener('keydown', onEsc);
+        resolve(result);
+      };
+
+      const onEsc = (e: KeyboardEvent) => { if (e.key === 'Escape') close(null); };
+      document.addEventListener('keydown', onEsc);
+
+      const select = overlay.querySelector('.popup-select') as HTMLSelectElement | null;
+      const okBtn = overlay.querySelector('.popup-btn-confirm');
+      const cancelBtn = overlay.querySelector('.popup-btn-cancel');
+      const closeBtn = overlay.querySelector('.popup-close');
+
+      if (okBtn) okBtn.addEventListener('click', () => close(select ? select.value : ''));
+      if (cancelBtn) cancelBtn.addEventListener('click', () => close(null));
+      if (closeBtn) closeBtn.addEventListener('click', () => close(null));
+      if (select) select.addEventListener('keydown', (e) => { if ((e as KeyboardEvent).key === 'Enter') close(select!.value); });
+      overlay.addEventListener('click', (e) => { if (e.target === overlay) close(null); });
+    });
+  }
 }

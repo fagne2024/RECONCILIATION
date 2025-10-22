@@ -449,25 +449,25 @@ public class OperationService {
 
         // Générer automatiquement la référence pour les opérations Compense_client
         if ("Compense_client".equals(request.getTypeOperation())) {
-            String reference = generateCompenseClientReference(compte.getNumeroCompte(), entity.getDateOperation(), null);
+            String reference = generateCompenseClientReference(compte.getNumeroCompte(), entity.getDateOperation(), null, request.getReferenceType());
             entity.setReference(reference);
         }
         
         // Générer automatiquement la référence pour les opérations Appro_client
         if ("Appro_client".equals(request.getTypeOperation())) {
-            String reference = generateApproClientReference(compte.getNumeroCompte(), entity.getDateOperation(), null);
+            String reference = generateApproClientReference(compte.getNumeroCompte(), entity.getDateOperation(), null, request.getReferenceType());
             entity.setReference(reference);
         }
         
         // Générer automatiquement la référence pour les opérations Appro_fournisseur
         if ("Appro_fournisseur".equals(request.getTypeOperation())) {
-            String reference = generateApproFournisseurReference(compte.getNumeroCompte(), entity.getDateOperation(), null);
+            String reference = generateApproFournisseurReference(compte.getNumeroCompte(), entity.getDateOperation(), null, request.getReferenceType());
             entity.setReference(reference);
         }
         
         // Générer automatiquement la référence pour les opérations Compense_fournisseur
         if ("Compense_fournisseur".equals(request.getTypeOperation())) {
-            String reference = generateCompenseFournisseurReference(compte.getNumeroCompte(), entity.getDateOperation(), null);
+            String reference = generateCompenseFournisseurReference(compte.getNumeroCompte(), entity.getDateOperation(), null, request.getReferenceType());
             entity.setReference(reference);
         }
         
@@ -1769,7 +1769,7 @@ public class OperationService {
      * Format: CODE_PROPRIETAIRE-DATE_JJMMAA-CP{NUMERO}
      * Exemple: CELCM0001-120825-CP1
      */
-    private String generateCompenseClientReference(String codeProprietaire, LocalDateTime dateOperation, Long operationIdToExclude) {
+    private String generateCompenseClientReference(String codeProprietaire, LocalDateTime dateOperation, Long operationIdToExclude, String referenceType) {
         // Formater la date au format jjmmaa
         String dateFormatted = dateOperation.format(java.time.format.DateTimeFormatter.ofPattern("ddMMyy"));
         
@@ -1789,8 +1789,9 @@ public class OperationService {
         // Le numéro sera le nombre d'opérations existantes + 1
         int numero = existingCount.intValue() + 1;
         
-        // Construire la référence
-        String reference = String.format("%s-%sCP%d", codeProprietaire, dateFormatted, numero);
+        // Construire la référence selon le type
+        String prefix = "CROSS_BORDER".equals(referenceType) ? "CB" : "CP";
+        String reference = String.format("%s-%s%s%d", codeProprietaire, dateFormatted, prefix, numero);
         
         System.out.println("DEBUG: Génération référence Compense_client: " + reference);
         System.out.println("DEBUG: Code propriétaire: " + codeProprietaire);
@@ -1806,7 +1807,7 @@ public class OperationService {
      * Format: CODE_PROPRIETAIRE-DATE_JJMMAA-AP{NUMERO}
      * Exemple: CELCM0001-120825-AP1
      */
-    private String generateApproClientReference(String codeProprietaire, LocalDateTime dateOperation, Long operationIdToExclude) {
+    private String generateApproClientReference(String codeProprietaire, LocalDateTime dateOperation, Long operationIdToExclude, String referenceType) {
         // Formater la date au format jjmmaa
         String dateFormatted = dateOperation.format(java.time.format.DateTimeFormatter.ofPattern("ddMMyy"));
         
@@ -1826,8 +1827,9 @@ public class OperationService {
         // Le numéro sera le nombre d'opérations existantes + 1
         int numero = existingCount.intValue() + 1;
         
-        // Construire la référence
-        String reference = String.format("%s-%sAP%d", codeProprietaire, dateFormatted, numero);
+        // Construire la référence selon le type
+        String prefix = "CROSS_BORDER".equals(referenceType) ? "CB" : "AP";
+        String reference = String.format("%s-%s%s%d", codeProprietaire, dateFormatted, prefix, numero);
         
         System.out.println("DEBUG: Génération référence Appro_client: " + reference);
         System.out.println("DEBUG: Code propriétaire: " + codeProprietaire);
@@ -1843,7 +1845,7 @@ public class OperationService {
      * Format: CODE_PROPRIETAIRE-DATE_JJMMAA-APFR{NUMERO}
      * Exemple: CELCM0001-120825-APFR1
      */
-    private String generateApproFournisseurReference(String codeProprietaire, LocalDateTime dateOperation, Long operationIdToExclude) {
+    private String generateApproFournisseurReference(String codeProprietaire, LocalDateTime dateOperation, Long operationIdToExclude, String referenceType) {
         // Formater la date au format jjmmaa
         String dateFormatted = dateOperation.format(java.time.format.DateTimeFormatter.ofPattern("ddMMyy"));
         
@@ -1863,8 +1865,9 @@ public class OperationService {
         // Le numéro sera le nombre d'opérations existantes + 1
         int numero = existingCount.intValue() + 1;
         
-        // Construire la référence
-        String reference = String.format("%s-%s-APFR%d", codeProprietaire, dateFormatted, numero);
+        // Construire la référence selon le type
+        String prefix = "CROSS_BORDER".equals(referenceType) ? "CBFR" : "APFR";
+        String reference = String.format("%s-%s-%s%d", codeProprietaire, dateFormatted, prefix, numero);
         
         System.out.println("DEBUG: Génération référence Appro_fournisseur: " + reference);
         System.out.println("DEBUG: Code propriétaire: " + codeProprietaire);
@@ -1880,7 +1883,7 @@ public class OperationService {
      * Format: CODE_PROPRIETAIRE-DATE_JJMMAA-CPFR{NUMERO}
      * Exemple: CELCM0001-120825-CPFR1
      */
-    private String generateCompenseFournisseurReference(String codeProprietaire, LocalDateTime dateOperation, Long operationIdToExclude) {
+    private String generateCompenseFournisseurReference(String codeProprietaire, LocalDateTime dateOperation, Long operationIdToExclude, String referenceType) {
         // Formater la date au format jjmmaa
         String dateFormatted = dateOperation.format(java.time.format.DateTimeFormatter.ofPattern("ddMMyy"));
         
@@ -1900,8 +1903,9 @@ public class OperationService {
         // Le numéro sera le nombre d'opérations existantes + 1
         int numero = existingCount.intValue() + 1;
         
-        // Construire la référence
-        String reference = String.format("%s-%s-CPFR%d", codeProprietaire, dateFormatted, numero);
+        // Construire la référence selon le type
+        String prefix = "CROSS_BORDER".equals(referenceType) ? "CBFR" : "CPFR";
+        String reference = String.format("%s-%s-%s%d", codeProprietaire, dateFormatted, prefix, numero);
         
         System.out.println("DEBUG: Génération référence Compense_fournisseur: " + reference);
         System.out.println("DEBUG: Code propriétaire: " + codeProprietaire);
@@ -1955,16 +1959,16 @@ public class OperationService {
         String reference = null;
         switch (typeOperation) {
             case "Compense_client":
-                reference = generateCompenseClientReference(codeProprietaire, dateOperation, operationIdToExclude);
+                reference = generateCompenseClientReference(codeProprietaire, dateOperation, operationIdToExclude, null);
                 break;
             case "Appro_client":
-                reference = generateApproClientReference(codeProprietaire, dateOperation, operationIdToExclude);
+                reference = generateApproClientReference(codeProprietaire, dateOperation, operationIdToExclude, null);
                 break;
             case "Appro_fournisseur":
-                reference = generateApproFournisseurReference(codeProprietaire, dateOperation, operationIdToExclude);
+                reference = generateApproFournisseurReference(codeProprietaire, dateOperation, operationIdToExclude, null);
                 break;
             case "Compense_fournisseur":
-                reference = generateCompenseFournisseurReference(codeProprietaire, dateOperation, operationIdToExclude);
+                reference = generateCompenseFournisseurReference(codeProprietaire, dateOperation, operationIdToExclude, null);
                 break;
             case "nivellement":
                 reference = generateNivellementReference(dateOperation, operationIdToExclude);
