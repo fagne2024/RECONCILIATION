@@ -550,10 +550,16 @@
     <div class="banque-section" *ngIf="!showOperations && activeSection === 'home'">
       <div class="section-header">
         <h2>🏦 Comptes de Banque</h2>
-        <button class="btn-refresh" (click)="loadComptesBanque()" [disabled]="loadingComptesBanque">
-          <i class="fas fa-sync-alt" [class.spin]="loadingComptesBanque"></i>
-          Actualiser
-        </button>
+        <div class="header-actions">
+          <button class="btn-export" (click)="exportComptesBanque()" [disabled]="loadingComptesBanque || comptesBanqueDisplayed.length === 0" title="Exporter les comptes de banque (Excel)">
+            <i class="fas fa-file-excel"></i>
+            Exporter
+          </button>
+          <button class="btn-refresh" (click)="loadComptesBanque()" [disabled]="loadingComptesBanque">
+            <i class="fas fa-sync-alt" [class.spin]="loadingComptesBanque"></i>
+            Actualiser
+          </button>
+        </div>
       </div>
 
       <div *ngIf="comptesBanqueError" class="error-box">
@@ -615,25 +621,37 @@
                   <i class="fas fa-globe-africa"></i> {{ c.pays }}
                 </span>
               </td>
-              <td>{{ c.categorie || '-' }}</td>
-              <td>{{ c.type || '-' }}</td>
+              <td>
+                <span class="chip chip-category">{{ c.categorie || '-' }}</span>
+              </td>
+              <td>
+                <span class="chip chip-type">{{ c.type || '-' }}</span>
+              </td>
               <td class="center">
                 <span class="amount" [class.negative]="c.solde < 0">{{ c.solde | number:'1.2-2' }}</span>
               </td>
-              <td>{{ c.dateDerniereMaj | date:'dd/MM/yyyy HH:mm' }}</td>
+              <td>
+                <span class="date-badge">{{ c.dateDerniereMaj | date:'dd/MM/yyyy HH:mm' }}</span>
+              </td>
               <td class="actions-col">
-                <button class="btn-outline" (click)="openCompteRelevePopup(c)" title="Voir opérations du compte"><i class="fas fa-receipt"></i> Relevé</button>
+                <button class="btn-releve" (click)="openCompteRelevePopup(c)" title="Voir opérations du compte"><i class="fas fa-receipt"></i> Relevé</button>
               </td>
             </tr>
           </tbody>
         </table>
-        <div class="pagination small" *ngIf="comptesListTotalPages > 1">
+        <div class="pagination small" *ngIf="comptesBanqueDisplayed.length > 0">
           <div class="btn-group">
-            <button (click)="comptesListPrevPage()" [disabled]="comptesListPage===1"><i class="fas fa-chevron-left"></i></button>
-            <button (click)="comptesListNextPage()" [disabled]="comptesListPage>=comptesListTotalPages"><i class="fas fa-chevron-right"></i></button>
+            <button (click)="comptesListFirstPage()" [disabled]="comptesListPage===1" title="Première page"><i class="fas fa-angle-double-left"></i></button>
+            <button (click)="comptesListPrevPage()" [disabled]="comptesListPage===1" title="Page précédente"><i class="fas fa-chevron-left"></i></button>
+            <button (click)="comptesListNextPage()" [disabled]="comptesListPage>=comptesListTotalPages" title="Page suivante"><i class="fas fa-chevron-right"></i></button>
+            <button (click)="comptesListLastPage()" [disabled]="comptesListPage>=comptesListTotalPages" title="Dernière page"><i class="fas fa-angle-double-right"></i></button>
           </div>
-          <span class="muted">Page {{ comptesListPage }} / {{ comptesListTotalPages }}</span>
+          <span class="muted">
+            Page {{ comptesListPage }} / {{ comptesListTotalPages }} 
+            ({{ comptesListStartIndex }}-{{ comptesListEndIndex }} sur {{ comptesBanqueDisplayed.length }})
+          </span>
           <select [(ngModel)]="comptesListPageSize" (change)="onComptesListPageSizeChange()">
+            <option [value]="5">5</option>
             <option [value]="7">7</option>
             <option [value]="10">10</option>
             <option [value]="20">20</option>
@@ -749,9 +767,9 @@
       </button>
     </div>
 
-      <!-- Import / Modèle -->
+      <!-- Import / Modèle / Export -->
       <div class="releve-header" style="margin-bottom: 12px;">
-        <h3>Importer des opérations (Excel/CSV)</h3>
+        <h3>Gestion des opérations (Import/Export Excel/CSV)</h3>
         <div class="actions">
           <label class="file-btn">
             <input type="file" (change)="onOpbFileSelected($event)" accept=".xlsx,.xls,.csv" />
@@ -762,6 +780,9 @@
           </button>
           <button class="btn-primary" (click)="downloadOpbTemplate()" title="Télécharger le modèle">
             <i class="fas fa-file-excel"></i> Modèle
+          </button>
+          <button class="btn-success" (click)="exportOperations()" [disabled]="filteredOperations.length === 0" title="Exporter (Excel)">
+            <i class="fas fa-file-excel"></i> Exporter
           </button>
         </div>
       </div>
@@ -859,9 +880,6 @@
               <i class="fas fa-ban"></i> Rejeter
             </button>
           </ng-container>
-          <button class="btn btn-success" (click)="exportOperations()" [disabled]="filteredOperations.length === 0" title="Exporter (Excel)">
-            <i class="fas fa-file-excel"></i> Exporter
-          </button>
         </div>
       </div>
 
@@ -949,9 +967,10 @@
                   <i class="fas fa-trash"></i>
                 </button>
               </td>
-              <td class="right">
-                <span class="badge status-ok" *ngIf="getOperationReconStatus(operation)==='OK'">OK</span>
-                <span class="badge status-ko" *ngIf="getOperationReconStatus(operation)==='KO'">KO</span>
+              <td>
+                <span class="badge status-{{ getOperationReconStatus(operation).toLowerCase() }}">
+                  {{ getOperationReconStatus(operation) }}
+                </span>
               </td>
             </tr>
           </tbody>
@@ -959,23 +978,32 @@
       </div>
 
       <!-- Pagination -->
-      <div class="pagination" *ngIf="totalPages > 1">
-        <button (click)="prevPage()" [disabled]="currentPage === 1">
-          <i class="fas fa-chevron-left"></i> Précédent
-        </button>
-        
-        <div class="pagination-indicators">
-          <span *ngFor="let page of getVisiblePages()" 
-                class="page-indicator"
-                [class.active]="currentPage === page"
-                (click)="goToPage(page)">
-            {{ page }}
-          </span>
+      <div class="pagination small" *ngIf="filteredOperations.length > 0">
+        <div class="btn-group">
+          <button (click)="goToPage(1)" [disabled]="currentPage === 1" title="Première page"><i class="fas fa-angle-double-left"></i></button>
+          <button (click)="prevPage()" [disabled]="currentPage === 1" title="Page précédente"><i class="fas fa-chevron-left"></i></button>
+          <button (click)="nextPage()" [disabled]="currentPage === totalPages" title="Page suivante"><i class="fas fa-chevron-right"></i></button>
+          <button (click)="goToPage(totalPages)" [disabled]="currentPage === totalPages" title="Dernière page"><i class="fas fa-angle-double-right"></i></button>
         </div>
         
-        <button (click)="nextPage()" [disabled]="currentPage === totalPages">
-          Suivant <i class="fas fa-chevron-right"></i>
-        </button>
+        <span class="muted">Page {{ currentPage }} / {{ totalPages }}</span>
+        
+        <select [(ngModel)]="pageSize" (change)="onPageSizeChange()">
+          <option [value]="5">5</option>
+          <option [value]="10">10</option>
+          <option [value]="20">20</option>
+          <option [value]="50">50</option>
+          <option [value]="100">100</option>
+        </select>
+        
+        <div class="filter-group" style="margin-left: 8px;">
+          <label>Statut Réconciliation</label>
+          <select [(ngModel)]="operationsReconStatusFilter" (change)="onOperationsReconStatusFilterChange()">
+            <option value="">Tous</option>
+            <option value="OK">OK</option>
+            <option value="KO">KO</option>
+          </select>
+        </div>
       </div>
     </div>
   </div>

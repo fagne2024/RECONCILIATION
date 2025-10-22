@@ -93,6 +93,7 @@ export class BanqueComponent implements OnInit {
   currentPage = 1;
   pageSize = 10;
   totalPages = 1;
+  
 
   // Popups
   showDetailPopup = false;
@@ -864,16 +865,30 @@ export class BanqueComponent implements OnInit {
   comptesSearch = '';
   // Pagination liste des comptes
   comptesListPage = 1;
-  comptesListPageSize = 7;
+  comptesListPageSize = 5;
   get comptesListTotalPages(): number {
     const total = this.comptesBanqueDisplayed.length;
     return Math.ceil(total / this.comptesListPageSize) || 1;
+  }
+  
+  get comptesListStartIndex(): number {
+    return ((this.comptesListPage - 1) * this.comptesListPageSize) + 1;
+  }
+  
+  get comptesListEndIndex(): number {
+    return Math.min(this.comptesListPage * this.comptesListPageSize, this.comptesBanqueDisplayed.length);
+  }
+  comptesListFirstPage() {
+    this.comptesListPage = 1;
   }
   comptesListPrevPage() {
     if (this.comptesListPage > 1) this.comptesListPage--;
   }
   comptesListNextPage() {
     if (this.comptesListPage < this.comptesListTotalPages) this.comptesListPage++;
+  }
+  comptesListLastPage() {
+    this.comptesListPage = this.comptesListTotalPages;
   }
   onComptesListPageSizeChange() {
     this.comptesListPage = 1;
@@ -1275,6 +1290,166 @@ export class BanqueComponent implements OnInit {
     }
 
     XLSX.utils.book_append_sheet(wb, ws, 'Opérations');
+    XLSX.writeFile(wb, filename);
+  }
+
+  // Export des comptes de banque (Excel)
+  async exportComptesBanque() {
+    const rows = this.comptesBanqueDisplayed || [];
+    if (!rows.length) return;
+
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const now = new Date();
+    const ts = `${now.getFullYear()}${pad(now.getMonth()+1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}`;
+    const filename = `comptes_banque_${ts}.xlsx`;
+
+    const formatDate = (d: Date | string) => {
+      if (!d) return '';
+      const date = typeof d === 'string' ? new Date(d) : d;
+      const dd = pad(date.getDate());
+      const mm = pad(date.getMonth()+1);
+      const yyyy = date.getFullYear();
+      return `${dd}/${mm}/${yyyy}`;
+    };
+
+    const header = [
+      'Numéro de Compte', 'Code Propriétaire', 'Pays', 'Catégorie', 'Type', 
+      'Solde', 'Date Dernière MAJ'
+    ];
+
+    const aoa: any[] = [];
+    aoa.push(header);
+    rows.forEach(compte => {
+      aoa.push([
+        compte.numeroCompte || '',
+        compte.codeProprietaire || '',
+        compte.pays || '',
+        compte.categorie || '',
+        compte.type || '',
+        compte.solde ?? '',
+        formatDate(compte.dateDerniereMaj)
+      ]);
+    });
+
+    const XLSX: any = await import('xlsx');
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+
+    // Largeur des colonnes
+    (ws['!cols'] as any) = [
+      { wch: 20 }, { wch: 18 }, { wch: 15 }, { wch: 12 }, { wch: 12 }, 
+      { wch: 15 }, { wch: 18 }
+    ];
+
+    // En-têtes colorés avec dégradé vert
+    for (let c = 0; c < header.length; c++) {
+      const cell = ws[XLSX.utils.encode_cell({ r: 0, c })];
+      if (cell) {
+        cell.s = { 
+          fill: { fgColor: { rgb: '2E7D32' } }, 
+          font: { bold: true, color: { rgb: 'FFFFFF' } },
+          alignment: { horizontal: 'center', vertical: 'center' },
+          border: {
+            top: { style: 'thin', color: { rgb: '1B5E20' } },
+            bottom: { style: 'thin', color: { rgb: '1B5E20' } },
+            left: { style: 'thin', color: { rgb: '1B5E20' } },
+            right: { style: 'thin', color: { rgb: '1B5E20' } }
+          }
+        };
+      }
+    }
+
+    // Mise en forme des données avec couleurs alternées
+    for (let r = 1; r < aoa.length; r++) {
+      const isEvenRow = r % 2 === 0;
+      const rowColor = isEvenRow ? 'F8FFFE' : 'FFFFFF';
+      
+      // Couleur de fond pour toute la ligne
+      for (let c = 0; c < header.length; c++) {
+        const addr = XLSX.utils.encode_cell({ r, c });
+        const cell = ws[addr];
+        if (cell) {
+          cell.s = Object.assign({}, cell.s || {}, {
+            fill: { fgColor: { rgb: rowColor } },
+            border: {
+              top: { style: 'thin', color: { rgb: 'E8F5E8' } },
+              bottom: { style: 'thin', color: { rgb: 'E8F5E8' } },
+              left: { style: 'thin', color: { rgb: 'E8F5E8' } },
+              right: { style: 'thin', color: { rgb: 'E8F5E8' } }
+            }
+          });
+        }
+      }
+      
+      // Solde en colonne 5 (index 5) avec couleur conditionnelle
+      const soldeAddr = XLSX.utils.encode_cell({ r, c: 5 });
+      const soldeCell = ws[soldeAddr];
+      if (soldeCell) {
+        const solde = parseFloat(aoa[r][5]) || 0;
+        const soldeColor = solde >= 0 ? 'E8F5E8' : 'FFEBEE';
+        const textColor = solde >= 0 ? '2E7D32' : 'C62828';
+        
+        soldeCell.s = Object.assign({}, soldeCell.s || {}, {
+          numFmt: '#,##0.00',
+          alignment: { horizontal: 'right', vertical: 'center' },
+          fill: { fgColor: { rgb: soldeColor } },
+          font: { bold: true, color: { rgb: textColor } }
+        });
+      }
+      
+      // Code Propriétaire en colonne 1 (index 1) avec couleur bleue
+      const ownerAddr = XLSX.utils.encode_cell({ r, c: 1 });
+      const ownerCell = ws[ownerAddr];
+      if (ownerCell) {
+        ownerCell.s = Object.assign({}, ownerCell.s || {}, {
+          fill: { fgColor: { rgb: 'E3F2FD' } },
+          font: { color: { rgb: '1565C0' }, bold: true }
+        });
+      }
+      
+      // Pays en colonne 2 (index 2) avec couleur verte
+      const countryAddr = XLSX.utils.encode_cell({ r, c: 2 });
+      const countryCell = ws[countryAddr];
+      if (countryCell) {
+        countryCell.s = Object.assign({}, countryCell.s || {}, {
+          fill: { fgColor: { rgb: 'E8F5E8' } },
+          font: { color: { rgb: '2E7D32' }, bold: true }
+        });
+      }
+      
+      // Catégorie en colonne 3 (index 3) avec couleur orange
+      const categoryAddr = XLSX.utils.encode_cell({ r, c: 3 });
+      const categoryCell = ws[categoryAddr];
+      if (categoryCell) {
+        categoryCell.s = Object.assign({}, categoryCell.s || {}, {
+          fill: { fgColor: { rgb: 'FFF3E0' } },
+          font: { color: { rgb: 'E65100' }, bold: true }
+        });
+      }
+      
+      // Type en colonne 4 (index 4) avec couleur violette
+      const typeAddr = XLSX.utils.encode_cell({ r, c: 4 });
+      const typeCell = ws[typeAddr];
+      if (typeCell) {
+        typeCell.s = Object.assign({}, typeCell.s || {}, {
+          fill: { fgColor: { rgb: 'F3E5F5' } },
+          font: { color: { rgb: '7B1FA2' }, bold: true }
+        });
+      }
+      
+      // Date en colonne 6 (index 6) avec couleur violette
+      const dateAddr = XLSX.utils.encode_cell({ r, c: 6 });
+      const dateCell = ws[dateAddr];
+      if (dateCell) {
+        dateCell.s = Object.assign({}, dateCell.s || {}, {
+          fill: { fgColor: { rgb: 'E8EAF6' } },
+          font: { color: { rgb: '3F51B5' }, bold: true },
+          alignment: { horizontal: 'center' }
+        });
+      }
+    }
+
+    XLSX.utils.book_append_sheet(wb, ws, 'Comptes Banque');
     XLSX.writeFile(wb, filename);
   }
 
@@ -1776,11 +1951,42 @@ export class BanqueComponent implements OnInit {
     const startIndex = (this.currentPage - 1) * this.pageSize;
     this.pagedOperations = this.filteredOperations.slice(startIndex, startIndex + this.pageSize);
   }
+  
+  get operationsStartIndex(): number {
+    return ((this.currentPage - 1) * this.pageSize) + 1;
+  }
+  
+  get operationsEndIndex(): number {
+    return Math.min(this.currentPage * this.pageSize, this.filteredOperations.length);
+  }
 
   onPageSizeChange() {
     this.currentPage = 1; // Retour à la première page lors du changement de taille
     this.updatePagedOperations();
   }
+  
+  onOperationsReconStatusFilterChange() {
+    this.currentPage = 1; // Retour à la première page lors du changement de filtre
+    this.applyOperationsFilters();
+  }
+  
+  applyOperationsFilters() {
+    let filtered = [...this.operations];
+    
+    // Filtre par statut de réconciliation
+    if (this.operationsReconStatusFilter) {
+      filtered = filtered.filter(op => {
+        // Ici, vous pouvez ajouter la logique pour déterminer le statut de réconciliation
+        // Pour l'instant, on simule avec le statut de l'opération
+        const reconStatus = this.getOperationReconStatus(op);
+        return reconStatus === this.operationsReconStatusFilter;
+      });
+    }
+    
+    this.filteredOperations = filtered;
+    this.updatePagedOperations();
+  }
+  
 
   nextPage() {
     if (this.currentPage < this.totalPages) {
