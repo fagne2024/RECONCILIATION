@@ -129,7 +129,7 @@ export class BanqueComponent implements OnInit {
     numeroCompte: '', nomCompte: '', banque: '',
     dateComptable: '', dateValeur: '', libelle: '',
     debit: null as number | null, credit: null as number | null, montant: null as number | null,
-    numeroCheque: '', devise: '', commentaire: ''
+    numeroCheque: '', devise: '', commentaire: '', numeroSerie: ''
   };
 
   // Réconciliation banque
@@ -1733,6 +1733,7 @@ export class BanqueComponent implements OnInit {
       'montant',
       'numeroCheque',
       'devise',
+      'numeroSerie',
       'soldeCourant',
       'soldeDisponibleOuverture',
       'soldeDisponibleCloture',
@@ -1886,7 +1887,8 @@ export class BanqueComponent implements OnInit {
       montant: row.montant ?? null,
       numeroCheque: row.numeroCheque || '',
       devise: row.devise || '',
-      commentaire: row.commentaire || ''
+      commentaire: row.commentaire || '',
+      numeroSerie: row.numeroSerie || ''
     };
     this.showReleveEditPopup = true;
   }
@@ -1910,7 +1912,8 @@ export class BanqueComponent implements OnInit {
       montant: this.releveEditForm.montant,
       numeroCheque: this.releveEditForm.numeroCheque || null,
       devise: this.releveEditForm.devise || null,
-      commentaire: this.releveEditForm.commentaire || null
+      commentaire: this.releveEditForm.commentaire || null,
+      numeroSerie: this.releveEditForm.numeroSerie || null
     };
     
     console.log('💾 Sauvegarde relevé avec commentaire:', {

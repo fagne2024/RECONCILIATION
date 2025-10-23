@@ -31,15 +31,20 @@ public class ReleveBancaireImportService {
             // Detect headers row and map columns
             // Trouver dynamiquement la ligne d'entêtes (fichiers avec bannières hautes)
             int headerRowIdx = findBestHeaderRow(sheet, 50);
+            System.out.println("DEBUG: Ligne d'entêtes détectée: " + headerRowIdx);
             Row header = sheet.getRow(headerRowIdx);
             Map<String, Integer> colIndex = mapHeaders(header);
+            System.out.println("DEBUG: Mapping des colonnes: " + colIndex);
+            
             List<String> unmapped = new ArrayList<>();
             if (header != null) {
+                System.out.println("DEBUG: En-têtes détectés:");
                 for (int i = header.getFirstCellNum(); i < header.getLastCellNum(); i++) {
                     Cell c = header.getCell(i);
                     String raw = (c != null) ? c.toString() : null;
                     if (raw == null) continue;
                     String norm = normalize(raw);
+                    System.out.println("DEBUG: Colonne " + i + ": '" + raw + "' -> '" + norm + "'");
                     if (!HEADER_ALIASES.containsKey(norm)) {
                         unmapped.add(raw);
                     }
@@ -50,6 +55,7 @@ public class ReleveBancaireImportService {
                 Row row = sheet.getRow(r);
                 if (row == null) continue;
                 ReleveBancaireRow dto = new ReleveBancaireRow();
+                
                 dto.nomCompte = getString(row, colIndex.get("nomCompte"));
                 dto.numeroCompte = getString(row, colIndex.get("numeroCompte"));
                 dto.dateComptable = getDate(row, colIndex.get("dateComptable"));
@@ -72,6 +78,21 @@ public class ReleveBancaireImportService {
                 dto.soldeComptableCloture = getNumber(row, colIndex.get("soldeComptableCloture"));
                 dto.depotTotal = getNumber(row, colIndex.get("depotTotal"));
                 dto.totalRetraits = getNumber(row, colIndex.get("totalRetraits"));
+                dto.numeroSerie = getString(row, colIndex.get("numeroSerie"));
+
+                // Debug: afficher les valeurs extraites pour la première ligne
+                if (r == headerRowIdx + 1) {
+                    System.out.println("DEBUG: Première ligne de données:");
+                    System.out.println("  - numeroCompte: " + dto.numeroCompte);
+                    System.out.println("  - nomCompte: " + dto.nomCompte);
+                    System.out.println("  - dateComptable: " + dto.dateComptable);
+                    System.out.println("  - dateValeur: " + dto.dateValeur);
+                    System.out.println("  - libelle: " + dto.libelle);
+                    System.out.println("  - debit: " + dto.debit);
+                    System.out.println("  - credit: " + dto.credit);
+                    System.out.println("  - devise: " + dto.devise);
+                    System.out.println("  - numeroSerie: " + dto.numeroSerie);
+                }
 
                 boolean allEmpty = (dto.numeroCompte == null || dto.numeroCompte.isBlank()) && dto.libelle == null && dto.debit == null && dto.credit == null;
                 if (!allEmpty) rows.add(dto);
@@ -115,6 +136,7 @@ public class ReleveBancaireImportService {
             e.setSoldeComptableCloture(dto.soldeComptableCloture);
             e.setDepotTotal(dto.depotTotal);
             e.setTotalRetraits(dto.totalRetraits);
+            e.setNumeroSerie(dto.numeroSerie);
             // Déterminer la banque: codeProprietaire depuis le compte si existant, sinon heuristique nomCompte
             try {
                 if (dto.numeroCompte != null && !dto.numeroCompte.isBlank()) {
@@ -208,12 +230,19 @@ public class ReleveBancaireImportService {
     }
 
     private static String normalize(String s) {
-        return s.toLowerCase()
+        if (s == null) return "";
+        
+        // Normaliser les accents
+        String normalized = java.text.Normalizer.normalize(s, java.text.Normalizer.Form.NFD)
+                .replaceAll("\\p{M}", "");
+        
+        return normalized.toLowerCase()
                 .replace("é", "e").replace("è", "e").replace("ê", "e")
                 .replace("à", "a").replace("â", "a")
                 .replace("ù", "u")
                 .replace("î", "i")
                 .replace("ô", "o")
+                .replace("ç", "c")
                 .replaceAll("[^a-z0-9]", "")
                 .trim();
     }
@@ -295,6 +324,63 @@ public class ReleveBancaireImportService {
         m.put("depototal", "depotTotal");
         m.put("depottotal", "depotTotal");
         m.put("totaldesretraits", "totalRetraits");
+        
+        // Support ECOBANK - Mapping des colonnes spécifiques
+        // COMPTE -> Numéro de compte
+        m.put("compte", "numeroCompte");
+        m.put("numerodecompte", "numeroCompte");
+        
+        // NARRATION -> Libellé
+        m.put("narration", "libelle");
+        m.put("narratif", "libelle");
+        
+        // DEVISE DU COMPTE -> Devise
+        m.put("deviseducompte", "devise");
+        m.put("devise", "devise");
+        
+        // DATE COMPTABLE -> Date comptable
+        m.put("datecomptable", "dateComptable");
+        m.put("dateoperation", "dateComptable");
+        
+        // DATE DE VALEUR -> Date valeur
+        m.put("datedevaleur", "dateValeur");
+        m.put("datevaleur", "dateValeur");
+        
+        // CRÉDIT -> Credit (sans XAF/XOF)
+        m.put("crédit", "credit");
+        m.put("credit", "credit");
+        m.put("credits", "credit");
+        
+        // DÉBIT -> Debit (sans XAF/XOF)
+        m.put("débit", "debit");
+        m.put("debit", "debit");
+        m.put("debits", "debit");
+        
+        // SOLDE COURANT -> Solde courant
+        m.put("soldecourant", "soldeCourant");
+        
+        // SOLDE DISPONIBLE DE CLOTURE -> Solde disponible clôture
+        m.put("soldedisponibledecloture", "soldeDisponibleCloture");
+        
+        // SOLDE DISPONIBLE À L'OUVERTURE -> Solde disponible ouverture
+        m.put("soldedisponiblealouverture", "soldeDisponibleOuverture");
+        
+        // SOLDE COMPTABLE D'OUVERTURE -> Solde comptable ouverture
+        m.put("soldecomptabledouverture", "soldeComptableOuverture");
+        
+        // SOLDE COMPTABLE DE CLOTURE -> Solde comptable clôture
+        m.put("soldecomptabledecloture", "soldeComptableCloture");
+        
+        // DÉPOT TOTAL -> Dépôt total
+        m.put("depototal", "depotTotal");
+        
+        // TOTAL DES RETRAITS -> Total retraits
+        m.put("totaldesretraits", "totalRetraits");
+        
+        // NUMÉRO DE SERIE -> Numéro de série (optionnel)
+        m.put("numerodeserie", "numeroSerie");
+        m.put("numeroserie", "numeroSerie");
+        
         return m;
     }
 
@@ -302,9 +388,33 @@ public class ReleveBancaireImportService {
         if (idx == null) return null;
         Cell c = row.getCell(idx);
         if (c == null) return null;
-        c.setCellType(CellType.STRING);
-        String s = c.getStringCellValue();
-        return (s != null && !s.isBlank()) ? s.trim() : null;
+        
+        try {
+            // Essayer d'abord de lire comme string
+            if (c.getCellType() == CellType.STRING) {
+                String s = c.getStringCellValue();
+                return (s != null && !s.isBlank()) ? s.trim() : null;
+            }
+            
+            // Si c'est numérique, convertir en string
+            if (c.getCellType() == CellType.NUMERIC) {
+                double numValue = c.getNumericCellValue();
+                // Si c'est un entier, l'afficher sans décimales
+                if (numValue == Math.floor(numValue)) {
+                    return String.valueOf((long) numValue);
+                } else {
+                    return String.valueOf(numValue);
+                }
+            }
+            
+            // Fallback: forcer le type string
+            c.setCellType(CellType.STRING);
+            String s = c.getStringCellValue();
+            return (s != null && !s.isBlank()) ? s.trim() : null;
+        } catch (Exception e) {
+            System.out.println("DEBUG: Erreur lors de la lecture de la cellule string: " + e.getMessage());
+            return null;
+        }
     }
 
     private static Double getNumber(Row row, Integer idx) {
@@ -317,6 +427,10 @@ public class ReleveBancaireImportService {
             if (s == null) return null;
             s = s.trim();
             if (s.isEmpty()) return null;
+            
+            // Support ECOBANK: Supprimer XAF, XOF et autres devises
+            s = s.replaceAll("(?i)(xaf|xof|usd|eur|cfa)\\s*", "");
+            
             // Supprimer libellés et devises
             s = s.replaceAll("[A-Za-z\\u00C0-\\u017F]", "");
             // Garder seulement chiffres, séparateurs et signe
@@ -356,29 +470,62 @@ public class ReleveBancaireImportService {
                     return d.toInstant().atZone(java.time.ZoneId.systemDefault()).toLocalDate();
                 }
             }
+            
+            // 3) Traitement des chaînes de caractères
             String s = c.toString();
             if (s == null) return null;
             s = s.trim();
             if (s.isBlank()) return null;
-            // Try multiple patterns (case-insensitive)
-            // Normaliser multiples espaces/points au besoin
+            
+            // Debug: afficher la valeur brute
+            System.out.println("DEBUG: Date brute: '" + s + "'");
+            
+            // Normaliser la chaîne
             s = s.replaceAll("\\s+", " ").replace('.', '-').replace('/', '-');
-            String[] patternsFr = {"dd-MM-yyyy", "yyyy-MM-dd", "dd MMM yy", "dd MMM yyyy", "dd-MMM-yy", "dd-MMM-yyyy", "ddMMyyyy", "yyyyMMdd"};
-            String[] patternsEn = {"dd-MMM-yy", "dd-MMM-yyyy", "dd MMM yy", "dd MMM yyyy"};
+            
+            // Support ECOBANK: Format DD-MMM-YY (ex: 01-OCT-25)
+            String[] patternsEcobank = {
+                "dd-MMM-yy", "dd-MMM-yyyy", 
+                "dd MMM yy", "dd MMM yyyy",
+                "dd/MMM/yy", "dd/MMM/yyyy",
+                "dd.MMM.yy", "dd.MMM.yyyy"
+            };
+            
+            // Essayer d'abord les patterns ECOBANK avec locale anglaise
+            for (String p : patternsEcobank) {
+                try { 
+                    LocalDate result = parseCaseInsensitive(s, p, Locale.ENGLISH);
+                    System.out.println("DEBUG: Date parsée avec pattern " + p + ": " + result);
+                    return result;
+                } catch (Exception e) {
+                    System.out.println("DEBUG: Échec pattern " + p + " pour '" + s + "': " + e.getMessage());
+                }
+            }
+            
+            // Patterns français
+            String[] patternsFr = {"dd-MM-yyyy", "yyyy-MM-dd", "dd/MM/yyyy", "dd.MM.yyyy"};
             for (String p : patternsFr) {
-                try { return parseCaseInsensitive(s, p, Locale.FRENCH); } catch (Exception ignore) {}
+                try { 
+                    LocalDate result = parseCaseInsensitive(s, p, Locale.FRENCH);
+                    System.out.println("DEBUG: Date parsée avec pattern FR " + p + ": " + result);
+                    return result;
+                } catch (Exception ignore) {}
             }
-            for (String p : patternsEn) {
-                try { return parseCaseInsensitive(s, p, Locale.ENGLISH); } catch (Exception ignore) {}
-            }
-            // 3) Fallback: extraire jour/mois/année chiffres si présent
+            
+            // Fallback: extraire jour/mois/année chiffres si présent
             String digits = s.replaceAll("[^0-9]", "");
             if (digits.length() == 8) {
                 // ddMMyyyy
                 String dd = digits.substring(0,2), mm = digits.substring(2,4), yyyy = digits.substring(4,8);
-                return LocalDate.parse(dd+"-"+mm+"-"+yyyy, DateTimeFormatter.ofPattern("dd-MM-yyyy"));
+                LocalDate result = LocalDate.parse(dd+"-"+mm+"-"+yyyy, DateTimeFormatter.ofPattern("dd-MM-yyyy"));
+                System.out.println("DEBUG: Date parsée avec digits: " + result);
+                return result;
             }
-        } catch (Exception ignore) {}
+            
+            System.out.println("DEBUG: Impossible de parser la date: '" + s + "'");
+        } catch (Exception e) {
+            System.out.println("DEBUG: Erreur lors du parsing de date: " + e.getMessage());
+        }
         return null;
     }
 

@@ -143,6 +143,7 @@
                 <th class="right">Montant</th>
                 <th>Chèque</th>
                 <th>Devise</th>
+                <th>Numéro de série</th>
                 <th>Statut Réconciliation</th>
                 <th *ngIf="showCommentColumn">Commentaire</th>
                 <th class="actions-col" *ngIf="showActionsColumn">Actions</th>
@@ -161,6 +162,7 @@
                 <td class="right"><span class="amount" [class.debit]="!!r.montant && r.montant < 0" [class.credit]="!!r.montant && r.montant > 0">{{ r.montant !== null && r.montant !== undefined ? (r.montant | number:'1.0-0') : '-' }}</span></td>
                 <td>{{ r.numeroCheque || '-' }}</td>
               <td>{{ r.devise || '-' }}</td>
+              <td>{{ r.numeroSerie || '-' }}</td>
               <td>
                 <span class="badge status-ok" *ngIf="getReleveReconStatus(r)==='OK'">OK</span>
                 <span class="badge status-ko" *ngIf="getReleveReconStatus(r)==='KO'">KO</span>
@@ -417,6 +419,7 @@
               <th class="right">Montant</th>
               <th>Chèque</th>
               <th>Devise</th>
+              <th>Numéro de série</th>
             </tr>
           </thead>
           <tbody>
@@ -432,7 +435,7 @@
               <td class="right">{{ r.montant !== null && r.montant !== undefined ? (r.montant | number:'1.0-0') : '-' }}</td>
               <td>{{ r.numeroCheque || '-' }}</td>
               <td>{{ r.devise || '-' }}</td>
-              
+              <td>{{ r.numeroSerie || '-' }}</td>
             </tr>
           </tbody>
         </table>
@@ -503,6 +506,7 @@
               <th class="right">Montant</th>
               <th>Chèque</th>
               <th>Devise</th>
+              <th>Numéro de série</th>
               <th>Statut Réconciliation</th>
             </tr>
           </thead>
@@ -522,6 +526,7 @@
               <td class="right">{{ r.montant !== null && r.montant !== undefined ? (r.montant | number:'1.0-0') : '-' }}</td>
               <td>{{ r.numeroCheque || '-' }}</td>
               <td>{{ r.devise || '-' }}</td>
+              <td>{{ r.numeroSerie || '-' }}</td>
               <td class="right">
                 <span class="badge status-ok" *ngIf="getReconStatusByKey(r.key, 'OK')==='OK'">OK</span>
                 <span class="badge status-ko" *ngIf="getReconStatusByKey(r.key, 'OK')==='KO'">KO</span>
@@ -1254,6 +1259,10 @@
             <div class="form-group">
               <label>Devise</label>
               <input type="text" [(ngModel)]="releveEditForm.devise" name="rv_devise">
+            </div>
+            <div class="form-group">
+              <label>Numéro de série</label>
+              <input type="text" [(ngModel)]="releveEditForm.numeroSerie" name="rv_numero_serie">
             </div>
           </div>
           <div class="form-row">

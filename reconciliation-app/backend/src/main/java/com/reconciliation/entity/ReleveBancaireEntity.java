@@ -84,6 +84,9 @@ public class ReleveBancaireEntity {
     @Column(name = "commentaire", length = 1000)
     private String commentaire;
 
+    @Column(name = "numero_serie")
+    private String numeroSerie;
+
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
     public String getNumeroCompte() { return numeroCompte; }
@@ -137,6 +140,8 @@ public class ReleveBancaireEntity {
 
     public String getCommentaire() { return commentaire; }
     public void setCommentaire(String commentaire) { this.commentaire = commentaire; }
+    public String getNumeroSerie() { return numeroSerie; }
+    public void setNumeroSerie(String numeroSerie) { this.numeroSerie = numeroSerie; }
 }
 
 

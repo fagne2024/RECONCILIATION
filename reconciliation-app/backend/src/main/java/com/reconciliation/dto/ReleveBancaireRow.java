@@ -21,6 +21,7 @@ public class ReleveBancaireRow {
     public Double soldeComptableCloture;
     public Double depotTotal;
     public Double totalRetraits;
+    public String numeroSerie;
 }
 
 
