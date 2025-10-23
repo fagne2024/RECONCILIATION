@@ -295,7 +295,7 @@ export class BanqueComponent implements OnInit {
       this.loadOperations();
       this.updatePagedReconciliationResults();
     } catch (e) {
-      alert('❌ Erreur lors de la mise à jour en masse des statuts');
+      this.popupService.showError('❌ Erreur lors de la mise à jour en masse des statuts');
     } finally {
       this.isBulkUpdatingOps = false;
     }
@@ -712,7 +712,7 @@ export class BanqueComponent implements OnInit {
   // Actions bulk: marquer OK définitif et annuler
   bulkMarkOkDefinitif() {
     const keys = Array.from(this.selectedReconKeys);
-    if (!keys.length) { alert('Sélectionnez au moins une ligne.'); return; }
+    if (!keys.length) { this.popupService.showWarning('Sélectionnez au moins une ligne.'); return; }
     this.operationApi.markOkBulk(keys).subscribe({
       next: () => {
         keys.forEach(k => this.reconOkKeySet.add(k));
@@ -760,7 +760,7 @@ export class BanqueComponent implements OnInit {
 
   bulkUnmarkOk() {
     const keys = Array.from(this.selectedReconKeys);
-    if (!keys.length) { alert('Sélectionnez au moins une ligne.'); return; }
+    if (!keys.length) { this.popupService.showWarning('Sélectionnez au moins une ligne.'); return; }
     this.operationApi.unmarkOkBulk(keys).subscribe({
       next: () => {
         keys.forEach(k => this.reconOkKeySet.delete(k));
@@ -1533,7 +1533,7 @@ export class BanqueComponent implements OnInit {
 
   saveCreateOperation() {
     if (!this.isCreateOperationFormValid()) {
-      alert('❌ Veuillez remplir tous les champs obligatoires');
+      this.popupService.showError('❌ Veuillez remplir tous les champs obligatoires');
       return;
     }
 
@@ -1559,7 +1559,7 @@ export class BanqueComponent implements OnInit {
     this.operationService.createOperationFromForm(operationData).subscribe({
       next: (createdOperation) => {
         console.log('✅ Opération créée avec succès:', createdOperation);
-        alert('✅ Opération bancaire créée avec succès!');
+        this.popupService.showSuccess('✅ Opération bancaire créée avec succès!');
         this.closeCreateOperationPopup();
         
         // Recharger les données si nécessaire
@@ -1578,7 +1578,7 @@ export class BanqueComponent implements OnInit {
           errorMessage = '❌ ' + err.error;
         }
         
-        alert(errorMessage);
+        this.popupService.showError(errorMessage);
         this.creatingOperation = false;
       }
     });
@@ -1701,7 +1701,7 @@ export class BanqueComponent implements OnInit {
         window.URL.revokeObjectURL(url);
       },
       error: () => {
-        alert('Impossible de télécharger le modèle de relevé');
+        this.popupService.showError('Impossible de télécharger le modèle de relevé');
       }
     });
   }
@@ -1710,7 +1710,7 @@ export class BanqueComponent implements OnInit {
   exportReleveCSV() {
     const rows = this.filteredReleveRowsForImport || [];
     if (!rows.length) {
-      alert('Aucune ligne de relevé à exporter.');
+      this.popupService.showWarning('Aucune ligne de relevé à exporter.');
       return;
     }
 
@@ -1861,7 +1861,7 @@ export class BanqueComponent implements OnInit {
 
   openReleveEdit(row: ReleveBancaireRow) {
     if (!row || !row.id) {
-      alert('Cette ligne ne peut pas être modifiée car son identifiant est manquant. Réimportez si nécessaire.');
+      this.popupService.showError('Cette ligne ne peut pas être modifiée car son identifiant est manquant. Réimportez si nécessaire.');
       return;
     }
     this.selectedReleve = row;
@@ -1923,11 +1923,11 @@ export class BanqueComponent implements OnInit {
       next: () => {
         this.closeReleveEdit();
         this.loadLatestReleveBatch();
-        alert('✅ Ligne de relevé mise à jour');
+        this.popupService.showSuccess('✅ Ligne de relevé mise à jour');
       },
       error: (err) => {
         console.error('Erreur MAJ relevé', err);
-        alert('❌ Échec de la mise à jour du relevé');
+        this.popupService.showError('❌ Échec de la mise à jour du relevé');
       }
     });
   }
@@ -1951,7 +1951,7 @@ export class BanqueComponent implements OnInit {
       },
       error: (err) => {
         console.error('Erreur sauvegarde commentaire', err);
-        alert('❌ Échec de la sauvegarde du commentaire');
+        this.popupService.showError('❌ Échec de la sauvegarde du commentaire');
       }
     });
   }
@@ -1959,11 +1959,12 @@ export class BanqueComponent implements OnInit {
   // Suppression d'une ligne de relevé
   deleteReleveRow(row: ReleveBancaireRow) {
     if (!row.id) {
-      alert('❌ Impossible de supprimer cette ligne');
+      this.popupService.showError('❌ Impossible de supprimer cette ligne');
       return;
     }
 
-    if (confirm('⚠️ Êtes-vous sûr de vouloir supprimer cette ligne de relevé ?\n\nCette action est irréversible.')) {
+    this.popupService.showConfirmDialog('⚠️ Êtes-vous sûr de vouloir supprimer cette ligne de relevé ?\n\nCette action est irréversible.', 'Confirmation de suppression').then(confirmed => {
+      if (confirmed) {
       console.log('🗑️ Suppression relevé:', { id: row.id, row: row });
       
       this.releveService.delete(row.id).subscribe({
@@ -1977,14 +1978,15 @@ export class BanqueComponent implements OnInit {
           // Mettre à jour la liste filtrée
           this.loadLatestReleveBatch();
           
-          alert('✅ Ligne de relevé supprimée');
+          this.popupService.showSuccess('✅ Ligne de relevé supprimée');
         },
         error: (err) => {
           console.error('Erreur suppression relevé', err);
-          alert('❌ Échec de la suppression du relevé');
+          this.popupService.showError('❌ Échec de la suppression du relevé');
         }
       });
-    }
+      }
+    });
   }
 
   // Chargement des données
@@ -2089,7 +2091,7 @@ export class BanqueComponent implements OnInit {
         window.URL.revokeObjectURL(url);
       },
       error: () => {
-        alert('Impossible de télécharger le modèle');
+        this.popupService.showError('Impossible de télécharger le modèle');
       }
     });
   }
@@ -2409,15 +2411,15 @@ export class BanqueComponent implements OnInit {
   // =========================
   reconcile() {
     if (!this.reconPays) {
-      alert('Veuillez choisir un pays. La date est optionnelle.');
+      this.popupService.showWarning('Veuillez choisir un pays. La date est optionnelle.');
       return;
     }
     if (!this.operations || !this.operations.length) {
-      alert('Aucune opération bancaire disponible.');
+      this.popupService.showWarning('Aucune opération bancaire disponible.');
       return;
     }
     if (!this.releveRows || !this.releveRows.length) {
-      alert('Aucun relevé bancaire importé. Veuillez importer un relevé.');
+      this.popupService.showWarning('Aucun relevé bancaire importé. Veuillez importer un relevé.');
       return;
     }
 
@@ -2655,7 +2657,7 @@ export class BanqueComponent implements OnInit {
 
   openCorrespondance() {
     if (!this.matchedPairs.length) {
-      alert('Aucune correspondance trouvée.');
+      this.popupService.showWarning('Aucune correspondance trouvée.');
       return;
     }
     this.showCorrespondancePopup = true;
@@ -3096,11 +3098,11 @@ export class BanqueComponent implements OnInit {
         console.log('Opération bancaire modifiée avec succès');
         this.loadOperations();
         this.closeEditPopup();
-        alert('✅ Opération bancaire modifiée avec succès');
+        this.popupService.showSuccess('✅ Opération bancaire modifiée avec succès');
       },
       error: (error) => {
         console.error('Erreur lors de la modification:', error);
-        alert('❌ Erreur lors de la modification de l\'opération bancaire');
+        this.popupService.showError('❌ Erreur lors de la modification de l\'opération bancaire');
       }
     });
   }
@@ -3111,21 +3113,23 @@ export class BanqueComponent implements OnInit {
       ? `Êtes-vous sûr de vouloir supprimer cette opération bancaire ?\n\nType: ${operation.typeOperation}\nAgence: ${operation.agence}\nMontant: ${operation.montant} FCFA`
       : 'Êtes-vous sûr de vouloir supprimer cette opération bancaire ?';
 
-    if (confirm(confirmMessage)) {
+    this.popupService.showConfirmDialog(confirmMessage, 'Confirmation de suppression').then(confirmed => {
+      if (confirmed) {
       this.operationBancaireService.deleteOperationBancaire(id).subscribe({
         next: (success) => {
           if (success) {
             console.log('Opération bancaire supprimée avec succès');
             this.loadOperations();
-            alert('✅ Opération bancaire supprimée avec succès');
+            this.popupService.showSuccess('✅ Opération bancaire supprimée avec succès');
           }
         },
         error: (error) => {
           console.error('Erreur lors de la suppression de l\'opération bancaire:', error);
-          alert('❌ Erreur lors de la suppression de l\'opération bancaire');
+          this.popupService.showError('❌ Erreur lors de la suppression de l\'opération bancaire');
         }
       });
-    }
+      }
+    });
   }
 
   // Helper pour formater la date pour l'input
