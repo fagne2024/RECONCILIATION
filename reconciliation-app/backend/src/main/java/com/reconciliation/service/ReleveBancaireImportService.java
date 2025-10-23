@@ -480,7 +480,13 @@ public class ReleveBancaireImportService {
             // Debug: afficher la valeur brute
             System.out.println("DEBUG: Date brute: '" + s + "'");
             
-            // Normaliser la chaîne
+            // Essayer d'abord le parsing ECOBANK spécifique
+            LocalDate ecobankResult = parseEcobankDate(s);
+            if (ecobankResult != null) {
+                return ecobankResult;
+            }
+            
+            // Normaliser la chaîne pour les autres patterns
             s = s.replaceAll("\\s+", " ").replace('.', '-').replace('/', '-');
             
             // Support ECOBANK: Format DD-MMM-YY (ex: 01-OCT-25)
@@ -488,7 +494,9 @@ public class ReleveBancaireImportService {
                 "dd-MMM-yy", "dd-MMM-yyyy", 
                 "dd MMM yy", "dd MMM yyyy",
                 "dd/MMM/yy", "dd/MMM/yyyy",
-                "dd.MMM.yy", "dd.MMM.yyyy"
+                "dd.MMM.yy", "dd.MMM.yyyy",
+                "d-MMM-yy", "d-MMM-yyyy",  // Support jour sur 1 chiffre
+                "dd-M-yy", "dd-M-yyyy"     // Support mois sur 1 chiffre
             };
             
             // Essayer d'abord les patterns ECOBANK avec locale anglaise
@@ -535,6 +543,62 @@ public class ReleveBancaireImportService {
                 .appendPattern(pattern)
                 .toFormatter(locale);
         return LocalDate.parse(input, f);
+    }
+    
+    // Méthode spécifique pour parser le format ECOBANK "01-OCT-25"
+    private static LocalDate parseEcobankDate(String dateStr) {
+        if (dateStr == null || dateStr.trim().isEmpty()) return null;
+        
+        try {
+            // Nettoyer la chaîne
+            String clean = dateStr.trim().toUpperCase();
+            System.out.println("DEBUG: Parsing ECOBANK date: '" + clean + "'");
+            
+            // Format principal: DD-MMM-YY (ex: 01-OCT-25)
+            if (clean.matches("\\d{1,2}-[A-Z]{3}-\\d{2}")) {
+                String[] parts = clean.split("-");
+                if (parts.length == 3) {
+                    int day = Integer.parseInt(parts[0]);
+                    String monthStr = parts[1];
+                    int year = Integer.parseInt(parts[2]);
+                    
+                    // Convertir l'année à 2 chiffres en année à 4 chiffres
+                    int fullYear = (year < 50) ? 2000 + year : 1900 + year;
+                    
+                    // Mapper les mois
+                    int month = mapMonthAbbreviation(monthStr);
+                    if (month > 0) {
+                        LocalDate result = LocalDate.of(fullYear, month, day);
+                        System.out.println("DEBUG: Date ECOBANK parsée: " + result);
+                        return result;
+                    }
+                }
+            }
+            
+            // Fallback: essayer avec les patterns standards
+            return null;
+        } catch (Exception e) {
+            System.out.println("DEBUG: Erreur parsing ECOBANK date '" + dateStr + "': " + e.getMessage());
+            return null;
+        }
+    }
+    
+    private static int mapMonthAbbreviation(String monthAbbr) {
+        switch (monthAbbr) {
+            case "JAN": return 1;
+            case "FEB": case "FEV": return 2;
+            case "MAR": return 3;
+            case "APR": case "AVR": return 4;
+            case "MAY": case "MAI": return 5;
+            case "JUN": case "JUI": return 6;
+            case "JUL": return 7;
+            case "AUG": case "AOU": return 8;
+            case "SEP": case "SEPT": return 9;
+            case "OCT": return 10;
+            case "NOV": return 11;
+            case "DEC": return 12;
+            default: return -1;
+        }
     }
 }
 
