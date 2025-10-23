@@ -82,6 +82,10 @@
     <div class="banque-section" *ngIf="activeSection === 'rapports'">
       <div class="releve-header">
         <h2>📋 Relevé bancaire - Import</h2>
+        <button class="btn-toggle-comment" (click)="toggleCommentColumn()" [class.active]="showCommentColumn" title="Afficher/Masquer la colonne commentaire">
+          <i class="fas" [class.fa-comment]="!showCommentColumn" [class.fa-comment-slash]="showCommentColumn"></i>
+          {{ showCommentColumn ? 'Masquer Commentaires' : 'Afficher Commentaires' }}
+        </button>
         <div class="actions">
           <label class="file-btn">
             <input type="file" (change)="onReleveFileSelected($event)" accept=".xlsx,.xls,.csv" />
@@ -95,6 +99,9 @@
           </button>
           <button class="btn-primary" (click)="exportReleveCSV()" [disabled]="!(filteredReleveRowsForImport && filteredReleveRowsForImport.length)" title="Exporter le relevé (CSV ;)">
             <i class="fas fa-file-export"></i> Export CSV
+          </button>
+          <button class="btn-success" (click)="openCreateOperation()" title="Créer une nouvelle opération bancaire">
+            <i class="fas fa-plus"></i> Créer Opération
           </button>
           <div class="filter-group" style="margin-left:12px;">
             <label>Lot</label>
@@ -137,7 +144,8 @@
                 <th>Chèque</th>
                 <th>Devise</th>
                 <th>Statut Réconciliation</th>
-                <th class="actions-col">Actions</th>
+                <th *ngIf="showCommentColumn">Commentaire</th>
+                <th class="actions-col" *ngIf="showActionsColumn">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -157,9 +165,20 @@
                 <span class="badge status-ok" *ngIf="getReleveReconStatus(r)==='OK'">OK</span>
                 <span class="badge status-ko" *ngIf="getReleveReconStatus(r)==='KO'">KO</span>
               </td>
-                <td class="actions-col">
+              <td *ngIf="showCommentColumn" class="comment-cell">
+                <div class="comment-display" [class.empty]="!r.commentaire">
+                  <span *ngIf="r.commentaire; else noComment">{{ r.commentaire }}</span>
+                  <ng-template #noComment>
+                    <span class="no-comment">Aucun commentaire</span>
+                  </ng-template>
+                </div>
+              </td>
+                <td class="actions-col" *ngIf="showActionsColumn">
                   <button class="btn-icon" (click)="openReleveEdit(r)" [disabled]="!r.id" title="Modifier cette ligne">
                     <i class="fas fa-edit"></i>
+                  </button>
+                  <button class="btn-icon btn-danger" (click)="deleteReleveRow(r)" [disabled]="!r.id" title="Supprimer cette ligne">
+                    <i class="fas fa-trash"></i>
                   </button>
                 </td>
               </tr>
@@ -289,30 +308,30 @@
             <span *ngIf="reconView==='corr_releve'">{{ filteredMatchedReleves.length }} correspondance(s)</span>
           </div>
           <div class="bulk-actions" *ngIf="reconView==='corr_operation' || reconView==='corr_releve'">
-            <button class="btn-outline" (click)="toggleSelectAllCurrentPage()" title="Sélectionner/Désélectionner la page">
+            <button class="btn-selection-toggle" (click)="toggleSelectAllCurrentPage()" title="Sélectionner/Désélectionner la page">
               <i class="fas" [ngClass]="{ 'fa-square': !selectAllOnPage, 'fa-check-square': selectAllOnPage }"></i>
               {{ selectAllOnPage ? 'Tout désélectionner' : 'Sélectionner la page' }}
             </button>
-            <button class="btn-primary" (click)="bulkMarkOkDefinitif()" [disabled]="selectedReconKeys.size===0" title="Marquer OK définitif (plusieurs)">
+            <button class="btn-bulk-action" (click)="bulkMarkOkDefinitif()" [disabled]="selectedReconKeys.size===0" title="Marquer OK définitif (plusieurs)">
               <i class="fas fa-check-double"></i> OK définitif ({{ selectedReconKeys.size }})
             </button>
-            <button class="btn-outline" (click)="bulkUnmarkOk()" [disabled]="selectedReconKeys.size===0" title="Annuler OK définitif (plusieurs)">
+            <button class="btn-bulk-cancel" (click)="bulkUnmarkOk()" [disabled]="selectedReconKeys.size===0" title="Annuler OK définitif (plusieurs)">
               <i class="fas fa-undo"></i> Annuler ({{ selectedReconKeys.size }})
             </button>
           </div>
           <!-- Actions sélection pour vue opérations -->
           <div class="bulk-actions" *ngIf="reconView==='operation'">
-            <button class="btn-outline" (click)="toggleSelectionModeOps()">
+            <button class="btn-selection-toggle" (click)="toggleSelectionModeOps()">
               <i class="fas fa-check-square"></i>
               {{ isSelectionModeOps ? 'Quitter la sélection' : 'Sélection multiple' }}
               <span *ngIf="isSelectionModeOps && hasSelectedOps" class="badge" style="margin-left:6px;">{{ selectedOpIds.size }}</span>
             </button>
             <ng-container *ngIf="isSelectionModeOps">
-              <button class="btn-outline" (click)="selectAllOpsCurrentPage()" [disabled]="selectAllOpsOnPage">
+              <button class="btn-selection-toggle" (click)="selectAllOpsCurrentPage()" [disabled]="selectAllOpsOnPage">
                 <i class="fas fa-check-double"></i>
                 Sélectionner la page
               </button>
-              <button class="btn-outline" (click)="deselectAllOps()" [disabled]="!hasSelectedOps">
+              <button class="btn-bulk-cancel" (click)="deselectAllOps()" [disabled]="!hasSelectedOps">
                 <i class="fas fa-times"></i>
                 Désélectionner tout
               </button>
@@ -320,7 +339,7 @@
                 <option value="" disabled selected>Choisir un statut</option>
                 <option *ngFor="let s of statutsList" [value]="s">{{ s }}</option>
               </select>
-              <button class="btn-primary" (click)="bulkChangeSelectedOpsStatus()" [disabled]="isBulkUpdatingOps || !hasSelectedOps || !selectedOpsTargetStatut">
+              <button class="btn-bulk-action" (click)="bulkChangeSelectedOpsStatus()" [disabled]="isBulkUpdatingOps || !hasSelectedOps || !selectedOpsTargetStatut">
                 <i class="fas fa-exchange-alt"></i>
                 {{ isBulkUpdatingOps ? '⏳ Changement...' : 'Changer statut (' + selectedOpIds.size + ')' }}
               </button>
@@ -514,30 +533,71 @@
           </tbody>
         </table>
 
-        <div class="pagination small center" *ngIf="(reconView==='operation' ? reconOpTotalPages : reconView==='releve' ? reconRevTotalPages : reconView==='corr_operation' ? reconCorrOpTotalPages : reconCorrRevTotalPages) > 1">
-          <div class="btn-group">
-            <button (click)="reconPrevPage()" [disabled]="(reconView==='operation' ? reconOpPage===1 : reconView==='releve' ? reconRevPage===1 : reconView==='corr_operation' ? reconCorrOpPage===1 : reconCorrRevPage===1)">
-              <i class="fas fa-chevron-left"></i>
-            </button>
-            <button (click)="reconNextPage()" [disabled]="(
-              reconView==='operation' ? reconOpPage===reconOpTotalPages : (
-              reconView==='releve' ? reconRevPage===reconRevTotalPages : (
-              reconView==='corr_operation' ? reconCorrOpPage===reconCorrOpTotalPages : reconCorrRevPage===reconCorrRevTotalPages)))">
-              <i class="fas fa-chevron-right"></i>
-            </button>
+        <!-- Pagination améliorée pour la réconciliation -->
+        <div class="pagination-enhanced" *ngIf="reconPays">
+          <!-- Informations de pagination -->
+          <div class="pagination-info">
+            <i class="fas fa-info-circle"></i>
+            <span>{{ getReconPaginationInfo() }}</span>
           </div>
-          <span class="muted">
-            Page {{ reconView==='operation' ? reconOpPage : (reconView==='releve' ? reconRevPage : (reconView==='corr_operation' ? reconCorrOpPage : reconCorrRevPage)) }}
-            /
-            {{ reconView==='operation' ? reconOpTotalPages : (reconView==='releve' ? reconRevTotalPages : (reconView==='corr_operation' ? reconCorrOpTotalPages : reconCorrRevTotalPages)) }}
-          </span>
-          <select [(ngModel)]="reconPageSize" (change)="onReconPageSizeChange()">
-            <option [value]="5">5</option>
-            <option [value]="10">10</option>
-            <option [value]="20">20</option>
-            <option [value]="50">50</option>
-            <option [value]="100">100</option>
-          </select>
+          
+          <!-- Navigation de pagination -->
+          <div class="pagination-nav">
+            <div class="btn-group">
+              <!-- Première page -->
+              <button (click)="reconGoToFirstPage()" 
+                      [disabled]="(reconView==='operation' ? reconOpPage===1 : reconView==='releve' ? reconRevPage===1 : reconView==='corr_operation' ? reconCorrOpPage===1 : reconCorrRevPage===1)"
+                      title="Première page">
+                <i class="fas fa-angle-double-left"></i>
+              </button>
+              
+              <!-- Page précédente -->
+              <button (click)="reconPrevPage()" 
+                      [disabled]="(reconView==='operation' ? reconOpPage===1 : reconView==='releve' ? reconRevPage===1 : reconView==='corr_operation' ? reconCorrOpPage===1 : reconCorrRevPage===1)"
+                      title="Page précédente">
+                <i class="fas fa-chevron-left"></i>
+              </button>
+            </div>
+            
+            <!-- Numéros de page -->
+            <div class="page-numbers">
+              <button *ngFor="let page of getReconPageNumbers()" 
+                      (click)="reconGoToPage(page)"
+                      [disabled]="(reconView==='operation' ? filteredLeftOps.length===0 : reconView==='releve' ? filteredRightReleves.length===0 : reconView==='corr_operation' ? filteredMatchedOps.length===0 : filteredMatchedReleves.length===0)"
+                      [class.active]="page === (reconView==='operation' ? reconOpPage : (reconView==='releve' ? reconRevPage : (reconView==='corr_operation' ? reconCorrOpPage : reconCorrRevPage)))"
+                      class="page-number">
+                {{ page }}
+              </button>
+            </div>
+            
+            <div class="btn-group">
+              <!-- Page suivante -->
+              <button (click)="reconNextPage()" 
+                      [disabled]="(reconView==='operation' ? reconOpPage===reconOpTotalPages : (reconView==='releve' ? reconRevPage===reconRevTotalPages : (reconView==='corr_operation' ? reconCorrOpPage===reconCorrOpTotalPages : reconCorrRevPage===reconCorrRevTotalPages)))"
+                      title="Page suivante">
+                <i class="fas fa-chevron-right"></i>
+              </button>
+              
+              <!-- Dernière page -->
+              <button (click)="reconGoToLastPage()" 
+                      [disabled]="(reconView==='operation' ? reconOpPage===reconOpTotalPages : (reconView==='releve' ? reconRevPage===reconRevTotalPages : (reconView==='corr_operation' ? reconCorrOpPage===reconCorrOpTotalPages : reconCorrRevPage===reconCorrRevTotalPages)))"
+                      title="Dernière page">
+                <i class="fas fa-angle-double-right"></i>
+              </button>
+            </div>
+          </div>
+          
+          <!-- Sélecteur de taille de page -->
+          <div class="page-size-selector">
+            <label>Afficher</label>
+            <select [(ngModel)]="reconPageSize" (change)="onReconPageSizeChange()">
+              <option [value]="5">5 lignes</option>
+              <option [value]="10">10 lignes</option>
+              <option [value]="20">20 lignes</option>
+              <option [value]="50">50 lignes</option>
+              <option [value]="100">100 lignes</option>
+            </select>
+          </div>
         </div>
       </div>
       <div *ngIf="!reconDiffRows.length" class="empty-row">
@@ -761,9 +821,9 @@
   <div class="banque-section operations-section" *ngIf="showOperations && activeSection === 'operations'">
     <div class="operations-header">
       <h2>📋 Opérations Bancaires</h2>
-      <button class="btn-back" (click)="hideOperationsTable()">
-        <i class="fas fa-arrow-left"></i>
-        Retour
+      <button class="btn-toggle-actions" (click)="toggleActionsColumn()" [class.active]="showActionsColumn" title="Afficher/Masquer les colonnes Actions">
+        <i class="fas" [class.fa-eye]="!showActionsColumn" [class.fa-eye-slash]="showActionsColumn"></i>
+        {{ showActionsColumn ? 'Masquer Actions' : 'Afficher Actions' }}
       </button>
     </div>
 
@@ -859,7 +919,7 @@
           <span>{{ filteredOperations.length }} opération(s) au total</span>
         </div>
         <div style="margin-left:auto; display:flex; gap:8px; align-items:center;">
-          <button class="btn-outline" (click)="toggleSelectionModeMain()">
+          <button class="btn-selection-toggle" (click)="toggleSelectionModeMain()">
             <i class="fas fa-check-square"></i>
             {{ isSelectionModeMain ? 'Quitter la sélection' : 'Sélection multiple' }}
             <span *ngIf="isSelectionModeMain && hasSelectedMainOps" class="badge" style="margin-left:6px;">{{ selectedMainOpIds.size }}</span>
@@ -869,7 +929,7 @@
               <option value="" disabled selected>Choisir un statut</option>
               <option *ngFor="let s of statutsList" [value]="s">{{ s }}</option>
             </select>
-            <button class="btn-primary" (click)="bulkChangeSelectedMainStatus()" [disabled]="isBulkUpdatingMain || !hasSelectedMainOps || !selectedMainTargetStatut">
+            <button class="btn-bulk-action" (click)="bulkChangeSelectedMainStatus()" [disabled]="isBulkUpdatingMain || !hasSelectedMainOps || !selectedMainTargetStatut">
               <i class="fas fa-exchange-alt"></i>
               {{ isBulkUpdatingMain ? '⏳ Changement...' : 'Changer statut (' + selectedMainOpIds.size + ')' }}
             </button>
@@ -909,7 +969,7 @@
               <th>ID GLPI</th>
               <th>Banque</th>
               <th>Statut</th>
-              <th>Actions</th>
+              <th *ngIf="showActionsColumn">Actions</th>
               <th>Statut Réconciliation</th>
             </tr>
           </thead>
@@ -956,7 +1016,7 @@
                   {{ operation.statut }}
                 </span>
               </td>
-              <td class="actions">
+              <td class="actions" *ngIf="showActionsColumn">
                 <button class="btn-icon" (click)="viewOperation(operation)" title="Voir">
                   <i class="fas fa-eye"></i>
                 </button>
@@ -1202,11 +1262,121 @@
               <input type="text" [(ngModel)]="releveEditForm.libelle" name="rv_libelle">
             </div>
           </div>
+          <div class="form-row">
+            <div class="form-group" style="grid-column: 1 / -1;">
+              <label>Commentaire</label>
+              <textarea 
+                [(ngModel)]="releveEditForm.commentaire" 
+                name="rv_commentaire"
+                placeholder="Ajouter un commentaire..."
+                rows="3"
+                maxlength="500"
+                class="comment-textarea">
+              </textarea>
+            </div>
+          </div>
         </form>
       </div>
       <div class="popup-footer">
         <button class="btn-secondary" (click)="closeReleveEdit()"><i class="fas fa-times"></i> Annuler</button>
         <button class="btn-primary" (click)="saveReleveEdit()"><i class="fas fa-save"></i> Enregistrer</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Popup Création Opération Bancaire -->
+  <div class="modern-popup-overlay" *ngIf="showCreateOperationPopup" (click)="closeCreateOperationPopup()">
+    <div class="modern-popup create-operation-popup" (click)="$event.stopPropagation()">
+      <div class="popup-header">
+        <h3><i class="fas fa-plus"></i> Créer une Opération Bancaire</h3>
+        <button class="btn-close" (click)="closeCreateOperationPopup()">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+      <div class="popup-body">
+        <form class="create-operation-form">
+          <div class="form-row">
+            <div class="form-group">
+              <label>Numéro de compte *</label>
+              <input type="text" [(ngModel)]="createOperationForm.numeroCompte" name="co_numeroCompte" required>
+            </div>
+            <div class="form-group">
+              <label>Nom du compte *</label>
+              <input type="text" [(ngModel)]="createOperationForm.nomCompte" name="co_nomCompte" required>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Banque *</label>
+              <input type="text" [(ngModel)]="createOperationForm.banque" name="co_banque" required>
+            </div>
+            <div class="form-group">
+              <label>Devise</label>
+              <select [(ngModel)]="createOperationForm.devise" name="co_devise">
+                <option value="XAF">XAF</option>
+                <option value="USD">USD</option>
+                <option value="EUR">EUR</option>
+                <option value="CFA">CFA</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Date comptable *</label>
+              <input type="date" [(ngModel)]="createOperationForm.dateComptable" name="co_dateComptable" required>
+            </div>
+            <div class="form-group">
+              <label>Date de valeur</label>
+              <input type="date" [(ngModel)]="createOperationForm.dateValeur" name="co_dateValeur">
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Type d'opération *</label>
+              <select [(ngModel)]="createOperationForm.typeOperation" name="co_typeOperation" required>
+                <option value="">Choisir un type</option>
+                <option value="VIREMENT">Virement</option>
+                <option value="RETRAIT">Retrait</option>
+                <option value="DEPOT">Dépôt</option>
+                <option value="FRAIS">Frais</option>
+                <option value="COMMISSION">Commission</option>
+                <option value="AUTRE">Autre</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Montant *</label>
+              <input type="number" [(ngModel)]="createOperationForm.montant" name="co_montant" step="0.01" required>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group" style="grid-column: 1 / -1;">
+              <label>Libellé / Description *</label>
+              <input type="text" [(ngModel)]="createOperationForm.libelle" name="co_libelle" required>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group" style="grid-column: 1 / -1;">
+              <label>Commentaire</label>
+              <textarea 
+                [(ngModel)]="createOperationForm.commentaire" 
+                name="co_commentaire"
+                placeholder="Ajouter un commentaire (optionnel)..."
+                rows="3"
+                maxlength="500"
+                class="comment-textarea">
+              </textarea>
+            </div>
+          </div>
+        </form>
+      </div>
+      <div class="popup-footer">
+        <button class="btn-secondary" (click)="closeCreateOperationPopup()">
+          <i class="fas fa-times"></i> Annuler
+        </button>
+        <button class="btn-primary" (click)="saveCreateOperation()" [disabled]="!isCreateOperationFormValid() || creatingOperation">
+          <i class="fas" [class.fa-save]="!creatingOperation" [class.fa-spinner]="creatingOperation" [class.fa-spin]="creatingOperation"></i>
+          {{ creatingOperation ? 'Création en cours...' : 'Créer l\'Opération' }}
+        </button>
       </div>
     </div>
   </div>

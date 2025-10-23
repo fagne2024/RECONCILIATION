@@ -23,6 +23,7 @@ C:\Users\YamarNDAO\OneDrive - Intouchgroup\Bureau\PAD\reconciliation-app\backend
 C:\Users\YamarNDAO\OneDrive - Intouchgroup\Bureau\PAD\reconciliation-app\backend\src\main\java\com\reconciliation\controller\UserProfilController.java
 C:\Users\YamarNDAO\OneDrive - Intouchgroup\Bureau\PAD\reconciliation-app\backend\src\main\java\com\reconciliation\service\ProfilService.java
 C:\Users\YamarNDAO\OneDrive - Intouchgroup\Bureau\PAD\reconciliation-app\backend\src\main\java\com\reconciliation\entity\ProfilEntity.java
+C:\Users\YamarNDAO\OneDrive - Intouchgroup\Bureau\PAD\reconciliation-app\backend\src\main\java\com\reconciliation\util\DatabaseMigration.java
 C:\Users\YamarNDAO\OneDrive - Intouchgroup\Bureau\PAD\reconciliation-app\backend\src\main\java\com\reconciliation\entity\ProfilPermissionEntity.java
 C:\Users\YamarNDAO\OneDrive - Intouchgroup\Bureau\PAD\reconciliation-app\backend\src\main\java\com\reconciliation\controller\AutoProcessingController.java
 C:\Users\YamarNDAO\OneDrive - Intouchgroup\Bureau\PAD\reconciliation-app\backend\src\main\java\com\reconciliation\entity\ImpactOPEntity.java
@@ -103,6 +104,7 @@ C:\Users\YamarNDAO\OneDrive - Intouchgroup\Bureau\PAD\reconciliation-app\backend
 C:\Users\YamarNDAO\OneDrive - Intouchgroup\Bureau\PAD\reconciliation-app\backend\src\main\java\com\reconciliation\model\AgencySummary.java
 C:\Users\YamarNDAO\OneDrive - Intouchgroup\Bureau\PAD\reconciliation-app\backend\src\main\java\com\reconciliation\model\Statistics.java
 C:\Users\YamarNDAO\OneDrive - Intouchgroup\Bureau\PAD\reconciliation-app\backend\src\main\java\com\reconciliation\service\OperationBusinessService.java
+C:\Users\YamarNDAO\OneDrive - Intouchgroup\Bureau\PAD\reconciliation-app\backend\src\main\java\com\reconciliation\dto\FormOperationCreateRequest.java
 C:\Users\YamarNDAO\OneDrive - Intouchgroup\Bureau\PAD\reconciliation-app\backend\src\main\java\com\reconciliation\repository\ModuleRepository.java
 C:\Users\YamarNDAO\OneDrive - Intouchgroup\Bureau\PAD\reconciliation-app\backend\src\main\java\com\reconciliation\dto\AutoProcessingModelDTO.java
 C:\Users\YamarNDAO\OneDrive - Intouchgroup\Bureau\PAD\reconciliation-app\backend\src\main\java\com\reconciliation\dto\ReconciliationConfig.java

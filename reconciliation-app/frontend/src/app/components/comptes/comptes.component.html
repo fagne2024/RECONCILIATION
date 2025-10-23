@@ -424,7 +424,7 @@
                             (click)="switchTab('impact-op')"
                             *ngIf="showImpactOPTab">
                         <i class="fas fa-chart-line"></i>
-                        Impact OP
+                        Ecart régularisé
                     </button>
                     <button class="tab-button" 
                             [class.active]="activeTab === 'revenu-journalier'"
@@ -611,8 +611,8 @@
                                         <th>Solde de Clôture</th>
                                         <th>Variation Journalière</th>
                                         <th>Solde de Clôture BO</th>
-                                        <th>TSOP</th>
-                                        <th>Impact OP</th>
+                                        <th>Ecart de solde</th>
+                                        <th>Ecart régularisé</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -644,7 +644,7 @@
                                         <td [ngClass]="getImpactOPClass(solde)" 
                                             (click)="navigateToImpactOP(solde)"
                                             style="cursor: pointer; text-decoration: underline; font-weight: bold;"
-                                            title="Cliquer pour voir les impacts OP correspondants">
+                                            title="Cliquer pour voir les écarts régularisés correspondants">
                                             {{ getImpactOPValue(solde) | number:'1.2-2' }}
                                         </td>
                                     </tr>
@@ -685,7 +685,7 @@
                     </app-ecart-solde-tab>
                 </div>
 
-                <!-- Contenu de l'onglet Impact OP -->
+                <!-- Contenu de l'onglet Ecart régularisé -->
                 <div class="tab-content" *ngIf="activeTab === 'impact-op'">
                     <app-impact-op-tab 
                         [agence]="impactOPAgence"

@@ -885,7 +885,7 @@ export class EcartSoldeComponent implements OnInit, OnDestroy {
       };
     }
 
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'Modèle TSOP');
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Modèle Ecart de solde');
 
     const excelBuffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
     const blob = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
@@ -898,6 +898,6 @@ export class EcartSoldeComponent implements OnInit, OnDestroy {
     link.click();
     document.body.removeChild(link);
 
-    this.popupService.showSuccess('Modèle de fichier TSOP téléchargé avec succès!', 'Téléchargement Réussi');
+    this.popupService.showSuccess('Modèle de fichier Ecart de solde téléchargé avec succès!', 'Téléchargement Réussi');
   }
 } 

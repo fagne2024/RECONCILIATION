@@ -43,6 +43,29 @@ export class BanqueComponent implements OnInit {
   // État d'affichage
   showOperations = false;
   activeSection: 'home' | 'operations' | 'comptes' | 'rapports' | 'securite' = 'home';
+  
+  // Contrôle de visibilité des colonnes Actions
+  showActionsColumn = false;
+  
+  // Contrôle de visibilité de la colonne commentaire
+  showCommentColumn = false;
+
+  // Création d'opération bancaire
+  showCreateOperationPopup = false;
+  creatingOperation = false;
+  createOperationForm = {
+    numeroCompte: '',
+    nomCompte: '',
+    banque: '',
+    dateComptable: '',
+    dateValeur: '',
+    
+    typeOperation: '',
+    montant: null as number | null,
+    libelle: '',
+    devise: 'XAF',
+    commentaire: ''
+  };
 
   // Données des opérations
   operations: OperationBancaireDisplay[] = [];
@@ -106,7 +129,7 @@ export class BanqueComponent implements OnInit {
     numeroCompte: '', nomCompte: '', banque: '',
     dateComptable: '', dateValeur: '', libelle: '',
     debit: null as number | null, credit: null as number | null, montant: null as number | null,
-    numeroCheque: '', devise: ''
+    numeroCheque: '', devise: '', commentaire: ''
   };
 
   // Réconciliation banque
@@ -1464,6 +1487,103 @@ export class BanqueComponent implements OnInit {
     this.activeSection = 'home';
   }
 
+  // Contrôle de visibilité des colonnes Actions
+  toggleActionsColumn() {
+    this.showActionsColumn = !this.showActionsColumn;
+  }
+
+  // Contrôle de visibilité de la colonne commentaire
+  toggleCommentColumn() {
+    this.showCommentColumn = !this.showCommentColumn;
+  }
+
+  // Création d'opération bancaire
+  openCreateOperation() {
+    this.showCreateOperationPopup = true;
+    // Initialiser le formulaire avec des valeurs par défaut
+    this.createOperationForm = {
+      numeroCompte: '',
+      nomCompte: '',
+      banque: '',
+      dateComptable: new Date().toISOString().split('T')[0], // Date du jour
+      dateValeur: '',
+      typeOperation: '',
+      montant: null,
+      libelle: '',
+      devise: 'XAF',
+      commentaire: ''
+    };
+  }
+
+  closeCreateOperationPopup() {
+    this.showCreateOperationPopup = false;
+  }
+
+  isCreateOperationFormValid(): boolean {
+    return !!(
+      this.createOperationForm.numeroCompte &&
+      this.createOperationForm.nomCompte &&
+      this.createOperationForm.banque &&
+      this.createOperationForm.dateComptable &&
+      this.createOperationForm.typeOperation &&
+      this.createOperationForm.montant !== null &&
+      this.createOperationForm.libelle
+    );
+  }
+
+  saveCreateOperation() {
+    if (!this.isCreateOperationFormValid()) {
+      alert('❌ Veuillez remplir tous les champs obligatoires');
+      return;
+    }
+
+    this.creatingOperation = true;
+
+    // Créer l'objet opération bancaire
+    const operationData = {
+      numeroCompte: this.createOperationForm.numeroCompte,
+      nomCompte: this.createOperationForm.nomCompte,
+      banque: this.createOperationForm.banque,
+      dateComptable: this.createOperationForm.dateComptable,
+      dateValeur: this.createOperationForm.dateValeur || this.createOperationForm.dateComptable,
+      typeOperation: this.createOperationForm.typeOperation,
+      montant: this.createOperationForm.montant!,
+      libelle: this.createOperationForm.libelle,
+      devise: this.createOperationForm.devise,
+      commentaire: this.createOperationForm.commentaire || null
+    };
+
+    console.log('💾 Création d\'opération bancaire:', operationData);
+
+    // Appeler le service pour créer l'opération
+    this.operationService.createOperationFromForm(operationData).subscribe({
+      next: (createdOperation) => {
+        console.log('✅ Opération créée avec succès:', createdOperation);
+        alert('✅ Opération bancaire créée avec succès!');
+        this.closeCreateOperationPopup();
+        
+        // Recharger les données si nécessaire
+        this.loadOperations();
+        this.creatingOperation = false;
+      },
+      error: (err) => {
+        console.error('❌ Erreur lors de la création de l\'opération:', err);
+        let errorMessage = '❌ Erreur lors de la création de l\'opération';
+        
+        if (err.status === 404) {
+          errorMessage = '❌ Compte introuvable: ' + this.createOperationForm.numeroCompte;
+        } else if (err.status === 400) {
+          errorMessage = '❌ Données invalides: ' + (err.error || 'Vérifiez les informations saisies');
+        } else if (err.error && typeof err.error === 'string') {
+          errorMessage = '❌ ' + err.error;
+        }
+        
+        alert(errorMessage);
+        this.creatingOperation = false;
+      }
+    });
+  }
+
   goToComptes() {
     this.activeSection = 'comptes';
     this.showOperations = false;
@@ -1713,6 +1833,7 @@ export class BanqueComponent implements OnInit {
           soldeCourant: it.soldeCourant,
           soldeDisponibleCloture: it.soldeDisponibleCloture,
           soldeDisponibleOuverture: it.soldeDisponibleOuverture,
+          commentaire: it.commentaire,
           // Conserver le batchId pour filtrer
           ...( { batchId: bid } as any )
         } as ReleveBancaireRow & any )));
@@ -1764,7 +1885,8 @@ export class BanqueComponent implements OnInit {
       credit: row.credit ?? null,
       montant: row.montant ?? null,
       numeroCheque: row.numeroCheque || '',
-      devise: row.devise || ''
+      devise: row.devise || '',
+      commentaire: row.commentaire || ''
     };
     this.showReleveEditPopup = true;
   }
@@ -1787,8 +1909,16 @@ export class BanqueComponent implements OnInit {
       credit: this.releveEditForm.credit,
       montant: this.releveEditForm.montant,
       numeroCheque: this.releveEditForm.numeroCheque || null,
-      devise: this.releveEditForm.devise || null
+      devise: this.releveEditForm.devise || null,
+      commentaire: this.releveEditForm.commentaire || null
     };
+    
+    console.log('💾 Sauvegarde relevé avec commentaire:', {
+      id: this.selectedReleve.id,
+      commentaire: this.releveEditForm.commentaire,
+      payload: payload
+    });
+    
     this.releveService.update(this.selectedReleve.id, payload).subscribe({
       next: () => {
         this.closeReleveEdit();
@@ -1802,17 +1932,74 @@ export class BanqueComponent implements OnInit {
     });
   }
 
+  // Sauvegarde des commentaires
+  saveComment(releveId: number, comment: string) {
+    if (!releveId) return;
+    
+    const payload: Partial<ReleveBancaireRow> = {
+      commentaire: comment || undefined
+    };
+    
+    this.releveService.update(releveId, payload).subscribe({
+      next: () => {
+        // Mettre à jour le commentaire localement
+        const releve = this.releveRows.find(r => r.id === releveId);
+        if (releve) {
+          releve.commentaire = comment;
+        }
+        console.log('✅ Commentaire sauvegardé');
+      },
+      error: (err) => {
+        console.error('Erreur sauvegarde commentaire', err);
+        alert('❌ Échec de la sauvegarde du commentaire');
+      }
+    });
+  }
+
+  // Suppression d'une ligne de relevé
+  deleteReleveRow(row: ReleveBancaireRow) {
+    if (!row.id) {
+      alert('❌ Impossible de supprimer cette ligne');
+      return;
+    }
+
+    if (confirm('⚠️ Êtes-vous sûr de vouloir supprimer cette ligne de relevé ?\n\nCette action est irréversible.')) {
+      console.log('🗑️ Suppression relevé:', { id: row.id, row: row });
+      
+      this.releveService.delete(row.id).subscribe({
+        next: () => {
+          // Supprimer la ligne de la liste locale
+          const index = this.releveRows.findIndex(r => r.id === row.id);
+          if (index > -1) {
+            this.releveRows.splice(index, 1);
+          }
+          
+          // Mettre à jour la liste filtrée
+          this.loadLatestReleveBatch();
+          
+          alert('✅ Ligne de relevé supprimée');
+        },
+        error: (err) => {
+          console.error('Erreur suppression relevé', err);
+          alert('❌ Échec de la suppression du relevé');
+        }
+      });
+    }
+  }
+
   // Chargement des données
   loadOperations() {
-    // Charger les opérations bancaires depuis le service
+    // Charger uniquement les opérations bancaires
     this.operationBancaireService.getAllOperationsBancaires().subscribe({
-      next: (operations) => {
+      next: (operationsBancaires) => {
         // Convertir les dates string en objets Date
-        this.operations = operations.map(op => ({
+        this.operations = operationsBancaires.map(op => ({
           ...op,
-          dateOperation: new Date(op.dateOperation)
+          dateOperation: new Date(op.dateOperation),
+          source: 'bancaire'
         }));
         this.filteredOperations = [...this.operations];
+        
         // Pays pour réconciliation basés sur les opérations (noms complets uniquement, pas de codes)
         const namesSet = new Set<string>();
         (this.operations || []).forEach(o => {
@@ -2696,6 +2883,113 @@ export class BanqueComponent implements OnInit {
         this.updatePagedReconciliationResults();
       }
     }
+  }
+
+  // Navigation avancée pour la pagination
+  reconGoToFirstPage() {
+    if (this.reconView === 'operation') {
+      this.reconOpPage = 1;
+    } else if (this.reconView === 'releve') {
+      this.reconRevPage = 1;
+    } else if (this.reconView === 'corr_operation') {
+      this.reconCorrOpPage = 1;
+    } else if (this.reconView === 'corr_releve') {
+      this.reconCorrRevPage = 1;
+    }
+    this.updatePagedReconciliationResults();
+  }
+
+  reconGoToLastPage() {
+    if (this.reconView === 'operation') {
+      this.reconOpPage = this.reconOpTotalPages;
+    } else if (this.reconView === 'releve') {
+      this.reconRevPage = this.reconRevTotalPages;
+    } else if (this.reconView === 'corr_operation') {
+      this.reconCorrOpPage = this.reconCorrOpTotalPages;
+    } else if (this.reconView === 'corr_releve') {
+      this.reconCorrRevPage = this.reconCorrRevTotalPages;
+    }
+    this.updatePagedReconciliationResults();
+  }
+
+  // Générateur de numéros de page pour l'affichage
+  getReconPageNumbers(): number[] {
+    let currentPage = 1;
+    let totalPages = 1;
+
+    if (this.reconView === 'operation') {
+      currentPage = this.reconOpPage;
+      totalPages = this.reconOpTotalPages;
+    } else if (this.reconView === 'releve') {
+      currentPage = this.reconRevPage;
+      totalPages = this.reconRevTotalPages;
+    } else if (this.reconView === 'corr_operation') {
+      currentPage = this.reconCorrOpPage;
+      totalPages = this.reconCorrOpTotalPages;
+    } else if (this.reconView === 'corr_releve') {
+      currentPage = this.reconCorrRevPage;
+      totalPages = this.reconCorrRevTotalPages;
+    }
+
+    const pages: number[] = [];
+    const maxVisiblePages = 5;
+    
+    // Toujours afficher au moins la page 1
+    if (totalPages === 0) {
+      totalPages = 1;
+    }
+    
+    if (totalPages <= maxVisiblePages) {
+      // Afficher toutes les pages
+      for (let i = 1; i <= totalPages; i++) {
+        pages.push(i);
+      }
+    } else {
+      // Logique de pagination avec ellipses
+      const start = Math.max(1, currentPage - 2);
+      const end = Math.min(totalPages, start + maxVisiblePages - 1);
+      
+      for (let i = start; i <= end; i++) {
+        pages.push(i);
+      }
+    }
+    
+    return pages;
+  }
+
+  // Informations de pagination détaillées
+  getReconPaginationInfo(): string {
+    let currentPage = 1;
+    let totalPages = 1;
+    let totalItems = 0;
+    let pageSize = this.reconPageSize;
+
+    if (this.reconView === 'operation') {
+      currentPage = this.reconOpPage;
+      totalPages = this.reconOpTotalPages;
+      totalItems = this.filteredLeftOps.length;
+    } else if (this.reconView === 'releve') {
+      currentPage = this.reconRevPage;
+      totalPages = this.reconRevTotalPages;
+      totalItems = this.filteredRightReleves.length;
+    } else if (this.reconView === 'corr_operation') {
+      currentPage = this.reconCorrOpPage;
+      totalPages = this.reconCorrOpTotalPages;
+      totalItems = this.filteredMatchedOps.length;
+    } else if (this.reconView === 'corr_releve') {
+      currentPage = this.reconCorrRevPage;
+      totalPages = this.reconCorrRevTotalPages;
+      totalItems = this.filteredMatchedReleves.length;
+    }
+
+    if (totalItems === 0) {
+      return 'Aucun résultat - Prêt pour la réconciliation';
+    }
+
+    const startItem = (currentPage - 1) * pageSize + 1;
+    const endItem = Math.min(currentPage * pageSize, totalItems);
+    
+    return `Affichage de ${startItem} à ${endItem} sur ${totalItems} résultat${totalItems > 1 ? 's' : ''}`;
   }
 
   reconGoToPage(page: number) {

@@ -1415,7 +1415,7 @@ export class ComptesComponent implements OnInit, OnDestroy {
         const worksheet = workbook.addWorksheet('Soldes Journaliers');
 
         // En-tête
-        worksheet.addRow(['Date', 'Solde d\'ouverture', 'Solde de clôture', 'Variation', 'Solde de Clôture BO', 'TSOP', 'Impact OP']);
+        worksheet.addRow(['Date', 'Solde d\'ouverture', 'Solde de clôture', 'Variation', 'Solde de Clôture BO', 'Ecart de solde', 'Ecart régularisé']);
 
         // Données
         this.releveSoldesJournaliers.forEach(solde => {
@@ -1456,7 +1456,7 @@ export class ComptesComponent implements OnInit, OnDestroy {
             }
           }
 
-          // Appliquer les couleurs pour la colonne TSOP
+          // Appliquer les couleurs pour la colonne Ecart de solde
           const tolerance = 0.01; // 1 centime de tolérance
           if (Math.abs(ecart) <= tolerance) {
             row.getCell(6).fill = {
@@ -1481,7 +1481,7 @@ export class ComptesComponent implements OnInit, OnDestroy {
             row.getCell(6).font = { color: { argb: 'FFC62828' }, bold: true };
           }
 
-          // Appliquer les couleurs pour la colonne Impact OP
+          // Appliquer les couleurs pour la colonne Ecart régularisé
           if (Math.abs(impactOP) <= tolerance) {
             row.getCell(7).fill = {
               type: 'pattern',
@@ -2068,7 +2068,7 @@ export class ComptesComponent implements OnInit, OnDestroy {
         this.showEcartSoldeTab = true;
     }
 
-    // Méthode pour calculer la valeur de l'Impact OP
+    // Méthode pour calculer la valeur de l'Ecart régularisé
     getImpactOPValue(solde: { date: string; opening: number; closing: number; closingBo?: number }): number {
         // Utiliser le cache si disponible
         if (this.impactOPSums[solde.date] !== undefined) {
@@ -2081,29 +2081,29 @@ export class ComptesComponent implements OnInit, OnDestroy {
         return 0;
     }
 
-    // Méthode pour déterminer la classe CSS de l'Impact OP
+    // Méthode pour déterminer la classe CSS de l'Ecart régularisé
     getImpactOPClass(solde: { date: string; opening: number; closing: number; closingBo?: number }): string {
         const impactOP = this.getImpactOPValue(solde);
         const tolerance = 0.01; // 1 centime de tolérance
         
         if (Math.abs(impactOP) <= tolerance) {
-            return 'impact-op-zero'; // Impact OP nul (vert)
+            return 'impact-op-zero'; // Ecart régularisé nul (vert)
         } else if (impactOP > 0) {
-            return 'impact-op-positive'; // Impact OP positif (orange)
+            return 'impact-op-positive'; // Ecart régularisé positif (orange)
         } else {
-            return 'impact-op-negative'; // Impact OP négatif (rouge)
+            return 'impact-op-negative'; // Ecart régularisé négatif (rouge)
         }
     }
 
-    // Navigation vers la page Impact OP avec filtres
+    // Navigation vers la page Ecart régularisé avec filtres
     navigateToImpactOP(solde: { date: string; opening: number; closing: number; closingBo?: number }): void {
         if (!this.selectedCompte) return;
         
-        // Configurer les données pour l'onglet Impact OP
+        // Configurer les données pour l'onglet Ecart régularisé
         this.impactOPAgence = this.selectedCompte.numeroCompte;
         this.impactOPDateTransaction = solde.date;
         
-        // Basculer vers l'onglet Impact OP
+        // Basculer vers l'onglet Ecart régularisé
         this.activeTab = 'impact-op';
         this.showImpactOPTab = true;
     }

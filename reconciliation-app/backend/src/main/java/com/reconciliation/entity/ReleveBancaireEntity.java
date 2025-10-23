@@ -81,6 +81,9 @@ public class ReleveBancaireEntity {
     @Column(name = "dedup_key", unique = true)
     private String dedupKey;
 
+    @Column(name = "commentaire", length = 1000)
+    private String commentaire;
+
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
     public String getNumeroCompte() { return numeroCompte; }
@@ -131,6 +134,9 @@ public class ReleveBancaireEntity {
 
     public String getDedupKey() { return dedupKey; }
     public void setDedupKey(String dedupKey) { this.dedupKey = dedupKey; }
+
+    public String getCommentaire() { return commentaire; }
+    public void setCommentaire(String commentaire) { this.commentaire = commentaire; }
 }
 
 

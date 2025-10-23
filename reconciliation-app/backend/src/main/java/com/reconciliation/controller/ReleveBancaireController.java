@@ -107,6 +107,7 @@ public class ReleveBancaireController {
         entity.setSoldeComptableCloture(payload.getSoldeComptableCloture());
         entity.setDepotTotal(payload.getDepotTotal());
         entity.setTotalRetraits(payload.getTotalRetraits());
+        entity.setCommentaire(payload.getCommentaire());
         // Non modifiés: id, uploadedAt, batchId, sourceFilename
         repository.save(entity);
         return ResponseEntity.ok(entity);
@@ -119,6 +120,16 @@ public class ReleveBancaireController {
         var entity = opt.get();
         entity.setReconStatus(status);
         repository.save(entity);
+        return ResponseEntity.ok().build();
+    }
+
+    @PostMapping("/{id}/delete")
+    public ResponseEntity<?> delete(@PathVariable("id") Long id) {
+        var opt = repository.findById(id);
+        if (opt.isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+        repository.deleteById(id);
         return ResponseEntity.ok().build();
     }
 

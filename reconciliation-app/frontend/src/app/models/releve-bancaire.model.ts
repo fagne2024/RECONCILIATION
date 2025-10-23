@@ -17,6 +17,7 @@ export interface ReleveBancaireRow {
   soldeComptableOuverture?: number;
   soldeComptableCloture?: number;
   reconStatus?: 'OK' | 'KO';
+  commentaire?: string;
 }
 
 export interface ReleveUploadResponse {

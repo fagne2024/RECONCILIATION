@@ -65,8 +65,8 @@
                 <span class="submenu-arrow">{{ showSuiviEcartsSubmenu ? '▲' : '▼' }}</span>
             </a>
             <ul class="submenu" *ngIf="showSuiviEcartsSubmenu">
-                <li *ngIf="isMenuAllowed('TSOP')"><a routerLink="/ecart-solde"><i class="fas fa-exclamation-triangle menu-icon ecart-solde"></i> TSOP</a></li>
-                <li *ngIf="isMenuAllowed('Impact OP')"><a routerLink="/impact-op"><i class="fas fa-chart-line menu-icon impact-op"></i> Impact OP</a></li>
+                <li *ngIf="isMenuAllowed('TSOP')"><a routerLink="/ecart-solde"><i class="fas fa-exclamation-triangle menu-icon ecart-solde"></i> Ecart de solde</a></li>
+                <li *ngIf="isMenuAllowed('Impact OP')"><a routerLink="/impact-op"><i class="fas fa-chart-line menu-icon impact-op"></i> Ecart régularisé</a></li>
                 <li *ngIf="isMenuAllowed('TRX SF')"><a routerLink="/trx-sf"><i class="fas fa-exchange-alt menu-icon trx-sf"></i> TRX SF</a></li>
             </ul>
         </li>

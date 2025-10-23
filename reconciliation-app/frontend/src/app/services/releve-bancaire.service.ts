@@ -29,6 +29,10 @@ export class ReleveBancaireService {
     return this.http.put(`${this.apiUrl}/${id}/recon-status?status=${encodeURIComponent(status)}`, {});
   }
 
+  delete(id: number): Observable<any> {
+    return this.http.post(`${this.apiUrl}/${id}/delete`, {});
+  }
+
   downloadTemplate(): Observable<Blob> {
     return this.http.get(`${this.apiUrl}/template`, { responseType: 'blob' });
   }

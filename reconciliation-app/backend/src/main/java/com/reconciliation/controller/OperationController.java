@@ -5,6 +5,7 @@ import com.reconciliation.service.OperationService;
 import com.reconciliation.service.OperationBusinessService;
 import com.reconciliation.dto.OperationUpdateRequest;
 import com.reconciliation.dto.OperationCreateRequest;
+import com.reconciliation.dto.FormOperationCreateRequest;
 import com.reconciliation.dto.DeleteOperationsRequest;
 import com.reconciliation.dto.DeleteOperationsResponse;
 import org.slf4j.Logger;
@@ -38,6 +39,9 @@ public class OperationController {
 
     @Autowired
     private com.reconciliation.service.OperationImportService operationImportService;
+
+    @Autowired
+    private com.reconciliation.repository.CompteRepository compteRepository;
     
     @GetMapping
     public ResponseEntity<List<Operation>> getAllOperations() {
@@ -242,6 +246,36 @@ public class OperationController {
             return ResponseEntity.ok(savedOperation);
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(null);
+        }
+    }
+
+    // Création simple depuis le formulaire (sélection par numéro de compte)
+    @PostMapping("/manual-from-form")
+    public ResponseEntity<?> createOperationFromForm(@RequestBody FormOperationCreateRequest form) {
+        try {
+            if (form.getNumeroCompte() == null || form.getNumeroCompte().trim().isEmpty()) {
+                return ResponseEntity.badRequest().body("numeroCompte requis");
+            }
+            var compteOpt = compteRepository.findByNumeroCompte(form.getNumeroCompte().trim());
+            if (compteOpt.isEmpty()) {
+                return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Compte introuvable: " + form.getNumeroCompte());
+            }
+
+            OperationCreateRequest req = new OperationCreateRequest();
+            req.setCompteId(compteOpt.get().getId());
+            req.setTypeOperation(form.getTypeOperation());
+            req.setMontant(form.getMontant());
+            req.setBanque(form.getBanque());
+            req.setNomBordereau(form.getLibelle());
+            req.setService(null);
+            req.setDateOperation(form.getDateComptable());
+            req.setRecordCount(1);
+
+            Operation created = operationService.createSingleOperation(req);
+            return ResponseEntity.ok(created);
+        } catch (Exception e) {
+            logger.error("[API] Erreur createOperationFromForm: {}", e.getMessage(), e);
+            return ResponseEntity.badRequest().body(e.getMessage());
         }
     }
     

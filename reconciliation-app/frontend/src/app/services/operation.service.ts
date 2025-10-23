@@ -291,4 +291,9 @@ export class OperationService {
     downloadOperationsTemplate(): Observable<Blob> {
         return this.http.get(`${this.apiUrl}/template`, { responseType: 'blob' });
     }
+
+    // Créer une opération depuis le formulaire
+    createOperationFromForm(formData: any): Observable<Operation> {
+        return this.http.post<Operation>(`${this.apiUrl}/manual-from-form`, formData);
+    }
 } 
