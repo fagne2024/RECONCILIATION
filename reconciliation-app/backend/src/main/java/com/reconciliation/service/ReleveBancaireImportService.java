@@ -464,15 +464,33 @@ public class ReleveBancaireImportService {
             }
             // 2) Valeur numérique Excel (saisie comme nombre, non formatée)
             if (c.getCellType() == CellType.NUMERIC) {
-                double v = c.getNumericCellValue();
-                if (DateUtil.isValidExcelDate(v)) {
-                    java.util.Date d = DateUtil.getJavaDate(v);
-                    return d.toInstant().atZone(java.time.ZoneId.systemDefault()).toLocalDate();
+                try {
+                    double v = c.getNumericCellValue();
+                    if (DateUtil.isValidExcelDate(v)) {
+                        java.util.Date d = DateUtil.getJavaDate(v);
+                        return d.toInstant().atZone(java.time.ZoneId.systemDefault()).toLocalDate();
+                    }
+                } catch (Exception e) {
+                    System.out.println("DEBUG: Erreur lecture date numérique: " + e.getMessage());
                 }
             }
             
             // 3) Traitement des chaînes de caractères
-            String s = c.toString();
+            String s = null;
+            
+            // Essayer de lire comme string d'abord
+            if (c.getCellType() == CellType.STRING) {
+                s = c.getStringCellValue();
+            } else {
+                // Forcer la conversion en string pour les autres types
+                try {
+                    c.setCellType(CellType.STRING);
+                    s = c.getStringCellValue();
+                } catch (Exception e) {
+                    s = c.toString();
+                }
+            }
+            
             if (s == null) return null;
             s = s.trim();
             if (s.isBlank()) return null;
