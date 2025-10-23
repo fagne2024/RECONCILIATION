@@ -458,8 +458,11 @@ public class ReleveBancaireImportService {
         Cell c = row.getCell(idx);
         if (c == null) return null;
         try {
+            System.out.println("DEBUG: getDate - Type de cellule: " + c.getCellType() + ", Index: " + idx);
+            
             // 1) Vrai format date Excel
             if (DateUtil.isCellDateFormatted(c)) {
+                System.out.println("DEBUG: Cellule formatée comme date Excel");
                 return c.getLocalDateTimeCellValue().toLocalDate();
             }
             // 2) Valeur numérique Excel (saisie comme nombre, non formatée)
@@ -481,12 +484,16 @@ public class ReleveBancaireImportService {
             // Essayer de lire comme string d'abord
             if (c.getCellType() == CellType.STRING) {
                 s = c.getStringCellValue();
+                System.out.println("DEBUG: Lecture directe comme STRING: '" + s + "'");
             } else {
                 // Forcer la conversion en string pour les autres types
                 try {
+                    System.out.println("DEBUG: Conversion forcée en STRING pour type: " + c.getCellType());
                     c.setCellType(CellType.STRING);
                     s = c.getStringCellValue();
+                    System.out.println("DEBUG: Après conversion: '" + s + "'");
                 } catch (Exception e) {
+                    System.out.println("DEBUG: Erreur conversion, fallback toString: " + e.getMessage());
                     s = c.toString();
                 }
             }
