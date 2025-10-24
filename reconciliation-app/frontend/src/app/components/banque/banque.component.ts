@@ -748,37 +748,6 @@ export class BanqueComponent implements OnInit {
       const opAny: any = (this as any).keyToOp && (this as any).keyToOp[key];
       if (opAny && opAny.id !== undefined) {
         this.operationBancaireService.updateReconStatus(opAny.id, status).subscribe({ next: () => {}, error: () => {} });
-        
-        // Vérifier le statut actuel de l'opération bancaire et le mettre à jour à "Validée" si nécessaire
-        if (status === 'OK') {
-          console.log(`🔍 Vérification du statut de l'opération bancaire ${opAny.id}`);
-          this.operationBancaireService.getOperationBancaireStatut(opAny.id).subscribe({
-            next: (currentStatut: string) => {
-              console.log(`📊 Statut actuel de l'opération bancaire ${opAny.id}: "${currentStatut}"`);
-              if (currentStatut !== 'Validée') {
-                console.log(`🔄 Mise à jour du statut de l'opération bancaire ${opAny.id} vers "Validée"`);
-                // Mettre à jour le statut à "Validée" et appliquer l'impact sur le compte
-                this.operationBancaireService.updateStatut(opAny.id, 'Validée').subscribe({
-                  next: () => {
-                    console.log(`✅ Statut de l'opération bancaire ${opAny.id} mis à jour à "Validée"`);
-                    // Actualiser l'interface après la mise à jour
-                    this.updatePagedReconciliationResults();
-                  },
-                  error: (error) => {
-                    console.error(`❌ Erreur lors de la mise à jour du statut de l'opération bancaire ${opAny.id}:`, error);
-                  }
-                });
-              } else {
-                console.log(`ℹ️ L'opération bancaire ${opAny.id} est déjà au statut "Validée" - Aucune action nécessaire`);
-                // Si déjà validée, on ne fait rien (pas d'impact supplémentaire)
-                this.updatePagedReconciliationResults();
-              }
-            },
-            error: (error) => {
-              console.error(`❌ Erreur lors de la récupération du statut de l'opération bancaire ${opAny.id}:`, error);
-            }
-          });
-        }
       }
     } catch {}
     try {
@@ -3138,6 +3107,49 @@ export class BanqueComponent implements OnInit {
         console.error('Erreur lors de la modification:', error);
         this.popupService.showError('❌ Erreur lors de la modification de l\'opération bancaire');
       }
+    });
+  }
+
+  validateOperation(operation: any) {
+    if (!operation || !operation.id) return;
+
+    // Confirmation avant validation
+    this.popupService.showConfirmDialog(
+      `Êtes-vous sûr de vouloir valider cette opération bancaire ?\n\nType: ${operation.typeOperation}\nAgence: ${operation.agence}\nMontant: ${operation.montant} FCFA`,
+      'Confirmation de validation'
+    ).then(confirmed => {
+      if (!confirmed) return;
+
+      // Préparer les données de mise à jour avec le statut "Validée"
+      const updateData = {
+        pays: operation.pays,
+        codePays: operation.codePays,
+        mois: operation.mois,
+        dateOperation: operation.dateOperation,
+        agence: operation.agence,
+        typeOperation: operation.typeOperation,
+        nomBeneficiaire: operation.nomBeneficiaire,
+        compteADebiter: operation.compteADebiter,
+        montant: operation.montant,
+        modePaiement: operation.modePaiement,
+        reference: operation.reference,
+        idGlpi: operation.idGlpi,
+        bo: operation.bo,
+        statut: 'Validée' // Changer le statut à "Validée"
+      };
+
+      // Mettre à jour l'opération avec le nouveau statut
+      this.operationBancaireService.updateOperationBancaire(operation.id, updateData).subscribe({
+        next: () => {
+          console.log('Opération bancaire validée avec succès');
+          this.loadOperations();
+          this.popupService.showSuccess('✅ Opération bancaire validée avec succès');
+        },
+        error: (error) => {
+          console.error('Erreur lors de la validation:', error);
+          this.popupService.showError('❌ Erreur lors de la validation de l\'opération bancaire');
+        }
+      });
     });
   }
 

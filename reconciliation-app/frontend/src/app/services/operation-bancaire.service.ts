@@ -1,7 +1,6 @@
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
-import { map } from 'rxjs/operators';
 import { environment } from '../../environments/environment';
 import { 
     OperationBancaire, 
@@ -80,18 +79,6 @@ export class OperationBancaireService {
 
   updateReconStatus(id: number, status: 'OK' | 'KO'): Observable<any> {
     return this.http.put(`${this.apiUrl}/${id}/recon-status?status=${encodeURIComponent(status)}`, {});
-  }
-
-  // Récupérer le statut d'une opération bancaire
-  getOperationBancaireStatut(id: number): Observable<string> {
-    return this.http.get<OperationBancaire>(`${this.apiUrl}/${id}`).pipe(
-      map(operation => operation.statut || '')
-    );
-  }
-
-  // Mettre à jour le statut d'une opération bancaire
-  updateStatut(id: number, statut: string): Observable<OperationBancaire> {
-    return this.http.put<OperationBancaire>(`${this.apiUrl}/${id}/statut`, statut);
   }
 
     // Télécharger le modèle Excel à utiliser pour l'import

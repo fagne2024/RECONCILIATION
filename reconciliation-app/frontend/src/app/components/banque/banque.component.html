@@ -1028,6 +1028,9 @@
                 <button class="btn-icon" (click)="editOperation(operation)" title="Modifier">
                   <i class="fas fa-edit"></i>
                 </button>
+                <button class="btn-icon btn-success" (click)="validateOperation(operation)" title="Valider" *ngIf="operation.statut !== 'Validée'">
+                  <i class="fas fa-check"></i>
+                </button>
                 <button class="btn-icon btn-danger" (click)="deleteOperation(operation.id)" title="Supprimer">
                   <i class="fas fa-trash"></i>
                 </button>
