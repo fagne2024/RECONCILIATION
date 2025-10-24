@@ -82,10 +82,6 @@
     <div class="banque-section" *ngIf="activeSection === 'rapports'">
       <div class="releve-header">
         <h2>📋 Relevé bancaire - Import</h2>
-        <button class="btn-toggle-comment" (click)="toggleCommentColumn()" [class.active]="showCommentColumn" title="Afficher/Masquer la colonne commentaire">
-          <i class="fas" [class.fa-comment]="!showCommentColumn" [class.fa-comment-slash]="showCommentColumn"></i>
-          {{ showCommentColumn ? 'Masquer Commentaires' : 'Afficher Commentaires' }}
-        </button>
         <div class="actions">
           <label class="file-btn">
             <input type="file" (change)="onReleveFileSelected($event)" accept=".xlsx,.xls,.csv" />
@@ -103,6 +99,10 @@
           <button class="btn-success" (click)="openCreateOperation()" title="Créer une nouvelle opération bancaire">
             <i class="fas fa-plus"></i> Créer Opération
           </button>
+          <button class="btn-primary" (click)="toggleCommentColumn()" [class.active]="showCommentColumn" title="Afficher/Masquer la colonne commentaire">
+            <i class="fas" [class.fa-comment]="!showCommentColumn" [class.fa-comment-slash]="showCommentColumn"></i>
+            {{ showCommentColumn ? 'Masquer Commentaires' : 'Afficher Commentaires' }}
+          </button>
           <div class="filter-group" style="margin-left:12px;">
             <label>Lot</label>
             <select [(ngModel)]="releveSelectedBatchId" (change)="relevePage = 1">
@@ -113,7 +113,7 @@
         </div>
       </div>
 
-      <div class="batch-bar" *ngIf="releveBatchId">
+      <div class="batch-bar" *ngIf="releveBatchId" style="display: none;">
         <span class="batch-badge"><i class="fas fa-hashtag"></i> {{ releveBatchId }}</span>
         <span class="muted">{{ releveRows.length }} ligne(s) importée(s)</span>
       </div>
@@ -193,6 +193,10 @@
             <button (click)="relevePage = relevePage + 1" [disabled]="relevePage >= releveTotalPages"><i class="fas fa-chevron-right"></i></button>
           </div>
           <span class="muted">Page {{ relevePage }} / {{ releveTotalPages }}</span>
+          <span class="muted" style="margin-left: 16px;">
+            <i class="fas fa-list"></i>
+            {{ filteredReleveRowsForImport.length }} ligne(s) au total
+          </span>
           <select [(ngModel)]="relevePageSize" (change)="relevePage = 1">
             <option [value]="10">10</option>
             <option [value]="20">20</option>
@@ -826,10 +830,6 @@
   <div class="banque-section operations-section" *ngIf="showOperations && activeSection === 'operations'">
     <div class="operations-header">
       <h2>📋 Opérations Bancaires</h2>
-      <button class="btn-toggle-actions" (click)="toggleActionsColumn()" [class.active]="showActionsColumn" title="Afficher/Masquer les colonnes Actions">
-        <i class="fas" [class.fa-eye]="!showActionsColumn" [class.fa-eye-slash]="showActionsColumn"></i>
-        {{ showActionsColumn ? 'Masquer Actions' : 'Afficher Actions' }}
-      </button>
     </div>
 
       <!-- Import / Modèle / Export -->
@@ -848,6 +848,15 @@
           </button>
           <button class="btn-success" (click)="exportOperations()" [disabled]="filteredOperations.length === 0" title="Exporter (Excel)">
             <i class="fas fa-file-excel"></i> Exporter
+          </button>
+          <button class="btn-primary" (click)="toggleActionsColumn()" [class.active]="showActionsColumn" title="Afficher/Masquer les colonnes Actions">
+            <i class="fas" [class.fa-eye]="!showActionsColumn" [class.fa-eye-slash]="showActionsColumn"></i>
+            {{ showActionsColumn ? 'Masquer Actions' : 'Afficher Actions' }}
+          </button>
+          <button class="btn-primary" (click)="toggleSelectionModeMain()" [class.active]="isSelectionModeMain" title="Sélection multiple">
+            <i class="fas fa-check-square"></i>
+            {{ isSelectionModeMain ? 'Quitter la sélection' : 'Sélection multiple' }}
+            <span *ngIf="isSelectionModeMain && hasSelectedMainOps" class="badge" style="margin-left:6px;">{{ selectedMainOpIds.size }}</span>
           </button>
         </div>
       </div>
@@ -909,42 +918,21 @@
 
       <!-- Contrôles de pagination -->
       <div class="pagination-controls">
-        <div class="page-size-selector">
-          <label>Afficher</label>
-          <select [(ngModel)]="pageSize" (change)="onPageSizeChange()">
-            <option [value]="5">5 lignes</option>
-            <option [value]="10">10 lignes</option>
-            <option [value]="20">20 lignes</option>
-            <option [value]="50">50 lignes</option>
-            <option [value]="100">100 lignes</option>
+        <div style="margin-left:auto; display:flex; gap:8px; align-items:center;" *ngIf="isSelectionModeMain">
+          <select [(ngModel)]="selectedMainTargetStatut" [disabled]="isBulkUpdatingMain">
+            <option value="" disabled selected>Choisir un statut</option>
+            <option *ngFor="let s of statutsList" [value]="s">{{ s }}</option>
           </select>
-        </div>
-        <div class="total-count">
-          <i class="fas fa-list"></i>
-          <span>{{ filteredOperations.length }} opération(s) au total</span>
-        </div>
-        <div style="margin-left:auto; display:flex; gap:8px; align-items:center;">
-          <button class="btn-selection-toggle" (click)="toggleSelectionModeMain()">
-            <i class="fas fa-check-square"></i>
-            {{ isSelectionModeMain ? 'Quitter la sélection' : 'Sélection multiple' }}
-            <span *ngIf="isSelectionModeMain && hasSelectedMainOps" class="badge" style="margin-left:6px;">{{ selectedMainOpIds.size }}</span>
+          <button class="btn-bulk-action" (click)="bulkChangeSelectedMainStatus()" [disabled]="isBulkUpdatingMain || !hasSelectedMainOps || !selectedMainTargetStatut">
+            <i class="fas fa-exchange-alt"></i>
+            {{ isBulkUpdatingMain ? '⏳ Changement...' : 'Changer statut (' + selectedMainOpIds.size + ')' }}
           </button>
-          <ng-container *ngIf="isSelectionModeMain">
-            <select [(ngModel)]="selectedMainTargetStatut" [disabled]="isBulkUpdatingMain">
-              <option value="" disabled selected>Choisir un statut</option>
-              <option *ngFor="let s of statutsList" [value]="s">{{ s }}</option>
-            </select>
-            <button class="btn-bulk-action" (click)="bulkChangeSelectedMainStatus()" [disabled]="isBulkUpdatingMain || !hasSelectedMainOps || !selectedMainTargetStatut">
-              <i class="fas fa-exchange-alt"></i>
-              {{ isBulkUpdatingMain ? '⏳ Changement...' : 'Changer statut (' + selectedMainOpIds.size + ')' }}
-            </button>
-            <button class="btn-success" (click)="quickBulkMain('Validée')" [disabled]="isBulkUpdatingMain || !hasSelectedMainOps">
-              <i class="fas fa-check"></i> Valider
-            </button>
-            <button class="btn-warning" (click)="quickBulkMain('Rejetée')" [disabled]="isBulkUpdatingMain || !hasSelectedMainOps">
-              <i class="fas fa-ban"></i> Rejeter
-            </button>
-          </ng-container>
+          <button class="btn-success" (click)="quickBulkMain('Validée')" [disabled]="isBulkUpdatingMain || !hasSelectedMainOps">
+            <i class="fas fa-check"></i> Valider
+          </button>
+          <button class="btn-warning" (click)="quickBulkMain('Rejetée')" [disabled]="isBulkUpdatingMain || !hasSelectedMainOps">
+            <i class="fas fa-ban"></i> Rejeter
+          </button>
         </div>
       </div>
 
@@ -1055,6 +1043,10 @@
         </div>
         
         <span class="muted">Page {{ currentPage }} / {{ totalPages }}</span>
+        <span class="muted" style="margin-left: 16px;">
+          <i class="fas fa-list"></i>
+          {{ filteredOperations.length }} opération(s) au total
+        </span>
         
         <select [(ngModel)]="pageSize" (change)="onPageSizeChange()">
           <option [value]="5">5</option>
