@@ -5473,16 +5473,23 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
                 return;
             }
 
-            // Demander le type de référence (Standard/Cross Border)
+            // Demander le type de référence (Standard/Cross Border/Nivellement)
             console.log('🔧 Affichage du popup de sélection du type de référence...');
             const referenceTypeInput = await this.popupService.showSelectInput(
                 'Type de référence :', 
                 'Sélectionner le type', 
-                ['STANDARD', 'CROSS_BORDER'], 
+                ['STANDARD', 'CROSS_BORDER', 'NIVELLEMENT'], 
                 'STANDARD'
             );
             const referenceType = referenceTypeInput || 'STANDARD';
             console.log('✅ Type de référence sélectionné:', referenceType);
+
+            // Si NIVELLEMENT est sélectionné, forcer le type d'opération à "nivellement"
+            let finalTypeOperation = typeOperation;
+            if (referenceType === 'NIVELLEMENT') {
+                finalTypeOperation = 'nivellement';
+                console.log('🔄 Type d\'opération changé vers "nivellement" pour utiliser la logique de nivellement');
+            }
 
             const comptes = await this.compteService.getComptesByCodeProprietaire(codeProprietaire).toPromise();
             if (!comptes || !comptes.length) {
@@ -5510,7 +5517,7 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
 
             const payload: OperationCreateRequest = {
                 compteId,
-                typeOperation,
+                typeOperation: finalTypeOperation,
                 montant,
                 banque,
                 nomBordereau: nomBordereau || undefined,

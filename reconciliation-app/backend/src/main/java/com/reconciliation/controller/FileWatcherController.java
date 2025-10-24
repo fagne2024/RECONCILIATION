@@ -446,6 +446,29 @@ public class FileWatcherController {
         return "unknown";
     }
 
+    /**
+     * Crée un Workbook Apache POI en détectant automatiquement le format du fichier Excel.
+     * Cette méthode gère les cas où des fichiers .xls sont en fait au format .xlsx.
+     */
+    private Workbook createWorkbook(File file) throws IOException {
+        try (FileInputStream fis = new FileInputStream(file)) {
+            // D'abord, essayer de détecter le format réel du fichier
+            try {
+                // Essayer d'abord le format XLSX (Office 2007+)
+                return new XSSFWorkbook(fis);
+            } catch (Exception e) {
+                // Si ça échoue, essayer le format HSSF (ancien format Excel)
+                try (FileInputStream fis2 = new FileInputStream(file)) {
+                    return new HSSFWorkbook(fis2);
+                } catch (Exception e2) {
+                    // Si les deux échouent, relancer l'exception originale
+                    throw new IOException("Impossible de lire le fichier Excel: " + file.getName() + 
+                        ". Format non supporté ou fichier corrompu.", e);
+                }
+            }
+        }
+    }
+
     private int getRecordCount(File file) {
         try {
             if (file.getName().toLowerCase().endsWith(".csv")) {
@@ -475,18 +498,8 @@ public class FileWatcherController {
         // Lecture des colonnes Excel
         
         try {
-            // Utiliser Apache POI pour lire les fichiers Excel
-            Workbook workbook;
-            if (file.getName().toLowerCase().endsWith(".xlsx") || 
-                file.getName().toLowerCase().endsWith(".xlsm") ||
-                file.getName().toLowerCase().endsWith(".xltx") ||
-                file.getName().toLowerCase().endsWith(".xltm")) {
-                workbook = new XSSFWorkbook(new FileInputStream(file));
-                // Format Excel XLSX détecté
-            } else {
-                workbook = new HSSFWorkbook(new FileInputStream(file));
-                // Format Excel XLS détecté
-            }
+            // Utiliser Apache POI pour lire les fichiers Excel avec détection automatique du format
+            Workbook workbook = createWorkbook(file);
             
             Sheet sheet = workbook.getSheetAt(0);
             // Feuille Excel analysée
@@ -783,13 +796,8 @@ public class FileWatcherController {
     // Méthode pour lire les données d'exemple des fichiers Excel
     private List<Map<String, Object>> readExcelSampleData(File file) throws IOException {
         try {
-            // Utiliser Apache POI pour lire les fichiers Excel
-            Workbook workbook;
-            if (file.getName().toLowerCase().endsWith(".xlsx")) {
-                workbook = new XSSFWorkbook(new FileInputStream(file));
-            } else {
-                workbook = new HSSFWorkbook(new FileInputStream(file));
-            }
+            // Utiliser Apache POI pour lire les fichiers Excel avec détection automatique du format
+            Workbook workbook = createWorkbook(file);
             
             Sheet sheet = workbook.getSheetAt(0);
             List<Map<String, Object>> sampleData = new ArrayList<>();

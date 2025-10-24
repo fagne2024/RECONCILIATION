@@ -473,7 +473,7 @@ public class OperationService {
         
         // Générer automatiquement la référence pour les opérations nivellement
         if ("nivellement".equals(request.getTypeOperation())) {
-            String reference = generateNivellementReference(entity.getDateOperation(), null);
+            String reference = generateNivellementReference(compte.getNumeroCompte(), entity.getDateOperation(), null);
             entity.setReference(reference);
         }
 
@@ -1918,26 +1918,27 @@ public class OperationService {
     
     /**
      * Génère automatiquement la référence pour les opérations nivellement
-     * Format: NIVELLEMENTHT-DATE_JJMMAA-NIV{NUMERO}
-     * Exemple: NIVELLEMENTHT-120825-NIV1
+     * Format: CODE_PROPRIETAIRE-DATE_JJMMAA-NV{NUMERO}
+     * Exemple: CELCM0001-120825NV1
      */
-    private String generateNivellementReference(LocalDateTime dateOperation, Long operationIdToExclude) {
+    private String generateNivellementReference(String codeProprietaire, LocalDateTime dateOperation, Long operationIdToExclude) {
         // Formater la date au format jjmmaa
         String dateFormatted = dateOperation.format(java.time.format.DateTimeFormatter.ofPattern("ddMMyy"));
         
-        // Compter le nombre d'opérations nivellement existantes pour cette journée
+        // Compter le nombre d'opérations nivellement existantes pour cette journée et ce code propriétaire
         // Utiliser la requête adaptée selon que l'on exclut une opération ou non
         Long existingCount = (operationIdToExclude == null)
-            ? operationRepository.countNivellementOperationsByDate(dateOperation)
-            : operationRepository.countNivellementOperationsByDateExcludingId(dateOperation, operationIdToExclude);
+            ? operationRepository.countNivellementOperationsByCodeProprietaireAndDate(codeProprietaire, dateOperation)
+            : operationRepository.countNivellementOperationsByCodeProprietaireAndDateExcludingId(codeProprietaire, dateOperation, operationIdToExclude);
         
         // Le numéro sera le nombre d'opérations existantes + 1
         int numero = existingCount.intValue() + 1;
         
-        // Construire la référence (suffixe NV pour Nivellement)
-        String reference = String.format("NIVELLEMENTHT-%sNV%d", dateFormatted, numero);
+        // Construire la référence avec le code propriétaire
+        String reference = String.format("%s-%sNV%d", codeProprietaire, dateFormatted, numero);
         
         System.out.println("DEBUG: Génération référence Nivellement: " + reference);
+        System.out.println("DEBUG: Code propriétaire: " + codeProprietaire);
         System.out.println("DEBUG: Date formatée: " + dateFormatted);
         System.out.println("DEBUG: Numéro d'opération: " + numero);
         System.out.println("DEBUG: Nombre d'opérations existantes (excluant ID " + operationIdToExclude + "): " + existingCount);
@@ -1971,7 +1972,7 @@ public class OperationService {
                 reference = generateCompenseFournisseurReference(codeProprietaire, dateOperation, operationIdToExclude, null);
                 break;
             case "nivellement":
-                reference = generateNivellementReference(dateOperation, operationIdToExclude);
+                reference = generateNivellementReference(codeProprietaire, dateOperation, operationIdToExclude);
                 break;
             default:
                 // Pour les autres types, retourner null pour garder la référence existante

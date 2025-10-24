@@ -41,7 +41,7 @@ export class RankingComponent implements OnInit {
 
   // Pagination agences
   agencyPage = 1;
-  agencyPageSize = 10;
+  agencyPageSize = 5;
   get paginatedAgencyRankings() {
     const start = (this.agencyPage - 1) * this.agencyPageSize;
     return this.agencyRankings.slice(start, start + this.agencyPageSize);
@@ -52,7 +52,7 @@ export class RankingComponent implements OnInit {
 
   // Pagination services
   servicePage = 1;
-  servicePageSize = 10;
+  servicePageSize = 5;
   get paginatedServiceRankings() {
     const start = (this.servicePage - 1) * this.servicePageSize;
     return this.serviceRankings.slice(start, start + this.servicePageSize);

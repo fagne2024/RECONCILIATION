@@ -25,6 +25,8 @@ public class OperationBancaireController {
     private com.reconciliation.service.OperationBancaireImportService importService;
     @Autowired
     private com.reconciliation.repository.OperationBancaireRepository operationBancaireRepository;
+    @Autowired
+    private com.reconciliation.service.OperationService operationService;
     
     
     // Récupérer toutes les opérations bancaires
@@ -184,6 +186,43 @@ public class OperationBancaireController {
                 .map(entity -> {
                     entity.setReconStatus(status);
                     operationBancaireRepository.save(entity);
+                    return ResponseEntity.ok().build();
+                })
+                .orElse(ResponseEntity.notFound().build());
+    }
+
+    // Mettre à jour le statut d'une opération bancaire
+    @PutMapping("/{id}/statut")
+    public ResponseEntity<?> updateStatut(@PathVariable Long id, @RequestBody String nouveauStatut) {
+        return operationBancaireRepository.findById(id)
+                .map(entity -> {
+                    System.out.println("🔍 Opération bancaire ID: " + id + ", Statut actuel: " + entity.getStatut() + ", Nouveau statut: " + nouveauStatut);
+                    
+                    // Vérifier si le statut actuel n'est pas déjà "Validée"
+                    if (!"Validée".equals(entity.getStatut())) {
+                        System.out.println("✅ Mise à jour du statut de l'opération bancaire " + id + " vers " + nouveauStatut);
+                        entity.setStatut(nouveauStatut);
+                        operationBancaireRepository.save(entity);
+                        
+                        // Si l'opération bancaire est liée à une opération, mettre à jour le statut de l'opération
+                        if (entity.getOperationId() != null) {
+                            try {
+                                System.out.println("🔗 Mise à jour de l'opération liée ID: " + entity.getOperationId());
+                                // Utiliser le service OperationService pour mettre à jour le statut et appliquer l'impact
+                                boolean updated = operationService.updateOperationStatut(entity.getOperationId(), nouveauStatut);
+                                System.out.println("📊 Résultat de la mise à jour de l'opération: " + updated);
+                            } catch (Exception e) {
+                                // Log l'erreur mais ne pas faire échouer la mise à jour du statut bancaire
+                                System.err.println("❌ Erreur lors de la mise à jour du statut de l'opération liée: " + e.getMessage());
+                                e.printStackTrace();
+                            }
+                        } else {
+                            System.out.println("⚠️ Aucune opération liée trouvée pour l'opération bancaire " + id);
+                        }
+                    } else {
+                        System.out.println("ℹ️ L'opération bancaire " + id + " est déjà au statut 'Validée' - Aucune action nécessaire");
+                        // Si déjà validée, on ne fait rien (pas d'impact supplémentaire)
+                    }
                     return ResponseEntity.ok().build();
                 })
                 .orElse(ResponseEntity.notFound().build());

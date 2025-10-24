@@ -748,6 +748,37 @@ export class BanqueComponent implements OnInit {
       const opAny: any = (this as any).keyToOp && (this as any).keyToOp[key];
       if (opAny && opAny.id !== undefined) {
         this.operationBancaireService.updateReconStatus(opAny.id, status).subscribe({ next: () => {}, error: () => {} });
+        
+        // Vérifier le statut actuel de l'opération bancaire et le mettre à jour à "Validée" si nécessaire
+        if (status === 'OK') {
+          console.log(`🔍 Vérification du statut de l'opération bancaire ${opAny.id}`);
+          this.operationBancaireService.getOperationBancaireStatut(opAny.id).subscribe({
+            next: (currentStatut: string) => {
+              console.log(`📊 Statut actuel de l'opération bancaire ${opAny.id}: "${currentStatut}"`);
+              if (currentStatut !== 'Validée') {
+                console.log(`🔄 Mise à jour du statut de l'opération bancaire ${opAny.id} vers "Validée"`);
+                // Mettre à jour le statut à "Validée" et appliquer l'impact sur le compte
+                this.operationBancaireService.updateStatut(opAny.id, 'Validée').subscribe({
+                  next: () => {
+                    console.log(`✅ Statut de l'opération bancaire ${opAny.id} mis à jour à "Validée"`);
+                    // Actualiser l'interface après la mise à jour
+                    this.updatePagedReconciliationResults();
+                  },
+                  error: (error) => {
+                    console.error(`❌ Erreur lors de la mise à jour du statut de l'opération bancaire ${opAny.id}:`, error);
+                  }
+                });
+              } else {
+                console.log(`ℹ️ L'opération bancaire ${opAny.id} est déjà au statut "Validée" - Aucune action nécessaire`);
+                // Si déjà validée, on ne fait rien (pas d'impact supplémentaire)
+                this.updatePagedReconciliationResults();
+              }
+            },
+            error: (error) => {
+              console.error(`❌ Erreur lors de la récupération du statut de l'opération bancaire ${opAny.id}:`, error);
+            }
+          });
+        }
       }
     } catch {}
     try {

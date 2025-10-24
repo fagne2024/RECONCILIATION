@@ -135,21 +135,40 @@ export class RankingService {
   }
 
   /**
-   * Formater un montant en FCFA
+   * Formater un montant en FCFA avec séparateurs de milliers
    */
   formatAmount(amount: number): string {
-    return new Intl.NumberFormat('fr-FR', {
+    if (amount === null || amount === undefined || isNaN(amount)) {
+      return '0 FCFA';
+    }
+    
+    const formatted = new Intl.NumberFormat('fr-FR', {
       style: 'currency',
       currency: 'XOF',
       minimumFractionDigits: 0,
-      maximumFractionDigits: 0
+      maximumFractionDigits: 0,
+      useGrouping: true
     }).format(amount);
+    
+    // Log pour vérifier que le formatage fonctionne
+    console.log(`[RANKING SERVICE] Formatting ${amount} -> ${formatted}`);
+    return formatted;
   }
 
   /**
    * Formater un nombre avec séparateurs de milliers
    */
   formatNumber(num: number): string {
-    return new Intl.NumberFormat('fr-FR').format(num);
+    if (num === null || num === undefined || isNaN(num)) {
+      return '0';
+    }
+    
+    const formatted = new Intl.NumberFormat('fr-FR', {
+      useGrouping: true
+    }).format(num);
+    
+    // Log pour vérifier que le formatage fonctionne
+    console.log(`[RANKING SERVICE] Formatting number ${num} -> ${formatted}`);
+    return formatted;
   }
 } 

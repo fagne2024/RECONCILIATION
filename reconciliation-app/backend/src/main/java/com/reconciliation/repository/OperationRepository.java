@@ -303,6 +303,24 @@ public interface OperationRepository extends JpaRepository<OperationEntity, Long
         @Param("operationIdToExclude") Long operationIdToExclude
     );
 
+    @Query("SELECT COUNT(o) FROM OperationEntity o WHERE o.typeOperation = 'nivellement' " +
+           "AND o.codeProprietaire = :codeProprietaire " +
+           "AND DATE(o.dateOperation) = DATE(:dateOperation)")
+    Long countNivellementOperationsByCodeProprietaireAndDate(
+        @Param("codeProprietaire") String codeProprietaire,
+        @Param("dateOperation") LocalDateTime dateOperation
+    );
+
+    @Query("SELECT COUNT(o) FROM OperationEntity o WHERE o.typeOperation = 'nivellement' " +
+           "AND o.codeProprietaire = :codeProprietaire " +
+           "AND DATE(o.dateOperation) = DATE(:dateOperation) " +
+           "AND o.id != :operationIdToExclude")
+    Long countNivellementOperationsByCodeProprietaireAndDateExcludingId(
+        @Param("codeProprietaire") String codeProprietaire,
+        @Param("dateOperation") LocalDateTime dateOperation,
+        @Param("operationIdToExclude") Long operationIdToExclude
+    );
+
     // Méthode pour récupérer les opérations valides (non annulées) d'un compte triées par date décroissante
     @Query("SELECT o FROM OperationEntity o WHERE o.compte.id = :compteId AND o.statut != :statutExclu ORDER BY o.dateOperation DESC")
     List<OperationEntity> findByCompteIdAndStatutNotOrderByDateOperationDesc(
