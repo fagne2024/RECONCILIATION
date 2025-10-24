@@ -103,7 +103,7 @@
             <i class="fas" [class.fa-comment]="!showCommentColumn" [class.fa-comment-slash]="showCommentColumn"></i>
             {{ showCommentColumn ? 'Masquer Commentaires' : 'Afficher Commentaires' }}
           </button>
-          <div class="filter-group" style="margin-left:12px;">
+          <div class="filter-group" style="margin-left:12px; display: none;">
             <label>Lot</label>
             <select [(ngModel)]="releveSelectedBatchId" (change)="relevePage = 1">
               <option value="ALL">Tous les lots</option>
@@ -198,6 +198,7 @@
             {{ filteredReleveRowsForImport.length }} ligne(s) au total
           </span>
           <select [(ngModel)]="relevePageSize" (change)="relevePage = 1">
+            <option [value]="5">5</option>
             <option [value]="10">10</option>
             <option [value]="20">20</option>
             <option [value]="50">50</option>
@@ -1328,11 +1329,21 @@
           <div class="form-row">
             <div class="form-group">
               <label>Date comptable *</label>
-              <input type="date" [(ngModel)]="createOperationForm.dateComptable" name="co_dateComptable" required>
+              <input type="date" [(ngModel)]="createOperationForm.dateComptable" name="co_dateComptable" (change)="onDateComptableChange()" required>
             </div>
             <div class="form-group">
               <label>Date de valeur</label>
               <input type="date" [(ngModel)]="createOperationForm.dateValeur" name="co_dateValeur">
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Code Pays *</label>
+              <input type="text" [(ngModel)]="createOperationForm.codePays" name="co_codePays" (input)="onCodePaysChange()" placeholder="CI, ML, BF..." required>
+            </div>
+            <div class="form-group">
+              <label>Pays</label>
+              <input type="text" [(ngModel)]="createOperationForm.pays" name="co_pays" readonly>
             </div>
           </div>
           <div class="form-row">
@@ -1351,6 +1362,21 @@
             <div class="form-group">
               <label>Montant *</label>
               <input type="number" [(ngModel)]="createOperationForm.montant" name="co_montant" step="0.01" required>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Statut</label>
+              <select [(ngModel)]="createOperationForm.statut" name="co_statut">
+                <option value="En attente">En attente</option>
+                <option value="Validée">Validée</option>
+                <option value="Rejetée">Rejetée</option>
+                <option value="En cours">En cours</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Mois</label>
+              <input type="text" [(ngModel)]="createOperationForm.mois" name="co_mois" placeholder="Octobre 2024">
             </div>
           </div>
           <div class="form-row">

@@ -59,7 +59,10 @@ export class BanqueComponent implements OnInit {
     banque: '',
     dateComptable: '',
     dateValeur: '',
-    
+    codePays: '',
+    pays: '',
+    mois: '',
+    statut: 'En attente',
     typeOperation: '',
     montant: null as number | null,
     libelle: '',
@@ -103,13 +106,33 @@ export class BanqueComponent implements OnInit {
     if (!raw) return '-';
     // Si déjà un nom complet, le retourner tel quel
     if (raw.length > 3 || raw.includes(' ')) {
-      // Normaliser pour traiter les variantes "Côte d’Ivoire" vs "Cote d'Ivoire"
+      // Normaliser pour traiter les variantes "Côte d'Ivoire" vs "Cote d'Ivoire"
       const norm = this.normalizeCountryName(raw);
       const entry = Object.entries(this.paysCodeToName).find(([, name]) => this.normalizeCountryName(name) === norm);
       return entry ? entry[1] : raw;
     }
     const code = raw.toUpperCase();
     return this.paysCodeToName[code] || raw;
+  }
+
+  onCodePaysChange() {
+    const codePays = this.createOperationForm.codePays?.trim().toUpperCase();
+    if (!codePays) {
+      this.createOperationForm.pays = '';
+      return;
+    }
+
+    // Remplir automatiquement le pays à partir du code pays
+    this.createOperationForm.pays = this.paysCodeToName[codePays] || '';
+  }
+
+  onDateComptableChange() {
+    // Remplir automatiquement le mois à partir de la date comptable
+    if (this.createOperationForm.dateComptable) {
+      const date = new Date(this.createOperationForm.dateComptable);
+      const mois = date.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
+      this.createOperationForm.mois = mois.charAt(0).toUpperCase() + mois.slice(1);
+    }
   }
 
   // Pagination
@@ -1507,6 +1530,10 @@ export class BanqueComponent implements OnInit {
       banque: '',
       dateComptable: new Date().toISOString().split('T')[0], // Date du jour
       dateValeur: '',
+      codePays: '',
+      pays: '',
+      mois: '',
+      statut: 'En attente',
       typeOperation: '',
       montant: null,
       libelle: '',
@@ -1525,6 +1552,7 @@ export class BanqueComponent implements OnInit {
       this.createOperationForm.nomCompte &&
       this.createOperationForm.banque &&
       this.createOperationForm.dateComptable &&
+      this.createOperationForm.codePays &&
       this.createOperationForm.typeOperation &&
       this.createOperationForm.montant !== null &&
       this.createOperationForm.libelle
@@ -1546,6 +1574,10 @@ export class BanqueComponent implements OnInit {
       banque: this.createOperationForm.banque,
       dateComptable: this.createOperationForm.dateComptable,
       dateValeur: this.createOperationForm.dateValeur || this.createOperationForm.dateComptable,
+      codePays: this.createOperationForm.codePays,
+      pays: this.createOperationForm.pays,
+      mois: this.createOperationForm.mois,
+      statut: this.createOperationForm.statut,
       typeOperation: this.createOperationForm.typeOperation,
       montant: this.createOperationForm.montant!,
       libelle: this.createOperationForm.libelle,
