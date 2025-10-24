@@ -249,13 +249,25 @@
         </div>
       </div>
 
+      <!-- Barre d'actions pour la réconciliation -->
+      <div class="releve-header" style="margin-bottom: 12px;" *ngIf="reconPays">
+        <h3>Actions de réconciliation</h3>
+        <div class="actions">
+          <button class="btn-primary" (click)="toggleSelectAllCurrentPage()" [class.active]="selectAllOnPage" title="Sélectionner/Désélectionner la page" *ngIf="reconView==='corr_operation' || reconView==='corr_releve'">
+            <i class="fas" [ngClass]="{ 'fa-square': !selectAllOnPage, 'fa-check-square': selectAllOnPage }"></i>
+            {{ selectAllOnPage ? 'Tout désélectionner' : 'Sélectionner la page' }}
+          </button>
+          <button class="btn-primary" (click)="toggleSelectionModeOps()" [class.active]="isSelectionModeOps" title="Sélection multiple" *ngIf="reconView==='operation'">
+            <i class="fas fa-check-square"></i>
+            {{ isSelectionModeOps ? 'Quitter la sélection' : 'Sélection multiple' }}
+            <span *ngIf="isSelectionModeOps && hasSelectedOps" class="badge" style="margin-left:6px;">{{ selectedOpIds.size }}</span>
+          </button>
+        </div>
+      </div>
+
       <div class="table-container" *ngIf="reconDiffRows.length || (matchedPairs && matchedPairs.length)">
         <!-- Filtres Réconciliation -->
         <div class="table-filters">
-          <div class="filter-group" style="margin-right:12px; align-items:center; display:flex; gap:6px;">
-            <label>OK définitifs</label>
-            <span class="badge status-ok">{{ totalOkDefinitifs }}</span>
-          </div>
           <div class="filter-group" *ngIf="reconView==='operation' || reconView==='corr_operation'">
             <label>Type d'opération</label>
             <select [(ngModel)]="reconFilters.typeOperation" (change)="applyReconFilters()">
@@ -296,28 +308,7 @@
         </div>
 
         <div class="pagination-controls">
-          <div class="page-size-selector">
-            <label>Afficher</label>
-            <select [(ngModel)]="reconPageSize" (change)="onReconPageSizeChange()">
-              <option [value]="5">5 lignes</option>
-              <option [value]="10">10 lignes</option>
-              <option [value]="20">20 lignes</option>
-              <option [value]="50">50 lignes</option>
-              <option [value]="100">100 lignes</option>
-            </select>
-          </div>
-          <div class="total-count">
-            <i class="fas fa-list"></i>
-            <span *ngIf="reconView==='operation'">{{ filteredLeftOps.length }} ligne(s) au total</span>
-            <span *ngIf="reconView==='releve'">{{ filteredRightReleves.length }} ligne(s) au total</span>
-            <span *ngIf="reconView==='corr_operation'">{{ filteredMatchedOps.length }} correspondance(s)</span>
-            <span *ngIf="reconView==='corr_releve'">{{ filteredMatchedReleves.length }} correspondance(s)</span>
-          </div>
           <div class="bulk-actions" *ngIf="reconView==='corr_operation' || reconView==='corr_releve'">
-            <button class="btn-selection-toggle" (click)="toggleSelectAllCurrentPage()" title="Sélectionner/Désélectionner la page">
-              <i class="fas" [ngClass]="{ 'fa-square': !selectAllOnPage, 'fa-check-square': selectAllOnPage }"></i>
-              {{ selectAllOnPage ? 'Tout désélectionner' : 'Sélectionner la page' }}
-            </button>
             <button class="btn-bulk-action" (click)="bulkMarkOkDefinitif()" [disabled]="selectedReconKeys.size===0" title="Marquer OK définitif (plusieurs)">
               <i class="fas fa-check-double"></i> OK définitif ({{ selectedReconKeys.size }})
             </button>
@@ -326,12 +317,7 @@
             </button>
           </div>
           <!-- Actions sélection pour vue opérations -->
-          <div class="bulk-actions" *ngIf="reconView==='operation'">
-            <button class="btn-selection-toggle" (click)="toggleSelectionModeOps()">
-              <i class="fas fa-check-square"></i>
-              {{ isSelectionModeOps ? 'Quitter la sélection' : 'Sélection multiple' }}
-              <span *ngIf="isSelectionModeOps && hasSelectedOps" class="badge" style="margin-left:6px;">{{ selectedOpIds.size }}</span>
-            </button>
+          <div class="bulk-actions" *ngIf="reconView==='operation' && isSelectionModeOps">
             <ng-container *ngIf="isSelectionModeOps">
               <button class="btn-selection-toggle" (click)="selectAllOpsCurrentPage()" [disabled]="selectAllOpsOnPage">
                 <i class="fas fa-check-double"></i>
@@ -594,6 +580,21 @@
                 <i class="fas fa-angle-double-right"></i>
               </button>
             </div>
+          </div>
+          
+          <!-- Informations de pagination -->
+          <div class="pagination-info">
+            <i class="fas fa-info-circle"></i>
+            <span *ngIf="reconView==='operation'">{{ filteredLeftOps.length }} ligne(s) au total</span>
+            <span *ngIf="reconView==='releve'">{{ filteredRightReleves.length }} ligne(s) au total</span>
+            <span *ngIf="reconView==='corr_operation'">{{ filteredMatchedOps.length }} correspondance(s)</span>
+            <span *ngIf="reconView==='corr_releve'">{{ filteredMatchedReleves.length }} correspondance(s)</span>
+          </div>
+          
+          <!-- Total correspondances (OK définitifs) -->
+          <div class="pagination-info" *ngIf="totalOkDefinitifs > 0">
+            <i class="fas fa-list-check"></i>
+            <span>Total correspondances: {{ totalOkDefinitifs }}</span>
           </div>
           
           <!-- Sélecteur de taille de page -->
