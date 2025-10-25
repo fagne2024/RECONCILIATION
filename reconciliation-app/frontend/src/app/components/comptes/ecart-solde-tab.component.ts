@@ -2,6 +2,7 @@ import { Component, Input, OnInit, OnDestroy } from '@angular/core';
 import { EcartSoldeService } from '../../services/ecart-solde.service';
 import { EcartSolde } from '../../models/ecart-solde.model';
 import { Subscription } from 'rxjs';
+import { PopupService } from '../../services/popup.service';
 import * as XLSX from 'xlsx';
 
 @Component({
@@ -24,9 +25,17 @@ export class EcartSoldeTabComponent implements OnInit, OnDestroy {
   totalPages = 1;
   Math = Math;
   
+  // Sélection multiple
+  selectedItems: Set<number> = new Set();
+  isSelectAll = false;
+  isValidatingMass = false;
+  
   private subscription = new Subscription();
 
-  constructor(private ecartSoldeService: EcartSoldeService) {}
+  constructor(
+    private ecartSoldeService: EcartSoldeService,
+    private popupService: PopupService
+  ) {}
 
   ngOnInit(): void {
     this.loadEcartSoldes();
@@ -214,6 +223,131 @@ export class EcartSoldeTabComponent implements OnInit, OnDestroy {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2
     }).format(total) + ' F CFA';
+  }
+
+  async validateEcartSolde(ecart: EcartSolde): Promise<void> {
+    if (!ecart.id) {
+      await this.popupService.showError('ID de l\'écart de solde manquant');
+      return;
+    }
+
+    const confirmed = await this.popupService.showConfirmDialog(
+      `Êtes-vous sûr de vouloir valider cet écart de solde ?\n\nID Transaction: ${ecart.idTransaction}\nMontant: ${this.formatMontant(ecart.montant)}\nService: ${ecart.service || 'N/A'}`,
+      'Confirmation de validation'
+    );
+
+    if (confirmed) {
+      this.isLoading = true;
+      
+      this.subscription.add(
+        this.ecartSoldeService.updateStatut(ecart.id, 'TRAITE').subscribe({
+          next: (response: any) => {
+            // Mettre à jour le statut localement
+            ecart.statut = 'TRAITE';
+            this.isLoading = false;
+            this.popupService.showSuccess('Écart de solde validé avec succès');
+          },
+          error: (err: any) => {
+            this.isLoading = false;
+            this.popupService.showError('Erreur lors de la validation: ' + err.message);
+          }
+        })
+      );
+    }
+  }
+
+  // Méthodes de sélection multiple
+  isItemSelected(ecart: EcartSolde): boolean {
+    return ecart.id ? this.selectedItems.has(ecart.id) : false;
+  }
+
+  toggleItemSelection(ecart: EcartSolde): void {
+    if (!ecart.id || ecart.statut === 'TRAITE') return;
+    
+    if (this.selectedItems.has(ecart.id)) {
+      this.selectedItems.delete(ecart.id);
+    } else {
+      this.selectedItems.add(ecart.id);
+    }
+    this.updateSelectAllState();
+  }
+
+  toggleSelectAll(): void {
+    if (this.isSelectAll) {
+      this.selectedItems.clear();
+    } else {
+      // Sélectionner tous les éléments EN_ATTENTE
+      this.filteredEcartSoldes.forEach(ecart => {
+        if (ecart.id && ecart.statut === 'EN_ATTENTE') {
+          this.selectedItems.add(ecart.id);
+        }
+      });
+    }
+    this.updateSelectAllState();
+  }
+
+  updateSelectAllState(): void {
+    const eligibleItems = this.filteredEcartSoldes.filter(ecart => 
+      ecart.id && ecart.statut === 'EN_ATTENTE'
+    );
+    this.isSelectAll = eligibleItems.length > 0 && 
+      eligibleItems.every(ecart => ecart.id && this.selectedItems.has(ecart.id));
+  }
+
+  clearSelection(): void {
+    this.selectedItems.clear();
+    this.isSelectAll = false;
+  }
+
+  async validateSelectedEcartSoldes(): Promise<void> {
+    if (this.selectedItems.size === 0) {
+      await this.popupService.showError('Aucun élément sélectionné');
+      return;
+    }
+
+    const selectedEcartSoldes = this.filteredEcartSoldes.filter(ecart => 
+      ecart.id && this.selectedItems.has(ecart.id)
+    );
+
+    const confirmed = await this.popupService.showConfirmDialog(
+      `Êtes-vous sûr de vouloir valider ${selectedEcartSoldes.length} écart(s) de solde sélectionné(s) ?`,
+      'Confirmation de validation en masse'
+    );
+
+    if (confirmed) {
+      this.isValidatingMass = true;
+      let successCount = 0;
+      let errorCount = 0;
+
+      // Traiter les validations en parallèle
+      const validationPromises = selectedEcartSoldes.map(ecart => 
+        this.ecartSoldeService.updateStatut(ecart.id!, 'TRAITE').toPromise()
+          .then(() => {
+            ecart.statut = 'TRAITE';
+            successCount++;
+          })
+          .catch(() => {
+            errorCount++;
+          })
+      );
+
+      try {
+        await Promise.all(validationPromises);
+        
+        if (successCount > 0) {
+          this.popupService.showSuccess(`${successCount} écart(s) de solde validé(s) avec succès`);
+        }
+        if (errorCount > 0) {
+          this.popupService.showError(`${errorCount} erreur(s) lors de la validation`);
+        }
+        
+        this.clearSelection();
+      } catch (error) {
+        this.popupService.showError('Erreur lors de la validation en masse');
+      } finally {
+        this.isValidatingMass = false;
+      }
+    }
   }
 
   exportEcartSoldes(): void {

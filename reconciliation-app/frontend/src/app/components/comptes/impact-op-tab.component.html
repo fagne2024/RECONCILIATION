@@ -9,6 +9,40 @@
     </div>
   </div>
 
+  <!-- Contrôles de sélection multiple -->
+  <div class="selection-controls" *ngIf="impactOPs.length > 0">
+    <div class="selection-header">
+      <div class="selection-info">
+        <label class="checkbox-container">
+          <input type="checkbox" 
+                 [checked]="isSelectAll" 
+                 (change)="toggleSelectAll()"
+                 [disabled]="isValidatingMass">
+          <span class="checkmark"></span>
+          Sélectionner tout
+        </label>
+        <span class="selected-count" *ngIf="selectedItems.size > 0">
+          {{ selectedItems.size }} élément(s) sélectionné(s)
+        </span>
+      </div>
+      <div class="selection-actions" *ngIf="selectedItems.size > 0">
+        <button class="btn btn-success btn-sm" 
+                (click)="validateSelectedImpactOPs()"
+                [disabled]="isValidatingMass || selectedItems.size === 0">
+          <i class="fas fa-check" *ngIf="!isValidatingMass"></i>
+          <i class="fas fa-spinner fa-spin" *ngIf="isValidatingMass"></i>
+          {{ isValidatingMass ? 'Validation...' : 'Valider sélection' }}
+        </button>
+        <button class="btn btn-secondary btn-sm" 
+                (click)="clearSelection()"
+                [disabled]="isValidatingMass">
+          <i class="fas fa-times"></i>
+          Annuler
+        </button>
+      </div>
+    </div>
+  </div>
+
   <div *ngIf="isLoading" class="loading">
     <i class="fas fa-spinner fa-spin"></i> Chargement des impacts OP...
   </div>
@@ -22,6 +56,12 @@
     <table class="table table-bordered table-hover table-sm">
       <thead>
         <tr>
+          <th class="checkbox-header">
+            <input type="checkbox" 
+                   [checked]="isSelectAll" 
+                   (change)="toggleSelectAll()"
+                   [disabled]="isValidatingMass">
+          </th>
           <th>Type d'opération</th>
           <th>Montant</th>
           <th>Solde avant</th>
@@ -32,10 +72,17 @@
           <th>Groupe réseau</th>
           <th>Statut</th>
           <th>Commentaire</th>
+          <th>Actions</th>
         </tr>
       </thead>
       <tbody>
-        <tr *ngFor="let impact of pagedImpactOPs">
+        <tr *ngFor="let impact of pagedImpactOPs" [class.selected]="isItemSelected(impact)">
+          <td class="checkbox-cell">
+            <input type="checkbox" 
+                   [checked]="isItemSelected(impact)" 
+                   (change)="toggleItemSelection(impact)"
+                   [disabled]="isValidatingMass || impact.statut === 'TRAITE'">
+          </td>
           <td>{{ impact.typeOperation }}</td>
           <td [ngClass]="impact.montant >= 0 ? 'montant-positif' : 'montant-negatif'">
             {{ formatMontant(impact.montant) }}
@@ -52,16 +99,32 @@
             </span>
           </td>
           <td>{{ impact.commentaire || '-' }}</td>
+          <td class="actions-cell">
+            <div class="action-buttons">
+              <button *ngIf="impact.statut === 'EN_ATTENTE'" 
+                      class="btn btn-success btn-sm validate-btn" 
+                      (click)="validateImpactOP(impact)"
+                      title="Valider l'impact OP">
+                <i class="fas fa-check"></i>
+                Valider
+              </button>
+              <span *ngIf="impact.statut === 'TRAITE'" class="status-validated">
+                <i class="fas fa-check-circle"></i>
+                Validé
+              </span>
+            </div>
+          </td>
         </tr>
       </tbody>
       <tfoot>
         <tr class="total-row">
-          <td colspan="9" class="total-label">
+          <td colspan="10" class="total-label">
             <strong>MONTANT TOTAL :</strong>
           </td>
           <td colspan="1" class="total-amount">
             <strong>{{ formatTotalMontant() }}</strong>
           </td>
+          <td class="actions-cell"></td>
         </tr>
       </tfoot>
     </table>

@@ -2,6 +2,7 @@ import { Component, Input, OnInit, OnDestroy } from '@angular/core';
 import { Subscription } from 'rxjs';
 import { ImpactOP } from '../../models/impact-op.model';
 import { ImpactOPService } from '../../services/impact-op.service';
+import { PopupService } from '../../services/popup.service';
 
 @Component({
   selector: 'app-impact-op-tab',
@@ -19,9 +20,17 @@ export class ImpactOPTabComponent implements OnInit, OnDestroy {
   totalPages = 1;
   Math = Math;
 
+  // Sélection multiple
+  selectedItems: Set<number> = new Set();
+  isSelectAll = false;
+  isValidatingMass = false;
+
   private subscription = new Subscription();
 
-  constructor(private impactOPService: ImpactOPService) {}
+  constructor(
+    private impactOPService: ImpactOPService,
+    private popupService: PopupService
+  ) {}
 
   ngOnInit() {
     this.loadImpactOPs();
@@ -162,5 +171,130 @@ export class ImpactOPTabComponent implements OnInit, OnDestroy {
 
   formatTotalMontant(): string {
     return this.formatMontant(this.calculateTotalMontant());
+  }
+
+  async validateImpactOP(impact: ImpactOP): Promise<void> {
+    if (!impact.id) {
+      await this.popupService.showError('ID de l\'impact OP manquant');
+      return;
+    }
+
+    const confirmed = await this.popupService.showConfirmDialog(
+      `Êtes-vous sûr de vouloir valider cet impact OP ?\n\nType: ${impact.typeOperation}\nMontant: ${this.formatMontant(impact.montant)}`,
+      'Confirmation de validation'
+    );
+
+    if (confirmed) {
+      this.isLoading = true;
+      
+      this.subscription.add(
+        this.impactOPService.updateImpactOPStatut(impact.id, 'TRAITE').subscribe({
+          next: (response: any) => {
+            // Mettre à jour le statut localement
+            impact.statut = 'TRAITE';
+            this.isLoading = false;
+            this.popupService.showSuccess('Impact OP validé avec succès');
+          },
+          error: (err: any) => {
+            this.isLoading = false;
+            this.popupService.showError('Erreur lors de la validation: ' + err.message);
+          }
+        })
+      );
+    }
+  }
+
+  // Méthodes de sélection multiple
+  isItemSelected(impact: ImpactOP): boolean {
+    return impact.id ? this.selectedItems.has(impact.id) : false;
+  }
+
+  toggleItemSelection(impact: ImpactOP): void {
+    if (!impact.id || impact.statut === 'TRAITE') return;
+    
+    if (this.selectedItems.has(impact.id)) {
+      this.selectedItems.delete(impact.id);
+    } else {
+      this.selectedItems.add(impact.id);
+    }
+    this.updateSelectAllState();
+  }
+
+  toggleSelectAll(): void {
+    if (this.isSelectAll) {
+      this.selectedItems.clear();
+    } else {
+      // Sélectionner tous les éléments EN_ATTENTE
+      this.impactOPs.forEach(impact => {
+        if (impact.id && impact.statut === 'EN_ATTENTE') {
+          this.selectedItems.add(impact.id);
+        }
+      });
+    }
+    this.updateSelectAllState();
+  }
+
+  updateSelectAllState(): void {
+    const eligibleItems = this.impactOPs.filter(impact => 
+      impact.id && impact.statut === 'EN_ATTENTE'
+    );
+    this.isSelectAll = eligibleItems.length > 0 && 
+      eligibleItems.every(impact => impact.id && this.selectedItems.has(impact.id));
+  }
+
+  clearSelection(): void {
+    this.selectedItems.clear();
+    this.isSelectAll = false;
+  }
+
+  async validateSelectedImpactOPs(): Promise<void> {
+    if (this.selectedItems.size === 0) {
+      await this.popupService.showError('Aucun élément sélectionné');
+      return;
+    }
+
+    const selectedImpactOPs = this.impactOPs.filter(impact => 
+      impact.id && this.selectedItems.has(impact.id)
+    );
+
+    const confirmed = await this.popupService.showConfirmDialog(
+      `Êtes-vous sûr de vouloir valider ${selectedImpactOPs.length} impact(s) OP sélectionné(s) ?`,
+      'Confirmation de validation en masse'
+    );
+
+    if (confirmed) {
+      this.isValidatingMass = true;
+      let successCount = 0;
+      let errorCount = 0;
+
+      // Traiter les validations en parallèle
+      const validationPromises = selectedImpactOPs.map(impact => 
+        this.impactOPService.updateImpactOPStatut(impact.id!, 'TRAITE').toPromise()
+          .then(() => {
+            impact.statut = 'TRAITE';
+            successCount++;
+          })
+          .catch(() => {
+            errorCount++;
+          })
+      );
+
+      try {
+        await Promise.all(validationPromises);
+        
+        if (successCount > 0) {
+          this.popupService.showSuccess(`${successCount} impact(s) OP validé(s) avec succès`);
+        }
+        if (errorCount > 0) {
+          this.popupService.showError(`${errorCount} erreur(s) lors de la validation`);
+        }
+        
+        this.clearSelection();
+      } catch (error) {
+        this.popupService.showError('Erreur lors de la validation en masse');
+      } finally {
+        this.isValidatingMass = false;
+      }
+    }
   }
 } 
