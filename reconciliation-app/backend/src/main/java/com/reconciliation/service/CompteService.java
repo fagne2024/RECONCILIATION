@@ -220,12 +220,13 @@ public class CompteService {
         return compteRepository.findDistinctCodeProprietaire();
     }
     
-    public List<Compte> filterComptes(List<String> pays, Double soldeMin, String dateDebut, String dateFin, List<String> codeProprietaire, List<String> categorie) {
+    public List<Compte> filterComptes(List<String> pays, Double soldeMin, String dateDebut, String dateFin, List<String> codeProprietaire, List<String> categorie, List<String> type) {
         System.out.println("Service: Filtrage des comptes");
         System.out.println("Service: Pays = " + pays);
         System.out.println("Service: SoldeMin = " + soldeMin);
         System.out.println("Service: CodeProprietaire = " + codeProprietaire);
         System.out.println("Service: Categorie = " + categorie);
+        System.out.println("Service: Type = " + type);
         System.out.println("Service: DateDebut = " + dateDebut);
         System.out.println("Service: DateFin = " + dateFin);
         
@@ -237,6 +238,7 @@ public class CompteService {
                 .filter(entity -> soldeMin == null || entity.getSolde() >= soldeMin)
                 .filter(entity -> codeProprietaire == null || codeProprietaire.isEmpty() || codeProprietaire.contains(entity.getCodeProprietaire()))
                 .filter(entity -> categorie == null || categorie.isEmpty() || categorie.contains(entity.getCategorie()))
+                .filter(entity -> type == null || type.isEmpty() || type.contains(entity.getType()))
                 .filter(entity -> {
                     if ((dateDebut == null || dateDebut.isEmpty()) && (dateFin == null || dateFin.isEmpty())) {
                         return true;

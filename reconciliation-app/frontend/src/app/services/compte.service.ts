@@ -126,6 +126,17 @@ export class CompteService {
             }
         }
 
+        // type: string | string[]
+        if (filter.type) {
+            if (Array.isArray(filter.type)) {
+                filter.type.forEach((t: string) => {
+                    params = params.append('type', t);
+                });
+            } else {
+                params = params.set('type', filter.type);
+            }
+        }
+
         return this.http.get<Compte[]>(`${this.apiUrl}/filter`, { params });
     }
 

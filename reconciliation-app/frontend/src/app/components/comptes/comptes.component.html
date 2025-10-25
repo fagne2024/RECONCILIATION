@@ -234,6 +234,19 @@
                         </mat-select>
                     </mat-form-field>
                 </div>
+                <div class="form-field">
+                    <mat-form-field appearance="fill" class="filter-select">
+                        <mat-label>Type</mat-label>
+                        <mat-select #typeSelect formControlName="type" multiple (selectionChange)="onTypeChange($event)">
+                            <mat-option>
+                                <ngx-mat-select-search [formControl]="typeSearchCtrl" placeholderLabel="Rechercher un type..." noEntriesFoundLabel="Aucun type trouvé"></ngx-mat-select-search>
+                            </mat-option>
+                            <mat-option *ngFor="let type of filteredTypeList" [value]="type">
+                                {{ type }}
+                            </mat-option>
+                        </mat-select>
+                    </mat-form-field>
+                </div>
                  <div class="form-field">
                     <label for="dateDebut">Date de début</label>
                     <input id="dateDebut" type="date" formControlName="dateDebut" >

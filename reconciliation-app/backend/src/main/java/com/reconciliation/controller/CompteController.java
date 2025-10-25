@@ -180,14 +180,16 @@ public class CompteController {
             @RequestParam(required = false) String dateDebut,
             @RequestParam(required = false) String dateFin,
             @RequestParam(required = false) List<String> codeProprietaire,
-            @RequestParam(required = false) List<String> categorie) {
+            @RequestParam(required = false) List<String> categorie,
+            @RequestParam(required = false) List<String> type) {
         
         System.out.println("=== FILTRE COMPTES (DEBUG) ===");
         System.out.println("Pays (reçu): " + pays);
         System.out.println("CodeProprietaire (reçu): " + codeProprietaire);
         System.out.println("Categorie (reçu): " + categorie);
+        System.out.println("Type (reçu): " + type);
         
-        List<Compte> comptes = compteService.filterComptes(pays, soldeMin, dateDebut, dateFin, codeProprietaire, categorie);
+        List<Compte> comptes = compteService.filterComptes(pays, soldeMin, dateDebut, dateFin, codeProprietaire, categorie, type);
         System.out.println("Résultats: " + comptes.size() + " comptes trouvés");
         
         return ResponseEntity.ok(comptes);

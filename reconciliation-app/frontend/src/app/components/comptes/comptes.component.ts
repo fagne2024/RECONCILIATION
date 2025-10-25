@@ -121,15 +121,19 @@ export class ComptesComponent implements OnInit, OnDestroy {
     selectedCategories: string[] = [];
     categorieSearch: string = '';
     filteredCategorieList: string[] = [];
+    selectedTypes: string[] = [];
+    typeSearch: string = '';
+    filteredTypeList: string[] = [];
     paysSearchCtrl = new FormControl('');
     codeProprietaireSearchCtrl = new FormControl('');
     categorieSearchCtrl = new FormControl('');
+    typeSearchCtrl = new FormControl('');
 
     // Liste des types de compte
     compteTypes: string[] = ['TOP20', 'B2B', 'G&I'];
     
     // Liste des catégories de compte
-    compteCategories: string[] = ['Client', 'Service', 'Banque'];
+    compteCategories: string[] = ['Client', 'Service', 'Banque', 'Comptable'];
     
     // Méthode pour obtenir la classe CSS de la catégorie
     getCategorieClass(categorie: string | undefined): string {
@@ -142,6 +146,8 @@ export class ComptesComponent implements OnInit, OnDestroy {
                 return 'categorie-service';
             case 'banque':
                 return 'categorie-banque';
+            case 'comptable':
+                return 'categorie-comptable';
             default:
                 return 'categorie-default';
         }
@@ -150,6 +156,7 @@ export class ComptesComponent implements OnInit, OnDestroy {
     @ViewChild('paysSelect') paysSelect!: MatSelect;
     @ViewChild('codeProprietaireSelect') codeProprietaireSelect!: MatSelect;
     @ViewChild('categorieSelect') categorieSelect!: MatSelect;
+    @ViewChild('typeSelect') typeSelect!: MatSelect;
 
     selectedCompteForBo: Compte | null = null;
     showSoldeBoModal = false;
@@ -270,7 +277,8 @@ export class ComptesComponent implements OnInit, OnDestroy {
             dateDebut: [''],
             dateFin: [''],
             codeProprietaire: [''],
-            categorie: ['']
+            categorie: [''],
+            type: ['']
         });
     }
 
@@ -281,6 +289,7 @@ export class ComptesComponent implements OnInit, OnDestroy {
         this.filteredPaysList = this.paysList;
         this.filteredCodeProprietaireList = this.codeProprietaireList;
         this.filteredCategorieList = this.compteCategories;
+        this.filteredTypeList = this.compteTypes;
         
         // Vérifier s'il y a un filtre de catégorie dans les paramètres de la route
         this.route.queryParams.subscribe(params => {
@@ -349,6 +358,10 @@ export class ComptesComponent implements OnInit, OnDestroy {
         
         this.filterForm.controls['categorie'].valueChanges.subscribe((value: string[]) => {
             this.selectedCategories = value || [];
+        });
+
+        this.filterForm.controls['type'].valueChanges.subscribe((value: string[]) => {
+            this.selectedTypes = value || [];
         });
     }
 
@@ -486,12 +499,14 @@ export class ComptesComponent implements OnInit, OnDestroy {
         this.filterForm.controls['pays'].setValue(this.selectedPays);
         this.filterForm.controls['codeProprietaire'].setValue(this.selectedCodesProprietaire);
         this.filterForm.controls['categorie'].setValue(this.selectedCategories);
+        this.filterForm.controls['type'].setValue(this.selectedTypes);
 
         const filter: CompteFilter = {
             ...this.filterForm.value,
             pays: this.selectedPays,
             codeProprietaire: this.selectedCodesProprietaire,
-            categorie: this.selectedCategories
+            categorie: this.selectedCategories,
+            type: this.selectedTypes
         };
         console.log('Filtres appliqués:', filter);
         this.isLoading = true;
@@ -522,6 +537,7 @@ export class ComptesComponent implements OnInit, OnDestroy {
         this.selectedPays = [];
         this.selectedCodesProprietaire = [];
         this.selectedCategories = [];
+        this.selectedTypes = [];
         this.loadComptes();
     }
 
@@ -931,6 +947,22 @@ export class ComptesComponent implements OnInit, OnDestroy {
         }, 100);
     }
 
+    onTypeChange(event: any) {
+        this.selectedTypes = event.value;
+        console.log('onTypeChange called, selectedTypes:', this.selectedTypes, 'event:', event);
+        this.filterForm.controls['type'].setValue(this.selectedTypes);
+        
+        // Mettre à jour les listes filtrées pour le cloisonnement
+        this.updateFilteredLists();
+        
+        this.applyFilters();
+        
+        // Fermer automatiquement le dropdown après un choix
+        setTimeout(() => {
+            if (this.typeSelect) this.typeSelect.close();
+        }, 100);
+    }
+
     // Méthode pour mettre à jour les listes filtrées avec cloisonnement
     updateFilteredLists() {
         // Mettre à jour les codes propriétaires disponibles selon le pays sélectionné
@@ -942,12 +974,16 @@ export class ComptesComponent implements OnInit, OnDestroy {
         // Mettre à jour les catégories disponibles selon les autres filtres
         this.filteredCategorieList = this.getFilteredCategories();
         
+        // Mettre à jour les types disponibles selon les autres filtres
+        this.filteredTypeList = this.getFilteredTypes();
+        
         // Nettoyer les sélections qui ne sont plus valides
         this.cleanInvalidSelections();
         
         console.log('updateFilteredLists - filteredPaysList:', this.filteredPaysList);
         console.log('updateFilteredLists - filteredCodeProprietaireList:', this.filteredCodeProprietaireList);
         console.log('updateFilteredLists - filteredCategorieList:', this.filteredCategorieList);
+        console.log('updateFilteredLists - filteredTypeList:', this.filteredTypeList);
     }
 
     // Méthode pour nettoyer les sélections invalides
@@ -955,6 +991,7 @@ export class ComptesComponent implements OnInit, OnDestroy {
         const currentPays = this.selectedPays;
         const currentCodeProprietaire = this.selectedCodesProprietaire;
         const currentCategories = this.selectedCategories;
+        const currentTypes = this.selectedTypes;
 
         // Nettoyer les codes propriétaires si le pays a changé
         if (currentCodeProprietaire && currentCodeProprietaire.length > 0) {
@@ -988,6 +1025,17 @@ export class ComptesComponent implements OnInit, OnDestroy {
                 this.filterForm.controls['categorie'].setValue(validCategories);
             }
         }
+
+        // Nettoyer les types si les autres filtres ont changé
+        if (currentTypes && currentTypes.length > 0) {
+            const validTypes = currentTypes.filter((type: string) => 
+                this.filteredTypeList.includes(type)
+            );
+            if (validTypes.length !== currentTypes.length) {
+                this.selectedTypes = validTypes;
+                this.filterForm.controls['type'].setValue(validTypes);
+            }
+        }
     }
 
     // Méthodes de filtrage avec cloisonnement
@@ -1001,6 +1049,14 @@ export class ComptesComponent implements OnInit, OnDestroy {
         // Filtrer par code propriétaire si sélectionné
         if (this.selectedCodesProprietaire && this.selectedCodesProprietaire.length > 0) {
             data = data.filter(c => c.codeProprietaire && this.selectedCodesProprietaire.includes(c.codeProprietaire));
+        }
+        // Filtrer par catégorie si sélectionnée
+        if (this.selectedCategories && this.selectedCategories.length > 0) {
+            data = data.filter(c => c.categorie && this.selectedCategories.includes(c.categorie));
+        }
+        // Filtrer par type si sélectionné
+        if (this.selectedTypes && this.selectedTypes.length > 0) {
+            data = data.filter(c => c.type && this.selectedTypes.includes(c.type));
         }
         const pays = [...new Set(data.map(c => c.pays).filter((p): p is string => p !== undefined && p !== null))];
         return pays.sort();
@@ -1016,6 +1072,14 @@ export class ComptesComponent implements OnInit, OnDestroy {
         // Filtrer par pays si sélectionné (cloisonnement principal)
         if (this.selectedPays && this.selectedPays.length > 0) {
             data = data.filter(c => c.pays && this.selectedPays.includes(c.pays));
+        }
+        // Filtrer par catégorie si sélectionnée
+        if (this.selectedCategories && this.selectedCategories.length > 0) {
+            data = data.filter(c => c.categorie && this.selectedCategories.includes(c.categorie));
+        }
+        // Filtrer par type si sélectionné
+        if (this.selectedTypes && this.selectedTypes.length > 0) {
+            data = data.filter(c => c.type && this.selectedTypes.includes(c.type));
         }
         const codeProprietaire = [...new Set(data.map(c => c.codeProprietaire).filter((c): c is string => c !== undefined && c !== null))];
         return codeProprietaire.sort();
@@ -1036,8 +1100,35 @@ export class ComptesComponent implements OnInit, OnDestroy {
         if (this.selectedCodesProprietaire && this.selectedCodesProprietaire.length > 0) {
             data = data.filter(c => c.codeProprietaire && this.selectedCodesProprietaire.includes(c.codeProprietaire));
         }
+        // Filtrer par type si sélectionné
+        if (this.selectedTypes && this.selectedTypes.length > 0) {
+            data = data.filter(c => c.type && this.selectedTypes.includes(c.type));
+        }
         const categories = [...new Set(data.map(c => c.categorie).filter((c): c is string => c !== undefined && c !== null))];
         return categories.sort();
+    }
+
+    getFilteredTypes(): string[] {
+        // Si pas de données comptes, retourner la liste de base
+        if (!this.comptes || this.comptes.length === 0) {
+            return this.compteTypes;
+        }
+        
+        let data = this.comptes;
+        // Filtrer par pays si sélectionné
+        if (this.selectedPays && this.selectedPays.length > 0) {
+            data = data.filter(c => c.pays && this.selectedPays.includes(c.pays));
+        }
+        // Filtrer par code propriétaire si sélectionné
+        if (this.selectedCodesProprietaire && this.selectedCodesProprietaire.length > 0) {
+            data = data.filter(c => c.codeProprietaire && this.selectedCodesProprietaire.includes(c.codeProprietaire));
+        }
+        // Filtrer par catégorie si sélectionnée
+        if (this.selectedCategories && this.selectedCategories.length > 0) {
+            data = data.filter(c => c.categorie && this.selectedCategories.includes(c.categorie));
+        }
+        const types = [...new Set(data.map(c => c.type).filter((t): t is string => t !== undefined && t !== null))];
+        return types.sort();
     }
 
     get pagedComptesCritiques() {

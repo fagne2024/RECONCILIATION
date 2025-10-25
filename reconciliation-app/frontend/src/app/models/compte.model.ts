@@ -38,4 +38,5 @@ export interface CompteFilter {
     dateFin?: string;
     codeProprietaire?: string | string[];
     categorie?: string | string[];
+    type?: string | string[];
 } 

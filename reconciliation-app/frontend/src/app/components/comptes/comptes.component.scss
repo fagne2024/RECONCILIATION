@@ -1336,6 +1336,18 @@
         }
     }
     
+    &.categorie-comptable {
+        background-color: #fff3e0;
+        color: #e65100;
+        border-color: #ffb74d;
+        
+        &:hover {
+            background-color: #ffb74d;
+            transform: translateY(-1px);
+            box-shadow: 0 2px 8px rgba(230, 81, 0, 0.3);
+        }
+    }
+    
     &.categorie-default {
         background-color: #f5f5f5;
         color: #666;
@@ -4415,6 +4427,18 @@
             background-color: #a5d6a7;
             transform: translateY(-1px);
             box-shadow: 0 2px 8px rgba(46, 125, 50, 0.3);
+        }
+    }
+    
+    &.categorie-comptable {
+        background-color: #fff3e0;
+        color: #e65100;
+        border-color: #ffb74d;
+        
+        &:hover {
+            background-color: #ffb74d;
+            transform: translateY(-1px);
+            box-shadow: 0 2px 8px rgba(230, 81, 0, 0.3);
         }
     }
     
