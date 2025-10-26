@@ -16,6 +16,7 @@ export interface OperationBancaire {
     statut: string;
     operationId?: number; // Lien avec l'opération d'origine
     reconStatus?: 'OK' | 'KO';
+    impactApplique?: boolean; // Flag pour savoir si l'impact a déjà été appliqué
 }
 
 export interface OperationBancaireCreateRequest {

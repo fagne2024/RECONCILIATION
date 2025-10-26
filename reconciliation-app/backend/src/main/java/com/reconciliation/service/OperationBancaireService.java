@@ -163,7 +163,7 @@ public class OperationBancaireService {
         if (request.getOperationId() != null) entity.setOperationId(request.getOperationId());
         
         OperationBancaireEntity savedEntity = operationBancaireRepository.save(entity);
-        // Impacter le compte si le statut devient Validée
+        // Impacter le compte si le statut devient Validée ET que l'impact n'a pas déjà été appliqué
         if (!"Validée".equalsIgnoreCase(previousStatut) && "Validée".equalsIgnoreCase(savedEntity.getStatut())) {
             appliquerImpactSurCompte(savedEntity);
         }
@@ -173,6 +173,12 @@ public class OperationBancaireService {
 
     private void appliquerImpactSurCompte(OperationBancaireEntity ob) {
         try {
+            // Vérifier si l'impact a déjà été appliqué pour éviter le double impact
+            if (Boolean.TRUE.equals(ob.getImpactApplique())) {
+                logger.warn("⚠️ L'impact a déjà été appliqué pour l'opération bancaire {} - Ignoré", ob.getId());
+                return;
+            }
+            
             String numero = ob.getCompteADebiter();
             if (numero == null || numero.isEmpty()) {
                 logger.warn("⚠️ Aucun compte spécifié pour l'opération bancaire {}", ob.getId());
@@ -203,6 +209,11 @@ public class OperationBancaireService {
             compte.setSolde(soldeFinal);
             compte.setDateDerniereMaj(LocalDateTime.now());
             compteRepository.save(compte);
+            
+            // Marquer l'impact comme appliqué pour éviter le double impact
+            ob.setImpactApplique(true);
+            operationBancaireRepository.save(ob);
+            
             logger.info("✅ Solde compte mis à jour suite validation op bancaire {}: {} -> {}", ob.getId(), soldeInitial, soldeFinal);
         } catch (Exception e) {
             logger.error("❌ Erreur lors de l'impact sur le compte pour op bancaire {}: {}", ob.getId(), e.getMessage(), e);
@@ -264,7 +275,7 @@ public class OperationBancaireService {
     
     // Convertir une entité en modèle
     private OperationBancaire convertToModel(OperationBancaireEntity entity) {
-        return new OperationBancaire(
+        OperationBancaire model = new OperationBancaire(
             entity.getId(),
             entity.getPays(),
             entity.getCodePays(),
@@ -282,6 +293,8 @@ public class OperationBancaireService {
             entity.getStatut(),
             entity.getOperationId()
         );
+        model.setImpactApplique(entity.getImpactApplique());
+        return model;
     }
 }
 

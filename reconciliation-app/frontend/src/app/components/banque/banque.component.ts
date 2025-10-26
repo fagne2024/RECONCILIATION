@@ -1009,7 +1009,29 @@ export class BanqueComponent implements OnInit {
         const list = ops || [];
         this.totalOperations = list.length;
         this.totalEnAttente = list.filter(o => (o.statut || '').toLowerCase() === 'en attente' || (o.statut || '').toLowerCase() === 'en cours').length;
-        this.totalTicketsACreer = list.filter(o => (!o.idGlpi || o.idGlpi.trim() === '') && (((o.statut || '').toLowerCase() === 'en attente') || ((o.statut || '').toLowerCase() === 'en cours'))).length;
+        // Compter les tickets à créer : 
+        // - opérations sans ID GLPI (undefined, null ou vide) OU
+        // - opérations dont ID GLPI contient "créer" (pas case-sensitive)
+        // - mais exclure celles dont ID GLPI contient "modifier" (pas case-sensitive)
+        // - avec statut "en attente" ou "en cours"
+        this.totalTicketsACreer = list.filter(o => {
+          const idGlpiStr = (o.idGlpi || '').trim();
+          const idGlpiLower = idGlpiStr.toLowerCase();
+          
+          // Exclure les tickets qui contiennent "modifier"
+          if (idGlpiLower.includes('modifier')) {
+            return false;
+          }
+          
+          // Compter si : vide/null/undefined OU contient "créer"
+          const hasNoIdGlpi = idGlpiStr === '';
+          const containsCreer = idGlpiLower.includes('créer');
+          
+          const isEnAttenteOuEnCours = ((o.statut || '').toLowerCase() === 'en attente') || ((o.statut || '').toLowerCase() === 'en cours');
+          
+          return (hasNoIdGlpi || containsCreer) && isEnAttenteOuEnCours;
+        }).length;
+        console.log('[DASHBOARD] Tickets à créer:', this.totalTicketsACreer, 'sur', this.totalOperations, 'opérations');
       }
     });
   }
@@ -1596,6 +1618,7 @@ export class BanqueComponent implements OnInit {
         
         // Recharger les données si nécessaire
         this.loadOperations();
+        this.loadDashboardStats(); // Mettre à jour le compteur de tickets
         this.creatingOperation = false;
       },
       error: (err) => {
@@ -3129,11 +3152,36 @@ export class BanqueComponent implements OnInit {
     };
 
     this.operationBancaireService.updateOperationBancaire(this.selectedOperation.id, updateData).subscribe({
-      next: () => {
+      next: (updatedOperation) => {
         console.log('Opération bancaire modifiée avec succès');
+        
+        // Vérifier si le statut passe à "Validée" pour ajouter l'info d'impact
+        const previousStatut = this.selectedOperation.statut || '';
+        const newStatut = this.editForm.statut || '';
+        let message = '✅ Opération bancaire modifiée avec succès';
+        
+        if (!previousStatut.toLowerCase().includes('validée') && newStatut.toLowerCase().includes('validée')) {
+          const type = (this.editForm.typeOperation || '').toLowerCase();
+          const montant = this.editForm.montant || 0;
+          const compte = this.editForm.compteADebiter || '';
+          
+          // Vérifier si l'impact a déjà été appliqué (depuis l'opération mise à jour)
+          if (updatedOperation.impactApplique) {
+            message += `\n\n⚠️ Impact déjà appliqué sur le solde du compte ${compte} (évite le double impact)`;
+          } else if (type.includes('appro')) {
+            message += `\n\n💰 Impact sur le solde du compte ${compte}:\n+${montant} FCFA (Approvisionnement)`;
+          } else if (type.includes('compens') || type.includes('compense')) {
+            message += `\n\n💰 Impact sur le solde du compte ${compte}:\n-${montant} FCFA (Compensation)`;
+          } else if (type.includes('nivellement')) {
+            const signe = montant >= 0 ? '+' : '';
+            message += `\n\n💰 Impact sur le solde du compte ${compte}:\n${signe}${montant} FCFA (Nivellement)`;
+          }
+        }
+        
         this.loadOperations();
+        this.loadDashboardStats(); // Mettre à jour le compteur de tickets
         this.closeEditPopup();
-        this.popupService.showSuccess('✅ Opération bancaire modifiée avec succès');
+        this.popupService.showSuccess(message);
       },
       error: (error) => {
         console.error('Erreur lors de la modification:', error);
@@ -3172,10 +3220,30 @@ export class BanqueComponent implements OnInit {
 
       // Mettre à jour l'opération avec le nouveau statut
       this.operationBancaireService.updateOperationBancaire(operation.id, updateData).subscribe({
-        next: () => {
+        next: (updatedOperation) => {
           console.log('Opération bancaire validée avec succès');
+          
+          // Ajouter l'info d'impact dans le message
+          const type = (operation.typeOperation || '').toLowerCase();
+          const montant = operation.montant || 0;
+          const compte = operation.compteADebiter || '';
+          let message = '✅ Opération bancaire validée avec succès';
+          
+          // Vérifier si l'impact a déjà été appliqué (depuis l'opération mise à jour)
+          if (updatedOperation.impactApplique) {
+            message += `\n\n⚠️ Impact déjà appliqué sur le solde du compte ${compte} (évite le double impact)`;
+          } else if (type.includes('appro')) {
+            message += `\n\n💰 Impact sur le solde du compte ${compte}:\n+${montant} FCFA (Approvisionnement)`;
+          } else if (type.includes('compens') || type.includes('compense')) {
+            message += `\n\n💰 Impact sur le solde du compte ${compte}:\n-${montant} FCFA (Compensation)`;
+          } else if (type.includes('nivellement')) {
+            const signe = montant >= 0 ? '+' : '';
+            message += `\n\n💰 Impact sur le solde du compte ${compte}:\n${signe}${montant} FCFA (Nivellement)`;
+          }
+          
           this.loadOperations();
-          this.popupService.showSuccess('✅ Opération bancaire validée avec succès');
+          this.loadDashboardStats(); // Mettre à jour le compteur de tickets
+          this.popupService.showSuccess(message);
         },
         error: (error) => {
           console.error('Erreur lors de la validation:', error);
@@ -3198,6 +3266,7 @@ export class BanqueComponent implements OnInit {
           if (success) {
             console.log('Opération bancaire supprimée avec succès');
             this.loadOperations();
+            this.loadDashboardStats(); // Mettre à jour le compteur de tickets
             this.popupService.showSuccess('✅ Opération bancaire supprimée avec succès');
           }
         },

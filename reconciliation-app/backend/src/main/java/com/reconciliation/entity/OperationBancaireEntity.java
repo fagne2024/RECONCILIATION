@@ -59,6 +59,9 @@ public class OperationBancaireEntity {
     @Column(name = "operation_id")
     private Long operationId;
     
+    @Column(name = "impact_applique", nullable = false)
+    private Boolean impactApplique = false; // Flag pour éviter le double impact
+    
     // Constructeurs
     public OperationBancaireEntity() {}
     
@@ -218,6 +221,14 @@ public class OperationBancaireEntity {
     
     public void setOperationId(Long operationId) {
         this.operationId = operationId;
+    }
+    
+    public Boolean getImpactApplique() {
+        return impactApplique;
+    }
+    
+    public void setImpactApplique(Boolean impactApplique) {
+        this.impactApplique = impactApplique;
     }
 }
 

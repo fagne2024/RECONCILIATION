@@ -208,6 +208,15 @@ export class ComptesComponent implements OnInit, OnDestroy {
     ecartFraisPageSize = 10;
     ecartFraisTotalPages = 1;
     
+    // Nouvelles propriétés pour l'amélioration UX
+    ecartFraisSearchTerm = '';
+    ecartFraisStatusFilter = '';
+    ecartFraisServiceFilter = '';
+    ecartFraisSortField = '';
+    ecartFraisSortDirection: 'asc' | 'desc' = 'asc';
+    ecartFraisJumpToPage = 1;
+    ecartFraisFilteredItems: import('../../services/trx-sf.service').TrxSfData[] = [];
+    
     // Pagination pour le revenu journalier
     revenuJournalierCurrentPage = 1;
     revenuJournalierPageSize = 10;
@@ -2343,14 +2352,17 @@ export class ComptesComponent implements OnInit, OnDestroy {
     private fetchEcartFraisData(agence: string, date: string): void {
         this.isLoadingEcartFrais = true;
         this.ecartFraisItems = [];
+        this.ecartFraisFilteredItems = [];
         this.trxSfService.getTrxSfs({ agence, dateDebut: date, dateFin: date, statut: 'EN_ATTENTE' }).subscribe({
             next: (rows) => {
                 this.ecartFraisItems = rows || [];
+                this.ecartFraisFilteredItems = [...this.ecartFraisItems];
                 this.isLoadingEcartFrais = false;
                 this.calculateEcartFraisPagination();
             },
             error: () => {
                 this.ecartFraisItems = [];
+                this.ecartFraisFilteredItems = [];
                 this.isLoadingEcartFrais = false;
                 this.calculateEcartFraisPagination();
             }
@@ -2368,16 +2380,16 @@ export class ComptesComponent implements OnInit, OnDestroy {
     }
 
     // Pagination Écart Frais
-    private calculateEcartFraisPagination(): void {
+    private     calculateEcartFraisPagination(): void {
         this.ecartFraisCurrentPage = 1;
-        const total = this.ecartFraisItems.length;
+        const total = this.ecartFraisFilteredItems.length;
         this.ecartFraisTotalPages = Math.max(1, Math.ceil(total / this.ecartFraisPageSize));
     }
 
     get pagedEcartFraisItems(): import('../../services/trx-sf.service').TrxSfData[] {
         const startIndex = (this.ecartFraisCurrentPage - 1) * this.ecartFraisPageSize;
         const endIndex = startIndex + this.ecartFraisPageSize;
-        return (this.ecartFraisItems || []).slice(startIndex, endIndex);
+        return (this.ecartFraisFilteredItems || []).slice(startIndex, endIndex);
     }
 
     prevEcartFraisPage(): void {
@@ -2416,6 +2428,123 @@ export class ComptesComponent implements OnInit, OnDestroy {
             start = Math.max(1, end - maxVisible + 1);
         }
         return Array.from({ length: end - start + 1 }, (_, i) => start + i);
+    }
+
+    // Nouvelles méthodes pour l'amélioration UX
+    onEcartFraisSearch(): void {
+        this.applyEcartFraisFilters();
+    }
+
+    onEcartFraisFilterChange(): void {
+        this.applyEcartFraisFilters();
+    }
+
+    clearEcartFraisFilters(): void {
+        this.ecartFraisSearchTerm = '';
+        this.ecartFraisStatusFilter = '';
+        this.ecartFraisServiceFilter = '';
+        this.applyEcartFraisFilters();
+    }
+
+    applyEcartFraisFilters(): void {
+        let filtered = [...this.ecartFraisItems];
+
+        // Filtre par terme de recherche
+        if (this.ecartFraisSearchTerm) {
+            const searchTerm = this.ecartFraisSearchTerm.toLowerCase();
+            filtered = filtered.filter(item => 
+                item.idTransaction?.toLowerCase().includes(searchTerm) ||
+                item.service?.toLowerCase().includes(searchTerm) ||
+                item.agence?.toLowerCase().includes(searchTerm) ||
+                item.numeroTransGu?.toLowerCase().includes(searchTerm) ||
+                item.pays?.toLowerCase().includes(searchTerm)
+            );
+        }
+
+        // Filtre par statut
+        if (this.ecartFraisStatusFilter) {
+            filtered = filtered.filter(item => item.statut === this.ecartFraisStatusFilter);
+        }
+
+        // Filtre par service
+        if (this.ecartFraisServiceFilter) {
+            filtered = filtered.filter(item => item.service === this.ecartFraisServiceFilter);
+        }
+
+        // Tri
+        if (this.ecartFraisSortField) {
+            filtered.sort((a, b) => {
+                let aValue = a[this.ecartFraisSortField as keyof typeof a];
+                let bValue = b[this.ecartFraisSortField as keyof typeof b];
+
+                if (typeof aValue === 'string') aValue = aValue.toLowerCase();
+                if (typeof bValue === 'string') bValue = bValue.toLowerCase();
+
+                if (aValue < bValue) return this.ecartFraisSortDirection === 'asc' ? -1 : 1;
+                if (aValue > bValue) return this.ecartFraisSortDirection === 'asc' ? 1 : -1;
+                return 0;
+            });
+        }
+
+        this.ecartFraisFilteredItems = filtered;
+        this.ecartFraisCurrentPage = 1;
+        this.calculateEcartFraisPagination();
+    }
+
+    sortEcartFrais(field: string): void {
+        if (this.ecartFraisSortField === field) {
+            this.ecartFraisSortDirection = this.ecartFraisSortDirection === 'asc' ? 'desc' : 'asc';
+        } else {
+            this.ecartFraisSortField = field;
+            this.ecartFraisSortDirection = 'asc';
+        }
+        this.applyEcartFraisFilters();
+    }
+
+    getSortIcon(field: string): string {
+        if (this.ecartFraisSortField !== field) {
+            return 'fa-sort';
+        }
+        return this.ecartFraisSortDirection === 'asc' ? 'fa-sort-up' : 'fa-sort-down';
+    }
+
+    getUniqueServicesEcartFrais(): string[] {
+        const services = [...new Set(this.ecartFraisItems.map(item => item.service))];
+        return services.filter(service => service && service.trim() !== '');
+    }
+
+    getTransactionIdPrefix(id: string): string {
+        if (!id) return '';
+        return id.length > 20 ? id.substring(0, 20) + '...' : id;
+    }
+
+    getTransactionIdSuffix(id: string): string {
+        if (!id || id.length <= 20) return '';
+        return '...' + id.substring(id.length - 10);
+    }
+
+    copyToClipboard(text: string): void {
+        navigator.clipboard.writeText(text).then(() => {
+            // Optionnel: afficher une notification de succès
+            console.log('ID copié dans le presse-papiers');
+        }).catch(err => {
+            console.error('Erreur lors de la copie:', err);
+        });
+    }
+
+    getStatusLabel(status: string): string {
+        const statusLabels: { [key: string]: string } = {
+            'EN_ATTENTE': 'En attente',
+            'TRAITE': 'Traité',
+            'ERREUR': 'Erreur'
+        };
+        return statusLabels[status] || status;
+    }
+
+    jumpToEcartFraisPage(): void {
+        const page = Math.max(1, Math.min(this.ecartFraisJumpToPage, this.ecartFraisTotalPages));
+        this.goToEcartFraisPage(page);
+        this.ecartFraisJumpToPage = page;
     }
 
     // Obtenir le nombre de services uniques dans ecartFraisItems
