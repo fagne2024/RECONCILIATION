@@ -253,7 +253,7 @@
             <div class="operation-stats-section">
                 <h4>📋 Statistiques par type d'opération</h4>
                 <div class="operation-stats-grid">
-                    <div *ngFor="let stat of detailedMetrics.operationStats" class="operation-stat-card">
+                    <div *ngFor="let stat of filteredOperationStats" class="operation-stat-card">
                         <div class="operation-stat-header">
                             <span class="operation-type">{{stat.operationType}}</span>
                         </div>
@@ -279,7 +279,7 @@
             <div class="frequency-stats-section">
                 <h4>📊 Fréquence par type d'opération</h4>
                 <div class="frequency-stats-grid">
-                    <div *ngFor="let freq of detailedMetrics.frequencyStats" class="frequency-stat-card">
+                    <div *ngFor="let freq of filteredFrequencyStats" class="frequency-stat-card">
                         <div class="frequency-stat-header">
                             <span class="operation-type">{{freq.operationType}}</span>
                         </div>

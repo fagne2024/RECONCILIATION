@@ -75,14 +75,22 @@ public class Result8RecController {
                     existing.setTotalTransactions(body.getTotalTransactions());
                     existing.setTotalVolume(body.getTotalVolume());
                     
+                    // Mettre à jour les champs de réconciliation
+                    existing.setMatches(body.getMatches());
+                    existing.setBoOnly(body.getBoOnly());
+                    existing.setPartnerOnly(body.getPartnerOnly());
+                    existing.setMismatches(body.getMismatches());
+                    existing.setMatchRate(body.getMatchRate());
+                    
                     if (body.getStatus() != null) existing.setStatus(body.getStatus());
                     if (body.getComment() != null) existing.setComment(body.getComment());
                     if (body.getGlpiId() != null) existing.setGlpiId(body.getGlpiId());
                     
                     Result8RecEntity saved = repository.save(existing);
-                    log.info("✅ result8rec mis à jour id={} - Date: {}, Agency: {}, Service: {}, Country: {}, Transactions: {}, Volume: {}", 
+                    log.info("✅ result8rec mis à jour id={} - Date: {}, Agency: {}, Service: {}, Country: {}, Transactions: {}, Volume: {}, Matches: {}, BoOnly: {}, PartnerOnly: {}, Mismatches: {}, MatchRate: {}", 
                             saved.getId(), saved.getDate(), saved.getAgency(), saved.getService(), 
-                            saved.getCountry(), saved.getTotalTransactions(), saved.getTotalVolume());
+                            saved.getCountry(), saved.getTotalTransactions(), saved.getTotalVolume(),
+                            saved.getMatches(), saved.getBoOnly(), saved.getPartnerOnly(), saved.getMismatches(), saved.getMatchRate());
                     return ResponseEntity.ok(saved);
                 })
                 .orElseGet(() -> ResponseEntity.notFound().build());

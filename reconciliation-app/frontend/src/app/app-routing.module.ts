@@ -29,6 +29,7 @@ import { ReconciliationLauncherComponent } from './components/reconciliation-lau
 import { ReconciliationComponent } from './components/reconciliation/reconciliation.component';
 import { ReconciliationReportComponent } from './components/reconciliation-report/reconciliation-report.component';
 import { ReportDashboardComponent } from './components/report-dashboard/report-dashboard.component';
+import { DashboardReconciliationComponent } from './components/dashboard-reconciliation/dashboard-reconciliation.component';
 
 const routes: Routes = [
   { path: '', redirectTo: '/reconciliation-launcher', pathMatch: 'full' },
@@ -60,6 +61,7 @@ const routes: Routes = [
   { path: 'comptabilite', component: ComptabiliteComponent },
   { path: 'reconciliation-report', component: ReconciliationReportComponent },
   { path: 'report-dashboard', component: ReportDashboardComponent },
+  { path: 'reconciliation-dashboard', component: DashboardReconciliationComponent },
 ];
 
 @NgModule({

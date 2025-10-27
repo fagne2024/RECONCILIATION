@@ -13,6 +13,8 @@ import { MatAutocompleteModule } from '@angular/material/autocomplete';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatSelectModule } from '@angular/material/select';
 import { MatOptionModule } from '@angular/material/core';
+import { MatDatepickerModule } from '@angular/material/datepicker';
+import { MatNativeDateModule } from '@angular/material/core';
 import { NgChartsModule } from 'ng2-charts';
 import { BrowserAnimationsModule } from '@angular/platform-browser/animations';
 import { NgxMatSelectSearchModule } from 'ngx-mat-select-search';
@@ -53,6 +55,7 @@ import { ExportOptimizationService } from './services/export-optimization.servic
 import { ModernExcelExportService } from './services/modern-excel-export.service';
 import { ReconciliationSummaryService } from './services/reconciliation-summary.service';
 import { ReconciliationTabsService } from './services/reconciliation-tabs.service';
+import { DashboardReconciliationService } from './services/dashboard-reconciliation.service';
 
 
 import { AutoProcessingModelsComponent } from './components/auto-processing-models/auto-processing-models.component';
@@ -63,6 +66,7 @@ import { ModernPopupComponent } from './components/modern-popup/modern-popup.com
 import { ProgressIndicatorComponent } from './components/progress-indicator/progress-indicator.component';
 import { ReconciliationReportComponent } from './components/reconciliation-report/reconciliation-report.component';
 import { ReportDashboardComponent } from './components/report-dashboard/report-dashboard.component';
+import { DashboardReconciliationComponent } from './components/dashboard-reconciliation/dashboard-reconciliation.component';
 import { ComptabiliteComponent } from './components/comptabilite/comptabilite.component';
 
 @NgModule({
@@ -102,6 +106,7 @@ import { ComptabiliteComponent } from './components/comptabilite/comptabilite.co
                 ProgressIndicatorComponent,
                 ReconciliationReportComponent,
                 ReportDashboardComponent,
+                DashboardReconciliationComponent,
                 ComptabiliteComponent
     ],
     imports: [
@@ -124,12 +129,14 @@ import { ComptabiliteComponent } from './components/comptabilite/comptabilite.co
         NgChartsModule,
         MatSelectModule,
         MatOptionModule,
+        MatDatepickerModule,
+        MatNativeDateModule,
         NgxMatSelectSearchModule,
         ColumnSelectionComponent,
         AgencySummaryComponent,
         ReconciliationLauncherComponent
     ],
-    providers: [ReconciliationService, ServiceBalanceService, ExportOptimizationService, ModernExcelExportService, ReconciliationSummaryService, ReconciliationTabsService],
+    providers: [ReconciliationService, ServiceBalanceService, ExportOptimizationService, ModernExcelExportService, ReconciliationSummaryService, ReconciliationTabsService, DashboardReconciliationService],
     bootstrap: [AppComponent]
 })
 export class AppModule { } 

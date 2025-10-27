@@ -50,6 +50,9 @@ export interface ReconciliationReportData {
                     <button class="btn btn-report" (click)="goToReportDashboard()" [disabled]="!filteredReportData.length && !reportData.length">
                         📊 Rapport Avancé
                     </button>
+                    <button class="btn btn-dashboard" (click)="goToReconciliationDashboard()" [disabled]="!filteredReportData.length && !reportData.length">
+                        📈 Tableau de bord
+                    </button>
                     <button class="btn btn-close" (click)="goBack()">
                         ❌ Fermer
                     </button>
@@ -62,7 +65,7 @@ export interface ReconciliationReportData {
                     <input 
                         type="text" 
                         [(ngModel)]="selectedAgency" 
-                        (input)="filterReport()"
+                        (input)="onAgencyFilterChange()"
                         placeholder="Tapez pour rechercher une agence..."
                         class="filter-input"
                         list="agency-list">
@@ -80,17 +83,46 @@ export interface ReconciliationReportData {
                         class="filter-input"
                         list="service-list">
                     <datalist id="service-list">
-                        <option *ngFor="let service of uniqueServices" [value]="service">{{service}}</option>
+                        <option *ngFor="let service of filteredServices" [value]="service">{{service}}</option>
                     </datalist>
                 </div>
                 <div class="filter-group">
-                    <label>Date:</label>
+                    <label>Date de début:</label>
                     <input 
                         type="date" 
-                        [(ngModel)]="selectedDate" 
+                        [(ngModel)]="selectedDateDebut" 
                         (change)="filterReport()"
                         class="filter-date"
-                        placeholder="Sélectionner une date">
+                        placeholder="Date de début">
+                </div>
+                <div class="filter-group">
+                    <label>Date de fin:</label>
+                    <input 
+                        type="date" 
+                        [(ngModel)]="selectedDateFin" 
+                        (change)="filterReport()"
+                        class="filter-date"
+                        placeholder="Date de fin">
+                </div>
+                <div class="filter-group">
+                    <label>&nbsp;</label>
+                    <button 
+                        type="button" 
+                        (click)="clearDateFilters()" 
+                        class="btn-clear-dates"
+                        title="Effacer les filtres de date">
+                        🗑️ Effacer dates
+                    </button>
+                </div>
+                <div class="filter-group">
+                    <label>Statut:</label>
+                    <select 
+                        [(ngModel)]="selectedStatus" 
+                        (change)="filterReport()"
+                        class="filter-select">
+                        <option value="">Tous les statuts</option>
+                        <option *ngFor="let status of uniqueStatuses" [value]="status">{{status}}</option>
+                    </select>
                 </div>
             </div>
 
@@ -139,6 +171,13 @@ export interface ReconciliationReportData {
                             <div class="card-value">{{treatedDiscrepancies | number}}</div>
                         </div>
                     </div>
+                    <div class="summary-card">
+                        <div class="card-icon">🎫</div>
+                        <div class="card-content">
+                            <div class="card-title">Tickets à créer</div>
+                            <div class="card-value">{{ticketsACreer | number}}</div>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -148,9 +187,9 @@ export interface ReconciliationReportData {
                         <tr>
                             <th class="col-date">Date</th>
                             <th class="col-text">Agence</th>
-                            <th class="col-text">Service</th>
-                            <th class="col-text">Pays</th>
-                            <th class="col-number">Transactions</th>
+                            <th class="col-service">Service</th>
+                            <th class="col-pays">Pays</th>
+                            <th class="col-transactions">Transactions</th>
                             <th class="col-number">Volume</th>
                             <th class="col-number">Correspondances</th>
                             <th class="col-number">Écarts BO</th>
@@ -181,23 +220,23 @@ export interface ReconciliationReportData {
                                     <input [(ngModel)]="item.agency" class="edit-input" placeholder="Agence"/>
                                 </ng-template>
                             </td>
-                            <td class="text-cell">
+                            <td class="text-cell col-service">
                                 <ng-container *ngIf="editingRow !== item; else editService">
-                                    {{item.service}}
+                                    <span class="service-text" [title]="item.service">{{item.service}}</span>
                                 </ng-container>
                                 <ng-template #editService>
                                     <input [(ngModel)]="item.service" class="edit-input" placeholder="Service"/>
                                 </ng-template>
                             </td>
-                            <td class="text-cell">
+                            <td class="text-cell col-pays">
                                 <ng-container *ngIf="editingRow !== item; else editCountry">
-                                    {{item.country}}
+                                    <span class="country-text" [title]="item.country">{{item.country}}</span>
                                 </ng-container>
                                 <ng-template #editCountry>
                                     <input [(ngModel)]="item.country" class="edit-input" placeholder="Pays"/>
                                 </ng-template>
                             </td>
-                            <td class="number-cell">
+                            <td class="col-transactions">
                                 <ng-container *ngIf="editingRow !== item; else editTransactions">
                                     {{item.totalTransactions | number}}
                                 </ng-container>
@@ -225,10 +264,19 @@ export interface ReconciliationReportData {
                             <td class="text-cell">
                                 <div class="glpi-cell">
                                     <ng-container *ngIf="item.glpiId && item.glpiId.trim() && editingRow !== item; else glpiInput">
-                                        <a class="glpi-link" [href]="glpiBaseUrl + item.glpiId" target="_blank" rel="noopener noreferrer" title="Ouvrir le ticket GLPI">{{item.glpiId}}</a>
+                                        <a class="glpi-link" [href]="getGlpiTicketUrl(item.glpiId)" target="_blank" rel="noopener noreferrer" title="Ouvrir le ticket GLPI">{{item.glpiId}}</a>
                                     </ng-container>
                                     <ng-template #glpiInput>
-                                        <input [(ngModel)]="item.glpiId" placeholder="ID GLPI" class="edit-input"/>
+                                        <div class="glpi-input-container">
+                                            <input [(ngModel)]="item.glpiId" placeholder="ID GLPI" class="edit-input"/>
+                                            <button 
+                                                *ngIf="!item.glpiId || item.glpiId.trim() === ''" 
+                                                class="btn-glpi-create"
+                                                (click)="openGlpiCreate()"
+                                                title="Créer un ticket GLPI">
+                                                <i class="fas fa-plus-circle"></i> Créer
+                                            </button>
+                                        </div>
                                     </ng-template>
                                 </div>
                             </td>
@@ -424,6 +472,16 @@ export interface ReconciliationReportData {
             transform: translateY(-1px);
         }
 
+        .btn-dashboard {
+            background: #fd7e14;
+            color: white;
+        }
+
+        .btn-dashboard:hover:not(:disabled) {
+            background: #e8650e;
+            transform: translateY(-1px);
+        }
+
         .btn-add {
             background: #17a2b8;
             color: white;
@@ -521,6 +579,44 @@ export interface ReconciliationReportData {
             box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25);
         }
 
+        .filter-select {
+            padding: 8px 12px;
+            border: 1px solid #ced4da;
+            border-radius: 6px;
+            font-size: 0.9rem;
+            background: white;
+            min-width: 150px;
+            transition: border-color 0.2s ease;
+        }
+
+        .filter-select:focus {
+            outline: none;
+            border-color: #007bff;
+            box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25);
+        }
+
+        .btn-clear-dates {
+            padding: 8px 12px;
+            border: 1px solid #dc3545;
+            background: #dc3545;
+            color: white;
+            border-radius: 6px;
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            white-space: nowrap;
+        }
+
+        .btn-clear-dates:hover {
+            background: #c82333;
+            border-color: #bd2130;
+            transform: translateY(-1px);
+        }
+
+        .btn-clear-dates:active {
+            transform: translateY(0);
+        }
+
         .report-summary {
             padding: 20px;
             background: #f8f9fa;
@@ -615,12 +711,94 @@ export interface ReconciliationReportData {
         .col-date { width: 110px; }
         .col-text { width: 140px; }
         .col-text input { width: 100%; padding: 6px 8px; box-sizing: border-box; }
-        .col-number { width: 120px; }
+        .col-number { width: 100px; }
+        .col-transactions { width: 100px; text-align: center; }
         .col-select { width: 180px; }
         .col-actions { text-align: left; width: 130px; }
+        
+        /* Largeur spécifique pour la colonne Service (augmentée) */
+        .col-service { width: 300px; min-width: 280px; }
+        .col-service input { width: 100%; padding: 6px 8px; box-sizing: border-box; }
+        
+        /* Largeur spécifique pour la colonne Pays */
+        .col-pays { width: 200px; min-width: 180px; }
+        .col-pays input { width: 100%; padding: 6px 8px; box-sizing: border-box; }
+        
+        /* Styles pour le texte des services */
+        .service-text {
+            display: inline-block;
+            max-width: 100%;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            font-weight: 500;
+            color: #495057;
+        }
+        
+        .service-text:hover {
+            white-space: normal;
+            word-wrap: break-word;
+            background: #f8f9fa;
+            padding: 2px 4px;
+            border-radius: 4px;
+            z-index: 10;
+            position: relative;
+        }
+        
+        /* Styles pour le texte des pays */
+        .country-text {
+            display: inline-block;
+            max-width: 100%;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            font-weight: 500;
+            color: #495057;
+        }
+        
+        .country-text:hover {
+            white-space: normal;
+            word-wrap: break-word;
+            background: #f8f9fa;
+            padding: 2px 4px;
+            border-radius: 4px;
+            z-index: 10;
+            position: relative;
+        }
         .glpi-cell { display: flex; gap: 8px; align-items: center; }
         .glpi-link { color: #007bff; text-decoration: none; font-weight: 600; }
         .glpi-link:hover { text-decoration: underline; }
+        
+        .glpi-input-container {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            width: 100%;
+        }
+        
+        .btn-glpi-create {
+            background: #28a745;
+            color: white;
+            border: none;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            transition: all 0.2s ease;
+            white-space: nowrap;
+        }
+        
+        .btn-glpi-create:hover {
+            background: #218838;
+            transform: translateY(-1px);
+        }
+        
+        .btn-glpi-create i {
+            font-size: 0.7rem;
+        }
 
         .match-cell {
             text-align: right;
@@ -908,6 +1086,37 @@ export interface ReconciliationReportData {
             .page-numbers {
                 margin: 0 4px;
             }
+            
+            /* Ajustements pour les colonnes Service et Pays sur mobile */
+            .col-service { 
+                width: 250px; 
+                min-width: 220px; 
+            }
+            
+            .col-pays { 
+                width: 150px; 
+                min-width: 120px; 
+            }
+            
+            .service-text, .country-text {
+                font-size: 0.85rem;
+            }
+        }
+        
+        @media (max-width: 480px) {
+            .col-service { 
+                width: 200px; 
+                min-width: 180px; 
+            }
+            
+            .col-pays { 
+                width: 120px; 
+                min-width: 100px; 
+            }
+            
+            .service-text, .country-text {
+                font-size: 0.8rem;
+            }
         }
     `]
 })
@@ -930,11 +1139,15 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
     
     selectedAgency: string = '';
     selectedService: string = '';
-    selectedDate: string = '';
+    selectedDateDebut: string = '';
+    selectedDateFin: string = '';
+    selectedStatus: string = '';
 
     uniqueAgencies: string[] = [];
     uniqueServices: string[] = [];
     uniqueDates: string[] = [];
+    uniqueStatuses: string[] = [];
+    filteredServices: string[] = []; // Services filtrés selon l'agence sélectionnée
 
     statusOptions: string[] = ['OK', 'NOK', 'REPORTING INCOMPLET', 'REPORTING INDISPONIBLE', 'EN COURS.....'];
     commentOptions: string[] = ['ECARTS TRANSMIS', "PAS D'ECARTS CONSTATES", 'NOK'];
@@ -957,10 +1170,14 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
     }
 
     ngOnInit() {
+        console.log('🔄 ReconciliationReportComponent - ngOnInit appelé');
+        
         // Récupérer les données du résumé depuis le service dédié
         this.subscription.add(
             this.reconciliationSummaryService.agencySummary$.subscribe(summary => {
+                console.log('📊 ReconciliationReportComponent - Résumé reçu:', summary);
                 if (summary && summary.length > 0) {
+                    console.log('📊 ReconciliationReportComponent - Génération du rapport...');
                     this.generateReportDataFromSummary(summary);
                     this.extractUniqueValues();
                     this.filterReport();
@@ -982,7 +1199,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                     if (this.hasSummary && this.reportData.length > 0) {
                         // Si on a un résumé, on garde les colonnes Agence/Service/Pays du résumé
                         // mais on récupère les compteurs directement des onglets
-                        this.reportData = this.reportData.map(item => {
+                        this.reportData = this.reportData.map((item, index) => {
                             const stats = this.calculateDetailedStatsForSummaryItem({
                                 date: item.date,
                                 agency: item.agency,
@@ -992,15 +1209,24 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                                 recordCount: item.totalTransactions
                             } as any);
                             const matchRate = stats.matchRate;
+                            
+                            // Préserver la valeur partnerOnly originale (calculée dans generateReportDataFromSummary)
+                            const preservedPartnerOnly = item.partnerOnly;
+                            
+                            console.log(`📊 Préservation partnerOnly pour index ${index}:`, {
+                                original: preservedPartnerOnly,
+                                calculated: stats.partnerOnly
+                            });
+                            
                             return {
                                 ...item,
                                 matches: stats.matches,
                                 boOnly: stats.boOnly,
-                                partnerOnly: stats.partnerOnly,
+                                partnerOnly: preservedPartnerOnly, // Préserver la valeur originale
                                 mismatches: stats.mismatches,
                                 matchRate,
-                                status: this.computeStatusFromCounts(stats.matches, stats.boOnly, stats.partnerOnly, stats.mismatches, item.totalTransactions),
-                                comment: this.buildCommentForCounts(stats.matches, stats.boOnly, stats.partnerOnly, stats.mismatches)
+                                status: this.computeStatusFromCounts(stats.matches, stats.boOnly, preservedPartnerOnly, stats.mismatches, item.totalTransactions),
+                                comment: this.buildCommentForCounts(stats.matches, stats.boOnly, preservedPartnerOnly, stats.mismatches)
                             };
                         });
                     } else {
@@ -1025,10 +1251,23 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
     private generateReportDataFromSummary(summary: AgencySummaryData[]) {
         console.log('📊 Génération du rapport à partir du résumé par agence:', summary);
         
+        // Calculer le total des écarts partenaires une seule fois
+        const totalPartnerOnly = this.calculateTotalPartnerOnly();
+        console.log('📊 Total des écarts partenaires calculé:', totalPartnerOnly);
+        
         // Convertir les données du résumé en données du rapport
-        this.reportData = summary.map(item => {
+        this.reportData = summary.map((item, index) => {
             // Calculer les statistiques détaillées si possible
             const detailedStats = this.calculateDetailedStatsForSummaryItem(item);
+            
+            const finalPartnerOnly = index === 0 ? totalPartnerOnly : 0;
+            
+            console.log(`📊 Rapport final pour index ${index}:`, {
+                agency: item.agency,
+                service: item.service,
+                partnerOnly: finalPartnerOnly,
+                totalPartnerOnly: totalPartnerOnly
+            });
             
             return {
                 date: item.date,
@@ -1039,24 +1278,36 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                 totalVolume: item.totalVolume,
                 matches: detailedStats.matches,
                 boOnly: detailedStats.boOnly,
-                partnerOnly: detailedStats.partnerOnly,
+                // Mettre le total des écarts partenaires sur la première ligne seulement
+                partnerOnly: finalPartnerOnly,
                 mismatches: detailedStats.mismatches,
                 matchRate: detailedStats.matchRate,
                 status: this.computeStatusFromCounts(
                     detailedStats.matches,
                     detailedStats.boOnly,
-                    detailedStats.partnerOnly,
+                    finalPartnerOnly,
                     detailedStats.mismatches,
                     item.recordCount
                 ),
                 comment: this.buildCommentForCounts(
                     detailedStats.matches,
                     detailedStats.boOnly,
-                    detailedStats.partnerOnly,
+                    finalPartnerOnly,
                     detailedStats.mismatches
                 )
             };
         });
+        
+        console.log('📊 Rapport final généré - reportData:', this.reportData);
+        console.log('📊 Premier élément du rapport:', this.reportData[0]);
+    }
+
+    private calculateTotalPartnerOnly(): number {
+        // Récupérer tous les écarts partenaires sans filtrage par agence/service
+        const filteredPartnerOnly = this.reconciliationTabsService.getFilteredPartnerOnly();
+        console.log('📊 Total des écarts partenaires disponibles dans calculateTotalPartnerOnly:', filteredPartnerOnly.length);
+        
+        return filteredPartnerOnly.length;
     }
 
     private calculateDetailedStatsForSummaryItem(summaryItem: AgencySummaryData) {
@@ -1083,6 +1334,12 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         console.log('📊 Total boOnly disponibles:', filteredBoOnly.length);
         console.log('📊 Total partnerOnly disponibles:', filteredPartnerOnly.length);
         console.log('📊 Total mismatches disponibles:', filteredMismatches.length);
+        
+        // Debug structure des données partnerOnly
+        if (filteredPartnerOnly.length > 0) {
+            console.log('🔍 Structure des données partnerOnly (premier élément):', filteredPartnerOnly[0]);
+            console.log('🔍 Colonnes disponibles dans partnerOnly:', Object.keys(filteredPartnerOnly[0]));
+        }
 
         // Limiter les logs aux premiers éléments pour éviter le spam
         let logCount = 0;
@@ -1149,33 +1406,33 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                    countryMatch;
         });
 
-        const agencyPartnerOnly = filteredPartnerOnly.filter(record => {
-            const partnerInfo = this.getPartnerOnlyAgencyAndService(record);
-            const countryMatch = partnerInfo.country === 'Inconnu' || partnerInfo.country === '' || 
-                                 this.flexibleMatch(partnerInfo.country, summaryItem.country);
-            return this.flexibleMatch(partnerInfo.agency, summaryItem.agency) && 
-                   this.flexibleMatch(partnerInfo.service, summaryItem.service) && 
-                   countryMatch;
-        });
+        // Les écarts partenaires sont maintenant regroupés sur la première ligne
+        // Donc on ne les calcule plus par agence/service
+        const agencyPartnerOnly: any[] = [];
 
         // Calculer le total des écarts BO (boOnly + mismatches)
         const totalBoOnly = agencyBoOnly.length + agencyMismatches.length;
         
-        const totalDetailed = agencyMatches.length + totalBoOnly + agencyPartnerOnly.length;
+        // Pour le calcul du taux de correspondance, inclure les écarts partenaires
+        // car ils sont maintenant regroupés sur la première ligne
+        const totalPartnerOnly = this.calculateTotalPartnerOnly();
+        const totalDetailed = agencyMatches.length + totalBoOnly + totalPartnerOnly;
         const matchRate = totalDetailed > 0 ? (agencyMatches.length / totalDetailed) * 100 : 0;
 
         console.log('📊 Résultats finaux:', {
             matches: agencyMatches.length,
             boOnly: totalBoOnly,
-            partnerOnly: agencyPartnerOnly.length,
+            partnerOnly: 0, // Les écarts partenaires sont maintenant regroupés sur la première ligne
             mismatches: agencyMismatches.length,
-            matchRate: matchRate
+            matchRate: matchRate,
+            totalDetailed: totalDetailed,
+            totalPartnerOnly: totalPartnerOnly
         });
 
         return {
             matches: agencyMatches.length,
             boOnly: totalBoOnly, // Écarts BO totaux (boOnly + mismatches)
-            partnerOnly: agencyPartnerOnly.length,
+            partnerOnly: 0, // Les écarts partenaires sont maintenant regroupés sur la première ligne
             mismatches: agencyMismatches.length, // Incohérences séparées
             matchRate: matchRate
         };
@@ -1213,11 +1470,11 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
 
     private getPartnerOnlyAgencyAndService(record: Record<string, string>) {
         return {
-            agency: record['Agence'] || record['agency'] || record['agence'] || record['AGENCE'] || 'Inconnue',
-            service: record['Service'] || record['service'] || record['SERVICE'] || 'Inconnu',
-            country: record['Pays provenance'] || record['country'] || record['pays'] || record['PAYS'] || 'Inconnu',
-            date: record['Date'] || record['date'] || record['DATE'] || new Date().toISOString().split('T')[0],
-            volume: this.parseAmount(record['montant'] || record['amount'] || record['AMOUNT'] || '0')
+            agency: record['Code proprietaire'] || record['Agent'] || record['Agence'] || record['agency'] || record['agence'] || record['AGENCE'] || 'Inconnue',
+            service: record['Type Opération'] || record['Service'] || record['service'] || record['SERVICE'] || 'Inconnu',
+            country: record['groupe de réseau'] || record['Pays provenance'] || record['country'] || record['pays'] || record['PAYS'] || 'Inconnu',
+            date: record['Date opération'] || record['Date'] || record['date'] || record['DATE'] || new Date().toISOString().split('T')[0],
+            volume: this.parseAmount(record['Montant'] || record['montant'] || record['amount'] || record['AMOUNT'] || '0')
         };
     }
 
@@ -1251,7 +1508,6 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             }
             const data = groupedData.get(key)!;
             data.matches++;
-            data.totalTransactions++;
             data.totalVolume += this.parseAmount(match.boData['amount'] || match.boData['montant'] || '0');
         });
 
@@ -1263,7 +1519,6 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             }
             const data = groupedData.get(key)!;
             data.boOnly++;
-            data.totalTransactions++;
             data.totalVolume += this.parseAmount(record['amount'] || record['montant'] || '0');
         });
 
@@ -1275,7 +1530,6 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             }
             const data = groupedData.get(key)!;
             data.partnerOnly++;
-            data.totalTransactions++;
             data.totalVolume += this.parseAmount(record['amount'] || record['montant'] || '0');
         });
 
@@ -1287,22 +1541,25 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             }
             const data = groupedData.get(key)!;
             data.mismatches++;
-            data.totalTransactions++;
             data.totalVolume += this.parseAmount(record['amount'] || record['montant'] || '0');
         });
 
         // Calculer les taux de correspondance
+        // Le taux de correspondance = (nombre de correspondances / nombre de transactions) * 100
         this.reportData = Array.from(groupedData.values()).map(data => {
-            const rate = data.totalTransactions > 0 ? (data.matches / data.totalTransactions) * 100 : 0;
+            // Calculer le nombre total de transactions (correspondances + écarts BO + écarts partenaires + incohérences)
+            const totalTransactions = data.matches + data.boOnly + data.partnerOnly + data.mismatches;
+            const rate = totalTransactions > 0 ? (data.matches / totalTransactions) * 100 : 0;
             return {
             ...data,
+                totalTransactions: totalTransactions,
                 matchRate: rate,
                 status: this.computeStatusFromCounts(
                     data.matches,
                     data.boOnly,
                     data.partnerOnly,
                     data.mismatches,
-                    data.totalTransactions
+                    totalTransactions
                 ),
                 comment: this.buildCommentForCounts(data.matches, data.boOnly, data.partnerOnly, data.mismatches)
             };
@@ -1356,6 +1613,10 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         this.uniqueAgencies = [...new Set(this.reportData.map(item => item.agency))].sort();
         this.uniqueServices = [...new Set(this.reportData.map(item => item.service))].sort();
         this.uniqueDates = [...new Set(this.reportData.map(item => item.date))].sort();
+        this.uniqueStatuses = [...new Set(this.reportData.map(item => item.status).filter(status => status && status.trim() !== ''))].sort();
+        
+        // Initialiser les services filtrés avec tous les services
+        this.filteredServices = [...this.uniqueServices];
         
         // Initialiser filteredReportData avec toutes les données si pas encore fait
         if (this.filteredReportData.length === 0) {
@@ -1363,28 +1624,77 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             console.log('🔍 Debug extractUniqueValues - Initialisation filteredReportData:', {
                 reportDataLength: this.reportData.length,
                 filteredReportDataLength: this.filteredReportData.length,
-                uniqueDatesFromReportData: this.uniqueDates.length
+                uniqueDatesFromReportData: this.uniqueDates.length,
+                uniqueStatusesFromReportData: this.uniqueStatuses.length
             });
         }
+    }
+
+    /**
+     * Met à jour la liste des services filtrés selon l'agence sélectionnée
+     */
+    private updateFilteredServices(): void {
+        if (!this.selectedAgency) {
+            // Si aucune agence sélectionnée, afficher tous les services
+            this.filteredServices = [...this.uniqueServices];
+        } else {
+            // Filtrer les services selon l'agence sélectionnée
+            const servicesForAgency = new Set<string>();
+            this.reportData
+                .filter(item => item.agency.toLowerCase().includes(this.selectedAgency.toLowerCase()))
+                .forEach(item => {
+                    servicesForAgency.add(item.service);
+                });
+            this.filteredServices = Array.from(servicesForAgency).sort();
+        }
+    }
+
+    /**
+     * Gère le changement de filtre agence avec filtrage cloisonné
+     */
+    onAgencyFilterChange(): void {
+        // Réinitialiser le service sélectionné quand l'agence change
+        this.selectedService = '';
+        
+        // Mettre à jour la liste des services disponibles pour cette agence
+        this.updateFilteredServices();
+        
+        this.filterReport();
+    }
+
+    clearDateFilters(): void {
+        this.selectedDateDebut = '';
+        this.selectedDateFin = '';
+        this.filterReport();
     }
 
     filterReport() {
         this.filteredReportData = this.reportData.filter(item => {
             const agencyMatch = !this.selectedAgency || item.agency.toLowerCase().includes(this.selectedAgency.toLowerCase());
             const serviceMatch = !this.selectedService || item.service.toLowerCase().includes(this.selectedService.toLowerCase());
+            const statusMatch = !this.selectedStatus || item.status === this.selectedStatus;
             
-            // Filtrage de date plus flexible
+            // Filtrage par plage de dates
             let dateMatch = true;
-            if (this.selectedDate) {
-                // Convertir la date sélectionnée en format comparable
-                const selectedDateObj = new Date(this.selectedDate);
+            if (this.selectedDateDebut || this.selectedDateFin) {
                 const itemDateObj = new Date(item.date);
                 
-                // Comparer seulement la date (sans l'heure)
-                dateMatch = selectedDateObj.toDateString() === itemDateObj.toDateString();
+                // Si date de début spécifiée
+                if (this.selectedDateDebut) {
+                    const dateDebutObj = new Date(this.selectedDateDebut);
+                    dateMatch = dateMatch && itemDateObj >= dateDebutObj;
+                }
+                
+                // Si date de fin spécifiée
+                if (this.selectedDateFin) {
+                    const dateFinObj = new Date(this.selectedDateFin);
+                    // Ajouter 1 jour à la date de fin pour inclure toute la journée
+                    dateFinObj.setDate(dateFinObj.getDate() + 1);
+                    dateMatch = dateMatch && itemDateObj < dateFinObj;
+                }
             }
             
-            return agencyMatch && serviceMatch && dateMatch;
+            return agencyMatch && serviceMatch && dateMatch && statusMatch;
         });
         
         console.log('🔍 Debug filterReport:', {
@@ -1392,7 +1702,9 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             filteredReportDataLength: this.filteredReportData.length,
             selectedAgency: this.selectedAgency,
             selectedService: this.selectedService,
-            selectedDate: this.selectedDate
+            selectedDateDebut: this.selectedDateDebut,
+            selectedDateFin: this.selectedDateFin,
+            selectedStatus: this.selectedStatus
         });
         
         // Réinitialiser à la première page et mettre à jour la pagination
@@ -1437,6 +1749,76 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         return parts.join(' • ');
     }
 
+    /**
+     * Recalcule les données selon le statut sélectionné
+     * Si le statut passe à "OK", les écarts sont réinitialisés à 0 et ajoutés aux correspondances
+     */
+    private recalculateDataBasedOnStatus(item: ReconciliationReportData): ReconciliationReportData {
+        const recalculated = { ...item };
+
+        // Si le statut est "OK", réinitialiser les écarts et les ajouter aux correspondances
+        if (item.status === 'OK') {
+            console.log('🔄 Recalcul pour statut OK:', {
+                avant: {
+                    matches: item.matches,
+                    boOnly: item.boOnly,
+                    partnerOnly: item.partnerOnly,
+                    mismatches: item.mismatches,
+                    totalTransactions: item.totalTransactions
+                }
+            });
+
+            // Ajouter tous les écarts aux correspondances
+            const totalEcart = item.boOnly + item.partnerOnly + item.mismatches;
+            recalculated.matches = item.matches + totalEcart;
+            
+            // Réinitialiser les écarts à 0
+            recalculated.boOnly = 0;
+            recalculated.partnerOnly = 0;
+            recalculated.mismatches = 0;
+            
+            // Recalculer le nombre total de transactions et le taux de correspondance
+            recalculated.totalTransactions = recalculated.matches + recalculated.boOnly + recalculated.partnerOnly + recalculated.mismatches;
+            recalculated.matchRate = recalculated.totalTransactions > 0 ? 
+                (recalculated.matches / recalculated.totalTransactions) * 100 : 0;
+            
+            // Mettre à jour le commentaire
+            recalculated.comment = this.buildCommentForCounts(
+                recalculated.matches, 
+                recalculated.boOnly, 
+                recalculated.partnerOnly, 
+                recalculated.mismatches
+            );
+
+            console.log('🔄 Recalcul pour statut OK:', {
+                apres: {
+                    matches: recalculated.matches,
+                    boOnly: recalculated.boOnly,
+                    partnerOnly: recalculated.partnerOnly,
+                    mismatches: recalculated.mismatches,
+                    totalTransactions: recalculated.totalTransactions,
+                    matchRate: recalculated.matchRate,
+                    comment: recalculated.comment
+                }
+            });
+        } else {
+            // Pour les autres statuts, recalculer le nombre total de transactions et le taux de correspondance normalement
+            recalculated.totalTransactions = recalculated.matches + recalculated.boOnly + recalculated.partnerOnly + recalculated.mismatches;
+            recalculated.matchRate = recalculated.totalTransactions > 0 ? 
+                (recalculated.matches / recalculated.totalTransactions) * 100 : 0;
+            
+            // Mettre à jour le commentaire
+            recalculated.comment = this.buildCommentForCounts(
+                recalculated.matches, 
+                recalculated.boOnly, 
+                recalculated.partnerOnly, 
+                recalculated.mismatches
+            );
+        }
+
+        return recalculated;
+    }
+
     get averageMatchRate(): number {
         if (!this.filteredReportData || this.filteredReportData.length === 0) return 0;
         const total = this.filteredReportData.reduce((sum, item) => sum + item.matchRate, 0);
@@ -1477,6 +1859,33 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         return this.filteredReportData
             .filter(item => !(item.status || '').toUpperCase().includes('EN COURS'))
             .reduce((sum, item) => sum + (item.boOnly || 0) + (item.partnerOnly || 0) + (item.mismatches || 0), 0);
+    }
+
+    // Compteur des tickets à créer
+    get ticketsACreer(): number {
+        if (!this.filteredReportData) return 0;
+        
+        return this.filteredReportData
+            .filter(item => {
+                const idGlpiStr = (item.glpiId || '').trim();
+                const idGlpiLower = idGlpiStr.toLowerCase();
+                const status = (item.status || '').toUpperCase();
+                
+                // Exclure les tickets qui contiennent "modifier"
+                if (idGlpiLower.includes('modifier')) {
+                    return false;
+                }
+                
+                // Compter les tickets qui nécessitent une création :
+                // 1. ID GLPI vide ET statut NOK (problème nécessitant un ticket)
+                // 2. ID GLPI contient "créer" ET statut en cours/attente
+                const hasNoIdGlpi = idGlpiStr === '';
+                const containsCreer = idGlpiLower.includes('créer');
+                const isNok = status === 'NOK';
+                const isEnAttenteOuEnCours = status.includes('EN COURS') || status.includes('EN ATTENTE');
+                
+                return (hasNoIdGlpi && isNok) || (containsCreer && isEnAttenteOuEnCours);
+            }).length;
     }
 
     trackByItem(index: number, item: ReconciliationReportData): string {
@@ -1525,6 +1934,17 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
 
     goBack() {
         this.router.navigate(['/results']);
+    }
+
+    // Ouvrir GLPI pour créer un nouveau ticket
+    openGlpiCreate() {
+        const glpiCreateUrl = 'https://glpi.intouchgroup.net/glpi/front/ticket.form.php';
+        window.open(glpiCreateUrl, '_blank');
+    }
+
+    // Obtenir l'URL du ticket GLPI avec l'ID
+    getGlpiTicketUrl(idGlpi: string): string {
+        return `https://glpi.intouchgroup.net/glpi/front/ticket.form.php?id=${idGlpi}`;
     }
 
     private loadSavedReportFromDatabase() {
@@ -1642,16 +2062,24 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         );
         if (!confirmed) return;
 
+        // Recalculer les valeurs selon le statut
+        const recalculatedData = this.recalculateDataBasedOnStatus(item);
+
         const payload = {
-            date: item.date,
-            agency: item.agency,
-            service: item.service,
-            country: item.country,
-            totalTransactions: item.totalTransactions,
-            totalVolume: item.totalVolume,
-            status: item.status,
-            comment: item.comment,
-            glpiId: item.glpiId || ''
+            date: recalculatedData.date,
+            agency: recalculatedData.agency,
+            service: recalculatedData.service,
+            country: recalculatedData.country,
+            totalTransactions: recalculatedData.totalTransactions,
+            totalVolume: recalculatedData.totalVolume,
+            matches: recalculatedData.matches,
+            boOnly: recalculatedData.boOnly,
+            partnerOnly: recalculatedData.partnerOnly,
+            mismatches: recalculatedData.mismatches,
+            matchRate: recalculatedData.matchRate,
+            status: recalculatedData.status,
+            comment: recalculatedData.comment,
+            glpiId: recalculatedData.glpiId || ''
         };
 
         fetch('/api/result8rec/' + item.id, {
@@ -1679,22 +2107,26 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         );
         if (!confirmed) return;
 
-        const payload = rowsSource.map(item => ({
-            date: item.date,
-            agency: item.agency,
-            service: item.service,
-            country: item.country,
-            glpiId: item.glpiId || '',
-            totalTransactions: item.totalTransactions,
-            totalVolume: item.totalVolume,
-            matches: item.matches,
-            boOnly: item.boOnly,
-            partnerOnly: item.partnerOnly,
-            mismatches: item.mismatches,
-            matchRate: item.matchRate,
-            status: item.status,
-            comment: item.comment
-        }));
+        const payload = rowsSource.map(item => {
+            // Recalculer les valeurs selon le statut pour chaque item
+            const recalculatedData = this.recalculateDataBasedOnStatus(item);
+            return {
+                date: recalculatedData.date,
+                agency: recalculatedData.agency,
+                service: recalculatedData.service,
+                country: recalculatedData.country,
+                glpiId: recalculatedData.glpiId || '',
+                totalTransactions: recalculatedData.totalTransactions,
+                totalVolume: recalculatedData.totalVolume,
+                matches: recalculatedData.matches,
+                boOnly: recalculatedData.boOnly,
+                partnerOnly: recalculatedData.partnerOnly,
+                mismatches: recalculatedData.mismatches,
+                matchRate: recalculatedData.matchRate,
+                status: recalculatedData.status,
+                comment: recalculatedData.comment
+            };
+        });
 
         fetch('/api/result8rec/bulk', {
             method: 'POST',
@@ -1709,22 +2141,23 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                 contentType: r.headers.get('content-type')
             });
             
+            // Lire le corps de la réponse une seule fois
+            const responseText = await r.text();
+            
             if (!r.ok) {
-                const errorText = await r.text();
-                console.error('❌ Erreur HTTP:', errorText);
-                throw new Error(`HTTP ${r.status}: ${errorText}`);
+                console.error('❌ Erreur HTTP:', responseText);
+                throw new Error(`HTTP ${r.status}: ${responseText}`);
             }
             
             // Essayer de parser en JSON, sinon utiliser le texte brut
             try {
-                const jsonResponse = await r.json();
+                const jsonResponse = JSON.parse(responseText);
                 console.log('🔍 Debug saveAll JSON response:', jsonResponse);
                 return jsonResponse;
             } catch (parseError) {
                 console.log('🔍 Debug saveAll - Response is not JSON, using text');
-                const textResponse = await r.text();
-                console.log('🔍 Debug saveAll text response:', textResponse);
-                return textResponse;
+                console.log('🔍 Debug saveAll text response:', responseText);
+                return responseText;
             }
         })
         .then((res) => {
@@ -1740,6 +2173,10 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
 
     goToReportDashboard() {
         window.location.href = '/report-dashboard';
+    }
+
+    goToReconciliationDashboard() {
+        this.router.navigate(['/reconciliation-dashboard']);
     }
 
 

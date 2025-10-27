@@ -1,0 +1,193 @@
+<div class="dashboard-reconciliation-container">
+    <div class="page-header">
+        <div class="breadcrumb">
+            <a routerLink="/reconciliation-report" class="breadcrumb-link">← Retour au Rapport</a>
+        </div>
+    </div>
+    
+    <div class="dashboard-header">
+        <h2>📈 Tableau de bord de Réconciliation</h2>
+        <p class="subtitle">Vue d'ensemble des pourcentages de correspondance par service et par pays</p>
+        <p class="subtitle-small">Données réelles de la table result8rec</p>
+        
+        <!-- Résumé des données -->
+        <div *ngIf="!loading && !error && countryServiceData && countryServiceData.length > 0" class="data-summary">
+            <div class="summary-item">
+                <span class="summary-label">Pays:</span>
+                <span class="summary-value">{{ countryServiceData.length }}</span>
+            </div>
+            <div class="summary-item">
+                <span class="summary-label">Services:</span>
+                <span class="summary-value">{{ getTotalServicesCount() }}</span>
+            </div>
+            <div class="summary-item">
+                <span class="summary-label">Services uniques:</span>
+                <span class="summary-value">{{ getAllUniqueServices().length }}</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Filtres -->
+    <div *ngIf="!loading && !error && countryServiceData && countryServiceData.length > 0" class="filters-container">
+        <div class="filters-header">
+            <h3>🔍 Filtres</h3>
+        </div>
+        <div class="filters-content">
+            <div class="filter-group">
+                <label for="countryFilter" class="filter-label">Pays:</label>
+                <select id="countryFilter" 
+                        [(ngModel)]="selectedCountry" 
+                        (change)="onCountryFilterChange()"
+                        class="filter-select">
+                    <option value="">Tous les pays</option>
+                    <option *ngFor="let country of availableCountries" [value]="country">
+                        {{ country }}
+                    </option>
+                </select>
+            </div>
+            
+            <div class="filter-group">
+                <label for="dateStartFilter" class="filter-label">Date de début:</label>
+                <div class="date-input-container">
+                    <input matInput 
+                           [matDatepicker]="dateStartPicker" 
+                           [(ngModel)]="selectedDateStart"
+                           (dateChange)="onDateStartChange()"
+                           placeholder="Sélectionner une date de début"
+                           class="filter-date-input">
+                    <mat-datepicker-toggle matSuffix [for]="dateStartPicker"></mat-datepicker-toggle>
+                    <mat-datepicker #dateStartPicker></mat-datepicker>
+                </div>
+            </div>
+            
+            <div class="filter-group">
+                <label for="dateEndFilter" class="filter-label">Date de fin:</label>
+                <div class="date-input-container">
+                    <input matInput 
+                           [matDatepicker]="dateEndPicker" 
+                           [(ngModel)]="selectedDateEnd"
+                           (dateChange)="onDateEndChange()"
+                           placeholder="Sélectionner une date de fin"
+                           class="filter-date-input">
+                    <mat-datepicker-toggle matSuffix [for]="dateEndPicker"></mat-datepicker-toggle>
+                    <mat-datepicker #dateEndPicker></mat-datepicker>
+                </div>
+            </div>
+            
+            <div class="filter-group">
+                <label for="serviceFilter" class="filter-label">Service:</label>
+                <select id="serviceFilter" 
+                        [(ngModel)]="selectedService" 
+                        (change)="onServiceFilterChange()"
+                        class="filter-select"
+                        [disabled]="!selectedCountry && filteredServices.length === 0">
+                    <option value="">Tous les services</option>
+                    <option *ngFor="let service of filteredServices" [value]="service">
+                        {{ service }}
+                    </option>
+                </select>
+            </div>
+            
+            <div class="filter-actions">
+                <button type="button" 
+                        (click)="resetFilters()" 
+                        class="reset-filters-btn"
+                        [disabled]="!selectedCountry && !selectedService && !selectedDateStart && !selectedDateEnd">
+                    🔄 Réinitialiser
+                </button>
+            </div>
+        </div>
+        
+        <!-- Résumé des filtres appliqués -->
+        <div *ngIf="selectedCountry || selectedService || selectedDateStart || selectedDateEnd" class="active-filters">
+            <span class="active-filters-label">Filtres actifs:</span>
+            <span *ngIf="selectedCountry" class="filter-tag">
+                Pays: {{ selectedCountry }}
+            </span>
+            <span *ngIf="selectedDateStart" class="filter-tag">
+                Date début: {{ selectedDateStart | date:'dd/MM/yyyy' }}
+            </span>
+            <span *ngIf="selectedDateEnd" class="filter-tag">
+                Date fin: {{ selectedDateEnd | date:'dd/MM/yyyy' }}
+            </span>
+            <span *ngIf="selectedService" class="filter-tag">
+                Service: {{ selectedService }}
+            </span>
+            <span class="filter-results">
+                ({{ filteredCountryServiceData.length }} résultat(s))
+            </span>
+        </div>
+    </div>
+
+    <div class="dashboard-content">
+        <!-- Indicateur de chargement -->
+        <div *ngIf="loading" class="loading-container">
+            <div class="loading-spinner">🔄</div>
+            <div class="loading-message">Chargement des données de réconciliation...</div>
+        </div>
+
+        <!-- Message d'erreur -->
+        <div *ngIf="error && !loading" class="error-container">
+            <div class="error-icon">❌</div>
+            <div class="error-message">{{ error }}</div>
+            <button class="retry-btn" (click)="loadReconciliationData()">🔄 Réessayer</button>
+        </div>
+
+
+        <!-- Données du tableau de bord -->
+        <div *ngIf="!loading && !error && countryServiceData && countryServiceData.length > 0" class="dashboard-grid">
+            <div *ngFor="let countryData of getPagedCountries()" class="country-section">
+                <div class="country-header">
+                    <span class="country-code">{{ countryData.countryCode }}</span>
+                    <span class="services-count">{{ getServiceEntries(countryData.services).length }} service(s)</span>
+                </div>
+                
+                <div class="services-grid">
+                    <div *ngFor="let serviceEntry of getServiceEntries(countryData.services)" class="service-metrics">
+                        <div class="service-header">
+                            <span class="service-name">{{ serviceEntry.key }}</span>
+                        </div>
+                        <div class="metrics-grid">
+                            <div class="metric-item" [ngClass]="getRateClass(serviceEntry.value.trxReconNet)">
+                                <div class="metric-label">Réconciliation Nette</div>
+                                <div class="metric-value">{{ formatPercentage(serviceEntry.value.trxReconNet) }}</div>
+                            </div>
+                            
+                            <div class="metric-item" [ngClass]="getRateClass(serviceEntry.value.trxReconBrut)">
+                                <div class="metric-label">Réconciliation Brute</div>
+                                <div class="metric-value">{{ formatPercentage(serviceEntry.value.trxReconBrut) }}</div>
+                            </div>
+                            
+                            <div class="metric-item metric-item-centered" [ngClass]="getRateClass(serviceEntry.value.bkRecoBanque)">
+                                <div class="metric-content">
+                                    <div class="metric-label">Taux de Correspondance</div>
+                                    <div class="metric-value">{{ formatPercentage(serviceEntry.value.bkRecoBanque) }}</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Contrôles de pagination -->
+        <div *ngIf="!loading && !error && countryServiceData && countryServiceData.length > 0" class="pagination-controls">
+            <button (click)="previousPage()" [disabled]="currentPage === 1" class="pagination-btn">
+                ← Précédent
+            </button>
+            <span class="pagination-info">
+                Page {{ currentPage }} sur {{ getTotalPages() }}
+            </span>
+            <button (click)="nextPage()" [disabled]="currentPage === getTotalPages()" class="pagination-btn">
+                Suivant →
+            </button>
+        </div>
+
+        <!-- Message si aucune donnée -->
+        <div *ngIf="!loading && !error && (!countryServiceData || countryServiceData.length === 0)" class="no-data">
+            <div class="no-data-icon">📊</div>
+            <div class="no-data-message">Aucune donnée de réconciliation disponible</div>
+            <div class="no-data-subtitle">Les données seront disponibles après avoir effectué des réconciliations</div>
+        </div>
+    </div>
+</div>

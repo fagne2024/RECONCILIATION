@@ -47,6 +47,10 @@ export class DashboardComponent implements OnInit, OnDestroy {
     detailedMetrics: DetailedMetrics | null = null;
     detailedLoading: boolean = false;
     detailedError: string | null = null;
+    
+    // Statistiques filtrées pour l'affichage
+    filteredOperationStats: any[] = [];
+    filteredFrequencyStats: any[] = [];
 
     // Statistiques des transactions créées
     transactionCreatedStats: TransactionCreatedStats | null = null;
@@ -109,7 +113,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
     /**
      * Filtre les types d'opérations à afficher sur les graphiques.
      * Exclut tous les types commençant par 'annulation_' sauf 'annulation_bo'.
-     * Exclut également les ajustements et transactions créées.
+     * Exclut également les ajustements, transactions créées, dépôts et versements.
      * @param typeOperation Le type d'opération à vérifier.
      * @returns `true` si le type doit être inclus, `false` sinon.
      */
@@ -124,8 +128,13 @@ export class DashboardComponent implements OnInit, OnDestroy {
             return lowerCaseType === 'annulation_bo';
         }
         
-        // Exclure les ajustements et transactions créées
-        if (lowerCaseType === 'ajustement' || lowerCaseType === 'transaction_cree') {
+        // Exclure les ajustements, transactions créées, dépôts, versements et virements
+        if (lowerCaseType === 'ajustement' || 
+            lowerCaseType === 'transaction_cree' ||
+            lowerCaseType === 'depot' ||
+            lowerCaseType === 'dépôt' ||
+            lowerCaseType === 'versement' ||
+            lowerCaseType === 'virement') {
             return false;
         }
         
@@ -241,7 +250,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
 
       if (this.selectedMetric === 'transactions') {
         // Bar chart : répartition par service
-        const excludedTypes = ['annulation_bo', 'ajustement', 'transaction_cree'];
+        const excludedTypes = ['annulation_bo', 'ajustement', 'transaction_cree', 'depot', 'dépôt', 'versement', 'virement'];
         // On filtre explicitement par agence (client) sélectionnée pour la courbe
         let filteredAgencySummary = agencySummaryFiltered
             .filter(s => !excludedTypes.includes((s.typeOperation || '').toLowerCase()))
@@ -308,7 +317,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
         return;
       } else if (this.selectedMetric === 'revenu') {
         // Bar chart : volume des frais par service (tous les FRAIS_TRANSACTION, crédit et débit)
-        const excludedTypes = ['annulation_bo', 'ajustement', 'transaction_cree'];
+        const excludedTypes = ['annulation_bo', 'ajustement', 'transaction_cree', 'depot', 'dépôt', 'versement', 'virement'];
         let filteredOperations = operationsFiltered
             .filter(op => !excludedTypes.includes((op.typeOperation || '').toLowerCase()))
             .filter(op => this.shouldIncludeOperation(op.typeOperation));
@@ -381,7 +390,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
       } else if (this.selectedMetric === 'volume') {
         // Bar chart : volume total par type d'opération
         if (!this.detailedMetrics?.operationStats) return;
-        const excludedTypes2 = ['annulation_bo', 'ajustement', 'transaction_cree'];
+        const excludedTypes2 = ['annulation_bo', 'ajustement', 'transaction_cree', 'depot', 'dépôt', 'versement', 'virement'];
         let filteredOperations = operationsFiltered
             .filter(op => !excludedTypes2.includes((op.typeOperation || '').toLowerCase()))
             .filter(op => this.shouldIncludeOperation(op.typeOperation));
@@ -706,17 +715,77 @@ export class DashboardComponent implements OnInit, OnDestroy {
                 this.detailedMetrics = metrics;
                 this.detailedLoading = false;
                 this.detailedError = null;
+                this.filterOperationStats();
                 this.updateBarChartData();
                 console.log('Detailed metrics loaded:', metrics);
             },
             error: (error) => {
                 // En cas d'erreur, vider les données et afficher un message explicite
                 this.detailedMetrics = null;
+                this.filteredOperationStats = [];
+                this.filteredFrequencyStats = [];
                 this.barChartData = { labels: [], datasets: [] };
                 this.lineChartData = { labels: [], datasets: [] };
                 this.detailedError = 'Aucune donnée pour ce pays';
                 this.detailedLoading = false;
             }
+        });
+    }
+
+    /**
+     * Filtre les statistiques par type d'opération pour exclure DEPOT et VERSEMENT
+     */
+    private filterOperationStats() {
+        if (!this.detailedMetrics) {
+            this.filteredOperationStats = [];
+            this.filteredFrequencyStats = [];
+            return;
+        }
+
+        // Filtrer les statistiques par type d'opération
+        this.filteredOperationStats = (this.detailedMetrics.operationStats || []).filter(stat => {
+            if (!stat.operationType) return true;
+            const lowerCaseType = stat.operationType.toLowerCase();
+            
+            // Exclure les types non désirés
+            return !(lowerCaseType === 'depot' || 
+                    lowerCaseType === 'dépôt' || 
+                    lowerCaseType === 'versement' ||
+                    lowerCaseType === 'virement' ||
+                    lowerCaseType === 'ajustement' ||
+                    lowerCaseType === 'transaction_cree' ||
+                    (lowerCaseType.startsWith('annulation_') && lowerCaseType !== 'annulation_bo'));
+        });
+
+        // Filtrer les statistiques de fréquence
+        this.filteredFrequencyStats = (this.detailedMetrics.frequencyStats || []).filter(stat => {
+            if (!stat.operationType) return true;
+            const lowerCaseType = stat.operationType.toLowerCase();
+            
+            // Exclure les types non désirés
+            return !(lowerCaseType === 'depot' || 
+                    lowerCaseType === 'dépôt' || 
+                    lowerCaseType === 'versement' ||
+                    lowerCaseType === 'virement' ||
+                    lowerCaseType === 'ajustement' ||
+                    lowerCaseType === 'transaction_cree' ||
+                    (lowerCaseType.startsWith('annulation_') && lowerCaseType !== 'annulation_bo'));
+        });
+
+        console.log('[filterOperationStats] Statistiques filtrées:', {
+            original: this.detailedMetrics.operationStats?.length || 0,
+            filtered: this.filteredOperationStats.length,
+            excluded: (this.detailedMetrics.operationStats || []).filter(stat => {
+                if (!stat.operationType) return false;
+                const lowerCaseType = stat.operationType.toLowerCase();
+                return (lowerCaseType === 'depot' || 
+                        lowerCaseType === 'dépôt' || 
+                        lowerCaseType === 'versement' ||
+                        lowerCaseType === 'virement' ||
+                        lowerCaseType === 'ajustement' ||
+                        lowerCaseType === 'transaction_cree' ||
+                        (lowerCaseType.startsWith('annulation_') && lowerCaseType !== 'annulation_bo'));
+            }).map(stat => stat.operationType)
         });
     }
 
@@ -994,11 +1063,11 @@ export class DashboardComponent implements OnInit, OnDestroy {
     }
 
     getFrequencyPercentage(frequency: number): number {
-        if (!this.detailedMetrics || this.detailedMetrics.frequencyStats.length === 0) {
+        if (!this.filteredFrequencyStats || this.filteredFrequencyStats.length === 0) {
             return 0;
         }
         
-        const maxFrequency = Math.max(...this.detailedMetrics.frequencyStats.map(f => f.frequency));
+        const maxFrequency = Math.max(...this.filteredFrequencyStats.map(f => f.frequency));
         return maxFrequency > 0 ? (frequency / maxFrequency) * 100 : 0;
     }
 
@@ -1118,9 +1187,9 @@ export class DashboardComponent implements OnInit, OnDestroy {
         XLSX.utils.book_append_sheet(wb, wsMain, 'Métriques');
 
         // 2. Feuille Statistiques par type d'opération avec couleurs
-        if (this.detailedMetrics.operationStats && this.detailedMetrics.operationStats.length > 0) {
+        if (this.filteredOperationStats && this.filteredOperationStats.length > 0) {
             const opHeader = ['Type d\'opération', 'Transactions', 'Volume total', 'Volume moyen'];
-            const opData = this.detailedMetrics.operationStats.map(stat => [
+            const opData = this.filteredOperationStats.map(stat => [
                 stat.operationType,
                 stat.transactionCount,
                 stat.totalVolume,
@@ -1163,9 +1232,9 @@ export class DashboardComponent implements OnInit, OnDestroy {
         }
 
         // 3. Feuille Fréquence avec couleurs
-        if (this.detailedMetrics.frequencyStats && this.detailedMetrics.frequencyStats.length > 0) {
+        if (this.filteredFrequencyStats && this.filteredFrequencyStats.length > 0) {
             const freqHeader = ['Type d\'opération', 'Fréquence'];
-            const freqData = this.detailedMetrics.frequencyStats.map(stat => [
+            const freqData = this.filteredFrequencyStats.map(stat => [
                 stat.operationType,
                 stat.frequency
             ]);

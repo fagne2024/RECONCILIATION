@@ -3092,6 +3092,10 @@ export class ComptesComponent implements OnInit, OnDestroy {
         return (totalEcart / totalRevenuAttendu) * 100;
     }
 
+    getTotalRevenuAttenduControlRevenu(): number {
+        return this.controlRevenuDataFiltered.reduce((total, item) => total + item.revenuAttendu, 0);
+    }
+
     getTotalRevenuReelControlRevenu(): number {
         return this.controlRevenuDataFiltered.reduce((total, item) => total + item.revenuReel, 0);
     }
@@ -3102,35 +3106,35 @@ export class ComptesComponent implements OnInit, OnDestroy {
     }
 
     private analyzeAnomaliesByService(data: any[]): void {
-        // Grouper les données par service
-        const serviceGroups = new Map<string, any[]>();
-        
+        // Analyser chaque ligne individuellement basé sur le pourcentage de MàG (valeur absolue)
         data.forEach(item => {
-            if (!serviceGroups.has(item.service)) {
-                serviceGroups.set(item.service, []);
-            }
-            serviceGroups.get(item.service)!.push(item);
-        });
-
-        // Analyser chaque service
-        serviceGroups.forEach((serviceData, serviceName) => {
-            // Compter les lignes avec MàG négatif
-            const negativeMagCount = serviceData.filter(item => item.ecart < 0).length;
+            // Calculer le pourcentage de MàG en valeur absolue
+            const magPercentage = Math.abs(this.getMagPercentage(item));
             
-            // Déterminer le statut selon les critères
-            let serviceStatus = 'normal';
-            if (negativeMagCount >= 5 && negativeMagCount <= 10) {
-                serviceStatus = 'anomalie';
-            } else if (negativeMagCount > 10) {
-                serviceStatus = 'critique';
+            // Déterminer le statut selon les seuils de MàG
+            // MàG < 1% = normal
+            // MàG = 1% = anomalie
+            // MàG > 1% = critique
+            let status = 'normal';
+            
+            if (magPercentage > 1.0) {
+                // MàG > 1% = critique
+                status = 'critique';
+            } else if (Math.abs(magPercentage - 1.0) < 0.01) {
+                // MàG ≈ 1% (avec tolérance de 0.01%) = anomalie
+                status = 'anomalie';
+            } else if (magPercentage >= 1.0) {
+                // MàG >= 1% mais pas exactement 1% = anomalie
+                status = 'anomalie';
+            } else {
+                // MàG < 1% = normal
+                status = 'normal';
             }
 
-            // Appliquer le statut à toutes les lignes du service
-            serviceData.forEach(item => {
-                item.statut = serviceStatus;
-            });
+            // Appliquer le statut à la ligne
+            item.statut = status;
 
-            console.log(`Service ${serviceName}: ${negativeMagCount} lignes MàG négatif -> Statut: ${serviceStatus}`);
+            console.log(`Ligne ${item.service} - ${item.date}: MàG ${magPercentage.toFixed(2)}% -> Statut: ${status}`);
         });
     }
 
