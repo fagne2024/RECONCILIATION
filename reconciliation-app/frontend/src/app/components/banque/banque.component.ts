@@ -1678,16 +1678,12 @@ export class BanqueComponent implements OnInit {
   applyReleveFilters() {
     // Si on a déjà des données, juste appliquer le filtre local
     if (this.releveAllRows && this.releveAllRows.length > 0) {
-      this.releveRows = this.getFilteredRelevesByAllFilters();
+      this.releveRows = this.getFilteredRelevesByStatusAndBatch();
       this.updatePagedReconciliationResults();
       console.log('[RECON][DEBUG] applyReleveFilters - local filter applied:', {
         totalRows: this.releveAllRows.length,
         filteredRows: this.releveRows.length,
-        filters: {
-          pays: this.releveFilterPays,
-          banque: this.releveFilterBanque,
-          reconStatus: this.releveFilterReconStatus
-        }
+        filter: this.releveFilterReconStatus
       });
     } else {
       // Sinon, recharger depuis l'API
@@ -1757,103 +1753,87 @@ export class BanqueComponent implements OnInit {
       base = base.filter((r: any) => (r && (r as any).batchId) === this.releveSelectedBatchId);
     }
     
-    console.log('[RECON][DEBUG] getFilteredRelevesByStatusAndBatch:', {
-      totalReleves: this.releveAllRows?.length || 0,
-      afterBatchFilter: base.length,
-      releveFilterReconStatus: this.releveFilterReconStatus,
-      releveSelectedBatchId: this.releveSelectedBatchId
-    });
-    
-    if (!this.releveFilterReconStatus) return base;
-    const target = this.releveFilterReconStatus;
-    const filtered = base.filter(r => this.getReleveReconStatus(r) === target);
-    
-    console.log('[RECON][DEBUG] Status filter results:', {
-      target: target,
-      beforeFilter: base.length,
-      afterFilter: filtered.length,
-      sampleStatuses: base.slice(0, 5).map(r => ({
-        id: (r as any).id,
-        status: this.getReleveReconStatus(r)
-      }))
-    });
-    
-    return filtered;
-  }
-
-  getFilteredRelevesByAllFilters() {
-    // Source: tous les relevés puis filtrage par tous les critères
-    let base = this.releveAllRows || [];
-    
-    // Filtre par lot
-    if (this.releveSelectedBatchId && this.releveSelectedBatchId !== 'ALL') {
-      base = base.filter((r: any) => (r && (r as any).batchId) === this.releveSelectedBatchId);
-    }
+    // Appliquer tous les filtres
+    let filtered = base;
     
     // Filtre par numéro de compte
     if (this.releveFilterNumeroCompte && this.releveFilterNumeroCompte.trim()) {
       const searchTerm = this.releveFilterNumeroCompte.toLowerCase().trim();
-      base = base.filter((r: any) => (r.numeroCompte || '').toLowerCase().includes(searchTerm));
+      filtered = filtered.filter((r: any) => 
+        (r.numeroCompte || '').toLowerCase().includes(searchTerm)
+      );
     }
     
     // Filtre par banque
     if (this.releveFilterBanque && this.releveFilterBanque.trim()) {
       const searchTerm = this.releveFilterBanque.toLowerCase().trim();
-      base = base.filter((r: any) => (r.banque || '').toLowerCase().includes(searchTerm));
+      filtered = filtered.filter((r: any) => 
+        (r.banque || '').toLowerCase().includes(searchTerm)
+      );
     }
     
     // Filtre par devise
     if (this.releveFilterDevise && this.releveFilterDevise.trim()) {
       const searchTerm = this.releveFilterDevise.toLowerCase().trim();
-      base = base.filter((r: any) => (r.devise || '').toLowerCase().includes(searchTerm));
+      filtered = filtered.filter((r: any) => 
+        (r.devise || '').toLowerCase().includes(searchTerm)
+      );
     }
     
     // Filtre par pays
     if (this.releveFilterPays && this.releveFilterPays.trim()) {
       const searchTerm = this.releveFilterPays.toLowerCase().trim();
-      base = base.filter((r: any) => (r.pays || '').toLowerCase().includes(searchTerm));
-    }
-    
-    // Filtre par statut de réconciliation
-    if (this.releveFilterReconStatus) {
-      base = base.filter(r => this.getReleveReconStatus(r) === this.releveFilterReconStatus);
+      filtered = filtered.filter((r: any) => 
+        (r.pays || '').toLowerCase().includes(searchTerm)
+      );
     }
     
     // Filtre par dates
     if (this.releveFilterDateDebut || this.releveFilterDateFin) {
-      base = base.filter((r: any) => {
+      filtered = filtered.filter((r: any) => {
         const dateField = this.releveFilterDateField === 'valeur' ? r.dateValeur : r.dateComptable;
         if (!dateField) return false;
         
         const itemDate = new Date(dateField);
+        if (isNaN(itemDate.getTime())) return false;
+        
         if (this.releveFilterDateDebut) {
           const startDate = new Date(this.releveFilterDateDebut);
           if (itemDate < startDate) return false;
         }
+        
         if (this.releveFilterDateFin) {
           const endDate = new Date(this.releveFilterDateFin);
+          endDate.setHours(23, 59, 59, 999); // Inclure toute la journée
           if (itemDate > endDate) return false;
         }
+        
         return true;
       });
     }
     
-    console.log('[RECON][DEBUG] getFilteredRelevesByAllFilters:', {
+    // Filtre par statut de réconciliation
+    if (this.releveFilterReconStatus) {
+      filtered = filtered.filter(r => this.getReleveReconStatus(r) === this.releveFilterReconStatus);
+    }
+    
+    console.log('[RECON][DEBUG] getFilteredRelevesByStatusAndBatch:', {
       totalReleves: this.releveAllRows?.length || 0,
-      afterAllFilters: base.length,
+      afterBatchFilter: base.length,
+      afterAllFilters: filtered.length,
       filters: {
-        batch: this.releveSelectedBatchId,
         numeroCompte: this.releveFilterNumeroCompte,
         banque: this.releveFilterBanque,
         devise: this.releveFilterDevise,
         pays: this.releveFilterPays,
         reconStatus: this.releveFilterReconStatus,
         dateDebut: this.releveFilterDateDebut,
-        dateFin: this.releveFilterDateFin
+        dateFin: this.releveFilterDateFin,
+        dateField: this.releveFilterDateField
       }
     });
     
-    return base;
+    return filtered;
   }
 
   // Met en avant et reste sur la liste des comptes Banque dans la page Banque
@@ -2030,8 +2010,8 @@ export class BanqueComponent implements OnInit {
 
   // Relevé Import: lignes filtrées par Statut Réconciliation (OK/KO)
   get filteredReleveRowsForImport(): ReleveBancaireRow[] {
-    // Utiliser la nouvelle méthode qui gère tous les filtres
-    return this.getFilteredRelevesByAllFilters();
+    // Utiliser la même logique de filtrage que getFilteredRelevesByStatusAndBatch
+    return this.getFilteredRelevesByStatusAndBatch();
   }
 
   loadLatestReleveBatch() {
