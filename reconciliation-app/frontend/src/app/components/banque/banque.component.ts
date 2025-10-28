@@ -1675,6 +1675,26 @@ export class BanqueComponent implements OnInit {
   releveFilterDateFin: string = '';
   releveFilterDateField: 'comptable' | 'valeur' = 'comptable';
 
+  // Méthode pour extraire le code pays des 2 dernières lettres de la banque
+  private extractCountryCodeFromBank(banque: string): string {
+    if (!banque || typeof banque !== 'string') return '';
+    
+    // Nettoyer le nom de la banque et extraire les 2 dernières lettres
+    const cleanBanque = banque.trim().toUpperCase();
+    if (cleanBanque.length < 2) return '';
+    
+    // Extraire les 2 dernières lettres
+    const countryCode = cleanBanque.slice(-2);
+    
+    console.log('[RECON][DEBUG] extractCountryCodeFromBank:', {
+      banque: banque,
+      cleanBanque: cleanBanque,
+      countryCode: countryCode
+    });
+    
+    return countryCode;
+  }
+
   applyReleveFilters() {
     // Si on a déjà des données, juste appliquer le filtre local
     if (this.releveAllRows && this.releveAllRows.length > 0) {
@@ -1780,12 +1800,37 @@ export class BanqueComponent implements OnInit {
       );
     }
     
-    // Filtre par pays
+    // Filtre par pays (extrait automatiquement des 2 dernières lettres de la banque)
     if (this.releveFilterPays && this.releveFilterPays.trim()) {
       const searchTerm = this.releveFilterPays.toLowerCase().trim();
-      filtered = filtered.filter((r: any) => 
-        (r.pays || '').toLowerCase().includes(searchTerm)
-      );
+      const beforePaysFilter = filtered.length;
+      
+      filtered = filtered.filter((r: any) => {
+        // Extraire le code pays des 2 dernières lettres de la banque
+        const banqueCode = this.extractCountryCodeFromBank(r.banque);
+        const matches = banqueCode && banqueCode.toLowerCase().includes(searchTerm);
+        
+        if (matches) {
+          console.log('[RECON][DEBUG] Pays filter match:', {
+            banque: r.banque,
+            extractedCode: banqueCode,
+            searchTerm: searchTerm,
+            matches: matches
+          });
+        }
+        
+        return matches;
+      });
+      
+      console.log('[RECON][DEBUG] Pays filter results:', {
+        searchTerm: searchTerm,
+        beforeFilter: beforePaysFilter,
+        afterFilter: filtered.length,
+        sampleMatches: filtered.slice(0, 3).map(r => ({
+          banque: r.banque,
+          extractedCode: this.extractCountryCodeFromBank(r.banque)
+        }))
+      });
     }
     
     // Filtre par dates
