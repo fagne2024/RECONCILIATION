@@ -1659,6 +1659,10 @@ export class BanqueComponent implements OnInit {
     this.activeSection = 'securite';
     this.showOperations = false;
     this.loadLatestReleveBatch();
+    // Forcer la mise à jour de l'affichage des relevés filtrés
+    setTimeout(() => {
+      this.applyReleveFilters();
+    }, 100);
   }
 
   // ----- Filtres Relevé Bancaire -----
@@ -1672,7 +1676,19 @@ export class BanqueComponent implements OnInit {
   releveFilterDateField: 'comptable' | 'valeur' = 'comptable';
 
   applyReleveFilters() {
-    this.refreshRelevesFromApiWithFilters();
+    // Si on a déjà des données, juste appliquer le filtre local
+    if (this.releveAllRows && this.releveAllRows.length > 0) {
+      this.releveRows = this.getFilteredRelevesByStatusAndBatch();
+      this.updatePagedReconciliationResults();
+      console.log('[RECON][DEBUG] applyReleveFilters - local filter applied:', {
+        totalRows: this.releveAllRows.length,
+        filteredRows: this.releveRows.length,
+        filter: this.releveFilterReconStatus
+      });
+    } else {
+      // Sinon, recharger depuis l'API
+      this.refreshRelevesFromApiWithFilters();
+    }
   }
 
   resetReleveFilters() {
