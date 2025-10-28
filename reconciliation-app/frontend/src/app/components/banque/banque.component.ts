@@ -1678,12 +1678,16 @@ export class BanqueComponent implements OnInit {
   applyReleveFilters() {
     // Si on a déjà des données, juste appliquer le filtre local
     if (this.releveAllRows && this.releveAllRows.length > 0) {
-      this.releveRows = this.getFilteredRelevesByStatusAndBatch();
+      this.releveRows = this.getFilteredRelevesByAllFilters();
       this.updatePagedReconciliationResults();
       console.log('[RECON][DEBUG] applyReleveFilters - local filter applied:', {
         totalRows: this.releveAllRows.length,
         filteredRows: this.releveRows.length,
-        filter: this.releveFilterReconStatus
+        filters: {
+          pays: this.releveFilterPays,
+          banque: this.releveFilterBanque,
+          reconStatus: this.releveFilterReconStatus
+        }
       });
     } else {
       // Sinon, recharger depuis l'API
@@ -1775,6 +1779,81 @@ export class BanqueComponent implements OnInit {
     });
     
     return filtered;
+  }
+
+  getFilteredRelevesByAllFilters() {
+    // Source: tous les relevés puis filtrage par tous les critères
+    let base = this.releveAllRows || [];
+    
+    // Filtre par lot
+    if (this.releveSelectedBatchId && this.releveSelectedBatchId !== 'ALL') {
+      base = base.filter((r: any) => (r && (r as any).batchId) === this.releveSelectedBatchId);
+    }
+    
+    // Filtre par numéro de compte
+    if (this.releveFilterNumeroCompte && this.releveFilterNumeroCompte.trim()) {
+      const searchTerm = this.releveFilterNumeroCompte.toLowerCase().trim();
+      base = base.filter((r: any) => (r.numeroCompte || '').toLowerCase().includes(searchTerm));
+    }
+    
+    // Filtre par banque
+    if (this.releveFilterBanque && this.releveFilterBanque.trim()) {
+      const searchTerm = this.releveFilterBanque.toLowerCase().trim();
+      base = base.filter((r: any) => (r.banque || '').toLowerCase().includes(searchTerm));
+    }
+    
+    // Filtre par devise
+    if (this.releveFilterDevise && this.releveFilterDevise.trim()) {
+      const searchTerm = this.releveFilterDevise.toLowerCase().trim();
+      base = base.filter((r: any) => (r.devise || '').toLowerCase().includes(searchTerm));
+    }
+    
+    // Filtre par pays
+    if (this.releveFilterPays && this.releveFilterPays.trim()) {
+      const searchTerm = this.releveFilterPays.toLowerCase().trim();
+      base = base.filter((r: any) => (r.pays || '').toLowerCase().includes(searchTerm));
+    }
+    
+    // Filtre par statut de réconciliation
+    if (this.releveFilterReconStatus) {
+      base = base.filter(r => this.getReleveReconStatus(r) === this.releveFilterReconStatus);
+    }
+    
+    // Filtre par dates
+    if (this.releveFilterDateDebut || this.releveFilterDateFin) {
+      base = base.filter((r: any) => {
+        const dateField = this.releveFilterDateField === 'valeur' ? r.dateValeur : r.dateComptable;
+        if (!dateField) return false;
+        
+        const itemDate = new Date(dateField);
+        if (this.releveFilterDateDebut) {
+          const startDate = new Date(this.releveFilterDateDebut);
+          if (itemDate < startDate) return false;
+        }
+        if (this.releveFilterDateFin) {
+          const endDate = new Date(this.releveFilterDateFin);
+          if (itemDate > endDate) return false;
+        }
+        return true;
+      });
+    }
+    
+    console.log('[RECON][DEBUG] getFilteredRelevesByAllFilters:', {
+      totalReleves: this.releveAllRows?.length || 0,
+      afterAllFilters: base.length,
+      filters: {
+        batch: this.releveSelectedBatchId,
+        numeroCompte: this.releveFilterNumeroCompte,
+        banque: this.releveFilterBanque,
+        devise: this.releveFilterDevise,
+        pays: this.releveFilterPays,
+        reconStatus: this.releveFilterReconStatus,
+        dateDebut: this.releveFilterDateDebut,
+        dateFin: this.releveFilterDateFin
+      }
+    });
+    
+    return base;
   }
 
   // Met en avant et reste sur la liste des comptes Banque dans la page Banque
@@ -1951,14 +2030,8 @@ export class BanqueComponent implements OnInit {
 
   // Relevé Import: lignes filtrées par Statut Réconciliation (OK/KO)
   get filteredReleveRowsForImport(): ReleveBancaireRow[] {
-    // Source: tous les relevés puis filtrage par lot
-    let base = this.releveAllRows || [];
-    if (this.releveSelectedBatchId && this.releveSelectedBatchId !== 'ALL') {
-      base = base.filter((r: any) => (r && (r as any).batchId) === this.releveSelectedBatchId);
-    }
-    if (!this.releveFilterReconStatus) return base;
-    const target = this.releveFilterReconStatus;
-    return base.filter(r => this.getReleveReconStatus(r) === target);
+    // Utiliser la nouvelle méthode qui gère tous les filtres
+    return this.getFilteredRelevesByAllFilters();
   }
 
   loadLatestReleveBatch() {
