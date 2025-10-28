@@ -1736,9 +1736,29 @@ export class BanqueComponent implements OnInit {
     if (this.releveSelectedBatchId && this.releveSelectedBatchId !== 'ALL') {
       base = base.filter((r: any) => (r && (r as any).batchId) === this.releveSelectedBatchId);
     }
-    if (!this.releveStatusFilter) return base;
-    const target = this.releveStatusFilter;
-    return base.filter(r => this.getReleveReconStatus(r) === target);
+    
+    console.log('[RECON][DEBUG] getFilteredRelevesByStatusAndBatch:', {
+      totalReleves: this.releveAllRows?.length || 0,
+      afterBatchFilter: base.length,
+      releveFilterReconStatus: this.releveFilterReconStatus,
+      releveSelectedBatchId: this.releveSelectedBatchId
+    });
+    
+    if (!this.releveFilterReconStatus) return base;
+    const target = this.releveFilterReconStatus;
+    const filtered = base.filter(r => this.getReleveReconStatus(r) === target);
+    
+    console.log('[RECON][DEBUG] Status filter results:', {
+      target: target,
+      beforeFilter: base.length,
+      afterFilter: filtered.length,
+      sampleStatuses: base.slice(0, 5).map(r => ({
+        id: (r as any).id,
+        status: this.getReleveReconStatus(r)
+      }))
+    });
+    
+    return filtered;
   }
 
   // Met en avant et reste sur la liste des comptes Banque dans la page Banque
@@ -1920,8 +1940,8 @@ export class BanqueComponent implements OnInit {
     if (this.releveSelectedBatchId && this.releveSelectedBatchId !== 'ALL') {
       base = base.filter((r: any) => (r && (r as any).batchId) === this.releveSelectedBatchId);
     }
-    if (!this.releveStatusFilter) return base;
-    const target = this.releveStatusFilter;
+    if (!this.releveFilterReconStatus) return base;
+    const target = this.releveFilterReconStatus;
     return base.filter(r => this.getReleveReconStatus(r) === target);
   }
 
