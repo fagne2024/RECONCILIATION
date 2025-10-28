@@ -1,0 +1,69 @@
+<div class="banque-dashboard-container">
+  <div class="top-bar">
+    <button type="button" class="btn-back" (click)="goBack()">← Retour</button>
+  </div>
+  <div class="report-hero">
+    <div class="hero-title">📊 Tableau de bord de Réconciliation</div>
+    <div class="hero-subtitle">Vue d'ensemble des pourcentages de correspondance par pays</div>
+    <div class="hero-stats">
+      <div class="stat">
+        <div class="label">Pays:</div>
+        <div class="value">{{ getCountries().length }}</div>
+      </div>
+      <div class="stat">
+        <div class="label">Opérations:</div>
+        <div class="value">{{ totalOperations }}</div>
+      </div>
+      <div class="stat">
+        <div class="label">Relevés:</div>
+        <div class="value">{{ totalReleves }}</div>
+      </div>
+    </div>
+  </div>
+
+  <div *ngIf="loading" class="loading"><i class="fas fa-spinner fa-spin"></i> Chargement...</div>
+  <div *ngIf="!loading && error" class="error">{{ error }}</div>
+
+  <div *ngIf="!loading && !error" class="filters">
+    <div class="filter-bar">
+      <div class="filter-field">
+        <label>🌍 Pays</label>
+        <select [(ngModel)]="selectedCountry" (change)="applyFilters()" class="control">
+          <option value="">Tous les pays</option>
+          <option *ngFor="let c of getCountries()" [value]="c">{{ c }}</option>
+        </select>
+      </div>
+      <div class="filter-field">
+        <label>📅 Date de début</label>
+        <input type="date" [(ngModel)]="startDate" (change)="onDatesChanged()" class="control" />
+      </div>
+      <div class="filter-field">
+        <label>📅 Date de fin</label>
+        <input type="date" [(ngModel)]="endDate" (change)="onDatesChanged()" class="control" />
+      </div>
+      <div class="filter-actions">
+        <button type="button" class="btn-reset" (click)="resetDates()">Réinitialiser</button>
+      </div>
+    </div>
+  </div>
+
+  <div *ngIf="!loading && !error" class="cards">
+    <div class="country-card" *ngFor="let row of filtered">
+      <div class="country-header">
+        <span class="country-name">{{ row.country }}</span>
+      </div>
+      <div class="badge-row">
+        <div class="pill" [class.ok]="row.bank.rate>=90" [class.warn]="row.bank.rate<90 && row.bank.rate>=60" [class.ko]="row.bank.rate<60">
+          <div class="pill-title">Bk_Reco_Banque</div>
+          <div class="pill-rate">{{ row.bank.rate | number:'1.0-2' }} %</div>
+        </div>
+        <div class="pill" [class.ok]="row.bo.rate>=90" [class.warn]="row.bo.rate<90 && row.bo.rate>=60" [class.ko]="row.bo.rate<60">
+          <div class="pill-title">Bk_Reco_BO</div>
+          <div class="pill-rate">{{ row.bo.rate | number:'1.0-2' }} %</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+

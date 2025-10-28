@@ -52,6 +52,68 @@
   }
 }
 
+// Styles pour la barre de filtres des relevés
+.filters-bar {
+  background: #f8f9fa;
+  border: 1px solid #e9ecef;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 16px;
+  
+  .filters-row {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    
+    input, select {
+      padding: 8px 12px;
+      border: 1px solid #ced4da;
+      border-radius: 4px;
+      font-size: 14px;
+      min-width: 120px;
+      flex-shrink: 0;
+      
+      &:focus {
+        outline: none;
+        border-color: #2e7d32;
+        box-shadow: 0 0 0 2px rgba(46, 125, 50, 0.2);
+      }
+    }
+    
+    button {
+      padding: 8px 12px;
+      border: 1px solid #2e7d32;
+      border-radius: 4px;
+      background: #2e7d32;
+      color: white;
+      cursor: pointer;
+      font-size: 14px;
+      flex-shrink: 0;
+      
+      &:hover {
+        background: #1b5e20;
+      }
+      
+      &:last-child {
+        background: #dc3545;
+        border-color: #dc3545;
+        
+        &:hover {
+          background: #c82333;
+        }
+      }
+    }
+    
+    span {
+      color: #6c757d;
+      font-weight: 500;
+      flex-shrink: 0;
+    }
+  }
+}
+
 .banque-stats {
   display: grid;
   grid-template-columns: repeat(5, 1fr);

@@ -68,6 +68,7 @@ import { ReconciliationReportComponent } from './components/reconciliation-repor
 import { ReportDashboardComponent } from './components/report-dashboard/report-dashboard.component';
 import { DashboardReconciliationComponent } from './components/dashboard-reconciliation/dashboard-reconciliation.component';
 import { ComptabiliteComponent } from './components/comptabilite/comptabilite.component';
+import { BanqueDashboardComponent } from './components/banque-dashboard/banque-dashboard.component';
 
 @NgModule({
     declarations: [
@@ -107,7 +108,8 @@ import { ComptabiliteComponent } from './components/comptabilite/comptabilite.co
                 ReconciliationReportComponent,
                 ReportDashboardComponent,
                 DashboardReconciliationComponent,
-                ComptabiliteComponent
+                ComptabiliteComponent,
+                BanqueDashboardComponent
     ],
     imports: [
         BrowserModule,

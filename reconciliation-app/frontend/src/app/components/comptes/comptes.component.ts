@@ -687,6 +687,16 @@ export class ComptesComponent implements OnInit, OnDestroy {
         });
     }
 
+    private normalizeToYmd(dateInput: string): string {
+        const dateObj = new Date(dateInput);
+        if (!isNaN(dateObj.getTime())) {
+            return dateObj.toISOString().split('T')[0];
+        }
+        // Fallback: tenter d'extraire la partie date si déjà au format ISO-like
+        const tIndex = dateInput.indexOf('T');
+        return tIndex > 0 ? dateInput.substring(0, tIndex) : dateInput;
+    }
+
     async exportComptes() {
         this.isExporting = true;
         try {
@@ -2340,27 +2350,40 @@ export class ComptesComponent implements OnInit, OnDestroy {
 
     // Naviguer vers l'onglet Écart Frais (date/agence) depuis Revenu Journalier
     navigateToEcartFrais(date: string): void {
+        try { console.log('[ECART_FRAIS][NAV] click date raw =', date); } catch {}
         if (!this.selectedCompte) return;
         const agence = this.selectedCompte.numeroCompte || '';
-        this.ecartFraisDate = date;
+        const normalizedDate = this.normalizeToYmd(date);
+        try { console.log('[ECART_FRAIS][NAV] agence =', agence, 'normalizedDate =', normalizedDate); } catch {}
+        this.ecartFraisDate = normalizedDate;
         this.ecartFraisAgence = agence;
         this.activeTab = 'ecart-frais';
         this.showEcartFraisTab = true;
-        this.fetchEcartFraisData(agence, date);
+        this.fetchEcartFraisData(agence, normalizedDate);
     }
 
     private fetchEcartFraisData(agence: string, date: string): void {
         this.isLoadingEcartFrais = true;
         this.ecartFraisItems = [];
         this.ecartFraisFilteredItems = [];
-        this.trxSfService.getTrxSfs({ agence, dateDebut: date, dateFin: date, statut: 'EN_ATTENTE' }).subscribe({
+        const day = this.normalizeToYmd(date);
+        try { console.log('[ECART_FRAIS][REQ] getTrxSfs params =', { agence, dateDebut: day, dateFin: day, statut: 'EN_ATTENTE' }); } catch {}
+        this.trxSfService.getTrxSfs({ agence, dateDebut: day, dateFin: day, statut: 'EN_ATTENTE' }).subscribe({
             next: (rows) => {
+                try {
+                    console.log('[ECART_FRAIS][RESP] rows length =', (rows || []).length);
+                    if (rows && rows.length > 0) {
+                        const sampleDates = rows.slice(0, 3).map(r => r.dateTransaction);
+                        console.log('[ECART_FRAIS][RESP] sample dateTransaction =', sampleDates);
+                    }
+                } catch {}
                 this.ecartFraisItems = rows || [];
                 this.ecartFraisFilteredItems = [...this.ecartFraisItems];
                 this.isLoadingEcartFrais = false;
                 this.calculateEcartFraisPagination();
             },
             error: () => {
+                try { console.error('[ECART_FRAIS][ERR] getTrxSfs error for params =', { agence, dateDebut: day, dateFin: day, statut: 'EN_ATTENTE' }); } catch {}
                 this.ecartFraisItems = [];
                 this.ecartFraisFilteredItems = [];
                 this.isLoadingEcartFrais = false;

@@ -895,6 +895,9 @@
                     <!-- En-tête -->
                     <div class="header">
                       <h2>Détail des Frais de Transaction - {{ ecartFraisAgence }} - {{ formatDate(ecartFraisDate).split(' ')[0] }}</h2>
+                      <div style="font-size: 12px; color: #666; margin-top: 4px;">
+                        Filtre actif: Agence <strong>{{ ecartFraisAgence }}</strong> | Date <strong>{{ ecartFraisDate }}</strong> (00:00–23:59) | Statut <strong>EN_ATTENTE</strong>
+                      </div>
                       <div class="header-actions">
                         <button class="btn btn-success" (click)="exportEcartFrais()" [disabled]="ecartFraisItems.length === 0">
                           <i class="fas fa-download"></i> Exporter
@@ -984,9 +987,9 @@
                                 <i class="fas fa-cog"></i> Service
                                 <i class="fas fa-sort" [ngClass]="getSortIcon('service')"></i>
                               </th>
-                              <th class="sortable" (click)="sortEcartFrais('agence')">
+                              <th class="sortable" (click)="sortEcartFrais('dateTransaction')">
                                 <i class="fas fa-calendar"></i> Date/Heure
-                                <i class="fas fa-sort" [ngClass]="getSortIcon('agence')"></i>
+                                <i class="fas fa-sort" [ngClass]="getSortIcon('dateTransaction')"></i>
                               </th>
                               <th class="sortable" (click)="sortEcartFrais('numeroTransGu')">
                                 <i class="fas fa-barcode"></i> Trans GU
@@ -1032,8 +1035,8 @@
                               </td>
                               <td class="datetime-cell">
                                 <div class="datetime-content">
-                                  <div class="date">{{ formatDate(it.agence).split(' ')[0] }}</div>
-                                  <div class="time">{{ formatDate(it.agence).split(' ')[1] }}</div>
+                                  <div class="date">{{ formatDate(it.dateTransaction).split(' ')[0] }}</div>
+                                  <div class="time">{{ formatDate(it.dateTransaction).split(' ')[1] }}</div>
                                 </div>
                               </td>
                               <td class="trans-gu-cell">

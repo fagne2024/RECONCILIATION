@@ -1899,6 +1899,12 @@ Mises à jour: ${updated}/${total}${failed > 0 ? `\nEchecs: ${failed}` : ''}`;
         // Mettre à jour les listes filtrées avec cloisonnement
         this.updateFilteredLists();
         
+        // Appliquer les filtres aux opérations
+        this.applyFilters();
+        
+        // Mettre à jour la pagination
+        this.updatePagedOperations();
+        
         // Forcer la détection de changement pour mettre à jour l'interface
         this.cdr.detectChanges();
         

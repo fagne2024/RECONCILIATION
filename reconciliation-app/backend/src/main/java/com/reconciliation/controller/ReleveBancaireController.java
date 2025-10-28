@@ -74,11 +74,86 @@ public class ReleveBancaireController {
     }
 
     @GetMapping("/list")
-    public ResponseEntity<List<com.reconciliation.entity.ReleveBancaireEntity>> list(@RequestParam(value = "batchId", required = false) String batchId) {
-        if (batchId == null || batchId.isBlank()) {
-            return ResponseEntity.ok(repository.findAll());
+    public ResponseEntity<List<com.reconciliation.entity.ReleveBancaireEntity>> list(
+            @RequestParam(value = "batchId", required = false) String batchId,
+            @RequestParam(value = "numeroCompte", required = false) String numeroCompte,
+            @RequestParam(value = "banque", required = false) String banque,
+            @RequestParam(value = "pays", required = false) String pays,
+            @RequestParam(value = "devise", required = false) String devise,
+            @RequestParam(value = "reconStatus", required = false) String reconStatus,
+            @RequestParam(value = "libelleContains", required = false) String libelleContains,
+            @RequestParam(value = "dateDebut", required = false) String dateDebut,
+            @RequestParam(value = "dateFin", required = false) String dateFin,
+            @RequestParam(value = "dateField", required = false, defaultValue = "comptable") String dateField,
+            @RequestParam(value = "montantMin", required = false) Double montantMin,
+            @RequestParam(value = "montantMax", required = false) Double montantMax
+    ) {
+        java.util.stream.Stream<com.reconciliation.entity.ReleveBancaireEntity> stream = repository.findAll().stream();
+
+        if (batchId != null && !batchId.isBlank()) {
+            stream = stream.filter(e -> batchId.equals(e.getBatchId()));
         }
-        return ResponseEntity.ok(repository.findAll().stream().filter(e -> batchId.equals(e.getBatchId())).toList());
+        if (numeroCompte != null && !numeroCompte.isBlank()) {
+            String nc = numeroCompte.trim();
+            stream = stream.filter(e -> e.getNumeroCompte() != null && e.getNumeroCompte().contains(nc));
+        }
+        if (banque != null && !banque.isBlank()) {
+            String bq = banque.trim().toLowerCase();
+            stream = stream.filter(e -> e.getBanque() != null && e.getBanque().toLowerCase().contains(bq));
+        }
+        if (pays != null && !pays.isBlank()) {
+            String target = pays.trim().toUpperCase();
+            stream = stream.filter(e -> {
+                String b = e.getBanque();
+                if (b == null) return false;
+                String trimmed = b.trim();
+                if (trimmed.length() < 2) return false;
+                String last2 = trimmed.substring(trimmed.length() - 2).toUpperCase();
+                return last2.equals(target);
+            });
+        }
+        if (devise != null && !devise.isBlank()) {
+            String dv = devise.trim().toUpperCase();
+            stream = stream.filter(e -> e.getDevise() != null && e.getDevise().toUpperCase().contains(dv));
+        }
+        if (reconStatus != null && !reconStatus.isBlank()) {
+            String rs = reconStatus.trim().toUpperCase();
+            stream = stream.filter(e -> e.getReconStatus() != null && e.getReconStatus().toUpperCase().equals(rs));
+        }
+        if (libelleContains != null && !libelleContains.isBlank()) {
+            String sub = libelleContains.trim().toLowerCase();
+            stream = stream.filter(e -> e.getLibelle() != null && e.getLibelle().toLowerCase().contains(sub));
+        }
+        if ((dateDebut != null && !dateDebut.isBlank()) || (dateFin != null && !dateFin.isBlank())) {
+            java.time.LocalDate start = null;
+            java.time.LocalDate end = null;
+            try {
+                if (dateDebut != null && !dateDebut.isBlank()) start = java.time.LocalDate.parse(dateDebut);
+            } catch (Exception ignore) {}
+            try {
+                if (dateFin != null && !dateFin.isBlank()) end = java.time.LocalDate.parse(dateFin);
+            } catch (Exception ignore) {}
+
+            final java.time.LocalDate fStart = start;
+            final java.time.LocalDate fEnd = end;
+            final boolean byValeur = "valeur".equalsIgnoreCase(dateField);
+            stream = stream.filter(e -> {
+                java.time.LocalDate d = byValeur ? e.getDateValeur() : e.getDateComptable();
+                if (d == null) return false;
+                if (fStart != null && d.isBefore(fStart)) return false;
+                if (fEnd != null && d.isAfter(fEnd)) return false;
+                return true;
+            });
+        }
+        if (montantMin != null) {
+            stream = stream.filter(e -> e.getMontant() != null && e.getMontant() >= montantMin);
+        }
+        if (montantMax != null) {
+            stream = stream.filter(e -> e.getMontant() != null && e.getMontant() <= montantMax);
+        }
+
+        java.util.List<com.reconciliation.entity.ReleveBancaireEntity> result = stream.toList();
+        return ResponseEntity.ok(result);
     }
 
     @PutMapping("/{id}")

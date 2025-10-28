@@ -30,6 +30,7 @@ import { ReconciliationComponent } from './components/reconciliation/reconciliat
 import { ReconciliationReportComponent } from './components/reconciliation-report/reconciliation-report.component';
 import { ReportDashboardComponent } from './components/report-dashboard/report-dashboard.component';
 import { DashboardReconciliationComponent } from './components/dashboard-reconciliation/dashboard-reconciliation.component';
+import { BanqueDashboardComponent } from './components/banque-dashboard/banque-dashboard.component';
 
 const routes: Routes = [
   { path: '', redirectTo: '/reconciliation-launcher', pathMatch: 'full' },
@@ -62,6 +63,7 @@ const routes: Routes = [
   { path: 'reconciliation-report', component: ReconciliationReportComponent },
   { path: 'report-dashboard', component: ReportDashboardComponent },
   { path: 'reconciliation-dashboard', component: DashboardReconciliationComponent },
+  { path: 'banque-dashboard', component: BanqueDashboardComponent },
 ];
 
 @NgModule({

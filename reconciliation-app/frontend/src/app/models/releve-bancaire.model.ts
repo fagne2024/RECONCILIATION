@@ -30,4 +30,19 @@ export interface ReleveUploadResponse {
   unmappedHeaders: string[];
 }
 
+export interface ReleveListFilter {
+  batchId?: string;
+  numeroCompte?: string;
+  banque?: string;
+  pays?: string; // dérivé des 2 dernières lettres de banque
+  devise?: string;
+  reconStatus?: 'OK' | 'KO';
+  libelleContains?: string;
+  dateDebut?: string; // yyyy-MM-dd
+  dateFin?: string;   // yyyy-MM-dd
+  dateField?: 'comptable' | 'valeur';
+  montantMin?: number;
+  montantMax?: number;
+}
+
 

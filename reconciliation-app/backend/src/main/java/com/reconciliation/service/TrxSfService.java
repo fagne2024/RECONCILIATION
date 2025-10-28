@@ -52,11 +52,16 @@ public class TrxSfService {
                 // Gérer différents formats de date
                 if (dateDebut.contains("T")) {
                     dateDebutParsed = LocalDateTime.parse(dateDebut.replace("T", " "));
+                } else if (dateDebut.matches("\\d{4}-\\d{2}-\\d{2}")) {
+                    // Format "YYYY-MM-DD" - ajouter 00:00:00 pour le début de journée
+                    dateDebutParsed = LocalDateTime.parse(dateDebut + " 00:00:00", DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
                 } else {
                     // Format "YYYY-MM-DD HH:mm:ss"
                     dateDebutParsed = LocalDateTime.parse(dateDebut, DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
                 }
+                System.out.println("[TRX_SF][SRV] dateDebut input=" + dateDebut + " parsed=" + dateDebutParsed);
             } catch (Exception e) {
+                System.err.println("Erreur parsing date début: " + dateDebut + " - " + e.getMessage());
                 // Date invalide, on ignore le filtre
             }
         }
@@ -66,17 +71,25 @@ public class TrxSfService {
                 // Gérer différents formats de date
                 if (dateFin.contains("T")) {
                     dateFinParsed = LocalDateTime.parse(dateFin.replace("T", " "));
+                } else if (dateFin.matches("\\d{4}-\\d{2}-\\d{2}")) {
+                    // Format "YYYY-MM-DD" - ajouter 23:59:59 pour la fin de journée
+                    dateFinParsed = LocalDateTime.parse(dateFin + " 23:59:59", DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
                 } else {
                     // Format "YYYY-MM-DD HH:mm:ss"
                     dateFinParsed = LocalDateTime.parse(dateFin, DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
                 }
+                System.out.println("[TRX_SF][SRV] dateFin input=" + dateFin + " parsed=" + dateFinParsed);
             } catch (Exception e) {
+                System.err.println("Erreur parsing date fin: " + dateFin + " - " + e.getMessage());
                 // Date invalide, on ignore le filtre
             }
         }
 
+        System.out.println("[TRX_SF][SRV] filters agence=" + agence + ", service=" + service + ", statut=" + statut +
+            ", dateDebutParsed=" + dateDebutParsed + ", dateFinParsed=" + dateFinParsed);
         List<TrxSfEntity> results = trxSfRepository.findWithFilters(
             agence, service, pays, numeroTransGu, statut, dateDebutParsed, dateFinParsed);
+        System.out.println("[TRX_SF][SRV] results size=" + (results != null ? results.size() : 0));
         
         return results;
     }

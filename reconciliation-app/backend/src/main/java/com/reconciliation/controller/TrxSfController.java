@@ -34,10 +34,15 @@ public class TrxSfController {
             @RequestParam(required = false) String dateFin) {
         
         try {
+            System.out.println("[TRX_SF][GET] params agence=" + agence + 
+                ", service=" + service + ", pays=" + pays + ", numeroTransGu=" + numeroTransGu +
+                ", statut=" + statut + ", dateDebut=" + dateDebut + ", dateFin=" + dateFin);
             List<TrxSfEntity> trxSfList = trxSfService.getTrxSfs(
                 agence, service, pays, numeroTransGu, statut, dateDebut, dateFin);
+            System.out.println("[TRX_SF][GET] result size=" + (trxSfList != null ? trxSfList.size() : 0));
             return ResponseEntity.ok(trxSfList);
         } catch (Exception e) {
+            System.err.println("[TRX_SF][GET][ERR] " + e.getMessage());
             return ResponseEntity.internalServerError().build();
         }
     }

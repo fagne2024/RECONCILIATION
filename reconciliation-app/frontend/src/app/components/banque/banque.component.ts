@@ -101,6 +101,10 @@ export class BanqueComponent implements OnInit {
     'CM': 'Cameroun'
   };
 
+  goToBanqueDashboard() {
+    this.router.navigate(['/banque-dashboard']);
+  }
+
   getPaysDisplay(op: OperationBancaireDisplay): string {
     const raw = (op.pays || op.codePays || '').trim();
     if (!raw) return '-';
@@ -1657,6 +1661,86 @@ export class BanqueComponent implements OnInit {
     this.loadLatestReleveBatch();
   }
 
+  // ----- Filtres Relevé Bancaire -----
+  releveFilterNumeroCompte: string = '';
+  releveFilterBanque: string = '';
+  releveFilterDevise: string = '';
+  releveFilterPays: string = '';
+  releveFilterReconStatus: '' | 'OK' | 'KO' = '' as any;
+  releveFilterDateDebut: string = '';
+  releveFilterDateFin: string = '';
+  releveFilterDateField: 'comptable' | 'valeur' = 'comptable';
+
+  applyReleveFilters() {
+    this.refreshRelevesFromApiWithFilters();
+  }
+
+  resetReleveFilters() {
+    this.releveFilterNumeroCompte = '';
+    this.releveFilterBanque = '';
+    this.releveFilterDevise = '';
+    this.releveFilterPays = '';
+    this.releveFilterReconStatus = '' as any;
+    this.releveFilterDateDebut = '';
+    this.releveFilterDateFin = '';
+    this.releveFilterDateField = 'comptable';
+    this.refreshRelevesFromApiWithFilters();
+  }
+
+  private buildReleveFilterPayload(): any {
+    const filter: any = {};
+    const add = (k: string, v: any) => { if (v !== undefined && v !== null && String(v).trim() !== '') filter[k] = v; };
+    if (this.releveSelectedBatchId && this.releveSelectedBatchId !== 'ALL') add('batchId', this.releveSelectedBatchId);
+    add('numeroCompte', this.releveFilterNumeroCompte);
+    add('banque', this.releveFilterBanque);
+    add('pays', this.releveFilterPays);
+    add('devise', this.releveFilterDevise);
+    add('reconStatus', this.releveFilterReconStatus);
+    add('dateDebut', this.releveFilterDateDebut);
+    add('dateFin', this.releveFilterDateFin);
+    add('dateField', this.releveFilterDateField);
+    return filter;
+  }
+
+  private refreshRelevesFromApiWithFilters() {
+    const filter = this.buildReleveFilterPayload();
+    this.releveService.list(filter).subscribe({
+      next: (rows) => {
+        const all = Array.isArray(rows) ? rows : [];
+        this.releveAllRows = all;
+        // Reappliquer sélection de lot si ALL choisi, sinon conserver l’option en cours
+        this.updateReleveBatchOptionsFromRows(all);
+        this.releveRows = this.getFilteredRelevesByStatusAndBatch();
+        this.updatePagedReconciliationResults();
+      },
+      error: () => {}
+    });
+  }
+
+  private updateReleveBatchOptionsFromRows(rows: any[]) {
+    const groups: Record<string, any[]> = {};
+    rows.forEach((r: any) => {
+      const bid = r.batchId || 'default';
+      if (!groups[bid]) groups[bid] = [];
+      groups[bid].push(r);
+    });
+    this.releveBatchOptions = Object.keys(groups).map(k => ({ id: k, label: k, count: groups[k].length }));
+    if (!this.releveSelectedBatchId || !this.releveBatchOptions.some(o => o.id === this.releveSelectedBatchId)) {
+      this.releveSelectedBatchId = 'ALL';
+    }
+  }
+
+  getFilteredRelevesByStatusAndBatch() {
+    // Source: tous les relevés puis filtrage par lot
+    let base = this.releveAllRows || [];
+    if (this.releveSelectedBatchId && this.releveSelectedBatchId !== 'ALL') {
+      base = base.filter((r: any) => (r && (r as any).batchId) === this.releveSelectedBatchId);
+    }
+    if (!this.releveStatusFilter) return base;
+    const target = this.releveStatusFilter;
+    return base.filter(r => this.getReleveReconStatus(r) === target);
+  }
+
   // Met en avant et reste sur la liste des comptes Banque dans la page Banque
   highlightBankAccounts() {
     // Reste sur la page Banque et affiche la section Comptes de Banque
@@ -1842,7 +1926,10 @@ export class BanqueComponent implements OnInit {
   }
 
   loadLatestReleveBatch() {
-    this.releveService.list().subscribe({
+    // Charger depuis l’API en appliquant éventuellement le batchId sélectionné
+    const filter: any = {};
+    if (this.releveSelectedBatchId && this.releveSelectedBatchId !== 'ALL') filter.batchId = this.releveSelectedBatchId;
+    this.releveService.list(filter).subscribe({
       next: (all) => {
         const rows = Array.isArray(all) ? all : [];
         if (!rows.length) { this.releveRows = []; this.releveAllRows = []; this.releveBatchId = null; this.releveBatchOptions = []; this.releveSelectedBatchId = 'ALL'; return; }

@@ -76,6 +76,11 @@
           <h3>Réconciliation banque</h3>
           <p>Lancer la réconciliation bancaire</p>
         </div>
+        <div class="feature-card" (click)="goToBanqueDashboard()">
+          <div class="feature-icon">📊</div>
+          <h3>Tableau de bord</h3>
+          <p>Taux de correspondance Banque vs BO</p>
+        </div>
       </div>
     </div>
 
@@ -125,6 +130,30 @@
           'fa-exclamation-triangle': releveMessageKind==='error'
         }"></i>
         <span>{{ releveMessage }}</span>
+      </div>
+
+      <!-- Barre de filtres Relevé -->
+      <div class="filters-bar" *ngIf="releveRows.length">
+        <div class="filters-row">
+          <input type="text" placeholder="Numéro de compte" [(ngModel)]="releveFilterNumeroCompte" (keyup.enter)="applyReleveFilters()">
+          <input type="text" placeholder="Banque" [(ngModel)]="releveFilterBanque" (keyup.enter)="applyReleveFilters()">
+          <input type="text" placeholder="Devise" [(ngModel)]="releveFilterDevise" (keyup.enter)="applyReleveFilters()" style="width:90px;">
+          <input type="text" placeholder="Pays (ex: CI)" [(ngModel)]="releveFilterPays" (keyup.enter)="applyReleveFilters()" style="width:80px; text-transform: uppercase;">
+          <select [(ngModel)]="releveFilterReconStatus" (change)="applyReleveFilters()">
+            <option [ngValue]="''">Statut (tous)</option>
+            <option [ngValue]="'OK'">OK</option>
+            <option [ngValue]="'KO'">KO</option>
+          </select>
+          <select [(ngModel)]="releveFilterDateField" (change)="applyReleveFilters()">
+            <option [ngValue]="'comptable'">Par date comptable</option>
+            <option [ngValue]="'valeur'">Par date valeur</option>
+          </select>
+          <input type="date" [(ngModel)]="releveFilterDateDebut" (change)="applyReleveFilters()">
+          <span>→</span>
+          <input type="date" [(ngModel)]="releveFilterDateFin" (change)="applyReleveFilters()">
+          <button (click)="applyReleveFilters()" title="Appliquer"><i class="fas fa-filter"></i></button>
+          <button (click)="resetReleveFilters()" title="Réinitialiser"><i class="fas fa-times"></i></button>
+        </div>
       </div>
 
       <div class="operations-table-container" *ngIf="releveRows.length">
@@ -396,6 +425,7 @@
           </tbody>
         </table>
         
+
         <table class="operations-table" *ngIf="reconView==='releve'">
           <thead>
             <tr>
