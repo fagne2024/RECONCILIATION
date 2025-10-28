@@ -130,13 +130,6 @@ export interface ReconciliationReportData {
             <div class="report-summary">
                 <div class="summary-cards">
                     <div class="summary-card">
-                        <div class="card-icon">📅</div>
-                        <div class="card-content">
-                            <div class="card-title">Dates</div>
-                            <div class="card-value">{{uniqueFilteredDates}}</div>
-                        </div>
-                    </div>
-                    <div class="summary-card">
                         <div class="card-icon">🏢</div>
                         <div class="card-content">
                             <div class="card-title">Agences</div>
@@ -1825,26 +1818,6 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         return Math.round(total / this.filteredReportData.length * 100) / 100;
     }
 
-    get uniqueFilteredDates(): number {
-        if (!this.filteredReportData || this.filteredReportData.length === 0) return 0;
-        
-        // Normaliser les dates pour ignorer l'heure
-        const normalizedDates = this.filteredReportData.map(item => {
-            const date = new Date(item.date);
-            return date.toISOString().split('T')[0]; // Format YYYY-MM-DD
-        });
-        
-        const uniqueDates = [...new Set(normalizedDates)];
-        console.log('🔍 Debug uniqueFilteredDates:', {
-            filteredReportDataLength: this.filteredReportData.length,
-            uniqueDates: uniqueDates,
-            uniqueCount: uniqueDates.length,
-            sampleDates: this.filteredReportData.slice(0, 3).map(item => item.date),
-            allDates: this.filteredReportData.map(item => item.date),
-            normalizedDates: normalizedDates
-        });
-        return uniqueDates.length;
-    }
 
     // Compteurs d'écarts
     get inProgressDiscrepancies(): number {

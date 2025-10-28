@@ -2884,48 +2884,94 @@ export class BanqueComponent implements OnInit {
 
     // Opérations (écarts seulement gauche)
     this.filteredLeftOps = (this.leftOnlyOperations || []).filter(op => {
-      if (!this.showOkMarked && (op as any).key && this.reconOkKeySet.has((op as any).key)) return false; // ignorer marqués OK
+      const isMarkedOk = (op as any).key && this.reconOkKeySet.has((op as any).key);
+      if (!this.showOkMarked && isMarkedOk) {
+        console.log('[RECON][DEBUG] Excluding OK marked operation:', (op as any).key, op);
+        return false; // ignorer marqués OK
+      }
       const okType = !f.typeOperation || (op.typeOperation || '') === f.typeOperation;
       const okStatut = !f.statut || (op.statut || '') === f.statut;
       const okBanque = matchBanque(op.bo);
       const okAmount = matchAmount(Math.abs(op.montant || 0));
       const okSearch = [op.nomBeneficiaire, op.reference, op.compteADebiter, op.agence]
         .some(v => matchText(v || ''));
-      return okType && okStatut && okBanque && okAmount && okSearch;
+      const result = okType && okStatut && okBanque && okAmount && okSearch;
+      if (result) {
+        console.log('[RECON][DEBUG] Including operation:', (op as any).key, 'marked OK:', isMarkedOk, 'showOkMarked:', this.showOkMarked);
+      }
+      return result;
     });
 
     // Relevés (écarts seulement droite)
     this.filteredRightReleves = (this.rightOnlyReleves || []).filter(r => {
-      if (!this.showOkMarked && (r as any).key && this.reconOkKeySet.has((r as any).key)) return false; // ignorer marqués OK
+      const isMarkedOk = (r as any).key && this.reconOkKeySet.has((r as any).key);
+      if (!this.showOkMarked && isMarkedOk) {
+        console.log('[RECON][DEBUG] Excluding OK marked releve:', (r as any).key, r);
+        return false; // ignorer marqués OK
+      }
       const amount = this.getReleveMontantAbs(r);
       const okBanque = matchBanque(r.banque);
       const okAmount = matchAmount(amount);
       const okSearch = [r.libelle, r.numeroCompte, r.nomCompte, r.numeroCheque]
         .some(v => matchText(v || ''));
-      return okBanque && okAmount && okSearch;
+      const result = okBanque && okAmount && okSearch;
+      if (result) {
+        console.log('[RECON][DEBUG] Including releve:', (r as any).key, 'marked OK:', isMarkedOk, 'showOkMarked:', this.showOkMarked);
+      }
+      return result;
     });
 
     // Correspondances opérations
     this.filteredMatchedOps = (this.matchedOperations || []).filter(op => {
-      if (!this.showOkMarked && (op as any).key && this.reconOkKeySet.has((op as any).key)) return false; // ignorer marqués OK
+      const isMarkedOk = (op as any).key && this.reconOkKeySet.has((op as any).key);
+      if (!this.showOkMarked && isMarkedOk) {
+        console.log('[RECON][DEBUG] Excluding OK marked matched operation:', (op as any).key, op);
+        return false; // ignorer marqués OK
+      }
       const okType = !f.typeOperation || (op.typeOperation || '') === f.typeOperation;
       const okStatut = !f.statut || (op.statut || '') === f.statut;
       const okBanque = matchBanque(op.bo);
       const okAmount = matchAmount(Math.abs(op.montant || 0));
       const okSearch = [op.nomBeneficiaire, op.reference, op.compteADebiter, op.agence]
         .some(v => matchText(v || ''));
-      return okType && okStatut && okBanque && okAmount && okSearch;
+      const result = okType && okStatut && okBanque && okAmount && okSearch;
+      if (result) {
+        console.log('[RECON][DEBUG] Including matched operation:', (op as any).key, 'marked OK:', isMarkedOk, 'showOkMarked:', this.showOkMarked);
+      }
+      return result;
     });
 
     // Correspondances relevé
     this.filteredMatchedReleves = (this.matchedReleves || []).filter(r => {
-      if (!this.showOkMarked && (r as any).key && this.reconOkKeySet.has((r as any).key)) return false; // ignorer marqués OK
+      const isMarkedOk = (r as any).key && this.reconOkKeySet.has((r as any).key);
+      if (!this.showOkMarked && isMarkedOk) {
+        console.log('[RECON][DEBUG] Excluding OK marked matched releve:', (r as any).key, r);
+        return false; // ignorer marqués OK
+      }
       const amount = this.getReleveMontantAbs(r);
       const okBanque = matchBanque(r.banque);
       const okAmount = matchAmount(amount);
       const okSearch = [r.libelle, r.numeroCompte, r.nomCompte, r.numeroCheque]
         .some(v => matchText(v || ''));
-      return okBanque && okAmount && okSearch;
+      const result = okBanque && okAmount && okSearch;
+      if (result) {
+        console.log('[RECON][DEBUG] Including matched releve:', (r as any).key, 'marked OK:', isMarkedOk, 'showOkMarked:', this.showOkMarked);
+      }
+      return result;
+    });
+
+    // Logs de débogage pour les totaux
+    console.log('[RECON][DEBUG] Filtering results:', {
+      showOkMarked: this.showOkMarked,
+      totalOkKeys: this.reconOkKeySet.size,
+      leftOnlyOperations: (this.leftOnlyOperations || []).length,
+      filteredLeftOps: this.filteredLeftOps.length,
+      rightOnlyReleves: (this.rightOnlyReleves || []).length,
+      filteredRightReleves: this.filteredRightReleves.length,
+      matchedOperations: (this.matchedOperations || []).length,
+      filteredMatchedOps: this.filteredMatchedOps.length,
+      matchedReleves: (this.matchedReleves || []).length,
+      filteredMatchedReleves: this.filteredMatchedReleves.length
     });
 
     // Global (legacy, non affiché directement ici)
