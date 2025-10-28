@@ -2559,7 +2559,7 @@ export class BanqueComponent implements OnInit {
       reconPays: this.reconPays,
       reconDate: this.reconDate,
       operationsCount: this.operations?.length || 0,
-      relevesCount: this.releves?.length || 0
+      relevesCount: this.releveAllRows?.length || 0
     });
     
     if (!this.reconPays) {
