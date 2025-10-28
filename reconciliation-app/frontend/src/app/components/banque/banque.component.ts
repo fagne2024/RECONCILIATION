@@ -2771,10 +2771,36 @@ export class BanqueComponent implements OnInit {
     this.leftOnlyOperations = diffs.filter(d => !!d.left).map(d => d.left!) as OperationBancaireDisplay[];
     this.rightOnlyReleves = diffs.filter(d => !!d.right).map(d => d.right!) as ReleveBancaireRow[];
 
+    console.log('[RECON][DEBUG] reconcile() results:', {
+      totalDiffs: diffs.length,
+      leftOnlyOperations: this.leftOnlyOperations.length,
+      rightOnlyReleves: this.rightOnlyReleves.length,
+      sampleLeftOps: this.leftOnlyOperations.slice(0, 2).map(op => ({
+        key: (op as any).key,
+        typeOperation: op.typeOperation,
+        montant: op.montant
+      })),
+      sampleRightReleves: this.rightOnlyReleves.slice(0, 2).map(r => ({
+        key: (r as any).key,
+        banque: r.banque,
+        montant: r.montant
+      }))
+    });
+
     // Correspondances complètes (toutes colonnes)
     const bothKeys = Array.from(allKeys).filter(k => opMap.has(k) && revMap.has(k));
     this.matchedOperations = bothKeys.map(k => opMap.get(k)!.op);
     this.matchedReleves = bothKeys.map(k => revMap.get(k)!.row);
+    
+    console.log('[RECON][DEBUG] matched results:', {
+      matchedOperations: this.matchedOperations.length,
+      matchedReleves: this.matchedReleves.length,
+      sampleMatchedOps: this.matchedOperations.slice(0, 2).map(op => ({
+        key: (op as any).key,
+        typeOperation: op.typeOperation,
+        montant: op.montant
+      }))
+    });
     // Index pour action rapide
     (this as any).keyToOp = {};
     (this as any).keyToRev = {};
@@ -2988,6 +3014,44 @@ export class BanqueComponent implements OnInit {
       console.log('[RECON][WARNING] Aucune réconciliation lancée - reconPays est vide');
     } else if (!(this.leftOnlyOperations?.length || this.rightOnlyReleves?.length || this.matchedOperations?.length || this.matchedReleves?.length)) {
       console.log('[RECON][WARNING] Réconciliation lancée mais aucune donnée trouvée pour', this.reconPays);
+    } else {
+      console.log('[RECON][INFO] Réconciliation active avec données:', {
+        reconPays: this.reconPays,
+        leftOnlyOperations: this.leftOnlyOperations?.length || 0,
+        rightOnlyReleves: this.rightOnlyReleves?.length || 0,
+        matchedOperations: this.matchedOperations?.length || 0,
+        matchedReleves: this.matchedReleves?.length || 0,
+        showOkMarked: this.showOkMarked,
+        totalOkKeys: this.reconOkKeySet.size
+      });
+      
+      // Logs détaillés pour chaque catégorie
+      if (this.leftOnlyOperations?.length > 0) {
+        console.log('[RECON][DEBUG] leftOnlyOperations sample:', this.leftOnlyOperations.slice(0, 3).map(op => ({
+          key: (op as any).key,
+          isMarkedOk: (op as any).key && this.reconOkKeySet.has((op as any).key),
+          typeOperation: op.typeOperation,
+          montant: op.montant
+        })));
+      }
+      
+      if (this.rightOnlyReleves?.length > 0) {
+        console.log('[RECON][DEBUG] rightOnlyReleves sample:', this.rightOnlyReleves.slice(0, 3).map(r => ({
+          key: (r as any).key,
+          isMarkedOk: (r as any).key && this.reconOkKeySet.has((r as any).key),
+          banque: r.banque,
+          montant: r.montant
+        })));
+      }
+      
+      if (this.matchedOperations?.length > 0) {
+        console.log('[RECON][DEBUG] matchedOperations sample:', this.matchedOperations.slice(0, 3).map(op => ({
+          key: (op as any).key,
+          isMarkedOk: (op as any).key && this.reconOkKeySet.has((op as any).key),
+          typeOperation: op.typeOperation,
+          montant: op.montant
+        })));
+      }
     }
 
     // Global (legacy, non affiché directement ici)
