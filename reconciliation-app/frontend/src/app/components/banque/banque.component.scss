@@ -2586,3 +2586,56 @@
     }
   }
 }
+
+// Styles pour les messages d'information de réconciliation
+.recon-info-message {
+  margin: 20px 0;
+  
+  .info-card {
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+    padding: 20px;
+    background: #f8f9fa;
+    border: 1px solid #dee2e6;
+    border-radius: 8px;
+    border-left: 4px solid #007bff;
+    
+    i {
+      font-size: 1.5rem;
+      color: #007bff;
+      margin-top: 2px;
+      flex-shrink: 0;
+    }
+    
+    .info-content {
+      flex: 1;
+      
+      h4 {
+        margin: 0 0 8px 0;
+        color: #495057;
+        font-size: 1.1rem;
+        font-weight: 600;
+      }
+      
+      p {
+        margin: 0;
+        color: #6c757d;
+        line-height: 1.5;
+        
+        strong {
+          color: #495057;
+        }
+      }
+    }
+  }
+  
+  // Style pour les messages d'avertissement
+  .info-card:has(.fa-exclamation-triangle) {
+    border-left-color: #ffc107;
+    
+    i {
+      color: #ffc107;
+    }
+  }
+}

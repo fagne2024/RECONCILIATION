@@ -337,6 +337,27 @@
           </button>
         </div>
 
+        <!-- Message d'information si pas de données de réconciliation -->
+        <div class="recon-info-message" *ngIf="!reconPays">
+          <div class="info-card">
+            <i class="fas fa-info-circle"></i>
+            <div class="info-content">
+              <h4>Aucune réconciliation en cours</h4>
+              <p>Pour voir les filtres OK/KO, vous devez d'abord lancer une réconciliation en sélectionnant un pays et en cliquant sur "Réconcilier".</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="recon-info-message" *ngIf="reconPays && !(leftOnlyOperations?.length || rightOnlyReleves?.length || matchedOperations?.length || matchedReleves?.length)">
+          <div class="info-card">
+            <i class="fas fa-exclamation-triangle"></i>
+            <div class="info-content">
+              <h4>Aucune donnée de réconciliation trouvée</h4>
+              <p>La réconciliation pour <strong>{{ reconPays }}</strong> n'a trouvé aucune donnée à comparer. Vérifiez que vous avez des opérations bancaires et des relevés importés pour ce pays.</p>
+            </div>
+          </div>
+        </div>
+
         <div class="pagination-controls">
           <div class="bulk-actions" *ngIf="reconView==='corr_operation' || reconView==='corr_releve'">
             <button class="btn-bulk-action" (click)="bulkMarkOkDefinitif()" [disabled]="selectedReconKeys.size===0" title="Marquer OK définitif (plusieurs)">

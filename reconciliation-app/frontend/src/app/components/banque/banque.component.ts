@@ -2555,6 +2555,13 @@ export class BanqueComponent implements OnInit {
   // Réconciliation - Actions
   // =========================
   reconcile() {
+    console.log('[RECON][DEBUG] reconcile() called with:', {
+      reconPays: this.reconPays,
+      reconDate: this.reconDate,
+      operationsCount: this.operations?.length || 0,
+      relevesCount: this.releves?.length || 0
+    });
+    
     if (!this.reconPays) {
       this.popupService.showWarning('Veuillez choisir un pays. La date est optionnelle.');
       return;
@@ -2971,8 +2978,17 @@ export class BanqueComponent implements OnInit {
       matchedOperations: (this.matchedOperations || []).length,
       filteredMatchedOps: this.filteredMatchedOps.length,
       matchedReleves: (this.matchedReleves || []).length,
-      filteredMatchedReleves: this.filteredMatchedReleves.length
+      filteredMatchedReleves: this.filteredMatchedReleves.length,
+      reconPays: this.reconPays,
+      hasReconciliationData: !!(this.leftOnlyOperations?.length || this.rightOnlyReleves?.length || this.matchedOperations?.length || this.matchedReleves?.length)
     });
+
+    // Avertissement si pas de données de réconciliation
+    if (!this.reconPays) {
+      console.log('[RECON][WARNING] Aucune réconciliation lancée - reconPays est vide');
+    } else if (!(this.leftOnlyOperations?.length || this.rightOnlyReleves?.length || this.matchedOperations?.length || this.matchedReleves?.length)) {
+      console.log('[RECON][WARNING] Réconciliation lancée mais aucune donnée trouvée pour', this.reconPays);
+    }
 
     // Global (legacy, non affiché directement ici)
     this.reconTotalPages = Math.ceil(this.reconDiffRows.length / this.reconPageSize) || 1;
