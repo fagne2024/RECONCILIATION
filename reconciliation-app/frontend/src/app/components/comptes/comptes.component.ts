@@ -27,6 +27,8 @@ import { PopupService } from '../../services/popup.service';
 })
 export class ComptesComponent implements OnInit, OnDestroy {
     comptes: Compte[] = [];
+    // Source immuable pour les filtres (liste complète non filtrée)
+    allComptes: Compte[] = [];
     pagedComptes: Compte[] = [];
     currentPage = 1;
     pageSize = 7;
@@ -315,45 +317,19 @@ export class ComptesComponent implements OnInit, OnDestroy {
         
         this.paysSearchCtrl.valueChanges.subscribe((search: string | null) => {
             const s = (search || '').toLowerCase();
-            // Utiliser directement getFilteredPays() pour avoir les données les plus récentes
             const availablePays = this.getFilteredPays();
             this.filteredPaysList = availablePays.filter(p => p.toLowerCase().includes(s));
-            // Sélection automatique si un seul résultat
-            if (this.filteredPaysList.length === 1 && !this.selectedPays.includes(this.filteredPaysList[0])) {
-                this.selectedPays = [this.filteredPaysList[0]];
-                this.filterForm.controls['pays'].setValue(this.selectedPays);
-                if (this.paysSelect) { this.paysSelect.close(); }
-                this.updateFilteredLists();
-                this.applyFilters();
-            }
         });
         this.codeProprietaireSearchCtrl.valueChanges.subscribe((search: string | null) => {
             const s = (search || '').toLowerCase();
-            // Utiliser directement getFilteredCodeProprietaire() pour avoir les données les plus récentes
             const availableCodeProprietaire = this.getFilteredCodeProprietaire();
             this.filteredCodeProprietaireList = availableCodeProprietaire.filter(c => c.toLowerCase().includes(s));
-            // Sélection automatique si un seul résultat
-            if (this.filteredCodeProprietaireList.length === 1 && !this.selectedCodesProprietaire.includes(this.filteredCodeProprietaireList[0])) {
-                this.selectedCodesProprietaire = [this.filteredCodeProprietaireList[0]];
-                this.filterForm.controls['codeProprietaire'].setValue(this.selectedCodesProprietaire);
-                if (this.codeProprietaireSelect) { this.codeProprietaireSelect.close(); }
-                this.updateFilteredLists();
-                this.applyFilters();
-            }
         });
         
         this.categorieSearchCtrl.valueChanges.subscribe((search: string | null) => {
             const s = (search || '').toLowerCase();
             const availableCategories = this.getFilteredCategories();
             this.filteredCategorieList = availableCategories.filter(c => c.toLowerCase().includes(s));
-            // Sélection automatique si un seul résultat
-            if (this.filteredCategorieList.length === 1 && !this.selectedCategories.includes(this.filteredCategorieList[0])) {
-                this.selectedCategories = [this.filteredCategorieList[0]];
-                this.filterForm.controls['categorie'].setValue(this.selectedCategories);
-                if (this.categorieSelect) { this.categorieSelect.close(); }
-                this.updateFilteredLists();
-                this.applyFilters();
-            }
         });
 
         // Synchroniser les valeurs du formulaire vers les variables locales
@@ -383,6 +359,7 @@ export class ComptesComponent implements OnInit, OnDestroy {
         this.subscription.add(
             this.compteService.getAllComptes().subscribe({
                 next: (comptes) => {
+                    this.allComptes = comptes;
                     this.comptes = comptes;
                     
                     // Mettre à jour les listes filtrées avec cloisonnement après chargement des comptes
@@ -413,6 +390,7 @@ export class ComptesComponent implements OnInit, OnDestroy {
                 this.compteService.createCompte(newCompte).subscribe({
                     next: (compte) => {
                         console.log('Compte créé avec succès:', compte);
+                        this.allComptes.unshift(compte);
                         this.comptes.unshift(compte);
                         this.updatePagedComptes();
                         this.calculateStats();
@@ -477,6 +455,7 @@ export class ComptesComponent implements OnInit, OnDestroy {
                 this.compteService.deleteCompte(id).subscribe({
                     next: (response) => {
                         if (response.success) {
+                            this.allComptes = this.allComptes.filter(c => c.id !== id);
                             this.comptes = this.comptes.filter(c => c.id !== id);
                             this.updatePagedComptes();
                             this.calculateStats();
@@ -524,6 +503,7 @@ export class ComptesComponent implements OnInit, OnDestroy {
             this.compteService.filterComptes(filter).subscribe({
                 next: (comptes) => {
                     console.log('Résultats du filtrage:', comptes);
+                    // Ne pas toucher allComptes ici (reste la source complète)
                     this.comptes = comptes;
                     
                     // Mettre à jour les listes filtrées avec cloisonnement après le filtrage
@@ -851,6 +831,7 @@ export class ComptesComponent implements OnInit, OnDestroy {
                 this.compteService.updateCompte(this.editingCompte.id!, updatedCompte).subscribe({
                     next: (compte) => {
                         console.log('Compte mis à jour avec succès:', compte);
+                        this.allComptes = this.allComptes.map(c => c.id === compte.id ? compte : c);
                         this.comptes = this.comptes.map(c => c.id === compte.id ? compte : c);
                         this.updatePagedComptes();
                         this.calculateStats();
@@ -1064,7 +1045,7 @@ export class ComptesComponent implements OnInit, OnDestroy {
             return this.paysList;
         }
         
-        let data = this.comptes;
+        let data = this.allComptes && this.allComptes.length ? this.allComptes : this.comptes;
         // Filtrer par code propriétaire si sélectionné
         if (this.selectedCodesProprietaire && this.selectedCodesProprietaire.length > 0) {
             data = data.filter(c => c.codeProprietaire && this.selectedCodesProprietaire.includes(c.codeProprietaire));
@@ -1078,7 +1059,9 @@ export class ComptesComponent implements OnInit, OnDestroy {
             data = data.filter(c => c.type && this.selectedTypes.includes(c.type));
         }
         const pays = [...new Set(data.map(c => c.pays).filter((p): p is string => p !== undefined && p !== null))];
-        return pays.sort();
+        // Toujours inclure les éléments déjà sélectionnés pour qu'ils restent visibles et cochés
+        const withSelected = Array.from(new Set([...(pays || []), ...(this.selectedPays || [])]));
+        return withSelected.sort();
     }
 
     getFilteredCodeProprietaire(): string[] {
@@ -1087,7 +1070,7 @@ export class ComptesComponent implements OnInit, OnDestroy {
             return this.codeProprietaireList;
         }
         
-        let data = this.comptes;
+        let data = this.allComptes && this.allComptes.length ? this.allComptes : this.comptes;
         // Filtrer par pays si sélectionné (cloisonnement principal)
         if (this.selectedPays && this.selectedPays.length > 0) {
             data = data.filter(c => c.pays && this.selectedPays.includes(c.pays));
@@ -1101,7 +1084,9 @@ export class ComptesComponent implements OnInit, OnDestroy {
             data = data.filter(c => c.type && this.selectedTypes.includes(c.type));
         }
         const codeProprietaire = [...new Set(data.map(c => c.codeProprietaire).filter((c): c is string => c !== undefined && c !== null))];
-        return codeProprietaire.sort();
+        // Toujours inclure les éléments déjà sélectionnés
+        const withSelected = Array.from(new Set([...(codeProprietaire || []), ...(this.selectedCodesProprietaire || [])]));
+        return withSelected.sort();
     }
     
     getFilteredCategories(): string[] {
@@ -1110,7 +1095,7 @@ export class ComptesComponent implements OnInit, OnDestroy {
             return this.compteCategories;
         }
         
-        let data = this.comptes;
+        let data = this.allComptes && this.allComptes.length ? this.allComptes : this.comptes;
         // Filtrer par pays si sélectionné
         if (this.selectedPays && this.selectedPays.length > 0) {
             data = data.filter(c => c.pays && this.selectedPays.includes(c.pays));
@@ -1124,7 +1109,9 @@ export class ComptesComponent implements OnInit, OnDestroy {
             data = data.filter(c => c.type && this.selectedTypes.includes(c.type));
         }
         const categories = [...new Set(data.map(c => c.categorie).filter((c): c is string => c !== undefined && c !== null))];
-        return categories.sort();
+        // Toujours inclure les éléments déjà sélectionnés
+        const withSelected = Array.from(new Set([...(categories || []), ...(this.selectedCategories || [])]));
+        return withSelected.sort();
     }
 
     getFilteredTypes(): string[] {
@@ -1133,7 +1120,7 @@ export class ComptesComponent implements OnInit, OnDestroy {
             return this.compteTypes;
         }
         
-        let data = this.comptes;
+        let data = this.allComptes && this.allComptes.length ? this.allComptes : this.comptes;
         // Filtrer par pays si sélectionné
         if (this.selectedPays && this.selectedPays.length > 0) {
             data = data.filter(c => c.pays && this.selectedPays.includes(c.pays));
@@ -1147,7 +1134,9 @@ export class ComptesComponent implements OnInit, OnDestroy {
             data = data.filter(c => c.categorie && this.selectedCategories.includes(c.categorie));
         }
         const types = [...new Set(data.map(c => c.type).filter((t): t is string => t !== undefined && t !== null))];
-        return types.sort();
+        // Toujours inclure les éléments déjà sélectionnés
+        const withSelected = Array.from(new Set([...(types || []), ...(this.selectedTypes || [])]));
+        return withSelected.sort();
     }
 
     get pagedComptesCritiques() {
