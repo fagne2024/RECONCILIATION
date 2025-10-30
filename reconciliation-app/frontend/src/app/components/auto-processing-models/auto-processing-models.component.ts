@@ -315,6 +315,11 @@ export class AutoProcessingModelsComponent implements OnInit {
       groups: this.availableGroups,
       countries: this.availableCountries
     });
+
+    // Définir par défaut l'affichage des modèles Back Office si disponible
+    if (!this.hasActiveFilters() && this.availableGroups.includes('Back Office')) {
+      this.filterGroup = 'Back Office';
+    }
   }
 
   /**

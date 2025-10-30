@@ -34,16 +34,14 @@
         </div>
         <div class="filters-content">
             <div class="filter-group">
-                <label for="countryFilter" class="filter-label">Pays:</label>
-                <select id="countryFilter" 
-                        [(ngModel)]="selectedCountry" 
-                        (change)="onCountryFilterChange()"
-                        class="filter-select">
-                    <option value="">Tous les pays</option>
-                    <option *ngFor="let country of availableCountries" [value]="country">
-                        {{ country }}
-                    </option>
-                </select>
+                <label class="filter-label">Pays:</label>
+                <mat-form-field appearance="fill" class="filter-select">
+                    <mat-select [(ngModel)]="selectedCountry" multiple (selectionChange)="onCountryFilterChange()" placeholder="Sélectionner un ou plusieurs pays">
+                        <mat-option *ngFor="let country of availableCountries" [value]="country">
+                            {{ country }}
+                        </mat-option>
+                    </mat-select>
+                </mat-form-field>
             </div>
             
             <div class="filter-group">
@@ -75,17 +73,14 @@
             </div>
             
             <div class="filter-group">
-                <label for="serviceFilter" class="filter-label">Service:</label>
-                <select id="serviceFilter" 
-                        [(ngModel)]="selectedService" 
-                        (change)="onServiceFilterChange()"
-                        class="filter-select"
-                        [disabled]="!selectedCountry && filteredServices.length === 0">
-                    <option value="">Tous les services</option>
-                    <option *ngFor="let service of filteredServices" [value]="service">
-                        {{ service }}
-                    </option>
-                </select>
+                <label class="filter-label">Service:</label>
+                <mat-form-field appearance="fill" class="filter-select">
+                    <mat-select [(ngModel)]="selectedService" multiple (selectionChange)="onServiceFilterChange()" [disabled]="selectedCountry.length === 0 && filteredServices.length === 0" placeholder="Sélectionner un ou plusieurs services">
+                        <mat-option *ngFor="let service of filteredServices" [value]="service">
+                            {{ service }}
+                        </mat-option>
+                    </mat-select>
+                </mat-form-field>
             </div>
             
             <div class="filter-actions">
@@ -99,10 +94,10 @@
         </div>
         
         <!-- Résumé des filtres appliqués -->
-        <div *ngIf="selectedCountry || selectedService || selectedDateStart || selectedDateEnd" class="active-filters">
+        <div *ngIf="(selectedCountry && selectedCountry.length) || (selectedService && selectedService.length) || selectedDateStart || selectedDateEnd" class="active-filters">
             <span class="active-filters-label">Filtres actifs:</span>
-            <span *ngIf="selectedCountry" class="filter-tag">
-                Pays: {{ selectedCountry }}
+            <span *ngIf="selectedCountry && selectedCountry.length" class="filter-tag">
+                Pays: {{ selectedCountry.join(', ') }}
             </span>
             <span *ngIf="selectedDateStart" class="filter-tag">
                 Date début: {{ selectedDateStart | date:'dd/MM/yyyy' }}
@@ -110,8 +105,8 @@
             <span *ngIf="selectedDateEnd" class="filter-tag">
                 Date fin: {{ selectedDateEnd | date:'dd/MM/yyyy' }}
             </span>
-            <span *ngIf="selectedService" class="filter-tag">
-                Service: {{ selectedService }}
+            <span *ngIf="selectedService && selectedService.length" class="filter-tag">
+                Service: {{ selectedService.join(', ') }}
             </span>
             <span class="filter-results">
                 ({{ filteredCountryServiceData.length }} résultat(s))

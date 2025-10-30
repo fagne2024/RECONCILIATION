@@ -22,8 +22,8 @@ export class DashboardReconciliationComponent implements OnInit, OnDestroy {
     itemsPerPage = 4; // 4 cartes par page
     
     // Filtres
-    selectedCountry: string = '';
-    selectedService: string = '';
+    selectedCountry: string[] = [];
+    selectedService: string[] = [];
     selectedDateStart: Date | null = null;
     selectedDateEnd: Date | null = null;
     availableCountries: string[] = [];
@@ -174,9 +174,9 @@ export class DashboardReconciliationComponent implements OnInit, OnDestroy {
     applyFilters(): void {
         let filtered = [...this.countryServiceData];
 
-        // Filtrer par pays
-        if (this.selectedCountry) {
-            filtered = filtered.filter(country => country.country === this.selectedCountry);
+        // Filtrer par pays (multi)
+        if (this.selectedCountry && this.selectedCountry.length > 0) {
+            filtered = filtered.filter(country => this.selectedCountry.includes(country.country));
         }
 
         // Filtrer par intervalle de dates
@@ -211,13 +211,15 @@ export class DashboardReconciliationComponent implements OnInit, OnDestroy {
             }).filter(country => Object.keys(country.services).length > 0);
         }
 
-        // Filtrer par service (après le filtrage par pays et date)
-        if (this.selectedService) {
+        // Filtrer par services (multi) après pays/date
+        if (this.selectedService && this.selectedService.length > 0) {
             filtered = filtered.map(country => {
                 const filteredServices: {[serviceName: string]: any} = {};
-                if (country.services[this.selectedService]) {
-                    filteredServices[this.selectedService] = country.services[this.selectedService];
-                }
+                Object.keys(country.services).forEach(serviceName => {
+                    if (this.selectedService.includes(serviceName)) {
+                        filteredServices[serviceName] = country.services[serviceName];
+                    }
+                });
                 return {
                     ...country,
                     services: filteredServices
@@ -233,8 +235,8 @@ export class DashboardReconciliationComponent implements OnInit, OnDestroy {
      * Gère le changement de filtre pays
      */
     onCountryFilterChange(): void {
-        // Réinitialiser le service sélectionné quand le pays change
-        this.selectedService = '';
+        // Réinitialiser les services sélectionnés quand le pays change
+        this.selectedService = [];
         
         // Mettre à jour la liste des services disponibles pour ce pays
         this.updateFilteredServices();
@@ -267,14 +269,14 @@ export class DashboardReconciliationComponent implements OnInit, OnDestroy {
      * Met à jour la liste des services filtrés selon le pays sélectionné
      */
     private updateFilteredServices(): void {
-        if (!this.selectedCountry) {
+        if (!this.selectedCountry || this.selectedCountry.length === 0) {
             // Si aucun pays sélectionné, afficher tous les services
             this.filteredServices = [...this.availableServices];
         } else {
             // Filtrer les services selon le pays sélectionné
             const servicesForCountry = new Set<string>();
             this.countryServiceData
-                .filter(country => country.country === this.selectedCountry)
+                .filter(country => this.selectedCountry.includes(country.country))
                 .forEach(country => {
                     Object.keys(country.services).forEach(service => {
                         servicesForCountry.add(service);
@@ -288,8 +290,8 @@ export class DashboardReconciliationComponent implements OnInit, OnDestroy {
      * Réinitialise tous les filtres
      */
     resetFilters(): void {
-        this.selectedCountry = '';
-        this.selectedService = '';
+        this.selectedCountry = [];
+        this.selectedService = [];
         this.selectedDateStart = null;
         this.selectedDateEnd = null;
         this.filteredServices = [...this.availableServices];

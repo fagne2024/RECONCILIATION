@@ -2822,24 +2822,7 @@ export class ComptesComponent implements OnInit, OnDestroy {
         this.isLoadingControlRevenu = true;
         this.showControlRevenuTab = true;
 
-        // Charger les frais paramétrés en premier
-        this.fraisTransactionService.getAllFraisTransactionsActifs().subscribe({
-            next: (frais) => {
-                this.fraisParametres = frais;
-                console.log('Frais paramétrés chargés:', frais);
-                
-                // Ensuite charger les données AgencySummary
-                this.loadAgencySummaryData(agency, service);
-            },
-            error: (error) => {
-                console.error('Erreur lors du chargement des frais paramétrés:', error);
-                this.fraisParametres = [];
-                // Continuer avec les données AgencySummary même sans frais
-                this.loadAgencySummaryData(agency, service);
-            }
-        });
-
-        // Déterminer l'agence et le service à filtrer
+        // Déterminer l'agence et le service à filtrer AVANT de charger les données
         let agency: string | undefined = undefined;
         let service: string | undefined = undefined;
         
@@ -2862,8 +2845,23 @@ export class ComptesComponent implements OnInit, OnDestroy {
         } else {
             console.log('Aucun compte sélectionné, affichage de toutes les données');
         }
-        
-        // Cette méthode sera appelée après le chargement des frais paramétrés
+
+        // Charger les frais paramétrés en premier
+        this.fraisTransactionService.getAllFraisTransactionsActifs().subscribe({
+            next: (frais) => {
+                this.fraisParametres = frais;
+                console.log('Frais paramétrés chargés:', frais);
+                
+                // Ensuite charger les données AgencySummary
+                this.loadAgencySummaryData(agency, service);
+            },
+            error: (error) => {
+                console.error('Erreur lors du chargement des frais paramétrés:', error);
+                this.fraisParametres = [];
+                // Continuer avec les données AgencySummary même sans frais
+                this.loadAgencySummaryData(agency, service);
+            }
+        });
     }
 
     private loadAgencySummaryData(agency: string | undefined, service: string | undefined): void {
@@ -3081,8 +3079,32 @@ export class ComptesComponent implements OnInit, OnDestroy {
     getTauxConformiteControlRevenu(): number {
         const total = this.getTotalControlRevenu();
         if (total === 0) return 0;
-        const normaux = this.getTotalNormauxControlRevenu();
-        return (normaux / total) * 100;
+        
+        // Calculer le taux de conformité basé sur la proportion de contrôles normaux
+        // pondérés par le revenu attendu (MàG < 1% = normal, MàG >= 1% = anomalie/critique)
+        let totalPoidsNormal = 0;
+        let totalPoids = 0;
+        
+        this.controlRevenuDataFiltered.forEach(item => {
+            const magPercentage = Math.abs(this.getMagPercentage(item));
+            const poids = item.revenuAttendu; // Poids basé sur le revenu attendu
+            totalPoids += poids;
+            
+            // Un contrôle est considéré comme conforme si son MàG < 1%
+            if (magPercentage < 1.0) {
+                totalPoidsNormal += poids;
+            }
+        });
+        
+        if (totalPoids === 0) return 0;
+        
+        // Retourner le taux de conformité en pourcentage
+        const tauxConformite = (totalPoidsNormal / totalPoids) * 100;
+        
+        // Ajouter un log pour debug
+        console.log(`Taux de conformité: ${totalPoidsNormal.toFixed(2)} / ${totalPoids.toFixed(2)} = ${tauxConformite.toFixed(2)}%`);
+        
+        return tauxConformite;
     }
 
     getTotalVolumeControlRevenu(): number {
