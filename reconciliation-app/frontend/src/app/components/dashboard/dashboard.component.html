@@ -295,14 +295,20 @@
 
             <!-- Statistiques des transactions créées par service -->
             <div class="transaction-created-stats-section">
-                <h4>🔄 Transactions créées par service</h4>
-                <div *ngIf="transactionCreatedLoading" class="loading-message">
+                <div class="bottom-section-header">
+                    <h4>🔄 Transactions créées et annulées par service</h4>
+                    <button class="toggle-btn" [class.active]="showBottomSection" (click)="showBottomSection = !showBottomSection">
+                        <span class="toggle-icon">▾</span>
+                        {{ showBottomSection ? 'Masquer' : 'Afficher' }}
+                    </button>
+                </div>
+                <div *ngIf="transactionCreatedLoading && showBottomSection" class="loading-message">
                     Chargement des statistiques des transactions créées...
                 </div>
-                <div *ngIf="transactionCreatedError" class="error-message">
+                <div *ngIf="transactionCreatedError && showBottomSection" class="error-message">
                     {{ transactionCreatedError }}
                 </div>
-                <div *ngIf="transactionCreatedStats && !transactionCreatedLoading" class="transaction-stats-container">
+                <div *ngIf="showBottomSection && transactionCreatedStats && !transactionCreatedLoading" class="transaction-stats-container">
                     <!-- Résumé global -->
                     <div class="global-stats-summary">
                         <div class="summary-card">
@@ -330,7 +336,7 @@
                             <div class="summary-icon">📊</div>
                             <div class="summary-content">
                                 <div class="summary-value">{{ transactionCreatedStats.totalTransactionCount }}</div>
-                                <div class="summary-label">Transactions créées</div>
+                                <div class="summary-label">Transactions créées/annulées</div>
                             </div>
                         </div>
                     </div>

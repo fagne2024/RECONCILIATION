@@ -30,6 +30,9 @@ export class BanqueDashboardComponent implements OnInit {
   totalOperations = 0;
   totalReleves = 0;
 
+  // Gestion drapeaux
+  private flagLoadError: { [code: string]: boolean } = {};
+
   private okBaseKeys = new Set<string>();
   private statusByBaseKey: Record<string, 'OK' | 'KO'> = {};
 
@@ -44,6 +47,30 @@ export class BanqueDashboardComponent implements OnInit {
 
   ngOnInit(): void {
     this.loadRealData();
+  }
+
+  // === FLAGS ===
+  getCountryFlag(code: string): string {
+    const flagMap: Record<string, string> = {
+      'BF': '🇧🇫','BJ': '🇧🇯','CI': '🇨🇮','CM': '🇨🇲','GA': '🇬🇦','GN': '🇬🇳','KE': '🇰🇪','ML': '🇲🇱','MZ': '🇲🇿','NG': '🇳🇬','SN': '🇸🇳','TG': '🇹🇬'
+    };
+    return flagMap[(code || '').toUpperCase()] || '🌍';
+  }
+
+  getCountryFlagUrl(code: string): string | null {
+    const c = (code || '').toLowerCase();
+    if (!c) return null;
+    if (this.flagLoadError[c]) return null;
+    return `assets/flags/${c}.svg`;
+  }
+
+  onFlagError(e: Event, code: string) { this.flagLoadError[(code||'').toLowerCase()] = true; }
+
+  getCountryName(code: string): string {
+    const names: Record<string, string> = {
+      'BF':'Burkina Faso','BJ':'Bénin','CI':'Côte d\'Ivoire','CM':'Cameroun','GA':'Gabon','GN':'Guinée','KE':'Kenya','ML':'Mali','MZ':'Mozambique','NG':'Nigeria','SN':'Sénégal','TG':'Togo'
+    };
+    return names[(code||'').toUpperCase()] || code;
   }
 
   private loadRealData() {

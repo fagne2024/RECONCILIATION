@@ -27,8 +27,19 @@
         </div>
     </div>
 
+    <!-- Toggle Filtres -->
+    <div *ngIf="!loading && !error && countryServiceData && countryServiceData.length > 0" class="filters-toggle">
+        <div class="filters-toggle-inner">
+            <h3>🔍 Filtres</h3>
+            <button class="toggle-btn" [class.active]="showFilters" (click)="showFilters = !showFilters">
+                <span class="toggle-icon">▾</span>
+                {{ showFilters ? 'Masquer' : 'Afficher' }}
+            </button>
+        </div>
+    </div>
+
     <!-- Filtres -->
-    <div *ngIf="!loading && !error && countryServiceData && countryServiceData.length > 0" class="filters-container">
+    <div *ngIf="showFilters && !loading && !error && countryServiceData && countryServiceData.length > 0" class="filters-container">
         <div class="filters-header">
             <h3>🔍 Filtres</h3>
         </div>
@@ -133,12 +144,16 @@
         <div *ngIf="!loading && !error && countryServiceData && countryServiceData.length > 0" class="dashboard-grid">
             <div *ngFor="let countryData of getPagedCountries()" class="country-section">
                 <div class="country-header">
-                    <span class="country-code">{{ countryData.countryCode }}</span>
+                    <span class="country-code">
+                        <img *ngIf="getCountryFlagUrl(countryData.countryCode) as flagUrl" [src]="flagUrl" (error)="onFlagError($event, countryData.countryCode)" class="country-flag-img" alt="flag"/>
+                        <span *ngIf="!getCountryFlagUrl(countryData.countryCode)" class="country-flag">{{ getCountryFlag(countryData.countryCode) }}</span>
+                        {{ countryData.country || getCountryName(countryData.countryCode) }}
+                    </span>
                     <span class="services-count">{{ getServiceEntries(countryData.services).length }} service(s)</span>
                 </div>
                 
                 <div class="services-grid">
-                    <div *ngFor="let serviceEntry of getServiceEntries(countryData.services)" class="service-metrics">
+                    <div *ngFor="let serviceEntry of getLimitedServiceEntries(countryData)" class="service-metrics">
                         <div class="service-header">
                             <span class="service-name">{{ serviceEntry.key }}</span>
                         </div>
@@ -161,6 +176,14 @@
                             </div>
                         </div>
                     </div>
+                </div>
+
+                <!-- Bouton Afficher plus / Afficher moins -->
+                <div class="services-toggle" *ngIf="getServiceEntries(countryData.services).length > 4">
+                    <button class="toggle-btn" [class.active]="isShowingAll(countryData.countryCode)" (click)="toggleShowMore(countryData.countryCode)">
+                        <span class="toggle-icon">▾</span>
+                        {{ isShowingAll(countryData.countryCode) ? 'Afficher moins' : 'Afficher plus' }}
+                    </button>
                 </div>
             </div>
         </div>

@@ -17,6 +17,15 @@ export class DashboardReconciliationComponent implements OnInit, OnDestroy {
     loading = true;
     error: string | null = null;
     
+    // Affichage des services (par pays): par défaut, afficher 4, avec bascule "plus/moins"
+    showAllServicesByCountry: { [countryCode: string]: boolean } = {};
+
+    // Affichage des filtres (masqués par défaut)
+    showFilters: boolean = false;
+
+    // Erreurs de chargement de drapeaux images
+    private flagLoadError: { [countryCode: string]: boolean } = {};
+    
     // Pagination
     currentPage = 1;
     itemsPerPage = 4; // 4 cartes par page
@@ -74,6 +83,70 @@ export class DashboardReconciliationComponent implements OnInit, OnDestroy {
         return Object.entries(services)
             .map(([key, value]) => ({ key, value }))
             .sort((a, b) => a.key.localeCompare(b.key)); // Trier par nom de service
+    }
+
+    /**
+     * Retourne les services à afficher pour un pays (limitée à 4 par défaut)
+     */
+    getLimitedServiceEntries(countryData: CountryServiceMetrics): Array<{key: string, value: any}> {
+        const entries = this.getServiceEntries(countryData.services);
+        const showAll = this.showAllServicesByCountry[countryData.countryCode] === true;
+        if (!showAll && entries.length > 4) {
+            return entries.slice(0, 4);
+        }
+        return entries;
+    }
+
+    /**
+     * Bascule l'affichage complet/limité des services pour un pays
+     */
+    toggleShowMore(countryCode: string): void {
+        this.showAllServicesByCountry[countryCode] = !(this.showAllServicesByCountry[countryCode] === true);
+    }
+
+    isShowingAll(countryCode: string): boolean {
+        return this.showAllServicesByCountry[countryCode] === true;
+    }
+
+    /**
+     * Retourne le drapeau (emoji) d'un pays à partir de son code
+     */
+    getCountryFlag(countryCode: string): string {
+        const flagMap: { [key: string]: string } = {
+            'BF': '🇧🇫', 'BJ': '🇧🇯', 'CI': '🇨🇮', 'CM': '🇨🇲', 'GA': '🇬🇦', 'GN': '🇬🇳', 'KE': '🇰🇪', 'ML': '🇲🇱', 'MZ': '🇲🇿', 'NG': '🇳🇬', 'SN': '🇸🇳', 'TG': '🇹🇬',
+            'CF': '🇨🇫', 'TD': '🇹🇩', 'CG': '🇨🇬', 'CD': '🇨🇩', 'GQ': '🇬🇶', 'ST': '🇸🇹', 'AO': '🇦🇴',
+            'NE': '🇳🇪', 'GW': '🇬🇼', 'SL': '🇸🇱', 'LR': '🇱🇷', 'GH': '🇬🇭', 'MR': '🇲🇷', 'GM': '🇬🇲', 'CV': '🇨🇻',
+            'TZ': '🇹🇿', 'UG': '🇺🇬', 'RW': '🇷🇼', 'BI': '🇧🇮', 'ET': '🇪🇹', 'SO': '🇸🇴', 'DJ': '🇩🇯', 'ER': '🇪🇷', 'SS': '🇸🇸', 'SD': '🇸🇩', 'SC': '🇸🇨', 'MU': '🇲🇺', 'KM': '🇰🇲', 'MG': '🇲🇬'
+        };
+        return flagMap[(countryCode || '').toUpperCase()] || '🌍';
+    }
+
+    /**
+     * URL du drapeau SVG dans les assets (fallback vers emoji si indisponible)
+     */
+    getCountryFlagUrl(countryCode: string): string | null {
+        const code = (countryCode || '').toLowerCase();
+        if (!code) return null;
+        if (this.flagLoadError[code]) return null;
+        return `assets/flags/${code}.svg`;
+    }
+
+    onFlagError(event: Event, countryCode: string): void {
+        const code = (countryCode || '').toLowerCase();
+        this.flagLoadError[code] = true;
+    }
+
+    /**
+     * Retourne le nom du pays à partir du code si le libellé est manquant
+     */
+    getCountryName(countryCode: string): string {
+        const names: { [key: string]: string } = {
+            'BF': 'Burkina Faso', 'BJ': 'Bénin', 'CI': 'Côte d\'Ivoire', 'CM': 'Cameroun', 'GA': 'Gabon', 'GN': 'Guinée', 'KE': 'Kenya', 'ML': 'Mali', 'MZ': 'Mozambique', 'NG': 'Nigeria', 'SN': 'Sénégal', 'TG': 'Togo',
+            'CF': 'Centrafrique', 'TD': 'Tchad', 'CG': 'Congo', 'CD': 'RDC', 'GQ': 'Guinée Équatoriale', 'ST': 'Sao Tomé', 'AO': 'Angola',
+            'NE': 'Niger', 'GW': 'Guinée-Bissau', 'SL': 'Sierra Leone', 'LR': 'Liberia', 'GH': 'Ghana', 'MR': 'Mauritanie', 'GM': 'Gambie', 'CV': 'Cap-Vert',
+            'TZ': 'Tanzanie', 'UG': 'Ouganda', 'RW': 'Rwanda', 'BI': 'Burundi', 'ET': 'Éthiopie', 'SO': 'Somalie', 'DJ': 'Djibouti', 'ER': 'Érythrée', 'SS': 'Soudan du Sud', 'SD': 'Soudan', 'SC': 'Seychelles', 'MU': 'Maurice', 'KM': 'Comores', 'MG': 'Madagascar'
+        };
+        return names[(countryCode || '').toUpperCase()] || countryCode;
     }
 
     getRateClass(rate: number): string {

@@ -988,6 +988,7 @@ export class BanqueComponent implements OnInit {
   totalOperations = 0;
   totalComptes = 0;
   totalEnAttente = 0;
+  totalReleveLignes = 0; // Nombre de lignes de relevé (tous lots)
   totalTicketsACreer = 0; // Opérations bancaires sans ID GLPI
   // Suspens (écarts) comptage global
   totalSuspensBO = 0;
@@ -1952,6 +1953,8 @@ export class BanqueComponent implements OnInit {
         const baseMsg = `Fichier importé avec succès (${res.count} lignes).`;
         const dupMsg = res.duplicatesIgnored ? ` ${res.duplicatesIgnored} doublon(s) ignoré(s).` : '';
         this.releveMessage = `${baseMsg}${dupMsg} Batch: ${this.releveBatchId}`;
+        // Mettre à jour le compteur des lignes de relevé (batch importé)
+        this.totalReleveLignes = this.releveRows.length;
         // Alerts
         const msgs: string[] = [];
         if (res.duplicatesIgnored) msgs.push(`${res.duplicatesIgnored} doublon(s) ignoré(s)`);
@@ -1965,6 +1968,7 @@ export class BanqueComponent implements OnInit {
         this.releveUploading = false;
         this.releveMessageKind = 'error';
         this.releveMessage = 'Import du relevé bancaire échoué';
+        this.totalReleveLignes = 0;
       }
     });
   }
@@ -2066,7 +2070,7 @@ export class BanqueComponent implements OnInit {
     this.releveService.list(filter).subscribe({
       next: (all) => {
         const rows = Array.isArray(all) ? all : [];
-        if (!rows.length) { this.releveRows = []; this.releveAllRows = []; this.releveBatchId = null; this.releveBatchOptions = []; this.releveSelectedBatchId = 'ALL'; return; }
+        if (!rows.length) { this.releveRows = []; this.releveAllRows = []; this.totalReleveLignes = 0; this.releveBatchId = null; this.releveBatchOptions = []; this.releveSelectedBatchId = 'ALL'; return; }
         // Grouper par batchId
         const groups: Record<string, any[]> = {};
         rows.forEach((r: any) => {
@@ -2119,6 +2123,7 @@ export class BanqueComponent implements OnInit {
         // Compat: releveRows = dernier lot (pour usages hérités au besoin)
         this.releveRows = this.releveAllRows.filter((r: any) => r.batchId === bestBatchId);
         this.relevePage = 1;
+        this.totalReleveLignes = this.releveAllRows.length;
         this.updateTotalSuspensKO();
       },
       error: (err) => {
@@ -2130,6 +2135,7 @@ export class BanqueComponent implements OnInit {
         console.warn('Erreur chargement /releve-bancaire/list', err);
         this.releveRows = [];
         this.releveAllRows = [];
+        this.totalReleveLignes = 0;
         this.releveBatchOptions = [];
         this.releveSelectedBatchId = 'ALL';
       }

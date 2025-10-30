@@ -62,26 +62,46 @@ export interface ReconciliationReportData {
             <div class="report-filters">
                 <div class="filter-group">
                     <label>Agence:</label>
-                    <input 
-                        type="text" 
-                        [(ngModel)]="selectedAgency" 
-                        (input)="onAgencyFilterChange()"
-                        placeholder="Tapez pour rechercher une agence..."
-                        class="filter-input"
-                        list="agency-list">
+                    <div class="filter-inline">
+                        <input 
+                            type="text" 
+                            [(ngModel)]="selectedAgency" 
+                            (input)="onAgencyFilterChange()"
+                            placeholder="Tapez pour rechercher une agence..."
+                            class="filter-input"
+                            list="agency-list">
+                        <button 
+                            type="button" 
+                            class="btn-clear-dates" 
+                            title="Effacer le filtre agence"
+                            (click)="clearAgencyFilter()"
+                        >
+                            🗑️ Effacer agence
+                        </button>
+                    </div>
                     <datalist id="agency-list">
                         <option *ngFor="let agency of uniqueAgencies" [value]="agency">{{agency}}</option>
                     </datalist>
                 </div>
                 <div class="filter-group">
                     <label>Service:</label>
-                    <input 
-                        type="text" 
-                        [(ngModel)]="selectedService" 
-                        (input)="filterReport()"
-                        placeholder="Tapez pour rechercher un service..."
-                        class="filter-input"
-                        list="service-list">
+                    <div class="filter-inline">
+                        <input 
+                            type="text" 
+                            [(ngModel)]="selectedService" 
+                            (input)="filterReport()"
+                            placeholder="Tapez pour rechercher un service..."
+                            class="filter-input"
+                            list="service-list">
+                        <button 
+                            type="button" 
+                            class="btn-clear-dates" 
+                            title="Effacer le filtre service"
+                            (click)="clearServiceFilter()"
+                        >
+                            🗑️ Effacer service
+                        </button>
+                    </div>
                     <datalist id="service-list">
                         <option *ngFor="let service of filteredServices" [value]="service">{{service}}</option>
                     </datalist>
@@ -97,22 +117,21 @@ export interface ReconciliationReportData {
                 </div>
                 <div class="filter-group">
                     <label>Date de fin:</label>
-                    <input 
-                        type="date" 
-                        [(ngModel)]="selectedDateFin" 
-                        (change)="filterReport()"
-                        class="filter-date"
-                        placeholder="Date de fin">
-                </div>
-                <div class="filter-group">
-                    <label>&nbsp;</label>
-                    <button 
-                        type="button" 
-                        (click)="clearDateFilters()" 
-                        class="btn-clear-dates"
-                        title="Effacer les filtres de date">
-                        🗑️ Effacer dates
-                    </button>
+                    <div class="filter-inline">
+                        <input 
+                            type="date" 
+                            [(ngModel)]="selectedDateFin" 
+                            (change)="filterReport()"
+                            class="filter-date"
+                            placeholder="Date de fin">
+                        <button 
+                            type="button" 
+                            (click)="clearDateFilters()" 
+                            class="btn-clear-dates"
+                            title="Effacer les filtres de date">
+                            🗑️ Effacer dates
+                        </button>
+                    </div>
                 </div>
                 <div class="filter-group">
                     <label>Statut:</label>
@@ -570,6 +589,12 @@ export interface ReconciliationReportData {
             outline: none;
             border-color: #007bff;
             box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25);
+        }
+
+        .filter-inline {
+            display: flex;
+            align-items: center;
+            gap: 8px;
         }
 
         .filter-select {
@@ -1658,6 +1683,17 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
     clearDateFilters(): void {
         this.selectedDateDebut = '';
         this.selectedDateFin = '';
+        this.filterReport();
+    }
+
+    clearAgencyFilter(): void {
+        this.selectedAgency = '';
+        this.updateFilteredServices();
+        this.filterReport();
+    }
+
+    clearServiceFilter(): void {
+        this.selectedService = '';
         this.filterReport();
     }
 

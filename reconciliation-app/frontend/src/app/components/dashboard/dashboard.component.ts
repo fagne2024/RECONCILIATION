@@ -57,6 +57,9 @@ export class DashboardComponent implements OnInit, OnDestroy {
     transactionCreatedLoading: boolean = false;
     transactionCreatedError: string | null = null;
 
+    // Affichage section du bas (Transactions créées par service)
+    showBottomSection: boolean = false;
+
     // Filtres
     selectedAgency: string[] = [];
     selectedService: string[] = [];
