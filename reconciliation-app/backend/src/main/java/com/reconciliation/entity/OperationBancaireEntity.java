@@ -62,6 +62,9 @@ public class OperationBancaireEntity {
     @Column(name = "impact_applique", nullable = false)
     private Boolean impactApplique = false; // Flag pour éviter le double impact
     
+    @Column(name = "traitement")
+    private String traitement;
+    
     // Constructeurs
     public OperationBancaireEntity() {}
     
@@ -229,6 +232,14 @@ public class OperationBancaireEntity {
     
     public void setImpactApplique(Boolean impactApplique) {
         this.impactApplique = impactApplique;
+    }
+    
+    public String getTraitement() {
+        return traitement;
+    }
+    
+    public void setTraitement(String traitement) {
+        this.traitement = traitement;
     }
 }
 

@@ -284,6 +284,12 @@
     max-width: 100%; // Pas de limite de largeur
     margin: 0;
     padding: 0 20px; // Padding pour l'espacement
+    
+    // Layout horizontal quand un seul pays est sélectionné
+    &.horizontal-layout {
+        grid-template-columns: 1fr; // Une seule colonne pour le pays
+        gap: 30px;
+    }
 }
 
 .country-section {
@@ -341,6 +347,18 @@
     display: grid;
     grid-template-columns: 1fr;
     gap: 10px;
+    
+    // Layout horizontal des services quand un seul pays est sélectionné - 4 services par ligne
+    &.horizontal-services {
+        grid-template-columns: repeat(4, 1fr);
+        gap: 20px;
+    }
+}
+
+// Styles pour un seul pays sélectionné
+.country-section.single-country {
+    width: 100%;
+    max-width: 100%;
 }
 
 /* Bouton Afficher plus/moins */
@@ -652,6 +670,18 @@
     }
 }
 
+@media (max-width: 1400px) {
+    .services-grid.horizontal-services {
+        grid-template-columns: repeat(3, 1fr); // 3 services par ligne sur écrans moyens
+    }
+}
+
+@media (max-width: 1024px) {
+    .services-grid.horizontal-services {
+        grid-template-columns: repeat(2, 1fr); // 2 services par ligne sur écrans plus petits
+    }
+}
+
 @media (max-width: 768px) {
     .dashboard-grid {
         grid-template-columns: 1fr; // 1 colonne sur mobile
@@ -685,5 +715,9 @@
     
     .services-grid {
         grid-template-columns: 1fr;
+        
+        &.horizontal-services {
+            grid-template-columns: 1fr; // 1 service par ligne sur mobile même en mode horizontal
+        }
     }
 }

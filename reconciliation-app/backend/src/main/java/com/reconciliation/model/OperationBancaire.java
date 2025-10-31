@@ -21,6 +21,7 @@ public class OperationBancaire {
     private String reconStatus; // OK/KO
     private Long operationId;
     private Boolean impactApplique; // Flag pour savoir si l'impact a déjà été appliqué
+    private String traitement;
     
     // Constructeurs
     public OperationBancaire() {}
@@ -191,6 +192,14 @@ public class OperationBancaire {
     
     public void setImpactApplique(Boolean impactApplique) {
         this.impactApplique = impactApplique;
+    }
+    
+    public String getTraitement() {
+        return traitement;
+    }
+    
+    public void setTraitement(String traitement) {
+        this.traitement = traitement;
     }
 }
 

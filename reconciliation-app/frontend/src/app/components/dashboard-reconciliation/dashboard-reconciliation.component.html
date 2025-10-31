@@ -141,8 +141,12 @@
 
 
         <!-- Données du tableau de bord -->
-        <div *ngIf="!loading && !error && countryServiceData && countryServiceData.length > 0" class="dashboard-grid">
-            <div *ngFor="let countryData of getPagedCountries()" class="country-section">
+        <div *ngIf="!loading && !error && countryServiceData && countryServiceData.length > 0" 
+             class="dashboard-grid" 
+             [class.horizontal-layout]="selectedCountry && selectedCountry.length === 1">
+            <div *ngFor="let countryData of getPagedCountries()" 
+                 class="country-section"
+                 [class.single-country]="selectedCountry && selectedCountry.length === 1">
                 <div class="country-header">
                     <span class="country-code">
                         <img *ngIf="getCountryFlagUrl(countryData.countryCode) as flagUrl" [src]="flagUrl" (error)="onFlagError($event, countryData.countryCode)" class="country-flag-img" alt="flag"/>
@@ -152,7 +156,7 @@
                     <span class="services-count">{{ getServiceEntries(countryData.services).length }} service(s)</span>
                 </div>
                 
-                <div class="services-grid">
+                <div class="services-grid" [class.horizontal-services]="selectedCountry && selectedCountry.length === 1">
                     <div *ngFor="let serviceEntry of getLimitedServiceEntries(countryData)" class="service-metrics">
                         <div class="service-header">
                             <span class="service-name">{{ serviceEntry.key }}</span>

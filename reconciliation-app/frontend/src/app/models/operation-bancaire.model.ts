@@ -17,6 +17,7 @@ export interface OperationBancaire {
     operationId?: number; // Lien avec l'opération d'origine
     reconStatus?: 'OK' | 'KO';
     impactApplique?: boolean; // Flag pour savoir si l'impact a déjà été appliqué
+    traitement?: string;
 }
 
 export interface OperationBancaireCreateRequest {
@@ -53,6 +54,7 @@ export interface OperationBancaireUpdateRequest {
     bo?: string;
     statut?: string;
     operationId?: number;
+    traitement?: string;
 }
 
 export interface OperationBancaireFilter {

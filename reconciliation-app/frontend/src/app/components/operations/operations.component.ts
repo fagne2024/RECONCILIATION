@@ -469,7 +469,17 @@ export class OperationsComponent implements OnInit, OnDestroy, AfterViewInit {
 
     loadOperations() {
         this.isLoading = true;
-        this.operationService.getAllOperations().subscribe({
+        
+        // Calculer les dates du mois en cours
+        const today = new Date();
+        const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+        const lastDayOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+        
+        // Formater les dates au format YYYY-MM-DD
+        const dateDebut = firstDayOfMonth.toISOString().split('T')[0];
+        const dateFin = lastDayOfMonth.toISOString().split('T')[0];
+        
+        this.operationService.getOperationsByDateRange(dateDebut, dateFin).subscribe({
             next: (operations) => {
                 setTimeout(() => {
                 this.operations = operations;
@@ -490,7 +500,8 @@ export class OperationsComponent implements OnInit, OnDestroy, AfterViewInit {
                 this.initializeFilteredLists();
                 this.isLoading = false;
                 
-                console.log(`Opérations chargées: ${operations.length} opérations`);
+                console.log(`Opérations chargées (mois en cours): ${operations.length} opérations`);
+                console.log(`Période: ${dateDebut} à ${dateFin}`);
                 console.log('Listes chargées:', {
                     paysList: this.paysList.length,
                     codeProprietaireList: this.codeProprietaireList.length

@@ -161,6 +161,7 @@ public class OperationBancaireService {
         if (request.getBo() != null) entity.setBo(request.getBo());
         if (request.getStatut() != null) entity.setStatut(request.getStatut());
         if (request.getOperationId() != null) entity.setOperationId(request.getOperationId());
+        if (request.getTraitement() != null) entity.setTraitement(request.getTraitement());
         
         OperationBancaireEntity savedEntity = operationBancaireRepository.save(entity);
         // Impacter le compte si le statut devient Validée ET que l'impact n'a pas déjà été appliqué
@@ -294,6 +295,7 @@ public class OperationBancaireService {
             entity.getOperationId()
         );
         model.setImpactApplique(entity.getImpactApplique());
+        model.setTraitement(entity.getTraitement());
         return model;
     }
 }

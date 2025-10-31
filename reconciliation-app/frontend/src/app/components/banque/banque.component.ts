@@ -21,6 +21,7 @@ interface FiltresOperation {
   pays: string;
   typeOperation: string;
   statut: string;
+  traitement: string;
   dateDebut: string;
   dateFin: string;
 }
@@ -80,6 +81,7 @@ export class BanqueComponent implements OnInit {
     pays: '',
     typeOperation: '',
     statut: '',
+    traitement: '',
     dateDebut: '',
     dateFin: ''
   };
@@ -89,6 +91,10 @@ export class BanqueComponent implements OnInit {
   typesOperation: string[] = ['Compensation Client', 'Approvisionnement', 'Nivellement', 'Virement', 'Paiement', 'Retrait', 'Dépôt'];
   statutsList: string[] = ['Validée', 'En attente', 'Rejetée', 'En cours'];
   modesPaiement: string[] = ['Virement bancaire', 'Chèque', 'Espèces', 'Mobile Money'];
+  traitementOptions: string[] = ['Niveau Support', 'Niveau Group', 'Terminé'];
+  
+  // Édition en ligne
+  editingOperation: OperationBancaireDisplay | null = null;
 
   // Mapping codes pays -> noms pays
   private paysCodeToName: Record<string, string> = {
@@ -567,6 +573,61 @@ export class BanqueComponent implements OnInit {
 
   // Statuts pour tableau Opérations (indexés par id)
   private opStatusOverrides: Record<string, 'OK' | 'KO'> = {};
+  
+  getTraitementClass(traitement?: string): string {
+    if (!traitement) return 'badge-traitement-empty';
+    switch (traitement) {
+      case 'Niveau Support':
+        return 'badge-traitement-support';
+      case 'Niveau Group':
+        return 'badge-traitement-group';
+      case 'Terminé':
+        return 'badge-traitement-termine';
+      default:
+        return 'badge-traitement-default';
+    }
+  }
+
+  startEditTraitement(operation: OperationBancaireDisplay) {
+    this.editingOperation = operation;
+  }
+
+  stopEditTraitement() {
+    this.editingOperation = null;
+  }
+
+  onTraitementChange(operation: OperationBancaireDisplay) {
+    if (!operation.id) return;
+    
+    const updateData = {
+      traitement: operation.traitement || undefined
+    };
+    
+    this.operationBancaireService.updateOperationBancaire(operation.id, updateData).subscribe({
+      next: (updatedOperation) => {
+        console.log('Traitement mis à jour avec succès');
+        // Mettre à jour l'opération dans la liste
+        const index = this.operations.findIndex(op => op.id === operation.id);
+        if (index !== -1) {
+          this.operations[index].traitement = updatedOperation.traitement;
+        }
+        const filteredIndex = this.filteredOperations.findIndex(op => op.id === operation.id);
+        if (filteredIndex !== -1) {
+          this.filteredOperations[filteredIndex].traitement = updatedOperation.traitement;
+        }
+        this.stopEditTraitement();
+      },
+      error: (err) => {
+        console.error('Erreur lors de la mise à jour du traitement', err);
+        // Restaurer la valeur précédente en cas d'erreur
+        const originalOp = this.operations.find(op => op.id === operation.id);
+        if (originalOp) {
+          operation.traitement = originalOp.traitement;
+        }
+      }
+    });
+  }
+  
   getOperationReconStatus(op: OperationBancaireDisplay): 'OK' | 'KO' {
     const key = op && (op as any).id !== undefined ? String((op as any).id) : '';
     // 1) override direct par id
@@ -821,7 +882,8 @@ export class BanqueComponent implements OnInit {
     reference: '',
     idGlpi: '',
     bo: '',
-    statut: ''
+    statut: '',
+    traitement: ''
   };
 
   constructor(
@@ -2387,6 +2449,7 @@ export class BanqueComponent implements OnInit {
       const matchPays = !this.filters.pays || operation.pays === this.filters.pays;
       const matchType = !this.filters.typeOperation || operation.typeOperation === this.filters.typeOperation;
       const matchStatut = !this.filters.statut || operation.statut === this.filters.statut;
+      const matchTraitement = !this.filters.traitement || operation.traitement === this.filters.traitement;
       const matchReconStatut = !this.operationsReconStatusFilter || this.getOperationReconStatus(operation) === this.operationsReconStatusFilter;
       
       let matchDate = true;
@@ -2399,7 +2462,7 @@ export class BanqueComponent implements OnInit {
         matchDate = matchDate && operation.dateOperation <= dateFin;
       }
 
-      return matchPays && matchType && matchStatut && matchDate && matchReconStatut;
+      return matchPays && matchType && matchStatut && matchTraitement && matchDate && matchReconStatut;
     });
 
     this.currentPage = 1;
@@ -2411,6 +2474,7 @@ export class BanqueComponent implements OnInit {
       pays: '',
       typeOperation: '',
       statut: '',
+      traitement: '',
       dateDebut: '',
       dateFin: ''
     };
@@ -3474,7 +3538,8 @@ export class BanqueComponent implements OnInit {
       reference: operation.reference || '',
       idGlpi: operation.idGlpi || '',
       bo: operation.bo || '',
-      statut: operation.statut || 'En attente'
+      statut: operation.statut || 'En attente',
+      traitement: operation.traitement || ''
     };
     this.showEditPopup = true;
   }
@@ -3501,7 +3566,8 @@ export class BanqueComponent implements OnInit {
       reference: this.editForm.reference,
       idGlpi: this.editForm.idGlpi,
       bo: this.editForm.bo,
-      statut: this.editForm.statut
+      statut: this.editForm.statut,
+      traitement: this.editForm.traitement
     };
 
     this.operationBancaireService.updateOperationBancaire(this.selectedOperation.id, updateData).subscribe({

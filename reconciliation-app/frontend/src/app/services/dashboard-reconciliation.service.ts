@@ -18,6 +18,7 @@ export interface Result8RecData {
     matchRate: number;
     status: string;
     comment: string;
+    traitement?: string;
     glpiId: string;
     createdAt: string;
 }
