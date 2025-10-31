@@ -55,6 +55,14 @@ export class AppComponent implements OnInit {
     }
   }
 
+  toggleSidebar() {
+    this.showSidebar = !this.showSidebar;
+    // Forcer le recalcul du layout après toggle
+    setTimeout(() => {
+      window.dispatchEvent(new Event('resize'));
+    }, 50);
+  }
+
   // Les méthodes de navigation ne sont plus nécessaires ici
   // car elles sont gérées par les routerLink dans la sidebar.
 } 

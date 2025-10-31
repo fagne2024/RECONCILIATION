@@ -1,6 +1,10 @@
 <div class="app-container">
     <app-sidebar *ngIf="showSidebar"></app-sidebar>
     
+    <button class="sidebar-toggle-btn" (click)="toggleSidebar()" [class.sidebar-hidden]="!showSidebar" title="{{ showSidebar ? 'Masquer le menu' : 'Afficher le menu' }}">
+        <i class="fas" [ngClass]="showSidebar ? 'fa-times' : 'fa-bars'"></i>
+    </button>
+    
     <main class="main-content" [class.full-width]="!showSidebar">
         <router-outlet></router-outlet>
     </main>
