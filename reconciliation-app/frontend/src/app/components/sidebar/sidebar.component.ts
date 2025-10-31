@@ -12,6 +12,7 @@ export class SidebarComponent implements OnInit {
 
   showParamSubmenu = false;
   showSuiviEcartsSubmenu = false;
+  showFraisCommissionsSubmenu = false;
 
   constructor(
     private http: HttpClient,
@@ -28,6 +29,10 @@ export class SidebarComponent implements OnInit {
 
   toggleSuiviEcartsSubmenu() {
     this.showSuiviEcartsSubmenu = !this.showSuiviEcartsSubmenu;
+  }
+
+  toggleFraisCommissionsSubmenu() {
+    this.showFraisCommissionsSubmenu = !this.showFraisCommissionsSubmenu;
   }
 
   logout() {

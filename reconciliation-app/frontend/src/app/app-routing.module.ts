@@ -8,6 +8,7 @@ import { DashboardComponent } from './components/dashboard/dashboard.component';
 import { ComptesComponent } from './components/comptes/comptes.component';
 import { OperationsComponent } from './components/operations/operations.component';
 import { FraisComponent } from './components/frais/frais.component';
+import { CommissionComponent } from './components/commission/commission.component';
 import { UsersComponent } from './components/users/users.component';
 import { RankingComponent } from './components/ranking/ranking.component';
 import { ColumnSelectionComponent } from './components/column-selection/column-selection.component';
@@ -45,6 +46,7 @@ const routes: Routes = [
   { path: 'comptes', component: ComptesComponent },
   { path: 'operations', component: OperationsComponent },
   { path: 'frais', component: FraisComponent },
+  { path: 'commission', component: CommissionComponent },
   { path: 'users', component: UsersComponent },
   { path: 'ranking', component: RankingComponent },
   { path: 'login', component: LoginComponent },

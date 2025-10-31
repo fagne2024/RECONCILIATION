@@ -30,6 +30,7 @@ import { AgencySummaryComponent } from './components/stats/agency-summary/agency
 import { ComptesComponent } from './components/comptes/comptes.component';
 import { OperationsComponent } from './components/operations/operations.component';
 import { FraisComponent } from './components/frais/frais.component';
+import { CommissionComponent } from './components/commission/commission.component';
 import { AutocompleteInputComponent } from './components/shared/autocomplete-input.component';
 import { UsersComponent } from './components/users/users.component';
 import { RankingComponent } from './components/ranking/ranking.component';
@@ -81,6 +82,7 @@ import { BanqueDashboardComponent } from './components/banque-dashboard/banque-d
         ComptesComponent,
         OperationsComponent,
         FraisComponent,
+        CommissionComponent,
         SidebarComponent,
         AutocompleteInputComponent,
         UsersComponent,

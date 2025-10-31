@@ -53,10 +53,15 @@
             </a>
         </li>
         <li *ngIf="isMenuAllowed('Frais')">
-            <a routerLink="/frais" routerLinkActive="active">
+            <a href="#" class="has-submenu" (click)="toggleFraisCommissionsSubmenu(); $event.preventDefault()">
                 <i class="fas fa-money-bill-wave menu-icon frais"></i>
-                <span>Frais</span>
+                <span>Frais & Commissions</span>
+                <span class="submenu-arrow">{{ showFraisCommissionsSubmenu ? '▲' : '▼' }}</span>
             </a>
+            <ul class="submenu" *ngIf="showFraisCommissionsSubmenu">
+                <li *ngIf="isMenuAllowed('Frais')"><a routerLink="/frais"><i class="fas fa-money-bill-wave menu-icon frais"></i> Frais</a></li>
+                <li><a routerLink="/commission"><i class="fas fa-hand-holding-usd menu-icon commission"></i> Commission</a></li>
+            </ul>
         </li>
         <li *ngIf="isMenuAllowed('TSOP') || isMenuAllowed('Impact OP') || isMenuAllowed('TRX SF')">
             <a href="#" class="has-submenu" (click)="toggleSuiviEcartsSubmenu(); $event.preventDefault()">
