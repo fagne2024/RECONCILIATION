@@ -1,6 +1,7 @@
 import { Component, OnInit, Input, OnDestroy } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { Subscription } from 'rxjs';
+import { take } from 'rxjs/operators';
 import { ReconciliationResponse, Match } from '../../models/reconciliation-response.model';
 import { AppStateService } from '../../services/app-state.service';
 import { ReconciliationSummaryService, AgencySummaryData } from '../../services/reconciliation-summary.service';
@@ -38,6 +39,9 @@ export interface ReconciliationReportData {
             <div class="report-header">
                 <h2>📊 Rapport de Réconciliation <span class="badge" [ngClass]="currentSource === 'live' ? 'badge-live' : 'badge-db'">{{ currentSource === 'live' ? 'En cours' : 'Base sauvegardée' }}</span></h2>
                 <div class="report-actions">
+                    <button class="btn btn-toggle-source" (click)="toggleDataSource()" [title]="currentSource === 'live' ? 'Basculer vers les données en base' : 'Basculer vers les données en cours'">
+                        🔄 {{ currentSource === 'live' ? 'Voir données en base' : 'Voir données en cours' }}
+                    </button>
                     <button class="btn btn-add" (click)="addNewRow()" title="Ajouter une nouvelle ligne">
                         ➕ Nouvelle ligne
                     </button>
@@ -491,6 +495,16 @@ export interface ReconciliationReportData {
 
         .btn-dashboard:hover:not(:disabled) {
             background: #e8650e;
+            transform: translateY(-1px);
+        }
+
+        .btn-toggle-source {
+            background: #6c757d;
+            color: white;
+        }
+
+        .btn-toggle-source:hover:not(:disabled) {
+            background: #5a6268;
             transform: translateY(-1px);
         }
 
@@ -2480,5 +2494,60 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         if (!status) return 'status-badge';
         const cleanStatus = status.toLowerCase().replace(/\s+/g, '-');
         return `status-badge status-${cleanStatus}`;
+    }
+
+    // Méthode pour basculer entre les données en cours et les données en base
+    toggleDataSource() {
+        if (this.currentSource === 'live') {
+            // Basculer vers les données en base
+            this.currentSource = 'db';
+            this.loadSavedReportFromDatabase();
+        } else {
+            // Basculer vers les données en cours
+            this.currentSource = 'live';
+            this.loadLiveData();
+        }
+    }
+
+    // Méthode pour charger les données en cours
+    private loadLiveData() {
+        this.loadedFromDb = false;
+        this.hasSummary = false;
+        
+        // Réinitialiser les données
+        this.reportData = [];
+        this.filteredReportData = [];
+        
+        // Recharger depuis les services
+        const summary = this.reconciliationSummaryService.getAgencySummary();
+        if (summary && summary.length > 0) {
+            this.generateReportDataFromSummary(summary);
+            this.extractUniqueValues();
+            this.filterReport();
+            this.currentSource = 'live';
+            this.hasSummary = true;
+            this.updatePagination();
+        } else {
+            // Essayer de charger depuis les résultats de réconciliation via l'observable
+            // Prendre la dernière valeur du BehaviorSubject en s'abonnant une fois
+            this.appStateService.getReconciliationResults().pipe(
+                take(1)
+            ).subscribe(response => {
+                if (response) {
+                    this.response = response;
+                    this.generateReportData();
+                    this.extractUniqueValues();
+                    this.filterReport();
+                    this.currentSource = 'live';
+                    this.updatePagination();
+                } else {
+                    // Pas de données en cours disponibles
+                    this.popupService.showError('Données indisponibles', 'Aucune donnée en cours disponible. Veuillez effectuer une réconciliation d\'abord.');
+                    // Revenir aux données en base
+                    this.currentSource = 'db';
+                    this.loadSavedReportFromDatabase();
+                }
+            });
+        }
     }
 }
