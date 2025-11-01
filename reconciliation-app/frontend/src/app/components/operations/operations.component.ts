@@ -177,6 +177,9 @@ export class OperationsComponent implements OnInit, OnDestroy, AfterViewInit {
     // Propriété pour gérer l'affichage automatique des frais
     showFraisAutomatically: boolean = false;
 
+    // Propriété pour gérer l'affichage du filtre de date
+    showDateFilter: boolean = false;
+
     // Propriétés pour les popups personnalisés
     showApproClientPopup = false;
     showCompenseClientPopup = false;
@@ -468,9 +471,7 @@ export class OperationsComponent implements OnInit, OnDestroy, AfterViewInit {
     }
 
     loadOperations() {
-        this.isLoading = true;
-        
-        // Calculer les dates du mois en cours
+        // Calculer les dates du mois en cours par défaut
         const today = new Date();
         const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
         const lastDayOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0);
@@ -478,6 +479,13 @@ export class OperationsComponent implements OnInit, OnDestroy, AfterViewInit {
         // Formater les dates au format YYYY-MM-DD
         const dateDebut = firstDayOfMonth.toISOString().split('T')[0];
         const dateFin = lastDayOfMonth.toISOString().split('T')[0];
+        
+        this.loadOperationsByDateRange(dateDebut, dateFin);
+    }
+
+    // Méthode pour charger les opérations avec une plage de dates spécifique
+    loadOperationsByDateRange(dateDebut: string, dateFin: string) {
+        this.isLoading = true;
         
         this.operationService.getOperationsByDateRange(dateDebut, dateFin).subscribe({
             next: (operations) => {
@@ -492,7 +500,9 @@ export class OperationsComponent implements OnInit, OnDestroy, AfterViewInit {
                 
                 // Charger les listes pour les filtres
                 this.loadPaysList();
-                this.loadCodeProprietaireList();
+                // Ne pas charger loadCodeProprietaireList() ici car elle limite aux codes du mois en cours
+                // Les codes propriétaires sont déjà chargés depuis le backend dans ngOnInit() via loadCodeProprietaireListFromBackend()
+                // Cela permet d'avoir tous les codes même si le mois en cours n'a pas de données
                 this.loadBanqueList();
                 this.loadServiceList();
                 
@@ -500,7 +510,7 @@ export class OperationsComponent implements OnInit, OnDestroy, AfterViewInit {
                 this.initializeFilteredLists();
                 this.isLoading = false;
                 
-                console.log(`Opérations chargées (mois en cours): ${operations.length} opérations`);
+                console.log(`Opérations chargées: ${operations.length} opérations`);
                 console.log(`Période: ${dateDebut} à ${dateFin}`);
                 console.log('Listes chargées:', {
                     paysList: this.paysList.length,
@@ -796,6 +806,8 @@ export class OperationsComponent implements OnInit, OnDestroy, AfterViewInit {
                     this.codeProprietaireList = codes;
                     // Initialiser immédiatement la liste filtrée pour éviter l'état vide
                     this.filteredCodeProprietaireList = (codes || []).slice();
+                    // Mettre à jour aussi la liste pour le formulaire d'ajout
+                    this.filteredAddFormCodeProprietaireList = (codes || []).slice();
                     try { this.cdr.detectChanges(); } catch {}
 
                     // Mettre à jour les listes filtrées avec cloisonnement (si nécessaire)
@@ -805,6 +817,7 @@ export class OperationsComponent implements OnInit, OnDestroy, AfterViewInit {
                     
                     console.log('codeProprietaireList mis à jour:', this.codeProprietaireList);
                     console.log('filteredCodeProprietaireList mis à jour:', this.filteredCodeProprietaireList);
+                    console.log('filteredAddFormCodeProprietaireList mis à jour:', this.filteredAddFormCodeProprietaireList);
                 },
                 error: (error: any) => {
                     console.error('Erreur lors du chargement de la liste des codes propriétaires:', error);
@@ -2824,54 +2837,107 @@ Mises à jour: ${updated}/${total}${failed > 0 ? `\nEchecs: ${failed}` : ''}`;
     applyDatePreset(event: Event) {
         const value = (event.target as HTMLSelectElement)?.value || '';
         const today = new Date();
+        today.setHours(0, 0, 0, 0);
         let dateDebut = '';
         let dateFin = '';
+        let shouldReload = false; // Indicateur pour savoir si on doit recharger depuis le backend
+        
         if (value === 'today') {
-            // J-1
+            // Aujourd'hui
+            dateDebut = today.toISOString().split('T')[0];
+            dateFin = today.toISOString().split('T')[0];
+            shouldReload = true;
+        } else if (value === 'yesterday') {
+            // Hier
             const yesterday = new Date(today);
             yesterday.setDate(today.getDate() - 1);
             dateDebut = yesterday.toISOString().split('T')[0];
             dateFin = yesterday.toISOString().split('T')[0];
+            shouldReload = true;
         } else if (value === '7days') {
-            // J-7 à J-1
+            // 7 derniers jours (incluant aujourd'hui)
             const start = new Date(today);
-            start.setDate(today.getDate() - 7);
-            const end = new Date(today);
-            end.setDate(today.getDate() - 1);
+            start.setDate(today.getDate() - 6);
             dateDebut = start.toISOString().split('T')[0];
-            dateFin = end.toISOString().split('T')[0];
+            dateFin = today.toISOString().split('T')[0];
+            shouldReload = true;
         } else if (value === '30days') {
-            // J-30 à J-1
+            // 30 derniers jours (incluant aujourd'hui)
             const start = new Date(today);
-            start.setDate(today.getDate() - 30);
-            const end = new Date(today);
-            end.setDate(today.getDate() - 1);
+            start.setDate(today.getDate() - 29);
             dateDebut = start.toISOString().split('T')[0];
-            dateFin = end.toISOString().split('T')[0];
+            dateFin = today.toISOString().split('T')[0];
+            shouldReload = true;
         } else if (value === 'month') {
-            // 1er du mois à J-1
+            // Ce mois (du 1er à aujourd'hui)
             const start = new Date(today.getFullYear(), today.getMonth(), 1);
-            const end = new Date(today);
-            end.setDate(today.getDate() - 1);
             dateDebut = start.toISOString().split('T')[0];
-            dateFin = end.toISOString().split('T')[0];
+            dateFin = today.toISOString().split('T')[0];
+            shouldReload = true;
+        } else if (value === 'lastMonth') {
+            // Mois dernier (du 1er au dernier jour du mois précédent)
+            const lastMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+            const lastDay = new Date(today.getFullYear(), today.getMonth(), 0);
+            dateDebut = lastMonth.toISOString().split('T')[0];
+            dateFin = lastDay.toISOString().split('T')[0];
+            shouldReload = true;
+        } else if (value === 'quarter') {
+            // Ce trimestre (du 1er jour du trimestre à aujourd'hui)
+            const currentQuarter = Math.floor(today.getMonth() / 3);
+            const start = new Date(today.getFullYear(), currentQuarter * 3, 1);
+            dateDebut = start.toISOString().split('T')[0];
+            dateFin = today.toISOString().split('T')[0];
+            shouldReload = true;
+        } else if (value === 'lastQuarter') {
+            // Trimestre dernier
+            const currentQuarter = Math.floor(today.getMonth() / 3);
+            const lastQuarterStart = new Date(today.getFullYear(), (currentQuarter - 1) * 3, 1);
+            const lastQuarterEnd = new Date(today.getFullYear(), currentQuarter * 3, 0);
+            dateDebut = lastQuarterStart.toISOString().split('T')[0];
+            dateFin = lastQuarterEnd.toISOString().split('T')[0];
+            shouldReload = true;
         } else if (value === 'thisYear') {
-            // 1er janvier au 31 décembre de cette année
+            // Cette année (du 1er janvier à aujourd'hui)
             const start = new Date(today.getFullYear(), 0, 1);
-            const end = new Date(today.getFullYear(), 11, 31);
             dateDebut = start.toISOString().split('T')[0];
-            dateFin = end.toISOString().split('T')[0];
+            dateFin = today.toISOString().split('T')[0];
+            shouldReload = true;
         } else if (value === 'lastYear') {
-            // 1er janvier au 31 décembre de l'année dernière
+            // Année dernière (du 1er janvier au 31 décembre de l'année dernière)
             const start = new Date(today.getFullYear() - 1, 0, 1);
             const end = new Date(today.getFullYear() - 1, 11, 31);
             dateDebut = start.toISOString().split('T')[0];
             dateFin = end.toISOString().split('T')[0];
+            shouldReload = true;
         } else if (value === 'custom') {
-            dateDebut = '';
-            dateFin = '';
+            // Période personnalisée - ne rien changer, laisser l'utilisateur saisir
+            return;
+        } else {
+            // Option vide - ne rien faire
+            return;
         }
+        
+        // Mettre à jour le formulaire
         this.filterForm.patchValue({ dateDebut, dateFin });
+        
+        // Afficher le filtre si une période est sélectionnée
+        if (shouldReload && dateDebut && dateFin) {
+            this.showDateFilter = true;
+            // Recharger les opérations depuis le backend avec la nouvelle plage de dates
+            this.loadOperationsByDateRange(dateDebut, dateFin);
+        } else {
+            // Sinon, juste appliquer le filtre sur les données existantes
+            this.onFilterChange();
+        }
+    }
+
+    // Méthode pour effacer le filtre de date
+    clearDateFilter() {
+        this.filterForm.patchValue({ dateDebut: '', dateFin: '' });
+        // Masquer le filtre après l'effacement
+        this.showDateFilter = false;
+        // Recharger les opérations du mois en cours par défaut
+        this.loadOperations();
     }
 
     // Méthode pour appliquer le filtre à la sélection

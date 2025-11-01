@@ -8,6 +8,9 @@ import { ReconciliationSummaryService, AgencySummaryData } from '../../services/
 import { ExportOptimizationService } from '../../services/export-optimization.service';
 import { ReconciliationTabsService } from '../../services/reconciliation-tabs.service';
 import { PopupService } from '../../services/popup.service';
+import { PaysService } from '../../services/pays.service';
+import * as ExcelJS from 'exceljs';
+import { saveAs } from 'file-saver';
 
 export interface ReconciliationReportData {
     id?: number;
@@ -89,6 +92,29 @@ export interface ReconciliationReportData {
                     </div>
                     <datalist id="agency-list">
                         <option *ngFor="let agency of uniqueAgencies" [value]="agency">{{agency}}</option>
+                    </datalist>
+                </div>
+                <div class="filter-group">
+                    <label>Pays:</label>
+                    <div class="filter-inline">
+                        <input 
+                            type="text" 
+                            [(ngModel)]="selectedCountry" 
+                            (input)="filterReport()"
+                            placeholder="Tapez pour rechercher un pays..."
+                            class="filter-input"
+                            list="country-list">
+                        <button 
+                            type="button" 
+                            class="btn-clear-dates" 
+                            title="Effacer le filtre pays"
+                            (click)="clearCountryFilter()"
+                        >
+                            🗑️ Effacer pays
+                        </button>
+                    </div>
+                    <datalist id="country-list">
+                        <option *ngFor="let country of uniqueCountries" [value]="country">{{country}}</option>
                     </datalist>
                 </div>
                 <div class="filter-group">
@@ -594,14 +620,18 @@ export interface ReconciliationReportData {
             background: #f8f9fa;
             border-bottom: 1px solid #dee2e6;
             display: flex;
-            gap: 20px;
-            flex-wrap: wrap;
+            gap: 15px;
+            flex-wrap: nowrap;
+            align-items: flex-end;
+            overflow-x: auto;
         }
 
         .filter-group {
             display: flex;
             flex-direction: column;
             gap: 5px;
+            flex-shrink: 0;
+            min-width: 0;
         }
 
         .filter-group label {
@@ -616,7 +646,9 @@ export interface ReconciliationReportData {
             border-radius: 6px;
             font-size: 0.9rem;
             background: white;
-            min-width: 150px;
+            min-width: 120px;
+            width: 100%;
+            max-width: 180px;
         }
 
         .filter-input {
@@ -625,7 +657,9 @@ export interface ReconciliationReportData {
             border-radius: 6px;
             font-size: 0.9rem;
             background: white;
-            min-width: 200px;
+            min-width: 140px;
+            width: 100%;
+            max-width: 180px;
             transition: border-color 0.2s ease;
         }
 
@@ -641,7 +675,9 @@ export interface ReconciliationReportData {
             border-radius: 6px;
             font-size: 0.9rem;
             background: white;
-            min-width: 150px;
+            min-width: 140px;
+            width: 100%;
+            max-width: 160px;
             transition: border-color 0.2s ease;
         }
 
@@ -663,7 +699,9 @@ export interface ReconciliationReportData {
             border-radius: 6px;
             font-size: 0.9rem;
             background: white;
-            min-width: 150px;
+            min-width: 120px;
+            width: 100%;
+            max-width: 180px;
             transition: border-color 0.2s ease;
         }
 
@@ -1184,12 +1222,21 @@ export interface ReconciliationReportData {
 
         @media (max-width: 768px) {
             .report-filters {
-                flex-direction: column;
-                gap: 15px;
+                flex-wrap: wrap;
+                gap: 10px;
             }
             
-            .filter-group select {
+            .filter-group {
+                flex: 1 1 auto;
+                min-width: 140px;
+            }
+            
+            .filter-group select,
+            .filter-input,
+            .filter-date,
+            .filter-select {
                 min-width: auto;
+                max-width: none;
                 width: 100%;
             }
             
@@ -1264,6 +1311,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
     
     selectedAgency: string = '';
     selectedService: string = '';
+    selectedCountry: string = '';
     selectedDateDebut: string = '';
     selectedDateFin: string = '';
     selectedStatus: string = '';
@@ -1271,6 +1319,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
 
     uniqueAgencies: string[] = [];
     uniqueServices: string[] = [];
+    uniqueCountries: string[] = [];
     uniqueDates: string[] = [];
     uniqueStatuses: string[] = [];
     filteredServices: string[] = []; // Services filtrés selon l'agence sélectionnée
@@ -1286,6 +1335,9 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
     // Propriété pour contrôler l'affichage de la colonne Actions
     showActionsColumn = false;
 
+    // Pays autorisés pour le cloisonnement
+    private allowedCountryCodes: string[] | null = null;
+
     constructor(
         private route: ActivatedRoute,
         private router: Router,
@@ -1293,10 +1345,13 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         private reconciliationSummaryService: ReconciliationSummaryService,
         private reconciliationTabsService: ReconciliationTabsService,
         private exportService: ExportOptimizationService,
-        private popupService: PopupService
+        private popupService: PopupService,
+        private paysService: PaysService
     ) {
         // Initialiser filteredReportData pour éviter les erreurs
         this.filteredReportData = [];
+        // Charger les pays autorisés
+        this.loadAllowedCountries();
     }
 
     ngOnInit() {
@@ -1392,15 +1447,158 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         this.subscription.unsubscribe();
     }
 
+    private loadAllowedCountries(): void {
+        const username = this.appStateService.getUsername();
+        if (!username || username === 'admin') {
+            // Admin a accès à tous les pays
+            this.allowedCountryCodes = null;
+            console.log('🌍 Cloisonnement Frontend: Admin détecté, accès à tous les pays');
+            return;
+        }
+
+        // Récupérer les pays autorisés depuis le backend
+        this.paysService.getAllowedPaysCodesForCurrentUser().subscribe({
+            next: (response) => {
+                if (response.isGlobal) {
+                    // GNL ou admin : tous les pays
+                    this.allowedCountryCodes = null;
+                    console.log('🌍 Cloisonnement Frontend: Utilisateur a accès à GNL (tous les pays)');
+                } else {
+                    // Pays spécifiques
+                    this.allowedCountryCodes = response.codes || [];
+                    console.log('🌍 Cloisonnement Frontend: Pays autorisés pour ' + username + ':', this.allowedCountryCodes);
+                }
+            },
+            error: (error) => {
+                console.error('❌ Erreur lors de la récupération des pays autorisés:', error);
+                // En cas d'erreur, appliquer un filtrage strict (liste vide)
+                this.allowedCountryCodes = [];
+            }
+        });
+    }
+
+    private shouldIncludeCountry(country: string): boolean {
+        // Si allowedCountryCodes est null, cela signifie tous les pays (admin ou GNL ou backend gère déjà)
+        if (this.allowedCountryCodes === null) {
+            return true;
+        }
+
+        // Si la liste est vide, aucun pays autorisé
+        if (this.allowedCountryCodes.length === 0) {
+            return false;
+        }
+
+        // Vérifier si le pays est dans la liste autorisée
+        // Convertir le nom du pays en code pays si nécessaire
+        const countryCode = this.getCountryCode(country);
+        return this.allowedCountryCodes.includes(countryCode);
+    }
+
+    private getCountryCode(countryName: string): string {
+        if (!countryName) return '';
+        
+        const normalizedName = countryName.trim().toUpperCase();
+        
+        // Gérer les variantes spéciales comme "CITCH" qui signifie "CI" (Côte d'Ivoire)
+        if (normalizedName === 'CITCH' || normalizedName.startsWith('CITCH')) {
+            return 'CI';
+        }
+        
+        // Mapping des noms de pays vers leurs codes
+        const countryMap: { [key: string]: string } = {
+            'CAMEROUN': 'CM',
+            'CAMEROON': 'CM',
+            'CÔTE D\'IVOIRE': 'CI',
+            'COTE D\'IVOIRE': 'CI',
+            'COTE DIVOIRE': 'CI',
+            'CÔTE DIVOIRE': 'CI',
+            'SÉNÉGAL': 'SN',
+            'SENEGAL': 'SN',
+            'BURKINA FASO': 'BF',
+            'BURKINA': 'BF',
+            'MALI': 'ML',
+            'BÉNIN': 'BJ',
+            'BENIN': 'BJ',
+            'NIGER': 'NE',
+            'TCHAD': 'TD',
+            'TOGO': 'TG'
+        };
+
+        // Chercher par nom exact (insensible à la casse)
+        for (const [name, code] of Object.entries(countryMap)) {
+            if (name.toLowerCase() === normalizedName.toLowerCase()) {
+                return code;
+            }
+        }
+        
+        // Chercher par contenu (pour gérer les cas comme "Côte d'Ivoire" dans "Côte d'Ivoire - Abidjan")
+        if (normalizedName.includes('COTE') || normalizedName.includes('CÔTE') || normalizedName.includes('IVOIRE')) {
+            return 'CI';
+        }
+        if (normalizedName.includes('SENEGAL') || normalizedName.includes('SÉNÉGAL')) {
+            return 'SN';
+        }
+        if (normalizedName.includes('CAMEROUN') || normalizedName.includes('CAMEROON')) {
+            return 'CM';
+        }
+        if (normalizedName.includes('BURKINA')) {
+            return 'BF';
+        }
+        if (normalizedName.includes('MALI')) {
+            return 'ML';
+        }
+        if (normalizedName.includes('BENIN') || normalizedName.includes('BÉNIN')) {
+            return 'BJ';
+        }
+        if (normalizedName.includes('NIGER')) {
+            return 'NE';
+        }
+        if (normalizedName.includes('TCHAD')) {
+            return 'TD';
+        }
+        if (normalizedName.includes('TOGO')) {
+            return 'TG';
+        }
+
+        // Si c'est déjà un code (2 lettres), le retourner tel quel
+        if (normalizedName.length === 2) {
+            return normalizedName;
+        }
+        
+        // Si c'est un code de 4-5 lettres qui commence par un code pays connu, extraire les 2 premières lettres
+        if (normalizedName.length >= 4) {
+            const firstTwo = normalizedName.substring(0, 2);
+            const validCodes = ['CM', 'CI', 'SN', 'BF', 'ML', 'BJ', 'NE', 'TD', 'TG'];
+            if (validCodes.includes(firstTwo)) {
+                return firstTwo;
+            }
+        }
+
+        // Sinon, retourner le nom tel quel pour comparaison
+        return normalizedName;
+    }
+
     private generateReportDataFromSummary(summary: AgencySummaryData[]) {
         console.log('📊 Génération du rapport à partir du résumé par agence:', summary);
+        
+        // Filtrer par pays autorisés avant de générer le rapport
+        const filteredSummary = summary.filter(item => {
+            if (!item.country) return false;
+            return this.shouldIncludeCountry(item.country);
+        });
+
+        console.log('📊 Résumé filtré par pays:', {
+            total: summary.length,
+            filtered: filteredSummary.length,
+            allowedCountryCodes: this.allowedCountryCodes
+        });
         
         // Calculer le total des écarts partenaires une seule fois
         const totalPartnerOnly = this.calculateTotalPartnerOnly();
         console.log('📊 Total des écarts partenaires calculé:', totalPartnerOnly);
         
         // Convertir les données du résumé en données du rapport
-        this.reportData = summary.map((item, index) => {
+        this.reportData = filteredSummary.map((item, index) => {
             // Calculer les statistiques détaillées si possible
             const detailedStats = this.calculateDetailedStatsForSummaryItem(item);
             
@@ -1802,6 +2000,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
     private extractUniqueValues() {
         this.uniqueAgencies = [...new Set(this.reportData.map(item => item.agency))].sort();
         this.uniqueServices = [...new Set(this.reportData.map(item => item.service))].sort();
+        this.uniqueCountries = [...new Set(this.reportData.map(item => item.country).filter(country => country && country.trim() !== ''))].sort();
         this.uniqueDates = [...new Set(this.reportData.map(item => item.date))].sort();
         this.uniqueStatuses = [...new Set(this.reportData.map(item => item.status).filter(status => status && status.trim() !== ''))].sort();
         
@@ -1869,6 +2068,11 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         this.filterReport();
     }
 
+    clearCountryFilter(): void {
+        this.selectedCountry = '';
+        this.filterReport();
+    }
+
     clearTraitementFilter(): void {
         this.selectedTraitement = '';
         this.filterReport();
@@ -1876,8 +2080,15 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
 
     filterReport() {
         this.filteredReportData = this.reportData.filter(item => {
+            // Filtrage par pays autorisés (cloisonnement)
+            const countryMatch = this.shouldIncludeCountry(item.country || '');
+            if (!countryMatch) {
+                return false;
+            }
+
             const agencyMatch = !this.selectedAgency || item.agency.toLowerCase().includes(this.selectedAgency.toLowerCase());
             const serviceMatch = !this.selectedService || item.service.toLowerCase().includes(this.selectedService.toLowerCase());
+            const countryFilterMatch = !this.selectedCountry || item.country?.toLowerCase().includes(this.selectedCountry.toLowerCase());
             const statusMatch = !this.selectedStatus || item.status === this.selectedStatus;
             const traitementMatch = !this.selectedTraitement || item.traitement === this.selectedTraitement;
             
@@ -1901,7 +2112,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                 }
             }
             
-            return agencyMatch && serviceMatch && dateMatch && statusMatch && traitementMatch;
+            return agencyMatch && serviceMatch && countryFilterMatch && dateMatch && statusMatch && traitementMatch;
         });
         
         // Recalculer le traitement pour chaque ligne filtrée selon les écarts réels
@@ -2106,46 +2317,222 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         return `${item.agency}-${item.service}-${item.date}`;
     }
 
-    exportToExcel() {
+    async exportToExcel() {
         const rowsSource = this.filteredReportData.length > 0 ? this.filteredReportData : this.reportData;
-        const columns = [
-            'Date',
-            'Agence',
-            'Service',
-            'Pays',
-            'Transactions',
-            'Volume',
-            'Correspondances',
-            'Écarts BO',
-            'Écarts Partenaire',
-            'Incohérences',
-            'Taux de Correspondance',
-            'ID GLPI',
-            'Statut',
-            'Commentaire',
-            'Traitement'
-        ];
+        
+        if (!rowsSource || rowsSource.length === 0) {
+            this.popupService.showError('Erreur', 'Aucune donnée à exporter');
+            return;
+        }
 
-        const rows = rowsSource.map(item => ({
-            'Date': this.formatDate(item.date),
-            'Agence': item.agency,
-            'Service': item.service,
-            'Pays': item.country,
-            'Transactions': item.totalTransactions,
-            'Volume': item.totalVolume,
-            'Correspondances': item.matches,
-            'Écarts BO': item.boOnly,
-            'Écarts Partenaire': item.partnerOnly,
-            'Incohérences': item.mismatches,
-            'Taux de Correspondance': `${(item.matchRate || 0).toFixed(2)}%`,
-            'ID GLPI': item.glpiId || '',
-            'Statut': item.status,
-            'Commentaire': item.comment,
-            'Traitement': item.traitement || ''
-        }));
+        try {
+            const workbook = new ExcelJS.Workbook();
+            const worksheet = workbook.addWorksheet('Rapport de Réconciliation');
 
-        const fileName = `rapport_reconciliation_${new Date().toISOString().slice(0,10)}`;
-        this.exportService.exportExcelOptimized(rows, columns, fileName, { useWebWorker: true, format: 'xlsx' });
+            // Définir les colonnes
+            worksheet.columns = [
+                { header: 'Date', key: 'date', width: 12 },
+                { header: 'Agence', key: 'agency', width: 20 },
+                { header: 'Service', key: 'service', width: 20 },
+                { header: 'Pays', key: 'country', width: 15 },
+                { header: 'Transactions', key: 'transactions', width: 15 },
+                { header: 'Volume', key: 'volume', width: 15 },
+                { header: 'Correspondances', key: 'matches', width: 15 },
+                { header: 'Écarts BO', key: 'boOnly', width: 12 },
+                { header: 'Écarts Partenaire', key: 'partnerOnly', width: 18 },
+                { header: 'Incohérences', key: 'mismatches', width: 15 },
+                { header: 'Taux de Correspondance', key: 'matchRate', width: 20 },
+                { header: 'ID GLPI', key: 'glpiId', width: 15 },
+                { header: 'Statut', key: 'status', width: 15 },
+                { header: 'Commentaire', key: 'comment', width: 30 },
+                { header: 'Traitement', key: 'traitement', width: 18 }
+            ];
+
+            // Style de l'en-tête avec fond bleu foncé et texte blanc
+            worksheet.getRow(1).eachCell(cell => {
+                cell.fill = {
+                    type: 'pattern',
+                    pattern: 'solid',
+                    fgColor: { argb: 'FF2C3E50' } // Bleu foncé
+                };
+                cell.font = { 
+                    color: { argb: 'FFFFFFFF' }, 
+                    bold: true,
+                    size: 11
+                };
+                cell.alignment = { 
+                    horizontal: 'center', 
+                    vertical: 'middle',
+                    wrapText: true
+                };
+                cell.border = {
+                    top: { style: 'thin', color: { argb: 'FF1A252F' } },
+                    bottom: { style: 'thin', color: { argb: 'FF1A252F' } },
+                    left: { style: 'thin', color: { argb: 'FF1A252F' } },
+                    right: { style: 'thin', color: { argb: 'FF1A252F' } }
+                };
+            });
+
+            // Hauteur de l'en-tête
+            worksheet.getRow(1).height = 30;
+
+            // Ajouter les données avec couleurs conditionnelles
+            rowsSource.forEach((item, idx) => {
+                const matchRate = item.matchRate || 0;
+                const row = worksheet.addRow({
+                    date: this.formatDate(item.date),
+                    agency: item.agency,
+                    service: item.service,
+                    country: item.country,
+                    transactions: item.totalTransactions,
+                    volume: item.totalVolume,
+                    matches: item.matches,
+                    boOnly: item.boOnly,
+                    partnerOnly: item.partnerOnly,
+                    mismatches: item.mismatches,
+                    matchRate: `${matchRate.toFixed(2)}%`,
+                    glpiId: item.glpiId || '',
+                    status: item.status,
+                    comment: item.comment,
+                    traitement: item.traitement || ''
+                });
+
+                // Couleur de fond pour toute la ligne selon le taux de correspondance
+                let rowFillColor = 'FFFFFFFF'; // Blanc par défaut
+                let rowTextColor = 'FF000000'; // Noir par défaut
+
+                if (matchRate >= 95) {
+                    // 🟢 Vert : Taux excellents (≥95%)
+                    rowFillColor = 'FFD4EDDA'; // Vert clair
+                    rowTextColor = 'FF155724'; // Vert foncé
+                } else if (matchRate >= 80) {
+                    // 🔵 Bleu : Taux bons (80-94%)
+                    rowFillColor = 'FFD1ECF1'; // Bleu clair
+                    rowTextColor = 'FF0C5460'; // Bleu foncé
+                } else if (matchRate >= 60) {
+                    // 🟡 Jaune : Taux moyens (60-79%)
+                    rowFillColor = 'FFFFF3CD'; // Jaune clair
+                    rowTextColor = 'FF856404'; // Jaune foncé
+                } else {
+                    // 🔴 Rouge : Taux faibles (<60%)
+                    rowFillColor = 'FFF8D7DA'; // Rouge clair
+                    rowTextColor = 'FF721C24'; // Rouge foncé
+                }
+
+                // Appliquer la couleur de fond à toute la ligne
+                row.eachCell(cell => {
+                    cell.fill = {
+                        type: 'pattern',
+                        pattern: 'solid',
+                        fgColor: { argb: rowFillColor }
+                    };
+                    cell.font = { 
+                        color: { argb: rowTextColor },
+                        size: 10
+                    };
+                    cell.alignment = { 
+                        horizontal: 'left', 
+                        vertical: 'middle',
+                        wrapText: true
+                    };
+                    cell.border = {
+                        top: { style: 'thin', color: { argb: 'FFE9ECEF' } },
+                        bottom: { style: 'thin', color: { argb: 'FFE9ECEF' } },
+                        left: { style: 'thin', color: { argb: 'FFE9ECEF' } },
+                        right: { style: 'thin', color: { argb: 'FFE9ECEF' } }
+                    };
+                });
+
+                // Styles spécifiques pour certaines colonnes
+                // Correspondances - toujours vert
+                const matchesCell = row.getCell('matches');
+                matchesCell.fill = {
+                    type: 'pattern',
+                    pattern: 'solid',
+                    fgColor: { argb: 'FFD4EDDA' }
+                };
+                matchesCell.font = { 
+                    color: { argb: 'FF155724' },
+                    bold: true,
+                    size: 10
+                };
+
+                // Écarts BO - Jaune
+                const boOnlyCell = row.getCell('boOnly');
+                if (item.boOnly > 0) {
+                    boOnlyCell.fill = {
+                        type: 'pattern',
+                        pattern: 'solid',
+                        fgColor: { argb: 'FFFFF3CD' }
+                    };
+                    boOnlyCell.font = { 
+                        color: { argb: 'FF856404' },
+                        bold: true,
+                        size: 10
+                    };
+                }
+
+                // Écarts Partenaire - Orange
+                const partnerOnlyCell = row.getCell('partnerOnly');
+                if (item.partnerOnly > 0) {
+                    partnerOnlyCell.fill = {
+                        type: 'pattern',
+                        pattern: 'solid',
+                        fgColor: { argb: 'FFFFE0B2' } // Orange clair
+                    };
+                    partnerOnlyCell.font = { 
+                        color: { argb: 'FFE65100' }, // Orange foncé
+                        bold: true,
+                        size: 10
+                    };
+                }
+
+                // Incohérences - Rouge
+                const mismatchesCell = row.getCell('mismatches');
+                if (item.mismatches > 0) {
+                    mismatchesCell.fill = {
+                        type: 'pattern',
+                        pattern: 'solid',
+                        fgColor: { argb: 'FFF8D7DA' }
+                    };
+                    mismatchesCell.font = { 
+                        color: { argb: 'FF721C24' },
+                        bold: true,
+                        size: 10
+                    };
+                }
+
+                // Taux de Correspondance - Style selon la valeur
+                const matchRateCell = row.getCell('matchRate');
+                matchRateCell.font = { 
+                    color: { argb: rowTextColor },
+                    bold: true,
+                    size: 11
+                };
+                matchRateCell.alignment = { 
+                    horizontal: 'center', 
+                    vertical: 'middle'
+                };
+
+                // Alignement numérique pour Transactions, Volume
+                row.getCell('transactions').alignment = { horizontal: 'right', vertical: 'middle' };
+                row.getCell('volume').alignment = { horizontal: 'right', vertical: 'middle' };
+                row.getCell('matches').alignment = { horizontal: 'right', vertical: 'middle' };
+                row.getCell('boOnly').alignment = { horizontal: 'right', vertical: 'middle' };
+                row.getCell('partnerOnly').alignment = { horizontal: 'right', vertical: 'middle' };
+                row.getCell('mismatches').alignment = { horizontal: 'right', vertical: 'middle' };
+            });
+
+            // Générer le fichier Excel
+            const buffer = await workbook.xlsx.writeBuffer();
+            const fileName = `rapport_reconciliation_${new Date().toISOString().slice(0,10)}.xlsx`;
+            saveAs(new Blob([buffer]), fileName);
+            
+            this.popupService.showSuccess('Export réussi', `Le fichier ${fileName} a été téléchargé avec succès.`);
+        } catch (error) {
+            console.error('❌ Erreur lors de l\'export Excel:', error);
+            this.popupService.showError('Erreur d\'export', 'Une erreur est survenue lors de l\'export Excel.');
+        }
     }
 
     goBack() {

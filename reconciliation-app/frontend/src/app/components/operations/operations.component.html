@@ -797,13 +797,75 @@
                     </mat-select>
                 </mat-form-field>
             </div>
-            <div class="form-field">
-                <label for="dateDebut">Date de début</label>
-                <input id="dateDebut" type="date" formControlName="dateDebut">
+            <!-- Bouton pour afficher/masquer le filtre de date -->
+            <div class="form-field date-filter-toggle-section">
+                <button type="button" 
+                        class="btn-toggle-date-filter" 
+                        (click)="showDateFilter = !showDateFilter"
+                        [class.active]="showDateFilter || filterForm.get('dateDebut')?.value || filterForm.get('dateFin')?.value">
+                    <i class="fas" [ngClass]="showDateFilter ? 'fa-chevron-up' : 'fa-chevron-down'"></i>
+                    <i class="fas fa-calendar-alt"></i>
+                    {{ showDateFilter ? 'Masquer le filtre de période' : 'Afficher le filtre de période' }}
+                    <span class="date-filter-indicator" *ngIf="filterForm.get('dateDebut')?.value || filterForm.get('dateFin')?.value">
+                        <i class="fas fa-check-circle"></i>
+                    </span>
+                </button>
             </div>
-            <div class="form-field">
-                <label for="dateFin">Date de fin</label>
-                <input id="dateFin" type="date" formControlName="dateFin">
+            <!-- Filtre de date personnalisé -->
+            <div class="form-field date-filter-section" *ngIf="showDateFilter">
+                <label>
+                    <i class="fas fa-calendar-alt"></i> Période
+                </label>
+                <div class="date-filter-container">
+                    <div class="date-preset-selector">
+                        <select (change)="applyDatePreset($event)" class="date-preset-select">
+                            <option value="">Sélectionner une période</option>
+                            <option value="today">Aujourd'hui</option>
+                            <option value="yesterday">Hier</option>
+                            <option value="7days">7 derniers jours</option>
+                            <option value="30days">30 derniers jours</option>
+                            <option value="month">Ce mois</option>
+                            <option value="lastMonth">Mois dernier</option>
+                            <option value="quarter">Ce trimestre</option>
+                            <option value="lastQuarter">Trimestre dernier</option>
+                            <option value="thisYear">Cette année</option>
+                            <option value="lastYear">Année dernière</option>
+                            <option value="custom">Période personnalisée</option>
+                        </select>
+                    </div>
+                    <div class="date-range-inputs">
+                        <div class="date-input-group">
+                            <label for="dateDebut">
+                                <i class="fas fa-calendar"></i> Date de début
+                            </label>
+                            <input id="dateDebut" 
+                                   type="date" 
+                                   formControlName="dateDebut"
+                                   (focus)="showDateFilter = true"
+                                   (change)="onFilterChange()"
+                                   class="date-input-field">
+                        </div>
+                        <div class="date-input-group">
+                            <label for="dateFin">
+                                <i class="fas fa-calendar"></i> Date de fin
+                            </label>
+                            <input id="dateFin" 
+                                   type="date" 
+                                   formControlName="dateFin"
+                                   (focus)="showDateFilter = true"
+                                   (change)="onFilterChange()"
+                                   class="date-input-field">
+                        </div>
+                    </div>
+                    <div class="date-filter-actions" *ngIf="filterForm.get('dateDebut')?.value || filterForm.get('dateFin')?.value">
+                        <button type="button" 
+                                class="btn-clear-date" 
+                                (click)="clearDateFilter()"
+                                title="Effacer le filtre de date">
+                            <i class="fas fa-times"></i> Effacer
+                        </button>
+                    </div>
+                </div>
             </div>
             <div class="form-actions">
                 <button type="submit" class="btn primary">Appliquer</button>
