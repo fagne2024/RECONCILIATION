@@ -16,6 +16,7 @@ public class OperationBancaireCreateRequest {
     private String bo;
     private String statut;
     private Long operationId;
+    private String traitement;
     
     // Constructeurs
     public OperationBancaireCreateRequest() {}
@@ -139,6 +140,14 @@ public class OperationBancaireCreateRequest {
     
     public void setOperationId(Long operationId) {
         this.operationId = operationId;
+    }
+    
+    public String getTraitement() {
+        return traitement;
+    }
+    
+    public void setTraitement(String traitement) {
+        this.traitement = traitement;
     }
 }
 

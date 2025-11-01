@@ -31,6 +31,10 @@ public class OperationBancaireController {
     @GetMapping
     public ResponseEntity<List<OperationBancaire>> getAllOperationsBancaires() {
         List<OperationBancaire> operations = operationBancaireService.getAllOperationsBancaires();
+        // Log pour déboguer le traitement
+        operations.stream()
+            .filter(op -> op.getTraitement() != null)
+            .forEach(op -> System.out.println("🔍 Opération ID: " + op.getId() + " - Traitement: " + op.getTraitement()));
         return ResponseEntity.ok(operations);
     }
 

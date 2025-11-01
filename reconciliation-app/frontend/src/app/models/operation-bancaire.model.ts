@@ -36,6 +36,7 @@ export interface OperationBancaireCreateRequest {
     bo?: string;
     statut: string;
     operationId?: number;
+    traitement?: string;
 }
 
 export interface OperationBancaireUpdateRequest {

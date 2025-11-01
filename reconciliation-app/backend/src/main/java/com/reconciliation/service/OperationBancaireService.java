@@ -118,10 +118,14 @@ public class OperationBancaireService {
         entity.setBo(request.getBo());
         entity.setStatut(request.getStatut() != null ? request.getStatut() : "En attente");
         entity.setOperationId(request.getOperationId());
+        entity.setTraitement(request.getTraitement());
+        
+        logger.info("📋 Création opération bancaire - Traitement reçu: '{}'", request.getTraitement());
         
         OperationBancaireEntity savedEntity = operationBancaireRepository.save(entity);
         
-        logger.info("✅ Opération bancaire créée avec ID: {}", savedEntity.getId());
+        logger.info("✅ Opération bancaire créée avec ID: {} - Traitement sauvegardé: '{}'", 
+                   savedEntity.getId(), savedEntity.getTraitement());
         
         return convertToModel(savedEntity);
     }

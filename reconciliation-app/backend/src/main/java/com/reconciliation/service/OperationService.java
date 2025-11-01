@@ -2074,6 +2074,11 @@ public class OperationService {
         try {
             logger.info("🏦 Création automatique d'une opération bancaire pour l'opération ID: {} (Type: {})", 
                        operation.getId(), operation.getTypeOperation());
+            logger.info("🔍 Type d'opération détaillé: '{}' (Compense_client={}, Appro_client={}, nivellement={})", 
+                       operation.getTypeOperation(),
+                       "Compense_client".equals(operation.getTypeOperation()),
+                       "Appro_client".equals(operation.getTypeOperation()),
+                       "nivellement".equals(operation.getTypeOperation()));
             
             OperationBancaireCreateRequest request = new OperationBancaireCreateRequest();
             
@@ -2176,6 +2181,24 @@ public class OperationService {
             
             // Statut par défaut "En attente" car les autres informations doivent être complétées manuellement
             request.setStatut("En attente");
+            
+            // Traitement par défaut "Niveau Group" pour Compense_client, Appro_client et nivellement
+            String typeOp = operation.getTypeOperation();
+            logger.info("🔍 Vérification traitement pour type d'opération: '{}'", typeOp);
+            
+            if ("Compense_client".equals(typeOp) || 
+                "Appro_client".equals(typeOp) || 
+                "nivellement".equals(typeOp)) {
+                request.setTraitement("Niveau Group");
+                logger.info("✅ Traitement défini par défaut à 'Niveau Group' pour le type: '{}'", typeOp);
+                logger.info("📋 Valeur du traitement dans la requête: '{}'", request.getTraitement());
+            } else {
+                logger.info("ℹ️ Type d'opération '{}' n'a pas de traitement par défaut défini (Compense_client={}, Appro_client={}, nivellement={})", 
+                           typeOp,
+                           "Compense_client".equals(typeOp),
+                           "Appro_client".equals(typeOp),
+                           "nivellement".equals(typeOp));
+            }
             
             // Lien avec l'opération d'origine
             request.setOperationId(operation.getId());
