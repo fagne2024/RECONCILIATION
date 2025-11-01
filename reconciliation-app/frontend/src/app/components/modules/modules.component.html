@@ -52,7 +52,7 @@
           </tr>
         </thead>
         <tbody>
-          <tr *ngFor="let module of filteredModules">
+          <tr *ngFor="let module of pagedModules">
             <td class="module-name">{{ module.nom }}</td>
             <td>
               <span class="profils-count-badge">{{ getProfilsForModule(module).length }} profil(s)</span>
@@ -71,6 +71,50 @@
           </tr>
         </tbody>
       </table>
+    </div>
+  </div>
+
+  <!-- Pagination -->
+  <div class="pagination-section" *ngIf="filteredModules.length > 0 && !isLoading">
+    <div class="pagination-controls">
+      <div class="items-per-page">
+        <label>Lignes par page :</label>
+        <select [(ngModel)]="itemsPerPage" (change)="onItemsPerPageChange()" class="form-control">
+          <option [value]="10">10</option>
+          <option [value]="20">20</option>
+          <option [value]="50">50</option>
+          <option [value]="100">100</option>
+        </select>
+      </div>
+      
+      <button 
+        class="btn pagination-btn" 
+        [disabled]="currentPage === 1"
+        (click)="onPageChange(currentPage - 1)">
+        <i class="fas fa-chevron-left"></i> Précédent
+      </button>
+      
+      <div class="page-numbers">
+        <button 
+          *ngFor="let page of getVisiblePages()"
+          class="btn page-btn"
+          [class.active]="currentPage === page"
+          (click)="onPageChange(page)">
+          {{ page }}
+        </button>
+      </div>
+      
+      <button 
+        class="btn pagination-btn" 
+        [disabled]="currentPage === totalPages"
+        (click)="onPageChange(currentPage + 1)">
+        Suivant <i class="fas fa-chevron-right"></i>
+      </button>
+    </div>
+    
+    <div class="pagination-info">
+      Affichage de {{ getStartIndex() + 1 }} à {{ getEndIndex() }} sur {{ filteredModules.length }} élément(s)
+      (Page {{ currentPage }} / {{ totalPages }})
     </div>
   </div>
 

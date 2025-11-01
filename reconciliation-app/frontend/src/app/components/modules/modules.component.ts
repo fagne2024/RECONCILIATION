@@ -15,6 +15,7 @@ import { Permission } from '../../models/permission.model';
 export class ModulesComponent implements OnInit {
   modules: Module[] = [];
   filteredModules: Module[] = [];
+  pagedModules: Module[] = [];
   profils: Profil[] = [];
   permissions: Permission[] = [];
   profilPermissions: ProfilPermission[] = [];
@@ -30,6 +31,11 @@ export class ModulesComponent implements OnInit {
   selectedModule: Module | null = null;
   isSavingProfils = false;
   searchTerm = '';
+
+  // Propriétés pour la pagination
+  currentPage = 1;
+  itemsPerPage = 10;
+  totalPages = 1;
 
   // Liste de tous les menus de l'application
   appMenus = [
@@ -97,6 +103,67 @@ export class ModulesComponent implements OnInit {
         module.nom.toLowerCase().includes(this.searchTerm.toLowerCase());
       return matchesSearch;
     });
+    this.updatePagination();
+  }
+
+  // Méthodes de pagination
+  updatePagination(): void {
+    this.totalPages = Math.ceil(this.filteredModules.length / this.itemsPerPage);
+    if (this.currentPage > this.totalPages && this.totalPages > 0) {
+      this.currentPage = 1;
+    }
+    this.updatePagedModules();
+  }
+
+  updatePagedModules(): void {
+    const startIndex = (this.currentPage - 1) * this.itemsPerPage;
+    const endIndex = startIndex + this.itemsPerPage;
+    this.pagedModules = this.filteredModules.slice(startIndex, endIndex);
+  }
+
+  onPageChange(page: number): void {
+    if (page >= 1 && page <= this.totalPages) {
+      this.currentPage = page;
+      this.updatePagedModules();
+    }
+  }
+
+  onItemsPerPageChange(): void {
+    this.currentPage = 1;
+    this.updatePagination();
+  }
+
+  getStartIndex(): number {
+    return (this.currentPage - 1) * this.itemsPerPage;
+  }
+
+  getEndIndex(): number {
+    const endIndex = this.currentPage * this.itemsPerPage;
+    return Math.min(endIndex, this.filteredModules.length);
+  }
+
+  getVisiblePages(): number[] {
+    const maxVisible = 5;
+    const pages: number[] = [];
+    
+    if (this.totalPages <= maxVisible) {
+      for (let i = 1; i <= this.totalPages; i++) {
+        pages.push(i);
+      }
+    } else {
+      let start = Math.max(1, this.currentPage - 2);
+      let end = Math.min(this.totalPages, start + maxVisible - 1);
+      
+      if (end - start < maxVisible - 1) {
+        start = Math.max(1, end - maxVisible + 1);
+      }
+      
+      for (let i = start; i <= end; i++) {
+        pages.push(i);
+      }
+    }
+    
+    return pages;
   }
 
   clearFilters(): void {

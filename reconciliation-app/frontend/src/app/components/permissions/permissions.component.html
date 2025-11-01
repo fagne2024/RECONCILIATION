@@ -66,7 +66,7 @@
     </div>
 
     <div *ngIf="!isLoading && filteredPermissions.length > 0" class="permissions-list">
-      <div *ngFor="let permission of filteredPermissions" class="permission-item">
+      <div *ngFor="let permission of pagedPermissions" class="permission-item">
         <div class="permission-content">
           <div class="permission-name">
             <i class="fas fa-key"></i>
@@ -82,6 +82,50 @@
           </button>
         </div>
       </div>
+    </div>
+  </div>
+
+  <!-- Pagination -->
+  <div class="pagination-section" *ngIf="filteredPermissions.length > 0 && !isLoading">
+    <div class="pagination-controls">
+      <div class="items-per-page">
+        <label>Lignes par page :</label>
+        <select [(ngModel)]="itemsPerPage" (change)="onItemsPerPageChange()" class="form-control">
+          <option [value]="10">10</option>
+          <option [value]="20">20</option>
+          <option [value]="50">50</option>
+          <option [value]="100">100</option>
+        </select>
+      </div>
+      
+      <button 
+        class="btn pagination-btn" 
+        [disabled]="currentPage === 1"
+        (click)="onPageChange(currentPage - 1)">
+        <i class="fas fa-chevron-left"></i> Précédent
+      </button>
+      
+      <div class="page-numbers">
+        <button 
+          *ngFor="let page of getVisiblePages()"
+          class="btn page-btn"
+          [class.active]="currentPage === page"
+          (click)="onPageChange(page)">
+          {{ page }}
+        </button>
+      </div>
+      
+      <button 
+        class="btn pagination-btn" 
+        [disabled]="currentPage === totalPages"
+        (click)="onPageChange(currentPage + 1)">
+        Suivant <i class="fas fa-chevron-right"></i>
+      </button>
+    </div>
+    
+    <div class="pagination-info">
+      Affichage de {{ getStartIndex() + 1 }} à {{ getEndIndex() }} sur {{ filteredPermissions.length }} élément(s)
+      (Page {{ currentPage }} / {{ totalPages }})
     </div>
   </div>
 
