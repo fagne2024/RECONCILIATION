@@ -8,6 +8,7 @@ import com.reconciliation.dto.OperationCreateRequest;
 import com.reconciliation.dto.FormOperationCreateRequest;
 import com.reconciliation.dto.DeleteOperationsRequest;
 import com.reconciliation.dto.DeleteOperationsResponse;
+import com.reconciliation.util.RequestContextUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -45,14 +46,22 @@ public class OperationController {
     
     @GetMapping
     public ResponseEntity<List<Operation>> getAllOperations() {
-        List<Operation> operations = operationService.getAllOperations();
-        return ResponseEntity.ok(operations);
+        try {
+            String username = RequestContextUtil.getUsernameFromRequest();
+            List<Operation> operations = operationService.getAllOperations(username);
+            return ResponseEntity.ok(operations);
+        } catch (Exception e) {
+            logger.error("[API] Erreur dans /operations: {}", e.getMessage(), e);
+            e.printStackTrace();
+            return ResponseEntity.internalServerError().build();
+        }
     }
     
     @GetMapping("/with-frais")
     public ResponseEntity<List<Operation>> getAllOperationsWithFrais() {
         try {
-            List<Operation> operations = operationService.getAllOperationsWithFrais();
+            String username = RequestContextUtil.getUsernameFromRequest();
+            List<Operation> operations = operationService.getAllOperationsWithFrais(username);
             return ResponseEntity.ok(operations);
         } catch (Exception e) {
             logger.error("[API] Erreur dans /operations/with-frais: {}", e.getMessage(), e);

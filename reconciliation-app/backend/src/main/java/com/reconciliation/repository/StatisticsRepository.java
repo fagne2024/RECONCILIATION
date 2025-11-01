@@ -14,6 +14,10 @@ import java.math.BigDecimal;
 public interface StatisticsRepository extends JpaRepository<Statistics, Long> {
     Optional<Statistics> findByAgencyAndServiceAndDate(String agency, String service, LocalDate date);
     List<Statistics> findByDate(LocalDate date);
+    
+    @Query("SELECT s FROM Statistics s WHERE s.date = :date AND (:countries IS NULL OR s.country IN :countries)")
+    List<Statistics> findByDateAndCountries(@Param("date") LocalDate date, @Param("countries") List<String> countries);
+    
     List<Statistics> findByDateAndAgencyAndService(LocalDate date, String agency, String service);
 
     @Query("SELECT s FROM Statistics s WHERE " +
@@ -24,6 +28,20 @@ public interface StatisticsRepository extends JpaRepository<Statistics, Long> {
     List<Statistics> findByFilters(
         @Param("agency") String agency,
         @Param("service") String service,
+        @Param("startDate") LocalDate startDate,
+        @Param("endDate") LocalDate endDate
+    );
+    
+    @Query("SELECT s FROM Statistics s WHERE " +
+           "(:agency IS NULL OR s.agency = :agency) AND " +
+           "(:service IS NULL OR s.service = :service) AND " +
+           "(:countries IS NULL OR s.country IN :countries) AND " +
+           "(:startDate IS NULL OR s.date >= :startDate) AND " +
+           "(:endDate IS NULL OR s.date <= :endDate)")
+    List<Statistics> findByFiltersWithCountries(
+        @Param("agency") String agency,
+        @Param("service") String service,
+        @Param("countries") List<String> countries,
         @Param("startDate") LocalDate startDate,
         @Param("endDate") LocalDate endDate
     );

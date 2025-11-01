@@ -95,7 +95,7 @@
                 <span>Modèles de Traitement</span>
             </a>
         </li>
-        <li>
+        <li *ngIf="isAdmin()">
             <a href="#" class="has-submenu" (click)="toggleParamSubmenu(); $event.preventDefault()">
                 <i class="fas fa-cog menu-icon parametre"></i>
                 <span>Paramètre</span>
@@ -110,10 +110,26 @@
             </ul>
         </li>
     </ul>
-    <div class="sidebar-logout">
-        <a href="#" class="logout-link" (click)="logout(); $event.preventDefault()">
-            <i class="fas fa-sign-out-alt"></i>
-            <span>Logout</span>
-        </a>
+    <div class="sidebar-footer">
+        <div class="sidebar-user-info" *ngIf="getUsername()">
+            <div class="user-info-content">
+                <div class="user-avatar">
+                    <i class="fas fa-user-circle"></i>
+                </div>
+                <div class="user-details">
+                    <div class="user-name">{{ getUsername() }}</div>
+                    <div class="user-profil" *ngIf="getUserProfil()">
+                        <i class="fas fa-id-badge"></i>
+                        <span>{{ getUserProfil() }}</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="sidebar-logout">
+            <a href="#" class="logout-link" (click)="logout(); $event.preventDefault()">
+                <i class="fas fa-sign-out-alt"></i>
+                <span>Logout</span>
+            </a>
+        </div>
     </div>
 </div> 

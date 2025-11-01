@@ -111,9 +111,55 @@ public class ProfilService {
     // Permissions
     public List<PermissionEntity> getAllPermissions() { return permissionRepository.findAll(); }
     public PermissionEntity createPermission(PermissionEntity permission) { return permissionRepository.save(permission); }
+    
+    @Transactional
+    public void deletePermission(Long id) {
+        // Vérifier si la permission existe
+        PermissionEntity permission = permissionRepository.findById(id)
+            .orElseThrow(() -> new RuntimeException("Permission non trouvée avec l'ID: " + id));
+        
+        // Vérifier si la permission est utilisée dans des associations profil-permission-module
+        // Charger toutes les associations et filtrer celles qui utilisent cette permission
+        List<ProfilPermissionEntity> allAssociations = profilPermissionRepository.findAll();
+        List<ProfilPermissionEntity> associations = allAssociations.stream()
+            .filter(pp -> {
+                // Forcer le chargement de la relation permission si nécessaire
+                if (pp.getPermission() == null) {
+                    return false;
+                }
+                // Comparer les IDs
+                Long permissionId = pp.getPermission().getId();
+                return permissionId != null && permissionId.equals(id);
+            })
+            .toList();
+        
+        if (!associations.isEmpty()) {
+            throw new RuntimeException("Impossible de supprimer la permission '" + permission.getNom() + 
+                "' car elle est utilisée dans " + associations.size() + " association(s) profil-module. " +
+                "Veuillez d'abord supprimer ces associations.");
+        }
+        
+        // Supprimer la permission
+        permissionRepository.deleteById(id);
+        System.out.println("✅ Permission '" + permission.getNom() + "' (ID: " + id + ") supprimée avec succès");
+    }
 
     // Attribution de permissions à un profil
+    @Transactional
     public ProfilPermissionEntity addPermissionToProfil(Long profilId, Long moduleId, Long permissionId) {
+        // Vérifier si l'association existe déjà
+        ProfilPermissionEntity existing = profilPermissionRepository.findAll().stream()
+            .filter(pp -> pp.getProfil() != null && pp.getProfil().getId().equals(profilId) &&
+                         pp.getModule() != null && pp.getModule().getId().equals(moduleId) &&
+                         pp.getPermission() != null && pp.getPermission().getId().equals(permissionId))
+            .findFirst()
+            .orElse(null);
+        
+        if (existing != null) {
+            // Retourner l'existant avec ses relations chargées
+            return existing;
+        }
+        
         ProfilEntity profil = profilRepository.findById(profilId).orElseThrow();
         ModuleEntity module = moduleRepository.findById(moduleId).orElseThrow();
         PermissionEntity permission = permissionRepository.findById(permissionId).orElseThrow();
@@ -121,7 +167,10 @@ public class ProfilService {
         pp.setProfil(profil);
         pp.setModule(module);
         pp.setPermission(permission);
-        return profilPermissionRepository.save(pp);
+        ProfilPermissionEntity saved = profilPermissionRepository.save(pp);
+        
+        // Recharger avec les relations pour s'assurer qu'elles sont disponibles
+        return profilPermissionRepository.findById(saved.getId()).orElse(saved);
     }
 
     public void removePermissionFromProfil(Long profilPermissionId) {
@@ -129,8 +178,13 @@ public class ProfilService {
     }
 
     public List<ProfilPermissionEntity> getPermissionsForProfil(Long profilId) {
-        return profilPermissionRepository.findAll().stream()
-            .filter(pp -> pp.getProfil().getId().equals(profilId))
+        // Charger toutes les permissions avec leurs relations
+        List<ProfilPermissionEntity> allPermissions = profilPermissionRepository.findAll();
+        // Filtrer par profil et s'assurer que les relations sont chargées
+        return allPermissions.stream()
+            .filter(pp -> pp.getProfil() != null && pp.getProfil().getId() != null && 
+                         pp.getProfil().getId().equals(profilId))
+            .filter(pp -> pp.getModule() != null && pp.getPermission() != null)
             .toList();
     }
 

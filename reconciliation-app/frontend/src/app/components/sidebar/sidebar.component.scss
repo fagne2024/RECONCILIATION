@@ -10,6 +10,7 @@
     display: flex;
     flex-direction: column;
     box-shadow: 2px 0 5px rgba(0,0,0,0.1);
+    overflow: hidden;
 }
 
 .logo-container {
@@ -37,7 +38,16 @@
     list-style: none;
     padding: 0;
     margin: 0;
-    flex-grow: 1;
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    scrollbar-width: none; /* Firefox */
+    -ms-overflow-style: none; /* IE and Edge */
+    
+    /* Masquer la barre de défilement pour Chrome, Safari et Opera */
+    &::-webkit-scrollbar {
+        display: none;
+    }
 
     li a {
         display: flex;
@@ -100,12 +110,82 @@
     font-size: 0.9em;
 }
 
+.sidebar-footer {
+    margin-top: auto;
+    flex-shrink: 0;
+    background-color: #2c3e50;
+    position: relative;
+    z-index: 10;
+}
+
+.sidebar-user-info {
+    padding: 16px 0;
+    border-top: 1px solid #34495e;
+    margin-bottom: 12px;
+    overflow: hidden;
+
+    .user-info-content {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        padding: 0 8px;
+        text-align: center;
+
+        .user-avatar {
+            flex-shrink: 0;
+            
+            i {
+                font-size: 2.5rem;
+                color: #3498db;
+            }
+        }
+
+        .user-details {
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 4px;
+
+            .user-name {
+                font-weight: 600;
+                font-size: 1rem;
+                color: #ecf0f1;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                max-width: 100%;
+            }
+
+            .user-profil {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                gap: 6px;
+                font-size: 0.85rem;
+                color: #95a5a6;
+
+                i {
+                    font-size: 0.9rem;
+                    color: #7f8c8d;
+                }
+
+                span {
+                    white-space: nowrap;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                    max-width: 200px;
+                }
+            }
+        }
+    }
+}
+
 .sidebar-logout {
-    position: absolute;
-    bottom: 24px;
-    left: 0;
-    width: 100%;
     text-align: center;
+    overflow: hidden;
 }
 
 .logout-link {

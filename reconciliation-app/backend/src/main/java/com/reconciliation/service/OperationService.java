@@ -12,6 +12,7 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.context.annotation.Lazy;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
@@ -59,10 +60,44 @@ public class OperationService {
     @Lazy
     private OperationService self; // Self-injection pour la gestion transactionnelle
     
+    @Autowired
+    private PaysFilterService paysFilterService;
+    
     public List<Operation> getAllOperations() {
-        return operationRepository.findAllOrderByDateOperationDesc().stream()
-                .map(this::convertToModel)
-                .collect(Collectors.toList());
+        return getAllOperations(null);
+    }
+    
+    public List<Operation> getAllOperations(String username) {
+        try {
+            List<OperationEntity> operations;
+            
+            if (username != null && !username.isEmpty()) {
+                List<String> allowedPays = paysFilterService.getAllowedPaysCodes(username);
+                
+                // null signifie tous les pays (GNL ou admin)
+                if (allowedPays == null) {
+                    operations = operationRepository.findAllOrderByDateOperationDesc();
+                } else if (allowedPays.isEmpty()) {
+                    // Aucun pays autorisé, retourner une liste vide
+                    return new ArrayList<>();
+                } else {
+                    // Filtrer par pays autorisés
+                    operations = operationRepository.findByPaysInOrderByDateOperationDesc(allowedPays);
+                }
+            } else {
+                // Pas de username, retourner toutes les opérations (comportement par défaut)
+                operations = operationRepository.findAllOrderByDateOperationDesc();
+            }
+            
+            return operations.stream()
+                    .map(this::convertToModel)
+                    .collect(Collectors.toList());
+        } catch (Exception e) {
+            logger.error("Erreur dans getAllOperations pour username: {}", username, e);
+            e.printStackTrace();
+            // En cas d'erreur, retourner une liste vide pour éviter les crashes
+            return new ArrayList<>();
+        }
     }
     
     public Optional<Operation> getOperationById(Long id) {
@@ -1494,7 +1529,31 @@ public class OperationService {
      * Récupérer toutes les opérations enrichies avec leurs frais
      */
     public List<Operation> getAllOperationsWithFrais() {
-        return operationRepository.findAllOrderByDateOperationDesc().stream()
+        return getAllOperationsWithFrais(null);
+    }
+    
+    public List<Operation> getAllOperationsWithFrais(String username) {
+        List<OperationEntity> operations;
+        
+        if (username != null) {
+            List<String> allowedPays = paysFilterService.getAllowedPaysCodes(username);
+            
+            // null signifie tous les pays (GNL ou admin)
+            if (allowedPays == null) {
+                operations = operationRepository.findAllOrderByDateOperationDesc();
+            } else if (allowedPays.isEmpty()) {
+                // Aucun pays autorisé, retourner une liste vide
+                return new ArrayList<>();
+            } else {
+                // Filtrer par pays autorisés
+                operations = operationRepository.findByPaysInOrderByDateOperationDesc(allowedPays);
+            }
+        } else {
+            // Pas de username, retourner toutes les opérations (comportement par défaut)
+            operations = operationRepository.findAllOrderByDateOperationDesc();
+        }
+        
+        return operations.stream()
                 .map(this::convertToModel)
                 .map(this::enrichOperationWithFrais)
                 .collect(Collectors.toList());
@@ -1643,10 +1702,33 @@ public class OperationService {
 
 
     public Map<String, List<String>> getOperationFilterOptions() {
+        return getOperationFilterOptions(null);
+    }
+    
+    public Map<String, List<String>> getOperationFilterOptions(String username) {
         Map<String, List<String>> filterOptions = new HashMap<>();
         filterOptions.put("typeOperations", operationRepository.findDistinctTypeOperation());
         filterOptions.put("services", operationRepository.findDistinctService());
-        filterOptions.put("pays", operationRepository.findDistinctPays());
+        
+        // Filtrer les pays selon les permissions de l'utilisateur
+        if (username != null) {
+            List<String> allowedPays = paysFilterService.getAllowedPaysCodes(username);
+            if (allowedPays == null) {
+                // GNL ou admin : tous les pays
+                filterOptions.put("pays", operationRepository.findDistinctPays());
+            } else if (allowedPays.isEmpty()) {
+                filterOptions.put("pays", new ArrayList<>());
+            } else {
+                // Filtrer uniquement les pays autorisés
+                List<String> allPays = operationRepository.findDistinctPays();
+                filterOptions.put("pays", allPays.stream()
+                    .filter(allowedPays::contains)
+                    .collect(Collectors.toList()));
+            }
+        } else {
+            filterOptions.put("pays", operationRepository.findDistinctPays());
+        }
+        
         filterOptions.put("statuts", operationRepository.findDistinctStatut());
         filterOptions.put("banques", operationRepository.findDistinctBanque());
         filterOptions.put("codeProprietaires", operationRepository.findDistinctCodeProprietaire());

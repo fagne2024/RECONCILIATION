@@ -2,7 +2,8 @@ import { NgModule } from '@angular/core';
 import { BrowserModule } from '@angular/platform-browser';
 import { FormsModule, ReactiveFormsModule } from '@angular/forms';
 import { CommonModule } from '@angular/common';
-import { HttpClientModule } from '@angular/common/http';
+import { HttpClientModule, HTTP_INTERCEPTORS } from '@angular/common/http';
+import { AuthInterceptor } from './interceptors/auth.interceptor';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatFormFieldModule } from '@angular/material/form-field';
@@ -70,6 +71,7 @@ import { ReportDashboardComponent } from './components/report-dashboard/report-d
 import { DashboardReconciliationComponent } from './components/dashboard-reconciliation/dashboard-reconciliation.component';
 import { ComptabiliteComponent } from './components/comptabilite/comptabilite.component';
 import { BanqueDashboardComponent } from './components/banque-dashboard/banque-dashboard.component';
+import { UserLogComponent } from './components/user-log/user-log.component';
 
 @NgModule({
     declarations: [
@@ -111,7 +113,8 @@ import { BanqueDashboardComponent } from './components/banque-dashboard/banque-d
                 ReportDashboardComponent,
                 DashboardReconciliationComponent,
                 ComptabiliteComponent,
-                BanqueDashboardComponent
+                BanqueDashboardComponent,
+                UserLogComponent
     ],
     imports: [
         BrowserModule,
@@ -140,7 +143,20 @@ import { BanqueDashboardComponent } from './components/banque-dashboard/banque-d
         AgencySummaryComponent,
         ReconciliationLauncherComponent
     ],
-    providers: [ReconciliationService, ServiceBalanceService, ExportOptimizationService, ModernExcelExportService, ReconciliationSummaryService, ReconciliationTabsService, DashboardReconciliationService],
+    providers: [
+        ReconciliationService, 
+        ServiceBalanceService, 
+        ExportOptimizationService, 
+        ModernExcelExportService, 
+        ReconciliationSummaryService, 
+        ReconciliationTabsService, 
+        DashboardReconciliationService,
+        {
+            provide: HTTP_INTERCEPTORS,
+            useClass: AuthInterceptor,
+            multi: true
+        }
+    ],
     bootstrap: [AppComponent]
 })
 export class AppModule { } 

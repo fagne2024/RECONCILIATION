@@ -186,36 +186,94 @@ export class DashboardReconciliationService {
     private extractCountryCode(countryOrAgency: string): string {
         if (!countryOrAgency) return 'XX';
         
+        const normalizedName = countryOrAgency.trim().toUpperCase();
+        
+        // Gérer les variantes spéciales comme "CITCH" qui signifie "CI" (Côte d'Ivoire)
+        if (normalizedName === 'CITCH' || normalizedName.startsWith('CITCH')) {
+            return 'CI';
+        }
+        
         // Mapping des codes pays
         const countryMap: {[key: string]: string} = {
-            'Burkina Faso': 'BF',
-            'Bénin': 'BJ',
-            'Côte d\'Ivoire': 'CI',
-            'Cameroun': 'CM',
-            'Gabon': 'GA',
-            'Guinée': 'GN',
-            'Kenya': 'KE',
-            'Mali': 'ML',
-            'Mozambique': 'MZ',
-            'Nigeria': 'NG',
-            'Sénégal': 'SN',
-            'Togo': 'TG'
+            'BURKINA FASO': 'BF',
+            'BURKINA': 'BF',
+            'BÉNIN': 'BJ',
+            'BENIN': 'BJ',
+            'CÔTE D\'IVOIRE': 'CI',
+            'COTE D\'IVOIRE': 'CI',
+            'COTE DIVOIRE': 'CI',
+            'CÔTE DIVOIRE': 'CI',
+            'CAMEROUN': 'CM',
+            'CAMEROON': 'CM',
+            'GABON': 'GA',
+            'GUINÉE': 'GN',
+            'GUINEE': 'GN',
+            'KENYA': 'KE',
+            'MALI': 'ML',
+            'MOZAMBIQUE': 'MZ',
+            'NIGERIA': 'NG',
+            'SÉNÉGAL': 'SN',
+            'SENEGAL': 'SN',
+            'TOGO': 'TG',
+            'NIGER': 'NE',
+            'TCHAD': 'TD'
         };
 
-        // Chercher d'abord dans le mapping
+        // Chercher d'abord dans le mapping (insensible à la casse)
         for (const [country, code] of Object.entries(countryMap)) {
-            if (countryOrAgency.toLowerCase().includes(country.toLowerCase())) {
+            if (normalizedName.includes(country.toUpperCase())) {
                 return code;
             }
         }
+        
+        // Chercher par contenu (pour gérer les cas comme "Côte d'Ivoire" dans "Côte d'Ivoire - Abidjan")
+        if (normalizedName.includes('COTE') || normalizedName.includes('CÔTE') || normalizedName.includes('IVOIRE')) {
+            return 'CI';
+        }
+        if (normalizedName.includes('SENEGAL') || normalizedName.includes('SÉNÉGAL')) {
+            return 'SN';
+        }
+        if (normalizedName.includes('CAMEROUN') || normalizedName.includes('CAMEROON')) {
+            return 'CM';
+        }
+        if (normalizedName.includes('BURKINA')) {
+            return 'BF';
+        }
+        if (normalizedName.includes('MALI')) {
+            return 'ML';
+        }
+        if (normalizedName.includes('BENIN') || normalizedName.includes('BÉNIN')) {
+            return 'BJ';
+        }
+        if (normalizedName.includes('NIGER')) {
+            return 'NE';
+        }
+        if (normalizedName.includes('TCHAD')) {
+            return 'TD';
+        }
+        if (normalizedName.includes('TOGO')) {
+            return 'TG';
+        }
 
         // Extraire le code depuis le nom de l'agence si possible
-        const upperName = countryOrAgency.toUpperCase();
-        const codes = ['BF', 'BJ', 'CI', 'CM', 'GA', 'GN', 'KE', 'ML', 'MZ', 'NG', 'SN', 'TG'];
+        const codes = ['BF', 'BJ', 'CI', 'CM', 'GA', 'GN', 'KE', 'ML', 'MZ', 'NG', 'SN', 'TG', 'NE', 'TD'];
         
         for (const code of codes) {
-            if (upperName.includes(code)) {
+            if (normalizedName.includes(code)) {
                 return code;
+            }
+        }
+        
+        // Si c'est déjà un code (2 lettres), le retourner tel quel
+        if (normalizedName.length === 2) {
+            return normalizedName;
+        }
+        
+        // Si c'est un code de 4-5 lettres qui commence par un code pays connu, extraire les 2 premières lettres
+        if (normalizedName.length >= 4) {
+            const firstTwo = normalizedName.substring(0, 2);
+            if (codes.includes(firstTwo)) {
+                return firstTwo;
             }
         }
 

@@ -1,0 +1,137 @@
+<div class="user-log-container">
+  <div class="header">
+    <h2>Logs Utilisateur</h2>
+    <div class="header-actions">
+      <button class="btn btn-primary" (click)="loadLogs()" [disabled]="isLoading">
+        <i class="fas fa-sync-alt"></i> Actualiser
+      </button>
+    </div>
+  </div>
+
+  <!-- Filtres -->
+  <div class="filters-section">
+    <h3>Filtres</h3>
+    <form [formGroup]="filterForm" (ngSubmit)="applyFilters()">
+      <div class="filter-grid">
+        <div class="form-group">
+          <label>Utilisateur</label>
+          <input 
+            type="text" 
+            formControlName="username" 
+            class="form-control"
+            [list]="'username-list'"
+            placeholder="Filtrer par utilisateur">
+          <datalist id="username-list">
+            <option *ngFor="let username of usernames" [value]="username">
+          </datalist>
+        </div>
+
+        <div class="form-group">
+          <label>Module</label>
+          <input 
+            type="text" 
+            formControlName="module" 
+            class="form-control"
+            [list]="'module-list'"
+            placeholder="Filtrer par module">
+          <datalist id="module-list">
+            <option *ngFor="let module of modules" [value]="module">
+          </datalist>
+        </div>
+
+        <div class="form-group">
+          <label>Permission</label>
+          <input 
+            type="text" 
+            formControlName="permission" 
+            class="form-control"
+            [list]="'permission-list'"
+            placeholder="Filtrer par permission">
+          <datalist id="permission-list">
+            <option *ngFor="let permission of permissions" [value]="permission">
+          </datalist>
+        </div>
+
+        <div class="form-group">
+          <label>Date début</label>
+          <input 
+            type="datetime-local" 
+            formControlName="dateDebut" 
+            class="form-control">
+        </div>
+
+        <div class="form-group">
+          <label>Date fin</label>
+          <input 
+            type="datetime-local" 
+            formControlName="dateFin" 
+            class="form-control">
+        </div>
+      </div>
+
+      <div class="filter-actions">
+        <button type="submit" class="btn btn-primary" [disabled]="isLoading">
+          <i class="fas fa-filter"></i> Appliquer les filtres
+        </button>
+        <button type="button" class="btn btn-secondary" (click)="resetFilters()" [disabled]="isLoading">
+          <i class="fas fa-redo"></i> Réinitialiser
+        </button>
+      </div>
+    </form>
+  </div>
+
+  <!-- Table des logs -->
+  <div class="logs-section">
+    <div class="table-header">
+      <p class="total-count">Total: {{ filteredLogs.length }} log(s)</p>
+    </div>
+
+    <div class="table-container" *ngIf="!isLoading">
+      <table class="logs-table">
+        <thead>
+          <tr>
+            <th>Utilisateur</th>
+            <th>Module</th>
+            <th>Permission</th>
+            <th>Date et Heure</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let log of pagedLogs">
+            <td>{{ log.username }}</td>
+            <td>{{ log.module }}</td>
+            <td>{{ log.permission }}</td>
+            <td>{{ formatDate(log.dateHeure) }}</td>
+          </tr>
+          <tr *ngIf="pagedLogs.length === 0">
+            <td colspan="4" class="no-data">Aucun log trouvé</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="loading-spinner" *ngIf="isLoading">
+      <i class="fas fa-spinner fa-spin"></i> Chargement...
+    </div>
+
+    <!-- Pagination -->
+    <div class="pagination" *ngIf="totalPages > 1 && !isLoading">
+      <button 
+        class="btn btn-sm" 
+        (click)="previousPage()" 
+        [disabled]="currentPage === 1">
+        <i class="fas fa-chevron-left"></i> Précédent
+      </button>
+      <span class="page-info">
+        Page {{ currentPage }} sur {{ totalPages }}
+      </span>
+      <button 
+        class="btn btn-sm" 
+        (click)="nextPage()" 
+        [disabled]="currentPage === totalPages">
+        Suivant <i class="fas fa-chevron-right"></i>
+      </button>
+    </div>
+  </div>
+</div>
+

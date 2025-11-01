@@ -4,6 +4,7 @@ import com.reconciliation.model.OperationBancaire;
 import com.reconciliation.service.OperationBancaireService;
 import com.reconciliation.dto.OperationBancaireCreateRequest;
 import com.reconciliation.dto.OperationBancaireUpdateRequest;
+import com.reconciliation.util.RequestContextUtil;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -30,7 +31,8 @@ public class OperationBancaireController {
     // Récupérer toutes les opérations bancaires
     @GetMapping
     public ResponseEntity<List<OperationBancaire>> getAllOperationsBancaires() {
-        List<OperationBancaire> operations = operationBancaireService.getAllOperationsBancaires();
+        String username = RequestContextUtil.getUsernameFromRequest();
+        List<OperationBancaire> operations = operationBancaireService.getAllOperationsBancaires(username);
         // Log pour déboguer le traitement
         operations.stream()
             .filter(op -> op.getTraitement() != null)
@@ -56,21 +58,24 @@ public class OperationBancaireController {
     // Récupérer les opérations bancaires par pays
     @GetMapping("/pays/{pays}")
     public ResponseEntity<List<OperationBancaire>> getOperationsBancairesByPays(@PathVariable String pays) {
-        List<OperationBancaire> operations = operationBancaireService.getOperationsBancairesByPays(pays);
+        String username = RequestContextUtil.getUsernameFromRequest();
+        List<OperationBancaire> operations = operationBancaireService.getOperationsBancairesByPays(pays, username);
         return ResponseEntity.ok(operations);
     }
     
     // Récupérer les opérations bancaires par agence
     @GetMapping("/agence/{agence}")
     public ResponseEntity<List<OperationBancaire>> getOperationsBancairesByAgence(@PathVariable String agence) {
-        List<OperationBancaire> operations = operationBancaireService.getOperationsBancairesByAgence(agence);
+        String username = RequestContextUtil.getUsernameFromRequest();
+        List<OperationBancaire> operations = operationBancaireService.getOperationsBancairesByAgence(agence, username);
         return ResponseEntity.ok(operations);
     }
     
     // Récupérer les opérations bancaires par statut
     @GetMapping("/statut/{statut}")
     public ResponseEntity<List<OperationBancaire>> getOperationsBancairesByStatut(@PathVariable String statut) {
-        List<OperationBancaire> operations = operationBancaireService.getOperationsBancairesByStatut(statut);
+        String username = RequestContextUtil.getUsernameFromRequest();
+        List<OperationBancaire> operations = operationBancaireService.getOperationsBancairesByStatut(statut, username);
         return ResponseEntity.ok(operations);
     }
     
@@ -79,9 +84,10 @@ public class OperationBancaireController {
     public ResponseEntity<List<OperationBancaire>> getOperationsBancairesByDateRange(
             @RequestParam String dateDebut,
             @RequestParam String dateFin) {
+        String username = RequestContextUtil.getUsernameFromRequest();
         LocalDateTime debut = LocalDateTime.parse(dateDebut);
         LocalDateTime fin = LocalDateTime.parse(dateFin);
-        List<OperationBancaire> operations = operationBancaireService.getOperationsBancairesByDateRange(debut, fin);
+        List<OperationBancaire> operations = operationBancaireService.getOperationsBancairesByDateRange(debut, fin, username);
         return ResponseEntity.ok(operations);
     }
     
@@ -98,6 +104,8 @@ public class OperationBancaireController {
             @RequestParam(required = false) String dateFin,
             @RequestParam(required = false) String reference) {
         
+        String username = RequestContextUtil.getUsernameFromRequest();
+        
         LocalDateTime debut = null;
         LocalDateTime fin = null;
         
@@ -109,7 +117,7 @@ public class OperationBancaireController {
         }
         
         List<OperationBancaire> operations = operationBancaireService.filterOperationsBancaires(
-                pays, codePays, mois, agence, typeOperation, statut, debut, fin, reference);
+                pays, codePays, mois, agence, typeOperation, statut, debut, fin, reference, username);
         return ResponseEntity.ok(operations);
     }
     
@@ -153,7 +161,8 @@ public class OperationBancaireController {
     @GetMapping("/recent")
     public ResponseEntity<List<OperationBancaire>> getRecentOperationsBancaires(
             @RequestParam(defaultValue = "10") int limit) {
-        List<OperationBancaire> operations = operationBancaireService.getAllOperationsBancaires();
+        String username = RequestContextUtil.getUsernameFromRequest();
+        List<OperationBancaire> operations = operationBancaireService.getAllOperationsBancaires(username);
         if (operations.size() > limit) {
             operations = operations.subList(0, limit);
         }
@@ -163,21 +172,24 @@ public class OperationBancaireController {
     // Récupérer la liste des pays distincts
     @GetMapping("/pays/list")
     public ResponseEntity<List<String>> getDistinctPays() {
-        List<String> pays = operationBancaireService.getDistinctPays();
+        String username = RequestContextUtil.getUsernameFromRequest();
+        List<String> pays = operationBancaireService.getDistinctPays(username);
         return ResponseEntity.ok(pays);
     }
     
     // Récupérer la liste des agences distinctes
     @GetMapping("/agence/list")
     public ResponseEntity<List<String>> getDistinctAgences() {
-        List<String> agences = operationBancaireService.getDistinctAgences();
+        String username = RequestContextUtil.getUsernameFromRequest();
+        List<String> agences = operationBancaireService.getDistinctAgences(username);
         return ResponseEntity.ok(agences);
     }
     
     // Récupérer la liste des types d'opération distincts
     @GetMapping("/type-operation/list")
     public ResponseEntity<List<String>> getDistinctTypesOperation() {
-        List<String> types = operationBancaireService.getDistinctTypesOperation();
+        String username = RequestContextUtil.getUsernameFromRequest();
+        List<String> types = operationBancaireService.getDistinctTypesOperation(username);
         return ResponseEntity.ok(types);
     }
 

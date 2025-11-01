@@ -1,10 +1,12 @@
 import { Component, OnInit, ChangeDetectorRef } from '@angular/core';
 import { FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { ProfilService } from '../../services/profil.service';
+import { PaysService } from '../../services/pays.service';
 import { Profil } from '../../models/profil.model';
 import { Module } from '../../models/module.model';
 import { Permission } from '../../models/permission.model';
 import { ProfilPermission } from '../../models/profil-permission.model';
+import { Pays, ProfilPays } from '../../models/pays.model';
 
 @Component({
   selector: 'app-profil',
@@ -13,10 +15,12 @@ import { ProfilPermission } from '../../models/profil-permission.model';
 })
 export class ProfilComponent implements OnInit {
   profils: Profil[] = [];
+  filteredProfils: Profil[] = [];
   modules: Module[] = [];
   permissions: Permission[] = [];
   profilPermissions: ProfilPermission[] = [];
   selectedProfil: Profil | null = null;
+  searchTerm = '';
   newProfilName = '';
   newModuleName = '';
   newPermissionName = '';
@@ -24,6 +28,13 @@ export class ProfilComponent implements OnInit {
   selectedModuleId: number | '' = '';
   availableModulePermissions: Permission[] = [];
   loadingModulePermissions = false;
+  
+  // Propriétés pour la gestion des pays
+  pays: Pays[] = [];
+  profilPays: ProfilPays[] = [];
+  showPaysModal = false;
+  selectedProfilForPays: Profil | null = null;
+  isSavingPays = false;
 
   // Propriétés pour le formulaire d'ajout
   showAddForm = false;
@@ -51,12 +62,14 @@ export class ProfilComponent implements OnInit {
 
   constructor(
     private profilService: ProfilService,
+    private paysService: PaysService,
     private fb: FormBuilder,
     private cd: ChangeDetectorRef
   ) {
     this.addForm = this.fb.group({
       nom: ['', [Validators.required, Validators.minLength(2)]],
-      description: ['']
+      description: [''],
+      moduleId: ['']
     });
     this.editForm = this.fb.group({
       nom: ['', [Validators.required, Validators.minLength(2)]],
@@ -68,6 +81,7 @@ export class ProfilComponent implements OnInit {
     this.loadProfils();
     this.loadModules();
     this.loadPermissions();
+    this.loadPays();
   }
 
   loadProfils() {
@@ -75,11 +89,58 @@ export class ProfilComponent implements OnInit {
     this.profilService.getProfils().subscribe({
       next: (p) => {
         this.profils = p;
+        this.applyFilters();
+        // Charger les permissions pour tous les profils afin d'avoir les décomptes corrects
+        this.loadAllProfilPermissions();
+        // Charger les pays associés pour tous les profils
+        this.loadAllProfilPays();
         this.isLoading = false;
       },
       error: (error) => {
         console.error('Erreur lors du chargement des profils:', error);
         this.isLoading = false;
+      }
+    });
+  }
+
+  applyFilters(): void {
+    this.filteredProfils = this.profils.filter(profil => {
+      const matchesSearch = !this.searchTerm || 
+        profil.nom.toLowerCase().includes(this.searchTerm.toLowerCase()) ||
+        (profil.description && profil.description.toLowerCase().includes(this.searchTerm.toLowerCase()));
+      return matchesSearch;
+    });
+  }
+
+  clearFilters(): void {
+    this.searchTerm = '';
+    this.applyFilters();
+  }
+
+  loadAllProfilPermissions() {
+    // Charger les permissions pour tous les profils
+    this.profils.forEach(profil => {
+      if (profil.id) {
+        this.profilService.getProfilPermissions(profil.id).subscribe({
+          next: (pp) => {
+            // Ajouter les permissions chargées à la liste globale
+            pp.forEach(newPp => {
+              // Vérifier si cette permission n'existe pas déjà
+              if (!this.profilPermissions.some(existing => 
+                existing.id === newPp.id || 
+                (existing.profil && existing.profil.id === newPp.profil?.id &&
+                 existing.module && existing.module.id === newPp.module?.id &&
+                 existing.permission && existing.permission.id === newPp.permission?.id)
+              )) {
+                this.profilPermissions.push(newPp);
+              }
+            });
+            this.cd.detectChanges();
+          },
+          error: (error) => {
+            console.error(`Erreur lors du chargement des permissions pour le profil ${profil.id}:`, error);
+          }
+        });
       }
     });
   }
@@ -91,8 +152,15 @@ export class ProfilComponent implements OnInit {
   }
 
   selectProfil(profil: Profil) {
-    this.selectedProfil = profil;
-    this.profilService.getProfilPermissions(profil.id!).subscribe(pp => this.profilPermissions = pp);
+    // Si le profil est déjà sélectionné, le désélectionner (masquer les infos)
+    if (this.selectedProfil && this.selectedProfil.id === profil.id) {
+      this.selectedProfil = null;
+      this.profilPermissions = [];
+    } else {
+      // Sinon, sélectionner le profil et charger ses permissions
+      this.selectedProfil = profil;
+      this.profilService.getProfilPermissions(profil.id!).subscribe(pp => this.profilPermissions = pp);
+    }
   }
 
   createProfil() {
@@ -102,13 +170,23 @@ export class ProfilComponent implements OnInit {
         nom: this.addForm.get('nom')?.value,
         description: this.addForm.get('description')?.value || ''
       };
+      const selectedModuleId = this.addForm.get('moduleId')?.value;
       
       this.profilService.createProfil(newProfil).subscribe({
         next: (response) => {
-          this.addForm.reset();
-          this.showAddForm = false;
-          this.loadProfils();
-          this.isAdding = false;
+          // Si un module est sélectionné, l'associer au profil avec toutes les permissions
+          if (response.id && selectedModuleId) {
+            this.associateModuleToNewProfil(response.id, selectedModuleId);
+          } else {
+            this.addForm.reset();
+            this.showAddForm = false;
+            this.loadProfils();
+            // Recharger les permissions pour mettre à jour les décomptes
+            this.loadAllProfilPermissions();
+            // Recharger les pays associés
+            this.loadAllProfilPays();
+            this.isAdding = false;
+          }
         },
         error: (error) => {
           console.error('Erreur lors de la création du profil:', error);
@@ -116,6 +194,57 @@ export class ProfilComponent implements OnInit {
         }
       });
     }
+  }
+
+  associateModuleToNewProfil(profilId: number, moduleId: number): void {
+    if (this.permissions.length === 0) {
+      console.log('⚠️ Aucune permission disponible pour associer au module');
+      this.addForm.reset();
+      this.showAddForm = false;
+      this.loadProfils();
+      this.isAdding = false;
+      return;
+    }
+
+    let addedCount = 0;
+    const totalPermissions = this.permissions.length;
+
+    this.permissions.forEach(permission => {
+      if (permission.id) {
+        this.profilService.addPermissionToProfil(profilId, moduleId, permission.id).subscribe({
+          next: (pp) => {
+            addedCount++;
+            if (addedCount === totalPermissions) {
+              console.log(`✅ Module associé au nouveau profil`);
+              this.addForm.reset();
+              this.showAddForm = false;
+              this.loadProfils();
+              // Recharger les permissions pour mettre à jour les décomptes
+              this.loadAllProfilPermissions();
+              // Recharger les permissions si un profil est sélectionné
+              if (this.selectedProfil && this.selectedProfil.id === profilId) {
+                this.profilService.getProfilPermissions(profilId).subscribe(pp => this.profilPermissions = pp);
+              }
+              this.isAdding = false;
+            }
+          },
+          error: (error) => {
+            console.error(`❌ Erreur lors de l'association de la permission:`, error);
+            addedCount++;
+            if (addedCount === totalPermissions) {
+              this.addForm.reset();
+              this.showAddForm = false;
+              this.loadProfils();
+              // Recharger les permissions si un profil est sélectionné
+              if (this.selectedProfil && this.selectedProfil.id === profilId) {
+                this.profilService.getProfilPermissions(profilId).subscribe(pp => this.profilPermissions = pp);
+              }
+              this.isAdding = false;
+            }
+          }
+        });
+      }
+    });
   }
 
   cancelAdd() {
@@ -159,6 +288,8 @@ export class ProfilComponent implements OnInit {
           this.showEditForm = false;
           this.editingProfil = null;
           this.loadProfils();
+          // Recharger les permissions pour mettre à jour les décomptes
+          this.loadAllProfilPermissions();
           this.isEditing = false;
         },
         error: (error) => {
@@ -197,6 +328,8 @@ export class ProfilComponent implements OnInit {
               this.selectedProfil = null;
             }
             this.loadProfils();
+            // Recharger les permissions pour mettre à jour les décomptes
+            this.loadAllProfilPermissions();
             this.isDeleting = false;
           },
           error: (error) => {
@@ -267,8 +400,11 @@ export class ProfilComponent implements OnInit {
     if (!this.selectedModuleId) return false;
     const module = this.modules.find(m => m.id === +this.selectedModuleId);
     const permission = this.availableModulePermissions.find(p => p.nom.toLowerCase() === name.toLowerCase());
-    if (!module || !permission) return false;
-    return this.profilPermissions.some(pp => pp.module.id === module.id && pp.permission.id === permission.id);
+    if (!module || !permission || !module.id || !permission.id) return false;
+    return this.profilPermissions.some(pp => 
+      pp.module && pp.module.id && pp.permission && pp.permission.id &&
+      pp.module.id === module.id && pp.permission.id === permission.id
+    );
   }
 
   addExistingPermissionToModule() {
@@ -309,23 +445,65 @@ export class ProfilComponent implements OnInit {
 
   hasPermission(module: Module, permission: Permission): boolean {
     return this.profilPermissions.some(pp =>
+      pp.module && pp.module.id && pp.permission && pp.permission.id &&
       pp.module.id === module.id && pp.permission.id === permission.id
     );
   }
 
   togglePermission(module: Module, permission: Permission, event: Event) {
-    if (!this.selectedProfil) return;
+    if (!this.selectedProfil || !module.id || !permission.id) return;
+    
     const checked = (event.target as HTMLInputElement).checked;
     const existing = this.profilPermissions.find(pp =>
-      pp.module.id === module.id && pp.permission.id === permission.id
+      pp.module && pp.module.id && pp.permission && pp.permission.id &&
+      pp.profil && pp.profil.id &&
+      pp.module.id === module.id && 
+      pp.permission.id === permission.id &&
+      pp.profil.id === this.selectedProfil.id
     );
+    
     if (checked && !existing) {
-      this.profilService.addPermissionToProfil(this.selectedProfil.id!, module.id!, permission.id!).subscribe(pp => {
-        this.profilPermissions.push(pp);
+      // Ajouter la permission
+      console.log(`➕ Ajout de la permission "${permission.nom}" pour le module "${module.nom}"`);
+      this.profilService.addPermissionToProfil(this.selectedProfil.id!, module.id!, permission.id!).subscribe({
+        next: (pp) => {
+          // Vérifier qu'elle n'existe pas déjà avant d'ajouter
+          if (!this.profilPermissions.some(existing => 
+            existing.id === pp.id || 
+            (existing.module && existing.module.id === pp.module?.id && 
+             existing.permission && existing.permission.id === pp.permission?.id &&
+             existing.profil && existing.profil.id === pp.profil?.id)
+          )) {
+            this.profilPermissions.push(pp);
+          }
+          this.cd.detectChanges();
+          console.log(`✅ Permission "${permission.nom}" ajoutée avec succès`);
+          // Recharger toutes les permissions pour mettre à jour les décomptes dans le tableau
+          this.loadAllProfilPermissions();
+        },
+        error: (error) => {
+          console.error(`❌ Erreur lors de l'ajout de la permission:`, error);
+          // Recharger les permissions en cas d'erreur
+          this.reloadProfilData();
+        }
       });
     } else if (!checked && existing && existing.id) {
-      this.profilService.removePermissionFromProfil(existing.id).subscribe(() => {
-        this.profilPermissions = this.profilPermissions.filter(pp => pp.id !== existing.id);
+      // Supprimer la permission
+      console.log(`➖ Suppression de la permission "${permission.nom}" pour le module "${module.nom}"`);
+      this.profilService.removePermissionFromProfil(existing.id).subscribe({
+        next: () => {
+          // Supprimer immédiatement de la liste
+          this.profilPermissions = this.profilPermissions.filter(pp => pp.id !== existing.id);
+          this.cd.detectChanges();
+          console.log(`✅ Permission "${permission.nom}" supprimée avec succès`);
+          // Recharger toutes les permissions pour mettre à jour les décomptes dans le tableau
+          this.loadAllProfilPermissions();
+        },
+        error: (error) => {
+          console.error(`❌ Erreur lors de la suppression de la permission:`, error);
+          // Recharger les permissions en cas d'erreur
+          this.reloadProfilData();
+        }
       });
     }
   }
@@ -340,27 +518,27 @@ export class ProfilComponent implements OnInit {
     // Utiliser la même logique que isModuleAssociated
     const associatedModuleIds = new Set(
       this.profilPermissions
-        .filter(pp => pp.profil.id === this.selectedProfil!.id)
-        .map(pp => pp.module.id)
+        .filter(pp => pp.profil && pp.profil.id === this.selectedProfil!.id && pp.module && pp.module.id)
+        .map(pp => pp.module!.id!)
     );
     
-    return this.modules.filter(m => associatedModuleIds.has(m.id));
+    return this.modules.filter(m => m.id && associatedModuleIds.has(m.id));
   }
 
   getAssociatedModulesForProfil(profil: Profil): Module[] {
     // Utiliser la même logique que getAssociatedModules mais pour un profil spécifique
     const associatedModuleIds = new Set(
       this.profilPermissions
-        .filter(pp => pp.profil.id === profil.id)
-        .map(pp => pp.module.id)
+        .filter(pp => pp.profil && pp.profil.id === profil.id && pp.module && pp.module.id)
+        .map(pp => pp.module!.id!)
     );
     
-    return this.modules.filter(m => associatedModuleIds.has(m.id));
+    return this.modules.filter(m => m.id && associatedModuleIds.has(m.id));
   }
 
   getProfilPermissionsCount(profil: Profil): number {
     // Compter les permissions pour un profil spécifique
-    return this.profilPermissions.filter(pp => pp.profil.id === profil.id).length;
+    return this.profilPermissions.filter(pp => pp.profil && pp.profil.id === profil.id).length;
   }
 
   onModuleChange() {
@@ -391,11 +569,13 @@ export class ProfilComponent implements OnInit {
 
   // Nouvelles méthodes pour améliorer la vue des droits
   getPermissionUsageCount(permission: Permission): number {
-    return this.profilPermissions.filter(pp => pp.permission.id === permission.id).length;
+    if (!permission || !permission.id) return 0;
+    return this.profilPermissions.filter(pp => pp.permission && pp.permission.id === permission.id).length;
   }
 
   getModulePermissionsCount(module: Module): number {
-    return this.profilPermissions.filter(pp => pp.module.id === module.id).length;
+    if (!module || !module.id) return 0;
+    return this.profilPermissions.filter(pp => pp.module && pp.module.id === module.id).length;
   }
 
   hasAllPermissions(module: Module): boolean {
@@ -419,7 +599,8 @@ export class ProfilComponent implements OnInit {
   }
 
   deselectAllPermissions(module: Module) {
-    const modulePermissions = this.profilPermissions.filter(pp => pp.module.id === module.id);
+    if (!module || !module.id) return;
+    const modulePermissions = this.profilPermissions.filter(pp => pp.module && pp.module.id === module.id);
     
     modulePermissions.forEach(pp => {
       if (pp.id) {
@@ -471,14 +652,14 @@ export class ProfilComponent implements OnInit {
   }
 
   isModuleAssociated(module: Module | undefined): boolean {
-    if (!module || !this.selectedProfil) return false;
+    if (!module || !this.selectedProfil || !module.id) return false;
     
     // Vérifier si le module a des permissions associées dans ce profil
     const hasPermissions = this.profilPermissions.some(pp => 
+      pp.module && pp.module.id && pp.profil && pp.profil.id &&
       pp.module.id === module.id && pp.profil.id === this.selectedProfil!.id
     );
     
-    console.log(`🔍 Module ${module.nom} associé: ${hasPermissions}`);
     return hasPermissions;
   }
 
@@ -562,8 +743,9 @@ export class ProfilComponent implements OnInit {
   }
 
   getModulePermissions(module: Module): Permission[] {
-    const modulePermissions = this.profilPermissions.filter(pp => pp.module.id === module.id);
-    return modulePermissions.map(pp => pp.permission);
+    if (!module || !module.id) return [];
+    const modulePermissions = this.profilPermissions.filter(pp => pp.module && pp.module.id === module.id && pp.permission);
+    return modulePermissions.map(pp => pp.permission).filter(p => p !== undefined) as Permission[];
   }
 
   manageModulePermissions(module: Module) {
@@ -600,33 +782,87 @@ export class ProfilComponent implements OnInit {
       }
       
       this.permissions.forEach(permission => {
-        this.profilService.addPermissionToProfil(this.selectedProfil!.id!, module.id!, permission.id!).subscribe({
-          next: (pp) => {
-            this.profilPermissions.push(pp);
-            addedCount++;
-            console.log(`✅ Permission ${permission.nom} ajoutée au module ${module.nom} (${addedCount}/${totalPermissions})`);
-            
-            // Si c'est la dernière permission, recharger les données
-            if (addedCount === totalPermissions) {
-              console.log(`✅ Toutes les permissions ajoutées pour le module ${module.nom}`);
-              this.reloadProfilData();
+        if (permission.id) {
+          this.profilService.addPermissionToProfil(this.selectedProfil!.id!, module.id!, permission.id).subscribe({
+            next: (pp) => {
+              // Ajouter immédiatement à la liste pour mise à jour instantanée de la vue
+              if (!this.profilPermissions.some(existing => 
+                existing.id === pp.id || 
+                (existing.module && existing.module.id === pp.module?.id && 
+                 existing.permission && existing.permission.id === pp.permission?.id &&
+                 existing.profil && existing.profil.id === pp.profil?.id)
+              )) {
+                this.profilPermissions.push(pp);
+              }
+              addedCount++;
+              console.log(`✅ Permission ${permission.nom} ajoutée au module ${module.nom} (${addedCount}/${totalPermissions})`);
+              
+              // Forcer la détection des changements après chaque ajout
+              this.cd.detectChanges();
+              
+              // Si c'est la dernière permission, recharger les données pour synchronisation complète
+              if (addedCount === totalPermissions) {
+                console.log(`✅ Toutes les permissions ajoutées pour le module ${module.nom}`);
+                // Attendre un peu pour s'assurer que la base de données est à jour
+                setTimeout(() => {
+                  // Recharger toutes les permissions pour mettre à jour les décomptes dans le tableau
+                  this.loadAllProfilPermissions();
+                  if (this.selectedProfil && this.selectedProfil.id) {
+                    this.profilService.getProfilPermissions(this.selectedProfil.id).subscribe({
+                      next: (allPermissions) => {
+                        console.log(`🔄 Rechargement: ${allPermissions.length} permissions trouvées`);
+                        this.profilPermissions = allPermissions;
+                        // Vérifier que le module est bien associé
+                        const moduleAssociated = allPermissions.some(pp => 
+                          pp.module && pp.module.id === module.id && 
+                          pp.profil && pp.profil.id === this.selectedProfil!.id
+                        );
+                        console.log(`🔍 Module ${module.nom} associé après rechargement: ${moduleAssociated}`);
+                        // Sélectionner automatiquement le module qui vient d'être associé
+                        if (module.id) {
+                          this.selectedModuleId = module.id;
+                          this.onModuleChange();
+                        }
+                        // Forcer la détection des changements
+                        this.cd.detectChanges();
+                      },
+                      error: (error) => {
+                        console.error('❌ Erreur lors du rechargement:', error);
+                        this.cd.detectChanges();
+                      }
+                    });
+                  }
+                }, 300); // Attendre 300ms pour laisser le temps à la base de données
+              }
+            },
+            error: (error) => {
+              console.error(`❌ Erreur lors de l'ajout de la permission ${permission.nom}:`, error);
+              addedCount++;
+              // Continuer même en cas d'erreur pour une permission
+              if (addedCount === totalPermissions) {
+                // Recharger les données même en cas d'erreur partielle
+                if (this.selectedProfil && this.selectedProfil.id) {
+                  this.profilService.getProfilPermissions(this.selectedProfil.id).subscribe({
+                    next: (allPermissions) => {
+                      this.profilPermissions = allPermissions;
+                      this.cd.detectChanges();
+                    },
+                    error: (err) => {
+                      console.error('❌ Erreur lors du rechargement:', err);
+                    }
+                  });
+                }
+              }
             }
-          },
-          error: (error) => {
-            console.error(`❌ Erreur lors de l'ajout de la permission ${permission.nom}:`, error);
-            addedCount++;
-            // Continuer même en cas d'erreur pour une permission
-            if (addedCount === totalPermissions) {
-              this.reloadProfilData();
-            }
-          }
-        });
+          });
+        }
       });
     } else {
       // Désassocier le module en supprimant toutes ses permissions
       console.log(`➖ Désassociation du module ${module.nom} du profil ${this.selectedProfil.nom}`);
       
-      const modulePermissions = this.profilPermissions.filter(pp => pp.module.id === module.id);
+      if (!module.id) return;
+      const modulePermissions = this.profilPermissions.filter(pp => pp.module && pp.module.id === module.id);
       console.log(`🗑️ Suppression de ${modulePermissions.length} permissions pour le module ${module.nom}`);
       
       if (modulePermissions.length === 0) {
@@ -650,6 +886,8 @@ export class ProfilComponent implements OnInit {
               // Si c'est la dernière permission supprimée, recharger les données
               if (removedCount === totalToRemove) {
                 console.log(`✅ Toutes les permissions supprimées pour le module ${module.nom}`);
+                // Recharger toutes les permissions pour mettre à jour les décomptes dans le tableau
+                this.loadAllProfilPermissions();
                 this.reloadProfilData();
               }
             },
@@ -697,5 +935,203 @@ export class ProfilComponent implements OnInit {
     // Recharger les profils et modules
     this.loadProfils();
     this.loadModules();
+  }
+
+  // Méthodes pour la gestion des pays
+  loadPays() {
+    this.paysService.getPays().subscribe({
+      next: (pays) => {
+        this.pays = pays;
+      },
+      error: (error) => {
+        console.error('Erreur lors du chargement des pays:', error);
+      }
+    });
+  }
+
+  loadAllProfilPays() {
+    // Charger les associations pays pour tous les profils
+    if (this.profils.length === 0) return;
+    
+    this.profils.forEach(profil => {
+      if (profil.id) {
+        this.paysService.getPaysForProfil(profil.id).subscribe({
+          next: (pp) => {
+            // Supprimer les anciennes associations pour ce profil
+            this.profilPays = this.profilPays.filter(existing => 
+              !existing.profil || existing.profil.id !== profil.id
+            );
+            // Ajouter les nouvelles associations
+            this.profilPays.push(...pp);
+            this.cd.detectChanges();
+          },
+          error: (error) => {
+            console.error(`Erreur lors du chargement des pays pour le profil ${profil.id}:`, error);
+          }
+        });
+      }
+    });
+  }
+
+  getPaysForProfil(profil: Profil): Pays[] {
+    if (!profil.id) return [];
+    return this.profilPays
+      .filter(pp => pp.profil && pp.profil.id === profil.id && pp.pays)
+      .map(pp => pp.pays!)
+      .filter(p => p !== undefined);
+  }
+
+  getPaysDisplayForProfil(profil: Profil): string {
+    const paysList = this.getPaysForProfil(profil);
+    if (paysList.length === 0) {
+      return 'Aucun pays';
+    }
+    // Vérifier si GNL est présent
+    const hasGNL = paysList.some(p => p.code === 'GNL');
+    if (hasGNL) {
+      return 'GNL (Tous les pays)';
+    }
+    if (paysList.length === 1) {
+      return paysList[0].nom;
+    }
+    return `${paysList.length} pays`;
+  }
+
+  openPaysModal(profil: Profil) {
+    this.selectedProfilForPays = profil;
+    this.showPaysModal = true;
+    // Charger les pays associés à ce profil
+    if (profil.id) {
+      this.paysService.getPaysForProfil(profil.id).subscribe({
+        next: (pp) => {
+          this.profilPays = this.profilPays.filter(p => !p.profil || p.profil.id !== profil.id);
+          this.profilPays.push(...pp);
+          this.cd.detectChanges();
+        }
+      });
+    }
+  }
+
+  closePaysModal() {
+    this.showPaysModal = false;
+    this.selectedProfilForPays = null;
+  }
+
+  isPaysSelectedForProfil(pays: Pays, profil: Profil): boolean {
+    if (!profil.id) return false;
+    return this.profilPays.some(pp => 
+      pp.profil && pp.profil.id === profil.id && 
+      pp.pays && pp.pays.id === pays.id
+    );
+  }
+
+  togglePaysAssociation(pays: Pays, event: Event) {
+    if (!this.selectedProfilForPays || !this.selectedProfilForPays.id) return;
+    
+    const checked = (event.target as HTMLInputElement).checked;
+    const profilId = this.selectedProfilForPays.id;
+    
+    if (checked) {
+      // Si on sélectionne GNL, désélectionner tous les autres pays
+      if (pays.code === 'GNL') {
+        const otherPays = this.pays.filter(p => p.code !== 'GNL' && p.id);
+        otherPays.forEach(p => {
+          if (p.id && this.isPaysSelectedForProfil(p, this.selectedProfilForPays!)) {
+            this.paysService.disassociatePaysFromProfil(profilId, p.id).subscribe({
+              next: () => {
+                this.profilPays = this.profilPays.filter(pp => 
+                  !(pp.profil && pp.profil.id === profilId && pp.pays && pp.pays.id === p.id)
+                );
+                this.cd.detectChanges();
+              }
+            });
+          }
+        });
+      } else {
+        // Si on sélectionne un pays autre que GNL, désélectionner GNL
+        const gnlPays = this.pays.find(p => p.code === 'GNL');
+        if (gnlPays && gnlPays.id && this.isPaysSelectedForProfil(gnlPays, this.selectedProfilForPays)) {
+          this.paysService.disassociatePaysFromProfil(profilId, gnlPays.id).subscribe({
+            next: () => {
+              this.profilPays = this.profilPays.filter(pp => 
+                !(pp.profil && pp.profil.id === profilId && pp.pays && pp.pays.id === gnlPays.id)
+              );
+              this.cd.detectChanges();
+            }
+          });
+        }
+      }
+      
+      // Associer le pays sélectionné
+      if (pays.id) {
+        this.paysService.associatePaysToProfil(profilId, pays.id).subscribe({
+          next: (pp) => {
+            if (!this.profilPays.some(existing => existing.id === pp.id)) {
+              this.profilPays.push(pp);
+            }
+            this.cd.detectChanges();
+          },
+          error: (error) => {
+            console.error('Erreur lors de l\'association du pays:', error);
+          }
+        });
+      }
+    } else {
+      // Désassocier le pays
+      if (pays.id) {
+        this.paysService.disassociatePaysFromProfil(profilId, pays.id).subscribe({
+          next: () => {
+            this.profilPays = this.profilPays.filter(pp => 
+              !(pp.profil && pp.profil.id === profilId && pp.pays && pp.pays.id === pays.id)
+            );
+            this.cd.detectChanges();
+          },
+          error: (error) => {
+            console.error('Erreur lors de la désassociation du pays:', error);
+          }
+        });
+      }
+    }
+  }
+
+  savePaysForProfil() {
+    if (!this.selectedProfilForPays || !this.selectedProfilForPays.id) return;
+    
+    this.isSavingPays = true;
+    const selectedPaysIds = this.pays
+      .filter(p => this.isPaysSelectedForProfil(p, this.selectedProfilForPays!))
+      .map(p => p.id!)
+      .filter(id => id !== undefined && id !== null);
+    
+    console.log('💾 Sauvegarde des pays pour le profil:', this.selectedProfilForPays.id);
+    console.log('📋 Pays sélectionnés (IDs):', selectedPaysIds);
+    
+    this.paysService.setPaysForProfil(this.selectedProfilForPays.id, selectedPaysIds).subscribe({
+      next: () => {
+        console.log('✅ Pays sauvegardés avec succès');
+        // Recharger les associations
+        this.loadAllProfilPays();
+        this.closePaysModal();
+        this.isSavingPays = false;
+      },
+      error: (error) => {
+        console.error('❌ Erreur lors de la sauvegarde des pays:', error);
+        console.error('❌ Détails de l\'erreur:', JSON.stringify(error, null, 2));
+        let errorMessage = 'Erreur lors de la sauvegarde des pays.';
+        if (error.error) {
+          if (error.error.error) {
+            errorMessage = error.error.error;
+          } else if (error.error.message) {
+            errorMessage = error.error.message;
+          } else if (typeof error.error === 'string') {
+            errorMessage = error.error;
+          }
+        } else if (error.message) {
+          errorMessage = error.message;
+        }
+        alert('Erreur: ' + errorMessage);
+        this.isSavingPays = false;
+      }
+    });
   }
 } 

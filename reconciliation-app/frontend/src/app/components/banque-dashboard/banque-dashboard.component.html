@@ -49,7 +49,7 @@
     </div>
   </div>
 
-  <div *ngIf="!loading && !error" class="cards">
+  <div *ngIf="!loading && !error" class="cards" [class.single-country]="filtered.length === 1">
     <div class="country-card" *ngFor="let row of filtered">
       <div class="country-header">
         <span class="country-name">

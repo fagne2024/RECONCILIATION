@@ -1,22 +1,48 @@
 <div class="users-container">
   <div class="header">
-    <h2>Gestion des utilisateurs</h2>
+    <div class="header-title">
+      <h2><i class="fas fa-users"></i> Gestion des utilisateurs</h2>
+      <span class="users-count">{{ filteredUsers.length }} utilisateur(s)</span>
+    </div>
     <div class="header-actions">
       <button class="btn btn-secondary" (click)="loadUsers()" title="Rafraîchir la liste">
         <i class="fas fa-sync-alt"></i> Rafraîchir
       </button>
       <button class="btn btn-primary" (click)="showCreateForm = !showCreateForm">
-        {{ showCreateForm ? 'Annuler' : 'Nouvel utilisateur' }}
+        <i class="fas fa-plus"></i> {{ showCreateForm ? 'Annuler' : 'Nouvel utilisateur' }}
       </button>
     </div>
   </div>
 
+  <!-- Barre de recherche et filtres -->
+  <div class="search-filters-bar">
+    <div class="search-box">
+      <i class="fas fa-search"></i>
+      <input 
+        type="text" 
+        [(ngModel)]="searchTerm" 
+        placeholder="Rechercher un utilisateur..." 
+        class="search-input"
+        (input)="applyFilters()">
+    </div>
+    <div class="filter-box">
+      <i class="fas fa-filter"></i>
+      <select [(ngModel)]="selectedProfilFilter" (change)="applyFilters()" class="filter-select">
+        <option value="">Tous les profils</option>
+        <option *ngFor="let profil of profils" [value]="profil.id">{{ profil.nom }}</option>
+      </select>
+    </div>
+    <button *ngIf="searchTerm || selectedProfilFilter" class="btn-clear-filters" (click)="clearFilters()">
+      <i class="fas fa-times"></i> Effacer les filtres
+    </button>
+  </div>
+
   <!-- Messages d'erreur et de succès -->
   <div *ngIf="errorMessage" class="alert alert-danger">
-    {{ errorMessage }}
+    <i class="fas fa-exclamation-circle"></i> {{ errorMessage }}
   </div>
   <div *ngIf="successMessage" class="alert alert-success">
-    {{ successMessage }}
+    <i class="fas fa-check-circle"></i> {{ successMessage }}
   </div>
 
   <!-- Formulaire de création -->
@@ -112,11 +138,15 @@
 
   <!-- Liste des utilisateurs -->
   <div class="users-list">
-    <h3>Liste des utilisateurs ({{ users.length }})</h3>
-    
-    <div *ngIf="users.length === 0" class="no-users">
-      <p>Aucun utilisateur trouvé.</p>
-      <p class="help-text">
+    <div *ngIf="filteredUsers.length === 0 && !isLoading" class="no-users">
+      <i class="fas fa-user-slash"></i>
+      <h3>Aucun utilisateur trouvé</h3>
+      <p *ngIf="searchTerm || selectedProfilFilter" class="help-text">
+        Aucun utilisateur ne correspond à vos critères de recherche.
+        <br>
+        <button class="btn-link" (click)="clearFilters()">Effacer les filtres</button>
+      </p>
+      <p *ngIf="!searchTerm && !selectedProfilFilter" class="help-text">
         Si vous venez de démarrer l'application, les utilisateurs de test peuvent ne pas être encore créés.
         <br>
         <strong>Solutions :</strong>
@@ -129,42 +159,44 @@
       </p>
     </div>
     
-    <div *ngIf="users.length > 0" class="table-responsive">
-      <table class="table">
-        <thead>
-          <tr>
-            <th>ID</th>
-            <th>Nom d'utilisateur</th>
-            <th>Profil</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr *ngFor="let user of users">
-            <td>{{ user.id }}</td>
-            <td>
-              <span class="username">{{ user.username }}</span>
+    <div *ngIf="filteredUsers.length > 0" class="users-grid">
+      <div *ngFor="let user of filteredUsers" class="user-card">
+        <div class="user-card-header">
+          <div class="user-avatar">
+            <i class="fas fa-user"></i>
+          </div>
+          <div class="user-info">
+            <h3 class="username">
+              {{ user.username }}
               <span *ngIf="user.username === 'admin'" class="badge badge-primary">Admin</span>
-            </td>
-            <td>{{ user.profil?.nom }}</td>
-            <td class="actions">
+            </h3>
+            <p class="user-id">ID: {{ user.id }}</p>
+          </div>
+        </div>
+        <div class="user-card-body">
+          <div class="user-detail">
+            <i class="fas fa-user-tag"></i>
+            <span class="label">Profil:</span>
+            <span class="value">{{ user.profil?.nom || 'Aucun profil' }}</span>
+          </div>
+        </div>
+        <div class="user-card-actions">
               <button 
-                class="btn btn-sm btn-outline-primary" 
+            class="btn btn-action btn-edit" 
                 (click)="editUser(user)"
-                [disabled]="isEditing">
-                Modifier
+            [disabled]="isEditing"
+            title="Modifier">
+            <i class="fas fa-edit"></i> Modifier
               </button>
               <button 
-                class="btn btn-sm btn-outline-danger" 
+            class="btn btn-action btn-delete" 
                 (click)="deleteUser(user)"
                 [disabled]="user.username === 'admin'"
                 [title]="user.username === 'admin' ? 'Impossible de supprimer l\'administrateur' : 'Supprimer'">
-                Supprimer
+            <i class="fas fa-trash"></i> Supprimer
               </button>
-            </td>
-          </tr>
-        </tbody>
-      </table>
+        </div>
+      </div>
     </div>
   </div>
 </div> 

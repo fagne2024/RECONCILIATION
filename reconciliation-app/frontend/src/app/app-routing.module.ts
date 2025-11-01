@@ -22,6 +22,7 @@ import { ImpactOPComponent } from './components/impact-op/impact-op.component';
 import { TrxSfComponent } from './components/trx-sf/trx-sf.component';
 import { ServiceBalanceComponent } from './components/service-balance/service-balance.component';
 import { ComptabiliteComponent } from './components/comptabilite/comptabilite.component';
+import { UserLogComponent } from './components/user-log/user-log.component';
 
 
 import { AutoProcessingModelsComponent } from './components/auto-processing-models/auto-processing-models.component';
@@ -66,6 +67,7 @@ const routes: Routes = [
   { path: 'report-dashboard', component: ReportDashboardComponent },
   { path: 'reconciliation-dashboard', component: DashboardReconciliationComponent },
   { path: 'banque-dashboard', component: BanqueDashboardComponent },
+  { path: 'log-utilisateur', component: UserLogComponent },
 ];
 
 @NgModule({

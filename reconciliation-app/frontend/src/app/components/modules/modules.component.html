@@ -1,8 +1,27 @@
 <div class="modules-container">
   <div class="header">
-    <h2>Gestion des Modules</h2>
+    <div class="header-title">
+      <h2><i class="fas fa-cube"></i> Gestion des Modules</h2>
+      <span class="modules-count">{{ filteredModules.length }} module(s)</span>
+    </div>
     <button class="btn btn-primary" (click)="showAddForm = true">
       <i class="fas fa-plus"></i> Nouveau Module
+    </button>
+  </div>
+
+  <!-- Barre de recherche -->
+  <div class="search-filters-bar">
+    <div class="search-box">
+      <i class="fas fa-search"></i>
+      <input 
+        type="text" 
+        [(ngModel)]="searchTerm" 
+        placeholder="Rechercher un module..." 
+        class="search-input"
+        (input)="applyFilters()">
+    </div>
+    <button *ngIf="searchTerm" class="btn-clear-filters" (click)="clearFilters()">
+      <i class="fas fa-times"></i> Effacer
     </button>
   </div>
 
@@ -11,24 +30,37 @@
       <i class="fas fa-spinner fa-spin"></i> Chargement...
     </div>
 
-    <div *ngIf="!isLoading && modules.length === 0" class="no-data">
-      <i class="fas fa-info-circle"></i> Aucun module trouvé
+    <div *ngIf="!isLoading && filteredModules.length === 0" class="no-data">
+      <i class="fas fa-cube"></i>
+      <h3>Aucun module trouvé</h3>
+      <p *ngIf="searchTerm" class="help-text">
+        Aucun module ne correspond à votre recherche.
+        <button class="btn-link" (click)="clearFilters()">Effacer les filtres</button>
+      </p>
+      <p *ngIf="!searchTerm">Créez votre premier module pour commencer.</p>
     </div>
     
 
 
-    <div *ngIf="!isLoading && modules.length > 0" class="table-wrapper">
+    <div *ngIf="!isLoading && filteredModules.length > 0" class="table-wrapper">
       <table class="modules-table">
         <thead>
           <tr>
             <th>Nom</th>
+            <th>Profils associés</th>
             <th>Actions</th>
           </tr>
         </thead>
         <tbody>
-          <tr *ngFor="let module of modules">
+          <tr *ngFor="let module of filteredModules">
             <td class="module-name">{{ module.nom }}</td>
+            <td>
+              <span class="profils-count-badge">{{ getProfilsForModule(module).length }} profil(s)</span>
+            </td>
             <td class="actions">
+              <button class="btn icon-btn" (click)="openProfilsModal(module)" title="Gérer les profils">
+                <i class="fas fa-users" style="color: #007bff;"></i>
+              </button>
               <button class="btn icon-btn" (click)="editModule(module)" title="Modifier">
                 <i class="fas fa-edit" style="color: #28a745;"></i>
               </button>
@@ -55,17 +87,17 @@
         <div class="modal-body">
           <div class="form-section">
             <div class="form-group">
-              <label for="nom">Nom du module *</label>
-              <input 
-                type="text" 
+              <label for="nom">Sélectionner un menu *</label>
+              <select 
                 id="nom" 
                 class="text-input" 
-                formControlName="nom" 
-                placeholder="Entrez le nom du module"
+                formControlName="nom"
               >
+                <option value="">-- Sélectionner un menu --</option>
+                <option *ngFor="let menu of appMenus" [value]="menu">{{ menu }}</option>
+              </select>
               <div *ngIf="addForm.get('nom')?.invalid && addForm.get('nom')?.touched" class="error-message">
-                <span *ngIf="addForm.get('nom')?.errors?.['required']">Le nom est requis</span>
-                <span *ngIf="addForm.get('nom')?.errors?.['minlength']">Le nom doit contenir au moins 2 caractères</span>
+                <span *ngIf="addForm.get('nom')?.errors?.['required']">Veuillez sélectionner un menu</span>
               </div>
             </div>
           </div>
@@ -100,17 +132,17 @@
         <div class="modal-body">
           <div class="form-section">
             <div class="form-group">
-              <label for="edit-nom">Nom du module *</label>
-              <input 
-                type="text" 
+              <label for="edit-nom">Sélectionner un menu *</label>
+              <select 
                 id="edit-nom" 
                 class="text-input" 
-                formControlName="nom" 
-                placeholder="Entrez le nom du module"
+                formControlName="nom"
               >
+                <option value="">-- Sélectionner un menu --</option>
+                <option *ngFor="let menu of appMenus" [value]="menu">{{ menu }}</option>
+              </select>
               <div *ngIf="editForm.get('nom')?.invalid && editForm.get('nom')?.touched" class="error-message">
-                <span *ngIf="editForm.get('nom')?.errors?.['required']">Le nom est requis</span>
-                <span *ngIf="editForm.get('nom')?.errors?.['minlength']">Le nom doit contenir au moins 2 caractères</span>
+                <span *ngIf="editForm.get('nom')?.errors?.['required']">Veuillez sélectionner un menu</span>
               </div>
             </div>
           </div>
@@ -129,6 +161,51 @@
           </div>
         </div>
       </form>
+    </div>
+  </div>
+
+  <!-- Modal de gestion des profils -->
+  <div *ngIf="showProfilsModal && selectedModule" class="modal-overlay" (click)="closeProfilsModal()">
+    <div class="modal-container profils-modal" (click)="$event.stopPropagation()">
+      <div class="modal-header">
+        <h3>
+          <i class="fas fa-users"></i> 
+          Gérer les profils pour : {{ selectedModule.nom }}
+        </h3>
+        <button class="close-btn" (click)="closeProfilsModal()">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+      <div class="modal-body">
+        <div *ngIf="isSavingProfils" class="saving-indicator">
+          <i class="fas fa-spinner fa-spin"></i> Enregistrement en cours...
+        </div>
+        <div class="profils-list-container">
+          <div *ngIf="profils.length === 0" class="no-profils-message">
+            <i class="fas fa-info-circle"></i> Aucun profil disponible
+          </div>
+          <div *ngFor="let profil of profils" class="profil-item">
+            <label class="profil-checkbox">
+              <input 
+                type="checkbox"
+                [checked]="isModuleAssociatedToProfil(selectedModule, profil)"
+                (change)="toggleProfilAssociation(profil, $event)"
+                [disabled]="isSavingProfils"
+              >
+              <span class="checkmark"></span>
+              <span class="profil-name">{{ profil.nom }}</span>
+              <span *ngIf="profil.description" class="profil-description">{{ profil.description }}</span>
+            </label>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <div class="modal-actions">
+          <button type="button" class="btn btn-secondary" (click)="closeProfilsModal()" [disabled]="isSavingProfils">
+            Fermer
+          </button>
+        </div>
+      </div>
     </div>
   </div>
 </div> 

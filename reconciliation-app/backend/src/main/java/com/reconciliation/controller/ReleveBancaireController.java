@@ -2,6 +2,8 @@ package com.reconciliation.controller;
 
 import com.reconciliation.service.ReleveBancaireImportService;
 import com.reconciliation.repository.ReleveBancaireRepository;
+import com.reconciliation.service.PaysFilterService;
+import com.reconciliation.util.RequestContextUtil;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -9,6 +11,7 @@ import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.bind.annotation.RequestMethod;
 
 import java.util.List;
+import java.util.ArrayList;
 
 @RestController
 @RequestMapping("/api/releve-bancaire")
@@ -19,6 +22,8 @@ public class ReleveBancaireController {
     private ReleveBancaireImportService importService;
     @Autowired
     private ReleveBancaireRepository repository;
+    @Autowired
+    private PaysFilterService paysFilterService;
 
     @PostMapping(value = "/upload", consumes = {"multipart/form-data"})
     public ResponseEntity<java.util.Map<String, Object>> upload(@RequestParam("file") MultipartFile file) {
@@ -88,7 +93,36 @@ public class ReleveBancaireController {
             @RequestParam(value = "montantMin", required = false) Double montantMin,
             @RequestParam(value = "montantMax", required = false) Double montantMax
     ) {
+        // Récupérer le username pour le filtrage par pays
+        String username = RequestContextUtil.getUsernameFromRequest();
+        
+        // Récupérer les pays autorisés pour l'utilisateur
+        List<String> allowedCountries = null;
+        if (username != null && !username.isEmpty()) {
+            allowedCountries = paysFilterService.getAllowedPaysCodes(username);
+            // null signifie tous les pays (GNL ou admin)
+        }
+        
         java.util.stream.Stream<com.reconciliation.entity.ReleveBancaireEntity> stream = repository.findAll().stream();
+        
+        // Appliquer le filtrage par pays selon les permissions de l'utilisateur
+        if (allowedCountries != null) {
+            if (allowedCountries.isEmpty()) {
+                // Aucun pays autorisé, retourner une liste vide
+                return ResponseEntity.ok(new ArrayList<>());
+            } else {
+                // Filtrer par pays autorisés (extraire le code pays des 2 derniers caractères du champ banque)
+                final List<String> finalAllowedCountries = allowedCountries;
+                stream = stream.filter(e -> {
+                    String b = e.getBanque();
+                    if (b == null) return false;
+                    String trimmed = b.trim();
+                    if (trimmed.length() < 2) return false;
+                    String last2 = trimmed.substring(trimmed.length() - 2).toUpperCase();
+                    return finalAllowedCountries.contains(last2);
+                });
+            }
+        }
 
         if (batchId != null && !batchId.isBlank()) {
             stream = stream.filter(e -> batchId.equals(e.getBatchId()));

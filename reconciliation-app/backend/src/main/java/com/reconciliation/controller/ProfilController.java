@@ -16,6 +16,9 @@ import java.util.HashMap;
 public class ProfilController {
     @Autowired
     private ProfilService profilService;
+    
+    @Autowired
+    private com.reconciliation.service.PermissionGeneratorService permissionGeneratorService;
 
     // Profils
     @GetMapping
@@ -110,6 +113,30 @@ public class ProfilController {
         return profilService.createPermission(permission);
     }
 
+    @DeleteMapping("/permissions/{id}")
+    public ResponseEntity<Map<String, String>> deletePermission(@PathVariable Long id) {
+        System.out.println("🗑️ DELETE /api/profils/permissions/" + id + " - Requête reçue");
+        try {
+            profilService.deletePermission(id);
+            System.out.println("✅ Permission supprimée avec succès: ID " + id);
+            Map<String, String> response = new HashMap<>();
+            response.put("message", "Permission supprimée avec succès");
+            response.put("id", id.toString());
+            return ResponseEntity.ok(response);
+        } catch (RuntimeException e) {
+            System.out.println("❌ Erreur lors de la suppression: " + e.getMessage());
+            Map<String, String> response = new HashMap<>();
+            response.put("error", e.getMessage());
+            return ResponseEntity.badRequest().body(response);
+        } catch (Exception e) {
+            System.out.println("❌ Erreur inattendue lors de la suppression: " + e.getMessage());
+            e.printStackTrace();
+            Map<String, String> response = new HashMap<>();
+            response.put("error", "Erreur lors de la suppression de la permission");
+            return ResponseEntity.internalServerError().body(response);
+        }
+    }
+
     // Attribution de droits à un profil
     @PostMapping("/{profilId}/droits")
     public ProfilPermissionEntity addPermissionToProfil(
@@ -132,6 +159,22 @@ public class ProfilController {
     @GetMapping("/modules/{moduleId}/permissions")
     public List<PermissionEntity> getPermissionsForModule(@PathVariable Long moduleId) {
         return profilService.getPermissionsForModule(moduleId);
+    }
+
+    @PostMapping("/permissions/generate")
+    public ResponseEntity<Map<String, Object>> generatePermissions() {
+        System.out.println("🔄 Génération automatique des permissions à partir des contrôleurs...");
+        try {
+            Map<String, Object> result = permissionGeneratorService.generatePermissionsForAllModules();
+            System.out.println("✅ " + result.get("message"));
+            return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            System.err.println("❌ Erreur lors de la génération des permissions: " + e.getMessage());
+            e.printStackTrace();
+            Map<String, String> errorResponse = new HashMap<>();
+            errorResponse.put("error", "Erreur lors de la génération des permissions: " + e.getMessage());
+            return ResponseEntity.internalServerError().body(new HashMap<>(errorResponse));
+        }
     }
 
     @GetMapping("/diagnostic")

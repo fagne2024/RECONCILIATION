@@ -21,6 +21,10 @@ public interface OperationBancaireRepository extends JpaRepository<OperationBanc
     @Query("SELECT o FROM OperationBancaireEntity o WHERE o.pays = :pays ORDER BY o.dateOperation DESC")
     List<OperationBancaireEntity> findByPaysOrderByDateOperationDesc(@Param("pays") String pays);
     
+    // Récupérer les opérations bancaires par plusieurs pays
+    @Query("SELECT o FROM OperationBancaireEntity o WHERE o.pays IN :paysCodes ORDER BY o.dateOperation DESC")
+    List<OperationBancaireEntity> findByPaysInOrderByDateOperationDesc(@Param("paysCodes") List<String> paysCodes);
+    
     // Récupérer les opérations bancaires par agence
     @Query("SELECT o FROM OperationBancaireEntity o WHERE o.agence = :agence ORDER BY o.dateOperation DESC")
     List<OperationBancaireEntity> findByAgenceOrderByDateOperationDesc(@Param("agence") String agence);

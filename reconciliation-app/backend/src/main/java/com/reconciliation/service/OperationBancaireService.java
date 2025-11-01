@@ -14,6 +14,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
@@ -28,11 +29,45 @@ public class OperationBancaireService {
     @Autowired
     private CompteRepository compteRepository;
     
+    @Autowired
+    private PaysFilterService paysFilterService;
+    
     // Récupérer toutes les opérations bancaires
     public List<OperationBancaire> getAllOperationsBancaires() {
-        return operationBancaireRepository.findAllOrderByDateOperationDesc().stream()
-                .map(this::convertToModel)
-                .collect(Collectors.toList());
+        return getAllOperationsBancaires(null);
+    }
+    
+    public List<OperationBancaire> getAllOperationsBancaires(String username) {
+        try {
+            List<OperationBancaireEntity> operations;
+            
+            if (username != null && !username.isEmpty()) {
+                List<String> allowedPays = paysFilterService.getAllowedPaysCodes(username);
+                
+                // null signifie tous les pays (GNL ou admin)
+                if (allowedPays == null) {
+                    operations = operationBancaireRepository.findAllOrderByDateOperationDesc();
+                } else if (allowedPays.isEmpty()) {
+                    // Aucun pays autorisé, retourner une liste vide
+                    return new ArrayList<>();
+                } else {
+                    // Filtrer par pays autorisés
+                    operations = operationBancaireRepository.findByPaysInOrderByDateOperationDesc(allowedPays);
+                }
+            } else {
+                // Pas de username, retourner toutes les opérations (comportement par défaut)
+                operations = operationBancaireRepository.findAllOrderByDateOperationDesc();
+            }
+            
+            return operations.stream()
+                    .map(this::convertToModel)
+                    .collect(Collectors.toList());
+        } catch (Exception e) {
+            logger.error("Erreur dans getAllOperationsBancaires pour username: {}", username, e);
+            e.printStackTrace();
+            // En cas d'erreur, retourner une liste vide pour éviter les crashes
+            return new ArrayList<>();
+        }
     }
     
     // Récupérer une opération bancaire par ID
@@ -43,41 +78,191 @@ public class OperationBancaireService {
     
     // Récupérer les opérations bancaires par pays
     public List<OperationBancaire> getOperationsBancairesByPays(String pays) {
-        return operationBancaireRepository.findByPaysOrderByDateOperationDesc(pays).stream()
-                .map(this::convertToModel)
-                .collect(Collectors.toList());
+        return getOperationsBancairesByPays(pays, null);
+    }
+    
+    public List<OperationBancaire> getOperationsBancairesByPays(String pays, String username) {
+        try {
+            // Vérifier que l'utilisateur a accès à ce pays
+            if (username != null && !username.isEmpty()) {
+                if (!paysFilterService.canAccessPays(username, pays)) {
+                    return new ArrayList<>(); // L'utilisateur n'a pas accès à ce pays
+                }
+            }
+            
+            return operationBancaireRepository.findByPaysOrderByDateOperationDesc(pays).stream()
+                    .map(this::convertToModel)
+                    .collect(Collectors.toList());
+        } catch (Exception e) {
+            logger.error("Erreur dans getOperationsBancairesByPays pour username: {}", username, e);
+            return new ArrayList<>();
+        }
     }
     
     // Récupérer les opérations bancaires par agence
     public List<OperationBancaire> getOperationsBancairesByAgence(String agence) {
-        return operationBancaireRepository.findByAgenceOrderByDateOperationDesc(agence).stream()
-                .map(this::convertToModel)
-                .collect(Collectors.toList());
+        return getOperationsBancairesByAgence(agence, null);
+    }
+    
+    public List<OperationBancaire> getOperationsBancairesByAgence(String agence, String username) {
+        try {
+            List<OperationBancaireEntity> operations;
+            
+            if (username != null && !username.isEmpty()) {
+                List<String> allowedPays = paysFilterService.getAllowedPaysCodes(username);
+                
+                if (allowedPays == null) {
+                    // GNL ou admin : toutes les opérations
+                    operations = operationBancaireRepository.findByAgenceOrderByDateOperationDesc(agence);
+                } else if (allowedPays.isEmpty()) {
+                    return new ArrayList<>();
+                } else {
+                    // Filtrer par pays autorisés après récupération par agence
+                    List<OperationBancaireEntity> allByAgence = operationBancaireRepository.findByAgenceOrderByDateOperationDesc(agence);
+                    final List<String> finalAllowedPays = allowedPays;
+                    operations = allByAgence.stream()
+                        .filter(op -> op.getPays() != null && finalAllowedPays.contains(op.getPays()))
+                        .collect(Collectors.toList());
+                }
+            } else {
+                operations = operationBancaireRepository.findByAgenceOrderByDateOperationDesc(agence);
+            }
+            
+            return operations.stream()
+                    .map(this::convertToModel)
+                    .collect(Collectors.toList());
+        } catch (Exception e) {
+            logger.error("Erreur dans getOperationsBancairesByAgence pour username: {}", username, e);
+            return new ArrayList<>();
+        }
     }
     
     // Récupérer les opérations bancaires par statut
     public List<OperationBancaire> getOperationsBancairesByStatut(String statut) {
-        return operationBancaireRepository.findByStatutOrderByDateOperationDesc(statut).stream()
-                .map(this::convertToModel)
-                .collect(Collectors.toList());
+        return getOperationsBancairesByStatut(statut, null);
+    }
+    
+    public List<OperationBancaire> getOperationsBancairesByStatut(String statut, String username) {
+        try {
+            List<OperationBancaireEntity> operations;
+            
+            if (username != null && !username.isEmpty()) {
+                List<String> allowedPays = paysFilterService.getAllowedPaysCodes(username);
+                
+                if (allowedPays == null) {
+                    // GNL ou admin : toutes les opérations
+                    operations = operationBancaireRepository.findByStatutOrderByDateOperationDesc(statut);
+                } else if (allowedPays.isEmpty()) {
+                    return new ArrayList<>();
+                } else {
+                    // Filtrer par pays autorisés après récupération par statut
+                    List<OperationBancaireEntity> allByStatut = operationBancaireRepository.findByStatutOrderByDateOperationDesc(statut);
+                    final List<String> finalAllowedPays = allowedPays;
+                    operations = allByStatut.stream()
+                        .filter(op -> op.getPays() != null && finalAllowedPays.contains(op.getPays()))
+                        .collect(Collectors.toList());
+                }
+            } else {
+                operations = operationBancaireRepository.findByStatutOrderByDateOperationDesc(statut);
+            }
+            
+            return operations.stream()
+                    .map(this::convertToModel)
+                    .collect(Collectors.toList());
+        } catch (Exception e) {
+            logger.error("Erreur dans getOperationsBancairesByStatut pour username: {}", username, e);
+            return new ArrayList<>();
+        }
     }
     
     // Récupérer les opérations bancaires par plage de dates
     public List<OperationBancaire> getOperationsBancairesByDateRange(LocalDateTime dateDebut, LocalDateTime dateFin) {
-        return operationBancaireRepository.findByDateOperationBetween(dateDebut, dateFin).stream()
-                .map(this::convertToModel)
-                .collect(Collectors.toList());
+        return getOperationsBancairesByDateRange(dateDebut, dateFin, null);
+    }
+    
+    public List<OperationBancaire> getOperationsBancairesByDateRange(LocalDateTime dateDebut, LocalDateTime dateFin, String username) {
+        try {
+            List<OperationBancaireEntity> operations;
+            
+            if (username != null && !username.isEmpty()) {
+                List<String> allowedPays = paysFilterService.getAllowedPaysCodes(username);
+                
+                if (allowedPays == null) {
+                    // GNL ou admin : toutes les opérations
+                    operations = operationBancaireRepository.findByDateOperationBetween(dateDebut, dateFin);
+                } else if (allowedPays.isEmpty()) {
+                    return new ArrayList<>();
+                } else {
+                    // Filtrer par pays autorisés après récupération par date
+                    List<OperationBancaireEntity> allByDate = operationBancaireRepository.findByDateOperationBetween(dateDebut, dateFin);
+                    final List<String> finalAllowedPays = allowedPays;
+                    operations = allByDate.stream()
+                        .filter(op -> op.getPays() != null && finalAllowedPays.contains(op.getPays()))
+                        .collect(Collectors.toList());
+                }
+            } else {
+                operations = operationBancaireRepository.findByDateOperationBetween(dateDebut, dateFin);
+            }
+            
+            return operations.stream()
+                    .map(this::convertToModel)
+                    .collect(Collectors.toList());
+        } catch (Exception e) {
+            logger.error("Erreur dans getOperationsBancairesByDateRange pour username: {}", username, e);
+            return new ArrayList<>();
+        }
     }
     
     // Filtrer les opérations bancaires
     public List<OperationBancaire> filterOperationsBancaires(String pays, String codePays, String mois,
                                                              String agence, String typeOperation, String statut,
                                                              LocalDateTime dateDebut, LocalDateTime dateFin, String reference) {
-        return operationBancaireRepository.findFilteredOperationsOrderByDateOperationDesc(
-                pays, codePays, mois, agence, typeOperation, statut, dateDebut, dateFin, reference)
-                .stream()
-                .map(this::convertToModel)
-                .collect(Collectors.toList());
+        return filterOperationsBancaires(pays, codePays, mois, agence, typeOperation, statut, dateDebut, dateFin, reference, null);
+    }
+    
+    public List<OperationBancaire> filterOperationsBancaires(String pays, String codePays, String mois,
+                                                             String agence, String typeOperation, String statut,
+                                                             LocalDateTime dateDebut, LocalDateTime dateFin, String reference, String username) {
+        try {
+            List<OperationBancaireEntity> operations;
+            
+            // Récupérer les pays autorisés pour l'utilisateur
+            List<String> allowedPays = null;
+            if (username != null && !username.isEmpty()) {
+                allowedPays = paysFilterService.getAllowedPaysCodes(username);
+                // null signifie tous les pays (GNL ou admin)
+            }
+            
+            if (allowedPays == null) {
+                // GNL ou admin : toutes les opérations
+                operations = operationBancaireRepository.findFilteredOperationsOrderByDateOperationDesc(
+                    pays, codePays, mois, agence, typeOperation, statut, dateDebut, dateFin, reference);
+            } else if (allowedPays.isEmpty()) {
+                // Aucun pays autorisé
+                return new ArrayList<>();
+            } else {
+                // Filtrer d'abord par pays autorisés, puis appliquer les autres filtres
+                List<OperationBancaireEntity> allFiltered = operationBancaireRepository.findFilteredOperationsOrderByDateOperationDesc(
+                    pays, codePays, mois, agence, typeOperation, statut, dateDebut, dateFin, reference);
+                
+                // Filtrer par pays autorisés
+                final List<String> finalAllowedPays = allowedPays;
+                operations = allFiltered.stream()
+                    .filter(op -> {
+                        if (op.getPays() == null) return false;
+                        // Vérifier si le pays de l'opération est dans la liste autorisée
+                        return finalAllowedPays.contains(op.getPays());
+                    })
+                    .collect(Collectors.toList());
+            }
+            
+            return operations.stream()
+                    .map(this::convertToModel)
+                    .collect(Collectors.toList());
+        } catch (Exception e) {
+            logger.error("Erreur dans filterOperationsBancaires pour username: {}", username, e);
+            return new ArrayList<>();
+        }
     }
     
     // Créer une nouvelle opération bancaire
@@ -260,17 +445,98 @@ public class OperationBancaireService {
     
     // Récupérer les pays distincts
     public List<String> getDistinctPays() {
-        return operationBancaireRepository.findDistinctPays();
+        return getDistinctPays(null);
+    }
+    
+    public List<String> getDistinctPays(String username) {
+        try {
+            if (username != null && !username.isEmpty()) {
+                List<String> allowedPays = paysFilterService.getAllowedPaysCodes(username);
+                
+                if (allowedPays == null) {
+                    // GNL ou admin : tous les pays
+                    return operationBancaireRepository.findDistinctPays();
+                } else if (allowedPays.isEmpty()) {
+                    return new ArrayList<>();
+                } else {
+                    // Filtrer uniquement les pays autorisés
+                    List<String> allPays = operationBancaireRepository.findDistinctPays();
+                    return allPays.stream()
+                        .filter(allowedPays::contains)
+                        .collect(Collectors.toList());
+                }
+            }
+            return operationBancaireRepository.findDistinctPays();
+        } catch (Exception e) {
+            logger.error("Erreur dans getDistinctPays pour username: {}", username, e);
+            return new ArrayList<>();
+        }
     }
     
     // Récupérer les agences distinctes
     public List<String> getDistinctAgences() {
-        return operationBancaireRepository.findDistinctAgences();
+        return getDistinctAgences(null);
+    }
+    
+    public List<String> getDistinctAgences(String username) {
+        try {
+            if (username != null && !username.isEmpty()) {
+                List<String> allowedPays = paysFilterService.getAllowedPaysCodes(username);
+                
+                if (allowedPays == null) {
+                    // GNL ou admin : toutes les agences
+                    return operationBancaireRepository.findDistinctAgences();
+                } else if (allowedPays.isEmpty()) {
+                    return new ArrayList<>();
+                } else {
+                    // Filtrer les agences selon les pays autorisés
+                    List<OperationBancaire> operations = getAllOperationsBancaires(username);
+                    return operations.stream()
+                        .map(OperationBancaire::getAgence)
+                        .filter(agence -> agence != null && !agence.isEmpty())
+                        .distinct()
+                        .sorted()
+                        .collect(Collectors.toList());
+                }
+            }
+            return operationBancaireRepository.findDistinctAgences();
+        } catch (Exception e) {
+            logger.error("Erreur dans getDistinctAgences pour username: {}", username, e);
+            return new ArrayList<>();
+        }
     }
     
     // Récupérer les types d'opération distincts
     public List<String> getDistinctTypesOperation() {
-        return operationBancaireRepository.findDistinctTypesOperation();
+        return getDistinctTypesOperation(null);
+    }
+    
+    public List<String> getDistinctTypesOperation(String username) {
+        try {
+            if (username != null && !username.isEmpty()) {
+                List<String> allowedPays = paysFilterService.getAllowedPaysCodes(username);
+                
+                if (allowedPays == null) {
+                    // GNL ou admin : tous les types
+                    return operationBancaireRepository.findDistinctTypesOperation();
+                } else if (allowedPays.isEmpty()) {
+                    return new ArrayList<>();
+                } else {
+                    // Filtrer les types selon les pays autorisés
+                    List<OperationBancaire> operations = getAllOperationsBancaires(username);
+                    return operations.stream()
+                        .map(OperationBancaire::getTypeOperation)
+                        .filter(type -> type != null && !type.isEmpty())
+                        .distinct()
+                        .sorted()
+                        .collect(Collectors.toList());
+                }
+            }
+            return operationBancaireRepository.findDistinctTypesOperation();
+        } catch (Exception e) {
+            logger.error("Erreur dans getDistinctTypesOperation pour username: {}", username, e);
+            return new ArrayList<>();
+        }
     }
     
     // Récupérer les statuts distincts

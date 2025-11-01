@@ -71,12 +71,24 @@ public interface AgencySummaryRepository extends JpaRepository<AgencySummaryEnti
 
     @Query("SELECT COALESCE(MAX(a.date), NULL) FROM AgencySummaryEntity a")
     String findMaxDate();
+    
+    @Query("SELECT COALESCE(MAX(a.date), NULL) FROM AgencySummaryEntity a WHERE (:countries IS NULL OR a.country IN :countries)")
+    String findMaxDateByCountries(@Param("countries") List<String> countries);
 
     @Query("SELECT COUNT(DISTINCT a.agency) FROM AgencySummaryEntity a")
     long countDistinctAgency();
+    
+    @Query("SELECT COUNT(DISTINCT a.agency) FROM AgencySummaryEntity a WHERE (:countries IS NULL OR a.country IN :countries)")
+    long countDistinctAgencyByCountries(@Param("countries") List<String> countries);
 
     @Query("SELECT COUNT(a) FROM AgencySummaryEntity a WHERE a.date = :date")
     long countByDate(@Param("date") String date);
+    
+    @Query("SELECT COUNT(a) FROM AgencySummaryEntity a WHERE a.date = :date AND (:countries IS NULL OR a.country IN :countries)")
+    long countByDateAndCountries(@Param("date") String date, @Param("countries") List<String> countries);
+    
+    @Query("SELECT COUNT(a) FROM AgencySummaryEntity a WHERE (:countries IS NULL OR a.country IN :countries)")
+    long countByCountries(@Param("countries") List<String> countries);
 
     @Query("SELECT a FROM AgencySummaryEntity a WHERE a.date = :date AND a.agency = :agency AND a.service = :service")
     List<AgencySummaryEntity> findByDateAndAgencyAndService(

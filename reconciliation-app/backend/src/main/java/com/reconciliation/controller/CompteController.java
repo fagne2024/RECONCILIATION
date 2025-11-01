@@ -2,6 +2,7 @@ package com.reconciliation.controller;
 
 import com.reconciliation.model.Compte;
 import com.reconciliation.service.CompteService;
+import com.reconciliation.util.RequestContextUtil;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -20,59 +21,68 @@ public class CompteController {
     
     @GetMapping
     public ResponseEntity<List<Compte>> getAllComptes() {
-        List<Compte> comptes = compteService.getAllComptes();
+        String username = RequestContextUtil.getUsernameFromRequest();
+        List<Compte> comptes = compteService.getAllComptes(username);
         return ResponseEntity.ok(comptes);
     }
     
     @GetMapping("/{id}")
     public ResponseEntity<Compte> getCompteById(@PathVariable Long id) {
-        Optional<Compte> compte = compteService.getCompteById(id);
+        String username = RequestContextUtil.getUsernameFromRequest();
+        Optional<Compte> compte = compteService.getCompteById(id, username);
         return compte.map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
     }
     
     @GetMapping("/numero/{numeroCompte}")
     public ResponseEntity<Compte> getCompteByNumero(@PathVariable String numeroCompte) {
-        Optional<Compte> compte = compteService.getCompteByNumero(numeroCompte);
+        String username = RequestContextUtil.getUsernameFromRequest();
+        Optional<Compte> compte = compteService.getCompteByNumero(numeroCompte, username);
         return compte.map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
     }
     
     @GetMapping("/pays/{pays}")
     public ResponseEntity<List<Compte>> getComptesByPays(@PathVariable String pays) {
-        List<Compte> comptes = compteService.getComptesByPays(pays);
+        String username = RequestContextUtil.getUsernameFromRequest();
+        List<Compte> comptes = compteService.getComptesByPays(pays, username);
         return ResponseEntity.ok(comptes);
     }
     
     @GetMapping("/code-proprietaire/{codeProprietaire}")
     public ResponseEntity<List<Compte>> getComptesByCodeProprietaire(@PathVariable String codeProprietaire) {
-        List<Compte> comptes = compteService.getComptesByCodeProprietaire(codeProprietaire);
+        String username = RequestContextUtil.getUsernameFromRequest();
+        List<Compte> comptes = compteService.getComptesByCodeProprietaire(codeProprietaire, username);
         return ResponseEntity.ok(comptes);
     }
     
     @GetMapping("/agency/{agency}")
     public ResponseEntity<List<Compte>> getComptesByAgency(@PathVariable String agency) {
-        List<Compte> comptes = compteService.getComptesByAgency(agency);
+        String username = RequestContextUtil.getUsernameFromRequest();
+        List<Compte> comptes = compteService.getComptesByAgency(agency, username);
         return ResponseEntity.ok(comptes);
     }
     
     @GetMapping("/service/{service}")
     public ResponseEntity<Compte> getCompteByService(@PathVariable String service) {
-        Optional<Compte> compte = compteService.getCompteByService(service);
+        String username = RequestContextUtil.getUsernameFromRequest();
+        Optional<Compte> compte = compteService.getCompteByService(service, username);
         return compte.map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
     }
     
     @GetMapping("/agency/{agency}/service/{service}")
     public ResponseEntity<Compte> getCompteByAgencyAndService(@PathVariable String agency, @PathVariable String service) {
-        Optional<Compte> compte = compteService.getCompteByAgencyAndService(agency, service);
+        String username = RequestContextUtil.getUsernameFromRequest();
+        Optional<Compte> compte = compteService.getCompteByAgencyAndService(agency, service, username);
         return compte.map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
     }
     
     @GetMapping("/solde/{soldeMin}")
     public ResponseEntity<List<Compte>> getComptesBySoldeSuperieurA(@PathVariable Double soldeMin) {
-        List<Compte> comptes = compteService.getComptesBySoldeSuperieurA(soldeMin);
+        String username = RequestContextUtil.getUsernameFromRequest();
+        List<Compte> comptes = compteService.getComptesBySoldeSuperieurA(soldeMin, username);
         return ResponseEntity.ok(comptes);
     }
     
@@ -183,13 +193,16 @@ public class CompteController {
             @RequestParam(required = false) List<String> categorie,
             @RequestParam(required = false) List<String> type) {
         
+        String username = RequestContextUtil.getUsernameFromRequest();
+        
         System.out.println("=== FILTRE COMPTES (DEBUG) ===");
         System.out.println("Pays (reçu): " + pays);
         System.out.println("CodeProprietaire (reçu): " + codeProprietaire);
         System.out.println("Categorie (reçu): " + categorie);
         System.out.println("Type (reçu): " + type);
+        System.out.println("Username: " + username);
         
-        List<Compte> comptes = compteService.filterComptes(pays, soldeMin, dateDebut, dateFin, codeProprietaire, categorie, type);
+        List<Compte> comptes = compteService.filterComptes(pays, soldeMin, dateDebut, dateFin, codeProprietaire, categorie, type, username);
         System.out.println("Résultats: " + comptes.size() + " comptes trouvés");
         
         return ResponseEntity.ok(comptes);

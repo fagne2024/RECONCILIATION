@@ -285,10 +285,12 @@
     margin: 0;
     padding: 0 20px; // Padding pour l'espacement
     
-    // Layout horizontal quand un seul pays est sélectionné
+    // Layout horizontal quand un seul pays est affiché
     &.horizontal-layout {
         grid-template-columns: 1fr; // Une seule colonne pour le pays
         gap: 30px;
+        justify-items: stretch; // Étirer la carte sur toute la largeur
+        padding: 20px; // Padding pour l'espacement
     }
 }
 
@@ -348,17 +350,41 @@
     grid-template-columns: 1fr;
     gap: 10px;
     
-    // Layout horizontal des services quand un seul pays est sélectionné - 4 services par ligne
+    // Layout horizontal des services quand un seul pays est affiché - 4 services par ligne
     &.horizontal-services {
         grid-template-columns: repeat(4, 1fr);
         gap: 20px;
+        
+        // Responsive: réduire à 3 colonnes sur écrans moyens
+        @media (max-width: 1400px) {
+            grid-template-columns: repeat(3, 1fr);
+        }
+        
+        // Responsive: réduire à 2 colonnes sur écrans plus petits
+        @media (max-width: 1024px) {
+            grid-template-columns: repeat(2, 1fr);
+        }
+        
+        // Responsive: 1 colonne sur mobile
+        @media (max-width: 768px) {
+            grid-template-columns: 1fr;
+        }
     }
 }
 
-// Styles pour un seul pays sélectionné
+// Styles pour un seul pays affiché
 .country-section.single-country {
     width: 100%;
-    max-width: 100%;
+    max-width: 100%; // Utiliser toute la largeur disponible
+    margin: 0; // Pas de margin auto pour utiliser toute la largeur
+    padding: 32px 40px; // Padding augmenté pour un meilleur espacement
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12); // Ombre plus prononcée
+    
+    // Assurer que la grille des services utilise toute la largeur disponible
+    .services-grid.horizontal-services {
+        width: 100%;
+        max-width: 100%;
+    }
 }
 
 /* Bouton Afficher plus/moins */
@@ -407,6 +433,12 @@
     border: 1px solid #e9ecef;
     margin: 10px 0; // Espacement en haut et en bas
     min-width: 350px; // Largeur ajustée pour les 3 métriques
+    
+    // Quand affichage horizontal, ajuster la largeur minimale
+    .horizontal-services & {
+        min-width: 280px; // Largeur réduite pour permettre 4 colonnes
+        max-width: 100%; // S'adapter à la grille
+    }
 }
 
 .service-header {
@@ -433,6 +465,11 @@
     display: grid;
     grid-template-columns: 1fr 1fr; // 2 colonnes sur 2 lignes
     gap: 12px; // Espacement pour les 3 métriques
+    
+    // Quand affichage horizontal, ajuster pour économiser l'espace
+    .horizontal-services & {
+        gap: 8px; // Espacement réduit
+    }
 }
 
 .metric-item-centered {
@@ -445,6 +482,11 @@
     display: flex; // Override du display de .metric-item
     justify-content: center; // Override du justify-content de .metric-item
     align-items: center; // Override de l'align-items de .metric-item
+    
+    // Quand affichage horizontal, réduire la largeur maximale
+    .horizontal-services & {
+        max-width: 240px; // Largeur réduite pour permettre 4 colonnes
+    }
 }
 
 .metric-content {
@@ -479,6 +521,11 @@
     transition: all 0.2s ease;
     min-height: 40px;
     min-width: 180px; // Largeur encore augmentée pour éviter le chevauchement
+    
+    // Quand affichage horizontal, réduire la largeur minimale
+    .horizontal-services & {
+        min-width: 140px; // Largeur réduite pour permettre 4 colonnes
+    }
 }
 
 .metric-label {
@@ -670,17 +717,7 @@
     }
 }
 
-@media (max-width: 1400px) {
-    .services-grid.horizontal-services {
-        grid-template-columns: repeat(3, 1fr); // 3 services par ligne sur écrans moyens
-    }
-}
-
-@media (max-width: 1024px) {
-    .services-grid.horizontal-services {
-        grid-template-columns: repeat(2, 1fr); // 2 services par ligne sur écrans plus petits
-    }
-}
+// Les règles responsive pour horizontal-services sont maintenant intégrées dans .services-grid
 
 @media (max-width: 768px) {
     .dashboard-grid {

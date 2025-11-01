@@ -12,6 +12,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
@@ -30,20 +31,88 @@ public class CompteService {
     @Autowired
     private CompteRegroupementService compteRegroupementService;
     
+    @Autowired
+    private PaysFilterService paysFilterService;
+    
     public List<Compte> getAllComptes() {
-        return compteRepository.findAll().stream()
-                .map(this::convertToModel)
-                .collect(Collectors.toList());
+        return getAllComptes(null);
+    }
+    
+    public List<Compte> getAllComptes(String username) {
+        try {
+            List<CompteEntity> comptes;
+            
+            if (username != null && !username.isEmpty()) {
+                List<String> allowedPays = paysFilterService.getAllowedPaysCodes(username);
+                
+                // null signifie tous les pays (GNL ou admin)
+                if (allowedPays == null) {
+                    comptes = compteRepository.findAll();
+                } else if (allowedPays.isEmpty()) {
+                    // Aucun pays autorisé, retourner une liste vide
+                    return new ArrayList<>();
+                } else {
+                    // Filtrer par pays autorisés
+                    comptes = compteRepository.findByPaysIn(allowedPays);
+                }
+            } else {
+                // Pas de username, retourner tous les comptes (comportement par défaut)
+                comptes = compteRepository.findAll();
+            }
+            
+            return comptes.stream()
+                    .map(this::convertToModel)
+                    .collect(Collectors.toList());
+        } catch (Exception e) {
+            logger.error("Erreur dans getAllComptes pour username: {}", username, e);
+            e.printStackTrace();
+            // En cas d'erreur, retourner une liste vide pour éviter les crashes
+            return new ArrayList<>();
+        }
     }
     
     public Optional<Compte> getCompteById(Long id) {
-        return compteRepository.findById(id)
-                .map(this::convertToModel);
+        return getCompteById(id, null);
+    }
+    
+    public Optional<Compte> getCompteById(Long id, String username) {
+        Optional<CompteEntity> compteOpt = compteRepository.findById(id);
+        if (compteOpt.isEmpty()) {
+            return Optional.empty();
+        }
+        
+        CompteEntity compte = compteOpt.get();
+        
+        // Vérifier l'accès par pays si username fourni
+        if (username != null && !username.isEmpty()) {
+            if (!paysFilterService.canAccessPays(username, compte.getPays())) {
+                return Optional.empty(); // L'utilisateur n'a pas accès à ce pays
+            }
+        }
+        
+        return Optional.of(convertToModel(compte));
     }
     
     public Optional<Compte> getCompteByNumero(String numeroCompte) {
-        return compteRepository.findByNumeroCompte(numeroCompte)
-                .map(this::convertToModel);
+        return getCompteByNumero(numeroCompte, null);
+    }
+    
+    public Optional<Compte> getCompteByNumero(String numeroCompte, String username) {
+        Optional<CompteEntity> compteOpt = compteRepository.findByNumeroCompte(numeroCompte);
+        if (compteOpt.isEmpty()) {
+            return Optional.empty();
+        }
+        
+        CompteEntity compte = compteOpt.get();
+        
+        // Vérifier l'accès par pays si username fourni
+        if (username != null && !username.isEmpty()) {
+            if (!paysFilterService.canAccessPays(username, compte.getPays())) {
+                return Optional.empty(); // L'utilisateur n'a pas accès à ce pays
+            }
+        }
+        
+        return Optional.of(convertToModel(compte));
     }
     
     /**
@@ -51,9 +120,12 @@ public class CompteService {
      * Le numéro de compte est construit comme "agence_service"
      */
     public Optional<Compte> getCompteByAgencyAndService(String agency, String service) {
+        return getCompteByAgencyAndService(agency, service, null);
+    }
+    
+    public Optional<Compte> getCompteByAgencyAndService(String agency, String service, String username) {
         String numeroCompte = agency + "_" + service;
-        return compteRepository.findByNumeroCompte(numeroCompte)
-                .map(this::convertToModel);
+        return getCompteByNumero(numeroCompte, username);
     }
     
     /**
@@ -81,8 +153,11 @@ public class CompteService {
      * Toutes les agences d'un même service impactent le même compte
      */
     public Optional<Compte> getCompteByService(String service) {
-        return compteRepository.findByNumeroCompte(service)
-                .map(this::convertToModel);
+        return getCompteByService(service, null);
+    }
+    
+    public Optional<Compte> getCompteByService(String service, String username) {
+        return getCompteByNumero(service, username);
     }
     
     /**
@@ -105,21 +180,86 @@ public class CompteService {
     }
     
     public List<Compte> getComptesByPays(String pays) {
+        return getComptesByPays(pays, null);
+    }
+    
+    public List<Compte> getComptesByPays(String pays, String username) {
+        // Vérifier que l'utilisateur a accès à ce pays
+        if (username != null && !username.isEmpty()) {
+            if (!paysFilterService.canAccessPays(username, pays)) {
+                return new ArrayList<>(); // L'utilisateur n'a pas accès à ce pays
+            }
+        }
+        
         return compteRepository.findByPays(pays).stream()
                 .map(this::convertToModel)
                 .collect(Collectors.toList());
     }
     
     public List<Compte> getComptesByCodeProprietaire(String codeProprietaire) {
-        return compteRepository.findByCodeProprietaire(codeProprietaire).stream()
-                .map(this::convertToModel)
-                .collect(Collectors.toList());
+        return getComptesByCodeProprietaire(codeProprietaire, null);
+    }
+    
+    public List<Compte> getComptesByCodeProprietaire(String codeProprietaire, String username) {
+        try {
+            List<CompteEntity> comptes;
+            
+            if (username != null && !username.isEmpty()) {
+                List<String> allowedPays = paysFilterService.getAllowedPaysCodes(username);
+                
+                if (allowedPays == null) {
+                    // GNL ou admin : tous les comptes
+                    comptes = compteRepository.findByCodeProprietaire(codeProprietaire);
+                } else if (allowedPays.isEmpty()) {
+                    return new ArrayList<>();
+                } else {
+                    // Filtrer par pays autorisés
+                    comptes = compteRepository.findByCodeProprietaireAndPaysIn(codeProprietaire, allowedPays);
+                }
+            } else {
+                comptes = compteRepository.findByCodeProprietaire(codeProprietaire);
+            }
+            
+            return comptes.stream()
+                    .map(this::convertToModel)
+                    .collect(Collectors.toList());
+        } catch (Exception e) {
+            logger.error("Erreur dans getComptesByCodeProprietaire pour username: {}", username, e);
+            return new ArrayList<>();
+        }
     }
     
     public List<Compte> getComptesBySoldeSuperieurA(Double soldeMin) {
-        return compteRepository.findBySoldeSuperieurA(soldeMin).stream()
-                .map(this::convertToModel)
-                .collect(Collectors.toList());
+        return getComptesBySoldeSuperieurA(soldeMin, null);
+    }
+    
+    public List<Compte> getComptesBySoldeSuperieurA(Double soldeMin, String username) {
+        try {
+            List<CompteEntity> comptes;
+            
+            if (username != null && !username.isEmpty()) {
+                List<String> allowedPays = paysFilterService.getAllowedPaysCodes(username);
+                
+                if (allowedPays == null) {
+                    // GNL ou admin : tous les comptes
+                    comptes = compteRepository.findBySoldeSuperieurA(soldeMin);
+                } else if (allowedPays.isEmpty()) {
+                    return new ArrayList<>();
+                } else {
+                    // Filtrer par pays autorisés
+                    comptes = compteRepository.findBySoldeSuperieurAAndPaysIn(soldeMin, allowedPays);
+                }
+            } else {
+                comptes = compteRepository.findBySoldeSuperieurA(soldeMin);
+            }
+            
+            return comptes.stream()
+                    .map(this::convertToModel)
+                    .collect(Collectors.toList());
+        } catch (Exception e) {
+            logger.error("Erreur dans getComptesBySoldeSuperieurA pour username: {}", username, e);
+            return new ArrayList<>();
+        }
     }
     
     @Transactional(propagation = org.springframework.transaction.annotation.Propagation.REQUIRES_NEW)
@@ -221,59 +361,141 @@ public class CompteService {
     }
     
     public List<Compte> filterComptes(List<String> pays, Double soldeMin, String dateDebut, String dateFin, List<String> codeProprietaire, List<String> categorie, List<String> type) {
-        System.out.println("Service: Filtrage des comptes");
-        System.out.println("Service: Pays = " + pays);
-        System.out.println("Service: SoldeMin = " + soldeMin);
-        System.out.println("Service: CodeProprietaire = " + codeProprietaire);
-        System.out.println("Service: Categorie = " + categorie);
-        System.out.println("Service: Type = " + type);
-        System.out.println("Service: DateDebut = " + dateDebut);
-        System.out.println("Service: DateFin = " + dateFin);
-        
-        List<CompteEntity> entities = compteRepository.findAll();
-        System.out.println("Service: Total entités trouvées = " + entities.size());
-        
-        List<Compte> result = entities.stream()
-                .filter(entity -> pays == null || pays.isEmpty() || pays.contains(entity.getPays()))
-                .filter(entity -> soldeMin == null || entity.getSolde() >= soldeMin)
-                .filter(entity -> codeProprietaire == null || codeProprietaire.isEmpty() || codeProprietaire.contains(entity.getCodeProprietaire()))
-                .filter(entity -> categorie == null || categorie.isEmpty() || categorie.contains(entity.getCategorie()))
-                .filter(entity -> type == null || type.isEmpty() || type.contains(entity.getType()))
-                .filter(entity -> {
-                    if ((dateDebut == null || dateDebut.isEmpty()) && (dateFin == null || dateFin.isEmpty())) {
-                        return true;
-                    }
-                    if (entity.getDateDerniereMaj() == null) {
-                        return false;
-                    }
-                    String dateMaj = entity.getDateDerniereMaj().toString();
-                    boolean afterDebut = (dateDebut == null || dateDebut.isEmpty()) || dateMaj.compareTo(dateDebut) >= 0;
-                    boolean beforeFin = (dateFin == null || dateFin.isEmpty()) || dateMaj.compareTo(dateFin) <= 0;
-                    return afterDebut && beforeFin;
-                })
-                .map(this::convertToModel)
-                .collect(Collectors.toList());
-        
-        System.out.println("Service: Résultats après filtrage = " + result.size());
-        return result;
+        return filterComptes(pays, soldeMin, dateDebut, dateFin, codeProprietaire, categorie, type, null);
+    }
+    
+    public List<Compte> filterComptes(List<String> pays, Double soldeMin, String dateDebut, String dateFin, List<String> codeProprietaire, List<String> categorie, List<String> type, String username) {
+        try {
+            System.out.println("Service: Filtrage des comptes");
+            System.out.println("Service: Pays = " + pays);
+            System.out.println("Service: SoldeMin = " + soldeMin);
+            System.out.println("Service: CodeProprietaire = " + codeProprietaire);
+            System.out.println("Service: Categorie = " + categorie);
+            System.out.println("Service: Type = " + type);
+            System.out.println("Service: DateDebut = " + dateDebut);
+            System.out.println("Service: DateFin = " + dateFin);
+            System.out.println("Service: Username = " + username);
+            
+            List<CompteEntity> entities;
+            
+            // Filtrer d'abord par pays autorisés si username fourni
+            if (username != null && !username.isEmpty()) {
+                List<String> allowedPays = paysFilterService.getAllowedPaysCodes(username);
+                
+                if (allowedPays == null) {
+                    // GNL ou admin : tous les comptes
+                    entities = compteRepository.findAll();
+                } else if (allowedPays.isEmpty()) {
+                    return new ArrayList<>();
+                } else {
+                    // Filtrer par pays autorisés
+                    entities = compteRepository.findByPaysIn(allowedPays);
+                }
+            } else {
+                entities = compteRepository.findAll();
+            }
+            
+            System.out.println("Service: Total entités trouvées après filtrage pays = " + entities.size());
+            
+            List<Compte> result = entities.stream()
+                    .filter(entity -> pays == null || pays.isEmpty() || pays.contains(entity.getPays()))
+                    .filter(entity -> soldeMin == null || entity.getSolde() >= soldeMin)
+                    .filter(entity -> codeProprietaire == null || codeProprietaire.isEmpty() || codeProprietaire.contains(entity.getCodeProprietaire()))
+                    .filter(entity -> categorie == null || categorie.isEmpty() || categorie.contains(entity.getCategorie()))
+                    .filter(entity -> type == null || type.isEmpty() || type.contains(entity.getType()))
+                    .filter(entity -> {
+                        if ((dateDebut == null || dateDebut.isEmpty()) && (dateFin == null || dateFin.isEmpty())) {
+                            return true;
+                        }
+                        if (entity.getDateDerniereMaj() == null) {
+                            return false;
+                        }
+                        String dateMaj = entity.getDateDerniereMaj().toString();
+                        boolean afterDebut = (dateDebut == null || dateDebut.isEmpty()) || dateMaj.compareTo(dateDebut) >= 0;
+                        boolean beforeFin = (dateFin == null || dateFin.isEmpty()) || dateMaj.compareTo(dateFin) <= 0;
+                        return afterDebut && beforeFin;
+                    })
+                    .map(this::convertToModel)
+                    .collect(Collectors.toList());
+            
+            System.out.println("Service: Résultats après filtrage = " + result.size());
+            return result;
+        } catch (Exception e) {
+            logger.error("Erreur dans filterComptes pour username: {}", username, e);
+            return new ArrayList<>();
+        }
     }
     
     /**
      * Récupère tous les comptes d'une agence
      */
     public List<Compte> getComptesByAgency(String agency) {
-        return compteRepository.findByAgency(agency).stream()
-                .map(this::convertToModel)
-                .collect(Collectors.toList());
+        return getComptesByAgency(agency, null);
+    }
+    
+    public List<Compte> getComptesByAgency(String agency, String username) {
+        try {
+            List<CompteEntity> comptes;
+            
+            if (username != null && !username.isEmpty()) {
+                List<String> allowedPays = paysFilterService.getAllowedPaysCodes(username);
+                
+                if (allowedPays == null) {
+                    // GNL ou admin : tous les comptes
+                    comptes = compteRepository.findByAgency(agency);
+                } else if (allowedPays.isEmpty()) {
+                    return new ArrayList<>();
+                } else {
+                    // Filtrer par pays autorisés
+                    comptes = compteRepository.findByAgencyAndPaysIn(agency, allowedPays);
+                }
+            } else {
+                comptes = compteRepository.findByAgency(agency);
+            }
+            
+            return comptes.stream()
+                    .map(this::convertToModel)
+                    .collect(Collectors.toList());
+        } catch (Exception e) {
+            logger.error("Erreur dans getComptesByAgency pour username: {}", username, e);
+            return new ArrayList<>();
+        }
     }
     
     /**
      * Récupère tous les comptes d'un service
      */
     public List<Compte> getComptesByService(String service) {
-        return compteRepository.findByService(service).stream()
-                .map(this::convertToModel)
-                .collect(Collectors.toList());
+        return getComptesByService(service, null);
+    }
+    
+    public List<Compte> getComptesByService(String service, String username) {
+        try {
+            List<CompteEntity> comptes;
+            
+            if (username != null && !username.isEmpty()) {
+                List<String> allowedPays = paysFilterService.getAllowedPaysCodes(username);
+                
+                if (allowedPays == null) {
+                    // GNL ou admin : tous les comptes
+                    comptes = compteRepository.findByService(service);
+                } else if (allowedPays.isEmpty()) {
+                    return new ArrayList<>();
+                } else {
+                    // Filtrer par pays autorisés
+                    comptes = compteRepository.findByServiceAndPaysIn(service, allowedPays);
+                }
+            } else {
+                comptes = compteRepository.findByService(service);
+            }
+            
+            return comptes.stream()
+                    .map(this::convertToModel)
+                    .collect(Collectors.toList());
+        } catch (Exception e) {
+            logger.error("Erreur dans getComptesByService pour username: {}", username, e);
+            return new ArrayList<>();
+        }
     }
     
     /**

@@ -32,6 +32,8 @@ public class StatisticsService {
     @Autowired
     private AgencySummaryRepository agencySummaryRepository;
 
+    @Autowired
+    private com.reconciliation.service.PaysFilterService paysFilterService;
 
     @Autowired
     private com.reconciliation.service.OperationService operationService;
@@ -62,9 +64,32 @@ public class StatisticsService {
     }
 
     public List<Statistics> getStatisticsByDate(LocalDate date) {
-        logger.info("Fetching statistics for date: {}", date);
+        return getStatisticsByDate(date, null);
+    }
+    
+    public List<Statistics> getStatisticsByDate(LocalDate date, String username) {
+        logger.info("Fetching statistics for date: {} (username: {})", date, username);
         try {
-            List<Statistics> stats = statisticsRepository.findByDate(date);
+            List<Statistics> stats;
+            
+            // Récupérer les pays autorisés pour l'utilisateur
+            List<String> allowedCountries = null;
+            if (username != null && !username.isEmpty()) {
+                allowedCountries = paysFilterService.getAllowedPaysCodes(username);
+                // null signifie tous les pays (GNL ou admin)
+            }
+            
+            if (allowedCountries == null) {
+                // GNL ou admin : tous les pays
+                stats = statisticsRepository.findByDate(date);
+            } else if (allowedCountries.isEmpty()) {
+                // Aucun pays autorisé
+                stats = new ArrayList<>();
+            } else {
+                // Filtrer par pays autorisés
+                stats = statisticsRepository.findByDateAndCountries(date, allowedCountries);
+            }
+            
             logger.debug("Found {} statistics records for date {}", stats.size(), date);
             return stats;
         } catch (Exception e) {
@@ -74,10 +99,33 @@ public class StatisticsService {
     }
 
     public List<Statistics> getStatisticsByFilters(String agency, String service, LocalDate startDate, LocalDate endDate) {
-        logger.info("Fetching statistics with filters: agency={}, service={}, startDate={}, endDate={}", 
-            agency, service, startDate, endDate);
+        return getStatisticsByFilters(agency, service, startDate, endDate, null);
+    }
+    
+    public List<Statistics> getStatisticsByFilters(String agency, String service, LocalDate startDate, LocalDate endDate, String username) {
+        logger.info("Fetching statistics with filters: agency={}, service={}, startDate={}, endDate={} (username: {})", 
+            agency, service, startDate, endDate, username);
         try {
-            List<Statistics> stats = statisticsRepository.findByFilters(agency, service, startDate, endDate);
+            List<Statistics> stats;
+            
+            // Récupérer les pays autorisés pour l'utilisateur
+            List<String> allowedCountries = null;
+            if (username != null && !username.isEmpty()) {
+                allowedCountries = paysFilterService.getAllowedPaysCodes(username);
+                // null signifie tous les pays (GNL ou admin)
+            }
+            
+            if (allowedCountries == null) {
+                // GNL ou admin : tous les pays
+                stats = statisticsRepository.findByFilters(agency, service, startDate, endDate);
+            } else if (allowedCountries.isEmpty()) {
+                // Aucun pays autorisé
+                stats = new ArrayList<>();
+            } else {
+                // Filtrer par pays autorisés
+                stats = statisticsRepository.findByFiltersWithCountries(agency, service, allowedCountries, startDate, endDate);
+            }
+            
             logger.debug("Found {} statistics records matching filters", stats.size());
             return stats;
         } catch (Exception e) {
@@ -87,21 +135,47 @@ public class StatisticsService {
     }
 
     public Map<String, Object> getDashboardMetrics() {
-        logger.info("Calculating dashboard metrics");
+        return getDashboardMetrics(null);
+    }
+    
+    public Map<String, Object> getDashboardMetrics(String username) {
+        logger.info("Calculating dashboard metrics for username: {}", username);
         
         try {
             Map<String, Object> metrics = new HashMap<>();
             
+            // Récupérer les pays autorisés pour l'utilisateur
+            List<String> allowedCountries = null;
+            if (username != null && !username.isEmpty()) {
+                allowedCountries = paysFilterService.getAllowedPaysCodes(username);
+                // null signifie tous les pays (GNL ou admin)
+            }
+            
             // Total des réconciliations (nombre total d'enregistrements du résumé)
-            long totalReconciliations = agencySummaryRepository.count();
+            long totalReconciliations;
+            if (allowedCountries == null) {
+                totalReconciliations = agencySummaryRepository.count();
+            } else if (allowedCountries.isEmpty()) {
+                totalReconciliations = 0;
+            } else {
+                totalReconciliations = agencySummaryRepository.countByCountries(allowedCountries);
+            }
             metrics.put("totalReconciliations", totalReconciliations);
             
             // Total des fichiers traités (nombre total d'enregistrements du résumé)
-            long totalFiles = agencySummaryRepository.count();
+            long totalFiles = totalReconciliations; // Même valeur
             metrics.put("totalFiles", totalFiles);
             
             // Dernière activité (date la plus récente)
-            String lastActivity = agencySummaryRepository.findMaxDate();
+            String lastActivity;
+            if (allowedCountries == null) {
+                lastActivity = agencySummaryRepository.findMaxDate();
+            } else if (allowedCountries.isEmpty()) {
+                lastActivity = null;
+            } else {
+                lastActivity = agencySummaryRepository.findMaxDateByCountries(allowedCountries);
+            }
+            
             LocalDate yesterday = LocalDate.now().minusDays(1);
             String lastActivityStr;
             if (lastActivity != null) {
@@ -118,7 +192,14 @@ public class StatisticsService {
             
             // Statistiques du jour (modifié : on prend la date d'hier)
             LocalDate yesterdayDate = LocalDate.now().minusDays(1);
-            long todayReconciliations = agencySummaryRepository.countByDate(yesterdayDate.toString());
+            long todayReconciliations;
+            if (allowedCountries == null) {
+                todayReconciliations = agencySummaryRepository.countByDate(yesterdayDate.toString());
+            } else if (allowedCountries.isEmpty()) {
+                todayReconciliations = 0;
+            } else {
+                todayReconciliations = agencySummaryRepository.countByDateAndCountries(yesterdayDate.toString(), allowedCountries);
+            }
             metrics.put("todayReconciliations", todayReconciliations);
             
             logger.info("Dashboard metrics calculated: totalReconciliations={}, totalFiles={}, lastActivity={}, todayReconciliations={}", 
@@ -152,21 +233,73 @@ public class StatisticsService {
     }
 
     public Map<String, Object> getFilterOptions() {
-        logger.info("Retrieving filter options from operations data");
+        return getFilterOptions(null);
+    }
+    
+    public Map<String, Object> getFilterOptions(String username) {
+        logger.info("Retrieving filter options from operations data for username: {}", username);
         
         try {
             Map<String, Object> filterOptions = new HashMap<>();
             
-            // Récupérer les agences depuis les opérations (sans ajouter 'Tous')
-            List<String> agencies = new ArrayList<>(operationRepository.findDistinctAgency());
+            // Récupérer les pays autorisés pour l'utilisateur
+            List<String> allowedCountries = null;
+            if (username != null && !username.isEmpty()) {
+                allowedCountries = paysFilterService.getAllowedPaysCodes(username);
+                // null signifie tous les pays (GNL ou admin)
+            }
+            
+            // Récupérer les agences depuis les opérations (filtrées par pays si nécessaire)
+            List<String> agencies;
+            if (allowedCountries == null) {
+                agencies = new ArrayList<>(operationRepository.findDistinctAgency());
+            } else if (allowedCountries.isEmpty()) {
+                agencies = new ArrayList<>();
+            } else {
+                // Filtrer les agences selon les pays autorisés
+                // Note: findDistinctAgency() retourne codeProprietaire qui représente l'agence
+                List<com.reconciliation.model.Operation> operations = operationService.getAllOperations(username);
+                agencies = operations.stream()
+                    .map(com.reconciliation.model.Operation::getCodeProprietaire)
+                    .filter(agence -> agence != null && !agence.isEmpty())
+                    .distinct()
+                    .sorted()
+                    .collect(java.util.stream.Collectors.toList());
+            }
             filterOptions.put("agencies", agencies);
             
-            // Récupérer les services depuis les opérations (sans ajouter 'Tous')
-            List<String> services = new ArrayList<>(operationRepository.findDistinctService());
+            // Récupérer les services depuis les opérations (filtrées par pays si nécessaire)
+            List<String> services;
+            if (allowedCountries == null) {
+                services = new ArrayList<>(operationRepository.findDistinctService());
+            } else if (allowedCountries.isEmpty()) {
+                services = new ArrayList<>();
+            } else {
+                // Filtrer les services selon les pays autorisés
+                List<com.reconciliation.model.Operation> operations = operationService.getAllOperations(username);
+                services = operations.stream()
+                    .map(com.reconciliation.model.Operation::getService)
+                    .filter(service -> service != null && !service.isEmpty())
+                    .distinct()
+                    .sorted()
+                    .collect(java.util.stream.Collectors.toList());
+            }
             filterOptions.put("services", services);
             
-            // Récupérer les pays depuis les comptes (sans ajouter 'Tous')
-            List<String> countries = new ArrayList<>(compteRepository.findDistinctPays());
+            // Récupérer les pays depuis les comptes (filtrés selon les permissions)
+            List<String> countries;
+            if (allowedCountries == null) {
+                // GNL ou admin : tous les pays
+                countries = new ArrayList<>(compteRepository.findDistinctPays());
+            } else if (allowedCountries.isEmpty()) {
+                countries = new ArrayList<>();
+            } else {
+                // Filtrer uniquement les pays autorisés
+                List<String> allCountries = compteRepository.findDistinctPays();
+                countries = allCountries.stream()
+                    .filter(allowedCountries::contains)
+                    .collect(java.util.stream.Collectors.toList());
+            }
             filterOptions.put("countries", countries);
             
             // Options de filtres temporels (sans 'Tous')
@@ -185,6 +318,11 @@ public class StatisticsService {
 
     public Map<String, Object> getDetailedMetrics(List<String> agencies, List<String> services, List<String> countries, 
                                                  String timeFilter, String startDate, String endDate) {
+        return getDetailedMetrics(agencies, services, countries, timeFilter, startDate, endDate, null);
+    }
+    
+    public Map<String, Object> getDetailedMetrics(List<String> agencies, List<String> services, List<String> countries, 
+                                                 String timeFilter, String startDate, String endDate, String username) {
         logger.info("Calculating detailed metrics with filters: agencies={}, services={}, countries={}, timeFilter={}, startDate={}, endDate={}", 
             agencies, services, countries, timeFilter, startDate, endDate);
         
@@ -347,7 +485,7 @@ public class StatisticsService {
             Double averageFeesPerDay = 0.0;
             
             // Utiliser les opérations avec frais calculés au lieu du repository FraisTransactionRepository
-            List<com.reconciliation.model.Operation> operationsWithFrais = operationService.getAllOperationsWithFrais();
+            List<com.reconciliation.model.Operation> operationsWithFrais = operationService.getAllOperationsWithFrais(username);
             
             // Filtrer les opérations selon les critères
             List<com.reconciliation.model.Operation> filteredOperations = operationsWithFrais.stream()
@@ -441,6 +579,12 @@ public class StatisticsService {
     public Map<String, Object> getTransactionCreatedStatsByService(List<String> agencies, List<String> services, 
                                                                    List<String> countries, String timeFilter, 
                                                                    String startDate, String endDate) {
+        return getTransactionCreatedStatsByService(agencies, services, countries, timeFilter, startDate, endDate, null);
+    }
+    
+    public Map<String, Object> getTransactionCreatedStatsByService(List<String> agencies, List<String> services, 
+                                                                   List<String> countries, String timeFilter, 
+                                                                   String startDate, String endDate, String username) {
         logger.info("Calculating transaction_cree stats by service with filters: agencies={}, services={}, countries={}, timeFilter={}, startDate={}, endDate={}", 
             agencies, services, countries, timeFilter, startDate, endDate);
         
@@ -508,7 +652,7 @@ public class StatisticsService {
             Map<String, Object> stats = new HashMap<>();
             
             // Récupérer toutes les opérations de type transaction_cree
-            List<com.reconciliation.model.Operation> allTransactionCreatedOps = operationService.getAllOperations().stream()
+            List<com.reconciliation.model.Operation> allTransactionCreatedOps = operationService.getAllOperations(username).stream()
                 .filter(op -> "transaction_cree".equals(op.getTypeOperation()))
                 .filter(op -> finalAgencies == null || finalAgencies.isEmpty() || finalAgencies.contains(op.getCodeProprietaire()))
                 .filter(op -> finalServices == null || finalServices.isEmpty() || finalServices.contains(op.getService()))

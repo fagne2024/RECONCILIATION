@@ -2,6 +2,7 @@ import { Component, OnInit } from '@angular/core';
 import { FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { PermissionService } from '../../services/permission.service';
 import { Permission } from '../../models/permission.model';
+import { HttpClient } from '@angular/common/http';
 
 @Component({
   selector: 'app-permissions',
@@ -10,18 +11,23 @@ import { Permission } from '../../models/permission.model';
 })
 export class PermissionsComponent implements OnInit {
   permissions: Permission[] = [];
+  filteredPermissions: Permission[] = [];
   showAddForm = false;
   isAdding = false;
   isLoading = false;
+  isGenerating = false;
   addForm: FormGroup;
   showEditForm = false;
   isEditing = false;
   editingPermission: Permission | null = null;
   editForm: FormGroup;
+  generationResult: any = null;
+  searchTerm = '';
 
   constructor(
     private permissionService: PermissionService,
-    private formBuilder: FormBuilder
+    private formBuilder: FormBuilder,
+    private http: HttpClient
   ) {
     this.addForm = this.formBuilder.group({
       nom: ['', [Validators.required, Validators.minLength(2)]]
@@ -41,6 +47,7 @@ export class PermissionsComponent implements OnInit {
     this.permissionService.getAllPermissions().subscribe({
       next: (permissions) => {
         this.permissions = permissions;
+        this.applyFilters();
         this.isLoading = false;
       },
       error: (error) => {
@@ -48,6 +55,19 @@ export class PermissionsComponent implements OnInit {
         this.isLoading = false;
       }
     });
+  }
+
+  applyFilters(): void {
+    this.filteredPermissions = this.permissions.filter(permission => {
+      const matchesSearch = !this.searchTerm || 
+        permission.nom.toLowerCase().includes(this.searchTerm.toLowerCase());
+      return matchesSearch;
+    });
+  }
+
+  clearFilters(): void {
+    this.searchTerm = '';
+    this.applyFilters();
   }
 
   createPermission(): void {
@@ -62,6 +82,7 @@ export class PermissionsComponent implements OnInit {
           this.showAddForm = false;
           this.isAdding = false;
           this.loadPermissions();
+          this.applyFilters();
         },
         error: (error) => {
           console.error('❌ Erreur lors de la création de la permission:', error);
@@ -102,6 +123,7 @@ export class PermissionsComponent implements OnInit {
           this.isEditing = false;
           this.editingPermission = null;
           this.loadPermissions();
+          this.applyFilters();
         },
         error: (error) => {
           console.error('❌ Erreur lors de la mise à jour de la permission:', error);
@@ -126,13 +148,73 @@ export class PermissionsComponent implements OnInit {
           next: () => {
             console.log('✅ Permission supprimée avec succès');
             this.loadPermissions();
+            this.applyFilters();
           },
           error: (error) => {
             console.error('❌ Erreur lors de la suppression de la permission:', error);
-            alert('Erreur lors de la suppression de la permission. Veuillez réessayer.');
+            console.error('❌ Structure de l\'erreur:', {
+              error: error.error,
+              status: error.status,
+              statusText: error.statusText,
+              message: error.message
+            });
+            
+            // Extraire le message d'erreur du backend si disponible
+            let errorMessage = 'Erreur lors de la suppression de la permission. Veuillez réessayer.';
+            
+            // Essayer différentes structures de réponse
+            if (error.error) {
+              if (typeof error.error === 'object') {
+                // Structure: { error: "message" }
+                if (error.error.error) {
+                  errorMessage = error.error.error;
+                } else if (error.error.message) {
+                  errorMessage = error.error.message;
+                } else if (Object.keys(error.error).length > 0) {
+                  // Prendre la première valeur de l'objet
+                  errorMessage = Object.values(error.error)[0] as string;
+                }
+              } else if (typeof error.error === 'string') {
+                errorMessage = error.error;
+              }
+            } else if (error.message) {
+              errorMessage = error.message;
+            }
+            
+            alert(errorMessage);
           }
         });
       }
+    }
+  }
+
+  generatePermissions(): void {
+    const confirmed = confirm('Voulez-vous générer automatiquement les permissions à partir des contrôleurs de l\'application ?\n\nCette opération va analyser tous les endpoints et créer les permissions correspondantes.');
+    if (confirmed) {
+      this.isGenerating = true;
+      this.generationResult = null;
+      
+      this.http.post<any>('http://localhost:8080/api/profils/permissions/generate', {}).subscribe({
+        next: (result) => {
+          console.log('✅ Génération des permissions terminée:', result);
+          this.generationResult = result;
+          this.isGenerating = false;
+          // Recharger les permissions après génération
+          this.loadPermissions();
+          this.applyFilters();
+        },
+        error: (error) => {
+          console.error('❌ Erreur lors de la génération des permissions:', error);
+          this.isGenerating = false;
+          let errorMessage = 'Erreur lors de la génération des permissions. Veuillez réessayer.';
+          if (error.error && error.error.error) {
+            errorMessage = error.error.error;
+          } else if (error.error && typeof error.error === 'string') {
+            errorMessage = error.error;
+          }
+          alert(errorMessage);
+        }
+      });
     }
   }
 } 

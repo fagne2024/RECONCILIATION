@@ -1,42 +1,87 @@
 <div class="permissions-container">
   <div class="header">
-    <h2>Gestion des Permissions</h2>
-    <button class="btn btn-primary" (click)="showAddForm = true">
-      <i class="fas fa-plus"></i> Nouvelle Permission
+    <div class="header-title">
+      <h2><i class="fas fa-key"></i> Gestion des Permissions</h2>
+      <span class="permissions-count">{{ filteredPermissions.length }} permission(s)</span>
+    </div>
+    <div class="header-actions">
+      <button class="btn btn-success" (click)="generatePermissions()" [disabled]="isGenerating">
+        <i class="fas fa-magic"></i> 
+        <span *ngIf="!isGenerating">Générer automatiquement</span>
+        <span *ngIf="isGenerating">
+          <i class="fas fa-spinner fa-spin"></i> Génération...
+        </span>
+      </button>
+      <button class="btn btn-primary" (click)="showAddForm = true">
+        <i class="fas fa-plus"></i> Nouvelle Permission
+      </button>
+    </div>
+  </div>
+
+  <div *ngIf="generationResult" class="generation-result" [class.success]="generationResult.totalCreated > 0" [class.info]="generationResult.totalCreated === 0">
+    <div class="result-header">
+      <i class="fas" [class.fa-check-circle]="generationResult.totalCreated > 0" [class.fa-info-circle]="generationResult.totalCreated === 0"></i>
+      <strong>{{ generationResult.message }}</strong>
+      <button class="close-result" (click)="generationResult = null">
+        <i class="fas fa-times"></i>
+      </button>
+    </div>
+    <div *ngIf="generationResult.createdPermissions && generationResult.createdPermissions.length > 0" class="result-details">
+      <strong>Nouvelles permissions créées :</strong>
+      <ul>
+        <li *ngFor="let perm of generationResult.createdPermissions">{{ perm }}</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- Barre de recherche -->
+  <div class="search-filters-bar">
+    <div class="search-box">
+      <i class="fas fa-search"></i>
+      <input 
+        type="text" 
+        [(ngModel)]="searchTerm" 
+        placeholder="Rechercher une permission..." 
+        class="search-input"
+        (input)="applyFilters()">
+    </div>
+    <button *ngIf="searchTerm" class="btn-clear-filters" (click)="clearFilters()">
+      <i class="fas fa-times"></i> Effacer
     </button>
   </div>
 
-  <div class="table-container">
+  <div class="list-container">
     <div *ngIf="isLoading" class="loading">
       <i class="fas fa-spinner fa-spin"></i> Chargement...
     </div>
 
-    <div *ngIf="!isLoading && permissions.length === 0" class="no-data">
-      <i class="fas fa-info-circle"></i> Aucune permission trouvée
+    <div *ngIf="!isLoading && filteredPermissions.length === 0" class="no-data">
+      <i class="fas fa-key"></i>
+      <h3>Aucune permission trouvée</h3>
+      <p *ngIf="searchTerm" class="help-text">
+        Aucune permission ne correspond à votre recherche.
+        <button class="btn-link" (click)="clearFilters()">Effacer les filtres</button>
+      </p>
+      <p *ngIf="!searchTerm">Cliquez sur "Générer automatiquement" pour créer les permissions à partir des contrôleurs de l'application.</p>
     </div>
 
-    <div *ngIf="!isLoading && permissions.length > 0" class="table-wrapper">
-      <table class="permissions-table">
-        <thead>
-          <tr>
-            <th>Nom</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr *ngFor="let permission of permissions">
-            <td class="permission-name">{{ permission.nom }}</td>
-            <td class="actions">
-              <button class="btn icon-btn" (click)="editPermission(permission)" title="Modifier">
-                <i class="fas fa-edit" style="color: #28a745;"></i>
-              </button>
-              <button class="btn icon-btn" (click)="deletePermission(permission)" title="Supprimer">
-                <i class="fas fa-trash" style="color: #dc3545;"></i>
-              </button>
-            </td>
-          </tr>
-        </tbody>
-      </table>
+    <div *ngIf="!isLoading && filteredPermissions.length > 0" class="permissions-list">
+      <div *ngFor="let permission of filteredPermissions" class="permission-item">
+        <div class="permission-content">
+          <div class="permission-name">
+            <i class="fas fa-key"></i>
+            <span>{{ permission.nom }}</span>
+          </div>
+        </div>
+        <div class="permission-actions">
+          <button class="btn icon-btn edit-btn" (click)="editPermission(permission)" title="Modifier">
+            <i class="fas fa-edit"></i>
+          </button>
+          <button class="btn icon-btn delete-btn" (click)="deletePermission(permission)" title="Supprimer">
+            <i class="fas fa-trash"></i>
+          </button>
+        </div>
+      </div>
     </div>
   </div>
 

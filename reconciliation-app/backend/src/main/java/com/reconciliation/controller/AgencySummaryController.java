@@ -7,6 +7,7 @@ import com.reconciliation.repository.AgencySummaryRepository;
 import com.reconciliation.service.OperationService;
 import com.reconciliation.service.CompteService;
 import com.reconciliation.service.FraisTransactionService;
+import com.reconciliation.service.PaysFilterService;
 import com.reconciliation.dto.OperationCreateRequest;
 import com.reconciliation.model.Compte;
 import com.reconciliation.entity.FraisTransactionEntity;
@@ -40,6 +41,9 @@ public class AgencySummaryController {
     private CompteService compteService;
     
     @Autowired
+    private PaysFilterService paysFilterService;
+    
+    @Autowired
     private FraisTransactionService fraisTransactionService;
 
     /**
@@ -63,11 +67,56 @@ public class AgencySummaryController {
 
     @GetMapping("/all")
     public List<AgencySummary> getAllSummaries() {
+        // Récupérer le username pour le filtrage par pays
+        String username = com.reconciliation.util.RequestContextUtil.getUsernameFromRequest();
+        
+        // Récupérer les pays autorisés pour l'utilisateur
+        List<String> allowedCountriesTemp = null;
+        if (username != null && !username.isEmpty()) {
+            allowedCountriesTemp = paysFilterService.getAllowedPaysCodes(username);
+            // null signifie tous les pays (GNL ou admin)
+        }
+        
+        // Variable finale pour utilisation dans lambda
+        final List<String> allowedCountries = allowedCountriesTemp;
+        
         // Récupérer toutes les données agency_summary
-        List<AgencySummaryEntity> allSummaries = repository.findAll();
+        List<AgencySummaryEntity> allSummaries;
+        if (allowedCountries == null) {
+            // GNL ou admin : tous les pays
+            allSummaries = repository.findAll();
+            System.out.println("🌍 Cloisonnement: Admin/GNL détecté, retour de " + allSummaries.size() + " enregistrements");
+        } else if (allowedCountries.isEmpty()) {
+            // Aucun pays autorisé
+            System.out.println("🌍 Cloisonnement: Aucun pays autorisé pour l'utilisateur " + username);
+            return new ArrayList<>();
+        } else {
+            // Filtrer par pays autorisés
+            List<AgencySummaryEntity> allEntities = repository.findAll();
+            System.out.println("🌍 Cloisonnement: Filtrage pour utilisateur " + username + " - Pays autorisés: " + allowedCountries);
+            System.out.println("🌍 Cloisonnement: Total enregistrements avant filtrage: " + allEntities.size());
+            
+            allSummaries = allEntities.stream()
+                .filter(entity -> {
+                    if (entity.getCountry() == null) {
+                        System.out.println("⚠️ Enregistrement sans pays: " + entity.getAgency() + "/" + entity.getService());
+                        return false;
+                    }
+                    // Convertir le nom du pays en code pays si nécessaire
+                    String countryCode = getCountryCode(entity.getCountry());
+                    boolean included = allowedCountries.contains(countryCode);
+                    if (!included) {
+                        System.out.println("🚫 Enregistrement exclu: " + entity.getCountry() + " (code: " + countryCode + ") - Pays autorisés: " + allowedCountries);
+                    }
+                    return included;
+                })
+                .collect(Collectors.toList());
+            
+            System.out.println("🌍 Cloisonnement: Total enregistrements après filtrage: " + allSummaries.size());
+        }
         
         // Récupérer les opérations pour vérifier les statuts
-        List<com.reconciliation.model.Operation> allOperations = operationService.getAllOperations();
+        List<com.reconciliation.model.Operation> allOperations = operationService.getAllOperations(username);
         
         // Créer un set des opérations annulées/rejetées pour les types spécifiques
         Set<String> excludedOperations = new HashSet<>();
@@ -115,6 +164,95 @@ public class AgencySummaryController {
                 return dto;
             })
             .collect(Collectors.toList());
+    }
+    
+    /**
+     * Convertit un nom de pays en code pays pour le filtrage
+     */
+    private String getCountryCode(String countryName) {
+        if (countryName == null || countryName.trim().isEmpty()) {
+            return "";
+        }
+        
+        String normalizedName = countryName.trim().toUpperCase();
+        
+        // Gérer les variantes spéciales comme "CITCH" qui signifie "CI" (Côte d'Ivoire)
+        if (normalizedName.equals("CITCH") || normalizedName.startsWith("CITCH")) {
+            return "CI";
+        }
+        
+        // Mapping des noms de pays vers leurs codes
+        java.util.Map<String, String> countryMap = new java.util.HashMap<>();
+        countryMap.put("CAMEROUN", "CM");
+        countryMap.put("CAMEROON", "CM");
+        countryMap.put("CÔTE D'IVOIRE", "CI");
+        countryMap.put("COTE D'IVOIRE", "CI");
+        countryMap.put("COTE DIVOIRE", "CI");
+        countryMap.put("CÔTE DIVOIRE", "CI");
+        countryMap.put("SÉNÉGAL", "SN");
+        countryMap.put("SENEGAL", "SN");
+        countryMap.put("BURKINA FASO", "BF");
+        countryMap.put("BURKINA", "BF");
+        countryMap.put("MALI", "ML");
+        countryMap.put("BÉNIN", "BJ");
+        countryMap.put("BENIN", "BJ");
+        countryMap.put("NIGER", "NE");
+        countryMap.put("TCHAD", "TD");
+        countryMap.put("TOGO", "TG");
+        
+        // Chercher par nom exact (insensible à la casse)
+        for (java.util.Map.Entry<String, String> entry : countryMap.entrySet()) {
+            if (entry.getKey().equalsIgnoreCase(normalizedName)) {
+                return entry.getValue();
+            }
+        }
+        
+        // Chercher par contenu (pour gérer les cas comme "Côte d'Ivoire" dans "Côte d'Ivoire - Abidjan")
+        if (normalizedName.contains("COTE") || normalizedName.contains("CÔTE") || normalizedName.contains("IVOIRE")) {
+            return "CI";
+        }
+        if (normalizedName.contains("SENEGAL") || normalizedName.contains("SÉNÉGAL")) {
+            return "SN";
+        }
+        if (normalizedName.contains("CAMEROUN") || normalizedName.contains("CAMEROON")) {
+            return "CM";
+        }
+        if (normalizedName.contains("BURKINA")) {
+            return "BF";
+        }
+        if (normalizedName.contains("MALI")) {
+            return "ML";
+        }
+        if (normalizedName.contains("BENIN") || normalizedName.contains("BÉNIN")) {
+            return "BJ";
+        }
+        if (normalizedName.contains("NIGER")) {
+            return "NE";
+        }
+        if (normalizedName.contains("TCHAD")) {
+            return "TD";
+        }
+        if (normalizedName.contains("TOGO")) {
+            return "TG";
+        }
+        
+        // Si c'est déjà un code (2 lettres), le retourner tel quel
+        if (normalizedName.length() == 2) {
+            return normalizedName;
+        }
+        
+        // Si c'est un code de 4-5 lettres qui commence par un code pays connu, extraire les 2 premières lettres
+        if (normalizedName.length() >= 4) {
+            String firstTwo = normalizedName.substring(0, 2);
+            // Vérifier si c'est un code pays valide
+            List<String> validCodes = Arrays.asList("CM", "CI", "SN", "BF", "ML", "BJ", "NE", "TD", "TG");
+            if (validCodes.contains(firstTwo)) {
+                return firstTwo;
+            }
+        }
+        
+        // Sinon, retourner le nom tel quel pour comparaison (normalisé en majuscules)
+        return normalizedName;
     }
 
     /**

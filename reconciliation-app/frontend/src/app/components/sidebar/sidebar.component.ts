@@ -44,4 +44,17 @@ export class SidebarComponent implements OnInit {
     if (this.appState.isAdmin()) return true;
     return this.appState.isModuleAllowed(menu);
   }
+
+  isAdmin(): boolean {
+    return this.appState.isAdmin();
+  }
+
+  getUsername(): string | null {
+    return this.appState.getUsername();
+  }
+
+  getUserProfil(): string | null {
+    const userRights = this.appState.getUserRights();
+    return userRights?.profil || null;
+  }
 } 

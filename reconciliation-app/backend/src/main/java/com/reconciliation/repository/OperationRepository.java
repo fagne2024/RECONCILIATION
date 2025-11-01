@@ -111,6 +111,9 @@ public interface OperationRepository extends JpaRepository<OperationEntity, Long
     @Query("SELECT o FROM OperationEntity o WHERE o.pays = :pays ORDER BY o.dateOperation DESC")
     List<OperationEntity> findByPaysOrderByDateOperationDesc(@Param("pays") String pays);
     
+    @Query("SELECT o FROM OperationEntity o WHERE o.pays IN :paysCodes ORDER BY o.dateOperation DESC")
+    List<OperationEntity> findByPaysInOrderByDateOperationDesc(@Param("paysCodes") List<String> paysCodes);
+    
     @Query("SELECT o FROM OperationEntity o WHERE o.statut = :statut ORDER BY o.dateOperation DESC")
     List<OperationEntity> findByStatutOrderByDateOperationDesc(@Param("statut") String statut);
     

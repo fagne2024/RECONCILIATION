@@ -401,7 +401,27 @@ export class ComptesComponent implements OnInit, OnDestroy {
                     error: (error) => {
                         console.error('Erreur lors de l\'ajout du compte:', error);
                         this.isAdding = false;
-                        this.popupService.showError('Erreur lors de l\'ajout du compte: ' + error.message);
+                        
+                        // Extraire le message d'erreur du backend
+                        let errorMessage = 'Erreur lors de l\'ajout du compte.';
+                        if (error.error) {
+                            if (error.error.message) {
+                                errorMessage = error.error.message;
+                            } else if (error.error.error) {
+                                errorMessage = error.error.error;
+                            } else if (typeof error.error === 'string') {
+                                errorMessage = error.error;
+                            }
+                        } else if (error.message) {
+                            errorMessage = error.message;
+                        }
+                        
+                        // Vérifier si c'est une erreur de permission (403)
+                        if (error.status === 403) {
+                            errorMessage = errorMessage || 'Vous n\'avez pas la permission pour exécuter cette action.';
+                        }
+                        
+                        this.popupService.showError(errorMessage);
                     }
                 })
             );
@@ -466,16 +486,27 @@ export class ComptesComponent implements OnInit, OnDestroy {
                     },
                     error: (error) => {
                         console.error('Erreur lors de la suppression:', error);
-                        let errorMessage = 'Erreur lors de la suppression du compte';
                         
-                        // Extraire le message d'erreur du backend si disponible
-                        if (error.error && error.error.message) {
-                            errorMessage = error.error.message;
+                        // Extraire le message d'erreur du backend
+                        let errorMessage = 'Erreur lors de la suppression du compte.';
+                        if (error.error) {
+                            if (error.error.message) {
+                                errorMessage = error.error.message;
+                            } else if (error.error.error) {
+                                errorMessage = error.error.error;
+                            } else if (typeof error.error === 'string') {
+                                errorMessage = error.error;
+                            }
                         } else if (error.message) {
                             errorMessage = error.message;
                         }
                         
-                        this.popupService.showError('Erreur de suppression', errorMessage);
+                        // Vérifier si c'est une erreur de permission (403)
+                        if (error.status === 403) {
+                            errorMessage = errorMessage || 'Vous n\'avez pas la permission pour exécuter cette action.';
+                        }
+                        
+                        this.popupService.showError(errorMessage);
                     }
                 })
             );
@@ -842,7 +873,27 @@ export class ComptesComponent implements OnInit, OnDestroy {
                     error: (error) => {
                         console.error('Erreur lors de la mise à jour du compte:', error);
                         this.isEditing = false;
-                        this.popupService.showError('Erreur lors de la mise à jour du compte: ' + error.message);
+                        
+                        // Extraire le message d'erreur du backend
+                        let errorMessage = 'Erreur lors de la mise à jour du compte.';
+                        if (error.error) {
+                            if (error.error.message) {
+                                errorMessage = error.error.message;
+                            } else if (error.error.error) {
+                                errorMessage = error.error.error;
+                            } else if (typeof error.error === 'string') {
+                                errorMessage = error.error;
+                            }
+                        } else if (error.message) {
+                            errorMessage = error.message;
+                        }
+                        
+                        // Vérifier si c'est une erreur de permission (403)
+                        if (error.status === 403) {
+                            errorMessage = errorMessage || 'Vous n\'avez pas la permission pour exécuter cette action.';
+                        }
+                        
+                        this.popupService.showError(errorMessage);
                     }
                 })
             );

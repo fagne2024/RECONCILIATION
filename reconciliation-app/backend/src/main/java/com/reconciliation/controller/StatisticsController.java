@@ -2,6 +2,7 @@ package com.reconciliation.controller;
 
 import com.reconciliation.model.Statistics;
 import com.reconciliation.service.StatisticsService;
+import com.reconciliation.util.RequestContextUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -68,11 +69,13 @@ public class StatisticsController {
         logger.info("Date parameter: {}", date);
         
         try {
-            List<Statistics> stats = statisticsService.getStatisticsByDate(date);
+            String username = RequestContextUtil.getUsernameFromRequest();
+            List<Statistics> stats = statisticsService.getStatisticsByDate(date, username);
             logger.info("Found {} statistics records for date {}", stats.size(), date);
             return ResponseEntity.ok(stats);
         } catch (Exception e) {
             logger.error("Error fetching statistics by date {}: {}", date, e.getMessage(), e);
+            e.printStackTrace();
             return ResponseEntity.internalServerError()
                 .body("Failed to fetch statistics: " + e.getMessage());
         }
@@ -92,11 +95,13 @@ public class StatisticsController {
             agency, service, startDate, endDate);
         
         try {
-            List<Statistics> stats = statisticsService.getStatisticsByFilters(agency, service, startDate, endDate);
+            String username = RequestContextUtil.getUsernameFromRequest();
+            List<Statistics> stats = statisticsService.getStatisticsByFilters(agency, service, startDate, endDate, username);
             logger.info("Found {} statistics records matching filters", stats.size());
             return ResponseEntity.ok(stats);
         } catch (Exception e) {
             logger.error("Error fetching statistics with filters: {}", e.getMessage(), e);
+            e.printStackTrace();
             return ResponseEntity.internalServerError()
                 .body("Failed to fetch statistics: " + e.getMessage());
         }
@@ -109,11 +114,13 @@ public class StatisticsController {
         logger.info("Origin: {}", request.getHeader("Origin"));
         
         try {
-            Map<String, Object> metrics = statisticsService.getDashboardMetrics();
+            String username = RequestContextUtil.getUsernameFromRequest();
+            Map<String, Object> metrics = statisticsService.getDashboardMetrics(username);
             logger.info("Dashboard metrics calculated successfully");
             return ResponseEntity.ok(metrics);
         } catch (Exception e) {
             logger.error("Error fetching dashboard metrics: {}", e.getMessage(), e);
+            e.printStackTrace();
             return ResponseEntity.internalServerError()
                 .body("Failed to fetch dashboard metrics: " + e.getMessage());
         }
@@ -126,11 +133,13 @@ public class StatisticsController {
         logger.info("Origin: {}", request.getHeader("Origin"));
         
         try {
-            Map<String, Object> filterOptions = statisticsService.getFilterOptions();
+            String username = RequestContextUtil.getUsernameFromRequest();
+            Map<String, Object> filterOptions = statisticsService.getFilterOptions(username);
             logger.info("Filter options retrieved successfully");
             return ResponseEntity.ok(filterOptions);
         } catch (Exception e) {
             logger.error("Error fetching filter options: {}", e.getMessage(), e);
+            e.printStackTrace();
             return ResponseEntity.internalServerError()
                 .body("Failed to fetch filter options: " + e.getMessage());
         }
@@ -152,11 +161,13 @@ public class StatisticsController {
             agency, service, country, timeFilter, startDate, endDate);
         
         try {
-            Map<String, Object> metrics = statisticsService.getDetailedMetrics(agency, service, country, timeFilter, startDate, endDate);
+            String username = RequestContextUtil.getUsernameFromRequest();
+            Map<String, Object> metrics = statisticsService.getDetailedMetrics(agency, service, country, timeFilter, startDate, endDate, username);
             logger.info("Detailed metrics calculated successfully");
             return ResponseEntity.ok(metrics);
         } catch (Exception e) {
             logger.error("Error fetching detailed metrics: {}", e.getMessage(), e);
+            e.printStackTrace();
             return ResponseEntity.internalServerError()
                 .body("Failed to fetch detailed metrics: " + e.getMessage());
         }
@@ -178,11 +189,13 @@ public class StatisticsController {
             agency, service, country, timeFilter, startDate, endDate);
         
         try {
-            Map<String, Object> stats = statisticsService.getTransactionCreatedStatsByService(agency, service, country, timeFilter, startDate, endDate);
+            String username = RequestContextUtil.getUsernameFromRequest();
+            Map<String, Object> stats = statisticsService.getTransactionCreatedStatsByService(agency, service, country, timeFilter, startDate, endDate, username);
             logger.info("Transaction created stats calculated successfully");
             return ResponseEntity.ok(stats);
         } catch (Exception e) {
             logger.error("Error fetching transaction created stats: {}", e.getMessage(), e);
+            e.printStackTrace();
             return ResponseEntity.internalServerError()
                 .body("Failed to fetch transaction created stats: " + e.getMessage());
         }
