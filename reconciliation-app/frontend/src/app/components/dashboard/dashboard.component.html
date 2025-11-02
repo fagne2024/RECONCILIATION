@@ -101,8 +101,11 @@
               </mat-select>
             </mat-form-field>
           </div>
-          <div style="flex: 2; text-align: center;">
+          <div style="flex: 2; display: flex; flex-direction: column; align-items: center; gap: 8px;">
             <h3 style="margin: 0;">📈 Métriques détaillées</h3>
+            <button class="btn-show-graph" (click)="openGraphModal()" [disabled]="(!barChartData || !barChartData.labels?.length) && (!lineChartData || !lineChartData.labels?.length)">
+              <i class="fas fa-chart-line"></i> Afficher graph
+            </button>
           </div>
           <div class="chart-type-select" style="flex: 1; text-align: right; min-width: 180px;">
             <mat-form-field appearance="fill" class="filter-select">
@@ -366,6 +369,123 @@
                             </tbody>
                         </table>
                     </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal pour afficher les graphiques en plein écran -->
+    <div *ngIf="showGraphModal" class="graph-modal-overlay" (click)="closeGraphModal()">
+        <div class="graph-modal-container" (click)="$event.stopPropagation()">
+            <div class="graph-modal-header">
+                <h2>📈 Graphiques détaillés</h2>
+                <button class="btn-close-modal" (click)="closeGraphModal()" title="Fermer">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="graph-modal-controls">
+                <div class="modal-controls-row">
+                    <div class="modal-metric-select">
+                        <mat-form-field appearance="fill" class="filter-select">
+                            <mat-label>Afficher</mat-label>
+                            <mat-select [(ngModel)]="selectedMetric" (selectionChange)="updateBarChartData()">
+                                <mat-option value="volume">Volume total</mat-option>
+                                <mat-option value="transactions">Nombre de transactions</mat-option>
+                                <mat-option value="revenu">Volume des revenus</mat-option>
+                            </mat-select>
+                        </mat-form-field>
+                    </div>
+                    <div class="modal-chart-type-select">
+                        <mat-form-field appearance="fill" class="filter-select">
+                            <mat-label>Vue</mat-label>
+                            <mat-select [(ngModel)]="selectedChartType">
+                                <mat-option value="bar">Barres</mat-option>
+                                <mat-option value="line">Courbe</mat-option>
+                            </mat-select>
+                        </mat-form-field>
+                    </div>
+                </div>
+                <div class="modal-filters-row">
+                    <div class="filter-group">
+                        <mat-form-field appearance="fill" class="filter-select">
+                            <mat-label>Client</mat-label>
+                            <mat-select #agencySelectModal [(ngModel)]="selectedAgency" multiple (selectionChange)="onFilterChange()" placeholder="Sélection multiple possible">
+                                <mat-option>
+                                    <ngx-mat-select-search [formControl]="agenceSearchCtrl" placeholderLabel="Rechercher un client..." noEntriesFoundLabel="Aucun client trouvé"></ngx-mat-select-search>
+                                </mat-option>
+                                <mat-option *ngFor="let agency of filteredAgencies" [value]="agency">
+                                    {{ agency }}
+                                </mat-option>
+                            </mat-select>
+                        </mat-form-field>
+                    </div>
+                    <div class="filter-group">
+                        <mat-form-field appearance="fill" class="filter-select">
+                            <mat-label>Service</mat-label>
+                            <mat-select #serviceSelectModal [(ngModel)]="selectedService" multiple (selectionChange)="onFilterChange()" placeholder="Sélection multiple possible">
+                                <mat-option>
+                                    <ngx-mat-select-search [formControl]="serviceSearchCtrl" placeholderLabel="Rechercher un service..." noEntriesFoundLabel="Aucun service trouvé"></ngx-mat-select-search>
+                                </mat-option>
+                                <mat-option *ngFor="let service of filteredServices" [value]="service">
+                                    {{ service }}
+                                </mat-option>
+                            </mat-select>
+                        </mat-form-field>
+                    </div>
+                    <div class="filter-group">
+                        <mat-form-field appearance="fill" class="filter-select">
+                            <mat-label>Pays</mat-label>
+                            <mat-select #countrySelectModal [(ngModel)]="selectedCountry" multiple (selectionChange)="onFilterChange()" placeholder="Sélection multiple possible">
+                                <mat-option>
+                                    <ngx-mat-select-search [formControl]="paysSearchCtrl" placeholderLabel="Rechercher un pays..." noEntriesFoundLabel="Aucun pays trouvé"></ngx-mat-select-search>
+                                </mat-option>
+                                <mat-option *ngFor="let country of filteredCountries" [value]="country">
+                                    {{ country }}
+                                </mat-option>
+                            </mat-select>
+                        </mat-form-field>
+                    </div>
+                    <div class="filter-group">
+                        <mat-form-field appearance="fill" class="filter-select">
+                            <mat-label>Période</mat-label>
+                            <mat-select [(ngModel)]="selectedTimeFilter" (selectionChange)="onTimeFilterChange()">
+                                <mat-option *ngFor="let timeFilter of filterOptions?.timeFilters" [value]="timeFilter">
+                                    {{ timeFilter }}
+                                </mat-option>
+                            </mat-select>
+                        </mat-form-field>
+                    </div>
+                    <button type="button" (click)="resetFilters()" class="reset-btn-modal">
+                        <i class="fas fa-undo"></i> Réinitialiser
+                    </button>
+                </div>
+                <!-- Champs de dates personnalisées dans le modal -->
+                <div *ngIf="showCustomDateInputs" class="modal-custom-date-inputs">
+                    <div class="date-input-group">
+                        <label for="startDateModal">Date de début:</label>
+                        <input type="date" id="startDateModal" [(ngModel)]="startDate" (change)="onFilterChange()" class="date-input">
+                    </div>
+                    <div class="date-input-group">
+                        <label for="endDateModal">Date de fin:</label>
+                        <input type="date" id="endDateModal" [(ngModel)]="endDate" (change)="onFilterChange()" class="date-input">
+                    </div>
+                </div>
+            </div>
+            <div class="graph-modal-content">
+                <canvas *ngIf="selectedChartType === 'bar' && barChartData && barChartData.labels?.length" baseChart
+                    [data]="barChartData"
+                    [options]="barChartOptions"
+                    [type]="'bar'"
+                    [plugins]="[ChartDataLabels]"
+                    (chartClick)="onBarClick($event)">
+                </canvas>
+                <canvas *ngIf="selectedChartType === 'line' && lineChartData && lineChartData.labels?.length" baseChart
+                    [data]="lineChartData"
+                    [options]="lineChartOptions"
+                    [type]="'line'">
+                </canvas>
+                <div *ngIf="(!barChartData || !barChartData.labels?.length) && (!lineChartData || !lineChartData.labels?.length)" class="no-data-modal">
+                    Aucune donnée à afficher
                 </div>
             </div>
         </div>

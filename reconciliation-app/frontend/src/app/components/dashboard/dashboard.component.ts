@@ -60,6 +60,9 @@ export class DashboardComponent implements OnInit, OnDestroy {
     // Affichage section du bas (Transactions créées par service)
     showBottomSection: boolean = false;
 
+    // Modal pour afficher les graphiques en plein écran
+    showGraphModal: boolean = false;
+
     // Filtres
     selectedAgency: string[] = [];
     selectedService: string[] = [];
@@ -150,6 +153,18 @@ export class DashboardComponent implements OnInit, OnDestroy {
         legend: { display: true, position: 'top' },
         title: { display: true, text: '' },
         datalabels: { display: false } // Empêche l'affichage des valeurs sur les courbes
+      },
+      elements: {
+        line: {
+          tension: 0.4, // Lignes plus fluides
+          borderJoinStyle: 'round',
+          spanGaps: true // Relie tous les points même avec des données manquantes
+        },
+        point: {
+          radius: 4,
+          hoverRadius: 6,
+          hoverBorderWidth: 2
+        }
       },
       scales: {
         y: {
@@ -302,7 +317,8 @@ export class DashboardComponent implements OnInit, OnDestroy {
             borderColor: color,
             backgroundColor: color + '33', // couleur semi-transparente
             fill: true,
-            tension: 0.3,
+            tension: 0.4,
+            spanGaps: true, // Relie tous les points même avec des données manquantes
             pointRadius: 4,
             pointBackgroundColor: color,
             pointBorderColor: color,
@@ -378,7 +394,8 @@ export class DashboardComponent implements OnInit, OnDestroy {
             borderColor: color,
             backgroundColor: color + '33',
             fill: true,
-            tension: 0.3,
+            tension: 0.4,
+            spanGaps: true, // Relie tous les points même avec des données manquantes
             pointRadius: 4,
             pointBackgroundColor: color,
             pointBorderColor: color,
@@ -445,7 +462,8 @@ export class DashboardComponent implements OnInit, OnDestroy {
             borderColor: color,
             backgroundColor: color + '33',
             fill: true,
-            tension: 0.3,
+            tension: 0.4,
+            spanGaps: true, // Relie tous les points même avec des données manquantes
             pointRadius: 4,
             pointBackgroundColor: color,
             pointBorderColor: color,
@@ -1893,5 +1911,14 @@ export class DashboardComponent implements OnInit, OnDestroy {
         'HT': 'Haïti',
       };
       return countryNames[countryCode?.toUpperCase()] || countryCode;
+    }
+
+    // Méthodes pour gérer le modal des graphiques
+    openGraphModal(): void {
+        this.showGraphModal = true;
+    }
+
+    closeGraphModal(): void {
+        this.showGraphModal = false;
     }
 } 
