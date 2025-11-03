@@ -16,6 +16,8 @@ import { MatSelectModule } from '@angular/material/select';
 import { MatOptionModule } from '@angular/material/core';
 import { MatDatepickerModule } from '@angular/material/datepicker';
 import { MatNativeDateModule } from '@angular/material/core';
+import { MatTooltipModule } from '@angular/material/tooltip';
+import { MatCheckboxModule } from '@angular/material/checkbox';
 import { NgChartsModule } from 'ng2-charts';
 import { BrowserAnimationsModule } from '@angular/platform-browser/animations';
 import { NgxMatSelectSearchModule } from 'ngx-mat-select-search';
@@ -138,6 +140,8 @@ import { UserLogComponent } from './components/user-log/user-log.component';
         MatOptionModule,
         MatDatepickerModule,
         MatNativeDateModule,
+        MatTooltipModule,
+        MatCheckboxModule,
         NgxMatSelectSearchModule,
         ColumnSelectionComponent,
         AgencySummaryComponent,

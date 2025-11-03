@@ -57,7 +57,7 @@ export class UsersComponent implements OnInit {
       const matchesSearch = !this.searchTerm || 
         user.username.toLowerCase().includes(this.searchTerm.toLowerCase());
       const matchesProfil = !this.selectedProfilFilter || 
-        (user.profil && user.profil.id === this.selectedProfilFilter);
+        (user.profil && user.profil.id === Number(this.selectedProfilFilter));
       return matchesSearch && matchesProfil;
     });
   }

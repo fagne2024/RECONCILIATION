@@ -283,11 +283,11 @@ export class RankingComponent implements OnInit {
    */
   getAgencyRankingTitle(): string {
     if (this.agencyRankingType === 'fees') {
-      return 'Classement des Agences par Revenu';
+      return 'Classement des Clients par Revenu';
     } else if (this.agencyRankingType === 'volume') {
-      return 'Classement des Agences par Volume';
+      return 'Classement des Clients par Volume';
     } else {
-      return 'Classement des Agences par Transactions';
+      return 'Classement des Clients par Transactions';
     }
   }
 

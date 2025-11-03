@@ -851,6 +851,16 @@ export class OperationsComponent implements OnInit, OnDestroy, AfterViewInit {
                 this.addFormServiceList = services; // Initialiser aussi pour le formulaire d'ajout
                 this.filteredAddFormServiceList = services.slice();
                 this.filteredEditFormServiceList = services.slice();
+                // Ne pas initialiser filteredServiceList ici car elle sera gérée par updateFilteredLists()
+                // On initialise seulement si vide pour éviter un bug visuel au démarrage
+                if (!this.filteredServiceList || this.filteredServiceList.length === 0) {
+                    this.filteredServiceList = services.slice();
+                }
+                
+                // Mettre à jour les listes filtrées avec cloisonnement
+                setTimeout(() => {
+                    this.updateFilteredLists();
+                }, 100);
             },
             error: (err) => {
                 console.error('Erreur lors du chargement des services:', err);
@@ -858,6 +868,9 @@ export class OperationsComponent implements OnInit, OnDestroy, AfterViewInit {
                 this.addFormServiceList = [];
                 this.filteredAddFormServiceList = [];
                 this.filteredEditFormServiceList = [];
+                if (!this.filteredServiceList || this.filteredServiceList.length === 0) {
+                    this.filteredServiceList = [];
+                }
             }
         });
     }

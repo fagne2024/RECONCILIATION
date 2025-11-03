@@ -1,7 +1,12 @@
 <div class="login-container">
+  <div class="background-particles">
+    <div class="particle" *ngFor="let i of particles" [attr.data-index]="i"></div>
+  </div>
   <form (ngSubmit)="onSubmit()" [formGroup]="loginForm" class="login-form">
     <div class="logo-section">
-      <i class="fas fa-sync-alt logo-icon"></i>
+      <div class="logo-icon-wrapper">
+        <i class="fas fa-sync-alt logo-icon"></i>
+      </div>
       <h2>Connexion</h2>
       <p class="subtitle">Système de Réconciliation</p>
     </div>
@@ -14,9 +19,35 @@
     
     <mat-form-field appearance="outline" class="login-field">
       <mat-label>Mot de passe</mat-label>
-      <input matInput type="password" formControlName="password" autocomplete="current-password" required>
-      <mat-icon matSuffix>lock</mat-icon>
+      <input 
+        matInput 
+        [type]="hidePassword ? 'password' : 'text'" 
+        formControlName="password" 
+        autocomplete="current-password" 
+        required>
+      <button 
+        matSuffix 
+        mat-icon-button 
+        type="button"
+        (click)="togglePasswordVisibility()"
+        aria-label="Afficher/Masquer le mot de passe"
+        class="password-toggle">
+        <mat-icon>{{ hidePassword ? 'visibility_off' : 'visibility' }}</mat-icon>
+      </button>
     </mat-form-field>
+    
+    <div class="login-options">
+      <div class="checkbox-group">
+        <mat-checkbox formControlName="rememberMe" class="remember-me">
+          Mémoriser
+        </mat-checkbox>
+        <mat-checkbox formControlName="additionalOption" class="additional-checkbox">
+        </mat-checkbox>
+      </div>
+      <a href="#" class="forgot-password" (click)="$event.preventDefault(); onForgotPassword()">
+        Mot de passe oublié ?
+      </a>
+    </div>
     
     <button mat-raised-button color="primary" type="submit" [disabled]="loginForm.invalid || loading" class="login-button">
       <mat-icon *ngIf="!loading">login</mat-icon>
@@ -24,22 +55,9 @@
       {{ loading ? 'Connexion...' : 'Se connecter' }}
     </button>
     
-    <div class="login-actions">
-      <button type="button" mat-button color="accent" (click)="resetToDefault()" class="reset-button">
-        <mat-icon>refresh</mat-icon>
-        Utiliser Admin
-      </button>
-    </div>
-    
     <div *ngIf="error" class="login-error">
       <mat-icon>error</mat-icon>
       {{ error }}
-    </div>
-    
-    <div class="login-info" *ngIf="adminExists">
-      <p><strong>Compte par défaut :</strong></p>
-      <p>Utilisateur : <code>admin</code></p>
-      <p>Mot de passe : <code>admin</code></p>
     </div>
     
     <div class="login-warning" *ngIf="!adminExists">

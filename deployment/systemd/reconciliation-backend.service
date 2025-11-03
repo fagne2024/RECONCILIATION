@@ -1,0 +1,22 @@
+ [Unit]
+ Description=Reconciliation Backend (Spring Boot)
+ After=network.target
+
+ [Service]
+ User=www-data
+ WorkingDirectory=/opt/reconciliation/backend
+ Environment=SPRING_PROFILES_ACTIVE=prod
+ Environment=SPRING_DATASOURCE_URL=jdbc:mysql://127.0.0.1:3306/reconciliation?useSSL=false&serverTimezone=UTC
+ Environment=SPRING_DATASOURCE_USERNAME=reco
+ Environment=SPRING_DATASOURCE_PASSWORD=CHANGER_CE_MOT_DE_PASSE
+ Environment=APP_WATCH_FOLDER=/opt/reconciliation/watch-folder
+ ExecStart=/usr/bin/java -Xms512m -Xmx2g -jar /opt/reconciliation/backend/app.jar
+ SuccessExitStatus=143
+ Restart=always
+ RestartSec=5
+ StandardOutput=append:/opt/reconciliation/logs/backend.out.log
+ StandardError=append:/opt/reconciliation/logs/backend.err.log
+
+ [Install]
+ WantedBy=multi-user.target
+

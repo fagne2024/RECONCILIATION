@@ -1,0 +1,64 @@
+ apiVersion: apps/v1
+ kind: Deployment
+ metadata:
+   name: reconciliation-backend
+   labels:
+     app: reconciliation-backend
+ spec:
+   replicas: 2
+   selector:
+     matchLabels:
+       app: reconciliation-backend
+   template:
+     metadata:
+       labels:
+         app: reconciliation-backend
+     spec:
+       containers:
+         - name: backend
+           image: your-registry/reconciliation-backend:prod
+           imagePullPolicy: IfNotPresent
+           ports:
+             - containerPort: 8080
+           env:
+             - name: SPRING_PROFILES_ACTIVE
+               value: prod
+             - name: SPRING_DATASOURCE_URL
+               value: jdbc:mysql://reconciliation-mysql:3306/reconciliation?useSSL=false&serverTimezone=UTC
+             - name: SPRING_DATASOURCE_USERNAME
+               valueFrom:
+                 secretKeyRef: { name: reconciliation-secrets, key: db_user }
+             - name: SPRING_DATASOURCE_PASSWORD
+               valueFrom:
+                 secretKeyRef: { name: reconciliation-secrets, key: db_password }
+             - name: APP_WATCH_FOLDER
+               value: /data/watch-folder
+           volumeMounts:
+             - name: watch-folder
+               mountPath: /data/watch-folder
+           readinessProbe:
+             httpGet: { path: /actuator/health/readiness, port: 8080 }
+             initialDelaySeconds: 30
+             periodSeconds: 10
+           livenessProbe:
+             httpGet: { path: /actuator/health/liveness, port: 8080 }
+             initialDelaySeconds: 60
+             periodSeconds: 15
+       volumes:
+         - name: watch-folder
+           persistentVolumeClaim:
+             claimName: watch-folder-pvc
+ ---
+ apiVersion: v1
+ kind: Service
+ metadata:
+   name: reconciliation-backend
+ spec:
+   type: ClusterIP
+   selector:
+     app: reconciliation-backend
+   ports:
+     - name: http
+       port: 8080
+       targetPort: 8080
+

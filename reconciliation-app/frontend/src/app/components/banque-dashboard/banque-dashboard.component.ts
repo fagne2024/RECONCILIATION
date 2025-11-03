@@ -25,8 +25,8 @@ export class BanqueDashboardComponent implements OnInit {
   metrics: CountryMetrics[] = [];
   filtered: CountryMetrics[] = [];
   selectedCountry = '';
-  startDate: string = '';
-  endDate: string = '';
+  startDate: string | null = null;
+  endDate: string | null = null;
   totalOperations = 0;
   totalReleves = 0;
 
@@ -238,8 +238,9 @@ export class BanqueDashboardComponent implements OnInit {
   }
 
   resetDates() {
-    this.startDate = '';
-    this.endDate = '';
+    this.selectedCountry = '';
+    this.startDate = null;
+    this.endDate = null;
     this.loadRealData();
   }
 

@@ -14,6 +14,8 @@ export class LoginComponent implements OnInit {
   loading = false;
   error: string | null = null;
   adminExists = true; // Par défaut, on suppose que l'admin existe
+  hidePassword = true; // Pour toggle afficher/masquer mot de passe
+  particles = Array(10).fill(0).map((_, i) => i + 1); // Pour les particules animées en arrière-plan
 
   constructor(
     private fb: FormBuilder,
@@ -22,8 +24,10 @@ export class LoginComponent implements OnInit {
     private appState: AppStateService
   ) {
     this.loginForm = this.fb.group({
-      username: ['admin', Validators.required],
-      password: ['admin', Validators.required]
+      username: ['', Validators.required],
+      password: ['', Validators.required],
+      rememberMe: [true], // Option mémoriser activée par défaut
+      additionalOption: [false] // Option supplémentaire
     });
   }
 
@@ -83,11 +87,12 @@ export class LoginComponent implements OnInit {
     });
   }
 
-  resetToDefault() {
-    this.loginForm.patchValue({
-      username: 'admin',
-      password: 'admin'
-    });
-    this.error = null;
+  togglePasswordVisibility() {
+    this.hidePassword = !this.hidePassword;
+  }
+
+  onForgotPassword() {
+    // TODO: Implémenter la fonctionnalité de mot de passe oublié
+    alert('Fonctionnalité de réinitialisation de mot de passe à implémenter');
   }
 }

@@ -15,7 +15,7 @@ public class UserEntity {
     @Column(nullable = false)
     private String password;
 
-    @ManyToOne
+    @ManyToOne(fetch = FetchType.EAGER)
     @JoinColumn(name = "profil_id")
     private ProfilEntity profil;
 

@@ -1,0 +1,39 @@
+ apiVersion: apps/v1
+ kind: Deployment
+ metadata:
+   name: reconciliation-frontend
+   labels:
+     app: reconciliation-frontend
+ spec:
+   replicas: 2
+   selector:
+     matchLabels:
+       app: reconciliation-frontend
+   template:
+     metadata:
+       labels:
+         app: reconciliation-frontend
+     spec:
+       containers:
+         - name: frontend
+           image: your-registry/reconciliation-frontend:prod
+           imagePullPolicy: IfNotPresent
+           ports:
+             - containerPort: 80
+           env:
+             - name: API_BASE_URL
+               value: http://reconciliation-backend:8080
+ ---
+ apiVersion: v1
+ kind: Service
+ metadata:
+   name: reconciliation-frontend
+ spec:
+   type: ClusterIP
+   selector:
+     app: reconciliation-frontend
+   ports:
+     - name: http
+       port: 80
+       targetPort: 80
+

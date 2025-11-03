@@ -1,0 +1,53 @@
+ version: "3.9"
+ services:
+   db:
+     image: mysql:8.0
+     environment:
+       MYSQL_DATABASE: reconciliation
+       MYSQL_USER: reco
+       MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+     command:
+       - --default-authentication-plugin=mysql_native_password
+       - --character-set-server=utf8mb4
+       - --collation-server=utf8mb4_0900_ai_ci
+     volumes:
+       - db_data:/var/lib/mysql
+     healthcheck:
+       test: ["CMD-SHELL", "mysqladmin ping -h localhost -p${MYSQL_ROOT_PASSWORD} --silent"]
+       interval: 10s
+       retries: 10
+
+  backend:
+    build:
+      context: ..
+      dockerfile: reconciliation-app/backend/Dockerfile
+     environment:
+       SPRING_PROFILES_ACTIVE: prod
+       SPRING_DATASOURCE_URL: jdbc:mysql://db:3306/reconciliation?useSSL=false&serverTimezone=UTC
+       SPRING_DATASOURCE_USERNAME: reco
+       SPRING_DATASOURCE_PASSWORD: ${MYSQL_PASSWORD}
+       APP_WATCH_FOLDER: /data/watch-folder
+     depends_on:
+       db:
+         condition: service_healthy
+     volumes:
+       - watch_data:/data/watch-folder
+     ports:
+       - "8080:8080"
+
+  frontend:
+    build:
+      context: ..
+      dockerfile: reconciliation-app/frontend/Dockerfile
+    environment:
+      API_BASE_URL: http://backend:8080
+     depends_on:
+       - backend
+     ports:
+       - "80:80"
+
+ volumes:
+   db_data:
+   watch_data:
+

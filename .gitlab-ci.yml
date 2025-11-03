@@ -1,0 +1,73 @@
+ stages:
+   - build
+   - test
+   - docker
+   - deploy
+
+ variables:
+   MAVEN_CLI_OPTS: "-B -DskipTests=false"
+   DOCKER_DRIVER: overlay2
+   DOCKER_TLS_CERTDIR: ""
+
+ cache:
+   paths:
+     - .m2/repository
+     - reconciliation-app/frontend/node_modules/
+
+ build-backend:
+   stage: build
+   image: maven:3.9-eclipse-temurin-11
+   script:
+     - cd reconciliation-app/backend
+     - mvn $MAVEN_CLI_OPTS clean package
+   artifacts:
+     paths:
+       - reconciliation-app/backend/target/
+
+ build-frontend:
+   stage: build
+   image: node:16
+   script:
+     - cd reconciliation-app/frontend
+     - npm ci
+     - npm run build -- --configuration production
+   artifacts:
+     paths:
+       - reconciliation-app/frontend/dist/
+
+ docker-build-push:
+   stage: docker
+   image: docker:24
+   services:
+     - docker:24-dind
+   script:
+     - docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" $CI_REGISTRY
+     - docker build -t $CI_REGISTRY_IMAGE/reconciliation-backend:$CI_COMMIT_SHA -f reconciliation-app/backend/Dockerfile .
+     - docker build -t $CI_REGISTRY_IMAGE/reconciliation-frontend:$CI_COMMIT_SHA -f reconciliation-app/frontend/Dockerfile .
+     - docker push $CI_REGISTRY_IMAGE/reconciliation-backend:$CI_COMMIT_SHA
+     - docker push $CI_REGISTRY_IMAGE/reconciliation-frontend:$CI_COMMIT_SHA
+     - docker tag $CI_REGISTRY_IMAGE/reconciliation-backend:$CI_COMMIT_SHA $CI_REGISTRY_IMAGE/reconciliation-backend:latest
+     - docker tag $CI_REGISTRY_IMAGE/reconciliation-frontend:$CI_COMMIT_SHA $CI_REGISTRY_IMAGE/reconciliation-frontend:latest
+     - docker push $CI_REGISTRY_IMAGE/reconciliation-backend:latest
+     - docker push $CI_REGISTRY_IMAGE/reconciliation-frontend:latest
+   rules:
+     - if: '$CI_COMMIT_BRANCH == "main"'
+
+ deploy-k8s:
+   stage: deploy
+   image: bitnami/kubectl:1.28
+   script:
+     - echo "$KUBECONFIG_CONTENT" > kubeconfig
+     - export KUBECONFIG=$PWD/kubeconfig
+     - sed -i "s|your-registry/reconciliation-backend:prod|$CI_REGISTRY_IMAGE/reconciliation-backend:$CI_COMMIT_SHA|g" k8s/backend-deployment.yaml
+     - sed -i "s|your-registry/reconciliation-frontend:prod|$CI_REGISTRY_IMAGE/reconciliation-frontend:$CI_COMMIT_SHA|g" k8s/frontend-deployment.yaml
+     - kubectl apply -f k8s/pvc-watch-folder.yaml
+     - kubectl apply -f k8s/backend-deployment.yaml
+     - kubectl apply -f k8s/frontend-deployment.yaml
+     - kubectl apply -f k8s/ingress.yaml
+   environment:
+     name: production
+     url: https://reco.example.com
+   rules:
+     - if: '$CI_COMMIT_BRANCH == "main"'
+
