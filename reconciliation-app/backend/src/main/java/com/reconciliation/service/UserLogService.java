@@ -113,24 +113,36 @@ public class UserLogService {
             logs = getAllLogs();
         }
         
-        // Filtrer par username si fourni
+        // Filtrer par username si fourni (contient, insensible à la casse)
         if (username != null && !username.isEmpty()) {
+            final String usernameQuery = username.toLowerCase();
             logs = logs.stream()
-                    .filter(log -> log.getUsername().equalsIgnoreCase(username))
+                    .filter(log -> {
+                        String value = log.getUsername();
+                        return value != null && value.toLowerCase().contains(usernameQuery);
+                    })
                     .toList();
         }
         
-        // Filtrer par module si fourni
+        // Filtrer par module si fourni (contient, insensible à la casse)
         if (module != null && !module.isEmpty()) {
+            final String moduleQuery = module.toLowerCase();
             logs = logs.stream()
-                    .filter(log -> log.getModule().equalsIgnoreCase(module))
+                    .filter(log -> {
+                        String value = log.getModule();
+                        return value != null && value.toLowerCase().contains(moduleQuery);
+                    })
                     .toList();
         }
         
-        // Filtrer par permission si fourni
+        // Filtrer par permission si fourni (contient, insensible à la casse)
         if (permission != null && !permission.isEmpty()) {
+            final String permissionQuery = permission.toLowerCase();
             logs = logs.stream()
-                    .filter(log -> log.getPermission().equalsIgnoreCase(permission))
+                    .filter(log -> {
+                        String value = log.getPermission();
+                        return value != null && value.toLowerCase().contains(permissionQuery);
+                    })
                     .toList();
         }
         

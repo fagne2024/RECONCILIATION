@@ -2349,18 +2349,20 @@ export class BanqueComponent implements OnInit {
         }));
         this.filteredOperations = [...this.operations];
         
-        // Pays pour réconciliation basés sur les opérations (noms complets uniquement, pas de codes)
+        // Pays pour réconciliation basés sur les opérations (forcer libellés complets, pas de codes)
         const namesSet = new Set<string>();
         (this.operations || []).forEach(o => {
-          const paysName = (o.pays && o.pays.trim())
-            ? o.pays.trim()
+          const paysName = (o.pays && String(o.pays).trim())
+            ? this.resolveDisplayCountryName(String(o.pays))
             : (() => {
                 const code = (o as any).codePays ? String((o as any).codePays).toUpperCase().trim() : '';
                 return code && this.paysCodeToName[code] ? this.paysCodeToName[code] : '';
               })();
           if (paysName) namesSet.add(paysName);
         });
-        this.reconPaysOptions = Array.from(namesSet).sort((a, b) => a.localeCompare(b));
+        this.reconPaysOptions = Array.from(namesSet)
+          .map(n => this.resolveDisplayCountryName(n))
+          .sort((a, b) => a.localeCompare(b));
         if (!this.reconPays && this.reconPaysOptions.length === 1) {
           this.reconPays = this.reconPaysOptions[0];
         }

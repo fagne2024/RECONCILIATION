@@ -2,6 +2,7 @@ import { Component, OnInit } from '@angular/core';
 import { FormBuilder, FormGroup } from '@angular/forms';
 import { UserLog, UserLogFilter } from '../../models/user-log.model';
 import { UserLogService } from '../../services/user-log.service';
+import { debounceTime, distinctUntilChanged } from 'rxjs/operators';
 
 @Component({
   selector: 'app-user-log',
@@ -37,6 +38,17 @@ export class UserLogComponent implements OnInit {
 
   ngOnInit(): void {
     this.loadLogs();
+
+    // Recherche en direct dès que l'utilisateur tape (debounce pour éviter le spam réseau)
+    this.filterForm.valueChanges
+      .pipe(
+        debounceTime(300),
+        distinctUntilChanged((prev, curr) => JSON.stringify(prev) === JSON.stringify(curr))
+      )
+      .subscribe(() => {
+        this.currentPage = 1;
+        this.loadLogs();
+      });
   }
 
   loadLogs(): void {
