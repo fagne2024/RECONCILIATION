@@ -201,4 +201,41 @@ public class ProfilController {
         
         return diagnostic;
     }
+
+    /**
+     * Analyse approfondie de toutes les actions disponibles par module
+     * Retourne toutes les actions spécifiques de chaque module détectées dans les contrôleurs
+     */
+    @GetMapping("/actions/analyse")
+    public ResponseEntity<Map<String, Object>> analyzeAllModuleActions() {
+        try {
+            System.out.println("🔍 Analyse approfondie de toutes les actions par module...");
+            Map<String, Object> result = permissionGeneratorService.analyzeAllModuleActions();
+            System.out.println("✅ Analyse terminée: " + result.get("totalModules") + " modules, " + result.get("totalActions") + " actions");
+            return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            System.err.println("❌ Erreur lors de l'analyse des actions: " + e.getMessage());
+            e.printStackTrace();
+            Map<String, String> errorResponse = new HashMap<>();
+            errorResponse.put("error", "Erreur lors de l'analyse des actions: " + e.getMessage());
+            return ResponseEntity.internalServerError().body(new HashMap<>(errorResponse));
+        }
+    }
+
+    /**
+     * Retourne toutes les actions disponibles pour un module spécifique
+     */
+    @GetMapping("/actions/module/{moduleName}")
+    public ResponseEntity<List<Map<String, Object>>> getActionsForModule(@PathVariable String moduleName) {
+        try {
+            System.out.println("🔍 Récupération des actions pour le module: " + moduleName);
+            List<Map<String, Object>> actions = permissionGeneratorService.getActionsForModule(moduleName);
+            System.out.println("✅ " + actions.size() + " actions trouvées pour le module " + moduleName);
+            return ResponseEntity.ok(actions);
+        } catch (Exception e) {
+            System.err.println("❌ Erreur lors de la récupération des actions: " + e.getMessage());
+            e.printStackTrace();
+            return ResponseEntity.internalServerError().build();
+        }
+    }
 } 

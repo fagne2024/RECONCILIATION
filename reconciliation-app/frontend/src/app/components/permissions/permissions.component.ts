@@ -3,6 +3,7 @@ import { FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { PermissionService } from '../../services/permission.service';
 import { Permission } from '../../models/permission.model';
 import { HttpClient } from '@angular/common/http';
+import { PopupService } from '../../services/popup.service';
 
 @Component({
   selector: 'app-permissions',
@@ -24,6 +25,14 @@ export class PermissionsComponent implements OnInit {
   editForm: FormGroup;
   generationResult: any = null;
   searchTerm = '';
+  
+  // Propriétés pour l'analyse des actions
+  showActionsAnalysis = false;
+  isAnalyzing = false;
+  actionsAnalysis: any = null;
+  selectedModule: string | null = null;
+  moduleActions: any[] = [];
+  isLoadingModuleActions = false;
 
   // Propriétés pour la pagination
   currentPage = 1;
@@ -33,7 +42,8 @@ export class PermissionsComponent implements OnInit {
   constructor(
     private permissionService: PermissionService,
     private formBuilder: FormBuilder,
-    private http: HttpClient
+    private http: HttpClient,
+    private popupService: PopupService
   ) {
     this.addForm = this.formBuilder.group({
       nom: ['', [Validators.required, Validators.minLength(2)]]
@@ -59,6 +69,28 @@ export class PermissionsComponent implements OnInit {
       error: (error) => {
         console.error('Erreur lors du chargement des permissions:', error);
         this.isLoading = false;
+        
+        // Gestion d'erreur plus explicite
+        if (error.status === 0) {
+          this.popupService.showError(
+            'Impossible de se connecter au serveur backend.\n\n' +
+            'Veuillez vérifier que le backend est démarré sur le port 8080.\n\n' +
+            'Pour démarrer le backend:\n' +
+            'cd reconciliation-app/backend\n' +
+            'mvn spring-boot:run',
+            'Erreur de connexion'
+          );
+        } else if (error.status === 404) {
+          this.popupService.showWarning(
+            'Endpoint non trouvé. Vérifiez que le backend est à jour.',
+            'Endpoint non trouvé'
+          );
+        } else {
+          this.popupService.showError(
+            `Erreur lors du chargement des permissions: ${error.message || 'Erreur inconnue'}`,
+            'Erreur'
+          );
+        }
       }
     });
   }
@@ -145,6 +177,10 @@ export class PermissionsComponent implements OnInit {
       this.permissionService.createPermission(permissionData).subscribe({
         next: (permission) => {
           console.log('✅ Permission créée avec succès:', permission);
+          this.popupService.showSuccess(
+            `La permission "${permission.nom}" a été créée avec succès.`,
+            'Permission créée'
+          );
           this.addForm.reset();
           this.showAddForm = false;
           this.isAdding = false;
@@ -154,7 +190,10 @@ export class PermissionsComponent implements OnInit {
         error: (error) => {
           console.error('❌ Erreur lors de la création de la permission:', error);
           this.isAdding = false;
-          alert('Erreur lors de la création de la permission. Veuillez réessayer.');
+          this.popupService.showError(
+            'Erreur lors de la création de la permission. Veuillez réessayer.',
+            'Erreur de création'
+          );
         }
       });
     }
@@ -185,6 +224,10 @@ export class PermissionsComponent implements OnInit {
       this.permissionService.updatePermission(permissionData.id!, permissionData).subscribe({
         next: (permission) => {
           console.log('✅ Permission mise à jour avec succès:', permission);
+          this.popupService.showSuccess(
+            `La permission "${permission.nom}" a été mise à jour avec succès.`,
+            'Permission mise à jour'
+          );
           this.editForm.reset();
           this.showEditForm = false;
           this.isEditing = false;
@@ -195,7 +238,10 @@ export class PermissionsComponent implements OnInit {
         error: (error) => {
           console.error('❌ Erreur lors de la mise à jour de la permission:', error);
           this.isEditing = false;
-          alert('Erreur lors de la mise à jour de la permission. Veuillez réessayer.');
+          this.popupService.showError(
+            'Erreur lors de la mise à jour de la permission. Veuillez réessayer.',
+            'Erreur de mise à jour'
+          );
         }
       });
     }
@@ -207,13 +253,20 @@ export class PermissionsComponent implements OnInit {
     this.editingPermission = null;
   }
 
-  deletePermission(permission: Permission): void {
+  async deletePermission(permission: Permission): Promise<void> {
     if (permission.id) {
-      const confirmed = confirm(`Êtes-vous sûr de vouloir supprimer la permission "${permission.nom}" ?\n\nCette action est irréversible.`);
+      const confirmed = await this.popupService.showConfirm(
+        `Êtes-vous sûr de vouloir supprimer la permission "${permission.nom}" ?\n\nCette action est irréversible.`,
+        'Confirmation de suppression'
+      );
       if (confirmed) {
         this.permissionService.deletePermission(permission.id).subscribe({
           next: () => {
             console.log('✅ Permission supprimée avec succès');
+            this.popupService.showSuccess(
+              `La permission "${permission.nom}" a été supprimée avec succès.`,
+              'Permission supprimée'
+            );
             this.loadPermissions();
             this.applyFilters();
           },
@@ -248,20 +301,23 @@ export class PermissionsComponent implements OnInit {
               errorMessage = error.message;
             }
             
-            alert(errorMessage);
+            this.popupService.showError(errorMessage, 'Erreur de suppression');
           }
         });
       }
     }
   }
 
-  generatePermissions(): void {
-    const confirmed = confirm('Voulez-vous générer automatiquement les permissions à partir des contrôleurs de l\'application ?\n\nCette opération va analyser tous les endpoints et créer les permissions correspondantes.');
+  async generatePermissions(): Promise<void> {
+    const confirmed = await this.popupService.showConfirm(
+      'Voulez-vous générer automatiquement les permissions à partir des contrôleurs de l\'application ?\n\nCette opération va analyser tous les endpoints et créer les permissions correspondantes.',
+      'Génération automatique'
+    );
     if (confirmed) {
       this.isGenerating = true;
       this.generationResult = null;
       
-      this.http.post<any>('http://localhost:8080/api/profils/permissions/generate', {}).subscribe({
+      this.permissionService.generatePermissions().subscribe({
         next: (result) => {
           console.log('✅ Génération des permissions terminée:', result);
           this.generationResult = result;
@@ -279,9 +335,92 @@ export class PermissionsComponent implements OnInit {
           } else if (error.error && typeof error.error === 'string') {
             errorMessage = error.error;
           }
-          alert(errorMessage);
+          this.popupService.showError(errorMessage, 'Erreur de génération');
         }
       });
     }
+  }
+
+  /**
+   * Analyse toutes les actions disponibles par module
+   */
+  analyzeModuleActions(): void {
+    this.isAnalyzing = true;
+    this.actionsAnalysis = null;
+    this.showActionsAnalysis = true;
+    
+    this.permissionService.analyzeAllModuleActions().subscribe({
+      next: (result) => {
+        console.log('✅ Analyse des actions terminée:', result);
+        this.actionsAnalysis = result;
+        this.isAnalyzing = false;
+      },
+      error: (error) => {
+        console.error('❌ Erreur lors de l\'analyse des actions:', error);
+        this.isAnalyzing = false;
+        let errorMessage = 'Erreur lors de l\'analyse des actions. Veuillez réessayer.';
+        if (error.error && error.error.error) {
+          errorMessage = error.error.error;
+        } else if (error.error && typeof error.error === 'string') {
+          errorMessage = error.error;
+        }
+        this.popupService.showError(errorMessage, 'Erreur d\'analyse');
+      }
+    });
+  }
+
+  /**
+   * Charge les actions d'un module spécifique
+   */
+  loadModuleActions(moduleName: string): void {
+    this.selectedModule = moduleName;
+    this.isLoadingModuleActions = true;
+    this.moduleActions = [];
+    
+    this.permissionService.getActionsForModule(moduleName).subscribe({
+      next: (actions) => {
+        console.log(`✅ Actions chargées pour le module ${moduleName}:`, actions);
+        this.moduleActions = actions;
+        this.isLoadingModuleActions = false;
+      },
+      error: (error) => {
+        console.error(`❌ Erreur lors du chargement des actions pour ${moduleName}:`, error);
+        this.isLoadingModuleActions = false;
+        this.popupService.showError(
+          `Erreur lors du chargement des actions pour le module ${moduleName}`,
+          'Erreur de chargement'
+        );
+      }
+    });
+  }
+
+  /**
+   * Ferme l'analyse des actions
+   */
+  closeActionsAnalysis(): void {
+    this.showActionsAnalysis = false;
+    this.actionsAnalysis = null;
+    this.selectedModule = null;
+    this.moduleActions = [];
+  }
+
+  /**
+   * Retourne les modules disponibles dans l'analyse
+   */
+  getAvailableModules(): string[] {
+    if (!this.actionsAnalysis || !this.actionsAnalysis.modules) {
+      return [];
+    }
+    return Object.keys(this.actionsAnalysis.modules);
+  }
+
+  /**
+   * Retourne le nombre d'actions pour un module
+   */
+  getActionCountForModule(moduleName: string): number {
+    if (!this.actionsAnalysis || !this.actionsAnalysis.actionCounts) {
+      return 0;
+    }
+    return this.actionsAnalysis.actionCounts[moduleName] || 0;
   }
 } 

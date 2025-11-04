@@ -5,6 +5,13 @@
       <span class="permissions-count">{{ filteredPermissions.length }} permission(s)</span>
     </div>
     <div class="header-actions">
+      <button class="btn btn-info" (click)="analyzeModuleActions()" [disabled]="isAnalyzing">
+        <i class="fas fa-search"></i> 
+        <span *ngIf="!isAnalyzing">Analyser les actions</span>
+        <span *ngIf="isAnalyzing">
+          <i class="fas fa-spinner fa-spin"></i> Analyse en cours...
+        </span>
+      </button>
       <button class="btn btn-success" (click)="generatePermissions()" [disabled]="isGenerating">
         <i class="fas fa-magic"></i> 
         <span *ngIf="!isGenerating">Générer automatiquement</span>
@@ -216,6 +223,118 @@
           </div>
         </div>
       </form>
+    </div>
+  </div>
+
+  <!-- Modal d'analyse des actions -->
+  <div *ngIf="showActionsAnalysis" class="modal-overlay" (click)="closeActionsAnalysis()">
+    <div class="modal-container large-modal" (click)="$event.stopPropagation()">
+      <div class="modal-header">
+        <h3><i class="fas fa-search"></i> Analyse des Actions par Module</h3>
+        <button class="close-btn" (click)="closeActionsAnalysis()">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+      <div class="modal-body">
+        <div *ngIf="isAnalyzing" class="loading">
+          <i class="fas fa-spinner fa-spin"></i> Analyse en cours...
+        </div>
+
+        <div *ngIf="!isAnalyzing && actionsAnalysis" class="actions-analysis">
+          <div class="analysis-summary">
+            <div class="summary-card">
+              <i class="fas fa-layer-group"></i>
+              <div>
+                <strong>{{ actionsAnalysis.totalModules }}</strong>
+                <span>Modules</span>
+              </div>
+            </div>
+            <div class="summary-card">
+              <i class="fas fa-tasks"></i>
+              <div>
+                <strong>{{ actionsAnalysis.totalActions }}</strong>
+                <span>Actions totales</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="modules-list">
+            <h4><i class="fas fa-folder"></i> Modules disponibles</h4>
+            <div class="modules-grid">
+              <div 
+                *ngFor="let moduleName of getAvailableModules()" 
+                class="module-card"
+                [class.active]="selectedModule === moduleName"
+                (click)="loadModuleActions(moduleName)">
+                <div class="module-header">
+                  <i class="fas fa-folder"></i>
+                  <span class="module-name">{{ moduleName }}</span>
+                  <span class="action-count badge">{{ getActionCountForModule(moduleName) }} action(s)</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div *ngIf="selectedModule" class="module-actions-detail">
+            <h4>
+              <i class="fas fa-list"></i> Actions du module : {{ selectedModule }}
+              <button class="btn-close-detail" (click)="selectedModule = null; moduleActions = []">
+                <i class="fas fa-times"></i>
+              </button>
+            </h4>
+            
+            <div *ngIf="isLoadingModuleActions" class="loading">
+              <i class="fas fa-spinner fa-spin"></i> Chargement des actions...
+            </div>
+
+            <div *ngIf="!isLoadingModuleActions && moduleActions.length > 0" class="actions-table">
+              <table>
+                <thead>
+                  <tr>
+                    <th><i class="fas fa-tasks"></i> Action</th>
+                    <th><i class="fas fa-code"></i> Méthode HTTP</th>
+                    <th><i class="fas fa-link"></i> Chemin API</th>
+                    <th><i class="fas fa-file-code"></i> Contrôleur</th>
+                    <th><i class="fas fa-function"></i> Méthode</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr *ngFor="let action of moduleActions">
+                    <td>
+                      <span class="action-badge">{{ action.action }}</span>
+                    </td>
+                    <td>
+                      <span class="http-method" [class]="'method-' + action.httpMethod.toLowerCase()">
+                        {{ action.httpMethod }}
+                      </span>
+                    </td>
+                    <td>
+                      <code class="path-code">{{ action.path }}</code>
+                    </td>
+                    <td>{{ action.controller }}</td>
+                    <td><code>{{ action.method }}</code></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div *ngIf="!isLoadingModuleActions && moduleActions.length === 0" class="no-data">
+              <i class="fas fa-info-circle"></i>
+              <p>Aucune action trouvée pour ce module</p>
+            </div>
+          </div>
+
+          <div *ngIf="!isAnalyzing && !actionsAnalysis" class="no-data">
+            <i class="fas fa-info-circle"></i>
+            <p>Cliquez sur "Analyser les actions" pour commencer l'analyse</p>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" (click)="closeActionsAnalysis()">
+          Fermer
+        </button>
+      </div>
     </div>
   </div>
 </div> 

@@ -187,73 +187,245 @@ public class PermissionGeneratorService {
 
     /**
      * Détermine le type d'action basé sur le chemin et le nom de la méthode
+     * Cette méthode fait une analyse plus approfondie pour extraire toutes les actions spécifiques
      */
     private String determineActionType(String path, String methodName, String defaultAction) {
         String lowerPath = path.toLowerCase();
         String lowerMethodName = methodName.toLowerCase();
+        
+        // Construire le nom d'action spécifique basé sur le chemin et la méthode
+        StringBuilder actionBuilder = new StringBuilder();
 
-        // Actions spéciales
-        if (lowerPath.contains("upload") || lowerMethodName.contains("upload")) {
-            return "upload";
-        }
-        if (lowerPath.contains("download") || lowerPath.contains("template") || lowerPath.contains("export") || lowerMethodName.contains("download") || lowerMethodName.contains("export")) {
-            return "download";
-        }
-        if (lowerPath.contains("filter") || lowerPath.contains("search") || lowerMethodName.contains("filter") || lowerMethodName.contains("search")) {
-            return "filter";
-        }
-        if (lowerPath.contains("bulk") || lowerMethodName.contains("bulk")) {
-            return "bulk";
-        }
-        if (lowerPath.contains("statistiques") || lowerPath.contains("stats") || lowerMethodName.contains("stat")) {
-            return "statistiques";
-        }
-        if (lowerPath.contains("recent") || lowerMethodName.contains("recent")) {
-            return "lire_recent";
-        }
-        if (lowerPath.contains("mark-ok") || lowerMethodName.contains("mark")) {
-            return "marquer";
-        }
-        if (lowerPath.contains("reconcil") || lowerMethodName.contains("reconcil")) {
-            return "reconcilier";
-        }
-
-        // Actions spéciales supplémentaires
-        if (lowerPath.contains("import") || lowerMethodName.contains("import")) {
-            return "importer";
-        }
-        if (lowerPath.contains("export") || lowerMethodName.contains("export")) {
-            return "exporter";
-        }
-        if (lowerPath.contains("validate") || lowerMethodName.contains("validate")) {
-            return "valider";
-        }
-        if (lowerPath.contains("approve") || lowerMethodName.contains("approve")) {
-            return "approuver";
-        }
-        if (lowerPath.contains("reject") || lowerMethodName.contains("reject")) {
-            return "rejeter";
-        }
-        if (lowerPath.contains("reset") || lowerMethodName.contains("reset")) {
-            return "reinitialiser";
-        }
-        if (lowerPath.contains("annuler") || lowerMethodName.contains("annuler") || lowerMethodName.contains("cancel")) {
-            return "annuler";
-        }
-
-        // Actions standard basées sur le chemin
-        if (path.isEmpty() || path.equals("/")) {
-            if (defaultAction.equals("read")) {
-                return "lire";
-            } else if (defaultAction.equals("create")) {
-                return "creer";
+        // Analyser le chemin pour extraire les segments d'action
+        String[] pathSegments = lowerPath.split("/");
+        List<String> actionSegments = new ArrayList<>();
+        
+        // Extraire les segments significatifs du chemin
+        for (String segment : pathSegments) {
+            segment = segment.trim();
+            if (segment.isEmpty() || segment.matches("\\{[^}]+\\}") || segment.matches("\\d+")) {
+                continue; // Ignorer les paramètres et IDs numériques
+            }
+            
+            // Ajouter les segments significatifs
+            if (segment.length() > 0) {
+                actionSegments.add(segment);
             }
         }
-
+        
+        // Analyser les actions spécifiques dans le chemin
+        String specificAction = extractSpecificAction(lowerPath, lowerMethodName, defaultAction);
+        
+        // Si on a une action spécifique, l'utiliser
+        if (specificAction != null && !specificAction.isEmpty()) {
+            return specificAction;
+        }
+        
+        // Sinon, construire l'action à partir des segments
+        if (!actionSegments.isEmpty()) {
+            // Prendre le dernier segment significatif comme action spécifique
+            String lastSegment = actionSegments.get(actionSegments.size() - 1);
+            
+            // Combiner avec l'action de base
+            String baseAction = getBaseAction(defaultAction);
+            if (!lastSegment.equals(baseAction) && !lastSegment.equals("liste") && !lastSegment.equals("list")) {
+                return baseAction + "_" + lastSegment;
+            }
+        }
+        
         // Actions standard
+        return getBaseAction(defaultAction);
+    }
+    
+    /**
+     * Extrait une action spécifique basée sur des patterns connus
+     */
+    private String extractSpecificAction(String lowerPath, String lowerMethodName, String defaultAction) {
+        // Patterns d'upload/import
+        if (lowerPath.contains("upload") || lowerMethodName.contains("upload")) {
+            if (lowerPath.contains("operations")) {
+                return "importer_operations";
+            } else if (lowerPath.contains("operations-bancaires")) {
+                return "importer_operations_bancaires";
+            } else if (lowerPath.contains("reconciliation")) {
+                return "importer_fichier_reconciliation";
+            }
+            return "importer";
+        }
+        
+        // Patterns de template/download
+        if (lowerPath.contains("template") || lowerPath.contains("download")) {
+            if (lowerPath.contains("operations")) {
+                return "telecharger_template_operations";
+            } else if (lowerPath.contains("operations-bancaires")) {
+                return "telecharger_template_operations_bancaires";
+            }
+            return "telecharger_template";
+        }
+        
+        // Patterns de création spécifiques
+        if (lowerMethodName.contains("create") || lowerPath.contains("create") || defaultAction.equals("create")) {
+            if (lowerPath.contains("manual-from-form") || lowerMethodName.contains("form")) {
+                return "creer_operation_formulaire";
+            } else if (lowerPath.contains("manual-with-four-operations") || lowerMethodName.contains("four")) {
+                return "creer_operation_quatre_operations";
+            } else if (lowerPath.contains("operation") && !lowerPath.contains("operations")) {
+                return "creer_operation";
+            } else if (lowerPath.contains("operations-bancaires")) {
+                return "creer_operation_bancaire";
+            } else if (lowerPath.contains("compte")) {
+                return "creer_compte";
+            } else if (lowerPath.contains("profil")) {
+                return "creer_profil";
+            } else if (lowerPath.contains("module")) {
+                return "creer_module";
+            } else if (lowerPath.contains("permission")) {
+                return "creer_permission";
+            }
+        }
+        
+        // Patterns de modification spécifiques
+        if (lowerMethodName.contains("update") || lowerPath.contains("update") || defaultAction.equals("update")) {
+            if (lowerPath.contains("statut") || lowerMethodName.contains("statut")) {
+                if (lowerPath.contains("bulk")) {
+                    return "modifier_statut_bulk";
+                }
+                return "modifier_statut";
+            } else if (lowerPath.contains("recon-status") || lowerMethodName.contains("recon")) {
+                return "modifier_statut_reconciliation";
+            } else if (lowerPath.contains("validate") || lowerMethodName.contains("validate")) {
+                return "valider_operation";
+            } else if (lowerPath.contains("reject") || lowerMethodName.contains("reject")) {
+                return "rejeter_operation";
+            } else if (lowerPath.contains("cancel") || lowerMethodName.contains("cancel")) {
+                return "annuler_operation";
+            }
+        }
+        
+        // Patterns de réconciliation
+        if (lowerPath.contains("mark-ok")) {
+            if (lowerPath.contains("bulk")) {
+                return "marquer_ok_bulk";
+            } else if (lowerPath.contains("unmark")) {
+                return "annuler_marquer_ok_bulk";
+            }
+            return "marquer_ok";
+        }
+        
+        if (lowerPath.contains("unmark-ok")) {
+            return "annuler_marquer_ok";
+        }
+        
+        if (lowerPath.contains("status") && defaultAction.equals("create")) {
+            if (lowerPath.contains("bulk")) {
+                return "enregistrer_statut_bulk";
+            }
+            return "enregistrer_statut_reconciliation";
+        }
+        
+        if (lowerPath.contains("reconcile") || lowerMethodName.contains("reconcile")) {
+            return "lancer_reconciliation";
+        }
+        
+        if (lowerPath.contains("execute-magic") || lowerMethodName.contains("magic")) {
+            return "executer_reconciliation_magique";
+        }
+        
+        if (lowerPath.contains("analyze-keys") || lowerMethodName.contains("analyze")) {
+            return "analyser_cles_reconciliation";
+        }
+        
+        if (lowerPath.contains("save-summary") || lowerMethodName.contains("summary")) {
+            return "sauvegarder_resume_reconciliation";
+        }
+        
+        // Patterns de filtrage/recherche
+        if (lowerPath.contains("filter") || lowerMethodName.contains("filter")) {
+            if (lowerPath.contains("operations")) {
+                return "filtrer_operations";
+            } else if (lowerPath.contains("operations-bancaires")) {
+                return "filtrer_operations_bancaires";
+            }
+            return "filtrer";
+        }
+        
+        // Patterns de statistiques
+        if (lowerPath.contains("stats") || lowerPath.contains("statistiques") || lowerMethodName.contains("stat")) {
+            if (lowerPath.contains("by-type")) {
+                if (lowerPath.contains("filtered")) {
+                    return "consulter_statistiques_par_type_filtre";
+                }
+                return "consulter_statistiques_par_type";
+            }
+            return "consulter_statistiques";
+        }
+        
+        // Patterns de suppression
+        if (lowerMethodName.contains("delete") || lowerPath.contains("delete") || defaultAction.equals("delete")) {
+            if (lowerPath.contains("batch") || lowerMethodName.contains("batch")) {
+                return "supprimer_operations_batch";
+            }
+            return "supprimer";
+        }
+        
+        // Patterns de lecture spécifiques
+        if (lowerPath.contains("with-frais") || lowerMethodName.contains("frais")) {
+            return "consulter_avec_frais";
+        }
+        
+        if (lowerPath.contains("recent") || lowerMethodName.contains("recent")) {
+            return "consulter_recent";
+        }
+        
+        if (lowerPath.contains("progress") || lowerMethodName.contains("progress")) {
+            return "consulter_progression_reconciliation";
+        }
+        
+        if (lowerPath.contains("results") || lowerMethodName.contains("result")) {
+            return "consulter_resultats_reconciliation";
+        }
+        
+        if (lowerPath.contains("ok-keys")) {
+            return "consulter_cles_ok";
+        }
+        
+        if (lowerPath.contains("status") && defaultAction.equals("read")) {
+            return "consulter_statuts_reconciliation";
+        }
+        
+        // Patterns de synchronisation
+        if (lowerPath.contains("synchronize") || lowerMethodName.contains("synchronize")) {
+            return "synchroniser_soldes";
+        }
+        
+        if (lowerPath.contains("recalculate") || lowerMethodName.contains("recalculate")) {
+            return "recalculer_solde_cloture";
+        }
+        
+        // Patterns de correction
+        if (lowerPath.contains("correct") || lowerMethodName.contains("correct")) {
+            return "corriger_frais";
+        }
+        
+        // Patterns de can-process/solde-impact
+        if (lowerPath.contains("can-process") || lowerMethodName.contains("canprocess")) {
+            return "verifier_traitement_operation";
+        }
+        
+        if (lowerPath.contains("solde-impact") || lowerMethodName.contains("soldeimpact")) {
+            return "calculer_impact_solde";
+        }
+        
+        return null; // Pas d'action spécifique trouvée
+    }
+    
+    /**
+     * Retourne l'action de base selon le type HTTP
+     */
+    private String getBaseAction(String defaultAction) {
         switch (defaultAction) {
             case "read":
-                return "lire";
+                return "consulter";
             case "create":
                 return "creer";
             case "update":
@@ -314,6 +486,86 @@ public class PermissionGeneratorService {
         mapping.put("/api/banque-dashboard", "Dashboard");
         
         return mapping;
+    }
+
+    /**
+     * Analyse tous les contrôleurs et retourne toutes les actions disponibles par module
+     * Cette méthode fournit une vue détaillée de toutes les actions possibles
+     */
+    public Map<String, Object> analyzeAllModuleActions() {
+        Map<String, Object> result = new HashMap<>();
+        Map<String, List<Map<String, Object>>> moduleActions = new HashMap<>();
+        
+        // Cartographie des chemins d'API vers les noms de modules
+        Map<String, String> apiToModuleMap = createApiToModuleMapping();
+        
+        // Obtenir tous les contrôleurs
+        Map<String, Object> controllers = applicationContext.getBeansWithAnnotation(RestController.class);
+        
+        for (Object controller : controllers.values()) {
+            Class<?> controllerClass = controller.getClass();
+            
+            // Ignorer les classes proxy Spring
+            if (controllerClass.getName().contains("$")) {
+                controllerClass = controllerClass.getSuperclass();
+            }
+            
+            // Obtenir le RequestMapping de la classe
+            RequestMapping classMapping = controllerClass.getAnnotation(RequestMapping.class);
+            String basePath = classMapping != null && classMapping.value().length > 0 
+                ? classMapping.value()[0] 
+                : "";
+            
+            // Analyser toutes les méthodes avec des annotations de mapping
+            Method[] methods = controllerClass.getDeclaredMethods();
+            for (Method method : methods) {
+                try {
+                    List<PermissionInfo> permissions = extractPermissionsFromMethod(method, basePath, apiToModuleMap);
+                    
+                    for (PermissionInfo permInfo : permissions) {
+                        if (permInfo.moduleName == null || permInfo.permissionName == null) {
+                            continue;
+                        }
+                        
+                        // Ajouter l'action au module correspondant
+                        moduleActions.computeIfAbsent(permInfo.moduleName, k -> new ArrayList<>())
+                            .add(Map.of(
+                                "action", permInfo.permissionName,
+                                "httpMethod", permInfo.httpMethod,
+                                "path", permInfo.path,
+                                "controller", controllerClass.getSimpleName(),
+                                "method", method.getName()
+                            ));
+                    }
+                } catch (Exception e) {
+                    System.err.println("Erreur lors de l'analyse de la méthode " + method.getName() + ": " + e.getMessage());
+                }
+            }
+        }
+        
+        // Compter les actions par module
+        Map<String, Integer> actionCounts = new HashMap<>();
+        for (Map.Entry<String, List<Map<String, Object>>> entry : moduleActions.entrySet()) {
+            actionCounts.put(entry.getKey(), entry.getValue().size());
+        }
+        
+        result.put("modules", moduleActions);
+        result.put("actionCounts", actionCounts);
+        result.put("totalModules", moduleActions.size());
+        result.put("totalActions", moduleActions.values().stream().mapToInt(List::size).sum());
+        
+        return result;
+    }
+    
+    /**
+     * Retourne toutes les actions disponibles pour un module spécifique
+     */
+    public List<Map<String, Object>> getActionsForModule(String moduleName) {
+        Map<String, Object> allActions = analyzeAllModuleActions();
+        @SuppressWarnings("unchecked")
+        Map<String, List<Map<String, Object>>> modules = (Map<String, List<Map<String, Object>>>) allActions.get("modules");
+        
+        return modules.getOrDefault(moduleName, new ArrayList<>());
     }
 
     /**
