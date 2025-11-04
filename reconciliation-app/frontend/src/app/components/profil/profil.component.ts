@@ -35,6 +35,15 @@ export class ProfilComponent implements OnInit {
   itemsPerPage = 10;
   totalPages = 1;
   
+  // Propriété pour contrôler l'affichage de la vue d'ensemble
+  showOverview = false;
+  
+  // Nombre de permissions à afficher par défaut dans la liste
+  defaultPermissionsDisplayCount = 10;
+  
+  // Propriétés pour la gestion des pays et drapeaux
+  flagLoadError: { [key: string]: boolean } = {};
+  
   // Propriétés pour la gestion des pays
   pays: Pays[] = [];
   profilPays: ProfilPays[] = [];
@@ -815,6 +824,14 @@ export class ProfilComponent implements OnInit {
     return modulePermissions.map(pp => pp.permission).filter(p => p !== undefined) as Permission[];
   }
 
+  /**
+   * Retourne les permissions à afficher pour un module (limitées par défaut)
+   */
+  getDisplayedPermissions(module: Module): Permission[] {
+    // Retourner toutes les permissions pour ce module, mais limitées visuellement via CSS
+    return this.permissions;
+  }
+
   manageModulePermissions(module: Module) {
     // Sélectionner le module pour permettre la gestion des permissions
     this.selectedModuleId = module.id!;
@@ -1062,6 +1079,57 @@ export class ProfilComponent implements OnInit {
       return paysList[0].nom;
     }
     return `${paysList.length} pays`;
+  }
+
+  /**
+   * Retourne l'URL du drapeau SVG pour un code pays
+   */
+  getCountryFlagUrl(countryCode: string): string | null {
+    const code = (countryCode || '').toLowerCase();
+    if (!code) return null;
+    // Si le pays est GNL (tous les pays), ne pas afficher de drapeau
+    if (code === 'gnl') return null;
+    if (this.flagLoadError[code]) return null;
+    return `assets/flags/${code}.svg`;
+  }
+
+  /**
+   * Gère l'erreur de chargement d'un drapeau
+   */
+  onFlagError(event: Event, countryCode: string): void {
+    const code = (countryCode || '').toLowerCase();
+    if (code) {
+      this.flagLoadError[code] = true;
+    }
+  }
+
+  /**
+   * Retourne les pays associés à un profil (limités pour l'affichage)
+   */
+  getPaysForProfilDisplay(profil: Profil): Pays[] {
+    const paysList = this.getPaysForProfil(profil);
+    // Exclure GNL de la liste des drapeaux (il sera affiché avec une icône globe)
+    const paysWithoutGNL = paysList.filter(p => p.code !== 'GNL');
+    // Limiter à 5 pays pour l'affichage dans le tableau
+    return paysWithoutGNL.slice(0, 5);
+  }
+
+  /**
+   * Retourne le nombre de pays supplémentaires (au-delà des 5 premiers)
+   */
+  getAdditionalPaysCount(profil: Profil): number {
+    const paysList = this.getPaysForProfil(profil);
+    // Exclure GNL du comptage
+    const paysWithoutGNL = paysList.filter(p => p.code !== 'GNL');
+    return Math.max(0, paysWithoutGNL.length - 5);
+  }
+
+  /**
+   * Vérifie si un profil a GNL (tous les pays)
+   */
+  hasGNL(profil: Profil): boolean {
+    const paysList = this.getPaysForProfil(profil);
+    return paysList.some(p => p.code === 'GNL');
   }
 
   openPaysModal(profil: Profil) {

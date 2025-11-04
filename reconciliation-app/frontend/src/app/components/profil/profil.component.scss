@@ -266,6 +266,84 @@
       font-size: 0.9rem;
     }
     
+    .pays-display-container {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+
+    .pays-flags-container {
+      display: flex;
+      align-items: center;
+      gap: 0.3rem;
+      flex-wrap: wrap;
+
+      .pays-flag-item {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 24px;
+        height: 24px;
+        border-radius: 4px;
+        overflow: hidden;
+        position: relative;
+        cursor: pointer;
+        transition: transform 0.2s ease;
+        background: #f8f9fa;
+        border: 1px solid #e9ecef;
+
+        &:hover {
+          transform: scale(1.1);
+          z-index: 10;
+          box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        &.gnl-flag {
+          background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
+          border-color: #2196F3;
+        }
+
+        .country-flag-img {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+          border-radius: 2px;
+          display: block;
+        }
+
+        i {
+          font-size: 0.9rem;
+          color: #666;
+          
+          &.fa-globe {
+            color: #2196F3;
+          }
+
+          &.fa-flag {
+            color: #999;
+          }
+        }
+      }
+
+      .additional-pays-count {
+        background: #e3f2fd;
+        color: #1976D2;
+        padding: 2px 6px;
+        border-radius: 10px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        cursor: help;
+        margin-left: 2px;
+      }
+    }
+
+    .pays-text {
+      color: #666;
+      font-size: 0.85rem;
+      margin-right: 8px;
+    }
+
     .pays-display {
       color: #666;
       font-size: 0.9rem;
@@ -561,6 +639,46 @@
   .permissions-overview {
     margin-bottom: 2rem;
 
+    .overview-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1rem;
+
+      h4 {
+        margin: 0;
+      }
+
+      .toggle-overview-btn {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.5rem 1rem;
+        background: #f8f9fa;
+        border: 1px solid #dee2e6;
+        border-radius: 6px;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        font-size: 0.9rem;
+        color: #495057;
+
+        &:hover {
+          background: #e9ecef;
+          border-color: #adb5bd;
+        }
+
+        &.active {
+          background: #2196F3;
+          color: white;
+          border-color: #2196F3;
+        }
+
+        i {
+          font-size: 0.8rem;
+        }
+      }
+    }
+
     .permissions-grid {
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
@@ -658,6 +776,33 @@
 
         .permissions-list {
           margin-bottom: 1rem;
+          
+          &.scrollable-list {
+            // Limiter à 10 éléments visibles par défaut (environ 25px par élément)
+            max-height: calc(10 * 2.5rem); // 10 éléments × 2.5rem = 25rem
+            overflow-y: auto;
+            overflow-x: hidden;
+            padding-right: 0.5rem; // Espace pour la barre de défilement
+            
+            // Style de la barre de défilement
+            &::-webkit-scrollbar {
+              width: 8px;
+            }
+            
+            &::-webkit-scrollbar-track {
+              background: #f1f1f1;
+              border-radius: 4px;
+            }
+            
+            &::-webkit-scrollbar-thumb {
+              background: #888;
+              border-radius: 4px;
+              
+              &:hover {
+                background: #555;
+              }
+            }
+          }
 
           .permission-item {
             margin-bottom: 0.5rem;
