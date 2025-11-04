@@ -242,8 +242,38 @@
       }
     }
     
-    tr:hover {
-      background-color: #f8f9fa;
+    tr {
+      transition: all 0.2s ease;
+      
+      &:hover {
+        background-color: #f8f9fa;
+      }
+      
+      &.selected-row {
+        background-color: #e3f2fd !important;
+        border-left: 4px solid #2196F3;
+        box-shadow: 0 2px 4px rgba(33, 150, 243, 0.1);
+        
+        td {
+          border-bottom-color: #bbdefb;
+        }
+        
+        &:hover {
+          background-color: #bbdefb !important;
+        }
+        
+        .profil-name {
+          color: #1976D2;
+          font-weight: 600;
+          
+          &::before {
+            content: '▶';
+            margin-right: 8px;
+            color: #2196F3;
+            font-size: 0.8rem;
+          }
+        }
+      }
     }
     
     .profil-name {

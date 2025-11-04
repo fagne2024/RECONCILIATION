@@ -49,4 +49,11 @@ export class PermissionService {
   getActionsForModule(moduleName: string): Observable<any[]> {
     return this.http.get<any[]>(`${this.baseUrl}/actions/module/${encodeURIComponent(moduleName)}`);
   }
+
+  /**
+   * Récupère toutes les permissions groupées par module
+   */
+  getPermissionsGroupedByModule(): Observable<{ [key: string]: Permission[] }> {
+    return this.http.get<{ [key: string]: Permission[] }>(`${this.baseUrl}/permissions/by-module`);
+  }
 } 

@@ -161,6 +161,11 @@ public class ProfilController {
         return profilService.getPermissionsForModule(moduleId);
     }
 
+    @GetMapping("/permissions/by-module")
+    public Map<String, List<PermissionEntity>> getPermissionsGroupedByModule() {
+        return profilService.getPermissionsGroupedByModule();
+    }
+
     @PostMapping("/permissions/generate")
     public ResponseEntity<Map<String, Object>> generatePermissions() {
         System.out.println("🔄 Génération automatique des permissions à partir des contrôleurs...");

@@ -14,6 +14,9 @@ export class PermissionsComponent implements OnInit {
   permissions: Permission[] = [];
   filteredPermissions: Permission[] = [];
   pagedPermissions: Permission[] = [];
+  permissionsByModule: { [key: string]: Permission[] } = {};
+  filteredPermissionsByModule: { [key: string]: Permission[] } = {};
+  expandedModules: Set<string> = new Set();
   showAddForm = false;
   isAdding = false;
   isLoading = false;
@@ -60,9 +63,13 @@ export class PermissionsComponent implements OnInit {
 
   loadPermissions(): void {
     this.isLoading = true;
-    this.permissionService.getAllPermissions().subscribe({
-      next: (permissions) => {
-        this.permissions = permissions;
+    this.permissionService.getPermissionsGroupedByModule().subscribe({
+      next: (permissionsByModule) => {
+        this.permissionsByModule = permissionsByModule;
+        // Aplatir toutes les permissions pour la liste complète
+        this.permissions = Object.values(permissionsByModule).flat();
+        // Développer tous les modules par défaut
+        this.expandedModules = new Set(Object.keys(permissionsByModule));
         this.applyFilters();
         this.isLoading = false;
       },
@@ -96,12 +103,59 @@ export class PermissionsComponent implements OnInit {
   }
 
   applyFilters(): void {
+    // Filtrer les permissions
     this.filteredPermissions = this.permissions.filter(permission => {
       const matchesSearch = !this.searchTerm || 
         permission.nom.toLowerCase().includes(this.searchTerm.toLowerCase());
       return matchesSearch;
     });
+    
+    // Filtrer et regrouper par module
+    this.filteredPermissionsByModule = {};
+    for (const [moduleName, permissions] of Object.entries(this.permissionsByModule)) {
+      const filtered = permissions.filter(permission => {
+        const matchesSearch = !this.searchTerm || 
+          permission.nom.toLowerCase().includes(this.searchTerm.toLowerCase());
+        return matchesSearch;
+      });
+      if (filtered.length > 0) {
+        this.filteredPermissionsByModule[moduleName] = filtered;
+      }
+    }
+    
     this.updatePagination();
+  }
+
+  /**
+   * Toggle l'expansion d'un module
+   */
+  toggleModule(moduleName: string): void {
+    if (this.expandedModules.has(moduleName)) {
+      this.expandedModules.delete(moduleName);
+    } else {
+      this.expandedModules.add(moduleName);
+    }
+  }
+
+  /**
+   * Vérifie si un module est développé
+   */
+  isModuleExpanded(moduleName: string): boolean {
+    return this.expandedModules.has(moduleName);
+  }
+
+  /**
+   * Obtient les noms des modules triés
+   */
+  getModuleNames(): string[] {
+    return Object.keys(this.filteredPermissionsByModule).sort();
+  }
+
+  /**
+   * Obtient le nombre de permissions pour un module
+   */
+  getPermissionCountForModule(moduleName: string): number {
+    return this.filteredPermissionsByModule[moduleName]?.length || 0;
   }
 
   // Méthodes de pagination

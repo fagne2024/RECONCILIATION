@@ -8,6 +8,9 @@ import org.springframework.transaction.annotation.Transactional;
 import jakarta.persistence.EntityManager;
 import java.util.List;
 import java.util.Optional;
+import java.util.Map;
+import java.util.HashMap;
+import java.util.ArrayList;
 
 @Service
 public class ProfilService {
@@ -201,5 +204,42 @@ public class ProfilService {
         
         // Sinon, retourner toutes les permissions disponibles
         return permissionRepository.findAll();
+    }
+
+    /**
+     * Retourne toutes les permissions groupées par module
+     * @return Map où la clé est le nom du module et la valeur est la liste des permissions
+     */
+    public Map<String, List<PermissionEntity>> getPermissionsGroupedByModule() {
+        Map<String, List<PermissionEntity>> permissionsByModule = new HashMap<>();
+        
+        // Récupérer toutes les associations module-permission
+        List<ModulePermissionEntity> allModulePermissions = modulePermissionRepository.findAll();
+        
+        // Grouper les permissions par module
+        for (ModulePermissionEntity mp : allModulePermissions) {
+            if (mp.getModule() != null && mp.getPermission() != null) {
+                String moduleName = mp.getModule().getNom();
+                permissionsByModule.computeIfAbsent(moduleName, k -> new ArrayList<>())
+                    .add(mp.getPermission());
+            }
+        }
+        
+        // Ajouter les permissions sans module associé dans une catégorie "Sans module"
+        List<PermissionEntity> allPermissions = permissionRepository.findAll();
+        List<Long> permissionIdsWithModule = allModulePermissions.stream()
+            .map(mp -> mp.getPermission() != null ? mp.getPermission().getId() : null)
+            .filter(id -> id != null)
+            .toList();
+        
+        List<PermissionEntity> permissionsWithoutModule = allPermissions.stream()
+            .filter(p -> p.getId() != null && !permissionIdsWithModule.contains(p.getId()))
+            .toList();
+        
+        if (!permissionsWithoutModule.isEmpty()) {
+            permissionsByModule.put("Sans module", permissionsWithoutModule);
+        }
+        
+        return permissionsByModule;
     }
 } 

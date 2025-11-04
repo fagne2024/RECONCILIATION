@@ -73,27 +73,41 @@
     </div>
 
     <div *ngIf="!isLoading && filteredPermissions.length > 0" class="permissions-list">
-      <div *ngFor="let permission of pagedPermissions" class="permission-item">
-        <div class="permission-content">
-          <div class="permission-name">
-            <i class="fas fa-key"></i>
-            <span>{{ permission.nom }}</span>
+      <!-- Affichage par module -->
+      <div *ngFor="let moduleName of getModuleNames()" class="module-section">
+        <div class="module-header-section" (click)="toggleModule(moduleName)">
+          <div class="module-title">
+            <i class="fas" [class.fa-chevron-down]="isModuleExpanded(moduleName)" [class.fa-chevron-right]="!isModuleExpanded(moduleName)"></i>
+            <i class="fas fa-folder"></i>
+            <span class="module-name">{{ moduleName }}</span>
+            <span class="module-permissions-count">{{ getPermissionCountForModule(moduleName) }} permission(s)</span>
           </div>
         </div>
-        <div class="permission-actions">
-          <button class="btn icon-btn edit-btn" (click)="editPermission(permission)" title="Modifier">
-            <i class="fas fa-edit"></i>
-          </button>
-          <button class="btn icon-btn delete-btn" (click)="deletePermission(permission)" title="Supprimer">
-            <i class="fas fa-trash"></i>
-          </button>
+        
+        <div *ngIf="isModuleExpanded(moduleName)" class="module-permissions-list">
+          <div *ngFor="let permission of filteredPermissionsByModule[moduleName]" class="permission-item">
+            <div class="permission-content">
+              <div class="permission-name">
+                <i class="fas fa-key"></i>
+                <span>{{ permission.nom }}</span>
+              </div>
+            </div>
+            <div class="permission-actions">
+              <button class="btn icon-btn edit-btn" (click)="editPermission(permission)" title="Modifier">
+                <i class="fas fa-edit"></i>
+              </button>
+              <button class="btn icon-btn delete-btn" (click)="deletePermission(permission)" title="Supprimer">
+                <i class="fas fa-trash"></i>
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     </div>
   </div>
 
-  <!-- Pagination -->
-  <div class="pagination-section" *ngIf="filteredPermissions.length > 0 && !isLoading">
+  <!-- Pagination (désactivée avec l'affichage par module) -->
+  <!-- <div class="pagination-section" *ngIf="filteredPermissions.length > 0 && !isLoading">
     <div class="pagination-controls">
       <div class="items-per-page">
         <label>Lignes par page :</label>
@@ -134,7 +148,7 @@
       Affichage de {{ getStartIndex() + 1 }} à {{ getEndIndex() }} sur {{ filteredPermissions.length }} élément(s)
       (Page {{ currentPage }} / {{ totalPages }})
     </div>
-  </div>
+  </div> -->
 
   <!-- Modal d'ajout -->
   <div *ngIf="showAddForm" class="modal-overlay" (click)="closeAddModal()">

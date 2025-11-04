@@ -149,9 +149,12 @@
           </tr>
         </thead>
         <tbody>
-          <tr *ngFor="let profil of pagedProfils">
+          <tr *ngFor="let profil of pagedProfils" 
+              [class.selected-row]="selectedProfil && selectedProfil.id === profil.id"
+              (click)="selectProfil(profil)"
+              [style.cursor]="'pointer'">
             <td>
-              <span class="profil-name" (click)="selectProfil(profil)" [class.selected]="selectedProfil && selectedProfil.id === profil.id">
+              <span class="profil-name" [class.selected]="selectedProfil && selectedProfil.id === profil.id">
                 {{ profil.nom }}
               </span>
             </td>
@@ -196,7 +199,7 @@
                 </button>
               </div>
             </td>
-            <td class="actions">
+            <td class="actions" (click)="$event.stopPropagation()">
               <button (click)="editProfil(profil)" [disabled]="isDeleting" class="btn icon-btn edit" title="Modifier">
                 <i class="fas fa-edit" [style.color]="isDeleting ? '#ccc' : 'green'"></i>
               </button>

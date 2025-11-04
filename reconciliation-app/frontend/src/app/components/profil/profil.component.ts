@@ -29,6 +29,7 @@ export class ProfilComponent implements OnInit {
   selectedModuleId: number | '' = '';
   availableModulePermissions: Permission[] = [];
   loadingModulePermissions = false;
+  modulePermissionsCache: { [moduleId: number]: Permission[] } = {};
 
   // Propriétés pour la pagination
   currentPage = 1;
@@ -232,11 +233,31 @@ export class ProfilComponent implements OnInit {
     if (this.selectedProfil && this.selectedProfil.id === profil.id) {
       this.selectedProfil = null;
       this.profilPermissions = [];
+      this.modulePermissionsCache = {}; // Nettoyer le cache
     } else {
       // Sinon, sélectionner le profil et charger ses permissions
       this.selectedProfil = profil;
-      this.profilService.getProfilPermissions(profil.id!).subscribe(pp => this.profilPermissions = pp);
+      this.modulePermissionsCache = {}; // Réinitialiser le cache
+      this.profilService.getProfilPermissions(profil.id!).subscribe(pp => {
+        this.profilPermissions = pp;
+        // Charger les permissions pour tous les modules associés
+        this.preloadModulePermissions();
+      });
     }
+  }
+
+  /**
+   * Précharge les permissions pour tous les modules associés au profil
+   */
+  preloadModulePermissions(): void {
+    if (!this.selectedProfil) return;
+    
+    const associatedModules = this.getAssociatedModules();
+    associatedModules.forEach(module => {
+      if (module.id && !this.modulePermissionsCache[module.id]) {
+        this.loadModulePermissionsForDisplay(module);
+      }
+    });
   }
 
   createProfil() {
@@ -825,11 +846,46 @@ export class ProfilComponent implements OnInit {
   }
 
   /**
-   * Retourne les permissions à afficher pour un module (limitées par défaut)
+   * Retourne les permissions à afficher pour un module
+   * Retourne uniquement les permissions disponibles pour ce module spécifique depuis le backend
    */
   getDisplayedPermissions(module: Module): Permission[] {
-    // Retourner toutes les permissions pour ce module, mais limitées visuellement via CSS
-    return this.permissions;
+    if (!module || !module.id) return [];
+    
+    // Si on a déjà les permissions en cache pour ce module, les retourner
+    if (this.modulePermissionsCache[module.id]) {
+      return this.modulePermissionsCache[module.id];
+    }
+    
+    // Sinon, charger les permissions depuis le backend et les mettre en cache
+    this.loadModulePermissionsForDisplay(module);
+    
+    // Retourner un tableau vide temporairement pendant le chargement
+    return [];
+  }
+
+  /**
+   * Charge les permissions disponibles pour un module depuis le backend
+   */
+  loadModulePermissionsForDisplay(module: Module): void {
+    if (!module || !module.id) return;
+    
+    // Si déjà en cache, ne pas recharger
+    if (this.modulePermissionsCache[module.id]) return;
+    
+    this.profilService.getPermissionsForModule(module.id).subscribe({
+      next: (perms) => {
+        // Mettre en cache les permissions pour ce module
+        this.modulePermissionsCache[module.id] = perms;
+        // Forcer la détection des changements pour mettre à jour l'affichage
+        this.cd.detectChanges();
+      },
+      error: (error) => {
+        console.error(`Erreur lors du chargement des permissions pour le module ${module.nom}:`, error);
+        // En cas d'erreur, utiliser un tableau vide pour éviter d'afficher toutes les permissions
+        this.modulePermissionsCache[module.id] = [];
+      }
+    });
   }
 
   manageModulePermissions(module: Module) {
