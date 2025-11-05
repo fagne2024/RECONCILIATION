@@ -192,6 +192,16 @@ export class OperationsComponent implements OnInit, OnDestroy, AfterViewInit {
     nivellementOperations: Operation[] = [];
     regularisationSoldeOperations: Operation[] = [];
 
+    // Données brutes chargées depuis le backend pour Appro et Compense
+    approClientRawOperations: Operation[] = [];
+    compenseClientRawOperations: Operation[] = [];
+
+    // Suivi des dernières dates utilisées pour éviter les rechargements inutiles
+    approClientLastDateDebut: string = '';
+    approClientLastDateFin: string = '';
+    compenseClientLastDateDebut: string = '';
+    compenseClientLastDateFin: string = '';
+
     // Listes de codes propriétaires filtrées par pays pour chaque popup
     approClientFilteredCodeProprietaireList: string[] = [];
     compenseClientFilteredCodeProprietaireList: string[] = [];
@@ -3254,20 +3264,114 @@ Mises à jour: ${updated}/${total}${failed > 0 ? `\nEchecs: ${failed}` : ''}`;
         this.loadRegularisationSoldeOperations();
     }
 
-    // Charger les opérations Appro Client
+    // Charger les opérations Appro (client et fournisseur)
     loadApproClientOperations() {
-        this.approClientOperations = this.operations.filter(op => 
-            op.typeOperation === 'Appro_client' || op.typeOperation === 'appro_client'
-        );
-        this.applyApproClientFilters();
+        // Initialiser avec les dates du mois en cours si pas de dates définies
+        if (!this.approClientFilters.dateDebut || !this.approClientFilters.dateFin) {
+            const today = new Date();
+            const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+            const lastDayOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+            this.approClientFilters.dateDebut = firstDayOfMonth.toISOString().split('T')[0];
+            this.approClientFilters.dateFin = lastDayOfMonth.toISOString().split('T')[0];
+        }
+        this.loadApproClientOperationsFromBackend();
     }
 
-    // Charger les opérations Compense Client
+    // Charger les opérations Appro depuis le backend avec les dates du filtre
+    loadApproClientOperationsFromBackend() {
+        const dateDebut = this.approClientFilters.dateDebut || '';
+        const dateFin = this.approClientFilters.dateFin || '';
+        
+        // Si les dates ont changé, recharger depuis le backend
+        if (dateDebut !== this.approClientLastDateDebut || dateFin !== this.approClientLastDateFin) {
+            this.approClientLastDateDebut = dateDebut;
+            this.approClientLastDateFin = dateFin;
+            
+            if (dateDebut && dateFin) {
+                this.isLoading = true;
+                this.operationService.getOperationsByDateRange(dateDebut, dateFin).subscribe({
+                    next: (operations) => {
+                        // Filtrer uniquement les Appro (client et fournisseur)
+                        this.approClientRawOperations = operations.filter(op => 
+                            op.typeOperation === 'Appro_client' || op.typeOperation === 'appro_client' ||
+                            op.typeOperation === 'Appro_fournisseur' || op.typeOperation === 'appro_fournisseur'
+                        );
+                        this.isLoading = false;
+                        // Appliquer les autres filtres après le chargement
+                        this.applyApproClientFilters();
+                    },
+                    error: (err) => {
+                        console.error('Erreur lors du chargement des opérations Appro:', err);
+                        this.isLoading = false;
+                    }
+                });
+            } else {
+                // Pas de dates, utiliser les opérations du mois en cours
+                this.approClientRawOperations = this.operations.filter(op => 
+                    op.typeOperation === 'Appro_client' || op.typeOperation === 'appro_client' ||
+                    op.typeOperation === 'Appro_fournisseur' || op.typeOperation === 'appro_fournisseur'
+                );
+                this.applyApproClientFilters();
+            }
+        } else {
+            // Les dates n'ont pas changé, juste appliquer les filtres
+            this.applyApproClientFilters();
+        }
+    }
+
+    // Charger les opérations Compense (client et fournisseur)
     loadCompenseClientOperations() {
-        this.compenseClientOperations = this.operations.filter(op => 
-            op.typeOperation === 'Compense_client' || op.typeOperation === 'compense_client'
-        );
-        this.applyCompenseClientFilters();
+        // Initialiser avec les dates du mois en cours si pas de dates définies
+        if (!this.compenseClientFilters.dateDebut || !this.compenseClientFilters.dateFin) {
+            const today = new Date();
+            const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+            const lastDayOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+            this.compenseClientFilters.dateDebut = firstDayOfMonth.toISOString().split('T')[0];
+            this.compenseClientFilters.dateFin = lastDayOfMonth.toISOString().split('T')[0];
+        }
+        this.loadCompenseClientOperationsFromBackend();
+    }
+
+    // Charger les opérations Compense depuis le backend avec les dates du filtre
+    loadCompenseClientOperationsFromBackend() {
+        const dateDebut = this.compenseClientFilters.dateDebut || '';
+        const dateFin = this.compenseClientFilters.dateFin || '';
+        
+        // Si les dates ont changé, recharger depuis le backend
+        if (dateDebut !== this.compenseClientLastDateDebut || dateFin !== this.compenseClientLastDateFin) {
+            this.compenseClientLastDateDebut = dateDebut;
+            this.compenseClientLastDateFin = dateFin;
+            
+            if (dateDebut && dateFin) {
+                this.isLoading = true;
+                this.operationService.getOperationsByDateRange(dateDebut, dateFin).subscribe({
+                    next: (operations) => {
+                        // Filtrer uniquement les Compense (client et fournisseur)
+                        this.compenseClientRawOperations = operations.filter(op => 
+                            op.typeOperation === 'Compense_client' || op.typeOperation === 'compense_client' ||
+                            op.typeOperation === 'Compense_fournisseur' || op.typeOperation === 'compense_fournisseur'
+                        );
+                        this.isLoading = false;
+                        // Appliquer les autres filtres après le chargement
+                        this.applyCompenseClientFilters();
+                    },
+                    error: (err) => {
+                        console.error('Erreur lors du chargement des opérations Compense:', err);
+                        this.isLoading = false;
+                    }
+                });
+            } else {
+                // Pas de dates, utiliser les opérations du mois en cours
+                this.compenseClientRawOperations = this.operations.filter(op => 
+                    op.typeOperation === 'Compense_client' || op.typeOperation === 'compense_client' ||
+                    op.typeOperation === 'Compense_fournisseur' || op.typeOperation === 'compense_fournisseur'
+                );
+                this.applyCompenseClientFilters();
+            }
+        } else {
+            // Les dates n'ont pas changé, juste appliquer les filtres
+            this.applyCompenseClientFilters();
+        }
     }
 
     // Charger les opérations Nivellement
@@ -3288,13 +3392,23 @@ Mises à jour: ${updated}/${total}${failed > 0 ? `\nEchecs: ${failed}` : ''}`;
 
     // Appliquer les filtres Appro Client
     applyApproClientFilters() {
+        // Vérifier si les dates ont changé, si oui recharger depuis le backend
+        const dateDebut = this.approClientFilters.dateDebut || '';
+        const dateFin = this.approClientFilters.dateFin || '';
+        
+        if (dateDebut !== this.approClientLastDateDebut || dateFin !== this.approClientLastDateFin) {
+            // Les dates ont changé, recharger depuis le backend
+            this.loadApproClientOperationsFromBackend();
+            return;
+        }
+        
         // Mettre à jour la liste des codes propriétaires disponibles
         this.updateApproClientFilteredCodeProprietaireList();
         
-        let filtered = this.operations.filter(op => 
-            op.typeOperation === 'Appro_client' || op.typeOperation === 'appro_client'
-        );
+        // Filtrer sur les données brutes chargées
+        let filtered = [...this.approClientRawOperations];
 
+        // Appliquer les filtres en temps réel
         if (this.approClientFilters.pays) {
             filtered = filtered.filter(op => op.pays === this.approClientFilters.pays);
         }
@@ -3303,12 +3417,6 @@ Mises à jour: ${updated}/${total}${failed > 0 ? `\nEchecs: ${failed}` : ''}`;
         }
         if (this.approClientFilters.service) {
             filtered = filtered.filter(op => op.service?.includes(this.approClientFilters.service));
-        }
-        if (this.approClientFilters.dateDebut) {
-            filtered = filtered.filter(op => op.dateOperation >= this.approClientFilters.dateDebut);
-        }
-        if (this.approClientFilters.dateFin) {
-            filtered = filtered.filter(op => op.dateOperation <= this.approClientFilters.dateFin);
         }
 
         this.approClientOperations = filtered;
@@ -3340,13 +3448,23 @@ Mises à jour: ${updated}/${total}${failed > 0 ? `\nEchecs: ${failed}` : ''}`;
 
     // Appliquer les filtres Compense Client
     applyCompenseClientFilters() {
+        // Vérifier si les dates ont changé, si oui recharger depuis le backend
+        const dateDebut = this.compenseClientFilters.dateDebut || '';
+        const dateFin = this.compenseClientFilters.dateFin || '';
+        
+        if (dateDebut !== this.compenseClientLastDateDebut || dateFin !== this.compenseClientLastDateFin) {
+            // Les dates ont changé, recharger depuis le backend
+            this.loadCompenseClientOperationsFromBackend();
+            return;
+        }
+        
         // Mettre à jour la liste des codes propriétaires disponibles
         this.updateCompenseClientFilteredCodeProprietaireList();
         
-        let filtered = this.operations.filter(op => 
-            op.typeOperation === 'Compense_client' || op.typeOperation === 'compense_client'
-        );
+        // Filtrer sur les données brutes chargées
+        let filtered = [...this.compenseClientRawOperations];
 
+        // Appliquer les filtres en temps réel
         if (this.compenseClientFilters.pays) {
             filtered = filtered.filter(op => op.pays === this.compenseClientFilters.pays);
         }
@@ -3355,12 +3473,6 @@ Mises à jour: ${updated}/${total}${failed > 0 ? `\nEchecs: ${failed}` : ''}`;
         }
         if (this.compenseClientFilters.service) {
             filtered = filtered.filter(op => op.service?.includes(this.compenseClientFilters.service));
-        }
-        if (this.compenseClientFilters.dateDebut) {
-            filtered = filtered.filter(op => op.dateOperation >= this.compenseClientFilters.dateDebut);
-        }
-        if (this.compenseClientFilters.dateFin) {
-            filtered = filtered.filter(op => op.dateOperation <= this.compenseClientFilters.dateFin);
         }
 
         this.compenseClientOperations = filtered;
@@ -3491,11 +3603,11 @@ Mises à jour: ${updated}/${total}${failed > 0 ? `\nEchecs: ${failed}` : ''}`;
         }
     }
 
-    // Exporter Appro Client
+    // Exporter Appro
     async exportApproClientOperations() {
         this.isExportingApproClient = true;
         try {
-            await this.exportOperationsToExcel(this.approClientOperations, 'Appro_Client');
+            await this.exportOperationsToExcel(this.approClientOperations, 'Appro');
             await this.popupService.showSuccess('Export réussi', 'Succès');
         } catch (error) {
             console.error('Erreur lors de l\'export:', error);
@@ -3505,11 +3617,11 @@ Mises à jour: ${updated}/${total}${failed > 0 ? `\nEchecs: ${failed}` : ''}`;
         }
     }
 
-    // Exporter Compense Client
+    // Exporter Compense
     async exportCompenseClientOperations() {
         this.isExportingCompenseClient = true;
         try {
-            await this.exportOperationsToExcel(this.compenseClientOperations, 'Compense_Client');
+            await this.exportOperationsToExcel(this.compenseClientOperations, 'Compense');
             await this.popupService.showSuccess('Export réussi', 'Succès');
         } catch (error) {
             console.error('Erreur lors de l\'export:', error);
@@ -3673,9 +3785,8 @@ Mises à jour: ${updated}/${total}${failed > 0 ? `\nEchecs: ${failed}` : ''}`;
 
     // Mettre à jour la liste des codes propriétaires pour Appro Client en fonction du pays sélectionné
     updateApproClientFilteredCodeProprietaireList() {
-        let operations = this.operations.filter(op => 
-            op.typeOperation === 'Appro_client' || op.typeOperation === 'appro_client'
-        );
+        // Utiliser les données brutes chargées
+        let operations = [...this.approClientRawOperations];
         
         // Si un pays est sélectionné, filtrer les opérations par pays
         if (this.approClientFilters.pays) {
@@ -3695,9 +3806,8 @@ Mises à jour: ${updated}/${total}${failed > 0 ? `\nEchecs: ${failed}` : ''}`;
 
     // Mettre à jour la liste des codes propriétaires pour Compense Client en fonction du pays sélectionné
     updateCompenseClientFilteredCodeProprietaireList() {
-        let operations = this.operations.filter(op => 
-            op.typeOperation === 'Compense_client' || op.typeOperation === 'compense_client'
-        );
+        // Utiliser les données brutes chargées
+        let operations = [...this.compenseClientRawOperations];
         
         // Si un pays est sélectionné, filtrer les opérations par pays
         if (this.compenseClientFilters.pays) {
