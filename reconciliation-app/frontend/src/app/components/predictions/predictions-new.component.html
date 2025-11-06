@@ -1,0 +1,822 @@
+<div class="supply-prediction-container">
+
+  <!-- Toast notifications -->
+  <div *ngIf="toastMessage" class="toast" [ngClass]="'toast-' + toastType">
+    <span class="toast-icon" *ngIf="toastType === 'success'">✅</span>
+    <span class="toast-icon" *ngIf="toastType === 'error'">❌</span>
+    <span class="toast-icon" *ngIf="toastType === 'info'">ℹ️</span>
+    <span class="toast-message">{{ toastMessage }}</span>
+  </div>
+
+  <!-- Header -->
+  <div class="header">
+    <div class="header-top">
+      <button (click)="goBack()" class="btn-back">
+        <i class="fas fa-arrow-left"></i> Retour
+      </button>
+      <h1>📦 Système de Prédiction {{ isCompensationType() ? 'des Compensations' : 'de la Trésorerie' }}</h1>
+    </div>
+    <p class="subtitle">
+      {{ isCompensationType() 
+        ? 'Analysez les patterns de compensation et prédisez les besoins futurs basés sur la fréquence et les soldes'
+        : 'Analysez vos données historiques pour optimiser la gestion du tréso et prédire les besoins futurs en approvisionnements' 
+      }}
+    </p>
+  </div>
+
+  <!-- Configuration Section (Enhanced) -->
+  <div class="config-section" *ngIf="showConfig">
+    <div class="config-header">
+      <h2>⚙️ Configuration {{ isCompensationType() ? 'des Compensations' : 'des Approvisionnements' }}</h2>
+      <button type="button" (click)="showConfig = false" class="btn-close-config" title="Masquer la configuration">
+        <i class="fas fa-times"></i>
+      </button>
+    </div>
+    <form [formGroup]="configForm">
+      <div class="config-grid">
+        <!-- Configuration commune -->
+        <div class="form-group" *ngIf="!isCompensationType()">
+          <label>Délai d'Approvisionnement (jours)</label>
+          <input type="number" formControlName="leadTimeDays" class="form-control" min="1" max="30">
+          <small>Temps nécessaire pour recevoir un approvisionnement</small>
+        </div>
+        
+        <div class="form-group" *ngIf="!isCompensationType()">
+          <label>Facteur de Sécurité</label>
+          <input type="number" formControlName="safetyFactor" class="form-control" step="0.1" min="1.0" max="3.0">
+          <small>Multiplie le stock de sécurité (1.0-3.0)</small>
+        </div>
+        
+        <!-- Configuration spécifique aux compensations -->
+        <div class="form-group" *ngIf="isCompensationType()">
+          <label>Seuil de Compensation (XOF) *</label>
+          <input type="number" formControlName="compensationThresholdAmount" class="form-control" min="0">
+          <small>Solde maximum : lorsque le solde atteint ou dépasse ce seuil, une compensation est déclenchée</small>
+        </div>
+        
+        <div class="form-group">
+          <label>Seuil Urgent (jours)</label>
+          <input type="number" formControlName="urgentThresholdDays" class="form-control" min="1">
+          <small>{{ isCompensationType() ? 'Jours avant la prochaine compensation nécessaire' : 'Jours avant rupture de stock' }}</small>
+        </div>
+        
+        <div class="form-group">
+          <label>Seuil Normal (jours)</label>
+          <input type="number" formControlName="normalThresholdDays" class="form-control" min="1">
+          <small>{{ isCompensationType() ? 'Jours confortables avant compensation' : 'Jours confortables avant rupture' }}</small>
+        </div>
+        <!-- Nouveaux paramètres pour la précision -->
+        <div class="form-group">
+          <label>Analyse Saisonnière</label>
+          <div class="checkbox-wrapper">
+            <input type="checkbox" formControlName="seasonalityEnabled" id="seasonality">
+            <label for="seasonality">Activer la détection de saisonnalité</label>
+          </div>
+          <small>Détecte les patterns récurrents dans le temps</small>
+        </div>
+        <div class="form-group">
+          <label>Analyse de Tendance</label>
+          <div class="checkbox-wrapper">
+            <input type="checkbox" formControlName="trendAnalysisEnabled" id="trend">
+            <label for="trend">Activer l'analyse des tendances</label>
+          </div>
+          <small>Identifie les évolutions à long terme</small>
+        </div>
+        <div class="form-group">
+          <label>Poids de Volatilité</label>
+          <input type="number" formControlName="volatilityWeight" class="form-control" step="0.1" min="0" max="1">
+          <small>Impact de la variabilité sur les prédictions (0-1)</small>
+        </div>
+        <div class="form-group">
+          <label>Seuil de Confiance</label>
+          <input type="number" formControlName="predictionConfidenceThreshold" class="form-control" step="0.05" min="0" max="1">
+          <small>Niveau de confiance minimum requis (0-1)</small>
+        </div>
+      </div>
+      <div class="action-buttons">
+        <button (click)="saveConfiguration()" class="btn btn-secondary">
+          💾 Sauvegarder Configuration
+        </button>
+      </div>
+    </form>
+  </div>
+
+  <!-- Bouton pour afficher la configuration -->
+  <div class="config-toggle-section" *ngIf="!showConfig">
+    <button type="button" (click)="showConfig = true" class="btn btn-secondary btn-show-config">
+      <i class="fas fa-cog"></i> Afficher la Configuration
+    </button>
+  </div>
+
+  <!-- Formulaire d'analyse -->
+  <div class="analysis-section">
+    <h2>🔍 Paramètres d'Analyse</h2>
+    <form [formGroup]="analysisForm">
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Type d'Opération *</label>
+          <select formControlName="typeOperation" class="form-control">
+            <option value="">-- Sélectionner --</option>
+            <option *ngFor="let type of availableTypes" [value]="type.value">{{ type.label }}</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Pays (optionnel)</label>
+          <input type="text" formControlName="pays" class="form-control" placeholder="Ex: CI, SN, CM">
+        </div>
+        <div class="form-group">
+          <label>Période d'Analyse (jours)</label>
+          <input type="number" formControlName="periodeAnalyseJours" class="form-control" min="7" max="730">
+        </div>
+        <div class="form-group">
+          <label>Calendrier (jours)</label>
+          <input type="number" formControlName="calendarDays" class="form-control" min="7" max="365">
+        </div>
+      </div>
+      <div class="action-buttons">
+        <button (click)="loadMetrics()" class="btn btn-secondary" [disabled]="!analysisForm.get('typeOperation')?.value">
+          📊 Métriques Globales
+        </button>
+        <button (click)="loadRecommendations()" class="btn btn-primary" [disabled]="isLoading || !analysisForm.get('typeOperation')?.value">
+          📋 Recommandations
+        </button>
+        <button (click)="loadCalendar()" class="btn btn-primary" [disabled]="isLoading || !analysisForm.get('typeOperation')?.value">
+          📅 Calendrier
+        </button>
+      </div>
+    </form>
+  </div>
+
+  <!-- Message d'erreur -->
+  <div *ngIf="errorMessage" class="alert alert-error">
+    <strong>Erreur:</strong> {{ errorMessage }}
+  </div>
+
+  <!-- Loading -->
+  <div *ngIf="isLoading" class="loading-spinner">
+    <div class="spinner"></div>
+    <p>Chargement en cours...</p>
+  </div>
+
+  <!-- Onglets de navigation -->
+  <div *ngIf="(metrics || compensationMetrics) || (recommendations.length > 0 || compensationRecommendations.length > 0) || (calendar || compensationCalendar)" class="tabs-navigation">
+    <button 
+      class="tab-button" 
+      [class.active]="selectedTab === 'overview'"
+      (click)="selectedTab = 'overview'"
+      [disabled]="!metrics && !compensationMetrics">
+      📊 Vue d'Ensemble
+    </button>
+    <button 
+      class="tab-button" 
+      [class.active]="selectedTab === 'recommendations'"
+      (click)="selectedTab = 'recommendations'"
+      [disabled]="recommendations.length === 0 && compensationRecommendations.length === 0">
+      📋 Recommandations
+      <span *ngIf="recommendations.length > 0 || compensationRecommendations.length > 0" class="badge">
+        {{ isCompensationType() ? compensationRecommendations.length : recommendations.length }}
+      </span>
+    </button>
+    <button 
+      class="tab-button" 
+      [class.active]="selectedTab === 'calendar'"
+      (click)="selectedTab = 'calendar'"
+      [disabled]="!calendar && !compensationCalendar">
+      📅 Calendrier
+    </button>
+    <button 
+      class="tab-button" 
+      [class.active]="selectedTab === 'analytics'"
+      (click)="selectedTab = 'analytics'"
+      [disabled]="!selectedAgencyAnalytics && !selectedCompensationAnalytics">
+      🔍 Analytiques
+    </button>
+  </div>
+
+  <!-- ============================================ -->
+  <!-- MÉTRIQUES APPROVISIONNEMENTS -->
+  <!-- ============================================ -->
+  <div *ngIf="metrics && selectedTab === 'overview' && !isCompensationType()" class="metrics-section">
+    <h2>📊 Vue d'Ensemble - Approvisionnements</h2>
+    <div class="metrics-grid">
+      <div class="metric-card">
+        <div class="metric-icon">🏢</div>
+        <div class="metric-content">
+          <div class="metric-label">Total Agences</div>
+          <div class="metric-value">{{ metrics.totalAgencies }}</div>
+        </div>
+      </div>
+      <div class="metric-card critical">
+        <div class="metric-icon">🚨</div>
+        <div class="metric-content">
+          <div class="metric-label">Agences Critiques</div>
+          <div class="metric-value">{{ metrics.criticalAgencies }}</div>
+        </div>
+      </div>
+      <div class="metric-card warning">
+        <div class="metric-icon">⚠️</div>
+        <div class="metric-content">
+          <div class="metric-label">Surstock</div>
+          <div class="metric-value">{{ metrics.overstockedAgencies }}</div>
+        </div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-icon">📊</div>
+        <div class="metric-content">
+          <div class="metric-label">Confiance Moyenne</div>
+          <div class="metric-value">{{ formatPercent(metrics.averageConfidenceLevel) }}</div>
+        </div>
+      </div>
+      <div class="metric-card urgent">
+        <div class="metric-icon">🔴</div>
+        <div class="metric-content">
+          <div class="metric-label">Commandes Urgentes</div>
+          <div class="metric-value">{{ metrics.urgentOrders }}</div>
+        </div>
+      </div>
+      <div class="metric-card normal">
+        <div class="metric-icon">🟡</div>
+        <div class="metric-content">
+          <div class="metric-label">Commandes Normales</div>
+          <div class="metric-value">{{ metrics.normalOrders }}</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Alertes critiques -->
+    <div *ngIf="metrics.topCriticalAgencies && metrics.topCriticalAgencies.length > 0" class="critical-alerts-section">
+      <div class="alert-banner critical">
+        <div class="alert-icon">🚨</div>
+        <div class="alert-content">
+          <h3>Attention : {{ metrics.topCriticalAgencies.length }} agence(s) en situation critique</h3>
+          <div class="alert-list">
+            <div *ngFor="let agency of metrics.topCriticalAgencies.slice(0, 5)" class="alert-item">
+              <button 
+                class="alert-link" 
+                (click)="loadAgencyAnalytics(agency.codeProprietaire)">
+                <strong>{{ agency.codeProprietaire }}</strong>
+                <span class="alert-days">{{ agency.value | number:'1.0-0' }} jours restants</span>
+              </button>
+            </div>
+            <p *ngIf="metrics.topCriticalAgencies.length > 5" class="alert-more">
+              Et {{ metrics.topCriticalAgencies.length - 5 }} autre(s) agence(s)...
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================ -->
+  <!-- MÉTRIQUES COMPENSATIONS -->
+  <!-- ============================================ -->
+  <div *ngIf="compensationMetrics && selectedTab === 'overview' && isCompensationType()" class="metrics-section">
+    <h2>📊 Vue d'Ensemble - Compensations</h2>
+    <div class="metrics-grid">
+      <div class="metric-card">
+        <div class="metric-icon">🏢</div>
+        <div class="metric-content">
+          <div class="metric-label">Total Agences</div>
+          <div class="metric-value">{{ compensationMetrics.totalAgencies }}</div>
+        </div>
+      </div>
+      <div class="metric-card critical">
+        <div class="metric-icon">💰</div>
+        <div class="metric-content">
+          <div class="metric-label">Nécessitant Compensation</div>
+          <div class="metric-value">{{ compensationMetrics.agenciesNeedingCompensation }}</div>
+        </div>
+      </div>
+      <div class="metric-card urgent">
+        <div class="metric-icon">🚨</div>
+        <div class="metric-content">
+          <div class="metric-label">Compensations Urgentes</div>
+          <div class="metric-value">{{ compensationMetrics.urgentCompensations }}</div>
+        </div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-icon">📅</div>
+        <div class="metric-content">
+          <div class="metric-label">Fréquence Moyenne (jours)</div>
+          <div class="metric-value">{{ compensationMetrics.averageCompensationFrequency | number:'1.0-0' }}</div>
+        </div>
+      </div>
+      <div class="metric-card success">
+        <div class="metric-icon">💵</div>
+        <div class="metric-content">
+          <div class="metric-label">Montant Total Prévu</div>
+          <div class="metric-value">{{ formatCurrency(compensationMetrics.totalCompensationAmount) }}</div>
+        </div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-icon">📈</div>
+        <div class="metric-content">
+          <div class="metric-label">Montant Moyen</div>
+          <div class="metric-value">{{ formatCurrency(compensationMetrics.averageCompensationAmount) }}</div>
+        </div>
+      </div>
+      <div class="metric-card warning">
+        <div class="metric-icon">⬆️</div>
+        <div class="metric-content">
+          <div class="metric-label">Atteignant le Seuil</div>
+          <div class="metric-value">{{ compensationMetrics.agenciesAboveThreshold }}</div>
+        </div>
+      </div>
+      <div class="metric-card info">
+        <div class="metric-icon">⬇️</div>
+        <div class="metric-content">
+          <div class="metric-label">En-dessous du Seuil</div>
+          <div class="metric-value">{{ compensationMetrics.agenciesBelowThreshold }}</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Info sur le seuil configuré -->
+    <div class="info-banner">
+      <div class="info-icon">ℹ️</div>
+      <div class="info-content">
+        <p><strong>Seuil de Compensation Configuré:</strong> {{ formatCurrency(configForm.get('compensationThresholdAmount')?.value) }}</p>
+        <p>Lorsqu'une agence atteint un solde égal ou supérieur à ce seuil maximum, une compensation est déclenchée.</p>
+        <p style="margin-top: 10px;">
+          <button type="button" (click)="openThresholdModal()" class="btn btn-secondary btn-sm" *ngIf="isCompensationType()">
+            <i class="fas fa-cog"></i> Gérer les Seuils Personnalisés par Agence
+          </button>
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================ -->
+  <!-- RECOMMANDATIONS APPROVISIONNEMENTS -->
+  <!-- ============================================ -->
+  <div *ngIf="selectedTab === 'recommendations' && recommendations.length > 0 && !isCompensationType()" class="recommendations-section">
+    <h2>📋 Recommandations d'Approvisionnement</h2>
+    <div class="recommendations-list">
+      <div *ngFor="let rec of recommendations" class="recommendation-card" [ngClass]="getAlertClass(rec.alertLevel)">
+        <div class="recommendation-header">
+          <div class="agency-info">
+            <span class="alert-icon">{{ getAlertIcon(rec.alertLevel) }}</span>
+            <div>
+              <div class="agency-code">{{ rec.codeProprietaire }}</div>
+              <div class="agency-name">{{ rec.agence || rec.codeProprietaire }}</div>
+            </div>
+          </div>
+          <span class="alert-badge" [ngClass]="getAlertClass(rec.alertLevel)">{{ rec.alertLevel.toUpperCase() }}</span>
+        </div>
+        <div class="recommendation-body">
+          <div class="recommendation-grid">
+            <div class="recommendation-item">
+              <div class="item-label">Date Recommandée</div>
+              <div class="item-value">{{ rec.predictedDate | date:'dd/MM/yyyy' }}</div>
+            </div>
+            <div class="recommendation-item">
+              <div class="item-label">Solde Recommandé</div>
+              <div class="item-value amount">{{ formatCurrency(rec.recommendedBalance || rec.recommendedQuantity) }}</div>
+            </div>
+            <div class="recommendation-item">
+              <div class="item-label">Solde Actuel</div>
+              <div class="item-value">{{ formatCurrency(rec.currentBalance || rec.currentStock) }}</div>
+            </div>
+            <div class="recommendation-item">
+              <div class="item-label">Consommation Moyenne/Jour</div>
+              <div class="item-value">{{ formatCurrency(rec.averageConsumptionDaily || rec.averageConsumption) }}</div>
+            </div>
+            <div class="recommendation-item">
+              <div class="item-label">Jours Avant Rupture</div>
+              <div class="item-value" [ngClass]="{'urgent': rec.daysUntilStockout <= 2}">{{ rec.daysUntilStockout }}</div>
+            </div>
+            <div class="recommendation-item">
+              <div class="item-label">Stock de Sécurité</div>
+              <div class="item-value">{{ formatCurrency(rec.safetyStock) }}</div>
+            </div>
+            <div class="recommendation-item">
+              <div class="item-label">Confiance</div>
+              <div class="item-value">{{ formatPercent(rec.confidenceLevel) }}</div>
+            </div>
+            <div class="recommendation-item" *ngIf="rec.volatilityScore">
+              <div class="item-label">Volatilité</div>
+              <div class="item-value">{{ formatPercent(rec.volatilityScore) }}</div>
+            </div>
+          </div>
+          <button class="btn btn-small" (click)="loadAgencyAnalytics(rec.codeProprietaire)">
+            🔍 Voir les Analytiques
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================ -->
+  <!-- RECOMMANDATIONS COMPENSATIONS -->
+  <!-- ============================================ -->
+  <div *ngIf="selectedTab === 'recommendations' && compensationRecommendations.length > 0 && isCompensationType()" class="recommendations-section">
+    <h2>📋 Recommandations de Compensation</h2>
+    <div class="recommendations-list">
+      <div *ngFor="let rec of compensationRecommendations" class="recommendation-card" [ngClass]="getAlertClass(rec.alertLevel)">
+        <div class="recommendation-header">
+          <div class="agency-info">
+            <span class="alert-icon">{{ getAlertIcon(rec.alertLevel) }}</span>
+            <div>
+              <div class="agency-code">{{ rec.codeProprietaire }}</div>
+              <div class="agency-name">{{ rec.agence }}</div>
+            </div>
+          </div>
+          <span class="alert-badge" [ngClass]="getAlertClass(rec.alertLevel)">{{ rec.alertLevel.toUpperCase() }}</span>
+        </div>
+        <div class="recommendation-body">
+          <div class="recommendation-grid">
+            <div class="recommendation-item">
+              <div class="item-label">Date Prévue</div>
+              <div class="item-value">{{ rec.predictedDate | date:'dd/MM/yyyy' }}</div>
+            </div>
+            <div class="recommendation-item">
+              <div class="item-label">Montant Recommandé</div>
+              <div class="item-value amount">{{ formatCurrency(rec.recommendedAmount) }}</div>
+            </div>
+            <div class="recommendation-item">
+              <div class="item-label">Solde Actuel</div>
+              <div class="item-value">{{ formatCurrency(rec.currentBalance) }}</div>
+            </div>
+            <div class="recommendation-item">
+              <div class="item-label">
+                Seuil Maximum (XOF)
+                <span class="custom-threshold-badge" *ngIf="hasCustomThreshold(rec.codeProprietaire)" title="Seuil personnalisé">
+                  <i class="fas fa-star"></i> Personnalisé
+                </span>
+              </div>
+              <div class="item-value">{{ formatCurrency(rec.thresholdAmount) }}</div>
+            </div>
+            <div class="recommendation-item">
+              <div class="item-label">Montant Moyen Compensation</div>
+              <div class="item-value">{{ formatCurrency(rec.averageCompensationAmount) }}</div>
+            </div>
+            <div class="recommendation-item">
+              <div class="item-label">Fréquence (jours)</div>
+              <div class="item-value">{{ rec.compensationFrequencyDays | number:'1.0-0' }}</div>
+            </div>
+            <div class="recommendation-item">
+              <div class="item-label">Dernière Compensation</div>
+              <div class="item-value">{{ rec.lastCompensationDate ? (rec.lastCompensationDate | date:'dd/MM/yyyy') : 'Aucune' }}</div>
+            </div>
+            <div class="recommendation-item">
+              <div class="item-label">Jours Depuis Dernière</div>
+              <div class="item-value">{{ rec.daysSinceLastCompensation | number:'1.0-0' }}</div>
+            </div>
+            <div class="recommendation-item">
+              <div class="item-label">Pattern</div>
+              <div class="item-value">{{ getCompensationPatternLabel(rec.compensationPattern) }}</div>
+            </div>
+            <div class="recommendation-item">
+              <div class="item-label">Confiance</div>
+              <div class="item-value">{{ formatPercent(rec.confidenceLevel) }}</div>
+            </div>
+          </div>
+          <button class="btn btn-small" (click)="loadAgencyAnalytics(rec.codeProprietaire)">
+            🔍 Voir les Analytiques
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================ -->
+  <!-- CALENDRIER (Commun mais adapté) -->
+  <!-- ============================================ -->
+  <div *ngIf="selectedTab === 'calendar' && (calendar || compensationCalendar)" class="calendar-section">
+    <h2>📅 Calendrier Prédictif {{ isCompensationType() ? 'de Compensation' : 'd\'Approvisionnement' }}</h2>
+    
+    <div class="calendar-summary">
+      <div class="summary-item">
+        <span class="summary-label">Total {{ isCompensationType() ? 'Compensations' : 'Commandes' }}:</span>
+        <span class="summary-value">{{ (isCompensationType() ? compensationCalendar?.totalOrders : calendar?.totalOrders) || 0 }}</span>
+      </div>
+      <div class="summary-item urgent">
+        <span class="summary-label">Urgentes:</span>
+        <span class="summary-value">{{ (isCompensationType() ? compensationCalendar?.urgentOrders : calendar?.urgentOrders) || 0 }}</span>
+      </div>
+      <div class="summary-item normal">
+        <span class="summary-label">Normales:</span>
+        <span class="summary-value">{{ (isCompensationType() ? compensationCalendar?.normalOrders : calendar?.normalOrders) || 0 }}</span>
+      </div>
+      <div class="summary-item low">
+        <span class="summary-label">Faible Priorité:</span>
+        <span class="summary-value">{{ (isCompensationType() ? compensationCalendar?.lowPriorityOrders : calendar?.lowPriorityOrders) || 0 }}</span>
+      </div>
+    </div>
+    
+    <div *ngIf="getCalendarWeeks().length === 0" class="empty-calendar">
+      <p>Aucun {{ isCompensationType() ? 'compensation prévue' : 'approvisionnement prévu' }} dans les {{ analysisForm.get('calendarDays')?.value || 30 }} prochains jours</p>
+    </div>
+    
+    <!-- Calendrier groupé par semaine -->
+    <div *ngIf="getCalendarWeeks().length > 0" class="calendar-weeks">
+      <div *ngFor="let weekEntry of getCalendarWeeks()" class="calendar-week">
+        <div class="week-header">
+          <h3>Semaine du {{ weekEntry.week }}</h3>
+          <span class="week-count">{{ weekEntry.events.length }} événement(s)</span>
+        </div>
+        <div class="week-events">
+          <div *ngFor="let event of weekEntry.events" class="calendar-event" [ngClass]="getAlertClass(event.alertLevel)">
+            <div class="event-date">{{ formatDate(event.date) }}</div>
+            <div class="event-agency">{{ event.agence || event.codeProprietaire }}</div>
+            <div class="event-quantity">{{ formatCurrency(getEventRecommendedBalance(event)) }}</div>
+            <span class="event-badge" [ngClass]="getAlertClass(event.alertLevel)">{{ event.alertLevel }}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================ -->
+  <!-- ANALYTIQUES APPROVISIONNEMENTS -->
+  <!-- ============================================ -->
+  <div *ngIf="selectedTab === 'analytics' && selectedAgencyAnalytics && !isCompensationType()" class="analytics-section">
+    <h2>🔍 Analytiques Détaillées - {{ selectedAgencyAnalytics.agence || selectedAgencyAnalytics.codeProprietaire }}</h2>
+    <div class="analytics-grid">
+      <div class="analytics-card">
+        <h3>📈 Consommation</h3>
+        <div class="analytics-item">
+          <span>Journalière:</span>
+          <strong>{{ formatCurrency(selectedAgencyAnalytics.averageConsumptionDaily) }}</strong>
+        </div>
+        <div class="analytics-item">
+          <span>Hebdomadaire:</span>
+          <strong>{{ formatCurrency(selectedAgencyAnalytics.averageConsumptionWeekly) }}</strong>
+        </div>
+        <div class="analytics-item">
+          <span>Mensuelle:</span>
+          <strong>{{ formatCurrency(selectedAgencyAnalytics.averageConsumptionMonthly) }}</strong>
+        </div>
+        <div class="analytics-item">
+          <span>Tendance:</span>
+          <strong [ngClass]="{
+            'trend-increasing': selectedAgencyAnalytics.consumptionTrend === 'increasing',
+            'trend-decreasing': selectedAgencyAnalytics.consumptionTrend === 'decreasing',
+            'trend-stable': selectedAgencyAnalytics.consumptionTrend === 'stable'
+          }">
+            {{ selectedAgencyAnalytics.consumptionTrend === 'increasing' ? '📈 Croissante' : 
+               selectedAgencyAnalytics.consumptionTrend === 'decreasing' ? '📉 Décroissante' : 
+               '➡️ Stable' }}
+          </strong>
+        </div>
+      </div>
+      <div class="analytics-card">
+        <h3>🏦 Stock</h3>
+        <div class="analytics-item">
+          <span>Actuel:</span>
+          <strong>{{ formatCurrency(selectedAgencyAnalytics.currentStock) }}</strong>
+        </div>
+        <div class="analytics-item">
+          <span>Jours de Stock:</span>
+          <strong>{{ selectedAgencyAnalytics.stockDays }}</strong>
+        </div>
+        <div class="analytics-item">
+          <span>Stock Moyen:</span>
+          <strong>{{ formatCurrency(selectedAgencyAnalytics.averageStock || 0) }}</strong>
+        </div>
+      </div>
+      <div class="analytics-card">
+        <h3>📊 Performance</h3>
+        <div class="analytics-item">
+          <span>Taux de Rotation:</span>
+          <strong>{{ selectedAgencyAnalytics.turnoverRate | number:'1.2-2' }}</strong>
+        </div>
+        <div class="analytics-item">
+          <span>Risque de Rupture:</span>
+          <strong [ngClass]="{'risk-high': computeStockoutRiskPercent(selectedAgencyAnalytics) >= 50}">
+            {{ computeStockoutRiskPercent(selectedAgencyAnalytics) }}%
+          </strong>
+        </div>
+        <div class="analytics-item">
+          <span>Statut:</span>
+          <strong>
+            <span [ngClass]="getStatusClass(getStatusFromRiskPercent(selectedAgencyAnalytics))">
+              {{ getStatusLabel(getStatusFromRiskPercent(selectedAgencyAnalytics)) }}
+            </span>
+          </strong>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================ -->
+  <!-- ANALYTIQUES COMPENSATIONS -->
+  <!-- ============================================ -->
+  <div *ngIf="selectedTab === 'analytics' && selectedCompensationAnalytics && isCompensationType()" class="analytics-section">
+    <h2>🔍 Analytiques Compensation - {{ selectedCompensationAnalytics.agence || selectedCompensationAnalytics.codeProprietaire }}</h2>
+    <div class="analytics-grid">
+      <div class="analytics-card">
+        <h3>💰 Solde & Seuil</h3>
+        <div class="analytics-item">
+          <span>Solde Actuel:</span>
+          <strong>{{ formatCurrency(selectedCompensationAnalytics.currentBalance) }}</strong>
+        </div>
+        <div class="analytics-item">
+          <span>Seuil Maximum (XOF):</span>
+          <strong>{{ formatCurrency(configForm.get('compensationThresholdAmount')?.value) }}</strong>
+        </div>
+        <div class="analytics-item">
+          <span>Différence:</span>
+          <strong [ngClass]="{
+            'amount-positive': selectedCompensationAnalytics.currentBalance >= configForm.get('compensationThresholdAmount')?.value,
+            'amount-negative': selectedCompensationAnalytics.currentBalance < configForm.get('compensationThresholdAmount')?.value
+          }">
+            {{ formatCurrency(selectedCompensationAnalytics.currentBalance - configForm.get('compensationThresholdAmount')?.value) }}
+          </strong>
+          <small style="display: block; margin-top: 4px; color: #7f8c8d; font-size: 0.85rem;" *ngIf="selectedCompensationAnalytics.currentBalance >= configForm.get('compensationThresholdAmount')?.value">
+            ⚠️ Seuil atteint - Compensation nécessaire
+          </small>
+        </div>
+      </div>
+      
+      <div class="analytics-card">
+        <h3>📅 Historique Compensations</h3>
+        <div class="analytics-item">
+          <span>Total Compensations:</span>
+          <strong>{{ selectedCompensationAnalytics.totalCompensations }}</strong>
+        </div>
+        <div class="analytics-item">
+          <span>Montant Moyen:</span>
+          <strong>{{ formatCurrency(selectedCompensationAnalytics.averageCompensationAmount) }}</strong>
+        </div>
+        <div class="analytics-item">
+          <span>Fréquence (jours):</span>
+          <strong>{{ selectedCompensationAnalytics.compensationFrequencyDays | number:'1.0-0' }}</strong>
+        </div>
+        <div class="analytics-item">
+          <span>Dernière Compensation:</span>
+          <strong>{{ selectedCompensationAnalytics.lastCompensationDate ? (selectedCompensationAnalytics.lastCompensationDate | date:'dd/MM/yyyy') : 'Aucune' }}</strong>
+        </div>
+        <div class="analytics-item">
+          <span>Jours Depuis:</span>
+          <strong>{{ selectedCompensationAnalytics.daysSinceLastCompensation | number:'1.0-0' }}</strong>
+        </div>
+      </div>
+      
+      <div class="analytics-card">
+        <h3>📊 Prédictions & Tendances</h3>
+        <div class="analytics-item">
+          <span>Prochaine Compensation:</span>
+          <strong>{{ selectedCompensationAnalytics.predictedNextCompensation | date:'dd/MM/yyyy' }}</strong>
+        </div>
+        <div class="analytics-item">
+          <span>Tendance:</span>
+          <strong [ngClass]="{
+            'trend-increasing': selectedCompensationAnalytics.compensationTrend === 'increasing',
+            'trend-decreasing': selectedCompensationAnalytics.compensationTrend === 'decreasing',
+            'trend-stable': selectedCompensationAnalytics.compensationTrend === 'stable'
+          }">
+            {{ selectedCompensationAnalytics.compensationTrend === 'increasing' ? '📈 Croissante' : 
+               selectedCompensationAnalytics.compensationTrend === 'decreasing' ? '📉 Décroissante' : 
+               '➡️ Stable' }}
+          </strong>
+        </div>
+        <div class="analytics-item">
+          <span>Volatilité:</span>
+          <strong>{{ formatPercent(selectedCompensationAnalytics.volatility) }}</strong>
+        </div>
+        <div class="analytics-item">
+          <span>Facteur Saisonnier:</span>
+          <strong>{{ selectedCompensationAnalytics.seasonalityFactor | number:'1.2-2' }}</strong>
+        </div>
+        <div class="analytics-item">
+          <span>Niveau de Risque:</span>
+          <strong [ngClass]="getRiskLevelClass(selectedCompensationAnalytics.riskLevel)">
+            {{ getRiskLevelLabel(selectedCompensationAnalytics.riskLevel) }}
+          </strong>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================ -->
+  <!-- MODAL POUR LA GESTION DES SEUILS PERSONNALISÉS -->
+  <!-- ============================================ -->
+  <div class="modal-overlay" *ngIf="showThresholdsModal" (click)="closeThresholdModal()">
+    <div class="modal-content" (click)="$event.stopPropagation()" *ngIf="isCompensationType()">
+      <div class="modal-header">
+        <h2>
+          <i class="fas fa-sliders-h"></i> 
+          {{ editingThreshold ? 'Modifier le Seuil Personnalisé' : 'Créer un Seuil Personnalisé' }}
+        </h2>
+        <button type="button" (click)="closeThresholdModal()" class="btn-close-modal">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+      
+      <div class="modal-body">
+        <!-- Formulaire de création/modification -->
+        <form [formGroup]="thresholdForm" (ngSubmit)="saveThreshold()">
+          <div class="form-group">
+            <label>Code Propriétaire *</label>
+            <input 
+              type="text" 
+              formControlName="codeProprietaire" 
+              class="form-control"
+              [readonly]="!!editingThreshold"
+              placeholder="Ex: AGENCE_DAKAR">
+            <small>Code unique de l'agence</small>
+          </div>
+          
+          <div class="form-group">
+            <label>Seuil Maximum (XOF) *</label>
+            <input 
+              type="number" 
+              formControlName="thresholdAmount" 
+              class="form-control"
+              min="1"
+              placeholder="Montant en XOF">
+            <small>Solde maximum déclenchant une compensation pour cette agence</small>
+          </div>
+          
+          <div class="form-group">
+            <label>Seuil Global</label>
+            <input 
+              type="text" 
+              [value]="formatCurrency(configForm.get('compensationThresholdAmount')?.value)" 
+              class="form-control"
+              readonly>
+            <small>Seuil utilisé par défaut pour toutes les agences</small>
+          </div>
+          
+          <div class="modal-actions">
+            <button type="button" (click)="closeThresholdModal()" class="btn btn-secondary">
+              Annuler
+            </button>
+            <button type="submit" class="btn btn-primary" [disabled]="thresholdForm.invalid || isLoading">
+              <i class="fas fa-save"></i> {{ editingThreshold ? 'Modifier' : 'Créer' }}
+            </button>
+          </div>
+        </form>
+        
+        <!-- Liste des seuils personnalisés existants -->
+        <div class="thresholds-list" *ngIf="agencyThresholds.length > 0">
+          <h3>Seuils Personnalisés Configurés ({{ agencyThresholds.length }})</h3>
+          <div class="thresholds-table">
+            <table>
+              <thead>
+                <tr>
+                  <th>Agence</th>
+                  <th>Code Propriétaire</th>
+                  <th>Seuil (XOF)</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr *ngFor="let threshold of agencyThresholds">
+                  <td>{{ threshold.agence || threshold.codeProprietaire }}</td>
+                  <td>{{ threshold.codeProprietaire }}</td>
+                  <td><strong>{{ formatCurrency(threshold.thresholdAmount) }}</strong></td>
+                  <td>
+                    <button 
+                      type="button" 
+                      (click)="openThresholdModal(threshold)" 
+                      class="btn-icon" 
+                      title="Modifier">
+                      <i class="fas fa-edit"></i>
+                    </button>
+                    <button 
+                      type="button" 
+                      (click)="deleteThreshold(threshold)" 
+                      class="btn-icon btn-danger" 
+                      title="Supprimer">
+                      <i class="fas fa-trash"></i>
+                    </button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        
+        <div class="empty-state" *ngIf="agencyThresholds.length === 0">
+          <p>Aucun seuil personnalisé configuré. Utilisez le formulaire ci-dessus pour en créer un.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================ -->
+  <!-- MODAL DE CONFIRMATION GÉNÉRIQUE -->
+  <!-- ============================================ -->
+  <div class="modal-overlay" *ngIf="showConfirmModal" (click)="onConfirmModal(false)">
+    <div class="modal-content" (click)="$event.stopPropagation()">
+      <div class="modal-header">
+        <h2>
+          <i class="fas fa-exclamation-triangle"></i>
+          {{ confirmTitle }}
+        </h2>
+        <button type="button" (click)="onConfirmModal(false)" class="btn-close-modal">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+      <div class="modal-body">
+        <p>{{ confirmMessage }}</p>
+        <div class="modal-actions">
+          <button type="button" (click)="onConfirmModal(false)" class="btn btn-secondary">Annuler</button>
+          <button type="button" (click)="onConfirmModal(true)" class="btn btn-primary">Confirmer</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
