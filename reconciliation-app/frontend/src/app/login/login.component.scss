@@ -215,46 +215,10 @@
 
 .login-options {
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-end;
   align-items: center;
   margin-bottom: 1rem;
   width: 100%;
-}
-
-.checkbox-group {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-}
-
-.remember-me {
-  color: #7f8c8d;
-  font-size: 0.9rem;
-  
-  ::ng-deep .mat-checkbox-label {
-    color: #7f8c8d;
-    font-size: 0.9rem;
-  }
-  
-  ::ng-deep .mat-checkbox-frame {
-    border-color: #bdc3c7;
-  }
-  
-  ::ng-deep .mat-checkbox-checked .mat-checkbox-background {
-    background-color: #3498db;
-  }
-}
-
-.additional-checkbox {
-  color: #7f8c8d;
-  
-  ::ng-deep .mat-checkbox-frame {
-    border-color: #bdc3c7;
-  }
-  
-  ::ng-deep .mat-checkbox-checked .mat-checkbox-background {
-    background-color: #3498db;
-  }
 }
 
 .forgot-password {
@@ -507,7 +471,4 @@ button[mat-raised-button]:disabled {
     padding: 2rem 1rem 2.5rem 1rem;
   }
   
-  .checkbox-group {
-    gap: 0.5rem;
-  }
 }

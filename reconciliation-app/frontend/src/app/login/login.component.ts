@@ -1,7 +1,7 @@
 import { Component, OnInit } from '@angular/core';
 import { FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { HttpClient } from '@angular/common/http';
-import { Router } from '@angular/router';
+import { Router, ActivatedRoute } from '@angular/router';
 import { AppStateService } from '../services/app-state.service';
 
 @Component({
@@ -21,13 +21,12 @@ export class LoginComponent implements OnInit {
     private fb: FormBuilder,
     private http: HttpClient,
     private router: Router,
+    private route: ActivatedRoute,
     private appState: AppStateService
   ) {
     this.loginForm = this.fb.group({
       username: ['', Validators.required],
-      password: ['', Validators.required],
-      rememberMe: [true], // Option mémoriser activée par défaut
-      additionalOption: [false] // Option supplémentaire
+      password: ['', Validators.required]
     });
   }
 
@@ -53,11 +52,31 @@ export class LoginComponent implements OnInit {
             modules,
             permissions
           }, response.username);
-          this.router.navigate(['/dashboard']);
+          
+          // Rediriger vers l'URL demandée ou vers le dashboard par défaut
+          const returnUrl = this.route.snapshot.queryParams['returnUrl'] || '/dashboard';
+          this.router.navigate([returnUrl]);
         },
         error: (err) => {
           this.loading = false;
-          this.error = err.error || 'Erreur de connexion';
+          if (err.status === 401 || err.status === 403) {
+            // Le backend renvoie {"error": "Identifiants invalides"} ou un message similaire
+            if (err.error && err.error.error) {
+              this.error = err.error.error;
+            } else {
+              this.error = 'Nom d\'utilisateur ou mot de passe incorrect. Veuillez vérifier vos identifiants.';
+            }
+          } else if (err.status === 0) {
+            this.error = 'Impossible de se connecter au serveur. Vérifiez votre connexion réseau.';
+          } else if (err.error && typeof err.error === 'string') {
+            this.error = err.error;
+          } else if (err.error && err.error.message) {
+            this.error = err.error.message;
+          } else if (err.error && err.error.error) {
+            this.error = err.error.error;
+          } else {
+            this.error = 'Une erreur est survenue lors de la connexion. Veuillez réessayer.';
+          }
         }
       });
   }
@@ -65,7 +84,8 @@ export class LoginComponent implements OnInit {
   ngOnInit() {
     // Rediriger si déjà connecté
     if (this.appState.getUserRights() && this.appState.getUsername()) {
-      this.router.navigate(['/dashboard']);
+      const returnUrl = this.route.snapshot.queryParams['returnUrl'] || '/dashboard';
+      this.router.navigate([returnUrl]);
       return;
     }
     // Vérifier si l'utilisateur admin existe

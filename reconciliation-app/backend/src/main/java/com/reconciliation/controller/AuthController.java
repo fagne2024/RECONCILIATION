@@ -65,7 +65,7 @@ public class AuthController {
                     }
                     return ResponseEntity.ok().body(response);
                 })
-                .orElse(ResponseEntity.status(401).body(Map.of("error", "Identifiants invalides")));
+                .orElse(ResponseEntity.status(401).body(Map.of("error", "Login ou mot de passe incorrect")));
     }
 
     @PostMapping("/logout")
