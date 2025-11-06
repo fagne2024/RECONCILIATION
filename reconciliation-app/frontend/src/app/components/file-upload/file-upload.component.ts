@@ -149,8 +149,13 @@ export class FileUploadComponent {
             this.boFile = input.files[0];
             console.log('📁 Fichier BO sélectionné:', this.boFile.name, 'Taille:', this.boFile.size);
             
-            // Traitement du fichier avec détection TRXBO pour le mode manuel
-            this.processManualBoFile(this.boFile);
+            if (this.reconciliationMode === 'manual') {
+                // Mode manuel: pas de traitement automatique
+                this.processManualBoFile(this.boFile);
+            } else {
+                // Mode automatique: utiliser le traitement automatique
+                this.processFileWithAutoProcessing(this.boFile, 'bo');
+            }
         }
     }
 
@@ -160,7 +165,14 @@ export class FileUploadComponent {
         if (input.files?.length) {
             this.partnerFile = input.files[0];
             console.log('📁 Fichier Partenaire sélectionné:', this.partnerFile.name, 'Taille:', this.partnerFile.size);
-            this.processFileWithAutoProcessing(this.partnerFile, 'partner');
+            
+            if (this.reconciliationMode === 'manual') {
+                // Mode manuel: pas de traitement automatique
+                this.parseFile(this.partnerFile, false);
+            } else {
+                // Mode automatique: utiliser le traitement automatique
+                this.processFileWithAutoProcessing(this.partnerFile, 'partner');
+            }
         }
     }
 
@@ -168,8 +180,8 @@ export class FileUploadComponent {
     private processManualBoFile(file: File): void {
         console.log('🔧 Traitement du fichier BO en mode manuel:', file.name);
         
-        // D'abord, traiter le fichier normalement
-        this.processFileWithAutoProcessing(file, 'bo');
+        // En mode manuel, ne pas utiliser le traitement automatique: parser directement le fichier
+        this.parseFile(file, true);
         
         // Ensuite, vérifier si c'est un fichier TRXBO et extraire les services
         // On va attendre que les données soient chargées avant de vérifier
@@ -570,8 +582,18 @@ export class FileUploadComponent {
     private applyOrangeMoneyColumnSelection<T extends Record<string, any>>(rows: T[], fileName?: string): T[] {
         if (!rows || rows.length === 0) return rows;
 
-        const headers = Object.keys(rows[0]);
-        console.log('🔍 applyOrangeMoneyColumnSelection - Colonnes d\'entrée:', headers);
+        // Normaliser les colonnes dans les données d'abord
+        const normalizedRows = rows.map(row => {
+            const normalizedRow: Record<string, any> = {};
+            Object.keys(row).forEach(key => {
+                const normalizedKey = this.normalizeColumnName(key);
+                normalizedRow[normalizedKey] = row[key];
+            });
+            return normalizedRow as T;
+        });
+
+        const headers = Object.keys(normalizedRows[0]);
+        console.log('🔍 applyOrangeMoneyColumnSelection - Colonnes d\'entrée (normalisées):', headers);
         console.log('🔍 applyOrangeMoneyColumnSelection - Nom du fichier:', fileName);
         
         const lower = (s: string) => s.toLowerCase();
@@ -579,7 +601,7 @@ export class FileUploadComponent {
         // EXCEPTION: Le fichier PMOMBF ne doit pas utiliser les colonnes par défaut Orange Money
         if (fileName && lower(fileName).includes('pmombf')) {
             console.log('🚫 Exception PMOMBF détectée - retour des données originales sans transformation Orange Money');
-            return rows;
+            return normalizedRows;
         }
 
         // Détection d'un fichier Orange Money basée sur la présence de colonnes clés
@@ -590,8 +612,8 @@ export class FileUploadComponent {
         console.log('🔍 Détection Orange Money:', looksLikeOM);
         
         if (!looksLikeOM) {
-            console.log('✅ Fichier non-Orange Money détecté, retour des données originales');
-            return rows;
+            console.log('✅ Fichier non-Orange Money détecté, retour des données originales (normalisées)');
+            return normalizedRows;
         }
 
         const targetOrder = [
@@ -628,10 +650,10 @@ export class FileUploadComponent {
         const mappedColumns: (string | null)[] = targetOrder.map(findColumn);
 
         // Si aucune correspondance pertinente, ne pas altérer
-        if (mappedColumns.every(c => c === null)) return rows;
+        if (mappedColumns.every(c => c === null)) return normalizedRows;
 
         // Recomposer les lignes avec uniquement les colonnes cibles, dans l'ordre
-        const remapped = rows.map(row => {
+        const remapped = normalizedRows.map(row => {
             const obj: any = {};
             mappedColumns.forEach((col, idx) => {
                 const targetName = targetOrder[idx];
@@ -720,7 +742,11 @@ export class FileUploadComponent {
                             if (rawRows.length > orangeMoneyDetection.headerRowIndex) {
                                 const headerRow = orangeMoneyDetection.headerRow;
                                 const dataRows = rawRows.slice(orangeMoneyDetection.headerRowIndex + 1);
-                                const colNames = headerRow.map((v: any, i: number) => v ? v.toString() : 'Col' + (i+1));
+                                // Normaliser les noms de colonnes (corriger l'encodage)
+                                const colNames = headerRow.map((v: any, i: number) => {
+                                    const header = v ? v.toString() : 'Col' + (i+1);
+                                    return this.normalizeColumnName(header);
+                                });
                                 
                                 console.log(`✅ En-têtes détectés à la ligne ${orangeMoneyDetection.headerRowIndex}:`, colNames);
                                 
@@ -732,7 +758,7 @@ export class FileUploadComponent {
                                     const row: any = {};
                                     colNames.forEach((header: string, index: number) => {
                                         const value = rowData[index];
-                                        row[header] = value !== undefined && value !== null ? value : '';
+                                        row[header] = value !== undefined && value !== null ? this.normalizeValue(value) : '';
                                     });
                                     processedRows.push(row);
                                 }
@@ -763,29 +789,48 @@ export class FileUploadComponent {
                         header: true,
                         delimiter: delimiter,
                         skipEmptyLines: true,
+                        transformHeader: (header: string) => {
+                            // Normaliser les noms de colonnes (corriger l'encodage)
+                            return this.normalizeColumnName(header);
+                        },
+                        transform: (value: string) => {
+                            // Normaliser les valeurs
+                            return this.normalizeValue(value);
+                        },
                         complete: (results) => {
                             console.log('Première ligne lue:', results.data[0]);
-                            console.log('📊 Colonnes détectées dans le CSV:', results.data.length > 0 ? Object.keys(results.data[0]) : []);
-                            
                             const rawData = results.data as Record<string, string>[];
-                            console.log('📊 Données brutes CSV:', rawData.length, 'lignes');
+                            console.log('📊 Colonnes détectées dans le CSV (avant normalisation):', rawData.length > 0 ? Object.keys(rawData[0]) : []);
+                            
+                            // Normaliser les noms de colonnes dans les données (au cas où transformHeader n'aurait pas fonctionné)
+                            const normalizedData = rawData.map(row => {
+                                const normalizedRow: Record<string, string> = {};
+                                Object.keys(row).forEach(key => {
+                                    const normalizedKey = this.normalizeColumnName(key);
+                                    normalizedRow[normalizedKey] = row[key];
+                                });
+                                return normalizedRow;
+                            });
+                            
+                            console.log('📊 Colonnes après normalisation:', normalizedData.length > 0 ? Object.keys(normalizedData[0]) : []);
+                            console.log('📊 Données brutes CSV:', normalizedData.length, 'lignes');
                             
                             // Vérifier si les colonnes semblent être des données au lieu d'en-têtes
-                            const firstRowKeys = Object.keys(rawData[0] || {});
+                            const firstRowKeys = Object.keys(normalizedData[0] || {});
                             const hasValidHeaders = this.hasValidHeaders(firstRowKeys);
                             
-                            if (!hasValidHeaders && rawData.length > 0) {
+                            if (!hasValidHeaders && normalizedData.length > 0) {
                                 console.log('⚠️ En-têtes invalides détectés, tentative de parsing sans en-têtes');
                                 this.parseCSVWithoutHeaders(text, delimiter, isBo, file.name);
                                 return;
                             }
                             
                             if (isBo) {
-                                this.boData = this.applyOrangeMoneyColumnSelection(this.normalizeData(rawData), file.name);
+                                this.boData = this.applyOrangeMoneyColumnSelection(this.normalizeData(normalizedData), file.name);
                                 console.log('📊 Données BO après traitement:', this.boData.length, 'lignes');
                                 console.log('📊 Colonnes BO après traitement:', this.boData.length > 0 ? Object.keys(this.boData[0]) : []);
                             } else {
-                                this.partnerData = this.applyOrangeMoneyColumnSelection(this.normalizeData(this.convertDebitCreditToNumber(rawData)), file.name);
+                                this.partnerData = this.applyOrangeMoneyColumnSelection(this.normalizeData(this.convertDebitCreditToNumber(normalizedData)), file.name);
                                 console.log('📊 Données Partenaire après traitement:', this.partnerData.length, 'lignes');
                                 console.log('📊 Colonnes Partenaire après traitement:', this.partnerData.length > 0 ? Object.keys(this.partnerData[0]) : []);
                             }
@@ -859,6 +904,7 @@ export class FileUploadComponent {
             const hasValidHeaders = this.hasValidHeaders(rowStrings23);
             
             // Si la ligne 23 a beaucoup de colonnes ET contient des en-têtes valides
+            // ET que ce ne sont PAS des données (vérification stricte)
             if (nonEmptyColumns23 >= 10 && hasValidHeaders) {
                 console.log('✅ Ligne 23 trouvée avec suffisamment de colonnes et en-têtes valides!');
                 return {
@@ -867,7 +913,11 @@ export class FileUploadComponent {
                     headerRow: cells23
                 };
             } else {
-                console.log('⚠️ Ligne 23 n\'a pas assez de colonnes ou contient des données au lieu d\'en-têtes, recherche dans les 50 premières lignes');
+                if (!hasValidHeaders) {
+                    console.log('❌ Ligne 23 contient des données au lieu d\'en-têtes, recherche dans les premières lignes');
+                } else {
+                    console.log('⚠️ Ligne 23 n\'a pas assez de colonnes, recherche dans les 50 premières lignes');
+                }
             }
         } else {
             console.log('⚠️ Ligne 23 n\'existe pas, recherche dans les 50 premières lignes');
@@ -920,14 +970,25 @@ export class FileUploadComponent {
                 }
             }
             
-            // Bonus pour avoir plusieurs colonnes non vides (critère important pour Orange Money)
-            if (nonEmptyColumns >= 10) {
-                score += 50; // Bonus très important pour les vraies lignes d'en-tête
+            // Vérifier si cette ligne contient des en-têtes valides (CRITÈRE CRITIQUE)
+            const hasValidHeaders = this.hasValidHeaders(rowStrings);
+            
+            // PÉNALITÉ MAJEURE si la ligne ressemble à des données
+            if (!hasValidHeaders) {
+                score -= 1000; // Pénalité massive pour rejeter les lignes de données
+                console.log(`❌ Ligne ${i} rejetée: contient des données au lieu d'en-têtes`);
             }
             
-            // Bonus pour avoir beaucoup de colonnes non vides (critère très important)
-            if (nonEmptyColumns >= 15) {
-                score += 100; // Bonus maximum pour les vraies lignes d'en-tête
+            // Bonus pour avoir plusieurs colonnes non vides (critère important pour Orange Money)
+            // MAIS seulement si ce sont de vrais en-têtes
+            if (hasValidHeaders) {
+                if (nonEmptyColumns >= 10) {
+                    score += 50; // Bonus très important pour les vraies lignes d'en-tête
+                }
+                
+                if (nonEmptyColumns >= 15) {
+                    score += 100; // Bonus maximum pour les vraies lignes d'en-tête
+                }
             }
             
             // Pénalité pour les lignes avec peu de colonnes non vides
@@ -974,10 +1035,18 @@ export class FileUploadComponent {
         console.log(`🔍 Meilleur en-tête trouvé à la ligne ${bestHeaderRowIndex} avec score ${bestScore}`);
         console.log(`🔍 En-tête détecté:`, bestHeaderRow);
         
+        // Vérifier que le meilleur en-tête trouvé est vraiment valide
+        // (score > 0 signifie qu'il a passé la validation hasValidHeaders)
+        const isValidResult = bestScore > 0 && bestHeaderRowIndex >= 0 && bestHeaderRow.length > 0;
+        
+        if (!isValidResult) {
+            console.warn('⚠️ Aucun en-tête valide trouvé dans les 50 premières lignes');
+        }
+        
         return {
-            isOrangeMoney: bestScore > 0,
-            headerRowIndex: bestHeaderRowIndex,
-            headerRow: bestHeaderRow
+            isOrangeMoney: isValidResult,
+            headerRowIndex: isValidResult ? bestHeaderRowIndex : -1,
+            headerRow: isValidResult ? bestHeaderRow : []
         };
     }
 
@@ -989,10 +1058,30 @@ export class FileUploadComponent {
     }
 
     /**
-     * Méthode simple qui retourne la valeur de la colonne sans modification
+     * Normalise un nom de colonne en corrigeant l'encodage et en nettoyant les caractères
      */
     private normalizeColumnName(columnName: string): string {
-        return columnName;
+        if (!columnName) return '';
+        
+        // Nettoyer les espaces d'abord
+        let normalized = columnName.trim();
+        
+        // Supprimer les guillemets
+        if ((normalized.startsWith('"') && normalized.endsWith('"')) ||
+            (normalized.startsWith("'") && normalized.endsWith("'"))) {
+            normalized = normalized.slice(1, -1);
+        }
+        
+        // Nettoyer les caractères invisibles (BOM, etc.)
+        normalized = normalized.replace(/[\u200B-\u200D\uFEFF]/g, '');
+        
+        // Corriger les caractères mal encodés (é, è, à, etc.) - IMPORTANT: après le nettoyage
+        normalized = fixGarbledCharacters(normalized);
+        
+        // Remplacer les espaces multiples par un seul
+        normalized = normalized.replace(/\s+/g, ' ');
+        
+        return normalized.trim();
     }
 
     /**
@@ -1103,11 +1192,21 @@ export class FileUploadComponent {
     private hasValidHeaders(keys: string[]): boolean {
         if (!keys || keys.length === 0) return false;
         
-        // Vérifier si les clés contiennent des patterns typiques de données
+        // Filtrer les clés vides et les colonnes génériques
+        const nonEmptyKeys = keys.filter(key => key && key.trim() !== '' && !key.startsWith('Col'));
+        
+        if (nonEmptyKeys.length === 0) return false;
+        
+        // Patterns de données à rejeter (plus stricts)
         const dataPatterns = [
-            /^\d{10,}$/, // Numéros de téléphone longs
+            /^\d{8,}$/, // Numéros longs (IDs, téléphones, etc.) - 8 chiffres ou plus
             /^\d{4}-\d{2}-\d{2}/, // Dates
             /^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}/, // Dates avec heures
+            /^\d+\.\d+$/, // Nombres décimaux simples
+            /^[a-z0-9-]{10,}$/i, // Codes/identifiants alphanumériques longs (ex: cos-20w0wph3r2a1t)
+            /^0\d{9}$/, // Numéros de téléphone (10 chiffres commençant par 0)
+            /^[A-Z]{2,}_[A-Z0-9_]+$/i, // Codes en majuscules avec underscores (ex: CI_PAIEMENTWAVE_LONACI)
+            /^[A-Z]{3,}$/, // Codes en majuscules (ex: CASH, API)
             /^Col\d+$/, // Colonnes génériques
             /^Successful$/, // Statuts
             /^Cash in$/, // Types de transaction
@@ -1122,25 +1221,66 @@ export class FileUploadComponent {
             /^XAF$/, // Devises
             /^Debit$/, // Types de transaction
             /^PC0_\d+$/, // Codes de transaction
+            /^null$/i, // Valeurs null
+            /^\d{13,}$/, // Timestamps longs
         ];
         
-        // Filtrer les clés vides et les colonnes génériques
-        const nonEmptyKeys = keys.filter(key => key && key.trim() !== '' && !key.startsWith('Col'));
+        // Patterns d'en-têtes valides (mots-clés typiques)
+        const headerPatterns = [
+            /^(N°|Numéro|Number|ID|Id)$/i,
+            /^(Date|Heure|Time|Timestamp)$/i,
+            /^(Référence|Reference|Ref)$/i,
+            /^(Montant|Amount|Somme)$/i,
+            /^(Opération|Operation|Transaction)$/i,
+            /^(Agent|Correspondant|Correspondent)$/i,
+            /^(Service|Type|Category)$/i,
+            /^(Statut|Status|État|State)$/i,
+            /^(Compte|Account|Wallet)$/i,
+            /^(Téléphone|Phone|Tel)$/i,
+            /^(Description|Libellé|Label)$/i,
+            /^(Colonne|Column|Champ|Field)$/i,
+        ];
         
-        // Si plus de 30% des clés non vides correspondent à des patterns de données, ce ne sont probablement pas des en-têtes
+        // Compter les correspondances avec les patterns de données
         const dataMatches = nonEmptyKeys.filter(key => 
-            dataPatterns.some(pattern => pattern.test(key))
+            dataPatterns.some(pattern => pattern.test(key.trim()))
         ).length;
         
-        const isDataLike = nonEmptyKeys.length > 0 && dataMatches > nonEmptyKeys.length * 0.3;
+        // Compter les correspondances avec les patterns d'en-têtes
+        const headerMatches = nonEmptyKeys.filter(key => 
+            headerPatterns.some(pattern => pattern.test(key.trim()))
+        ).length;
+        
+        // Calculer le ratio de données vs en-têtes
+        const dataRatio = dataMatches / nonEmptyKeys.length;
+        const headerRatio = headerMatches / nonEmptyKeys.length;
+        
+        // Critères de rejet (plus stricts)
+        // 1. Si plus de 40% des clés sont des données, c'est probablement une ligne de données
+        // 2. Si moins de 10% des clés sont des en-têtes valides, c'est probablement une ligne de données
+        // 3. Si on a beaucoup de numéros longs ou de codes, c'est probablement des données
+        const hasManyDataPatterns = dataRatio > 0.4;
+        const hasFewHeaders = headerRatio < 0.1;
+        const hasManyLongNumbers = nonEmptyKeys.filter(k => /^\d{8,}$/.test(k.trim())).length > nonEmptyKeys.length * 0.3;
+        const hasManyCodes = nonEmptyKeys.filter(k => /^[A-Z0-9_-]{8,}$/i.test(k.trim())).length > nonEmptyKeys.length * 0.3;
+        
+        const isDataLike = hasManyDataPatterns || (hasFewHeaders && (hasManyLongNumbers || hasManyCodes));
         
         console.log('🔍 Validation des en-têtes:', {
-            keys: keys.slice(0, 5), // Afficher seulement les 5 premiers
-            nonEmptyKeys: nonEmptyKeys.slice(0, 5),
+            keys: keys.slice(0, 10), // Afficher les 10 premiers
+            nonEmptyKeys: nonEmptyKeys.slice(0, 10),
             dataMatches,
+            headerMatches,
+            dataRatio: (dataRatio * 100).toFixed(1) + '%',
+            headerRatio: (headerRatio * 100).toFixed(1) + '%',
             nonEmptyKeysCount: nonEmptyKeys.length,
             totalKeys: keys.length,
-            isDataLike
+            hasManyDataPatterns,
+            hasFewHeaders,
+            hasManyLongNumbers,
+            hasManyCodes,
+            isDataLike,
+            result: !isDataLike ? '✅ EN-TÊTES VALIDES' : '❌ DONNÉES DÉTECTÉES'
         });
         
         return !isDataLike;
@@ -1148,9 +1288,10 @@ export class FileUploadComponent {
 
     /**
      * Parse un fichier CSV sans en-têtes en générant des noms de colonnes
+     * Essaie d'abord de trouver une vraie ligne d'en-tête dans les premières lignes
      */
     private parseCSVWithoutHeaders(text: string, delimiter: string, isBo: boolean, fileName: string): void {
-        console.log('🔧 Parsing CSV sans en-têtes');
+        console.log('🔧 Parsing CSV sans en-têtes - Recherche d\'une ligne d\'en-tête valide');
         
         Papa.parse(text, {
             header: false,
@@ -1165,22 +1306,49 @@ export class FileUploadComponent {
                     return;
                 }
                 
-                // Générer des noms de colonnes basés sur le nombre de colonnes
-                const firstRow = rawRows[0];
-                const columnCount = firstRow.length;
-                const generatedHeaders = Array.from({ length: columnCount }, (_, i) => `Colonne_${i + 1}`);
+                // Chercher une vraie ligne d'en-tête dans les 20 premières lignes
+                let headerRowIndex = -1;
+                let headers: string[] = [];
                 
-                console.log('📊 En-têtes générés:', generatedHeaders);
+                for (let i = 0; i < Math.min(20, rawRows.length); i++) {
+                    const row = rawRows[i];
+                    if (!row || row.length === 0) continue;
+                    
+                    const rowStrings = row.map(cell => String(cell || '').trim());
+                    if (this.hasValidHeaders(rowStrings)) {
+                        headerRowIndex = i;
+                        headers = rowStrings.map((h, idx) => {
+                            const normalized = this.normalizeColumnName(h);
+                            return normalized || `Colonne_${idx + 1}`;
+                        });
+                        console.log(`✅ Ligne d'en-tête trouvée à la ligne ${i + 1}:`, headers);
+                        break;
+                    }
+                }
                 
-                // Créer les lignes de données avec les en-têtes générés
+                // Si aucune ligne d'en-tête valide trouvée, générer des noms de colonnes
+                if (headerRowIndex === -1) {
+                    const firstRow = rawRows[0];
+                    const columnCount = firstRow ? firstRow.length : 0;
+                    headers = Array.from({ length: columnCount }, (_, i) => `Colonne_${i + 1}`);
+                    headerRowIndex = 0; // Utiliser la première ligne comme données
+                    console.log('⚠️ Aucune ligne d\'en-tête valide trouvée, génération de noms génériques:', headers);
+                }
+                
+                console.log('📊 En-têtes utilisés:', headers);
+                
+                // Créer les lignes de données avec les en-têtes trouvés ou générés
                 const processedRows: any[] = [];
-                for (const rowData of rawRows) {
+                const dataStartIndex = headerRowIndex + 1; // Commencer après la ligne d'en-tête
+                
+                for (let i = dataStartIndex; i < rawRows.length; i++) {
+                    const rowData = rawRows[i];
                     if (!rowData || rowData.length === 0) continue;
                     
                     const row: any = {};
-                    generatedHeaders.forEach((header: string, index: number) => {
+                    headers.forEach((header: string, index: number) => {
                         const value = rowData[index];
-                        row[header] = value !== undefined && value !== null ? value : '';
+                        row[header] = value !== undefined && value !== null ? String(value).trim() : '';
                     });
                     processedRows.push(row);
                 }
@@ -2836,23 +3004,30 @@ export class FileUploadComponent {
         }
 
         const availableColumns = Object.keys(data[0]);
-        console.log('📊 Colonnes disponibles:', availableColumns);
-        console.log('🔑 Clés candidates:', candidateKeys);
-
-        // Normaliser les noms de colonnes pour la comparaison
+        
+        // Normaliser les noms de colonnes AVANT de les logger
         const normalizedColumns = availableColumns.map(col => this.normalizeColumnName(col));
         const normalizedCandidates = candidateKeys.map(key => this.normalizeColumnName(key));
+        
+        // Créer un mapping entre colonnes normalisées et originales pour l'accès aux données
+        const columnMapping = new Map<string, string>();
+        availableColumns.forEach((originalCol, index) => {
+            const normalizedCol = normalizedColumns[index];
+            columnMapping.set(normalizedCol, originalCol);
+        });
 
-        console.log('🔧 Colonnes normalisées:', normalizedColumns);
-        console.log('🔧 Clés candidates normalisées:', normalizedCandidates);
+        console.log('📊 Colonnes disponibles (normalisées):', normalizedColumns);
+        console.log('🔑 Clés candidates (normalisées):', normalizedCandidates);
 
         // PRIORITÉ 1: Chercher des correspondances exactes
         for (let i = 0; i < normalizedCandidates.length; i++) {
             const candidateIndex = normalizedColumns.indexOf(normalizedCandidates[i]);
             if (candidateIndex !== -1) {
-                console.log(`✅ Correspondance exacte trouvée: ${candidateKeys[i]} -> ${availableColumns[candidateIndex]}`);
-                console.log(`   Normalisé: "${normalizedCandidates[i]}" -> "${normalizedColumns[candidateIndex]}"`);
-                return availableColumns[candidateIndex];
+                // Retourner la colonne normalisée, pas l'originale
+                const foundColumn = normalizedColumns[candidateIndex];
+                console.log(`✅ Correspondance exacte trouvée: ${candidateKeys[i]} -> ${foundColumn}`);
+                console.log(`   Normalisé: "${normalizedCandidates[i]}" -> "${foundColumn}"`);
+                return foundColumn;
             }
         }
         
@@ -2862,9 +3037,11 @@ export class FileUploadComponent {
             for (let j = 0; j < normalizedColumns.length; j++) {
                 const column = normalizedColumns[j].toLowerCase();
                 if (candidate === column) {
-                    console.log(`✅ Correspondance exacte (insensible à la casse) trouvée: ${candidateKeys[i]} -> ${availableColumns[j]}`);
-                    console.log(`   Normalisé: "${normalizedCandidates[i]}" -> "${normalizedColumns[j]}"`);
-                    return availableColumns[j];
+                    // Retourner la colonne normalisée (qui sera utilisée pour accéder aux données)
+                    const foundColumn = normalizedColumns[j];
+                    console.log(`✅ Correspondance exacte (insensible à la casse) trouvée: ${candidateKeys[i]} -> ${foundColumn}`);
+                    console.log(`   Normalisé: "${normalizedCandidates[i]}" -> "${foundColumn}"`);
+                    return foundColumn;
                 }
             }
         }
@@ -2876,9 +3053,11 @@ export class FileUploadComponent {
                 const column = normalizedColumns[j].replace(/\s+/g, '');
                 
                 if (candidate === column) {
-                    console.log(`✅ Correspondance sans espaces trouvée: ${candidateKeys[i]} -> ${availableColumns[j]}`);
+                    // Retourner la colonne normalisée
+                    const foundColumn = normalizedColumns[j];
+                    console.log(`✅ Correspondance sans espaces trouvée: ${candidateKeys[i]} -> ${foundColumn}`);
                     console.log(`   Sans espaces: "${candidate}" = "${column}"`);
-                    return availableColumns[j];
+                    return foundColumn;
                 }
             }
         }
@@ -2894,27 +3073,31 @@ export class FileUploadComponent {
                     // Vérification spéciale pour éviter les correspondances incorrectes
                     // Si on cherche "id" et qu'on trouve "Provider category", c'est incorrect
                     if (candidate.toLowerCase() === 'id' && column.toLowerCase().includes('provider')) {
-                        console.log(`❌ Correspondance partielle rejetée: ${candidateKeys[i]} -> ${availableColumns[j]} (évite Provider category)`);
+                        console.log(`❌ Correspondance partielle rejetée: ${candidateKeys[i]} -> ${normalizedColumns[j]} (évite Provider category)`);
                         continue;
                     }
                     
                     // Vérification spéciale pour éviter les correspondances trop courtes
                     if (candidate.length < 3 && column.length > candidate.length * 3) {
-                        console.log(`❌ Correspondance partielle rejetée: ${candidateKeys[i]} -> ${availableColumns[j]} (clé trop courte)`);
+                        console.log(`❌ Correspondance partielle rejetée: ${candidateKeys[i]} -> ${normalizedColumns[j]} (clé trop courte)`);
                         continue;
                     }
                     
-                    console.log(`✅ Correspondance partielle trouvée: ${candidateKeys[i]} -> ${availableColumns[j]}`);
+                    // Retourner la colonne normalisée
+                    const foundColumn = normalizedColumns[j];
+                    console.log(`✅ Correspondance partielle trouvée: ${candidateKeys[i]} -> ${foundColumn}`);
                     console.log(`   Normalisé: "${candidate}" contient ou est contenu dans "${column}"`);
-                    return availableColumns[j];
+                    return foundColumn;
                 }
                 
                 // Vérifier la similarité (pour gérer les variations d'encodage)
                 const similarity = this.calculateStringSimilarity(candidate, column);
                 if (similarity > 0.8) {
-                    console.log(`✅ Correspondance par similarité trouvée: ${candidateKeys[i]} -> ${availableColumns[j]}`);
+                    // Retourner la colonne normalisée
+                    const foundColumn = normalizedColumns[j];
+                    console.log(`✅ Correspondance par similarité trouvée: ${candidateKeys[i]} -> ${foundColumn}`);
                     console.log(`   Similarité: ${similarity} (${candidate} ~ ${column})`);
-                    return availableColumns[j];
+                    return foundColumn;
                 }
             }
         }

@@ -19,6 +19,7 @@ import { PopupService } from '../../services/popup.service';
 import { CompteService } from '../../services/compte.service';
 import { OperationService } from '../../services/operation.service';
 import { OperationCreateRequest } from '../../models/operation.model';
+import { fixGarbledCharacters } from '../../utils/encoding-fixer';
 
 interface ApiError {
     error?: {
@@ -320,7 +321,7 @@ interface ApiError {
                                     <div class="data-grid refined-grid">
                                         <div class="data-row" *ngFor="let key of getBoKeys(match)">
                                             <span class="label">{{key}} :</span>
-                                            <span class="value">{{match.boData[key]}}</span>
+                                            <span class="value">{{getBoValue(match, key)}}</span>
                                         </div>
                                     </div>
                                 </div>
@@ -329,7 +330,7 @@ interface ApiError {
                                     <div class="data-grid refined-grid">
                                         <div class="data-row" *ngFor="let key of getPartnerKeys(match)">
                                             <span class="label">{{key}} :</span>
-                                            <span class="value">{{match.partnerData[key]}}</span>
+                                            <span class="value">{{getPartnerValue(match, key)}}</span>
                                         </div>
                                     </div>
                                 </div>
@@ -405,7 +406,7 @@ interface ApiError {
                                 </div>
                                 <div class="data-row" *ngFor="let key of getBoOnlyKeys(record)">
                                     <span class="label">{{key}}:</span>
-                                    <span class="value">{{record[key]}}</span>
+                                    <span class="value">{{getRecordValue(record, key)}}</span>
                                 </div>
                             </div>
                         </div>
@@ -479,7 +480,7 @@ interface ApiError {
                                 </div>
                                 <div class="data-row" *ngFor="let key of getPartnerOnlyKeys(record)">
                                     <span class="label">{{key}}:</span>
-                                    <span class="value">{{record[key]}}</span>
+                                    <span class="value">{{getRecordValue(record, key)}}</span>
                                 </div>
                             </div>
                         </div>
@@ -2967,59 +2968,107 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
         return this.getFilteredKeys(match.partnerData, 'partner');
     }
 
+    /**
+     * Obtient la valeur BO à partir d'une clé corrigée
+     */
+    getBoValue(match: Match, correctedKey: string): string {
+        const originalKey = this.getOriginalKey(match.boData, correctedKey);
+        return match.boData[originalKey] || '';
+    }
+
+    /**
+     * Obtient la valeur Partenaire à partir d'une clé corrigée
+     */
+    getPartnerValue(match: Match, correctedKey: string): string {
+        const originalKey = this.getOriginalKey(match.partnerData, correctedKey);
+        return match.partnerData[originalKey] || '';
+    }
+
+    /**
+     * Obtient la valeur d'un enregistrement à partir d'une clé corrigée
+     */
+    getRecordValue(record: Record<string, string>, correctedKey: string): string {
+        const originalKey = this.getOriginalKey(record, correctedKey);
+        return record[originalKey] || '';
+    }
+
     getRecordKeys(record: Record<string, string>): string[] {
         return Object.keys(record);
     }
 
     /**
      * Méthode intelligente pour filtrer les colonnes selon le type de données détecté
+     * Corrige également les noms de colonnes mal encodés
      */
     getFilteredKeys(record: Record<string, string>, dataType: 'bo' | 'partner'): string[] {
         const keys = Object.keys(record);
         
-        // Détecter le type de données basé sur les colonnes présentes
-        const isTRXBO = keys.some(key => ['IDTransaction', 'téléphone client', 'GRX'].includes(key));
-        const isOPPART = keys.some(key => ['ID Opération', 'Type Opération', 'Solde avant', 'Solde aprés'].includes(key));
-        const isUSSDPART = keys.some(key => ['Code service', 'Déstinataire', 'Token', 'SMS Action faite'].includes(key));
+        // Corriger les noms de colonnes mal encodés
+        const correctedKeys = keys.map(key => fixGarbledCharacters(key));
+        
+        // Créer un mapping entre les clés originales et corrigées pour l'accès aux données
+        const keyMapping = new Map<string, string>();
+        keys.forEach((originalKey, index) => {
+            keyMapping.set(correctedKeys[index], originalKey);
+        });
+        
+        // Détecter le type de données basé sur les colonnes présentes (avec clés corrigées)
+        const isTRXBO = correctedKeys.some(key => ['IDTransaction', 'téléphone client', 'GRX'].includes(key));
+        const isOPPART = correctedKeys.some(key => ['ID Opération', 'Type Opération', 'Solde avant', 'Solde aprés'].includes(key));
+        const isUSSDPART = correctedKeys.some(key => ['Code service', 'Déstinataire', 'Token', 'SMS Action faite'].includes(key));
         
         // Définir les colonnes autorisées selon le type détecté
         let allowedColumns: string[] = [];
         
         if (isTRXBO) {
-            // Colonnes TRXBO autorisées
+            // Colonnes TRXBO autorisées (logique de filtrage originale)
+            // Inclure les variations pour gérer les différences d'encodage
             allowedColumns = [
                 'ID',
                 'IDTransaction',
                 'téléphone client',
+                'telephone client',
                 'montant',
                 'Service',
                 'Agence',
                 'Date',
                 'Numéro Trans GU',
+                'Numero Trans GU',
                 'GRX',
                 'Statut'
             ];
         } else if (isOPPART) {
-            // Colonnes OPPART autorisées
+            // Colonnes OPPART autorisées (logique de filtrage originale)
+            // Inclure les variations pour gérer les différences d'encodage
             allowedColumns = [
                 'ID Opération',
+                'ID Operation',
                 'Type Opération',
+                'Type Operation',
                 'Montant',
                 'Solde avant',
                 'Solde aprés',
+                'Solde apres',
                 'Code proprietaire',
                 'Date opération',
+                'Date Opération',
+                'Date operation',
                 'Numéro Trans GU',
-                'groupe de réseau'
+                'Numero Trans GU',
+                'groupe de réseau',
+                'groupe de reseau'
             ];
         } else if (isUSSDPART) {
-            // Colonnes USSDPART autorisées
+            // Colonnes USSDPART autorisées (logique de filtrage originale)
+            // Inclure les variations pour gérer les différences d'encodage
             allowedColumns = [
                 'ID',
                 'Agence',
                 'Code service',
                 'Numéro Trans GU',
+                'Numero Trans GU',
                 'Déstinataire',
+                'Destinataire',
                 'date de création',
                 'Etat',
                 'Token',
@@ -3027,12 +3076,58 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                 'Montant'
             ];
         } else {
-            // Si aucun type n'est détecté, retourner toutes les colonnes
-            return keys;
+            // Si aucun type n'est détecté, retourner toutes les colonnes corrigées
+            return correctedKeys;
         }
         
-        // Filtrer les clés pour ne garder que les colonnes autorisées
-        return keys.filter(key => allowedColumns.includes(key));
+        // Filtrer les clés corrigées pour ne garder que les colonnes autorisées
+        // Utiliser une correspondance flexible pour gérer les variations (avec/sans accents, etc.)
+        const filteredKeys = correctedKeys.filter(key => {
+            // Vérifier correspondance exacte d'abord
+            if (allowedColumns.includes(key)) {
+                return true;
+            }
+            
+            // Vérifier correspondance insensible à la casse et aux accents
+            const normalizedKey = key.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim();
+            const match = allowedColumns.some(allowed => {
+                const normalizedAllowed = allowed.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim();
+                return normalizedKey === normalizedAllowed;
+            });
+            
+            if (match) {
+                return true;
+            }
+            
+            // Correspondance partielle pour gérer les cas comme "Numero Trans GU" vs "Numéro Trans GU"
+            // ou "Type Operation" vs "Type Opération"
+            return allowedColumns.some(allowed => {
+                // Normaliser les deux chaînes pour comparaison
+                const keyWords = normalizedKey.split(/\s+/);
+                const allowedWords = allowed.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').split(/\s+/);
+                
+                // Si les mots principaux correspondent (ignorant les accents)
+                if (keyWords.length === allowedWords.length) {
+                    return keyWords.every((word, idx) => {
+                        const allowedWord = allowedWords[idx];
+                        return word === allowedWord || word.includes(allowedWord) || allowedWord.includes(word);
+                    });
+                }
+                
+                return false;
+            });
+        });
+        
+        return filteredKeys;
+    }
+    
+    /**
+     * Obtient la clé originale à partir d'une clé corrigée pour accéder aux données
+     */
+    private getOriginalKey(record: Record<string, string>, correctedKey: string): string {
+        // Chercher la clé originale qui correspond à la clé corrigée
+        const originalKey = Object.keys(record).find(key => fixGarbledCharacters(key) === correctedKey);
+        return originalKey || correctedKey;
     }
 
     getBoOnlyKeys(record: Record<string, string>): string[] {
@@ -3392,8 +3487,16 @@ private async generateExcelFile(): Promise<ExcelJS.Workbook[]> {
             const allPartnerKeys = new Set<string>();
             
             filteredMatches.forEach(match => {
-                Object.keys(match.boData).forEach(key => allBoKeys.add(key));
-                Object.keys(match.partnerData).forEach(key => allPartnerKeys.add(key));
+                Object.keys(match.boData).forEach(key => {
+                    // Corriger le nom de colonne mal encodé
+                    const correctedKey = fixGarbledCharacters(key);
+                    allBoKeys.add(correctedKey);
+                });
+                Object.keys(match.partnerData).forEach(key => {
+                    // Corriger le nom de colonne mal encodé
+                    const correctedKey = fixGarbledCharacters(key);
+                    allPartnerKeys.add(correctedKey);
+                });
             });
             
             const boKeysArray = Array.from(allBoKeys);
@@ -4884,7 +4987,9 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
             this.response.partnerOnly.forEach(record => {
                 Object.keys(record).forEach(key => {
                     if (record[key] !== undefined && record[key] !== null && record[key] !== '') {
-                        allColumns.add(key);
+                        // Corriger le nom de colonne mal encodé
+                        const correctedKey = fixGarbledCharacters(key);
+                        allColumns.add(correctedKey);
                     }
                 });
             });

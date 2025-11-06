@@ -6,6 +6,8 @@ import { ReconciliationService, ReconciliationConfig, ProgressUpdate } from '../
 import { AppStateService } from '../../services/app-state.service';
 import { OrangeMoneyUtilsService } from '../../services/orange-money-utils.service';
 import { Subject, takeUntil } from 'rxjs';
+import * as Papa from 'papaparse';
+import { fixGarbledCharacters } from '../../utils/encoding-fixer';
 
 @Component({
     selector: 'app-reconciliation',
@@ -335,7 +337,7 @@ export class ReconciliationComponent implements OnInit, OnDestroy {
     }
 
     /**
-     * Parse un fichier CSV
+     * Parse un fichier CSV avec détection robuste des colonnes
      */
     private parseCsvFile(file: File): Promise<Record<string, string>[]> {
         return new Promise((resolve, reject) => {
@@ -345,45 +347,81 @@ export class ReconciliationComponent implements OnInit, OnDestroy {
             
             reader.onload = (e) => {
                 try {
-                    const content = e.target?.result as string;
+                    let content = e.target?.result as string;
                     console.log(`📄 Contenu du fichier ${file.name}: ${content.length} caractères`);
                     
-                    const lines = content.split('\n');
-                    console.log(`📋 Nombre de lignes dans ${file.name}: ${lines.length}`);
-                    
-                    if (lines.length < 2) {
-                        reject(new Error('Fichier CSV invalide: au moins 2 lignes requises (en-tête + données)'));
-                        return;
+                    // Nettoyer le BOM UTF-8 si présent
+                    if (content.charCodeAt(0) === 0xFEFF) {
+                        content = content.slice(1);
+                        console.log('🔧 BOM UTF-8 détecté et supprimé');
                     }
                     
-                    // Parser l'en-tête
-                    const headers = lines[0].split(',').map(h => h.trim());
-                    console.log(`🏷️ En-têtes trouvées dans ${file.name}:`, headers);
+                    // Normaliser les retours à la ligne
+                    content = content.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
                     
-                    const data: Record<string, string>[] = [];
+                    // Détecter le délimiteur de manière robuste
+                    const delimiter = this.detectCsvDelimiter(content);
+                    console.log(`🔍 Délimiteur détecté: "${delimiter}"`);
                     
-                    // Parser les données (limitées à 1000 lignes pour les performances)
-                    const maxLines = Math.min(lines.length - 1, 1000);
-                    console.log(`📊 Parsing de ${maxLines} lignes de données dans ${file.name}`);
-                    
-                    for (let i = 1; i <= maxLines; i++) {
-                        if (lines[i].trim().length === 0) continue;
-                        
-                        const values = lines[i].split(',').map(v => v.trim());
-                        const row: Record<string, string> = {};
-                        
-                        for (let j = 0; j < Math.min(headers.length, values.length); j++) {
-                            row[headers[j]] = values[j];
+                    // Parser avec PapaParse pour une meilleure gestion des cas complexes
+                    Papa.parse(content, {
+                        header: true,
+                        delimiter: delimiter,
+                        skipEmptyLines: true,
+                        transformHeader: (header: string) => {
+                            // Normaliser les noms de colonnes
+                            return this.normalizeColumnName(header);
+                        },
+                        transform: (value: string) => {
+                            // Normaliser les valeurs
+                            return this.normalizeCsvValue(value);
+                        },
+                        complete: (results) => {
+                            try {
+                                const data = results.data as Record<string, string>[];
+                                console.log(`✅ Fichier ${file.name} parsé avec succès: ${data.length} enregistrements`);
+                                
+                                if (data.length === 0) {
+                                    console.warn('⚠️ Aucune donnée trouvée dans le fichier');
+                                    reject(new Error('Fichier CSV vide ou invalide'));
+                                    return;
+                                }
+                                
+                                // Vérifier que les colonnes sont valides
+                                const firstRow = data[0];
+                                const columns = Object.keys(firstRow);
+                                console.log(`🏷️ Colonnes détectées (${columns.length}):`, columns);
+                                
+                                if (columns.length === 0 || columns.every(col => !col || col.startsWith('field'))) {
+                                    console.warn('⚠️ Colonnes invalides détectées, tentative de re-parsing sans header');
+                                    // Réessayer sans header
+                                    this.parseCsvWithoutHeader(content, delimiter)
+                                        .then(resolve)
+                                        .catch(reject);
+                                    return;
+                                }
+                                
+                                // Limiter à 1000 lignes pour les performances (si nécessaire)
+                                const limitedData = data.slice(0, 1000);
+                                if (limitedData.length < data.length) {
+                                    console.log(`📊 Limitation à ${limitedData.length} lignes pour les performances`);
+                                }
+                                
+                                if (limitedData.length > 0) {
+                                    console.log(`📊 Exemple de données:`, limitedData[0]);
+                                }
+                                
+                                resolve(limitedData);
+                            } catch (error) {
+                                console.error(`❌ Erreur lors du traitement des résultats:`, error);
+                                reject(new Error(`Erreur lors du traitement des résultats: ${error}`));
+                            }
+                        },
+                        error: (error) => {
+                            console.error(`❌ Erreur PapaParse:`, error);
+                            reject(new Error(`Erreur lors du parsing CSV: ${error.message}`));
                         }
-                        
-                        data.push(row);
-                    }
-                    
-                    console.log(`✅ Fichier ${file.name} parsé avec succès: ${data.length} enregistrements`);
-                    if (data.length > 0) {
-                        console.log(`📊 Exemple de données:`, data[0]);
-                    }
-                    resolve(data);
+                    });
                     
                 } catch (error) {
                     console.error(`❌ Erreur lors du parsing du fichier ${file.name}:`, error);
@@ -396,7 +434,140 @@ export class ReconciliationComponent implements OnInit, OnDestroy {
                 reject(new Error(`Erreur lors de la lecture du fichier ${file.name}`));
             };
             
+            // Lire avec UTF-8 (le plus courant), avec fallback automatique si nécessaire
             reader.readAsText(file, 'UTF-8');
+        });
+    }
+    
+    /**
+     * Détecte le délimiteur CSV de manière robuste
+     */
+    private detectCsvDelimiter(content: string): string {
+        const firstLines = content.split('\n').slice(0, 5).filter(line => line.trim().length > 0);
+        if (firstLines.length === 0) return ';'; // Délimiteur par défaut
+        
+        const delimiters = [';', ',', '\t', '|'];
+        const delimiterScores: { [key: string]: number } = {};
+        
+        // Initialiser les scores
+        delimiters.forEach(d => delimiterScores[d] = 0);
+        
+        // Analyser les premières lignes
+        firstLines.forEach(line => {
+            delimiters.forEach(delimiter => {
+                // Compter les occurrences du délimiteur
+                const count = (line.match(new RegExp('\\' + delimiter, 'g')) || []).length;
+                delimiterScores[delimiter] += count;
+                
+                // Bonus si le délimiteur est entouré de guillemets (indique un CSV bien formaté)
+                const quotedPattern = new RegExp(`"[^"]*"\\${delimiter}`, 'g');
+                const quotedMatches = (line.match(quotedPattern) || []).length;
+                delimiterScores[delimiter] += quotedMatches * 2;
+            });
+        });
+        
+        // Trouver le délimiteur avec le meilleur score
+        let bestDelimiter = ';'; // Délimiteur par défaut
+        let bestScore = 0;
+        
+        for (const delimiter of delimiters) {
+            const score = delimiterScores[delimiter];
+            if (score > bestScore) {
+                bestScore = score;
+                bestDelimiter = delimiter;
+            }
+        }
+        
+        console.log(`🔍 Scores des délimiteurs:`, delimiterScores);
+        return bestDelimiter;
+    }
+    
+    /**
+     * Normalise un nom de colonne en corrigeant l'encodage et en nettoyant les caractères
+     */
+    private normalizeColumnName(header: string): string {
+        if (!header) return '';
+        
+        // Corriger les caractères mal encodés (é, è, à, etc.)
+        let normalized = fixGarbledCharacters(header);
+        
+        // Nettoyer les espaces
+        normalized = normalized.trim();
+        
+        // Supprimer les guillemets
+        if ((normalized.startsWith('"') && normalized.endsWith('"')) ||
+            (normalized.startsWith("'") && normalized.endsWith("'"))) {
+            normalized = normalized.slice(1, -1);
+        }
+        
+        // Nettoyer les caractères invisibles
+        normalized = normalized.replace(/[\u200B-\u200D\uFEFF]/g, '');
+        
+        // Remplacer les espaces multiples par un seul
+        normalized = normalized.replace(/\s+/g, ' ');
+        
+        return normalized.trim();
+    }
+    
+    /**
+     * Normalise une valeur CSV
+     */
+    private normalizeCsvValue(value: string): string {
+        if (value === null || value === undefined) return '';
+        
+        let normalized = String(value).trim();
+        
+        // Supprimer les guillemets inutiles
+        if ((normalized.startsWith('"') && normalized.endsWith('"')) ||
+            (normalized.startsWith("'") && normalized.endsWith("'"))) {
+            normalized = normalized.slice(1, -1);
+        }
+        
+        return normalized;
+    }
+    
+    /**
+     * Parse un CSV sans header (fallback)
+     */
+    private parseCsvWithoutHeader(content: string, delimiter: string): Promise<Record<string, string>[]> {
+        return new Promise((resolve, reject) => {
+            Papa.parse(content, {
+                header: false,
+                delimiter: delimiter,
+                skipEmptyLines: true,
+                complete: (results) => {
+                    const rawRows = results.data as any[][];
+                    
+                    if (rawRows.length === 0) {
+                        reject(new Error('Aucune donnée trouvée'));
+                        return;
+                    }
+                    
+                    // Utiliser la première ligne comme header
+                    const headers = (rawRows[0] || []).map((h: any) => 
+                        this.normalizeColumnName(String(h || '')) || `Colonne_${rawRows[0].indexOf(h) + 1}`
+                    );
+                    
+                    // Créer les objets de données
+                    const data: Record<string, string>[] = [];
+                    for (let i = 1; i < rawRows.length; i++) {
+                        const row: Record<string, string> = {};
+                        const values = rawRows[i] || [];
+                        
+                        headers.forEach((header, index) => {
+                            row[header] = this.normalizeCsvValue(values[index] || '');
+                        });
+                        
+                        data.push(row);
+                    }
+                    
+                    console.log(`✅ CSV parsé sans header: ${data.length} enregistrements`);
+                    resolve(data);
+                },
+                error: (error) => {
+                    reject(new Error(`Erreur lors du parsing: ${error.message}`));
+                }
+            });
         });
     }
 

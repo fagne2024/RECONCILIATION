@@ -294,21 +294,29 @@ public class FileWatcherController {
                     reader = new BufferedReader(new InputStreamReader(new FileInputStream(file), encoding));
                 }
                 
-                                    String firstLine = reader.readLine();
-                    if (firstLine != null && !firstLine.trim().isEmpty()) {
-                        // Ligne brute lue
-                        // Détecter le délimiteur (virgule ou point-virgule)
-                        String delimiter = firstLine.contains(";") ? ";" : ",";
-                        String[] columnArray = firstLine.split(delimiter);
-                        for (String column : columnArray) {
-                            // Corriger les caractères spéciaux corrompus
-                            String correctedColumn = column.trim();
-                            columns.add(correctedColumn);
+                // Lire les premières lignes pour une meilleure détection
+                String firstLine = reader.readLine();
+                if (firstLine != null && !firstLine.trim().isEmpty()) {
+                    // Détecter le délimiteur de manière robuste
+                    String delimiter = detectCsvDelimiter(firstLine);
+                    log.debug("Délimiteur CSV détecté: '{}'", delimiter);
+                    
+                    // Parser les colonnes en gérant les guillemets
+                    String[] columnArray = parseCsvLine(firstLine, delimiter);
+                    for (String column : columnArray) {
+                        // Normaliser le nom de colonne
+                        String normalizedColumn = normalizeColumnName(column);
+                        if (!normalizedColumn.isEmpty()) {
+                            columns.add(normalizedColumn);
                         }
-                        reader.close();
-                        // Colonnes détectées
+                    }
+                    reader.close();
+                    
+                    if (!columns.isEmpty()) {
+                        log.debug("Colonnes détectées avec encodage {}: {}", encoding, columns);
                         return columns;
                     }
+                }
                 reader.close();
             } catch (Exception e) {
                 log.debug("Erreur avec l'encodage {}: {}", encoding, e.getMessage());
@@ -320,16 +328,122 @@ public class FileWatcherController {
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(new FileInputStream(file), "UTF-8"))) {
             String firstLine = reader.readLine();
             if (firstLine != null && !firstLine.trim().isEmpty()) {
-                String delimiter = firstLine.contains(";") ? ";" : ",";
-                String[] columnArray = firstLine.split(delimiter);
+                String delimiter = detectCsvDelimiter(firstLine);
+                String[] columnArray = parseCsvLine(firstLine, delimiter);
                 for (String column : columnArray) {
-                    columns.add(column.trim());
+                    String normalizedColumn = normalizeColumnName(column);
+                    if (!normalizedColumn.isEmpty()) {
+                        columns.add(normalizedColumn);
+                    }
                 }
             }
         }
         
         // Colonnes détectées (fallback)
         return columns;
+    }
+    
+    /**
+     * Détecte le délimiteur CSV de manière robuste
+     */
+    private String detectCsvDelimiter(String line) {
+        if (line == null || line.trim().isEmpty()) {
+            return ";"; // Délimiteur par défaut
+        }
+        
+        // Délimiteurs possibles
+        String[] delimiters = {";", ",", "\t", "|"};
+        int[] scores = new int[delimiters.length];
+        
+        // Analyser la ligne pour chaque délimiteur
+        for (int i = 0; i < delimiters.length; i++) {
+            String delimiter = delimiters[i];
+            // Compter les occurrences
+            int count = line.length() - line.replace(delimiter, "").length();
+            scores[i] = count;
+            
+            // Bonus si le délimiteur est dans des champs entre guillemets (CSV bien formaté)
+            String quotedPattern = "\"[^\"]*\"\\" + delimiter;
+            int quotedMatches = line.split(quotedPattern).length - 1;
+            scores[i] += quotedMatches * 2;
+        }
+        
+        // Trouver le délimiteur avec le meilleur score
+        int bestIndex = 0;
+        int bestScore = scores[0];
+        for (int i = 1; i < scores.length; i++) {
+            if (scores[i] > bestScore) {
+                bestScore = scores[i];
+                bestIndex = i;
+            }
+        }
+        
+        return delimiters[bestIndex];
+    }
+    
+    /**
+     * Parse une ligne CSV en gérant les guillemets
+     */
+    private String[] parseCsvLine(String line, String delimiter) {
+        if (line == null || line.trim().isEmpty()) {
+            return new String[0];
+        }
+        
+        List<String> fields = new ArrayList<>();
+        boolean inQuotes = false;
+        StringBuilder currentField = new StringBuilder();
+        
+        for (int i = 0; i < line.length(); i++) {
+            char c = line.charAt(i);
+            
+            if (c == '"') {
+                if (inQuotes && i + 1 < line.length() && line.charAt(i + 1) == '"') {
+                    // Guillemet échappé
+                    currentField.append('"');
+                    i++; // Passer le guillemet suivant
+                } else {
+                    // Toggle du mode guillemets
+                    inQuotes = !inQuotes;
+                }
+            } else if (c == delimiter.charAt(0) && !inQuotes) {
+                // Fin du champ
+                fields.add(currentField.toString());
+                currentField = new StringBuilder();
+            } else {
+                currentField.append(c);
+            }
+        }
+        
+        // Ajouter le dernier champ
+        fields.add(currentField.toString());
+        
+        return fields.toArray(new String[0]);
+    }
+    
+    /**
+     * Normalise un nom de colonne
+     */
+    private String normalizeColumnName(String column) {
+        if (column == null) {
+            return "";
+        }
+        
+        // Nettoyer les espaces
+        String normalized = column.trim();
+        
+        // Supprimer les guillemets
+        if ((normalized.startsWith("\"") && normalized.endsWith("\"")) ||
+            (normalized.startsWith("'") && normalized.endsWith("'"))) {
+            normalized = normalized.substring(1, normalized.length() - 1);
+        }
+        
+        // Nettoyer les caractères invisibles (BOM, etc.)
+        normalized = normalized.replace("\uFEFF", "").replace("\u200B", "").replace("\u200C", "").replace("\u200D", "");
+        
+        // Remplacer les espaces multiples par un seul
+        normalized = normalized.replaceAll("\\s+", " ");
+        
+        return normalized.trim();
     }
 
     /**

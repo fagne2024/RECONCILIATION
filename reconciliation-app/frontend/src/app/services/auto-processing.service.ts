@@ -363,10 +363,54 @@ export class AutoProcessingService {
 
   private findMatchingModel(fileName: string, fileType: 'bo' | 'partner' | 'both'): AutoProcessingModel | null {
     return this.processingModels.find(model => {
-      const pattern = model.filePattern.replace('*', '.*');
-        const regex = new RegExp(pattern, 'i');
-      return regex.test(fileName) && (model.fileType === fileType || model.fileType === 'both');
+      const matches = this.matchesFilePattern(fileName, model.filePattern);
+      const typeOk = model.fileType === fileType || model.fileType === 'both';
+      return matches && typeOk;
     }) || null;
+  }
+
+  /**
+   * Vérifie si un nom de fichier correspond à un pattern de modèle, de manière robuste
+   * - Supporte wildcards (* et ?)
+   * - Si le pattern contient une extension, on accepte aussi les variantes (.csv, .xls, .xlsx)
+   * - Détection par inclusion sans extension (ex: "TRXBO" détecte "TRXBO_202501.xlsx")
+   */
+  private matchesFilePattern(fileName: string, pattern: string): boolean {
+    if (!pattern || !fileName) return false;
+
+    const lowerName = fileName.toLowerCase();
+    const lowerPattern = pattern.toLowerCase();
+
+    // 1) Wildcards explicites
+    if (lowerPattern.includes('*') || lowerPattern.includes('?')) {
+      const regexPattern = lowerPattern
+        .replace(/\./g, '\\.')
+        .replace(/\*/g, '.*')
+        .replace(/\?/g, '.');
+      try {
+        const regex = new RegExp(`^${regexPattern}$`, 'i');
+        if (regex.test(fileName)) return true;
+      } catch {
+        // ignorer pattern invalide
+      }
+    }
+
+    // 2) Pattern avec extension: accepter mêmes bases avec .csv/.xls/.xlsx
+    if (/[.][^/\\]+$/.test(lowerPattern)) {
+      const nameNoExt = lowerName.replace(/\.[^/.]+$/, '');
+      const patternNoExt = lowerPattern.replace(/\.[^/.]+$/, '');
+
+      if (nameNoExt === patternNoExt) return true; // correspondance stricte sans extension
+
+      // autoriser variantes d'extension usuelles
+      if (nameNoExt.endsWith(patternNoExt) || nameNoExt.includes(patternNoExt)) return true;
+    }
+
+    // 3) Inclusion sans extension (fallback généreux)
+    const cleanFileName = lowerName.replace(/\.[^/.]+$/, '');
+    const cleanPattern = lowerPattern.replace(/\.[^/.]+$/, '');
+    if (!cleanPattern) return false;
+    return cleanFileName.includes(cleanPattern) || cleanFileName.startsWith(cleanPattern);
   }
 
   private async readFile(file: File): Promise<any[]> {
