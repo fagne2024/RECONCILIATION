@@ -8,6 +8,9 @@
             <button (click)="goToServiceBalance()" class="btn service-balance-btn">
                 <i class="fas fa-layer-group"></i> Fusion Service
             </button>
+            <button (click)="goToPredictions()" class="btn predictions-btn">
+                <i class="fas fa-crystal-ball"></i> Prédictions
+            </button>
             <button (click)="exportComptes()" class="btn export-btn" [disabled]="isExporting">
                 <i class="fas fa-file-excel"></i> {{ isExporting ? 'Exportation...' : 'Exporter en Excel' }}
             </button>
@@ -503,11 +506,65 @@
                         <button class="btn export-btn" (click)="exportReleve()" [disabled]="isExporting">
                             <i class="fas fa-file-excel"></i> Exporter le relevé
                         </button>
+                        <button class="btn" (click)="toggleReleveSummary()">
+                            <i class="fas" [ngClass]="showReleveSummary ? 'fa-eye-slash' : 'fa-eye'"></i>
+                            {{ showReleveSummary ? 'Masquer calculs' : 'Afficher calculs' }}
+                        </button>
                     </div>
 
                     <!-- Historique des opérations -->
                     <div class="releve-operations">
                         <h3>{{ showSoldesSeulement ? 'Soldes Journaliers' : 'Historique des opérations' }}</h3>
+                        <!-- Panneau Approvisionnements: comparaison et recommandations -->
+                        <div class="appro-panel" *ngIf="showReleveSummary && releveSoldesJournaliers && releveSoldesJournaliers.length > 0" style="margin:10px 0; background:#fff; border:1px solid #eee; border-radius:8px; padding:12px;">
+                            <div style="display:flex; flex-wrap:wrap; gap:12px; align-items:flex-end;">
+                                <div style="margin-right:auto;">
+                                    <label style="font-size:12px; color:#777; display:block;">Base de calcul</label>
+                                    <div style="display:flex; align-items:center; gap:8px; font-size:13px; flex-wrap:wrap;">
+                                        <label style="display:flex; align-items:center; gap:8px;">
+                                            <input type="checkbox" [(ngModel)]="useMonthlyAverage"> Moyenne mensuelle (ex: {{ referenceMonthLabel }})
+                                        </label>
+                                        <select [(ngModel)]="selectedMonthIndex" [disabled]="!useMonthlyAverage" style="padding:6px 8px; border:1px solid #ddd; border-radius:6px;">
+                                            <option [ngValue]="null">Mois réf.</option>
+                                            <option *ngFor="let m of [0,1,2,3,4,5,6,7,8,9,10,11]" [ngValue]="m">{{ getMonthLabel(m) }}</option>
+                                        </select>
+                                        <input type="number" [(ngModel)]="selectedYear" [disabled]="!useMonthlyAverage" placeholder="Année" style="width:90px; padding:6px 8px; border:1px solid #ddd; border-radius:6px;">
+                                    </div>
+                                </div>
+                                <div>
+                                    <div style="font-size:12px; color:#777;">Consommation moyenne / jour</div>
+                                    <div style="font-weight:600;">{{ averageConsumptionPerDay | number:'1.2-2' }}</div>
+                                </div>
+                                <div>
+                                    <div style="font-size:12px; color:#777;">Stock actuel</div>
+                                    <div style="font-weight:600;">{{ currentStockAmount | number:'1.2-2' }}</div>
+                                </div>
+                                <div>
+                                    <div style="font-size:12px; color:#777;">Jours de stock</div>
+                                    <div style="font-weight:600;">{{ stockDays | number:'1.1-1' }}</div>
+                                </div>
+                                <div>
+                                    <label style="font-size:12px; color:#777; display:block;">Délai (jours)</label>
+                                    <input type="number" [(ngModel)]="leadTimeDays" min="0" style="width:90px; padding:6px 8px; border:1px solid #ddd; border-radius:6px;">
+                                </div>
+                                <div>
+                                    <label style="font-size:12px; color:#777; display:block;">Stock sécurité (jours)</label>
+                                    <input type="number" [(ngModel)]="safetyStockDaysOverride" placeholder="auto" min="0" step="0.1" style="width:120px; padding:6px 8px; border:1px solid #ddd; border-radius:6px;">
+                                </div>
+                                <div>
+                                    <div style="font-size:12px; color:#777;">Point de réappro (jours)</div>
+                                    <div style="font-weight:600;">{{ reorderPointDays | number:'1.1-1' }}</div>
+                                </div>
+                                <div>
+                                    <div style="font-size:12px; color:#777;">Qté recommandée (jours)</div>
+                                    <div style="font-weight:600;">{{ recommendedDays | number:'1.1-1' }}</div>
+                                </div>
+                                <div>
+                                    <div style="font-size:12px; color:#777;">Qté recommandée</div>
+                                    <div style="font-weight:600;">{{ recommendedQuantityAmount | number:'1.2-2' }}</div>
+                                </div>
+                            </div>
+                        </div>
                         
                         <!-- Indicateur pour l'affichage automatique des frais -->
                         <div *ngIf="showFraisAutomaticallyReleve && !showSoldesSeulement" class="frais-auto-indicator">

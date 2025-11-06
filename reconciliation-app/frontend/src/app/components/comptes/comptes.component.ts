@@ -31,7 +31,7 @@ export class ComptesComponent implements OnInit, OnDestroy {
     allComptes: Compte[] = [];
     pagedComptes: Compte[] = [];
     currentPage = 1;
-    pageSize = 7;
+    pageSize = 5;
     totalPages = 1;
     isLoading = false;
     isAdding = false;
@@ -78,6 +78,8 @@ export class ComptesComponent implements OnInit, OnDestroy {
     
     // Propriété pour contrôler l'affichage automatique des frais
     showFraisAutomaticallyReleve: boolean = false;
+    // Panneau de résumé/calculs du relevé (masqué par défaut)
+    showReleveSummary: boolean = false;
     
     // Pagination pour le relevé
     releveCurrentPage = 1;
@@ -762,6 +764,10 @@ export class ComptesComponent implements OnInit, OnDestroy {
         this.router.navigate(['/service-balance']);
     }
 
+    goToPredictions() {
+        this.router.navigate(['/predictions']);
+    }
+
     async exportSoldesCritiques() {
         this.isExporting = true;
         try {
@@ -1212,6 +1218,10 @@ export class ComptesComponent implements OnInit, OnDestroy {
         this.calculateRelevePagination();
     }
 
+    toggleReleveSummary(): void {
+        this.showReleveSummary = !this.showReleveSummary;
+    }
+
     // Méthodes pour le relevé de compte
     viewReleve(compte: Compte): void {
         this.selectedCompte = compte;
@@ -1336,6 +1346,138 @@ export class ComptesComponent implements OnInit, OnDestroy {
 
         this.calculateRelevePagination();
         this.isLoadingReleve = false;
+    }
+
+    // ==========================
+    // Approvisionnements - Calculs
+    // ==========================
+    // Paramètres ajustables (en jours)
+    leadTimeDays: number = 2; // Délai de livraison par défaut
+    safetyStockDaysOverride: number | null = null; // Permet de forcer le stock de sécurité (jours)
+    // Choix de la base de calcul
+    useMonthlyAverage: boolean = true; // Utiliser la moyenne du mois sélectionné
+    selectedMonthIndex: number | null = null; // 0-11 (null => mois de référence par défaut)
+    selectedYear: number | null = null;
+
+    // Utilitaire: filtre les soldes d'un mois/année
+    private filterSoldesByMonthYear(monthIndex: number, year: number) {
+        if (!this.releveSoldesJournaliers || this.releveSoldesJournaliers.length === 0) return [] as typeof this.releveSoldesJournaliers;
+        return this.releveSoldesJournaliers.filter(s => {
+            const d = new Date(s.date);
+            return d.getMonth() === monthIndex && d.getFullYear() === year;
+        });
+    }
+
+    // Détermine le mois de référence: le mois précédent la date du jour
+    private get referenceMonthYear() {
+        const now = new Date();
+        const ref = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+        return { monthIndex: ref.getMonth(), year: ref.getFullYear() };
+    }
+
+    // Mois/année actuellement utilisés (sélection utilisateur sinon mois de référence)
+    private get currentMonthYear() {
+        const ref = this.referenceMonthYear;
+        return {
+            monthIndex: this.selectedMonthIndex !== null ? this.selectedMonthIndex : ref.monthIndex,
+            year: this.selectedYear !== null ? this.selectedYear : ref.year
+        };
+    }
+
+    // Libellé du mois courant (ex: Octobre 2025)
+    get referenceMonthLabel(): string {
+        const { monthIndex, year } = this.currentMonthYear;
+        const formatter = new Intl.DateTimeFormat('fr-FR', { month: 'long' });
+        const monthName = formatter.format(new Date(year, monthIndex, 1));
+        return `${monthName.charAt(0).toUpperCase()}${monthName.slice(1)} ${year}`;
+    }
+
+    // Libellé de mois pour le sélecteur (sans année)
+    getMonthLabel(monthIndex: number): string {
+        const formatter = new Intl.DateTimeFormat('fr-FR', { month: 'long' });
+        const monthName = formatter.format(new Date(2000, monthIndex, 1));
+        return `${monthName.charAt(0).toUpperCase()}${monthName.slice(1)}`;
+    }
+
+    // Moyenne journalière (globale sur l'échantillon courant)
+    private get averageConsumptionPerDayGlobal(): number {
+        if (!this.releveSoldesJournaliers || this.releveSoldesJournaliers.length === 0) return 0;
+        const consumptions: number[] = this.releveSoldesJournaliers.map(s => Math.max(0, (s.opening || 0) - (s.closing || 0)));
+        const total = consumptions.reduce((sum, v) => sum + v, 0);
+        return consumptions.length > 0 ? total / consumptions.length : 0;
+    }
+
+    // Moyenne journalière sur le mois sélectionné
+    private get averageConsumptionPerDayMonthly(): number {
+        const { monthIndex, year } = this.currentMonthYear;
+        const monthSoldes = this.filterSoldesByMonthYear(monthIndex, year);
+        if (!monthSoldes || monthSoldes.length === 0) return 0;
+        const consumptions = monthSoldes.map(s => Math.max(0, (s.opening || 0) - (s.closing || 0)));
+        const total = consumptions.reduce((sum, v) => sum + v, 0);
+        return consumptions.length > 0 ? total / consumptions.length : 0;
+    }
+
+    // Consommation journalière moyenne utilisée pour les calculs (mensuelle ou globale)
+    get averageConsumptionPerDay(): number {
+        const monthly = this.averageConsumptionPerDayMonthly;
+        if (this.useMonthlyAverage && monthly > 0) return monthly;
+        return this.averageConsumptionPerDayGlobal;
+    }
+
+    // Stock actuel = dernier solde de clôture (ou closingBo si disponible)
+    get currentStockAmount(): number {
+        if (!this.releveSoldesJournaliers || this.releveSoldesJournaliers.length === 0) return 0;
+        // Les soldes sont triés du plus récent au plus ancien
+        const latest = this.releveSoldesJournaliers[0];
+        const closing = (latest.closingBo ?? latest.closing) || 0;
+        return closing;
+    }
+
+    // Jours de stock disponible
+    get stockDays(): number {
+        const avg = this.averageConsumptionPerDay;
+        if (avg <= 0) return 0;
+        return +(this.currentStockAmount / avg).toFixed(1);
+    }
+
+    // Écart-type quotidien (pour estimer l'incertitude) -> converti en jours
+    private get dailyConsumptionStdDevDays(): number {
+        const { monthIndex, year } = this.currentMonthYear;
+        const soldes = (this.useMonthlyAverage ? this.filterSoldesByMonthYear(monthIndex, year) : this.releveSoldesJournaliers) || [];
+        if (soldes.length < 2) return 0;
+        const consumptions = soldes.map(s => Math.max(0, (s.opening || 0) - (s.closing || 0)));
+        const avg = this.averageConsumptionPerDay || 0;
+        if (avg <= 0) return 0;
+        const variance = consumptions.reduce((sum, v) => sum + Math.pow(v - avg, 2), 0) / (consumptions.length - 1);
+        const stdDev = Math.sqrt(variance);
+        return +(stdDev / avg).toFixed(1); // convertir en jours
+    }
+
+    // Stock de sécurité (en jours)
+    get safetyStockDays(): number {
+        if (this.safetyStockDaysOverride !== null) return this.safetyStockDaysOverride;
+        // Heuristique par défaut: 1 écart-type en jours, min 1 jour, max 7 jours
+        const days = Math.max(1, Math.min(7, this.dailyConsumptionStdDevDays || 1));
+        return +days.toFixed(1);
+    }
+
+    // Point de réapprovisionnement (en jours) = délai + stock de sécurité
+    get reorderPointDays(): number {
+        return +(Math.max(0, (this.leadTimeDays || 0)) + (this.safetyStockDays || 0)).toFixed(1);
+    }
+
+    // Quantité recommandée (en jours): viser au moins (reorderPointDays + safetyStockDays)
+    // Si stockDays < reorderPointDays, recommander pour remonter à reorderPointDays + safety
+    get recommendedDays(): number {
+        const targetDays = this.reorderPointDays + this.safetyStockDays;
+        const deficit = Math.max(0, targetDays - this.stockDays);
+        return +deficit.toFixed(1);
+    }
+
+    // Conversion de jours -> montant
+    get recommendedQuantityAmount(): number {
+        const qty = (this.recommendedDays || 0) * (this.averageConsumptionPerDay || 0);
+        return +qty.toFixed(2);
     }
 
     // Méthode pour recalculer le solde de clôture après validation d'une opération

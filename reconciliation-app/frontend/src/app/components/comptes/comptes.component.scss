@@ -55,6 +55,12 @@
             color: white;
             &:hover { background-color: #F57C00; }
         }
+
+        &.predictions-btn {
+            background-color: #9C27B0;
+            color: white;
+            &:hover { background-color: #7B1FA2; }
+        }
         
         &.primary {
             background-color: #2196F3;
@@ -1864,8 +1870,8 @@
 
             .table-container {
                 overflow-x: auto;
-                max-height: 600px;
-                overflow-y: auto;
+                max-height: none;
+                overflow-y: visible;
 
                 // Custom scrollbar
                 &::-webkit-scrollbar {
