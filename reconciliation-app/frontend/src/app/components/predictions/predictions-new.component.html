@@ -335,8 +335,11 @@
     <div class="info-banner">
       <div class="info-icon">ℹ️</div>
       <div class="info-content">
-        <p><strong>Seuil de Compensation Configuré:</strong> {{ formatCurrency(configForm.get('compensationThresholdAmount')?.value) }}</p>
+        <p><strong>Seuil de Compensation (par défaut):</strong> {{ formatCurrency(configForm.get('compensationThresholdAmount')?.value) }}</p>
         <p>Lorsqu'une agence atteint un solde égal ou supérieur à ce seuil maximum, une compensation est déclenchée.</p>
+        <p *ngIf="isCompensationType() && agencyThresholds.length > 0" style="margin-top: 6px; color: #f39c12;">
+          ✅ Les seuils personnalisés définis pour {{ agencyThresholds.length }} agence{{ agencyThresholds.length > 1 ? 's' : '' }} priment automatiquement sur ce seuil global.
+        </p>
         <p style="margin-top: 10px;">
           <button type="button" (click)="openThresholdModal()" class="btn btn-secondary btn-sm" *ngIf="isCompensationType()">
             <i class="fas fa-cog"></i> Gérer les Seuils Personnalisés par Agence
@@ -352,7 +355,7 @@
   <div *ngIf="selectedTab === 'recommendations' && recommendations.length > 0 && !isCompensationType()" class="recommendations-section">
     <h2>📋 Recommandations d'Approvisionnement</h2>
     <div class="recommendations-list">
-      <div *ngFor="let rec of recommendations" class="recommendation-card" [ngClass]="getAlertClass(rec.alertLevel)">
+      <div *ngFor="let rec of getPaginatedRecommendations()" class="recommendation-card" [ngClass]="getAlertClass(rec.alertLevel)">
         <div class="recommendation-header">
           <div class="agency-info">
             <span class="alert-icon">{{ getAlertIcon(rec.alertLevel) }}</span>
@@ -404,6 +407,26 @@
         </div>
       </div>
     </div>
+    
+    <!-- Pagination des recommandations -->
+    <div *ngIf="getRecommendationsTotalPages() > 1" class="pagination">
+      <button 
+        class="btn-pagination" 
+        [disabled]="recommendationsPage === 1"
+        (click)="changeRecommendationsPage(recommendationsPage - 1)">
+        <i class="fas fa-chevron-left"></i> Précédent
+      </button>
+      <span class="pagination-info">
+        Page {{ recommendationsPage }} / {{ getRecommendationsTotalPages() }}
+        ({{ recommendations.length }} recommandation{{ recommendations.length > 1 ? 's' : '' }})
+      </span>
+      <button 
+        class="btn-pagination" 
+        [disabled]="recommendationsPage === getRecommendationsTotalPages()"
+        (click)="changeRecommendationsPage(recommendationsPage + 1)">
+        Suivant <i class="fas fa-chevron-right"></i>
+      </button>
+    </div>
   </div>
 
   <!-- ============================================ -->
@@ -412,7 +435,7 @@
   <div *ngIf="selectedTab === 'recommendations' && compensationRecommendations.length > 0 && isCompensationType()" class="recommendations-section">
     <h2>📋 Recommandations de Compensation</h2>
     <div class="recommendations-list">
-      <div *ngFor="let rec of compensationRecommendations" class="recommendation-card" [ngClass]="getAlertClass(rec.alertLevel)">
+      <div *ngFor="let rec of getPaginatedRecommendations()" class="recommendation-card" [ngClass]="getAlertClass(rec.alertLevel)">
         <div class="recommendation-header">
           <div class="agency-info">
             <span class="alert-icon">{{ getAlertIcon(rec.alertLevel) }}</span>
@@ -477,6 +500,26 @@
         </div>
       </div>
     </div>
+    
+    <!-- Pagination des recommandations -->
+    <div *ngIf="getRecommendationsTotalPages() > 1" class="pagination">
+      <button 
+        class="btn-pagination" 
+        [disabled]="recommendationsPage === 1"
+        (click)="changeRecommendationsPage(recommendationsPage - 1)">
+        <i class="fas fa-chevron-left"></i> Précédent
+      </button>
+      <span class="pagination-info">
+        Page {{ recommendationsPage }} / {{ getRecommendationsTotalPages() }}
+        ({{ compensationRecommendations.length }} recommandation{{ compensationRecommendations.length > 1 ? 's' : '' }})
+      </span>
+      <button 
+        class="btn-pagination" 
+        [disabled]="recommendationsPage === getRecommendationsTotalPages()"
+        (click)="changeRecommendationsPage(recommendationsPage + 1)">
+        Suivant <i class="fas fa-chevron-right"></i>
+      </button>
+    </div>
   </div>
 
   <!-- ============================================ -->
@@ -510,7 +553,7 @@
     
     <!-- Calendrier groupé par semaine -->
     <div *ngIf="getCalendarWeeks().length > 0" class="calendar-weeks">
-      <div *ngFor="let weekEntry of getCalendarWeeks()" class="calendar-week">
+      <div *ngFor="let weekEntry of getPaginatedCalendarWeeks()" class="calendar-week">
         <div class="week-header">
           <h3>Semaine du {{ weekEntry.week }}</h3>
           <span class="week-count">{{ weekEntry.events.length }} événement(s)</span>
@@ -524,6 +567,26 @@
           </div>
         </div>
       </div>
+    </div>
+    
+    <!-- Pagination du calendrier -->
+    <div *ngIf="getCalendarTotalPages() > 1" class="pagination">
+      <button 
+        class="btn-pagination" 
+        [disabled]="calendarPage === 1"
+        (click)="changeCalendarPage(calendarPage - 1)">
+        <i class="fas fa-chevron-left"></i> Précédent
+      </button>
+      <span class="pagination-info">
+        Page {{ calendarPage }} / {{ getCalendarTotalPages() }}
+        ({{ getCalendarWeeks().length }} semaine{{ getCalendarWeeks().length > 1 ? 's' : '' }})
+      </span>
+      <button 
+        class="btn-pagination" 
+        [disabled]="calendarPage === getCalendarTotalPages()"
+        (click)="changeCalendarPage(calendarPage + 1)">
+        Suivant <i class="fas fa-chevron-right"></i>
+      </button>
     </div>
   </div>
 
@@ -605,28 +668,41 @@
   <div *ngIf="selectedTab === 'analytics' && selectedCompensationAnalytics && isCompensationType()" class="analytics-section">
     <h2>🔍 Analytiques Compensation - {{ selectedCompensationAnalytics.agence || selectedCompensationAnalytics.codeProprietaire }}</h2>
     <div class="analytics-grid">
-      <div class="analytics-card">
-        <h3>💰 Solde & Seuil</h3>
-        <div class="analytics-item">
-          <span>Solde Actuel:</span>
-          <strong>{{ formatCurrency(selectedCompensationAnalytics.currentBalance) }}</strong>
-        </div>
-        <div class="analytics-item">
-          <span>Seuil Maximum (XOF):</span>
-          <strong>{{ formatCurrency(configForm.get('compensationThresholdAmount')?.value) }}</strong>
-        </div>
-        <div class="analytics-item">
-          <span>Différence:</span>
-          <strong [ngClass]="{
-            'amount-positive': selectedCompensationAnalytics.currentBalance >= configForm.get('compensationThresholdAmount')?.value,
-            'amount-negative': selectedCompensationAnalytics.currentBalance < configForm.get('compensationThresholdAmount')?.value
-          }">
-            {{ formatCurrency(selectedCompensationAnalytics.currentBalance - configForm.get('compensationThresholdAmount')?.value) }}
-          </strong>
-          <small style="display: block; margin-top: 4px; color: #7f8c8d; font-size: 0.85rem;" *ngIf="selectedCompensationAnalytics.currentBalance >= configForm.get('compensationThresholdAmount')?.value">
-            ⚠️ Seuil atteint - Compensation nécessaire
-          </small>
-        </div>
+      <div class="analytics-card" *ngIf="selectedCompensationAnalytics as analytics">
+        <ng-container *ngIf="getEffectiveThreshold(analytics.codeProprietaire) as effectiveThreshold">
+          <h3>💰 Solde & Seuil</h3>
+          <div class="analytics-item">
+            <span>Solde Actuel:</span>
+            <strong>{{ formatCurrency(analytics.currentBalance) }}</strong>
+          </div>
+          <div class="analytics-item">
+            <span>Seuil Maximum (XOF):</span>
+            <div>
+              <strong>{{ formatCurrency(effectiveThreshold) }}</strong>
+              <small
+                *ngIf="hasCustomThreshold(analytics.codeProprietaire)"
+                style="display: block; margin-top: 4px; color: #f39c12; font-size: 0.85rem;"
+              >
+                ⭐ Seuil personnalisé appliqué
+              </small>
+            </div>
+          </div>
+          <div class="analytics-item">
+            <span>Différence:</span>
+            <strong [ngClass]="{
+              'amount-positive': analytics.currentBalance >= effectiveThreshold,
+              'amount-negative': analytics.currentBalance < effectiveThreshold
+            }">
+              {{ formatCurrency(analytics.currentBalance - effectiveThreshold) }}
+            </strong>
+            <small
+              style="display: block; margin-top: 4px; color: #7f8c8d; font-size: 0.85rem;"
+              *ngIf="analytics.currentBalance >= effectiveThreshold"
+            >
+              ⚠️ Seuil atteint - Compensation nécessaire
+            </small>
+          </div>
+        </ng-container>
       </div>
       
       <div class="analytics-card">

@@ -61,6 +61,12 @@ export class PredictionsNewComponent implements OnInit {
   confirmMessage = '';
   private confirmResolve: ((confirmed: boolean) => void) | null = null;
   
+  // Pagination
+  recommendationsPage = 1;
+  recommendationsPageSize = 10;
+  calendarPage = 1;
+  calendarPageSize = 5; // 5 semaines par page
+  
   // Configuration
   config: SupplyPredictionConfig = {
     leadTimeDays: 7,
@@ -226,6 +232,7 @@ export class PredictionsNewComponent implements OnInit {
     this.supplyPredictionService.getRecommendations(typeOperation, pays, periodeAnalyseJours).subscribe({
       next: (recommendations) => {
         this.recommendations = this.enhanceRecommendationsAccuracy(recommendations);
+        this.resetRecommendationsPagination();
         this.selectedTab = 'recommendations';
         this.isLoading = false;
       },
@@ -325,6 +332,7 @@ export class PredictionsNewComponent implements OnInit {
     ).subscribe({
       next: (recommendations) => {
         this.compensationRecommendations = recommendations;
+        this.resetRecommendationsPagination();
         this.selectedTab = 'recommendations';
         this.isLoading = false;
       },
@@ -366,6 +374,7 @@ export class PredictionsNewComponent implements OnInit {
     this.supplyPredictionService.getCalendar(typeOperation, calendarDays, pays).subscribe({
       next: (calendar) => {
         this.calendar = calendar;
+        this.resetCalendarPagination();
         this.selectedTab = 'calendar';
         this.isLoading = false;
       },
@@ -397,6 +406,7 @@ export class PredictionsNewComponent implements OnInit {
     ).subscribe({
       next: (calendar) => {
         this.compensationCalendar = calendar;
+        this.resetCalendarPagination();
         this.selectedTab = 'calendar';
         this.isLoading = false;
       },
@@ -524,7 +534,7 @@ export class PredictionsNewComponent implements OnInit {
   private loadCompensationAnalytics(codeProprietaire: string) {
     const typeOperation = this.analysisForm.get('typeOperation')?.value;
     const periodeAnalyseJours = this.analysisForm.get('periodeAnalyseJours')?.value;
-    const thresholdAmount = this.configForm.get('compensationThresholdAmount')?.value;
+    const thresholdAmount = this.getEffectiveThreshold(codeProprietaire);
     
     this.isLoading = true;
     this.supplyPredictionService.getCompensationAnalytics(
@@ -923,6 +933,101 @@ export class PredictionsNewComponent implements OnInit {
    */
   getCustomThreshold(codeProprietaire: string): AgencyThreshold | undefined {
     return this.agencyThresholds.find(t => t.codeProprietaire === codeProprietaire);
+  }
+
+  /**
+   * Retourne le seuil effectif à utiliser pour une agence (personnalisé si défini, sinon global)
+   */
+  getEffectiveThreshold(codeProprietaire?: string): number {
+    const defaultThreshold = this.configForm.get('compensationThresholdAmount')?.value
+      ?? this.config.compensationThresholdAmount
+      ?? 0;
+
+    if (!codeProprietaire) {
+      return defaultThreshold;
+    }
+
+    const custom = this.getCustomThreshold(codeProprietaire);
+    return custom?.thresholdAmount ?? defaultThreshold;
+  }
+
+  // ============================================
+  // PAGINATION
+  // ============================================
+
+  /**
+   * Obtient les recommandations paginées
+   */
+  getPaginatedRecommendations(): any[] {
+    const recommendations = this.isCompensationType() 
+      ? this.compensationRecommendations 
+      : this.recommendations;
+    
+    const start = (this.recommendationsPage - 1) * this.recommendationsPageSize;
+    const end = start + this.recommendationsPageSize;
+    return recommendations.slice(start, end);
+  }
+
+  /**
+   * Obtient le nombre total de pages pour les recommandations
+   */
+  getRecommendationsTotalPages(): number {
+    const recommendations = this.isCompensationType() 
+      ? this.compensationRecommendations 
+      : this.recommendations;
+    return Math.ceil(recommendations.length / this.recommendationsPageSize);
+  }
+
+  /**
+   * Obtient les semaines du calendrier paginées
+   */
+  getPaginatedCalendarWeeks(): { week: string; events: any[] }[] {
+    const weeks = this.getCalendarWeeks();
+    const start = (this.calendarPage - 1) * this.calendarPageSize;
+    const end = start + this.calendarPageSize;
+    return weeks.slice(start, end);
+  }
+
+  /**
+   * Obtient le nombre total de pages pour le calendrier
+   */
+  getCalendarTotalPages(): number {
+    const weeks = this.getCalendarWeeks();
+    return Math.ceil(weeks.length / this.calendarPageSize);
+  }
+
+  /**
+   * Change la page des recommandations
+   */
+  changeRecommendationsPage(page: number): void {
+    const totalPages = this.getRecommendationsTotalPages();
+    if (page >= 1 && page <= totalPages) {
+      this.recommendationsPage = page;
+    }
+  }
+
+  /**
+   * Change la page du calendrier
+   */
+  changeCalendarPage(page: number): void {
+    const totalPages = this.getCalendarTotalPages();
+    if (page >= 1 && page <= totalPages) {
+      this.calendarPage = page;
+    }
+  }
+
+  /**
+   * Réinitialise la pagination des recommandations
+   */
+  resetRecommendationsPagination(): void {
+    this.recommendationsPage = 1;
+  }
+
+  /**
+   * Réinitialise la pagination du calendrier
+   */
+  resetCalendarPagination(): void {
+    this.calendarPage = 1;
   }
 }
 
