@@ -206,13 +206,34 @@ import { ReconciliationRequest } from '../../models/reconciliation-request.model
                 </button>
             </div>
 
+            <!-- Barre de progression -->
+            <div class="reconciliation-progress" *ngIf="isReconciliationInProgress">
+                <div class="progress-card">
+                    <div class="progress-header">
+                        <h3>🔄 Réconciliation en cours...</h3>
+                        <span class="progress-percentage">{{ reconciliationProgress }}%</span>
+                    </div>
+                    <div class="progress-bar">
+                        <div class="progress-fill" [style.width.%]="reconciliationProgress"></div>
+                    </div>
+                    <div class="progress-status">
+                        <span class="status-text">{{ reconciliationStatus }}</span>
+                        <span class="status-time" *ngIf="reconciliationStartTime">
+                            Temps écoulé : {{ getElapsedTime() }}
+                        </span>
+                    </div>
+                </div>
+            </div>
+
             <!-- Bouton de validation -->
             <div class="validation-section">
                 <button 
                     class="validate-btn" 
-                    [disabled]="!isValid"
+                    [disabled]="!isValid || isReconciliationInProgress"
+                    [class.processing]="isReconciliationInProgress"
                     (click)="proceedWithReconciliation()">
-                    🔄 Lancer la réconciliation
+                    <span *ngIf="!isReconciliationInProgress">🚀 Lancer la réconciliation</span>
+                    <span *ngIf="isReconciliationInProgress">⏳ Réconciliation en cours...</span>
                 </button>
             </div>
         </div>
@@ -551,6 +572,68 @@ import { ReconciliationRequest } from '../../models/reconciliation-request.model
             box-shadow: 0 5px 15px rgba(33, 150, 243, 0.3);
         }
 
+        .validate-btn.processing {
+            opacity: 0.7;
+            cursor: progress;
+        }
+
+        .reconciliation-progress {
+            margin: 20px 0;
+        }
+
+        .progress-card {
+            background: linear-gradient(135deg, #f8fff5 0%, #e8f5e9 100%);
+            border: 2px solid #28a745;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 4px 12px rgba(40, 167, 69, 0.15);
+        }
+
+        .progress-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .progress-percentage {
+            font-weight: bold;
+            font-size: 1.4em;
+            color: #1b5e20;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 20px;
+            background: #e9ecef;
+            border-radius: 10px;
+            overflow: hidden;
+            margin-bottom: 12px;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #28a745, #20c997);
+            border-radius: 10px;
+            transition: width 0.3s ease;
+        }
+
+        .progress-status {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.95em;
+            color: #2e7d32;
+        }
+
+        .status-text {
+            font-weight: 500;
+        }
+
+        .status-time {
+            font-style: italic;
+        }
+
         /* Styles pour les options d'analyse */
         .analysis-options-section {
             background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
@@ -667,6 +750,7 @@ export class ColumnSelectionComponent implements OnDestroy, OnChanges, OnInit {
 
     ngOnDestroy() {
         console.log('ColumnSelectionComponent destroyed');
+        this.subscription.unsubscribe();
     }
 
     ngOnInit() {
@@ -685,6 +769,23 @@ export class ColumnSelectionComponent implements OnDestroy, OnChanges, OnInit {
             this.disableAutoAnalysis = false;
         }
         
+        // Suivre la progression temps réel de la réconciliation
+        this.subscription.add(
+            this.reconciliationService.progress$.subscribe(progress => {
+                if (!progress) {
+                    return;
+                }
+
+                this.reconciliationProgress = Math.round(progress.percentage || 0);
+
+                if (progress.step) {
+                    this.reconciliationStatus = progress.step;
+                }
+
+                this.cdr.detectChanges();
+            })
+        );
+
         this.loadDataFromService();
     }
 
