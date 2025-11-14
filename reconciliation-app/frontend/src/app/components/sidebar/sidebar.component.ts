@@ -37,7 +37,8 @@ export class SidebarComponent implements OnInit {
 
   logout() {
     this.appState.logout();
-    window.location.href = '/login';
+    // Rediriger vers la page de login
+    this.router.navigate(['/login']);
   }
 
   isMenuAllowed(menu: string): boolean {

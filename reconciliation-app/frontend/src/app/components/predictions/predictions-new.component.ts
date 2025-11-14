@@ -75,7 +75,7 @@ export class PredictionsNewComponent implements OnInit {
     maxStockDays: 60,
     urgentThresholdDays: 2,
     normalThresholdDays: 4,
-    compensationThresholdAmount: 500000,
+    compensationThresholdAmount: 5000000,
     seasonalityEnabled: true,
     trendAnalysisEnabled: true,
     volatilityWeight: 0.3,
@@ -95,7 +95,7 @@ export class PredictionsNewComponent implements OnInit {
       maxStockDays: [60, [Validators.required, Validators.min(1), Validators.max(365)]],
       urgentThresholdDays: [2, [Validators.required, Validators.min(1)]],
       normalThresholdDays: [4, [Validators.required, Validators.min(1)]],
-      compensationThresholdAmount: [500000, [Validators.min(0)]],
+      compensationThresholdAmount: [5000000, [Validators.min(0)]],
       seasonalityEnabled: [true],
       trendAnalysisEnabled: [true],
       volatilityWeight: [0.3, [Validators.min(0), Validators.max(1)]],
@@ -949,6 +949,90 @@ export class PredictionsNewComponent implements OnInit {
 
     const custom = this.getCustomThreshold(codeProprietaire);
     return custom?.thresholdAmount ?? defaultThreshold;
+  }
+
+  /**
+   * Nombre d'agences nécessitant une compensation (avec fallback selon les données disponibles)
+   */
+  get compensationNeedingCount(): number {
+    if (!this.isCompensationType()) {
+      return 0;
+    }
+
+    if (this.compensationMetrics?.agenciesNeedingCompensation !== undefined) {
+      return this.compensationMetrics.agenciesNeedingCompensation;
+    }
+
+    if (this.compensationRecommendations.length > 0) {
+      return this.compensationRecommendations.length;
+    }
+
+    if (this.compensationCalendar?.totalOrders !== undefined) {
+      return this.compensationCalendar.totalOrders;
+    }
+
+    return 0;
+  }
+
+  /**
+   * Nombre de compensations urgentes
+   */
+  get compensationUrgentCount(): number {
+    if (!this.isCompensationType()) {
+      return 0;
+    }
+
+    if (this.compensationMetrics?.urgentCompensations !== undefined) {
+      return this.compensationMetrics.urgentCompensations;
+    }
+
+    const urgentRecommendations = this.compensationRecommendations.filter(
+      rec => rec.alertLevel === 'urgent'
+    ).length;
+
+    if (urgentRecommendations > 0) {
+      return urgentRecommendations;
+    }
+
+    if (this.compensationCalendar?.urgentOrders !== undefined) {
+      return this.compensationCalendar.urgentOrders;
+    }
+
+    return 0;
+  }
+
+  /**
+   * Nombre de compensations normales
+   */
+  get compensationNormalCount(): number {
+    if (!this.isCompensationType()) {
+      return 0;
+    }
+
+    if (this.compensationCalendar?.normalOrders !== undefined) {
+      return this.compensationCalendar.normalOrders;
+    }
+
+    return this.compensationRecommendations.filter(
+      rec => rec.alertLevel === 'normal'
+    ).length;
+  }
+
+  /**
+   * Nombre de compensations à faible priorité
+   */
+  get compensationLowCount(): number {
+    if (!this.isCompensationType()) {
+      return 0;
+    }
+
+    if (this.compensationCalendar?.lowPriorityOrders !== undefined) {
+      return this.compensationCalendar.lowPriorityOrders;
+    }
+
+    return this.compensationRecommendations.filter(
+      rec => rec.alertLevel === 'low'
+    ).length;
   }
 
   // ============================================

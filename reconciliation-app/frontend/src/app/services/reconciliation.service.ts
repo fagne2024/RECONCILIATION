@@ -28,6 +28,12 @@ export interface ProgressUpdate {
     currentFile?: number;
     totalFiles?: number;
     estimatedTimeRemaining?: number;
+    // Informations détaillées pour le traitement par chunks
+    currentBoChunk?: number;
+    totalBoChunks?: number;
+    matchesCount?: number;
+    boOnlyCount?: number;
+    partnerRemaining?: number;
 }
 
 @Injectable({
@@ -911,6 +917,19 @@ export class ReconciliationService implements OnInit, OnDestroy {
             
             console.log(`🔄 Traitement chunk BO ${currentBoIndex}/${boChunks.length} avec ${remainingPartnerData.length} lignes Partner restantes`);
             
+            // Mettre à jour la progression avec les informations détaillées
+            this.progressSubject.next({
+                percentage: Math.min(95, (currentBoIndex / boChunks.length) * 90), // 90% max pour laisser de la place à la finalisation
+                processed: currentBoIndex,
+                total: boChunks.length,
+                step: `Traitement chunk BO ${currentBoIndex}/${boChunks.length}`,
+                currentBoChunk: currentBoIndex,
+                totalBoChunks: boChunks.length,
+                matchesCount: allMatches.length,
+                boOnlyCount: allBoOnly.length,
+                partnerRemaining: remainingPartnerData.length
+            });
+            
             const chunkRequest: ReconciliationRequest = {
                 ...originalRequest,
                 boFileContent: boChunk,
@@ -948,6 +967,19 @@ export class ReconciliationService implements OnInit, OnDestroy {
                         
                         // Vérifier la mémoire
                         console.log(`💾 État mémoire: ${allMatches.length} matches, ${allBoOnly.length} bo-only, ${remainingPartnerData.length} partner restantes`);
+                        
+                        // Mettre à jour la progression avec les informations détaillées
+                        this.progressSubject.next({
+                            percentage: Math.min(95, (currentBoIndex / boChunks.length) * 90),
+                            processed: currentBoIndex,
+                            total: boChunks.length,
+                            step: `Chunk BO ${currentBoIndex}/${boChunks.length} traité`,
+                            currentBoChunk: currentBoIndex,
+                            totalBoChunks: boChunks.length,
+                            matchesCount: allMatches.length,
+                            boOnlyCount: allBoOnly.length,
+                            partnerRemaining: remainingPartnerData.length
+                        });
                         
                         processNextBoChunk();
                     } catch (error) {

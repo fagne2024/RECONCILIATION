@@ -179,6 +179,10 @@ export class OperationsComponent implements OnInit, OnDestroy, AfterViewInit {
 
     // Propriété pour gérer l'affichage du filtre de date
     showDateFilter: boolean = false;
+    
+    // Flag pour indiquer si les dates du formulaire ont été définies automatiquement par le système
+    // Si true, on ne filtre pas par date dans applyFilters car les données sont déjà filtrées par le backend
+    dateFilterAutoSet: boolean = false;
 
     // Propriétés pour les popups personnalisés
     showApproClientPopup = false;
@@ -496,6 +500,17 @@ export class OperationsComponent implements OnInit, OnDestroy, AfterViewInit {
     // Méthode pour charger les opérations avec une plage de dates spécifique
     loadOperationsByDateRange(dateDebut: string, dateFin: string) {
         this.isLoading = true;
+        
+        // Marquer que les dates sont définies automatiquement par le système
+        this.dateFilterAutoSet = true;
+        
+        // Synchroniser les dates du formulaire avec les dates chargées
+        // IMPORTANT: Utiliser patchValue avec emitEvent: false pour éviter de déclencher onFilterChange
+        this.filterForm.patchValue({ dateDebut, dateFin }, { emitEvent: false, onlySelf: false });
+        
+        // Forcer la mise à jour des valeurs pour s'assurer qu'elles sont bien prises en compte
+        this.filterForm.get('dateDebut')?.setValue(dateDebut, { emitEvent: false });
+        this.filterForm.get('dateFin')?.setValue(dateFin, { emitEvent: false });
         
         this.operationService.getOperationsByDateRange(dateDebut, dateFin).subscribe({
             next: (operations) => {
@@ -1783,6 +1798,8 @@ Mises à jour: ${updated}/${total}${failed > 0 ? `\nEchecs: ${failed}` : ''}`;
     applyFilters() {
         console.log('=== DÉBUT applyFilters() ===');
         console.log('filterForm.value:', this.filterForm.value);
+        console.log('filterForm.dateDebut:', this.filterForm.get('dateDebut')?.value);
+        console.log('filterForm.dateFin:', this.filterForm.get('dateFin')?.value);
         console.log('Opérations totales avant filtrage:', this.operations.length);
         
         // Récupérer les valeurs du formulaire
@@ -1860,22 +1877,27 @@ Mises à jour: ${updated}/${total}${failed > 0 ? `\nEchecs: ${failed}` : ''}`;
                 }
             }
             
-            // Filtre par date
-            if (formValue.dateDebut && op.dateOperation) {
-                const opDate = new Date(op.dateOperation);
-                const debutDate = new Date(formValue.dateDebut);
-                if (opDate < debutDate) {
-                    console.log(`Opération ${op.id} exclue: date ${op.dateOperation} avant ${formValue.dateDebut}`);
-                    return false;
+            // Filtre par date (comparaison normalisée sur la partie date uniquement, sans l'heure)
+            // Ne filtrer par date QUE si les dates ont été définies manuellement par l'utilisateur
+            // Si les dates sont définies automatiquement par le système (dateFilterAutoSet = true),
+            // ne pas filtrer car les données sont déjà filtrées par le backend
+            if (!this.dateFilterAutoSet) {
+                if (formValue.dateDebut && op.dateOperation) {
+                    const opDateStr = new Date(op.dateOperation).toISOString().split('T')[0];
+                    const debutDateStr = formValue.dateDebut;
+                    if (opDateStr < debutDateStr) {
+                        console.log(`Opération ${op.id} exclue: date ${opDateStr} avant ${debutDateStr}`);
+                        return false;
+                    }
                 }
-            }
-            
-            if (formValue.dateFin && op.dateOperation) {
-                const opDate = new Date(op.dateOperation);
-                const finDate = new Date(formValue.dateFin);
-                if (opDate > finDate) {
-                    console.log(`Opération ${op.id} exclue: date ${op.dateOperation} après ${formValue.dateFin}`);
-                    return false;
+                
+                if (formValue.dateFin && op.dateOperation) {
+                    const opDateStr = new Date(op.dateOperation).toISOString().split('T')[0];
+                    const finDateStr = formValue.dateFin;
+                    if (opDateStr > finDateStr) {
+                        console.log(`Opération ${op.id} exclue: date ${opDateStr} après ${finDateStr}`);
+                        return false;
+                    }
                 }
             }
             
@@ -1942,6 +1964,14 @@ Mises à jour: ${updated}/${total}${failed > 0 ? `\nEchecs: ${failed}` : ''}`;
     onFilterChange() {
         console.log('=== DÉBUT onFilterChange() ===');
         console.log('filterForm.value:', this.filterForm.value);
+        
+        // Si l'utilisateur modifie les dates manuellement, réinitialiser le flag
+        // pour permettre le filtrage par date dans applyFilters
+        if (this.dateFilterAutoSet) {
+            // Vérifier si les dates ont été modifiées par l'utilisateur
+            // Si oui, réinitialiser le flag pour permettre le filtrage
+            this.dateFilterAutoSet = false;
+        }
         
         // Mettre à jour les listes filtrées avec cloisonnement
         this.updateFilteredLists();
@@ -2934,6 +2964,8 @@ Mises à jour: ${updated}/${total}${failed > 0 ? `\nEchecs: ${failed}` : ''}`;
             shouldReload = true;
         } else if (value === 'custom') {
             // Période personnalisée - ne rien changer, laisser l'utilisateur saisir
+            // Réinitialiser le flag pour permettre le filtrage manuel
+            this.dateFilterAutoSet = false;
             return;
         } else {
             // Option vide - ne rien faire
@@ -2950,6 +2982,8 @@ Mises à jour: ${updated}/${total}${failed > 0 ? `\nEchecs: ${failed}` : ''}`;
             this.loadOperationsByDateRange(dateDebut, dateFin);
         } else {
             // Sinon, juste appliquer le filtre sur les données existantes
+            // Réinitialiser le flag car l'utilisateur modifie les dates manuellement
+            this.dateFilterAutoSet = false;
             this.onFilterChange();
         }
     }

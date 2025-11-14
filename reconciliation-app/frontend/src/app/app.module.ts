@@ -74,6 +74,8 @@ import { DashboardReconciliationComponent } from './components/dashboard-reconci
 import { ComptabiliteComponent } from './components/comptabilite/comptabilite.component';
 import { BanqueDashboardComponent } from './components/banque-dashboard/banque-dashboard.component';
 import { UserLogComponent } from './components/user-log/user-log.component';
+import { PredictionsComponent } from './components/predictions/predictions.component';
+import { PredictionsNewComponent } from './components/predictions/predictions-new.component';
 
 @NgModule({
     declarations: [
@@ -116,7 +118,9 @@ import { UserLogComponent } from './components/user-log/user-log.component';
                 DashboardReconciliationComponent,
                 ComptabiliteComponent,
                 BanqueDashboardComponent,
-                UserLogComponent
+                UserLogComponent,
+                PredictionsComponent,
+                PredictionsNewComponent
     ],
     imports: [
         BrowserModule,

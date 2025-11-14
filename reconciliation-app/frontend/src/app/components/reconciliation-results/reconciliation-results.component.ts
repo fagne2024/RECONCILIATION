@@ -1670,6 +1670,7 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
     isSavingEcartBoToTrxSf: boolean = false;
     isSavingEcartPartnerToTrxSf: boolean = false;
     isSavingEcartPartnerToImpactOP: boolean = false;
+    selectedPartnerImportOpDate: string | null = null;
     exportProgress = 0;
     isExporting = false;
     
@@ -2612,6 +2613,31 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
 
             console.log('DEBUG: Nombre d\'enregistrements à sauvegarder (sélection):', sourceRecords.length);
 
+            const defaultDateCandidate = this.selectedPartnerImportOpDate
+                || this.extractIsoDay(this.getFromRecord(sourceRecords[0], ['Date opération', 'Date', 'dateOperation', 'date_operation']))
+                || this.extractIsoDay(this.getPartnerOnlyDate(sourceRecords[0]))
+                || this.toIsoLocalDate(new Date().toISOString());
+
+            const dateInput = await this.popupService.showDateInput(
+                'Sélectionnez la date d\'opération à appliquer pour les Import OP générés.',
+                'Date Import OP',
+                defaultDateCandidate
+            );
+
+            if (dateInput === null) {
+                await this.popupService.showInfo('Sauvegarde Import OP annulée.');
+                return;
+            }
+
+            const normalizedDateInput = this.toIsoLocalDate(dateInput || defaultDateCandidate);
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(normalizedDateInput)) {
+                await this.popupService.showWarning('Date d\'opération invalide. Sauvegarde annulée.');
+                return;
+            }
+
+            this.selectedPartnerImportOpDate = normalizedDateInput;
+            const overrideDateIso = this.makeIsoDateTime(normalizedDateInput);
+
             // Convertir les données ECART Partenaire en format ImpactOP
             const impactOPData: ImpactOP[] = sourceRecords.map((record, index) => {
                 const getValueWithFallback = (keys: string[]): string => {
@@ -2666,7 +2692,7 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                 // Construire la date d'opération au format LocalDateTime
                 const dateOperationStr = getValueWithFallback(['Date opération', 'dateOperation', 'date_operation']);
                 const parsedDate = parseExcelDate(dateOperationStr);
-                const dateOperation = parsedDate.toISOString();
+                const dateOperation = overrideDateIso || parsedDate.toISOString();
 
                 return {
                     id: undefined, // Sera assigné par le backend
@@ -5568,7 +5594,29 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
             const normalizedAmount = parseFloat(String(rawAmountStr).replace(/[,\s]/g, '')) || 0;
             const montant = Math.abs(normalizedAmount);
             const rawDate = this.getFromRecord(record, ['Date opération','Date','dateOperation','date_operation','DATE']);
-            const dateStr = this.extractIsoDay(rawDate) || this.extractIsoDay(this.getPartnerOnlyDate(record)) || this.toIsoLocalDate(new Date().toISOString());
+            const defaultDateCandidate = this.selectedPartnerImportOpDate
+                || this.extractIsoDay(rawDate)
+                || this.extractIsoDay(this.getPartnerOnlyDate(record))
+                || this.toIsoLocalDate(new Date().toISOString());
+
+            const dateInput = await this.popupService.showDateInput(
+                'Sélectionnez la date d\'opération pour cette création Import OP.',
+                'Créer OP - Date d\'opération',
+                defaultDateCandidate
+            );
+
+            if (dateInput === null) {
+                await this.popupService.showInfo('Création de l\'opération annulée.');
+                return;
+            }
+
+            const normalizedDate = this.toIsoLocalDate(dateInput || defaultDateCandidate);
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(normalizedDate)) {
+                await this.popupService.showWarning('Date d\'opération invalide. Création annulée.');
+                return;
+            }
+
+            this.selectedPartnerImportOpDate = normalizedDate;
             const nomBordereau = this.getFromRecord(record, ['Numéro Trans GU','Numero Trans GU','numeroTransGU','numero_trans_gu']);
 
             const banqueInput = await this.popupService.showTextInput('Banque (code propriétaire) :', 'Créer OP', codeProprietaire, 'Ex: CIELCM0001');
@@ -5626,7 +5674,7 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
                 montant,
                 banque,
                 nomBordereau: nomBordereau || undefined,
-                dateOperation: this.toIsoLocalDate(dateStr),
+                dateOperation: normalizedDate,
                 referenceType: referenceType
             };
 
@@ -5674,6 +5722,15 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
             if (!isNaN(d.getTime())) return d.toISOString().split('T')[0];
         } catch {}
         return input;
+    }
+
+    private makeIsoDateTime(datePart: string): string {
+        try {
+            if (/^\d{4}-\d{2}-\d{2}$/.test(datePart)) {
+                return new Date(`${datePart}T00:00:00`).toISOString();
+            }
+        } catch {}
+        return new Date().toISOString();
     }
 
     private formatCurrency(amount: number): string {

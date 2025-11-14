@@ -35,6 +35,13 @@ export class ReconciliationComponent implements OnInit, OnDestroy {
     progressStep: string = '';
     progressCurrentFile: number = 0;
     progressTotalFiles: number = 0;
+    
+    // Informations détaillées de progression
+    currentBoChunk: number = 0;
+    totalBoChunks: number = 0;
+    matchesCount: number = 0;
+    boOnlyCount: number = 0;
+    partnerRemaining: number = 0;
 
     // Gestion des jobs
     currentJobId: string | null = null;
@@ -63,6 +70,35 @@ export class ReconciliationComponent implements OnInit, OnDestroy {
         
         // Mode API classique activé
         console.log('✅ Mode API classique activé');
+        
+        // S'abonner aux mises à jour de progression détaillées
+        this.reconciliationService.progress$
+            .pipe(takeUntil(this.destroy$))
+            .subscribe((progress) => {
+                if (progress.currentBoChunk !== undefined) {
+                    this.currentBoChunk = progress.currentBoChunk;
+                }
+                if (progress.totalBoChunks !== undefined) {
+                    this.totalBoChunks = progress.totalBoChunks;
+                }
+                if (progress.matchesCount !== undefined) {
+                    this.matchesCount = progress.matchesCount;
+                }
+                if (progress.boOnlyCount !== undefined) {
+                    this.boOnlyCount = progress.boOnlyCount;
+                }
+                if (progress.partnerRemaining !== undefined) {
+                    this.partnerRemaining = progress.partnerRemaining;
+                }
+                // Mettre à jour aussi les propriétés de base
+                if (progress.percentage !== undefined) {
+                    this.progressPercentage = progress.percentage;
+                }
+                if (progress.step) {
+                    this.progressStep = progress.step;
+                }
+                this.cd.detectChanges();
+            });
     }
 
     /**
@@ -298,39 +334,116 @@ export class ReconciliationComponent implements OnInit, OnDestroy {
             return;
         }
         
+        const startTime = performance.now();
         try {
-            console.log('🔄 Début du parsing des fichiers...');
+            console.log('🔄 [START_ASSISTED] Début du parsing des fichiers...');
+            console.log('📊 [START_ASSISTED] Fichiers reçus:', {
+                boFile: {
+                    name: uploadedFiles.boFile.name,
+                    size: uploadedFiles.boFile.size,
+                    sizeMB: (uploadedFiles.boFile.size / (1024 * 1024)).toFixed(2),
+                    type: uploadedFiles.boFile.type
+                },
+                partnerFile: {
+                    name: uploadedFiles.partnerFile.name,
+                    size: uploadedFiles.partnerFile.size,
+                    sizeMB: (uploadedFiles.partnerFile.size / (1024 * 1024)).toFixed(2),
+                    type: uploadedFiles.partnerFile.type
+                }
+            });
+            
+            // Afficher l'indicateur de progression pour les fichiers volumineux
+            const isLargeBoFile = uploadedFiles.boFile.size > 10 * 1024 * 1024;
+            const isLargePartnerFile = uploadedFiles.partnerFile.size > 10 * 1024 * 1024;
+            console.log(`🔍 [START_ASSISTED] Fichiers volumineux: BO=${isLargeBoFile}, Partner=${isLargePartnerFile}`);
+            
+            if (isLargeBoFile || isLargePartnerFile) {
+                console.log('📊 [START_ASSISTED] Affichage de l\'indicateur de progression');
+                this.showProgress = true;
+                this.currentStep = 'Parsing des fichiers CSV...';
+                this.cd.detectChanges();
+            }
             
             // Parser les fichiers CSV
-            console.log('📊 Parsing du fichier BO:', uploadedFiles.boFile.name);
-            const boData = await this.parseCsvFile(uploadedFiles.boFile);
-            console.log('📊 Parsing du fichier Partner:', uploadedFiles.partnerFile.name);
-            const partnerData = await this.parseCsvFile(uploadedFiles.partnerFile);
+            console.log('📊 [START_ASSISTED] Début du parsing du fichier BO:', uploadedFiles.boFile.name);
+            const boParseStartTime = performance.now();
+            let boData: Record<string, string>[];
+            try {
+                boData = await this.parseCsvFile(uploadedFiles.boFile);
+                const boParseDuration = ((performance.now() - boParseStartTime) / 1000).toFixed(2);
+                console.log(`✅ [START_ASSISTED] Fichier BO parsé en ${boParseDuration}s: ${boData.length} enregistrements`);
+            } catch (error) {
+                const boParseDuration = ((performance.now() - boParseStartTime) / 1000).toFixed(2);
+                console.error(`❌ [START_ASSISTED] Erreur lors du parsing du fichier BO après ${boParseDuration}s:`, error);
+                console.error(`❌ [START_ASSISTED] Stack trace:`, error instanceof Error ? error.stack : 'N/A');
+                throw error;
+            }
             
-            console.log('💾 Sauvegarde des données dans le service...');
+            console.log('📊 [START_ASSISTED] Début du parsing du fichier Partner:', uploadedFiles.partnerFile.name);
+            const partnerParseStartTime = performance.now();
+            let partnerData: Record<string, string>[];
+            try {
+                partnerData = await this.parseCsvFile(uploadedFiles.partnerFile);
+                const partnerParseDuration = ((performance.now() - partnerParseStartTime) / 1000).toFixed(2);
+                console.log(`✅ [START_ASSISTED] Fichier Partner parsé en ${partnerParseDuration}s: ${partnerData.length} enregistrements`);
+            } catch (error) {
+                const partnerParseDuration = ((performance.now() - partnerParseStartTime) / 1000).toFixed(2);
+                console.error(`❌ [START_ASSISTED] Erreur lors du parsing du fichier Partner après ${partnerParseDuration}s:`, error);
+                console.error(`❌ [START_ASSISTED] Stack trace:`, error instanceof Error ? error.stack : 'N/A');
+                throw error;
+            }
+            
+            // Masquer l'indicateur de progression
+            if (isLargeBoFile || isLargePartnerFile) {
+                console.log('📊 [START_ASSISTED] Masquage de l\'indicateur de progression');
+                this.showProgress = false;
+                this.cd.detectChanges();
+            }
+            
+            console.log('💾 [START_ASSISTED] Sauvegarde des données dans le service...');
+            const saveStartTime = performance.now();
             // Sauvegarder les données parsées dans le service
-            this.appStateService.setBoData(boData);
-            this.appStateService.setPartnerData(partnerData);
+            try {
+                this.appStateService.setBoData(boData);
+                this.appStateService.setPartnerData(partnerData);
+                const saveDuration = ((performance.now() - saveStartTime) / 1000).toFixed(2);
+                console.log(`✅ [START_ASSISTED] Données sauvegardées en ${saveDuration}s`);
+            } catch (error) {
+                console.error(`❌ [START_ASSISTED] Erreur lors de la sauvegarde:`, error);
+                throw error;
+            }
             
-            console.log('✅ Fichiers parsés et données sauvegardées:', {
+            console.log('✅ [START_ASSISTED] Fichiers parsés et données sauvegardées:', {
                 boRecords: boData.length,
                 partnerRecords: partnerData.length
             });
             
             // Vérifier que les données sont bien sauvegardées
+            const verifyStartTime = performance.now();
             const savedBoData = this.appStateService.getBoData();
             const savedPartnerData = this.appStateService.getPartnerData();
-            console.log('🔍 Vérification de la sauvegarde:', {
+            const verifyDuration = ((performance.now() - verifyStartTime) / 1000).toFixed(2);
+            console.log('🔍 [START_ASSISTED] Vérification de la sauvegarde:', {
                 savedBoRecords: savedBoData.length,
-                savedPartnerRecords: savedPartnerData.length
+                savedPartnerRecords: savedPartnerData.length,
+                verificationDuration: `${verifyDuration}s`
             });
             
-            console.log('🚀 Redirection vers la page de sélection de colonnes...');
+            const totalDuration = ((performance.now() - startTime) / 1000).toFixed(2);
+            console.log(`✅ [START_ASSISTED] Processus complet terminé en ${totalDuration}s`);
+            console.log('🚀 [START_ASSISTED] Redirection vers la page de sélection de colonnes...');
             // Rediriger vers la page de sélection de colonnes
             this.router.navigate(['/column-selection'], { queryParams: { mode: 'assisted' } });
             
         } catch (error) {
-            console.error('❌ Erreur lors du parsing des fichiers:', error);
+            const errorTime = performance.now();
+            const errorDuration = ((errorTime - startTime) / 1000).toFixed(2);
+            console.error(`❌ [START_ASSISTED] Erreur lors du parsing des fichiers après ${errorDuration}s:`, error);
+            console.error(`❌ [START_ASSISTED] Détails de l'erreur:`, {
+                message: error instanceof Error ? error.message : String(error),
+                stack: error instanceof Error ? error.stack : 'N/A',
+                name: error instanceof Error ? error.name : 'N/A'
+            });
             this.error = 'Erreur lors de la lecture des fichiers: ' + (error instanceof Error ? error.message : 'Erreur inconnue');
             this.cd.detectChanges();
         }
@@ -341,48 +454,115 @@ export class ReconciliationComponent implements OnInit, OnDestroy {
      */
     private parseCsvFile(file: File): Promise<Record<string, string>[]> {
         return new Promise((resolve, reject) => {
-            console.log(`📖 Début de la lecture du fichier: ${file.name} (${file.size} bytes)`);
+            const startTime = performance.now();
+            const fileSizeMB = (file.size / (1024 * 1024)).toFixed(2);
+            console.log(`📖 [PARSE_CSV] Début de la lecture du fichier: ${file.name}`);
+            console.log(`📊 [PARSE_CSV] Taille du fichier: ${fileSizeMB} MB (${file.size} bytes)`);
+            console.log(`📊 [PARSE_CSV] Type MIME: ${file.type || 'non spécifié'}`);
+            
+            // Détecter si le fichier est volumineux (> 10 MB)
+            const isLargeFile = file.size > 10 * 1024 * 1024;
+            console.log(`🔍 [PARSE_CSV] Fichier volumineux? ${isLargeFile} (seuil: 10 MB)`);
+            
+            if (isLargeFile) {
+                console.log('📦 [PARSE_CSV] Fichier volumineux détecté, utilisation du parsing optimisé par chunks');
+                this.parseLargeCsvFile(file)
+                    .then((data) => {
+                        const endTime = performance.now();
+                        const duration = ((endTime - startTime) / 1000).toFixed(2);
+                        console.log(`✅ [PARSE_CSV] Parsing terminé en ${duration}s: ${data.length} enregistrements`);
+                        resolve(data);
+                    })
+                    .catch((error) => {
+                        const endTime = performance.now();
+                        const duration = ((endTime - startTime) / 1000).toFixed(2);
+                        console.error(`❌ [PARSE_CSV] Erreur après ${duration}s:`, error);
+                        reject(error);
+                    });
+                return;
+            }
             
             const reader = new FileReader();
             
             reader.onload = (e) => {
+                const loadStartTime = performance.now();
                 try {
+                    console.log(`📥 [PARSE_CSV] FileReader.onload déclenché pour ${file.name}`);
                     let content = e.target?.result as string;
-                    console.log(`📄 Contenu du fichier ${file.name}: ${content.length} caractères`);
+                    const contentSizeMB = (content.length / (1024 * 1024)).toFixed(2);
+                    console.log(`📄 [PARSE_CSV] Contenu chargé: ${contentSizeMB} MB (${content.length} caractères)`);
                     
                     // Nettoyer le BOM UTF-8 si présent
                     if (content.charCodeAt(0) === 0xFEFF) {
                         content = content.slice(1);
-                        console.log('🔧 BOM UTF-8 détecté et supprimé');
+                        console.log('🔧 [PARSE_CSV] BOM UTF-8 détecté et supprimé');
                     }
                     
                     // Normaliser les retours à la ligne
+                    const normalizeStartTime = performance.now();
                     content = content.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+                    const normalizeDuration = ((performance.now() - normalizeStartTime) / 1000).toFixed(2);
+                    console.log(`🔧 [PARSE_CSV] Normalisation des retours à la ligne: ${normalizeDuration}s`);
                     
                     // Détecter le délimiteur de manière robuste
+                    const delimiterStartTime = performance.now();
                     const delimiter = this.detectCsvDelimiter(content);
-                    console.log(`🔍 Délimiteur détecté: "${delimiter}"`);
+                    const delimiterDuration = ((performance.now() - delimiterStartTime) / 1000).toFixed(2);
+                    console.log(`🔍 [PARSE_CSV] Délimiteur détecté: "${delimiter}" (${delimiterDuration}s)`);
                     
-                    // Parser avec PapaParse pour une meilleure gestion des cas complexes
+                    // Compter les lignes approximatives
+                    const lineCount = content.split('\n').length;
+                    console.log(`📊 [PARSE_CSV] Nombre approximatif de lignes: ${lineCount}`);
+                    
+                    // Parser avec PapaParse avec streaming pour les gros fichiers
+                    const parseStartTime = performance.now();
+                    const data: Record<string, string>[] = [];
+                    let headers: string[] = [];
+                    let isFirstRow = true;
+                    let rowCount = 0;
+                    console.log(`🔄 [PARSE_CSV] Début du parsing avec PapaParse (mode step)`);
+                    
                     Papa.parse(content, {
-                        header: true,
+                        header: false,
                         delimiter: delimiter,
                         skipEmptyLines: true,
-                        transformHeader: (header: string) => {
-                            // Normaliser les noms de colonnes
-                            return this.normalizeColumnName(header);
+                        step: (results, parser) => {
+                            rowCount++;
+                            // Traiter ligne par ligne pour éviter de bloquer l'UI
+                            if (isFirstRow) {
+                                // Première ligne = headers
+                                const headerStartTime = performance.now();
+                                headers = (results.data as string[]).map(header => this.normalizeColumnName(header));
+                                const headerDuration = ((performance.now() - headerStartTime) / 1000).toFixed(3);
+                                console.log(`📋 [PARSE_CSV] Headers détectés (${headers.length} colonnes):`, headers);
+                                console.log(`⏱️ [PARSE_CSV] Normalisation des headers: ${headerDuration}s`);
+                                isFirstRow = false;
+                            } else {
+                                // Lignes de données
+                                const row: Record<string, string> = {};
+                                const values = results.data as string[];
+                                headers.forEach((header, index) => {
+                                    row[header] = this.normalizeCsvValue(values[index] || '');
+                                });
+                                data.push(row);
+                                
+                                // Logger tous les 10000 enregistrements pour suivre la progression
+                                if (rowCount % 10000 === 0) {
+                                    const progress = ((rowCount / lineCount) * 100).toFixed(1);
+                                    console.log(`📊 [PARSE_CSV] Progression: ${progress}% (${rowCount} lignes traitées, ${data.length} enregistrements)`);
+                                }
+                            }
                         },
-                        transform: (value: string) => {
-                            // Normaliser les valeurs
-                            return this.normalizeCsvValue(value);
-                        },
-                        complete: (results) => {
+                        complete: () => {
                             try {
-                                const data = results.data as Record<string, string>[];
-                                console.log(`✅ Fichier ${file.name} parsé avec succès: ${data.length} enregistrements`);
+                                const parseDuration = ((performance.now() - parseStartTime) / 1000).toFixed(2);
+                                const totalDuration = ((performance.now() - loadStartTime) / 1000).toFixed(2);
+                                console.log(`✅ [PARSE_CSV] Fichier ${file.name} parsé avec succès`);
+                                console.log(`📊 [PARSE_CSV] Statistiques: ${data.length} enregistrements, ${rowCount} lignes traitées`);
+                                console.log(`⏱️ [PARSE_CSV] Durée parsing: ${parseDuration}s, Durée totale: ${totalDuration}s`);
                                 
                                 if (data.length === 0) {
-                                    console.warn('⚠️ Aucune donnée trouvée dans le fichier');
+                                    console.warn('⚠️ [PARSE_CSV] Aucune donnée trouvée dans le fichier');
                                     reject(new Error('Fichier CSV vide ou invalide'));
                                     return;
                                 }
@@ -390,10 +570,10 @@ export class ReconciliationComponent implements OnInit, OnDestroy {
                                 // Vérifier que les colonnes sont valides
                                 const firstRow = data[0];
                                 const columns = Object.keys(firstRow);
-                                console.log(`🏷️ Colonnes détectées (${columns.length}):`, columns);
+                                console.log(`🏷️ [PARSE_CSV] Colonnes détectées (${columns.length}):`, columns);
                                 
                                 if (columns.length === 0 || columns.every(col => !col || col.startsWith('field'))) {
-                                    console.warn('⚠️ Colonnes invalides détectées, tentative de re-parsing sans header');
+                                    console.warn('⚠️ [PARSE_CSV] Colonnes invalides détectées, tentative de re-parsing sans header');
                                     // Réessayer sans header
                                     this.parseCsvWithoutHeader(content, delimiter)
                                         .then(resolve)
@@ -401,24 +581,32 @@ export class ReconciliationComponent implements OnInit, OnDestroy {
                                     return;
                                 }
                                 
-                                // Limiter à 1000 lignes pour les performances (si nécessaire)
-                                const limitedData = data.slice(0, 1000);
-                                if (limitedData.length < data.length) {
-                                    console.log(`📊 Limitation à ${limitedData.length} lignes pour les performances`);
+                                if (data.length > 0) {
+                                    console.log(`📊 [PARSE_CSV] Exemple de données (première ligne):`, data[0]);
                                 }
                                 
-                                if (limitedData.length > 0) {
-                                    console.log(`📊 Exemple de données:`, limitedData[0]);
-                                }
-                                
-                                resolve(limitedData);
+                                const endTime = performance.now();
+                                const totalDurationFinal = ((endTime - startTime) / 1000).toFixed(2);
+                                console.log(`✅ [PARSE_CSV] Parsing complet en ${totalDurationFinal}s`);
+                                resolve(data);
                             } catch (error) {
-                                console.error(`❌ Erreur lors du traitement des résultats:`, error);
+                                const errorTime = performance.now();
+                                const errorDuration = ((errorTime - loadStartTime) / 1000).toFixed(2);
+                                console.error(`❌ [PARSE_CSV] Erreur lors du traitement des résultats après ${errorDuration}s:`, error);
+                                console.error(`❌ [PARSE_CSV] Stack trace:`, error instanceof Error ? error.stack : 'N/A');
                                 reject(new Error(`Erreur lors du traitement des résultats: ${error}`));
                             }
                         },
                         error: (error) => {
-                            console.error(`❌ Erreur PapaParse:`, error);
+                            const errorTime = performance.now();
+                            const errorDuration = ((errorTime - loadStartTime) / 1000).toFixed(2);
+                            console.error(`❌ [PARSE_CSV] Erreur PapaParse après ${errorDuration}s:`, error);
+                            console.error(`❌ [PARSE_CSV] Détails de l'erreur:`, {
+                                message: error.message,
+                                code: error.code,
+                                type: error.type,
+                                row: error.row
+                            });
                             reject(new Error(`Erreur lors du parsing CSV: ${error.message}`));
                         }
                     });
@@ -430,12 +618,223 @@ export class ReconciliationComponent implements OnInit, OnDestroy {
             };
             
             reader.onerror = (error) => {
-                console.error(`❌ Erreur lors de la lecture du fichier ${file.name}:`, error);
+                const errorTime = performance.now();
+                const errorDuration = ((errorTime - startTime) / 1000).toFixed(2);
+                console.error(`❌ [PARSE_CSV] Erreur FileReader après ${errorDuration}s pour ${file.name}:`, error);
+                console.error(`❌ [PARSE_CSV] Détails de l'erreur FileReader:`, {
+                    error: error,
+                    target: (error.target as FileReader)?.error
+                });
                 reject(new Error(`Erreur lors de la lecture du fichier ${file.name}`));
             };
             
             // Lire avec UTF-8 (le plus courant), avec fallback automatique si nécessaire
-            reader.readAsText(file, 'UTF-8');
+            console.log(`📥 [PARSE_CSV] Démarrage de FileReader.readAsText avec encodage UTF-8`);
+            try {
+                reader.readAsText(file, 'UTF-8');
+                console.log(`✅ [PARSE_CSV] FileReader.readAsText appelé avec succès`);
+            } catch (error) {
+                console.error(`❌ [PARSE_CSV] Erreur lors de l'appel à readAsText:`, error);
+                reject(new Error(`Erreur lors de la lecture du fichier ${file.name}: ${error}`));
+            }
+        });
+    }
+    
+    /**
+     * Parse un fichier CSV volumineux par chunks pour éviter de bloquer l'UI
+     */
+    private parseLargeCsvFile(file: File): Promise<Record<string, string>[]> {
+        return new Promise((resolve, reject) => {
+            const startTime = performance.now();
+            const fileSizeMB = (file.size / (1024 * 1024)).toFixed(2);
+            console.log(`📦 [PARSE_LARGE] Parsing optimisé pour fichier volumineux: ${file.name}`);
+            console.log(`📊 [PARSE_LARGE] Taille du fichier: ${fileSizeMB} MB (${file.size} bytes)`);
+            
+            const CHUNK_SIZE = 5 * 1024 * 1024; // 5 MB par chunk (plus petit pour éviter de bloquer)
+            const chunkSizeMB = (CHUNK_SIZE / (1024 * 1024)).toFixed(2);
+            const estimatedChunks = Math.ceil(file.size / CHUNK_SIZE);
+            console.log(`📊 [PARSE_LARGE] Configuration: ${chunkSizeMB} MB par chunk, ~${estimatedChunks} chunks estimés`);
+            
+            const reader = new FileReader();
+            let offset = 0;
+            let allData: Record<string, string>[] = [];
+            let headers: string[] = [];
+            let isFirstChunk = true;
+            let delimiter = ';';
+            let remainingLine = ''; // Pour gérer les lignes qui s'étendent sur plusieurs chunks
+            let chunkNumber = 0;
+            
+            const readChunk = () => {
+                chunkNumber++;
+                const chunkStartTime = performance.now();
+                
+                if (offset >= file.size) {
+                    // Traiter la dernière ligne restante
+                    if (remainingLine.trim()) {
+                        console.log(`📝 [PARSE_LARGE] Traitement de la dernière ligne restante`);
+                        const values = remainingLine.split(delimiter);
+                        const row: Record<string, string> = {};
+                        headers.forEach((header, index) => {
+                            row[header] = this.normalizeCsvValue(values[index] || '');
+                        });
+                        allData.push(row);
+                    }
+                    const endTime = performance.now();
+                    const totalDuration = ((endTime - startTime) / 1000).toFixed(2);
+                    console.log(`✅ [PARSE_LARGE] Parsing terminé en ${totalDuration}s`);
+                    console.log(`📊 [PARSE_LARGE] Statistiques finales: ${allData.length} enregistrements, ${chunkNumber} chunks traités`);
+                    resolve(allData);
+                    return;
+                }
+                
+                const chunkEnd = Math.min(offset + CHUNK_SIZE, file.size);
+                const chunkSize = chunkEnd - offset;
+                const chunkSizeMB = (chunkSize / (1024 * 1024)).toFixed(2);
+                const progress = ((offset / file.size) * 100).toFixed(1);
+                console.log(`📦 [PARSE_LARGE] Chunk ${chunkNumber}/${estimatedChunks}: ${chunkSizeMB} MB (offset: ${offset}, progress: ${progress}%)`);
+                
+                const chunk = file.slice(offset, chunkEnd);
+                try {
+                    reader.readAsText(chunk, 'UTF-8');
+                } catch (error) {
+                    console.error(`❌ [PARSE_LARGE] Erreur lors de la lecture du chunk ${chunkNumber}:`, error);
+                    reject(new Error(`Erreur lors de la lecture du chunk ${chunkNumber}: ${error}`));
+                }
+            };
+            
+            reader.onload = (e) => {
+                const chunkProcessStartTime = performance.now();
+                try {
+                    console.log(`📥 [PARSE_LARGE] Chunk ${chunkNumber} chargé`);
+                    let content = e.target?.result as string;
+                    const contentSizeMB = (content.length / (1024 * 1024)).toFixed(2);
+                    console.log(`📄 [PARSE_LARGE] Chunk ${chunkNumber} contenu: ${contentSizeMB} MB (${content.length} caractères)`);
+                    
+                    // Nettoyer le BOM UTF-8 seulement sur le premier chunk
+                    if (isFirstChunk && content.charCodeAt(0) === 0xFEFF) {
+                        content = content.slice(1);
+                        console.log(`🔧 [PARSE_LARGE] BOM UTF-8 détecté et supprimé sur le premier chunk`);
+                    }
+                    
+                    // Normaliser les retours à la ligne
+                    const normalizeStartTime = performance.now();
+                    content = content.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+                    const normalizeDuration = ((performance.now() - normalizeStartTime) / 1000).toFixed(3);
+                    console.log(`🔧 [PARSE_LARGE] Chunk ${chunkNumber} normalisation: ${normalizeDuration}s`);
+                    
+                    // Ajouter la ligne restante du chunk précédent
+                    if (remainingLine) {
+                        console.log(`📝 [PARSE_LARGE] Chunk ${chunkNumber} ajout de la ligne restante (${remainingLine.length} caractères)`);
+                        content = remainingLine + content;
+                        remainingLine = '';
+                    }
+                    
+                    // Détecter le délimiteur sur le premier chunk
+                    if (isFirstChunk) {
+                        const delimiterStartTime = performance.now();
+                        delimiter = this.detectCsvDelimiter(content);
+                        const delimiterDuration = ((performance.now() - delimiterStartTime) / 1000).toFixed(3);
+                        console.log(`🔍 [PARSE_LARGE] Délimiteur détecté: "${delimiter}" (${delimiterDuration}s)`);
+                    }
+                    
+                    // Parser le chunk ligne par ligne
+                    const splitStartTime = performance.now();
+                    const lines = content.split('\n');
+                    const splitDuration = ((performance.now() - splitStartTime) / 1000).toFixed(3);
+                    console.log(`📊 [PARSE_LARGE] Chunk ${chunkNumber} divisé en ${lines.length} lignes (${splitDuration}s)`);
+                    
+                    const chunkData: Record<string, string>[] = [];
+                    
+                    // Si ce n'est pas le dernier chunk, la dernière ligne peut être incomplète
+                    const isLastChunk = offset + CHUNK_SIZE >= file.size;
+                    const linesToProcess = isLastChunk ? lines.length : lines.length - 1;
+                    console.log(`📊 [PARSE_LARGE] Chunk ${chunkNumber} traitement: ${linesToProcess} lignes (dernier chunk: ${isLastChunk})`);
+                    
+                    // Sauvegarder la dernière ligne si elle est incomplète
+                    if (!isLastChunk && lines.length > 0) {
+                        remainingLine = lines[lines.length - 1];
+                        console.log(`📝 [PARSE_LARGE] Chunk ${chunkNumber} ligne incomplète sauvegardée (${remainingLine.length} caractères)`);
+                    }
+                    
+                    const parseStartTime = performance.now();
+                    for (let i = 0; i < linesToProcess; i++) {
+                        const line = lines[i].trim();
+                        if (!line) continue;
+                        
+                        // Détecter les headers sur la première ligne du premier chunk
+                        if (isFirstChunk && i === 0) {
+                            const headerStartTime = performance.now();
+                            headers = line.split(delimiter).map(header => this.normalizeColumnName(header));
+                            const headerDuration = ((performance.now() - headerStartTime) / 1000).toFixed(3);
+                            console.log(`📋 [PARSE_LARGE] Headers détectés (${headers.length} colonnes):`, headers);
+                            console.log(`⏱️ [PARSE_LARGE] Normalisation des headers: ${headerDuration}s`);
+                            isFirstChunk = false;
+                            continue;
+                        }
+                        
+                        // Parser la ligne de données
+                        const values = line.split(delimiter);
+                        const row: Record<string, string> = {};
+                        headers.forEach((header, index) => {
+                            row[header] = this.normalizeCsvValue(values[index] || '');
+                        });
+                        chunkData.push(row);
+                    }
+                    const parseDuration = ((performance.now() - parseStartTime) / 1000).toFixed(3);
+                    console.log(`⏱️ [PARSE_LARGE] Chunk ${chunkNumber} parsing: ${parseDuration}s (${chunkData.length} enregistrements)`);
+                    
+                    allData.push(...chunkData);
+                    isFirstChunk = false;
+                    
+                    // Mettre à jour la progression
+                    const progress = Math.min(100, (offset / file.size) * 100);
+                    this.progressPercentage = Math.round(progress);
+                    this.processedRecords = allData.length;
+                    this.currentStep = `Parsing de ${file.name}: ${allData.length} lignes traitées`;
+                    this.cd.detectChanges();
+                    
+                    const chunkProcessDuration = ((performance.now() - chunkProcessStartTime) / 1000).toFixed(2);
+                    console.log(`📊 [PARSE_LARGE] Chunk ${chunkNumber} terminé en ${chunkProcessDuration}s`);
+                    console.log(`📊 [PARSE_LARGE] Progression globale: ${Math.round(progress)}% (${allData.length} enregistrements, ${chunkNumber}/${estimatedChunks} chunks)`);
+                    
+                    // Lire le chunk suivant après une petite pause pour permettre à l'UI de se mettre à jour
+                    offset += CHUNK_SIZE;
+                    setTimeout(() => {
+                        readChunk();
+                    }, 100); // Pause plus longue pour permettre à l'UI de se mettre à jour
+                    
+                } catch (error) {
+                    const errorTime = performance.now();
+                    const errorDuration = ((errorTime - startTime) / 1000).toFixed(2);
+                    console.error(`❌ [PARSE_LARGE] Erreur lors du parsing du chunk ${chunkNumber} après ${errorDuration}s:`, error);
+                    console.error(`❌ [PARSE_LARGE] Détails de l'erreur:`, {
+                        chunkNumber: chunkNumber,
+                        offset: offset,
+                        fileSize: file.size,
+                        allDataLength: allData.length,
+                        error: error instanceof Error ? error.message : String(error),
+                        stack: error instanceof Error ? error.stack : 'N/A'
+                    });
+                    reject(new Error(`Erreur lors du parsing du chunk ${chunkNumber}: ${error}`));
+                }
+            };
+            
+            reader.onerror = (error) => {
+                const errorTime = performance.now();
+                const errorDuration = ((errorTime - startTime) / 1000).toFixed(2);
+                console.error(`❌ [PARSE_LARGE] Erreur FileReader pour le chunk ${chunkNumber} après ${errorDuration}s:`, error);
+                console.error(`❌ [PARSE_LARGE] Détails de l'erreur FileReader:`, {
+                    chunkNumber: chunkNumber,
+                    offset: offset,
+                    fileSize: file.size,
+                    error: (error.target as FileReader)?.error
+                });
+                reject(new Error(`Erreur lors de la lecture du chunk ${chunkNumber}: ${error}`));
+            };
+            
+            // Démarrer la lecture du premier chunk
+            console.log(`🚀 [PARSE_LARGE] Démarrage du parsing par chunks`);
+            readChunk();
         });
     }
     

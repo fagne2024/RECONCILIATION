@@ -1,0 +1,45 @@
+### Test des endpoints du système de prédiction d'approvisionnement
+### Utiliser avec REST Client dans VS Code ou IntelliJ
+
+### 1. Configuration du système
+POST http://localhost:8080/api/supply/configure
+Content-Type: application/json
+
+{
+  "leadTimeDays": 7,
+  "safetyFactor": 1.5,
+  "minStockDays": 14,
+  "maxStockDays": 60,
+  "urgentThresholdDays": 2,
+  "normalThresholdDays": 7
+}
+
+### 2. Obtenir les recommandations d'approvisionnement
+GET http://localhost:8080/api/supply/recommendations?typeOperation=Appro_client&periodeAnalyseJours=90
+
+### 3. Obtenir les recommandations avec filtre pays
+GET http://localhost:8080/api/supply/recommendations?typeOperation=Appro_client&pays=CI&periodeAnalyseJours=90
+
+### 4. Obtenir le calendrier prédictif
+GET http://localhost:8080/api/supply/calendar?typeOperation=Appro_client&days=30
+
+### 5. Obtenir les analytiques d'une agence
+GET http://localhost:8080/api/supply/agency/AG001?typeOperation=Appro_client&periodeAnalyseJours=90
+
+### 6. Obtenir les métriques globales
+GET http://localhost:8080/api/supply/metrics?typeOperation=Appro_client
+
+### 7. Analyser la fréquence d'approvisionnement
+GET http://localhost:8080/api/supply/frequency/AG001?typeOperation=Appro_client&periodeAnalyseJours=90
+
+### 8. Créer une commande (placeholder)
+POST http://localhost:8080/api/supply/order
+Content-Type: application/json
+
+{
+  "codeProprietaire": "AG001",
+  "typeOperation": "Appro_client",
+  "quantity": 1000,
+  "requestedDate": "2025-01-15"
+}
+

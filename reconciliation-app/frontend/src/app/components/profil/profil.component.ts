@@ -916,8 +916,69 @@ export class ProfilComponent implements OnInit {
       
       if (totalPermissions === 0) {
         console.log(`⚠️ Aucune permission disponible pour ajouter au module ${module.nom}`);
-        // Même sans permissions, on considère le module comme associé
-        this.reloadProfilData();
+        console.log(`ℹ️ Le module ${module.nom} sera associé sans permissions actives`);
+        
+        // Créer une permission spéciale "aucune" pour marquer l'association du module
+        // Cela permet au module d'apparaître comme associé même sans permissions actives
+        const aucunePermission = this.permissions.find(p => p.nom === 'aucune' || p.nom === 'module_associé');
+        
+        if (aucunePermission && aucunePermission.id) {
+          // Utiliser la permission "aucune" existante
+          this.profilService.addPermissionToProfil(this.selectedProfil!.id!, module.id!, aucunePermission.id).subscribe({
+            next: (pp) => {
+              if (!this.profilPermissions.some(existing => 
+                existing.id === pp.id || 
+                (existing.module && existing.module.id === pp.module?.id && 
+                 existing.permission && existing.permission.id === pp.permission?.id &&
+                 existing.profil && existing.profil.id === pp.profil?.id)
+              )) {
+                this.profilPermissions.push(pp);
+              }
+              console.log(`✅ Module ${module.nom} associé sans permissions actives`);
+              this.cd.detectChanges();
+            },
+            error: (error) => {
+              console.error(`❌ Erreur lors de l'association du module sans permissions:`, error);
+              this.cd.detectChanges();
+            }
+          });
+        } else {
+          // Créer une permission "aucune" si elle n'existe pas
+          this.profilService.createPermission({ nom: 'module_associé' }).subscribe({
+            next: (newPermission) => {
+              console.log(`✅ Permission spéciale créée: ${newPermission.nom}`);
+              // Ajouter cette permission au profil pour ce module
+              if (newPermission.id) {
+                this.profilService.addPermissionToProfil(this.selectedProfil!.id!, module.id!, newPermission.id).subscribe({
+                  next: (pp) => {
+                    if (!this.profilPermissions.some(existing => 
+                      existing.id === pp.id || 
+                      (existing.module && existing.module.id === pp.module?.id && 
+                       existing.permission && existing.permission.id === pp.permission?.id &&
+                       existing.profil && existing.profil.id === pp.profil?.id)
+                    )) {
+                      this.profilPermissions.push(pp);
+                    }
+                    // Recharger les permissions pour inclure la nouvelle
+                    this.loadPermissions();
+                    console.log(`✅ Module ${module.nom} associé sans permissions actives`);
+                    this.cd.detectChanges();
+                  },
+                  error: (error) => {
+                    console.error(`❌ Erreur lors de l'association du module:`, error);
+                    this.cd.detectChanges();
+                  }
+                });
+              }
+            },
+            error: (error) => {
+              console.error(`❌ Erreur lors de la création de la permission spéciale:`, error);
+              // En cas d'erreur, recharger quand même pour mettre à jour l'UI
+              this.reloadProfilData();
+              this.cd.detectChanges();
+            }
+          });
+        }
         return;
       }
       

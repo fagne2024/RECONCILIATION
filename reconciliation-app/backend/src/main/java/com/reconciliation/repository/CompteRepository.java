@@ -6,6 +6,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -57,5 +58,8 @@ public interface CompteRepository extends JpaRepository<CompteEntity, Long> {
     @Query("SELECT c FROM CompteEntity c WHERE c.solde > :soldeMin AND c.pays IN :paysCodes")
     List<CompteEntity> findBySoldeSuperieurAAndPaysIn(@Param("soldeMin") Double soldeMin, @Param("paysCodes") List<String> paysCodes);
     
+    @Query("SELECT c FROM CompteEntity c WHERE LOWER(c.categorie) IN :categories")
+    List<CompteEntity> findByCategorieInIgnoreCase(@Param("categories") Collection<String> categories);
+
     boolean existsByNumeroCompte(String numeroCompte);
 } 

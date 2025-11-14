@@ -14,12 +14,12 @@
       <button (click)="goBack()" class="btn-back">
         <i class="fas fa-arrow-left"></i> Retour
       </button>
-      <h1>📦 Système de Prédiction {{ isCompensationType() ? 'des Compensations' : 'de la Trésorerie' }}</h1>
+      <h1>📦 Système de Prédiction {{ isCompensationType() ? 'des Compensations' : 'des Approvisionnement' }}</h1>
     </div>
     <p class="subtitle">
       {{ isCompensationType() 
         ? 'Analysez les patterns de compensation et prédisez les besoins futurs basés sur la fréquence et les soldes'
-        : 'Analysez vos données historiques pour optimiser la gestion du tréso et prédire les besoins futurs en approvisionnements' 
+        : 'Analysez vos données historiques pour optimiser la gestion des approvisionnements et prédire les besoins futurs' 
       }}
     </p>
   </div>
@@ -434,6 +434,24 @@
   <!-- ============================================ -->
   <div *ngIf="selectedTab === 'recommendations' && compensationRecommendations.length > 0 && isCompensationType()" class="recommendations-section">
     <h2>📋 Recommandations de Compensation</h2>
+    <div class="recommendations-summary">
+      <div class="summary-item critical">
+        <span class="summary-label">Nécessitant Compensation</span>
+        <span class="summary-value">{{ compensationNeedingCount }}</span>
+      </div>
+      <div class="summary-item urgent">
+        <span class="summary-label">Compensations Urgentes</span>
+        <span class="summary-value">{{ compensationUrgentCount }}</span>
+      </div>
+      <div class="summary-item normal">
+        <span class="summary-label">Compensations Normales</span>
+        <span class="summary-value">{{ compensationNormalCount }}</span>
+      </div>
+      <div class="summary-item low">
+        <span class="summary-label">Faible Priorité</span>
+        <span class="summary-value">{{ compensationLowCount }}</span>
+      </div>
+    </div>
     <div class="recommendations-list">
       <div *ngFor="let rec of getPaginatedRecommendations()" class="recommendation-card" [ngClass]="getAlertClass(rec.alertLevel)">
         <div class="recommendation-header">
@@ -529,21 +547,21 @@
     <h2>📅 Calendrier Prédictif {{ isCompensationType() ? 'de Compensation' : 'd\'Approvisionnement' }}</h2>
     
     <div class="calendar-summary">
-      <div class="summary-item">
-        <span class="summary-label">Total {{ isCompensationType() ? 'Compensations' : 'Commandes' }}:</span>
-        <span class="summary-value">{{ (isCompensationType() ? compensationCalendar?.totalOrders : calendar?.totalOrders) || 0 }}</span>
+      <div class="summary-item" [ngClass]="{'critical': isCompensationType()}">
+        <span class="summary-label">{{ isCompensationType() ? 'Nécessitant Compensation' : 'Total Commandes' }}:</span>
+        <span class="summary-value">{{ isCompensationType() ? compensationNeedingCount : (calendar?.totalOrders || 0) }}</span>
       </div>
       <div class="summary-item urgent">
-        <span class="summary-label">Urgentes:</span>
-        <span class="summary-value">{{ (isCompensationType() ? compensationCalendar?.urgentOrders : calendar?.urgentOrders) || 0 }}</span>
+        <span class="summary-label">{{ isCompensationType() ? 'Compensations Urgentes' : 'Urgentes' }}:</span>
+        <span class="summary-value">{{ isCompensationType() ? compensationUrgentCount : (calendar?.urgentOrders || 0) }}</span>
       </div>
       <div class="summary-item normal">
-        <span class="summary-label">Normales:</span>
-        <span class="summary-value">{{ (isCompensationType() ? compensationCalendar?.normalOrders : calendar?.normalOrders) || 0 }}</span>
+        <span class="summary-label">{{ isCompensationType() ? 'Compensations Normales' : 'Normales' }}:</span>
+        <span class="summary-value">{{ isCompensationType() ? compensationNormalCount : (calendar?.normalOrders || 0) }}</span>
       </div>
       <div class="summary-item low">
         <span class="summary-label">Faible Priorité:</span>
-        <span class="summary-value">{{ (isCompensationType() ? compensationCalendar?.lowPriorityOrders : calendar?.lowPriorityOrders) || 0 }}</span>
+        <span class="summary-value">{{ isCompensationType() ? compensationLowCount : (calendar?.lowPriorityOrders || 0) }}</span>
       </div>
     </div>
     

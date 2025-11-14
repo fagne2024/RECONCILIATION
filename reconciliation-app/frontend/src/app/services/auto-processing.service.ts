@@ -381,36 +381,79 @@ export class AutoProcessingService {
     const lowerName = fileName.toLowerCase();
     const lowerPattern = pattern.toLowerCase();
 
+    // Extensions acceptées comme équivalentes
+    const acceptedExtensions = ['.csv', '.xls', '.xlsx'];
+    
+    // Extraire les extensions
+    const getExtension = (name: string): string => {
+      const match = name.match(/\.[^/.]+$/);
+      return match ? match[0] : '';
+    };
+    
+    const fileNameExt = getExtension(lowerName);
+    const patternExt = getExtension(lowerPattern);
+    
+    // Noms sans extension
+    const nameNoExt = lowerName.replace(/\.[^/.]+$/, '');
+    const patternNoExt = lowerPattern.replace(/\.[^/.]+$/, '');
+
     // 1) Wildcards explicites
-    if (lowerPattern.includes('*') || lowerPattern.includes('?')) {
-      const regexPattern = lowerPattern
+    if (patternNoExt.includes('*') || patternNoExt.includes('?')) {
+      const regexPattern = patternNoExt
         .replace(/\./g, '\\.')
         .replace(/\*/g, '.*')
         .replace(/\?/g, '.');
       try {
         const regex = new RegExp(`^${regexPattern}$`, 'i');
-        if (regex.test(fileName)) return true;
+        const matches = regex.test(nameNoExt);
+        
+        if (matches) {
+          // Si le pattern a une extension acceptée, vérifier que l'extension du fichier est aussi acceptée
+          if (patternExt && acceptedExtensions.includes(patternExt)) {
+            return acceptedExtensions.includes(fileNameExt);
+          }
+          // Le pattern n'a pas d'extension spécifique ou extension non standard, accepter
+          return true;
+        }
       } catch {
         // ignorer pattern invalide
       }
     }
 
     // 2) Pattern avec extension: accepter mêmes bases avec .csv/.xls/.xlsx
-    if (/[.][^/\\]+$/.test(lowerPattern)) {
-      const nameNoExt = lowerName.replace(/\.[^/.]+$/, '');
-      const patternNoExt = lowerPattern.replace(/\.[^/.]+$/, '');
-
-      if (nameNoExt === patternNoExt) return true; // correspondance stricte sans extension
-
+    if (patternExt && acceptedExtensions.includes(patternExt)) {
+      // Si le pattern a une extension acceptée, tester sans extension puis vérifier l'extension
+      if (nameNoExt === patternNoExt) {
+        // Correspondance exacte du nom, vérifier que l'extension est acceptée
+        return acceptedExtensions.includes(fileNameExt);
+      }
+      
       // autoriser variantes d'extension usuelles
-      if (nameNoExt.endsWith(patternNoExt) || nameNoExt.includes(patternNoExt)) return true;
+      if (nameNoExt.endsWith(patternNoExt) || nameNoExt.includes(patternNoExt)) {
+        return acceptedExtensions.includes(fileNameExt);
+      }
+    } else if (patternExt) {
+      // Extension non standard, correspondance exacte stricte
+      if (lowerName === lowerPattern) return true;
     }
 
     // 3) Inclusion sans extension (fallback généreux)
-    const cleanFileName = lowerName.replace(/\.[^/.]+$/, '');
-    const cleanPattern = lowerPattern.replace(/\.[^/.]+$/, '');
+    const cleanFileName = nameNoExt;
+    const cleanPattern = patternNoExt;
     if (!cleanPattern) return false;
-    return cleanFileName.includes(cleanPattern) || cleanFileName.startsWith(cleanPattern);
+    
+    const containsPattern = cleanFileName.includes(cleanPattern);
+    const startsWithPattern = cleanFileName.startsWith(cleanPattern);
+    
+    if (containsPattern || startsWithPattern) {
+      // Si le pattern avait une extension acceptée, vérifier que l'extension du fichier est aussi acceptée
+      if (patternExt && acceptedExtensions.includes(patternExt)) {
+        return acceptedExtensions.includes(fileNameExt);
+      }
+      return true;
+    }
+    
+    return false;
   }
 
   private async readFile(file: File): Promise<any[]> {

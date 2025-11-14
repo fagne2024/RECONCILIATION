@@ -23,6 +23,8 @@ import { TrxSfComponent } from './components/trx-sf/trx-sf.component';
 import { ServiceBalanceComponent } from './components/service-balance/service-balance.component';
 import { ComptabiliteComponent } from './components/comptabilite/comptabilite.component';
 import { UserLogComponent } from './components/user-log/user-log.component';
+import { PredictionsComponent } from './components/predictions/predictions.component';
+import { PredictionsNewComponent } from './components/predictions/predictions-new.component';
 
 
 import { AutoProcessingModelsComponent } from './components/auto-processing-models/auto-processing-models.component';
@@ -33,41 +35,47 @@ import { ReconciliationReportComponent } from './components/reconciliation-repor
 import { ReportDashboardComponent } from './components/report-dashboard/report-dashboard.component';
 import { DashboardReconciliationComponent } from './components/dashboard-reconciliation/dashboard-reconciliation.component';
 import { BanqueDashboardComponent } from './components/banque-dashboard/banque-dashboard.component';
+import { AuthGuard } from './guards/auth.guard';
 
 const routes: Routes = [
-  { path: '', redirectTo: '/reconciliation-launcher', pathMatch: 'full' },
-  { path: 'reconciliation-launcher', component: ReconciliationLauncherComponent },
-  { path: 'reconciliation', component: ReconciliationComponent },
-  { path: 'upload', component: FileUploadComponent },
-  { path: 'column-selection', component: ColumnSelectionComponent },
-  { path: 'stats', component: StatsComponent },
-  { path: 'agency-summary', component: AgencySummaryComponent },
-  { path: 'results', component: ReconciliationResultsComponent },
-  { path: 'dashboard', component: DashboardComponent },
-  { path: 'comptes', component: ComptesComponent },
-  { path: 'operations', component: OperationsComponent },
-  { path: 'frais', component: FraisComponent },
-  { path: 'commission', component: CommissionComponent },
-  { path: 'users', component: UsersComponent },
-  { path: 'ranking', component: RankingComponent },
+  // Route de login accessible sans authentification
   { path: 'login', component: LoginComponent },
-  { path: 'traitement', component: TraitementComponent },
-  { path: 'profils', component: ProfilComponent },
-  { path: 'modules', component: ModulesComponent },
-  { path: 'permissions', component: PermissionsComponent },
-  { path: 'ecart-solde', component: EcartSoldeComponent },
-  { path: 'trx-sf', component: TrxSfComponent },
-  { path: 'impact-op', component: ImpactOPComponent },
-  { path: 'service-balance', component: ServiceBalanceComponent },
-
-  { path: 'auto-processing-models', component: AutoProcessingModelsComponent },
-  { path: 'banque', component: BanqueComponent },
-  { path: 'comptabilite', component: ComptabiliteComponent },
-  { path: 'reconciliation-report', component: ReconciliationReportComponent },
-  { path: 'report-dashboard', component: ReportDashboardComponent },
-  { path: 'reconciliation-dashboard', component: DashboardReconciliationComponent },
-  { path: 'banque-dashboard', component: BanqueDashboardComponent },
-  { path: 'log-utilisateur', component: UserLogComponent },
+  
+  // Toutes les autres routes nécessitent une authentification
+  // Note: La route de redirection n'a pas besoin de canActivate car la route de destination est protégée
+  { path: '', redirectTo: '/reconciliation-launcher', pathMatch: 'full' },
+  { path: 'reconciliation-launcher', component: ReconciliationLauncherComponent, canActivate: [AuthGuard] },
+  { path: 'reconciliation', component: ReconciliationComponent, canActivate: [AuthGuard] },
+  { path: 'upload', component: FileUploadComponent, canActivate: [AuthGuard] },
+  { path: 'column-selection', component: ColumnSelectionComponent, canActivate: [AuthGuard] },
+  { path: 'stats', component: StatsComponent, canActivate: [AuthGuard] },
+  { path: 'agency-summary', component: AgencySummaryComponent, canActivate: [AuthGuard] },
+  { path: 'results', component: ReconciliationResultsComponent, canActivate: [AuthGuard] },
+  { path: 'dashboard', component: DashboardComponent, canActivate: [AuthGuard] },
+  { path: 'comptes', component: ComptesComponent, canActivate: [AuthGuard] },
+  { path: 'operations', component: OperationsComponent, canActivate: [AuthGuard] },
+  { path: 'frais', component: FraisComponent, canActivate: [AuthGuard] },
+  { path: 'commission', component: CommissionComponent, canActivate: [AuthGuard] },
+  { path: 'users', component: UsersComponent, canActivate: [AuthGuard] },
+  { path: 'ranking', component: RankingComponent, canActivate: [AuthGuard] },
+  { path: 'traitement', component: TraitementComponent, canActivate: [AuthGuard] },
+  { path: 'profils', component: ProfilComponent, canActivate: [AuthGuard] },
+  { path: 'modules', component: ModulesComponent, canActivate: [AuthGuard] },
+  { path: 'permissions', component: PermissionsComponent, canActivate: [AuthGuard] },
+  { path: 'ecart-solde', component: EcartSoldeComponent, canActivate: [AuthGuard] },
+  { path: 'trx-sf', component: TrxSfComponent, canActivate: [AuthGuard] },
+  { path: 'impact-op', component: ImpactOPComponent, canActivate: [AuthGuard] },
+  { path: 'service-balance', component: ServiceBalanceComponent, canActivate: [AuthGuard] },
+  { path: 'auto-processing-models', component: AutoProcessingModelsComponent, canActivate: [AuthGuard] },
+  { path: 'banque', component: BanqueComponent, canActivate: [AuthGuard] },
+  { path: 'comptabilite', component: ComptabiliteComponent, canActivate: [AuthGuard] },
+  { path: 'reconciliation-report', component: ReconciliationReportComponent, canActivate: [AuthGuard] },
+  { path: 'report-dashboard', component: ReportDashboardComponent, canActivate: [AuthGuard] },
+  { path: 'reconciliation-dashboard', component: DashboardReconciliationComponent, canActivate: [AuthGuard] },
+  { path: 'banque-dashboard', component: BanqueDashboardComponent, canActivate: [AuthGuard] },
+  { path: 'log-utilisateur', component: UserLogComponent, canActivate: [AuthGuard] },
+  { path: 'predictions', component: PredictionsNewComponent, canActivate: [AuthGuard] },
+  { path: 'predictions-old', component: PredictionsComponent, canActivate: [AuthGuard] }, // Ancien système gardé pour référence
 ];
 
 @NgModule({

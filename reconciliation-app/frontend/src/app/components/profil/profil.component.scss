@@ -805,6 +805,25 @@
         }
 
         .permissions-list {
+          .no-permissions-message {
+            padding: 1rem;
+            text-align: center;
+            color: #6c757d;
+            font-size: 0.9rem;
+            background: #f8f9fa;
+            border-radius: 4px;
+            margin: 0.5rem 0;
+
+            i {
+              color: #2196F3;
+              margin-right: 0.5rem;
+            }
+
+            p {
+              margin: 0.5rem 0 0 0;
+              font-style: italic;
+            }
+          }
           margin-bottom: 1rem;
           
           &.scrollable-list {

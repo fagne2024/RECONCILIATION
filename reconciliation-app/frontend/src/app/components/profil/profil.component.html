@@ -310,8 +310,12 @@
             </div>
             
             <div class="permissions-list scrollable-list">
+              <div *ngIf="getDisplayedPermissions(module).length === 0 || (getDisplayedPermissions(module).length === 1 && getDisplayedPermissions(module)[0]?.nom === 'module_associé')" class="no-permissions-message">
+                <i class="fas fa-info-circle"></i>
+                <p>Aucune permission disponible pour ce module. Le module est associé mais aucune permission n'est activée.</p>
+              </div>
               <div *ngFor="let permission of getDisplayedPermissions(module); let i = index" class="permission-item">
-                <label class="permission-checkbox">
+                <label class="permission-checkbox" *ngIf="permission.nom !== 'module_associé'">
                   <input type="checkbox"
                     [checked]="hasPermission(module, permission)"
                     (change)="togglePermission(module, permission, $event)"

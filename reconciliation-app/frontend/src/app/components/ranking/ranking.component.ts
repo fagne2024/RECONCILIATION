@@ -475,6 +475,7 @@ export class RankingComponent implements OnInit {
     switch (col) {
       case 'agency': return 'Agence';
       case 'service': return 'Service';
+      case 'country': return 'Pays';
       case 'transactionCount': return 'Transactions';
       case 'totalVolume': return 'Volume Total';
       case 'totalFees': return 'Revenu';

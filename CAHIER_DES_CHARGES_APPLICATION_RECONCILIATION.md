@@ -3,7 +3,7 @@
 ## 🎯 1. CONTEXTE ET OBJECTIFS
 
 ### 1.1 Contexte
-Application de réconciliation financière complète développée avec **Angular 14** (frontend) et **Spring Boot** (backend), permettant la collecte, le traitement et la réconciliation automatique des transactions financières entre différents partenaires et le back-office.
+Application de réconciliation financière complète développée avec **Angular 20** (frontend), **Spring Boot 3** (backend principal) et un module **Node.js/Express** (surveillance & agrégations), permettant la collecte, le traitement et la réconciliation automatique des transactions financières entre différents partenaires et le back-office.
 
 ### 1.2 Objectifs
 - **Automatiser** l'ingestion et la réconciliation des transactions financières
@@ -19,40 +19,56 @@ Application de réconciliation financière complète développée avec **Angular
 ### 2.1 Stack Technologique
 
 #### Backend (Spring Boot)
-- **Framework** : Spring Boot 2.7+
-- **Langage** : Java 11+
+- **Framework** : Spring Boot 3.2.x
+- **Langage** : Java 17
 - **Base de données** : MySQL 8.0+
-- **ORM** : JPA/Hibernate
-- **Build** : Maven 3.6+
-- **Sécurité** : Spring Security (authentification basique)
+- **ORM** : JPA/Hibernate + Flyway
+- **Build** : Maven 3.9+
+- **Sécurité** : Spring Security (authentification basique + contrôles par profil)
+
+#### Services Node (Express + Prisma)
+- **Runtime** : Node.js 20+
+- **Framework** : Express 5 (TypeScript)
+- **ORM** : Prisma 6
+- **Base de données** : SQLite embarquée (`prisma/dev.db`) pour la modélisation rapide (exportable MySQL)
+- **Rôles** : API `agency-summary`, moteur de surveillance `file-watcher`, gestion des modèles d’auto-traitement
+- **Interop** : Expose des endpoints REST consommés par l’UI Angular et le backend Java
+
+- **File watcher** : `watch-folder` (chokidar, transformations configurables)
 
 #### Frontend (Angular)
-- **Framework** : Angular 14
-- **Langage** : TypeScript
-- **Styling** : SCSS
-- **Charts** : ng2-charts
-- **UI Components** : Angular Material
-- **Build** : Angular CLI
+- **Framework** : Angular 20.1
+- **Langage** : TypeScript 5.8
+- **Styling** : SCSS + theming Angular Material
+- **Charts** : ng2-charts, ngx-charts
+- **UI Components** : Angular Material, composants maison (`modern-popup`, `progress-indicator`)
+- **Build** : Angular CLI + workers (data-processing.worker.ts)
 
 ### 2.2 Structure du Projet
 ```
 PAD/
 ├── reconciliation-app/
-│   ├── backend/                 # Application Spring Boot
+│   ├── backend/
 │   │   ├── src/main/java/com/reconciliation/
-│   │   │   ├── controller/      # Contrôleurs REST (24 contrôleurs)
-│   │   │   ├── service/         # Logique métier (31 services)
-│   │   │   ├── repository/      # Accès aux données (24 repositories)
-│   │   │   ├── entity/          # Entités JPA (20 entités)
-│   │   │   ├── dto/             # Objets de transfert (15 DTOs)
+│   │   │   ├── controller/      # Contrôleurs REST (28 contrôleurs)
+│   │   │   ├── service/         # Logique métier (38 services)
+│   │   │   ├── repository/      # Accès aux données (28 repositories)
+│   │   │   ├── entity/          # Entités JPA (30 entités)
+│   │   │   ├── dto/             # Objets de transfert (33 DTOs)
 │   │   │   └── config/          # Configuration
-│   │   └── src/main/resources/
-│   │       └── db/migration/    # Scripts de migration
+│   │   ├── src/main/resources/
+│   │   │   └── db/migration/    # Scripts de migration (33 fichiers SQL)
+│   │   ├── src/                 # Services Node (Express + Prisma)
+│   │   │   ├── controllers/     # API complémentaires (agency summary, file watcher)
+│   │   │   ├── services/        # Surveillance fichiers, transformations
+│   │   │   ├── routes/          # Routage Express
+│   │   │   └── models/          # Contrats TypeScript
+│   │   └── prisma/              # `schema.prisma` + migrations SQLite
 │   └── frontend/                # Application Angular
 │       ├── src/app/
-│       │   ├── components/      # Composants Angular (25+ composants)
-│       │   ├── services/        # Services Angular (30+ services)
-│       │   ├── models/          # Modèles TypeScript (15+ modèles)
+│       │   ├── components/      # Composants Angular (41 composants actifs)
+│       │   ├── services/        # Services Angular (40 services partagés)
+│       │   ├── models/          # Modèles TypeScript (17 modèles)
 │       │   └── utils/           # Utilitaires
 │       └── src/environments/    # Configuration par environnement
 └── watch-folder/                # Dossier de surveillance des fichiers
@@ -88,24 +104,27 @@ PAD/
 ## 📁 4. FONCTIONNALITÉS D'IMPORT ET TRAITEMENT
 
 ### 4.1 Import de Fichiers
-- **Formats supportés** : Excel (.xls, .xlsx), CSV
+- **Formats supportés** : Excel (.xls, .xlsx), CSV (séparateur `;` par défaut), JSON
 - **Dossier de surveillance** : `watch-folder` avec détection automatique
 - **Types de fichiers traités** :
   - Fichiers partenaires (CIMOOVCI, CIMTNCI, CIOMCI, etc.)
   - Fichiers BO (TRXBO, USSDBO, USSDPART)
   - Fichiers de réconciliation (OPPART, PMMOOVBF, etc.)
+- **Automatisation** : Spécifications dynamiques via l'API `file-watcher` (patterns, mappings, transformations)
 
 ### 4.2 Normalisation des Données
 - **Détection automatique** des colonnes et types
 - **Mapping intelligent** des colonnes selon les modèles
 - **Validation** des données selon les règles métier
 - **Gestion des erreurs** avec journalisation détaillée
+- **Analyse assistée** : Endpoint `/api/file-watcher/analyze` pour introspection colonnes/échantillons
 
 ### 4.3 Traitement par Lots
 - **Chunking** : Traitement par lots pour optimiser les performances
 - **Parallélisation** : Traitement multi-thread pour les gros volumes
 - **Progress tracking** : Suivi en temps réel du traitement
 - **Récupération d'erreurs** : Gestion des échecs partiels
+- **Transformations configurables** : Pipeline `format/validate/transform` appliqué aux flux entrants
 
 ### 4.4 Processus d'Import
 1. **Upload** : Récupération du fichier via formulaire
@@ -114,6 +133,13 @@ PAD/
 4. **Normalisation** : Mapping des colonnes selon les modèles
 5. **Validation** : Vérification des règles métier
 6. **Sauvegarde** : Insertion en base de données
+
+### 4.5 Automatisation via FileWatcher
+- **Surveillance** : `chokidar` surveille `watch-folder` et déclenche les traitements
+- **Spécifications** : Création/édition via `/api/file-watcher/specifications`
+- **Gestion de queue** : Files de traitement internes avec protection contre doublons
+- **Sorties** : Génération JSON/CSV/texte dans `watch-folder/processed` ou chemin personnalisé
+- **Modèles persistés** : Prisma `AutoProcessingModel` conserve les mappings type partenaire/BO
 
 ---
 
@@ -222,7 +248,7 @@ PAD/
 ### 8.2 Tableaux de Bord
 - **Dashboard principal** : Vue d'ensemble des métriques
 - **Statistiques** : KPIs en temps réel
-- **Graphiques** : Visualisation des données avec ng2-charts
+- **Graphiques** : Visualisation des données avec ng2-charts et ngx-charts
 - **Filtres dynamiques** : Recherche multi-critères
 
 ### 8.3 Rapports Spécialisés
@@ -230,6 +256,7 @@ PAD/
 - **Statistiques de création** : `transaction_created_stats`
 - **Classements** : Performance des agences
 - **Suivi des écarts** : Évolution des écarts dans le temps
+- **Résumé agences** : Export `agency-summary` agrégé (Prisma) avec historisation des snapshots
 
 ### 8.4 Fonctionnement des Exports
 1. **Sélection** : Choix des données à exporter (filtres, sélection)
@@ -295,6 +322,13 @@ PAD/
 - **ExportService** : Génération d'exports côté client
 - **AppStateService** : Gestion de l'état global
 
+### 10.4 Services Node (Express + Prisma)
+- **AgencySummaryController** : Sauvegarde, listing et export des résumés d'agence
+- **FileWatcherController** : Pilotage démarrage/arrêt, statut et CRUD des spécifications
+- **FileWatcherService** : Surveillance `chokidar`, queue de traitement, pipeline de transformations
+- **PrismaClient** : Modèles `AgencySummary` & `AutoProcessingModel` persistés en SQLite (migrations versionnées)
+- **Interopérabilité** : Endpoints `/api/agency-summary` et `/api/file-watcher` consommés par l'UI Angular
+
 ---
 
 ## 📋 11. RÈGLES MÉTIER PRINCIPALES
@@ -338,6 +372,7 @@ PAD/
 - **Chunking** : Traitement par lots
 - **Indexation** : Index de base de données optimisés
 - **Cache** : Mise en cache des données fréquentes
+- **File watcher** : Debounce `awaitWriteFinish`, queue FIFO et anti-doublon intégrés
 
 ### 12.3 Techniques d'Optimisation
 - **ExecutorService** : Pool de threads réutilisable (daemon threads)
@@ -372,12 +407,12 @@ PAD/
 ## 📦 14. DÉPLOIEMENT ET EXPLOITATION
 
 ### 14.1 Environnements
-- **Développement** : `http://localhost:4200` (frontend) / `http://localhost:8080` (backend)
+- **Développement** : `http://localhost:4200` (frontend) / `http://localhost:8080` (backend Spring Boot) / `http://localhost:3000` (API Node Express)
 - **Test** : Environnement de test dédié
 - **Production** : Configuration de production
 
 ### 14.2 Sauvegardes
-- **Base de données** : Scripts de sauvegarde automatisés
+- **Base de données** : Scripts `mysqldump` versionnés dans `backups/` (nomenclature `dump_top20_YYYY-MM-DD_HH-mm-ss.sql`)
 - **Fichiers** : Sauvegarde du dossier `watch-folder`
 - **Rétention** : Politique de rétention des données
 - **Restauration** : Procédures de restauration
@@ -387,6 +422,7 @@ PAD/
 - **Métriques** : Surveillance des performances
 - **Alertes** : Notifications en cas de problème
 - **Health checks** : Vérification de l'état de l'application
+- **File watcher** : Logs temps réel pour chaque fichier traité (succès/erreur)
 
 ---
 
@@ -427,11 +463,10 @@ PAD/
 - **Support** : Procédures de support
 
 ### 16.3 Guides Spécialisés Disponibles
-- `GUIDE_OPERATIONS_BANCAIRES_COMPLETE.md` : Opérations bancaires
-- `GUIDE_OPERATIONS_BANCAIRES_AUTOMATIQUES.md` : Création automatique
-- `GUIDE_TELECHARGEMENT_MODELES.md` : Import de modèles
-- `GUIDE_SUPPRESSION_OPERATIONS.md` : Suppression et annulation
-- `GUIDE_RAPPORT_RECONCILIATION.md` : Rapports de réconciliation
+- `DOCUMENTATION_PREDICTION.md` : Système de prédiction des opérations
+- `RESUME_MIGRATION_POPUPS.md` : Historique des évolutions UI de migration
+- `deployment/systemd/reconciliation-backend.service` : Paramétrage service Linux
+- `deployment/windows/install-backend-service.ps1` : Installation service Windows
 
 ---
 
@@ -501,8 +536,56 @@ PAD/
 
 ---
 
-**Version du document** : 2.0  
-**Date de création** : Janvier 2025  
+## 🤖 21. MODULE PRÉDICTIONS
+
+### 21.1 Objectifs
+- **Anticiper** les correspondances probables pour accélérer la réconciliation.
+- **Suggérer** les mappings de colonnes, types de réconciliation et paramètres.
+- **Prioriser** les cas à traiter selon un score de confiance.
+
+### 21.2 Portée Fonctionnelle
+- **Suggestions de matching**: propositions 1-N basées sur références, montants, dates et partenaires.
+- **Pré-configuration**: proposition automatique des clés de réconciliation et tolérances.
+- **Apprentissage continu**: amélioration des suggestions à partir des validations/rejets utilisateurs.
+- **Explicabilité**: affichage des raisons principales d’une suggestion (référence proche, écart de montant, proximité temporelle).
+
+### 21.3 Flux Fonctionnel
+1. Import/chargement des jeux de données (BO et partenaire).
+2. Calcul des suggestions et attribution d’un score de confiance [0..1].
+3. Affichage paginé avec filtres (score, partenaire, période, statut).
+4. Actions utilisateur: Accepter, Rejeter, Marquer à vérifier, Réconcilier.
+5. Boucle d’apprentissage: prise en compte des décisions pour affiner les prochaines suggestions.
+
+### 21.4 UI/UX Spécifiques
+- **Composant**: `predictions-new` (sélection, tri, contrôle en masse).
+- **Couleurs d’actions**: suppression/annulation en rouge, modification en vert (convention UI).
+- **Accessibilité**: navigation clavier, états chargement/erreur, toasts non intrusifs.
+
+### 21.5 API & Données
+- Entrée: jeux de transactions normalisés (BO, partenaire) et contexte (modèle, période, tolérances).
+- Sortie: liste de suggestions `{id_bo, candidats_partenaire[], score, explications[]}`.
+- Endpoints: `GET /predictions`, `POST /predictions/feedback`, `POST /predictions/apply`.
+
+### 21.6 Performances & Contraintes
+- Calcul suggestions: 100k lignes < 5 min (aligné section 12).
+- Mémoire: traitement par lots/streaming, pas de chargement complet en mémoire.
+- Export: CSV `;` par défaut et UTF-8 (aligné section 8 et 11.3).
+
+### 21.7 Sécurité & Traçabilité
+- Contrôle d’accès par profil/module.
+- Journalisation: décision utilisateur (qui, quand, quoi, score au moment de la décision).
+- Non-régression: aucune suggestion n’applique d’impact sans action explicite.
+
+### 21.8 Critères d’acceptation
+- ✅ Affichage des suggestions avec score et explications.
+- ✅ Actions en masse (accepter/rejeter) avec annulation possible.
+- ✅ Feedback pris en compte pour améliorer les prochaines suggestions.
+- ✅ Temps de réponse UI fluide avec pagination/filtrage.
+
+---
+
+**Version du document** : 2.2  
+**Date de mise à jour** : 11 novembre 2025  
 **Auteur** : Yamar NDAO - Intouch Group  
 **Statut** : Finalisé
 

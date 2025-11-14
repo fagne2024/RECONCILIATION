@@ -10,5 +10,25 @@
     </div>
     <div class="progress-value">{{ progress | number: '1.0-0' }}%</div>
     <div class="progress-message">{{ message }}</div>
+    
+    <!-- Informations détaillées de progression -->
+    <div *ngIf="totalBoChunks > 0" class="progress-details">
+      <div class="detail-item">
+        <span class="detail-label">Chunk BO:</span>
+        <span class="detail-value">{{ currentBoChunk }} / {{ totalBoChunks }}</span>
+      </div>
+      <div class="detail-item">
+        <span class="detail-label">Matches trouvés:</span>
+        <span class="detail-value">{{ matchesCount | number }}</span>
+      </div>
+      <div class="detail-item">
+        <span class="detail-label">Écarts BO:</span>
+        <span class="detail-value">{{ boOnlyCount | number }}</span>
+      </div>
+      <div class="detail-item">
+        <span class="detail-label">Lignes Partner restantes:</span>
+        <span class="detail-value">{{ partnerRemaining | number }}</span>
+      </div>
+    </div>
   </div>
 </div> 

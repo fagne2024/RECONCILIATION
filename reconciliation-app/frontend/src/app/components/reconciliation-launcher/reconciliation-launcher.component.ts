@@ -1753,17 +1753,53 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
     
     console.log(`🔍 Test de correspondance: "${fileName}" vs pattern "${pattern}"`);
     
-    // Mode 1: Pattern avec wildcards (comportement classique)
-    if (pattern.includes('*') || pattern.includes('?')) {
-      const regexPattern = pattern
+    const lowerName = fileName.toLowerCase();
+    const lowerPattern = pattern.toLowerCase();
+    
+    // Extensions acceptées comme équivalentes
+    const acceptedExtensions = ['.csv', '.xls', '.xlsx'];
+    
+    // Extraire les extensions
+    const getExtension = (name: string): string => {
+      const match = name.match(/\.[^/.]+$/);
+      return match ? match[0] : '';
+    };
+    
+    const fileNameExt = getExtension(lowerName);
+    const patternExt = getExtension(lowerPattern);
+    
+    // Noms sans extension
+    const nameNoExt = lowerName.replace(/\.[^/.]+$/, '');
+    const patternNoExt = lowerPattern.replace(/\.[^/.]+$/, '');
+    
+    // Mode 1: Pattern avec wildcards
+    if (patternNoExt.includes('*') || patternNoExt.includes('?')) {
+      // Construire le regex à partir du pattern sans extension
+      const regexPattern = patternNoExt
+        .replace(/\./g, '\\.')
         .replace(/\*/g, '.*')
         .replace(/\?/g, '.');
       
       try {
-        const regex = new RegExp(regexPattern, 'i');
-        const matches = regex.test(fileName);
-        console.log(`🔍 Test wildcard: ${matches ? '✅' : '❌'}`);
-        return matches;
+        const regex = new RegExp(`^${regexPattern}$`, 'i');
+        const matches = regex.test(nameNoExt);
+        
+        if (matches) {
+          // Si le pattern a une extension, vérifier que l'extension du fichier est acceptée
+          if (patternExt && acceptedExtensions.includes(patternExt)) {
+            // Le pattern spécifie une extension, accepter les extensions équivalentes
+            const fileExtAccepted = acceptedExtensions.includes(fileNameExt);
+            console.log(`🔍 Test wildcard (sans extension): ✅ - Extension fichier: ${fileNameExt}, Extension acceptée: ${fileExtAccepted ? '✅' : '❌'}`);
+            return fileExtAccepted;
+          } else {
+            // Le pattern n'a pas d'extension spécifique, accepter n'importe quelle extension
+            console.log(`🔍 Test wildcard (sans extension): ✅`);
+            return true;
+          }
+        } else {
+          console.log(`🔍 Test wildcard (sans extension): ❌`);
+          return false;
+        }
       } catch (error) {
         console.warn('⚠️ Pattern wildcard invalide:', pattern);
         return false;
@@ -1771,9 +1807,18 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
     }
     
     // Mode 2: Pattern avec extension - correspondance exacte (insensible à la casse)
-    // Exemple: pattern "pmmoovbf.xlsx" détecte "PMMOOVBF.xlsx"
-    if (pattern.includes('.')) {
-      const exactMatch = fileName.toLowerCase() === pattern.toLowerCase();
+    // Exemple: pattern "pmmoovbf.xlsx" détecte "PMMOOVBF.xlsx" ou "PMMOOVBF.csv"
+    if (patternExt && acceptedExtensions.includes(patternExt)) {
+      // Si le pattern a une extension acceptée, tester sans extension puis vérifier l'extension
+      if (nameNoExt === patternNoExt) {
+        // Correspondance exacte du nom, vérifier que l'extension est acceptée
+        const fileExtAccepted = acceptedExtensions.includes(fileNameExt);
+        console.log(`🔍 Test correspondance exacte avec extension: ${fileExtAccepted ? '✅' : '❌'}`);
+        return fileExtAccepted;
+      }
+    } else if (patternExt) {
+      // Extension non standard, correspondance exacte stricte
+      const exactMatch = lowerName === lowerPattern;
       console.log(`🔍 Test correspondance exacte avec extension: ${exactMatch ? '✅' : '❌'}`);
       if (exactMatch) {
         return true;
@@ -1781,24 +1826,34 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
     }
     
     // Mode 3: Pattern simple - détection par inclusion (sans extension)
-    // Nettoyer le nom du fichier et le pattern (enlever l'extension)
-    const cleanFileName = fileName.replace(/\.[^/.]+$/, '').toLowerCase();
-    const cleanPattern = pattern.replace(/\.[^/.]+$/, '').toLowerCase();
-    
     // Exemple: pattern "TRXBO" détecte "TRXBO_02082025.xlsx"
-    const containsPattern = cleanFileName.includes(cleanPattern);
-    console.log(`🔍 Test inclusion (sans extension): "${cleanFileName}" contient "${cleanPattern}": ${containsPattern ? '✅' : '❌'}`);
+    const containsPattern = nameNoExt.includes(patternNoExt);
+    console.log(`🔍 Test inclusion (sans extension): "${nameNoExt}" contient "${patternNoExt}": ${containsPattern ? '✅' : '❌'}`);
     
     if (containsPattern) {
+      // Si le pattern avait une extension acceptée, vérifier que l'extension du fichier est aussi acceptée
+      if (patternExt && acceptedExtensions.includes(patternExt)) {
+        const fileExtAccepted = acceptedExtensions.includes(fileNameExt);
+        return fileExtAccepted;
+      }
       return true;
     }
     
     // Mode 4: Détection par préfixe (optionnel, pour plus de flexibilité)
     // Exemple: pattern "TRXBO" détecte "TRXBO_02082025.xlsx"
-    const startsWithPattern = cleanFileName.startsWith(cleanPattern);
-    console.log(`🔍 Test préfixe (sans extension): "${cleanFileName}" commence par "${cleanPattern}": ${startsWithPattern ? '✅' : '❌'}`);
+    const startsWithPattern = nameNoExt.startsWith(patternNoExt);
+    console.log(`🔍 Test préfixe (sans extension): "${nameNoExt}" commence par "${patternNoExt}": ${startsWithPattern ? '✅' : '❌'}`);
     
-    return startsWithPattern;
+    if (startsWithPattern) {
+      // Si le pattern avait une extension acceptée, vérifier que l'extension du fichier est aussi acceptée
+      if (patternExt && acceptedExtensions.includes(patternExt)) {
+        const fileExtAccepted = acceptedExtensions.includes(fileNameExt);
+        return fileExtAccepted;
+      }
+      return true;
+    }
+    
+    return false;
   }
 
 }

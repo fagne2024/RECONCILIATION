@@ -2669,7 +2669,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         .then(async r => {
             if (r.status === 409) {
                 const existing = await r.json();
-                alert('Doublon détecté: déjà enregistré (id=' + existing.id + ')');
+                await this.popupService.showWarning(`Doublon détecté : déjà enregistré (id=${existing.id})`, 'Conflit de duplication');
                 return null;
             }
             if (!r.ok) throw r;

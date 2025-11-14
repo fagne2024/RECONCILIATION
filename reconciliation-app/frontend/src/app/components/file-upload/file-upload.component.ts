@@ -582,19 +582,61 @@ export class FileUploadComponent {
     private applyOrangeMoneyColumnSelection<T extends Record<string, any>>(rows: T[], fileName?: string): T[] {
         if (!rows || rows.length === 0) return rows;
 
-        // Normaliser les colonnes dans les données d'abord
-        const normalizedRows = rows.map(row => {
-            const normalizedRow: Record<string, any> = {};
-            Object.keys(row).forEach(key => {
-                const normalizedKey = this.normalizeColumnName(key);
-                normalizedRow[normalizedKey] = row[key];
+        const startTime = performance.now();
+        const isLargeDataset = rows.length > 100000;
+        console.log(`🔄 [APPLY_OM] Début de applyOrangeMoneyColumnSelection pour ${rows.length} enregistrements (fichier volumineux: ${isLargeDataset})`);
+
+        // Pour les gros datasets, normaliser par chunks pour éviter de bloquer l'UI
+        let normalizedRows: T[];
+        if (isLargeDataset) {
+            console.log(`📦 [APPLY_OM] Normalisation par chunks pour éviter le blocage de l'UI...`);
+            const normalizeStartTime = performance.now();
+            const CHUNK_SIZE = 50000;
+            normalizedRows = [] as T[];
+            
+            for (let i = 0; i < rows.length; i += CHUNK_SIZE) {
+                const chunk = rows.slice(i, i + CHUNK_SIZE);
+                const normalizedChunk = chunk.map(row => {
+                    const normalizedRow: Record<string, any> = {};
+                    Object.keys(row).forEach(key => {
+                        const normalizedKey = this.normalizeColumnName(key);
+                        normalizedRow[normalizedKey] = row[key];
+                    });
+                    return normalizedRow as T;
+                });
+                normalizedRows.push(...normalizedChunk);
+                
+                // Logger la progression tous les 100k enregistrements
+                if ((i + CHUNK_SIZE) % 100000 === 0 || i + CHUNK_SIZE >= rows.length) {
+                    const progress = ((i + CHUNK_SIZE) / rows.length * 100).toFixed(1);
+                    const duration = ((performance.now() - normalizeStartTime) / 1000).toFixed(2);
+                    console.log(`📊 [APPLY_OM] Normalisation: ${progress}% (${Math.min(i + CHUNK_SIZE, rows.length)}/${rows.length} enregistrements, ${duration}s)`);
+                }
+                
+                // Petite pause pour permettre à l'UI de se mettre à jour (sans await car fonction synchrone)
+                // Utiliser setTimeout de manière synchrone n'est pas possible, donc on continue
+                // La pause sera gérée par le traitement par chunks lui-même
+            }
+            const normalizeDuration = ((performance.now() - normalizeStartTime) / 1000).toFixed(2);
+            console.log(`✅ [APPLY_OM] Normalisation terminée en ${normalizeDuration}s`);
+        } else {
+            // Normaliser les colonnes dans les données d'abord
+            const normalizeStartTime = performance.now();
+            normalizedRows = rows.map(row => {
+                const normalizedRow: Record<string, any> = {};
+                Object.keys(row).forEach(key => {
+                    const normalizedKey = this.normalizeColumnName(key);
+                    normalizedRow[normalizedKey] = row[key];
+                });
+                return normalizedRow as T;
             });
-            return normalizedRow as T;
-        });
+            const normalizeDuration = ((performance.now() - normalizeStartTime) / 1000).toFixed(2);
+            console.log(`✅ [APPLY_OM] Normalisation terminée en ${normalizeDuration}s`);
+        }
 
         const headers = Object.keys(normalizedRows[0]);
-        console.log('🔍 applyOrangeMoneyColumnSelection - Colonnes d\'entrée (normalisées):', headers);
-        console.log('🔍 applyOrangeMoneyColumnSelection - Nom du fichier:', fileName);
+        console.log('🔍 [APPLY_OM] Colonnes d\'entrée (normalisées):', headers);
+        console.log('🔍 [APPLY_OM] Nom du fichier:', fileName);
         
         const lower = (s: string) => s.toLowerCase();
 
@@ -648,23 +690,69 @@ export class FileUploadComponent {
         };
 
         const mappedColumns: (string | null)[] = targetOrder.map(findColumn);
+        console.log(`🔍 [APPLY_OM] Colonnes mappées:`, mappedColumns);
 
         // Si aucune correspondance pertinente, ne pas altérer
-        if (mappedColumns.every(c => c === null)) return normalizedRows;
+        if (mappedColumns.every(c => c === null)) {
+            console.log(`✅ [APPLY_OM] Aucune correspondance Orange Money, retour des données normalisées`);
+            const totalDuration = ((performance.now() - startTime) / 1000).toFixed(2);
+            console.log(`✅ [APPLY_OM] Processus complet terminé en ${totalDuration}s`);
+            return normalizedRows;
+        }
 
         // Recomposer les lignes avec uniquement les colonnes cibles, dans l'ordre
-        const remapped = normalizedRows.map(row => {
-            const obj: any = {};
-            mappedColumns.forEach((col, idx) => {
-                const targetName = targetOrder[idx];
-                if (col && Object.prototype.hasOwnProperty.call(row, col)) {
-                    obj[targetName] = row[col];
-                } else {
-                    obj[targetName] = '';
+        console.log(`🔄 [APPLY_OM] Début du remapping des colonnes...`);
+        const remapStartTime = performance.now();
+        
+        let remapped: T[];
+        if (isLargeDataset) {
+            // Pour les gros datasets, remapper par chunks
+            console.log(`📦 [APPLY_OM] Remapping par chunks...`);
+            const REMAP_CHUNK_SIZE = 50000;
+            remapped = [] as T[];
+            
+            for (let i = 0; i < normalizedRows.length; i += REMAP_CHUNK_SIZE) {
+                const chunk = normalizedRows.slice(i, i + REMAP_CHUNK_SIZE);
+                const remappedChunk = chunk.map(row => {
+                    const obj: any = {};
+                    mappedColumns.forEach((col, idx) => {
+                        const targetName = targetOrder[idx];
+                        if (col && Object.prototype.hasOwnProperty.call(row, col)) {
+                            obj[targetName] = row[col];
+                        } else {
+                            obj[targetName] = '';
+                        }
+                    });
+                    return obj as T;
+                });
+                remapped.push(...remappedChunk);
+                
+                // Logger la progression
+                if ((i + REMAP_CHUNK_SIZE) % 100000 === 0 || i + REMAP_CHUNK_SIZE >= normalizedRows.length) {
+                    const progress = ((i + REMAP_CHUNK_SIZE) / normalizedRows.length * 100).toFixed(1);
+                    const duration = ((performance.now() - remapStartTime) / 1000).toFixed(2);
+                    console.log(`📊 [APPLY_OM] Remapping: ${progress}% (${Math.min(i + REMAP_CHUNK_SIZE, normalizedRows.length)}/${normalizedRows.length} enregistrements, ${duration}s)`);
                 }
+            }
+        } else {
+            remapped = normalizedRows.map(row => {
+                const obj: any = {};
+                mappedColumns.forEach((col, idx) => {
+                    const targetName = targetOrder[idx];
+                    if (col && Object.prototype.hasOwnProperty.call(row, col)) {
+                        obj[targetName] = row[col];
+                    } else {
+                        obj[targetName] = '';
+                    }
+                });
+                return obj as T;
             });
-            return obj as T;
-        });
+        }
+        
+        const remapDuration = ((performance.now() - remapStartTime) / 1000).toFixed(2);
+        const totalDuration = ((performance.now() - startTime) / 1000).toFixed(2);
+        console.log(`✅ [APPLY_OM] Remapping terminé en ${remapDuration}s`);
+        console.log(`✅ [APPLY_OM] Processus complet terminé en ${totalDuration}s: ${remapped.length} enregistrements`);
 
         return remapped;
     }
@@ -1102,8 +1190,13 @@ export class FileUploadComponent {
     }
 
     private parseLargeCSV(lines: string[], isBo: boolean, fileName: string): void {
+        const parseStartTime = performance.now();
         const CHUNK_SIZE = 10000;
         const data: Record<string, string>[] = [];
+        
+        console.log(`📦 [PARSE_LARGE] Début du parsing optimisé pour ${fileName}`);
+        console.log(`📊 [PARSE_LARGE] Nombre de lignes: ${lines.length}`);
+        console.log(`📊 [PARSE_LARGE] Taille de chunk: ${CHUNK_SIZE} lignes`);
         
         // Activer l'indicateur de progression
         this.isProcessingLargeFile = true;
@@ -1111,11 +1204,13 @@ export class FileUploadComponent {
         this.processingProgress = 0;
         
         // Détecter le délimiteur et les en-têtes
+        const detectStartTime = performance.now();
         const firstLine = lines[0];
         const delimiter = this.detectDelimiter(firstLine);
         const headers = firstLine.split(delimiter);
+        const detectDuration = ((performance.now() - detectStartTime) / 1000).toFixed(3);
         
-        console.log(`🔧 Parsing optimisé: délimiteur "${delimiter}", ${headers.length} colonnes`);
+        console.log(`🔧 [PARSE_LARGE] Parsing optimisé: délimiteur "${delimiter}", ${headers.length} colonnes (${detectDuration}s)`);
         
         // Traitement par chunks
         for (let i = 1; i < lines.length; i += CHUNK_SIZE) {
@@ -1148,25 +1243,70 @@ export class FileUploadComponent {
             setTimeout(() => {}, 10);
         }
         
-        console.log(`✅ Parsing terminé: ${data.length} lignes traitées`);
+        const parseEndTime = performance.now();
+        const parseDuration = ((parseEndTime - parseStartTime) / 1000).toFixed(2);
+        console.log(`✅ [PARSE_LARGE] Parsing terminé en ${parseDuration}s: ${data.length} lignes traitées`);
+        console.log(`📊 [PARSE_LARGE] Taille mémoire approximative: ${(JSON.stringify(data).length / (1024 * 1024)).toFixed(2)} MB`);
         
         // Désactiver l'indicateur de progression
         this.isProcessingLargeFile = false;
         this.processingProgress = 0;
         this.processingMessage = '';
         
-        if (isBo) {
-            this.boData = this.applyOrangeMoneyColumnSelection(data, fileName);
-        } else {
-            this.partnerData = this.applyOrangeMoneyColumnSelection(this.convertDebitCreditToNumber(data), fileName);
-        }
+        // Traitement des données avec logs
+        console.log(`🔄 [PARSE_LARGE] Début du traitement post-parsing...`);
+        const postProcessStartTime = performance.now();
         
-        // Mettre à jour l'estimation seulement si les deux fichiers sont chargés
-        if (this.boFile && this.partnerFile) {
-            this.updateEstimatedTime();
+        try {
+            if (isBo) {
+                console.log(`🔄 [PARSE_LARGE] Application de applyOrangeMoneyColumnSelection pour BO...`);
+                const selectionStartTime = performance.now();
+                this.boData = this.applyOrangeMoneyColumnSelection(data, fileName);
+                const selectionDuration = ((performance.now() - selectionStartTime) / 1000).toFixed(2);
+                console.log(`✅ [PARSE_LARGE] applyOrangeMoneyColumnSelection terminé en ${selectionDuration}s: ${this.boData.length} enregistrements`);
+            } else {
+                console.log(`🔄 [PARSE_LARGE] Conversion débit/crédit pour Partenaire...`);
+                const convertStartTime = performance.now();
+                const convertedData = this.convertDebitCreditToNumber(data);
+                const convertDuration = ((performance.now() - convertStartTime) / 1000).toFixed(2);
+                console.log(`✅ [PARSE_LARGE] Conversion terminée en ${convertDuration}s`);
+                
+                console.log(`🔄 [PARSE_LARGE] Application de applyOrangeMoneyColumnSelection pour Partenaire...`);
+                const selectionStartTime = performance.now();
+                this.partnerData = this.applyOrangeMoneyColumnSelection(convertedData, fileName);
+                const selectionDuration = ((performance.now() - selectionStartTime) / 1000).toFixed(2);
+                console.log(`✅ [PARSE_LARGE] applyOrangeMoneyColumnSelection terminé en ${selectionDuration}s: ${this.partnerData.length} enregistrements`);
+            }
+            
+            const postProcessDuration = ((performance.now() - postProcessStartTime) / 1000).toFixed(2);
+            console.log(`✅ [PARSE_LARGE] Traitement post-parsing terminé en ${postProcessDuration}s`);
+            
+            // Mettre à jour l'estimation seulement si les deux fichiers sont chargés
+            if (this.boFile && this.partnerFile) {
+                console.log(`🔄 [PARSE_LARGE] Mise à jour de l'estimation du temps...`);
+                const estimateStartTime = performance.now();
+                this.updateEstimatedTime();
+                const estimateDuration = ((performance.now() - estimateStartTime) / 1000).toFixed(2);
+                console.log(`✅ [PARSE_LARGE] Estimation mise à jour en ${estimateDuration}s`);
+            }
+            
+            // Forcer la détection des changements
+            console.log(`🔄 [PARSE_LARGE] Détection des changements...`);
+            this.cd.detectChanges();
+            console.log(`✅ [PARSE_LARGE] Processus complet terminé`);
+            
+        } catch (error) {
+            const errorTime = performance.now();
+            const errorDuration = ((errorTime - postProcessStartTime) / 1000).toFixed(2);
+            console.error(`❌ [PARSE_LARGE] Erreur lors du traitement post-parsing après ${errorDuration}s:`, error);
+            console.error(`❌ [PARSE_LARGE] Détails de l'erreur:`, {
+                message: error instanceof Error ? error.message : String(error),
+                stack: error instanceof Error ? error.stack : 'N/A',
+                dataLength: data.length,
+                isBo: isBo
+            });
+            throw error;
         }
-        // Forcer la détection des changements
-        this.cd.detectChanges();
     }
 
     private detectDelimiter(line: string): string {
@@ -2941,17 +3081,53 @@ export class FileUploadComponent {
         
         console.log(`🔍 Test de correspondance: "${fileName}" vs pattern "${pattern}"`);
         
-        // Mode 1: Pattern avec wildcards (comportement classique)
-        if (pattern.includes('*') || pattern.includes('?')) {
-            const regexPattern = pattern
+        const lowerName = fileName.toLowerCase();
+        const lowerPattern = pattern.toLowerCase();
+        
+        // Extensions acceptées comme équivalentes
+        const acceptedExtensions = ['.csv', '.xls', '.xlsx'];
+        
+        // Extraire les extensions
+        const getExtension = (name: string): string => {
+            const match = name.match(/\.[^/.]+$/);
+            return match ? match[0] : '';
+        };
+        
+        const fileNameExt = getExtension(lowerName);
+        const patternExt = getExtension(lowerPattern);
+        
+        // Noms sans extension
+        const nameNoExt = lowerName.replace(/\.[^/.]+$/, '');
+        const patternNoExt = lowerPattern.replace(/\.[^/.]+$/, '');
+        
+        // Mode 1: Pattern avec wildcards
+        if (patternNoExt.includes('*') || patternNoExt.includes('?')) {
+            // Construire le regex à partir du pattern sans extension
+            const regexPattern = patternNoExt
+                .replace(/\./g, '\\.')
                 .replace(/\*/g, '.*')
                 .replace(/\?/g, '.');
             
             try {
-                const regex = new RegExp(regexPattern, 'i');
-                const matches = regex.test(fileName);
-                console.log(`🔍 Test wildcard: ${matches ? '✅' : '❌'}`);
-                return matches;
+                const regex = new RegExp(`^${regexPattern}$`, 'i');
+                const matches = regex.test(nameNoExt);
+                
+                if (matches) {
+                    // Si le pattern a une extension, vérifier que l'extension du fichier est acceptée
+                    if (patternExt && acceptedExtensions.includes(patternExt)) {
+                        // Le pattern spécifie une extension, accepter les extensions équivalentes
+                        const fileExtAccepted = acceptedExtensions.includes(fileNameExt);
+                        console.log(`🔍 Test wildcard (sans extension): ✅ - Extension fichier: ${fileNameExt}, Extension acceptée: ${fileExtAccepted ? '✅' : '❌'}`);
+                        return fileExtAccepted;
+                    } else {
+                        // Le pattern n'a pas d'extension spécifique, accepter n'importe quelle extension
+                        console.log(`🔍 Test wildcard (sans extension): ✅`);
+                        return true;
+                    }
+                } else {
+                    console.log(`🔍 Test wildcard (sans extension): ❌`);
+                    return false;
+                }
             } catch (error) {
                 console.warn('⚠️ Pattern wildcard invalide:', pattern);
                 return false;
@@ -2959,9 +3135,18 @@ export class FileUploadComponent {
         }
         
         // Mode 2: Pattern avec extension - correspondance exacte (insensible à la casse)
-        // Exemple: pattern "pmmoovbf.xlsx" détecte "PMMOOVBF.xlsx"
-        if (pattern.includes('.')) {
-            const exactMatch = fileName.toLowerCase() === pattern.toLowerCase();
+        // Exemple: pattern "pmmoovbf.xlsx" détecte "PMMOOVBF.xlsx" ou "PMMOOVBF.csv"
+        if (patternExt && acceptedExtensions.includes(patternExt)) {
+            // Si le pattern a une extension acceptée, tester sans extension puis vérifier l'extension
+            if (nameNoExt === patternNoExt) {
+                // Correspondance exacte du nom, vérifier que l'extension est acceptée
+                const fileExtAccepted = acceptedExtensions.includes(fileNameExt);
+                console.log(`🔍 Test correspondance exacte avec extension: ${fileExtAccepted ? '✅' : '❌'}`);
+                return fileExtAccepted;
+            }
+        } else if (patternExt) {
+            // Extension non standard, correspondance exacte stricte
+            const exactMatch = lowerName === lowerPattern;
             console.log(`🔍 Test correspondance exacte avec extension: ${exactMatch ? '✅' : '❌'}`);
             if (exactMatch) {
                 return true;
@@ -2969,24 +3154,34 @@ export class FileUploadComponent {
         }
         
         // Mode 3: Pattern simple - détection par inclusion (sans extension)
-        // Nettoyer le nom du fichier et le pattern (enlever l'extension)
-        const cleanFileName = fileName.replace(/\.[^/.]+$/, '').toLowerCase();
-        const cleanPattern = pattern.replace(/\.[^/.]+$/, '').toLowerCase();
-        
         // Exemple: pattern "TRXBO" détecte "TRXBO_02082025.xlsx"
-        const containsPattern = cleanFileName.includes(cleanPattern);
-        console.log(`🔍 Test inclusion (sans extension): "${cleanFileName}" contient "${cleanPattern}": ${containsPattern ? '✅' : '❌'}`);
+        const containsPattern = nameNoExt.includes(patternNoExt);
+        console.log(`🔍 Test inclusion (sans extension): "${nameNoExt}" contient "${patternNoExt}": ${containsPattern ? '✅' : '❌'}`);
         
         if (containsPattern) {
+            // Si le pattern avait une extension acceptée, vérifier que l'extension du fichier est aussi acceptée
+            if (patternExt && acceptedExtensions.includes(patternExt)) {
+                const fileExtAccepted = acceptedExtensions.includes(fileNameExt);
+                return fileExtAccepted;
+            }
             return true;
         }
         
         // Mode 4: Détection par préfixe (optionnel, pour plus de flexibilité)
         // Exemple: pattern "TRXBO" détecte "TRXBO_02082025.xlsx"
-        const startsWithPattern = cleanFileName.startsWith(cleanPattern);
-        console.log(`🔍 Test préfixe (sans extension): "${cleanFileName}" commence par "${cleanPattern}": ${startsWithPattern ? '✅' : '❌'}`);
+        const startsWithPattern = nameNoExt.startsWith(patternNoExt);
+        console.log(`🔍 Test préfixe (sans extension): "${nameNoExt}" commence par "${patternNoExt}": ${startsWithPattern ? '✅' : '❌'}`);
         
-        return startsWithPattern;
+        if (startsWithPattern) {
+            // Si le pattern avait une extension acceptée, vérifier que l'extension du fichier est aussi acceptée
+            if (patternExt && acceptedExtensions.includes(patternExt)) {
+                const fileExtAccepted = acceptedExtensions.includes(fileNameExt);
+                return fileExtAccepted;
+            }
+            return true;
+        }
+        
+        return false;
     }
 
     /**

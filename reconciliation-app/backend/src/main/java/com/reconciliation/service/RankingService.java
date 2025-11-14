@@ -5,6 +5,7 @@ import com.reconciliation.entity.AgencySummaryEntity;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import java.text.Normalizer;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.WeekFields;
@@ -20,6 +21,11 @@ public class RankingService {
     @Autowired
     private com.reconciliation.repository.AgencySummaryRepository agencySummaryRepository;
     
+    @Autowired
+    private com.reconciliation.repository.CompteRepository compteRepository;
+    
+    private static final Map<String, String> COUNTRY_KEYWORDS = initCountryKeywordMap();
+    
     /**
      * Récupérer le classement des agences par nombre de transactions (via recordCount)
      */
@@ -30,7 +36,7 @@ public class RankingService {
         
         // Filtrer par pays si spécifié
         if (countries != null && !countries.isEmpty()) {
-            summaries = summaries.stream().filter(s -> countries.contains(s.getCountry())).collect(Collectors.toList());
+            summaries = summaries.stream().filter(s -> matchesCountryFilter(s.getCountry(), countries)).collect(Collectors.toList());
         }
         
         List<Operation> allOperations = operationService.getAllOperationsWithFrais();
@@ -39,7 +45,7 @@ public class RankingService {
         
         // Filtrer par pays si spécifié
         if (countries != null && !countries.isEmpty()) {
-            allOperations = allOperations.stream().filter(op -> countries.contains(op.getPays())).collect(Collectors.toList());
+            allOperations = allOperations.stream().filter(op -> matchesCountryFilter(op.getPays(), countries)).collect(Collectors.toList());
         }
         // Grouper par agence
         Map<String, List<AgencySummaryEntity>> byAgency = summaries.stream()
@@ -61,8 +67,12 @@ public class RankingService {
             double averageVolume = calculateAverageVolumeByPeriod(list, period);
             double averageFees = calculateAverageFeesByPeriod(allOperations, agency, period);
             
+            // Récupérer les pays distincts pour cette agence
+            String countryList = getDistinctCountries(list);
+            
             Map<String, Object> agencyData = new HashMap<>();
             agencyData.put("agency", agency);
+            agencyData.put("country", countryList);
             agencyData.put("transactionCount", transactionCount);
             agencyData.put("totalVolume", totalVolume);
             agencyData.put("totalFees", totalFees);
@@ -190,7 +200,7 @@ public class RankingService {
         
         // Filtrer par pays si spécifié
         if (countries != null && !countries.isEmpty()) {
-            summaries = summaries.stream().filter(s -> countries.contains(s.getCountry())).collect(Collectors.toList());
+            summaries = summaries.stream().filter(s -> matchesCountryFilter(s.getCountry(), countries)).collect(Collectors.toList());
         }
         
         List<Operation> allOperations = operationService.getAllOperationsWithFrais();
@@ -199,7 +209,7 @@ public class RankingService {
         
         // Filtrer par pays si spécifié
         if (countries != null && !countries.isEmpty()) {
-            allOperations = allOperations.stream().filter(op -> countries.contains(op.getPays())).collect(Collectors.toList());
+            allOperations = allOperations.stream().filter(op -> matchesCountryFilter(op.getPays(), countries)).collect(Collectors.toList());
         }
         // Grouper par service
         Map<String, List<AgencySummaryEntity>> byService = summaries.stream()
@@ -221,8 +231,12 @@ public class RankingService {
             double averageVolume = calculateAverageVolumeByPeriodForService(list, period);
             double averageFees = calculateAverageFeesByPeriodForService(allOperations, service, period);
             
+            // Récupérer les pays distincts pour ce service
+            String countryList = getDistinctCountries(list);
+            
             Map<String, Object> serviceData = new HashMap<>();
             serviceData.put("service", service);
+            serviceData.put("country", countryList);
             serviceData.put("transactionCount", transactionCount);
             serviceData.put("totalVolume", totalVolume);
             serviceData.put("totalFees", totalFees);
@@ -482,5 +496,159 @@ public class RankingService {
                 return !operationDate.isBefore(finalStartDate) && !operationDate.isAfter(finalEndDate);
             })
             .collect(Collectors.toList());
+    }
+    
+    /**
+     * Vérifie si un pays correspond aux filtres de pays sélectionnés
+     * Gère les cas spéciaux comme CI et CICTH qui doivent être traités de la même manière
+     */
+    private boolean matchesCountryFilter(String country, List<String> filterCountries) {
+        if (country == null || country.trim().isEmpty()) {
+            return false;
+        }
+        
+        // Normaliser le pays à vérifier
+        String normalizedCountry = normalizeCountryCode(country);
+        
+        if (normalizedCountry.isEmpty()) {
+            return false;
+        }
+        
+        // Vérifier si le pays normalisé correspond à l'un des filtres (normalisés aussi)
+        for (String filterCountry : filterCountries) {
+            if (filterCountry == null || filterCountry.trim().isEmpty()) {
+                continue;
+            }
+            String normalizedFilter = normalizeCountryCode(filterCountry);
+            
+            // Correspondance après normalisation (CI et CICTH seront tous les deux normalisés en CI)
+            if (normalizedCountry.equals(normalizedFilter)) {
+                return true;
+            }
+        }
+        
+        return false;
+    }
+    
+    /**
+     * Normalise un code pays pour le filtrage
+     * CI et CICTH sont traités de la même manière
+     */
+    private String normalizeCountryCode(String countryCode) {
+        if (countryCode == null || countryCode.trim().isEmpty()) {
+            return "";
+        }
+        
+        String trimmed = countryCode.trim();
+        if (trimmed.isEmpty()) {
+            return "";
+        }
+        
+        String normalized = Normalizer.normalize(trimmed, Normalizer.Form.NFD)
+            .replaceAll("\\p{M}", "")
+            .toUpperCase();
+        String normalizedWithSpaces = normalized.replaceAll("[^A-Z0-9 ]", " ").replaceAll("\\s+", " ").trim();
+        String lettersOnly = normalized.replaceAll("[^A-Z0-9]", "");
+        
+        if (lettersOnly.isEmpty()) {
+            return "";
+        }
+        
+        // Gérer les variantes spéciales : CICTH est équivalent à CI
+        if (lettersOnly.startsWith("CICTH")) {
+            return "CI";
+        }
+        
+        // Si c'est déjà un code à 2 lettres, le retourner tel quel
+        if (lettersOnly.length() == 2) {
+            return lettersOnly;
+        }
+        
+        for (Map.Entry<String, String> entry : COUNTRY_KEYWORDS.entrySet()) {
+            if (normalizedWithSpaces.contains(entry.getKey())) {
+                return entry.getValue();
+            }
+        }
+        
+        // Fallback : retourner les deux premières lettres si disponibles
+        if (lettersOnly.length() >= 2) {
+            return lettersOnly.substring(0, 2);
+        }
+        
+        return lettersOnly;
+    }
+    
+    /**
+     * Récupère les pays distincts depuis une liste de summaries
+     * Retourne une chaîne avec les pays séparés par des virgules
+     */
+    private String getDistinctCountries(List<AgencySummaryEntity> summaries) {
+        if (summaries == null || summaries.isEmpty()) {
+            return "";
+        }
+        
+        List<String> countries = summaries.stream()
+            .map(AgencySummaryEntity::getCountry)
+            .map(this::normalizeCountryCode)
+            .filter(country -> country != null && !country.isEmpty())
+            .distinct()
+            .sorted()
+            .collect(Collectors.toList());
+        
+        if (countries.isEmpty()) {
+            return "";
+        }
+        
+        // Si un seul pays, le retourner tel quel
+        if (countries.size() == 1) {
+            return countries.get(0);
+        }
+        
+        // Sinon, les concaténer avec des virgules
+        return String.join(", ", countries);
+    }
+    
+    /**
+     * Récupère la liste des pays distincts normalisés pour le dropdown
+     * Normalise les variantes comme CI et CICTH en un seul CI
+     */
+    public List<String> getNormalizedDistinctCountries() {
+        List<String> allCountries = compteRepository.findDistinctPays();
+        
+        // Normaliser et dédupliquer les pays
+        return allCountries.stream()
+            .filter(country -> country != null && !country.trim().isEmpty())
+            .map(this::normalizeCountryCode)
+            .filter(normalized -> !normalized.isEmpty())
+            .distinct()
+            .sorted()
+            .collect(Collectors.toList());
+    }
+    
+    private static Map<String, String> initCountryKeywordMap() {
+        Map<String, String> map = new LinkedHashMap<>();
+        map.put("COTE D IVOIRE", "CI");
+        map.put("COTE IVOIRE", "CI");
+        map.put("COTE DIVOIRE", "CI");
+        map.put("COTE DIVOIRES", "CI");
+        map.put("SENEGAL", "SN");
+        map.put("CAMEROUN", "CM");
+        map.put("CAMEROON", "CM");
+        map.put("BURKINA FASO", "BF");
+        map.put("BURKINA", "BF");
+        map.put("MALI", "ML");
+        map.put("BENIN", "BJ");
+        map.put("GUINEE", "GN");
+        map.put("GUINEA", "GN");
+        map.put("GABON", "GA");
+        map.put("TOGO", "TG");
+        map.put("TCHAD", "TD");
+        map.put("CHAD", "TD");
+        map.put("NIGERIA", "NG");
+        map.put("NIGER", "NE");
+        map.put("KENYA", "KE");
+        map.put("MOZAMBIQUE", "MZ");
+        map.put("MOZAMBIC", "MZ");
+        return map;
     }
 } 

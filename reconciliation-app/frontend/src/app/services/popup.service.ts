@@ -78,6 +78,10 @@ export class PopupService {
     return ModernPopupComponent.showTextInput(message, title, defaultValue, placeholder);
   }
 
+  showDateInput(message: string, title: string = 'Sélectionner une date', defaultValue: string = ''): Promise<string | null> {
+    return ModernPopupComponent.showDateInput(message, title, defaultValue);
+  }
+
   showSelectInput(message: string, title: string = 'Sélection', options: string[] = [], defaultValue: string = ''): Promise<string | null> {
     return ModernPopupComponent.showSelectInput(message, title, options, defaultValue);
   }

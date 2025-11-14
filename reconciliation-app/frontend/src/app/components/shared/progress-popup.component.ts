@@ -12,4 +12,11 @@ export class ProgressPopupComponent {
   @Input() currentFile: number = 0;
   @Input() totalFiles: number = 0;
   @Input() message: string = 'Veuillez patienter, le traitement peut prendre quelques minutes...';
+  
+  // Informations détaillées de progression
+  @Input() currentBoChunk: number = 0;
+  @Input() totalBoChunks: number = 0;
+  @Input() matchesCount: number = 0;
+  @Input() boOnlyCount: number = 0;
+  @Input() partnerRemaining: number = 0;
 } 

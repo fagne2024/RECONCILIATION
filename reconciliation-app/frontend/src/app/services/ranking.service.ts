@@ -5,6 +5,7 @@ import { Observable } from 'rxjs';
 export interface RankingItem {
   agency?: string;
   service?: string;
+  country?: string;
   transactionCount: number;
   totalVolume: number;
   totalFees: number;

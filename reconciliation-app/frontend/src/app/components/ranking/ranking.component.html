@@ -115,6 +115,7 @@
             <tr>
               <th class="position">Position</th>
               <th class="agency-name">Client</th>
+              <th class="country">Pays</th>
               <th class="transaction-count">Transactions</th>
               <th class="total-volume">Volume Total</th>
               <th class="total-fees">Revenu</th>
@@ -129,6 +130,7 @@
                 <span *ngIf="((agencyPage-1)*agencyPageSize + i) < 3" class="medal">🏅</span>
               </td>
               <td class="agency-name">{{ item.agency }}</td>
+              <td class="country">{{ item.country || '-' }}</td>
               <td class="transaction-count">{{ formatNumber(item.transactionCount) }}</td>
               <td class="total-volume">{{ formatAmount(item.totalVolume) }}</td>
               <td class="total-fees">{{ formatAmount(item.totalFees) }}</td>
@@ -190,6 +192,7 @@
             <tr>
               <th class="position">Position</th>
               <th class="service-name">Service</th>
+              <th class="country">Pays</th>
               <th class="transaction-count">Transactions</th>
               <th class="total-volume">Volume Total</th>
               <th class="total-fees">Revenu</th>
@@ -205,6 +208,7 @@
                 <span *ngIf="((servicePage-1)*servicePageSize + i) < 3" class="medal">🏅</span>
               </td>
               <td class="service-name">{{ item.service }}</td>
+              <td class="country">{{ item.country || '-' }}</td>
               <td class="transaction-count">{{ formatNumber(item.transactionCount) }}</td>
               <td class="total-volume">{{ formatAmount(item.totalVolume) }}</td>
               <td class="total-fees">{{ formatAmount(item.totalFees) }}</td>

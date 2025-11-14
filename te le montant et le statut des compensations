@@ -1,0 +1,134 @@
+[1mdiff --git a/reconciliation-app/backend/src/main/java/com/reconciliation/service/SupplyPredictionService.java b/reconciliation-app/backend/src/main/java/com/reconciliation/service/SupplyPredictionService.java[m
+[1mnew file mode 100644[m
+[1mindex 00000000..ad1bbdcd[m
+[1m--- /dev/null[m
+[1m+++ b/reconciliation-app/backend/src/main/java/com/reconciliation/service/SupplyPredictionService.java[m
+[36m@@ -0,0 +1,1878 @@[m
+[32m+[m[32mpackage com.reconciliation.service;[m
+[32m+[m
+[32m+[m[32mimport com.reconciliation.dto.*;[m
+[32m+[m[32mimport com.reconciliation.entity.OperationEntity;[m
+[32m+[m[32mimport com.reconciliation.entity.CompteEntity;[m
+[32m+[m[32mimport com.reconciliation.entity.AgencyThresholdEntity;[m
+[32m+[m[32mimport com.reconciliation.repository.OperationRepository;[m
+[32m+[m[32mimport com.reconciliation.repository.CompteRepository;[m
+[32m+[m[32mimport com.reconciliation.repository.AgencyThresholdRepository;[m
+[32m+[m[32mimport org.slf4j.Logger;[m
+[32m+[m[32mimport org.slf4j.LoggerFactory;[m
+[32m+[m[32mimport org.springframework.beans.factory.annotation.Autowired;[m
+[32m+[m[32mimport org.springframework.stereotype.Service;[m
+[32m+[m[32mimport org.springframework.transaction.annotation.Transactional;[m
+[32m+[m
+[32m+[m[32mimport java.time.LocalDate;[m
+[32m+[m[32mimport java.time.LocalDateTime;[m
+[32m+[m[32mimport java.time.temporal.ChronoUnit;[m
+[32m+[m[32mimport java.util.*;[m
+[32m+[m[32mimport java.util.stream.Collectors;[m
+[32m+[m
+[32m+[m[32m/**[m
+[32m+[m[32m * Service de prédiction d'approvisionnement[m
+[32m+[m[32m * Inspiré du modèle de prédiction d'approvisionnement[m
+[32m+[m[32m * Adapté au contexte bancaire (agences = produits, solde = stock)[m
+[32m+[m[32m */[m
+[32m+[m[32m@Service[m
+[32m+[m[32mpublic class SupplyPredictionService {[m
+[32m+[m[32m    private static final Logger logger = LoggerFactory.getLogger(SupplyPredictionService.class);[m
+[32m+[m
+[32m+[m[32m    @Autowired[m
+[32m+[m[32m    private OperationRepository operationRepository;[m
+[32m+[m[41m    [m
+[32m+[m[32m    @Autowired[m
+[32m+[m[32m    private CompteRepository compteRepository;[m
+[32m+[m[41m    [m
+[32m+[m[32m    @Autowired[m
+[32m+[m[32m    private AgencyThresholdRepository agencyThresholdRepository;[m
+[32m+[m[41m    [m
+[32m+[m[32m    private SupplyPredictionConfig config = new SupplyPredictionConfig();[m
+[32m+[m[32m    private static final List<String> ELIGIBLE_CATEGORIES = Arrays.asList("client", "service");[m
+[32m+[m
+[32m+[m[32m    /**[m
+[32m+[m[32m     * Configure les paramètres du système[m
+[32m+[m[32m     */[m
+[32m+[m[32m    public void configure(SupplyPredictionConfig config) {[m
+[32m+[m[32m        this.config = config != null ? config : new SupplyPredictionConfig();[m
+[32m+[m[32m        logger.info("⚙️ Configuration mise à jour: leadTime={}, safetyFactor={}, minStock={}, maxStock={}",[m
+[32m+[m[32m            config.getLeadTimeDays(), config.getSafetyFactor(), config.getMinStockDays(), config.getMaxStockDays());[m
+[32m+[m[32m    }[m
+[32m+[m
+[32m+[m[32m    /**[m
+[32m+[m[32m     * Obtient les recommandations d'approvisionnement pour toutes les agences[m
+[32m+[m[32m     */[m
+[32m+[m[32m    @Transactional(readOnly = true)[m
+[32m+[m[32m    public List<SupplyRecommendation> getSupplyRecommendations(String typeOperation, String pays, Integer periodeAnalyseJours) {[m
+[32m+[m[32m        logger.info("📊 Génération des recommandations d'approvisionnement pour type: {}", typeOperation);[m
+[32m+[m[41m        [m
+[32m+[m[32m        LocalDate aujourdhui = LocalDate.now();[m
+[32m+[m[32m        LocalDateTime dateDebut = aujourdhui.minusDays(periodeAnalyseJours != null ? periodeAnalyseJours : 90).atStartOfDay();[m
+[32m+[m[32m        LocalDateTime dateFin = aujourdhui.atTime(23, 59, 59);[m
+[32m+[m[41m        [m
+[32m+[m[32m        Map<String, CompteEntity> eligibleAccounts = getEligibleAccountsByIdentifier(pays);[m
+[32m+[m[32m        List<SupplyRecommendation> recommendations = new ArrayList<>();[m
+[32m+[m[41m        [m
+[32m+[m[32m        for (Map.Entry<String, CompteEntity> entry : eligibleAccounts.entrySet()) {[m
+[32m+[m[32m            String primaryIdentifier = entry.getKey();[m
+[32m+[m[32m            CompteEntity compte = entry.getValue();[m
+[32m+[m[32m            String fallbackIdentifier = getCompteFallbackIdentifier(compte, primaryIdentifier);[m
+[32m+[m[32m            try {[m
+[32m+[m[32m                // Récupérer les opérations historiques pour cette agence[m
+[32m+[m[32m                List<OperationEntity> operations = findOperationsByIdentifiers(primaryIdentifier, fallbackIdentifier);[m
+[32m+[m[32m                operations = operations.stream()[m
+[32m+[m[32m                    .filter(op -> op != null && typeOperation.equals(op.getTypeOperation()))[m
+[32m+[m[32m                    .filter(op -> op.getDateOperation().isAfter(dateDebut) && op.getDateOperation().isBefore(dateFin))[m
+[32m+[m[32m                    .filter(op -> op.getStatut() == null || !"Annulée".equals(op.getStatut()))[m
+[32m+[m[32m                    .filter(op -> pays == null || pays.isEmpty() || (op.getPays() != null && op.getPays().equalsIgnoreCase(pays)))[m
+[32m+[m[32m                    .sorted(Comparator.comparing(OperationEntity::getDateOperation))[m
+[32m+[m[32m                    .collect(Collectors.toList());[m
+[32m+[m[41m                [m
+[32m+[m[32m                if (operations.isEmpty()) {[m
+[32m+[m[32m                    continue;[m
+[32m+[m[32m                }[m
+[32m+[m[41m                [m
+[32m+[m[32m                Double currentStock = compte.getSolde() != null ? compte.getSolde() : 0.0;[m
+[32m+[m[41m                [m
+[32m+[m[32m                // Calculer les recommandations[m
+[32m+[m[32m                SupplyRecommendation recommendation = calculateRecommendation([m
+[32m+[m[32m                    primaryIdentifier,[m
+[32m+[m[32m                    fallbackIdentifier,[m
+[32m+[m[32m                    typeOperation,[m
+[32m+[m[32m                    operations,[m
+[32m+[m[32m                    currentStock,[m
+[32m+[m[32m                    periodeAnalyseJours,[m
+[32m+[m[32m                    pays,[m
+[32m+[m[32m                    compte);[m
+[32m+[m[41m                [m
+[32m+[m[32m                if (recommendation != null) {[m
+[32m+[m[32m                    recommendations.add(recommendation);[m
+[32m+[m[32m                }[m
+[32m+[m[32m            } catch (Exception e) {[m
+[32m+[m[32m                logger.error("❌ Erreur lors du calcul pour l'agence {}: {}", primaryIdentifier, e.getMessage());[m
+[32m+[m[32m            }[m
+[32m+[m[32m        }[m
+[32m+[m[41m        [m
+[32m+[m[32m        // Trier par niveau d'alerte (urgent > normal > low)[m
+[32m+[m[32m        recommendations.sort((a, b) -> {[m
+[32m+[m[32m            int priorityA = getAlertPriority(a.getAlertLevel());[m
+[32m+[m[32m            int priorityB = getAlertPriority(b.getAlertLevel());[m
+[32m+[m[32m            return Integer.compare(priorityB, priorityA);[m
+[32m+[m[32m        });[m
+[32m+[m[41m        [m
+[32m+[m[32m        logger.info("✅ {} recommandations générées", recommendations.size());[m
+[32m+[m[32m        return recommendations;[m
+[32m+[m[32m    }[m
+[32m+[m
+[32m+[m[32m    /**[m
+[32m+[m[32m     * Calcule une recommandation pour une agence[m
+[32m+[m[32m     */[m
+[32m+[m[32m    private SupplyRecommendation calculateRecommendation([m
+[32m+[m[32m            String primaryIdentifier,[m
+[32m+[m[32m            String fallbackIdentifier,[m
+[32m+[m[32m            String typeOperation,[m
+[32m+[m[32m            List<OperationEntity> operations,[m
+[32m+[m[32m            Double currentStock,[m
+[32m+[m[32m            Integer periodeAnalyseJours,[m
+[32m+[m[32m            String pays,[m
+[32m+[m[32

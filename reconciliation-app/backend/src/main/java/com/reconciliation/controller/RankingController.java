@@ -1,7 +1,6 @@
 package com.reconciliation.controller;
 
 import com.reconciliation.service.RankingService;
-import com.reconciliation.repository.CompteRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -21,9 +20,6 @@ public class RankingController {
     @Autowired
     private RankingService rankingService;
     
-    @Autowired
-    private CompteRepository compteRepository;
-    
     /**
      * Récupérer tous les classements
      */
@@ -39,12 +35,13 @@ public class RankingController {
     }
     
     /**
-     * Récupérer la liste des pays distincts
+     * Récupérer la liste des pays distincts normalisés
+     * Les variantes comme CI et CICTH sont regroupées en un seul CI
      */
     @GetMapping("/countries")
     public ResponseEntity<List<String>> getDistinctCountries() {
         try {
-            List<String> countries = compteRepository.findDistinctPays();
+            List<String> countries = rankingService.getNormalizedDistinctCountries();
             return ResponseEntity.ok(countries);
         } catch (Exception e) {
             logger.error("Error getting countries: {}", e.getMessage(), e);
