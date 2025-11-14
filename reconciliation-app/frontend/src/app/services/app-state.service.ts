@@ -55,6 +55,7 @@ export class AppStateService {
 
     private userRights: UserRights | null = null;
     private username: string | null = null;
+    private token: string | null = null;
 
     // Gestion des fichiers uploadés
     private uploadedFilesSubject = new BehaviorSubject<{ boFile: File | null; partnerFile: File | null }>({
@@ -70,7 +71,7 @@ export class AppStateService {
         private dataNormalizationService: DataNormalizationService
     ) {
         console.log('AppStateService initialized');
-        // Charger l'utilisateur depuis le localStorage au démarrage
+        // Charger l'utilisateur et le token depuis le localStorage au démarrage
         this.loadUserFromStorage();
     }
 
@@ -276,25 +277,39 @@ export class AppStateService {
         return this.reconciliationStateSubject.value;
     }
 
-    setUserRights(rights: UserRights, username?: string) {
+    setUserRights(rights: UserRights, username?: string, token?: string) {
         this.userRights = rights;
         if (username) this.username = username;
+        if (token) this.token = token;
         // Sauvegarder dans le localStorage
         localStorage.setItem('userRights', JSON.stringify(rights));
         if (username) localStorage.setItem('username', username);
+        if (token) localStorage.setItem('auth_token', token);
+    }
+
+    setToken(token: string) {
+        this.token = token;
+        localStorage.setItem('auth_token', token);
+    }
+
+    getToken(): string | null {
+        return this.token;
     }
 
     private loadUserFromStorage() {
         const rightsStr = localStorage.getItem('userRights');
         const username = localStorage.getItem('username');
+        const token = localStorage.getItem('auth_token');
         if (rightsStr && username) {
             try {
                 this.userRights = JSON.parse(rightsStr);
                 this.username = username;
+                if (token) this.token = token;
             } catch (e) {
                 // Nettoyer si erreur de parsing
                 localStorage.removeItem('userRights');
                 localStorage.removeItem('username');
+                localStorage.removeItem('auth_token');
             }
         }
     }
@@ -302,8 +317,14 @@ export class AppStateService {
     logout() {
         this.userRights = null;
         this.username = null;
+        this.token = null;
         localStorage.removeItem('userRights');
         localStorage.removeItem('username');
+        localStorage.removeItem('auth_token');
+    }
+
+    isAuthenticated(): boolean {
+        return !!(this.token && this.username);
     }
 
     getUserRights(): UserRights | null {

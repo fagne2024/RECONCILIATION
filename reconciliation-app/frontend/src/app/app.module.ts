@@ -18,6 +18,8 @@ import { MatDatepickerModule } from '@angular/material/datepicker';
 import { MatNativeDateModule } from '@angular/material/core';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatCheckboxModule } from '@angular/material/checkbox';
+import { MatCardModule } from '@angular/material/card';
+import { MatExpansionModule } from '@angular/material/expansion';
 import { NgChartsModule } from 'ng2-charts';
 import { BrowserAnimationsModule } from '@angular/platform-browser/animations';
 import { NgxMatSelectSearchModule } from 'ngx-mat-select-search';
@@ -76,6 +78,8 @@ import { BanqueDashboardComponent } from './components/banque-dashboard/banque-d
 import { UserLogComponent } from './components/user-log/user-log.component';
 import { PredictionsComponent } from './components/predictions/predictions.component';
 import { PredictionsNewComponent } from './components/predictions/predictions-new.component';
+import { TwoFactorAuthComponent } from './components/two-factor-auth/two-factor-auth.component';
+import { User2FADialogComponent } from './components/users/user-2fa-dialog.component';
 
 @NgModule({
     declarations: [
@@ -120,7 +124,9 @@ import { PredictionsNewComponent } from './components/predictions/predictions-ne
                 BanqueDashboardComponent,
                 UserLogComponent,
                 PredictionsComponent,
-                PredictionsNewComponent
+                PredictionsNewComponent,
+                TwoFactorAuthComponent,
+                User2FADialogComponent
     ],
     imports: [
         BrowserModule,
@@ -146,6 +152,8 @@ import { PredictionsNewComponent } from './components/predictions/predictions-ne
         MatNativeDateModule,
         MatTooltipModule,
         MatCheckboxModule,
+        MatCardModule,
+        MatExpansionModule,
         NgxMatSelectSearchModule,
         ColumnSelectionComponent,
         AgencySummaryComponent,

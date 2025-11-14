@@ -16,16 +16,18 @@ export class AuthGuard implements CanActivate {
     route: ActivatedRouteSnapshot,
     state: RouterStateSnapshot
   ): boolean {
-    // Vérifier si l'utilisateur est connecté
+    // Vérifier si l'utilisateur est connecté avec un token JWT valide
+    const isAuthenticated = this.appState.isAuthenticated();
     const userRights = this.appState.getUserRights();
     const username = this.appState.getUsername();
+    const token = this.appState.getToken();
 
-    if (userRights && username) {
-      // L'utilisateur est connecté, autoriser l'accès
+    if (isAuthenticated && userRights && username && token) {
+      // L'utilisateur est connecté avec un token JWT, autoriser l'accès
       return true;
     }
 
-    // L'utilisateur n'est pas connecté, rediriger vers la page de login
+    // L'utilisateur n'est pas connecté ou le token est manquant, rediriger vers la page de login
     // Enregistrer l'URL demandée pour rediriger après la connexion
     this.router.navigate(['/login'], { 
       queryParams: { returnUrl: state.url } 

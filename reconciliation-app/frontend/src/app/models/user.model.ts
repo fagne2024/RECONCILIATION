@@ -5,4 +5,6 @@ export interface User {
     username: string;
     password?: string;
     profil?: Profil;
+    enabled2FA?: boolean;
+    secret2FA?: string;
 } 

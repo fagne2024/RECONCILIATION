@@ -35,6 +35,7 @@ import { ReconciliationReportComponent } from './components/reconciliation-repor
 import { ReportDashboardComponent } from './components/report-dashboard/report-dashboard.component';
 import { DashboardReconciliationComponent } from './components/dashboard-reconciliation/dashboard-reconciliation.component';
 import { BanqueDashboardComponent } from './components/banque-dashboard/banque-dashboard.component';
+import { TwoFactorAuthComponent } from './components/two-factor-auth/two-factor-auth.component';
 import { AuthGuard } from './guards/auth.guard';
 
 const routes: Routes = [
@@ -76,6 +77,7 @@ const routes: Routes = [
   { path: 'log-utilisateur', component: UserLogComponent, canActivate: [AuthGuard] },
   { path: 'predictions', component: PredictionsNewComponent, canActivate: [AuthGuard] },
   { path: 'predictions-old', component: PredictionsComponent, canActivate: [AuthGuard] }, // Ancien système gardé pour référence
+  { path: 'two-factor-auth', component: TwoFactorAuthComponent, canActivate: [AuthGuard] },
 ];
 
 @NgModule({

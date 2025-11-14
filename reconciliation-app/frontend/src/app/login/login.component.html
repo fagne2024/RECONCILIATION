@@ -2,7 +2,9 @@
   <div class="background-particles">
     <div class="particle" *ngFor="let i of particles" [attr.data-index]="i"></div>
   </div>
-  <form (ngSubmit)="onSubmit()" [formGroup]="loginForm" class="login-form">
+  
+  <!-- Formulaire de connexion (username/password) -->
+  <form *ngIf="!requires2FA" (ngSubmit)="onSubmit()" [formGroup]="loginForm" class="login-form">
     <div class="logo-section">
       <div class="logo-icon-wrapper">
         <i class="fas fa-sync-alt logo-icon"></i>
@@ -57,6 +59,106 @@
       <mat-icon>warning</mat-icon>
       <p><strong>Attention :</strong> L'utilisateur admin n'existe pas.</p>
       <p>Veuillez créer un compte administrateur ou utiliser un autre compte.</p>
+    </div>
+  </form>
+  
+  <!-- Formulaire 2FA (code à 6 chiffres) -->
+  <form *ngIf="requires2FA" (ngSubmit)="onVerify2FA()" [formGroup]="twoFactorForm" class="login-form">
+    <div class="logo-section">
+      <div class="logo-icon-wrapper">
+        <i class="fas fa-shield-alt logo-icon"></i>
+      </div>
+      <h2>Authentification à deux facteurs</h2>
+      <p class="subtitle">Code de sécurité requis</p>
+    </div>
+    
+    <!-- QR Code à scanner lors de la première connexion -->
+    <div *ngIf="showQRCode && qrCodeBase64" class="qr-code-section">
+      <div class="info-message">
+        <mat-icon>qr_code_scanner</mat-icon>
+        <p><strong>Première connexion avec 2FA ?</strong><br>Scannez ce QR code avec Google Authenticator pour configurer votre compte.</p>
+      </div>
+      
+      <div class="qr-code-container">
+        <img [src]="qrCodeBase64" alt="QR Code 2FA" class="qr-code-image">
+        <p class="qr-code-hint">Scannez ce code avec Google Authenticator</p>
+      </div>
+      
+      <div class="secret-info" *ngIf="secret && otpAuthUrl">
+        <details>
+          <summary>
+            <mat-icon>info</mat-icon>
+            Saisie manuelle (si le scan ne fonctionne pas)
+          </summary>
+          <div class="secret-details">
+            <div class="secret-item">
+              <label>Clé secrète :</label>
+              <div class="secret-value">
+                <code>{{ secret }}</code>
+                <button mat-icon-button (click)="copySecret()" matTooltip="Copier la clé">
+                  <mat-icon>content_copy</mat-icon>
+                </button>
+              </div>
+            </div>
+            <div class="secret-item">
+              <label>URL OTP Auth :</label>
+              <div class="secret-value">
+                <code class="url-code">{{ otpAuthUrl }}</code>
+              </div>
+              <p class="hint">
+                Dans Google Authenticator : "+" > "Saisir une clé" > 
+                Nom: "Reconciliation App - {{ currentUsername }}" > 
+                Clé: copiez la clé secrète ci-dessus
+              </p>
+            </div>
+          </div>
+        </details>
+      </div>
+      
+      <div class="divider"></div>
+    </div>
+    
+    <div class="info-message">
+      <mat-icon>info</mat-icon>
+      <p>Ouvrez votre application Google Authenticator et entrez le code à 6 chiffres.</p>
+    </div>
+    
+    <mat-form-field appearance="outline" class="login-field">
+      <mat-label>Code d'authentification</mat-label>
+      <input 
+        matInput 
+        formControlName="code" 
+        placeholder="000000"
+        maxlength="6"
+        pattern="[0-9]{6}"
+        autocomplete="off"
+        required>
+      <mat-icon matSuffix>vpn_key</mat-icon>
+      <mat-hint>Entrez le code à 6 chiffres depuis Google Authenticator</mat-hint>
+      <mat-error *ngIf="twoFactorForm.get('code')?.hasError('required')">
+        Le code est requis
+      </mat-error>
+      <mat-error *ngIf="twoFactorForm.get('code')?.hasError('pattern')">
+        Le code doit contenir exactement 6 chiffres
+      </mat-error>
+    </mat-form-field>
+    
+    <div class="button-group">
+      <button mat-raised-button color="primary" type="submit" [disabled]="twoFactorForm.invalid || loading" class="login-button">
+        <mat-icon *ngIf="!loading">verified_user</mat-icon>
+        <mat-spinner *ngIf="loading" diameter="20"></mat-spinner>
+        {{ loading ? 'Vérification...' : 'Vérifier' }}
+      </button>
+      
+      <button mat-button type="button" (click)="backToLogin()" [disabled]="loading" class="back-button">
+        <mat-icon>arrow_back</mat-icon>
+        Retour
+      </button>
+    </div>
+    
+    <div *ngIf="error" class="login-error">
+      <mat-icon>error</mat-icon>
+      {{ error }}
     </div>
   </form>
 </div>

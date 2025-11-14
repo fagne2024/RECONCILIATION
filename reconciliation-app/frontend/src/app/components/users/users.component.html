@@ -179,22 +179,45 @@
             <span class="label">Profil:</span>
             <span class="value">{{ user.profil?.nom || 'Aucun profil' }}</span>
           </div>
+          <div class="user-detail" *ngIf="getUser2FAStatus(user.id)">
+            <i class="fas fa-shield-alt" [class.enabled]="getUser2FAStatus(user.id)?.enabled" [class.disabled]="!getUser2FAStatus(user.id)?.enabled"></i>
+            <span class="label">2FA:</span>
+            <span class="value" [class.enabled]="getUser2FAStatus(user.id)?.enabled" [class.disabled]="!getUser2FAStatus(user.id)?.enabled">
+              {{ getUser2FAStatus(user.id)?.enabled ? 'Activé' : 'Désactivé' }}
+            </span>
+          </div>
+          <div class="user-detail" *ngIf="loading2FAStatus.has(user.id)">
+            <i class="fas fa-spinner fa-spin"></i>
+            <span class="label">2FA:</span>
+            <span class="value">Chargement...</span>
+          </div>
         </div>
         <div class="user-card-actions">
-              <button 
+          <button 
             class="btn btn-action btn-edit" 
-                (click)="editUser(user)"
+            (click)="editUser(user)"
             [disabled]="isEditing"
             title="Modifier">
             <i class="fas fa-edit"></i> Modifier
-              </button>
-              <button 
+          </button>
+          <button 
+            class="btn btn-action btn-2fa" 
+            [class.btn-2fa-enabled]="getUser2FAStatus(user.id)?.enabled"
+            [class.btn-2fa-disabled]="!getUser2FAStatus(user.id)?.enabled"
+            (click)="toggle2FA(user)"
+            [disabled]="loading2FAStatus.has(user.id)"
+            [title]="getUser2FAStatus(user.id)?.enabled ? 'Désactiver le 2FA' : 'Activer le 2FA'">
+            <i class="fas fa-shield-alt" *ngIf="!loading2FAStatus.has(user.id)"></i>
+            <i class="fas fa-spinner fa-spin" *ngIf="loading2FAStatus.has(user.id)"></i>
+            {{ getUser2FAStatus(user.id)?.enabled ? 'Désactiver 2FA' : 'Activer 2FA' }}
+          </button>
+          <button 
             class="btn btn-action btn-delete" 
-                (click)="deleteUser(user)"
-                [disabled]="user.username === 'admin'"
-                [title]="user.username === 'admin' ? 'Impossible de supprimer l\'administrateur' : 'Supprimer'">
+            (click)="deleteUser(user)"
+            [disabled]="user.username === 'admin'"
+            [title]="user.username === 'admin' ? 'Impossible de supprimer l\'administrateur' : 'Supprimer'">
             <i class="fas fa-trash"></i> Supprimer
-              </button>
+          </button>
         </div>
       </div>
     </div>

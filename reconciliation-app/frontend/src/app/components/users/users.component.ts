@@ -3,6 +3,9 @@ import { UserService } from '../../services/user.service';
 import { User } from '../../models/user.model';
 import { Profil } from '../../models/profil.model';
 import { ProfilService } from '../../services/profil.service';
+import { TwoFactorAuthService } from '../../services/two-factor-auth.service';
+import { User2FADialogComponent } from './user-2fa-dialog.component';
+import { PopupService } from '../../services/popup.service';
 
 @Component({
   selector: 'app-users',
@@ -23,8 +26,15 @@ export class UsersComponent implements OnInit {
   searchTerm = '';
   selectedProfilFilter: number | '' = '';
   isLoading = false;
+  user2FAStatus: Map<number, { enabled: boolean; hasSecret: boolean }> = new Map();
+  loading2FAStatus: Set<number> = new Set();
 
-  constructor(private userService: UserService, private profilService: ProfilService) { }
+  constructor(
+    private userService: UserService, 
+    private profilService: ProfilService,
+    private twoFactorService: TwoFactorAuthService,
+    private popupService: PopupService
+  ) { }
 
   ngOnInit(): void {
     this.loadUsers();
@@ -40,6 +50,8 @@ export class UsersComponent implements OnInit {
         this.users = users;
         this.applyFilters();
         this.isLoading = false;
+        // Charger le statut 2FA pour chaque utilisateur
+        this.loadAllUsers2FAStatus();
         if (users.length === 0) {
           this.errorMessage = 'Aucun utilisateur trouvé dans la base de données. Vérifiez que les migrations ont été exécutées.';
         }
@@ -72,28 +84,27 @@ export class UsersComponent implements OnInit {
     this.profilService.getProfils().subscribe(profils => this.profils = profils);
   }
 
-  createUser(): void {
+  async createUser(): Promise<void> {
     if (!this.newUser.username || !this.newUser.password) {
-      this.errorMessage = 'Veuillez remplir tous les champs';
+      await this.popupService.showError('Veuillez remplir tous les champs', 'Champs requis');
       return;
     }
 
     this.isCreating = true;
     this.userService.createUser(this.newUser).subscribe({
-      next: (user) => {
+      next: async (user) => {
         this.users.push(user);
         this.newUser = { username: '', password: '' };
         this.isCreating = false;
         this.showCreateForm = false; // Masquer le formulaire après création
-        this.successMessage = 'Utilisateur créé avec succès';
+        await this.popupService.showSuccess('Utilisateur créé avec succès', 'Succès');
         this.applyFilters();
-        this.clearMessages();
       },
-      error: (error) => {
+      error: async (error) => {
         this.isCreating = false;
-        this.errorMessage = 'Erreur lors de la création de l\'utilisateur';
+        const errorMsg = error.error?.error || error.message || 'Erreur lors de la création de l\'utilisateur';
+        await this.popupService.showError(errorMsg, 'Erreur de création');
         console.error('Error creating user:', error);
-        this.clearMessages();
       }
     });
   }
@@ -103,49 +114,54 @@ export class UsersComponent implements OnInit {
     this.isEditing = true;
   }
 
-  updateUser(): void {
+  async updateUser(): Promise<void> {
     if (!this.editingUser || !this.editingUser.username) {
-      this.errorMessage = 'Veuillez remplir tous les champs';
+      await this.popupService.showError('Veuillez remplir tous les champs', 'Champs requis');
       return;
     }
 
     this.userService.updateUser(this.editingUser.id!, this.editingUser).subscribe({
-      next: (updatedUser) => {
+      next: async (updatedUser) => {
         const index = this.users.findIndex(u => u.id === updatedUser.id);
         if (index !== -1) {
           this.users[index] = updatedUser;
         }
         this.applyFilters();
         this.cancelEdit();
-        this.successMessage = 'Utilisateur mis à jour avec succès';
-        this.clearMessages();
+        await this.popupService.showSuccess('Utilisateur mis à jour avec succès', 'Succès');
+        // Recharger le statut 2FA si nécessaire
+        this.loadUser2FAStatus(updatedUser.id!, updatedUser.username);
       },
-      error: (error) => {
-        this.errorMessage = 'Erreur lors de la mise à jour de l\'utilisateur';
+      error: async (error) => {
+        const errorMsg = error.error?.error || error.message || 'Erreur lors de la mise à jour de l\'utilisateur';
+        await this.popupService.showError(errorMsg, 'Erreur de mise à jour');
         console.error('Error updating user:', error);
-        this.clearMessages();
       }
     });
   }
 
-  deleteUser(user: User): void {
-    if (confirm(`Êtes-vous sûr de vouloir supprimer l'utilisateur "${user.username}" ?`)) {
+  async deleteUser(user: User): Promise<void> {
+    const confirmed = await this.popupService.showConfirmDialog(
+      `Êtes-vous sûr de vouloir supprimer l'utilisateur "${user.username}" ?`,
+      'Confirmation de suppression'
+    );
+    
+    if (confirmed) {
       this.userService.deleteUser(user.id!).subscribe({
-        next: (success) => {
+        next: async (success) => {
           if (success) {
             this.users = this.users.filter(u => u.id !== user.id);
+            this.user2FAStatus.delete(user.id!); // Supprimer aussi le statut 2FA
             this.applyFilters();
-            this.successMessage = 'Utilisateur supprimé avec succès';
-            this.clearMessages();
+            await this.popupService.showSuccess('Utilisateur supprimé avec succès', 'Succès');
           } else {
-            this.errorMessage = 'Impossible de supprimer cet utilisateur';
-            this.clearMessages();
+            await this.popupService.showError('Impossible de supprimer cet utilisateur', 'Erreur');
           }
         },
-        error: (error) => {
-          this.errorMessage = 'Erreur lors de la suppression de l\'utilisateur';
+        error: async (error) => {
+          const errorMsg = error.error?.error || error.message || 'Erreur lors de la suppression de l\'utilisateur';
+          await this.popupService.showError(errorMsg, 'Erreur de suppression');
           console.error('Error deleting user:', error);
-          this.clearMessages();
         }
       });
     }
@@ -157,9 +173,114 @@ export class UsersComponent implements OnInit {
   }
 
   private clearMessages(): void {
+    // Les messages sont maintenant gérés par les popups modernes
+    // Cette méthode est conservée pour la compatibilité mais peut être supprimée
     setTimeout(() => {
       this.errorMessage = '';
       this.successMessage = '';
     }, 3000);
+  }
+
+  /**
+   * Charge le statut 2FA pour tous les utilisateurs
+   */
+  loadAllUsers2FAStatus(): void {
+    this.users.forEach(user => {
+      if (user.id && user.username) {
+        this.loadUser2FAStatus(user.id, user.username);
+      }
+    });
+  }
+
+  /**
+   * Charge le statut 2FA pour un utilisateur spécifique
+   */
+  loadUser2FAStatus(userId: number, username: string): void {
+    this.loading2FAStatus.add(userId);
+    this.twoFactorService.get2FAStatus(username).subscribe({
+      next: (status) => {
+        this.user2FAStatus.set(userId, status);
+        this.loading2FAStatus.delete(userId);
+      },
+      error: (err) => {
+        console.error('Error loading 2FA status for user:', username, err);
+        this.loading2FAStatus.delete(userId);
+      }
+    });
+  }
+
+  /**
+   * Obtient le statut 2FA d'un utilisateur
+   */
+  getUser2FAStatus(userId: number | undefined): { enabled: boolean; hasSecret: boolean } | null {
+    if (!userId) return null;
+    return this.user2FAStatus.get(userId) || null;
+  }
+
+  /**
+   * Active ou désactive le 2FA pour un utilisateur
+   */
+  async toggle2FA(user: User): Promise<void> {
+    if (!user.username || !user.id) return;
+
+    const currentStatus = this.getUser2FAStatus(user.id);
+    const isEnabled = currentStatus?.enabled || false;
+
+    if (isEnabled) {
+      // Désactiver le 2FA
+      const confirmed = await this.popupService.showConfirmDialog(
+        `Êtes-vous sûr de vouloir désactiver l'authentification à deux facteurs pour "${user.username}" ?`,
+        'Désactivation du 2FA'
+      );
+      
+      if (!confirmed) {
+        return;
+      }
+
+      this.loading2FAStatus.add(user.id);
+      this.twoFactorService.disable2FA(user.username).subscribe({
+        next: async () => {
+          this.loadUser2FAStatus(user.id!, user.username);
+          await this.popupService.showSuccess(
+            `2FA désactivé pour ${user.username}. La clé secrète est conservée pour permettre une réactivation avec le même compte Google Authenticator.`,
+            '2FA désactivé'
+          );
+        },
+        error: async (err) => {
+          this.loading2FAStatus.delete(user.id!);
+          const errorMsg = err.error?.error || 'Erreur inconnue';
+          await this.popupService.showError(`Erreur lors de la désactivation du 2FA: ${errorMsg}`, 'Erreur');
+        }
+      });
+    } else {
+      // Activer le 2FA
+      const confirmed = await this.popupService.showConfirmDialog(
+        `Activer l'authentification à deux facteurs pour "${user.username}" ?\n\nL'utilisateur devra scanner un QR code lors de sa prochaine connexion.`,
+        'Activation du 2FA'
+      );
+      
+      if (!confirmed) {
+        return;
+      }
+
+      this.loading2FAStatus.add(user.id);
+      // Activer le 2FA directement (sans validation de code)
+      this.twoFactorService.activate2FA(user.username).subscribe({
+        next: async (response) => {
+          this.loadUser2FAStatus(user.id!, user.username);
+          // Vérifier si on réutilise une clé existante
+          const usingExistingSecret = response.usingExistingSecret || false;
+          const message = usingExistingSecret
+            ? `2FA réactivé pour ${user.username}. L'utilisateur peut continuer à utiliser le même compte Google Authenticator.`
+            : `2FA activé pour ${user.username}. L'utilisateur devra scanner le QR code à la prochaine connexion.`;
+          await this.popupService.showSuccess(message, '2FA activé');
+        },
+        error: async (err) => {
+          this.loading2FAStatus.delete(user.id!);
+          const errorMsg = err.error?.error || 'Erreur inconnue';
+          await this.popupService.showError(`Erreur lors de l'activation du 2FA: ${errorMsg}`, 'Erreur');
+        }
+      });
+    }
   }
 } 

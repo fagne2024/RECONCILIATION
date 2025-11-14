@@ -11,11 +11,18 @@ import { AppStateService } from '../services/app-state.service';
 })
 export class LoginComponent implements OnInit {
   loginForm: FormGroup;
+  twoFactorForm: FormGroup;
   loading = false;
   error: string | null = null;
   adminExists = true; // Par défaut, on suppose que l'admin existe
   hidePassword = true; // Pour toggle afficher/masquer mot de passe
   particles = Array(10).fill(0).map((_, i) => i + 1); // Pour les particules animées en arrière-plan
+  requires2FA = false; // Indique si le 2FA est requis
+  currentUsername: string | null = null; // Username pour la validation 2FA
+  showQRCode = false; // Afficher le QR code lors de la connexion
+  qrCodeBase64: string | null = null; // QR code en base64
+  secret: string | null = null; // Clé secrète
+  otpAuthUrl: string | null = null; // URL OTP Auth
 
   constructor(
     private fb: FormBuilder,
@@ -27,6 +34,10 @@ export class LoginComponent implements OnInit {
     this.loginForm = this.fb.group({
       username: ['', Validators.required],
       password: ['', Validators.required]
+    });
+    
+    this.twoFactorForm = this.fb.group({
+      code: ['', [Validators.required, Validators.pattern(/^\d{6}$/)]]
     });
   }
 
@@ -40,7 +51,36 @@ export class LoginComponent implements OnInit {
       .subscribe({
         next: (response: any) => {
           this.loading = false;
-          // Stocker les droits dans AppStateService
+          
+          // Vérifier si le 2FA est requis
+          if (response.requires2FA === true) {
+            this.requires2FA = true;
+            this.currentUsername = response.username;
+            this.error = null;
+            // Afficher le QR code uniquement si c'est la première connexion
+            if (response.showQRCode === true && response.qrCode) {
+              this.showQRCode = true;
+              this.qrCodeBase64 = response.qrCode;
+              this.secret = response.secret || null;
+              this.otpAuthUrl = response.otpAuthUrl || null;
+            } else {
+              this.showQRCode = false;
+              this.qrCodeBase64 = null;
+              this.secret = null;
+              this.otpAuthUrl = null;
+            }
+            // Masquer le formulaire de login et afficher le formulaire 2FA
+            return;
+          }
+          
+          // Vérifier si un token JWT est présent dans la réponse
+          const token = response.token || null;
+          if (!token) {
+            this.error = 'Token d\'authentification manquant dans la réponse du serveur.';
+            return;
+          }
+          
+          // Stocker les droits et le token dans AppStateService
           const modules: string[] = Array.from(new Set(response.droits.map((d: any) => d.module)));
           const permissions: { [module: string]: string[] } = {};
           response.droits.forEach((d: any) => {
@@ -51,7 +91,7 @@ export class LoginComponent implements OnInit {
             profil: response.profil,
             modules,
             permissions
-          }, response.username);
+          }, response.username, token);
           
           // Rediriger vers l'URL demandée ou vers le dashboard par défaut
           const returnUrl = this.route.snapshot.queryParams['returnUrl'] || '/dashboard';
@@ -114,5 +154,86 @@ export class LoginComponent implements OnInit {
   onForgotPassword() {
     // TODO: Implémenter la fonctionnalité de mot de passe oublié
     alert('Fonctionnalité de réinitialisation de mot de passe à implémenter');
+  }
+
+  onVerify2FA() {
+    if (this.twoFactorForm.invalid || !this.currentUsername) {
+      return;
+    }
+    
+    const code = this.twoFactorForm.value.code;
+    this.loading = true;
+    this.error = null;
+    
+    this.http.post<any>('/api/auth/verify-2fa', {
+      username: this.currentUsername,
+      code: code
+    }).subscribe({
+      next: (response: any) => {
+        this.loading = false;
+        
+        // Vérifier si un token JWT est présent dans la réponse
+        const token = response.token || null;
+        if (!token) {
+          this.error = 'Token d\'authentification manquant dans la réponse du serveur.';
+          return;
+        }
+        
+        // Stocker les droits et le token dans AppStateService
+        const modules: string[] = Array.from(new Set(response.droits.map((d: any) => d.module)));
+        const permissions: { [module: string]: string[] } = {};
+        response.droits.forEach((d: any) => {
+          if (!permissions[d.module]) permissions[d.module] = [];
+          permissions[d.module].push(d.permission);
+        });
+        this.appState.setUserRights({
+          profil: response.profil,
+          modules,
+          permissions
+        }, response.username, token);
+        
+        // Rediriger vers l'URL demandée ou vers le dashboard par défaut
+        const returnUrl = this.route.snapshot.queryParams['returnUrl'] || '/dashboard';
+        this.router.navigate([returnUrl]);
+      },
+      error: (err) => {
+        this.loading = false;
+        if (err.status === 401) {
+          this.error = err.error?.error || 'Code d\'authentification invalide. Veuillez réessayer.';
+          // Réinitialiser le formulaire 2FA
+          this.twoFactorForm.patchValue({ code: '' });
+        } else {
+          this.error = 'Une erreur est survenue lors de la vérification du code. Veuillez réessayer.';
+        }
+      }
+    });
+  }
+
+  backToLogin() {
+    this.requires2FA = false;
+    this.currentUsername = null;
+    this.showQRCode = false;
+    this.qrCodeBase64 = null;
+    this.secret = null;
+    this.otpAuthUrl = null;
+    this.twoFactorForm.reset();
+    this.error = null;
+  }
+
+  /**
+   * Copie la clé secrète dans le presse-papiers
+   */
+  copySecret() {
+    if (!this.secret) return;
+    
+    navigator.clipboard.writeText(this.secret).then(() => {
+      this.error = null; // Réinitialiser l'erreur
+      // Afficher un message de succès temporaire
+      setTimeout(() => {
+        // Le message disparaîtra automatiquement
+      }, 3000);
+    }).catch(() => {
+      this.error = 'Impossible de copier la clé secrète';
+    });
   }
 }
