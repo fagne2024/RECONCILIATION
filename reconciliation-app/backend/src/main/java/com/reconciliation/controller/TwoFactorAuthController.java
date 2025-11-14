@@ -144,13 +144,13 @@ public class TwoFactorAuthController {
         user.setEnabled2FA(true);
         // Si on réutilise une clé existante qui a déjà été scannée, conserver le flag
         // pour que l'utilisateur n'ait pas à rescanner le QR code
-        if (usingExistingSecret && user.getQrCodeScanned()) {
-            // Garder le flag à true pour ne pas afficher le QR code (l'utilisateur peut utiliser son code existant)
-            // Ne rien faire - le flag reste à true
-        } else {
-            // Nouvelle clé ou clé jamais scannée - afficher le QR code
+        // Si c'est une nouvelle clé, initialiser le flag à false pour afficher le QR code
+        if (!usingExistingSecret) {
+            // Nouvelle clé - afficher le QR code
             user.setQrCodeScanned(false);
         }
+        // Si usingExistingSecret est true, on garde le flag qrCodeScanned tel quel
+        // (il reste à true si déjà scanné, ou false si jamais scanné)
         userRepository.save(user);
         
         // Générer le QR code pour affichage (toujours retourner pour permettre de le revoir si nécessaire)
@@ -194,8 +194,9 @@ public class TwoFactorAuthController {
         // La clé secrète est conservée pour que l'utilisateur puisse continuer à utiliser
         // le même compte dans Google Authenticator après réactivation
         // user.setSecret2FA(null); // Supprimé pour conserver la clé
-        // Réinitialiser le flag de scan pour afficher le QR code à nouveau si nécessaire
-        user.setQrCodeScanned(false);
+        // NE PAS réinitialiser le flag de scan pour que l'utilisateur n'ait pas à rescanner
+        // le QR code lors de la réactivation si la clé a déjà été scannée
+        // user.setQrCodeScanned(false); // Supprimé pour conserver l'état du scan
         userRepository.save(user);
         
         return ResponseEntity.ok(Map.of(

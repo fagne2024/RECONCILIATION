@@ -7,16 +7,6 @@
     <p class="subtitle">Sécurisez votre compte avec Google Authenticator</p>
   </div>
 
-  <!-- Messages de succès/erreur -->
-  <div *ngIf="success" class="message success">
-    <mat-icon>check_circle</mat-icon>
-    <span>{{ success }}</span>
-  </div>
-
-  <div *ngIf="error" class="message error">
-    <mat-icon>error</mat-icon>
-    <span>{{ error }}</span>
-  </div>
 
   <!-- Statut actuel du 2FA -->
   <div class="status-card" *ngIf="!showQRCode">
