@@ -261,7 +261,7 @@ export interface ReconciliationReportData {
                             <th class="col-number">Écarts Partenaire</th>
                             <th class="col-number">Incohérences</th>
                             <th class="col-number">Taux de Correspondance</th>
-                            <th class="col-text">ID GLPI</th>
+                            <th class="col-text">ID TICKET</th>
                             <th class="col-select">Statut</th>
                             <th class="col-select">Commentaire</th>
                             <th class="col-select">Traitement</th>
@@ -334,7 +334,7 @@ export interface ReconciliationReportData {
                                     </ng-container>
                                     <ng-template #glpiInput>
                                         <div class="glpi-input-container">
-                                            <input [(ngModel)]="item.glpiId" placeholder="ID GLPI" class="edit-input" [disabled]="item.status === 'OK'"/>
+                                            <input [(ngModel)]="item.glpiId" placeholder="ID TICKET" class="edit-input" [disabled]="item.status === 'OK'"/>
                                             <button 
                                                 *ngIf="!item.glpiId || item.glpiId.trim() === ''" 
                                                 class="btn-glpi-create"
@@ -2302,8 +2302,8 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                 }
                 
                 // Compter les tickets qui nécessitent une création :
-                // 1. ID GLPI vide ET statut NOK (problème nécessitant un ticket)
-                // 2. ID GLPI contient "créer" ET statut en cours/attente
+                // 1. ID TICKET vide ET statut NOK (problème nécessitant un ticket)
+                // 2. ID TICKET contient "créer" ET statut en cours/attente
                 const hasNoIdGlpi = idGlpiStr === '';
                 const containsCreer = idGlpiLower.includes('créer');
                 const isNok = status === 'NOK';
@@ -2342,7 +2342,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                 { header: 'Écarts Partenaire', key: 'partnerOnly', width: 18 },
                 { header: 'Incohérences', key: 'mismatches', width: 15 },
                 { header: 'Taux de Correspondance', key: 'matchRate', width: 20 },
-                { header: 'ID GLPI', key: 'glpiId', width: 15 },
+                { header: 'ID TICKET', key: 'glpiId', width: 15 },
                 { header: 'Statut', key: 'status', width: 15 },
                 { header: 'Commentaire', key: 'comment', width: 30 },
                 { header: 'Traitement', key: 'traitement', width: 18 }
@@ -2553,9 +2553,22 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
     private loadSavedReportFromDatabase() {
         this.loadedFromDb = true;
         fetch('/api/result8rec')
-        .then(r => r.ok ? r.json() : [])
+        .then(r => {
+            if (!r.ok) {
+                // Si 404, le backend n'est probablement pas démarré - c'est normal en développement
+                if (r.status === 404) {
+                    console.log('ℹ️ Backend non disponible - les données sauvegardées ne seront pas chargées');
+                    return [];
+                }
+                // Pour les autres erreurs, retourner un tableau vide
+                return [];
+            }
+            return r.json();
+        })
         .then((rows: any[]) => {
-            if (!Array.isArray(rows)) return;
+            if (!Array.isArray(rows) || rows.length === 0) {
+                return;
+            }
             this.reportData = rows.map(r => {
                 // Calculer les écarts
                 const boOnly = Number(r.boOnly) || 0;
@@ -2608,8 +2621,9 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             this.currentSource = 'db';
             this.updatePagination();
         })
-        .catch(() => {
-            // Ignorer silencieusement en cas d'erreur
+        .catch((err) => {
+            // Ignorer silencieusement en cas d'erreur réseau (backend non démarré)
+            // Ne pas afficher d'erreur dans la console pour éviter le bruit
         });
     }
     saveRow(item: ReconciliationReportData) {
@@ -2964,7 +2978,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             'Statut': item.status,
             'Commentaire': item.comment,
             'Traitement': item.traitement || '',
-            'ID GLPI': item.glpiId
+            'ID TICKET': item.glpiId
         }));
         
         // Exporter les deux feuilles séparément
@@ -2978,7 +2992,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         setTimeout(() => {
             this.exportService.exportExcelOptimized(
                 detailedRows, 
-                ['Date', 'Agence', 'Service', 'Pays', 'Transactions', 'Volume', 'Correspondances', 'Écarts BO', 'Écarts Partenaire', 'Incohérences', 'Taux', 'Statut', 'Commentaire', 'Traitement', 'ID GLPI'], 
+                ['Date', 'Agence', 'Service', 'Pays', 'Transactions', 'Volume', 'Correspondances', 'Écarts BO', 'Écarts Partenaire', 'Incohérences', 'Taux', 'Statut', 'Commentaire', 'Traitement', 'ID TICKET'], 
                 `${fileName}_detail_complet.xlsx`
             );
         }, 1000);

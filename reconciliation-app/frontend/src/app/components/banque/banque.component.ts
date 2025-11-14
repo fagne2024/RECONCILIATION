@@ -1051,7 +1051,7 @@ export class BanqueComponent implements OnInit {
   totalComptes = 0;
   totalEnAttente = 0;
   totalReleveLignes = 0; // Nombre de lignes de relevé (tous lots)
-  totalTicketsACreer = 0; // Opérations bancaires sans ID GLPI
+  totalTicketsACreer = 0; // Opérations bancaires sans ID TICKET
   // Suspens (écarts) comptage global
   totalSuspensBO = 0;
   totalSuspensBanque = 0;
@@ -1077,9 +1077,9 @@ export class BanqueComponent implements OnInit {
         this.totalOperations = list.length;
         this.totalEnAttente = list.filter(o => (o.statut || '').toLowerCase() === 'en attente' || (o.statut || '').toLowerCase() === 'en cours').length;
         // Compter les tickets à créer : 
-        // - opérations sans ID GLPI (undefined, null ou vide) OU
-        // - opérations dont ID GLPI contient "créer" (pas case-sensitive)
-        // - mais exclure celles dont ID GLPI contient "modifier" (pas case-sensitive)
+        // - opérations sans ID TICKET (undefined, null ou vide) OU
+        // - opérations dont ID TICKET contient "créer" (pas case-sensitive)
+        // - mais exclure celles dont ID TICKET contient "modifier" (pas case-sensitive)
         // - avec statut "en attente" ou "en cours"
         this.totalTicketsACreer = list.filter(o => {
           const idGlpiStr = (o.idGlpi || '').trim();
@@ -1376,7 +1376,7 @@ export class BanqueComponent implements OnInit {
     const header = [
       'Pays', 'Code Pays', 'Mois', 'Date Opération', 'Agence', 'Type Opération',
       'Nom du Bénéficiaire', 'Compte', 'Montant', 'Mode de Paiement', 'Référence',
-      'ID GLPI', 'Banque', 'Statut'
+      'ID TICKET', 'Banque', 'Statut'
     ];
 
     const aoa: any[] = [];

@@ -417,7 +417,7 @@
               <th>Montant</th>
               <th>Mode de Paiement</th>
               <th>Référence</th>
-              <th>ID GLPI</th>
+              <th>ID TICKET</th>
               <th>Banque</th>
               <th>Statut</th>
             </tr>
@@ -497,7 +497,7 @@
               <th>Montant</th>
               <th>Mode de Paiement</th>
               <th>Référence</th>
-              <th>ID GLPI</th>
+              <th>ID TICKET</th>
               <th>Banque</th>
               <th>Statut</th>
               <th>Statut Réconciliation</th>
@@ -1019,7 +1019,7 @@
               <th>Montant</th>
               <th>Mode de Paiement</th>
               <th>Référence</th>
-              <th>ID GLPI</th>
+              <th>ID TICKET</th>
               <th>Banque</th>
               <th>Statut</th>
               <th>Traitement</th>
@@ -1199,7 +1199,7 @@
             <span>{{ selectedOperation.reference || 'Non renseignée' }}</span>
           </div>
           <div class="detail-item">
-            <label><i class="fas fa-ticket-alt"></i> ID GLPI</label>
+            <label><i class="fas fa-ticket-alt"></i> ID TICKET</label>
             <span>
               <a *ngIf="selectedOperation.idGlpi && selectedOperation.idGlpi.trim() !== ''" 
                  [href]="getGlpiTicketUrl(selectedOperation.idGlpi)"
@@ -1566,8 +1566,8 @@
               <input type="text" [(ngModel)]="editForm.reference" name="reference" placeholder="Référence de l'opération">
             </div>
             <div class="form-group">
-              <label><i class="fas fa-ticket-alt"></i> ID GLPI</label>
-              <input type="text" [(ngModel)]="editForm.idGlpi" name="idGlpi" placeholder="ID du ticket GLPI">
+              <label><i class="fas fa-ticket-alt"></i> ID TICKET</label>
+              <input type="text" [(ngModel)]="editForm.idGlpi" name="idGlpi" placeholder="ID TICKET">
             </div>
           </div>
 
