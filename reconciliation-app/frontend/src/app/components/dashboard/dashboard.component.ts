@@ -234,20 +234,44 @@ export class DashboardComponent implements OnInit, OnDestroy {
         end = new Date(today.getFullYear() - 1, 11, 31); // 31 décembre de l'année dernière
       } else if (this.selectedTimeFilter === 'Personnalisé' && this.startDate && this.endDate) {
         start = new Date(this.startDate);
+        start.setHours(0, 0, 0, 0);
         end = new Date(this.endDate);
+        end.setHours(0, 0, 0, 0);
         end.setDate(end.getDate() + 1); // inclure la date de fin
       }
 
       if (!start || !end) {
         return data;
       }
+      
+      // Normaliser toutes les dates de début et de fin à minuit pour une comparaison cohérente
+      if (start) {
+        start.setHours(0, 0, 0, 0);
+      }
+      if (end) {
+        end.setHours(0, 0, 0, 0);
+      }
+      
       console.log('[DEBUG] filterByPeriod: start =', start, 'end =', end);
 
       return data.filter((item: any) => {
         const dateStr = item.date || item.dateOperation;
         if (!dateStr) return false;
-        const date = new Date(dateStr.split('T')[0]);
-        const inPeriod = date >= start! && date < end!;
+        
+        // Normaliser la date en utilisant uniquement la partie date (YYYY-MM-DD)
+        const dateOnly = dateStr.split('T')[0];
+        const [year, month, day] = dateOnly.split('-').map(Number);
+        // Créer la date en heure locale pour éviter les problèmes de fuseau horaire
+        const date = new Date(year, month - 1, day);
+        date.setHours(0, 0, 0, 0);
+        
+        // Normaliser start et end aussi pour la comparaison
+        const normalizedStart = new Date(start!);
+        normalizedStart.setHours(0, 0, 0, 0);
+        const normalizedEnd = new Date(end!);
+        normalizedEnd.setHours(0, 0, 0, 0);
+        
+        const inPeriod = date >= normalizedStart && date < normalizedEnd;
         console.log('[DEBUG] filterByPeriod: date =', date, 'inPeriod =', inPeriod, 'raw =', dateStr);
         return inPeriod;
       });

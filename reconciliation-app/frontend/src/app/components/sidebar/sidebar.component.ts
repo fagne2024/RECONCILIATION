@@ -1,7 +1,8 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, ChangeDetectorRef } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { Router } from '@angular/router';
+import { Router, NavigationEnd } from '@angular/router';
 import { AppStateService } from '../../services/app-state.service';
+import { filter } from 'rxjs/operators';
 
 @Component({
   selector: 'app-sidebar',
@@ -17,10 +18,17 @@ export class SidebarComponent implements OnInit {
   constructor(
     private http: HttpClient,
     private router: Router,
-    private appState: AppStateService
+    private appState: AppStateService,
+    private cdr: ChangeDetectorRef
   ) { }
 
   ngOnInit(): void {
+    // Écouter les changements de navigation pour forcer la mise à jour du menu
+    this.router.events.pipe(
+      filter(event => event instanceof NavigationEnd)
+    ).subscribe(() => {
+      this.cdr.detectChanges();
+    });
   }
 
   toggleParamSubmenu() {
@@ -47,7 +55,10 @@ export class SidebarComponent implements OnInit {
   }
 
   isAdmin(): boolean {
-    return this.appState.isAdmin();
+    const result = this.appState.isAdmin();
+    const userRights = this.appState.getUserRights();
+    console.log('[DEBUG] SidebarComponent.isAdmin: result =', result, 'userRights =', userRights, 'profil =', userRights?.profil);
+    return result;
   }
 
   getUsername(): string | null {

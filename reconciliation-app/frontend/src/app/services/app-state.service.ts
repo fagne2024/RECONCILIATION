@@ -336,7 +336,22 @@ export class AppStateService {
     }
 
     isAdmin(): boolean {
-        return this.username === 'admin';
+        // Vérifier si l'utilisateur est admin par son nom d'utilisateur OU par son profil
+        if (this.username === 'admin') {
+            console.log('[DEBUG] isAdmin: User is admin by username');
+            return true;
+        }
+        // Vérifier si le profil est ADMIN, ADMINISTRATEUR, ou Admin (insensible à la casse)
+        const profil = this.userRights?.profil;
+        if (!profil) {
+            console.log('[DEBUG] isAdmin: No profile found, userRights:', this.userRights);
+            return false;
+        }
+        const profilUpper = profil.toUpperCase();
+        // Vérifier toutes les variations possibles : ADMIN, ADMINISTRATEUR, Admin
+        const isAdminByProfil = profilUpper === 'ADMIN' || profilUpper === 'ADMINISTRATEUR';
+        console.log('[DEBUG] isAdmin: profil =', profil, 'profilUpper =', profilUpper, 'isAdminByProfil =', isAdminByProfil, 'userRights =', this.userRights);
+        return isAdminByProfil;
     }
 
     isModuleAllowed(module: string): boolean {
