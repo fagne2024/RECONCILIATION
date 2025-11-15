@@ -40,6 +40,12 @@
         border-radius: 4px;
         font-size: 12px;
         font-weight: 500;
+
+        .revenu-info {
+          font-size: 11px;
+          color: #856404;
+          margin-left: 5px;
+        }
       }
 
       .export-btn {
@@ -190,6 +196,19 @@
 
           &:hover {
             background-color: #f8f9fa;
+          }
+
+          &.revenu-journalier-row {
+            background-color: #fff9e6;
+            border-left: 4px solid #ffc107;
+
+            &:hover {
+              background-color: #fff3cd;
+            }
+          }
+
+          &.ecart-solde-row {
+            background-color: white;
           }
 
           td {
@@ -371,6 +390,13 @@
         background-color: #e2e3e5;
         color: #383d41;
         border: 1px solid #d6d8db;
+      }
+
+      &.revenu-badge {
+        background-color: #ffc107;
+        color: #856404;
+        border: 1px solid #ffb300;
+        font-weight: 700;
       }
     }
 

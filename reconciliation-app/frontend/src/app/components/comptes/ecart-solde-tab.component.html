@@ -6,10 +6,13 @@
         Date: {{ formatDate(dateTransaction) }}
       </span>
       <span class="count-info">
-        Total: {{ filteredEcartSoldes.length }} résultat(s)
+        Total: {{ combinedRows.length }} résultat(s)
+        <span *ngIf="revenuJournalierRows.length > 0" class="revenu-info">
+          ({{ filteredEcartSoldes.length }} écart(s) de solde, {{ revenuJournalierRows.length }} revenu(s) journalier)
+        </span>
       </span>
-      <span class="count-info" *ngIf="filteredEcartSoldes.length > pageSize">
-        Affichage: {{ (currentPage - 1) * pageSize + 1 }} - {{ Math.min(currentPage * pageSize, filteredEcartSoldes.length) }} sur {{ filteredEcartSoldes.length }}
+      <span class="count-info" *ngIf="combinedRows.length > pageSize">
+        Affichage: {{ (currentPage - 1) * pageSize + 1 }} - {{ Math.min(currentPage * pageSize, combinedRows.length) }} sur {{ combinedRows.length }}
       </span>
       <button class="btn btn-success export-btn" 
               (click)="exportEcartSoldes()"
@@ -66,14 +69,14 @@
     </div>
   </div>
 
-  <div class="no-data-container" *ngIf="!isLoading && !error && filteredEcartSoldes.length === 0">
+  <div class="no-data-container" *ngIf="!isLoading && !error && combinedRows.length === 0">
     <div class="alert alert-info">
       <i class="fas fa-info-circle"></i>
-      Aucun écart de solde trouvé pour cette agence et cette date.
+      Aucun écart de solde ou revenu journalier trouvé pour cette agence et cette date.
     </div>
   </div>
 
-  <div class="table-container" *ngIf="!isLoading && !error && filteredEcartSoldes.length > 0">
+  <div class="table-container" *ngIf="!isLoading && !error && combinedRows.length > 0">
     <table class="table table-striped table-hover">
       <thead>
         <tr>
@@ -99,64 +102,107 @@
         </tr>
       </thead>
       <tbody>
-        <tr *ngFor="let ecart of pagedEcartSoldes" class="data-row" [class.selected]="isItemSelected(ecart)">
-          <td class="checkbox-cell">
-            <input type="checkbox" 
-                   [checked]="isItemSelected(ecart)" 
-                   (change)="toggleItemSelection(ecart)"
-                   [disabled]="isValidatingMass || ecart.statut === 'TRAITE'">
-          </td>
-          <td class="id-cell">{{ ecart.idTransaction }}</td>
-          <td class="phone-cell">{{ ecart.telephoneClient || '-' }}</td>
-          <td class="amount-cell">{{ formatMontant(ecart.montant) }}</td>
-          <td class="service-cell">{{ ecart.service || '-' }}</td>
-          <td class="agence-cell">{{ ecart.agence || '-' }}</td>
-          <td class="date-cell">{{ formatDate(ecart.dateTransaction) }}</td>
-          <td class="gu-cell">{{ ecart.numeroTransGu || '-' }}</td>
-          <td class="pays-cell">{{ ecart.pays || '-' }}</td>
-          <td>
-            <span class="status-badge" [ngClass]="getStatutClass(ecart.statut || '')">
-              {{ ecart.statut || 'EN_ATTENTE' }}
-            </span>
-          </td>
-          <td class="frais-cell">
-            <div *ngIf="ecart.fraisAssocie" class="frais-info">
-              <span class="frais-amount">{{ formatMontantFrais(ecart.fraisAssocie.montant) }}</span>
-              <span class="frais-type" [ngClass]="getFraisTypeClass(ecart.fraisAssocie.typeCalcul)">
-                {{ getFraisTypeLabel(ecart.fraisAssocie.typeCalcul) }}
+        <tr *ngFor="let row of pagedCombinedRows" 
+            class="data-row" 
+            [class.revenu-journalier-row]="isRevenuJournalierRow(row)"
+            [class.ecart-solde-row]="isEcartSoldeRow(row)"
+            [class.selected]="isEcartSoldeRow(row) && isItemSelected(row.data)">
+          <!-- Ligne pour écart de solde -->
+          <ng-container *ngIf="isEcartSoldeRow(row)">
+            <td class="checkbox-cell">
+              <input type="checkbox" 
+                     [checked]="isItemSelected(row.data)" 
+                     (change)="toggleItemSelection(row.data)"
+                     [disabled]="isValidatingMass || row.data.statut === 'TRAITE'">
+            </td>
+            <td class="id-cell">{{ row.data.idTransaction }}</td>
+            <td class="phone-cell">{{ row.data.telephoneClient || '-' }}</td>
+            <td class="amount-cell">{{ formatMontant(row.data.montant) }}</td>
+            <td class="service-cell">{{ row.data.service || '-' }}</td>
+            <td class="agence-cell">{{ row.data.agence || '-' }}</td>
+            <td class="date-cell">{{ formatDate(row.data.dateTransaction) }}</td>
+            <td class="gu-cell">{{ row.data.numeroTransGu || '-' }}</td>
+            <td class="pays-cell">{{ row.data.pays || '-' }}</td>
+            <td>
+              <span class="status-badge" [ngClass]="getStatutClass(row.data.statut || '')">
+                {{ row.data.statut || 'EN_ATTENTE' }}
               </span>
-              <span *ngIf="ecart.fraisAssocie.pourcentage" class="frais-percentage">
-                ({{ ecart.fraisAssocie.pourcentage }}%)
+            </td>
+            <td class="frais-cell">
+              <div *ngIf="row.data.fraisAssocie" class="frais-info">
+                <span class="frais-amount">{{ formatMontantFrais(row.data.fraisAssocie.montant) }}</span>
+                <span class="frais-type" [ngClass]="getFraisTypeClass(row.data.fraisAssocie.typeCalcul)">
+                  {{ getFraisTypeLabel(row.data.fraisAssocie.typeCalcul) }}
+                </span>
+                <span *ngIf="row.data.fraisAssocie.pourcentage" class="frais-percentage">
+                  ({{ row.data.fraisAssocie.pourcentage }}%)
+                </span>
+              </div>
+              <div *ngIf="!row.data.fraisAssocie" class="no-frais">
+                <span class="no-frais-text">Aucun frais</span>
+              </div>
+            </td>
+            <td class="commentaire-cell">
+              <div *ngIf="row.data.commentaire" class="commentaire-content">
+                <span class="commentaire-text">{{ row.data.commentaire }}</span>
+              </div>
+              <div *ngIf="!row.data.commentaire" class="no-commentaire">
+                <span class="no-commentaire-text">Aucun commentaire</span>
+              </div>
+            </td>
+            <td class="import-cell">{{ formatDate(row.data.dateImport || '') }}</td>
+            <td class="actions-cell">
+              <div class="action-buttons">
+                <button *ngIf="row.data.statut === 'EN_ATTENTE'" 
+                        class="btn btn-success btn-sm validate-btn" 
+                        (click)="validateEcartSolde(row.data)"
+                        title="Valider l'écart de solde">
+                  <i class="fas fa-check"></i>
+                  Valider
+                </button>
+                <span *ngIf="row.data.statut === 'TRAITE'" class="status-validated">
+                  <i class="fas fa-check-circle"></i>
+                  Validé
+                </span>
+              </div>
+            </td>
+          </ng-container>
+          <!-- Ligne pour revenu journalier -->
+          <ng-container *ngIf="isRevenuJournalierRow(row)">
+            <td class="checkbox-cell">-</td>
+            <td class="id-cell">-</td>
+            <td class="phone-cell">-</td>
+            <td class="amount-cell">-</td>
+            <td class="service-cell">Revenu Journalier</td>
+            <td class="agence-cell">{{ agence }}</td>
+            <td class="date-cell">{{ formatDate(row.data.date) }}</td>
+            <td class="gu-cell">-</td>
+            <td class="pays-cell">-</td>
+            <td>
+              <span class="status-badge revenu-badge">
+                REVENU
               </span>
-            </div>
-            <div *ngIf="!ecart.fraisAssocie" class="no-frais">
-              <span class="no-frais-text">Aucun frais</span>
-            </div>
-          </td>
-          <td class="commentaire-cell">
-            <div *ngIf="ecart.commentaire" class="commentaire-content">
-              <span class="commentaire-text">{{ ecart.commentaire }}</span>
-            </div>
-            <div *ngIf="!ecart.commentaire" class="no-commentaire">
-              <span class="no-commentaire-text">Aucun commentaire</span>
-            </div>
-          </td>
-          <td class="import-cell">{{ formatDate(ecart.dateImport || '') }}</td>
-          <td class="actions-cell">
-            <div class="action-buttons">
-              <button *ngIf="ecart.statut === 'EN_ATTENTE'" 
-                      class="btn btn-success btn-sm validate-btn" 
-                      (click)="validateEcartSolde(ecart)"
-                      title="Valider l'écart de solde">
-                <i class="fas fa-check"></i>
-                Valider
-              </button>
-              <span *ngIf="ecart.statut === 'TRAITE'" class="status-validated">
-                <i class="fas fa-check-circle"></i>
-                Validé
-              </span>
-            </div>
-          </td>
+            </td>
+            <td class="frais-cell">
+              <div class="frais-info">
+                <span class="frais-amount">{{ formatMontantFrais(row.data.ecartFrais) }}</span>
+                <span class="frais-type">Écart Frais</span>
+              </div>
+            </td>
+            <td class="commentaire-cell">
+              <div class="commentaire-content">
+                <span class="commentaire-text">
+                  Cashin: {{ formatMontant(row.data.totalCashin) }}, 
+                  Paiement: {{ formatMontant(row.data.totalPaiement) }}, 
+                  Frais Cashin: {{ formatMontant(row.data.fraisCashin) }}, 
+                  Frais Paiement: {{ formatMontant(row.data.fraisPaiement) }}, 
+                  Revenu Total: {{ formatMontant(row.data.revenuTotal) }}
+                </span>
+              </div>
+            </td>
+            <td class="import-cell">-</td>
+            <td class="actions-cell">-</td>
+          </ng-container>
         </tr>
       </tbody>
       <tfoot>

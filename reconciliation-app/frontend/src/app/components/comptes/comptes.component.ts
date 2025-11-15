@@ -2404,6 +2404,10 @@ export class ComptesComponent implements OnInit, OnDestroy {
         this.activeTab = tabName;
         if (tabName === 'ecart-solde') {
             this.showEcartSoldeTab = true;
+            // Charger les données de revenu journalier si elles ne sont pas déjà chargées
+            if (this.revenuJournalierData.length === 0 && this.selectedCompte && this.releveOperations.length > 0) {
+                this.loadRevenuJournalier();
+            }
         } else if (tabName === 'impact-op') {
             this.showImpactOPTab = true;
         } else if (tabName === 'revenu-journalier') {

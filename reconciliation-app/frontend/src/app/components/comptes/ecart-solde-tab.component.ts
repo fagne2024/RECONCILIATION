@@ -1,4 +1,4 @@
-import { Component, Input, OnInit, OnDestroy } from '@angular/core';
+import { Component, Input, OnInit, OnDestroy, OnChanges, SimpleChanges } from '@angular/core';
 import { EcartSoldeService } from '../../services/ecart-solde.service';
 import { EcartSolde } from '../../models/ecart-solde.model';
 import { Subscription } from 'rxjs';
@@ -10,12 +10,15 @@ import * as XLSX from 'xlsx';
   templateUrl: './ecart-solde-tab.component.html',
   styleUrls: ['./ecart-solde-tab.component.scss']
 })
-export class EcartSoldeTabComponent implements OnInit, OnDestroy {
+export class EcartSoldeTabComponent implements OnInit, OnDestroy, OnChanges {
   @Input() agence: string = '';
   @Input() dateTransaction: string = '';
+  @Input() revenuJournalierData: { date: string; totalCashin: number; totalPaiement: number; fraisCashin: number; fraisPaiement: number; revenuTotal: number; ecartFrais: number }[] = [];
   
   ecartSoldes: EcartSolde[] = [];
   filteredEcartSoldes: EcartSolde[] = [];
+  revenuJournalierRows: { date: string; totalCashin: number; totalPaiement: number; fraisCashin: number; fraisPaiement: number; revenuTotal: number; ecartFrais: number }[] = [];
+  combinedRows: any[] = [];
   isLoading = false;
   error: string | null = null;
   
@@ -39,6 +42,19 @@ export class EcartSoldeTabComponent implements OnInit, OnDestroy {
 
   ngOnInit(): void {
     this.loadEcartSoldes();
+  }
+
+  ngOnChanges(changes: SimpleChanges): void {
+    if (changes['revenuJournalierData'] && !changes['revenuJournalierData'].firstChange) {
+      // Re-filtrer les données si revenuJournalierData change
+      if (this.filteredEcartSoldes.length > 0 || this.revenuJournalierData.length > 0) {
+        this.filterEcartSoldes();
+      }
+    }
+    if (changes['agence'] || changes['dateTransaction']) {
+      // Re-filtrer si agence ou dateTransaction change
+      this.filterEcartSoldes();
+    }
   }
 
   ngOnDestroy(): void {
@@ -72,6 +88,7 @@ export class EcartSoldeTabComponent implements OnInit, OnDestroy {
   filterEcartSoldes(): void {
     if (!this.agence) {
       this.filteredEcartSoldes = [];
+      this.combinedRows = [];
       return;
     }
 
@@ -86,9 +103,10 @@ export class EcartSoldeTabComponent implements OnInit, OnDestroy {
     );
 
     // Filtrer par date de transaction si spécifiée
+    let targetDateString = '';
     if (this.dateTransaction) {
       const targetDate = new Date(this.dateTransaction);
-      const targetDateString = targetDate.toISOString().split('T')[0]; // Format YYYY-MM-DD
+      targetDateString = targetDate.toISOString().split('T')[0]; // Format YYYY-MM-DD
       
       filtered = filtered.filter(ecart => {
         if (!ecart.dateTransaction) return false;
@@ -102,11 +120,75 @@ export class EcartSoldeTabComponent implements OnInit, OnDestroy {
     filtered.sort((a, b) => new Date(b.dateTransaction).getTime() - new Date(a.dateTransaction).getTime());
 
     this.filteredEcartSoldes = filtered;
+
+    // Filtrer les lignes de revenu journalier pour la même date où ecartFrais n'est pas null
+    this.revenuJournalierRows = [];
+    if (this.revenuJournalierData && this.revenuJournalierData.length > 0) {
+      this.revenuJournalierRows = this.revenuJournalierData.filter(revenu => {
+        // Vérifier que ecartFrais n'est pas null et non zéro
+        if (revenu.ecartFrais === null || revenu.ecartFrais === undefined || revenu.ecartFrais === 0) {
+          return false;
+        }
+        
+        // Si une date de transaction est spécifiée, filtrer par date
+        if (targetDateString) {
+          const revenuDate = new Date(revenu.date);
+          const revenuDateString = revenuDate.toISOString().split('T')[0];
+          return revenuDateString === targetDateString;
+        }
+        
+        return true;
+      });
+    }
+
+    // Combiner les écarts de solde et les lignes de revenu journalier
+    this.combineRows();
     this.calculatePagination();
   }
 
+  combineRows(): void {
+    this.combinedRows = [];
+    
+    // Ajouter les écarts de solde
+    this.filteredEcartSoldes.forEach(ecart => {
+      this.combinedRows.push({
+        type: 'ecart-solde',
+        data: ecart
+      });
+    });
+    
+    // Ajouter les lignes de revenu journalier
+    this.revenuJournalierRows.forEach(revenu => {
+      this.combinedRows.push({
+        type: 'revenu-journalier',
+        data: revenu
+      });
+    });
+    
+    // Trier par date décroissante
+    this.combinedRows.sort((a, b) => {
+      let dateA: Date;
+      let dateB: Date;
+      
+      if (a.type === 'ecart-solde') {
+        dateA = new Date(a.data.dateTransaction);
+      } else {
+        dateA = new Date(a.data.date);
+      }
+      
+      if (b.type === 'ecart-solde') {
+        dateB = new Date(b.data.dateTransaction);
+      } else {
+        dateB = new Date(b.data.date);
+      }
+      
+      return dateB.getTime() - dateA.getTime();
+    });
+  }
+
   calculatePagination(): void {
-    this.totalPages = Math.ceil(this.filteredEcartSoldes.length / this.pageSize);
+    const totalItems = this.combinedRows.length;
+    this.totalPages = Math.ceil(totalItems / this.pageSize);
     if (this.currentPage > this.totalPages) {
       this.currentPage = this.totalPages || 1;
     }
@@ -116,6 +198,12 @@ export class EcartSoldeTabComponent implements OnInit, OnDestroy {
     const start = (this.currentPage - 1) * this.pageSize;
     const end = start + this.pageSize;
     return this.filteredEcartSoldes.slice(start, end);
+  }
+
+  get pagedCombinedRows(): any[] {
+    const start = (this.currentPage - 1) * this.pageSize;
+    const end = start + this.pageSize;
+    return this.combinedRows.slice(start, end);
   }
 
   nextPage(): void {
@@ -147,6 +235,14 @@ export class EcartSoldeTabComponent implements OnInit, OnDestroy {
     }
     
     return pages;
+  }
+
+  isRevenuJournalierRow(row: any): boolean {
+    return row && row.type === 'revenu-journalier';
+  }
+
+  isEcartSoldeRow(row: any): boolean {
+    return row && row.type === 'ecart-solde';
   }
 
   getStatutClass(statut: string): string {
@@ -197,6 +293,7 @@ export class EcartSoldeTabComponent implements OnInit, OnDestroy {
   calculateTotalEcart(): number {
     let totalEcart = 0;
     
+    // Calculer le total des écarts de solde
     this.filteredEcartSoldes.forEach(ecart => {
       const montant = ecart.montant || 0;
       const frais = ecart.fraisAssocie?.montant || 0;
@@ -212,6 +309,12 @@ export class EcartSoldeTabComponent implements OnInit, OnDestroy {
         // Pour les autres services : montant seulement
         totalEcart += montant;
       }
+    });
+    
+    // Soustraire les montants ecartFrais des lignes de revenu journalier
+    this.revenuJournalierRows.forEach(revenu => {
+      const ecartFrais = revenu.ecartFrais || 0;
+      totalEcart -= ecartFrais;
     });
     
     return totalEcart;
