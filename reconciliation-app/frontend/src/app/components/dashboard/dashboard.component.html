@@ -299,7 +299,7 @@
             <!-- Statistiques des transactions créées par service -->
             <div class="transaction-created-stats-section">
                 <div class="bottom-section-header">
-                    <h4>🔄 Transactions créées et annulées par service</h4>
+                    <h4>🔄 Transactions créées par service</h4>
                     <button class="toggle-btn" [class.active]="showBottomSection" (click)="showBottomSection = !showBottomSection">
                         <span class="toggle-icon">▾</span>
                         {{ showBottomSection ? 'Masquer' : 'Afficher' }}
@@ -339,7 +339,7 @@
                             <div class="summary-icon">📊</div>
                             <div class="summary-content">
                                 <div class="summary-value">{{ transactionCreatedStats.totalTransactionCount }}</div>
-                                <div class="summary-label">Transactions créées/annulées</div>
+                                <div class="summary-label">Transactions créées</div>
                             </div>
                         </div>
                     </div>

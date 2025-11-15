@@ -651,9 +651,10 @@ public class StatisticsService {
 
             Map<String, Object> stats = new HashMap<>();
             
-            // Récupérer toutes les opérations de type transaction_cree
+            // Récupérer toutes les opérations de type transaction_cree (uniquement celles non annulées)
             List<com.reconciliation.model.Operation> allTransactionCreatedOps = operationService.getAllOperations(username).stream()
                 .filter(op -> "transaction_cree".equals(op.getTypeOperation()))
+                .filter(op -> op.getStatut() == null || !"Annulée".equalsIgnoreCase(op.getStatut())) // Exclure les transactions annulées
                 .filter(op -> finalAgencies == null || finalAgencies.isEmpty() || finalAgencies.contains(op.getCodeProprietaire()))
                 .filter(op -> finalServices == null || finalServices.isEmpty() || finalServices.contains(op.getService()))
                 .filter(op -> finalCountries == null || finalCountries.isEmpty() || finalCountries.contains(op.getPays()))
