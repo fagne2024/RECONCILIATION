@@ -35,4 +35,15 @@ export class UserService {
   checkAdminExists(): Observable<boolean> {
     return this.http.get<boolean>(`${this.apiUrl}/check-admin`);
   }
+
+  getCurrentUser(): Observable<User> {
+    return this.http.get<User>(`${this.apiUrl}/me`);
+  }
+
+  changePassword(currentPassword: string, newPassword: string): Observable<any> {
+    return this.http.put(`${this.apiUrl}/me/password`, {
+      currentPassword,
+      newPassword
+    });
+  }
 } 

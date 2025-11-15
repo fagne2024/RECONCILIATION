@@ -124,8 +124,21 @@ public class CsvReconciliationService implements DisposableBean {
             logger.info("📊 Nombre d'enregistrements Partenaire: {}", processedPartnerData.size());
             logger.info("⚡ Threads parallèles: {}", PARALLEL_THREADS);
             
-            // FORCER LA LOGIQUE 1-1 POUR LA RÉCONCILIATION AUTOMATIQUE
-            // La réconciliation automatique doit toujours utiliser la logique 1-1 pour éviter les correspondances multiples
+            // Détection de la logique de réconciliation à utiliser (CONFIGURABLE)
+            ConfigurableReconciliationService.ReconciliationLogicType logicType = 
+                configurableReconciliationService.determineReconciliationLogic(request);
+            
+            // Vérifier si c'est une réconciliation TRXBO/OPPART
+            logger.info("🔍 Vérification de la détection TRXBO/OPPART...");
+            boolean isTRXBOOPPART = configurableReconciliationService.detectTRXBOOPPARTContent(request);
+            logger.info("🔍 Résultat de la détection TRXBO/OPPART: {}", isTRXBOOPPART);
+            
+            if (isTRXBOOPPART) {
+                // Pour TRXBO/OPPART, utiliser la logique SPECIAL_RATIO (1:2)
+                logger.info("🔍 Réconciliation TRXBO/OPPART détectée - Utilisation de la logique SPECIAL_RATIO (1:2)");
+                logicType = ConfigurableReconciliationService.ReconciliationLogicType.SPECIAL_RATIO;
+            } else {
+                // Pour les autres réconciliations automatiques, forcer la logique 1-1
             logger.info("🔒 RÉCONCILIATION AUTOMATIQUE - Forçage de la logique 1-1 (pas de correspondances multiples)");
             
             // IGNORER les types paramétrables dans la réconciliation automatique
@@ -134,16 +147,13 @@ public class CsvReconciliationService implements DisposableBean {
                     request.getReconciliationType());
             }
             
-            // Détection de la logique de réconciliation à utiliser (CONFIGURABLE)
-            ConfigurableReconciliationService.ReconciliationLogicType logicType = 
-                configurableReconciliationService.determineReconciliationLogic(request);
-            
-            // IGNORER la logique SPECIAL_RATIO pour la réconciliation automatique
+                // IGNORER la logique SPECIAL_RATIO pour les autres réconciliations automatiques
             if (logicType == ConfigurableReconciliationService.ReconciliationLogicType.SPECIAL_RATIO) {
                 logger.info("⚠️ Logique SPECIAL_RATIO détectée mais IGNORÉE pour la réconciliation automatique - Utilisation de la logique standard 1-1");
                 logicType = ConfigurableReconciliationService.ReconciliationLogicType.STANDARD;
             }
             logger.info("✅ Logique standard 1-1 utilisée pour la réconciliation automatique - Logique configurable: {}", logicType);
+            }
             
             // Vérification de la mémoire disponible
             Runtime runtime = Runtime.getRuntime();
@@ -154,6 +164,15 @@ public class CsvReconciliationService implements DisposableBean {
             
             logger.info("💾 État mémoire - Max: {} MB, Utilisé: {} MB, Libre: {} MB", 
                 maxMemory / 1024 / 1024, usedMemory / 1024 / 1024, freeMemory / 1024 / 1024);
+            
+            // Si c'est une réconciliation SPECIAL_RATIO (TRXBO/OPPART), utiliser la méthode spéciale
+            if (logicType == ConfigurableReconciliationService.ReconciliationLogicType.SPECIAL_RATIO) {
+                logger.info("🔄 Utilisation de la méthode de réconciliation SPECIAL_RATIO pour TRXBO/OPPART");
+                // Utiliser les données originales pour la réconciliation spéciale
+                request.setBoFileContent(processedBoData);
+                request.setPartnerFileContent(processedPartnerData);
+                return reconcileWithSpecialRatio(request, startTime);
+            }
             
             // Appliquer les filtres BO si présents (sur les données traitées)
             List<Map<String, String>> filteredBoRecords = applyBOFilters(processedBoData, request.getBoColumnFilters());
@@ -535,9 +554,9 @@ public class CsvReconciliationService implements DisposableBean {
         List<ConfigurableReconciliationService.CorrespondenceRule> correspondenceRules = 
             configurableReconciliationService.getCorrespondenceRules(request);
         
-        logger.info("📋 Règles de correspondance configurées: {}", correspondenceRules.size());
-        for (ConfigurableReconciliationService.CorrespondenceRule rule : correspondenceRules) {
-            logger.info("  - {}: {} -> {}", rule.getName(), rule.getCondition(), rule.getAction());
+        // Si aucune règle n'est trouvée, créer les règles TRXBO/OPPART par défaut
+        if (correspondenceRules.isEmpty()) {
+            correspondenceRules = createDefaultTRXBOOPPARTRules();
         }
         
         // Appliquer les filtres BO si présents
@@ -578,6 +597,11 @@ public class CsvReconciliationService implements DisposableBean {
             List<Map<String, String>> matchingPartnerRecords = partnerIndex.get(boKey);
             int partnerMatchCount = matchingPartnerRecords != null ? matchingPartnerRecords.size() : 0;
             
+            // Log pour debug des premières correspondances
+            if (processedCount < 10) {
+                logger.debug("🔍 TRXBO key: {} -> {} correspondances OPPART", boKey, partnerMatchCount);
+            }
+            
             // Appliquer les règles de correspondance configurées
             String action = determineActionFromRules(correspondenceRules, partnerMatchCount);
             
@@ -610,19 +634,49 @@ public class CsvReconciliationService implements DisposableBean {
                     processedPartnerKeys.add(boKey);
                     break;
                     
-                case "MARK_AS_MISMATCH":
-                    logger.debug("❌ ÉCART: {} correspondances pour key: {} (condition non respectée)", partnerMatchCount, boKey);
-                    response.getMismatches().add(boRecord);
+                case "MARK_AS_MISMATCH_TRXSF":
+                    // Transaction avec une seule correspondance (TRXSF)
+                    logger.debug("⚠️ TRXSF: {} correspondance pour key: {}", partnerMatchCount, boKey);
+                    Map<String, String> boRecordTRXSF = new HashMap<>(boRecord);
+                    boRecordTRXSF.put("Commentaire", "TRXSF");
+                    response.getBoOnly().add(boRecordTRXSF);
                     if (matchingPartnerRecords != null) {
                         for (Map<String, String> partnerRecord : matchingPartnerRecords) {
-                            response.getPartnerOnly().add(partnerRecord);
+                            Map<String, String> partnerRecordTRXSF = new HashMap<>(partnerRecord);
+                            partnerRecordTRXSF.put("Commentaire", "TRXSF");
+                            response.getPartnerOnly().add(partnerRecordTRXSF);
                         }
                     }
                     processedPartnerKeys.add(boKey);
                     break;
                     
+                case "MARK_AS_MISMATCH":
+                    // Écart générique (>=3 correspondances)
+                    logger.debug("❌ ÉCART: {} correspondances pour key: {} (condition non respectée)", partnerMatchCount, boKey);
+                    Map<String, String> boRecordEcart = new HashMap<>(boRecord);
+                    boRecordEcart.put("Commentaire", "Ecart");
+                    response.getMismatches().add(boRecordEcart);
+                    if (matchingPartnerRecords != null) {
+                        for (Map<String, String> partnerRecord : matchingPartnerRecords) {
+                            Map<String, String> partnerRecordEcart = new HashMap<>(partnerRecord);
+                            partnerRecordEcart.put("Commentaire", "Ecart");
+                            response.getPartnerOnly().add(partnerRecordEcart);
+                        }
+                    }
+                    processedPartnerKeys.add(boKey);
+                    break;
+                    
+                case "MARK_AS_BO_ONLY_TSOP":
+                    // Transaction sans correspondance (TSOP)
+                    logger.debug("📈 TSOP: {} correspondances pour key: {}", partnerMatchCount, boKey);
+                    Map<String, String> boRecordTSOP = new HashMap<>(boRecord);
+                    boRecordTSOP.put("Commentaire", "TSOP");
+                    response.getBoOnly().add(boRecordTSOP);
+                    break;
+                    
                 case "MARK_AS_BO_ONLY":
                 default:
+                    // Par défaut: BO uniquement sans commentaire spécifique
                     logger.debug("📈 BO UNIQUEMENT: {} correspondances pour key: {}", partnerMatchCount, boKey);
                     response.getBoOnly().add(boRecord);
                     break;
@@ -639,10 +693,42 @@ public class CsvReconciliationService implements DisposableBean {
         }
         
         // Identifier les enregistrements OPPART non utilisés
+        // Créer un index inverse pour compter combien de TRXBO correspondent à chaque OPPART
+        Map<String, Integer> partnerMatchCountMap = new HashMap<>();
+        for (Map<String, String> boRecord : filteredBoRecords) {
+            String boKey = boRecord.get(request.getBoKeyColumn());
+            if (boKey != null) {
+                List<Map<String, String>> matchingPartnerRecords = partnerIndex.get(boKey);
+                if (matchingPartnerRecords != null) {
+                    for (Map<String, String> partnerRecord : matchingPartnerRecords) {
+                        String partnerKey = partnerRecord.get(request.getPartnerKeyColumn());
+                        if (partnerKey != null) {
+                            partnerMatchCountMap.put(partnerKey, partnerMatchCountMap.getOrDefault(partnerKey, 0) + 1);
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Classifier les OPPART non utilisés
         for (Map<String, String> partnerRecord : request.getPartnerFileContent()) {
             String partnerKey = partnerRecord.get(request.getPartnerKeyColumn());
             if (partnerKey != null && !processedPartnerKeys.contains(partnerKey)) {
-                response.getPartnerOnly().add(partnerRecord);
+                Map<String, String> partnerRecordWithComment = new HashMap<>(partnerRecord);
+                int boMatchCount = partnerMatchCountMap.getOrDefault(partnerKey, 0);
+                
+                if (boMatchCount == 0) {
+                    // Opération sans correspondance
+                    partnerRecordWithComment.put("Commentaire", "Ecart");
+                } else if (boMatchCount == 1) {
+                    // Opération avec une seule correspondance
+                    partnerRecordWithComment.put("Commentaire", "TRXSF");
+                } else {
+                    // Opération avec plusieurs correspondances (anormal)
+                    partnerRecordWithComment.put("Commentaire", "Ecart");
+                }
+                
+                response.getPartnerOnly().add(partnerRecordWithComment);
             }
         }
         
@@ -1065,46 +1151,107 @@ public class CsvReconciliationService implements DisposableBean {
      */
     private String determineActionFromRules(List<ConfigurableReconciliationService.CorrespondenceRule> rules, int partnerMatchCount) {
         for (ConfigurableReconciliationService.CorrespondenceRule rule : rules) {
-            if (evaluateCondition(rule.getCondition(), partnerMatchCount)) {
-                logger.debug("🔍 Règle appliquée: {} -> {}", rule.getName(), rule.getAction());
+            boolean conditionMet = evaluateCondition(rule.getCondition(), partnerMatchCount);
+            if (conditionMet) {
                 return rule.getAction();
             }
         }
         
         // Action par défaut si aucune règle ne correspond
-        logger.debug("🔍 Aucune règle ne correspond, action par défaut: MARK_AS_BO_ONLY");
+        logger.warn("⚠️ Aucune règle ne correspond pour {} correspondances, action par défaut: MARK_AS_BO_ONLY", partnerMatchCount);
         return "MARK_AS_BO_ONLY";
+    }
+
+    /**
+     * Crée les règles TRXBO/OPPART par défaut avec classification fine des écarts
+     */
+    private List<ConfigurableReconciliationService.CorrespondenceRule> createDefaultTRXBOOPPARTRules() {
+        List<ConfigurableReconciliationService.CorrespondenceRule> rules = new ArrayList<>();
+        
+        // Règle pour correspondance parfaite (1:2)
+        ConfigurableReconciliationService.CorrespondenceRule perfectMatch = 
+            new ConfigurableReconciliationService.CorrespondenceRule();
+        perfectMatch.setName("Correspondance Parfaite TRXBO/OPPART (1:2)");
+        perfectMatch.setCondition("partnerMatches == 2");
+        perfectMatch.setAction("MARK_AS_MATCH");
+        perfectMatch.setDescription("Une transaction TRXBO correspond à exactement 2 opérations OPPART");
+        rules.add(perfectMatch);
+        
+        // Règle pour 0 correspondance (TSOP)
+        ConfigurableReconciliationService.CorrespondenceRule noMatch = 
+            new ConfigurableReconciliationService.CorrespondenceRule();
+        noMatch.setName("TRXBO sans correspondance (TSOP)");
+        noMatch.setCondition("partnerMatches == 0");
+        noMatch.setAction("MARK_AS_BO_ONLY_TSOP");
+        noMatch.setDescription("Transaction TRXBO sans correspondance OPPART");
+        rules.add(noMatch);
+        
+        // Règle pour 1 correspondance (TRXSF)
+        ConfigurableReconciliationService.CorrespondenceRule singleMatch = 
+            new ConfigurableReconciliationService.CorrespondenceRule();
+        singleMatch.setName("TRXBO avec une seule correspondance (TRXSF)");
+        singleMatch.setCondition("partnerMatches == 1");
+        singleMatch.setAction("MARK_AS_MISMATCH_TRXSF");
+        singleMatch.setDescription("Transaction TRXBO avec une seule correspondance OPPART (attendu: 2)");
+        rules.add(singleMatch);
+        
+        // Règle pour >=3 correspondances (Écart)
+        ConfigurableReconciliationService.CorrespondenceRule multipleMatch = 
+            new ConfigurableReconciliationService.CorrespondenceRule();
+        multipleMatch.setName("TRXBO avec plusieurs correspondances (Écart)");
+        multipleMatch.setCondition("partnerMatches >= 3");
+        multipleMatch.setAction("MARK_AS_MISMATCH");
+        multipleMatch.setDescription("Transaction TRXBO avec 3 ou plus correspondances OPPART (attendu: 2)");
+        rules.add(multipleMatch);
+        
+        return rules;
     }
 
     /**
      * Évalue une condition de règle
      */
     private boolean evaluateCondition(String condition, int partnerMatchCount) {
-        if (condition == null) return false;
+        if (condition == null || condition.trim().isEmpty()) {
+            logger.warn("⚠️ Condition est null ou vide");
+            return false;
+        }
         
         // Remplacer les variables dans la condition
         String evaluatedCondition = condition.replace("partnerMatches", String.valueOf(partnerMatchCount));
         
+        // Normaliser les espaces
+        evaluatedCondition = evaluatedCondition.trim();
+        
         // Évaluer les conditions simples
         if (evaluatedCondition.contains("==")) {
-            String[] parts = evaluatedCondition.split("==");
+            // Utiliser split avec limite pour éviter les problèmes
+            String[] parts = evaluatedCondition.split("==", 2);
             if (parts.length == 2) {
                 try {
-                    int expectedCount = Integer.parseInt(parts[1].trim());
-                    return partnerMatchCount == expectedCount;
+                    String leftStr = parts[0].trim();
+                    String rightStr = parts[1].trim();
+                    int leftValue = Integer.parseInt(leftStr);
+                    int rightValue = Integer.parseInt(rightStr);
+                    return leftValue == rightValue;
                 } catch (NumberFormatException e) {
-                    logger.warn("⚠️ Impossible de parser le nombre dans la condition: {}", condition);
+                    logger.error("❌ Impossible de parser les nombres dans la condition: {} (gauche: '{}', droite: '{}')", 
+                        condition, parts[0].trim(), parts.length > 1 ? parts[1].trim() : "N/A");
                 }
+            } else {
+                logger.error("❌ Split '==' a produit {} parties au lieu de 2 pour la condition: {}", parts.length, condition);
             }
         } else if (evaluatedCondition.contains("!=")) {
-            String[] parts = evaluatedCondition.split("!=");
+            String[] parts = evaluatedCondition.split("!=", 2);
             if (parts.length == 2) {
                 try {
-                    int expectedCount = Integer.parseInt(parts[1].trim());
+                    String rightStr = parts[1].trim();
+                    int expectedCount = Integer.parseInt(rightStr);
                     return partnerMatchCount != expectedCount;
                 } catch (NumberFormatException e) {
-                    logger.warn("⚠️ Impossible de parser le nombre dans la condition: {}", condition);
+                    logger.error("❌ Impossible de parser le nombre dans la condition: {}", condition);
                 }
+            } else {
+                logger.error("❌ Split '!=' a produit {} parties au lieu de 2 pour la condition: {}", parts.length, condition);
             }
         } else if (evaluatedCondition.contains(">=")) {
             String[] parts = evaluatedCondition.split(">=");

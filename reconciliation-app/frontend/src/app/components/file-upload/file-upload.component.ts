@@ -1908,6 +1908,7 @@ export class FileUploadComponent {
         const input = event.target as HTMLInputElement;
         if (input.files?.length) {
             this.autoBoFile = input.files[0];
+            this.cd.detectChanges(); // Forcer la mise à jour de la vue
             this.parseAutoFile(this.autoBoFile, true);
         }
     }
@@ -1916,6 +1917,7 @@ export class FileUploadComponent {
         const input = event.target as HTMLInputElement;
         if (input.files?.length) {
             this.autoPartnerFile = input.files[0];
+            this.cd.detectChanges(); // Forcer la mise à jour de la vue
             this.parseAutoFile(this.autoPartnerFile, false);
         }
     }
@@ -2031,6 +2033,9 @@ export class FileUploadComponent {
             // Masquer la sélection des services
             this.showServiceSelection = false;
             
+            // Forcer la détection des changements pour mettre à jour la vue
+            this.cd.detectChanges();
+            
             // Continuer avec la réconciliation automatique
             this.continueWithAutoReconciliation();
         }
@@ -2144,9 +2149,12 @@ export class FileUploadComponent {
                         } else {
                             this.autoPartnerData = this.convertDebitCreditToNumber(results.data as Record<string, string>[]);
                         }
+                        // Forcer la détection des changements pour mettre à jour la vue
+                        this.cd.detectChanges();
                     },
                     error: (error: any) => {
                         console.error('Erreur lors de la lecture du fichier CSV:', error);
+                        this.cd.detectChanges();
                     }
                 });
             }
@@ -2323,6 +2331,8 @@ export class FileUploadComponent {
                     
                     // Invalider le cache de canProceed
                     this._canProceedCache = null;
+                    // Forcer la détection des changements pour mettre à jour la vue
+                    this.cd.detectChanges();
                 } else {
                     // Corriger les caractères spéciaux dans les en-têtes
                     const correctedHeaders = headers.map(header => this.normalizeColumnName(header));
@@ -2373,6 +2383,8 @@ export class FileUploadComponent {
                     
                     // Invalider le cache de canProceed
                     this._canProceedCache = null;
+                    // Forcer la détection des changements pour mettre à jour la vue
+                    this.cd.detectChanges();
                 }
                 
                 console.log(`✅ Fichier Excel traité: ${isBo ? this.autoBoData.length : this.autoPartnerData.length} lignes`);
@@ -2562,6 +2574,9 @@ export class FileUploadComponent {
                 }
             }
 
+            // Forcer la détection des changements pour mettre à jour la vue
+            this.cd.detectChanges();
+            
             console.log(`✅ Fichier Excel volumineux traité: ${isBo ? this.autoBoData.length : this.autoPartnerData.length} lignes`);
             this.progressIndicatorService.updateProgress(100, 'Traitement terminé avec succès !');
             
@@ -2652,6 +2667,8 @@ export class FileUploadComponent {
                             }, 1500);
 
                             this._canProceedCache = null;
+                            // Forcer la détection des changements pour mettre à jour la vue
+                            this.cd.detectChanges();
                             return;
                         }
                     }
@@ -2793,6 +2810,8 @@ export class FileUploadComponent {
                                 }, 1500);
 
                                 this._canProceedCache = null;
+                                // Forcer la détection des changements pour mettre à jour la vue
+                                this.cd.detectChanges();
                                 return;
                             }
                         }

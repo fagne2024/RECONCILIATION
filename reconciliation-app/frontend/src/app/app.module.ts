@@ -80,6 +80,7 @@ import { PredictionsComponent } from './components/predictions/predictions.compo
 import { PredictionsNewComponent } from './components/predictions/predictions-new.component';
 import { TwoFactorAuthComponent } from './components/two-factor-auth/two-factor-auth.component';
 import { User2FADialogComponent } from './components/users/user-2fa-dialog.component';
+import { UserProfileComponent } from './components/user-profile/user-profile.component';
 
 @NgModule({
     declarations: [
@@ -126,7 +127,8 @@ import { User2FADialogComponent } from './components/users/user-2fa-dialog.compo
                 PredictionsComponent,
                 PredictionsNewComponent,
                 TwoFactorAuthComponent,
-                User2FADialogComponent
+                User2FADialogComponent,
+                UserProfileComponent
     ],
     imports: [
         BrowserModule,

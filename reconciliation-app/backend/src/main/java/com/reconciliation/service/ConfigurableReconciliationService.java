@@ -103,17 +103,120 @@ public class ConfigurableReconciliationService {
     /**
      * Détection automatique du contenu TRXBO/OPPART
      */
-    private boolean detectTRXBOOPPARTContent(ReconciliationRequest request) {
-        // Vérifier la présence de TRXBO dans les données BO
-        boolean hasTRXBO = request.getBoFileContent().stream()
-            .anyMatch(record -> record.values().stream()
-                .anyMatch(value -> value.toString().toUpperCase().contains("TRXBO")));
+    public boolean detectTRXBOOPPARTContent(ReconciliationRequest request) {
+        log.info("🔍 Début de la détection TRXBO/OPPART");
         
-        // Vérifier la présence d'OPPART dans les données partenaire
-        boolean hasOPPART = request.getPartnerFileContent().stream()
-            .anyMatch(record -> record.values().stream()
-                .anyMatch(value -> value.toString().toUpperCase().contains("OPPART")));
+        // EXCLUSION EXPLICITE DE USSDPART
+        // Détecter USSDPART par ses colonnes spécifiques
+        if (!request.getPartnerFileContent().isEmpty()) {
+            Map<String, String> firstPartnerRecord = request.getPartnerFileContent().get(0);
+            Set<String> partnerColumns = firstPartnerRecord.keySet();
+            
+            // USSDPART a des colonnes spécifiques comme "Token", "Code PIXI", "Code de Proxy"
+            boolean hasToken = partnerColumns.contains("Token");
+            boolean hasCodePixi = partnerColumns.contains("Code PIXI");
+            boolean hasCodeProxy = partnerColumns.contains("Code de Proxy");
+            boolean hasGroupeReseaux = partnerColumns.contains("Groupe R seaux") || partnerColumns.contains("Groupe Réseaux");
+            
+            if (hasToken && hasCodePixi && hasCodeProxy && hasGroupeReseaux) {
+                log.info("🔍 USSDPART détecté par colonnes spécifiques - Exclusion de la logique TRXBO/OPPART");
+                return false;
+            }
+        }
         
+        boolean hasTRXBO = false;
+        boolean hasOPPART = false;
+        
+        // 1. Vérifier dans les valeurs des données BO
+        for (Map<String, String> boRecord : request.getBoFileContent()) {
+            for (String value : boRecord.values()) {
+                if (value != null && value.toUpperCase().contains("TRXBO")) {
+                    hasTRXBO = true;
+                    log.info("🔍 TRXBO détecté dans les valeurs: {}", value);
+                    break;
+                }
+            }
+            if (hasTRXBO) break;
+        }
+        
+        // 2. Vérifier dans les valeurs des données Partenaire
+        for (Map<String, String> partnerRecord : request.getPartnerFileContent()) {
+            for (String value : partnerRecord.values()) {
+                if (value != null && value.toUpperCase().contains("OPPART")) {
+                    hasOPPART = true;
+                    log.info("🔍 OPPART détecté dans les valeurs: {}", value);
+                    break;
+                }
+            }
+            if (hasOPPART) break;
+        }
+        
+        // 3. Vérifier dans les noms de colonnes BO
+        if (!hasTRXBO && !request.getBoFileContent().isEmpty()) {
+            Set<String> boColumns = request.getBoFileContent().get(0).keySet();
+            hasTRXBO = boColumns.stream().anyMatch(col -> col.toUpperCase().contains("TRXBO"));
+            if (hasTRXBO) {
+                log.info("🔍 TRXBO détecté dans les colonnes BO");
+            }
+        }
+        
+        // 4. Vérifier dans les noms de colonnes Partenaire
+        if (!hasOPPART && !request.getPartnerFileContent().isEmpty()) {
+            Set<String> partnerColumns = request.getPartnerFileContent().get(0).keySet();
+            hasOPPART = partnerColumns.stream().anyMatch(col -> col.toUpperCase().contains("OPPART"));
+            if (hasOPPART) {
+                log.info("🔍 OPPART détecté dans les colonnes Partenaire");
+            }
+        }
+        
+        // 5. Détection par colonnes spécifiques TRXBO
+        if (!hasTRXBO && !request.getBoFileContent().isEmpty()) {
+            Set<String> boColumns = request.getBoFileContent().get(0).keySet();
+            boolean hasIDTransaction = boColumns.contains("IDTransaction") || boColumns.contains("ID Transaction");
+            boolean hasTelephoneClient = boColumns.contains("téléphone client") || boColumns.contains("telephone client");
+            boolean hasMontant = boColumns.contains("montant") || boColumns.contains("Montant");
+            boolean hasService = boColumns.contains("Service") || boColumns.contains("service");
+            boolean hasNumeroTransGU = boColumns.contains("Numéro Trans GU") || boColumns.contains("Numero Trans GU");
+            
+            int trxboColumnCount = 0;
+            if (hasIDTransaction) trxboColumnCount++;
+            if (hasTelephoneClient) trxboColumnCount++;
+            if (hasMontant) trxboColumnCount++;
+            if (hasService) trxboColumnCount++;
+            if (hasNumeroTransGU) trxboColumnCount++;
+            
+            hasTRXBO = trxboColumnCount >= 4; // Au moins 4 colonnes TRXBO spécifiques
+            
+            if (hasTRXBO) {
+                log.info("🔍 TRXBO détecté par colonnes spécifiques ({} colonnes TRXBO)", trxboColumnCount);
+            }
+        }
+        
+        // 6. Détection par colonnes spécifiques OPPART
+        if (!hasOPPART && !request.getPartnerFileContent().isEmpty()) {
+            Map<String, String> firstPartnerRecord = request.getPartnerFileContent().get(0);
+            Set<String> partnerColumns = firstPartnerRecord.keySet();
+            boolean hasTypeOperation = partnerColumns.contains("Type Opération") || partnerColumns.contains("Type Operation");
+            boolean hasMontant = partnerColumns.contains("Montant") || partnerColumns.contains("montant");
+            boolean hasSoldeAvant = partnerColumns.contains("Solde avant") || partnerColumns.contains("Solde avant");
+            boolean hasSoldeApres = partnerColumns.contains("Solde aprés") || partnerColumns.contains("Solde après");
+            boolean hasNumeroTransGU = partnerColumns.contains("Numéro Trans GU") || partnerColumns.contains("Numero Trans GU");
+            
+            int oppartColumnCount = 0;
+            if (hasTypeOperation) oppartColumnCount++;
+            if (hasMontant) oppartColumnCount++;
+            if (hasSoldeAvant) oppartColumnCount++;
+            if (hasSoldeApres) oppartColumnCount++;
+            if (hasNumeroTransGU) oppartColumnCount++;
+            
+            hasOPPART = oppartColumnCount >= 4; // Au moins 4 colonnes OPPART spécifiques
+            
+            if (hasOPPART) {
+                log.info("🔍 OPPART détecté par colonnes spécifiques ({} colonnes OPPART)", oppartColumnCount);
+            }
+        }
+        
+        log.info("🔍 Détection TRXBO/OPPART - TRXBO: {}, OPPART: {}", hasTRXBO, hasOPPART);
         return hasTRXBO && hasOPPART;
     }
 
@@ -128,7 +231,7 @@ public class ConfigurableReconciliationService {
         }
         
         // Règles par défaut
-        return getDefaultCorrespondenceRules();
+        return getDefaultCorrespondenceRules(request);
     }
 
     /**
@@ -157,9 +260,47 @@ public class ConfigurableReconciliationService {
     /**
      * Règles de correspondance par défaut
      */
-    private List<CorrespondenceRule> getDefaultCorrespondenceRules() {
+    private List<CorrespondenceRule> getDefaultCorrespondenceRules(ReconciliationRequest request) {
         List<CorrespondenceRule> rules = new ArrayList<>();
         
+        // Détecter si c'est une réconciliation TRXBO/OPPART
+        boolean isTRXBOOPPART = detectTRXBOOPPARTContent(request);
+        
+        if (isTRXBOOPPART) {
+            // Pour TRXBO/OPPART: une transaction doit correspondre à exactement 2 opérations
+            CorrespondenceRule perfectMatch = new CorrespondenceRule();
+            perfectMatch.setName("Correspondance Parfaite TRXBO/OPPART (1:2)");
+            perfectMatch.setCondition("partnerMatches == 2");
+            perfectMatch.setAction("MARK_AS_MATCH");
+            perfectMatch.setDescription("Une transaction TRXBO correspond à exactement 2 opérations OPPART");
+            rules.add(perfectMatch);
+            
+            // Règle pour 0 correspondance (TSOP)
+            CorrespondenceRule noMatch = new CorrespondenceRule();
+            noMatch.setName("TRXBO sans correspondance (TSOP)");
+            noMatch.setCondition("partnerMatches == 0");
+            noMatch.setAction("MARK_AS_BO_ONLY_TSOP");
+            noMatch.setDescription("Transaction TRXBO sans correspondance OPPART");
+            rules.add(noMatch);
+            
+            // Règle pour 1 correspondance (TRXSF)
+            CorrespondenceRule singleMatch = new CorrespondenceRule();
+            singleMatch.setName("TRXBO avec une seule correspondance (TRXSF)");
+            singleMatch.setCondition("partnerMatches == 1");
+            singleMatch.setAction("MARK_AS_MISMATCH_TRXSF");
+            singleMatch.setDescription("Transaction TRXBO avec une seule correspondance OPPART (attendu: 2)");
+            rules.add(singleMatch);
+            
+            // Règle pour >=3 correspondances (Écart)
+            CorrespondenceRule multipleMatch = new CorrespondenceRule();
+            multipleMatch.setName("TRXBO avec plusieurs correspondances (Écart)");
+            multipleMatch.setCondition("partnerMatches >= 3");
+            multipleMatch.setAction("MARK_AS_MISMATCH");
+            multipleMatch.setDescription("Transaction TRXBO avec 3 ou plus correspondances OPPART (attendu: 2)");
+            rules.add(multipleMatch);
+            
+            log.info("📋 Règles de correspondance par défaut configurées pour TRXBO/OPPART (1:2)");
+        } else {
         // Règle pour correspondance parfaite (1:1 par défaut)
         CorrespondenceRule perfectMatch = new CorrespondenceRule();
         perfectMatch.setName("Correspondance Parfaite (1:1)");
@@ -177,6 +318,8 @@ public class ConfigurableReconciliationService {
         rules.add(mismatch);
         
         log.info("📋 Règles de correspondance par défaut configurées (1:1)");
+        }
+        
         return rules;
     }
 

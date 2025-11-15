@@ -28,6 +28,8 @@ public class PermissionInterceptor implements HandlerInterceptor {
         "/api/profils/diagnostic",
         "/api/auth/login",
         "/api/auth/logout",
+        "/api/users/me",
+        "/api/users/me/password",
         "/error"
     };
 
@@ -40,7 +42,9 @@ public class PermissionInterceptor implements HandlerInterceptor {
 
         // Ignorer les chemins exclus
         for (String excludedPath : EXCLUDED_PATHS) {
-            if (path.startsWith(excludedPath)) {
+            // Vérifier si le chemin correspond exactement ou commence par le chemin exclu
+            // Pour les chemins avec des sous-chemins, vérifier aussi les correspondances exactes
+            if (path.equals(excludedPath) || path.startsWith(excludedPath + "/") || path.startsWith(excludedPath + "?")) {
                 return true;
             }
         }
