@@ -1,0 +1,1 @@
+﻿CORS configurÃ©: https://evil.com

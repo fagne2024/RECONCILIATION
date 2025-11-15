@@ -1,0 +1,132 @@
+﻿# npm audit report
+
+@babel/runtime  <7.26.10
+Severity: moderate
+Babel has inefficient RegExp complexity in generated code with .replace when transpiling named capturing groups - https://github.com/advisories/GHSA-968p-4wvh-cqc8
+fix available via `npm audit fix --force`
+Will install @angular-devkit/build-angular@14.2.13, which is outside the stated dependency range
+node_modules/@babel/runtime
+  @angular-devkit/build-angular  <=19.2.14 || 20.0.0-next.0 - 20.0.0-rc.4
+  Depends on vulnerable versions of @angular-devkit/build-webpack
+  Depends on vulnerable versions of @babel/runtime
+  Depends on vulnerable versions of babel-plugin-istanbul
+  Depends on vulnerable versions of esbuild
+  Depends on vulnerable versions of inquirer
+  Depends on vulnerable versions of loader-utils
+  Depends on vulnerable versions of postcss
+  Depends on vulnerable versions of semver
+  Depends on vulnerable versions of webpack
+  Depends on vulnerable versions of webpack-dev-middleware
+  Depends on vulnerable versions of webpack-dev-server
+  node_modules/@angular-devkit/build-angular
+
+esbuild  <=0.24.2
+Severity: moderate
+esbuild enables any website to send any requests to the development server and read the response - https://github.com/advisories/GHSA-67mh-4wv8-2f99
+fix available via `npm audit fix --force`
+Will install @angular-devkit/build-angular@14.2.13, which is outside the stated dependency range
+node_modules/esbuild
+
+js-yaml  <4.1.1
+Severity: moderate
+js-yaml has prototype pollution in merge (<<) - https://github.com/advisories/GHSA-mh29-5h37-fv8m
+fix available via `npm audit fix --force`
+Will install @angular-devkit/build-angular@14.2.13, which is outside the stated dependency range
+node_modules/js-yaml
+  @istanbuljs/load-nyc-config  *
+  Depends on vulnerable versions of js-yaml
+  node_modules/@istanbuljs/load-nyc-config
+    babel-plugin-istanbul  >=6.0.0-beta.0
+    Depends on vulnerable versions of @istanbuljs/load-nyc-config
+    node_modules/babel-plugin-istanbul
+
+loader-utils  3.0.0 - 3.2.0
+Severity: high
+loader-utils is vulnerable to Regular Expression Denial of Service (ReDoS) via url variable - https://github.com/advisories/GHSA-3rfm-jhwj-7488
+loader-utils is vulnerable to Regular Expression Denial of Service (ReDoS) - https://github.com/advisories/GHSA-hhq3-ff78-jv3g
+fix available via `npm audit fix --force`
+Will install @angular-devkit/build-angular@14.2.13, which is outside the stated dependency range
+node_modules/loader-utils
+
+on-headers  <1.1.0
+on-headers is vulnerable to http response header manipulation - https://github.com/advisories/GHSA-76c9-3jph-rj3q
+fix available via `npm audit fix`
+node_modules/on-headers
+  compression  1.0.3 - 1.8.0
+  Depends on vulnerable versions of on-headers
+  node_modules/compression
+
+postcss  <8.4.31
+Severity: moderate
+PostCSS line return parsing error - https://github.com/advisories/GHSA-7fh5-64p2-3v2j
+fix available via `npm audit fix --force`
+Will install @angular-devkit/build-angular@14.2.13, which is outside the stated dependency range
+node_modules/postcss
+
+semver  7.0.0 - 7.5.1
+Severity: high
+semver vulnerable to Regular Expression Denial of Service - https://github.com/advisories/GHSA-c2qf-rxjj-qqgw
+fix available via `npm audit fix --force`
+Will install @angular-devkit/build-angular@14.2.13, which is outside the stated dependency range
+node_modules/semver
+  @angular/cli  <=1.4.0-rc.2 || 7.0.0-beta.0 - 18.1.0-rc.1
+  Depends on vulnerable versions of inquirer
+  Depends on vulnerable versions of semver
+  node_modules/@angular/cli
+
+tmp  <=0.2.3
+tmp allows arbitrary temporary file / directory write via symbolic link `dir` parameter - https://github.com/advisories/GHSA-52f5-9888-hmc6
+fix available via `npm audit fix --force`
+Will install @angular-devkit/build-angular@14.2.13, which is outside the stated dependency range
+node_modules/external-editor/node_modules/tmp
+node_modules/tmp
+  external-editor  >=1.1.1
+  Depends on vulnerable versions of tmp
+  node_modules/external-editor
+    inquirer  3.0.0 - 8.2.6 || 9.0.0 - 9.3.7
+    Depends on vulnerable versions of external-editor
+    node_modules/inquirer
+
+webpack  5.0.0-alpha.0 - 5.93.0
+Severity: critical
+Cross-realm object access in Webpack 5 - https://github.com/advisories/GHSA-hc6q-2mpp-qw7j
+Webpack's AutoPublicPathRuntimeModule has a DOM Clobbering Gadget that leads to XSS - https://github.com/advisories/GHSA-4vvj-4cpr-p986
+fix available via `npm audit fix --force`
+Will install @angular-devkit/build-angular@14.2.13, which is outside the stated dependency range
+node_modules/webpack
+
+webpack-dev-middleware  <=5.3.3
+Severity: high
+Path traversal in webpack-dev-middleware - https://github.com/advisories/GHSA-wr3j-pwj9-hqq6
+fix available via `npm audit fix --force`
+Will install @angular-devkit/build-angular@14.2.13, which is outside the stated dependency range
+node_modules/webpack-dev-middleware
+
+webpack-dev-server  <=5.2.0
+Severity: moderate
+webpack-dev-server users' source code may be stolen when they access a malicious web site with non-Chromium based browser - https://github.com/advisories/GHSA-9jgg-88mc-972h
+webpack-dev-server users' source code may be stolen when they access a malicious web site - https://github.com/advisories/GHSA-4v9v-hfq4-rm2v
+fix available via `npm audit fix --force`
+Will install @angular-devkit/build-angular@14.2.13, which is outside the stated dependency range
+node_modules/webpack-dev-server
+  @angular-devkit/build-webpack  <=0.1703.17
+  Depends on vulnerable versions of webpack-dev-server
+  node_modules/@angular-devkit/build-webpack
+
+xlsx  *
+Severity: high
+Prototype Pollution in sheetJS - https://github.com/advisories/GHSA-4r6h-8v6p-xvw6
+SheetJS Regular Expression Denial of Service (ReDoS) - https://github.com/advisories/GHSA-5pgg-2g8v-p4x9
+No fix available
+node_modules/xlsx
+
+20 vulnerabilities (5 low, 8 moderate, 5 high, 2 critical)
+
+To address issues that do not require attention, run:
+  npm audit fix
+
+To address all issues possible, run:
+  npm audit fix --force
+
+Some issues need review, and may require choosing
+a different dependency.
