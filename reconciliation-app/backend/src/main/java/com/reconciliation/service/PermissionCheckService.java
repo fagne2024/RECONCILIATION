@@ -49,6 +49,15 @@ public class PermissionCheckService {
         }
 
         UserEntity user = userOpt.get();
+        
+        // Vérifier si le profil est administrateur
+        if (user.getProfil() != null && user.getProfil().getNom() != null) {
+            String profilNom = user.getProfil().getNom().toUpperCase();
+            if (profilNom.equals("ADMIN") || profilNom.equals("ADMINISTRATEUR")) {
+                return true;
+            }
+        }
+        
         if (user.getProfil() == null || user.getProfil().getId() == null) {
             return false;
         }
@@ -94,6 +103,18 @@ public class PermissionCheckService {
         // Si l'utilisateur est admin, il a toutes les permissions
         if ("admin".equals(username)) {
             return true;
+        }
+        
+        // Vérifier si l'utilisateur a un profil administrateur
+        Optional<UserEntity> userOpt = userRepository.findByUsername(username);
+        if (userOpt.isPresent()) {
+            UserEntity user = userOpt.get();
+            if (user.getProfil() != null && user.getProfil().getNom() != null) {
+                String profilNom = user.getProfil().getNom().toUpperCase();
+                if (profilNom.equals("ADMIN") || profilNom.equals("ADMINISTRATEUR")) {
+                    return true;
+                }
+            }
         }
 
         // Mapper le chemin API vers le module

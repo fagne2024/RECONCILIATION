@@ -212,6 +212,15 @@
             {{ getUser2FAStatus(user.id)?.enabled ? 'Désactiver 2FA' : 'Activer 2FA' }}
           </button>
           <button 
+            class="btn btn-action btn-reset-2fa" 
+            (click)="reset2FA(user)"
+            [disabled]="loading2FAStatus.has(user.id) || !getUser2FAStatus(user.id)?.hasSecret"
+            [title]="getUser2FAStatus(user.id)?.hasSecret ? 'Réinitialiser le 2FA (supprime la clé secrète)' : 'Aucune clé secrète à réinitialiser'">
+            <i class="fas fa-redo" *ngIf="!loading2FAStatus.has(user.id)"></i>
+            <i class="fas fa-spinner fa-spin" *ngIf="loading2FAStatus.has(user.id)"></i>
+            Réinitialiser 2FA
+          </button>
+          <button 
             class="btn btn-action btn-delete" 
             (click)="deleteUser(user)"
             [disabled]="user.username === 'admin'"

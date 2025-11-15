@@ -1,6 +1,6 @@
 .users-container {
   padding: 20px;
-  max-width: 1200px;
+  width: 100%;
   margin: 0 auto;
 }
 
@@ -246,9 +246,27 @@
 .users-list {
   .users-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    grid-template-columns: repeat(5, minmax(0, 1fr));
     gap: 20px;
     margin-top: 20px;
+    grid-auto-rows: auto;
+    align-items: start;
+    
+    @media (max-width: 1600px) {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+    
+    @media (max-width: 1200px) {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+    
+    @media (max-width: 768px) {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    
+    @media (max-width: 480px) {
+      grid-template-columns: 1fr;
+    }
   }
 
   .user-card {
@@ -258,6 +276,10 @@
     overflow: hidden;
     transition: all 0.3s ease;
     border: 2px solid transparent;
+    width: 100%;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
 
     &:hover {
       transform: translateY(-4px);
@@ -308,6 +330,10 @@
 
     .user-card-body {
       padding: 20px;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
 
       .user-detail {
         display: flex;
@@ -356,6 +382,7 @@
       display: flex;
       gap: 10px;
       border-top: 1px solid #dee2e6;
+      flex-wrap: wrap;
 
       .btn-action {
         flex: 1;
@@ -417,6 +444,17 @@
               transform: translateY(-2px);
               box-shadow: 0 4px 8px rgba(149, 165, 166, 0.3);
             }
+          }
+        }
+
+        &.btn-reset-2fa {
+          background: #ff9800;
+          color: white;
+
+          &:hover:not(:disabled) {
+            background: #f57c00;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(255, 152, 0, 0.3);
           }
         }
 

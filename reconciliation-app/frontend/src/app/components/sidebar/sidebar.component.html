@@ -95,7 +95,7 @@
                 <span>Modèles de Traitement</span>
             </a>
         </li>
-        <li *ngIf="isAdmin()">
+        <li *ngIf="isAdmin">
             <a href="#" class="has-submenu" (click)="toggleParamSubmenu(); $event.preventDefault()">
                 <i class="fas fa-cog menu-icon parametre"></i>
                 <span>Paramètre</span>
@@ -112,7 +112,7 @@
         </li>
     </ul>
     <div class="sidebar-footer">
-        <div class="sidebar-user-info" *ngIf="getUsername()">
+        <div class="sidebar-user-info" *ngIf="getUsername()" (click)="goToProfile()" style="cursor: pointer;">
             <div class="user-info-content">
                 <div class="user-avatar">
                     <i class="fas fa-user-circle"></i>

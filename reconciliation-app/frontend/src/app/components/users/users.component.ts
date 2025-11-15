@@ -283,4 +283,36 @@ export class UsersComponent implements OnInit {
       });
     }
   }
+
+  /**
+   * Réinitialise le 2FA pour un utilisateur (génère une nouvelle clé secrète mais garde le 2FA actif)
+   */
+  async reset2FA(user: User): Promise<void> {
+    if (!user.username || !user.id) return;
+
+    const confirmed = await this.popupService.showConfirmDialog(
+      `Êtes-vous sûr de vouloir réinitialiser l'authentification à deux facteurs pour "${user.username}" ?\n\nCette action générera une nouvelle clé secrète. Le 2FA restera actif mais l'utilisateur devra scanner un nouveau QR code lors de sa prochaine connexion.`,
+      'Réinitialisation du 2FA'
+    );
+    
+    if (!confirmed) {
+      return;
+    }
+
+    this.loading2FAStatus.add(user.id);
+    this.twoFactorService.reset2FA(user.username).subscribe({
+      next: async (response) => {
+        this.loadUser2FAStatus(user.id!, user.username);
+        await this.popupService.showSuccess(
+          `2FA réinitialisé pour ${user.username}. Une nouvelle clé secrète a été générée. Le 2FA reste actif et l'utilisateur devra scanner le nouveau QR code lors de sa prochaine connexion.`,
+          '2FA réinitialisé'
+        );
+      },
+      error: async (err) => {
+        this.loading2FAStatus.delete(user.id!);
+        const errorMsg = err.error?.error || 'Erreur inconnue';
+        await this.popupService.showError(`Erreur lors de la réinitialisation du 2FA: ${errorMsg}`, 'Erreur');
+      }
+    });
+  }
 } 

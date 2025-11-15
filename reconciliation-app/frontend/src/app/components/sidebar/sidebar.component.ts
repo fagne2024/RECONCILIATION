@@ -14,6 +14,7 @@ export class SidebarComponent implements OnInit {
   showParamSubmenu = false;
   showSuiviEcartsSubmenu = false;
   showFraisCommissionsSubmenu = false;
+  private _isAdmin: boolean | null = null;
 
   constructor(
     private http: HttpClient,
@@ -23,10 +24,15 @@ export class SidebarComponent implements OnInit {
   ) { }
 
   ngOnInit(): void {
+    // Réinitialiser le cache au démarrage
+    this._isAdmin = null;
+    
     // Écouter les changements de navigation pour forcer la mise à jour du menu
     this.router.events.pipe(
       filter(event => event instanceof NavigationEnd)
     ).subscribe(() => {
+      // Réinitialiser le cache lors des changements de navigation
+      this._isAdmin = null;
       this.cdr.detectChanges();
     });
   }
@@ -54,11 +60,12 @@ export class SidebarComponent implements OnInit {
     return this.appState.isModuleAllowed(menu);
   }
 
-  isAdmin(): boolean {
-    const result = this.appState.isAdmin();
-    const userRights = this.appState.getUserRights();
-    console.log('[DEBUG] SidebarComponent.isAdmin: result =', result, 'userRights =', userRights, 'profil =', userRights?.profil);
-    return result;
+  get isAdmin(): boolean {
+    // Mise en cache pour éviter les recalculs à chaque cycle de détection de changement
+    if (this._isAdmin === null) {
+      this._isAdmin = this.appState.isAdmin();
+    }
+    return this._isAdmin;
   }
 
   getUsername(): string | null {
@@ -68,5 +75,9 @@ export class SidebarComponent implements OnInit {
   getUserProfil(): string | null {
     const userRights = this.appState.getUserRights();
     return userRights?.profil || null;
+  }
+
+  goToProfile(): void {
+    this.router.navigate(['/user-profile']);
   }
 } 

@@ -49,6 +49,15 @@ public class PaysFilterService {
                 return new ArrayList<>();
             }
             
+            // Vérifier si le profil est administrateur
+            if (user.getProfil() != null && user.getProfil().getNom() != null) {
+                String profilNom = user.getProfil().getNom().toUpperCase();
+                if (profilNom.equals("ADMIN") || profilNom.equals("ADMINISTRATEUR")) {
+                    System.out.println("✅ Profil administrateur détecté pour " + username + ", accès à tous les pays");
+                    return null; // null signifie tous les pays
+                }
+            }
+            
             if (user.getProfil() == null || user.getProfil().getId() == null) {
                 System.out.println("⚠️ Utilisateur sans profil: " + username);
                 return new ArrayList<>();

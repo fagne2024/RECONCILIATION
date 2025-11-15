@@ -102,8 +102,14 @@ public class AuthController {
                     response.put("type", "Bearer");
                     response.put("requires2FA", false);
                     
-                    if ("admin".equals(user.getUsername())) {
-                        // Admin : tous les modules et toutes les actions
+                    ProfilEntity profil = user.getProfil();
+                    String profilNom = profil != null ? profil.getNom() : null;
+                    boolean isAdminProfil = profilNom != null && 
+                        (profilNom.toUpperCase().equals("ADMIN") || 
+                         profilNom.toUpperCase().equals("ADMINISTRATEUR"));
+                    
+                    if ("admin".equals(user.getUsername()) || isAdminProfil) {
+                        // Admin ou profil administrateur : tous les modules et toutes les actions
                         List<ModuleEntity> modules = moduleRepository.findAll();
                         List<PermissionEntity> permissions = permissionRepository.findAll();
                         List<Map<String, String>> droits = new java.util.ArrayList<>();
@@ -112,14 +118,13 @@ public class AuthController {
                                 droits.add(Map.of("module", m.getNom(), "permission", p.getNom()));
                             }
                         }
-                        response.put("profil", "ADMIN");
+                        response.put("profil", profilNom != null ? profilNom : "ADMIN");
                         response.put("droits", droits);
                     } else {
-                        ProfilEntity profil = user.getProfil();
                         List<ProfilPermissionEntity> droits = profil != null ? profilPermissionRepository.findAll().stream()
                             .filter(pp -> pp.getProfil().getId().equals(profil.getId()))
                             .toList() : List.of();
-                        response.put("profil", profil != null ? profil.getNom() : null);
+                        response.put("profil", profilNom);
                         response.put("droits", droits.stream().map(pp -> Map.of(
                             "module", pp.getModule().getNom(),
                             "permission", pp.getPermission().getNom()

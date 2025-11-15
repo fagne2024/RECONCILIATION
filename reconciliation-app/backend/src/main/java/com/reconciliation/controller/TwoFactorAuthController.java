@@ -225,5 +225,47 @@ public class TwoFactorAuthController {
             "hasSecret", hasSecret
         ));
     }
+
+    /**
+     * Réinitialise le 2FA pour un utilisateur (génère une nouvelle clé secrète mais garde le 2FA actif)
+     * POST /api/auth/2fa/reset
+     */
+    @PostMapping("/reset")
+    public ResponseEntity<?> reset2FA(@RequestBody Map<String, String> payload) {
+        String username = payload.get("username");
+        
+        if (username == null) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Username requis"));
+        }
+        
+        Optional<UserEntity> userOpt = userRepository.findByUsername(username);
+        if (userOpt.isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+        
+        UserEntity user = userOpt.get();
+        
+        // Générer une nouvelle clé secrète
+        String newSecret = twoFactorAuthService.generateSecretKey();
+        user.setSecret2FA(newSecret);
+        // Garder le 2FA activé
+        user.setEnabled2FA(true);
+        // Réinitialiser le flag de scan du QR code pour forcer un nouveau scan
+        user.setQrCodeScanned(false);
+        
+        userRepository.save(user);
+        
+        // Générer le QR code pour affichage
+        String qrCodeBase64 = twoFactorAuthService.generateQRCodeBase64(username, newSecret);
+        String otpAuthUrl = twoFactorAuthService.generateOtpAuthUrl(username, newSecret);
+        
+        return ResponseEntity.ok(Map.of(
+            "message", "Authentification à deux facteurs réinitialisée avec succès. Une nouvelle clé secrète a été générée. L'utilisateur devra scanner le nouveau QR code lors de sa prochaine connexion.",
+            "enabled", true,
+            "qrCode", qrCodeBase64,
+            "otpAuthUrl", otpAuthUrl,
+            "secret", newSecret
+        ));
+    }
 }
 

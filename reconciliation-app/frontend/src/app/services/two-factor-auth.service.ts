@@ -63,5 +63,14 @@ export class TwoFactorAuthService {
   get2FAStatus(username: string): Observable<TwoFactorStatusResponse> {
     return this.http.get<TwoFactorStatusResponse>(`${this.apiUrl}/status?username=${username}`);
   }
+
+  /**
+   * Réinitialise le 2FA pour un utilisateur (génère une nouvelle clé secrète mais garde le 2FA actif)
+   */
+  reset2FA(username: string): Observable<{ message: string; enabled: boolean; qrCode: string; otpAuthUrl: string; secret: string }> {
+    return this.http.post<{ message: string; enabled: boolean; qrCode: string; otpAuthUrl: string; secret: string }>(`${this.apiUrl}/reset`, {
+      username
+    });
+  }
 }
 
