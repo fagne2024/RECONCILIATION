@@ -34,6 +34,8 @@ export class FileUploadComponent {
     // Fichiers pour le mode automatique
     autoBoFile: File | null = null;
     autoPartnerFile: File | null = null;
+    autoBoFileName: string = '';
+    autoPartnerFileName: string = '';
     autoBoData: Record<string, string>[] = [];
     autoPartnerData: Record<string, string>[] = [];
 
@@ -1908,6 +1910,7 @@ export class FileUploadComponent {
         const input = event.target as HTMLInputElement;
         if (input.files?.length) {
             this.autoBoFile = input.files[0];
+            this.autoBoFileName = this.autoBoFile.name; // Conserver le nom du fichier
             this.cd.detectChanges(); // Forcer la mise à jour de la vue
             this.parseAutoFile(this.autoBoFile, true);
         }
@@ -1917,6 +1920,7 @@ export class FileUploadComponent {
         const input = event.target as HTMLInputElement;
         if (input.files?.length) {
             this.autoPartnerFile = input.files[0];
+            this.autoPartnerFileName = this.autoPartnerFile.name; // Conserver le nom du fichier
             this.cd.detectChanges(); // Forcer la mise à jour de la vue
             this.parseAutoFile(this.autoPartnerFile, false);
         }
