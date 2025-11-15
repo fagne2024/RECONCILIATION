@@ -1,4 +1,6 @@
 import { Component, OnInit } from '@angular/core';
+import { Router } from '@angular/router';
+import { Location } from '@angular/common';
 import { UserService } from '../../services/user.service';
 import { User } from '../../models/user.model';
 import { AppStateService } from '../../services/app-state.service';
@@ -26,7 +28,9 @@ export class UserProfileComponent implements OnInit {
   constructor(
     private userService: UserService,
     private appState: AppStateService,
-    private popupService: PopupService
+    private popupService: PopupService,
+    private router: Router,
+    private location: Location
   ) { }
 
   ngOnInit(): void {
@@ -106,6 +110,15 @@ export class UserProfileComponent implements OnInit {
 
   getProfilName(): string {
     return this.user?.profil?.nom || 'Non défini';
+  }
+
+  closeProfile(): void {
+    // Retourner à la page précédente ou rediriger vers le dashboard
+    if (window.history.length > 1) {
+      this.location.back();
+    } else {
+      this.router.navigate(['/dashboard']);
+    }
   }
 }
 

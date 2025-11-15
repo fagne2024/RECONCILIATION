@@ -44,9 +44,18 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         }
 
         final String authHeader = request.getHeader("Authorization");
+        String path = request.getRequestURI();
+        
+        // Log pour débogage
+        if (path.contains("result8rec")) {
+            System.out.println("🔍 JwtAuthenticationFilter - Path: " + path + ", AuthHeader: " + (authHeader != null ? "présent" : "absent"));
+        }
         
         // Si pas d'Authorization header ou ne commence pas par "Bearer ", continuer sans authentification
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+            if (path.contains("result8rec")) {
+                System.out.println("⚠️ JwtAuthenticationFilter - Pas de token JWT pour " + path);
+            }
             filterChain.doFilter(request, response);
             return;
         }
@@ -57,6 +66,10 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             
             // Extraire le username du token
             final String username = jwtService.extractUsername(jwt);
+            
+            if (path.contains("result8rec")) {
+                System.out.println("🔍 JwtAuthenticationFilter - Username extrait: " + username);
+            }
             
             // Si username extrait et pas d'authentification dans le contexte actuel
             if (username != null && SecurityContextHolder.getContext().getAuthentication() == null) {
@@ -76,11 +89,25 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                     
                     // Mettre à jour le contexte de sécurité
                     SecurityContextHolder.getContext().setAuthentication(authToken);
+                    
+                    if (path.contains("result8rec")) {
+                        System.out.println("✅ JwtAuthenticationFilter - Authentification réussie pour " + username);
+                    }
+                } else {
+                    if (path.contains("result8rec")) {
+                        System.out.println("❌ JwtAuthenticationFilter - Token invalide pour " + username);
+                    }
                 }
+            } else if (path.contains("result8rec")) {
+                System.out.println("⚠️ JwtAuthenticationFilter - Username null ou authentification déjà présente");
             }
         } catch (Exception e) {
             // En cas d'erreur (token invalide, expiré, etc.), continuer sans authentification
             // L'utilisateur sera rejeté par Spring Security si l'endpoint nécessite une authentification
+            if (path.contains("result8rec")) {
+                System.err.println("❌ JwtAuthenticationFilter - Erreur lors de la validation du token JWT: " + e.getMessage());
+                e.printStackTrace();
+            }
             logger.debug("Erreur lors de la validation du token JWT: " + e.getMessage());
         }
 

@@ -9,15 +9,19 @@ import { filter } from 'rxjs/operators';
 })
 export class AppComponent implements OnInit {
   showSidebar = true;
+  isLoginPage = false;
   title = 'reconciliation-app';
 
   constructor(private router: Router) {}
 
     ngOnInit() {
+    // Vérifier l'URL initiale pour masquer le sidebar si on est sur la page de login
+    this.updateSidebarVisibility(this.router.url);
+    
     this.router.events.pipe(
       filter((event): event is NavigationEnd => event instanceof NavigationEnd)
     ).subscribe((event) => {
-      this.showSidebar = event.urlAfterRedirects !== '/login';
+      this.updateSidebarVisibility(event.urlAfterRedirects);
       // Forcer le recalcul du layout après navigation (corrige le bug d'affichage trop large)
       setTimeout(() => {
         window.dispatchEvent(new Event('resize'));
@@ -25,6 +29,11 @@ export class AppComponent implements OnInit {
     });
     // S'assurer que le scroll fonctionne
     this.enableMouseScroll();
+  }
+
+  private updateSidebarVisibility(url: string): void {
+    this.isLoginPage = url === '/login' || url.startsWith('/login');
+    this.showSidebar = !this.isLoginPage;
   }
 
   private enableMouseScroll() {

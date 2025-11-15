@@ -20,6 +20,7 @@ public class WebConfig implements WebMvcConfigurer {
                     "/api/profils/permissions/generate",
                     "/api/profils/diagnostic",
                     "/api/auth/**",
+                    "/api/users/check-admin",
                     "/api/users/me",
                     "/api/users/me/password",
                     "/error"

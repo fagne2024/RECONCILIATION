@@ -58,6 +58,7 @@ public class SecurityConfig {
             .authorizeHttpRequests(auth -> auth
                 // Endpoints publics (pas d'authentification requise)
                 .requestMatchers("/api/auth/**").permitAll()
+                .requestMatchers("/api/users/check-admin").permitAll() // Vérification admin accessible sans authentification
                 .requestMatchers("/").permitAll()
                 .requestMatchers("/health").permitAll()
                 

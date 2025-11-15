@@ -6,6 +6,9 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.HandlerInterceptor;
 
@@ -28,6 +31,7 @@ public class PermissionInterceptor implements HandlerInterceptor {
         "/api/profils/diagnostic",
         "/api/auth/login",
         "/api/auth/logout",
+        "/api/users/check-admin",
         "/api/users/me",
         "/api/users/me/password",
         "/error"
@@ -61,11 +65,15 @@ public class PermissionInterceptor implements HandlerInterceptor {
 
         // Récupérer le nom d'utilisateur depuis le header ou la session
         String username = getUsernameFromRequest(request);
+        
+        // Log pour débogage
+        System.out.println("🔍 PermissionInterceptor - Path: " + path + ", Method: " + method + ", Username: " + username);
 
         // Si pas d'utilisateur, autoriser (sera géré par l'authentification)
         if (username == null || username.isEmpty()) {
             // Pour l'instant, autoriser toutes les requêtes sans utilisateur
             // À adapter selon votre système d'authentification
+            System.out.println("⚠️ PermissionInterceptor - Aucun username trouvé, autorisation par défaut");
             return true;
         }
 
@@ -73,6 +81,7 @@ public class PermissionInterceptor implements HandlerInterceptor {
         if (path.startsWith("/api/")) {
             try {
                 boolean hasPermission = permissionCheckService.hasPermissionForApiPath(username, path, method);
+                System.out.println("🔍 PermissionInterceptor - hasPermission: " + hasPermission + " pour " + username + " sur " + path);
                 
                 if (!hasPermission) {
                     // Log pour débogage
@@ -157,7 +166,25 @@ public class PermissionInterceptor implements HandlerInterceptor {
      * À adapter selon votre système d'authentification
      */
     private String getUsernameFromRequest(HttpServletRequest request) {
-        // Essayer d'abord depuis le header X-Username (si envoyé par le frontend)
+        // Essayer d'abord depuis le SecurityContext (rempli par JwtAuthenticationFilter)
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication != null && authentication.isAuthenticated()) {
+            Object principal = authentication.getPrincipal();
+            System.out.println("🔍 PermissionInterceptor - Authentication trouvée, principal type: " + (principal != null ? principal.getClass().getName() : "null"));
+            if (principal instanceof UserDetails) {
+                String username = ((UserDetails) principal).getUsername();
+                System.out.println("🔍 PermissionInterceptor - Username depuis UserDetails: " + username);
+                return username;
+            } else if (principal instanceof String) {
+                String username = (String) principal;
+                System.out.println("🔍 PermissionInterceptor - Username depuis String: " + username);
+                return username;
+            }
+        } else {
+            System.out.println("⚠️ PermissionInterceptor - Aucune authentication trouvée dans SecurityContext");
+        }
+
+        // Essayer depuis le header X-Username (si envoyé par le frontend)
         String username = request.getHeader("X-Username");
         if (username != null && !username.isEmpty()) {
             return username;
@@ -206,6 +233,7 @@ public class PermissionInterceptor implements HandlerInterceptor {
         if (path.startsWith("/api/dashboard")) return "Dashboard";
         if (path.startsWith("/api/traitement")) return "Traitement";
         if (path.startsWith("/api/results")) return "Résultats";
+        if (path.startsWith("/api/result8rec")) return "Résultats";
         
         return null;
     }

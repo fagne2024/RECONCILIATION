@@ -8,6 +8,9 @@
   margin-bottom: 30px;
   padding-bottom: 15px;
   border-bottom: 2px solid #e9ecef;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
 
   h2 {
     margin: 0;
@@ -20,6 +23,34 @@
 
     i {
       color: #667eea;
+    }
+  }
+
+  .btn-close {
+    background: #6c757d;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-size: 1.2rem;
+
+    &:hover {
+      background: #5a6268;
+      transform: scale(1.05);
+    }
+
+    &:active {
+      transform: scale(0.95);
+    }
+
+    i {
+      color: white;
     }
   }
 }
@@ -295,6 +326,20 @@
 @media (max-width: 768px) {
   .user-profile-container {
     padding: 15px;
+  }
+
+  .header {
+    flex-direction: row;
+    
+    h2 {
+      font-size: 1.5rem;
+    }
+
+    .btn-close {
+      width: 36px;
+      height: 36px;
+      font-size: 1rem;
+    }
   }
 
   .profile-header {

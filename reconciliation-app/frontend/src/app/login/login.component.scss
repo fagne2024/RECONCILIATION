@@ -133,6 +133,15 @@
   font-weight: 400;
 }
 
+.subtitle-brand {
+  color: #3498db;
+  text-align: center;
+  margin: 0.5rem 0 0 0;
+  font-size: 0.9rem;
+  font-weight: 500;
+  font-style: italic;
+}
+
 .login-form h2::after {
   content: '';
   position: absolute;

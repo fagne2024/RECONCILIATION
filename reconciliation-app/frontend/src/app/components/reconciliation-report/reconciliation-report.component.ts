@@ -1,5 +1,6 @@
 import { Component, OnInit, Input, OnDestroy } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
+import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { Subscription } from 'rxjs';
 import { take } from 'rxjs/operators';
 import { ReconciliationResponse, Match } from '../../models/reconciliation-response.model';
@@ -1341,6 +1342,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
     constructor(
         private route: ActivatedRoute,
         private router: Router,
+        private http: HttpClient,
         private appStateService: AppStateService,
         private reconciliationSummaryService: ReconciliationSummaryService,
         private reconciliationTabsService: ReconciliationTabsService,
@@ -2552,78 +2554,72 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
 
     private loadSavedReportFromDatabase() {
         this.loadedFromDb = true;
-        fetch('/api/result8rec')
-        .then(r => {
-            if (!r.ok) {
-                // Si 404, le backend n'est probablement pas démarré - c'est normal en développement
-                if (r.status === 404) {
-                    console.log('ℹ️ Backend non disponible - les données sauvegardées ne seront pas chargées');
-                    return [];
+        this.http.get<any[]>('/api/result8rec')
+        .subscribe({
+            next: (rows: any[]) => {
+                if (!Array.isArray(rows) || rows.length === 0) {
+                    return;
                 }
-                // Pour les autres erreurs, retourner un tableau vide
-                return [];
-            }
-            return r.json();
-        })
-        .then((rows: any[]) => {
-            if (!Array.isArray(rows) || rows.length === 0) {
-                return;
-            }
-            this.reportData = rows.map(r => {
-                // Calculer les écarts
-                const boOnly = Number(r.boOnly) || 0;
-                const partnerOnly = Number(r.partnerOnly) || 0;
-                const mismatches = Number(r.mismatches) || 0;
-                const totalEcarts = boOnly + partnerOnly + mismatches;
-                
-                // Recalculer le traitement selon les écarts réels si non défini ou incorrect
-                let traitement = r.traitement;
-                if (!traitement || traitement.trim() === '') {
-                    traitement = totalEcarts > 0 ? 'Niveau Support' : 'Niveau Group';
-                } else {
-                    // Vérifier si le traitement actuel correspond aux écarts réels
-                    const traitementAttendu = totalEcarts > 0 ? 'Niveau Support' : 'Niveau Group';
-                    // Si le traitement ne correspond pas aux écarts, le corriger
-                    if (traitement !== 'Terminé' && traitement !== traitementAttendu) {
-                        traitement = traitementAttendu;
+                this.reportData = rows.map(r => {
+                    // Calculer les écarts
+                    const boOnly = Number(r.boOnly) || 0;
+                    const partnerOnly = Number(r.partnerOnly) || 0;
+                    const mismatches = Number(r.mismatches) || 0;
+                    const totalEcarts = boOnly + partnerOnly + mismatches;
+                    
+                    // Recalculer le traitement selon les écarts réels si non défini ou incorrect
+                    let traitement = r.traitement;
+                    if (!traitement || traitement.trim() === '') {
+                        traitement = totalEcarts > 0 ? 'Niveau Support' : 'Niveau Group';
+                    } else {
+                        // Vérifier si le traitement actuel correspond aux écarts réels
+                        const traitementAttendu = totalEcarts > 0 ? 'Niveau Support' : 'Niveau Group';
+                        // Si le traitement ne correspond pas aux écarts, le corriger
+                        if (traitement !== 'Terminé' && traitement !== traitementAttendu) {
+                            traitement = traitementAttendu;
+                        }
                     }
-                }
+                    
+                    return {
+                        id: r.id,
+                        date: r.date,
+                        agency: r.agency,
+                        service: r.service,
+                        country: r.country,
+                        glpiId: r.glpiId || r.glpi_id || '',
+                        totalTransactions: r.totalTransactions || r.recordCount || 0,
+                        totalVolume: r.totalVolume || 0,
+                        matches: r.matches || 0,
+                        boOnly: boOnly,
+                        partnerOnly: partnerOnly,
+                        mismatches: mismatches,
+                        matchRate: r.matchRate || 0,
+                        status: r.status || '',
+                        comment: r.comment || '',
+                        traitement: traitement
+                    };
+                });
                 
-                return {
-                    id: r.id,
-                    date: r.date,
-                    agency: r.agency,
-                    service: r.service,
-                    country: r.country,
-                    glpiId: r.glpiId || r.glpi_id || '',
-                    totalTransactions: r.totalTransactions || r.recordCount || 0,
-                    totalVolume: r.totalVolume || 0,
-                    matches: r.matches || 0,
-                    boOnly: boOnly,
-                    partnerOnly: partnerOnly,
-                    mismatches: mismatches,
-                    matchRate: r.matchRate || 0,
-                    status: r.status || '',
-                    comment: r.comment || '',
-                    traitement: traitement
-                };
-            });
-            
-            // Trier par date décroissante (les plus récentes en premier)
-            this.reportData.sort((a, b) => {
-                const dateA = new Date(a.date).getTime();
-                const dateB = new Date(b.date).getTime();
-                return dateB - dateA; // Décroissant (plus récent en premier)
-            });
-            
-            this.extractUniqueValues();
-            this.filterReport();
-            this.currentSource = 'db';
-            this.updatePagination();
-        })
-        .catch((err) => {
-            // Ignorer silencieusement en cas d'erreur réseau (backend non démarré)
-            // Ne pas afficher d'erreur dans la console pour éviter le bruit
+                // Trier par date décroissante (les plus récentes en premier)
+                this.reportData.sort((a, b) => {
+                    const dateA = new Date(a.date).getTime();
+                    const dateB = new Date(b.date).getTime();
+                    return dateB - dateA; // Décroissant (plus récent en premier)
+                });
+                
+                this.extractUniqueValues();
+                this.filterReport();
+                this.currentSource = 'db';
+                this.updatePagination();
+            },
+            error: (err: HttpErrorResponse) => {
+                // Si 404, le backend n'est probablement pas démarré - c'est normal en développement
+                if (err.status === 404) {
+                    console.log('ℹ️ Backend non disponible - les données sauvegardées ne seront pas chargées');
+                }
+                // Ignorer silencieusement en cas d'erreur réseau (backend non démarré)
+                // Ne pas afficher d'erreur dans la console pour éviter le bruit
+            }
         });
     }
     saveRow(item: ReconciliationReportData) {
@@ -2675,28 +2671,21 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             comment: item.comment,
             traitement: traitement
         };
-        fetch('/api/result8rec', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-        })
-        .then(async r => {
-            if (r.status === 409) {
-                const existing = await r.json();
-                await this.popupService.showWarning(`Doublon détecté : déjà enregistré (id=${existing.id})`, 'Conflit de duplication');
-                return null;
+        this.http.post<any>('/api/result8rec', payload)
+        .subscribe({
+            next: (saved) => {
+                item.id = saved.id;
+                this.popupService.showSuccess('Ligne sauvegardée avec succès');
+            },
+            error: (err: HttpErrorResponse) => {
+                if (err.status === 409) {
+                    const existing = err.error;
+                    this.popupService.showWarning(`Doublon détecté : déjà enregistré (id=${existing.id})`, 'Conflit de duplication');
+                } else {
+                    console.error('❌ Erreur de sauvegarde', err);
+                    this.popupService.showError('Erreur de sauvegarde', 'Impossible de sauvegarder la ligne');
+                }
             }
-            if (!r.ok) throw r;
-            return r.json();
-        })
-        .then((saved) => {
-            if (!saved) return;
-            item.id = saved.id;
-            this.popupService.showSuccess('Ligne sauvegardée avec succès');
-        })
-        .catch(err => {
-            console.error('❌ Erreur de sauvegarde', err);
-            this.popupService.showError('Erreur de sauvegarde', 'Impossible de sauvegarder la ligne');
         });
     }
 
@@ -2708,20 +2697,21 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         );
         if (!confirmed) return;
         
-        fetch('/api/result8rec/' + item.id, { method: 'DELETE' })
-        .then(r => {
-            if (!r.ok) throw r;
-            // Ne pas supprimer la ligne du rapport (qui est calculée) mais juste retirer l'id
-            item.id = undefined;
-            this.popupService.showSuccess('Enregistrement supprimé avec succès');
-            // Actualiser la page/données après suppression
-            if (this.currentSource === 'db') {
-                this.loadSavedReportFromDatabase();
+        this.http.delete('/api/result8rec/' + item.id)
+        .subscribe({
+            next: () => {
+                // Ne pas supprimer la ligne du rapport (qui est calculée) mais juste retirer l'id
+                item.id = undefined;
+                this.popupService.showSuccess('Enregistrement supprimé avec succès');
+                // Actualiser la page/données après suppression
+                if (this.currentSource === 'db') {
+                    this.loadSavedReportFromDatabase();
+                }
+            },
+            error: (err: HttpErrorResponse) => {
+                console.error('❌ Erreur suppression', err);
+                this.popupService.showError('Erreur de suppression', 'Impossible de supprimer l\'enregistrement');
             }
-        })
-        .catch(err => {
-            console.error('❌ Erreur suppression', err);
-            this.popupService.showError('Erreur de suppression', 'Impossible de supprimer l\'enregistrement');
         });
     }
 
@@ -2759,20 +2749,17 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             glpiId: recalculatedData.glpiId || ''
         };
 
-        fetch('/api/result8rec/' + item.id, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-        })
-        .then(r => r.ok ? r.json() : Promise.reject(r))
-        .then(() => {
-            this.popupService.showSuccess('Ligne mise à jour avec succès');
-            // Rafraîchir les données après la mise à jour
-            this.loadSavedReportFromDatabase();
-        })
-        .catch(err => {
-            console.error('❌ Erreur de mise à jour', err);
-            this.popupService.showError('Erreur de mise à jour', 'Impossible de mettre à jour la ligne');
+        this.http.put<any>('/api/result8rec/' + item.id, payload)
+        .subscribe({
+            next: () => {
+                this.popupService.showSuccess('Ligne mise à jour avec succès');
+                // Rafraîchir les données après la mise à jour
+                this.loadSavedReportFromDatabase();
+            },
+            error: (err: HttpErrorResponse) => {
+                console.error('❌ Erreur de mise à jour', err);
+                this.popupService.showError('Erreur de mise à jour', 'Impossible de mettre à jour la ligne');
+            }
         });
     }
 
@@ -2812,46 +2799,19 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             };
         });
 
-        fetch('/api/result8rec/bulk', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-        })
-        .then(async r => {
-            console.log('🔍 Debug saveAll response:', {
-                status: r.status,
-                statusText: r.statusText,
-                ok: r.ok,
-                contentType: r.headers.get('content-type')
-            });
-            
-            // Lire le corps de la réponse une seule fois
-            const responseText = await r.text();
-            
-            if (!r.ok) {
-                console.error('❌ Erreur HTTP:', responseText);
-                throw new Error(`HTTP ${r.status}: ${responseText}`);
+        this.http.post<any>('/api/result8rec/bulk', payload, { responseType: 'text' as 'json' })
+        .subscribe({
+            next: (res: any) => {
+                // La réponse peut être une string ou un objet JSON
+                const message = typeof res === 'string' ? res : `${rowsSource.length} ligne(s) sauvegardée(s)`;
+                console.log('✅ Sauvegarde bulk réussie:', message);
+                this.popupService.showSuccess(message);
+            },
+            error: (err: HttpErrorResponse) => {
+                console.error('❌ Erreur de sauvegarde bulk', err);
+                const errorMessage = err.error?.message || err.message || 'Erreur inconnue';
+                this.popupService.showError('Erreur de sauvegarde', `Impossible de sauvegarder les lignes: ${errorMessage}`);
             }
-            
-            // Essayer de parser en JSON, sinon utiliser le texte brut
-            try {
-                const jsonResponse = JSON.parse(responseText);
-                console.log('🔍 Debug saveAll JSON response:', jsonResponse);
-                return jsonResponse;
-            } catch (parseError) {
-                console.log('🔍 Debug saveAll - Response is not JSON, using text');
-                console.log('🔍 Debug saveAll text response:', responseText);
-                return responseText;
-            }
-        })
-        .then((res) => {
-            const message = typeof res === 'string' ? res : `${rowsSource.length} ligne(s) sauvegardée(s)`;
-            console.log('✅ Sauvegarde bulk réussie:', message);
-            this.popupService.showSuccess(message);
-        })
-        .catch(err => {
-            console.error('❌ Erreur de sauvegarde bulk', err);
-            this.popupService.showError('Erreur de sauvegarde', `Impossible de sauvegarder les lignes: ${err.message}`);
         });
     }
 

@@ -1,5 +1,6 @@
 import { Component, OnInit, OnDestroy } from '@angular/core';
 import { Router } from '@angular/router';
+import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { Subscription } from 'rxjs';
 // Interface pour les données de rapport
 interface ReconciliationReportData {
@@ -1126,7 +1127,8 @@ export class ReportDashboardComponent implements OnInit, OnDestroy {
         private reconciliationService: ReconciliationService,
         private popupService: PopupService,
         private modernExportService: ModernExcelExportService,
-        private router: Router
+        private router: Router,
+        private http: HttpClient
     ) {}
 
     ngOnInit() {
@@ -1218,35 +1220,36 @@ export class ReportDashboardComponent implements OnInit, OnDestroy {
         this.applyFilters();
 
         // Essayer de charger les vraies données en arrière-plan
-        fetch('/api/result8rec')
-        .then(r => r.ok ? r.json() : [])
-        .then((rows: any[]) => {
-            if (Array.isArray(rows) && rows.length > 0) {
-                console.log('Données réelles chargées, remplacement des données de test');
-                this.allData = rows.map(row => ({
-                    id: row.id,
-                    date: row.date,
-                    agency: row.agency,
-                    service: row.service,
-                    country: row.country,
-                    totalTransactions: row.totalTransactions || 0,
-                    totalVolume: row.totalVolume || 0,
-                    matches: row.matches || 0,
-                    boOnly: row.boOnly || 0,
-                    partnerOnly: row.partnerOnly || 0,
-                    mismatches: row.mismatches || 0,
-                    matchRate: row.matchRate || 0,
-                    status: row.status || 'INCONNU',
-                    comment: row.comment || '',
-                    glpiId: row.glpiId
-                }));
-                
-                this.extractAvailableOptions();
-                this.applyFilters();
+        this.http.get<any[]>('/api/result8rec')
+        .subscribe({
+            next: (rows: any[]) => {
+                if (Array.isArray(rows) && rows.length > 0) {
+                    console.log('Données réelles chargées, remplacement des données de test');
+                    this.allData = rows.map(row => ({
+                        id: row.id,
+                        date: row.date,
+                        agency: row.agency,
+                        service: row.service,
+                        country: row.country,
+                        totalTransactions: row.totalTransactions || 0,
+                        totalVolume: row.totalVolume || 0,
+                        matches: row.matches || 0,
+                        boOnly: row.boOnly || 0,
+                        partnerOnly: row.partnerOnly || 0,
+                        mismatches: row.mismatches || 0,
+                        matchRate: row.matchRate || 0,
+                        status: row.status || 'INCONNU',
+                        comment: row.comment || '',
+                        glpiId: row.glpiId
+                    }));
+                    
+                    this.extractAvailableOptions();
+                    this.applyFilters();
+                }
+            },
+            error: (err: HttpErrorResponse) => {
+                console.log('Utilisation des données de test (API non disponible)');
             }
-        })
-        .catch(error => {
-            console.log('Utilisation des données de test (API non disponible)');
         });
     }
 
