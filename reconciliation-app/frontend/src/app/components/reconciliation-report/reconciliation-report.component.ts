@@ -366,12 +366,14 @@ export interface ReconciliationReportData {
                                     <textarea [(ngModel)]="item.comment" class="edit-textarea" placeholder="Commentaire" rows="2"></textarea>
                                 </ng-template>
                             </td>
-                            <td class="select-cell">
-                                <ng-container *ngIf="editingRow !== item; else editTraitement">
-                                    <span [class]="getTraitementClass(item.traitement)">{{item.traitement || '-'}}</span>
+                            <td class="select-cell traitement-cell">
+                                <ng-container *ngIf="editingTraitementRow !== item; else editTraitement">
+                                    <span [class]="getTraitementClass(item.traitement)" class="traitement-badge" (click)="startEditTraitement(item)" style="cursor: pointer;">
+                                        {{item.traitement || '-'}}
+                                    </span>
                                 </ng-container>
                                 <ng-template #editTraitement>
-                                    <select [(ngModel)]="item.traitement" class="edit-select">
+                                    <select [(ngModel)]="item.traitement" class="edit-select" (change)="onTraitementChange(item)" (blur)="stopEditTraitement()">
                                         <option [ngValue]="undefined">-</option>
                                         <option *ngFor="let t of traitementOptions" [ngValue]="t">{{t}}</option>
                                     </select>
@@ -1170,6 +1172,39 @@ export interface ReconciliationReportData {
             color: #383d41;
         }
 
+        .traitement-cell {
+            min-width: 150px;
+            
+            .traitement-badge {
+                display: inline-block;
+                padding: 4px 12px;
+                border-radius: 12px;
+                font-size: 0.85rem;
+                font-weight: 500;
+                white-space: nowrap;
+                transition: all 0.2s;
+                
+                &:hover {
+                    opacity: 0.8;
+                    transform: scale(1.05);
+                }
+            }
+            
+            .edit-select {
+                width: 100%;
+                padding: 4px 8px;
+                border: 1px solid #ddd;
+                border-radius: 4px;
+                font-size: 0.9rem;
+                background: white;
+                
+                &:focus {
+                    outline: none;
+                    border-color: #4caf50;
+                }
+            }
+        }
+
         .traitement-badge {
             display: inline-block;
             padding: 4px 8px;
@@ -1332,6 +1367,9 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
     // Propriétés pour l'édition en ligne
     editingRow: ReconciliationReportData | null = null;
     originalData: ReconciliationReportData | null = null;
+    
+    // Propriété pour l'édition directe du traitement (comme dans banque)
+    editingTraitementRow: ReconciliationReportData | null = null;
     
     // Propriété pour contrôler l'affichage de la colonne Actions
     showActionsColumn = false;
@@ -3125,6 +3163,62 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         if (!traitement) return 'traitement-badge';
         const cleanTraitement = traitement.toLowerCase().replace(/\s+/g, '-');
         return `traitement-badge traitement-${cleanTraitement}`;
+    }
+
+    // Méthodes pour l'édition directe du traitement (comme dans banque)
+    startEditTraitement(item: ReconciliationReportData) {
+        this.editingTraitementRow = item;
+    }
+
+    stopEditTraitement() {
+        this.editingTraitementRow = null;
+    }
+
+    onTraitementChange(item: ReconciliationReportData) {
+        if (!item.id) {
+            // Si la ligne n'a pas d'ID, elle n'est pas encore sauvegardée
+            // On peut juste mettre à jour localement
+            this.stopEditTraitement();
+            return;
+        }
+
+        // Sauvegarder le traitement via l'API
+        const payload = {
+            date: item.date,
+            agency: item.agency,
+            service: item.service,
+            country: item.country,
+            totalTransactions: item.totalTransactions,
+            totalVolume: item.totalVolume,
+            matches: item.matches,
+            boOnly: item.boOnly,
+            partnerOnly: item.partnerOnly,
+            mismatches: item.mismatches,
+            matchRate: item.matchRate,
+            status: item.status,
+            comment: item.comment,
+            traitement: item.traitement || undefined,
+            glpiId: item.glpiId || ''
+        };
+
+        this.http.put<any>('/api/result8rec/' + item.id, payload)
+        .subscribe({
+            next: (updated) => {
+                // Mettre à jour l'item avec les données retournées
+                if (updated.traitement !== undefined) {
+                    item.traitement = updated.traitement;
+                }
+                this.stopEditTraitement();
+                // Optionnel: afficher un message de succès discret
+                console.log('✅ Traitement mis à jour avec succès');
+            },
+            error: (err: HttpErrorResponse) => {
+                console.error('❌ Erreur lors de la mise à jour du traitement', err);
+                // Restaurer la valeur précédente en cas d'erreur
+                // On pourrait aussi afficher un message d'erreur
+                this.popupService.showError('Erreur', 'Impossible de mettre à jour le traitement');
+            }
+        });
     }
 
     // Méthode pour basculer entre les données en cours et les données en base

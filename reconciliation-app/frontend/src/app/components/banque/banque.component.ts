@@ -91,7 +91,7 @@ export class BanqueComponent implements OnInit {
   typesOperation: string[] = ['Compensation Client', 'Approvisionnement', 'Nivellement', 'Virement', 'Paiement', 'Retrait', 'Dépôt'];
   statutsList: string[] = ['Validée', 'En attente', 'Rejetée', 'En cours'];
   modesPaiement: string[] = ['Virement bancaire', 'Chèque', 'Espèces', 'Mobile Money'];
-  traitementOptions: string[] = ['Niveau Support', 'Niveau Group', 'Terminé'];
+  traitementOptions: string[] = ['Niveau reconciliation', 'Niveau Group', 'Terminé'];
   
   // Édition en ligne
   editingOperation: OperationBancaireDisplay | null = null;
@@ -577,7 +577,7 @@ export class BanqueComponent implements OnInit {
   getTraitementClass(traitement?: string): string {
     if (!traitement) return 'badge-traitement-empty';
     switch (traitement) {
-      case 'Niveau Support':
+      case 'Niveau reconciliation':
         return 'badge-traitement-support';
       case 'Niveau Group':
         return 'badge-traitement-group';
