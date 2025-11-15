@@ -3408,7 +3408,15 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
             return '';
         }
         
-        // Pour les écarts BO : toujours TSOP en rouge selon les spécifications
+        // Utiliser le commentaire ajouté par le backend
+        const commentaire = record['Commentaire'] || record['commentaire'] || '';
+        
+        // Si le backend a ajouté un commentaire, l'utiliser
+        if (commentaire === 'TSOP' || commentaire === 'TRXSF') {
+            return commentaire;
+        }
+        
+        // Par défaut, TSOP pour les écarts BO
         return 'TSOP';
     }
 
@@ -3422,7 +3430,17 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
             return '';
         }
         
-        // Pour les écarts BO : toujours TSOP (rouge) selon les spécifications
+        // Utiliser le commentaire ajouté par le backend
+        const commentaire = record['Commentaire'] || record['commentaire'] || '';
+        
+        // Si le backend a ajouté un commentaire, l'utiliser
+        if (commentaire === 'TSOP') {
+            return 'TSOP';
+        } else if (commentaire === 'TRXSF') {
+            return 'TRXSF';
+        }
+        
+        // Par défaut, TSOP pour les écarts BO
         return 'TSOP';
     }
 
@@ -3674,6 +3692,17 @@ private async generateExcelFile(): Promise<ExcelJS.Workbook[]> {
                 }
             };
 
+            const trxsfStyle = {
+                fill: { type: 'pattern' as const, pattern: 'solid' as const, fgColor: { argb: 'FF00FF00' } }, // Vert
+                font: { color: { argb: 'FF000000' }, bold: true },
+                border: {
+                    top: { style: 'thin' as const },
+                    left: { style: 'thin' as const },
+                    bottom: { style: 'thin' as const },
+                    right: { style: 'thin' as const }
+                }
+            };
+
             const tsorSansFraisStyle = {
                 fill: { type: 'pattern' as const, pattern: 'solid' as const, fgColor: { argb: 'FFFFFF00' } }, // Jaune
                 font: { color: { argb: 'FF000000' }, bold: true },
@@ -3721,13 +3750,19 @@ private async generateExcelFile(): Promise<ExcelJS.Workbook[]> {
                 });
                 const row = worksheet.addRow(rowData);
                 
-                // Appliquer le style selon le type - ÉCARTS BO : toujours TSOP (rouge)
+                // Appliquer le style selon le type
                 if (boOnlyType === 'TSOP') {
-                    // Style rouge pour TSOP (écarts BO)
+                    // Style rouge pour TSOP (écarts BO sans correspondance)
                     row.eachCell(cell => {
                         cell.style = tsorDuplicateStyle;
                     });
                     console.log(`🟥 Ligne ECART BO ${index + 2} colorée en rouge (TSOP)`);
+                } else if (boOnlyType === 'TRXSF') {
+                    // Style vert pour TRXSF (écarts BO avec une seule correspondance)
+                    row.eachCell(cell => {
+                        cell.style = trxsfStyle;
+                    });
+                    console.log(`🟩 Ligne ECART BO ${index + 2} colorée en vert (TRXSF)`);
                 } else {
                     // Style normal
                     row.eachCell(cell => {
@@ -3762,11 +3797,6 @@ private async generateExcelFile(): Promise<ExcelJS.Workbook[]> {
                 Object.keys(record).forEach(key => allKeys.add(key));
             });
             const keysArray = Array.from(allKeys);
-            
-            // Ajouter la colonne commentaire si elle n'existe pas
-            if (!keysArray.includes('Commentaire TSOP')) {
-                keysArray.push('Commentaire TSOP');
-            }
             
             // Définir les colonnes
             const columns = keysArray.map(key => ({ header: key, key: key, width: 15 }));
@@ -3818,6 +3848,17 @@ private async generateExcelFile(): Promise<ExcelJS.Workbook[]> {
                 }
             };
 
+            const trxsfStyle = {
+                fill: { type: 'pattern' as const, pattern: 'solid' as const, fgColor: { argb: 'FF00FF00' } }, // Vert
+                font: { color: { argb: 'FF000000' }, bold: true },
+                border: {
+                    top: { style: 'thin' as const },
+                    left: { style: 'thin' as const },
+                    bottom: { style: 'thin' as const },
+                    right: { style: 'thin' as const }
+                }
+            };
+
             const dataStyle = {
                 border: {
                     top: { style: 'thin' as const },
@@ -3831,20 +3872,28 @@ private async generateExcelFile(): Promise<ExcelJS.Workbook[]> {
             filteredPartnerOnly.forEach((record, index) => {
                 const rowData: any = {};
                 const tsopType = this.getTSOPType(record);
-                const tsopComment = this.getTSOPComment(record);
+                const commentaire = record['Commentaire'] || record['commentaire'] || '';
                 
                 keysArray.forEach(key => {
-                    if (key === 'Commentaire TSOP') {
-                        // Ajouter le commentaire approprié
-                        rowData[key] = tsopComment;
-                    } else {
-                        rowData[key] = record[key] || '';
-                    }
+                    rowData[key] = record[key] || '';
                 });
                 const row = worksheet.addRow(rowData);
                 
                 // Appliquer le style selon le type - ÉCARTS PARTENAIRE
-                if (tsopType === 'TSF') {
+                // Priorité: Commentaire du backend (Ecart, TRXSF) > Type Opération (TSF, C_FRAIS)
+                if (commentaire === 'Ecart') {
+                    // Style orange pour tous les Ecart
+                    row.eachCell(cell => {
+                        cell.style = regularisationFraisStyle;
+                    });
+                    console.log(`🟠 Ligne ${index + 2} colorée en orange (Écart)`);
+                } else if (commentaire === 'TRXSF') {
+                    // Style vert pour TRXSF
+                    row.eachCell(cell => {
+                        cell.style = trxsfStyle;
+                    });
+                    console.log(`🟩 Ligne ${index + 2} colorée en vert (TRXSF)`);
+                } else if (tsopType === 'TSF') {
                     // Style jaune pour TSF (IMPACT sans FRAIS)
                     row.eachCell(cell => {
                         cell.style = tsorSansFraisStyle;
