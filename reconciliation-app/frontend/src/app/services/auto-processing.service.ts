@@ -1,6 +1,5 @@
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { environment } from '../../environments/environment';
 import { FileWatcherService } from './file-watcher.service';
 import { ReconciliationService } from './reconciliation.service';
 import { FieldTypeDetectionService } from './field-type-detection.service';
@@ -108,7 +107,7 @@ export interface BOColumnFilter {
 })
 export class AutoProcessingService {
   private processingModels: AutoProcessingModel[] = [];
-  private apiUrl = environment.apiUrl;
+  private apiUrl = '/api';
   
   // Cache pour optimiser les performances
   private modelsCache: AutoProcessingModel[] = [];

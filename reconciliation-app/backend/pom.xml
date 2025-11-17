@@ -144,6 +144,12 @@
             <optional>true</optional>
         </dependency>
         
+        <!-- Spring Boot Mail pour l'envoi d'emails -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-mail</artifactId>
+        </dependency>
+        
         
         <!-- Spring Boot WebFlux pour le traitement asynchrone - DESACTIVE -->
         <!--

@@ -7,7 +7,7 @@ import { Module } from '../models/module.model';
   providedIn: 'root'
 })
 export class ModuleService {
-  private apiUrl = 'http://localhost:8080/api/profils/modules';
+  private apiUrl = '/api/profils/modules';
 
   constructor(private http: HttpClient) { }
 

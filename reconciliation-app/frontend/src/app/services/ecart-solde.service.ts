@@ -2,15 +2,14 @@ import { Injectable } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable, forkJoin, map } from 'rxjs';
 import { EcartSolde, EcartSoldeUploadResponse, EcartSoldeFilter, FraisAssocie } from '../models/ecart-solde.model';
-import { environment } from '../../environments/environment';
 
 @Injectable({
   providedIn: 'root'
 })
 export class EcartSoldeService {
-  private apiUrl = `${environment.apiUrl}/ecart-solde`;
-  private operationsUrl = `${environment.apiUrl}/operations`;
-  private fraisTransactionUrl = `${environment.apiUrl}/frais-transaction`;
+  private apiUrl = '/api/ecart-solde';
+  private operationsUrl = '/api/operations';
+  private fraisTransactionUrl = '/api/frais-transaction';
 
   constructor(private http: HttpClient) { }
 

@@ -18,7 +18,7 @@ import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/result8rec")
-@CrossOrigin(origins = "http://localhost:4200")
+@CrossOrigin(origins = {"http://localhost:4200", "http://172.214.108.8:4200"})
 @RequiredArgsConstructor
 @Slf4j
 public class Result8RecController {

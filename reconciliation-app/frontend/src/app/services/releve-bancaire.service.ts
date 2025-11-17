@@ -1,12 +1,11 @@
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
-import { environment } from '../../environments/environment';
 import { ReleveBancaireRow, ReleveUploadResponse, ReleveListFilter } from '../models/releve-bancaire.model';
 
 @Injectable({ providedIn: 'root' })
 export class ReleveBancaireService {
-  private apiUrl = `${environment.apiUrl}/releve-bancaire`;
+  private apiUrl = '/api/releve-bancaire';
 
   constructor(private http: HttpClient) {}
 

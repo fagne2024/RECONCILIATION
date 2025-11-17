@@ -8,6 +8,10 @@ import { ExportOptimizationService, ExportProgress } from '../../services/export
 import { fixGarbledCharacters } from '../../utils/encoding-fixer';
 import * as Papa from 'papaparse';
 import * as XLSX from 'xlsx';
+import * as ExcelJS from 'exceljs';
+import * as JSZip from 'jszip';
+import { saveAs } from 'file-saver';
+import { ExcelConversionService } from '../../services/excel-conversion.service';
 
 @Component({
   selector: 'app-traitement',
@@ -194,13 +198,45 @@ export class TraitementComponent implements OnInit, AfterViewInit {
     removeSpaces: []
   };
 
+  // --- SÉPARATION DES FEUILLES EXCEL ---
+  readonly sheetSplitDefaultHeader: string[] = [
+    'N°',
+    'Date',
+    'Heure',
+    'Référence',
+    'Service',
+    'Paiement',
+    'Statut',
+    'Mode',
+    'N° de Compte',
+    'Wallet',
+    'N° Pseudo',
+    'N° de Compte',
+    'Wallet',
+    'Débit',
+    'Crédit',
+    'Compte: 657376636',
+    'Sous-réseau'
+  ];
+  sheetSplitHeaderText: string = this.sheetSplitDefaultHeader.join('; ');
+  sheetSplitApplyHeaderFromSecondSheet: boolean = true;
+  sheetSplitFile: File | null = null;
+  sheetSplitIsProcessing: boolean = false;
+  sheetSplitConversionInProgress: boolean = false;
+  sheetSplitConversionMessage: string = '';
+  sheetSplitProgress: string = '';
+  sheetSplitResults: Array<{ sheetName: string; rows: number; fileName: string }> = [];
+  sheetSplitColumnWidths: number[] = [8, 12, 10, 15, 12, 12, 10, 8, 15, 10, 12, 15, 10, 12, 12, 20, 15];
+  sheetSplitZipName: string = '';
+
   constructor(
     private cd: ChangeDetectorRef, 
     private fb: FormBuilder,
     private orangeMoneyUtilsService: OrangeMoneyUtilsService,
     private fieldTypeDetectionService: FieldTypeDetectionService,
     public dataProcessingService: DataProcessingService,
-    private exportOptimizationService: ExportOptimizationService
+    private exportOptimizationService: ExportOptimizationService,
+    private excelConversionService: ExcelConversionService
   ) {}
 
   private showSuccess(key: string, msg: string) {
@@ -2576,12 +2612,20 @@ export class TraitementComponent implements OnInit, AfterViewInit {
     exportByDate: false,
     dedup: false,
     format: false,
+    sheetSplit: false,
     preview: true  // Aperçu des données combinées visible par défaut
   };
 
   // Propriété pour vérifier si toutes les sections sont visibles
   get allSectionsVisible(): boolean {
     return Object.values(this.showSections).every(visible => visible);
+  }
+  
+  get sheetSplitHeaderColumns(): string[] {
+    return this.sheetSplitHeaderText
+      .split(';')
+      .map(col => col.trim())
+      .filter(col => col.length > 0);
   }
 
   exportCSV() {
@@ -2745,6 +2789,211 @@ export class TraitementComponent implements OnInit, AfterViewInit {
     Object.keys(this.showSections).forEach(key => {
       this.showSections[key as keyof typeof this.showSections] = shouldShow;
     });
+  }
+
+  // --- MÉTHODES DE SÉPARATION DES FEUILLES EXCEL ---
+  onSheetSplitFileSelected(event: Event) {
+    const input = event.target as HTMLInputElement;
+    if (input.files && input.files.length > 0) {
+      this.sheetSplitFile = input.files[0];
+      this.sheetSplitResults = [];
+      this.sheetSplitZipName = '';
+      this.sheetSplitProgress = `${this.sheetSplitFile.name} sélectionné (${(this.sheetSplitFile.size / (1024 * 1024)).toFixed(2)} MB)`;
+      this.successMsg.sheetSplit = '';
+      this.errorMsg.sheetSplit = '';
+    }
+  }
+
+  resetSheetSplitSelection() {
+    this.sheetSplitFile = null;
+    this.sheetSplitResults = [];
+    this.sheetSplitZipName = '';
+    this.sheetSplitProgress = '';
+
+    const input = document.getElementById('sheetSplitInput') as HTMLInputElement | null;
+    if (input) {
+      input.value = '';
+    }
+  }
+
+  async splitExcelSheets() {
+    if (!this.sheetSplitFile) {
+      this.showError('sheetSplit', 'Veuillez sélectionner un fichier Excel (.xls ou .xlsx).');
+      return;
+    }
+
+    this.sheetSplitIsProcessing = true;
+    this.sheetSplitProgress = 'Chargement du classeur...';
+    this.sheetSplitResults = [];
+    this.sheetSplitZipName = '';
+
+    try {
+      let sourceFile: File = this.sheetSplitFile;
+
+      if (this.isLegacyXlsFile(this.sheetSplitFile)) {
+        this.sheetSplitConversionMessage = 'Conversion XLS → XLSX en cours. Cette opération peut durer plusieurs minutes pour les gros fichiers...';
+        this.sheetSplitConversionInProgress = true;
+        sourceFile = await this.convertLegacyXls(this.sheetSplitFile);
+        this.sheetSplitConversionInProgress = false;
+        this.sheetSplitConversionMessage = '';
+      }
+
+      const buffer = await sourceFile.arrayBuffer();
+      const workbook = await this.loadExcelWorkbook(buffer, sourceFile.name);
+
+      if (!workbook.worksheets || workbook.worksheets.length === 0) {
+        throw new Error('Aucune feuille trouvée dans ce classeur.');
+      }
+
+      const header = this.sheetSplitHeaderColumns;
+      const zip = new JSZip();
+      const sheetResults: Array<{ sheetName: string; rows: number; fileName: string }> = [];
+
+      for (let index = 0; index < workbook.worksheets.length; index++) {
+        const worksheet = workbook.worksheets[index];
+        const sheetName = worksheet?.name || `Feuille_${index + 1}`;
+        this.sheetSplitProgress = `Traitement de "${sheetName}" (${index + 1}/${workbook.worksheets.length})`;
+
+        const clonedWorkbook = new ExcelJS.Workbook();
+        const clonedSheet = clonedWorkbook.addWorksheet(sheetName);
+
+        worksheet.eachRow({ includeEmpty: true }, (row, rowNumber) => {
+          const values = Array.isArray(row.values) ? [...row.values] : row.values;
+          clonedSheet.getRow(rowNumber).values = values;
+          clonedSheet.getRow(rowNumber).commit();
+        });
+
+        if (this.sheetSplitApplyHeaderFromSecondSheet && index > 0 && header.length > 0) {
+          clonedSheet.spliceRows(1, 0, header);
+          this.applySheetSplitHeaderStyle(clonedSheet.getRow(1));
+        }
+
+        this.applySheetSplitColumnWidths(clonedSheet);
+
+        const safeSheetName = this.sanitizeFileName(sheetName) || `Feuille_${index + 1}`;
+        const fileName = `${safeSheetName}.xlsx`;
+        const sheetBuffer = await clonedWorkbook.xlsx.writeBuffer();
+
+        zip.file(fileName, sheetBuffer);
+        sheetResults.push({
+          sheetName,
+          rows: this.getSheetSplitRowCount(worksheet),
+          fileName
+        });
+      }
+
+      const zipName = `${this.getBaseFileName(sourceFile.name)}_feuilles_sep.zip`;
+      this.sheetSplitZipName = zipName;
+      const zipBlob = await zip.generateAsync({ type: 'blob' });
+      saveAs(zipBlob, zipName);
+
+      this.sheetSplitResults = sheetResults;
+      this.sheetSplitProgress = 'Séparation terminée';
+      this.showSuccess('sheetSplit', `Séparation terminée : ${sheetResults.length} fichiers générés (${zipName}).`);
+    } catch (error) {
+      console.error('Erreur lors de la séparation des feuilles:', error);
+      const message = error instanceof Error ? error.message : 'Erreur inconnue lors de la séparation des feuilles.';
+      this.showError('sheetSplit', message);
+    } finally {
+      this.sheetSplitIsProcessing = false;
+      this.sheetSplitConversionInProgress = false;
+      this.sheetSplitConversionMessage = '';
+    }
+  }
+
+  private applySheetSplitHeaderStyle(row: ExcelJS.Row) {
+    row.font = { bold: true, color: { argb: 'FF000000' } };
+    row.fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FFC8C8C8' }
+    };
+    row.alignment = { horizontal: 'center', vertical: 'middle' };
+  }
+
+  private applySheetSplitColumnWidths(worksheet: ExcelJS.Worksheet) {
+    this.sheetSplitColumnWidths.forEach((width, index) => {
+      const column = worksheet.getColumn(index + 1);
+      column.width = width;
+    });
+  }
+
+  private getSheetSplitRowCount(worksheet: ExcelJS.Worksheet): number {
+    const actualRows = (worksheet as any).actualRowCount;
+    if (typeof actualRows === 'number' && actualRows > 0) {
+      return actualRows;
+    }
+    return worksheet.rowCount || 0;
+  }
+
+  private sanitizeFileName(name: string): string {
+    return name.replace(/[\\/:*?"<>|]/g, '_').trim();
+  }
+
+  private getBaseFileName(fileName: string): string {
+    return fileName.replace(/\.[^.]+$/, '');
+  }
+
+  private isLegacyXlsFile(file: File | null): boolean {
+    if (!file) {
+      return false;
+    }
+    return file.name.toLowerCase().endsWith('.xls');
+  }
+
+  private async convertLegacyXls(file: File): Promise<File> {
+    return new Promise<File>((resolve, reject) => {
+      const sizeMB = (file.size / (1024 * 1024)).toFixed(2);
+      this.sheetSplitProgress = `Préparation de la conversion (${sizeMB} MB)...`;
+      this.excelConversionService.convertXlsToXlsx(file).subscribe({
+        next: blob => {
+          const convertedFile = new File([blob], `${this.getBaseFileName(file.name)}_converted.xlsx`, {
+            type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+          });
+          this.sheetSplitProgress = 'Conversion terminée, reprise de la séparation...';
+          resolve(convertedFile);
+        },
+        error: err => {
+          console.error('Erreur lors de la conversion XLS -> XLSX:', err);
+          this.showError('sheetSplit', 'Erreur lors de la conversion XLS -> XLSX.');
+          this.sheetSplitConversionInProgress = false;
+          this.sheetSplitConversionMessage = '';
+          reject(err);
+        }
+      });
+    });
+  }
+
+  private async loadExcelWorkbook(buffer: ArrayBuffer, fileName: string): Promise<ExcelJS.Workbook> {
+    const workbook = new ExcelJS.Workbook();
+    const lowerName = fileName.toLowerCase();
+
+    if (lowerName.endsWith('.xls')) {
+      const data = new Uint8Array(buffer);
+      const parsed = XLSX.read(data, {
+        type: 'array',
+        cellDates: true,
+        raw: true
+      });
+
+      parsed.SheetNames.forEach(sheetName => {
+        const targetSheet = workbook.addWorksheet(sheetName);
+        const sheet = parsed.Sheets[sheetName];
+        const rows: any[][] = XLSX.utils.sheet_to_json(sheet, {
+          header: 1,
+          raw: true
+        });
+
+        rows.forEach(rowValues => {
+          targetSheet.addRow(rowValues);
+        });
+      });
+
+      return workbook;
+    }
+
+    await workbook.xlsx.load(buffer);
+    return workbook;
   }
 
   convertColumnsToNumber() {

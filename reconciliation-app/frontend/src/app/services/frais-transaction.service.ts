@@ -1,14 +1,13 @@
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
-import { environment } from '../../environments/environment';
 import { FraisTransaction, FraisTransactionRequest } from '../models/frais-transaction.model';
 
 @Injectable({
     providedIn: 'root'
 })
 export class FraisTransactionService {
-    private apiUrl = `${environment.apiUrl}/frais-transaction`;
+    private apiUrl = '/api/frais-transaction';
 
     constructor(private http: HttpClient) {}
 

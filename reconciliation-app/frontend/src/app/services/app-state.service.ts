@@ -1,7 +1,6 @@
 import { Injectable } from '@angular/core';
 import { BehaviorSubject, Observable } from 'rxjs';
 import { HttpClient } from '@angular/common/http';
-import { environment } from '../../environments/environment';
 import { DataNormalizationService } from './data-normalization.service';
 import { ReconciliationResponse } from '../models/reconciliation-response.model';
 
@@ -120,7 +119,7 @@ export class AppStateService {
             });
 
             console.log('Sending formatted data to backend:', JSON.stringify(formattedData, null, 2));
-            const response = await this.http.post(`${environment.apiUrl}/statistics/save`, formattedData).toPromise();
+            const response = await this.http.post('/api/statistics/save', formattedData).toPromise();
             console.log('Backend response:', response);
             this.statsDataSubject.next(normalizedData);
         } catch (error) {

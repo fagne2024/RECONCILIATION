@@ -2240,6 +2240,8 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
      */
     private recalculateDataBasedOnStatus(item: ReconciliationReportData): ReconciliationReportData {
         const recalculated = { ...item };
+        const manualComment = item.comment ?? '';
+        const hasManualComment = manualComment.trim().length > 0;
 
         // Si le statut est "OK", réinitialiser les écarts et les ajouter aux correspondances
         if (item.status === 'OK') {
@@ -2267,14 +2269,6 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             recalculated.matchRate = recalculated.totalTransactions > 0 ? 
                 (recalculated.matches / recalculated.totalTransactions) * 100 : 0;
             
-            // Mettre à jour le commentaire
-            recalculated.comment = this.buildCommentForCounts(
-                recalculated.matches, 
-                recalculated.boOnly, 
-                recalculated.partnerOnly, 
-                recalculated.mismatches
-            );
-
             console.log('🔄 Recalcul pour statut OK:', {
                 apres: {
                     matches: recalculated.matches,
@@ -2292,14 +2286,16 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             recalculated.matchRate = recalculated.totalTransactions > 0 ? 
                 (recalculated.matches / recalculated.totalTransactions) * 100 : 0;
             
-            // Mettre à jour le commentaire
-            recalculated.comment = this.buildCommentForCounts(
-                recalculated.matches, 
-                recalculated.boOnly, 
-                recalculated.partnerOnly, 
-                recalculated.mismatches
-            );
         }
+
+        const generatedComment = this.buildCommentForCounts(
+            recalculated.matches,
+            recalculated.boOnly,
+            recalculated.partnerOnly,
+            recalculated.mismatches
+        );
+
+        recalculated.comment = hasManualComment ? manualComment : generatedComment;
 
         return recalculated;
     }

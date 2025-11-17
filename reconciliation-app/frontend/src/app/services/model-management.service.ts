@@ -1,7 +1,6 @@
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
-import { environment } from '../../environments/environment';
 import { AutoProcessingModel } from './auto-processing.service';
 
 export interface ModelNormalizationResult {
@@ -42,7 +41,7 @@ export interface ModelStatistics {
 })
 export class ModelManagementService {
 
-  private apiUrl = environment.apiUrl;
+  private apiUrl = '/api';
 
   constructor(private http: HttpClient) { }
 
@@ -50,14 +49,14 @@ export class ModelManagementService {
    * Normalise tous les modèles existants
    */
   normalizeAllModels(): Observable<ModelNormalizationResult> {
-    return this.http.post<ModelNormalizationResult>(`${this.apiUrl}/api/model-management/normalize-all`, {});
+    return this.http.post<ModelNormalizationResult>(`${this.apiUrl}/model-management/normalize-all`, {});
   }
 
   /**
    * Normalise un modèle spécifique
    */
   normalizeModel(modelId: string): Observable<ModelValidationResult> {
-    return this.http.post<ModelValidationResult>(`${this.apiUrl}/api/model-management/normalize/${modelId}`, {});
+    return this.http.post<ModelValidationResult>(`${this.apiUrl}/model-management/normalize/${modelId}`, {});
   }
 
   /**
@@ -78,42 +77,42 @@ export class ModelManagementService {
    * Charge les modèles depuis le watch-folder sans les importer
    */
   loadModelsFromWatchFolder(): Observable<{ success: boolean; models: AutoProcessingModel[]; count: number; message: string }> {
-    return this.http.get<{ success: boolean; models: AutoProcessingModel[]; count: number; message: string }>(`${this.apiUrl}/api/model-management/load-from-watch-folder`);
+    return this.http.get<{ success: boolean; models: AutoProcessingModel[]; count: number; message: string }>(`${this.apiUrl}/model-management/load-from-watch-folder`);
   }
 
   /**
    * Démarre la surveillance du dossier models
    */
   startWatchFolderMonitoring(): Observable<{ success: boolean; message: string }> {
-    return this.http.post<{ success: boolean; message: string }>(`${this.apiUrl}/api/model-management/start-watch-folder-monitoring`, {});
+    return this.http.post<{ success: boolean; message: string }>(`${this.apiUrl}/model-management/start-watch-folder-monitoring`, {});
   }
 
   /**
    * Crée un modèle d'exemple dans le watch-folder
    */
   createExampleModel(): Observable<{ success: boolean; message: string }> {
-    return this.http.post<{ success: boolean; message: string }>(`${this.apiUrl}/api/model-management/create-example-model`, {});
+    return this.http.post<{ success: boolean; message: string }>(`${this.apiUrl}/model-management/create-example-model`, {});
   }
 
   /**
    * Valide un modèle
    */
   validateModel(model: AutoProcessingModel): Observable<ModelValidationResult> {
-    return this.http.post<ModelValidationResult>(`${this.apiUrl}/api/model-management/validate`, model);
+    return this.http.post<ModelValidationResult>(`${this.apiUrl}/model-management/validate`, model);
   }
 
   /**
    * Génère un ID de modèle basé sur le nom
    */
   generateModelId(name: string): Observable<{ success: boolean; modelId: string; name: string; message: string }> {
-    return this.http.post<{ success: boolean; modelId: string; name: string; message: string }>(`${this.apiUrl}/api/model-management/generate-model-id`, { name });
+    return this.http.post<{ success: boolean; modelId: string; name: string; message: string }>(`${this.apiUrl}/model-management/generate-model-id`, { name });
   }
 
   /**
    * Obtient les statistiques des modèles
    */
   getModelStatistics(): Observable<ModelStatistics> {
-    return this.http.get<ModelStatistics>(`${this.apiUrl}/api/model-management/statistics`);
+    return this.http.get<ModelStatistics>(`${this.apiUrl}/model-management/statistics`);
   }
 
   /**

@@ -2,14 +2,13 @@ import { Injectable } from '@angular/core';
 import { HttpClient, HttpParams, HttpHeaders } from '@angular/common/http';
 import { Observable, of } from 'rxjs';
 import { map, catchError, concatMap, timeout } from 'rxjs/operators';
-import { environment } from '../../environments/environment';
 import { ImpactOP, ImpactOPFilter, ImpactOPValidationResult, ImpactOPUploadResult } from '../models/impact-op.model';
 
 @Injectable({
   providedIn: 'root'
 })
 export class ImpactOPService {
-  private apiUrl = environment.apiUrl;
+  private apiUrl = '/api';
 
   constructor(private http: HttpClient) {}
 

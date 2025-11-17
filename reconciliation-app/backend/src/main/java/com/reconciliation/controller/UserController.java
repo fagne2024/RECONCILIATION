@@ -5,6 +5,7 @@ import com.reconciliation.repository.UserRepository;
 import com.reconciliation.entity.ProfilEntity;
 import com.reconciliation.repository.ProfilRepository;
 import com.reconciliation.service.JwtService;
+import com.reconciliation.service.EmailService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -14,10 +15,11 @@ import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.security.SecureRandom;
 
 @RestController
 @RequestMapping("/api/users")
-@CrossOrigin(origins = "http://localhost:4200")
+@CrossOrigin(origins = {"http://localhost:4200", "http://172.214.108.8:4200"})
 public class UserController {
 
     @Autowired
@@ -28,6 +30,8 @@ public class UserController {
     private PasswordEncoder passwordEncoder;
     @Autowired
     private JwtService jwtService;
+    @Autowired
+    private EmailService emailService;
 
     @GetMapping
     public ResponseEntity<List<UserEntity>> getAllUsers() {
@@ -49,28 +53,46 @@ public class UserController {
     }
 
     @PostMapping
-    public ResponseEntity<UserEntity> createUser(@RequestBody UserEntity user) {
+    public ResponseEntity<?> createUser(@RequestBody UserEntity user) {
         try {
             // Vérifier si l'username existe déjà
             if (userRepository.findByUsername(user.getUsername()).isPresent()) {
-                return ResponseEntity.badRequest().build();
+                return ResponseEntity.badRequest().body(Map.of("error", "Ce nom d'utilisateur existe déjà"));
             }
-            // Hasher le mot de passe avant de sauvegarder
-            if (user.getPassword() != null && !user.getPassword().isEmpty()) {
-                String hashedPassword = passwordEncoder.encode(user.getPassword());
-                user.setPassword(hashedPassword);
+            
+            // Vérifier que l'email est fourni
+            if (user.getEmail() == null || user.getEmail().trim().isEmpty()) {
+                return ResponseEntity.badRequest().body(Map.of("error", "L'adresse email est requise"));
             }
+            
+            // Générer un mot de passe automatiquement
+            String generatedPassword = generateSecurePassword();
+            String hashedPassword = passwordEncoder.encode(generatedPassword);
+            user.setPassword(hashedPassword);
+            
             // Associer le profil si fourni
             if (user.getProfil() != null && user.getProfil().getId() != null) {
                 ProfilEntity profil = profilRepository.findById(user.getProfil().getId()).orElse(null);
                 user.setProfil(profil);
             }
+            
+            // Sauvegarder l'utilisateur
             UserEntity savedUser = userRepository.save(user);
+            
+            // Envoyer le mot de passe par email
+            try {
+                emailService.sendPasswordEmail(user.getEmail(), user.getUsername(), generatedPassword);
+            } catch (Exception e) {
+                // Si l'envoi d'email échoue, on supprime l'utilisateur créé et on retourne une erreur
+                userRepository.deleteById(savedUser.getId());
+                return ResponseEntity.status(500).body(Map.of("error", "Erreur lors de l'envoi de l'email. L'utilisateur n'a pas été créé : " + e.getMessage()));
+            }
+            
             // Ne pas renvoyer le mot de passe hashé dans la réponse
             savedUser.setPassword(null);
             return ResponseEntity.ok(savedUser);
         } catch (Exception e) {
-            return ResponseEntity.badRequest().build();
+            return ResponseEntity.badRequest().body(Map.of("error", "Erreur lors de la création de l'utilisateur : " + e.getMessage()));
         }
     }
 
@@ -203,6 +225,58 @@ public class UserController {
         } catch (Exception e) {
             return ResponseEntity.status(500).body(Map.of("error", "Erreur lors de la modification du mot de passe"));
         }
+    }
+
+    /**
+     * Réinitialise le mot de passe d'un utilisateur et l'envoie par email
+     */
+    @PostMapping("/{id}/reset-password")
+    public ResponseEntity<?> resetPassword(@PathVariable Long id) {
+        try {
+            Optional<UserEntity> userOpt = userRepository.findById(id);
+            if (userOpt.isEmpty()) {
+                return ResponseEntity.notFound().build();
+            }
+            
+            UserEntity user = userOpt.get();
+            
+            // Vérifier que l'utilisateur a une adresse email
+            if (user.getEmail() == null || user.getEmail().trim().isEmpty()) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Cet utilisateur n'a pas d'adresse email configurée"));
+            }
+            
+            // Générer un nouveau mot de passe
+            String newPassword = generateSecurePassword();
+            String hashedPassword = passwordEncoder.encode(newPassword);
+            user.setPassword(hashedPassword);
+            userRepository.save(user);
+            
+            // Envoyer le nouveau mot de passe par email
+            try {
+                emailService.sendPasswordResetEmail(user.getEmail(), user.getUsername(), newPassword);
+            } catch (Exception e) {
+                return ResponseEntity.status(500).body(Map.of("error", "Le mot de passe a été réinitialisé mais l'email n'a pas pu être envoyé : " + e.getMessage()));
+            }
+            
+            return ResponseEntity.ok(Map.of("message", "Mot de passe réinitialisé et envoyé par email avec succès"));
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(Map.of("error", "Erreur lors de la réinitialisation du mot de passe : " + e.getMessage()));
+        }
+    }
+
+    /**
+     * Génère un mot de passe sécurisé aléatoire
+     */
+    private String generateSecurePassword() {
+        String chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*";
+        SecureRandom random = new SecureRandom();
+        StringBuilder password = new StringBuilder(12);
+        
+        for (int i = 0; i < 12; i++) {
+            password.append(chars.charAt(random.nextInt(chars.length())));
+        }
+        
+        return password.toString();
     }
 
     /**

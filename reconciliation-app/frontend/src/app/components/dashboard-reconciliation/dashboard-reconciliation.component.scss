@@ -270,6 +270,48 @@
     color: #fff;
 }
 
+.status-view-toggle {
+    margin: 15px auto 0;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.status-view-label {
+    font-weight: 600;
+    font-size: 0.95rem;
+}
+
+.status-pill {
+    border: 1px solid rgba(255, 255, 255, 0.6);
+    border-radius: 999px;
+    padding: 6px 18px;
+    background: transparent;
+    color: #fff;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-weight: 600;
+    font-size: 0.9rem;
+
+    &.active {
+        background: rgba(255, 255, 255, 0.2);
+        border-color: #fff;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+    }
+
+    &:hover {
+        background: rgba(255, 255, 255, 0.15);
+    }
+}
+
+.status-view-hint {
+    margin: 10px 0 0;
+    font-size: 0.85rem;
+    color: rgba(255, 255, 255, 0.9);
+}
+
 .dashboard-content {
     padding: 0; // Supprime le padding pour utiliser toute la largeur
     width: 100%;
@@ -543,6 +585,46 @@
     text-align: right;
     color: white;
     white-space: nowrap; // Empêche le retour à la ligne
+}
+
+.metric-subtext {
+    font-size: 0.75rem;
+    color: #6c757d;
+    margin-top: 4px;
+}
+
+.discrepancy-grid .metric-item {
+    min-height: 120px;
+    flex-direction: column;
+    align-items: flex-start;
+    color: #2c3e50;
+    background: #fdfdfd;
+}
+
+.discrepancy-grid .metric-value {
+    color: #2c3e50;
+    text-align: left;
+}
+
+.rate-ok {
+    border-left: 4px solid #2e7d32;
+    background: #e6f4ea;
+}
+
+.rate-alert {
+    border-left: 4px solid #f9a825;
+    background: #fff8e1;
+}
+
+.rate-critical {
+    border-left: 4px solid #c62828;
+    background: #ffebee;
+}
+
+.discrepancy-total .metric-value {
+    font-size: 1.4rem;
+    font-weight: 700;
+    color: #2c3e50;
 }
 
 /* Couleurs selon les seuils - style arrondi comme dans l'image */

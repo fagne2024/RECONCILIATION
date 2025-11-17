@@ -8,7 +8,7 @@ import { Profil } from '../models/profil.model';
   providedIn: 'root'
 })
 export class UserService {
-  private apiUrl = 'http://localhost:8080/api/users';
+  private apiUrl = '/api/users';
 
   constructor(private http: HttpClient) { }
 
@@ -45,5 +45,9 @@ export class UserService {
       currentPassword,
       newPassword
     });
+  }
+
+  resetPassword(id: number): Observable<any> {
+    return this.http.post(`${this.apiUrl}/${id}/reset-password`, {});
   }
 } 

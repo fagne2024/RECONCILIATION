@@ -111,7 +111,7 @@ public class ImpactOPController {
      * Suppression en masse d'impacts OP
      */
     @PostMapping("/delete-batch")
-    @CrossOrigin(origins = "http://localhost:4200", methods = {RequestMethod.POST, RequestMethod.OPTIONS})
+    @CrossOrigin(origins = {"http://localhost:4200", "http://172.214.108.8:4200"}, methods = {RequestMethod.POST, RequestMethod.OPTIONS})
     public ResponseEntity<Map<String, Object>> deleteImpactOPs(@RequestBody Map<String, List<Long>> request) {
         try {
             List<Long> ids = request.get("ids");

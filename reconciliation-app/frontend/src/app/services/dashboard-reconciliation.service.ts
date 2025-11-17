@@ -23,19 +23,28 @@ export interface Result8RecData {
     createdAt: string;
 }
 
+export interface ServiceMetricDetails {
+    bkRecoBanque: number;
+    bkRecoBO: number;
+    trxReconNet: number;
+    trxReconBrut: number;
+    date: string;
+    boDiscrepancyRate?: number;
+    partnerDiscrepancyRate?: number;
+    boDiscrepancyCount?: number;
+    partnerDiscrepancyCount?: number;
+    totalTransactions?: number;
+}
+
 export interface CountryServiceMetrics {
     country: string;
     countryCode: string;
     services: {
-        [serviceName: string]: {
-            bkRecoBanque: number;      // Taux de correspondance global
-            bkRecoBO: number;          // Taux de réconciliation BO (matches / total)
-            trxReconNet: number;       // Taux de réconciliation nette (matches / (matches + boOnly + mismatches))
-            trxReconBrut: number;      // Taux de réconciliation brute (matches / totalTransactions)
-            date: string;              // Date de la donnée
-        }
+        [serviceName: string]: ServiceMetricDetails;
     };
 }
+
+export type DashboardStatusFilter = 'encours' | 'traite';
 
 @Injectable({
     providedIn: 'root'
@@ -54,22 +63,30 @@ export class DashboardReconciliationService {
     /**
      * Calcule les métriques de réconciliation par pays et service
      */
-    getDashboardMetrics(): Observable<CountryServiceMetrics[]> {
+    getDashboardMetrics(statusFilter: DashboardStatusFilter = 'encours'): Observable<CountryServiceMetrics[]> {
         return this.getResult8RecData().pipe(
-            map(data => this.calculateMetrics(data))
+            map(data => this.calculateMetrics(data, statusFilter))
         );
     }
 
     /**
      * Calcule les métriques à partir des données brutes
      */
-    private calculateMetrics(data: Result8RecData[]): CountryServiceMetrics[] {
+    private calculateMetrics(data: Result8RecData[], statusFilter: DashboardStatusFilter): CountryServiceMetrics[] {
         console.log('📊 Calcul des métriques à partir des données result8rec:', data);
+
+        const filteredData = statusFilter === 'traite'
+            ? data.filter(item => (item.status || '').trim().toUpperCase() === 'OK')
+            : data;
+
+        if (!filteredData || filteredData.length === 0) {
+            return [];
+        }
         
         // Grouper les données par pays et service
         const countryMap = new Map<string, CountryServiceMetrics>();
 
-        data.forEach(item => {
+        filteredData.forEach(item => {
             // Ignorer les entrées sans service valide
             if (!item.service || item.service.trim() === '') {
                 console.log('⚠️ Entrée ignorée - service manquant:', item);
@@ -94,7 +111,10 @@ export class DashboardReconciliationService {
                     bkRecoBO: 0,
                     trxReconNet: 0,
                     trxReconBrut: 0,
-                    date: item.date
+                    date: item.date,
+                    boDiscrepancyCount: 0,
+                    partnerDiscrepancyCount: 0,
+                    totalTransactions: 0
                 };
             }
 
@@ -110,9 +130,36 @@ export class DashboardReconciliationService {
                 bkRecoBO: this.calculateWeightedAverage(existingMetrics.bkRecoBO, metrics.bkRecoBO, totalWeight),
                 trxReconNet: this.calculateWeightedAverage(existingMetrics.trxReconNet, metrics.trxReconNet, totalWeight),
                 trxReconBrut: this.calculateWeightedAverage(existingMetrics.trxReconBrut, metrics.trxReconBrut, totalWeight),
-                date: item.date // Préserver la date la plus récente
+                date: item.date, // Préserver la date la plus récente
+                boDiscrepancyCount: countryData.services[item.service].boDiscrepancyCount,
+                partnerDiscrepancyCount: countryData.services[item.service].partnerDiscrepancyCount,
+                totalTransactions: (countryData.services[item.service].totalTransactions || 0) + (item.totalTransactions || 0)
             };
+
+            if (statusFilter === 'traite') {
+                const { boCount, partnerCount } = this.extractDiscrepanciesFromComment(item.comment);
+                countryData.services[item.service].boDiscrepancyCount = (countryData.services[item.service].boDiscrepancyCount || 0) + boCount;
+                countryData.services[item.service].partnerDiscrepancyCount = (countryData.services[item.service].partnerDiscrepancyCount || 0) + partnerCount;
+            }
         });
+
+        if (statusFilter === 'traite') {
+            countryMap.forEach(country => {
+                Object.values(country.services).forEach(service => {
+                    const boCount = service.boDiscrepancyCount || 0;
+                    const partnerCount = service.partnerDiscrepancyCount || 0;
+                    const totalTransactions = service.totalTransactions || 0;
+
+                    if (totalTransactions > 0) {
+                        service.boDiscrepancyRate = Math.round((boCount / totalTransactions) * 10000) / 100;
+                        service.partnerDiscrepancyRate = Math.round((partnerCount / totalTransactions) * 10000) / 100;
+                    } else {
+                        service.boDiscrepancyRate = 0;
+                        service.partnerDiscrepancyRate = 0;
+                    }
+                });
+            });
+        }
 
         const result = Array.from(countryMap.values());
         console.log('📊 Métriques calculées avec vrais services:', result);
@@ -278,5 +325,20 @@ export class DashboardReconciliationService {
         }
 
         return 'XX';
+    }
+
+    private extractDiscrepanciesFromComment(comment?: string) {
+        if (!comment) {
+            return { boCount: 0, partnerCount: 0 };
+        }
+
+        const normalized = comment.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+        const boMatch = normalized.match(/(\d+)\s*ecart\(s\)\s*bo/i);
+        const partnerMatch = normalized.match(/(\d+)\s*ecart\(s\)\s*partenaire/i);
+
+        const boCount = boMatch ? parseInt(boMatch[1], 10) : 0;
+        const partnerCount = partnerMatch ? parseInt(partnerMatch[1], 10) : 0;
+
+        return { boCount, partnerCount };
     }
 }

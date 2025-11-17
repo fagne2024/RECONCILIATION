@@ -25,6 +25,25 @@
                 <span class="summary-value">{{ getAllUniqueServices().length }}</span>
             </div>
         </div>
+
+        <div *ngIf="!loading && !error && countryServiceData && countryServiceData.length > 0" class="status-view-toggle">
+            <span class="status-view-label">Vue :</span>
+            <button type="button"
+                    class="status-pill"
+                    [class.active]="statusView === 'encours'"
+                    (click)="changeStatusView('encours')">
+                🔄 En cours
+            </button>
+            <button type="button"
+                    class="status-pill"
+                    [class.active]="statusView === 'traite'"
+                    (click)="changeStatusView('traite')">
+                ✅ Traité
+            </button>
+        </div>
+        <p *ngIf="isTraiteView()" class="status-view-hint">
+            Affichage des statuts OK avec répartition des écarts BO / Partenaire calculée à partir des commentaires.
+        </p>
     </div>
 
     <!-- Toggle Filtres -->
@@ -161,24 +180,65 @@
                         <div class="service-header">
                             <span class="service-name">{{ serviceEntry.key }}</span>
                         </div>
-                        <div class="metrics-grid">
-                            <div class="metric-item" [ngClass]="getRateClass(serviceEntry.value.trxReconNet)">
-                                <div class="metric-label">Réconciliation Nette</div>
-                                <div class="metric-value">{{ formatPercentage(serviceEntry.value.trxReconNet) }}</div>
-                            </div>
-                            
-                            <div class="metric-item" [ngClass]="getRateClass(serviceEntry.value.trxReconBrut)">
-                                <div class="metric-label">Réconciliation Brute</div>
-                                <div class="metric-value">{{ formatPercentage(serviceEntry.value.trxReconBrut) }}</div>
-                            </div>
-                            
-                            <div class="metric-item metric-item-centered" [ngClass]="getRateClass(serviceEntry.value.bkRecoBanque)">
-                                <div class="metric-content">
-                                    <div class="metric-label">Taux de Correspondance</div>
-                                    <div class="metric-value">{{ formatPercentage(serviceEntry.value.bkRecoBanque) }}</div>
+                        <ng-container [ngSwitch]="statusView">
+                            <div *ngSwitchCase="'encours'" class="metrics-grid">
+                                <div class="metric-item" [ngClass]="getRateClass(serviceEntry.value.trxReconNet)">
+                                    <div class="metric-label">Réconciliation Nette</div>
+                                    <div class="metric-value">{{ formatPercentage(serviceEntry.value.trxReconNet) }}</div>
+                                </div>
+                                
+                                <div class="metric-item" [ngClass]="getRateClass(serviceEntry.value.trxReconBrut)">
+                                    <div class="metric-label">Réconciliation Brute</div>
+                                    <div class="metric-value">{{ formatPercentage(serviceEntry.value.trxReconBrut) }}</div>
+                                </div>
+                                
+                                <div class="metric-item metric-item-centered" [ngClass]="getRateClass(serviceEntry.value.bkRecoBanque)">
+                                    <div class="metric-content">
+                                        <div class="metric-label">Taux de Correspondance</div>
+                                        <div class="metric-value">{{ formatPercentage(serviceEntry.value.bkRecoBanque) }}</div>
+                                    </div>
                                 </div>
                             </div>
-                        </div>
+                            <div *ngSwitchCase="'traite'" class="metrics-grid discrepancy-grid">
+                                <div class="metric-item" [ngClass]="getDiscrepancyRateClass(serviceEntry.value.boDiscrepancyRate)">
+                                    <div class="metric-label">Taux écarts BO</div>
+                                    <div class="metric-value">{{ formatDiscrepancyPercentage(serviceEntry.value.boDiscrepancyRate) }}</div>
+                                    <div class="metric-subtext">{{ serviceEntry.value.boDiscrepancyCount || 0 }} écart(s) BO</div>
+                                </div>
+                                <div class="metric-item" [ngClass]="getDiscrepancyRateClass(serviceEntry.value.partnerDiscrepancyRate)">
+                                    <div class="metric-label">Taux écarts Partenaire</div>
+                                    <div class="metric-value">{{ formatDiscrepancyPercentage(serviceEntry.value.partnerDiscrepancyRate) }}</div>
+                                    <div class="metric-subtext">{{ serviceEntry.value.partnerDiscrepancyCount || 0 }} écart(s) Part.</div>
+                                </div>
+                                <div class="metric-item metric-item-centered discrepancy-total">
+                                    <div class="metric-content">
+                                        <div class="metric-label">Total écarts exploités</div>
+                                        <div class="metric-value">
+                                            {{ (serviceEntry.value.boDiscrepancyCount || 0) + (serviceEntry.value.partnerDiscrepancyCount || 0) }}
+                                        </div>
+                                        <div class="metric-subtext">d'après les commentaires</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div *ngSwitchDefault class="metrics-grid">
+                                <div class="metric-item" [ngClass]="getRateClass(serviceEntry.value.trxReconNet)">
+                                    <div class="metric-label">Réconciliation Nette</div>
+                                    <div class="metric-value">{{ formatPercentage(serviceEntry.value.trxReconNet) }}</div>
+                                </div>
+                                
+                                <div class="metric-item" [ngClass]="getRateClass(serviceEntry.value.trxReconBrut)">
+                                    <div class="metric-label">Réconciliation Brute</div>
+                                    <div class="metric-value">{{ formatPercentage(serviceEntry.value.trxReconBrut) }}</div>
+                                </div>
+                                
+                                <div class="metric-item metric-item-centered" [ngClass]="getRateClass(serviceEntry.value.bkRecoBanque)">
+                                    <div class="metric-content">
+                                        <div class="metric-label">Taux de Correspondance</div>
+                                        <div class="metric-value">{{ formatPercentage(serviceEntry.value.bkRecoBanque) }}</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </ng-container>
                     </div>
                 </div>
 

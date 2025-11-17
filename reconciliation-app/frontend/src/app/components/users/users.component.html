@@ -62,15 +62,16 @@
       </div>
       
       <div class="form-group">
-        <label for="newPassword">Mot de passe *</label>
+        <label for="newEmail">Adresse email *</label>
         <input 
-          type="password" 
-          id="newPassword" 
-          name="password" 
-          [(ngModel)]="newUser.password" 
+          type="email" 
+          id="newEmail" 
+          name="email" 
+          [(ngModel)]="newUser.email" 
           required 
           class="form-control"
-          placeholder="Entrez le mot de passe">
+          placeholder="exemple@email.com">
+        <small class="form-text text-muted">Le mot de passe sera généré automatiquement et envoyé à cette adresse email</small>
       </div>
 
       <div class="form-group">
@@ -105,6 +106,18 @@
           required 
           class="form-control"
           placeholder="Entrez le nom d'utilisateur">
+      </div>
+      
+      <div class="form-group">
+        <label for="editEmail">Adresse email *</label>
+        <input 
+          type="email" 
+          id="editEmail" 
+          name="email" 
+          [(ngModel)]="editingUser.email" 
+          required 
+          class="form-control"
+          placeholder="exemple@email.com">
       </div>
       
       <div class="form-group">
@@ -179,6 +192,11 @@
             <span class="label">Profil:</span>
             <span class="value">{{ user.profil?.nom || 'Aucun profil' }}</span>
           </div>
+          <div class="user-detail" *ngIf="user.email">
+            <i class="fas fa-envelope"></i>
+            <span class="label">Email:</span>
+            <span class="value">{{ user.email }}</span>
+          </div>
           <div class="user-detail" *ngIf="getUser2FAStatus(user.id)">
             <i class="fas fa-shield-alt" [class.enabled]="getUser2FAStatus(user.id)?.enabled" [class.disabled]="!getUser2FAStatus(user.id)?.enabled"></i>
             <span class="label">2FA:</span>
@@ -199,6 +217,13 @@
             [disabled]="isEditing"
             title="Modifier">
             <i class="fas fa-edit"></i> Modifier
+          </button>
+          <button 
+            class="btn btn-action btn-reset-password" 
+            (click)="resetUserPassword(user)"
+            [disabled]="!user.email"
+            [title]="user.email ? 'Réinitialiser le mot de passe' : 'Cet utilisateur n\'a pas d\'email'">
+            <i class="fas fa-key"></i> Réinitialiser MDP
           </button>
           <button 
             class="btn btn-action btn-2fa" 

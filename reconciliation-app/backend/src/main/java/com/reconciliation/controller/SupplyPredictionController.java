@@ -16,7 +16,7 @@ import java.util.List;
  */
 @RestController
 @RequestMapping("/api/supply")
-@CrossOrigin(origins = "http://localhost:4200", allowCredentials = "true")
+@CrossOrigin(origins = {"http://localhost:4200", "http://172.214.108.8:4200"}, allowCredentials = "true")
 public class SupplyPredictionController {
     private static final Logger logger = LoggerFactory.getLogger(SupplyPredictionController.class);
 

@@ -19,7 +19,7 @@ import java.util.stream.Collectors;
 @Slf4j
 @RestController
 @RequestMapping("/api/file-watcher")
-@CrossOrigin(origins = {"http://localhost:4200", "http://localhost:3000"}, allowCredentials = "true")
+@CrossOrigin(origins = {"http://localhost:4200", "http://localhost:3000", "http://172.214.108.8:4200"}, allowCredentials = "true")
 public class FileWatcherController {
 
     private static final String WATCH_FOLDER = "../watch-folder";

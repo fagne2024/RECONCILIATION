@@ -15,7 +15,7 @@ import java.util.ArrayList;
 
 @RestController
 @RequestMapping("/api/releve-bancaire")
-@CrossOrigin(origins = {"http://localhost:4200", "http://localhost:3000"}, allowedHeaders = "*", methods = {RequestMethod.GET, RequestMethod.POST, RequestMethod.PUT, RequestMethod.OPTIONS}, allowCredentials = "true")
+@CrossOrigin(origins = {"http://localhost:4200", "http://localhost:3000", "http://172.214.108.8:4200"}, allowedHeaders = "*", methods = {RequestMethod.GET, RequestMethod.POST, RequestMethod.PUT, RequestMethod.OPTIONS}, allowCredentials = "true")
 public class ReleveBancaireController {
 
     @Autowired

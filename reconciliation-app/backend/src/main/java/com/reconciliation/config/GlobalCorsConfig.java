@@ -18,10 +18,11 @@ public class GlobalCorsConfig {
         // En développement: localhost:4200 (Angular)
         // En production: remplacer par les domaines de production
         config.setAllowedOrigins(List.of(
-            "http://localhost:4200",      // Angular frontend (développement)
-            "http://localhost:3000"       // Autre frontend (si nécessaire)
+            "http://localhost:4200",
+            "http://localhost:3000",
+            "http://172.214.108.8:4200"
             // Ajouter les domaines de production ici:
-            // "https://votre-domaine.com",
+            // "https://votre-domaine.com"
             // "https://app.votre-domaine.com"
         ));
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));

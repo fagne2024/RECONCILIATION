@@ -12,7 +12,7 @@ import java.util.Map;
 
 @RestController
 @RequestMapping("/api/rankings")
-@CrossOrigin(origins = "http://localhost:4200")
+@CrossOrigin(origins = {"http://localhost:4200", "http://172.214.108.8:4200"})
 public class RankingController {
     
     private static final Logger logger = LoggerFactory.getLogger(RankingController.class);

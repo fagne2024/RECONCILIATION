@@ -20,7 +20,7 @@ import com.reconciliation.repository.PermissionRepository;
 
 @RestController
 @RequestMapping("/api/auth")
-@CrossOrigin(origins = "http://localhost:4200")
+@CrossOrigin(origins = {"http://localhost:4200", "http://172.214.108.8:4200"})
 public class AuthController {
     @Autowired
     private UserRepository userRepository;

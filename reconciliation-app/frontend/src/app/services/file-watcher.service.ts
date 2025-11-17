@@ -2,7 +2,6 @@ import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { tap, catchError } from 'rxjs/operators';
-import { environment } from '../../environments/environment';
 
 export interface ProcessingSpecification {
   id: string;
@@ -45,7 +44,7 @@ export interface FileProcessingResult {
   providedIn: 'root'
 })
 export class FileWatcherService {
-  private apiUrl = environment.apiUrl;
+  private apiUrl = '/api';
 
   constructor(private http: HttpClient) { }
 

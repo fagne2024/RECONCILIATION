@@ -11,7 +11,7 @@ import java.util.Map;
 
 @RestController
 @RequestMapping("/api/sql")
-@CrossOrigin(origins = {"http://localhost:4200", "http://localhost:3000"})
+@CrossOrigin(origins = {"http://localhost:4200", "http://localhost:3000", "http://172.214.108.8:4200"})
 public class SqlController {
 
     @Autowired

@@ -2,7 +2,6 @@ import { Injectable } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { tap } from 'rxjs/operators';
-import { environment } from '../../environments/environment';
 
 /**
  * Recommandation d'approvisionnement pour une agence
@@ -172,7 +171,7 @@ export interface CompensationAnalytics {
   providedIn: 'root'
 })
 export class SupplyPredictionService {
-  private apiUrl = `${environment.apiUrl}/supply`;
+  private apiUrl = '/api/supply';
 
   constructor(private http: HttpClient) {}
 

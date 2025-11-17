@@ -1,7 +1,6 @@
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { Observable } from 'rxjs';
-import { environment } from '../../environments/environment';
 
 export interface PredictionRequest {
   typeOperation: string;
@@ -50,7 +49,7 @@ export interface PredictionType {
   providedIn: 'root'
 })
 export class PredictionService {
-  private apiUrl = `${environment.apiUrl}/predictions`;
+  private apiUrl = '/api/predictions';
 
   constructor(private http: HttpClient) {}
 

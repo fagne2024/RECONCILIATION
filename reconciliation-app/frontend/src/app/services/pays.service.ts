@@ -5,7 +5,7 @@ import { Pays, ProfilPays } from '../models/pays.model';
 
 @Injectable({ providedIn: 'root' })
 export class PaysService {
-  private apiUrl = 'http://localhost:8080/api/pays';
+  private apiUrl = '/api/pays';
 
   constructor(private http: HttpClient) {}
 

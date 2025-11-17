@@ -302,7 +302,8 @@
 .traitement-container .export-by-date-section,
 .traitement-container .dedup-section,
 .traitement-container .format-section,
-.traitement-container .preview-table {
+.traitement-container .preview-table,
+.traitement-container .sheet-split-section {
   display: flex;
   flex-direction: column;
   margin-bottom: 24px;
@@ -313,6 +314,209 @@
   padding: 24px;
   box-shadow: 0 2px 8px rgba(0,0,0,0.08);
   border: 1px solid #e3f2fd;
+}
+
+.sheet-split-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 32px;
+
+  @media (max-width: 1200px) {
+    grid-template-columns: 1fr;
+  }
+}
+
+.sheet-split-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+
+  .form-label {
+    font-weight: 600;
+    color: #1976d2;
+    margin-bottom: 4px;
+  }
+
+  .sheet-split-file-picker {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+
+    input[type="file"] {
+      flex: 1;
+    }
+
+    .reset-btn {
+      background: transparent;
+      border: 1px solid #dc3545;
+      color: #dc3545;
+      padding: 6px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+
+      &:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+
+      &:hover:not(:disabled) {
+        background: #dc3545;
+        color: #fff;
+      }
+    }
+  }
+
+  textarea {
+    width: 100%;
+    border: 1px solid #ced4da;
+    border-radius: 8px;
+    padding: 10px;
+    font-size: 14px;
+    resize: vertical;
+    min-height: 80px;
+  }
+
+  .helper-text {
+    font-size: 12px;
+    color: #6c757d;
+  }
+
+  .sheet-split-file-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    background: #f1f5f9;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-size: 13px;
+
+    strong {
+      color: #0d47a1;
+    }
+
+    small {
+      color: #6c757d;
+    }
+  }
+
+  .option-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+    color: #495057;
+
+    input {
+      transform: scale(1.2);
+    }
+  }
+
+  .main-action {
+    background: linear-gradient(90deg, #1976d2, #42a5f5);
+    color: white;
+    border: none;
+    padding: 12px 16px;
+    border-radius: 8px;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    margin-top: 8px;
+
+    &:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    &:hover:not(:disabled) {
+      transform: translateY(-1px);
+      box-shadow: 0 6px 18px rgba(25, 118, 210, 0.3);
+    }
+  }
+
+  .sheet-split-progress {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: #e3f2fd;
+    border: 1px solid #90caf9;
+    padding: 10px 12px;
+    border-radius: 8px;
+    color: #0d47a1;
+
+    .spinner {
+      width: 18px;
+      height: 18px;
+      border: 3px solid rgba(13, 71, 161, 0.2);
+      border-top-color: #0d47a1;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+  }
+
+  .sheet-split-status {
+    font-size: 13px;
+    color: #495057;
+  }
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.sheet-split-summary {
+  background: #f8f9fa;
+  border: 1px dashed #bbdefb;
+  border-radius: 12px;
+  padding: 20px;
+
+  h5 {
+    margin-top: 0;
+    color: #1976d2;
+    font-size: 1.1rem;
+  }
+
+  ul {
+    padding-left: 20px;
+    color: #495057;
+
+    li {
+      margin-bottom: 6px;
+    }
+  }
+
+  .sheet-split-results {
+    margin-top: 16px;
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 12px;
+
+      th, td {
+        text-align: left;
+        padding: 8px 10px;
+        border-bottom: 1px solid #dee2e6;
+        font-size: 13px;
+      }
+
+      th {
+        background: #e3f2fd;
+        color: #0d47a1;
+        font-weight: 600;
+      }
+    }
+
+    .zip-name {
+      margin-top: 10px;
+      font-size: 13px;
+      color: #0d47a1;
+      font-weight: 600;
+    }
+  }
 }
 
 // Styles pour les en-têtes de section avec boutons d'affichage/masquage

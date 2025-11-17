@@ -43,6 +43,114 @@
     <div *ngIf="errorMsg.upload" class="error-msg">{{ errorMsg.upload }}</div>
   </div>
   <div *ngIf="successMsg.upload" class="success-msg" [innerHTML]="successMsg.upload"></div>
+
+<div class="sheet-split-section">
+  <div class="section-header">
+    <h4>
+      <i class="fas fa-clone"></i> Séparation des feuilles Excel
+      <button type="button" class="btn btn-sm btn-outline-info" (click)="toggleSection('sheetSplit')">
+        <i class="fas fa-eye" *ngIf="!showSections.sheetSplit"></i>
+        <i class="fas fa-eye-slash" *ngIf="showSections.sheetSplit"></i>
+        {{ showSections.sheetSplit ? 'Masquer' : 'Afficher' }}
+      </button>
+    </h4>
+  </div>
+
+  <div *ngIf="showSections.sheetSplit" class="section-content">
+    <div class="sheet-split-grid">
+      <div class="sheet-split-actions">
+        <label class="form-label">Fichier Excel source</label>
+        <div class="sheet-split-file-picker">
+          <input type="file"
+                 id="sheetSplitInput"
+                 accept=".xls,.xlsx"
+                 (change)="onSheetSplitFileSelected($event)"
+                 [disabled]="sheetSplitIsProcessing">
+          <button type="button"
+                  class="reset-btn"
+                  (click)="resetSheetSplitSelection()"
+                  [disabled]="!sheetSplitFile || sheetSplitIsProcessing">
+            Réinitialiser
+          </button>
+        </div>
+        <div class="sheet-split-file-meta" *ngIf="sheetSplitFile">
+          <strong>{{ sheetSplitFile.name }}</strong>
+          <small>{{ (sheetSplitFile.size / (1024 * 1024)) | number:'1.0-2' }} MB</small>
+        </div>
+
+        <label class="form-label">En-tête personnalisé (séparateur « ; »)</label>
+        <textarea rows="3"
+                  [(ngModel)]="sheetSplitHeaderText"
+                  [disabled]="sheetSplitIsProcessing"></textarea>
+        <small class="helper-text">
+          Colonnes détectées : {{ sheetSplitHeaderColumns.length }} / 17
+        </small>
+
+        <label class="option-toggle">
+          <input type="checkbox"
+                 [(ngModel)]="sheetSplitApplyHeaderFromSecondSheet"
+                 [disabled]="sheetSplitIsProcessing">
+          <span>Appliquer l'en-tête personnalisé à partir de la 2ᵉ feuille</span>
+        </label>
+
+        <button type="button"
+                class="main-action"
+                (click)="splitExcelSheets()"
+                [disabled]="!sheetSplitFile || sheetSplitIsProcessing">
+          {{ sheetSplitIsProcessing ? 'Séparation en cours...' : 'Séparer et télécharger' }}
+        </button>
+
+        <div *ngIf="sheetSplitIsProcessing" class="sheet-split-progress">
+          <div class="spinner"></div>
+          <p>{{ sheetSplitProgress }}</p>
+        </div>
+        <div *ngIf="sheetSplitConversionInProgress" class="sheet-split-progress conversion">
+          <div class="spinner"></div>
+          <p>{{ sheetSplitConversionMessage }}</p>
+        </div>
+        <div *ngIf="sheetSplitProgress && !sheetSplitIsProcessing" class="sheet-split-status">
+          {{ sheetSplitProgress }}
+        </div>
+
+        <div *ngIf="successMsg.sheetSplit" class="success-msg">{{ successMsg.sheetSplit }}</div>
+        <div *ngIf="errorMsg.sheetSplit" class="error-msg">{{ errorMsg.sheetSplit }}</div>
+      </div>
+
+      <div class="sheet-split-summary">
+        <h5>Fonctionnement</h5>
+        <ul>
+          <li>Sépare chaque feuille dans un fichier Excel indépendant.</li>
+          <li>Reproduit l'en-tête personnalisé (17 colonnes) sur toutes les feuilles sauf la première.</li>
+          <li>Applique automatiquement les largeurs et le style gris pour l'en-tête.</li>
+          <li>Génère un fichier ZIP prêt à être téléchargé.</li>
+        </ul>
+
+        <div *ngIf="sheetSplitResults.length > 0" class="sheet-split-results">
+          <h5>Fichiers générés ({{ sheetSplitResults.length }})</h5>
+          <table>
+            <thead>
+              <tr>
+                <th>Feuille</th>
+                <th>Lignes</th>
+                <th>Fichier</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let result of sheetSplitResults">
+                <td>{{ result.sheetName }}</td>
+                <td>{{ result.rows }}</td>
+                <td>{{ result.fileName }}</td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="zip-name" *ngIf="sheetSplitZipName">
+            ZIP téléchargé : {{ sheetSplitZipName }}
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
   
   <!-- Affichage des erreurs du service -->
   <div *ngIf="dataProcessingService.error$ | async as error" class="error-msg">

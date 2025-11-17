@@ -29,6 +29,9 @@ public class UserEntity {
     @Column(name = "qr_code_scanned", nullable = false)
     private Boolean qrCodeScanned = false;
 
+    @Column(name = "email")
+    private String email;
+
     // Getters et setters
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
@@ -44,4 +47,6 @@ public class UserEntity {
     public void setSecret2FA(String secret2FA) { this.secret2FA = secret2FA; }
     public Boolean getQrCodeScanned() { return qrCodeScanned != null && qrCodeScanned; }
     public void setQrCodeScanned(Boolean qrCodeScanned) { this.qrCodeScanned = qrCodeScanned != null ? qrCodeScanned : false; }
+    public String getEmail() { return email; }
+    public void setEmail(String email) { this.email = email; }
 } 

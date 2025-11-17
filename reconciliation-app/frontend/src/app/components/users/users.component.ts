@@ -16,7 +16,7 @@ export class UsersComponent implements OnInit {
   users: User[] = [];
   filteredUsers: User[] = [];
   profils: Profil[] = [];
-  newUser: User = { username: '', password: '' };
+  newUser: User = { username: '', email: '' };
   editingUser: User | null = null;
   showCreateForm = false; // Ajouté pour afficher/masquer le formulaire
   isCreating = false; // Sert uniquement à désactiver le bouton pendant la création
@@ -85,19 +85,23 @@ export class UsersComponent implements OnInit {
   }
 
   async createUser(): Promise<void> {
-    if (!this.newUser.username || !this.newUser.password) {
-      await this.popupService.showError('Veuillez remplir tous les champs', 'Champs requis');
+    if (!this.newUser.username || !this.newUser.email) {
+      await this.popupService.showError('Veuillez remplir tous les champs requis (nom d\'utilisateur et email)', 'Champs requis');
       return;
     }
 
     this.isCreating = true;
-    this.userService.createUser(this.newUser).subscribe({
+    // Ne pas envoyer le password car il sera généré automatiquement
+    const userToCreate = { ...this.newUser };
+    delete userToCreate.password;
+    
+    this.userService.createUser(userToCreate).subscribe({
       next: async (user) => {
         this.users.push(user);
-        this.newUser = { username: '', password: '' };
+        this.newUser = { username: '', email: '' };
         this.isCreating = false;
         this.showCreateForm = false; // Masquer le formulaire après création
-        await this.popupService.showSuccess('Utilisateur créé avec succès', 'Succès');
+        await this.popupService.showSuccess('Utilisateur créé avec succès. Le mot de passe a été envoyé par email.', 'Succès');
         this.applyFilters();
       },
       error: async (error) => {
@@ -138,6 +142,31 @@ export class UsersComponent implements OnInit {
         console.error('Error updating user:', error);
       }
     });
+  }
+
+  async resetUserPassword(user: User): Promise<void> {
+    if (!user.email) {
+      await this.popupService.showError('Cet utilisateur n\'a pas d\'adresse email configurée', 'Erreur');
+      return;
+    }
+
+    const confirmed = await this.popupService.showConfirmDialog(
+      `Êtes-vous sûr de vouloir réinitialiser le mot de passe de l'utilisateur "${user.username}" ?\n\nUn nouveau mot de passe sera généré et envoyé à : ${user.email}`,
+      'Confirmation de réinitialisation'
+    );
+    
+    if (confirmed) {
+      this.userService.resetPassword(user.id!).subscribe({
+        next: async () => {
+          await this.popupService.showSuccess('Le mot de passe a été réinitialisé et envoyé par email avec succès', 'Succès');
+        },
+        error: async (error) => {
+          const errorMsg = error.error?.error || error.message || 'Erreur lors de la réinitialisation du mot de passe';
+          await this.popupService.showError(errorMsg, 'Erreur de réinitialisation');
+          console.error('Error resetting password:', error);
+        }
+      });
+    }
   }
 
   async deleteUser(user: User): Promise<void> {

@@ -27,7 +27,7 @@ export interface AllRankings {
   providedIn: 'root'
 })
 export class RankingService {
-  private apiUrl = 'http://localhost:8080/api/rankings';
+  private apiUrl = '/api/rankings';
 
   constructor(private http: HttpClient) { }
 

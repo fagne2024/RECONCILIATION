@@ -40,7 +40,7 @@ export interface ProgressUpdate {
     providedIn: 'root'
 })
 export class ReconciliationService implements OnInit, OnDestroy {
-    private apiUrl = 'http://localhost:8080/api/reconciliation';
+    private apiUrl = '/api/reconciliation';
     private memoryResults = new Map<string, any>(); // Stockage en mémoire pour les gros fichiers
     
     // Progress management

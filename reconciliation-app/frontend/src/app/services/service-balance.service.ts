@@ -21,7 +21,7 @@ export interface FusionResult {
   providedIn: 'root'
 })
 export class ServiceBalanceService {
-  private apiUrl = 'http://localhost:8080/api/service-balance';
+  private apiUrl = '/api/service-balance';
 
   constructor(private http: HttpClient) { }
 
@@ -36,7 +36,7 @@ export class ServiceBalanceService {
    * Test de connectivité simple
    */
   testPing(): Observable<any> {
-    return this.http.get('http://localhost:8080/api/test/ping');
+    return this.http.get('/api/test/ping');
   }
 
   /**

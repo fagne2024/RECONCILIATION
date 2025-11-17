@@ -40,7 +40,7 @@ export interface ValidationResult {
   providedIn: 'root'
 })
 export class TrxSfService {
-  private baseUrl = 'http://localhost:8080/api/trx-sf';
+  private baseUrl = '/api/trx-sf';
 
   constructor(private http: HttpClient) { }
 

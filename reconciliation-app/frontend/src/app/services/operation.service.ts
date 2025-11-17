@@ -1,11 +1,10 @@
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
-import { environment } from '../../environments/environment';
 
 @Injectable({ providedIn: 'root' })
 export class OperationServiceApi {
-  private apiUrl = `${environment.apiUrl}/reconciliation`;
+  private apiUrl = '/api/reconciliation';
   constructor(private http: HttpClient) {}
 
   markOk(key: string): Observable<{ success: boolean }> {
@@ -50,7 +49,7 @@ import { Operation, OperationCreateRequest, OperationUpdateRequest, OperationFil
     providedIn: 'root'
 })
 export class OperationService {
-    private apiUrl = `${environment.apiUrl}/operations`;
+    private apiUrl = '/api/operations';
 
     constructor(private http: HttpClient) {}
 

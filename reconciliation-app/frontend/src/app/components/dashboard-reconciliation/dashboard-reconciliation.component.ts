@@ -1,7 +1,7 @@
 import { Component, OnInit, OnDestroy } from '@angular/core';
 import { Router } from '@angular/router';
 import { Subscription } from 'rxjs';
-import { DashboardReconciliationService, CountryServiceMetrics } from '../../services/dashboard-reconciliation.service';
+import { DashboardReconciliationService, CountryServiceMetrics, DashboardStatusFilter } from '../../services/dashboard-reconciliation.service';
 
 // Interface supprimée car elle est maintenant dans le service
 
@@ -39,6 +39,7 @@ export class DashboardReconciliationComponent implements OnInit, OnDestroy {
     availableServices: string[] = [];
     availableDates: string[] = [];
     filteredServices: string[] = []; // Services filtrés selon le pays sélectionné
+    statusView: DashboardStatusFilter = 'encours';
 
     constructor(
         private router: Router,
@@ -57,10 +58,12 @@ export class DashboardReconciliationComponent implements OnInit, OnDestroy {
     private loadReconciliationData() {
         this.loading = true;
         this.error = null;
+        this.subscription.unsubscribe();
+        this.subscription = new Subscription();
         
         // Récupérer les données réelles de la table result8rec
         this.subscription.add(
-            this.dashboardReconciliationService.getDashboardMetrics().subscribe({
+            this.dashboardReconciliationService.getDashboardMetrics(this.statusView).subscribe({
                 next: (data) => {
                     this.countryServiceData = data;
                     this.initializeFilters();
@@ -75,6 +78,15 @@ export class DashboardReconciliationComponent implements OnInit, OnDestroy {
                 }
             })
         );
+    }
+
+    changeStatusView(view: DashboardStatusFilter): void {
+        if (this.statusView === view) {
+            return;
+        }
+        this.statusView = view;
+        this.currentPage = 1;
+        this.loadReconciliationData();
     }
 
     // Méthodes supprimées car elles sont maintenant dans le service
@@ -159,6 +171,22 @@ export class DashboardReconciliationComponent implements OnInit, OnDestroy {
     formatPercentage(rate: number): string {
         if (rate === 0 || isNaN(rate)) return '(Vide)';
         return `${rate.toFixed(2)}%`;
+    }
+
+    formatDiscrepancyPercentage(rate?: number): string {
+        if (rate === undefined || rate === null || isNaN(rate)) return '--';
+        return `${rate.toFixed(2)}%`;
+    }
+
+    getDiscrepancyRateClass(rate?: number): string {
+        if (rate === undefined || rate === null || isNaN(rate)) return 'rate-empty';
+        if (rate >= 60) return 'rate-critical';
+        if (rate >= 30) return 'rate-alert';
+        return 'rate-ok';
+    }
+
+    isTraiteView(): boolean {
+        return this.statusView === 'traite';
     }
 
     goBackToReport() {

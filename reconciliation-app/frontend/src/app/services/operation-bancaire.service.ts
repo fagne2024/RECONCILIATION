@@ -1,7 +1,6 @@
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
-import { environment } from '../../environments/environment';
 import { 
     OperationBancaire, 
     OperationBancaireCreateRequest, 
@@ -13,7 +12,7 @@ import {
     providedIn: 'root'
 })
 export class OperationBancaireService {
-    private apiUrl = `${environment.apiUrl}/operations-bancaires`;
+    private apiUrl = '/api/operations-bancaires';
 
     constructor(private http: HttpClient) {}
 

@@ -8,7 +8,7 @@ import { ProfilPermission } from '../models/profil-permission.model';
 
 @Injectable({ providedIn: 'root' })
 export class ProfilService {
-  private apiUrl = 'http://localhost:8080/api/profils';
+  private apiUrl = '/api/profils';
 
   constructor(private http: HttpClient) {}
 

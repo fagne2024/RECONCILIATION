@@ -27,7 +27,7 @@ import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/operations")
-@CrossOrigin(origins = "http://localhost:4200")
+@CrossOrigin(origins = {"http://localhost:4200", "http://172.214.108.8:4200"})
 public class OperationController {
     
     private static final Logger logger = LoggerFactory.getLogger(OperationController.class);
@@ -363,13 +363,13 @@ public class OperationController {
     }
 
     @RequestMapping(value = "/delete-batch", method = RequestMethod.OPTIONS)
-    @CrossOrigin(origins = "http://localhost:4200")
+    @CrossOrigin(origins = {"http://localhost:4200", "http://172.214.108.8:4200"})
     public ResponseEntity<?> handleDeleteBatchOptions() {
         return ResponseEntity.ok().build();
     }
 
     @PostMapping("/delete-batch")
-    @CrossOrigin(origins = "http://localhost:4200", methods = {RequestMethod.POST, RequestMethod.OPTIONS})
+    @CrossOrigin(origins = {"http://localhost:4200", "http://172.214.108.8:4200"}, methods = {RequestMethod.POST, RequestMethod.OPTIONS})
     public ResponseEntity<DeleteOperationsResponse> deleteOperations(@RequestBody DeleteOperationsRequest request) {
         try {
             logger.info("🔧 Suppression en lot de {} opérations", request.getIds().size());

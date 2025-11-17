@@ -9,7 +9,7 @@ import java.util.HashMap;
 
 @RestController
 @RequestMapping("/api/user-profil")
-@CrossOrigin(origins = "http://localhost:4200")
+@CrossOrigin(origins = {"http://localhost:4200", "http://172.214.108.8:4200"})
 public class UserProfilController {
     
     @Autowired
