@@ -42,6 +42,7 @@ import com.reconciliation.repository.ReconciliationOkRepository;
 import com.reconciliation.entity.ReconciliationOkEntity;
 import com.reconciliation.entity.ReconciliationStatusEntity;
 import com.reconciliation.repository.ReconciliationStatusRepository;
+import com.reconciliation.service.ReconciliationLockService;
 
 @Slf4j
 @RestController
@@ -72,6 +73,8 @@ public class ReconciliationController {
     private ReconciliationOkRepository reconOkRepository;
     @Autowired
     private ReconciliationStatusRepository reconStatusRepository;
+    @Autowired
+    private ReconciliationLockService lockService;
 
     @GetMapping("/test")
     public ResponseEntity<String> test() {
@@ -234,112 +237,188 @@ public class ReconciliationController {
     @PostMapping("/reconcile")
     public ResponseEntity<ReconciliationResponse> reconcile(@RequestBody ReconciliationRequest request, HttpServletRequest httpRequest) {
         long startTime = System.currentTimeMillis();
+        String userId = extractUserId(httpRequest);
+        String lockKey = "reconcile_" + userId + "_" + System.currentTimeMillis();
+        
         try {
             log.info("🚀 === REQUÊTE DE RÉCONCILIATION REÇUE ===");
             log.info("📊 Method: {}", httpRequest.getMethod());
             log.info("🌐 Origin: {}", httpRequest.getHeader("Origin"));
             log.info("📄 Content-Type: {}", httpRequest.getHeader("Content-Type"));
+            log.info("👤 User ID: {}", userId);
             log.info("⏱️  Timeout configuré: 10 minutes");
             
-            // Journalisation optimisée des détails de la requête
-            if (request != null) {
-                log.info("📈 Nombre d'enregistrements BO: {}", 
-                    request.getBoFileContent() != null ? request.getBoFileContent().size() : 0);
-                log.info("📈 Nombre d'enregistrements Partenaire: {}", 
-                    request.getPartnerFileContent() != null ? request.getPartnerFileContent().size() : 0);
-                log.info("🔑 Colonne clé BO: {}", request.getBoKeyColumn());
-                log.info("🔑 Colonne clé Partenaire: {}", request.getPartnerKeyColumn());
-                
-                // Vérification de la taille des données
-                long boSize = request.getBoFileContent() != null ? request.getBoFileContent().size() : 0;
-                long partnerSize = request.getPartnerFileContent() != null ? request.getPartnerFileContent().size() : 0;
-                long totalSize = boSize + partnerSize;
-                
-                log.info("💾 Taille totale des données: {} enregistrements", totalSize);
-                
-                if (totalSize > 100000) {
-                    log.warn("⚠️  GROS FICHIER DÉTECTÉ - Optimisations activées");
-                    log.warn("📊 Taille: {} enregistrements ({} MB estimés)", totalSize, totalSize * 0.001);
-                }
+            // Tenter d'acquérir un verrou pour cette réconciliation
+            // Utiliser un verrou de type USER pour permettre plusieurs réconciliations simultanées par utilisateur
+            boolean lockAcquired = lockService.acquireLock(lockKey, ReconciliationLockService.LOCK_TYPE_USER, userId, null, 60);
+            
+            if (!lockAcquired) {
+                log.warn("⚠️ Impossible d'acquérir le verrou pour la réconciliation - Une autre réconciliation est peut-être en cours");
+                // Ne pas bloquer complètement, mais logger l'avertissement
+                // Dans un environnement de production, on pourrait retourner une erreur 429 (Too Many Requests)
             }
             
-            log.info("🔄 Début du traitement de la réconciliation...");
-            ReconciliationResponse response = reconciliationService.reconcile(request);
-            
-            long totalTime = System.currentTimeMillis() - startTime;
-            log.info("✅ Réconciliation terminée avec succès en {} ms ({:.2f} secondes)", totalTime, totalTime / 1000.0);
-            log.info("📊 Résultats: {} correspondances, {} BO uniquement, {} Partenaire uniquement", 
-                response.getMatches() != null ? response.getMatches().size() : 0,
-                response.getBoOnly() != null ? response.getBoOnly().size() : 0,
-                response.getPartnerOnly() != null ? response.getPartnerOnly().size() : 0);
-            
-            return ResponseEntity.ok(response);
+            try {
+                // Journalisation optimisée des détails de la requête
+                if (request != null) {
+                    log.info("📈 Nombre d'enregistrements BO: {}", 
+                        request.getBoFileContent() != null ? request.getBoFileContent().size() : 0);
+                    log.info("📈 Nombre d'enregistrements Partenaire: {}", 
+                        request.getPartnerFileContent() != null ? request.getPartnerFileContent().size() : 0);
+                    log.info("🔑 Colonne clé BO: {}", request.getBoKeyColumn());
+                    log.info("🔑 Colonne clé Partenaire: {}", request.getPartnerKeyColumn());
+                    
+                    // Vérification de la taille des données
+                    long boSize = request.getBoFileContent() != null ? request.getBoFileContent().size() : 0;
+                    long partnerSize = request.getPartnerFileContent() != null ? request.getPartnerFileContent().size() : 0;
+                    long totalSize = boSize + partnerSize;
+                    
+                    log.info("💾 Taille totale des données: {} enregistrements", totalSize);
+                    
+                    if (totalSize > 100000) {
+                        log.warn("⚠️  GROS FICHIER DÉTECTÉ - Optimisations activées");
+                        log.warn("📊 Taille: {} enregistrements ({} MB estimés)", totalSize, totalSize * 0.001);
+                    }
+                }
+                
+                log.info("🔄 Début du traitement de la réconciliation...");
+                ReconciliationResponse response = reconciliationService.reconcile(request);
+                
+                long totalTime = System.currentTimeMillis() - startTime;
+                log.info("✅ Réconciliation terminée avec succès en {} ms ({:.2f} secondes)", totalTime, totalTime / 1000.0);
+                log.info("📊 Résultats: {} correspondances, {} BO uniquement, {} Partenaire uniquement", 
+                    response.getMatches() != null ? response.getMatches().size() : 0,
+                    response.getBoOnly() != null ? response.getBoOnly().size() : 0,
+                    response.getPartnerOnly() != null ? response.getPartnerOnly().size() : 0);
+                
+                return ResponseEntity.ok(response);
+            } finally {
+                // Libérer le verrou après le traitement
+                if (lockAcquired) {
+                    lockService.releaseLock(lockKey, ReconciliationLockService.LOCK_TYPE_USER);
+                }
+            }
         } catch (Exception e) {
             long totalTime = System.currentTimeMillis() - startTime;
             log.error("❌ Erreur lors de la réconciliation après {} ms: {}", totalTime, e.getMessage());
             log.error("🔍 Stack trace:", e);
+            
+            // Libérer le verrou en cas d'erreur
+            lockService.releaseLock(lockKey, ReconciliationLockService.LOCK_TYPE_USER);
+            
             throw e;
         }
     }
 
     @PostMapping("/upload")
-    public ResponseEntity<String> uploadFile(@RequestParam("file") MultipartFile file) {
+    public ResponseEntity<String> uploadFile(@RequestParam("file") MultipartFile file, HttpServletRequest httpRequest) {
+        long startTime = System.currentTimeMillis();
+        String userId = extractUserId(httpRequest);
+        
         try {
-            log.info("Reçu une demande d'upload de fichier: {} ({} bytes)", 
-                file.getOriginalFilename(), file.getSize());
+            log.info("📤 === REQUÊTE D'UPLOAD REÇUE ===");
+            log.info("📁 Fichier: {} ({} bytes)", file.getOriginalFilename(), file.getSize());
+            log.info("👤 User ID: {}", userId);
+            
+            // Traitement synchrone de l'upload sans verrou bloquant
+            // Les uploads peuvent être traités simultanément
             String content = new String(file.getBytes(), StandardCharsets.UTF_8);
             log.debug("Longueur du contenu du fichier: {} caractères", content.length());
+            
+            long totalTime = System.currentTimeMillis() - startTime;
+            log.info("✅ Upload terminé avec succès en {} ms", totalTime);
+            
             return ResponseEntity.ok(content);
         } catch (IOException e) {
-            log.error("Erreur lors de la lecture du fichier: {}", e.getMessage());
+            long totalTime = System.currentTimeMillis() - startTime;
+            log.error("❌ Erreur lors de la lecture du fichier après {} ms: {}", totalTime, e.getMessage());
             return ResponseEntity.badRequest().body("Erreur lors de la lecture du fichier: " + e.getMessage());
+        } catch (Exception e) {
+            long totalTime = System.currentTimeMillis() - startTime;
+            log.error("❌ Erreur inattendue lors de l'upload après {} ms: {}", totalTime, e.getMessage());
+            return ResponseEntity.status(500).body("Erreur serveur lors de l'upload: " + e.getMessage());
         }
     }
 
     @PostMapping("/execute-magic")
     public ResponseEntity<Map<String, Object>> executeMagicReconciliation(
             @RequestParam("boFile") MultipartFile boFile,
-            @RequestParam("partnerFile") MultipartFile partnerFile) {
+            @RequestParam("partnerFile") MultipartFile partnerFile,
+            HttpServletRequest httpRequest) {
         
         long startTime = System.currentTimeMillis();
         String jobId = UUID.randomUUID().toString();
+        String userId = extractUserId(httpRequest);
+        String jobLockKey = "magic_" + jobId;
+        boolean jobLockAcquired = false;
         
         try {
             log.info("🚀 === RÉCONCILIATION MAGIQUE DÉMARRÉE ===");
             log.info("🎯 Job ID: {}", jobId);
+            log.info("👤 User ID: {}", userId);
             log.info("📁 Fichier BO: {} ({} bytes)", boFile.getOriginalFilename(), boFile.getSize());
             log.info("📁 Fichier Partenaire: {} ({} bytes)", partnerFile.getOriginalFilename(), partnerFile.getSize());
             
-            progressService.createJob(jobId, "Réconciliation magique en cours...");
+            // Acquérir un verrou pour ce job de réconciliation (pas pour l'upload)
+            // Les uploads peuvent être traités simultanément, seule la réconciliation est verrouillée
+            jobLockAcquired = lockService.acquireLock(jobLockKey, ReconciliationLockService.LOCK_TYPE_JOB, userId, jobId, 60);
             
-            // Lancer la réconciliation magique en arrière-plan
-            magicReconciliationService.executeMagicReconciliation(
-                parseCsvFile(boFile), 
-                parseCsvFile(partnerFile), 
-                jobId
-            ).thenAccept(result -> {
-                if (result.isSuccess()) {
-                    log.info("✅ Réconciliation magique terminée avec succès pour le job: {}", jobId);
-                    progressService.updateProgress(jobId, new ReconciliationProgress(100, "Réconciliation terminée avec succès", 0, 0));
-                } else {
-                    log.error("❌ Réconciliation magique échouée pour le job: {}", jobId);
-                    progressService.updateProgress(jobId, new ReconciliationProgress(0, "Échec: " + result.getMessage(), 0, 0));
+            if (!jobLockAcquired) {
+                log.warn("⚠️ Impossible d'acquérir le verrou pour le job: {} - Une autre réconciliation est peut-être en cours", jobId);
+                Map<String, Object> errorResponse = new HashMap<>();
+                errorResponse.put("error", true);
+                errorResponse.put("message", "Une réconciliation est déjà en cours. Veuillez patienter.");
+                return ResponseEntity.status(429).body(errorResponse);
+            }
+            
+            try {
+                progressService.createJob(jobId, "Réconciliation magique en cours...");
+                
+                // Lancer la réconciliation magique en arrière-plan
+                magicReconciliationService.executeMagicReconciliation(
+                    parseCsvFile(boFile), 
+                    parseCsvFile(partnerFile), 
+                    jobId
+                ).thenAccept(result -> {
+                    try {
+                        if (result.isSuccess()) {
+                            log.info("✅ Réconciliation magique terminée avec succès pour le job: {}", jobId);
+                            progressService.updateProgress(jobId, new ReconciliationProgress(100, "Réconciliation terminée avec succès", 0, 0));
+                        } else {
+                            log.error("❌ Réconciliation magique échouée pour le job: {}", jobId);
+                            progressService.updateProgress(jobId, new ReconciliationProgress(0, "Échec: " + result.getMessage(), 0, 0));
+                        }
+                    } finally {
+                        // Libérer le verrou du job après le traitement
+                        lockService.releaseLock(jobLockKey, ReconciliationLockService.LOCK_TYPE_JOB);
+                    }
+                });
+                
+                Map<String, Object> response = new HashMap<>();
+                response.put("jobId", jobId);
+                response.put("status", "started");
+                response.put("message", "Réconciliation magique lancée avec succès");
+                
+                long totalTime = System.currentTimeMillis() - startTime;
+                log.info("✅ Réconciliation magique lancée en {} ms", totalTime);
+                
+                return ResponseEntity.ok(response);
+            } catch (Exception e) {
+                // Libérer le verrou en cas d'erreur
+                if (jobLockAcquired) {
+                    lockService.releaseLock(jobLockKey, ReconciliationLockService.LOCK_TYPE_JOB);
                 }
-            });
-            
-            Map<String, Object> response = new HashMap<>();
-            response.put("jobId", jobId);
-            response.put("status", "started");
-            response.put("message", "Réconciliation magique lancée avec succès");
-            
-            long totalTime = System.currentTimeMillis() - startTime;
-            log.info("✅ Réconciliation magique lancée en {} ms", totalTime);
-            
-            return ResponseEntity.ok(response);
+                throw e;
+            }
             
         } catch (Exception e) {
             long totalTime = System.currentTimeMillis() - startTime;
             log.error("❌ Erreur lors de la réconciliation magique après {} ms: {}", totalTime, e.getMessage());
+            
+            // S'assurer que le verrou est libéré
+            if (jobLockAcquired) {
+                lockService.releaseLock(jobLockKey, ReconciliationLockService.LOCK_TYPE_JOB);
+            }
             
             Map<String, Object> errorResponse = new HashMap<>();
             errorResponse.put("error", true);
@@ -523,14 +602,20 @@ public class ReconciliationController {
     @PostMapping("/analyze-keys")
     public ResponseEntity<Map<String, Object>> analyzeKeys(
             @RequestParam("boFile") MultipartFile boFile,
-            @RequestParam("partnerFile") MultipartFile partnerFile) {
+            @RequestParam("partnerFile") MultipartFile partnerFile,
+            HttpServletRequest httpRequest) {
         
         long startTime = System.currentTimeMillis();
-        log.info("🔍 === ANALYSE INTELLIGENTE DES CLÉS DÉMARRÉE ===");
-        log.info("📁 Fichier BO: {} ({} bytes)", boFile.getOriginalFilename(), boFile.getSize());
-        log.info("📁 Fichier Partenaire: {} ({} bytes)", partnerFile.getOriginalFilename(), partnerFile.getSize());
+        String userId = extractUserId(httpRequest);
         
         try {
+            log.info("🔍 === ANALYSE INTELLIGENTE DES CLÉS DÉMARRÉE ===");
+            log.info("👤 User ID: {}", userId);
+            log.info("📁 Fichier BO: {} ({} bytes)", boFile.getOriginalFilename(), boFile.getSize());
+            log.info("📁 Fichier Partenaire: {} ({} bytes)", partnerFile.getOriginalFilename(), partnerFile.getSize());
+            
+            // Traitement synchrone sans verrou bloquant
+            // Les uploads peuvent être traités simultanément
             // Vérifier que les fichiers sont présents
             if (boFile.isEmpty() || partnerFile.isEmpty()) {
                 Map<String, Object> errorResponse = new HashMap<>();
@@ -1248,5 +1333,26 @@ public class ReconciliationController {
         
         log.info("📊 Fichier {} parsé: {} enregistrements", file.getOriginalFilename(), data.size());
         return data;
+    }
+    
+    /**
+     * Extrait l'identifiant de l'utilisateur depuis la requête HTTP
+     * Utilise l'adresse IP comme identifiant par défaut si aucun utilisateur n'est authentifié
+     */
+    private String extractUserId(HttpServletRequest request) {
+        // Essayer d'extraire un userId depuis les headers ou la session
+        String userId = request.getHeader("X-User-Id");
+        if (userId != null && !userId.trim().isEmpty()) {
+            return userId.trim();
+        }
+        
+        // Utiliser l'adresse IP comme identifiant par défaut
+        String remoteAddr = request.getRemoteAddr();
+        String forwardedFor = request.getHeader("X-Forwarded-For");
+        if (forwardedFor != null && !forwardedFor.trim().isEmpty()) {
+            remoteAddr = forwardedFor.split(",")[0].trim();
+        }
+        
+        return "user_" + (remoteAddr != null ? remoteAddr : "unknown");
     }
 } 
