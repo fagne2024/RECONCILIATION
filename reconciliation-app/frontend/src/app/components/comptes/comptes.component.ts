@@ -1300,6 +1300,19 @@ export class ComptesComponent implements OnInit, OnDestroy {
             dateDebutObj.setDate(dateDebutObj.getDate() - jours);
             dateDebut = dateDebutObj.toISOString().split('T')[0];
             dateFin = dateFinObj.toISOString().split('T')[0];
+        } else {
+            // Par défaut : charger uniquement les données du mois en cours
+            const now = new Date();
+            const year = now.getFullYear();
+            const month = now.getMonth();
+            
+            // Premier jour du mois en cours
+            const dateDebutObj = new Date(year, month, 1);
+            dateDebut = dateDebutObj.toISOString().split('T')[0];
+            
+            // Dernier jour du mois en cours
+            const dateFinObj = new Date(year, month + 1, 0);
+            dateFin = dateFinObj.toISOString().split('T')[0];
         }
 
         this.operationService.getOperationsByCompteForReleve(
