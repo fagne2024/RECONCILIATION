@@ -14,12 +14,21 @@ public class EmailService {
 
     @Value("${spring.mail.username:}")
     private String fromEmail;
+    
+    @Value("${spring.mail.host:}")
+    private String mailHost;
+    
+    @Value("${app.url:http://localhost:4200}")
+    private String appUrl;
 
     /**
      * Envoie un email avec le mot de passe généré lors de la création d'un utilisateur
      */
     public void sendPasswordEmail(String to, String username, String password) {
         try {
+            if (fromEmail == null || fromEmail.trim().isEmpty()) {
+                throw new RuntimeException("La configuration email n'est pas correcte. spring.mail.username est vide.");
+            }
             SimpleMailMessage message = new SimpleMailMessage();
             message.setFrom(fromEmail);
             message.setTo(to);
@@ -30,10 +39,12 @@ public class EmailService {
                 "Voici vos identifiants de connexion :\n" +
                 "Nom d'utilisateur : %s\n" +
                 "Mot de passe : %s\n\n" +
+                "Vous pouvez vous connecter à l'application en suivant ce lien :\n" +
+                "%s\n\n" +
                 "Nous vous recommandons de changer votre mot de passe après votre première connexion.\n\n" +
                 "Cordialement,\n" +
                 "L'équipe de réconciliation",
-                username, username, password
+                username, username, password, appUrl
             ));
             
             mailSender.send(message);
@@ -49,6 +60,9 @@ public class EmailService {
      */
     public void sendPasswordResetEmail(String to, String username, String newPassword) {
         try {
+            if (fromEmail == null || fromEmail.trim().isEmpty()) {
+                throw new RuntimeException("La configuration email n'est pas correcte. spring.mail.username est vide.");
+            }
             SimpleMailMessage message = new SimpleMailMessage();
             message.setFrom(fromEmail);
             message.setTo(to);
@@ -59,10 +73,12 @@ public class EmailService {
                 "Voici vos nouveaux identifiants de connexion :\n" +
                 "Nom d'utilisateur : %s\n" +
                 "Nouveau mot de passe : %s\n\n" +
+                "Vous pouvez vous connecter à l'application en suivant ce lien :\n" +
+                "%s\n\n" +
                 "Nous vous recommandons de changer votre mot de passe après votre prochaine connexion.\n\n" +
                 "Cordialement,\n" +
                 "L'équipe de réconciliation",
-                username, username, newPassword
+                username, username, newPassword, appUrl
             ));
             
             mailSender.send(message);
