@@ -1560,6 +1560,19 @@
     flex-wrap: wrap;
   }
 
+  .closing-cell .closing-edit-btn {
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease, transform 0.2s ease;
+  }
+
+  .closing-cell:hover .closing-edit-btn,
+  .closing-cell:focus-within .closing-edit-btn {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateY(-2px);
+  }
+
   .closing-edit-btn {
     position: absolute;
     right: 0;
@@ -1577,13 +1590,12 @@
     align-items: center;
     justify-content: center;
     box-shadow: 0 1px 3px rgba(57, 73, 171, 0.15);
-    transition: background 0.2s ease, color 0.2s ease, transform 0.2s ease;
+    transition: background 0.2s ease, color 0.2s ease;
   }
 
   .closing-edit-btn:hover {
     background: #e8eaf6;
     color: #1a237e;
-    transform: translateY(-1px);
   }
 
   .manual-badge {
