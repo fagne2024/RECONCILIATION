@@ -40,3 +40,10 @@ export interface CompteFilter {
     categorie?: string | string[];
     type?: string | string[];
 } 
+
+export interface CompteSoldeCloture {
+    id?: number;
+    numeroCompte: string;
+    dateSolde: string;
+    soldeCloture: number;
+}

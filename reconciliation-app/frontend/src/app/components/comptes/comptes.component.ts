@@ -20,6 +20,14 @@ import { FraisTransactionService } from '../../services/frais-transaction.servic
 import { FraisTransaction } from '../../models/frais-transaction.model';
 import { PopupService } from '../../services/popup.service';
 
+type DailySolde = {
+    date: string;
+    opening: number;
+    closing: number;
+    closingBo?: number;
+    closingManual?: number;
+};
+
 @Component({
     selector: 'app-comptes',
     templateUrl: './comptes.component.html',
@@ -74,7 +82,9 @@ export class ComptesComponent implements OnInit, OnDestroy {
     releveDateDebutCustom = '';
     releveDateFinCustom = '';
     showSoldesSeulement = false; // Pour basculer la vue
-    releveSoldesJournaliers: { date: string; opening: number; closing: number; closingBo?: number }[] = [];
+    releveSoldesJournaliers: DailySolde[] = [];
+    private groupedReleveOperationsCache: Array<{ main: Operation; frais: Operation[] }> = [];
+    private flattenedReleveOperationsCache: Operation[] = [];
     
     // Propriété pour contrôler l'affichage automatique des frais
     showFraisAutomaticallyReleve: boolean = false;
@@ -166,6 +176,17 @@ export class ComptesComponent implements OnInit, OnDestroy {
     showSoldeBoModal = false;
     dernierSoldeBo: number | null = null;
     dateSoldeBo: string = '';
+
+    showClosingOverrideModal = false;
+    closingOverrideDate: string = '';
+    closingOverrideValue: number | null = null;
+    closingOverrideLoading = false;
+
+    // Correction manuelle du solde de clôture
+    showSoldeClotureModal = false;
+    soldeClotureDateSelection = '';
+    soldeClotureValeurAuto: number | null = null;
+    soldeClotureValeurManuelle: number | null = null;
 
     // Propriétés pour les onglets du relevé
     activeTab = 'operations'; // 'operations' ou 'ecart-solde'
@@ -1236,6 +1257,8 @@ export class ComptesComponent implements OnInit, OnDestroy {
         this.selectedCompte = null;
         this.releveOperations = [];
         this.releveSoldesJournaliers = [];
+        this.closeClosingOverrideModal();
+        this.invalidateReleveOperationCaches();
         this.showSoldesSeulement = false;
         this.releveDateDebut = '';
         this.releveTypeOperation = '';
@@ -1260,6 +1283,7 @@ export class ComptesComponent implements OnInit, OnDestroy {
         this.isLoadingReleve = true;
         this.releveOperations = [];
         this.releveSoldesJournaliers = [];
+        this.invalidateReleveOperationCaches();
 
         // Construire les paramètres de filtrage
         let dateDebut: string | null = null;
@@ -1331,10 +1355,13 @@ export class ComptesComponent implements OnInit, OnDestroy {
                 date,
                 opening: balances.opening,
                 closing: balances.closing,
-                closingBo: undefined // valeur initiale
+                closingBo: undefined, // valeur initiale
+                closingManual: undefined
             }))
             // Trier du plus récent au plus ancien pour l'affichage
             .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+        this.loadManualClosingOverrides();
 
         // Après le calcul de this.releveSoldesJournaliers dans loadReleveOperations()
         this.releveSoldesJournaliers.forEach(solde => {
@@ -1346,6 +1373,31 @@ export class ComptesComponent implements OnInit, OnDestroy {
 
         this.calculateRelevePagination();
         this.isLoadingReleve = false;
+    }
+
+    private loadManualClosingOverrides(): void {
+        if (!this.selectedCompte || this.releveSoldesJournaliers.length === 0) return;
+
+        const dates = this.releveSoldesJournaliers.map(solde => solde.date);
+        const minDate = dates.reduce((min, current) => current < min ? current : min);
+        const maxDate = dates.reduce((max, current) => current > max ? current : max);
+
+        this.compteService.listSoldesClotureManuels(this.selectedCompte.numeroCompte, minDate, maxDate)
+            .subscribe({
+                next: (overrides) => {
+                    const overrideMap = new Map(overrides.map(item => [item.dateSolde, item.soldeCloture]));
+                    this.releveSoldesJournaliers.forEach(solde => {
+                        if (overrideMap.has(solde.date)) {
+                            solde.closingManual = overrideMap.get(solde.date) ?? undefined;
+                        } else {
+                            solde.closingManual = undefined;
+                        }
+                    });
+                },
+                error: (error) => {
+                    console.error('Erreur lors du chargement des soldes de clôture manuels:', error);
+                }
+            });
     }
 
     // ==========================
@@ -1402,7 +1454,7 @@ export class ComptesComponent implements OnInit, OnDestroy {
     // Moyenne journalière (globale sur l'échantillon courant)
     private get averageConsumptionPerDayGlobal(): number {
         if (!this.releveSoldesJournaliers || this.releveSoldesJournaliers.length === 0) return 0;
-        const consumptions: number[] = this.releveSoldesJournaliers.map(s => Math.max(0, (s.opening || 0) - (s.closing || 0)));
+        const consumptions: number[] = this.releveSoldesJournaliers.map(s => Math.max(0, (s.opening || 0) - this.getEffectiveClosingValue(s)));
         const total = consumptions.reduce((sum, v) => sum + v, 0);
         return consumptions.length > 0 ? total / consumptions.length : 0;
     }
@@ -1412,7 +1464,7 @@ export class ComptesComponent implements OnInit, OnDestroy {
         const { monthIndex, year } = this.currentMonthYear;
         const monthSoldes = this.filterSoldesByMonthYear(monthIndex, year);
         if (!monthSoldes || monthSoldes.length === 0) return 0;
-        const consumptions = monthSoldes.map(s => Math.max(0, (s.opening || 0) - (s.closing || 0)));
+        const consumptions = monthSoldes.map(s => Math.max(0, (s.opening || 0) - this.getEffectiveClosingValue(s)));
         const total = consumptions.reduce((sum, v) => sum + v, 0);
         return consumptions.length > 0 ? total / consumptions.length : 0;
     }
@@ -1429,7 +1481,7 @@ export class ComptesComponent implements OnInit, OnDestroy {
         if (!this.releveSoldesJournaliers || this.releveSoldesJournaliers.length === 0) return 0;
         // Les soldes sont triés du plus récent au plus ancien
         const latest = this.releveSoldesJournaliers[0];
-        const closing = (latest.closingBo ?? latest.closing) || 0;
+        const closing = (latest.closingManual ?? latest.closingBo ?? latest.closing) || 0;
         return closing;
     }
 
@@ -1445,7 +1497,7 @@ export class ComptesComponent implements OnInit, OnDestroy {
         const { monthIndex, year } = this.currentMonthYear;
         const soldes = (this.useMonthlyAverage ? this.filterSoldesByMonthYear(monthIndex, year) : this.releveSoldesJournaliers) || [];
         if (soldes.length < 2) return 0;
-        const consumptions = soldes.map(s => Math.max(0, (s.opening || 0) - (s.closing || 0)));
+        const consumptions = soldes.map(s => Math.max(0, (s.opening || 0) - this.getEffectiveClosingValue(s)));
         const avg = this.averageConsumptionPerDay || 0;
         if (avg <= 0) return 0;
         const variance = consumptions.reduce((sum, v) => sum + Math.pow(v - avg, 2), 0) / (consumptions.length - 1);
@@ -1494,18 +1546,13 @@ export class ComptesComponent implements OnInit, OnDestroy {
             this.releveTotalPages = Math.ceil(this.releveSoldesJournaliers.length / this.relevePageSize);
         } else {
             // Calculer la pagination basée sur les groupes d'opérations
-            const allGroupedOperations = this.getGroupedReleveOperations();
-            const allOperations = allGroupedOperations.flatMap(group => [group.main, ...group.frais]);
+            const allOperations = this.getFlattenedReleveOperations();
             this.releveTotalPages = Math.ceil(allOperations.length / this.relevePageSize);
         }
     }
 
     get pagedReleveOperations(): Operation[] {
-        // Obtenir tous les groupes d'opérations du relevé
-        const allGroupedOperations = this.getGroupedReleveOperations();
-        
-        // Aplatir tous les groupes pour compter le nombre total de lignes
-        const allOperations = allGroupedOperations.flatMap(group => [group.main, ...group.frais]);
+        const allOperations = this.getFlattenedReleveOperations();
         
         // Calculer l'index de début et de fin pour la pagination des lignes
         const startIndex = (this.releveCurrentPage - 1) * this.relevePageSize;
@@ -1517,16 +1564,26 @@ export class ComptesComponent implements OnInit, OnDestroy {
 
     // Méthode pour grouper les opérations du relevé avec leurs frais
     getGroupedReleveOperations(): Array<{main: Operation, frais: Operation[]}> {
+        if (this.releveOperations.length === 0) {
+            this.invalidateReleveOperationCaches();
+            return [];
+        }
+
+        if (this.groupedReleveOperationsCache.length === 0) {
+            const grouped = this.buildGroupedReleveOperations();
+            this.groupedReleveOperationsCache = grouped;
+            this.flattenedReleveOperationsCache = grouped.flatMap(group => [group.main, ...group.frais]);
+        }
+
+        return this.groupedReleveOperationsCache;
+    }
+
+    private buildGroupedReleveOperations(): Array<{main: Operation, frais: Operation[]}> {
         const grouped: Array<{main: Operation, frais: Operation[]}> = [];
         const operationsMap = new Map<number, {main: Operation | null, frais: Operation[]}>();
-        
-        // Utiliser releveOperations pour le groupement
-        const operationsToGroup = this.releveOperations;
-        
-        // Séparer les opérations principales et les frais
-        operationsToGroup.forEach(op => {
+
+        this.releveOperations.forEach(op => {
             if (op.typeOperation === 'FRAIS_TRANSACTION') {
-                // C'est un frais, on le stocke temporairement
                 const parentId = op.parentOperationId;
                 if (parentId) {
                     if (!operationsMap.has(parentId)) {
@@ -1537,40 +1594,59 @@ export class ComptesComponent implements OnInit, OnDestroy {
                         group.frais.push(op);
                     }
                 }
-            } else {
-                // C'est une opération principale
-                if (op.id) {
-                    if (!operationsMap.has(op.id)) {
-                        operationsMap.set(op.id, { main: op, frais: [] });
-                    } else {
-                        const group = operationsMap.get(op.id);
-                        if (group) {
-                            group.main = op;
-                        }
+            } else if (op.id) {
+                if (!operationsMap.has(op.id)) {
+                    operationsMap.set(op.id, { main: op, frais: [] });
+                } else {
+                    const group = operationsMap.get(op.id);
+                    if (group) {
+                        group.main = op;
                     }
                 }
             }
         });
-        
-        // Créer la liste finale avec les opérations principales et leurs frais
-        operationsMap.forEach((group, id) => {
+
+        operationsMap.forEach(group => {
             if (group.main) {
-                // Trier les frais par date d'opération du plus récent au plus ancien
-                const sortedFrais = group.frais.sort((a, b) => 
+                const sortedFrais = group.frais.sort((a, b) =>
                     new Date(b.dateOperation).getTime() - new Date(a.dateOperation).getTime()
                 );
-                
+
                 grouped.push({
                     main: group.main,
                     frais: sortedFrais
                 });
             }
         });
-        
-        // Trier les groupes par date d'opération du plus récent au plus ancien
-        return grouped.sort((a, b) => 
+
+        return grouped.sort((a, b) =>
             new Date(b.main.dateOperation).getTime() - new Date(a.main.dateOperation).getTime()
         );
+    }
+
+    private getFlattenedReleveOperations(): Operation[] {
+        if (this.releveOperations.length === 0) {
+            this.invalidateReleveOperationCaches();
+            return [];
+        }
+
+        if (this.flattenedReleveOperationsCache.length === 0) {
+            // Assure que le cache groupé est construit et synchronise le cache aplati
+            const grouped = this.getGroupedReleveOperations();
+            this.flattenedReleveOperationsCache = grouped.flatMap(group => [group.main, ...group.frais]);
+        }
+
+        return this.flattenedReleveOperationsCache;
+    }
+
+    private invalidateReleveOperationCaches(): void {
+        this.groupedReleveOperationsCache = [];
+        this.flattenedReleveOperationsCache = [];
+    }
+
+    private getAbsoluteReleveOperationIndex(indexOnPage: number): number {
+        const startIndex = (this.releveCurrentPage - 1) * this.relevePageSize;
+        return startIndex + indexOnPage;
     }
 
     // Méthode pour vérifier si une opération du relevé a des frais associés
@@ -1602,7 +1678,7 @@ export class ComptesComponent implements OnInit, OnDestroy {
         return typesWithFrais.includes(selectedType);
     }
 
-    get pagedReleveSoldes(): { date: string; opening: number; closing: number; closingBo?: number }[] {
+    get pagedReleveSoldes(): DailySolde[] {
         const startIndex = (this.releveCurrentPage - 1) * this.relevePageSize;
         const endIndex = startIndex + this.relevePageSize;
         return this.releveSoldesJournaliers.slice(startIndex, endIndex);
@@ -1711,13 +1787,14 @@ export class ComptesComponent implements OnInit, OnDestroy {
 
         // Données
         this.releveSoldesJournaliers.forEach(solde => {
-          const variation = solde.closing - solde.opening;
+          const closingValue = this.getEffectiveClosingValue(solde);
+          const variation = closingValue - solde.opening;
           const ecart = this.getEcartValue(solde);
           const impactOP = this.getImpactOPValue(solde);
           const row = worksheet.addRow([
             this.formatDate(solde.date).split(' ')[0],
             solde.opening,
-            solde.closing,
+            closingValue,
             variation,
             solde.closingBo !== undefined ? solde.closingBo : '',
             ecart,
@@ -1726,7 +1803,7 @@ export class ComptesComponent implements OnInit, OnDestroy {
 
           // Appliquer les couleurs
           if (solde.closingBo !== undefined) {
-            const closing = Math.round(solde.closing * 100) / 100;
+            const closing = Math.round(closingValue * 100) / 100;
             const closingBo = Math.round(solde.closingBo * 100) / 100;
             if (closing === closingBo) {
               // Les deux en vert
@@ -1860,8 +1937,7 @@ export class ComptesComponent implements OnInit, OnDestroy {
             'Service'
         ]);
         // Utiliser la même logique que l'affichage : opérations groupées puis aplaties
-        const allGroupedOperations = this.getGroupedReleveOperations();
-        const allOperations = allGroupedOperations.flatMap(group => [group.main, ...group.frais]);
+        const allOperations = this.getFlattenedReleveOperations();
         
         // Ajout d'une méthode utilitaire pour grouper les opérations par date et calculer les soldes d'ouverture/clôture
         const dailyBalances = this.getDailyBalances(this.releveOperations);
@@ -2076,19 +2152,55 @@ export class ComptesComponent implements OnInit, OnDestroy {
         return result;
     }
 
+    getEffectiveClosingValue(solde: DailySolde): number {
+        if (solde.closingManual !== undefined && solde.closingManual !== null) {
+            return solde.closingManual;
+        }
+        return solde.closing ?? 0;
+    }
+
+    hasManualClosingOverride(solde: DailySolde): boolean {
+        return solde.closingManual !== undefined && solde.closingManual !== null;
+    }
+
+    hasManualOverrideFor(date: string): boolean {
+        const solde = this.releveSoldesJournaliers.find(s => s.date === date);
+        return solde ? this.hasManualClosingOverride(solde) : false;
+    }
+
     // Helpers pour l'affichage UI du relevé
     getOpDate(op: Operation): string {
         return op.dateOperation ? op.dateOperation.split('T')[0] : '';
     }
     shouldShowOpeningBalance(op: Operation, i: number): boolean {
-        if (i === 0) return true;
-        const prevOp = this.pagedReleveOperations[i - 1];
-        return this.getOpDate(op) !== this.getOpDate(prevOp);
+        const allOperations = this.getFlattenedReleveOperations();
+        if (allOperations.length === 0) return false;
+
+        const absoluteIndex = this.getAbsoluteReleveOperationIndex(i);
+        const currentOp = allOperations[absoluteIndex];
+        if (!currentOp) return false;
+
+        if (absoluteIndex === 0) return true;
+
+        const prevOp = allOperations[absoluteIndex - 1];
+        if (!prevOp) return true;
+
+        return this.getOpDate(currentOp) !== this.getOpDate(prevOp);
     }
     shouldShowClosingBalance(op: Operation, i: number): boolean {
-        if (i === this.pagedReleveOperations.length - 1) return true;
-        const nextOp = this.pagedReleveOperations[i + 1];
-        return this.getOpDate(op) !== this.getOpDate(nextOp);
+        const allOperations = this.getFlattenedReleveOperations();
+        if (allOperations.length === 0) return false;
+
+        const absoluteIndex = this.getAbsoluteReleveOperationIndex(i);
+        const currentOp = allOperations[absoluteIndex];
+        if (!currentOp) return false;
+
+        if (absoluteIndex === allOperations.length - 1) return true;
+
+        const nextOp = allOperations[absoluteIndex + 1];
+        if (!nextOp) return true;
+
+        return this.getOpDate(currentOp) !== this.getOpDate(nextOp);
     }
 
     // Détermine si une opération est un débit
@@ -2206,9 +2318,16 @@ export class ComptesComponent implements OnInit, OnDestroy {
     }
     // Retourne le solde de clôture global (dernière date)
     getGlobalClosingBalance(): number {
-        const daily = this.getDailyBalances(this.releveOperations);
         const lastDate = this.getGlobalClosingBalanceDate();
-        return lastDate ? daily[lastDate]?.closing ?? 0 : 0;
+        if (lastDate) {
+            const solde = this.releveSoldesJournaliers.find(s => s.date === lastDate);
+            if (solde) {
+                return this.getEffectiveClosingValue(solde);
+            }
+            const daily = this.getDailyBalances(this.releveOperations);
+            return daily[lastDate]?.closing ?? 0;
+        }
+        return 0;
     }
 
     // Ajout d'une méthode utilitaire pour formater les montants
@@ -2315,21 +2434,90 @@ export class ComptesComponent implements OnInit, OnDestroy {
       }
     }
 
+    openClosingOverrideModal(solde: DailySolde) {
+      this.closingOverrideDate = solde.date;
+      this.closingOverrideValue = this.getEffectiveClosingValue(solde);
+      this.showClosingOverrideModal = true;
+    }
+
+    closeClosingOverrideModal() {
+      this.showClosingOverrideModal = false;
+      this.closingOverrideDate = '';
+      this.closingOverrideValue = null;
+      this.closingOverrideLoading = false;
+    }
+
+    saveClosingOverride() {
+      if (!this.selectedCompte || !this.closingOverrideDate) {
+        this.popupService.showWarning('Aucun compte ou date sélectionné');
+        return;
+      }
+      const value = this.closingOverrideValue !== null ? Number(this.closingOverrideValue) : NaN;
+      if (isNaN(value)) {
+        this.popupService.showWarning('Veuillez saisir un solde valide');
+        return;
+      }
+
+      this.closingOverrideLoading = true;
+      this.compteService.setSoldeClotureManuel(this.selectedCompte.numeroCompte, this.closingOverrideDate, value)
+        .subscribe({
+          next: () => {
+            const solde = this.releveSoldesJournaliers.find(s => s.date === this.closingOverrideDate);
+            if (solde) {
+              solde.closingManual = value;
+            }
+            this.closingOverrideValue = value;
+            this.popupService.showSuccess('Solde de clôture mis à jour.');
+            this.closingOverrideLoading = false;
+            this.closeClosingOverrideModal();
+          },
+          error: (error) => {
+            console.error('Erreur lors de la sauvegarde du solde manuel:', error);
+            this.popupService.showError(`Impossible d'enregistrer : ${error.message || 'Erreur inconnue'}`);
+            this.closingOverrideLoading = false;
+          }
+        });
+    }
+
+    removeClosingOverride() {
+      if (!this.selectedCompte || !this.closingOverrideDate) {
+        return;
+      }
+      this.closingOverrideLoading = true;
+      this.compteService.deleteSoldeClotureManuel(this.selectedCompte.numeroCompte, this.closingOverrideDate)
+        .subscribe({
+          next: () => {
+            const solde = this.releveSoldesJournaliers.find(s => s.date === this.closingOverrideDate);
+            if (solde) {
+              solde.closingManual = undefined;
+            }
+            this.popupService.showSuccess('Correction supprimée.');
+            this.closingOverrideLoading = false;
+            this.closeClosingOverrideModal();
+          },
+          error: (error) => {
+            console.error('Erreur lors de la suppression du solde manuel:', error);
+            this.popupService.showError(`Impossible de supprimer : ${error.message || 'Erreur inconnue'}`);
+            this.closingOverrideLoading = false;
+          }
+        });
+    }
+
     round2(val: any): number {
       return Math.round(+val * 100) / 100;
     }
 
     // Méthode pour calculer la valeur de l'écart entre les deux soldes de clôture
-    getEcartValue(solde: { date: string; opening: number; closing: number; closingBo?: number }): number {
+    getEcartValue(solde: DailySolde): number {
       if (solde.closingBo === undefined || solde.closingBo === null) {
         return 0; // Pas d'écart si pas de solde BO
       }
       // Arrondir l'écart à 2 décimales
-      return Math.round((solde.closing - solde.closingBo) * 100) / 100;
+      return Math.round((this.getEffectiveClosingValue(solde) - solde.closingBo) * 100) / 100;
     }
 
     // Méthode pour déterminer la classe CSS de l'écart
-    getEcartClass(solde: { date: string; opening: number; closing: number; closingBo?: number }): string {
+    getEcartClass(solde: DailySolde): string {
       if (solde.closingBo === undefined || solde.closingBo === null) {
         return ''; // Pas de classe si pas de solde BO
       }
@@ -2348,7 +2536,7 @@ export class ComptesComponent implements OnInit, OnDestroy {
     }
 
     // Navigation vers la page ecart de solde avec filtres
-    navigateToEcartSolde(solde: { date: string; opening: number; closing: number; closingBo?: number }): void {
+    navigateToEcartSolde(solde: DailySolde): void {
         if (!this.selectedCompte) return;
         
         // Configurer les données pour l'onglet écart de solde
@@ -2361,7 +2549,7 @@ export class ComptesComponent implements OnInit, OnDestroy {
     }
 
     // Méthode pour calculer la valeur de l'Ecart régularisé
-    getImpactOPValue(solde: { date: string; opening: number; closing: number; closingBo?: number }): number {
+    getImpactOPValue(solde: DailySolde): number {
         // Utiliser le cache si disponible
         if (this.impactOPSums[solde.date] !== undefined) {
             // Inverser le signe : positif devient négatif, négatif devient positif
@@ -2374,7 +2562,7 @@ export class ComptesComponent implements OnInit, OnDestroy {
     }
 
     // Méthode pour déterminer la classe CSS de l'Ecart régularisé
-    getImpactOPClass(solde: { date: string; opening: number; closing: number; closingBo?: number }): string {
+    getImpactOPClass(solde: DailySolde): string {
         const impactOP = this.getImpactOPValue(solde);
         const tolerance = 0.01; // 1 centime de tolérance
         
@@ -2388,7 +2576,7 @@ export class ComptesComponent implements OnInit, OnDestroy {
     }
 
     // Navigation vers la page Ecart régularisé avec filtres
-    navigateToImpactOP(solde: { date: string; opening: number; closing: number; closingBo?: number }): void {
+    navigateToImpactOP(solde: DailySolde): void {
         if (!this.selectedCompte) return;
         
         // Configurer les données pour l'onglet Ecart régularisé

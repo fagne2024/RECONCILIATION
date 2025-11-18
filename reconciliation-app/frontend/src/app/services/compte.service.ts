@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
-import { Compte, CompteCreateRequest, CompteUpdateRequest, CompteFilter } from '../models/compte.model';
+import { Compte, CompteCreateRequest, CompteUpdateRequest, CompteFilter, CompteSoldeCloture } from '../models/compte.model';
 
 @Injectable({
     providedIn: 'root'
@@ -171,5 +171,25 @@ export class CompteService {
 
     getSoldeBo(numeroCompte: string, dateSolde: string) {
         return this.http.get<number>('/api/compte-solde-bo/get', { params: { numeroCompte, dateSolde } });
+    }
+
+    // Soldes de clôture manuels
+    setSoldeClotureManuel(numeroCompte: string, dateSolde: string, soldeCloture: number) {
+        return this.http.post('/api/compte-solde-cloture/set', { numeroCompte, dateSolde, soldeCloture });
+    }
+
+    getSoldeClotureManuel(numeroCompte: string, dateSolde: string) {
+        return this.http.get<number>('/api/compte-solde-cloture/get', { params: { numeroCompte, dateSolde } });
+    }
+
+    deleteSoldeClotureManuel(numeroCompte: string, dateSolde: string) {
+        return this.http.delete('/api/compte-solde-cloture/delete', { params: { numeroCompte, dateSolde } });
+    }
+
+    listSoldesClotureManuels(numeroCompte: string, dateDebut?: string, dateFin?: string) {
+        let params = new HttpParams().set('numeroCompte', numeroCompte);
+        if (dateDebut) params = params.set('dateDebut', dateDebut);
+        if (dateFin) params = params.set('dateFin', dateFin);
+        return this.http.get<CompteSoldeCloture[]>('/api/compte-solde-cloture/list', { params });
     }
 } 

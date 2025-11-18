@@ -690,17 +690,30 @@
                                         <td>{{ formatDate(solde.date).split(' ')[0] }}</td>
                                         <td class="solde-ouverture-val">{{ solde.opening | number:'1.2-2' }}</td>
                                         <td class="solde-cloture-val"
-                                            [ngClass]="solde.closingBo !== undefined && (round2(solde.closingBo) === round2(solde.closing)) ? 'solde-green' : ''">
-                                            {{ solde.closing | number:'1.2-2' }}
+                                            [ngClass]="solde.closingBo !== undefined && (round2(solde.closingBo) === round2(getEffectiveClosingValue(solde))) ? 'solde-green' : ''">
+                                            <div class="closing-cell">
+                                                <div class="closing-value">
+                                                    <span [ngClass]="hasManualClosingOverride(solde) ? 'manual-closing-value' : ''">
+                                                        {{ getEffectiveClosingValue(solde) | number:'1.2-2' }}
+                                                    </span>
+                                                    <span *ngIf="hasManualClosingOverride(solde)" class="manual-badge">manuel</span>
+                                                </div>
+                                                <button type="button"
+                                                        class="btn btn-link btn-xs closing-edit-btn"
+                                                        (click)="openClosingOverrideModal(solde)"
+                                                        title="Corriger le solde de clôture">
+                                                    <i class="fas fa-edit"></i>
+                                                </button>
+                                            </div>
                                         </td>
-                                        <td [ngClass]="(solde.closing - solde.opening) >= 0 ? 'variation-positive' : 'variation-negative'">
-                                            {{ (solde.closing - solde.opening) | number:'1.2-2' }}
+                                        <td [ngClass]="(getEffectiveClosingValue(solde) - solde.opening) >= 0 ? 'variation-positive' : 'variation-negative'">
+                                            {{ (getEffectiveClosingValue(solde) - solde.opening) | number:'1.2-2' }}
                                         </td>
                                         <td>
                                             <span [ngClass]="
-                                                solde.closingBo !== undefined && (round2(solde.closingBo) === round2(solde.closing))
+                                                solde.closingBo !== undefined && (round2(solde.closingBo) === round2(getEffectiveClosingValue(solde)))
                                                     ? 'solde-green'
-                                                    : (solde.closingBo !== undefined && (round2(solde.closingBo) !== round2(solde.closing)) ? 'solde-red' : '')
+                                                    : (solde.closingBo !== undefined && (round2(solde.closingBo) !== round2(getEffectiveClosingValue(solde))) ? 'solde-red' : '')
                                               ">
                                                 {{ solde.closingBo !== undefined ? (solde.closingBo | number:'1.2-2') : '-' }}
                                             </span>
@@ -1476,6 +1489,27 @@
   </div>
 </div>
 
+<!-- Modale correction solde de clôture -->
+<div class="modal-overlay" *ngIf="showClosingOverrideModal">
+  <div class="modal-content">
+    <h2>Correction du solde de clôture</h2>
+    <p>Date sélectionnée : <b>{{ closingOverrideDate || 'N/A' }}</b></p>
+    <label>Nouveau solde de clôture :</label>
+    <input type="number" [(ngModel)]="closingOverrideValue" />
+    <div class="modal-actions">
+      <button type="button" class="btn btn-success" (click)="saveClosingOverride()" [disabled]="closingOverrideLoading">
+        <i class="fas fa-save"></i> Enregistrer
+      </button>
+      <button type="button" class="btn btn-danger" *ngIf="hasManualOverrideFor(closingOverrideDate)" (click)="removeClosingOverride()" [disabled]="closingOverrideLoading">
+        <i class="fas fa-trash"></i> Supprimer la correction
+      </button>
+      <button type="button" class="btn" (click)="closeClosingOverrideModal()" [disabled]="closingOverrideLoading">
+        Fermer
+      </button>
+    </div>
+  </div>
+</div>
+
 <style>
   .comptes-resume {
     margin-top: 32px;
@@ -1511,6 +1545,67 @@
     background: #e3f2fd;
     font-weight: bold;
     color: #1976d2;
+  }
+
+  .closing-cell {
+    position: relative;
+    min-height: 38px;
+    padding-right: 18px;
+  }
+
+  .closing-value {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .closing-edit-btn {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    border-radius: 50%;
+    border: 1px solid #c5cae9;
+    background: #ffffff;
+    color: #3949ab;
+    font-size: 0.65rem;
+    line-height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 1px 3px rgba(57, 73, 171, 0.15);
+    transition: background 0.2s ease, color 0.2s ease, transform 0.2s ease;
+  }
+
+  .closing-edit-btn:hover {
+    background: #e8eaf6;
+    color: #1a237e;
+    transform: translateY(-1px);
+  }
+
+  .manual-badge {
+    background: #ede7f6;
+    color: #512da8;
+    font-size: 0.7rem;
+    padding: 2px 6px;
+    border-radius: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .manual-closing-value {
+    font-weight: 600;
+    color: #512da8;
+  }
+
+  .modal-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 12px;
+    flex-wrap: wrap;
   }
 
   /* Styles pour les filtres du revenu journalier */
