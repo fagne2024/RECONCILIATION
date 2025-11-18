@@ -29,7 +29,7 @@ public class UserEntity {
     @Column(name = "qr_code_scanned", nullable = false)
     private Boolean qrCodeScanned = false;
 
-    @Column(name = "email")
+    @Column(name = "email", unique = true)
     private String email;
 
     // Getters et setters

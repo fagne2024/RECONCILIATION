@@ -32,6 +32,7 @@ public class PermissionInterceptor implements HandlerInterceptor {
         "/api/auth/login",
         "/api/auth/logout",
         "/api/users/check-admin",
+        "/api/users/forgot-password",
         "/api/users/me",
         "/api/users/me/password",
         "/error"

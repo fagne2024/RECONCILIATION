@@ -65,6 +65,11 @@ public class UserController {
                 return ResponseEntity.badRequest().body(Map.of("error", "L'adresse email est requise"));
             }
             
+            // Vérifier si l'email existe déjà
+            if (userRepository.findByEmail(user.getEmail().trim()).isPresent()) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Cette adresse email est déjà utilisée"));
+            }
+            
             // Générer un mot de passe automatiquement
             String generatedPassword = generateSecurePassword();
             String hashedPassword = passwordEncoder.encode(generatedPassword);
@@ -97,33 +102,52 @@ public class UserController {
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<UserEntity> updateUser(@PathVariable Long id, @RequestBody UserEntity user) {
+    public ResponseEntity<?> updateUser(@PathVariable Long id, @RequestBody UserEntity user) {
         try {
-            Optional<UserEntity> existingUser = userRepository.findById(id);
-            if (existingUser.isPresent()) {
-                user.setId(id);
-                // Si un nouveau mot de passe est fourni, le hasher
-                if (user.getPassword() != null && !user.getPassword().isEmpty()) {
-                    String hashedPassword = passwordEncoder.encode(user.getPassword());
-                    user.setPassword(hashedPassword);
-                } else {
-                    // Conserver l'ancien mot de passe si aucun nouveau n'est fourni
-                    user.setPassword(existingUser.get().getPassword());
-                }
-                // Associer le profil si fourni
-                if (user.getProfil() != null && user.getProfil().getId() != null) {
-                    ProfilEntity profil = profilRepository.findById(user.getProfil().getId()).orElse(null);
-                    user.setProfil(profil);
-                }
-                UserEntity updatedUser = userRepository.save(user);
-                // Ne pas renvoyer le mot de passe hashé dans la réponse
-                updatedUser.setPassword(null);
-                return ResponseEntity.ok(updatedUser);
-            } else {
+            Optional<UserEntity> existingUserOpt = userRepository.findById(id);
+            if (existingUserOpt.isEmpty()) {
                 return ResponseEntity.notFound().build();
             }
+            
+            UserEntity existingUser = existingUserOpt.get();
+            user.setId(id);
+            
+            // Vérifier si l'username a changé et si le nouveau username existe déjà
+            if (!existingUser.getUsername().equals(user.getUsername()) && 
+                userRepository.findByUsername(user.getUsername()).isPresent()) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Ce nom d'utilisateur existe déjà"));
+            }
+            
+            // Vérifier si l'email a changé et si le nouveau email existe déjà
+            if (user.getEmail() != null && !user.getEmail().trim().isEmpty()) {
+                String newEmail = user.getEmail().trim();
+                Optional<UserEntity> userWithEmail = userRepository.findByEmail(newEmail);
+                if (userWithEmail.isPresent() && !userWithEmail.get().getId().equals(id)) {
+                    return ResponseEntity.badRequest().body(Map.of("error", "Cette adresse email est déjà utilisée"));
+                }
+            }
+            
+            // Si un nouveau mot de passe est fourni, le hasher
+            if (user.getPassword() != null && !user.getPassword().isEmpty()) {
+                String hashedPassword = passwordEncoder.encode(user.getPassword());
+                user.setPassword(hashedPassword);
+            } else {
+                // Conserver l'ancien mot de passe si aucun nouveau n'est fourni
+                user.setPassword(existingUser.getPassword());
+            }
+            
+            // Associer le profil si fourni
+            if (user.getProfil() != null && user.getProfil().getId() != null) {
+                ProfilEntity profil = profilRepository.findById(user.getProfil().getId()).orElse(null);
+                user.setProfil(profil);
+            }
+            
+            UserEntity updatedUser = userRepository.save(user);
+            // Ne pas renvoyer le mot de passe hashé dans la réponse
+            updatedUser.setPassword(null);
+            return ResponseEntity.ok(updatedUser);
         } catch (Exception e) {
-            return ResponseEntity.badRequest().build();
+            return ResponseEntity.badRequest().body(Map.of("error", "Erreur lors de la mise à jour de l'utilisateur : " + e.getMessage()));
         }
     }
 
@@ -224,6 +248,72 @@ public class UserController {
             return ResponseEntity.ok(Map.of("message", "Mot de passe modifié avec succès"));
         } catch (Exception e) {
             return ResponseEntity.status(500).body(Map.of("error", "Erreur lors de la modification du mot de passe"));
+        }
+    }
+
+    /**
+     * Réinitialise le mot de passe d'un utilisateur par email (mot de passe oublié)
+     */
+    @PostMapping("/forgot-password")
+    public ResponseEntity<?> forgotPassword(@RequestBody Map<String, String> request) {
+        try {
+            String email = request.get("email");
+            if (email == null || email.trim().isEmpty()) {
+                return ResponseEntity.badRequest().body(Map.of("error", "L'adresse email est requise"));
+            }
+            
+            String emailTrimmed = email.trim();
+            System.out.println("🔐 [FORGOT-PASSWORD] Tentative de réinitialisation pour email: " + emailTrimmed);
+            
+            // Chercher l'utilisateur par email
+            Optional<UserEntity> userOpt = userRepository.findByEmail(emailTrimmed);
+            if (userOpt.isEmpty()) {
+                System.out.println("⚠️ [FORGOT-PASSWORD] Aucun utilisateur trouvé pour email: " + emailTrimmed);
+                // Pour des raisons de sécurité, on ne révèle pas si l'email existe ou non
+                // On retourne toujours un message de succès pour éviter l'énumération des emails
+                return ResponseEntity.ok(Map.of("message", "Si cette adresse email est associée à un compte, un nouveau mot de passe sera envoyé par email."));
+            }
+            
+            UserEntity user = userOpt.get();
+            System.out.println("✅ [FORGOT-PASSWORD] Utilisateur trouvé: " + user.getUsername());
+            
+            // Vérifier que l'utilisateur a une adresse email
+            if (user.getEmail() == null || user.getEmail().trim().isEmpty()) {
+                System.out.println("⚠️ [FORGOT-PASSWORD] L'utilisateur n'a pas d'email configuré");
+                return ResponseEntity.ok(Map.of("message", "Si cette adresse email est associée à un compte, un nouveau mot de passe sera envoyé par email."));
+            }
+            
+            // Générer un nouveau mot de passe
+            String newPassword = generateSecurePassword();
+            String hashedPassword = passwordEncoder.encode(newPassword);
+            user.setPassword(hashedPassword);
+            
+            try {
+                userRepository.save(user);
+                System.out.println("✅ [FORGOT-PASSWORD] Mot de passe mis à jour pour utilisateur: " + user.getUsername());
+            } catch (Exception e) {
+                System.err.println("❌ [FORGOT-PASSWORD] Erreur lors de la sauvegarde: " + e.getMessage());
+                e.printStackTrace();
+                return ResponseEntity.status(500).body(Map.of("error", "Une erreur est survenue lors de la réinitialisation. Veuillez réessayer plus tard."));
+            }
+            
+            // Envoyer le nouveau mot de passe par email
+            try {
+                emailService.sendPasswordResetEmail(user.getEmail(), user.getUsername(), newPassword);
+                System.out.println("✅ [FORGOT-PASSWORD] Email envoyé avec succès à: " + user.getEmail());
+                return ResponseEntity.ok(Map.of("message", "Si cette adresse email est associée à un compte, un nouveau mot de passe sera envoyé par email."));
+            } catch (Exception e) {
+                System.err.println("❌ [FORGOT-PASSWORD] Erreur lors de l'envoi de l'email: " + e.getMessage());
+                e.printStackTrace();
+                // En cas d'erreur d'envoi, on ne révèle pas l'erreur à l'utilisateur
+                // pour éviter de divulguer des informations sur l'existence du compte
+                // Mais le mot de passe a déjà été réinitialisé, donc on retourne un succès
+                return ResponseEntity.ok(Map.of("message", "Si cette adresse email est associée à un compte, un nouveau mot de passe sera envoyé par email."));
+            }
+        } catch (Exception e) {
+            System.err.println("❌ [FORGOT-PASSWORD] Erreur générale: " + e.getMessage());
+            e.printStackTrace();
+            return ResponseEntity.status(500).body(Map.of("error", "Une erreur est survenue. Veuillez réessayer plus tard."));
         }
     }
 

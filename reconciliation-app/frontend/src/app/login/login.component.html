@@ -3,8 +3,59 @@
     <div class="particle" *ngFor="let i of particles" [attr.data-index]="i"></div>
   </div>
   
+  <!-- Formulaire de mot de passe oublié -->
+  <form *ngIf="showForgotPassword && !requires2FA" (ngSubmit)="onSubmitForgotPassword()" [formGroup]="forgotPasswordForm" class="login-form">
+    <div class="logo-section">
+      <div class="logo-icon-wrapper">
+        <i class="fas fa-key logo-icon"></i>
+      </div>
+      <h2>Mot de passe oublié</h2>
+      <p class="subtitle">Réinitialisation du mot de passe</p>
+    </div>
+    
+    <div class="info-message">
+      <mat-icon>info</mat-icon>
+      <p>Entrez votre adresse email. Si elle correspond à un compte existant, un nouveau mot de passe sera généré et envoyé par email.</p>
+    </div>
+    
+    <mat-form-field appearance="outline" class="login-field">
+      <mat-label>Adresse email</mat-label>
+      <input matInput formControlName="email" type="email" autocomplete="email" required>
+      <mat-icon matSuffix>email</mat-icon>
+      <mat-error *ngIf="forgotPasswordForm.get('email')?.hasError('required')">
+        L'adresse email est requise
+      </mat-error>
+      <mat-error *ngIf="forgotPasswordForm.get('email')?.hasError('email')">
+        Veuillez entrer une adresse email valide
+      </mat-error>
+    </mat-form-field>
+    
+    <div class="button-group">
+      <button mat-raised-button color="primary" type="submit" [disabled]="forgotPasswordForm.invalid || loading" class="login-button">
+        <mat-icon *ngIf="!loading">send</mat-icon>
+        <mat-spinner *ngIf="loading" diameter="20"></mat-spinner>
+        {{ loading ? 'Envoi...' : 'Envoyer' }}
+      </button>
+      
+      <button mat-button type="button" (click)="backToLoginFromForgotPassword()" [disabled]="loading" class="back-button">
+        <mat-icon>arrow_back</mat-icon>
+        Retour
+      </button>
+    </div>
+    
+    <div *ngIf="error" class="login-error">
+      <mat-icon>error</mat-icon>
+      {{ error }}
+    </div>
+    
+    <div *ngIf="success" class="login-success">
+      <mat-icon>check_circle</mat-icon>
+      {{ success }}
+    </div>
+  </form>
+  
   <!-- Formulaire de connexion (username/password) -->
-  <form *ngIf="!requires2FA" (ngSubmit)="onSubmit()" [formGroup]="loginForm" class="login-form">
+  <form *ngIf="!showForgotPassword && !requires2FA" (ngSubmit)="onSubmit()" [formGroup]="loginForm" class="login-form">
     <div class="logo-section">
       <div class="logo-icon-wrapper">
         <i class="fas fa-sync-alt logo-icon"></i>

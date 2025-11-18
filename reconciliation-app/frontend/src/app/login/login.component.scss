@@ -604,6 +604,26 @@ button[mat-raised-button]:disabled {
   }
 }
 
+.login-success {
+  color: #27ae60;
+  margin-top: 0.5rem;
+  text-align: center;
+  background: rgba(39, 174, 96, 0.1);
+  padding: 12px;
+  border-radius: 8px;
+  border-left: 4px solid #27ae60;
+  font-size: 0.9rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  animation: slideInDown 0.5s ease-out;
+  
+  mat-icon {
+    color: #27ae60;
+  }
+}
+
 @keyframes shakeError {
   0%, 100% {
     transform: translateX(0);
@@ -613,6 +633,17 @@ button[mat-raised-button]:disabled {
   }
   20%, 40%, 60%, 80% {
     transform: translateX(5px);
+  }
+}
+
+@keyframes slideInDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }
 

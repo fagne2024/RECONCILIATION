@@ -3,6 +3,7 @@ import { FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { HttpClient } from '@angular/common/http';
 import { Router, ActivatedRoute } from '@angular/router';
 import { AppStateService } from '../services/app-state.service';
+import { UserService } from '../services/user.service';
 
 @Component({
   selector: 'app-login',
@@ -12,12 +13,15 @@ import { AppStateService } from '../services/app-state.service';
 export class LoginComponent implements OnInit {
   loginForm: FormGroup;
   twoFactorForm: FormGroup;
+  forgotPasswordForm: FormGroup;
   loading = false;
   error: string | null = null;
+  success: string | null = null;
   adminExists = true; // Par défaut, on suppose que l'admin existe
   hidePassword = true; // Pour toggle afficher/masquer mot de passe
   particles = Array(10).fill(0).map((_, i) => i + 1); // Pour les particules animées en arrière-plan
   requires2FA = false; // Indique si le 2FA est requis
+  showForgotPassword = false; // Afficher le formulaire de mot de passe oublié
   currentUsername: string | null = null; // Username pour la validation 2FA
   showQRCode = false; // Afficher le QR code lors de la connexion
   qrCodeBase64: string | null = null; // QR code en base64
@@ -29,7 +33,8 @@ export class LoginComponent implements OnInit {
     private http: HttpClient,
     private router: Router,
     private route: ActivatedRoute,
-    private appState: AppStateService
+    private appState: AppStateService,
+    private userService: UserService
   ) {
     this.loginForm = this.fb.group({
       username: ['', Validators.required],
@@ -38,6 +43,10 @@ export class LoginComponent implements OnInit {
     
     this.twoFactorForm = this.fb.group({
       code: ['', [Validators.required, Validators.pattern(/^\d{6}$/)]]
+    });
+    
+    this.forgotPasswordForm = this.fb.group({
+      email: ['', [Validators.required, Validators.email]]
     });
   }
 
@@ -152,8 +161,49 @@ export class LoginComponent implements OnInit {
   }
 
   onForgotPassword() {
-    // TODO: Implémenter la fonctionnalité de mot de passe oublié
-    alert('Fonctionnalité de réinitialisation de mot de passe à implémenter');
+    this.showForgotPassword = true;
+    this.error = null;
+    this.success = null;
+    this.forgotPasswordForm.reset();
+  }
+
+  onSubmitForgotPassword() {
+    if (this.forgotPasswordForm.invalid) {
+      return;
+    }
+    
+    const email = this.forgotPasswordForm.value.email;
+    this.loading = true;
+    this.error = null;
+    this.success = null;
+    
+    this.userService.forgotPassword(email).subscribe({
+      next: (response: any) => {
+        this.loading = false;
+        this.success = response.message || 'Si cette adresse email est associée à un compte, un nouveau mot de passe sera envoyé par email.';
+        // Réinitialiser le formulaire après 3 secondes
+        setTimeout(() => {
+          this.showForgotPassword = false;
+          this.success = null;
+          this.forgotPasswordForm.reset();
+        }, 5000);
+      },
+      error: (err) => {
+        this.loading = false;
+        if (err.error && err.error.error) {
+          this.error = err.error.error;
+        } else {
+          this.error = 'Une erreur est survenue. Veuillez réessayer plus tard.';
+        }
+      }
+    });
+  }
+
+  backToLoginFromForgotPassword() {
+    this.showForgotPassword = false;
+    this.error = null;
+    this.success = null;
+    this.forgotPasswordForm.reset();
   }
 
   onVerify2FA() {
