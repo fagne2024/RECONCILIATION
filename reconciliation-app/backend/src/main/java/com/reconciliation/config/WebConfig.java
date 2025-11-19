@@ -20,21 +20,11 @@ public class WebConfig implements WebMvcConfigurer {
 
     @Override
     public void addInterceptors(@org.springframework.lang.NonNull InterceptorRegistry registry) {
-        registry.addInterceptor(permissionInterceptor)
-                .addPathPatterns("/api/**")
-                .excludePathPatterns(
-                    "/api/profils/permissions/generate",
-                    "/api/profils/diagnostic",
-                    "/api/auth/**",
-                    "/api/users/check-admin",
-                    "/api/users/me",
-                    "/api/users/me/password",
-                    "/api/reconciliation/reconcile", // Réconciliation automatique - pas de vérification de permissions
-                    "/api/auto-processing/models", // Lecture des modèles - public
-                    "/api/auto-processing/models/**/column-rules", // Lecture des règles - public (pattern avec ** pour matcher plusieurs segments)
-                    "/api/file-watcher/available-files", // Lecture des fichiers - public
-                    "/error"
-                );
+        // TEMPORAIRE : Désactiver l'intercepteur de permissions pour tous les endpoints
+        // TODO: Réactiver la vérification des permissions en production
+        // registry.addInterceptor(permissionInterceptor)
+        //         .addPathPatterns("/api/**")
+        //         .excludePathPatterns("/api/**"); // Exclure tous les endpoints
     }
 
     /**

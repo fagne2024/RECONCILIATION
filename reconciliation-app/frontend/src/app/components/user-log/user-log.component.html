@@ -19,7 +19,7 @@
             type="text" 
             formControlName="username" 
             class="form-control"
-            [list]="'username-list'"
+            list="username-list"
             placeholder="Filtrer par utilisateur">
           <datalist id="username-list">
             <option *ngFor="let username of usernames" [value]="username">
@@ -32,7 +32,7 @@
             type="text" 
             formControlName="module" 
             class="form-control"
-            [list]="'module-list'"
+            list="module-list"
             placeholder="Filtrer par module">
           <datalist id="module-list">
             <option *ngFor="let module of modules" [value]="module">
@@ -45,7 +45,7 @@
             type="text" 
             formControlName="permission" 
             class="form-control"
-            [list]="'permission-list'"
+            list="permission-list"
             placeholder="Filtrer par permission">
           <datalist id="permission-list">
             <option *ngFor="let permission of permissions" [value]="permission">
