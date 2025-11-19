@@ -177,9 +177,6 @@ public class ReconciliationLockService {
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void cleanupExpiredLocks() {
         try {
-            // Nettoyer le contexte de persistance avant la suppression pour éviter les conflits
-            entityManager.clear();
-            
             int deleted = lockRepository.deleteExpiredLocks(LocalDateTime.now());
             if (deleted > 0) {
                 log.info("🧹 {} verrous expirés supprimés", deleted);
@@ -193,7 +190,9 @@ public class ReconciliationLockService {
      * Nettoyage automatique des verrous expirés toutes les 5 minutes
      */
     @Scheduled(fixedRate = 5, timeUnit = TimeUnit.MINUTES)
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void scheduledCleanup() {
+        // Garantir qu'une transaction est active pour les opérations de suppression
         cleanupExpiredLocks();
     }
     

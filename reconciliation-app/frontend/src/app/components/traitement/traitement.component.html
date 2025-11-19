@@ -105,8 +105,24 @@
           <p>{{ sheetSplitProgress }}</p>
         </div>
         <div *ngIf="sheetSplitConversionInProgress" class="sheet-split-progress conversion">
-          <div class="spinner"></div>
-          <p>{{ sheetSplitConversionMessage }}</p>
+          <div class="conversion-progress-container">
+            <div class="conversion-progress-header">
+              <i class="fas fa-sync-alt fa-spin"></i>
+              <span>{{ sheetSplitConversionMessage }}</span>
+            </div>
+            <div class="conversion-progress-bar-container">
+              <div class="conversion-progress-bar">
+                <div class="conversion-progress-fill" [style.width.%]="sheetSplitConversionProgress"></div>
+              </div>
+              <div class="conversion-progress-text">{{ sheetSplitConversionProgress }}%</div>
+            </div>
+            <div class="conversion-progress-info">
+              <small>
+                <i class="fas fa-info-circle"></i>
+                Cette opération peut prendre plusieurs minutes pour les gros fichiers. Veuillez patienter...
+              </small>
+            </div>
+          </div>
         </div>
         <div *ngIf="sheetSplitProgress && !sheetSplitIsProcessing" class="sheet-split-status">
           {{ sheetSplitProgress }}

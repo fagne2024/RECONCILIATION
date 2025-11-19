@@ -52,7 +52,7 @@
                 <span>Opérations</span>
             </a>
         </li>
-        <li *ngIf="isMenuAllowed('Frais')">
+        <li *ngIf="isMenuAllowed('Frais') || isMenuAllowed('Commission')">
             <a href="#" class="has-submenu" (click)="toggleFraisCommissionsSubmenu(); $event.preventDefault()">
                 <i class="fas fa-money-bill-wave menu-icon frais"></i>
                 <span>Frais & Commissions</span>
@@ -60,7 +60,7 @@
             </a>
             <ul class="submenu" *ngIf="showFraisCommissionsSubmenu">
                 <li *ngIf="isMenuAllowed('Frais')"><a routerLink="/frais"><i class="fas fa-money-bill-wave menu-icon frais"></i> Frais</a></li>
-                <li><a routerLink="/commission"><i class="fas fa-hand-holding-usd menu-icon commission"></i> Commission</a></li>
+                <li *ngIf="isMenuAllowed('Commission')"><a routerLink="/commission"><i class="fas fa-hand-holding-usd menu-icon commission"></i> Commission</a></li>
             </ul>
         </li>
         <li *ngIf="isMenuAllowed('TSOP') || isMenuAllowed('Impact OP') || isMenuAllowed('TRX SF')">

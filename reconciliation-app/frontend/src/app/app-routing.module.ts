@@ -38,6 +38,7 @@ import { BanqueDashboardComponent } from './components/banque-dashboard/banque-d
 import { TwoFactorAuthComponent } from './components/two-factor-auth/two-factor-auth.component';
 import { UserProfileComponent } from './components/user-profile/user-profile.component';
 import { AuthGuard } from './guards/auth.guard';
+import { AdminGuard } from './guards/admin.guard';
 
 const routes: Routes = [
   // Route de login accessible sans authentification
@@ -58,12 +59,12 @@ const routes: Routes = [
   { path: 'operations', component: OperationsComponent, canActivate: [AuthGuard] },
   { path: 'frais', component: FraisComponent, canActivate: [AuthGuard] },
   { path: 'commission', component: CommissionComponent, canActivate: [AuthGuard] },
-  { path: 'users', component: UsersComponent, canActivate: [AuthGuard] },
+  { path: 'users', component: UsersComponent, canActivate: [AuthGuard, AdminGuard] },
   { path: 'ranking', component: RankingComponent, canActivate: [AuthGuard] },
   { path: 'traitement', component: TraitementComponent, canActivate: [AuthGuard] },
-  { path: 'profils', component: ProfilComponent, canActivate: [AuthGuard] },
-  { path: 'modules', component: ModulesComponent, canActivate: [AuthGuard] },
-  { path: 'permissions', component: PermissionsComponent, canActivate: [AuthGuard] },
+  { path: 'profils', component: ProfilComponent, canActivate: [AuthGuard, AdminGuard] },
+  { path: 'modules', component: ModulesComponent, canActivate: [AuthGuard, AdminGuard] },
+  { path: 'permissions', component: PermissionsComponent, canActivate: [AuthGuard, AdminGuard] },
   { path: 'ecart-solde', component: EcartSoldeComponent, canActivate: [AuthGuard] },
   { path: 'trx-sf', component: TrxSfComponent, canActivate: [AuthGuard] },
   { path: 'impact-op', component: ImpactOPComponent, canActivate: [AuthGuard] },
@@ -75,10 +76,10 @@ const routes: Routes = [
   { path: 'report-dashboard', component: ReportDashboardComponent, canActivate: [AuthGuard] },
   { path: 'reconciliation-dashboard', component: DashboardReconciliationComponent, canActivate: [AuthGuard] },
   { path: 'banque-dashboard', component: BanqueDashboardComponent, canActivate: [AuthGuard] },
-  { path: 'log-utilisateur', component: UserLogComponent, canActivate: [AuthGuard] },
+  { path: 'log-utilisateur', component: UserLogComponent, canActivate: [AuthGuard, AdminGuard] },
   { path: 'predictions', component: PredictionsNewComponent, canActivate: [AuthGuard] },
   { path: 'predictions-old', component: PredictionsComponent, canActivate: [AuthGuard] }, // Ancien système gardé pour référence
-  { path: 'two-factor-auth', component: TwoFactorAuthComponent, canActivate: [AuthGuard] },
+  { path: 'two-factor-auth', component: TwoFactorAuthComponent, canActivate: [AuthGuard, AdminGuard] },
   { path: 'user-profile', component: UserProfileComponent, canActivate: [AuthGuard] },
 ];
 

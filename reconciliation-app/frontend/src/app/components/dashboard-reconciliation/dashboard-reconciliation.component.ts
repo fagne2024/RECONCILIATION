@@ -185,6 +185,20 @@ export class DashboardReconciliationComponent implements OnInit, OnDestroy {
         return 'rate-ok';
     }
 
+    getPositiveValueClass(value?: number | null): string {
+        if (value === undefined || value === null || isNaN(value)) {
+            return '';
+        }
+        return value > 0 ? 'metric-positive' : 'metric-zero';
+    }
+
+    getTotalDiscrepancies(serviceMetrics: any): number {
+        if (!serviceMetrics) {
+            return 0;
+        }
+        return (serviceMetrics.boDiscrepancyCount || 0) + (serviceMetrics.partnerDiscrepancyCount || 0);
+    }
+
     isTraiteView(): boolean {
         return this.statusView === 'traite';
     }

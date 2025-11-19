@@ -55,6 +55,7 @@ export class AppStateService {
     private userRights: UserRights | null = null;
     private username: string | null = null;
     private token: string | null = null;
+    private normalizedModuleSet = new Set<string>();
 
     // Gestion des fichiers uploadés
     private uploadedFilesSubject = new BehaviorSubject<{ boFile: File | null; partnerFile: File | null }>({
@@ -277,11 +278,26 @@ export class AppStateService {
     }
 
     setUserRights(rights: UserRights, username?: string, token?: string) {
-        this.userRights = rights;
+        const deduplicatedModules: string[] = [];
+        const seen = new Set<string>();
+        (rights.modules ?? []).forEach(moduleName => {
+            const normalized = this.normalizeModuleName(moduleName);
+            if (!normalized || seen.has(normalized)) {
+                return;
+            }
+            seen.add(normalized);
+            deduplicatedModules.push(moduleName);
+        });
+
+        this.userRights = {
+            ...rights,
+            modules: deduplicatedModules
+        };
+        this.rebuildNormalizedModuleSet(deduplicatedModules);
         if (username) this.username = username;
         if (token) this.token = token;
         // Sauvegarder dans le localStorage
-        localStorage.setItem('userRights', JSON.stringify(rights));
+        localStorage.setItem('userRights', JSON.stringify(this.userRights));
         if (username) localStorage.setItem('username', username);
         if (token) localStorage.setItem('auth_token', token);
     }
@@ -304,6 +320,7 @@ export class AppStateService {
                 this.userRights = JSON.parse(rightsStr);
                 this.username = username;
                 if (token) this.token = token;
+                this.rebuildNormalizedModuleSet();
             } catch (e) {
                 // Nettoyer si erreur de parsing
                 localStorage.removeItem('userRights');
@@ -317,6 +334,7 @@ export class AppStateService {
         this.userRights = null;
         this.username = null;
         this.token = null;
+        this.normalizedModuleSet.clear();
         localStorage.removeItem('userRights');
         localStorage.removeItem('username');
         localStorage.removeItem('auth_token');
@@ -350,7 +368,31 @@ export class AppStateService {
     }
 
     isModuleAllowed(module: string): boolean {
-        return this.userRights?.modules.includes(module) ?? false;
+        const normalized = this.normalizeModuleName(module);
+        if (!normalized) {
+            return false;
+        }
+        return this.normalizedModuleSet.has(normalized);
+    }
+
+    private rebuildNormalizedModuleSet(modules?: string[]) {
+        const source = modules ?? this.userRights?.modules ?? [];
+        this.normalizedModuleSet = new Set(
+            source
+                .map(name => this.normalizeModuleName(name))
+                .filter((name): name is string => !!name)
+        );
+    }
+
+    private normalizeModuleName(name?: string | null): string | null {
+        if (!name) {
+            return null;
+        }
+        return name
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .trim()
+            .toLowerCase();
     }
 
     // Méthodes pour gérer les fichiers uploadés

@@ -587,10 +587,47 @@
     white-space: nowrap; // Empêche le retour à la ligne
 }
 
+.metric-value.metric-positive {
+    color: #0b8043;
+    background: rgba(11, 128, 67, 0.15);
+    padding: 4px 10px;
+    border-radius: 999px;
+}
+
+.metric-value.metric-zero {
+    color: #546e7a;
+    background: rgba(84, 110, 122, 0.15);
+    padding: 4px 10px;
+    border-radius: 999px;
+}
+
 .metric-subtext {
     font-size: 0.75rem;
     color: #6c757d;
     margin-top: 4px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.metric-count-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 28px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-weight: 700;
+
+    &.metric-positive {
+        background: rgba(244, 67, 54, 0.15);
+        color: #c62828;
+    }
+
+    &.metric-zero {
+        background: rgba(33, 150, 243, 0.12);
+        color: #1565c0;
+    }
 }
 
 .discrepancy-grid .metric-item {
@@ -604,6 +641,22 @@
 .discrepancy-grid .metric-value {
     color: #2c3e50;
     text-align: left;
+    background: transparent;
+    padding: 0;
+}
+
+.discrepancy-grid .metric-value.metric-positive {
+    color: #c62828;
+    background: rgba(198, 40, 40, 0.12);
+    border-radius: 6px;
+    padding: 3px 8px;
+}
+
+.discrepancy-grid .metric-value.metric-zero {
+    color: #1565c0;
+    background: rgba(21, 101, 192, 0.12);
+    border-radius: 6px;
+    padding: 3px 8px;
 }
 
 .rate-ok {
@@ -624,7 +677,14 @@
 .discrepancy-total .metric-value {
     font-size: 1.4rem;
     font-weight: 700;
-    color: #2c3e50;
+}
+
+.discrepancy-total .metric-value.metric-positive {
+    color: #c62828;
+}
+
+.discrepancy-total .metric-value.metric-zero {
+    color: #1565c0;
 }
 
 /* Couleurs selon les seuils - style arrondi comme dans l'image */

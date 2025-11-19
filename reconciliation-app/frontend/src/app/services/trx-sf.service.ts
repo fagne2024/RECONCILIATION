@@ -1,6 +1,7 @@
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
+import { environment } from '../../environments/environment';
 
 export interface TrxSfData {
   id?: number;
@@ -40,7 +41,7 @@ export interface ValidationResult {
   providedIn: 'root'
 })
 export class TrxSfService {
-  private baseUrl = '/api/trx-sf';
+  private baseUrl = `${environment.apiUrl}/trx-sf`;
 
   constructor(private http: HttpClient) { }
 

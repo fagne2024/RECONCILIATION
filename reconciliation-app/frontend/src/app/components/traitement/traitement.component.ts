@@ -225,6 +225,9 @@ export class TraitementComponent implements OnInit, AfterViewInit {
   sheetSplitConversionInProgress: boolean = false;
   sheetSplitConversionMessage: string = '';
   sheetSplitProgress: string = '';
+  sheetSplitConversionProgress: number = 0; // Pourcentage de progression (0-100)
+  sheetSplitConversionElapsedTime: number = 0; // Temps écoulé en secondes
+  sheetSplitConversionProgressInterval: any = null; // Intervalle pour mettre à jour la progression
   sheetSplitResults: Array<{ sheetName: string; rows: number; fileName: string }> = [];
   sheetSplitColumnWidths: number[] = [8, 12, 10, 15, 12, 12, 10, 8, 15, 10, 12, 15, 10, 12, 12, 20, 15];
   sheetSplitZipName: string = '';
@@ -2898,6 +2901,14 @@ export class TraitementComponent implements OnInit, AfterViewInit {
       this.sheetSplitIsProcessing = false;
       this.sheetSplitConversionInProgress = false;
       this.sheetSplitConversionMessage = '';
+      
+      // Nettoyer l'intervalle si toujours actif
+      if (this.sheetSplitConversionProgressInterval) {
+        clearInterval(this.sheetSplitConversionProgressInterval);
+        this.sheetSplitConversionProgressInterval = null;
+      }
+      this.sheetSplitConversionProgress = 0;
+      this.sheetSplitConversionElapsedTime = 0;
     }
   }
 
@@ -2945,19 +2956,96 @@ export class TraitementComponent implements OnInit, AfterViewInit {
     return new Promise<File>((resolve, reject) => {
       const sizeMB = (file.size / (1024 * 1024)).toFixed(2);
       this.sheetSplitProgress = `Préparation de la conversion (${sizeMB} MB)...`;
+      
+      // Initialiser la progression
+      this.sheetSplitConversionProgress = 0;
+      this.sheetSplitConversionElapsedTime = 0;
+      const startTime = Date.now();
+      
+      // Démarrer l'intervalle de mise à jour de la progression
+      this.sheetSplitConversionProgressInterval = setInterval(() => {
+        this.sheetSplitConversionElapsedTime = Math.floor((Date.now() - startTime) / 1000);
+        
+        // Estimation de progression optimisée basée sur la taille du fichier
+        // Avec les optimisations backend (streaming), la conversion est plus rapide
+        // Estimation réaliste : ~1-1.5s par MB pour les petits, ~0.7-1s pour les moyens, ~0.6-0.8s pour les gros
+        const fileSizeMB = parseFloat(sizeMB);
+        let estimatedDuration;
+        
+        if (fileSizeMB < 50) {
+          // Petits fichiers : ~1.5s par MB
+          estimatedDuration = Math.max(30, fileSizeMB * 1.5);
+        } else if (fileSizeMB < 150) {
+          // Fichiers moyens : ~1s par MB
+          estimatedDuration = Math.max(60, fileSizeMB * 1.0);
+        } else {
+          // Gros fichiers (181 MB) : ~0.7s par MB (grâce au streaming)
+          // Pour 181 MB = ~127 secondes = ~2 minutes
+          estimatedDuration = Math.max(120, fileSizeMB * 0.7);
+        }
+        
+        // Limite à 98% pour laisser de la marge, mais permet d'aller plus loin
+        const rawProgress = (this.sheetSplitConversionElapsedTime / estimatedDuration) * 100;
+        // Progression non-linéaire : plus lente au début, accélère vers la fin
+        const adjustedProgress = rawProgress < 50 
+          ? rawProgress * 0.7  // Ralentir les premiers 50%
+          : 35 + (rawProgress - 50) * 1.3; // Accélérer les derniers 50%
+        
+        const estimatedProgress = Math.min(98, Math.max(0, adjustedProgress));
+        this.sheetSplitConversionProgress = Math.floor(estimatedProgress);
+        
+        // Mettre à jour le message avec le temps écoulé et estimation restante
+        const minutes = Math.floor(this.sheetSplitConversionElapsedTime / 60);
+        const seconds = this.sheetSplitConversionElapsedTime % 60;
+        const timeStr = minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
+        
+        const remainingSeconds = Math.max(0, Math.ceil(estimatedDuration - this.sheetSplitConversionElapsedTime));
+        const remainingMinutes = Math.floor(remainingSeconds / 60);
+        const remainingSecs = remainingSeconds % 60;
+        const remainingStr = remainingMinutes > 0 
+          ? `${remainingMinutes}m ${remainingSecs}s` 
+          : `${remainingSecs}s`;
+        
+        this.sheetSplitConversionMessage = `Conversion XLS → XLSX en cours... (${timeStr} écoulé${minutes > 0 ? 's' : ''}, ~${remainingStr} restant${remainingMinutes > 0 ? 's' : ''})`;
+        
+        this.cd.detectChanges();
+      }, 500); // Mise à jour toutes les 500ms
+      
       this.excelConversionService.convertXlsToXlsx(file).subscribe({
         next: blob => {
+          // Arrêter l'intervalle
+          if (this.sheetSplitConversionProgressInterval) {
+            clearInterval(this.sheetSplitConversionProgressInterval);
+            this.sheetSplitConversionProgressInterval = null;
+          }
+          
+          // Mettre la progression à 100%
+          this.sheetSplitConversionProgress = 100;
           const convertedFile = new File([blob], `${this.getBaseFileName(file.name)}_converted.xlsx`, {
             type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
           });
           this.sheetSplitProgress = 'Conversion terminée, reprise de la séparation...';
-          resolve(convertedFile);
+          this.sheetSplitConversionMessage = 'Conversion terminée !';
+          this.cd.detectChanges();
+          
+          // Petit délai pour afficher le 100% avant de continuer
+          setTimeout(() => {
+            resolve(convertedFile);
+          }, 500);
         },
         error: err => {
+          // Arrêter l'intervalle en cas d'erreur
+          if (this.sheetSplitConversionProgressInterval) {
+            clearInterval(this.sheetSplitConversionProgressInterval);
+            this.sheetSplitConversionProgressInterval = null;
+          }
+          
           console.error('Erreur lors de la conversion XLS -> XLSX:', err);
           this.showError('sheetSplit', 'Erreur lors de la conversion XLS -> XLSX.');
           this.sheetSplitConversionInProgress = false;
           this.sheetSplitConversionMessage = '';
+          this.sheetSplitConversionProgress = 0;
+          this.sheetSplitConversionElapsedTime = 0;
           reject(err);
         }
       });

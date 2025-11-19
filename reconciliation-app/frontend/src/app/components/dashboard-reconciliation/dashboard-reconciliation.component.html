@@ -202,19 +202,38 @@
                             <div *ngSwitchCase="'traite'" class="metrics-grid discrepancy-grid">
                                 <div class="metric-item" [ngClass]="getDiscrepancyRateClass(serviceEntry.value.boDiscrepancyRate)">
                                     <div class="metric-label">Taux écarts BO</div>
-                                    <div class="metric-value">{{ formatDiscrepancyPercentage(serviceEntry.value.boDiscrepancyRate) }}</div>
-                                    <div class="metric-subtext">{{ serviceEntry.value.boDiscrepancyCount || 0 }} écart(s) BO</div>
+                                    <div class="metric-value"
+                                         [ngClass]="getPositiveValueClass(serviceEntry.value.boDiscrepancyRate)">
+                                        {{ formatDiscrepancyPercentage(serviceEntry.value.boDiscrepancyRate) }}
+                                    </div>
+                                    <div class="metric-subtext">
+                                        <span class="metric-count-badge"
+                                              [ngClass]="getPositiveValueClass(serviceEntry.value.boDiscrepancyCount)">
+                                            {{ serviceEntry.value.boDiscrepancyCount || 0 }}
+                                        </span>
+                                        écart(s) BO
+                                    </div>
                                 </div>
                                 <div class="metric-item" [ngClass]="getDiscrepancyRateClass(serviceEntry.value.partnerDiscrepancyRate)">
                                     <div class="metric-label">Taux écarts Partenaire</div>
-                                    <div class="metric-value">{{ formatDiscrepancyPercentage(serviceEntry.value.partnerDiscrepancyRate) }}</div>
-                                    <div class="metric-subtext">{{ serviceEntry.value.partnerDiscrepancyCount || 0 }} écart(s) Part.</div>
+                                    <div class="metric-value"
+                                         [ngClass]="getPositiveValueClass(serviceEntry.value.partnerDiscrepancyRate)">
+                                        {{ formatDiscrepancyPercentage(serviceEntry.value.partnerDiscrepancyRate) }}
+                                    </div>
+                                    <div class="metric-subtext">
+                                        <span class="metric-count-badge"
+                                              [ngClass]="getPositiveValueClass(serviceEntry.value.partnerDiscrepancyCount)">
+                                            {{ serviceEntry.value.partnerDiscrepancyCount || 0 }}
+                                        </span>
+                                        écart(s) Part.
+                                    </div>
                                 </div>
                                 <div class="metric-item metric-item-centered discrepancy-total">
                                     <div class="metric-content">
                                         <div class="metric-label">Total écarts exploités</div>
-                                        <div class="metric-value">
-                                            {{ (serviceEntry.value.boDiscrepancyCount || 0) + (serviceEntry.value.partnerDiscrepancyCount || 0) }}
+                                        <div class="metric-value"
+                                             [ngClass]="getPositiveValueClass(getTotalDiscrepancies(serviceEntry.value))">
+                                            {{ getTotalDiscrepancies(serviceEntry.value) }}
                                         </div>
                                         <div class="metric-subtext">d'après les commentaires</div>
                                     </div>

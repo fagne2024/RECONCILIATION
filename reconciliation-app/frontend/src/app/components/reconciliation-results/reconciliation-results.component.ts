@@ -366,6 +366,10 @@ interface ApiError {
                                 placeholder="Rechercher par clé..."
                                 class="search-input"
                             >
+                            <label style="display:flex;align-items:center;gap:6px;">
+                                <input type="checkbox" [checked]="allBoSelectedOnPage" (change)="toggleSelectAllBoOnPage($event)">
+                                <span>Sélectionner la page</span>
+                            </label>
                             <button (click)="exportResults()" class="export-button">
                                 📥 Exporter les ECART BO
                             </button>
@@ -395,6 +399,13 @@ interface ApiError {
                             <button (click)="nextPage('boOnly')" [disabled]="boOnlyPage === getTotalPages('boOnly')">Suivant</button>
                         </div>
                         <div class="unmatched-card" *ngFor="let record of getPagedBoOnly()">
+                            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;gap:8px;">
+                                <div style="font-weight:600;color:#d32f2f;">Ligne BO</div>
+                                <label style="display:flex;align-items:center;gap:6px;">
+                                    <input type="checkbox" [checked]="isBoRecordSelected(record)" (change)="toggleBoSelection(record, $event)">
+                                    <span>Sélectionner</span>
+                                </label>
+                            </div>
                             <div class="data-grid">
                                 <div class="info-row">
                                     <span class="label">Volume:</span>
@@ -1731,6 +1742,70 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
         // Ici, tu peux appeler une API ou autre logique
     }
 
+    // Sélection pour ECART BO
+    selectedBoOnlyKeys: string[] = [];
+    private getBoOnlyKey(record: Record<string, string>): string {
+        const parts = [
+            this.getFromRecord(record, ['CLE', 'clé de réconciliation', 'cle_reconciliation', 'reconciliation_key', 'Key', 'key', 'ID', 'id']),
+            this.getFromRecord(record, ['ID Opération', 'ID Operation', 'id_operation', 'idOperation', 'ID OPERATION']),
+            this.getFromRecord(record, ['Numéro Trans GU', 'Numero Trans GU', 'numeroTransGU', 'numero_trans_gu']),
+            this.getFromRecord(record, ['Référence', 'Reference', 'reference']),
+            this.getFromRecord(record, ['Date opération', 'Date', 'dateOperation', 'date_operation', 'DATE']),
+            this.getFromRecord(record, ['Montant', 'montant', 'amount', 'Amount', 'volume', 'Volume']),
+            this.getFromRecord(record, ['Service', 'service', 'SERVICE']),
+            this.getFromRecord(record, ['Agence', 'agence', 'AGENCE', 'agency'])
+        ].map(value => value?.toString().trim()).filter(value => !!value);
+
+        if (parts.length === 0) {
+            return Object.values(record).join('|');
+        }
+
+        return parts.join('|');
+    }
+    isBoRecordSelected(record: Record<string, string>): boolean {
+        return this.selectedBoOnlyKeys.includes(this.getBoOnlyKey(record));
+    }
+    toggleBoSelection(record: Record<string, string>, event: any): void {
+        const key = this.getBoOnlyKey(record);
+        if (event.target.checked) {
+            if (!this.selectedBoOnlyKeys.includes(key)) {
+                this.selectedBoOnlyKeys.push(key);
+            }
+        } else {
+            this.selectedBoOnlyKeys = this.selectedBoOnlyKeys.filter(k => k !== key);
+        }
+    }
+    get allBoSelectedOnPage(): boolean {
+        const page = this.getPagedBoOnly();
+        return page.length > 0 && page.every(r => this.isBoRecordSelected(r));
+    }
+    toggleSelectAllBoOnPage(event: any): void {
+        const page = this.getPagedBoOnly();
+        const pageKeys = page.map(r => this.getBoOnlyKey(r));
+        if (event.target.checked) {
+            this.selectedBoOnlyKeys = Array.from(new Set([...this.selectedBoOnlyKeys, ...pageKeys]));
+        } else {
+            this.selectedBoOnlyKeys = this.selectedBoOnlyKeys.filter(k => !pageKeys.includes(k));
+        }
+    }
+    private getBoSelectionDataset(): Record<string, string>[] {
+        if (this.filteredBoOnly && this.filteredBoOnly.length > 0) {
+            return this.filteredBoOnly;
+        }
+        if (this.response?.boOnly && this.response.boOnly.length > 0) {
+            return this.response.boOnly;
+        }
+        return [];
+    }
+    private getBoRecordsForAction(): Record<string, string>[] {
+        const dataset = this.getBoSelectionDataset();
+        if (this.selectedBoOnlyKeys.length === 0) {
+            return dataset;
+        }
+        const keySet = new Set(this.selectedBoOnlyKeys);
+        return dataset.filter(record => keySet.has(this.getBoOnlyKey(record)));
+    }
+
     // Sélection pour ECART Partenaire (Import OP)
     selectedPartnerOnlyKeys: string[] = [];
     private getPartnerOnlyKey(record: Record<string, string>): string {
@@ -1768,8 +1843,15 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
     }
 
     async saveEcartBoToEcartSolde(): Promise<void> {
-        if (!this.response?.boOnly || this.response.boOnly.length === 0) {
+        const availableRecords = this.getBoSelectionDataset();
+        if (availableRecords.length === 0) {
             this.popupService.showWarning('❌ Aucune donnée ECART BO à sauvegarder.');
+            return;
+        }
+
+        const sourceRecords = this.getBoRecordsForAction();
+        if (sourceRecords.length === 0) {
+            this.popupService.showWarning('❌ Aucune ligne sélectionnée pour la sauvegarde.');
             return;
         }
 
@@ -1777,16 +1859,17 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
 
         try {
             console.log('🔄 Début de la sauvegarde des ECART BO...');
-            console.log('DEBUG: Nombre d\'enregistrements ECART BO:', this.response.boOnly.length);
+            console.log('DEBUG: Nombre d\'enregistrements ECART BO (disponibles):', availableRecords.length);
+            console.log('DEBUG: Nombre d\'enregistrements ECART BO (à sauvegarder):', sourceRecords.length);
 
             // Debug: Afficher les colonnes disponibles dans le premier enregistrement
-            if (this.response.boOnly.length > 0) {
-                console.log('DEBUG: Colonnes disponibles dans ECART BO:', Object.keys(this.response.boOnly[0]));
-                console.log('DEBUG: Premier enregistrement ECART BO:', this.response.boOnly[0]);
+            if (sourceRecords.length > 0) {
+                console.log('DEBUG: Colonnes disponibles dans ECART BO:', Object.keys(sourceRecords[0]));
+                console.log('DEBUG: Premier enregistrement ECART BO:', sourceRecords[0]);
             }
 
             // Convertir les données ECART BO en format EcartSolde
-            const ecartSoldeData: EcartSolde[] = this.response.boOnly.map((record, index) => {
+            const ecartSoldeData: EcartSolde[] = sourceRecords.map((record, index) => {
                 const getValueWithFallback = (keys: string[]): string => {
                     for (const key of keys) {
                         if (record[key] !== undefined && record[key] !== null && record[key] !== '') {
@@ -1907,8 +1990,12 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
             console.log('DEBUG: Contenu CSV généré pour validation');
 
             // Afficher un message de confirmation avec les détails
+            const selectionSummary = this.selectedBoOnlyKeys.length > 0
+                ? `🎯 Lignes sélectionnées: ${sourceRecords.length}\n`
+                : '';
             const message = `📋 RÉSUMÉ DES DONNÉES À SAUVEGARDER:\n\n` +
-                `📊 Total des enregistrements ECART BO: ${this.response.boOnly.length}\n` +
+                `📊 Total des enregistrements ECART BO: ${availableRecords.length}\n` +
+                selectionSummary +
                 `✅ Enregistrements valides: ${validRecords.length}\n` +
                 `❌ Enregistrements invalides: ${ecartSoldeData.length - validRecords.length}\n\n` +
                 `📝 Commentaire par défaut: "IMPACT J+1"\n` +
@@ -1961,8 +2048,15 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
     }
 
     async saveEcartBoToTrxSf(): Promise<void> {
-        if (!this.response?.boOnly || this.response.boOnly.length === 0) {
+        const availableRecords = this.getBoSelectionDataset();
+        if (availableRecords.length === 0) {
             this.popupService.showWarning('❌ Aucune donnée ECART BO à sauvegarder dans TRX SF.');
+            return;
+        }
+
+        const sourceRecords = this.getBoRecordsForAction();
+        if (sourceRecords.length === 0) {
+            this.popupService.showWarning('❌ Aucune ligne sélectionnée pour la sauvegarde.');
             return;
         }
 
@@ -1970,10 +2064,11 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
 
         try {
             console.log('🔄 Début de la sauvegarde des ECART BO dans TRX SF...');
-            console.log('DEBUG: Nombre d\'enregistrements ECART BO:', this.response.boOnly.length);
+            console.log('DEBUG: Nombre d\'enregistrements ECART BO (disponibles):', availableRecords.length);
+            console.log('DEBUG: Nombre d\'enregistrements ECART BO (à sauvegarder):', sourceRecords.length);
 
             // Convertir les données ECART BO en format TrxSfData avec récupération des frais
-            const trxSfDataPromises = this.response.boOnly.map(async (record, index) => {
+            const trxSfDataPromises = sourceRecords.map(async (record, index) => {
                 const getValueWithFallback = (keys: string[]): string => {
                     for (const key of keys) {
                         if (record[key] !== undefined && record[key] !== null && record[key] !== '') {
