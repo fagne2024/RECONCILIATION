@@ -60,6 +60,10 @@ public class SecurityConfig {
                 .requestMatchers("/api/auth/**").permitAll()
                 .requestMatchers("/api/users/check-admin").permitAll() // Vérification admin accessible sans authentification
                 .requestMatchers("/api/users/forgot-password").permitAll() // Réinitialisation mot de passe accessible sans authentification
+                .requestMatchers("/api/auto-processing/models").permitAll() // Lecture des modèles (GET) - public pour chargement initial
+                .requestMatchers("/api/auto-processing/models/*/column-rules").permitAll() // Lecture des règles (GET) - public
+                .requestMatchers("/api/file-watcher/available-files").permitAll() // Lecture des fichiers disponibles (GET) - public
+                .requestMatchers("/api/reconciliation/reconcile").permitAll() // Réconciliation automatique - public pour mode automatique
                 .requestMatchers("/").permitAll()
                 .requestMatchers("/health").permitAll()
                 
@@ -68,9 +72,11 @@ public class SecurityConfig {
                 .requestMatchers("/api/operations/**").authenticated()
                 .requestMatchers("/api/accounts/**").authenticated()
                 .requestMatchers("/api/comptes/**").authenticated()
-                .requestMatchers("/api/reconciliation/**").authenticated()
+                .requestMatchers("/api/reconciliation/**").authenticated() // Autres endpoints de réconciliation protégés
                 .requestMatchers("/api/rankings/**").authenticated()
                 .requestMatchers("/api/statistics/**").authenticated()
+                .requestMatchers("/api/auto-processing/**").authenticated() // Modifications des modèles (POST/PUT/DELETE) - protégé
+                .requestMatchers("/api/file-watcher/**").authenticated() // Modifications de la surveillance (POST/PUT/DELETE) - protégé
                 .requestMatchers("/api/sql/**").hasRole("ADMIN") // Admin seulement
                 
                 // Endpoints semi-protégés (peut nécessiter authentification selon le contexte)

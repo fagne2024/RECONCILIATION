@@ -92,10 +92,10 @@ public class PredictionService {
             // Calculer la confiance
             response.setConfiance(calculerConfiance(operationsHistoriques, stats));
             
-            logger.info("✅ Prédiction générée: {} jours, montant total: {}, confiance: {:.2f}%",
+            logger.info("✅ Prédiction générée: {} jours, montant total: {}, confiance: {}%",
                 response.getHorizonJours(),
                 response.getMontantTotalPrediction() != null ? response.getMontantTotalPrediction() : 0.0,
-                response.getConfiance() != null ? response.getConfiance() * 100 : 0.0);
+                String.format("%.2f", response.getConfiance() != null ? response.getConfiance() * 100 : 0.0));
             
             return response;
         } catch (IllegalArgumentException e) {

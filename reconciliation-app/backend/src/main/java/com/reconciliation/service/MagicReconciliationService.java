@@ -103,8 +103,8 @@ public class MagicReconciliationService {
             request.setBoKeyColumn(primaryKey.boColumn);
             request.setPartnerKeyColumn(primaryKey.partnerColumn);
             
-            log.info("🔑 Clé principale sélectionnée: {} ↔ {} (confiance: {:.1f}%)", 
-                primaryKey.boColumn, primaryKey.partnerColumn, primaryKey.getOverallScore() * 100);
+            log.info("🔑 Clé principale sélectionnée: {} ↔ {} (confiance: {}%)", 
+                primaryKey.boColumn, primaryKey.partnerColumn, String.format("%.1f", primaryKey.getOverallScore() * 100));
             log.info("🔧 Traitements appliqués: {}", primaryKey.contentAnalysis.appliedTreatments);
             log.info("📝 Raison: {}", primaryKey.contentAnalysis.reason);
         } else {

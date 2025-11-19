@@ -150,6 +150,11 @@
             <artifactId>spring-boot-starter-mail</artifactId>
         </dependency>
         
+        <!-- Caffeine Cache pour le cache en mémoire -->
+        <dependency>
+            <groupId>com.github.ben-manes.caffeine</groupId>
+            <artifactId>caffeine</artifactId>
+        </dependency>
         
         <!-- Spring Boot WebFlux pour le traitement asynchrone - DESACTIVE -->
         <!--

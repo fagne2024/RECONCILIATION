@@ -74,12 +74,12 @@ public class KeyDiscoveryService {
                                     (formatCompatibility * FORMAT_COMPATIBILITY_WEIGHT);
                 
                 // Log détaillé pour toutes les colonnes
-                log.info("🔍 Analyse: {} ↔ {} (nom: {:.3f}, contenu: {:.3f}, unicité: {:.3f}, global: {:.3f})", 
-                    boColumn, partnerColumn, nameSimilarity, contentAnalysis.confidence, uniquenessScore, overallScore);
+                log.info("🔍 Analyse: {} ↔ {} (nom: {}, contenu: {}, unicité: {}, global: {})", 
+                    boColumn, partnerColumn, String.format("%.3f", nameSimilarity), String.format("%.3f", contentAnalysis.confidence), String.format("%.3f", uniquenessScore), String.format("%.3f", overallScore));
                 
                 if (overallScore > 0.05) { // Seuil minimum de score global (très réduit pour debug)
                     matches.add(new ColumnMatch(boColumn, partnerColumn, overallScore, contentAnalysis));
-                    log.info("✅ Correspondance trouvée: {} ↔ {} (score: {:.3f})", boColumn, partnerColumn, overallScore);
+                    log.info("✅ Correspondance trouvée: {} ↔ {} (score: {})", boColumn, partnerColumn, String.format("%.3f", overallScore));
                 }
             }
         }
@@ -94,8 +94,8 @@ public class KeyDiscoveryService {
             log.info("🏆 Top 3 correspondances:");
             for (int i = 0; i < Math.min(3, matches.size()); i++) {
                 ColumnMatch match = matches.get(i);
-                log.info("  {}. {} ↔ {} (score: {:.2f}, confiance: {:.2f})", 
-                    i + 1, match.boColumn, match.partnerColumn, match.similarity, match.contentAnalysis.confidence);
+                log.info("  {}. {} ↔ {} (score: {}, confiance: {})", 
+                    i + 1, match.boColumn, match.partnerColumn, String.format("%.2f", match.similarity), String.format("%.2f", match.contentAnalysis.confidence));
                 log.info("     Traitements: {}", match.contentAnalysis.appliedTreatments);
                 log.info("     Raison: {}", match.contentAnalysis.reason);
             }
@@ -181,8 +181,8 @@ public class KeyDiscoveryService {
             // Log détaillé pour les colonnes importantes
             if (boColumn.toLowerCase().contains("id") || boColumn.toLowerCase().contains("transaction") ||
                 partnerColumn.toLowerCase().contains("id") || partnerColumn.toLowerCase().contains("transaction")) {
-                log.info("🔍 Test traitement '{}' pour {} ↔ {}: {:.1f}% ({}/{})", 
-                    treatment.name, boColumn, partnerColumn, confidence * 100, matches, treatedBoSample.size());
+                log.info("🔍 Test traitement '{}' pour {} ↔ {}: {}% ({}/{})", 
+                    treatment.name, boColumn, partnerColumn, String.format("%.1f", confidence * 100), matches, treatedBoSample.size());
                 
                 if (confidence > 0.1) { // Log des échantillons si confiance > 10%
                     log.info("   Échantillons BO traités: {}", treatedBoSample.stream().limit(5).collect(Collectors.toList()));

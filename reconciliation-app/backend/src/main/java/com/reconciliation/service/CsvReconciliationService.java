@@ -268,8 +268,8 @@ public class CsvReconciliationService implements DisposableBean {
                 double progress = (double) processedRecords / totalRecords * 100;
                 double recordsPerSecond = processedRecords / (elapsedTime / 1000.0);
                 
-                logger.info("📊 Progression: {:.2f}% ({}/{} enregistrements) - Vitesse: {:.0f} rec/s - Temps: {} ms", 
-                    progress, processedRecords, totalRecords, recordsPerSecond, elapsedTime);
+                logger.info("📊 Progression: {}% ({}/{} enregistrements) - Vitesse: {} rec/s - Temps: {} ms", 
+                    String.format("%.2f", progress), processedRecords, totalRecords, String.format("%.0f", recordsPerSecond), elapsedTime);
             }
 
             // Recherche optimisée des enregistrements uniquement dans le fichier partenaire
@@ -317,8 +317,8 @@ public class CsvReconciliationService implements DisposableBean {
             logger.info("❌ Différences: {}", response.getTotalMismatches());
             logger.info("📈 Uniquement BO: {}", response.getTotalBoOnly());
             logger.info("📈 Uniquement Partenaire: {}", response.getTotalPartnerOnly());
-            logger.info("⚡ Performance: {:.0f} enregistrements/seconde", recordsPerSecond);
-            logger.info("⏱️  Temps total d'exécution: {} ms ({:.2f} secondes)", totalTime, totalTime / 1000.0);
+            logger.info("⚡ Performance: {} enregistrements/seconde", String.format("%.0f", recordsPerSecond));
+            logger.info("⏱️  Temps total d'exécution: {} ms ({} secondes)", totalTime, String.format("%.2f", totalTime / 1000.0));
 
             // Ne pas fermer l'ExecutorService pour permettre la réutilisation
             // executorService.shutdown();
@@ -687,8 +687,8 @@ public class CsvReconciliationService implements DisposableBean {
             // Log de progression
             if (processedCount % 1000 == 0) {
                 double progress = (double) processedCount / filteredBoRecords.size() * 100;
-                logger.info("📊 Progression TRXBO/OPPART: {:.2f}% ({}/{} enregistrements)", 
-                    progress, processedCount, filteredBoRecords.size());
+                logger.info("📊 Progression TRXBO/OPPART: {}% ({}/{} enregistrements)", 
+                    String.format("%.2f", progress), processedCount, filteredBoRecords.size());
             }
         }
         
@@ -756,8 +756,8 @@ public class CsvReconciliationService implements DisposableBean {
         logger.info("❌ Écarts (0, 1, ou >2 correspondances): {}", response.getTotalMismatches());
         logger.info("📈 Uniquement TRXBO: {}", response.getTotalBoOnly());
         logger.info("📈 Uniquement OPPART: {}", response.getTotalPartnerOnly());
-        logger.info("⚡ Performance: {:.0f} enregistrements/seconde", recordsPerSecond);
-        logger.info("⏱️  Temps total d'exécution: {} ms ({:.2f} secondes)", totalTime, totalTime / 1000.0);
+        logger.info("⚡ Performance: {} enregistrements/seconde", String.format("%.0f", recordsPerSecond));
+        logger.info("⏱️  Temps total d'exécution: {} ms ({} secondes)", totalTime, String.format("%.2f", totalTime / 1000.0));
         
         return response;
     }
@@ -871,8 +871,8 @@ public class CsvReconciliationService implements DisposableBean {
             // Log de progression
             if (processedCount % 1000 == 0) {
                 double progress = (double) processedCount / filteredBoRecords.size() * 100;
-                logger.info("📊 Progression réconciliation {}: {:.2f}% ({}/{} enregistrements)", 
-                    request.getReconciliationType(), progress, processedCount, filteredBoRecords.size());
+                logger.info("📊 Progression réconciliation {}: {}% ({}/{} enregistrements)", 
+                    request.getReconciliationType(), String.format("%.2f", progress), processedCount, filteredBoRecords.size());
             }
         }
         
@@ -908,8 +908,8 @@ public class CsvReconciliationService implements DisposableBean {
         logger.info("❌ Écarts: {}", response.getTotalMismatches());
         logger.info("📈 Uniquement BO: {}", response.getTotalBoOnly());
         logger.info("📈 Uniquement Partenaire: {}", response.getTotalPartnerOnly());
-        logger.info("⚡ Performance: {:.0f} enregistrements/seconde", recordsPerSecond);
-        logger.info("⏱️  Temps total d'exécution: {} ms ({:.2f} secondes)", totalTime, totalTime / 1000.0);
+        logger.info("⚡ Performance: {} enregistrements/seconde", String.format("%.0f", recordsPerSecond));
+        logger.info("⏱️  Temps total d'exécution: {} ms ({} secondes)", totalTime, String.format("%.2f", totalTime / 1000.0));
         
         return response;
     }

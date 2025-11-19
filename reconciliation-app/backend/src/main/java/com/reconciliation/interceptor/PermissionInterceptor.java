@@ -35,6 +35,10 @@ public class PermissionInterceptor implements HandlerInterceptor {
         "/api/users/forgot-password",
         "/api/users/me",
         "/api/users/me/password",
+        "/api/reconciliation/reconcile", // Réconciliation automatique - pas de vérification de permissions
+        "/api/auto-processing/models", // Lecture des modèles - public
+        "/api/auto-processing/models", // Lecture des règles - sera géré par le pattern
+        "/api/file-watcher/available-files", // Lecture des fichiers - public
         "/error"
     };
 

@@ -29,6 +29,10 @@ public class WebConfig implements WebMvcConfigurer {
                     "/api/users/check-admin",
                     "/api/users/me",
                     "/api/users/me/password",
+                    "/api/reconciliation/reconcile", // Réconciliation automatique - pas de vérification de permissions
+                    "/api/auto-processing/models", // Lecture des modèles - public
+                    "/api/auto-processing/models/**/column-rules", // Lecture des règles - public (pattern avec ** pour matcher plusieurs segments)
+                    "/api/file-watcher/available-files", // Lecture des fichiers - public
                     "/error"
                 );
     }

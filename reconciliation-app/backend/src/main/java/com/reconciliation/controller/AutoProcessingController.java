@@ -34,11 +34,45 @@ public class AutoProcessingController {
     public ResponseEntity<Map<String, Object>> getAllModels() {
         try {
             List<AutoProcessingModel> models = autoProcessingService.getAllModels();
+            
+            if (models == null || models.isEmpty()) {
+                System.out.println("⚠️ Aucun modèle trouvé dans la base de données");
+                return ResponseEntity.ok(Map.of(
+                    "success", true,
+                    "models", java.util.Collections.emptyList()
+                ));
+            }
+            
+            System.out.println("📋 " + models.size() + " modèles récupérés depuis le service");
+            
+            // Convertir en DTOs pour éviter le chargement lazy lors de la sérialisation JSON
+            // La conversion doit se faire dans la même transaction ou après avoir chargé les règles
+            List<AutoProcessingModelDTO> modelDTOs = models.stream()
+                .map(model -> {
+                    try {
+                        // S'assurer que les règles sont chargées avant la conversion
+                        if (model.getColumnProcessingRules() != null) {
+                            model.getColumnProcessingRules().size();
+                        }
+                        return new AutoProcessingModelDTO(model);
+                    } catch (Exception e) {
+                        System.err.println("❌ Erreur lors de la conversion du modèle " + model.getModelId() + ": " + e.getMessage());
+                        e.printStackTrace();
+                        return null;
+                    }
+                })
+                .filter(dto -> dto != null)
+                .collect(Collectors.toList());
+            
+            System.out.println("✅ " + modelDTOs.size() + " modèles convertis en DTOs");
+            
             return ResponseEntity.ok(Map.of(
                 "success", true,
-                "models", models
+                "models", modelDTOs
             ));
         } catch (Exception e) {
+            System.err.println("❌ Erreur lors de la récupération des modèles: " + e.getMessage());
+            e.printStackTrace();
             return ResponseEntity.badRequest().body(Map.of(
                 "success", false,
                 "error", e.getMessage()
