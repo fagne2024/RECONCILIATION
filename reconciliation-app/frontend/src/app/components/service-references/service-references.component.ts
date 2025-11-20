@@ -62,7 +62,13 @@ export class ServiceReferencesComponent implements OnInit {
     allSelected = false;
     isDashboardVisible = false;
     dashboardStats: ServiceReferenceDashboard[] = [];
+    filteredDashboardStats: ServiceReferenceDashboard[] = [];
     isDashboardLoading = false;
+    selectedCountries: string[] = [];
+    availableCountries: string[] = [];
+    
+    // Erreurs de chargement de drapeaux images
+    private flagLoadError: { [countryCode: string]: boolean } = {};
 
     constructor(
         private serviceReferenceService: ServiceReferenceService,
@@ -111,6 +117,11 @@ export class ServiceReferencesComponent implements OnInit {
         this.serviceReferenceService.getDashboardStats().subscribe({
             next: (stats) => {
                 this.dashboardStats = (stats || []).sort((a, b) => a.country.localeCompare(b.country));
+                // Extraire la liste des pays disponibles
+                this.availableCountries = [...new Set(this.dashboardStats.map(s => s.country))].sort();
+                // Initialiser filteredDashboardStats avec tous les stats
+                this.filteredDashboardStats = [...this.dashboardStats];
+                this.applyCountryFilter();
                 this.isDashboardLoading = false;
             },
             error: async (error) => {
@@ -119,6 +130,37 @@ export class ServiceReferencesComponent implements OnInit {
                 await this.showErrorPopup('Impossible de charger le dashboard');
             }
         });
+    }
+
+    applyCountryFilter(): void {
+        if (this.selectedCountries.length === 0) {
+            // Si aucun pays sélectionné, afficher tous les pays
+            this.filteredDashboardStats = [...this.dashboardStats];
+        } else {
+            // Filtrer par les pays sélectionnés
+            this.filteredDashboardStats = this.dashboardStats.filter(stat => 
+                this.selectedCountries.includes(stat.country)
+            );
+        }
+    }
+
+    toggleCountry(country: string): void {
+        const index = this.selectedCountries.indexOf(country);
+        if (index > -1) {
+            this.selectedCountries.splice(index, 1);
+        } else {
+            this.selectedCountries.push(country);
+        }
+        this.applyCountryFilter();
+    }
+
+    clearCountryFilter(): void {
+        this.selectedCountries = [];
+        this.applyCountryFilter();
+    }
+
+    isCountrySelected(country: string): boolean {
+        return this.selectedCountries.includes(country);
     }
 
     loadReferences(): void {
@@ -496,27 +538,27 @@ export class ServiceReferencesComponent implements OnInit {
     }
 
     get dashboardTotalVolume(): number {
-        return this.dashboardStats.reduce((sum, stat) => sum + (stat.totalVolume || 0), 0);
+        return this.filteredDashboardStats.reduce((sum, stat) => sum + (stat.totalVolume || 0), 0);
     }
 
     get dashboardTotalTransactions(): number {
-        return this.dashboardStats.reduce((sum, stat) => sum + (stat.totalTransactions || 0), 0);
+        return this.filteredDashboardStats.reduce((sum, stat) => sum + (stat.totalTransactions || 0), 0);
     }
 
     get dashboardNetVolume(): number {
-        return this.dashboardStats.reduce((sum, stat) => sum + (stat.reconcilableVolume || 0), 0);
+        return this.filteredDashboardStats.reduce((sum, stat) => sum + (stat.reconcilableVolume || 0), 0);
     }
 
     get dashboardNetTransactions(): number {
-        return this.dashboardStats.reduce((sum, stat) => sum + (stat.reconcilableTransactions || 0), 0);
+        return this.filteredDashboardStats.reduce((sum, stat) => sum + (stat.reconcilableTransactions || 0), 0);
     }
 
     get dashboardNonReconcilableVolume(): number {
-        return this.dashboardStats.reduce((sum, stat) => sum + (stat.nonReconcilableVolume || 0), 0);
+        return this.filteredDashboardStats.reduce((sum, stat) => sum + (stat.nonReconcilableVolume || 0), 0);
     }
 
     get dashboardNonReconcilableTransactions(): number {
-        return this.dashboardStats.reduce((sum, stat) => sum + (stat.nonReconcilableTransactions || 0), 0);
+        return this.filteredDashboardStats.reduce((sum, stat) => sum + (stat.nonReconcilableTransactions || 0), 0);
     }
 
     private cleanString(value: any): string {
@@ -673,6 +715,66 @@ export class ServiceReferencesComponent implements OnInit {
                 this.selectedReferences.delete(id);
             }
         });
+    }
+
+    /**
+     * Normalise le code pays (CITCH -> CI, "EG EG" -> "EG")
+     */
+    private normalizeCountryCode(countryCode: string): string {
+        if (!countryCode) return '';
+        let normalized = (countryCode || '').toUpperCase().trim();
+        
+        // Si le code contient des espaces, prendre le premier mot
+        if (normalized.includes(' ')) {
+            normalized = normalized.split(' ')[0];
+        }
+        
+        // CITCH = CI
+        if (normalized === 'CITCH' || normalized.startsWith('CITCH')) {
+            return 'CI';
+        }
+        return normalized;
+    }
+
+    /**
+     * Retourne le drapeau (emoji) d'un pays à partir de son code
+     */
+    getCountryFlag(countryCode: string): string {
+        const normalizedCode = this.normalizeCountryCode(countryCode);
+        const flagMap: { [key: string]: string } = {
+            'BF': '🇧🇫', 'BJ': '🇧🇯', 'CI': '🇨🇮', 'CM': '🇨🇲', 'GA': '🇬🇦', 'GN': '🇬🇳', 'KE': '🇰🇪', 'ML': '🇲🇱', 'MZ': '🇲🇿', 'NG': '🇳🇬', 'SN': '🇸🇳', 'TG': '🇹🇬',
+            'CF': '🇨🇫', 'TD': '🇹🇩', 'CG': '🇨🇬', 'CD': '🇨🇩', 'GQ': '🇬🇶', 'ST': '🇸🇹', 'AO': '🇦🇴',
+            'NE': '🇳🇪', 'GW': '🇬🇼', 'SL': '🇸🇱', 'LR': '🇱🇷', 'GH': '🇬🇭', 'MR': '🇲🇷', 'GM': '🇬🇲', 'CV': '🇨🇻',
+            'TZ': '🇹🇿', 'UG': '🇺🇬', 'RW': '🇷🇼', 'BI': '🇧🇮', 'ET': '🇪🇹', 'SO': '🇸🇴', 'DJ': '🇩🇯', 'ER': '🇪🇷', 'SS': '🇸🇸', 'SD': '🇸🇩', 'SC': '🇸🇨', 'MU': '🇲🇺', 'KM': '🇰🇲', 'MG': '🇲🇬',
+            'EG': '🇪🇬', 'ZA': '🇿🇦'
+        };
+        return flagMap[normalizedCode] || '🌍';
+    }
+
+    /**
+     * URL du drapeau SVG dans les assets (fallback vers emoji si indisponible)
+     */
+    getCountryFlagUrl(countryCode: string): string | null {
+        if (!countryCode) return null;
+        const normalizedCode = this.normalizeCountryCode(countryCode);
+        const code = normalizedCode.toLowerCase();
+        if (!code) return null;
+        if (this.flagLoadError[code]) return null;
+        return `assets/flags/${code}.svg`;
+    }
+
+    /**
+     * Vérifie si une URL de drapeau existe pour un pays
+     */
+    hasCountryFlagUrl(countryCode: string): boolean {
+        return this.getCountryFlagUrl(countryCode) !== null;
+    }
+
+    onFlagError(event: Event, countryCode: string): void {
+        if (!countryCode) return;
+        const normalizedCode = this.normalizeCountryCode(countryCode);
+        const code = normalizedCode.toLowerCase();
+        this.flagLoadError[code] = true;
     }
 }
 

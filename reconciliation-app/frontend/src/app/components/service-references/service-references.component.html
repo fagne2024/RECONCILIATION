@@ -134,7 +134,13 @@
                             <td class="checkbox-col">
                                 <input type="checkbox" [checked]="isSelected(ref)" (change)="toggleSelection(ref, $event)" [disabled]="!ref.id">
                             </td>
-                            <td>{{ ref.pays }}</td>
+                            <td>
+                                <span class="country-cell">
+                                    <span class="country-flag">{{ getCountryFlag(ref.pays) }}</span>
+                                    <img *ngIf="getCountryFlagUrl(ref.pays) as flagUrl" [src]="flagUrl" (error)="onFlagError($event, ref.pays)" class="country-flag-img" alt="flag" style="display: none;" (load)="$event.target.style.display='inline-block'; $event.target.previousElementSibling.style.display='none';"/>
+                                    {{ ref.pays }}
+                                </span>
+                            </td>
                             <td>{{ ref.codeService }}</td>
                             <td>{{ ref.serviceLabel }}</td>
                             <td>{{ ref.codeReco }}</td>
@@ -254,6 +260,31 @@
 
 <ng-template #dashboardView>
     <div class="dashboard-container">
+        <div class="dashboard-filters" *ngIf="availableCountries.length > 0">
+            <div class="filter-section">
+                <label>Filtrer par pays :</label>
+                <div class="country-filters">
+                    <button 
+                        *ngFor="let country of availableCountries" 
+                        class="country-filter-btn"
+                        [class.active]="isCountrySelected(country)"
+                        (click)="toggleCountry(country)">
+                        <span class="country-flag">{{ getCountryFlag(country) }}</span>
+                        <img *ngIf="getCountryFlagUrl(country) as flagUrl" [src]="flagUrl" (error)="onFlagError($event, country)" class="country-flag-img" alt="flag" style="display: none;" (load)="$event.target.style.display='inline-block'; $event.target.previousElementSibling.style.display='none';"/>
+                        {{ country }}
+                    </button>
+                    <button 
+                        class="country-filter-btn clear-btn"
+                        (click)="clearCountryFilter()"
+                        *ngIf="selectedCountries.length > 0">
+                        ✖️ Effacer
+                    </button>
+                </div>
+                <div class="filter-info" *ngIf="selectedCountries.length > 0">
+                    <small>{{ selectedCountries.length }} pays sélectionné(s) sur {{ availableCountries.length }}</small>
+                </div>
+            </div>
+        </div>
         <div class="dashboard-summary-cards">
             <div class="summary-card">
                 <span>Volume total</span>
@@ -285,10 +316,14 @@
             Chargement du dashboard...
         </div>
 
-        <div *ngIf="!isDashboardLoading && dashboardStats.length" class="dashboard-grid">
-            <div class="dashboard-card" *ngFor="let stat of dashboardStats; trackBy: trackByCountry">
+        <div *ngIf="!isDashboardLoading && filteredDashboardStats.length" class="dashboard-grid">
+            <div class="dashboard-card" *ngFor="let stat of filteredDashboardStats; trackBy: trackByCountry">
                 <div class="card-header">
-                    <h4>{{ stat.country }}</h4>
+                    <h4>
+                        <span class="country-flag">{{ getCountryFlag(stat.country) }}</span>
+                        <img *ngIf="getCountryFlagUrl(stat.country) as flagUrl" [src]="flagUrl" (error)="onFlagError($event, stat.country)" class="country-flag-img" alt="flag" style="display: none;" (load)="$event.target.style.display='inline-block'; $event.target.previousElementSibling.style.display='none';"/>
+                        {{ stat.country }}
+                    </h4>
                     <small>{{ formatNumber(stat.totalVolume, 2) }} volume • {{ formatNumber(stat.totalTransactions) }} trx</small>
                 </div>
                 <div class="card-metrics">
@@ -304,6 +339,9 @@
             </div>
         </div>
 
+        <div *ngIf="!isDashboardLoading && !filteredDashboardStats.length && dashboardStats.length" class="dashboard-empty">
+            Aucun indicateur disponible pour les pays sélectionnés.
+        </div>
         <div *ngIf="!isDashboardLoading && !dashboardStats.length" class="dashboard-empty">
             Aucun indicateur disponible.
         </div>

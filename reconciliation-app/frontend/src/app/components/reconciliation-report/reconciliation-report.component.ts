@@ -56,9 +56,6 @@ export interface ReconciliationReportData {
                     <button class="btn btn-save-all" (click)="saveAll()" [disabled]="!filteredReportData.length && !reportData.length">
                         💾 Sauvegarder tout
                     </button>
-                    <button class="btn btn-report" (click)="goToReportDashboard()" [disabled]="!filteredReportData.length && !reportData.length">
-                        📊 Rapport Avancé
-                    </button>
                     <button class="btn btn-dashboard" (click)="goToReconciliationDashboard()" [disabled]="!filteredReportData.length && !reportData.length">
                         📈 Tableau de bord
                     </button>
@@ -2847,10 +2844,6 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                 this.popupService.showError('Erreur de sauvegarde', `Impossible de sauvegarder les lignes: ${errorMessage}`);
             }
         });
-    }
-
-    goToReportDashboard() {
-        window.location.href = '/report-dashboard';
     }
 
     goToReconciliationDashboard() {

@@ -320,7 +320,7 @@
 
 .dashboard-grid {
     display: grid;
-    grid-template-columns: repeat(4, 1fr); // 4 colonnes fixes
+    grid-template-columns: repeat(3, 1fr); // 3 colonnes fixes
     gap: 20px;
     width: 100%; // Utilise toute la largeur disponible
     max-width: 100%; // Pas de limite de largeur
@@ -845,7 +845,7 @@
 
 @media (max-width: 1400px) {
     .dashboard-grid {
-        grid-template-columns: repeat(3, 1fr); // 3 colonnes sur écrans moyens
+        grid-template-columns: repeat(2, 1fr); // 2 colonnes sur écrans moyens
         width: 100%;
         max-width: 100%;
     }

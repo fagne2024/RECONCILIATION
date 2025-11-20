@@ -187,16 +187,9 @@
                                     <div class="metric-value">{{ formatPercentage(serviceEntry.value.trxReconNet) }}</div>
                                 </div>
                                 
-                                <div class="metric-item" [ngClass]="getRateClass(serviceEntry.value.trxReconBrut)">
-                                    <div class="metric-label">Réconciliation Brute</div>
-                                    <div class="metric-value">{{ formatPercentage(serviceEntry.value.trxReconBrut) }}</div>
-                                </div>
-                                
-                                <div class="metric-item metric-item-centered" [ngClass]="getRateClass(serviceEntry.value.bkRecoBanque)">
-                                    <div class="metric-content">
-                                        <div class="metric-label">Taux de Correspondance</div>
-                                        <div class="metric-value">{{ formatPercentage(serviceEntry.value.bkRecoBanque) }}</div>
-                                    </div>
+                                <div class="metric-item" [ngClass]="getRateClass(serviceEntry.value.bkRecoBanque)">
+                                    <div class="metric-label">Taux de Correspondance</div>
+                                    <div class="metric-value">{{ formatPercentage(serviceEntry.value.bkRecoBanque) }}</div>
                                 </div>
                             </div>
                             <div *ngSwitchCase="'traite'" class="metrics-grid discrepancy-grid">
@@ -245,16 +238,9 @@
                                     <div class="metric-value">{{ formatPercentage(serviceEntry.value.trxReconNet) }}</div>
                                 </div>
                                 
-                                <div class="metric-item" [ngClass]="getRateClass(serviceEntry.value.trxReconBrut)">
-                                    <div class="metric-label">Réconciliation Brute</div>
-                                    <div class="metric-value">{{ formatPercentage(serviceEntry.value.trxReconBrut) }}</div>
-                                </div>
-                                
-                                <div class="metric-item metric-item-centered" [ngClass]="getRateClass(serviceEntry.value.bkRecoBanque)">
-                                    <div class="metric-content">
-                                        <div class="metric-label">Taux de Correspondance</div>
-                                        <div class="metric-value">{{ formatPercentage(serviceEntry.value.bkRecoBanque) }}</div>
-                                    </div>
+                                <div class="metric-item" [ngClass]="getRateClass(serviceEntry.value.bkRecoBanque)">
+                                    <div class="metric-label">Taux de Correspondance</div>
+                                    <div class="metric-value">{{ formatPercentage(serviceEntry.value.bkRecoBanque) }}</div>
                                 </div>
                             </div>
                         </ng-container>
