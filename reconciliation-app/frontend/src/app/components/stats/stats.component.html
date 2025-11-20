@@ -83,6 +83,9 @@
                 <button class="export-btn" (click)="exportStats()" [disabled]="!agencySummaries.length || isLoading">
                     📥 Exporter le résumé
                 </button>
+                <button class="export-btn secondary" (click)="goToServiceReferences()" [disabled]="isLoading">
+                    📚 Référentiel Services
+                </button>
                 <button class="bulk-delete-btn" (click)="deleteSelectedSummaries()" 
                         [disabled]="!hasSelectedItems() || isLoading"
                         *ngIf="hasSelectedItems()">

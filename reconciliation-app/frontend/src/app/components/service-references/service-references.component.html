@@ -1,0 +1,311 @@
+<div class="service-ref-container">
+    <div class="header">
+        <div>
+            <h2>
+                <button class="back-arrow-btn" (click)="goBackToStats()" title="Retour aux statistiques">⬅️</button>
+                Référentiel Services RECO
+            </h2>
+            <p>Gérez les correspondances Pays / Service / Code RECO utilisées dans les traitements.</p>
+        </div>
+        <div class="header-actions">
+            <button class="btn outline" (click)="toggleDashboard()">
+                {{ isDashboardVisible ? '📋 Vue Référentiel' : '📊 Dashboard' }}
+            </button>
+            <button class="btn primary" *ngIf="!showForm" (click)="openCreateForm()">➕ Nouvelle référence</button>
+            <button class="btn secondary" *ngIf="showForm" (click)="cancelEdit()">➖ Masquer le formulaire</button>
+            <button class="btn outline" (click)="downloadTemplate()" [disabled]="isImporting || isLoading">
+                📄 Télécharger le modèle
+            </button>
+            <button class="btn outline" (click)="triggerFileUpload()" [disabled]="isImporting || isLoading">
+                ⬆️ Importer un fichier
+            </button>
+            <input #fileInput type="file" accept=".xlsx,.xls,.csv" (change)="handleFileInput($event)" hidden>
+        </div>
+    </div>
+
+    <div class="messages">
+        <div class="alert alert-error" *ngIf="errorMessage">
+            {{ errorMessage }}
+        </div>
+        <div class="alert alert-success" *ngIf="successMessage">
+            {{ successMessage }}
+        </div>
+        <ul class="error-details" *ngIf="errorDetails.length">
+            <li *ngFor="let detail of errorDetails">{{ detail }}</li>
+        </ul>
+    </div>
+
+    <ng-container *ngIf="!isDashboardVisible; else dashboardView">
+        <div class="content-grid" [class.single-column]="!showForm">
+        <div class="table-card">
+            <div class="table-header">
+                <div>
+                    <h3>Références existantes</h3>
+                    <span *ngIf="isLoading">Chargement...</span>
+                    <span *ngIf="!isLoading">{{ filteredReferences.length }} ligne(s)</span>
+                </div>
+                <input type="text" placeholder="Rechercher..." [(ngModel)]="searchTerm" (ngModelChange)="applyFilters()" />
+            </div>
+
+            <form class="filters-bar" [formGroup]="filterForm">
+                <div class="filter-field">
+                    <label>Pays</label>
+                    <input type="text" formControlName="pays" placeholder="Saisir ou choisir un pays" list="paysOptionsList" autocomplete="off">
+                    <datalist id="paysOptionsList">
+                        <option *ngFor="let pays of paysOptions" [value]="pays"></option>
+                    </datalist>
+                </div>
+                <div class="filter-field">
+                    <label>Opérateur</label>
+                    <input type="text" formControlName="operateur" placeholder="Saisir ou choisir un opérateur" list="operateurOptionsList" autocomplete="off">
+                    <datalist id="operateurOptionsList">
+                        <option *ngFor="let op of operateurOptions" [value]="op"></option>
+                    </datalist>
+                </div>
+                <div class="filter-field">
+                    <label>Type de service</label>
+                    <input type="text" formControlName="serviceType" placeholder="Saisir ou choisir un type" list="serviceTypeOptionsList" autocomplete="off">
+                    <datalist id="serviceTypeOptionsList">
+                        <option *ngFor="let type of serviceTypeOptions" [value]="type"></option>
+                    </datalist>
+                </div>
+                <div class="filter-field">
+                    <label>Code Service</label>
+                    <input type="text" formControlName="codeService" placeholder="Filtrer par code service" list="codeServiceOptionsList" autocomplete="off">
+                    <datalist id="codeServiceOptionsList">
+                        <option *ngFor="let cs of codeServiceOptions" [value]="cs"></option>
+                    </datalist>
+                </div>
+                <div class="filter-field">
+                    <label>Réseau</label>
+                    <input type="text" formControlName="reseau" placeholder="Filtrer par réseau" list="reseauOptionsList" autocomplete="off">
+                    <datalist id="reseauOptionsList">
+                        <option *ngFor="let rs of reseauOptions" [value]="rs"></option>
+                    </datalist>
+                </div>
+                <div class="filter-field">
+                    <label>Réconciliable</label>
+                    <select formControlName="reconciliable">
+                        <option value="all">Tous</option>
+                        <option value="true">Oui</option>
+                        <option value="false">Non</option>
+                    </select>
+                </div>
+                <div class="filter-field">
+                    <label>Statut</label>
+                    <select formControlName="status">
+                        <option value="">Tous</option>
+                        <option value="ACTIF">Actif</option>
+                        <option value="INACTIF">Inactif</option>
+                    </select>
+                </div>
+                <button type="button" class="btn outline reset-btn" (click)="resetFilters()">Réinitialiser</button>
+            </form>
+
+            <div class="selection-toolbar" *ngIf="hasSelection">
+                <span>{{ selectedCount }} sélectionné(s)</span>
+                <button type="button" class="btn outline" (click)="clearSelection()">✖️ Vider la sélection</button>
+                <button type="button" class="btn danger" (click)="deleteSelectedReferences()" [disabled]="isLoading">🗑️ Supprimer la sélection</button>
+            </div>
+
+            <div class="table-wrapper">
+                <table>
+                    <thead>
+                        <tr>
+                            <th class="checkbox-col">
+                                <input type="checkbox" [checked]="allSelected" (change)="toggleSelectAll($event)">
+                            </th>
+                            <th>Pays</th>
+                            <th>Code Service</th>
+                            <th>Service</th>
+                            <th>Code RECO</th>
+                            <th>Type</th>
+                            <th>Opérateur</th>
+                            <th>Réseau</th>
+                            <th>Statut</th>
+                            <th>Réconciliable</th>
+                            <th>Motif</th>
+                            <th>Retenu Opérateur</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr *ngFor="let ref of pagedReferences">
+                            <td class="checkbox-col">
+                                <input type="checkbox" [checked]="isSelected(ref)" (change)="toggleSelection(ref, $event)" [disabled]="!ref.id">
+                            </td>
+                            <td>{{ ref.pays }}</td>
+                            <td>{{ ref.codeService }}</td>
+                            <td>{{ ref.serviceLabel }}</td>
+                            <td>{{ ref.codeReco }}</td>
+                            <td>{{ ref.serviceType || '-' }}</td>
+                            <td>{{ ref.operateur || '-' }}</td>
+                            <td>{{ ref.reseau || '-' }}</td>
+                            <td>
+                                <span class="chip" [class.chip-success]="ref.status !== 'INACTIF'" [class.chip-danger]="ref.status === 'INACTIF'">
+                                    {{ ref.status === 'INACTIF' ? 'Inactif' : 'Actif' }}
+                                </span>
+                            </td>
+                            <td>
+                                <span class="chip" [class.chip-success]="ref.reconciliable" [class.chip-danger]="!ref.reconciliable">
+                                    {{ ref.reconciliable ? 'OUI' : 'NON' }}
+                                </span>
+                            </td>
+                            <td>{{ ref.motif || '-' }}</td>
+                            <td>{{ ref.retenuOperateur || '-' }}</td>
+                            <td class="actions-cell">
+                                <button class="icon-btn" (click)="editReference(ref)" title="Modifier">
+                                    ✏️
+                                </button>
+                                <button class="icon-btn danger" (click)="deleteReference(ref)" [disabled]="isLoading" title="Supprimer">
+                                    🗑️
+                                </button>
+                            </td>
+                        </tr>
+                        <tr *ngIf="!filteredReferences.length && !isLoading">
+                            <td colspan="13" class="empty-state">Aucune donnée trouvée</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="pagination-controls" *ngIf="filteredReferences.length">
+                <div class="range-label">{{ getRangeLabel() }}</div>
+                <div class="page-size">
+                    <label>Afficher</label>
+                    <select [value]="pageSize" (change)="changePageSize($event.target.value)">
+                        <option *ngFor="let size of pageSizeOptions" [value]="size">{{ size }} / page</option>
+                    </select>
+                </div>
+                <div class="pagination-buttons">
+                    <button class="btn secondary" (click)="goToPage(pageIndex - 1)" [disabled]="pageIndex === 1">Précédent</button>
+                    <span>Page {{ pageIndex }} / {{ totalPages }}</span>
+                    <button class="btn secondary" (click)="goToPage(pageIndex + 1)" [disabled]="pageIndex === totalPages">Suivant</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="form-card" *ngIf="showForm">
+            <div class="form-header">
+                <h3>{{ editingReference ? 'Modifier une référence' : 'Nouvelle référence' }}</h3>
+                <button class="link-btn" (click)="cancelEdit()">Fermer</button>
+            </div>
+            <form [formGroup]="referenceForm" (ngSubmit)="saveReference()">
+                <div class="form-row">
+                    <label>Pays *</label>
+                    <input type="text" formControlName="pays" placeholder="BF">
+                </div>
+                <div class="form-row">
+                    <label>Code Service *</label>
+                    <input type="text" formControlName="codeService" placeholder="DEBIT">
+                </div>
+                <div class="form-row">
+                    <label>Service *</label>
+                    <input type="text" formControlName="serviceLabel" placeholder="CI_TUV_CASHIN_ORANGE_HT">
+                </div>
+                <div class="form-row">
+                    <label>Code RECO *</label>
+                    <input type="text" formControlName="codeReco" placeholder="BF_TUV_CASHIN_ORANGE_HT">
+                </div>
+                <div class="form-row">
+                    <label>Service Type</label>
+                    <input type="text" formControlName="serviceType" placeholder="MOMO CASHIN">
+                </div>
+                <div class="form-row">
+                    <label>Opérateur</label>
+                    <input type="text" formControlName="operateur" placeholder="ORANGE">
+                </div>
+                <div class="form-row">
+                    <label>Réseau</label>
+                    <input type="text" formControlName="reseau" placeholder="HT">
+                </div>
+                <div class="form-row toggle">
+                    <label>Réconciliable</label>
+                    <label class="switch">
+                        <input type="checkbox" formControlName="reconciliable">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                <div class="form-row">
+                    <label>Motif</label>
+                    <textarea formControlName="motif" rows="2"></textarea>
+                </div>
+                <div class="form-row">
+                    <label>Retenu Opérateur</label>
+                    <textarea formControlName="retenuOperateur" rows="2"></textarea>
+                </div>
+                <div class="form-row">
+                    <label>Statut (calculé automatiquement)</label>
+                    <select formControlName="status" disabled>
+                        <option value="ACTIF">Actif</option>
+                        <option value="INACTIF">Inactif</option>
+                    </select>
+                    <small>Actif si le code service existe dans les statistiques (Agency Summary).</small>
+                </div>
+
+                <button type="submit" class="btn primary" [disabled]="isSaving || referenceForm.invalid">
+                    {{ editingReference ? '💾 Mettre à jour' : '➕ Ajouter' }}
+                </button>
+            </form>
+        </div>
+        </div>
+    </ng-container>
+</div>
+
+<ng-template #dashboardView>
+    <div class="dashboard-container">
+        <div class="dashboard-summary-cards">
+            <div class="summary-card">
+                <span>Volume total</span>
+                <strong>{{ formatNumber(dashboardTotalVolume, 2) }}</strong>
+            </div>
+            <div class="summary-card">
+                <span>Transactions totales</span>
+                <strong>{{ formatNumber(dashboardTotalTransactions) }}</strong>
+            </div>
+            <div class="summary-card summary-card-green">
+                <span>Volume net</span>
+                <strong>{{ formatNumber(dashboardNetVolume, 2) }}</strong>
+            </div>
+            <div class="summary-card summary-card-green">
+                <span>Transactions net</span>
+                <strong>{{ formatNumber(dashboardNetTransactions) }}</strong>
+            </div>
+            <div class="summary-card summary-card-red">
+                <span>Volume non réconciliable</span>
+                <strong>{{ formatNumber(dashboardNonReconcilableVolume, 2) }}</strong>
+            </div>
+            <div class="summary-card summary-card-red">
+                <span>Transactions non réconciliables</span>
+                <strong>{{ formatNumber(dashboardNonReconcilableTransactions) }}</strong>
+            </div>
+        </div>
+
+        <div *ngIf="isDashboardLoading" class="dashboard-loading">
+            Chargement du dashboard...
+        </div>
+
+        <div *ngIf="!isDashboardLoading && dashboardStats.length" class="dashboard-grid">
+            <div class="dashboard-card" *ngFor="let stat of dashboardStats; trackBy: trackByCountry">
+                <div class="card-header">
+                    <h4>{{ stat.country }}</h4>
+                    <small>{{ formatNumber(stat.totalVolume, 2) }} volume • {{ formatNumber(stat.totalTransactions) }} trx</small>
+                </div>
+                <div class="card-metrics">
+                    <div class="metric-pill" [ngClass]="getMetricClass(stat.trxReconNet)">
+                        <span>Trx_Recon_net</span>
+                        <strong>{{ stat.trxReconNet | number:'1.0-2' }}%</strong>
+                    </div>
+                    <div class="metric-pill" [ngClass]="getMetricClass(stat.trxReconBrut)">
+                        <span>Trx_Recon_brut</span>
+                        <strong>{{ stat.trxReconBrut | number:'1.0-2' }}%</strong>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div *ngIf="!isDashboardLoading && !dashboardStats.length" class="dashboard-empty">
+            Aucun indicateur disponible.
+        </div>
+    </div>
+</ng-template>

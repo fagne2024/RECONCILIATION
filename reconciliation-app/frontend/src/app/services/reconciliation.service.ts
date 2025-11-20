@@ -1,6 +1,6 @@
 import { Injectable, OnInit, OnDestroy } from '@angular/core';
-import { HttpClient, HttpErrorResponse, HttpHeaders } from '@angular/common/http';
-import { Observable, throwError, BehaviorSubject, Subject, timer, from } from 'rxjs';
+import { HttpClient, HttpErrorResponse, HttpHeaders, HttpParams } from '@angular/common/http';
+import { Observable, throwError, BehaviorSubject, Subject, timer, from, timeout } from 'rxjs';
 import { catchError, tap, map, finalize, retry, takeUntil, switchMap } from 'rxjs/operators';
 import { ReconciliationRequest } from '../models/reconciliation-request.model';
 import { ReconciliationResponse } from '../models/reconciliation-response.model';
@@ -852,21 +852,28 @@ export class ReconciliationService implements OnInit, OnDestroy {
             estimatedTimeRemaining: 30000
         });
 
-        return this.http.post<ReconciliationResponse>(`${this.apiUrl}/reconcile`, request)
-            .pipe(
-                tap(response => {
-                    console.log('✅ Réconciliation terminée:', response);
-                    
-                    this.updateProgress({
-                        percentage: 100,
-                        processed: response.totalBoRecords + response.totalPartnerRecords,
-                        total: response.totalBoRecords + response.totalPartnerRecords,
-                        step: 'Terminé',
-                        estimatedTimeRemaining: 0
-                    });
-                }),
-                catchError(this.handleError)
-            );
+        // Timeout de 30 minutes (1800000ms) pour les gros fichiers
+        const RECONCILIATION_TIMEOUT = 1800000; // 30 minutes
+        
+        return this.http.post<ReconciliationResponse>(`${this.apiUrl}/reconcile`, request, {
+            headers: new HttpHeaders({
+                'Content-Type': 'application/json'
+            })
+        }).pipe(
+            timeout(RECONCILIATION_TIMEOUT),
+            tap(response => {
+                console.log('✅ Réconciliation terminée:', response);
+                
+                this.updateProgress({
+                    percentage: 100,
+                    processed: response.totalBoRecords + response.totalPartnerRecords,
+                    total: response.totalBoRecords + response.totalPartnerRecords,
+                    step: 'Terminé',
+                    estimatedTimeRemaining: 0
+                });
+            }),
+            catchError(this.handleError)
+        );
     }
 
     /**
@@ -936,7 +943,16 @@ export class ReconciliationService implements OnInit, OnDestroy {
                 partnerFileContent: remainingPartnerData
             };
             
-            this.http.post<ReconciliationResponse>(`${this.apiUrl}/reconcile`, chunkRequest).subscribe({
+            // Timeout de 30 minutes pour chaque chunk (au cas où un chunk serait très volumineux)
+            const RECONCILIATION_TIMEOUT = 1800000; // 30 minutes
+            
+            this.http.post<ReconciliationResponse>(`${this.apiUrl}/reconcile`, chunkRequest, {
+                headers: new HttpHeaders({
+                    'Content-Type': 'application/json'
+                })
+            }).pipe(
+                timeout(RECONCILIATION_TIMEOUT)
+            ).subscribe({
                 next: (response: ReconciliationResponse) => {
                     try {
                         console.log(`✅ Chunk BO ${currentBoIndex} traité: ${response.matches?.length || 0} matches`);
@@ -1335,17 +1351,27 @@ export class ReconciliationService implements OnInit, OnDestroy {
     /**
      * Gestion des erreurs
      */
-    private handleError = (error: HttpErrorResponse): Observable<never> => {
+    private handleError = (error: HttpErrorResponse | any): Observable<never> => {
         console.error('❌ Erreur dans ReconciliationService:', error);
         
         let errorMessage = 'Une erreur est survenue';
         
-        if (error.error instanceof ErrorEvent) {
+        // Détecter les erreurs de timeout
+        if (error.name === 'TimeoutError' || error.message?.includes('timeout') || error.message?.includes('Timeout')) {
+            errorMessage = 'Le délai d\'attente a été dépassé. La réconciliation prend plus de temps que prévu. ' +
+                          'Pour les très gros fichiers, veuillez patienter ou diviser les fichiers en plus petits lots.';
+            console.warn('⏰ Timeout détecté lors de la réconciliation');
+        } else if (error.error instanceof ErrorEvent) {
             // Erreur côté client
             errorMessage = `Erreur: ${error.error.message}`;
-        } else {
+        } else if (error.status) {
             // Erreur côté serveur
-            errorMessage = `Erreur ${error.status}: ${error.message}`;
+            if (error.status === 504 || error.status === 408) {
+                errorMessage = 'Le serveur a mis trop de temps à répondre. ' +
+                              'Veuillez réessayer ou diviser les fichiers en plus petits lots.';
+            } else {
+                errorMessage = `Erreur ${error.status}: ${error.message || 'Erreur serveur'}`;
+            }
             if (error.error && error.error.message) {
                 errorMessage = error.error.message;
             }

@@ -81,6 +81,7 @@ import { PredictionsNewComponent } from './components/predictions/predictions-ne
 import { TwoFactorAuthComponent } from './components/two-factor-auth/two-factor-auth.component';
 import { User2FADialogComponent } from './components/users/user-2fa-dialog.component';
 import { UserProfileComponent } from './components/user-profile/user-profile.component';
+import { ServiceReferencesComponent } from './components/service-references/service-references.component';
 
 @NgModule({
     declarations: [
@@ -128,7 +129,8 @@ import { UserProfileComponent } from './components/user-profile/user-profile.com
                 PredictionsNewComponent,
                 TwoFactorAuthComponent,
                 User2FADialogComponent,
-                UserProfileComponent
+                UserProfileComponent,
+                ServiceReferencesComponent
     ],
     imports: [
         BrowserModule,

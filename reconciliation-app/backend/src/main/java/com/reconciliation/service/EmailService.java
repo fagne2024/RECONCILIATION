@@ -20,6 +20,8 @@ public class EmailService {
     
     @Value("${app.url:http://localhost:4200}")
     private String appUrl;
+    
+    private static final String LOGIN_URL = "https://reconciliation.intouchgroup.net:4200/login?returnUrl=%2Freconciliation-launcher";
 
     /**
      * Envoie un email avec le mot de passe généré lors de la création d'un utilisateur
@@ -44,7 +46,7 @@ public class EmailService {
                 "Nous vous recommandons de changer votre mot de passe après votre première connexion.\n\n" +
                 "Cordialement,\n" +
                 "L'équipe de réconciliation",
-                username, username, password, appUrl
+                username, username, password, LOGIN_URL
             ));
             
             mailSender.send(message);
@@ -78,7 +80,7 @@ public class EmailService {
                 "Nous vous recommandons de changer votre mot de passe après votre prochaine connexion.\n\n" +
                 "Cordialement,\n" +
                 "L'équipe de réconciliation",
-                username, username, newPassword, appUrl
+                username, username, newPassword, LOGIN_URL
             ));
             
             mailSender.send(message);

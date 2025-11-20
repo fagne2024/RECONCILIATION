@@ -21,6 +21,7 @@ import { EcartSoldeComponent } from './components/ecart-solde/ecart-solde.compon
 import { ImpactOPComponent } from './components/impact-op/impact-op.component';
 import { TrxSfComponent } from './components/trx-sf/trx-sf.component';
 import { ServiceBalanceComponent } from './components/service-balance/service-balance.component';
+import { ServiceReferencesComponent } from './components/service-references/service-references.component';
 import { ComptabiliteComponent } from './components/comptabilite/comptabilite.component';
 import { UserLogComponent } from './components/user-log/user-log.component';
 import { PredictionsComponent } from './components/predictions/predictions.component';
@@ -69,6 +70,7 @@ const routes: Routes = [
   { path: 'trx-sf', component: TrxSfComponent, canActivate: [AuthGuard] },
   { path: 'impact-op', component: ImpactOPComponent, canActivate: [AuthGuard] },
   { path: 'service-balance', component: ServiceBalanceComponent, canActivate: [AuthGuard] },
+  { path: 'service-references', component: ServiceReferencesComponent, canActivate: [AuthGuard] },
   { path: 'auto-processing-models', component: AutoProcessingModelsComponent, canActivate: [AuthGuard] },
   { path: 'banque', component: BanqueComponent, canActivate: [AuthGuard] },
   { path: 'comptabilite', component: ComptabiliteComponent, canActivate: [AuthGuard] },

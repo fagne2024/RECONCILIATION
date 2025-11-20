@@ -285,7 +285,7 @@ public class ReconciliationController {
                 ReconciliationResponse response = reconciliationService.reconcile(request);
                 
                 long totalTime = System.currentTimeMillis() - startTime;
-                log.info("✅ Réconciliation terminée avec succès en {} ms ({:.2f} secondes)", totalTime, totalTime / 1000.0);
+                log.info("✅ Réconciliation terminée avec succès en {} ms ({} secondes)", totalTime, String.format("%.2f", totalTime / 1000.0));
                 log.info("📊 Résultats: {} correspondances, {} BO uniquement, {} Partenaire uniquement", 
                     response.getMatches() != null ? response.getMatches().size() : 0,
                     response.getBoOnly() != null ? response.getBoOnly().size() : 0,

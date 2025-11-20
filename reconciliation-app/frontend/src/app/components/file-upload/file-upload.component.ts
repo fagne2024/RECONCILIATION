@@ -3016,6 +3016,12 @@ export class FileUploadComponent {
         }
         
         let processedData = [...boData];
+        const MAX_LOG_SAMPLES = 5;
+        
+        const logSample = (phase: string, column: string, data: Record<string, string>[]) => {
+            const sampleValues = data.slice(0, MAX_LOG_SAMPLES).map(row => row?.[column]);
+            console.log(`   ${phase} (${column})`, sampleValues, data.length > MAX_LOG_SAMPLES ? '...' : '');
+        };
         
         // Appliquer les traitements pour chaque modèle BO
         Object.entries(boTreatments).forEach(([modelId, treatments]) => {
@@ -3023,65 +3029,70 @@ export class FileUploadComponent {
             
             if (Array.isArray(treatments)) {
                 treatments.forEach((treatment: any) => {
-                    console.log('🔧 Application du traitement:', treatment);
+                    if (!treatment?.type || !treatment?.column) {
+                        console.log('⚠️ Traitement invalide, paramètres manquants:', treatment);
+                        return;
+                    }
                     
-                    if (treatment.type === 'removeSuffix') {
-                        const column = treatment.column;
-                        const suffix = treatment.suffix;
-                        
-                        console.log(`🔧 Suppression du suffixe "${suffix}" de la colonne "${column}"`);
-                        console.log(`🔍 Valeurs avant traitement:`, processedData.slice(0, 5).map(row => row[column]));
-                        
-                        processedData = processedData.map(row => {
-                            const newRow = { ...row };
-                            if (newRow[column] && typeof newRow[column] === 'string') {
-                                const originalValue = newRow[column];
-                                if (originalValue.endsWith(suffix)) {
-                                    newRow[column] = originalValue.slice(0, -suffix.length);
-                                    console.log(`🔧 "${originalValue}" -> "${newRow[column]}" (suffixe "${suffix}" supprimé)`);
-                                } else {
-                                    console.log(`🔍 Valeur "${originalValue}" ne se termine pas par "${suffix}"`);
+                    const column = treatment.column;
+                    
+                    switch (treatment.type) {
+                        case 'removeSuffix': {
+                            const suffix = treatment.suffix;
+                            if (typeof suffix !== 'string' || !suffix.length) {
+                                console.log(`⚠️ Suffixe invalide pour removeSuffix: "${suffix}"`);
+                                return;
+                            }
+                            
+                            console.log(`🔧 Suppression du suffixe "${suffix}" de la colonne "${column}"`);
+                            logSample('🔍 Valeurs avant traitement', column, processedData);
+                            
+                            processedData = processedData.map(row => {
+                                const newRow = { ...row };
+                                if (typeof newRow[column] === 'string' && newRow[column].endsWith(suffix)) {
+                                    newRow[column] = newRow[column].slice(0, -suffix.length);
                                 }
-                            } else {
-                                console.log(`🔍 Valeur "${newRow[column]}" n'est pas une chaîne ou est vide`);
-                            }
-                            return newRow;
-                        });
-                        
-                        console.log(`🔍 Valeurs après traitement:`, processedData.slice(0, 5).map(row => row[column]));
-                    } else if (treatment.type === 'toNumber') {
-                        const column = treatment.column;
-                        
-                        console.log(`🔧 Conversion en nombre de la colonne "${column}"`);
-                        
-                        processedData = processedData.map(row => {
-                            const newRow = { ...row };
-                            if (newRow[column] !== undefined && newRow[column] !== null) {
-                                const originalValue = newRow[column];
-                                const numericValue = parseFloat(String(originalValue));
-                                if (!isNaN(numericValue)) {
-                                    newRow[column] = String(numericValue);
-                                    console.log(`🔧 "${originalValue}" -> "${newRow[column]}" (conversion en nombre)`);
+                                return newRow;
+                            });
+                            
+                            logSample('🔍 Valeurs après traitement', column, processedData);
+                            break;
+                        }
+                        case 'toNumber': {
+                            console.log(`🔧 Conversion en nombre de la colonne "${column}"`);
+                            logSample('🔍 Valeurs avant conversion', column, processedData);
+                            
+                            processedData = processedData.map(row => {
+                                const newRow = { ...row };
+                                if (newRow[column] !== undefined && newRow[column] !== null) {
+                                    const numericValue = parseFloat(String(newRow[column]).replace(/\s/g, ''));
+                                    if (!isNaN(numericValue)) {
+                                        newRow[column] = String(numericValue);
+                                    }
                                 }
-                            }
-                            return newRow;
-                        });
-                    } else if (treatment.type === 'toString') {
-                        const column = treatment.column;
-                        
-                        console.log(`🔧 Conversion en texte de la colonne "${column}"`);
-                        
-                        processedData = processedData.map(row => {
-                            const newRow = { ...row };
-                            if (newRow[column] !== undefined && newRow[column] !== null) {
-                                const originalValue = newRow[column];
-                                newRow[column] = String(originalValue);
-                                console.log(`🔧 ${originalValue} -> "${newRow[column]}" (conversion en texte)`);
-                            }
-                            return newRow;
-                        });
-                    } else {
-                        console.log('⚠️ Type de traitement non supporté:', treatment.type);
+                                return newRow;
+                            });
+                            
+                            logSample('🔍 Valeurs après conversion', column, processedData);
+                            break;
+                        }
+                        case 'toString': {
+                            console.log(`🔧 Conversion en texte de la colonne "${column}"`);
+                            logSample('🔍 Valeurs avant conversion', column, processedData);
+                            
+                            processedData = processedData.map(row => {
+                                const newRow = { ...row };
+                                if (newRow[column] !== undefined && newRow[column] !== null) {
+                                    newRow[column] = String(newRow[column]);
+                                }
+                                return newRow;
+                            });
+                            
+                            logSample('🔍 Valeurs après conversion', column, processedData);
+                            break;
+                        }
+                        default:
+                            console.log('⚠️ Type de traitement non supporté:', treatment.type);
                     }
                 });
             }
@@ -3090,6 +3101,7 @@ export class FileUploadComponent {
         console.log(`✅ Traitements BO appliqués: ${processedData.length} lignes`);
         return processedData;
     }
+
 
     /**
      * Vérifie si un nom de fichier correspond à un pattern

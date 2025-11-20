@@ -497,6 +497,12 @@ export class StatsComponent implements OnInit, OnDestroy {
         }
     }
 
+    goToServiceReferences() {
+        this.router.navigate(['/service-references']).catch(error => {
+            console.error('Navigation vers le référentiel services impossible', error);
+        });
+    }
+
     async exportStats() {
         this.isLoading = true;
         try {

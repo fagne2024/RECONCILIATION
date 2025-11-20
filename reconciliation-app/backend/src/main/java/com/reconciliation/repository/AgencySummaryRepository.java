@@ -120,4 +120,28 @@ public interface AgencySummaryRepository extends JpaRepository<AgencySummaryEnti
         @Param("date") String date,
         @Param("agency") String agency
     );
+
+    boolean existsByService(String service);
+
+    @Query("SELECT CASE WHEN COUNT(a) > 0 THEN TRUE ELSE FALSE END FROM AgencySummaryEntity a WHERE LOWER(a.service) = LOWER(:service)")
+    boolean existsByServiceIgnoreCase(@Param("service") String service);
+
+    @Query("SELECT DISTINCT LOWER(a.service) FROM AgencySummaryEntity a WHERE LOWER(a.service) IN :services")
+    List<String> findExistingServicesIgnoreCase(@Param("services") List<String> services);
+
+    @Query("""
+        SELECT UPPER(a.country) as country, LOWER(a.service) as service, SUM(a.totalVolume) as totalVolume, SUM(a.recordCount) as totalTransactions
+        FROM AgencySummaryEntity a
+        WHERE (:countries IS NULL OR UPPER(a.country) IN :countries)
+        GROUP BY UPPER(a.country), LOWER(a.service)
+    """)
+    List<Object[]> aggregateByCountryAndService(@Param("countries") List<String> countries);
+
+    @Query("""
+        SELECT UPPER(a.country) as country, SUM(a.totalVolume) as totalVolume, SUM(a.recordCount) as totalTransactions
+        FROM AgencySummaryEntity a
+        WHERE (:countries IS NULL OR UPPER(a.country) IN :countries)
+        GROUP BY UPPER(a.country)
+    """)
+    List<Object[]> aggregateByCountry(@Param("countries") List<String> countries);
 } 

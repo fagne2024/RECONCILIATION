@@ -17,6 +17,10 @@ import java.util.stream.Collectors;
 public class ConfigurableReconciliationService {
 
     private final AutoProcessingService autoProcessingService;
+    
+    // Cache local pour éviter les appels multiples à getAllModels() dans la même requête
+    private AutoProcessingModel cachedPartnerModel = null;
+    private ReconciliationRequest cachedRequest = null;
 
     /**
      * Détermine la logique de réconciliation à utiliser basée sur les modèles
@@ -56,10 +60,16 @@ public class ConfigurableReconciliationService {
 
     /**
      * Trouve un modèle partenaire correspondant aux fichiers
+     * Utilise un cache local pour éviter les appels multiples dans la même requête
      */
     private AutoProcessingModel findMatchingPartnerModel(ReconciliationRequest request) {
+        // Utiliser le cache si c'est la même requête
+        if (cachedPartnerModel != null && cachedRequest == request) {
+            return cachedPartnerModel;
+        }
+        
         try {
-            // Récupérer tous les modèles depuis la base de données
+            // Récupérer tous les modèles depuis la base de données (avec cache Spring)
             List<AutoProcessingModel> models = autoProcessingService.getAllModels();
             log.info("📋 {} modèles récupérés depuis la base de données", models.size());
             
@@ -69,12 +79,18 @@ public class ConfigurableReconciliationService {
                     // Vérifier si le modèle correspond aux fichiers
                     if (matchesFilePattern(request, model)) {
                         log.info("✅ Modèle partenaire trouvé: {}", model.getName());
+                        // Mettre en cache pour cette requête
+                        cachedPartnerModel = model;
+                        cachedRequest = request;
                         return model;
                     }
                 }
             }
             
             log.warn("⚠️ Aucun modèle partenaire trouvé pour les fichiers");
+            // Mettre null en cache pour éviter de chercher à nouveau
+            cachedPartnerModel = null;
+            cachedRequest = request;
             return null;
         } catch (Exception e) {
             log.error("❌ Erreur lors de la récupération des modèles: {}", e.getMessage());
@@ -224,6 +240,7 @@ public class ConfigurableReconciliationService {
      * Récupère les règles de correspondance configurées
      */
     public List<CorrespondenceRule> getCorrespondenceRules(ReconciliationRequest request) {
+        // Utiliser le cache pour éviter les appels multiples
         AutoProcessingModel partnerModel = findMatchingPartnerModel(request);
         
         if (partnerModel != null && partnerModel.getCorrespondenceRules() != null) {
@@ -327,6 +344,7 @@ public class ConfigurableReconciliationService {
      * Récupère les colonnes de comparaison configurées
      */
     public List<ComparisonColumn> getComparisonColumns(ReconciliationRequest request) {
+        // Utiliser le cache pour éviter les appels multiples
         AutoProcessingModel partnerModel = findMatchingPartnerModel(request);
         
         if (partnerModel != null && partnerModel.getComparisonColumns() != null) {
