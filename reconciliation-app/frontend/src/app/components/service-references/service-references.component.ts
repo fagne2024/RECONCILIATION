@@ -561,6 +561,13 @@ export class ServiceReferencesComponent implements OnInit {
         return this.filteredDashboardStats.reduce((sum, stat) => sum + (stat.nonReconcilableTransactions || 0), 0);
     }
 
+    getTrxNonReconPercentage(stat: ServiceReferenceDashboard): number {
+        const brut = typeof stat.trxReconBrut === 'number' ? stat.trxReconBrut : 0;
+        const net = typeof stat.trxReconNet === 'number' ? stat.trxReconNet : 0;
+        const difference = brut - net;
+        return difference < 0 ? 0 : difference;
+    }
+
     private cleanString(value: any): string {
         return value !== undefined && value !== null ? value.toString().trim() : '';
     }
@@ -650,6 +657,23 @@ export class ServiceReferencesComponent implements OnInit {
             return 'metric-warning';
         }
         return 'metric-bad';
+    }
+
+    getNegativeMetricClass(value: number): string {
+        if (value <= 5) {
+            return 'metric-good';
+        }
+        if (value <= 15) {
+            return 'metric-warning';
+        }
+        return 'metric-bad';
+    }
+
+    getProgressPercentage(value: number): number {
+        if (value === null || value === undefined || isNaN(value)) {
+            return 0;
+        }
+        return Math.min(value, 100);
     }
 
     trackByCountry(_index: number, item: ServiceReferenceDashboard): string {

@@ -286,11 +286,11 @@
             </div>
         </div>
         <div class="dashboard-summary-cards">
-            <div class="summary-card">
+            <div class="summary-card summary-card-blue">
                 <span>Volume total</span>
                 <strong>{{ formatNumber(dashboardTotalVolume, 2) }}</strong>
             </div>
-            <div class="summary-card">
+            <div class="summary-card summary-card-blue">
                 <span>Transactions totales</span>
                 <strong>{{ formatNumber(dashboardTotalTransactions) }}</strong>
             </div>
@@ -327,13 +327,32 @@
                     <small>{{ formatNumber(stat.totalVolume, 2) }} volume • {{ formatNumber(stat.totalTransactions) }} trx</small>
                 </div>
                 <div class="card-metrics">
-                    <div class="metric-pill" [ngClass]="getMetricClass(stat.trxReconNet)">
-                        <span>Trx_Recon_net</span>
-                        <strong>{{ stat.trxReconNet | number:'1.0-2' }}%</strong>
+                    <div class="metric-bar metric-bar-brut">
+                        <div class="metric-label">
+                            <span>Trx_Recon_brut</span>
+                            <strong>{{ stat.trxReconBrut | number:'1.0-2' }}%</strong>
+                        </div>
+                        <div class="progress-bar">
+                            <div class="progress-fill" [style.width.%]="getProgressPercentage(stat.trxReconBrut || 0)"></div>
+                        </div>
                     </div>
-                    <div class="metric-pill" [ngClass]="getMetricClass(stat.trxReconBrut)">
-                        <span>Trx_Recon_brut</span>
-                        <strong>{{ stat.trxReconBrut | number:'1.0-2' }}%</strong>
+                    <div class="metric-bar metric-bar-net">
+                        <div class="metric-label">
+                            <span>Trx_Recon_net</span>
+                            <strong>{{ stat.trxReconNet | number:'1.0-2' }}%</strong>
+                        </div>
+                        <div class="progress-bar">
+                            <div class="progress-fill" [style.width.%]="getProgressPercentage(stat.trxReconNet || 0)"></div>
+                        </div>
+                    </div>
+                    <div class="metric-bar metric-bar-non-recon">
+                        <div class="metric-label">
+                            <span>Trx_non_recon</span>
+                            <strong>{{ getTrxNonReconPercentage(stat) | number:'1.0-2' }}%</strong>
+                        </div>
+                        <div class="progress-bar">
+                            <div class="progress-fill" [style.width.%]="getProgressPercentage(getTrxNonReconPercentage(stat))"></div>
+                        </div>
                     </div>
                 </div>
             </div>
