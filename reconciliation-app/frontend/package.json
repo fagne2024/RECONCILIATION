@@ -3,7 +3,8 @@
   "version": "0.0.0",
   "scripts": {
     "ng": "ng",
-    "start": "cross-env NODE_OPTIONS=--no-deprecation ng serve",
+    "start": "cross-env NODE_OPTIONS=--no-deprecation ng serve --ssl --ssl-key C:/Certs/reconciliation/reconciliation.intouchgroup.net-key.pem --ssl-cert C:/Certs/reconciliation/reconciliation.intouchgroup.net-crt.pem --host 0.0.0.0",
+    "start-http": "cross-env NODE_OPTIONS=--no-deprecation ng serve",
     "build": "cross-env NODE_OPTIONS=--no-deprecation ng build",
     "watch": "cross-env NODE_OPTIONS=--no-deprecation ng build --watch --configuration development",
     "test": "cross-env NODE_OPTIONS=--no-deprecation ng test"

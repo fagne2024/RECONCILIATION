@@ -428,12 +428,24 @@ export class ProfilComponent implements OnInit {
             // Recharger les permissions pour mettre à jour les décomptes
             this.loadAllProfilPermissions();
             this.isDeleting = false;
+            alert('Profil supprimé avec succès.');
           },
           error: (error) => {
             console.error('❌ Erreur lors de la suppression du profil:', error);
             console.error('Détails de l\'erreur:', error.status, error.message);
             this.isDeleting = false;
-            alert('Erreur lors de la suppression du profil. Veuillez réessayer.');
+
+            // Extraire le message d'erreur du backend
+            let errorMessage = 'Erreur lors de la suppression du profil.';
+            if (error.error && error.error.error) {
+              errorMessage = error.error.error;
+            } else if (error.error && typeof error.error === 'string') {
+              errorMessage = error.error;
+            } else if (error.message) {
+              errorMessage = error.message;
+            }
+
+            alert(errorMessage);
           },
           complete: () => {
             console.log('✅ Requête DELETE terminée');

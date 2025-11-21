@@ -11,8 +11,8 @@ REM Configuration des variables d'environnement email pour Outlook
 REM IMPORTANT: Remplacez ces valeurs par vos identifiants Outlook
 set MAIL_HOST=smtp-mail.outlook.com
 set MAIL_PORT=587
-set MAIL_USERNAME=votre_email@outlook.com
-set MAIL_PASSWORD=votre_mot_de_passe
+set MAIL_USERNAME=touch@intouchgroup.net
+set MAIL_PASSWORD=Infr@2022
 
 REM Configuration de l'URL de l'application frontend
 set APP_URL=http://reconciliation.intouchgroup.net:4200

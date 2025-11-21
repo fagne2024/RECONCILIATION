@@ -1,4 +1,4 @@
-const DEFAULT_API_PORT = '8080';
+const DEFAULT_API_PORT = '8443';
 
 const resolveApiUrl = (): string => {
     if (typeof window === 'undefined') {

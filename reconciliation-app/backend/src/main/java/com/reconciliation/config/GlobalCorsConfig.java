@@ -21,7 +21,7 @@ import java.util.List;
 @Configuration
 public class GlobalCorsConfig {
 
-    @Value("${app.cors.allowed-origins:http://localhost:4200,http://localhost:3000,http://172.214.108.8:4200,http://reconciliation.intouchgroup.net:4200,https://reconciliation.intouchgroup.net}")
+    @Value("${app.cors.allowed-origins:http://localhost:4200,https://localhost:4200,http://localhost:3000,https://localhost:3000,http://172.214.108.8:4200,https://172.214.108.8:4200,http://reconciliation.intouchgroup.net:4200,https://reconciliation.intouchgroup.net:4200,https://reconciliation.intouchgroup.net}")
     private List<String> allowedOrigins;
 
     @Bean

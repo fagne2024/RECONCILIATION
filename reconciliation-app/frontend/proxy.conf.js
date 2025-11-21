@@ -4,18 +4,18 @@ function getBackendTarget() {
   if (process.env.BACKEND_URL) {
     return process.env.BACKEND_URL;
   }
-  
-  // Détecter l'environnement basé sur le hostname
-  // Si on est sur localhost, utiliser localhost:8080
-  // Sinon, utiliser l'adresse IP du serveur
-  const hostname = process.env.HOSTNAME || 'localhost';
-  
-  if (hostname === 'localhost' || hostname === '127.0.0.1') {
-    return 'http://localhost:8080';
+
+  // Vérifier le hostname pour déterminer l'environnement
+  const hostname = require('os').hostname().toLowerCase();
+
+  // Si on est sur le serveur de production (détecté par le hostname)
+  // ou si BACKEND_URL est défini, utiliser l'URL appropriée
+  if (hostname.includes('reconciliation') || hostname.includes('intouchgroup')) {
+    return 'https://reconciliation.intouchgroup.net:8443';
   }
-  
-  // Par défaut, utiliser l'adresse IP du serveur
-  return 'http://172.214.108.8:8080';
+
+  // Backend local - le proxy Angular tourne sur la même machine
+  return 'https://localhost:8443';
 }
 
 const backendTarget = getBackendTarget();

@@ -25,6 +25,8 @@ public class ProfilService {
     @Autowired
     private ModulePermissionRepository modulePermissionRepository;
     @Autowired
+    private UserRepository userRepository;
+    @Autowired
     private EntityManager entityManager;
 
     // CRUD Profil
@@ -37,25 +39,44 @@ public class ProfilService {
         return profilRepository.save(profil);
     }
     @Transactional
-    public void deleteProfil(Long id) { 
+    public void deleteProfil(Long id) {
         System.out.println("💾 Tentative de suppression du profil ID: " + id);
-        
+
         // Vérifier si le profil existe
         if (!profilRepository.existsById(id)) {
             System.out.println("❌ Profil non trouvé avec l'ID: " + id);
             throw new RuntimeException("Profil non trouvé avec l'ID: " + id);
         }
-        
+
+        // Vérifier si le profil est utilisé par des utilisateurs
+        List<UserEntity> usersWithProfil = userRepository.findByProfilId(id);
+        if (!usersWithProfil.isEmpty()) {
+            System.out.println("❌ Impossible de supprimer le profil: " + usersWithProfil.size() + " utilisateur(s) l'utilisent");
+            String usernames = usersWithProfil.stream()
+                .map(UserEntity::getUsername)
+                .limit(5)
+                .reduce((a, b) -> a + ", " + b)
+                .orElse("");
+            String message = "Impossible de supprimer ce profil car il est utilisé par " + usersWithProfil.size() + " utilisateur(s)";
+            if (usersWithProfil.size() <= 5) {
+                message += " : " + usernames;
+            } else {
+                message += " (incluant : " + usernames + ", ...)";
+            }
+            message += ". Veuillez d'abord réassigner ces utilisateurs à un autre profil.";
+            throw new RuntimeException(message);
+        }
+
         System.out.println("✅ Profil trouvé, suppression des permissions et actions associées...");
-        
+
         // Supprimer d'abord les permissions associées au profil
         List<ProfilPermissionEntity> permissions = profilPermissionRepository.findAll().stream()
             .filter(pp -> pp.getProfil().getId().equals(id))
             .toList();
-        
+
         System.out.println("🗑️ Suppression de " + permissions.size() + " permissions associées");
         profilPermissionRepository.deleteAll(permissions);
-        
+
         // Supprimer les actions associées au profil (table profil_action)
         System.out.println("🗑️ Suppression des actions associées au profil");
         try {
@@ -66,12 +87,9 @@ public class ProfilService {
         } catch (Exception e) {
             System.out.println("⚠️ Aucune action à supprimer ou table inexistante: " + e.getMessage());
         }
-        
+
         System.out.println("✅ Permissions et actions supprimées, suppression du profil...");
-        
-        // TODO: Vérifier si le profil est utilisé par des utilisateurs
-        // Si oui, empêcher la suppression
-        
+
         profilRepository.deleteById(id);
         System.out.println("✅ Profil supprimé avec succès: ID " + id);
     }
