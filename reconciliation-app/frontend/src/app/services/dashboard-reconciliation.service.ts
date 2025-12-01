@@ -137,9 +137,21 @@ export class DashboardReconciliationService {
             };
 
             if (statusFilter === 'traite') {
-                const { boCount, partnerCount } = this.extractDiscrepanciesFromComment(item.comment);
-                countryData.services[item.service].boDiscrepancyCount = (countryData.services[item.service].boDiscrepancyCount || 0) + boCount;
-                countryData.services[item.service].partnerDiscrepancyCount = (countryData.services[item.service].partnerDiscrepancyCount || 0) + partnerCount;
+                // Extraire les écarts depuis les commentaires pour les écarts traités
+                // (comme dans le rapport: statut OK avec répartition des écarts dans les commentaires)
+                const status = (item.status || '').trim().toUpperCase();
+                const isOk = status === 'OK';
+                if (isOk) {
+                    // Extraire les comptes d'écarts depuis les commentaires
+                    const discrepancies = this.extractDiscrepanciesFromComment(item.comment);
+                    const boCount = discrepancies.boCount || 0;
+                    const partnerCount = discrepancies.partnerCount || 0;
+                    // Ne compter que si au moins un écart existe
+                    if (boCount > 0 || partnerCount > 0) {
+                        countryData.services[item.service].boDiscrepancyCount = (countryData.services[item.service].boDiscrepancyCount || 0) + boCount;
+                        countryData.services[item.service].partnerDiscrepancyCount = (countryData.services[item.service].partnerDiscrepancyCount || 0) + partnerCount;
+                    }
+                }
             }
         });
 
@@ -328,16 +340,49 @@ export class DashboardReconciliationService {
     }
 
     private extractDiscrepanciesFromComment(comment?: string) {
-        if (!comment) {
+        if (!comment || !comment.trim()) {
             return { boCount: 0, partnerCount: 0 };
         }
 
-        const normalized = comment.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-        const boMatch = normalized.match(/(\d+)\s*ecart\(s\)\s*bo/i);
-        const partnerMatch = normalized.match(/(\d+)\s*ecart\(s\)\s*partenaire/i);
+        // Normaliser le commentaire pour gérer les accents et variations
+        const normalized = comment.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+        
+        // Patterns pour extraire les écarts BO (plusieurs variantes possibles)
+        const boPatterns = [
+            /(\d+)\s*ecart\(s\)\s*bo/i,           // "X écart(s) BO"
+            /(\d+)\s*ecart\(s\)\s*back\s*office/i, // "X écart(s) Back Office"
+            /(\d+)\s*ecarts?\s*bo/i,              // "X écart(s) bo" (sans parenthèses)
+            /bo[:\s]+(\d+)\s*ecart\(s\)/i,        // "BO: X écart(s)"
+        ];
+        
+        // Patterns pour extraire les écarts Partenaire (plusieurs variantes possibles)
+        const partnerPatterns = [
+            /(\d+)\s*ecart\(s\)\s*partenaire/i,   // "X écart(s) Partenaire"
+            /(\d+)\s*ecarts?\s*partenaire/i,      // "X écart(s) partenaire" (sans parenthèses)
+            /partenaire[:\s]+(\d+)\s*ecart\(s\)/i, // "Partenaire: X écart(s)"
+            /part[.:\s]+(\d+)\s*ecart\(s\)/i,     // "Part.: X écart(s)"
+        ];
 
-        const boCount = boMatch ? parseInt(boMatch[1], 10) : 0;
-        const partnerCount = partnerMatch ? parseInt(partnerMatch[1], 10) : 0;
+        let boCount = 0;
+        let partnerCount = 0;
+
+        // Chercher les écarts BO avec tous les patterns
+        for (const pattern of boPatterns) {
+            const match = normalized.match(pattern);
+            if (match) {
+                boCount = parseInt(match[1], 10) || 0;
+                break; // Prendre le premier match trouvé
+            }
+        }
+
+        // Chercher les écarts Partenaire avec tous les patterns
+        for (const pattern of partnerPatterns) {
+            const match = normalized.match(pattern);
+            if (match) {
+                partnerCount = parseInt(match[1], 10) || 0;
+                break; // Prendre le premier match trouvé
+            }
+        }
 
         return { boCount, partnerCount };
     }
