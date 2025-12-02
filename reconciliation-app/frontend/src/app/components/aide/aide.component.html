@@ -1,0 +1,28 @@
+<div class="aide-container">
+  <div class="aide-header">
+    <h1 class="aide-title">Choisissez une Option</h1>
+  </div>
+  
+  <div class="aide-grid">
+    <a 
+      *ngFor="let option of helpOptions" 
+      class="aide-card"
+      [class.clickable]="option.route"
+      [routerLink]="option.route || null"
+      [routerLinkActive]="option.route ? 'active' : ''"
+      (click)="!option.route && $event.preventDefault()"
+    >
+      <div class="card-icon-container">
+        <i [class]="option.icon" class="card-icon"></i>
+      </div>
+      <div class="card-content">
+        <h2 class="card-title">{{ option.title }}</h2>
+        <p class="card-description">{{ option.description }}</p>
+      </div>
+      <div class="card-tag" [ngClass]="'tag-' + option.tagColor">
+        {{ option.tag }}
+      </div>
+    </a>
+  </div>
+</div>
+

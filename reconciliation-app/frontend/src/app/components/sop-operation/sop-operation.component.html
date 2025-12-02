@@ -1,0 +1,219 @@
+<div class="sop-operation-container">
+  <div class="sop-header">
+    <h1 class="sop-title">Visualisation des SOP</h1>
+  </div>
+
+  <div class="mind-map-container">
+    <div class="mind-map" *ngIf="sopStructure">
+      <!-- Nœud racine -->
+      <div class="root-node" (click)="onNodeClick(sopStructure, $event)">
+        <div class="node-content root">
+          <i class="fas fa-sitemap"></i>
+          <span>{{ sopStructure.label }}</span>
+        </div>
+      </div>
+
+      <!-- Container pour les deux branches principales -->
+      <div class="branches-container">
+        <!-- Branche Back office -->
+        <div class="branch branch-back-office">
+        <div class="branch-node level-1" (click)="onNodeClick(sopStructure.children![0], $event)">
+          <div class="node-content level-1-content">
+            <i class="fas fa-building"></i>
+            <span>{{ sopStructure.children![0].label }}</span>
+          </div>
+        </div>
+
+        <!-- Sous-branches Back office -->
+        <div class="sub-branches">
+          <!-- Métier (GU3) -->
+          <div class="sub-branch">
+            <div class="branch-node level-2" (click)="onNodeClick(sopStructure.children![0].children![0], $event)">
+              <div class="node-content level-2-content">
+                <i class="fas fa-briefcase"></i>
+                <span>{{ sopStructure.children![0].children![0].label }}</span>
+              </div>
+            </div>
+            <div class="leaf-nodes">
+              <div 
+                *ngFor="let child of sopStructure.children![0].children![0].children" 
+                class="leaf-node"
+                (click)="onNodeClick(child, $event)">
+                <div class="node-content leaf-content">
+                  <i class="fas fa-circle"></i>
+                  <span>{{ child.label }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Classique -->
+          <div class="sub-branch">
+            <div class="branch-node level-2" (click)="onNodeClick(sopStructure.children![0].children![1], $event)">
+              <div class="node-content level-2-content">
+                <i class="fas fa-file-alt"></i>
+                <span>{{ sopStructure.children![0].children![1].label }}</span>
+              </div>
+            </div>
+            <div class="leaf-nodes">
+              <div 
+                *ngFor="let child of sopStructure.children![0].children![1].children" 
+                class="leaf-node"
+                (click)="onNodeClick(child, $event)">
+                <div class="node-content leaf-content">
+                  <i class="fas fa-circle"></i>
+                  <span>{{ child.label }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- GU2 -->
+          <div class="sub-branch">
+            <div class="branch-node level-2" (click)="onNodeClick(sopStructure.children![0].children![2], $event)">
+              <div class="node-content level-2-content">
+                <i class="fas fa-cogs"></i>
+                <span>{{ sopStructure.children![0].children![2].label }}</span>
+              </div>
+            </div>
+            <div class="leaf-nodes">
+              <div 
+                *ngFor="let child of sopStructure.children![0].children![2].children" 
+                class="leaf-node"
+                (click)="onNodeClick(child, $event)">
+                <div class="node-content leaf-content">
+                  <i class="fas fa-circle"></i>
+                  <span>{{ child.label }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        </div>
+
+        <!-- Branche Autres -->
+        <div class="branch branch-autres">
+        <div class="branch-node level-1" (click)="onNodeClick(sopStructure.children![1], $event)">
+          <div class="node-content level-1-content">
+            <i class="fas fa-folder-open"></i>
+            <span>{{ sopStructure.children![1].label }}</span>
+          </div>
+        </div>
+
+        <!-- Sous-branches Autres -->
+        <div class="sub-branches">
+          <!-- Annulation -->
+          <div class="sub-branch">
+            <div class="branch-node level-2" (click)="onNodeClick(sopStructure.children![1].children![0], $event)">
+              <div class="node-content level-2-content">
+                <i class="fas fa-times-circle"></i>
+                <span>{{ sopStructure.children![1].children![0].label }}</span>
+              </div>
+            </div>
+            <div class="leaf-nodes">
+              <div 
+                *ngFor="let child of sopStructure.children![1].children![0].children" 
+                class="leaf-node"
+                (click)="onNodeClick(child, $event)">
+                <div class="node-content leaf-content">
+                  <i class="fas fa-circle"></i>
+                  <span>{{ child.label }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Transfert d'UV inter filiale -->
+          <div class="sub-branch">
+            <div class="branch-node level-2" (click)="onNodeClick(sopStructure.children![1].children![1], $event)">
+              <div class="node-content level-2-content">
+                <i class="fas fa-exchange-alt"></i>
+                <span>{{ sopStructure.children![1].children![1].label }}</span>
+              </div>
+            </div>
+            <div class="leaf-nodes">
+              <div 
+                *ngFor="let child of sopStructure.children![1].children![1].children" 
+                class="leaf-node"
+                (click)="onNodeClick(child, $event)">
+                <div class="node-content leaf-content">
+                  <i class="fas fa-circle"></i>
+                  <span>{{ child.label }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Ajustement et Memo -->
+          <div class="sub-branch">
+            <div class="branch-node level-2" (click)="onNodeClick(sopStructure.children![1].children![2], $event)">
+              <div class="node-content level-2-content">
+                <i class="fas fa-balance-scale"></i>
+                <span>{{ sopStructure.children![1].children![2].label }}</span>
+              </div>
+            </div>
+            <div class="leaf-nodes">
+              <div 
+                *ngFor="let child of sopStructure.children![1].children![2].children" 
+                class="leaf-node"
+                (click)="onNodeClick(child, $event)">
+                <div class="node-content leaf-content">
+                  <i class="fas fa-circle"></i>
+                  <span>{{ child.label }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Problème technique -->
+          <div class="sub-branch">
+            <div class="branch-node level-2" (click)="onNodeClick(sopStructure.children![1].children![3], $event)">
+              <div class="node-content level-2-content">
+                <i class="fas fa-exclamation-triangle"></i>
+                <span>{{ sopStructure.children![1].children![3].label }}</span>
+              </div>
+            </div>
+            <div class="leaf-nodes">
+              <div 
+                *ngFor="let child of sopStructure.children![1].children![3].children" 
+                class="leaf-node"
+                (click)="onNodeClick(child, $event)">
+                <div class="node-content leaf-content">
+                  <i class="fas fa-circle"></i>
+                  <span>{{ child.label }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Popup pour les options -->
+  <div class="popup-overlay" *ngIf="showPopup && popupNode" (click)="closePopup()">
+    <div class="popup-content" (click)="$event.stopPropagation()">
+      <div class="popup-header">
+        <h3>{{ popupNode.label }}</h3>
+        <button class="btn-close-popup" (click)="closePopup()">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+      <div class="popup-body">
+        <p class="popup-description">Choisissez une option pour consulter les informations :</p>
+        <div class="popup-options">
+          <button class="popup-option-btn" (click)="onOptionClick('grandes-lignes')">
+            <i class="fas fa-list-ul"></i>
+            <span>Les grandes lignes</span>
+          </button>
+          <button class="popup-option-btn" (click)="onOptionClick('document-complet')">
+            <i class="fas fa-file-alt"></i>
+            <span>Document complet</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
