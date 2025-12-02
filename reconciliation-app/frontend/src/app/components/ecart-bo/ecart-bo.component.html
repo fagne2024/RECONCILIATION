@@ -1,0 +1,179 @@
+<div class="page-header">
+    <div class="breadcrumb">
+        <a (click)="goBack()" class="breadcrumb-link">← Retour aux Résultats</a>
+    </div>
+</div>
+
+<div class="ecart-bo-container">
+    <div class="header">
+        <h2>⚠️ Écarts BO ({{getBoEcartCount() | number:'1.0-0'}})</h2>
+    </div>
+
+    <div class="search-section">
+        <input 
+            type="text" 
+            [(ngModel)]="searchKey" 
+            (input)="onSearch()"
+            placeholder="Rechercher dans toutes les colonnes (montant, date, agence, service...)"
+            class="search-input"
+        >
+        <button (click)="showColumnSelector = !showColumnSelector" class="column-button">
+            ⚙️ Colonnes
+        </button>
+        <button (click)="toggleColumnReorderMode()" class="reorder-button" [class.active]="isColumnReorderMode">
+            {{ isColumnReorderMode ? '✅ Fin réorganisation' : '🔄 Réorganiser' }}
+        </button>
+        <label style="display:flex;align-items:center;gap:6px;">
+            <input type="checkbox" [checked]="allBoSelectedOnPage" (change)="toggleSelectAllBoOnPage($event)">
+            <span>Sélectionner la page</span>
+        </label>
+        <button (click)="exportResults()" class="export-button" [disabled]="isExporting || !filteredBoOnly.length">
+            {{ isExporting ? '⏳ Export en cours...' : '📥 Exporter les ECART BO' }}
+        </button>
+        <button (click)="saveEcartBoToEcartSolde()" class="save-button" [disabled]="isSavingEcartBo">
+            {{ isSavingEcartBo ? '💾 Sauvegarde...' : '💾 Sauvegarder dans Ecart Solde' }}
+        </button>
+        <button (click)="saveEcartBoToTrxSf()" class="save-button" [disabled]="isSavingEcartBoToTrxSf">
+            {{ isSavingEcartBoToTrxSf ? '💾 Sauvegarde...' : '💾 Sauvegarder dans TRX SF' }}
+        </button>
+    </div>
+
+    <!-- Sélecteur de colonnes -->
+    <div *ngIf="showColumnSelector" class="column-selector-panel">
+        <h4>👁️ Sélection des colonnes</h4>
+        <div class="column-list">
+            <label *ngFor="let col of allColumns" class="column-checkbox">
+                <input 
+                    type="checkbox" 
+                    [checked]="isColumnVisible(col)"
+                    (change)="toggleColumnVisibility(col)"
+                >
+                <span>{{ col }}</span>
+            </label>
+        </div>
+        <div class="column-selector-actions">
+            <button (click)="showAllColumns()">
+                Tout afficher
+            </button>
+            <button (click)="hideAllColumns()">
+                Tout masquer
+            </button>
+        </div>
+    </div>
+
+    <!-- Indicateur de progression de l'export -->
+    <div *ngIf="isExporting" class="export-progress-overlay">
+        <div class="export-progress-card">
+            <h3>📥 Export en cours</h3>
+            <div class="export-progress-bar">
+                <div class="export-progress-fill" [style.width.%]="exportProgress"></div>
+            </div>
+            <div class="export-progress-text">
+                {{ exportProgress }}% - {{ exportMessage }}
+            </div>
+            <div class="export-progress-details">
+                {{ filteredBoOnly.length | number }} écarts BO à exporter
+            </div>
+        </div>
+    </div>
+
+    <div class="volume-summary">
+        <h4>📊 Résumé des volumes</h4>
+        <div class="volume-grid">
+            <div class="volume-card">
+                <div class="volume-label">Volume total BO</div>
+                <div class="volume-value">{{calculateTotalVolumeBoOnly() | number:'1.0-0'}}</div>
+            </div>
+            <div class="volume-card">
+                <div class="volume-label">Nombre de Transactions</div>
+                <div class="volume-value">
+                    {{ filteredBoOnly.length | number }}
+                    <span *ngIf="searchKey && getSearchResultsCount() !== getTotalResultsCount()" class="filtered-badge">
+                        (filtré)
+                    </span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Pagination -->
+    <div class="pagination-controls" *ngIf="filteredBoOnly.length > 0 && !isLoading">
+        <div class="items-per-page">
+            <label>Lignes par page :</label>
+            <select [(ngModel)]="pageSize" (change)="onItemsPerPageChange()" class="form-control">
+                <option [value]="10">10</option>
+                <option [value]="20">20</option>
+                <option [value]="50">50</option>
+                <option [value]="100">100</option>
+            </select>
+        </div>
+        <button 
+            class="btn pagination-btn" 
+            [disabled]="boOnlyPage === 1"
+            (click)="goToPage(boOnlyPage - 1)">
+            ← Précédent
+        </button>
+        <span>Page {{boOnlyPage}} / {{getTotalPages()}}</span>
+        <button 
+            class="btn pagination-btn" 
+            [disabled]="boOnlyPage === getTotalPages()"
+            (click)="goToPage(boOnlyPage + 1)">
+            Suivant →
+        </button>
+    </div>
+
+    <div *ngIf="isLoading" class="loading">
+        <div class="spinner"></div>
+        <p>Chargement des écarts BO... {{loadProgress}}%</p>
+        <div class="progress-bar" *ngIf="loadProgress > 0">
+            <div class="progress" [style.width.%]="loadProgress"></div>
+        </div>
+    </div>
+
+    <div *ngIf="!isLoading && getVisibleColumns().length > 0" class="table-container">
+        <div class="table-wrapper">
+            <table class="ecart-bo-table">
+                <thead>
+                    <tr>
+                        <th class="table-header select-column">
+                            <div class="header-content">Sélection</div>
+                        </th>
+                        <th 
+                            *ngFor="let col of getVisibleColumns(); let i = index"
+                            [draggable]="isColumnReorderMode"
+                            (dragstart)="onColumnDragStart($event, col)"
+                            (dragover)="onColumnDragOver($event, col)"
+                            (drop)="onColumnDrop($event, col)"
+                            (dragend)="onColumnDragEnd()"
+                            [class.dragging]="draggedColumn === col"
+                            [class.drag-over]="dragOverColumn === col"
+                            [class.reorder-mode]="isColumnReorderMode"
+                            class="table-header">
+                            <div class="header-content">
+                                <span>{{ col }}</span>
+                                <span *ngIf="isColumnReorderMode" class="drag-handle">⋮⋮</span>
+                            </div>
+                        </th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr *ngFor="let record of getPagedBoOnly()">
+                        <td class="select-cell">
+                            <input 
+                                type="checkbox" 
+                                [checked]="isBoRecordSelected(record)" 
+                                (change)="toggleBoSelection(record, $event)">
+                        </td>
+                        <td *ngFor="let col of getVisibleColumns()">
+                            {{ getCellValue(record, col) }}
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div *ngIf="!isLoading && getVisibleColumns().length === 0" class="no-columns-message">
+        <p>⚠️ Aucune colonne visible. Veuillez sélectionner au moins une colonne à afficher.</p>
+    </div>
+</div>

@@ -1,0 +1,188 @@
+<div class="page-header">
+    <div class="breadcrumb">
+        <a (click)="goBack()" class="breadcrumb-link">← Retour aux Résultats</a>
+    </div>
+</div>
+
+<div class="ecart-partenaire-container">
+    <div class="header">
+        <h2>⚠️ Écarts Partenaire ({{getPartnerOnlyCount() | number:'1.0-0'}})</h2>
+    </div>
+
+    <div class="search-section">
+        <input 
+            type="text" 
+            [(ngModel)]="searchKey" 
+            (input)="onSearch()"
+            placeholder="Rechercher dans toutes les colonnes (montant, date, numéro trans GU, ID opération...)"
+            class="search-input"
+        >
+        <button (click)="showColumnSelector = !showColumnSelector" class="column-button">
+            ⚙️ Colonnes
+        </button>
+        <button (click)="toggleColumnReorderMode()" class="reorder-button" [class.active]="isColumnReorderMode">
+            {{ isColumnReorderMode ? '✅ Fin réorganisation' : '🔄 Réorganiser' }}
+        </button>
+        <label style="display:flex;align-items:center;gap:6px;">
+            <input type="checkbox" [checked]="allPartnerSelectedOnPage" (change)="toggleSelectAllPartnerOnPage($event)">
+            <span>Sélectionner la page</span>
+        </label>
+        <button (click)="exportResults()" class="export-button" [disabled]="isExporting || !filteredPartnerOnly.length">
+            {{ isExporting ? '⏳ Export en cours...' : '📥 Exporter les ECART Partenaire' }}
+        </button>
+        <button (click)="saveEcartPartnerToImpactOP()" class="save-button" [disabled]="isSavingEcartPartnerToImpactOP">
+            {{ isSavingEcartPartnerToImpactOP ? '💾 Sauvegarde...' : '💾 Sauvegarder dans Import OP' }}
+        </button>
+    </div>
+
+    <!-- Sélecteur de colonnes -->
+    <div *ngIf="showColumnSelector" class="column-selector-panel">
+        <h4>👁️ Sélection des colonnes</h4>
+        <div class="column-list">
+            <label *ngFor="let col of allColumns" class="column-checkbox">
+                <input 
+                    type="checkbox" 
+                    [checked]="isColumnVisible(col)"
+                    (change)="toggleColumnVisibility(col)"
+                >
+                <span>{{ col }}</span>
+            </label>
+        </div>
+        <div class="column-selector-actions">
+            <button (click)="showAllColumns()">
+                Tout afficher
+            </button>
+            <button (click)="hideAllColumns()">
+                Tout masquer
+            </button>
+        </div>
+    </div>
+
+    <!-- Indicateur de progression de l'export -->
+    <div *ngIf="isExporting" class="export-progress-overlay">
+        <div class="export-progress-card">
+            <h3>📥 Export en cours</h3>
+            <div class="export-progress-bar">
+                <div class="export-progress-fill" [style.width.%]="exportProgress"></div>
+            </div>
+            <div class="export-progress-text">
+                {{ exportProgress }}% - {{ exportMessage }}
+            </div>
+            <div class="export-progress-details">
+                {{ filteredPartnerOnly.length | number }} écarts Partenaire à exporter
+            </div>
+        </div>
+    </div>
+
+    <div class="volume-summary">
+        <h4>📊 Résumé des volumes</h4>
+        <div class="volume-grid">
+            <div class="volume-card">
+                <div class="volume-label">Volume total Partenaire</div>
+                <div class="volume-value">{{calculateTotalVolumePartnerOnly() | number:'1.0-0'}}</div>
+            </div>
+            <div class="volume-card">
+                <div class="volume-label">Nombre de Transactions</div>
+                <div class="volume-value">
+                    {{ filteredPartnerOnly.length | number }}
+                    <span *ngIf="searchKey && getSearchResultsCount() !== getTotalResultsCount()" class="filtered-badge">
+                        (filtré)
+                    </span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Pagination -->
+    <div class="pagination-controls" *ngIf="filteredPartnerOnly.length > 0 && !isLoading">
+        <div class="items-per-page">
+            <label>Lignes par page :</label>
+            <select [(ngModel)]="pageSize" (change)="onItemsPerPageChange()" class="form-control">
+                <option [value]="10">10</option>
+                <option [value]="20">20</option>
+                <option [value]="50">50</option>
+                <option [value]="100">100</option>
+            </select>
+        </div>
+        <button 
+            class="btn pagination-btn" 
+            [disabled]="partnerOnlyPage === 1"
+            (click)="goToPage(partnerOnlyPage - 1)">
+            ← Précédent
+        </button>
+        <span>Page {{partnerOnlyPage}} / {{getTotalPages()}}</span>
+        <button 
+            class="btn pagination-btn" 
+            [disabled]="partnerOnlyPage === getTotalPages()"
+            (click)="goToPage(partnerOnlyPage + 1)">
+            Suivant →
+        </button>
+    </div>
+
+    <div *ngIf="isLoading" class="loading">
+        <div class="spinner"></div>
+        <p>Chargement des écarts Partenaire... {{loadProgress}}%</p>
+        <div class="progress-bar" *ngIf="loadProgress > 0">
+            <div class="progress" [style.width.%]="loadProgress"></div>
+        </div>
+    </div>
+
+    <div *ngIf="!isLoading && getVisibleColumns().length > 0" class="table-container">
+        <div class="table-wrapper">
+            <table class="ecart-partenaire-table">
+                <thead>
+                    <tr>
+                        <th class="table-header action-column">
+                            <div class="header-content">Actions</div>
+                        </th>
+                        <th class="table-header select-column">
+                            <div class="header-content">Sélection</div>
+                        </th>
+                        <th 
+                            *ngFor="let col of getVisibleColumns(); let i = index"
+                            [draggable]="isColumnReorderMode"
+                            (dragstart)="onColumnDragStart($event, col)"
+                            (dragover)="onColumnDragOver($event, col)"
+                            (drop)="onColumnDrop($event, col)"
+                            (dragend)="onColumnDragEnd()"
+                            [class.dragging]="draggedColumn === col"
+                            [class.drag-over]="dragOverColumn === col"
+                            [class.reorder-mode]="isColumnReorderMode"
+                            class="table-header">
+                            <div class="header-content">
+                                <span>{{ col }}</span>
+                                <span *ngIf="isColumnReorderMode" class="drag-handle">⋮⋮</span>
+                            </div>
+                        </th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr *ngFor="let record of getPagedPartnerOnly()">
+                        <td class="action-cell">
+                            <button 
+                                (click)="createOperationFromPartnerRecord(record)" 
+                                class="create-op-button" 
+                                [disabled]="!isPartnerRecordEligible(record)" 
+                                title="Créer OP">
+                                ➕ Créer OP
+                            </button>
+                        </td>
+                        <td class="select-cell">
+                            <input 
+                                type="checkbox" 
+                                [checked]="isPartnerRecordSelected(record)" 
+                                (change)="togglePartnerSelection(record, $event)">
+                        </td>
+                        <td *ngFor="let col of getVisibleColumns()">
+                            {{ getCellValue(record, col) }}
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div *ngIf="!isLoading && getVisibleColumns().length === 0" class="no-columns-message">
+        <p>⚠️ Aucune colonne visible. Veuillez sélectionner au moins une colonne à afficher.</p>
+    </div>
+</div>
