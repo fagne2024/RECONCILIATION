@@ -84,6 +84,8 @@ import { UserProfileComponent } from './components/user-profile/user-profile.com
 import { ServiceReferencesComponent } from './components/service-references/service-references.component';
 import { AideComponent } from './components/aide/aide.component';
 import { SopOperationComponent } from './components/sop-operation/sop-operation.component';
+import { MatchesTableComponent } from './components/matches-table/matches-table.component';
+import { PartnerMatchesTableComponent } from './components/partner-matches-table/partner-matches-table.component';
 
 @NgModule({
     declarations: [
@@ -134,7 +136,9 @@ import { SopOperationComponent } from './components/sop-operation/sop-operation.
                 UserProfileComponent,
                 ServiceReferencesComponent,
                 AideComponent,
-                SopOperationComponent
+                SopOperationComponent,
+                MatchesTableComponent,
+                PartnerMatchesTableComponent
     ],
     imports: [
         BrowserModule,

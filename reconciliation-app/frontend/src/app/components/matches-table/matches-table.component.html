@@ -1,0 +1,176 @@
+<div class="matches-table-container">
+  <div class="header-section">
+    <div class="header-top">
+      <button (click)="goBack()" class="back-button">
+        ← Retour aux résultats
+      </button>
+      <h2>✅ Correspondances</h2>
+      <div class="header-info">
+        <span class="total-count">{{filteredMatches.length || 0}} correspondance(s)</span>
+      </div>
+    </div>
+    
+    <div class="search-section">
+      <input 
+        type="text" 
+        [(ngModel)]="searchKey" 
+        (input)="onSearch()"
+        placeholder="Rechercher par clé, montant, date, agence..."
+        class="search-input"
+      >
+      <div class="export-menu-container">
+        <button 
+          (click)="toggleExportMenu($event)" 
+          class="export-menu-button"
+          [disabled]="isExporting || displayedMatches.length === 0"
+        >
+          📥 Export & Options
+          <span class="menu-arrow">{{showExportMenu ? '▲' : '▼'}}</span>
+        </button>
+        <div *ngIf="showExportMenu" class="export-menu-dropdown">
+          <div class="menu-section">
+            <label class="menu-label">Affichage :</label>
+            <button 
+              (click)="setViewMode('BO')" 
+              class="menu-option-button"
+              [class.active]="viewMode === 'BO'"
+            >
+              {{viewMode === 'BO' ? '✓' : ''}} Tableau BO
+            </button>
+            <button 
+              (click)="setViewMode('PARTNER')" 
+              class="menu-option-button"
+              [class.active]="viewMode === 'PARTNER'"
+            >
+              {{viewMode === 'PARTNER' ? '✓' : ''}} Tableau Partenaire
+            </button>
+          </div>
+          <div class="menu-divider"></div>
+          <div class="menu-section">
+            <button (click)="openColumnSelector()" class="menu-option-button">
+              📋 Choisir les colonnes à exporter
+            </button>
+            <span class="menu-info">{{selectedColumnsCount}} / {{availableColumnsForExport.length}} colonnes sélectionnées</span>
+          </div>
+          <div class="menu-divider"></div>
+          <div class="menu-section">
+            <button 
+              (click)="exportResults()" 
+              class="menu-export-button"
+              [disabled]="isExporting"
+            >
+              {{ isExporting ? '⏳ Export en cours...' : '🚀 Exporter optimisé (' + viewMode + ')' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div *ngIf="isExporting" class="export-progress">
+    <div class="progress-bar">
+      <div class="progress-fill" [style.width.%]="exportProgress.percentage"></div>
+    </div>
+    <div class="progress-text">{{ exportProgress.message }} - {{ exportProgress.percentage | number:'1.0-0' }}%</div>
+    <div class="progress-details" *ngIf="exportProgress.total > 0">
+      {{ exportProgress.current | number }} / {{ exportProgress.total | number }} lignes
+    </div>
+  </div>
+
+  <div class="table-wrapper">
+    <table class="matches-table">
+      <thead>
+        <tr>
+          <th>Clé</th>
+          <th>Statut</th>
+          <th *ngFor="let col of displayedColumns">{{getColumnLabel(col)}}</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr *ngFor="let match of getPagedMatches()" [class.has-differences]="hasDifferences(match)">
+          <td class="key-cell">{{match.key}}</td>
+          <td class="status-cell">
+            <span [class.has-differences]="hasDifferences(match)">
+              {{hasDifferences(match) ? '⚠️ Différences' : '✅ OK'}}
+            </span>
+          </td>
+          <td *ngFor="let col of displayedColumns">{{getValue(match, col)}}</td>
+        </tr>
+        <tr *ngIf="getPagedMatches().length === 0">
+          <td [attr.colspan]="displayedColumns.length + 2" class="no-data">
+            Aucune correspondance trouvée
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="pagination-section">
+    <div class="pagination-info">
+      <span>
+        Page {{currentPage}} / {{totalPages}} 
+        ({{displayedMatches.length}} résultat(s))
+      </span>
+    </div>
+    <div class="pagination-controls">
+      <button (click)="prevPage()" [disabled]="currentPage === 1" class="page-btn">
+        Précédent
+      </button>
+      <div class="page-numbers">
+        <button 
+          *ngFor="let page of getPageNumbers()" 
+          (click)="goToPage(page)"
+          [class.active]="page === currentPage"
+          class="page-number-btn"
+        >
+          {{page}}
+        </button>
+      </div>
+      <button (click)="nextPage()" [disabled]="currentPage === totalPages" class="page-btn">
+        Suivant
+      </button>
+    </div>
+  </div>
+
+  <!-- Popup de sélection des colonnes -->
+  <div *ngIf="showColumnSelector" class="column-selector-overlay" (click)="closeColumnSelector()">
+    <div class="column-selector-popup" (click)="$event.stopPropagation()">
+      <div class="popup-header">
+        <h3>📋 Sélection des colonnes pour l'export</h3>
+        <button (click)="closeColumnSelector()" class="close-btn">×</button>
+      </div>
+      
+      <div class="popup-content">
+        <div class="selection-controls">
+          <button (click)="toggleAllColumns(true)" class="select-all-btn">
+            ✅ Tout sélectionner
+          </button>
+          <button (click)="toggleAllColumns(false)" class="deselect-all-btn">
+            ❌ Tout désélectionner
+          </button>
+          <span class="selection-info">
+            {{selectedColumnsCount}} / {{availableColumnsForExport.length}} colonnes sélectionnées
+          </span>
+        </div>
+        
+        <div class="columns-grid">
+          <div *ngFor="let column of availableColumnsForExport" class="column-item">
+            <label class="column-checkbox">
+              <input 
+                type="checkbox" 
+                [(ngModel)]="selectedColumnsForExport[column]"
+                [checked]="selectedColumnsForExport[column]">
+              <span class="column-name">{{column}}</span>
+            </label>
+          </div>
+        </div>
+      </div>
+      
+      <div class="popup-actions">
+        <button (click)="closeColumnSelector()" class="cancel-btn">
+          Fermer
+        </button>
+      </div>
+    </div>
+  </div>
+</div>

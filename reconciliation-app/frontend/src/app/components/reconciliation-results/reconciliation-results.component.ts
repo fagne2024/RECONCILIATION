@@ -131,9 +131,9 @@ interface ApiError {
             <div class="results-tabs">
                 <div class="tab-buttons">
                     <button 
-                        [class.active]="activeTab === 'matches'"
-                        (click)="setActiveTab('matches')">
-                        ✅ Correspondances ({{filteredMatches.length || 0}})
+                        class="matches-button"
+                        (click)="goToMatches()">
+                        ✅ Voir les Correspondances ({{filteredMatches.length || 0}})
                     </button>
                     <button 
                         [class.active]="activeTab === 'boOnly'"
@@ -158,6 +158,8 @@ interface ApiError {
                 </div>
 
                 <div class="tab-content">
+                    <!-- Les correspondances sont maintenant sur une page séparée -->
+                    
                     <!-- Résumé par Agence -->
                     <div *ngIf="activeTab === 'agencySummary'" class="agency-summary-section">
                         <div class="summary-header">
@@ -914,6 +916,20 @@ interface ApiError {
         .tab-buttons button.active {
             background: #2196F3;
             color: white;
+        }
+
+        .matches-button {
+            background: linear-gradient(135deg, #28a745 0%, #20c997 100%) !important;
+            color: white !important;
+            font-weight: 600;
+            border-radius: 6px;
+            transition: all 0.3s ease;
+        }
+
+        .matches-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(40, 167, 69, 0.4);
+            background: linear-gradient(135deg, #218838 0%, #1ea085 100%) !important;
         }
 
         .report-button {
@@ -4841,6 +4857,15 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
         } finally {
             this.isSaving = false;
         }
+    }
+
+    goToMatches() {
+        console.log('Navigation vers les correspondances');
+        this.router.navigate(['/matches']).then(() => {
+            console.log('Navigation vers /matches réussie');
+        }).catch(err => {
+            console.error('Erreur lors de la navigation vers /matches:', err);
+        });
     }
 
     goToStats() {

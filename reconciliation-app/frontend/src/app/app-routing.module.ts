@@ -3,6 +3,7 @@ import { RouterModule, Routes } from '@angular/router';
 import { StatsComponent } from './components/stats/stats.component';
 import { AgencySummaryComponent } from './components/stats/agency-summary/agency-summary.component';
 import { ReconciliationResultsComponent } from './components/reconciliation-results/reconciliation-results.component';
+import { MatchesTableComponent } from './components/matches-table/matches-table.component';
 import { FileUploadComponent } from './components/file-upload/file-upload.component';
 import { DashboardComponent } from './components/dashboard/dashboard.component';
 import { ComptesComponent } from './components/comptes/comptes.component';
@@ -57,6 +58,7 @@ const routes: Routes = [
   { path: 'stats', component: StatsComponent, canActivate: [AuthGuard] },
   { path: 'agency-summary', component: AgencySummaryComponent, canActivate: [AuthGuard] },
   { path: 'results', component: ReconciliationResultsComponent, canActivate: [AuthGuard] },
+  { path: 'matches', component: MatchesTableComponent, canActivate: [AuthGuard] },
   { path: 'dashboard', component: DashboardComponent, canActivate: [AuthGuard] },
   { path: 'comptes', component: ComptesComponent, canActivate: [AuthGuard] },
   { path: 'operations', component: OperationsComponent, canActivate: [AuthGuard] },
