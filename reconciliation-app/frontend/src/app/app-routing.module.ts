@@ -9,7 +9,6 @@ import { ComptesComponent } from './components/comptes/comptes.component';
 import { OperationsComponent } from './components/operations/operations.component';
 import { FraisComponent } from './components/frais/frais.component';
 import { CommissionComponent } from './components/commission/commission.component';
-import { ChargeComponent } from './components/charge/charge.component';
 import { UsersComponent } from './components/users/users.component';
 import { RankingComponent } from './components/ranking/ranking.component';
 import { ColumnSelectionComponent } from './components/column-selection/column-selection.component';
@@ -39,9 +38,6 @@ import { DashboardReconciliationComponent } from './components/dashboard-reconci
 import { BanqueDashboardComponent } from './components/banque-dashboard/banque-dashboard.component';
 import { TwoFactorAuthComponent } from './components/two-factor-auth/two-factor-auth.component';
 import { UserProfileComponent } from './components/user-profile/user-profile.component';
-import { CorrespondancesComponent } from './components/correspondances/correspondances.component';
-import { EcartBoComponent } from './components/ecart-bo/ecart-bo.component';
-import { EcartPartenaireComponent } from './components/ecart-partenaire/ecart-partenaire.component';
 import { AideComponent } from './components/aide/aide.component';
 import { SopOperationComponent } from './components/sop-operation/sop-operation.component';
 import { AuthGuard } from './guards/auth.guard';
@@ -61,15 +57,11 @@ const routes: Routes = [
   { path: 'stats', component: StatsComponent, canActivate: [AuthGuard] },
   { path: 'agency-summary', component: AgencySummaryComponent, canActivate: [AuthGuard] },
   { path: 'results', component: ReconciliationResultsComponent, canActivate: [AuthGuard] },
-  { path: 'correspondances', component: CorrespondancesComponent, canActivate: [AuthGuard] },
-  { path: 'ecart-bo', component: EcartBoComponent, canActivate: [AuthGuard] },
-  { path: 'ecart-partenaire', component: EcartPartenaireComponent, canActivate: [AuthGuard] },
   { path: 'dashboard', component: DashboardComponent, canActivate: [AuthGuard] },
   { path: 'comptes', component: ComptesComponent, canActivate: [AuthGuard] },
   { path: 'operations', component: OperationsComponent, canActivate: [AuthGuard] },
   { path: 'frais', component: FraisComponent, canActivate: [AuthGuard] },
   { path: 'commission', component: CommissionComponent, canActivate: [AuthGuard] },
-  { path: 'charge', component: ChargeComponent, canActivate: [AuthGuard] },
   { path: 'users', component: UsersComponent, canActivate: [AuthGuard, AdminGuard] },
   { path: 'ranking', component: RankingComponent, canActivate: [AuthGuard] },
   { path: 'traitement', component: TraitementComponent, canActivate: [AuthGuard] },

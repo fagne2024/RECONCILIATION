@@ -1703,7 +1703,6 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         // Vérifier immédiatement si on a des données en cours disponibles
         // Si oui, afficher la vue 'live' par défaut et charger les données immédiatement
         const summary = this.reconciliationSummaryService.getAgencySummary();
-        const response = this.appStateService.getReconciliationResultsValue();
         
         if (summary && summary.length > 0) {
             this.currentSource = 'live';
@@ -1713,14 +1712,19 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             this.extractUniqueValues();
             this.filterReport();
             this.hasSummary = true;
-        } else if (response) {
-            this.currentSource = 'live';
-            console.log('✅ Résultats de réconciliation disponibles, vue "live" par défaut - chargement immédiat');
-            // Charger immédiatement les données de réconciliation
-            this.response = response;
-            this.generateReportData();
-            this.extractUniqueValues();
-            this.filterReport();
+        } else {
+            // Vérifier les résultats de réconciliation
+            this.appStateService.getReconciliationResults().pipe(take(1)).subscribe(response => {
+                if (response) {
+                    this.currentSource = 'live';
+                    console.log('✅ Résultats de réconciliation disponibles, vue "live" par défaut - chargement immédiat');
+                    // Charger immédiatement les données de réconciliation
+                    this.response = response;
+                    this.generateReportData();
+                    this.extractUniqueValues();
+                    this.filterReport();
+                }
+            });
         }
         
         // Récupérer les données du résumé depuis le service dédié
