@@ -633,4 +633,182 @@ export class ModernPopupComponent implements OnInit, OnDestroy {
       overlay.addEventListener('click', (e) => { if (e.target === overlay) close(null); });
     });
   }
+
+  // Popup avec autocomplétion (input avec suggestions)
+  static showAutocompleteInput(message: string, title: string = 'Sélection', options: string[] = [], defaultValue: string = ''): Promise<string | null> {
+    return new Promise((resolve) => {
+      const overlay = document.createElement('div');
+      overlay.className = 'modern-popup-overlay';
+      
+      overlay.innerHTML = `
+        <div class="modern-popup autocomplete-popup">
+          <div class="popup-header">
+            <h3 class="popup-title">${title}</h3>
+            <button class="popup-close">×</button>
+          </div>
+          <div class="popup-content">
+            <p class="popup-message">${message}</p>
+            <div class="autocomplete-wrapper">
+              <input type="text" class="popup-input autocomplete-input" placeholder="Tapez pour rechercher..." value="${defaultValue || ''}" autocomplete="off" />
+              <ul class="autocomplete-list"></ul>
+            </div>
+          </div>
+          <div class="popup-actions">
+            <button class="popup-btn popup-btn-cancel">Annuler</button>
+            <button class="popup-btn popup-btn-confirm popup-btn-info">Valider</button>
+          </div>
+        </div>
+      `;
+
+      const style = document.createElement('style');
+      style.textContent = `
+        .modern-popup-overlay {
+          position: fixed;
+          top: 0; left: 0; width: 100%; height: 100%;
+          background: rgba(0,0,0,.5);
+          display: flex; justify-content: center; align-items: center;
+          z-index: 9999; animation: fadeIn .3s ease-out;
+        }
+        .modern-popup { background: #fff; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,.3); max-width: 420px; width: 92%; animation: slideIn .3s ease-out; }
+        .popup-header { display: flex; justify-content: space-between; align-items: center; padding: 20px 20px 0 20px; }
+        .popup-title { margin: 0; font-size: 18px; font-weight: 600; color: #333; }
+        .popup-close { background: none; border: none; font-size: 24px; cursor: pointer; color: #999; padding: 0; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; border-radius: 50%; transition: all .2s; }
+        .popup-close:hover { background: #f5f5f5; color: #666; }
+        .popup-content { padding: 20px; }
+        .popup-message { margin: 0 0 10px 0; color: #555; line-height: 1.5; }
+        .popup-actions { display: flex; justify-content: flex-end; gap: 10px; padding: 0 20px 20px 20px; }
+        .popup-btn { padding: 10px 20px; border: none; border-radius: 6px; cursor: pointer; font-weight: 500; transition: all .2s; min-width: 80px; }
+        .popup-btn-cancel { background: #f5f5f5; color: #666; }
+        .popup-btn-cancel:hover { background: #e5e5e5; }
+        .popup-btn-info { background: #007bff; color: #fff; }
+        .popup-btn-info:hover { background: #0056b3; }
+        .autocomplete-wrapper { position: relative; }
+        .autocomplete-input { width: 100%; padding: 10px 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px; box-sizing: border-box; }
+        .autocomplete-input:focus { outline: none; border-color: #3498db; box-shadow: 0 0 0 2px rgba(52,152,219,.2); }
+        .autocomplete-list { position: absolute; top: 100%; left: 0; right: 0; background: white; border: 1px solid #ddd; border-top: none; border-radius: 0 0 6px 6px; max-height: 200px; overflow-y: auto; z-index: 1000; margin: 0; padding: 0; list-style: none; box-shadow: 0 4px 6px rgba(0,0,0,.1); }
+        .autocomplete-list li { padding: 10px 12px; cursor: pointer; border-bottom: 1px solid #f0f0f0; }
+        .autocomplete-list li:hover { background: #f5f5f5; }
+        .autocomplete-list li.selected { background: #e3f2fd; }
+        .autocomplete-list li:last-child { border-bottom: none; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes slideIn { from { opacity: 0; transform: translateY(-20px) scale(.95); } to { opacity: 1; transform: translateY(0) scale(1); } }
+      `;
+
+      document.head.appendChild(style);
+      document.body.appendChild(overlay);
+      document.body.style.overflow = 'hidden';
+
+      const cleanup = () => {
+        document.body.style.overflow = 'auto';
+        if (style.parentNode) style.parentNode.removeChild(style);
+      };
+
+      const close = (result: string | null) => {
+        overlay.remove();
+        cleanup();
+        document.removeEventListener('keydown', onEsc);
+        resolve(result);
+      };
+
+      const onEsc = (e: KeyboardEvent) => { if (e.key === 'Escape') close(null); };
+      document.addEventListener('keydown', onEsc);
+
+      const input = overlay.querySelector('.autocomplete-input') as HTMLInputElement | null;
+      const list = overlay.querySelector('.autocomplete-list') as HTMLUListElement | null;
+      const okBtn = overlay.querySelector('.popup-btn-confirm');
+      const cancelBtn = overlay.querySelector('.popup-btn-cancel');
+      const closeBtn = overlay.querySelector('.popup-close');
+      
+      let selectedIndex = -1;
+      let filteredOptions: string[] = [...options];
+
+      const updateList = () => {
+        if (!list || !input) return;
+        const searchTerm = (input.value || '').toLowerCase().trim();
+        filteredOptions = options.filter(opt => 
+          opt.toLowerCase().includes(searchTerm)
+        );
+        
+        list.innerHTML = '';
+        if (filteredOptions.length === 0 && searchTerm) {
+          list.innerHTML = '<li style="color: #999; cursor: default;">Aucun résultat</li>';
+        } else {
+          filteredOptions.forEach((option, index) => {
+            const li = document.createElement('li');
+            li.textContent = option;
+            li.addEventListener('click', () => {
+              input.value = option;
+              list.innerHTML = '';
+              input.focus();
+            });
+            list.appendChild(li);
+          });
+        }
+        selectedIndex = -1;
+      };
+
+      const selectItem = (index: number) => {
+        if (index >= 0 && index < filteredOptions.length) {
+          if (input) {
+            input.value = filteredOptions[index];
+            list.innerHTML = '';
+            input.focus();
+          }
+        }
+      };
+
+      if (input) {
+        input.addEventListener('input', updateList);
+        input.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            if (input.value.trim()) {
+              close(input.value.trim());
+            }
+          } else if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            selectedIndex = Math.min(selectedIndex + 1, filteredOptions.length - 1);
+            const items = list?.querySelectorAll('li');
+            items?.forEach((li, idx) => {
+              li.classList.toggle('selected', idx === selectedIndex);
+            });
+            if (selectedIndex >= 0 && filteredOptions[selectedIndex]) {
+              input.value = filteredOptions[selectedIndex];
+            }
+          } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            selectedIndex = Math.max(selectedIndex - 1, -1);
+            const items = list?.querySelectorAll('li');
+            items?.forEach((li, idx) => {
+              li.classList.toggle('selected', idx === selectedIndex);
+            });
+            if (selectedIndex >= 0 && filteredOptions[selectedIndex]) {
+              input.value = filteredOptions[selectedIndex];
+            } else if (selectedIndex < 0) {
+              input.value = '';
+            }
+          }
+        });
+        input.addEventListener('focus', updateList);
+        setTimeout(() => input.focus(), 0);
+      }
+
+      if (okBtn) okBtn.addEventListener('click', () => {
+        const value = input ? input.value.trim() : '';
+        if (value) close(value);
+      });
+      if (cancelBtn) cancelBtn.addEventListener('click', () => close(null));
+      if (closeBtn) closeBtn.addEventListener('click', () => close(null));
+      overlay.addEventListener('click', (e) => { 
+        if (e.target === overlay) close(null);
+      });
+      
+      // Fermer la liste si on clique ailleurs
+      document.addEventListener('click', (e) => {
+        if (!overlay.contains(e.target as Node) && list) {
+          list.innerHTML = '';
+        }
+      }, true);
+    });
+  }
 }

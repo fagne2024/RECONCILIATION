@@ -86,6 +86,10 @@ export class PopupService {
     return ModernPopupComponent.showSelectInput(message, title, options, defaultValue);
   }
 
+  showAutocompleteInput(message: string, title: string = 'Sélection', options: string[] = [], defaultValue: string = ''): Promise<string | null> {
+    return ModernPopupComponent.showAutocompleteInput(message, title, options, defaultValue);
+  }
+
   private getTitleForType(type: string): string {
     switch (type) {
       case 'success': return 'Succès';

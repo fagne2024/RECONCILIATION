@@ -1,4 +1,0 @@
-﻿CRITIQUE: Mots de passe compares en clair dans AuthController.java ligne 39
-CRITIQUE: Mot de passe MySQL vide/en clair dans application.properties ligne 4
-MOYEN: CORS ouvert (*) dans GlobalCorsConfig.java:17
-MOYEN: CORS ouvert (*) dans SqlController.java:14
