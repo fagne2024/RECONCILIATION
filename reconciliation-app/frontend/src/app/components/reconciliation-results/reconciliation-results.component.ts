@@ -97,20 +97,6 @@ interface ApiError {
         </div>
 
         <div class="results-container">
-            <div class="service-selector">
-                <h3>🔍 Sélection du service</h3>
-                <div class="service-selector-content">
-                    <select [(ngModel)]="selectedService" class="service-select">
-                        <option value="">Tous les services</option>
-                        <option *ngFor="let service of getServiceTotalsArray()" [value]="service.name">
-                            {{service.name}}
-                        </option>
-                    </select>
-                    <button (click)="applyServiceFilter()" class="reconcile-button">
-                        Filtrer
-                    </button>
-                </div>
-            </div>
             <div class="summary-section">
                 <div class="summary-header">
                     <h3>📊 Résumé de la réconciliation</h3>
@@ -119,19 +105,23 @@ interface ApiError {
                     </button>
                 </div>
                 <div class="stats-grid">
-                    <div class="stat-card">
-                        <div class="stat-value">{{filteredMatches.length || 0}}</div>
+                    <div class="stat-card stat-card-total">
+                        <div class="stat-icon">📊</div>
+                        <div class="stat-value">{{getTotalTransactions()}}</div>
                         <div class="stat-label">Nombres de Transactions</div>
                     </div>
-                    <div class="stat-card">
+                    <div class="stat-card stat-card-matched">
+                        <div class="stat-icon">✅</div>
                         <div class="stat-value">{{filteredMatches.length || 0}}</div>
                         <div class="stat-label">Transactions correspondantes</div>
                     </div>
-                    <div class="stat-card">
+                    <div class="stat-card stat-card-bo">
+                        <div class="stat-icon">⚠️</div>
                         <div class="stat-value">{{(response?.mismatches?.length || 0) + (response?.boOnly?.length || 0)}}</div>
                         <div class="stat-label">Transactions non correspondantes BO</div>
                     </div>
-                    <div class="stat-card">
+                    <div class="stat-card stat-card-partner">
+                        <div class="stat-icon">⚠️</div>
                         <div class="stat-value">{{filteredPartnerOnly.length || 0}}</div>
                         <div class="stat-label">Transactions non correspondantes Partenaire</div>
                     </div>
@@ -500,12 +490,6 @@ interface ApiError {
             </div>
 
             <div class="action-buttons">
-                <button class="export-btn" (click)="exportResults()" [disabled]="isExporting">
-                    📥 Exporter les résultats
-                </button>
-                <button class="export-btn-optimized" (click)="exportResultsOptimized()" [disabled]="isExporting">
-                    🚀 Export optimisé
-                </button>
                 <button class="new-reconciliation-btn" (click)="nouvelleReconciliation()">
                     🔄 Nouvelle réconciliation
                 </button>
@@ -817,29 +801,91 @@ interface ApiError {
 
         .stats-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 20px;
-            margin-top: 20px;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 24px;
+            margin-top: 24px;
+            margin-bottom: 24px;
         }
 
         .stat-card {
             background: white;
-            padding: 20px;
-            border-radius: 8px;
+            padding: 28px 24px;
+            border-radius: 16px;
             text-align: center;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+            transition: all 0.3s ease;
+            border: 1px solid rgba(0, 0, 0, 0.05);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .stat-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+        }
+
+        .stat-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+        }
+
+        .stat-card-total::before {
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+        }
+
+        .stat-card-matched::before {
+            background: linear-gradient(90deg, #28a745 0%, #20c997 100%);
+        }
+
+        .stat-card-bo::before {
+            background: linear-gradient(90deg, #ffc107 0%, #ff9800 100%);
+        }
+
+        .stat-card-partner::before {
+            background: linear-gradient(90deg, #dc3545 0%, #c82333 100%);
+        }
+
+        .stat-icon {
+            font-size: 2.5em;
+            margin-bottom: 12px;
+            display: block;
         }
 
         .stat-value {
-            font-size: 2em;
-            font-weight: bold;
-            color: #2196F3;
-            margin-bottom: 5px;
+            font-size: 2.8em;
+            font-weight: 700;
+            color: #2c3e50;
+            margin-bottom: 8px;
+            line-height: 1.2;
+        }
+
+        .stat-card-total .stat-value {
+            color: #667eea;
+        }
+
+        .stat-card-matched .stat-value {
+            color: #28a745;
+        }
+
+        .stat-card-bo .stat-value {
+            color: #ff9800;
+        }
+
+        .stat-card-partner .stat-value {
+            color: #dc3545;
         }
 
         .stat-label {
-            color: #666;
-            font-size: 0.9em;
+            color: #6c757d;
+            font-size: 1em;
+            font-weight: 500;
+            line-height: 1.4;
+            margin-top: 8px;
         }
 
         .results-tabs {
@@ -1382,34 +1428,6 @@ interface ApiError {
             font-size: 0.9em;
         }
 
-        .service-selector {
-            background-color: #f8f9fa;
-            border-radius: 8px;
-            padding: 1rem;
-            margin-bottom: 1rem;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-
-        .service-selector h3 {
-            margin: 0 0 1rem 0;
-            color: #2c3e50;
-        }
-
-        .service-selector-content {
-            display: flex;
-            gap: 1rem;
-            align-items: center;
-        }
-
-        .service-select {
-            flex: 1;
-            padding: 0.5rem;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            font-size: 1rem;
-            background-color: white;
-        }
-
         .reconcile-button {
             padding: 0.5rem 1rem;
             background-color: #007bff;
@@ -1512,30 +1530,6 @@ interface ApiError {
             background: #1976D2;
         }
 
-        .export-btn-optimized {
-            background: linear-gradient(45deg, #FF6B35, #F7931E);
-            color: white;
-            border: none;
-            padding: 10px 20px;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 1em;
-            transition: all 0.3s ease;
-            margin-left: 10px;
-        }
-
-        .export-btn-optimized:hover {
-            background: linear-gradient(45deg, #E55A2B, #E8821A);
-            transform: translateY(-1px);
-            box-shadow: 0 4px 8px rgba(255, 107, 53, 0.3);
-        }
-
-        .export-btn-optimized:disabled {
-            background: #ccc;
-            cursor: not-allowed;
-            transform: none;
-            box-shadow: none;
-        }
 
         .new-reconciliation-btn {
             background: #4CAF50;
@@ -4680,6 +4674,13 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
         
         this.cachedTotalRecords = summary.reduce((total, summary) => total + summary.recordCount, 0);
         return this.cachedTotalRecords;
+    }
+
+    getTotalTransactions(): number {
+        const matches = this.filteredMatches.length || 0;
+        const boMismatches = (this.response?.mismatches?.length || 0) + (this.response?.boOnly?.length || 0);
+        const partnerMismatches = this.filteredPartnerOnly.length || 0;
+        return matches + boMismatches + partnerMismatches;
     }
 
     getTotalAgencyPages(): number {
