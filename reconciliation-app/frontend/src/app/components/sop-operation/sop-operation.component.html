@@ -561,6 +561,9 @@
       <div class="document-view-header">
         <h2>{{ documentTitle }}</h2>
         <div class="document-header-actions">
+          <button class="btn-document-action btn-download" (click)="downloadDocument(); $event.stopPropagation()" title="Télécharger">
+            <i class="fas fa-download"></i>
+          </button>
           <button class="btn-document-action btn-edit" (click)="openEditDocumentModal(); $event.stopPropagation()" title="Modifier">
             <i class="fas fa-edit"></i>
           </button>
@@ -573,7 +576,7 @@
         </div>
       </div>
       <div class="document-view-body">
-        <div class="document-text-content" [innerHTML]="formatDocumentText(documentContent)"></div>
+        <div class="document-text-content" [innerHTML]="safeDocumentContent"></div>
       </div>
     </div>
   </div>

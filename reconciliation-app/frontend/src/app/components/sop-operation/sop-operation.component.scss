@@ -315,9 +315,9 @@
   background: white;
   border-radius: 16px;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
-  max-width: 500px;
-  width: 90%;
-  max-height: 80vh;
+  max-width: 600px;
+  width: 95%;
+  max-height: 85vh;
   overflow: hidden;
   animation: slideDown 0.3s ease;
 }
@@ -580,9 +580,9 @@
   background: white;
   border-radius: 16px;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
-  max-width: 500px;
-  width: 90%;
-  max-height: 80vh;
+  max-width: 650px;
+  width: 95%;
+  max-height: 85vh;
   overflow: hidden;
   animation: slideDown 0.3s ease;
   display: flex;
@@ -746,7 +746,8 @@
 
 // Styles pour le modal d'upload
 .upload-modal {
-  max-width: 600px;
+  max-width: 700px;
+  width: 95%;
 }
 
 .upload-description {
@@ -903,27 +904,43 @@
   left: 0;
   width: 100%;
   height: 100%;
-  background: rgba(0, 0, 0, 0.7);
+  background: rgba(0, 0, 0, 0.85);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 3000;
   animation: fadeIn 0.3s ease;
-  padding: 20px;
+  padding: 10px;
   box-sizing: border-box;
+  overflow: auto;
 }
 
 .document-view-content {
   background: white;
-  border-radius: 16px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-  max-width: 900px;
-  width: 100%;
-  max-height: 90vh;
+  border-radius: 8px;
+  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.4);
+  width: 95%;
+  max-width: 1200px;
+  height: 95vh;
+  max-height: 95vh;
   display: flex;
   flex-direction: column;
   animation: slideDown 0.3s ease;
   overflow: hidden;
+  margin: auto;
+  
+  @media (min-width: 1200px) {
+    max-width: 1400px;
+  }
+  
+  @media (min-width: 1600px) {
+    max-width: 1600px;
+  }
+  
+  @media (max-width: 768px) {
+    width: 98%;
+    max-width: 98%;
+  }
 }
 
 .document-view-header {
@@ -969,6 +986,13 @@
     transform: scale(1.1);
   }
 
+  &.btn-download {
+    margin-right: 8px;
+    &:hover {
+      background: rgba(76, 175, 80, 0.3);
+    }
+  }
+
   &.btn-edit:hover {
     background: rgba(76, 175, 80, 0.3);
   }
@@ -1001,19 +1025,353 @@
 .document-view-body {
   flex: 1;
   overflow-y: auto;
-  padding: 30px;
-  background: #fafafa;
+  overflow-x: auto;
+  padding: 20px;
+  background: #f0f2f5;
+  min-height: 100%;
+  
+  // Masquer les scrollbars tout en gardant le défilement
+  scrollbar-width: none; // Firefox
+  -ms-overflow-style: none; // IE et Edge
+  
+  &::-webkit-scrollbar {
+    display: none; // Chrome, Safari, Opera
+    width: 0;
+    height: 0;
+  }
 }
 
 .document-text-content {
-  background: white;
-  padding: 30px;
+  background: #ffffff;
+  padding: 40px 20px;
   border-radius: 8px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-  line-height: 1.8;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  line-height: 1.6;
   color: #333;
-  font-size: 1rem;
+  font-size: 14px;
   word-wrap: break-word;
+  border: none;
+  width: 100%;
+  max-width: 100%;
+  margin: 0 auto;
+  min-height: 100%;
+  box-sizing: border-box;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  
+  // Préserver la mise en page originale du document
+  // Style inspiré du design SOP fourni
+  @media (min-width: 768px) {
+    padding: 50px 50px;
+  }
+  
+  @media (min-width: 1200px) {
+    padding: 60px 100px;
+    max-width: 100%;
+  }
+  
+  @media (min-width: 1600px) {
+    padding: 70px 120px;
+  }
+  
+  // IMPORTANT: Préserver tous les styles inline du document
+  // Ne pas définir de couleurs ou styles qui surchargeraient les styles inline
+  
+  // Préserver COMPLÈTEMENT les styles originaux du document
+  // Les styles inline du document ont priorité absolue
+  // Ne pas surcharger les couleurs, images, mise en page du document original
+  
+  // Wrapper pour préserver la mise en page
+  .document-wrapper {
+    width: 100%;
+    max-width: 100%;
+    margin: 0 auto;
+    
+    // Préserver tous les styles inline du document
+    * {
+      // Les styles inline ont priorité absolue
+      box-sizing: border-box;
+    }
+  }
+  
+  // Styles pour le contenu HTML formaté - Inspiré du design SOP
+  :global {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    line-height: 1.6;
+    color: #333;
+    
+    // Styles pour les pages PDF (images complètes de chaque page)
+    .pdf-page {
+      margin-bottom: 30px;
+      page-break-after: always;
+      background: transparent;
+      text-align: center;
+      
+      img {
+        max-width: 100%;
+        height: auto;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        border-radius: 6px;
+        display: block;
+        margin: 0 auto;
+        background: white;
+      }
+      
+      &:last-child {
+        margin-bottom: 0;
+      }
+    }
+    
+    // Images dans le document (Word) - logo, photos, etc.
+    img {
+      max-width: 100%;
+      height: auto;
+      display: block;
+      margin: 20px auto;
+      border-radius: 4px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+      
+      &[width], &[style*="width"] {
+        max-width: 100%;
+      }
+      
+      &[height], &[style*="height"] {
+        height: auto;
+      }
+      
+      &[src^="data:image"] {
+        max-width: 100%;
+        height: auto;
+        object-fit: contain;
+      }
+    }
+    
+    // Paragraphes
+    p {
+      margin: 0 0 15px 0;
+      color: #333;
+      font-size: 14px;
+      text-align: justify;
+      
+      &:last-child {
+        margin-bottom: 0;
+      }
+    }
+    
+    // Titres principaux
+    h1 {
+      color: #1e5a8e;
+      font-size: 24px;
+      font-weight: 700;
+      margin: 30px 0 10px 0;
+      text-align: center;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      
+      &:first-child {
+        margin-top: 0;
+      }
+      
+      strong {
+        font-weight: 700;
+      }
+    }
+    
+    // Sous-titres
+    h2 {
+      color: #1e5a8e;
+      font-size: 18px;
+      font-weight: 600;
+      margin: 0 0 30px 0;
+      text-align: center;
+    }
+    
+    // Titres de section
+    h3 {
+      color: #1e5a8e;
+      font-size: 16px;
+      font-weight: 700;
+      margin: 35px 0 15px 0;
+      
+      &:first-child {
+        margin-top: 0;
+      }
+    }
+    
+    // Sous-sections
+    h4 {
+      font-weight: 700;
+      margin: 20px 0 12px 0;
+      font-size: 14px;
+      color: #333;
+    }
+    
+    h5, h6 {
+      font-weight: 600;
+      margin: 15px 0 10px 0;
+      font-size: 14px;
+      color: #333;
+    }
+    
+    // Divider après le titre principal
+    h1 + h2 + * {
+      &::before {
+        content: '';
+        display: block;
+        width: 100%;
+        height: 2px;
+        background-color: #1e5a8e;
+        margin-bottom: 40px;
+      }
+    }
+    
+    // Listes primaires (style SOP avec ❖)
+    ul {
+      list-style: none;
+      padding-left: 0;
+      margin: 15px 0;
+      
+      > li {
+        margin-bottom: 15px;
+        padding-left: 20px;
+        position: relative;
+        color: #333;
+        font-size: 14px;
+        
+        &::before {
+          content: "❖";
+          position: absolute;
+          left: 0;
+          color: #1e5a8e;
+          font-size: 12px;
+        }
+        
+        // Listes secondaires imbriquées
+        ul {
+          padding-left: 40px;
+          margin-top: 10px;
+          margin-bottom: 0;
+          
+          > li {
+            margin-bottom: 8px;
+            padding-left: 20px;
+            
+            &::before {
+              content: "•";
+              color: #333;
+              font-weight: bold;
+            }
+          }
+        }
+        
+        // Listes numérotées imbriquées
+        ol {
+          padding-left: 40px;
+          margin-top: 10px;
+          margin-bottom: 0;
+        }
+      }
+    }
+    
+    // Listes numérotées
+    ol {
+      list-style: none;
+      counter-reset: item;
+      padding-left: 40px;
+      margin: 15px 0;
+      
+      > li {
+        counter-increment: item;
+        margin-bottom: 12px;
+        position: relative;
+        padding-left: 25px;
+        color: #333;
+        font-size: 14px;
+        
+        &::before {
+          content: counter(item) ".";
+          position: absolute;
+          left: 0;
+          font-weight: bold;
+          color: #333;
+        }
+        
+        // Listes imbriquées dans les listes numérotées
+        ul {
+          padding-left: 40px;
+          margin-top: 10px;
+          margin-bottom: 0;
+          
+          > li {
+            margin-bottom: 8px;
+            padding-left: 20px;
+            
+            &::before {
+              content: "•";
+              color: #333;
+              font-weight: bold;
+            }
+          }
+        }
+      }
+    }
+    
+    // Texte en gras
+    strong {
+      font-weight: 700;
+    }
+    
+    // Texte en italique
+    em {
+      font-style: italic;
+    }
+    
+    // Liens
+    a {
+      color: #1e5a8e;
+      text-decoration: none;
+      font-style: italic;
+      word-break: break-all;
+      
+      &:hover {
+        text-decoration: underline;
+      }
+    }
+    
+    // Tableaux
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 20px 0;
+      
+      th, td {
+        padding: 8px 12px;
+        border: 1px solid #d0d7de;
+        text-align: left;
+        font-size: 14px;
+      }
+      
+      th {
+        background-color: #f8f9fa;
+        font-weight: 600;
+      }
+    }
+    
+    // Citations
+    blockquote {
+      margin: 20px 0;
+      padding: 12px 20px;
+      border-left: 4px solid #1e5a8e;
+      background: #f8f9fa;
+      border-radius: 4px;
+      font-style: italic;
+    }
+    
+    // Préserver les styles inline du document original
+    // Les styles inline (style="...") ont toujours priorité
+    * {
+      box-sizing: border-box;
+    }
+  }
 
   .document-title {
     font-size: 1.4rem;

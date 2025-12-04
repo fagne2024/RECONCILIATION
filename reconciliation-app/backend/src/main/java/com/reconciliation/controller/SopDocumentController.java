@@ -2,6 +2,7 @@ package com.reconciliation.controller;
 
 import com.reconciliation.entity.SopDocumentEntity;
 import com.reconciliation.service.SopDocumentService;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -14,6 +15,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 
+@Slf4j
 @RestController
 @RequestMapping("/api/sop-documents")
 @CrossOrigin(origins = "*", allowedHeaders = "*")
@@ -61,18 +63,34 @@ public class SopDocumentController {
             @RequestParam String optionType,
             @RequestParam(required = false) String extractedText) {
         try {
+            log.info("📤 === REQUÊTE D'UPLOAD REÇUE ===");
+            log.info("📁 Nom du fichier: {}", file.getOriginalFilename());
+            log.info("📁 Type MIME: {}", file.getContentType());
+            log.info("📁 Taille: {} bytes", file.getSize());
+            log.info("📁 nodeId: {}", nodeId);
+            log.info("📁 optionType: {}", optionType);
+            log.info("📁 Texte extrait fourni: {}", extractedText != null ? "Oui (" + extractedText.length() + " caractères)" : "Non");
+            
             if (file.isEmpty()) {
+                log.warn("❌ Le fichier est vide");
                 Map<String, Object> error = new HashMap<>();
                 error.put("error", "Le fichier est vide");
                 return ResponseEntity.badRequest().body(error);
             }
 
+            log.info("💾 Sauvegarde du document...");
             SopDocumentEntity savedDocument = sopDocumentService.saveDocument(
                     nodeId, 
                     optionType, 
                     file, 
                     extractedText != null ? extractedText : ""
             );
+
+            log.info("✅ Document sauvegardé avec succès");
+            log.info("📊 ID document: {}", savedDocument.getId());
+            log.info("📊 Nom fichier: {}", savedDocument.getFileName());
+            log.info("📊 Type fichier: {}", savedDocument.getFileType());
+            log.info("📊 Texte extrait: {}", savedDocument.getExtractedText() != null ? savedDocument.getExtractedText().length() + " caractères" : "null");
 
             Map<String, Object> response = new HashMap<>();
             response.put("success", true);
@@ -82,6 +100,7 @@ public class SopDocumentController {
             response.put("extractedText", savedDocument.getExtractedText());
             return ResponseEntity.ok(response);
         } catch (Exception e) {
+            log.error("❌ Erreur lors de l'upload: {}", e.getMessage(), e);
             Map<String, Object> error = new HashMap<>();
             error.put("error", "Erreur lors de l'upload: " + e.getMessage());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);

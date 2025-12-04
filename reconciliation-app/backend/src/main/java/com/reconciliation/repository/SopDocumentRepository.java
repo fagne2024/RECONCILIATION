@@ -14,3 +14,4 @@ public interface SopDocumentRepository extends JpaRepository<SopDocumentEntity, 
     boolean existsByNodeIdAndOptionType(String nodeId, String optionType);
 }
 
+
