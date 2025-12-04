@@ -1,0 +1,212 @@
+<div class="ecart-bo-table-container">
+  <!-- Indicateur de chargement -->
+  <div *ngIf="isLoading" class="loading-overlay">
+    <div class="loading-content">
+      <div class="loading-spinner">⏳</div>
+      <div class="loading-text">Chargement des données...</div>
+      <div class="loading-progress">
+        <div class="progress-bar">
+          <div class="progress-fill" [style.width.%]="loadProgress"></div>
+        </div>
+        <div class="progress-text">{{ loadProgress }}%</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="header-section">
+    <div class="header-top">
+      <button (click)="goBack()" class="back-button">
+        ← Retour aux résultats
+      </button>
+      <h2>⚠️ Écarts BO</h2>
+      <div class="header-info">
+        <span class="total-count">{{filteredBoOnly.length || 0}} écart(s) BO</span>
+      </div>
+    </div>
+    
+    <div class="search-section">
+      <input 
+        type="text" 
+        [(ngModel)]="searchKey" 
+        (input)="onSearch()"
+        placeholder="Rechercher par clé, montant, date, agence..."
+        class="search-input"
+      >
+      <div class="export-menu-container">
+        <button 
+          (click)="toggleExportMenu($event)" 
+          class="export-menu-button"
+          [disabled]="isExporting || displayedBoOnly.length === 0"
+        >
+          📥 Export & Options
+          <span class="menu-arrow">{{showExportMenu ? '▲' : '▼'}}</span>
+        </button>
+        <div *ngIf="showExportMenu" class="export-menu-dropdown">
+          <div class="menu-section">
+            <button (click)="openColumnSelector()" class="menu-option-button">
+              📋 Choisir les colonnes à exporter
+            </button>
+            <span class="menu-info">{{selectedColumnsCount}} / {{availableColumnsForExport.length}} colonnes sélectionnées</span>
+          </div>
+          <div class="menu-divider"></div>
+          <div class="menu-section">
+            <button 
+              (click)="exportResults()" 
+              class="menu-export-button"
+              [disabled]="isExporting"
+            >
+              {{ isExporting ? '⏳ Export en cours...' : '🚀 Exporter optimisé' }}
+            </button>
+          </div>
+          <div class="menu-divider"></div>
+          <div class="menu-section">
+            <label class="menu-label">Actions de sauvegarde :</label>
+            <button 
+              (click)="saveEcartBoToEcartSolde()" 
+              class="menu-option-button save-button"
+              [disabled]="isSavingEcartBo || filteredBoOnly.length === 0"
+            >
+              {{ isSavingEcartBo ? '💾 Sauvegarde...' : '💾 Sauvegarder dans Ecart Solde' }}
+            </button>
+            <button 
+              (click)="saveEcartBoToTrxSf()" 
+              class="menu-option-button save-button"
+              [disabled]="isSavingEcartBoToTrxSf || filteredBoOnly.length === 0"
+            >
+              {{ isSavingEcartBoToTrxSf ? '💾 Sauvegarde...' : '💾 Sauvegarder dans TRX SF' }}
+            </button>
+            <span class="menu-info">
+              {{selectedBoOnlyKeys.length > 0 ? selectedBoOnlyKeys.length + ' ligne(s) sélectionnée(s)' : 'Toutes les lignes seront sauvegardées'}}
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div *ngIf="isExporting" class="export-progress">
+    <div class="progress-bar">
+      <div class="progress-fill" [style.width.%]="exportProgress.percentage"></div>
+    </div>
+    <div class="progress-text">{{ exportProgress.message }} - {{ exportProgress.percentage | number:'1.0-0' }}%</div>
+    <div class="progress-details" *ngIf="exportProgress.total > 0">
+      {{ exportProgress.current | number }} / {{ exportProgress.total | number }} lignes
+    </div>
+  </div>
+
+  <div class="summary-section">
+    <div class="summary-cards">
+      <div class="summary-card">
+        <div class="summary-label">Volume total BO</div>
+        <div class="summary-value">{{calculateTotalVolumeBoOnly() | number:'1.0-0'}}</div>
+      </div>
+      <div class="summary-card">
+        <div class="summary-label">Nombre de Transactions</div>
+        <div class="summary-value">{{filteredBoOnly.length}}</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="table-wrapper">
+    <table class="ecart-bo-table">
+      <thead>
+        <tr>
+          <th style="width: 40px;">
+            <input 
+              type="checkbox" 
+              [checked]="allBoSelectedOnPage" 
+              (change)="toggleSelectAllBoOnPage($event)"
+            >
+          </th>
+          <th *ngFor="let col of displayedColumns">{{col}}</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr *ngFor="let record of getPagedBoOnly()">
+          <td>
+            <input 
+              type="checkbox" 
+              [checked]="isBoRecordSelected(record)" 
+              (change)="toggleBoSelection(record, $event)"
+            >
+          </td>
+          <td *ngFor="let col of displayedColumns">{{getValue(record, col)}}</td>
+        </tr>
+        <tr *ngIf="getPagedBoOnly().length === 0">
+          <td [attr.colspan]="displayedColumns.length + 1" class="no-data">
+            Aucun écart BO trouvé
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="pagination-section">
+    <div class="pagination-info">
+      <span>
+        Page {{currentPage}} / {{totalPages}} 
+        ({{displayedBoOnly.length}} résultat(s))
+      </span>
+    </div>
+    <div class="pagination-controls">
+      <button (click)="prevPage()" [disabled]="currentPage === 1" class="page-btn">
+        Précédent
+      </button>
+      <div class="page-numbers">
+        <button 
+          *ngFor="let page of getPageNumbers()" 
+          (click)="goToPage(page)"
+          [class.active]="page === currentPage"
+          class="page-number-btn"
+        >
+          {{page}}
+        </button>
+      </div>
+      <button (click)="nextPage()" [disabled]="currentPage === totalPages" class="page-btn">
+        Suivant
+      </button>
+    </div>
+  </div>
+
+  <!-- Popup de sélection des colonnes -->
+  <div *ngIf="showColumnSelector" class="column-selector-overlay" (click)="closeColumnSelector()">
+    <div class="column-selector-popup" (click)="$event.stopPropagation()">
+      <div class="popup-header">
+        <h3>📋 Sélection des colonnes pour l'export</h3>
+        <button (click)="closeColumnSelector()" class="close-btn">×</button>
+      </div>
+      
+      <div class="popup-content">
+        <div class="selection-controls">
+          <button (click)="toggleAllColumns(true)" class="select-all-btn">
+            ✅ Tout sélectionner
+          </button>
+          <button (click)="toggleAllColumns(false)" class="deselect-all-btn">
+            ❌ Tout désélectionner
+          </button>
+          <span class="selection-info">
+            {{selectedColumnsCount}} / {{availableColumnsForExport.length}} colonnes sélectionnées
+          </span>
+        </div>
+        
+        <div class="columns-grid">
+          <div *ngFor="let column of availableColumnsForExport" class="column-item">
+            <label class="column-checkbox">
+              <input 
+                type="checkbox" 
+                [(ngModel)]="selectedColumnsForExport[column]"
+                [checked]="selectedColumnsForExport[column]">
+              <span class="column-name">{{column}}</span>
+            </label>
+          </div>
+        </div>
+      </div>
+      
+      <div class="popup-actions">
+        <button (click)="closeColumnSelector()" class="cancel-btn">
+          Fermer
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
