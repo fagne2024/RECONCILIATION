@@ -573,33 +573,88 @@ public class CsvReconciliationService implements DisposableBean {
         // Créer un index des enregistrements OPPART groupés par clé
         Map<String, List<Map<String, String>>> partnerIndex = new HashMap<>();
         
+        logger.info("🔍 DEBUG - Création de l'index Partner avec colonne clé: '{}'", request.getPartnerKeyColumn());
+        
+        int partnerKeysWithNull = 0;
         for (Map<String, String> partnerRecord : request.getPartnerFileContent()) {
             String partnerKey = partnerRecord.get(request.getPartnerKeyColumn());
             if (partnerKey != null) {
                 partnerIndex.computeIfAbsent(partnerKey, k -> new ArrayList<>()).add(partnerRecord);
+            } else {
+                partnerKeysWithNull++;
             }
         }
         
-        logger.info("✅ Index OPPART créé avec {} clés uniques", partnerIndex.size());
+        logger.info("✅ Index OPPART créé avec {} clés uniques ({} enregistrements avec clé null)", 
+            partnerIndex.size(), partnerKeysWithNull);
+        
+        // DEBUG: Afficher quelques exemples de clés Partner
+        if (!partnerIndex.isEmpty()) {
+            int sampleCount = Math.min(5, partnerIndex.size());
+            logger.info("🔍 DEBUG - Exemples de clés Partner ({} premiers):", sampleCount);
+            int count = 0;
+            for (String key : partnerIndex.keySet()) {
+                if (count >= sampleCount) break;
+                logger.info("  Partner Key[{}]: '{}' (longueur: {})", count, key, key != null ? key.length() : 0);
+                count++;
+            }
+        }
         
         // Traiter chaque enregistrement TRXBO
         Set<String> processedPartnerKeys = new HashSet<>();
         int processedCount = 0;
+        int boKeysWithNull = 0;
+        int boKeysNotFound = 0;
+        Set<String> sampleBoKeys = new HashSet<>();
+        Set<String> samplePartnerKeys = new HashSet<>();
+        
+        logger.info("🔍 DEBUG - Traitement des enregistrements BO avec colonne clé: '{}'", request.getBoKeyColumn());
         
         for (Map<String, String> boRecord : filteredBoRecords) {
             String boKey = boRecord.get(request.getBoKeyColumn());
             if (boKey == null) {
+                boKeysWithNull++;
                 response.getBoOnly().add(boRecord);
                 processedCount++;
                 continue;
             }
             
+            // Collecter quelques exemples de clés BO pour debug
+            if (sampleBoKeys.size() < 5) {
+                sampleBoKeys.add(boKey);
+            }
+            
             List<Map<String, String>> matchingPartnerRecords = partnerIndex.get(boKey);
             int partnerMatchCount = matchingPartnerRecords != null ? matchingPartnerRecords.size() : 0;
             
+            if (partnerMatchCount == 0) {
+                boKeysNotFound++;
+            }
+            
             // Log pour debug des premières correspondances
             if (processedCount < 10) {
-                logger.debug("🔍 TRXBO key: {} -> {} correspondances OPPART", boKey, partnerMatchCount);
+                logger.info("🔍 DEBUG - TRXBO key[{}]: '{}' (longueur: {}) -> {} correspondances OPPART", 
+                    processedCount, boKey, boKey != null ? boKey.length() : 0, partnerMatchCount);
+            }
+            
+            // DEBUG: Vérifier si la clé existe dans l'index (avec différentes variantes)
+            if (processedCount < 5 && partnerMatchCount == 0) {
+                // Vérifier avec trim
+                String trimmedBoKey = boKey != null ? boKey.trim() : null;
+                boolean foundWithTrim = trimmedBoKey != null && partnerIndex.containsKey(trimmedBoKey);
+                
+                // Vérifier quelques clés Partner pour comparaison
+                if (samplePartnerKeys.size() < 5 && !partnerIndex.isEmpty()) {
+                    samplePartnerKeys.addAll(partnerIndex.keySet().stream()
+                        .limit(5 - samplePartnerKeys.size())
+                        .collect(java.util.stream.Collectors.toList()));
+                }
+                
+                logger.warn("⚠️ DEBUG - Clé BO '{}' non trouvée dans l'index Partner", boKey);
+                logger.warn("  Trouvée avec trim? {}", foundWithTrim);
+                if (foundWithTrim) {
+                    logger.warn("  ⚠️ PROBLÈME DÉTECTÉ: Les clés nécessitent un trim()!");
+                }
             }
             
             // Appliquer les règles de correspondance configurées
@@ -729,6 +784,36 @@ public class CsvReconciliationService implements DisposableBean {
                 }
                 
                 response.getPartnerOnly().add(partnerRecordWithComment);
+            }
+        }
+        
+        // 🔍 DEBUG: Résumé des statistiques de correspondance
+        logger.info("🔍 DEBUG - Résumé de la réconciliation:");
+        logger.info("  - Enregistrements BO traités: {}", processedCount);
+        logger.info("  - Clés BO null: {}", boKeysWithNull);
+        logger.info("  - Clés BO non trouvées dans l'index Partner: {}", boKeysNotFound);
+        double matchRate = processedCount > 0 ? (100.0 * (processedCount - boKeysNotFound) / processedCount) : 0.0;
+        logger.info("  - Taux de correspondance: {:.2f}%", String.format("%.2f", matchRate));
+        logger.info("  - Matches trouvés: {}", response.getMatches().size());
+        logger.info("  - BO Only: {}", response.getBoOnly().size());
+        logger.info("  - Partner Only: {}", response.getPartnerOnly().size());
+        
+        // Afficher quelques exemples de clés pour comparaison
+        if (!sampleBoKeys.isEmpty() && !samplePartnerKeys.isEmpty()) {
+            logger.info("🔍 DEBUG - Exemples de clés pour comparaison:");
+            logger.info("  Exemples clés BO: {}", sampleBoKeys.stream().limit(3).collect(java.util.stream.Collectors.toList()));
+            logger.info("  Exemples clés Partner: {}", samplePartnerKeys.stream().limit(3).collect(java.util.stream.Collectors.toList()));
+            
+            // Vérifier si les premières clés correspondent (avec et sans trim)
+            String firstBoKey = sampleBoKeys.iterator().next();
+            String firstPartnerKey = samplePartnerKeys.iterator().next();
+            logger.info("  Comparaison première clé BO vs Partner:");
+            logger.info("    BO: '{}' (longueur: {})", firstBoKey, firstBoKey != null ? firstBoKey.length() : 0);
+            logger.info("    Partner: '{}' (longueur: {})", firstPartnerKey, firstPartnerKey != null ? firstPartnerKey.length() : 0);
+            logger.info("    Correspondance exacte? {}", firstBoKey != null && firstBoKey.equals(firstPartnerKey));
+            if (firstBoKey != null && firstPartnerKey != null) {
+                logger.info("    Correspondance après trim? {}", firstBoKey.trim().equals(firstPartnerKey.trim()));
+                logger.info("    Correspondance ignore case? {}", firstBoKey.equalsIgnoreCase(firstPartnerKey));
             }
         }
         

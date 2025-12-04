@@ -319,12 +319,66 @@
         </div>
 
         <!-- Indicateur de chargement -->
-        <div class="loading-section" *ngIf="loading">
+        <div class="loading-section" *ngIf="loading && !showReconciliationProgress">
             <div class="loading-spinner"></div>
             <p>🔄 Traitement automatique en cours...</p>
             <p class="loading-details">
                 Application des modèles de traitement et réconciliation automatique
             </p>
+        </div>
+
+        <!-- Barre de progression de la réconciliation automatique -->
+        <div class="reconciliation-progress-overlay" *ngIf="showReconciliationProgress">
+            <div class="reconciliation-progress-card">
+                <div class="reconciliation-progress-header">
+                    <h2>{{ reconciliationProgress.percentage === 100 ? '✅ Réconciliation terminée' : '🔄 Réconciliation en cours...' }}</h2>
+                    <div class="reconciliation-progress-header-actions">
+                        <div class="reconciliation-progress-icon" *ngIf="reconciliationProgress.percentage < 100">
+                            <i class="fas fa-cog fa-spin"></i>
+                        </div>
+                        <div class="reconciliation-progress-icon" *ngIf="reconciliationProgress.percentage === 100">
+                            <i class="fas fa-check-circle" style="color: #4CAF50;"></i>
+                        </div>
+                        <button class="reconciliation-close-btn" (click)="closeReconciliationProgress()" title="Fermer">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="reconciliation-progress-bar-container">
+                    <div class="reconciliation-progress-bar">
+                        <div class="reconciliation-progress-fill" [style.width.%]="reconciliationProgress.percentage"></div>
+                    </div>
+                    <div class="reconciliation-progress-text">
+                        {{ reconciliationProgress.percentage | number:'1.0-0' }}% terminé
+                    </div>
+                </div>
+                
+                <div class="reconciliation-progress-details">
+                    <div class="reconciliation-detail-item">
+                        <span class="reconciliation-label">📋 Étape:</span>
+                        <span class="reconciliation-value">{{ reconciliationProgress.step || 'Initialisation...' }}</span>
+                    </div>
+                    <div class="reconciliation-detail-item" *ngIf="reconciliationProgress.totalBoChunks && reconciliationProgress.totalBoChunks > 0">
+                        <span class="reconciliation-label">📦 Chunk:</span>
+                        <span class="reconciliation-value">
+                            {{ reconciliationProgress.currentBoChunk || 0 }}/{{ reconciliationProgress.totalBoChunks }}
+                        </span>
+                    </div>
+                    <div class="reconciliation-detail-item">
+                        <span class="reconciliation-label">✅ Matches trouvés:</span>
+                        <span class="reconciliation-value">{{ (reconciliationProgress.matchesCount || 0) | number }}</span>
+                    </div>
+                    <div class="reconciliation-detail-item" *ngIf="reconciliationProgress.partnerRemaining !== undefined && reconciliationProgress.partnerRemaining >= 0">
+                        <span class="reconciliation-label">📊 Lignes Partner restantes:</span>
+                        <span class="reconciliation-value">{{ reconciliationProgress.partnerRemaining | number }}</span>
+                    </div>
+                    <div class="reconciliation-detail-item">
+                        <span class="reconciliation-label">⚠️ Écarts BO:</span>
+                        <span class="reconciliation-value">{{ (reconciliationProgress.boOnlyCount || 0) | number }}</span>
+                    </div>
+                </div>
+            </div>
         </div>
 
         <!-- Boutons pour le mode automatique -->

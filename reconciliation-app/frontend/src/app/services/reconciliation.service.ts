@@ -909,6 +909,19 @@ export class ReconciliationService implements OnInit, OnDestroy {
             
             console.log(`📊 Données divisées: ${boChunks.length} chunks BO (${chunkSize} lignes/chunk), ${allPartnerData.length} lignes Partner complètes`);
             
+            // Émettre une mise à jour initiale de progression
+            this.progressSubject.next({
+                percentage: 0,
+                processed: 0,
+                total: boChunks.length,
+                step: `Initialisation - ${boChunks.length} chunks à traiter`,
+                currentBoChunk: 0,
+                totalBoChunks: boChunks.length,
+                matchesCount: 0,
+                boOnlyCount: 0,
+                partnerRemaining: allPartnerData.length
+            });
+            
             // Traiter chaque chunk BO avec TOUTES les lignes Partner
             this.processOptimizedChunks(request, boChunks, allPartnerData, [], observer);
         });

@@ -1,4 +1,4 @@
-import { Component, EventEmitter, Output, ChangeDetectorRef } from '@angular/core';
+import { Component, EventEmitter, Output, ChangeDetectorRef, OnDestroy } from '@angular/core';
 import { ReconciliationService } from '../../services/reconciliation.service';
 import { AutoProcessingService, ProcessingResult } from '../../services/auto-processing.service';
 import { OrangeMoneyUtilsService } from '../../services/orange-money-utils.service';
@@ -7,7 +7,7 @@ import * as Papa from 'papaparse';
 import * as XLSX from 'xlsx';
 import { Router } from '@angular/router';
 import { AppStateService } from '../../services/app-state.service';
-import { forkJoin } from 'rxjs';
+import { forkJoin, Subscription } from 'rxjs';
 import { PopupService } from '../../services/popup.service';
 import { ProgressIndicatorService } from '../../services/progress-indicator.service';
 
@@ -16,7 +16,7 @@ import { ProgressIndicatorService } from '../../services/progress-indicator.serv
     templateUrl: './file-upload.component.html',
     styleUrls: ['./file-upload.component.scss']
 })
-export class FileUploadComponent {
+export class FileUploadComponent implements OnDestroy {
     @Output() filesLoaded = new EventEmitter<{
         boData: Record<string, string>[];
         partnerData: Record<string, string>[];
@@ -63,6 +63,31 @@ export class FileUploadComponent {
         workers?: number;
         memory?: string;
     } | null = null;
+
+    // Variables pour la barre de progression de la réconciliation automatique
+    showReconciliationProgress = false;
+    reconciliationProgress: {
+        percentage: number;
+        step: string;
+        currentBoChunk?: number;
+        totalBoChunks?: number;
+        matchesCount?: number;
+        boOnlyCount?: number;
+        partnerRemaining?: number;
+        processed?: number;
+        total?: number;
+    } = {
+        percentage: 0,
+        step: '',
+        currentBoChunk: 0,
+        totalBoChunks: 0,
+        matchesCount: 0,
+        boOnlyCount: 0,
+        partnerRemaining: 0,
+        processed: 0,
+        total: 0
+    };
+    private reconciliationProgressSubscription?: Subscription;
 
     // Sélection de services pour TRXBO
     showServiceSelection = false;
@@ -3519,9 +3544,10 @@ export class FileUploadComponent {
 
     async onAutoProceed(): Promise<void> {
         if (this.canProceedAuto()) {
-            this.loading = true;
+            this.loading = false; // Ne pas utiliser loading pour ne pas masquer la barre de progression
             this.errorMessage = '';
             this.successMessage = '';
+            this.showReconciliationProgress = false; // Réinitialiser
 
             console.log('🚀 Démarrage de la réconciliation automatique...');
             console.log('📊 Données BO:', this.autoBoData.length, 'lignes');
@@ -3641,10 +3667,69 @@ export class FileUploadComponent {
 
             console.log('🔄 Lancement de la réconciliation...');
 
+                    // Afficher la barre de progression AVANT de lancer la réconciliation
+                    this.loading = false; // S'assurer que loading est false pour afficher la barre
+                    this.showReconciliationProgress = true;
+                    this.reconciliationProgress = {
+                        percentage: 0,
+                        step: 'Initialisation de la réconciliation...',
+                        currentBoChunk: 0,
+                        totalBoChunks: 0,
+                        matchesCount: 0,
+                        boOnlyCount: 0,
+                        partnerRemaining: 0,
+                        processed: 0,
+                        total: 0
+                    };
+                    console.log('📊 Barre de progression activée:', this.showReconciliationProgress);
+                    console.log('📊 État showReconciliationProgress:', this.showReconciliationProgress);
+                    console.log('📊 État loading:', this.loading);
+                    this.cd.detectChanges(); // Forcer la détection de changement immédiatement
+                    console.log('📊 Détection de changement forcée');
+
+                    // S'abonner aux mises à jour de progression
+                    console.log('📡 Abonnement à la progression...');
+                    this.reconciliationProgressSubscription = this.reconciliationService.progress$.subscribe(
+                        (progress) => {
+                            console.log('📊 Mise à jour de progression reçue:', progress);
+                            this.reconciliationProgress = {
+                                percentage: progress.percentage || 0,
+                                step: progress.step || '',
+                                currentBoChunk: progress.currentBoChunk || 0,
+                                totalBoChunks: progress.totalBoChunks || 0,
+                                matchesCount: progress.matchesCount || 0,
+                                boOnlyCount: progress.boOnlyCount || 0,
+                                partnerRemaining: progress.partnerRemaining || 0,
+                                processed: progress.processed || 0,
+                                total: progress.total || 0
+                            };
+                            this.cd.detectChanges();
+                        },
+                        (error) => {
+                            console.error('❌ Erreur dans l\'abonnement à la progression:', error);
+                        }
+                    );
+
                     // Lancer la réconciliation
+                    console.log('🚀 Appel à reconciliationService.reconcile()...');
                     this.reconciliationService.reconcile(reconciliationRequest).subscribe({
                         next: (result) => {
+                            console.log('✅ Réconciliation terminée');
                             this.loading = false;
+                            // NE PAS fermer automatiquement le popup - l'utilisateur le fermera manuellement
+                            // Mettre à jour la progression à 100% pour indiquer la fin
+                            this.reconciliationProgress = {
+                                ...this.reconciliationProgress,
+                                percentage: 100,
+                                step: '✅ Réconciliation terminée avec succès!'
+                            };
+                            this.cd.detectChanges();
+                            
+                            // Nettoyer l'abonnement mais garder le popup ouvert
+                            if (this.reconciliationProgressSubscription) {
+                                this.reconciliationProgressSubscription.unsubscribe();
+                            }
+                            
                             console.log('✅ Réconciliation automatique réussie:', result);
                             
                             // Sauvegarder les données traitées dans le service d'état
@@ -3654,11 +3739,25 @@ export class FileUploadComponent {
                             this.appStateService.setReconciliationResults(result);
                             this.appStateService.setCurrentStep(4);
                             
-                            // Naviguer directement vers les résultats
-                            this.router.navigate(['/results']);
+                            // Attendre que l'utilisateur ferme le popup avant de naviguer
+                            // La navigation se fera quand l'utilisateur fermera le popup
                         },
                         error: (error) => {
                             this.loading = false;
+                            // NE PAS fermer automatiquement le popup - l'utilisateur le fermera manuellement
+                            // Mettre à jour la progression pour indiquer l'erreur
+                            this.reconciliationProgress = {
+                                ...this.reconciliationProgress,
+                                percentage: 0,
+                                step: '❌ Erreur lors de la réconciliation'
+                            };
+                            this.cd.detectChanges();
+                            
+                            // Nettoyer l'abonnement mais garder le popup ouvert
+                            if (this.reconciliationProgressSubscription) {
+                                this.reconciliationProgressSubscription.unsubscribe();
+                            }
+                            
                             console.error('❌ Erreur lors de la réconciliation automatique:', error);
                             this.errorMessage = `Erreur lors de la réconciliation automatique: ${error.message}`;
                         }
@@ -3849,5 +3948,34 @@ export class FileUploadComponent {
 ✅ Une fois configuré, la réconciliation automatique utilisera ces modèles.`;
 
         this.popupService.showInfo(helpMessage);
+    }
+
+    /**
+     * Ferme le popup de progression de réconciliation
+     */
+    closeReconciliationProgress(): void {
+        console.log('❌ Fermeture du popup de progression demandée');
+        this.showReconciliationProgress = false;
+        
+        // Nettoyer l'abonnement si toujours actif
+        if (this.reconciliationProgressSubscription) {
+            this.reconciliationProgressSubscription.unsubscribe();
+        }
+        
+        // Si la réconciliation est terminée (step à 100%), naviguer vers les résultats
+        if (this.reconciliationProgress.percentage === 100 && 
+            this.appStateService.getReconciliationResults()) {
+            console.log('🚀 Navigation vers les résultats après fermeture du popup...');
+            this.router.navigate(['/results']);
+        }
+        
+        this.cd.detectChanges();
+    }
+
+    ngOnDestroy(): void {
+        // Nettoyer l'abonnement à la progression
+        if (this.reconciliationProgressSubscription) {
+            this.reconciliationProgressSubscription.unsubscribe();
+        }
     }
 } 
