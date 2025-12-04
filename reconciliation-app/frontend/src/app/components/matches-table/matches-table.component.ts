@@ -33,6 +33,11 @@ export class MatchesTableComponent implements OnInit, OnDestroy {
   boColumns: string[] = [];
   partnerColumns: string[] = [];
   
+  // Optimisation : chargement progressif
+  isLoading = false;
+  loadProgress = 0;
+  private searchIndex: Map<string, Set<number>> = new Map(); // Index de recherche pour performance
+  
   // Affichage BO ou Partenaire
   viewMode: 'BO' | 'PARTNER' = 'BO';
   
@@ -68,15 +73,82 @@ export class MatchesTableComponent implements OnInit, OnDestroy {
       this.appStateService.getReconciliationResults().subscribe((response: ReconciliationResponse | null) => {
         if (response) {
           this.response = response;
-          this.filteredMatches = response.matches || [];
-          this.initializeColumns();
-          this.applyFilters();
+          this.loadMatchesProgressively(response.matches || []);
         }
       })
     );
     
     // Fermer le menu en cliquant en dehors
     document.addEventListener('click', this.handleDocumentClick.bind(this));
+  }
+  
+  private async loadMatchesProgressively(matches: Match[]): Promise<void> {
+    this.isLoading = true;
+    this.loadProgress = 0;
+    this.cdr.markForCheck();
+    
+    try {
+      const total = matches.length;
+      
+      if (total === 0) {
+        this.filteredMatches = [];
+        this.displayedMatches = [];
+        return;
+      }
+
+      // Charger immédiatement un échantillon pour l'initialisation rapide
+      const sampleSize = Math.min(100, total);
+      const sample = matches.slice(0, sampleSize);
+      this.filteredMatches = [...sample];
+      this.loadProgress = 5;
+      this.initializeColumnsOptimized(sample);
+      this.buildSearchIndex(sample);
+      this.applyFilters();
+      this.cdr.markForCheck();
+      
+      // Permettre au navigateur de mettre à jour l'UI
+      await new Promise(resolve => setTimeout(resolve, 0));
+      
+      // Charger le reste par chunks pour un feedback régulier
+      const chunkSize = 500;
+      for (let i = sampleSize; i < total; i += chunkSize) {
+        const chunk = matches.slice(i, Math.min(i + chunkSize, total));
+        this.filteredMatches.push(...chunk);
+        this.buildSearchIndex(chunk, i); // Construire l'index pour ce chunk
+        this.loadProgress = Math.round(((i + chunk.length) / total) * 95 + 5); // 5-100%
+        this.cdr.markForCheck();
+        
+        // Permettre au navigateur de mettre à jour l'UI
+        await new Promise(resolve => setTimeout(resolve, 0));
+      }
+      
+      // Réappliquer les filtres avec toutes les données
+      this.applyFilters();
+    } finally {
+      this.isLoading = false;
+      this.loadProgress = 100;
+      this.cdr.markForCheck();
+    }
+  }
+  
+  private buildSearchIndex(matches: Match[], startIndex: number = 0): void {
+    matches.forEach((match, localIndex) => {
+      const globalIndex = startIndex + localIndex;
+      const searchableText = [
+        match.key || '',
+        ...Object.values(match.boData || {}),
+        ...Object.values(match.partnerData || {})
+      ].map(val => String(val).toLowerCase()).join(' ');
+      
+      // Indexer chaque mot
+      const words = searchableText.split(/\s+/).filter(w => w.length > 2);
+      words.forEach(word => {
+        if (!this.searchIndex.has(word)) {
+          this.searchIndex.set(word, new Set());
+        }
+        this.searchIndex.get(word)!.add(globalIndex);
+      });
+    });
   }
   
   private handleDocumentClick(event: MouseEvent): void {
@@ -95,64 +167,67 @@ export class MatchesTableComponent implements OnInit, OnDestroy {
     document.removeEventListener('click', this.handleDocumentClick.bind(this));
   }
 
-  private initializeColumns(): void {
-    if (this.filteredMatches.length > 0) {
-      const boKeysSet = new Set<string>();
-      const partnerKeysSet = new Set<string>();
+  private initializeColumnsOptimized(sampleMatches: Match[]): void {
+    if (sampleMatches.length === 0) return;
+    
+    const boKeysSet = new Set<string>();
+    const partnerKeysSet = new Set<string>();
+    
+    // Optimisation : ne parcourir qu'un échantillon représentatif (max 100 matches)
+    const sampleSize = Math.min(100, sampleMatches.length);
+    const sample = sampleMatches.slice(0, sampleSize);
+    
+    sample.forEach(match => {
+      // Collecter les clés BO
+      if (match.boData) {
+        Object.keys(match.boData).forEach(key => boKeysSet.add(key));
+      }
       
-      // Parcourir tous les matches pour collecter toutes les colonnes possibles
-      this.filteredMatches.forEach(match => {
-        // Collecter les clés BO
-        if (match.boData) {
-          Object.keys(match.boData).forEach(key => boKeysSet.add(key));
-        }
-        
-        // Collecter les clés partenaire depuis partnerData (peut avoir des suffixes _PARTNER_X)
-        if (match.partnerData) {
-          Object.keys(match.partnerData).forEach(key => {
-            // Enlever le suffixe _PARTNER_X pour obtenir la clé de base
-            const baseKey = key.replace(/_PARTNER_\d+$/, '');
-            partnerKeysSet.add(baseKey);
-          });
-        }
-        
-        // Collecter les clés partenaire depuis partnerDataList
-        if (match.partnerDataList && match.partnerDataList.length > 0) {
-          match.partnerDataList.forEach(partnerRecord => {
-            if (partnerRecord) {
-              Object.keys(partnerRecord).forEach(key => {
-                partnerKeysSet.add(key);
-              });
-            }
-          });
-        }
-      });
+      // Collecter les clés partenaire depuis partnerData (peut avoir des suffixes _PARTNER_X)
+      if (match.partnerData) {
+        Object.keys(match.partnerData).forEach(key => {
+          // Enlever le suffixe _PARTNER_X pour obtenir la clé de base
+          const baseKey = key.replace(/_PARTNER_\d+$/, '');
+          partnerKeysSet.add(baseKey);
+        });
+      }
       
-      const boKeys = Array.from(boKeysSet);
-      const partnerKeys = Array.from(partnerKeysSet);
-      
-      // Séparer les colonnes BO et Partenaire
-      this.boColumns = boKeys.map(key => `BO_${key}`);
-      this.partnerColumns = partnerKeys.map(key => `PARTNER_${key}`);
-      
-      // Créer des colonnes uniques avec préfixes pour l'affichage
-      const allKeys = new Set<string>();
-      boKeys.forEach(key => allKeys.add(`BO_${key}`));
-      partnerKeys.forEach(key => allKeys.add(`PARTNER_${key}`));
-      
-      this.allColumns = Array.from(allKeys);
-      
-      // Colonnes disponibles pour l'export (toutes)
-      this.availableColumnsForExport = ['Clé', 'Statut', ...this.allColumns.map(col => this.getColumnLabel(col))];
-      
-      // Initialiser la sélection pour l'export (toutes sélectionnées par défaut)
-      this.availableColumnsForExport.forEach(col => {
-        this.selectedColumnsForExport[col] = true;
-      });
-      
-      // Afficher les colonnes selon le mode
-      this.updateDisplayedColumns();
-    }
+      // Collecter les clés partenaire depuis partnerDataList
+      if (match.partnerDataList && match.partnerDataList.length > 0) {
+        match.partnerDataList.forEach(partnerRecord => {
+          if (partnerRecord) {
+            Object.keys(partnerRecord).forEach(key => {
+              partnerKeysSet.add(key);
+            });
+          }
+        });
+      }
+    });
+    
+    const boKeys = Array.from(boKeysSet);
+    const partnerKeys = Array.from(partnerKeysSet);
+    
+    // Séparer les colonnes BO et Partenaire
+    this.boColumns = boKeys.map(key => `BO_${key}`);
+    this.partnerColumns = partnerKeys.map(key => `PARTNER_${key}`);
+    
+    // Créer des colonnes uniques avec préfixes pour l'affichage
+    const allKeys = new Set<string>();
+    boKeys.forEach(key => allKeys.add(`BO_${key}`));
+    partnerKeys.forEach(key => allKeys.add(`PARTNER_${key}`));
+    
+    this.allColumns = Array.from(allKeys);
+    
+    // Colonnes disponibles pour l'export (toutes)
+    this.availableColumnsForExport = ['Clé', 'Statut', ...this.allColumns.map(col => this.getColumnLabel(col))];
+    
+    // Initialiser la sélection pour l'export (toutes sélectionnées par défaut)
+    this.availableColumnsForExport.forEach(col => {
+      this.selectedColumnsForExport[col] = true;
+    });
+    
+    // Afficher les colonnes selon le mode
+    this.updateDisplayedColumns();
   }
   
   private updateDisplayedColumns(): void {
@@ -187,22 +262,69 @@ export class MatchesTableComponent implements OnInit, OnDestroy {
   private applyFilters(): void {
     let filtered = [...this.filteredMatches];
     
-    // Appliquer la recherche de manière optimisée
+    // Appliquer la recherche de manière optimisée avec index
     if (this.searchKey.trim()) {
       const searchLower = this.searchKey.toLowerCase();
-      const searchTerms = searchLower.split(/\s+/).filter(term => term.length > 0);
+      const searchTerms = searchLower.split(/\s+/).filter(term => term.length > 2); // Ignorer les mots trop courts
       
-      filtered = filtered.filter(match => {
-        // Créer une chaîne de recherche une seule fois par match
-        const searchableText = [
-          match.key || '',
-          ...Object.values(match.boData || {}),
-          ...Object.values(match.partnerData || {})
-        ].map(val => String(val).toLowerCase()).join(' ');
+      if (searchTerms.length > 0 && this.searchIndex.size > 0) {
+        // Utiliser l'index pour une recherche rapide
+        const matchingIndices = new Set<number>();
         
-        // Vérifier si tous les termes de recherche sont présents
-        return searchTerms.every(term => searchableText.includes(term));
-      });
+        // Pour chaque terme, trouver les indices correspondants
+        searchTerms.forEach(term => {
+          const termMatches = new Set<number>();
+          
+          // Chercher dans l'index
+          this.searchIndex.forEach((indices, indexedWord) => {
+            if (indexedWord.includes(term)) {
+              indices.forEach(idx => termMatches.add(idx));
+            }
+          });
+          
+          // Si c'est le premier terme, initialiser avec ses résultats
+          if (matchingIndices.size === 0) {
+            termMatches.forEach(idx => matchingIndices.add(idx));
+          } else {
+            // Intersection : garder seulement les indices présents dans les deux sets
+            const intersection = new Set<number>();
+            termMatches.forEach(idx => {
+              if (matchingIndices.has(idx)) {
+                intersection.add(idx);
+              }
+            });
+            matchingIndices.clear();
+            intersection.forEach(idx => matchingIndices.add(idx));
+          }
+        });
+        
+        // Filtrer selon les indices trouvés
+        if (matchingIndices.size > 0) {
+          filtered = filtered.filter((_, index) => matchingIndices.has(index));
+        } else {
+          // Fallback : recherche classique si l'index ne trouve rien
+          filtered = filtered.filter(match => {
+            const searchableText = [
+              match.key || '',
+              ...Object.values(match.boData || {}),
+              ...Object.values(match.partnerData || {})
+            ].map(val => String(val).toLowerCase()).join(' ');
+            
+            return searchTerms.every(term => searchableText.includes(term));
+          });
+        }
+      } else if (searchTerms.length > 0) {
+        // Fallback : recherche classique si pas d'index
+        filtered = filtered.filter(match => {
+          const searchableText = [
+            match.key || '',
+            ...Object.values(match.boData || {}),
+            ...Object.values(match.partnerData || {})
+          ].map(val => String(val).toLowerCase()).join(' ');
+          
+          return searchTerms.every(term => searchableText.includes(term));
+        });
+      }
     }
     
     this.displayedMatches = filtered;

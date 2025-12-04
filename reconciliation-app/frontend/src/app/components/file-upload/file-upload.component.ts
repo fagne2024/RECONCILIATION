@@ -207,19 +207,9 @@ export class FileUploadComponent implements OnDestroy {
     private processManualBoFile(file: File): void {
         console.log('🔧 Traitement du fichier BO en mode manuel:', file.name);
         
-        // En mode manuel, ne pas utiliser le traitement automatique: parser directement le fichier
+        // En mode manuel, utiliser la même logique que le mode automatique pour les fichiers CSV
+        // La détection TRXBO est maintenant intégrée dans parseCSV
         this.parseFile(file, true);
-        
-        // Ensuite, vérifier si c'est un fichier TRXBO et extraire les services
-        // On va attendre que les données soient chargées avant de vérifier
-        setTimeout(() => {
-            if (this.boData && this.boData.length > 0) {
-                console.log('🔍 Vérification TRXBO sur les données BO chargées...');
-                if (this.detectTRXBOAndExtractServicesForManual(this.boData)) {
-                    this.showManualServiceSelectionStep();
-                }
-            }
-        }, 1000); // Attendre 1 seconde pour que les données soient chargées
     }
 
     // Nouvelle méthode pour le traitement automatique optimisé
@@ -821,146 +811,56 @@ export class FileUploadComponent implements OnDestroy {
         const reader = new FileReader();
         reader.onload = (e: ProgressEvent<FileReader>) => {
             let text = e.target?.result as string;
+            // Nettoyer le BOM éventuel
+            if (text.charCodeAt(0) === 0xFEFF) {
+                text = text.slice(1);
+            }
             
-            // Détection et nettoyage de l'encodage
-            text = this.detectAndFixEncoding(text);
-            
-            // Optimisation pour gros fichiers : parsing par chunks
-            const lines = text.split('\n');
-            console.log(`📊 Fichier ${file.name}: ${lines.length} lignes détectées`);
-            
-            // Pour les gros fichiers (>50k lignes), utiliser un parsing optimisé
-            if (lines.length > 50000) {
-                console.log(`🚀 Traitement optimisé pour gros fichier: ${lines.length} lignes`);
-                this.parseLargeCSV(lines, isBo, file.name);
-            } else {
-                // Parsing normal pour petits fichiers avec détection automatique du délimiteur
-                const delimiter = this.detectDelimiter(lines[0]);
-                console.log(`🔍 Délimiteur détecté: "${delimiter}"`);
+            // Détecter automatiquement le délimiteur (même logique que le mode automatique)
+            const lines = text.split('\n').filter(line => line.trim());
+            if (lines.length > 0) {
+                const firstLine = lines[0];
+                const commaCount = (firstLine.match(/,/g) || []).length;
+                const semicolonCount = (firstLine.match(/;/g) || []).length;
+                const delimiter = semicolonCount > commaCount ? ';' : ',';
                 
-                // Détection Orange Money
-                const orangeMoneyDetection = this.detectOrangeMoneyFile(text, delimiter);
-                console.log(`🟠 Détection Orange Money:`, orangeMoneyDetection);
+                console.log(`📊 Fichier ${file.name}: détecté délimiteur "${delimiter}"`);
                 
-                if (orangeMoneyDetection.isOrangeMoney) {
-                    console.log(`🟠 Fichier Orange Money détecté, traitement spécial`);
-                    
-                    // Traitement spécial pour les fichiers Orange Money
-                    Papa.parse(text, {
-                        header: false,
-                        delimiter: delimiter,
-                        skipEmptyLines: true,
-                        complete: (results) => {
-                            const rawRows = results.data as any[];
-                            console.log(`📊 Données Excel brutes: ${rawRows.length} lignes`);
+                Papa.parse(text, {
+                    header: true,
+                    delimiter: delimiter,
+                    skipEmptyLines: true,
+                    complete: (results) => {
+                        console.log('Première ligne lue:', results.data[0]);
+                        if (isBo) {
+                            this.boData = results.data as Record<string, string>[];
                             
-                            if (rawRows.length > orangeMoneyDetection.headerRowIndex) {
-                                const headerRow = orangeMoneyDetection.headerRow;
-                                const dataRows = rawRows.slice(orangeMoneyDetection.headerRowIndex + 1);
-                                // Normaliser les noms de colonnes (corriger l'encodage)
-                                const colNames = headerRow.map((v: any, i: number) => {
-                                    const header = v ? v.toString() : 'Col' + (i+1);
-                                    return this.normalizeColumnName(header);
-                                });
-                                
-                                console.log(`✅ En-têtes détectés à la ligne ${orangeMoneyDetection.headerRowIndex}:`, colNames);
-                                
-                                // Créer les lignes de données avec les en-têtes corrects
-                                const processedRows: any[] = [];
-                                for (const rowData of dataRows) {
-                                    if (!rowData || rowData.length === 0) continue;
-                                    
-                                    const row: any = {};
-                                    colNames.forEach((header: string, index: number) => {
-                                        const value = rowData[index];
-                                        row[header] = value !== undefined && value !== null ? this.normalizeValue(value) : '';
-                                    });
-                                    processedRows.push(row);
+                            // Vérifier si c'est un fichier TRXBO et déclencher la sélection des services (pour le mode manuel)
+                            setTimeout(() => {
+                                if (this.boData && this.boData.length > 0) {
+                                    console.log('🔍 Vérification TRXBO sur les données BO chargées...');
+                                    if (this.detectTRXBOAndExtractServicesForManual(this.boData)) {
+                                        this.showManualServiceSelectionStep();
+                                    }
                                 }
-                                
-                                console.log(`📊 Lignes de données créées: ${processedRows.length}`);
-                                
-                                if (isBo) {
-                                    this.boData = this.applyOrangeMoneyColumnSelection(this.normalizeData(processedRows), file.name);
-                                } else {
-                                    this.partnerData = this.applyOrangeMoneyColumnSelection(this.normalizeData(this.convertDebitCreditToNumber(processedRows)), file.name);
-                                }
-                                
-                                console.log(`✅ Fichier Excel traité: ${isBo ? this.boData.length : this.partnerData.length} lignes`);
-                                // Forcer la détection des changements
-                                this.cd.detectChanges();
-                                
-                                // Appliquer le filtrage automatique Orange Money si nécessaire
-                                this.applyAutomaticOrangeMoneyFilterForFileUpload(file.name, isBo);
-                            }
-                        },
-                        error: (error: any) => {
-                            console.error('Erreur lors de la lecture du fichier CSV Orange Money:', error);
+                            }, 100);
+                        } else {
+                            this.partnerData = this.convertDebitCreditToNumber(results.data as Record<string, string>[]);
                         }
-                    });
-                } else {
-                    // Traitement normal pour les autres fichiers
-                    Papa.parse(text, {
-                        header: true,
-                        delimiter: delimiter,
-                        skipEmptyLines: true,
-                        transformHeader: (header: string) => {
-                            // Normaliser les noms de colonnes (corriger l'encodage)
-                            return this.normalizeColumnName(header);
-                        },
-                        transform: (value: string) => {
-                            // Normaliser les valeurs
-                            return this.normalizeValue(value);
-                        },
-                        complete: (results) => {
-                            console.log('Première ligne lue:', results.data[0]);
-                            const rawData = results.data as Record<string, string>[];
-                            console.log('📊 Colonnes détectées dans le CSV (avant normalisation):', rawData.length > 0 ? Object.keys(rawData[0]) : []);
-                            
-                            // Normaliser les noms de colonnes dans les données (au cas où transformHeader n'aurait pas fonctionné)
-                            const normalizedData = rawData.map(row => {
-                                const normalizedRow: Record<string, string> = {};
-                                Object.keys(row).forEach(key => {
-                                    const normalizedKey = this.normalizeColumnName(key);
-                                    normalizedRow[normalizedKey] = row[key];
-                                });
-                                return normalizedRow;
-                            });
-                            
-                            console.log('📊 Colonnes après normalisation:', normalizedData.length > 0 ? Object.keys(normalizedData[0]) : []);
-                            console.log('📊 Données brutes CSV:', normalizedData.length, 'lignes');
-                            
-                            // Vérifier si les colonnes semblent être des données au lieu d'en-têtes
-                            const firstRowKeys = Object.keys(normalizedData[0] || {});
-                            const hasValidHeaders = this.hasValidHeaders(firstRowKeys);
-                            
-                            if (!hasValidHeaders && normalizedData.length > 0) {
-                                console.log('⚠️ En-têtes invalides détectés, tentative de parsing sans en-têtes');
-                                this.parseCSVWithoutHeaders(text, delimiter, isBo, file.name);
-                                return;
-                            }
-                            
-                            if (isBo) {
-                                this.boData = this.applyOrangeMoneyColumnSelection(this.normalizeData(normalizedData), file.name);
-                                console.log('📊 Données BO après traitement:', this.boData.length, 'lignes');
-                                console.log('📊 Colonnes BO après traitement:', this.boData.length > 0 ? Object.keys(this.boData[0]) : []);
-                            } else {
-                                this.partnerData = this.applyOrangeMoneyColumnSelection(this.normalizeData(this.convertDebitCreditToNumber(normalizedData)), file.name);
-                                console.log('📊 Données Partenaire après traitement:', this.partnerData.length, 'lignes');
-                                console.log('📊 Colonnes Partenaire après traitement:', this.partnerData.length > 0 ? Object.keys(this.partnerData[0]) : []);
-                            }
-                            // Mettre à jour l'estimation seulement si les deux fichiers sont chargés
-                            if (this.boFile && this.partnerFile) {
-                                this.updateEstimatedTime();
-                            }
-                            // Forcer la détection des changements
-                            this.cd.detectChanges();
-                        },
-                        error: (error: any) => {
-                            console.error('Erreur lors de la lecture du fichier CSV:', error);
+                        
+                        // Mettre à jour l'estimation si les deux fichiers sont chargés
+                        if (this.boFile && this.partnerFile) {
+                            this.updateEstimatedTime();
                         }
-                    });
-                }
+                        
+                        // Forcer la détection des changements pour mettre à jour la vue
+                        this.cd.detectChanges();
+                    },
+                    error: (error: any) => {
+                        console.error('Erreur lors de la lecture du fichier CSV:', error);
+                        this.cd.detectChanges();
+                    }
+                });
             }
         };
         reader.onerror = (e) => {

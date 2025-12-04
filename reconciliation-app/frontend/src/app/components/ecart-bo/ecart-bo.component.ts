@@ -30,6 +30,7 @@ export class EcartBoComponent implements OnInit, OnDestroy {
   loadProgress = 0;
   private volumeCache: number | null = null;
   private searchSubject = new Subject<string>();
+  private searchIndex: Map<string, Set<number>> = new Map(); // Index de recherche pour performance
   isSavingEcartBo = false;
   isSavingEcartBoToTrxSf = false;
   selectedBoOnlyKeys: string[] = [];
@@ -121,6 +122,7 @@ export class EcartBoComponent implements OnInit, OnDestroy {
       this.reconciliationTabsService.setFilteredBoOnly(this.filteredBoOnly);
       this.volumeCache = null;
       this.initializeColumns();
+      this.buildSearchIndex();
     } finally {
       this.isLoading = false;
       this.loadProgress = 100;
@@ -153,6 +155,30 @@ export class EcartBoComponent implements OnInit, OnDestroy {
     this.searchSubject.next(this.searchKey);
   }
 
+  private buildSearchIndex(): void {
+    this.searchIndex.clear();
+    const mismatches = this.response?.mismatches || [];
+    const boOnly = this.response?.boOnly || [];
+    const allMismatches = [...mismatches, ...boOnly];
+    
+    allMismatches.forEach((record, index) => {
+      // Créer une chaîne de recherche pour ce record
+      const searchableText = Object.entries(record)
+        .map(([key, value]) => `${key} ${value}`)
+        .join(' ')
+        .toLowerCase();
+      
+      // Indexer chaque mot significatif (longueur > 2)
+      const words = searchableText.split(/\s+/).filter(w => w.length > 2);
+      words.forEach(word => {
+        if (!this.searchIndex.has(word)) {
+          this.searchIndex.set(word, new Set());
+        }
+        this.searchIndex.get(word)!.add(index);
+      });
+    });
+  }
+  
   private performSearch(searchTerm: string): void {
     const mismatches = this.response?.mismatches || [];
     const boOnly = this.response?.boOnly || [];
@@ -164,71 +190,48 @@ export class EcartBoComponent implements OnInit, OnDestroy {
     } else {
       const term = searchTerm.trim();
       const termLower = term.toLowerCase();
+      const searchTerms = termLower.split(/\s+/).filter(t => t.length > 2);
       
-      // Filtrer les éléments qui correspondent au terme de recherche
-      this.filteredBoOnly = allMismatches.filter(record => {
-        // Parcourir toutes les colonnes et valeurs du record
-        for (const [key, value] of Object.entries(record)) {
-          if (!value) continue;
-          
-          const valueStr = value.toString();
-          const valueLower = valueStr.toLowerCase();
-          const keyLower = key.toLowerCase();
-          
-          // 1. Recherche simple : le terme est contenu dans la valeur (insensible à la casse)
-          if (valueLower.includes(termLower)) {
-            return true;
-          }
-          
-          // 2. Recherche dans le nom de la colonne
-          if (keyLower.includes(termLower)) {
-            return true;
-          }
-          
-          // 3. Recherche exacte pour les numéros (ignore les espaces, tirets, etc.)
-          const valueNumbers = valueStr.replace(/[^\d]/g, '');
-          const termNumbers = term.replace(/[^\d]/g, '');
-          if (termNumbers && valueNumbers.includes(termNumbers)) {
-            return true;
-          }
-          
-          // 4. Recherche pour les montants (correspondance partielle ou exacte)
-          if (keyLower.includes('montant') || keyLower.includes('amount') || keyLower.includes('volume')) {
-            const valueAmount = valueStr.replace(/[^\d.-]/g, '');
-            const termAmount = term.replace(/[^\d.-]/g, '');
-            if (termAmount && valueAmount.includes(termAmount)) {
-              return true;
-            }
-          }
-          
-          // 5. Recherche pour les dates (format flexible)
-          if (keyLower.includes('date')) {
-            const valueDate = valueStr.replace(/[^\d]/g, '');
-            const termDate = term.replace(/[^\d]/g, '');
-            if (termDate && valueDate.includes(termDate)) {
-              return true;
-            }
-          }
-          
-          // 6. Recherche pour les IDs, numéros de transaction, etc.
-          if (keyLower.includes('id') || keyLower.includes('numero') || keyLower.includes('numéro') || 
-              keyLower.includes('transaction') || keyLower.includes('reference') || keyLower.includes('référence')) {
-            if (valueLower.includes(termLower) || valueNumbers.includes(termNumbers)) {
-              return true;
-            }
-          }
-          
-          // 7. Recherche pour les agences, services, pays (correspondance partielle)
-          if (keyLower.includes('agence') || keyLower.includes('service') || keyLower.includes('pays')) {
-            if (valueLower.includes(termLower)) {
-              return true;
-            }
-          }
-        }
+      if (searchTerms.length > 0 && this.searchIndex.size > 0) {
+        // Utiliser l'index pour une recherche rapide
+        const matchingIndices = new Set<number>();
         
-        // Aucune correspondance trouvée
-        return false;
-      });
+        searchTerms.forEach((searchTermWord, termIndex) => {
+          const termMatches = new Set<number>();
+          
+          // Chercher dans l'index
+          this.searchIndex.forEach((indices, indexedWord) => {
+            if (indexedWord.includes(searchTermWord)) {
+              indices.forEach(idx => termMatches.add(idx));
+            }
+          });
+          
+          if (termIndex === 0) {
+            termMatches.forEach(idx => matchingIndices.add(idx));
+          } else {
+            // Intersection : garder seulement les indices présents dans les deux sets
+            const intersection = new Set<number>();
+            termMatches.forEach(idx => {
+              if (matchingIndices.has(idx)) {
+                intersection.add(idx);
+              }
+            });
+            matchingIndices.clear();
+            intersection.forEach(idx => matchingIndices.add(idx));
+          }
+        });
+        
+        // Filtrer selon les indices trouvés
+        if (matchingIndices.size > 0) {
+          this.filteredBoOnly = allMismatches.filter((_, index) => matchingIndices.has(index));
+        } else {
+          // Fallback : recherche classique si l'index ne trouve rien
+          this.filteredBoOnly = this.performClassicSearch(allMismatches, termLower);
+        }
+      } else {
+        // Fallback : recherche classique
+        this.filteredBoOnly = this.performClassicSearch(allMismatches, termLower);
+      }
     }
     
     // Réinitialiser à la première page après recherche
@@ -236,6 +239,36 @@ export class EcartBoComponent implements OnInit, OnDestroy {
     this.reconciliationTabsService.setFilteredBoOnly(this.filteredBoOnly);
     this.volumeCache = null;
     this.cdr.markForCheck();
+  }
+  
+  private performClassicSearch(allMismatches: Record<string, string>[], termLower: string): Record<string, string>[] {
+    return allMismatches.filter(record => {
+      for (const [key, value] of Object.entries(record)) {
+        if (!value) continue;
+        
+        const valueStr = value.toString();
+        const valueLower = valueStr.toLowerCase();
+        const keyLower = key.toLowerCase();
+        
+        // 1. Recherche simple : le terme est contenu dans la valeur
+        if (valueLower.includes(termLower)) {
+          return true;
+        }
+        
+        // 2. Recherche dans le nom de la colonne
+        if (keyLower.includes(termLower)) {
+          return true;
+        }
+        
+        // 3. Recherche exacte pour les numéros
+        const valueNumbers = valueStr.replace(/[^\d]/g, '');
+        const termNumbers = termLower.replace(/[^\d]/g, '');
+        if (termNumbers && valueNumbers.includes(termNumbers)) {
+          return true;
+        }
+      }
+      return false;
+    });
   }
 
   clearSearch(): void {

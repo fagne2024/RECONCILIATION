@@ -66,16 +66,16 @@
 
   .progress-fill {
     height: 100%;
-    background: linear-gradient(90deg, #667eea, #764ba2);
+    background: linear-gradient(90deg, #dc3545, #c82333);
     border-radius: 14px;
     transition: width 0.3s ease;
-    box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+    box-shadow: 0 2px 8px rgba(220, 53, 69, 0.3);
   }
 
   .progress-text {
     font-size: 16px;
     font-weight: 600;
-    color: #667eea;
+    color: #dc3545;
   }
 }
 
@@ -146,7 +146,7 @@ h2 {
   
   &:focus {
     outline: none;
-    border-color: #667eea;
+    border-color: #dc3545;
   }
 }
 
@@ -158,7 +158,7 @@ h2 {
 
 .export-menu-button {
   padding: 12px 20px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
   color: white;
   border: none;
   border-radius: 8px;
@@ -172,9 +172,9 @@ h2 {
   gap: 8px;
   
   &:hover:not(:disabled) {
-    background: linear-gradient(135deg, #5568d3 0%, #6a3d8f 100%);
+    background: linear-gradient(135deg, #c82333 0%, #bd2130 100%);
     transform: translateY(-2px);
-    box-shadow: 0 4px 8px rgba(102, 126, 234, 0.3);
+    box-shadow: 0 4px 8px rgba(220, 53, 69, 0.4);
   }
   
   &:disabled {
@@ -245,23 +245,23 @@ h2 {
   
   &:hover {
     background: #e9ecef;
-    border-color: #667eea;
+    border-color: #dc3545;
   }
   
   &.active {
-    background: #e3f2fd;
-    border-color: #667eea;
-    color: #667eea;
+    background: #f8d7da;
+    border-color: #dc3545;
+    color: #dc3545;
     font-weight: 600;
   }
   
   &.save-button {
-    background: #e3f2fd;
-    border-color: #667eea;
-    color: #667eea;
+    background: #f8d7da;
+    border-color: #dc3545;
+    color: #dc3545;
     
     &:hover:not(:disabled) {
-      background: #bbdefb;
+      background: #f5c6cb;
     }
     
     &:disabled {
@@ -329,7 +329,7 @@ h2 {
 
 .progress-fill {
   height: 100%;
-  background: linear-gradient(90deg, #667eea, #764ba2);
+  background: linear-gradient(90deg, #dc3545, #c82333);
   border-radius: 12px;
   transition: width 0.3s ease;
 }
@@ -364,7 +364,7 @@ h2 {
 
 .summary-card {
   padding: 16px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
   border-radius: 8px;
   color: white;
   text-align: center;
@@ -397,7 +397,7 @@ h2 {
   font-size: 14px;
   
   thead {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
     color: white;
     
     th {
@@ -513,7 +513,7 @@ h2 {
 
 .page-btn {
   padding: 8px 16px;
-  background: #667eea;
+  background: #dc3545;
   color: white;
   border: none;
   border-radius: 6px;
@@ -522,7 +522,7 @@ h2 {
   transition: all 0.3s ease;
   
   &:hover:not(:disabled) {
-    background: #5568d3;
+    background: #c82333;
     transform: translateY(-1px);
   }
   
@@ -541,8 +541,8 @@ h2 {
 .page-number-btn {
   padding: 8px 12px;
   background: white;
-  color: #667eea;
-  border: 2px solid #667eea;
+  color: #dc3545;
+  border: 2px solid #dc3545;
   border-radius: 6px;
   cursor: pointer;
   font-size: 14px;
@@ -550,11 +550,11 @@ h2 {
   transition: all 0.3s ease;
   
   &:hover {
-    background: #e3f2fd;
+    background: #f8d7da;
   }
   
   &.active {
-    background: #667eea;
+    background: #dc3545;
     color: white;
     font-weight: 600;
   }
@@ -658,16 +658,16 @@ h2 {
 .select-all-btn,
 .deselect-all-btn {
   padding: 8px 16px;
-  border: 1px solid #667eea;
+  border: 1px solid #dc3545;
   border-radius: 6px;
   background: white;
-  color: #667eea;
+  color: #dc3545;
   cursor: pointer;
   font-size: 13px;
   transition: all 0.2s ease;
   
   &:hover {
-    background: #e3f2fd;
+    background: #f8d7da;
   }
 }
 
@@ -701,7 +701,7 @@ h2 {
   transition: all 0.2s ease;
   
   &:hover {
-    border-color: #667eea;
+    border-color: #dc3545;
     background: #f8f9fa;
   }
 }

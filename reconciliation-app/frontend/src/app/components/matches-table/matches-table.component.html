@@ -67,6 +67,17 @@
     </div>
   </div>
 
+  <!-- Indicateur de chargement progressif -->
+  <div *ngIf="isLoading" class="loading-progress">
+    <div class="progress-bar">
+      <div class="progress-fill" [style.width.%]="loadProgress"></div>
+    </div>
+    <div class="progress-text">Chargement des correspondances... {{loadProgress | number:'1.0-0'}}%</div>
+    <div class="progress-details" *ngIf="filteredMatches.length > 0">
+      {{filteredMatches.length | number}} correspondance(s) chargée(s)
+    </div>
+  </div>
+
   <div *ngIf="isExporting" class="export-progress">
     <div class="progress-bar">
       <div class="progress-fill" [style.width.%]="exportProgress.percentage"></div>
