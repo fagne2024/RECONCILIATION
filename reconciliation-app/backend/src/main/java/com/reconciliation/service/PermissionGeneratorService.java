@@ -484,6 +484,7 @@ public class PermissionGeneratorService {
         mapping.put("/api/report-dashboard", "Résultats");
         mapping.put("/api/reconciliation-dashboard", "Dashboard");
         mapping.put("/api/banque-dashboard", "Dashboard");
+        mapping.put("/api/aide", "AIDE");
         
         return mapping;
     }

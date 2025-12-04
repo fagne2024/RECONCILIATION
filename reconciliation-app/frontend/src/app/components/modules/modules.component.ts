@@ -59,7 +59,8 @@ export class ModulesComponent implements OnInit {
     'Profil',
     'Module',
     'Permission',
-    'Log utilisateur'
+    'Log utilisateur',
+    'AIDE'
   ];
 
   constructor(
