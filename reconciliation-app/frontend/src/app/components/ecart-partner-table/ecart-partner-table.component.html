@@ -1,12 +1,26 @@
-<div class="matches-table-container">
+<div class="ecart-partner-table-container">
+  <!-- Indicateur de chargement -->
+  <div *ngIf="isLoading" class="loading-overlay">
+    <div class="loading-content">
+      <div class="loading-spinner">⏳</div>
+      <div class="loading-text">Chargement des données...</div>
+      <div class="loading-progress">
+        <div class="progress-bar">
+          <div class="progress-fill" [style.width.%]="loadProgress"></div>
+        </div>
+        <div class="progress-text">{{ loadProgress }}%</div>
+      </div>
+    </div>
+  </div>
+
   <div class="header-section">
     <div class="header-top">
       <button (click)="goBack()" class="back-button">
         ← Retour aux résultats
       </button>
-      <h2>✅ Correspondances</h2>
+      <h2>⚠️ Écarts Partenaire</h2>
       <div class="header-info">
-        <span class="total-count">{{filteredMatches.length || 0}} correspondance(s)</span>
+        <span class="total-count">{{filteredPartnerOnly.length || 0}} écart(s) Partenaire</span>
       </div>
     </div>
     
@@ -22,30 +36,12 @@
         <button 
           (click)="toggleExportMenu($event)" 
           class="export-menu-button"
-          [disabled]="isExporting || displayedMatches.length === 0"
+          [disabled]="isExporting || displayedPartnerOnly.length === 0"
         >
           📥 Export & Options
           <span class="menu-arrow">{{showExportMenu ? '▲' : '▼'}}</span>
         </button>
         <div *ngIf="showExportMenu" class="export-menu-dropdown">
-          <div class="menu-section">
-            <label class="menu-label">Affichage :</label>
-            <button 
-              (click)="setViewMode('BO')" 
-              class="menu-option-button"
-              [class.active]="viewMode === 'BO'"
-            >
-              {{viewMode === 'BO' ? '✓' : ''}} Tableau BO
-            </button>
-            <button 
-              (click)="setViewMode('PARTNER')" 
-              class="menu-option-button"
-              [class.active]="viewMode === 'PARTNER'"
-            >
-              {{viewMode === 'PARTNER' ? '✓' : ''}} Tableau Partenaire
-            </button>
-          </div>
-          <div class="menu-divider"></div>
           <div class="menu-section">
             <button (click)="openColumnSelector()" class="menu-option-button">
               📋 Choisir les colonnes à exporter
@@ -59,8 +55,22 @@
               class="menu-export-button"
               [disabled]="isExporting"
             >
-              {{ isExporting ? '⏳ Export en cours...' : '🚀 Exporter optimisé (' + viewMode + ')' }}
+              {{ isExporting ? '⏳ Export en cours...' : '🚀 Exporter optimisé' }}
             </button>
+          </div>
+          <div class="menu-divider"></div>
+          <div class="menu-section">
+            <label class="menu-label">Actions de sauvegarde :</label>
+            <button 
+              (click)="saveEcartPartnerToImpactOP()" 
+              class="menu-option-button save-button"
+              [disabled]="isSavingEcartPartnerToImpactOP || filteredPartnerOnly.length === 0"
+            >
+              {{ isSavingEcartPartnerToImpactOP ? '💾 Sauvegarde...' : '💾 Sauvegarder dans Import OP' }}
+            </button>
+            <span class="menu-info">
+              {{selectedPartnerOnlyKeys.length > 0 ? selectedPartnerOnlyKeys.length + ' ligne(s) sélectionnée(s)' : 'Toutes les lignes seront sauvegardées'}}
+            </span>
           </div>
         </div>
       </div>
@@ -80,38 +90,54 @@
   <div class="summary-section">
     <div class="summary-cards">
       <div class="summary-card">
-        <div class="summary-label">Volume total</div>
-        <div class="summary-value">{{calculateTotalVolume() | number:'1.0-0'}}</div>
+        <div class="summary-label">Volume total Partenaire</div>
+        <div class="summary-value">{{calculateTotalVolumePartnerOnly() | number:'1.0-0'}}</div>
       </div>
       <div class="summary-card">
         <div class="summary-label">Nombre de Transactions</div>
-        <div class="summary-value">{{filteredMatches.length}}</div>
+        <div class="summary-value">{{filteredPartnerOnly.length}}</div>
       </div>
     </div>
   </div>
 
   <div class="table-wrapper">
-    <table class="matches-table">
+    <table class="ecart-partner-table">
       <thead>
         <tr>
-          <th>Clé</th>
-          <th>Statut</th>
-          <th *ngFor="let col of displayedColumns">{{getColumnLabel(col)}}</th>
+          <th style="width: 120px;">Action</th>
+          <th style="width: 40px;">
+            <input 
+              type="checkbox" 
+              [checked]="allPartnerSelectedOnPage" 
+              (change)="toggleSelectAllPartnerOnPage($event)"
+            >
+          </th>
+          <th *ngFor="let col of displayedColumns">{{col}}</th>
         </tr>
       </thead>
       <tbody>
-        <tr *ngFor="let match of getPagedMatches()" [class.has-differences]="hasDifferences(match)">
-          <td class="key-cell">{{match.key}}</td>
-          <td class="status-cell">
-            <span [class.has-differences]="hasDifferences(match)">
-              {{hasDifferences(match) ? '⚠️ Différences' : '✅ OK'}}
-            </span>
+        <tr *ngFor="let record of getPagedPartnerOnly()">
+          <td class="action-cell">
+            <button 
+              (click)="createOperationFromPartnerRecord(record)" 
+              class="create-op-button" 
+              [disabled]="!isPartnerRecordEligible(record)" 
+              title="Créer OP">
+              ➕ Créer OP
+            </button>
           </td>
-          <td *ngFor="let col of displayedColumns">{{getValue(match, col)}}</td>
+          <td>
+            <input 
+              type="checkbox" 
+              [checked]="isPartnerRecordSelected(record)" 
+              (change)="togglePartnerSelection(record, $event)"
+            >
+          </td>
+          <td *ngFor="let col of displayedColumns">{{getValue(record, col)}}</td>
         </tr>
-        <tr *ngIf="getPagedMatches().length === 0">
+        <tr *ngIf="getPagedPartnerOnly().length === 0">
           <td [attr.colspan]="displayedColumns.length + 2" class="no-data">
-            Aucune correspondance trouvée
+            Aucun écart Partenaire trouvé
           </td>
         </tr>
       </tbody>
@@ -122,7 +148,7 @@
     <div class="pagination-info">
       <span>
         Page {{currentPage}} / {{totalPages}} 
-        ({{displayedMatches.length}} résultat(s))
+        ({{displayedPartnerOnly.length}} résultat(s))
       </span>
     </div>
     <div class="pagination-controls">

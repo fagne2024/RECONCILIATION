@@ -321,8 +321,14 @@ export class EcartBoTableComponent implements OnInit, OnDestroy {
     
     if (button && dropdown) {
       const rect = button.getBoundingClientRect();
-      dropdown.style.top = `${rect.bottom + window.scrollY + 8}px`;
-      dropdown.style.left = `${rect.right - dropdown.offsetWidth}px`;
+      const scrollY = window.scrollY || window.pageYOffset;
+      const scrollX = window.scrollX || window.pageXOffset;
+      
+      // Positionner le dropdown au-dessus des données (sous le bouton)
+      dropdown.style.position = 'fixed';
+      dropdown.style.top = `${rect.bottom + scrollY + 8}px`;
+      dropdown.style.left = `${rect.right + scrollX - dropdown.offsetWidth}px`;
+      dropdown.style.zIndex = '10004';
     }
   }
   

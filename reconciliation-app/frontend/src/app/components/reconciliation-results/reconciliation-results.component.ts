@@ -76,21 +76,35 @@ interface ApiError {
         <!-- Résumé des performances -->
         <div *ngIf="response && executionTime > 0" class="performance-summary">
             <div class="performance-card">
-                <div class="performance-header">
-                    <h3>📊 Performance de la réconciliation</h3>
-                </div>
-                <div class="performance-details">
-                    <div class="performance-item">
-                        <i class="fas fa-clock"></i>
-                        <span>Temps d'exécution: {{ formatTime(executionTime) }}</span>
+                <div class="performance-items-horizontal" style="display: flex !important; flex-direction: row !important; align-items: stretch !important; justify-content: space-between !important; gap: 0 !important; flex-wrap: nowrap !important; width: 100%;">
+                    <div class="performance-item-horizontal" style="display: flex !important; flex-direction: row !important; align-items: center !important; flex: 1; min-width: 0;">
+                        <div class="performance-icon-wrapper" style="display: flex !important; align-items: center !important; justify-content: center !important; flex-shrink: 0;">
+                            <div class="performance-icon">⏱️</div>
+                        </div>
+                        <div class="performance-content" style="display: flex !important; flex-direction: column !important; flex: 1;">
+                            <div class="performance-label">Temps effectué</div>
+                            <div class="performance-value">{{ formatTime(executionTime) }}</div>
+                        </div>
                     </div>
-                    <div class="performance-item">
-                        <i class="fas fa-database"></i>
-                        <span>Enregistrements traités: {{ processedRecords | number }}</span>
+                    <div class="performance-divider"></div>
+                    <div class="performance-item-horizontal" style="display: flex !important; flex-direction: row !important; align-items: center !important; flex: 1; min-width: 0;">
+                        <div class="performance-icon-wrapper" style="display: flex !important; align-items: center !important; justify-content: center !important; flex-shrink: 0;">
+                            <div class="performance-icon">💰</div>
+                        </div>
+                        <div class="performance-content" style="display: flex !important; flex-direction: column !important; flex: 1;">
+                            <div class="performance-label">Volume total</div>
+                            <div class="performance-value">{{ getTotalVolumeAll() | number:'1.0-0' }}</div>
+                        </div>
                     </div>
-                    <div class="performance-item">
-                        <i class="fas fa-tachometer-alt"></i>
-                        <span>Vitesse: {{ (processedRecords / (executionTime / 1000)) | number:'1.0-0' }} enregistrements/seconde</span>
+                    <div class="performance-divider"></div>
+                    <div class="performance-item-horizontal" style="display: flex !important; flex-direction: row !important; align-items: center !important; flex: 1; min-width: 0;">
+                        <div class="performance-icon-wrapper" style="display: flex !important; align-items: center !important; justify-content: center !important; flex-shrink: 0;">
+                            <div class="performance-icon">📊</div>
+                        </div>
+                        <div class="performance-content" style="display: flex !important; flex-direction: column !important; flex: 1;">
+                            <div class="performance-label">Nombre de transactions</div>
+                            <div class="performance-value">{{ getTotalTransactions() | number:'1.0-0' }}</div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -136,14 +150,14 @@ interface ApiError {
                         ✅ Voir les Correspondances ({{filteredMatches.length || 0}})
                     </button>
                     <button 
-                        [class.active]="activeTab === 'boOnly'"
-                        (click)="setActiveTab('boOnly')">
-                        ⚠️ ECART BO ({{(response?.mismatches?.length || 0) + (response?.boOnly?.length || 0)}})
+                        class="ecart-bo-button"
+                        (click)="goToEcartBo()">
+                        ⚠️ Voir les ECART BO ({{(response?.mismatches?.length || 0) + (response?.boOnly?.length || 0)}})
                     </button>
                     <button 
-                        [class.active]="activeTab === 'partnerOnly'"
-                        (click)="setActiveTab('partnerOnly')">
-                        ⚠️ ECART Partenaire ({{filteredPartnerOnly.length || 0}})
+                        class="ecart-partner-button"
+                        (click)="goToEcartPartner()">
+                        ⚠️ Voir les ECART Partenaire ({{filteredPartnerOnly.length || 0}})
                     </button>
                     <button 
                         [class.active]="activeTab === 'agencySummary'"
@@ -348,72 +362,7 @@ interface ApiError {
                         </div>
                     </div>
 
-                    <!-- ECART BO avec pagination -->
-                    <div *ngIf="activeTab === 'boOnly'" class="bo-only-section">
-                        <div class="search-section">
-                            <input 
-                                type="text" 
-                                [(ngModel)]="searchKey" 
-                                (input)="onSearch()"
-                                placeholder="Rechercher par clé..."
-                                class="search-input"
-                            >
-                            <label style="display:flex;align-items:center;gap:6px;">
-                                <input type="checkbox" [checked]="allBoSelectedOnPage" (change)="toggleSelectAllBoOnPage($event)">
-                                <span>Sélectionner la page</span>
-                            </label>
-                            <button (click)="exportResults()" class="export-button">
-                                📥 Exporter les ECART BO
-                            </button>
-                            <button (click)="saveEcartBoToEcartSolde()" class="save-button" [disabled]="isSavingEcartBo">
-                                {{ isSavingEcartBo ? '💾 Sauvegarde...' : '💾 Sauvegarder dans Ecart Solde' }}
-                            </button>
-                            <button (click)="saveEcartBoToTrxSf()" class="save-button" [disabled]="isSavingEcartBoToTrxSf">
-                                {{ isSavingEcartBoToTrxSf ? '💾 Sauvegarde...' : '💾 Sauvegarder dans TRX SF' }}
-                            </button>
-                        </div>
-                        <div class="volume-summary">
-                            <h4>📊 Résumé des volumes</h4>
-                            <div class="volume-grid">
-                                <div class="volume-card">
-                                    <div class="volume-label">Volume total BO</div>
-                                    <div class="volume-value">{{calculateTotalVolumeBoOnly() | number:'1.0-0'}}</div>
-                                </div>
-                                <div class="volume-card">
-                                    <div class="volume-label">Nombre de Transactions</div>
-                                    <div class="volume-value">{{filteredBoOnly.length}}</div>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="pagination-controls">
-                            <button (click)="prevPage('boOnly')" [disabled]="boOnlyPage === 1">Précédent</button>
-                            <span>Page {{boOnlyPage}} / {{getTotalPages('boOnly')}}</span>
-                            <button (click)="nextPage('boOnly')" [disabled]="boOnlyPage === getTotalPages('boOnly')">Suivant</button>
-                        </div>
-                        <div class="unmatched-card" *ngFor="let record of getPagedBoOnly()">
-                            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;gap:8px;">
-                                <div style="font-weight:600;color:#d32f2f;">Ligne BO</div>
-                                <label style="display:flex;align-items:center;gap:6px;">
-                                    <input type="checkbox" [checked]="isBoRecordSelected(record)" (change)="toggleBoSelection(record, $event)">
-                                    <span>Sélectionner</span>
-                                </label>
-                            </div>
-                            <div class="data-grid">
-                                <div class="info-row">
-                                    <span class="label">Volume:</span>
-                                    <span class="value">{{getBoOnlyAgencyAndService(record).volume | number:'1.0-0'}}</span>
-                                </div>
-                                <div class="info-row">
-                                    <span class="label">Date:</span>
-                                    <span class="value">{{getBoOnlyAgencyAndService(record).date}}</span>
-                                </div>
-                                <div class="data-row" *ngFor="let key of getBoOnlyKeys(record)">
-                                    <span class="label">{{key}}:</span>
-                                    <span class="value">{{getRecordValue(record, key)}}</span>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
+                    <!-- Les écarts BO sont maintenant sur une page séparée -->
 
                     <!-- ECART Partenaire avec pagination -->
                     <div *ngIf="activeTab === 'partnerOnly'" class="partner-only-section">
@@ -899,6 +848,8 @@ interface ApiError {
 
         .tab-buttons {
             display: flex;
+            gap: 15px;
+            padding: 10px;
             background: #f8f9fa;
             border-bottom: 1px solid #dee2e6;
         }
@@ -932,12 +883,39 @@ interface ApiError {
             background: linear-gradient(135deg, #218838 0%, #1ea085 100%) !important;
         }
 
+        .ecart-bo-button {
+            background: linear-gradient(135deg, #ff9800 0%, #f57c00 100%) !important;
+            color: white !important;
+            font-weight: 600;
+            border-radius: 6px;
+            transition: all 0.3s ease;
+        }
+
+        .ecart-bo-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(255, 152, 0, 0.4);
+            background: linear-gradient(135deg, #f57c00 0%, #e65100 100%) !important;
+        }
+
+        .ecart-partner-button {
+            background: linear-gradient(135deg, #dc3545 0%, #c82333 100%) !important;
+            color: white !important;
+            font-weight: 600;
+            border-radius: 6px;
+            transition: all 0.3s ease;
+        }
+
+        .ecart-partner-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(220, 53, 69, 0.4);
+            background: linear-gradient(135deg, #c82333 0%, #bd2130 100%) !important;
+        }
+
         .report-button {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
             color: white !important;
             font-weight: 600;
             border-radius: 6px;
-            margin-left: 10px;
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         }
 
@@ -3071,7 +3049,29 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
     }
 
     openReconciliationReport() {
-        console.log('📈 Navigation vers le rapport de réconciliation...');
+        console.log('📈 Ouverture du rapport de réconciliation...');
+        
+        // 1. Vérifier si un résumé par agence existe déjà dans le service
+        const existingSummary = this.reconciliationSummaryService.getAgencySummary();
+        if (existingSummary && existingSummary.length > 0) {
+            console.log('✅ Résumé existant trouvé, navigation immédiate vers le rapport');
+            this.router.navigate(['/reconciliation-report']);
+            return;
+        }
+        
+        // 2. Vérifier si les données sont déjà chargées dans les onglets
+        if (this.response && (this.filteredMatches.length > 0 || this.filteredBoOnly.length > 0 || this.filteredPartnerOnly.length > 0)) {
+            console.log('📊 Données disponibles, construction rapide du résumé...');
+            // Construire le résumé rapidement
+            const summary = this.getAgencySummary();
+            console.log('✅ Résumé construit:', summary.length, 'éléments');
+            // Le résumé est automatiquement stocké dans le service par getAgencySummary()
+            this.router.navigate(['/reconciliation-report']);
+            return;
+        }
+        
+        // 3. Sinon, naviguer immédiatement (les données seront chargées en arrière-plan)
+        console.log('⏳ Pas de données disponibles, navigation immédiate (chargement en arrière-plan)');
         this.router.navigate(['/reconciliation-report']);
     }
 
@@ -4470,7 +4470,7 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
     }
 
     private findCountryColumn(data: Record<string, string>): string | null {
-        const possibleColumns = ['Pays', 'PAYS', 'Country', 'COUNTRY', 'paysProvenance', 'Pays provenance', 'PAYS PROVENANCE'];
+        const possibleColumns = ['GRX', 'grx', 'GRX', 'Pays', 'PAYS', 'Country', 'COUNTRY', 'paysProvenance', 'Pays provenance', 'PAYS PROVENANCE'];
         for (const column of possibleColumns) {
             if (data[column] && data[column].trim() !== '') {
                 return column;
@@ -4699,6 +4699,19 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
         return matches + boMismatches + partnerMismatches;
     }
 
+    getTotalVolumeAll(): number {
+        // Volume des correspondances (BO)
+        const matchesVolume = this.calculateTotalVolume('bo');
+        
+        // Volume des écarts BO
+        const boOnlyVolume = this.calculateTotalVolumeBoOnly();
+        
+        // Volume des écarts Partenaire
+        const partnerOnlyVolume = this.calculateTotalVolumePartnerOnly();
+        
+        return matchesVolume + boOnlyVolume + partnerOnlyVolume;
+    }
+
     getTotalAgencyPages(): number {
         return Math.max(1, Math.ceil(this.getAgencySummary().length / this.agencyPageSize));
     }
@@ -4865,6 +4878,24 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
             console.log('Navigation vers /matches réussie');
         }).catch(err => {
             console.error('Erreur lors de la navigation vers /matches:', err);
+        });
+    }
+
+    goToEcartBo() {
+        console.log('Navigation vers les écarts BO');
+        this.router.navigate(['/ecart-bo']).then(() => {
+            console.log('Navigation vers /ecart-bo réussie');
+        }).catch(err => {
+            console.error('Erreur lors de la navigation vers /ecart-bo:', err);
+        });
+    }
+
+    goToEcartPartner() {
+        console.log('Navigation vers les écarts Partenaire');
+        this.router.navigate(['/ecart-partner']).then(() => {
+            console.log('Navigation vers /ecart-partner réussie');
+        }).catch(err => {
+            console.error('Erreur lors de la navigation vers /ecart-partner:', err);
         });
     }
 

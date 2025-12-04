@@ -106,16 +106,32 @@ export class EcartPartenaireComponent implements OnInit, OnDestroy {
         return;
       }
 
-      // Chargement progressif par chunks
-      const chunkSize = 1000;
+      // Chargement progressif par chunks pour éviter de bloquer l'UI
+      // Utiliser des chunks plus petits pour un feedback plus rapide
+      const chunkSize = 500; // Chunks plus petits pour un feedback plus rapide
       this.filteredPartnerOnly = [];
       
-      for (let i = 0; i < total; i += chunkSize) {
-        const chunk = partnerOnly.slice(i, Math.min(i + chunkSize, total));
-        this.filteredPartnerOnly.push(...chunk);
-        this.loadProgress = Math.round(((i + chunk.length) / total) * 100);
+      // Charger immédiatement un petit échantillon pour l'initialisation rapide
+      if (partnerOnly.length > 0) {
+        const sampleSize = Math.min(50, total);
+        const sample = partnerOnly.slice(0, sampleSize);
+        this.filteredPartnerOnly.push(...sample);
+        this.loadProgress = 2;
+        this.initializeColumns();
         this.cdr.markForCheck();
         
+        // Permettre au navigateur de mettre à jour l'UI immédiatement
+        await new Promise(resolve => setTimeout(resolve, 0));
+      }
+      
+      // Charger le reste par chunks pour un feedback régulier
+      for (let i = 50; i < total; i += chunkSize) {
+        const chunk = partnerOnly.slice(i, Math.min(i + chunkSize, total));
+        this.filteredPartnerOnly.push(...chunk);
+        this.loadProgress = Math.round(((i + chunk.length) / total) * 98 + 2); // 2-100%
+        this.cdr.markForCheck();
+        
+        // Permettre au navigateur de mettre à jour l'UI
         await new Promise(resolve => setTimeout(resolve, 0));
       }
       

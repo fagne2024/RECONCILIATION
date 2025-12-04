@@ -1,15 +1,17 @@
-import { Component, OnInit, OnDestroy, ChangeDetectorRef } from '@angular/core';
+import { Component, OnInit, OnDestroy, ChangeDetectorRef, ChangeDetectionStrategy } from '@angular/core';
 import { Router } from '@angular/router';
 import { Subscription } from 'rxjs';
 import { ReconciliationResponse, Match } from '../../models/reconciliation-response.model';
 import { AppStateService } from '../../services/app-state.service';
 import { ExportOptimizationService, ExportProgress } from '../../services/export-optimization.service';
 import { PopupService } from '../../services/popup.service';
+import { fixGarbledCharacters } from '../../utils/encoding-fixer';
 
 @Component({
   selector: 'app-matches-table',
   templateUrl: './matches-table.component.html',
-  styleUrls: ['./matches-table.component.scss']
+  styleUrls: ['./matches-table.component.scss'],
+  changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class MatchesTableComponent implements OnInit, OnDestroy {
   response: ReconciliationResponse | null = null;
@@ -81,7 +83,7 @@ export class MatchesTableComponent implements OnInit, OnDestroy {
     const target = event.target as HTMLElement;
     if (!target.closest('.export-menu-container')) {
       this.showExportMenu = false;
-      this.cdr.detectChanges();
+      this.cdr.markForCheck();
     }
   }
 
@@ -167,14 +169,14 @@ export class MatchesTableComponent implements OnInit, OnDestroy {
     this.viewMode = this.viewMode === 'BO' ? 'PARTNER' : 'BO';
     this.updateDisplayedColumns();
     this.currentPage = 1;
-    this.cdr.detectChanges();
+    this.cdr.markForCheck();
   }
   
   setViewMode(mode: 'BO' | 'PARTNER'): void {
     this.viewMode = mode;
     this.updateDisplayedColumns();
     this.currentPage = 1;
-    this.cdr.detectChanges();
+    this.cdr.markForCheck();
   }
 
   onSearch(): void {
@@ -185,31 +187,33 @@ export class MatchesTableComponent implements OnInit, OnDestroy {
   private applyFilters(): void {
     let filtered = [...this.filteredMatches];
     
-    // Appliquer la recherche
+    // Appliquer la recherche de manière optimisée
     if (this.searchKey.trim()) {
       const searchLower = this.searchKey.toLowerCase();
+      const searchTerms = searchLower.split(/\s+/).filter(term => term.length > 0);
+      
       filtered = filtered.filter(match => {
-        const keyMatch = match.key?.toLowerCase().includes(searchLower);
-        const boMatch = Object.values(match.boData || {}).some(val => 
-          String(val).toLowerCase().includes(searchLower)
-        );
-        const partnerMatch = Object.values(match.partnerData || {}).some(val => 
-          String(val).toLowerCase().includes(searchLower)
-        );
-        return keyMatch || boMatch || partnerMatch;
+        // Créer une chaîne de recherche une seule fois par match
+        const searchableText = [
+          match.key || '',
+          ...Object.values(match.boData || {}),
+          ...Object.values(match.partnerData || {})
+        ].map(val => String(val).toLowerCase()).join(' ');
+        
+        // Vérifier si tous les termes de recherche sont présents
+        return searchTerms.every(term => searchableText.includes(term));
       });
     }
     
     this.displayedMatches = filtered;
     this.totalPages = Math.max(1, Math.ceil(this.displayedMatches.length / this.pageSize));
-    this.updatePageData();
-  }
-
-  private updatePageData(): void {
-    const start = (this.currentPage - 1) * this.pageSize;
-    const end = start + this.pageSize;
-    // Les données sont déjà filtrées dans displayedMatches
-    this.cdr.detectChanges();
+    
+    // Réinitialiser à la première page si nécessaire
+    if (this.currentPage > this.totalPages) {
+      this.currentPage = 1;
+    }
+    
+    this.cdr.markForCheck();
   }
 
   getPagedMatches(): Match[] {
@@ -221,21 +225,21 @@ export class MatchesTableComponent implements OnInit, OnDestroy {
   prevPage(): void {
     if (this.currentPage > 1) {
       this.currentPage--;
-      this.cdr.detectChanges();
+      this.cdr.markForCheck();
     }
   }
 
   nextPage(): void {
     if (this.currentPage < this.totalPages) {
       this.currentPage++;
-      this.cdr.detectChanges();
+      this.cdr.markForCheck();
     }
   }
 
   goToPage(page: number): void {
     if (page >= 1 && page <= this.totalPages) {
       this.currentPage = page;
-      this.cdr.detectChanges();
+      this.cdr.markForCheck();
     }
   }
 
@@ -306,7 +310,7 @@ export class MatchesTableComponent implements OnInit, OnDestroy {
       event.stopPropagation();
     }
     this.showExportMenu = !this.showExportMenu;
-    this.cdr.detectChanges();
+    this.cdr.markForCheck();
     
     if (this.showExportMenu) {
       // Attendre que le DOM soit mis à jour pour positionner le menu
@@ -330,12 +334,12 @@ export class MatchesTableComponent implements OnInit, OnDestroy {
   openColumnSelector(): void {
     this.showColumnSelector = true;
     this.showExportMenu = false;
-    this.cdr.detectChanges();
+    this.cdr.markForCheck();
   }
   
   closeColumnSelector(): void {
     this.showColumnSelector = false;
-    this.cdr.detectChanges();
+    this.cdr.markForCheck();
   }
   
   toggleAllColumns(select: boolean): void {
@@ -364,7 +368,7 @@ export class MatchesTableComponent implements OnInit, OnDestroy {
         isComplete: false
       };
       this.showExportMenu = false;
-      this.cdr.detectChanges();
+      this.cdr.markForCheck();
 
       // Préparer les colonnes sélectionnées
       const selectedCols = this.availableColumnsForExport.filter(col => this.selectedColumnsForExport[col]);
@@ -401,7 +405,7 @@ export class MatchesTableComponent implements OnInit, OnDestroy {
 
       this.exportSubscription = this.exportOptimizationService.exportProgress$.subscribe(progress => {
         this.exportProgress = progress;
-        this.cdr.detectChanges();
+        this.cdr.markForCheck();
 
         if (progress.isComplete) {
           this.isExporting = false;
@@ -410,7 +414,7 @@ export class MatchesTableComponent implements OnInit, OnDestroy {
           } else if (progress.message.includes('Erreur')) {
             this.popupService.showError('Erreur lors de l\'export');
           }
-          this.cdr.detectChanges();
+          this.cdr.markForCheck();
         }
       });
 
@@ -432,8 +436,46 @@ export class MatchesTableComponent implements OnInit, OnDestroy {
       console.error('Erreur lors de l\'export:', error);
       this.isExporting = false;
       this.popupService.showError('Erreur lors de l\'export des correspondances');
-      this.cdr.detectChanges();
+      this.cdr.markForCheck();
     }
+  }
+
+  // Calculer le volume total des correspondances
+  calculateTotalVolume(): number {
+    return this.filteredMatches.reduce((total, match) => {
+      // Essayer de trouver le montant/volume dans les données BO
+      const boData = match.boData || {};
+      const volumeKeys = ['montant', 'Montant', 'MONTANT', 'Volume', 'volume', 'amount', 'Amount'];
+      
+      for (const key of volumeKeys) {
+        const originalKey = this.getOriginalKey(boData, key);
+        if (boData[originalKey]) {
+          const value = parseFloat(String(boData[originalKey]));
+          if (!isNaN(value)) {
+            return total + value;
+          }
+        }
+      }
+      
+      // Essayer dans les données partenaire si pas trouvé dans BO
+      const partnerData = match.partnerData || {};
+      for (const key of volumeKeys) {
+        const originalKey = this.getOriginalKey(partnerData, key);
+        if (partnerData[originalKey]) {
+          const value = parseFloat(String(partnerData[originalKey]));
+          if (!isNaN(value)) {
+            return total + value;
+          }
+        }
+      }
+      
+      return total;
+    }, 0);
+  }
+
+  private getOriginalKey(record: Record<string, any>, correctedKey: string): string {
+    const keys = Object.keys(record);
+    return keys.find(key => fixGarbledCharacters(key) === correctedKey) || correctedKey;
   }
 
   goBack(): void {

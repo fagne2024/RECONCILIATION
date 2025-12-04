@@ -98,7 +98,10 @@
                         "proxyConfig": "proxy.conf.js",
                         "ssl": true,
                         "sslCert": "C:/Certs/reconciliation/reconciliation.intouchgroup.net-crt.pem",
-                        "sslKey": "C:/Certs/reconciliation/reconciliation.intouchgroup.net-key.pem"
+                        "sslKey": "C:/Certs/reconciliation/reconciliation.intouchgroup.net-key.pem",
+                        // Désactiver Live Reload pour éviter les problèmes de WebSocket avec SSL
+                        "liveReload": false,
+                        "hmr": false
                     },
                     "configurations": {
                         "production": {

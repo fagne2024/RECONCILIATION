@@ -4,6 +4,8 @@ import { StatsComponent } from './components/stats/stats.component';
 import { AgencySummaryComponent } from './components/stats/agency-summary/agency-summary.component';
 import { ReconciliationResultsComponent } from './components/reconciliation-results/reconciliation-results.component';
 import { MatchesTableComponent } from './components/matches-table/matches-table.component';
+import { EcartBoTableComponent } from './components/ecart-bo-table/ecart-bo-table.component';
+import { EcartPartnerTableComponent } from './components/ecart-partner-table/ecart-partner-table.component';
 import { FileUploadComponent } from './components/file-upload/file-upload.component';
 import { DashboardComponent } from './components/dashboard/dashboard.component';
 import { ComptesComponent } from './components/comptes/comptes.component';
@@ -59,6 +61,8 @@ const routes: Routes = [
   { path: 'agency-summary', component: AgencySummaryComponent, canActivate: [AuthGuard] },
   { path: 'results', component: ReconciliationResultsComponent, canActivate: [AuthGuard] },
   { path: 'matches', component: MatchesTableComponent, canActivate: [AuthGuard] },
+  { path: 'ecart-bo', component: EcartBoTableComponent, canActivate: [AuthGuard] },
+  { path: 'ecart-partner', component: EcartPartnerTableComponent, canActivate: [AuthGuard] },
   { path: 'dashboard', component: DashboardComponent, canActivate: [AuthGuard] },
   { path: 'comptes', component: ComptesComponent, canActivate: [AuthGuard] },
   { path: 'operations', component: OperationsComponent, canActivate: [AuthGuard] },

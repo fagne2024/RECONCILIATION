@@ -86,6 +86,8 @@ import { AideComponent } from './components/aide/aide.component';
 import { SopOperationComponent } from './components/sop-operation/sop-operation.component';
 import { MatchesTableComponent } from './components/matches-table/matches-table.component';
 import { PartnerMatchesTableComponent } from './components/partner-matches-table/partner-matches-table.component';
+import { EcartBoTableComponent } from './components/ecart-bo-table/ecart-bo-table.component';
+import { EcartPartnerTableComponent } from './components/ecart-partner-table/ecart-partner-table.component';
 
 @NgModule({
     declarations: [
@@ -138,7 +140,9 @@ import { PartnerMatchesTableComponent } from './components/partner-matches-table
                 AideComponent,
                 SopOperationComponent,
                 MatchesTableComponent,
-                PartnerMatchesTableComponent
+                PartnerMatchesTableComponent,
+                EcartBoTableComponent,
+                EcartPartnerTableComponent
     ],
     imports: [
         BrowserModule,

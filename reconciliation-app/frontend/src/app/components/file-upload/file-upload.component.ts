@@ -3253,10 +3253,11 @@ export class FileUploadComponent {
         for (let i = 0; i < normalizedCandidates.length; i++) {
             const candidateIndex = normalizedColumns.indexOf(normalizedCandidates[i]);
             if (candidateIndex !== -1) {
-                // Retourner la colonne normalisée, pas l'originale
-                const foundColumn = normalizedColumns[candidateIndex];
+                // ⚠️ IMPORTANT: Retourner la colonne ORIGINALE (non normalisée) car c'est celle qui existe dans les données
+                const foundColumn = availableColumns[candidateIndex];
                 console.log(`✅ Correspondance exacte trouvée: ${candidateKeys[i]} -> ${foundColumn}`);
-                console.log(`   Normalisé: "${normalizedCandidates[i]}" -> "${foundColumn}"`);
+                console.log(`   Normalisé: "${normalizedCandidates[i]}" -> "${normalizedColumns[candidateIndex]}"`);
+                console.log(`   Colonne originale retournée: "${foundColumn}"`);
                 return foundColumn;
             }
         }
@@ -3267,15 +3268,16 @@ export class FileUploadComponent {
             for (let j = 0; j < normalizedColumns.length; j++) {
                 const column = normalizedColumns[j].toLowerCase();
                 if (candidate === column) {
-                    // Retourner la colonne normalisée (qui sera utilisée pour accéder aux données)
-                    const foundColumn = normalizedColumns[j];
+                    // ⚠️ IMPORTANT: Retourner la colonne ORIGINALE (non normalisée) car c'est celle qui existe dans les données
+                    const foundColumn = availableColumns[j];
                     console.log(`✅ Correspondance exacte (insensible à la casse) trouvée: ${candidateKeys[i]} -> ${foundColumn}`);
-                    console.log(`   Normalisé: "${normalizedCandidates[i]}" -> "${foundColumn}"`);
+                    console.log(`   Normalisé: "${normalizedCandidates[i]}" -> "${normalizedColumns[j]}"`);
+                    console.log(`   Colonne originale retournée: "${foundColumn}"`);
                     return foundColumn;
                 }
             }
         }
-
+        
         // PRIORITÉ 2: Chercher des correspondances sans espaces (pour gérer les variations d'espaces)
         for (let i = 0; i < normalizedCandidates.length; i++) {
             const candidate = normalizedCandidates[i].replace(/\s+/g, '');
@@ -3283,10 +3285,11 @@ export class FileUploadComponent {
                 const column = normalizedColumns[j].replace(/\s+/g, '');
                 
                 if (candidate === column) {
-                    // Retourner la colonne normalisée
-                    const foundColumn = normalizedColumns[j];
+                    // ⚠️ IMPORTANT: Retourner la colonne ORIGINALE (non normalisée) car c'est celle qui existe dans les données
+                    const foundColumn = availableColumns[j];
                     console.log(`✅ Correspondance sans espaces trouvée: ${candidateKeys[i]} -> ${foundColumn}`);
                     console.log(`   Sans espaces: "${candidate}" = "${column}"`);
+                    console.log(`   Colonne originale retournée: "${foundColumn}"`);
                     return foundColumn;
                 }
             }
@@ -3313,20 +3316,22 @@ export class FileUploadComponent {
                         continue;
                     }
                     
-                    // Retourner la colonne normalisée
-                    const foundColumn = normalizedColumns[j];
+                    // ⚠️ IMPORTANT: Retourner la colonne ORIGINALE (non normalisée) car c'est celle qui existe dans les données
+                    const foundColumn = availableColumns[j];
                     console.log(`✅ Correspondance partielle trouvée: ${candidateKeys[i]} -> ${foundColumn}`);
                     console.log(`   Normalisé: "${candidate}" contient ou est contenu dans "${column}"`);
+                    console.log(`   Colonne originale retournée: "${foundColumn}"`);
                     return foundColumn;
                 }
                 
                 // Vérifier la similarité (pour gérer les variations d'encodage)
                 const similarity = this.calculateStringSimilarity(candidate, column);
                 if (similarity > 0.8) {
-                    // Retourner la colonne normalisée
-                    const foundColumn = normalizedColumns[j];
+                    // ⚠️ IMPORTANT: Retourner la colonne ORIGINALE (non normalisée) car c'est celle qui existe dans les données
+                    const foundColumn = availableColumns[j];
                     console.log(`✅ Correspondance par similarité trouvée: ${candidateKeys[i]} -> ${foundColumn}`);
                     console.log(`   Similarité: ${similarity} (${candidate} ~ ${column})`);
+                    console.log(`   Colonne originale retournée: "${foundColumn}"`);
                     return foundColumn;
                 }
             }
@@ -3580,6 +3585,49 @@ export class FileUploadComponent {
                     console.log('🔗 Colonnes de comparaison configurées:', comparisonColumns);
                 console.log('🔑 Clé BO utilisée:', keyDetectionResult.boKeyColumn);
                 console.log('🔑 Clé Partenaire utilisée:', keyDetectionResult.partnerKeyColumn);
+                
+                // 🔍 VÉRIFICATION CRITIQUE: Vérifier que les colonnes existent dans les données
+                if (processedBoData.length > 0) {
+                    const boColumns = Object.keys(processedBoData[0]);
+                    const boKeyExists = boColumns.includes(keyDetectionResult.boKeyColumn);
+                    console.log('🔍 VÉRIFICATION - Colonnes disponibles dans les données BO:', boColumns);
+                    console.log(`🔍 VÉRIFICATION - Colonne clé BO "${keyDetectionResult.boKeyColumn}" existe? ${boKeyExists}`);
+                    if (!boKeyExists) {
+                        console.error(`❌ ERREUR CRITIQUE: La colonne "${keyDetectionResult.boKeyColumn}" n'existe pas dans les données BO!`);
+                        console.error('  Colonnes disponibles:', boColumns);
+                        // Chercher des colonnes similaires
+                        const similarColumns = boColumns.filter(col => 
+                            col.toLowerCase().includes(keyDetectionResult.boKeyColumn.toLowerCase()) ||
+                            keyDetectionResult.boKeyColumn.toLowerCase().includes(col.toLowerCase())
+                        );
+                        if (similarColumns.length > 0) {
+                            console.warn('  ⚠️ Colonnes similaires trouvées:', similarColumns);
+                            console.warn(`  💡 Suggestion: Utiliser "${similarColumns[0]}" au lieu de "${keyDetectionResult.boKeyColumn}"`);
+                        }
+                        throw new Error(`Colonne clé BO "${keyDetectionResult.boKeyColumn}" introuvable dans les données. Colonnes disponibles: ${boColumns.join(', ')}`);
+                    }
+                }
+                
+                if (processedPartnerData.length > 0) {
+                    const partnerColumns = Object.keys(processedPartnerData[0]);
+                    const partnerKeyExists = partnerColumns.includes(keyDetectionResult.partnerKeyColumn);
+                    console.log('🔍 VÉRIFICATION - Colonnes disponibles dans les données Partner:', partnerColumns);
+                    console.log(`🔍 VÉRIFICATION - Colonne clé Partner "${keyDetectionResult.partnerKeyColumn}" existe? ${partnerKeyExists}`);
+                    if (!partnerKeyExists) {
+                        console.error(`❌ ERREUR CRITIQUE: La colonne "${keyDetectionResult.partnerKeyColumn}" n'existe pas dans les données Partner!`);
+                        console.error('  Colonnes disponibles:', partnerColumns);
+                        // Chercher des colonnes similaires
+                        const similarColumns = partnerColumns.filter(col => 
+                            col.toLowerCase().includes(keyDetectionResult.partnerKeyColumn.toLowerCase()) ||
+                            keyDetectionResult.partnerKeyColumn.toLowerCase().includes(col.toLowerCase())
+                        );
+                        if (similarColumns.length > 0) {
+                            console.warn('  ⚠️ Colonnes similaires trouvées:', similarColumns);
+                            console.warn(`  💡 Suggestion: Utiliser "${similarColumns[0]}" au lieu de "${keyDetectionResult.partnerKeyColumn}"`);
+                        }
+                        throw new Error(`Colonne clé Partner "${keyDetectionResult.partnerKeyColumn}" introuvable dans les données. Colonnes disponibles: ${partnerColumns.join(', ')}`);
+                    }
+                }
                     
             // Créer la requête de réconciliation
                     const reconciliationRequest = {

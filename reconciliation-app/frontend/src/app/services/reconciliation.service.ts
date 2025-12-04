@@ -852,8 +852,8 @@ export class ReconciliationService implements OnInit, OnDestroy {
             estimatedTimeRemaining: 30000
         });
 
-        // Timeout de 30 minutes (1800000ms) pour les gros fichiers
-        const RECONCILIATION_TIMEOUT = 1800000; // 30 minutes
+        // Timeout de 60 minutes (3600000ms) pour les très gros fichiers (augmenté de 30 à 60 minutes)
+        const RECONCILIATION_TIMEOUT = 3600000; // 60 minutes
         
         return this.http.post<ReconciliationResponse>(`${this.apiUrl}/reconcile`, request, {
             headers: new HttpHeaders({
@@ -883,13 +883,31 @@ export class ReconciliationService implements OnInit, OnDestroy {
         console.log('🔄 Démarrage de la réconciliation par chunks backend optimisée');
         
         return new Observable(observer => {
-            const chunkSize = 100000; // 100k lignes par chunk pour un traitement plus rapide
+            // Réduire la taille des chunks pour éviter les timeouts (50000 lignes au lieu de 100000)
+            // Avec 258952 lignes Partner, des chunks plus petits réduisent le temps de traitement par requête
+            const boDataLength = (request.boFileContent || []).length;
+            const partnerDataLength = (request.partnerFileContent || []).length;
+            
+            // Ajuster dynamiquement la taille des chunks selon la taille des données
+            // Optimisation : augmenter la taille des chunks pour réduire le nombre de requêtes
+            let chunkSize = 50000; // Par défaut 50k lignes
+            if (partnerDataLength > 200000 && partnerDataLength < 300000) {
+                // Pour fichiers Partner moyens (200k-300k), utiliser 50k pour équilibrer vitesse/stabilité
+                chunkSize = 50000;
+                console.log('📊 Fichier Partner volumineux détecté - Utilisation de chunks optimisés (50k)');
+            } else if (partnerDataLength >= 300000) {
+                // Pour très gros fichiers Partner (>300k), réduire les chunks pour éviter les timeouts
+                chunkSize = 40000; // 40k lignes pour très gros fichiers
+                console.log('📊 Fichier Partner très volumineux détecté - Utilisation de chunks réduits (40k)');
+            } else if (boDataLength > 200000) {
+                chunkSize = 50000; // 50k lignes pour gros fichiers BO
+            }
             
             // Diviser seulement les données BO en chunks
             const boChunks = this.createChunks(request.boFileContent || [], chunkSize);
             const allPartnerData = request.partnerFileContent || [];
             
-            console.log(`📊 Données divisées: ${boChunks.length} chunks BO, ${allPartnerData.length} lignes Partner complètes`);
+            console.log(`📊 Données divisées: ${boChunks.length} chunks BO (${chunkSize} lignes/chunk), ${allPartnerData.length} lignes Partner complètes`);
             
             // Traiter chaque chunk BO avec TOUTES les lignes Partner
             this.processOptimizedChunks(request, boChunks, allPartnerData, [], observer);
@@ -898,6 +916,7 @@ export class ReconciliationService implements OnInit, OnDestroy {
 
     /**
      * Traite les chunks BO de manière optimisée avec toutes les lignes Partner
+     * OPTIMISATION: Traitement parallèle avec limite de concurrence
      */
     private processOptimizedChunks(
         originalRequest: ReconciliationRequest, 
@@ -907,111 +926,418 @@ export class ReconciliationService implements OnInit, OnDestroy {
         observer: any
     ): void {
         
-        let currentBoIndex = 0;
-        let remainingPartnerData = [...allPartnerData]; // Copie des données Partner restantes
+        // OPTIMISATION: Utiliser un Map pour un accès O(1) au lieu de O(n) pour le filtrage
+        // Créer un index des données Partner par clé pour un retrait rapide
+        const partnerDataMap = new Map<string, any>();
+        allPartnerData.forEach(partnerRow => {
+            const key = partnerRow[originalRequest.partnerKeyColumn];
+            if (key) {
+                // Stocker la première occurrence de chaque clé (pour 1-1)
+                if (!partnerDataMap.has(key)) {
+                    partnerDataMap.set(key, partnerRow);
+                }
+            }
+        });
+        let remainingPartnerData = [...allPartnerData]; // Garder pour compatibilité avec le backend
         let allMatches: any[] = [];
         let allBoOnly: any[] = [];
+        const startTime = Date.now(); // Pour calculer le temps d'exécution réel
         
-        const processNextBoChunk = () => {
-            if (currentBoIndex >= boChunks.length) {
-                console.log('✅ Tous les chunks BO traités, finalisation des résultats...');
-                this.finalizeOptimizedResults(allMatches, allBoOnly, remainingPartnerData, observer);
+        // OPTIMISATION: Traitement parallèle avec limite de concurrence adaptée à l'environnement
+        // Détecter si on est en production (hostname de production uniquement, pas le port)
+        const isProduction = typeof window !== 'undefined' && (
+            window.location.hostname.includes('reconciliation.intouchgroup.net') ||
+            (window.location.hostname.includes('intouchgroup') && !window.location.hostname.includes('localhost'))
+        );
+        
+        // En production, utiliser un traitement séquentiel pour éviter les problèmes de connexion
+        // En local, on peut être plus agressif avec le parallélisme
+        let MAX_CONCURRENT_CHUNKS = isProduction 
+            ? 1  // Production : traitement séquentiel (1 chunk à la fois) pour éviter les timeouts
+            : Math.min(3, boChunks.length); // Local : max 3 chunks simultanés
+        
+        console.log(`🔧 Environnement détecté: ${isProduction ? 'PRODUCTION' : 'LOCAL'} - Limite de concurrence: ${MAX_CONCURRENT_CHUNKS} chunk(s)`);
+        
+        if (isProduction) {
+            console.log('⚠️ Mode PRODUCTION: Traitement séquentiel activé pour éviter les problèmes de connexion');
+        }
+        
+        let completedChunks = 0;
+        const chunkResults = new Map<number, { matches: any[], boOnly: any[], matchedKeys: Set<string> }>();
+        const processingChunks = new Set<number>();
+        let consecutiveErrors = 0; // Compteur d'erreurs consécutives pour réduire la concurrence dynamiquement
+        
+        // Synchronisation pour éviter les conflits lors du retrait des données Partner
+        const lock = { locked: false, queue: [] as Array<() => void> };
+        
+        const acquireLock = (): Promise<void> => {
+            return new Promise((resolve) => {
+                if (!lock.locked) {
+                    lock.locked = true;
+                    resolve();
+                } else {
+                    lock.queue.push(resolve);
+                }
+            });
+        };
+        
+        const releaseLock = () => {
+            lock.locked = false;
+            if (lock.queue.length > 0) {
+                const next = lock.queue.shift();
+                if (next) {
+                    lock.locked = true;
+                    next();
+                }
+            }
+        };
+        
+        const processChunk = async (chunkIndex: number) => {
+            if (chunkIndex >= boChunks.length) {
                 return;
             }
             
-            const boChunk = boChunks[currentBoIndex];
-            currentBoIndex++;
+            const boChunk = boChunks[chunkIndex];
+            processingChunks.add(chunkIndex);
             
-            console.log(`🔄 Traitement chunk BO ${currentBoIndex}/${boChunks.length} avec ${remainingPartnerData.length} lignes Partner restantes`);
+            const modeText = MAX_CONCURRENT_CHUNKS === 1 ? 'séquentiel' : 'parallèle';
+            console.log(`🔄 Traitement chunk BO ${chunkIndex + 1}/${boChunks.length} (${modeText}) avec ${remainingPartnerData.length} lignes Partner`);
             
-            // Mettre à jour la progression avec les informations détaillées
+            // Mettre à jour la progression
             this.progressSubject.next({
-                percentage: Math.min(95, (currentBoIndex / boChunks.length) * 90), // 90% max pour laisser de la place à la finalisation
-                processed: currentBoIndex,
+                percentage: Math.min(95, ((chunkIndex + 1) / boChunks.length) * 90),
+                processed: chunkIndex + 1,
                 total: boChunks.length,
-                step: `Traitement chunk BO ${currentBoIndex}/${boChunks.length}`,
-                currentBoChunk: currentBoIndex,
+                step: `Traitement chunk BO ${chunkIndex + 1}/${boChunks.length} (${modeText})`,
+                currentBoChunk: chunkIndex + 1,
                 totalBoChunks: boChunks.length,
                 matchesCount: allMatches.length,
                 boOnlyCount: allBoOnly.length,
                 partnerRemaining: remainingPartnerData.length
             });
             
+            // Acquérir le lock pour lire les données Partner actuelles
+            await acquireLock();
+            const currentPartnerData = [...remainingPartnerData]; // Copie pour ce chunk
+            releaseLock();
+            
+            // 🔍 DEBUG: Log des clés et exemples de valeurs pour le premier chunk
+            if (chunkIndex === 0) {
+                console.log('🔍 DEBUG - Clés de réconciliation:');
+                console.log(`  - BO Key Column: "${originalRequest.boKeyColumn}"`);
+                console.log(`  - Partner Key Column: "${originalRequest.partnerKeyColumn}"`);
+                
+                // Vérifier que les colonnes existent dans les données
+                if (boChunk.length > 0) {
+                    const boColumns = Object.keys(boChunk[0]);
+                    const boKeyExists = boColumns.includes(originalRequest.boKeyColumn);
+                    console.log('🔍 DEBUG - Colonnes disponibles dans les données BO:', boColumns);
+                    console.log(`🔍 DEBUG - Colonne clé BO existe? ${boKeyExists}`);
+                    if (!boKeyExists) {
+                        console.error(`❌ ERREUR: La colonne "${originalRequest.boKeyColumn}" n'existe pas dans les données BO!`);
+                        console.error('  Colonnes disponibles:', boColumns);
+                        // Chercher des colonnes similaires
+                        const similarColumns = boColumns.filter(col => 
+                            col.toLowerCase().includes(originalRequest.boKeyColumn.toLowerCase()) ||
+                            originalRequest.boKeyColumn.toLowerCase().includes(col.toLowerCase())
+                        );
+                        if (similarColumns.length > 0) {
+                            console.warn('  Colonnes similaires trouvées:', similarColumns);
+                        }
+                    }
+                    
+                    // Afficher quelques exemples de clés BO
+                    const boKeys = boChunk.slice(0, 5).map(record => {
+                        const key = record[originalRequest.boKeyColumn];
+                        return {
+                            key: key,
+                            keyType: typeof key,
+                            keyLength: key ? key.length : 0,
+                            trimmed: key ? key.trim() : null,
+                            exists: key !== undefined
+                        };
+                    });
+                    console.log('🔍 DEBUG - Exemples de clés BO (5 premiers):', boKeys);
+                }
+                
+                // Vérifier que les colonnes existent dans les données Partner
+                if (currentPartnerData.length > 0) {
+                    const partnerColumns = Object.keys(currentPartnerData[0]);
+                    const partnerKeyExists = partnerColumns.includes(originalRequest.partnerKeyColumn);
+                    console.log('🔍 DEBUG - Colonnes disponibles dans les données Partner:', partnerColumns);
+                    console.log(`🔍 DEBUG - Colonne clé Partner existe? ${partnerKeyExists}`);
+                    if (!partnerKeyExists) {
+                        console.error(`❌ ERREUR: La colonne "${originalRequest.partnerKeyColumn}" n'existe pas dans les données Partner!`);
+                        console.error('  Colonnes disponibles:', partnerColumns);
+                        // Chercher des colonnes similaires
+                        const similarColumns = partnerColumns.filter(col => 
+                            col.toLowerCase().includes(originalRequest.partnerKeyColumn.toLowerCase()) ||
+                            originalRequest.partnerKeyColumn.toLowerCase().includes(col.toLowerCase())
+                        );
+                        if (similarColumns.length > 0) {
+                            console.warn('  Colonnes similaires trouvées:', similarColumns);
+                        }
+                    }
+                    
+                    // Afficher quelques exemples de clés Partner
+                    const partnerKeys = currentPartnerData.slice(0, 5).map(record => {
+                        const key = record[originalRequest.partnerKeyColumn];
+                        return {
+                            key: key,
+                            keyType: typeof key,
+                            keyLength: key ? key.length : 0,
+                            trimmed: key ? key.trim() : null,
+                            exists: key !== undefined
+                        };
+                    });
+                    console.log('🔍 DEBUG - Exemples de clés Partner (5 premiers):', partnerKeys);
+                    
+                    // Vérifier si les clés correspondent
+                    const boKeySet = new Set(boChunk.slice(0, 100).map(r => {
+                        const key = r[originalRequest.boKeyColumn];
+                        return key ? String(key).trim() : null;
+                    }).filter(k => k !== null && k !== ''));
+                    const partnerKeySet = new Set(currentPartnerData.slice(0, 100).map(r => {
+                        const key = r[originalRequest.partnerKeyColumn];
+                        return key ? String(key).trim() : null;
+                    }).filter(k => k !== null && k !== ''));
+                    const intersection = [...boKeySet].filter(k => partnerKeySet.has(k));
+                    console.log(`🔍 DEBUG - Intersection des 100 premières clés: ${intersection.length} correspondances trouvées`);
+                    console.log(`  - Clés BO uniques: ${boKeySet.size}`);
+                    console.log(`  - Clés Partner uniques: ${partnerKeySet.size}`);
+                    if (intersection.length === 0 && boKeySet.size > 0 && partnerKeySet.size > 0) {
+                        console.warn('⚠️ DEBUG - Aucune correspondance trouvée dans les 100 premiers enregistrements!');
+                        const firstBoKey = [...boKeySet][0];
+                        const firstPartnerKey = [...partnerKeySet][0];
+                        console.warn('  Exemple clé BO:', firstBoKey, `(type: ${typeof firstBoKey}, longueur: ${firstBoKey?.length})`);
+                        console.warn('  Exemple clé Partner:', firstPartnerKey, `(type: ${typeof firstPartnerKey}, longueur: ${firstPartnerKey?.length})`);
+                        console.warn('  Correspondance exacte?', firstBoKey === firstPartnerKey);
+                        console.warn('  Correspondance après trim?', firstBoKey?.trim() === firstPartnerKey?.trim());
+                        console.warn('  Correspondance ignore case?', firstBoKey?.toLowerCase() === firstPartnerKey?.toLowerCase());
+                    }
+                }
+            }
+            
             const chunkRequest: ReconciliationRequest = {
                 ...originalRequest,
                 boFileContent: boChunk,
-                partnerFileContent: remainingPartnerData
+                partnerFileContent: currentPartnerData
             };
             
-            // Timeout de 30 minutes pour chaque chunk (au cas où un chunk serait très volumineux)
-            const RECONCILIATION_TIMEOUT = 1800000; // 30 minutes
+            // Timeout de 60 minutes pour chaque chunk
+            const RECONCILIATION_TIMEOUT = 3600000; // 60 minutes
             
-            this.http.post<ReconciliationResponse>(`${this.apiUrl}/reconcile`, chunkRequest, {
-                headers: new HttpHeaders({
-                    'Content-Type': 'application/json'
-                })
-            }).pipe(
-                timeout(RECONCILIATION_TIMEOUT)
-            ).subscribe({
-                next: (response: ReconciliationResponse) => {
-                    try {
-                        console.log(`✅ Chunk BO ${currentBoIndex} traité: ${response.matches?.length || 0} matches`);
-                        
-                        // Ajouter les matches trouvés avec gestion d'erreur
-                        if (response.matches && response.matches.length > 0) {
-                            console.log(`📊 Ajout de ${response.matches.length} matches...`);
-                            allMatches.push(...response.matches);
+            // Fonction de retry avec backoff exponentiel
+            const processChunkWithRetry = (retryCount: number = 0, maxRetries: number = 3): Promise<void> => {
+                return new Promise((resolve, reject) => {
+                    const isTimeoutError = (error: any) => {
+                        return error.name === 'TimeoutError' || 
+                               error.status === 408 || 
+                               error.status === 0 ||
+                               error.message?.includes('timeout') ||
+                               error.message?.includes('Timeout') ||
+                               error.message?.includes('ERR_CONNECTION_RESET') ||
+                               error.message?.includes('Connection reset') ||
+                               (error.error && error.error.message && error.error.message.includes('timeout'));
+                    };
+                    
+                    this.http.post<ReconciliationResponse>(`${this.apiUrl}/reconcile`, chunkRequest, {
+                        headers: new HttpHeaders({
+                            'Content-Type': 'application/json'
+                        })
+                    }).pipe(
+                        timeout(RECONCILIATION_TIMEOUT),
+                        retry({
+                            count: 0,
+                            delay: 0
+                        })
+                    ).subscribe({
+                        next: async (response: ReconciliationResponse) => {
+                            try {
+                                // Réinitialiser le compteur d'erreurs en cas de succès
+                                consecutiveErrors = Math.max(0, consecutiveErrors - 1);
+                                
+                                console.log(`✅ Chunk BO ${chunkIndex + 1} traité: ${response.matches?.length || 0} matches`);
+                                
+                                // Stocker les résultats pour traitement séquentiel
+                                const matchedPartnerKeys = new Set<string>();
+                                if (response.matches && response.matches.length > 0) {
+                                    response.matches.forEach(match => {
+                                        const key = match.partnerData?.[originalRequest.partnerKeyColumn];
+                                        if (key) {
+                                            matchedPartnerKeys.add(key);
+                                        }
+                                    });
+                                }
+                                
+                                chunkResults.set(chunkIndex, {
+                                    matches: response.matches || [],
+                                    boOnly: response.boOnly || [],
+                                    matchedKeys: matchedPartnerKeys
+                                });
+                                
+                                // Traiter les résultats de manière séquentielle pour éviter les conflits
+                                await processChunkResults();
+                                
+                                resolve();
+                            } catch (error) {
+                                console.error(`❌ Erreur lors du traitement des résultats du chunk BO ${chunkIndex + 1}:`, error);
+                                reject(error);
+                            }
+                        },
+                        error: (error) => {
+                            const isTimeout = isTimeoutError(error);
                             
-                            // Retirer les lignes Partner qui ont matché (optimisé)
-                            const matchedPartnerKeys = new Set(response.matches.map(match => 
-                                match.partnerData[originalRequest.partnerKeyColumn]
-                            ));
-                            
-                            const beforeCount = remainingPartnerData.length;
-                            remainingPartnerData = remainingPartnerData.filter(partnerRow => 
-                                !matchedPartnerKeys.has(partnerRow[originalRequest.partnerKeyColumn])
-                            );
-                            
-                            console.log(`📊 ${beforeCount - remainingPartnerData.length} lignes Partner retirées, ${remainingPartnerData.length} restantes`);
+                            if (isTimeout && retryCount < maxRetries) {
+                                consecutiveErrors++;
+                                
+                                // Réduire dynamiquement la concurrence si trop d'erreurs
+                                if (consecutiveErrors >= 2 && MAX_CONCURRENT_CHUNKS > 1) {
+                                    MAX_CONCURRENT_CHUNKS = Math.max(1, MAX_CONCURRENT_CHUNKS - 1);
+                                    console.warn(`⚠️ Réduction de la concurrence à ${MAX_CONCURRENT_CHUNKS} chunk(s) en raison des erreurs répétées`);
+                                }
+                                
+                                // En production, augmenter le délai de backoff pour laisser le serveur récupérer
+                                const baseDelay = isProduction ? 3000 : 1000; // 3s en prod, 1s en local
+                                const backoffDelay = Math.min(baseDelay * Math.pow(2, retryCount), isProduction ? 60000 : 30000);
+                                console.warn(`⏰ Timeout chunk BO ${chunkIndex + 1} (tentative ${retryCount + 1}/${maxRetries}). Retry dans ${backoffDelay}ms...`);
+                                
+                                setTimeout(() => {
+                                    processChunkWithRetry(retryCount + 1, maxRetries).then(resolve).catch(reject);
+                                }, backoffDelay);
+                            } else {
+                                consecutiveErrors++;
+                                
+                                // Réduire la concurrence si erreur persistante
+                                if (consecutiveErrors >= 3 && MAX_CONCURRENT_CHUNKS > 1) {
+                                    MAX_CONCURRENT_CHUNKS = 1; // Passer en mode séquentiel
+                                    console.warn(`⚠️ Passage en mode séquentiel (1 chunk) en raison des erreurs persistantes`);
+                                }
+                                
+                                if (isTimeout) {
+                                    console.error(`❌ Timeout persistant pour le chunk BO ${chunkIndex + 1} après ${maxRetries} tentatives`);
+                                } else {
+                                    console.error(`❌ Erreur lors du traitement du chunk BO ${chunkIndex + 1}:`, error);
+                                }
+                                
+                                // En cas d'erreur, ajouter le chunk comme "bo-only"
+                                chunkResults.set(chunkIndex, {
+                                    matches: [],
+                                    boOnly: boChunk,
+                                    matchedKeys: new Set()
+                                });
+                                
+                                processChunkResults().then(() => resolve()).catch(reject);
+                            }
                         }
-                        
-                        // Ajouter les lignes BO sans correspondance
-                        if (response.boOnly && response.boOnly.length > 0) {
-                            console.log(`📊 Ajout de ${response.boOnly.length} lignes BO sans correspondance...`);
-                            allBoOnly.push(...response.boOnly);
-                        }
-                        
-                        // Vérifier la mémoire
-                        console.log(`💾 État mémoire: ${allMatches.length} matches, ${allBoOnly.length} bo-only, ${remainingPartnerData.length} partner restantes`);
-                        
-                        // Mettre à jour la progression avec les informations détaillées
-                        this.progressSubject.next({
-                            percentage: Math.min(95, (currentBoIndex / boChunks.length) * 90),
-                            processed: currentBoIndex,
-                            total: boChunks.length,
-                            step: `Chunk BO ${currentBoIndex}/${boChunks.length} traité`,
-                            currentBoChunk: currentBoIndex,
-                            totalBoChunks: boChunks.length,
-                            matchesCount: allMatches.length,
-                            boOnlyCount: allBoOnly.length,
-                            partnerRemaining: remainingPartnerData.length
-                        });
-                        
-                        processNextBoChunk();
-                    } catch (error) {
-                        console.error(`❌ Erreur lors du traitement des résultats du chunk BO ${currentBoIndex}:`, error);
-                        processNextBoChunk();
-                    }
-                },
-                error: (error) => {
-                    console.error(`❌ Erreur lors du traitement du chunk BO ${currentBoIndex}:`, error);
-                    // Continuer avec le chunk suivant
-                    processNextBoChunk();
-                }
-            });
+                    });
+                });
+            };
+            
+            return processChunkWithRetry();
         };
         
-        processNextBoChunk();
+        // Fonction pour traiter les résultats des chunks de manière séquentielle
+        const processChunkResults = async (): Promise<void> => {
+            await acquireLock();
+            try {
+                // Traiter les chunks dans l'ordre, en commençant par le plus petit index disponible
+                let nextChunkToProcess = completedChunks;
+                while (chunkResults.has(nextChunkToProcess)) {
+                    const result = chunkResults.get(nextChunkToProcess)!;
+                    
+                    // Ajouter les matches
+                    if (result.matches.length > 0) {
+                        allMatches.push(...result.matches);
+                        
+                        // Retirer les clés matchées du Map
+                        result.matchedKeys.forEach(key => partnerDataMap.delete(key));
+                        
+                        // Retirer les lignes Partner matchées
+                        const beforeCount = remainingPartnerData.length;
+                        remainingPartnerData = remainingPartnerData.filter(partnerRow => {
+                            const key = partnerRow[originalRequest.partnerKeyColumn];
+                            return !result.matchedKeys.has(key);
+                        });
+                        
+                        console.log(`📊 Chunk ${nextChunkToProcess + 1}: ${beforeCount - remainingPartnerData.length} lignes Partner retirées, ${remainingPartnerData.length} restantes`);
+                    }
+                    
+                    // Ajouter les bo-only
+                    if (result.boOnly.length > 0) {
+                        allBoOnly.push(...result.boOnly);
+                    }
+                    
+                    completedChunks++;
+                    chunkResults.delete(nextChunkToProcess);
+                    nextChunkToProcess++;
+                    
+                    // Mettre à jour la progression
+                    this.progressSubject.next({
+                        percentage: Math.min(95, (completedChunks / boChunks.length) * 90),
+                        processed: completedChunks,
+                        total: boChunks.length,
+                        step: `Chunk BO ${completedChunks}/${boChunks.length} traité`,
+                        currentBoChunk: completedChunks,
+                        totalBoChunks: boChunks.length,
+                        matchesCount: allMatches.length,
+                        boOnlyCount: allBoOnly.length,
+                        partnerRemaining: remainingPartnerData.length
+                    });
+                    
+                    // Vérifier si tous les chunks sont terminés
+                    if (completedChunks >= boChunks.length) {
+                        console.log('✅ Tous les chunks BO traités, finalisation des résultats...');
+                        this.finalizeOptimizedResults(allMatches, allBoOnly, remainingPartnerData, observer, startTime);
+                    }
+                }
+            } finally {
+                releaseLock();
+            }
+        };
+        
+        // Lancer le traitement avec limite de concurrence
+        const startProcessing = async () => {
+            // En production avec MAX_CONCURRENT_CHUNKS = 1, traitement séquentiel strict
+            if (isProduction && MAX_CONCURRENT_CHUNKS === 1) {
+                console.log('🔄 Mode séquentiel strict activé pour la production');
+                for (let i = 0; i < boChunks.length; i++) {
+                    try {
+                        await processChunk(i);
+                        // Délai entre les chunks en production pour laisser le serveur récupérer
+                        if (i < boChunks.length - 1) {
+                            console.log(`⏳ Pause de 1s avant le chunk suivant...`);
+                            await new Promise(resolve => setTimeout(resolve, 1000));
+                        }
+                    } catch (error) {
+                        console.error(`❌ Erreur lors du traitement du chunk ${i + 1}:`, error);
+                        // Continuer avec le chunk suivant même en cas d'erreur
+                    }
+                }
+            } else {
+                // Traitement parallèle avec limite de concurrence
+                const promises: Promise<void>[] = [];
+                
+                for (let i = 0; i < boChunks.length; i++) {
+                    // Attendre qu'un slot soit disponible
+                    while (processingChunks.size >= MAX_CONCURRENT_CHUNKS) {
+                        await new Promise(resolve => setTimeout(resolve, 100));
+                    }
+                    
+                    // Lancer le traitement du chunk
+                    const promise = processChunk(i).finally(() => {
+                        processingChunks.delete(i);
+                    });
+                    
+                    promises.push(promise);
+                }
+                
+                // Attendre que tous les chunks soient terminés
+                await Promise.allSettled(promises);
+            }
+        };
+        
+        startProcessing();
     }
 
     /**
@@ -1021,7 +1347,8 @@ export class ReconciliationService implements OnInit, OnDestroy {
         allMatches: any[], 
         allBoOnly: any[], 
         remainingPartnerData: any[], 
-        observer: any
+        observer: any,
+        startTime?: number
     ): void {
         try {
             console.log('📊 Finalisation des résultats optimisés:', {
@@ -1029,6 +1356,9 @@ export class ReconciliationService implements OnInit, OnDestroy {
                 totalBoOnly: allBoOnly.length,
                 totalPartnerOnly: remainingPartnerData.length
             });
+            
+            // OPTIMISATION: Calculer le temps d'exécution réel
+            const executionTimeMs = startTime ? Date.now() - startTime : 0;
             
             // Créer le résultat final avec gestion d'erreur
             const finalResult: ReconciliationResponse = {
@@ -1042,7 +1372,7 @@ export class ReconciliationService implements OnInit, OnDestroy {
                 totalMismatches: 0,
                 totalBoOnly: allBoOnly.length,
                 totalPartnerOnly: remainingPartnerData.length,
-                executionTimeMs: Date.now(),
+                executionTimeMs: executionTimeMs,
                 processedRecords: allMatches.length + allBoOnly.length + remainingPartnerData.length,
                 progressPercentage: 100
             };

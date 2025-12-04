@@ -18,6 +18,16 @@ export class SopOperationComponent implements OnInit {
   showPopup: boolean = false;
   popupNode: SOPNode | null = null;
   
+  // Modals pour ajouter, modifier et supprimer
+  showAddModal: boolean = false;
+  showEditModal: boolean = false;
+  showDeleteModal: boolean = false;
+  parentNodeForAdd: SOPNode | null = null;
+  nodeToEdit: SOPNode | null = null;
+  nodeToDelete: SOPNode | null = null;
+  newLabel: string = '';
+  editLabel: string = '';
+  
   sopStructure: SOPNode = {
     id: 'root',
     label: 'Visualisation des SOP',
@@ -143,6 +153,123 @@ export class SopOperationComponent implements OnInit {
 
   hasChildren(node: SOPNode): boolean {
     return node.children && node.children.length > 0;
+  }
+
+  // Ouvrir le modal d'ajout
+  openAddModal(node: SOPNode, event: Event): void {
+    event.stopPropagation();
+    this.parentNodeForAdd = node;
+    this.newLabel = '';
+    this.showAddModal = true;
+  }
+
+  // Fermer le modal d'ajout
+  closeAddModal(): void {
+    this.showAddModal = false;
+    this.parentNodeForAdd = null;
+    this.newLabel = '';
+  }
+
+  // Ajouter un nouveau titre/sous-titre
+  addNode(): void {
+    if (!this.parentNodeForAdd || !this.newLabel.trim()) {
+      return;
+    }
+
+    const newNode: SOPNode = {
+      id: this.generateId(this.newLabel),
+      label: this.newLabel.trim(),
+      children: []
+    };
+
+    if (!this.parentNodeForAdd.children) {
+      this.parentNodeForAdd.children = [];
+    }
+    this.parentNodeForAdd.children.push(newNode);
+    this.closeAddModal();
+  }
+
+  // Ouvrir le modal de modification
+  openEditModal(node: SOPNode, event: Event): void {
+    event.stopPropagation();
+    this.nodeToEdit = node;
+    this.editLabel = node.label;
+    this.showEditModal = true;
+  }
+
+  // Fermer le modal de modification
+  closeEditModal(): void {
+    this.showEditModal = false;
+    this.nodeToEdit = null;
+    this.editLabel = '';
+  }
+
+  // Modifier un élément
+  editNode(): void {
+    if (!this.nodeToEdit || !this.editLabel.trim()) {
+      return;
+    }
+
+    this.nodeToEdit.label = this.editLabel.trim();
+    this.closeEditModal();
+  }
+
+  // Ouvrir le modal de suppression
+  openDeleteModal(node: SOPNode, event: Event): void {
+    event.stopPropagation();
+    this.nodeToDelete = node;
+    this.showDeleteModal = true;
+  }
+
+  // Fermer le modal de suppression
+  closeDeleteModal(): void {
+    this.showDeleteModal = false;
+    this.nodeToDelete = null;
+  }
+
+  // Supprimer un élément
+  deleteNode(): void {
+    if (!this.nodeToDelete) {
+      return;
+    }
+
+    // Trouver le parent et supprimer le nœud
+    const parent = this.findParent(this.sopStructure, this.nodeToDelete);
+    if (parent && parent.children) {
+      const index = parent.children.findIndex(child => child.id === this.nodeToDelete!.id);
+      if (index !== -1) {
+        parent.children.splice(index, 1);
+      }
+    }
+
+    this.closeDeleteModal();
+  }
+
+  // Trouver le parent d'un nœud
+  private findParent(root: SOPNode, target: SOPNode): SOPNode | null {
+    if (!root.children) {
+      return null;
+    }
+
+    if (root.children.some(child => child.id === target.id)) {
+      return root;
+    }
+
+    for (const child of root.children) {
+      const found = this.findParent(child, target);
+      if (found) {
+        return found;
+      }
+    }
+
+    return null;
+  }
+
+  // Générer un ID unique basé sur le label
+  private generateId(label: string): string {
+    return label.toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '') + '-' + Date.now();
   }
 }
 

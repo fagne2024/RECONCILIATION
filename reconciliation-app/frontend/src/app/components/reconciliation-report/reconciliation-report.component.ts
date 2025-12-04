@@ -2220,7 +2220,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         return {
             agency: boData['Agence'] || boData['agency'] || boData['agence'] || boData['AGENCE'] || 'Inconnue',
             service: boData['Service'] || boData['service'] || boData['SERVICE'] || 'Inconnu',
-            country: boData['Pays provenance'] || boData['country'] || boData['pays'] || boData['PAYS'] || 'Inconnu',
+            country: boData['GRX'] || boData['grx'] || boData['Pays provenance'] || boData['country'] || boData['pays'] || boData['PAYS'] || 'Inconnu',
             date: boData['Date'] || boData['date'] || boData['DATE'] || new Date().toISOString().split('T')[0],
             volume: this.parseAmount(boData['montant'] || boData['amount'] || boData['AMOUNT'] || '0')
         };
@@ -2230,7 +2230,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         return {
             agency: record['Agence'] || record['agency'] || record['agence'] || record['AGENCE'] || 'Inconnue',
             service: record['Service'] || record['service'] || record['SERVICE'] || 'Inconnu',
-            country: record['Pays provenance'] || record['country'] || record['pays'] || record['PAYS'] || 'Inconnu',
+            country: record['GRX'] || record['grx'] || record['Pays provenance'] || record['country'] || record['pays'] || record['PAYS'] || 'Inconnu',
             date: record['Date'] || record['date'] || record['DATE'] || new Date().toISOString().split('T')[0],
             volume: this.parseAmount(record['montant'] || record['amount'] || record['AMOUNT'] || '0')
         };
@@ -2250,7 +2250,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         return {
             agency: record['Agence'] || record['agency'] || record['agence'] || record['AGENCE'] || 'Inconnue',
             service: record['Service'] || record['service'] || record['SERVICE'] || 'Inconnu',
-            country: record['Pays provenance'] || record['country'] || record['pays'] || record['PAYS'] || 'Inconnu',
+            country: record['GRX'] || record['grx'] || record['Pays provenance'] || record['country'] || record['pays'] || record['PAYS'] || 'Inconnu',
             date: record['Date'] || record['date'] || record['DATE'] || new Date().toISOString().split('T')[0],
             volume: this.parseAmount(record['montant'] || record['amount'] || record['AMOUNT'] || '0')
         };
@@ -2390,6 +2390,8 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             '';
 
         const country =
+            record['GRX'] ||
+            record['grx'] ||
             record['country'] ||
             record['Pays'] ||
             record['PAYS'] ||
@@ -2437,6 +2439,8 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             '';
 
         const country =
+            record['GRX'] ||
+            record['grx'] ||
             record['country'] ||
             record['Pays'] ||
             record['PAYS'] ||

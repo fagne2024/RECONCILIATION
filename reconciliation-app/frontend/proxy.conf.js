@@ -22,17 +22,29 @@ const backendTarget = getBackendTarget();
 console.log('Proxy configuration: Backend target =', backendTarget);
 
 const PROXY_CONFIG = {
+  // Configuration du proxy API uniquement
+  // Les chemins WebSocket du dev-server (sockjs-node, webpack-dev-server) ne sont PAS proxifiés
+  // car ils ne commencent pas par /api
   "/api": {
     "target": backendTarget,
     "secure": false,
     "changeOrigin": true,
     "logLevel": "info",
-    "timeout": 1800000, // 30 minutes pour les gros fichiers (700k lignes)
-    "proxyTimeout": 1800000,
+    "timeout": 3600000, // 60 minutes pour les très gros fichiers (augmenté de 30 à 60 minutes)
+    "proxyTimeout": 3600000,
+    // CRITICAL: Désactiver le proxy WebSocket pour éviter les déconnexions du dev-server
+    // Les WebSockets du dev-server (sockjs-node, webpack-dev-server) ne doivent pas être proxifiés
+    "ws": false,
     "headers": {
       "Connection": "keep-alive"
     },
     "onError": function(err, req, res) {
+      // Ignorer les erreurs WebSocket (normal pour le dev-server)
+      if (req && req.headers && 
+          (req.headers.upgrade === 'websocket' || 
+           (req.headers.connection && req.headers.connection.toLowerCase().includes('upgrade')))) {
+        return;
+      }
       console.error('[Proxy Error]', err.code, err.message, 'for', req.url);
       if (!res.headersSent) {
         res.writeHead(500, {
@@ -46,7 +58,12 @@ const PROXY_CONFIG = {
       }
     },
     "onProxyReq": function(proxyReq, req, res) {
-      proxyReq.setTimeout(1800000);
+      // Ignorer les requêtes WebSocket
+      if (req.headers.upgrade === 'websocket' || 
+          (req.headers.connection && req.headers.connection.toLowerCase().includes('upgrade'))) {
+        return;
+      }
+      proxyReq.setTimeout(3600000); // 60 minutes
       // Log uniquement pour les requêtes importantes
       if (req.url.includes('/reconcile') || req.url.includes('/upload')) {
         console.log('[Proxy]', req.method, req.url, '->', backendTarget + req.url);
@@ -59,8 +76,12 @@ const PROXY_CONFIG = {
       }
     },
     "onClose": function(res, socket, head) {
-      // Log uniquement en cas d'erreur
-      if (socket.destroyed) {
+      // Ignorer les fermetures WebSocket normales
+      if (!socket || (socket.readyState && socket.readyState === socket.OPEN)) {
+        return;
+      }
+      // Log uniquement en cas d'erreur réelle
+      if (socket && socket.destroyed) {
         console.warn('[Proxy] Connection closed unexpectedly');
       }
     }
