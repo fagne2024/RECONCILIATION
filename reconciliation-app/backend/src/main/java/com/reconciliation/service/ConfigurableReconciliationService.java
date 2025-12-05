@@ -59,6 +59,21 @@ public class ConfigurableReconciliationService {
     }
 
     /**
+     * Obtient le modelId du modèle partenaire correspondant aux fichiers
+     * @param request La requête de réconciliation
+     * @return Le modelId du modèle partenaire trouvé, ou null si aucun modèle n'est trouvé
+     */
+    public String getPartnerModelId(ReconciliationRequest request) {
+        AutoProcessingModel partnerModel = findMatchingPartnerModel(request);
+        if (partnerModel != null) {
+            String modelId = partnerModel.getModelId();
+            log.info("🔑 ModelId du modèle partenaire trouvé: {} (modèle: {})", modelId, partnerModel.getName());
+            return modelId;
+        }
+        return null;
+    }
+
+    /**
      * Trouve un modèle partenaire correspondant aux fichiers
      * Utilise un cache local pour éviter les appels multiples dans la même requête
      */

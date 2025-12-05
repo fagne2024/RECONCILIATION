@@ -1649,19 +1649,28 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
            let value = processedRow[columnName];
            const originalValue = value;
            
-           // Appliquer les transformations dans l'ordre
+           // Appliquer les transformations dans l'ordre optimal pour garantir une suppression correcte des caractères
+           // (même ordre que le backend pour cohérence)
+           
+           // 1. Suppression des accents AVANT la suppression des caractères spéciaux
+           //    (pour normaliser les caractères accentués avant qu'ils ne soient supprimés)
+           if (rule.removeAccents) {
+             value = value.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+           }
+           
+           // 2. Suppression de chaînes spécifiques (ex: _CM, _ML, etc.)
+           if (rule.stringToRemove && rule.stringToRemove.trim() !== '') {
+             // Supprimer toutes les occurrences de la chaîne spécifiée
+             value = value.replace(new RegExp(rule.stringToRemove.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), '');
+           }
+           
+           // 3. Suppression des caractères spéciaux (après normalisation des accents)
            if (rule.removeSpecialChars) {
-             // Supprimer les caractères spéciaux autorisés (_CM, _ML, etc.)
-             const allowedSuffixes = ['_CM', '_ML', '_GN', '_CI', '_BF', '_KE', '_SN', '_KN', '_BJ', '_GB'];
-             allowedSuffixes.forEach(suffix => {
-               value = value.replace(new RegExp(suffix, 'g'), '');
-             });
+             // Supprimer tous les caractères qui ne sont pas des lettres, chiffres ou espaces
+             value = value.replace(/[^a-zA-Z0-9\s]/g, '');
            }
            
-           if (rule.trimSpaces) {
-             value = value.trim();
-           }
-           
+           // 4. Transformations de casse (après nettoyage des caractères)
            if (rule.toUpperCase) {
              value = value.toUpperCase();
            }
@@ -1670,8 +1679,9 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
              value = value.toLowerCase();
            }
            
-           if (rule.removeAccents) {
-             value = value.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+           // 5. Trim des espaces EN DERNIER pour nettoyer les espaces restants après toutes les suppressions
+           if (rule.trimSpaces) {
+             value = value.trim();
            }
            
            // Mettre à jour la valeur si elle a changé

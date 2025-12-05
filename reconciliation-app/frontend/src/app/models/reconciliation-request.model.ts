@@ -14,6 +14,9 @@ export interface ReconciliationRequest {
     }[];
     selectedService?: string;
     
+    // ID du modèle de traitement à utiliser pour les règles de nettoyage
+    modelId?: string;
+    
     // Filtres BO pour la réconciliation
     boColumnFilters?: BOColumnFilter[];
     

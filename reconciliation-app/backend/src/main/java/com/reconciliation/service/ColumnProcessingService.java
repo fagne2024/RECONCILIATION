@@ -66,15 +66,31 @@ public class ColumnProcessingService {
         
         String stringValue = value.toString();
         
-        // Appliquer les transformations dans l'ordre
+        // Appliquer les transformations dans l'ordre optimal pour garantir une suppression correcte des caractères
+        // 1. Format type (nettoyage initial basé sur le type)
         stringValue = applyFormatType(stringValue, rule.getFormatType());
-        stringValue = applyCaseTransformations(stringValue, rule);
-        stringValue = applySpaceTransformations(stringValue, rule);
-        stringValue = applySpecialCharTransformations(stringValue, rule);
-        stringValue = applyStringRemoval(stringValue, rule);
+        
+        // 2. Suppression des accents AVANT la suppression des caractères spéciaux
+        //    (pour normaliser les caractères accentués avant qu'ils ne soient supprimés)
         stringValue = applyAccentRemoval(stringValue, rule);
+        
+        // 3. Suppression des caractères spéciaux (après normalisation des accents)
+        stringValue = applySpecialCharTransformations(stringValue, rule);
+        
+        // 4. Suppression de chaînes spécifiques (ex: _CM, _ML, etc.)
+        stringValue = applyStringRemoval(stringValue, rule);
+        
+        // 5. Transformations de casse (après nettoyage des caractères)
+        stringValue = applyCaseTransformations(stringValue, rule);
+        
+        // 6. Padding avec zéros (pour les valeurs numériques)
         stringValue = applyPadding(stringValue, rule);
+        
+        // 7. Remplacement par regex (dernière transformation personnalisée)
         stringValue = applyRegexReplace(stringValue, rule);
+        
+        // 8. Trim des espaces EN DERNIER pour nettoyer les espaces restants après toutes les suppressions
+        stringValue = applySpaceTransformations(stringValue, rule);
         
         return stringValue;
     }
@@ -129,17 +145,19 @@ public class ColumnProcessingService {
      * Applique les transformations de caractères spéciaux
      */
     private String applySpecialCharTransformations(String value, ColumnProcessingRule rule) {
-        if (rule.isRemoveSpecialChars()) {
-            // Supprimer les caractères spéciaux sauf les espaces
-            value = value.replaceAll("[^a-zA-Z0-9\\s]", "");
-        }
-        
-        // Appliquer le mapping de remplacement des caractères spéciaux
+        // D'abord appliquer le mapping de remplacement des caractères spéciaux
+        // (pour permettre de remplacer certains caractères spéciaux par des caractères alphanumériques)
         Map<String, String> replacementMap = rule.getSpecialCharReplacementMap();
         if (replacementMap != null && !replacementMap.isEmpty()) {
             for (Map.Entry<String, String> entry : replacementMap.entrySet()) {
                 value = value.replace(entry.getKey(), entry.getValue());
             }
+        }
+        
+        // Ensuite supprimer les caractères spéciaux restants (sauf les espaces)
+        if (rule.isRemoveSpecialChars()) {
+            // Supprimer tous les caractères qui ne sont pas des lettres, chiffres ou espaces
+            value = value.replaceAll("[^a-zA-Z0-9\\s]", "");
         }
         
         return value;

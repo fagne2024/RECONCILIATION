@@ -12,6 +12,9 @@ public class ReconciliationRequest {
     private String partnerKeyColumn;
     private List<ColumnComparison> comparisonColumns;
     
+    // ID du modèle de traitement à utiliser pour les règles de nettoyage
+    private String modelId;
+    
     // Filtres BO pour la réconciliation
     private List<BOColumnFilter> boColumnFilters;
     

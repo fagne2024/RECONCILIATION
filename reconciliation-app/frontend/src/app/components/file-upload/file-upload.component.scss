@@ -1114,6 +1114,41 @@
             pointer-events: none;
         }
     }
+    
+    .reconciliation-next-btn {
+        background: #4CAF50;
+        border: none;
+        color: white;
+        font-size: 14px;
+        font-weight: 600;
+        cursor: pointer;
+        padding: 10px 20px;
+        border-radius: 6px;
+        transition: all 0.3s ease;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        box-shadow: 0 2px 4px rgba(76, 175, 80, 0.3);
+        
+        &:hover {
+            background: #45a049;
+            box-shadow: 0 4px 8px rgba(76, 175, 80, 0.4);
+            transform: translateY(-1px);
+        }
+        
+        &:active {
+            transform: translateY(0);
+            box-shadow: 0 2px 4px rgba(76, 175, 80, 0.3);
+        }
+        
+        i {
+            font-size: 16px;
+        }
+        
+        span {
+            font-size: 14px;
+        }
+    }
 }
 
 .reconciliation-progress-bar-container {

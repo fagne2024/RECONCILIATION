@@ -1,6 +1,8 @@
 import { Component, OnInit } from '@angular/core';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { SopDocumentService } from '../../services/sop-document.service';
+import { SopNodeService } from '../../services/sop-node.service';
+import { PopupService } from '../../services/popup.service';
 
 interface SOPNode {
   id: string;
@@ -20,10 +22,7 @@ export class SopOperationComponent implements OnInit {
   showPopup: boolean = false;
   popupNode: SOPNode | null = null;
   
-  // Modals pour ajouter, modifier et supprimer
-  showAddModal: boolean = false;
-  showEditModal: boolean = false;
-  showDeleteModal: boolean = false;
+  // Variables pour les opérations (maintenant gérées par les popups modernes)
   parentNodeForAdd: SOPNode | null = null;
   nodeToEdit: SOPNode | null = null;
   nodeToDelete: SOPNode | null = null;
@@ -55,9 +54,9 @@ export class SopOperationComponent implements OnInit {
   editDocumentText: string = '';
   isEditingDocument: boolean = false;
 
-  // Modal de suppression
-  showDeleteDocumentModal: boolean = false;
-  documentToDelete: { nodeId: string; optionType: string; title: string } | null = null;
+  
+  // État de chargement
+  isLoadingStructure: boolean = false;
   
   sopStructure: SOPNode = {
     id: 'root',
@@ -148,10 +147,33 @@ export class SopOperationComponent implements OnInit {
 
   constructor(
     private sopDocumentService: SopDocumentService,
+    private sopNodeService: SopNodeService,
+    private popupService: PopupService,
     private sanitizer: DomSanitizer
   ) { }
 
   ngOnInit(): void {
+    this.loadStructure();
+  }
+
+  loadStructure(): void {
+    this.isLoadingStructure = true;
+    this.sopNodeService.getStructure().subscribe({
+      next: (response) => {
+        if (response.success && response.structure) {
+          this.sopStructure = response.structure;
+        } else {
+          console.error('Erreur lors du chargement de la structure:', response.error);
+          // En cas d'erreur, utiliser la structure par défaut
+        }
+        this.isLoadingStructure = false;
+      },
+      error: (error) => {
+        console.error('Erreur lors du chargement de la structure:', error);
+        // En cas d'erreur, utiliser la structure par défaut
+        this.isLoadingStructure = false;
+      }
+    });
   }
 
   onNodeClick(node: SOPNode, event?: Event): void {
@@ -869,7 +891,7 @@ export class SopOperationComponent implements OnInit {
       },
       error: (error) => {
         console.error('❌ [DOWNLOAD] Erreur lors du téléchargement:', error);
-        alert('Erreur lors du téléchargement du document: ' + (error.message || 'Erreur inconnue'));
+        this.popupService.showError('Erreur lors du téléchargement du document: ' + (error.message || 'Erreur inconnue'), 'Erreur de téléchargement');
       }
     });
   }
@@ -932,13 +954,13 @@ export class SopOperationComponent implements OnInit {
             this.loadDocument(this.currentNodeId, this.currentOptionType);
             this.closeEditDocumentModal();
           } else {
-            alert(response.error || 'Erreur lors de la modification');
+            this.popupService.showError(response.error || 'Erreur lors de la modification', 'Erreur de modification');
           }
           this.isEditingDocument = false;
         },
         error: (error) => {
           console.error('Erreur lors de la modification:', error);
-          alert('Erreur lors de la modification du document');
+          this.popupService.showError('Erreur lors de la modification du document', 'Erreur de modification');
           this.isEditingDocument = false;
         }
       });
@@ -948,53 +970,46 @@ export class SopOperationComponent implements OnInit {
     }
   }
 
-  openDeleteDocumentModal(): void {
+  async openDeleteDocumentModal(): Promise<void> {
     if (!this.currentNodeId || !this.currentOptionType) {
       return;
     }
-    this.documentToDelete = {
-      nodeId: this.currentNodeId,
-      optionType: this.currentOptionType,
-      title: this.documentTitle
-    };
-    this.showDeleteDocumentModal = true;
+    
+    const message = `Êtes-vous sûr de vouloir supprimer le document "${this.documentTitle}" ?\n\n⚠️ Cette action est irréversible. Le document et son contenu seront définitivement supprimés.`;
+    const confirmed = await this.popupService.showConfirm(message, 'Confirmation de suppression');
+    
+    if (confirmed) {
+      await this.deleteDocument();
+    }
   }
 
-  closeDeleteDocumentModal(): void {
-    this.showDeleteDocumentModal = false;
-    this.documentToDelete = null;
-  }
-
-  deleteDocument(): void {
-    if (!this.documentToDelete) {
+  private async deleteDocument(): Promise<void> {
+    if (!this.currentNodeId || !this.currentOptionType) {
       return;
     }
 
     this.sopDocumentService.deleteDocument(
-      this.documentToDelete.nodeId,
-      this.documentToDelete.optionType
+      this.currentNodeId,
+      this.currentOptionType
     ).subscribe({
-      next: (response) => {
+      next: async (response) => {
         if (response.success) {
           this.closeDocumentView();
-          this.closeDeleteDocumentModal();
-          // Ne pas utiliser alert, mais plutôt un message plus élégant
-          console.log('Document supprimé avec succès');
+          await this.popupService.showSuccess('Document supprimé avec succès', 'Succès');
         } else {
           console.error('Erreur suppression:', response.error);
-          alert(response.error || 'Erreur lors de la suppression');
+          await this.popupService.showError(response.error || 'Erreur lors de la suppression', 'Erreur de suppression');
         }
       },
-      error: (error) => {
+      error: async (error) => {
         console.error('Erreur lors de la suppression:', error);
         // Vérifier si c'est une erreur 404 (document non trouvé)
         if (error.status === 404) {
           // Le document n'existe plus, fermer quand même la vue
           this.closeDocumentView();
-          this.closeDeleteDocumentModal();
-          console.log('Document déjà supprimé ou non trouvé');
+          await this.popupService.showInfo('Document déjà supprimé ou non trouvé', 'Information');
         } else {
-          alert('Erreur lors de la suppression du document: ' + (error.error?.error || error.message || 'Erreur inconnue'));
+          await this.popupService.showError('Erreur lors de la suppression du document: ' + (error.error?.error || error.message || 'Erreur inconnue'), 'Erreur de suppression');
         }
       }
     });
@@ -1005,93 +1020,137 @@ export class SopOperationComponent implements OnInit {
   }
 
   // Ouvrir le modal d'ajout
-  openAddModal(node: SOPNode, event: Event): void {
+  async openAddModal(node: SOPNode, event: Event): Promise<void> {
     event.stopPropagation();
     this.parentNodeForAdd = node;
-    this.newLabel = '';
-    this.showAddModal = true;
+    
+    const label = await this.popupService.showTextInput(
+      'Entrez le libellé du nouveau titre/sous-titre :',
+      'Ajouter un titre/sous-titre',
+      '',
+      'Ex: Nouveau titre'
+    );
+    
+    if (label && label.trim()) {
+      await this.addNode(label.trim());
+    }
   }
 
-  // Fermer le modal d'ajout
-  closeAddModal(): void {
-    this.showAddModal = false;
-    this.parentNodeForAdd = null;
-    this.newLabel = '';
-  }
 
   // Ajouter un nouveau titre/sous-titre
-  addNode(): void {
-    if (!this.parentNodeForAdd || !this.newLabel.trim()) {
+  private async addNode(newLabel: string): Promise<void> {
+    if (!this.parentNodeForAdd || !newLabel.trim()) {
       return;
     }
 
-    const newNode: SOPNode = {
-      id: this.generateId(this.newLabel),
-      label: this.newLabel.trim(),
-      children: []
-    };
+    const newNodeId = this.generateId(newLabel);
+    const parentNodeId = this.parentNodeForAdd.id === 'root' ? undefined : this.parentNodeForAdd.id;
 
-    if (!this.parentNodeForAdd.children) {
-      this.parentNodeForAdd.children = [];
-    }
-    this.parentNodeForAdd.children.push(newNode);
-    this.closeAddModal();
+    // Sauvegarder en base de données
+    this.sopNodeService.createNode(newNodeId, newLabel, parentNodeId).subscribe({
+      next: async (response) => {
+        if (response.success) {
+          // Recharger la structure depuis la base pour avoir la version à jour
+          this.loadStructure();
+          await this.popupService.showSuccess('Nœud créé avec succès', 'Succès');
+        } else {
+          console.error('Erreur lors de la création:', response.error);
+          await this.popupService.showError('Erreur lors de la création: ' + (response.error || 'Erreur inconnue'), 'Erreur de création');
+        }
+      },
+      error: async (error) => {
+        console.error('Erreur lors de la création:', error);
+        await this.popupService.showError('Erreur lors de la création du nœud', 'Erreur de création');
+      }
+    });
   }
 
   // Ouvrir le modal de modification
-  openEditModal(node: SOPNode, event: Event): void {
+  async openEditModal(node: SOPNode, event: Event): Promise<void> {
     event.stopPropagation();
     this.nodeToEdit = node;
-    this.editLabel = node.label;
-    this.showEditModal = true;
+    
+    const newLabel = await this.popupService.showTextInput(
+      'Modifiez le libellé :',
+      'Modifier le titre/sous-titre',
+      node.label,
+      'Ex: Nouveau libellé'
+    );
+    
+    if (newLabel && newLabel.trim() && newLabel.trim() !== node.label) {
+      await this.editNode(newLabel.trim());
+    }
   }
 
-  // Fermer le modal de modification
-  closeEditModal(): void {
-    this.showEditModal = false;
-    this.nodeToEdit = null;
-    this.editLabel = '';
-  }
 
   // Modifier un élément
-  editNode(): void {
-    if (!this.nodeToEdit || !this.editLabel.trim()) {
+  private async editNode(newLabel: string): Promise<void> {
+    if (!this.nodeToEdit || !newLabel.trim()) {
       return;
     }
 
-    this.nodeToEdit.label = this.editLabel.trim();
-    this.closeEditModal();
+    // Sauvegarder en base de données
+    this.sopNodeService.updateNode(this.nodeToEdit.id, newLabel).subscribe({
+      next: async (response) => {
+        if (response.success) {
+          // Recharger la structure depuis la base pour avoir la version à jour
+          this.loadStructure();
+          await this.popupService.showSuccess('Nœud modifié avec succès', 'Succès');
+        } else {
+          console.error('Erreur lors de la modification:', response.error);
+          await this.popupService.showError('Erreur lors de la modification: ' + (response.error || 'Erreur inconnue'), 'Erreur de modification');
+        }
+      },
+      error: async (error) => {
+        console.error('Erreur lors de la modification:', error);
+        await this.popupService.showError('Erreur lors de la modification du nœud', 'Erreur de modification');
+      }
+    });
   }
 
   // Ouvrir le modal de suppression
-  openDeleteModal(node: SOPNode, event: Event): void {
+  async openDeleteModal(node: SOPNode, event: Event): Promise<void> {
     event.stopPropagation();
     this.nodeToDelete = node;
-    this.showDeleteModal = true;
+    
+    let message = `Êtes-vous sûr de vouloir supprimer "${node.label}" ?`;
+    if (node.children && node.children.length > 0) {
+      message += `\n\n⚠️ Attention : Ce nœud contient ${node.children.length} sous-élément(s) qui seront également supprimés.`;
+    }
+    
+    const confirmed = await this.popupService.showConfirm(message, 'Confirmation de suppression');
+    
+    if (confirmed) {
+      await this.deleteNode();
+    }
   }
 
-  // Fermer le modal de suppression
-  closeDeleteModal(): void {
-    this.showDeleteModal = false;
-    this.nodeToDelete = null;
-  }
 
   // Supprimer un élément
-  deleteNode(): void {
+  private async deleteNode(): Promise<void> {
     if (!this.nodeToDelete) {
       return;
     }
 
-    // Trouver le parent et supprimer le nœud
-    const parent = this.findParent(this.sopStructure, this.nodeToDelete);
-    if (parent && parent.children) {
-      const index = parent.children.findIndex(child => child.id === this.nodeToDelete!.id);
-      if (index !== -1) {
-        parent.children.splice(index, 1);
-      }
-    }
+    const nodeIdToDelete = this.nodeToDelete.id;
 
-    this.closeDeleteModal();
+    // Sauvegarder en base de données
+    this.sopNodeService.deleteNode(nodeIdToDelete).subscribe({
+      next: async (response) => {
+        if (response.success) {
+          // Recharger la structure depuis la base pour avoir la version à jour
+          this.loadStructure();
+          await this.popupService.showSuccess('Nœud supprimé avec succès', 'Succès');
+        } else {
+          console.error('Erreur lors de la suppression:', response.error);
+          await this.popupService.showError('Erreur lors de la suppression: ' + (response.error || 'Erreur inconnue'), 'Erreur de suppression');
+        }
+      },
+      error: async (error) => {
+        console.error('Erreur lors de la suppression:', error);
+        await this.popupService.showError('Erreur lors de la suppression du nœud', 'Erreur de suppression');
+      }
+    });
   }
 
   // Trouver le parent d'un nœud

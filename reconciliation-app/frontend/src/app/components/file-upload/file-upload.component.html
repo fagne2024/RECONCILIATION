@@ -339,7 +339,19 @@
                         <div class="reconciliation-progress-icon" *ngIf="reconciliationProgress.percentage === 100">
                             <i class="fas fa-check-circle" style="color: #4CAF50;"></i>
                         </div>
-                        <button class="reconciliation-close-btn" (click)="closeReconciliationProgress()" title="Fermer">
+                        <!-- Bouton "Suivant" quand la réconciliation est terminée -->
+                        <button *ngIf="reconciliationProgress.percentage === 100" 
+                                class="reconciliation-next-btn" 
+                                (click)="closeReconciliationProgress()" 
+                                title="Suivant">
+                            <i class="fas fa-arrow-right"></i>
+                            <span>Suivant</span>
+                        </button>
+                        <!-- Bouton "Fermer" quand la réconciliation est en cours -->
+                        <button *ngIf="reconciliationProgress.percentage < 100" 
+                                class="reconciliation-close-btn" 
+                                (click)="closeReconciliationProgress()" 
+                                title="Fermer">
                             <i class="fas fa-times"></i>
                         </button>
                     </div>

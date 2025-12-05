@@ -400,88 +400,6 @@
     </div>
   </div>
 
-  <!-- Modal d'ajout -->
-  <div class="modal-overlay" *ngIf="showAddModal" (click)="closeAddModal()">
-    <div class="modal-content" (click)="$event.stopPropagation()">
-      <div class="modal-header">
-        <h3>Ajouter un titre/sous-titre</h3>
-        <button class="btn-close-modal" (click)="closeAddModal()">
-          <i class="fas fa-times"></i>
-        </button>
-      </div>
-      <div class="modal-body">
-        <div class="form-group">
-          <label for="newLabel">Libellé :</label>
-          <input 
-            type="text" 
-            id="newLabel" 
-            [(ngModel)]="newLabel" 
-            class="form-input"
-            placeholder="Entrez le libellé du titre/sous-titre"
-            (keyup.enter)="addNode()"
-            autofocus>
-        </div>
-      </div>
-      <div class="modal-footer">
-        <button class="btn btn-secondary" (click)="closeAddModal()">Annuler</button>
-        <button class="btn btn-primary" (click)="addNode()" [disabled]="!newLabel.trim()">Ajouter</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Modal de modification -->
-  <div class="modal-overlay" *ngIf="showEditModal" (click)="closeEditModal()">
-    <div class="modal-content" (click)="$event.stopPropagation()">
-      <div class="modal-header">
-        <h3>Modifier le titre/sous-titre</h3>
-        <button class="btn-close-modal" (click)="closeEditModal()">
-          <i class="fas fa-times"></i>
-        </button>
-      </div>
-      <div class="modal-body">
-        <div class="form-group">
-          <label for="editLabel">Libellé :</label>
-          <input 
-            type="text" 
-            id="editLabel" 
-            [(ngModel)]="editLabel" 
-            class="form-input"
-            placeholder="Entrez le nouveau libellé"
-            (keyup.enter)="editNode()"
-            autofocus>
-        </div>
-      </div>
-      <div class="modal-footer">
-        <button class="btn btn-secondary" (click)="closeEditModal()">Annuler</button>
-        <button class="btn btn-primary" (click)="editNode()" [disabled]="!editLabel.trim()">Enregistrer</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Modal de suppression -->
-  <div class="modal-overlay" *ngIf="showDeleteModal" (click)="closeDeleteModal()">
-    <div class="modal-content" (click)="$event.stopPropagation()">
-      <div class="modal-header">
-        <h3>Supprimer le titre/sous-titre</h3>
-        <button class="btn-close-modal" (click)="closeDeleteModal()">
-          <i class="fas fa-times"></i>
-        </button>
-      </div>
-      <div class="modal-body">
-        <p class="delete-confirmation">
-          Êtes-vous sûr de vouloir supprimer <strong>{{ nodeToDelete?.label }}</strong> ?
-        </p>
-        <p class="delete-warning" *ngIf="nodeToDelete?.children && nodeToDelete.children.length > 0">
-          <i class="fas fa-exclamation-triangle"></i>
-          Attention : Ce nœud contient {{ nodeToDelete.children.length }} sous-élément(s) qui seront également supprimés.
-        </p>
-      </div>
-      <div class="modal-footer">
-        <button class="btn btn-secondary" (click)="closeDeleteModal()">Annuler</button>
-        <button class="btn btn-danger" (click)="deleteNode()">Supprimer</button>
-      </div>
-    </div>
-  </div>
 
   <!-- Modal d'upload de document -->
   <div class="modal-overlay" *ngIf="showUploadModal" (click)="closeUploadModal()">
@@ -637,29 +555,5 @@
     </div>
   </div>
 
-  <!-- Modal de suppression de document -->
-  <div class="modal-overlay" *ngIf="showDeleteDocumentModal" (click)="closeDeleteDocumentModal()">
-    <div class="modal-content" (click)="$event.stopPropagation()">
-      <div class="modal-header">
-        <h3>Supprimer le document</h3>
-        <button class="btn-close-modal" (click)="closeDeleteDocumentModal()">
-          <i class="fas fa-times"></i>
-        </button>
-      </div>
-      <div class="modal-body">
-        <p class="delete-confirmation">
-          Êtes-vous sûr de vouloir supprimer le document <strong>{{ documentToDelete?.title }}</strong> ?
-        </p>
-        <p class="delete-warning">
-          <i class="fas fa-exclamation-triangle"></i>
-          Cette action est irréversible. Le document et son contenu seront définitivement supprimés.
-        </p>
-      </div>
-      <div class="modal-footer">
-        <button class="btn btn-secondary" (click)="closeDeleteDocumentModal()">Annuler</button>
-        <button class="btn btn-danger" (click)="deleteDocument()">Supprimer</button>
-      </div>
-    </div>
-  </div>
 </div>
 

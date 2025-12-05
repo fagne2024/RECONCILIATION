@@ -67,8 +67,21 @@ public class CsvReconciliationService implements DisposableBean {
             request.getBoFileContent().size(), request.getPartnerFileContent().size());
         
         // Application des règles de traitement des colonnes
-        List<Map<String, String>> processedBoData = applyColumnProcessingRules(request.getBoFileContent(), "bo");
-        List<Map<String, String>> processedPartnerData = applyColumnProcessingRules(request.getPartnerFileContent(), "partner");
+        String modelId = request.getModelId();
+        // Si modelId n'est pas fourni directement, essayer de le récupérer depuis les filtres BO
+        if (modelId == null && request.getBoColumnFilters() != null && !request.getBoColumnFilters().isEmpty()) {
+            modelId = request.getBoColumnFilters().get(0).getModelId();
+        }
+        // Si modelId n'est toujours pas fourni, essayer de le détecter automatiquement depuis le modèle partenaire
+        if (modelId == null || modelId.isEmpty()) {
+            String detectedModelId = configurableReconciliationService.getPartnerModelId(request);
+            if (detectedModelId != null && !detectedModelId.isEmpty()) {
+                modelId = detectedModelId;
+                logger.info("🔑 ModelId détecté automatiquement depuis le modèle partenaire: {}", modelId);
+            }
+        }
+        List<Map<String, String>> processedBoData = applyColumnProcessingRules(request.getBoFileContent(), "bo", modelId);
+        List<Map<String, String>> processedPartnerData = applyColumnProcessingRules(request.getPartnerFileContent(), "partner", modelId);
         
                     // DEBUG: Afficher quelques exemples de valeurs (après traitement)
             if (!processedBoData.isEmpty()) {
@@ -1386,12 +1399,61 @@ public class CsvReconciliationService implements DisposableBean {
     
     /**
      * Applique les règles de traitement des colonnes aux données
+     * Utilise les règles configurées dans le modèle si un modelId est fourni
      */
-    private List<Map<String, String>> applyColumnProcessingRules(List<Map<String, String>> data, String fileType) {
-        logger.debug("Application des règles de traitement pour le type: {}", fileType);
+    private List<Map<String, String>> applyColumnProcessingRules(List<Map<String, String>> data, String fileType, String modelId) {
+        logger.debug("Application des règles de traitement pour le type: {}, modelId: {}", fileType, modelId);
         
-        // Pour l'instant, appliquer une règle hardcodée pour IDTransaction
-        // TODO: Récupérer les vraies règles depuis les modèles
+        // Si un modelId est fourni, utiliser le ColumnProcessingService pour appliquer les règles du modèle
+        if (modelId != null && !modelId.isEmpty()) {
+            try {
+                logger.info("🔧 Application des règles du modèle {} pour le type {}", modelId, fileType);
+                
+                // Convertir List<Map<String, String>> en List<Map<String, Object>> pour le ColumnProcessingService
+                List<Map<String, Object>> dataAsObject = new ArrayList<>();
+                for (Map<String, String> row : data) {
+                    Map<String, Object> rowAsObject = new HashMap<>(row);
+                    dataAsObject.add(rowAsObject);
+                }
+                
+                // Appliquer les règles du modèle
+                List<Map<String, Object>> processedDataAsObject = columnProcessingService.processDataList(modelId, dataAsObject);
+                
+                // Convertir de nouveau en List<Map<String, String>>
+                List<Map<String, String>> processedData = new ArrayList<>();
+                for (Map<String, Object> row : processedDataAsObject) {
+                    Map<String, String> rowAsString = new HashMap<>();
+                    for (Map.Entry<String, Object> entry : row.entrySet()) {
+                        rowAsString.put(entry.getKey(), entry.getValue() != null ? entry.getValue().toString() : null);
+                    }
+                    processedData.add(rowAsString);
+                }
+                
+                logger.info("✅ Règles du modèle {} appliquées à {} lignes", modelId, processedData.size());
+                
+                // Log quelques exemples de transformations pour debug
+                if (!processedData.isEmpty() && !data.isEmpty()) {
+                    Map<String, String> firstOriginal = data.get(0);
+                    Map<String, String> firstProcessed = processedData.get(0);
+                    for (String key : firstOriginal.keySet()) {
+                        String originalValue = firstOriginal.get(key);
+                        String processedValue = firstProcessed.get(key);
+                        if (originalValue != null && processedValue != null && !originalValue.equals(processedValue)) {
+                            logger.debug("Transformation {}: '{}' → '{}'", key, originalValue, processedValue);
+                        }
+                    }
+                }
+                
+                return processedData;
+            } catch (Exception e) {
+                logger.error("❌ Erreur lors de l'application des règles du modèle {}: {}", modelId, e.getMessage(), e);
+                logger.warn("⚠️ Utilisation des règles hardcodées en fallback");
+                // En cas d'erreur, continuer avec les règles hardcodées
+            }
+        }
+        
+        // Fallback: règles hardcodées si aucun modelId ou en cas d'erreur
+        logger.debug("Utilisation des règles hardcodées (fallback)");
         List<Map<String, String>> processedData = new ArrayList<>();
         
         for (Map<String, String> row : data) {
