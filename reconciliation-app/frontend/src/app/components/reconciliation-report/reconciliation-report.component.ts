@@ -3900,6 +3900,19 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
     }
 
     /**
+     * Force un rechargement complet de la page sans cache (équivalent à Shift+F5)
+     */
+    private forceReload(): void {
+        // Attendre un court délai pour laisser le message de succès s'afficher
+        setTimeout(() => {
+            // Forcer le rechargement sans cache en ajoutant un paramètre unique à l'URL
+            const url = new URL(window.location.href);
+            url.searchParams.set('_reload', Date.now().toString());
+            window.location.href = url.toString();
+        }, 500);
+    }
+
+    /**
      * Détermine le traitement par défaut selon la présence d'écarts
      * - Si écarts > 0 : "Niveau Support"
      * - Si pas d'écarts (tous à 0) : "Niveau Group"
@@ -3948,6 +3961,8 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             next: (saved) => {
                 item.id = saved.id;
                 this.popupService.showSuccess('Ligne sauvegardée avec succès');
+                // Forcer le rechargement sans cache après sauvegarde
+                this.forceReload();
             },
             error: (err: HttpErrorResponse) => {
                 if (err.status === 409) {
@@ -4040,6 +4055,8 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                 this.popupService.showSuccess('Ligne mise à jour avec succès');
                 // Mettre à jour localement l'item avec le commentaire préservé
                 item.comment = savedComment;
+                // Forcer le rechargement sans cache après mise à jour
+                this.forceReload();
                 
                 // Créer une map pour préserver les commentaires lors du rechargement
                 const preserveComments = new Map<number, string>();
@@ -4122,6 +4139,8 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                 const message = typeof res === 'string' ? res : `${rowsSource.length} ligne(s) sauvegardée(s)`;
                 console.log('✅ Sauvegarde bulk réussie:', message);
                 this.popupService.showSuccess(message);
+                // Forcer le rechargement sans cache après sauvegarde en masse
+                this.forceReload();
             },
             error: (err: HttpErrorResponse) => {
                 console.error('❌ Erreur de sauvegarde bulk', err);
