@@ -57,6 +57,12 @@ public class Result8RecController {
             log.info("🔄 Traitement par défaut défini: {}", body.getTraitement());
         }
         
+        // Définir le username depuis le contexte de la requête
+        String username = RequestContextUtil.getUsernameFromRequest();
+        if (username != null && !username.isEmpty()) {
+            body.setUsername(username);
+        }
+        
         body.setCreatedAt(Instant.now().toString());
         Result8RecEntity saved = repository.save(body);
         log.info("✅ result8rec sauvegardé id={}", saved.getId());
@@ -207,6 +213,9 @@ public class Result8RecController {
 
     @PostMapping("/bulk")
     public ResponseEntity<?> saveBulk(@RequestBody List<Result8RecEntity> rows) {
+        // Récupérer le username depuis le contexte de la requête
+        String username = RequestContextUtil.getUsernameFromRequest();
+        
         int duplicates = 0;
         for (Result8RecEntity r : rows) {
             if (repository.existsByDateAndAgencyAndServiceAndCountry(r.getDate(), r.getAgency(), r.getService(), r.getCountry())) {
@@ -217,6 +226,11 @@ public class Result8RecController {
             // Définir le traitement par défaut si non spécifié
             if (r.getTraitement() == null || r.getTraitement().trim().isEmpty()) {
                 r.setTraitement(determineDefaultTraitement(r));
+            }
+            
+            // Définir le username depuis le contexte de la requête
+            if (username != null && !username.isEmpty()) {
+                r.setUsername(username);
             }
             
             r.setCreatedAt(Instant.now().toString());
@@ -265,6 +279,12 @@ public class Result8RecController {
                     }
                     
                     if (body.getGlpiId() != null) existing.setGlpiId(body.getGlpiId());
+                    
+                    // Mettre à jour le username depuis le contexte de la requête
+                    String username = RequestContextUtil.getUsernameFromRequest();
+                    if (username != null && !username.isEmpty()) {
+                        existing.setUsername(username);
+                    }
                     
                     Result8RecEntity saved = repository.save(existing);
                     log.info("✅ result8rec mis à jour id={} - Date: {}, Agency: {}, Service: {}, Country: {}, Transactions: {}, Volume: {}, Matches: {}, BoOnly: {}, PartnerOnly: {}, Mismatches: {}, MatchRate: {}", 

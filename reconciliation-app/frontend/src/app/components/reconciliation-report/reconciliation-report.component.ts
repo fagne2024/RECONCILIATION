@@ -31,6 +31,7 @@ export interface ReconciliationReportData {
     status: string;
     comment: string;
     traitement?: string;
+    username?: string;
 }
 
 @Component({
@@ -306,6 +307,7 @@ export interface ReconciliationReportData {
                             <th class="col-select">Statut</th>
                             <th class="col-select">Commentaire</th>
                             <th class="col-select">Traitement</th>
+                            <th class="col-text">Utilisateur</th>
                             <th *ngIf="showActionsColumn" class="col-actions">Actions</th>
                         </tr>
                     </thead>
@@ -504,6 +506,9 @@ export interface ReconciliationReportData {
                                         <option *ngFor="let t of traitementOptions" [ngValue]="t">{{t}}</option>
                                     </select>
                                 </ng-template>
+                            </td>
+                            <td class="text-cell">
+                                {{item.username || '-'}}
                             </td>
                             <td *ngIf="showActionsColumn" class="actions-cell">
                                 <ng-container *ngIf="editingRow !== item; else editingActions">
@@ -3813,7 +3818,8 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                         matchRate: r.matchRate || 0,
                         status: r.status || '',
                         comment: comment,
-                        traitement: traitement
+                        traitement: traitement,
+                        username: r.username || ''
                     };
                 });
                 this.enforceDefaultStatusForReportData();

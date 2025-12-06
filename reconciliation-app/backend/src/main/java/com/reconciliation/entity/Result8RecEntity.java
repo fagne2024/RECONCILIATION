@@ -25,6 +25,7 @@ public class Result8RecEntity {
     private String status;
     private String comment;
     private String traitement;
+    private String username;
 
     private String glpiId;
 
@@ -74,6 +75,9 @@ public class Result8RecEntity {
 
     public String getTraitement() { return traitement; }
     public void setTraitement(String traitement) { this.traitement = traitement; }
+
+    public String getUsername() { return username; }
+    public void setUsername(String username) { this.username = username; }
 
     public String getGlpiId() { return glpiId; }
     public void setGlpiId(String glpiId) { this.glpiId = glpiId; }

@@ -19,6 +19,7 @@ export interface Result8RecData {
     status: string;
     comment: string;
     traitement?: string;
+    username?: string;
     glpiId: string;
     createdAt: string;
 }
