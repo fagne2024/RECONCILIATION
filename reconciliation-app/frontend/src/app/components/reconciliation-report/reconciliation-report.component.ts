@@ -61,6 +61,9 @@ export interface ReconciliationReportData {
                     <button class="btn btn-dashboard" (click)="goToReconciliationDashboard()" [disabled]="!filteredReportData.length && !reportData.length">
                         📈 Tableau de bord
                     </button>
+                    <button class="btn btn-suivi-ecarts" (click)="goToSuiviEcarts()" title="Ouvrir le suivi des écarts">
+                        📋 Suivi des écarts
+                    </button>
                     <button class="btn btn-toggle-actions" (click)="toggleActionsColumn()" [title]="showActionsColumn ? 'Masquer la colonne Actions' : 'Afficher la colonne Actions'">
                         {{ showActionsColumn ? '👁️ Masquer Actions' : '👁️‍🗨️ Afficher Actions' }}
                     </button>
@@ -703,6 +706,16 @@ export interface ReconciliationReportData {
 
         .btn-dashboard:hover:not(:disabled) {
             background: #e8650e;
+            transform: translateY(-1px);
+        }
+
+        .btn-suivi-ecarts {
+            background: #6f42c1;
+            color: white;
+        }
+
+        .btn-suivi-ecarts:hover:not(:disabled) {
+            background: #5a32a3;
             transform: translateY(-1px);
         }
 
@@ -5087,6 +5100,10 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
 
     toggleActionsColumn() {
         this.showActionsColumn = !this.showActionsColumn;
+    }
+
+    goToSuiviEcarts() {
+        this.router.navigate(['/suivi-des-ecarts']);
     }
 
     // Méthode pour charger les données en cours

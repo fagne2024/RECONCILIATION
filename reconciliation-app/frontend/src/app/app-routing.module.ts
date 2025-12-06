@@ -43,6 +43,7 @@ import { TwoFactorAuthComponent } from './components/two-factor-auth/two-factor-
 import { UserProfileComponent } from './components/user-profile/user-profile.component';
 import { AideComponent } from './components/aide/aide.component';
 import { SopOperationComponent } from './components/sop-operation/sop-operation.component';
+import { SuiviDesEcartsComponent } from './components/suivi-des-ecarts/suivi-des-ecarts.component';
 import { AuthGuard } from './guards/auth.guard';
 import { AdminGuard } from './guards/admin.guard';
 
@@ -93,6 +94,7 @@ const routes: Routes = [
   { path: 'user-profile', component: UserProfileComponent, canActivate: [AuthGuard] },
   { path: 'aide', component: AideComponent, canActivate: [AuthGuard] },
   { path: 'sop-operation', component: SopOperationComponent, canActivate: [AuthGuard] },
+  { path: 'suivi-des-ecarts', component: SuiviDesEcartsComponent, canActivate: [AuthGuard] },
 ];
 
 @NgModule({

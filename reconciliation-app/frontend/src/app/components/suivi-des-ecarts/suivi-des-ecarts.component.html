@@ -1,0 +1,419 @@
+<div class="page-header">
+  <div class="breadcrumb">
+    <a routerLink="/reconciliation-report" class="breadcrumb-link">← Retour au Rapport</a>
+  </div>
+</div>
+
+<div class="suivi-ecarts-container">
+  <div class="header">
+    <h2>📊 Suivi des Écarts</h2>
+    <div class="header-actions">
+      <button class="btn btn-secondary" (click)="loadData()" [disabled]="isLoading">
+        <i class="fas fa-sync-alt" [class.fa-spin]="isLoading"></i> Actualiser
+      </button>
+      <button class="btn btn-primary" (click)="goBack()">
+        <i class="fas fa-arrow-left"></i> Retour
+      </button>
+    </div>
+  </div>
+
+  <!-- Actions -->
+  <div class="actions-section">
+    <div class="actions-left">
+      <button class="btn btn-primary" (click)="openAddModal()">
+        <i class="fas fa-plus"></i> Ajouter une ligne
+      </button>
+      <button class="btn btn-info" (click)="downloadTemplate()">
+        <i class="fas fa-download"></i> Télécharger le modèle
+      </button>
+    </div>
+  </div>
+
+  <!-- Filtres -->
+  <div class="filters-section">
+    <h3>Filtres</h3>
+    <div class="filters-container">
+      <div class="filter-group">
+        <label>Date de début:</label>
+        <input 
+          type="date" 
+          [(ngModel)]="selectedDateDebut" 
+          (change)="applyFilters()"
+          class="filter-input">
+      </div>
+      <div class="filter-group">
+        <label>Date de fin:</label>
+        <div class="filter-inline">
+          <input 
+            type="date" 
+            [(ngModel)]="selectedDateFin" 
+            (change)="applyFilters()"
+            class="filter-input">
+          <button 
+            type="button" 
+            (click)="clearDateFilters()" 
+            class="btn-clear-filter"
+            title="Effacer les filtres de date">
+            🗑️
+          </button>
+        </div>
+      </div>
+      <div class="filter-group">
+        <label>Agence:</label>
+        <div class="filter-inline">
+          <input 
+            type="text" 
+            [(ngModel)]="selectedAgence" 
+            (input)="onAgenceFilterChange()"
+            placeholder="Tapez pour rechercher..."
+            class="filter-input"
+            list="agency-list">
+          <button 
+            type="button" 
+            class="btn-clear-filter" 
+            title="Effacer le filtre agence"
+            (click)="clearAgenceFilter()">
+            🗑️
+          </button>
+        </div>
+        <datalist id="agency-list">
+          <option *ngFor="let agency of filteredAgencies" [value]="agency">{{agency}}</option>
+        </datalist>
+      </div>
+      <div class="filter-group">
+        <label>Service:</label>
+        <div class="filter-inline">
+          <input 
+            type="text" 
+            [(ngModel)]="selectedService" 
+            (input)="onServiceFilterChange()"
+            placeholder="Tapez pour rechercher..."
+            class="filter-input"
+            list="service-list">
+          <button 
+            type="button" 
+            class="btn-clear-filter" 
+            title="Effacer le filtre service"
+            (click)="clearServiceFilter()">
+            🗑️
+          </button>
+        </div>
+        <datalist id="service-list">
+          <option *ngFor="let service of filteredServices" [value]="service">{{service}}</option>
+        </datalist>
+      </div>
+      <div class="filter-group">
+        <label>Pays:</label>
+        <select 
+          [(ngModel)]="selectedPays" 
+          (change)="applyFilters()"
+          class="filter-select">
+          <option value="">Tous les pays</option>
+          <option *ngFor="let pays of uniquePays" [value]="pays">{{pays}}</option>
+        </select>
+      </div>
+      <div class="filter-group">
+        <label>Statut:</label>
+        <select 
+          [(ngModel)]="selectedStatut" 
+          (change)="applyFilters()"
+          class="filter-select">
+          <option value="">Tous les statuts</option>
+          <option *ngFor="let statut of statutOptions" [value]="statut">{{statut}}</option>
+        </select>
+      </div>
+      <div class="filter-group">
+        <label>Traitement:</label>
+        <select 
+          [(ngModel)]="selectedTraitement" 
+          (change)="applyFilters()"
+          class="filter-select">
+          <option value="">Tous les traitements</option>
+          <option *ngFor="let traitement of traitementOptions" [value]="traitement">{{traitement}}</option>
+        </select>
+      </div>
+      <div class="filter-group">
+        <label>Token:</label>
+        <div class="filter-inline">
+          <input 
+            type="text" 
+            [(ngModel)]="selectedToken" 
+            (input)="applyFilters()"
+            placeholder="Rechercher..."
+            class="filter-input">
+          <button 
+            type="button" 
+            class="btn-clear-filter" 
+            title="Effacer le filtre token"
+            (click)="clearTokenFilter()">
+            🗑️
+          </button>
+        </div>
+      </div>
+      <div class="filter-group">
+        <label>IDPartenaire:</label>
+        <div class="filter-inline">
+          <input 
+            type="text" 
+            [(ngModel)]="selectedIdPartenaire" 
+            (input)="applyFilters()"
+            placeholder="Rechercher..."
+            class="filter-input">
+          <button 
+            type="button" 
+            class="btn-clear-filter" 
+            title="Effacer le filtre IDPartenaire"
+            (click)="clearIdPartenaireFilter()">
+            🗑️
+          </button>
+        </div>
+      </div>
+      <div class="filter-group filter-actions">
+        <button type="button" class="btn btn-secondary" (click)="clearAllFilters()">
+          <i class="fas fa-times"></i> Effacer tous les filtres
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Section Upload -->
+  <div class="upload-section">
+    <h3>Import de fichier (CSV, XLS, XLSX)</h3>
+    <div class="upload-form">
+      <div class="file-input-group">
+        <input 
+          type="file" 
+          class="file-input" 
+          (change)="onFileSelected($event)"
+          accept=".csv,.xlsx,.xls"
+          #fileInput>
+        <button 
+          type="button" 
+          class="btn btn-success" 
+          (click)="uploadFile()"
+          [disabled]="!selectedFile || isUploading">
+          <i class="fas fa-upload"></i> 
+          {{ isUploading ? 'Upload en cours...' : 'Uploader' }}
+        </button>
+      </div>
+      
+      <div class="upload-messages" *ngIf="uploadMessage">
+        <div class="alert" [ngClass]="uploadMessage.type === 'success' ? 'alert-success' : 'alert-danger'">
+          {{ uploadMessage.text }}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tableau -->
+  <div class="table-section">
+    <div class="table-container" *ngIf="!isLoading; else loadingTemplate">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Agence</th>
+            <th>Service</th>
+            <th>Pays</th>
+            <th>Montant</th>
+            <th>Token</th>
+            <th>IDPartenaire</th>
+            <th>Statut</th>
+            <th>Traitement</th>
+            <th>ID TICKET</th>
+            <th>Utilisateur</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let item of pagedItems">
+            <td>{{ item.date | date:'dd/MM/yyyy' }}</td>
+            <td>{{ item.agence }}</td>
+            <td>{{ item.service }}</td>
+            <td>{{ item.pays }}</td>
+            <td class="amount">{{ item.montant | number:'1.2-2' }}</td>
+            <td>{{ item.token }}</td>
+            <td>{{ item.idPartenaire }}</td>
+            <td class="select-cell">
+              <ng-container *ngIf="editingStatusRow !== item; else editStatus">
+                <span [class]="getStatusClass(item.statut)" 
+                      class="status-badge" 
+                      (click)="startEditStatus(item)" 
+                      style="cursor: pointer;"
+                      title="Cliquer pour modifier">
+                  {{ item.statut }}
+                </span>
+              </ng-container>
+              <ng-template #editStatus>
+                <select [(ngModel)]="item.statut" class="edit-select" (change)="onStatusChange(item)" (blur)="stopEditStatus()">
+                  <option *ngFor="let s of statutOptions" [ngValue]="s">{{ s }}</option>
+                </select>
+              </ng-template>
+            </td>
+            <td class="select-cell traitement-cell">
+              <ng-container *ngIf="editingTraitementRow !== item; else editTraitement">
+                <span [class]="getTraitementClass(item.traitement)" 
+                      class="traitement-badge" 
+                      (click)="startEditTraitement(item)" 
+                      style="cursor: pointer;"
+                      title="Cliquer pour modifier">
+                  {{ item.traitement || '-' }}
+                </span>
+              </ng-container>
+              <ng-template #editTraitement>
+                <select [(ngModel)]="item.traitement" class="edit-select" (change)="onTraitementChange(item)" (blur)="stopEditTraitement()">
+                  <option [ngValue]="undefined">-</option>
+                  <option *ngFor="let t of traitementOptions" [ngValue]="t">{{ t }}</option>
+                </select>
+              </ng-template>
+            </td>
+            <td class="text-cell">
+              <div class="glpi-cell">
+                <ng-container *ngIf="item.glpiId && item.glpiId.trim(); else glpiInput">
+                  <span class="glpi-link" (click)="showTicketOptionsPopup(item.glpiId)" title="Choisir une option pour ouvrir le ticket" style="cursor: pointer;">{{item.glpiId}}</span>
+                </ng-container>
+                <ng-template #glpiInput>
+                  <div class="glpi-input-container" [class.glpi-disabled]="item.statut === 'OK'">
+                    <input 
+                      [(ngModel)]="item.glpiId" 
+                      placeholder="ID TICKET" 
+                      class="edit-input" 
+                      [disabled]="item.statut === 'OK'"
+                      (ngModelChange)="onGlpiIdInputChange(item, $event)"
+                      (blur)="onGlpiIdInputBlur(item)"
+                      (keyup.enter)="onGlpiIdInputEnter(item)"/>
+                    <button 
+                      *ngIf="!item.glpiId || item.glpiId.trim() === ''" 
+                      class="btn-glpi-create"
+                      (click)="openGlpiCreate()"
+                      [disabled]="item.statut === 'OK'"
+                      title="Créer un ticket GLPI">
+                      <i class="fas fa-plus-circle"></i> Créer
+                    </button>
+                  </div>
+                </ng-template>
+              </div>
+            </td>
+            <td class="text-cell">
+              {{ item.username || '-' }}
+            </td>
+            <td class="actions-cell">
+              <button class="btn-icon btn-edit" (click)="openEditModal(item)" title="Modifier">
+                <i class="fas fa-edit"></i>
+              </button>
+              <button class="btn-icon btn-delete" (click)="confirmDelete(item)" title="Supprimer">
+                <i class="fas fa-trash"></i>
+              </button>
+            </td>
+          </tr>
+          <tr *ngIf="filteredEcarts.length === 0">
+            <td colspan="12" class="no-data">Aucun écart trouvé</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <ng-template #loadingTemplate>
+      <div class="loading-spinner">
+        <i class="fas fa-spinner fa-spin"></i> Chargement...
+      </div>
+    </ng-template>
+
+    <!-- Pagination -->
+    <div class="pagination" *ngIf="totalPages > 1 && !isLoading">
+      <button (click)="prevPage()" [disabled]="currentPage === 1">
+        <i class="fas fa-chevron-left"></i> Précédent
+      </button>
+      
+      <div class="pagination-indicators">
+        <span *ngFor="let page of getVisiblePages()" 
+              class="page-indicator"
+              [class.active]="currentPage === page"
+              (click)="goToPage(page)">
+          {{ page }}
+        </span>
+      </div>
+      
+      <button (click)="nextPage()" [disabled]="currentPage === totalPages">
+        Suivant <i class="fas fa-chevron-right"></i>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal d'ajout/édition -->
+<div class="modal-overlay" *ngIf="showAddModal || showEditModal" (click)="showAddModal ? closeAddModal() : closeEditModal()">
+  <div class="modal-content modal-form" (click)="$event.stopPropagation()">
+    <div class="modal-header">
+      <h2>{{ editingItem ? 'Modifier un écart' : 'Ajouter un écart' }}</h2>
+      <button type="button" class="btn-close" (click)="showAddModal ? closeAddModal() : closeEditModal()">
+        <i class="fas fa-times"></i>
+      </button>
+    </div>
+    <div class="modal-body">
+      <form [formGroup]="form" (ngSubmit)="saveItem()">
+        <div class="form-row">
+          <div class="form-group">
+            <label>Date *</label>
+            <input type="date" formControlName="date" class="form-control">
+          </div>
+          <div class="form-group">
+            <label>Agence *</label>
+            <input type="text" formControlName="agence" class="form-control">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Service *</label>
+            <input type="text" formControlName="service" class="form-control">
+          </div>
+          <div class="form-group">
+            <label>Pays *</label>
+            <input type="text" formControlName="pays" class="form-control">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Montant *</label>
+            <input type="number" step="0.01" formControlName="montant" class="form-control">
+          </div>
+          <div class="form-group">
+            <label>Token *</label>
+            <input type="text" formControlName="token" class="form-control">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>IDPartenaire *</label>
+            <input type="text" formControlName="idPartenaire" class="form-control">
+          </div>
+          <div class="form-group">
+            <label>Statut *</label>
+            <select formControlName="statut" class="form-control">
+              <option value="">Sélectionner un statut</option>
+              <option *ngFor="let statut of statutOptions" [value]="statut">{{ statut }}</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group full-width">
+            <label>Traitement</label>
+            <select formControlName="traitement" class="form-control">
+              <option value="">Sélectionner un traitement</option>
+              <option *ngFor="let traitement of traitementOptions" [value]="traitement">{{ traitement }}</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-secondary" (click)="showAddModal ? closeAddModal() : closeEditModal()">
+            Annuler
+          </button>
+          <button type="submit" class="btn btn-primary" [disabled]="form.invalid || isLoading">
+            {{ editingItem ? 'Modifier' : 'Ajouter' }}
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
