@@ -73,43 +73,6 @@ interface ApiError {
             </div>
         </div>
 
-        <!-- Résumé des performances -->
-        <div *ngIf="response && executionTime > 0" class="performance-summary">
-            <div class="performance-card">
-                <div class="performance-items-horizontal" style="display: flex !important; flex-direction: row !important; align-items: stretch !important; justify-content: space-between !important; gap: 0 !important; flex-wrap: nowrap !important; width: 100%;">
-                    <div class="performance-item-horizontal" style="display: flex !important; flex-direction: row !important; align-items: center !important; flex: 1; min-width: 0;">
-                        <div class="performance-icon-wrapper" style="display: flex !important; align-items: center !important; justify-content: center !important; flex-shrink: 0;">
-                            <div class="performance-icon">⏱️</div>
-                        </div>
-                        <div class="performance-content" style="display: flex !important; flex-direction: column !important; flex: 1;">
-                            <div class="performance-label">Temps effectué</div>
-                            <div class="performance-value">{{ formatTime(executionTime) }}</div>
-                        </div>
-                    </div>
-                    <div class="performance-divider"></div>
-                    <div class="performance-item-horizontal" style="display: flex !important; flex-direction: row !important; align-items: center !important; flex: 1; min-width: 0;">
-                        <div class="performance-icon-wrapper" style="display: flex !important; align-items: center !important; justify-content: center !important; flex-shrink: 0;">
-                            <div class="performance-icon">💰</div>
-                        </div>
-                        <div class="performance-content" style="display: flex !important; flex-direction: column !important; flex: 1;">
-                            <div class="performance-label">Volume total</div>
-                            <div class="performance-value">{{ getTotalVolumeAll() | number:'1.0-0' }}</div>
-                        </div>
-                    </div>
-                    <div class="performance-divider"></div>
-                    <div class="performance-item-horizontal" style="display: flex !important; flex-direction: row !important; align-items: center !important; flex: 1; min-width: 0;">
-                        <div class="performance-icon-wrapper" style="display: flex !important; align-items: center !important; justify-content: center !important; flex-shrink: 0;">
-                            <div class="performance-icon">📊</div>
-                        </div>
-                        <div class="performance-content" style="display: flex !important; flex-direction: column !important; flex: 1;">
-                            <div class="performance-label">Nombre de transactions</div>
-                            <div class="performance-value">{{ getTotalTransactions() | number:'1.0-0' }}</div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
         <div class="results-container">
             <div class="summary-section">
                 <div class="summary-header">
@@ -262,11 +225,17 @@ interface ApiError {
                                 placeholder="Rechercher par clé..."
                                 class="search-input"
                             >
+                            <button (click)="showVolumeSummary = !showVolumeSummary" class="toggle-volume-btn" [class.active]="showVolumeSummary">
+                                {{ showVolumeSummary ? '📊 Masquer les volumes' : '📊 Afficher les volumes' }}
+                            </button>
+                            <button (click)="showMatchesList = !showMatchesList" class="toggle-matches-btn" [class.active]="showMatchesList">
+                                {{ showMatchesList ? '📋 Masquer la liste' : '📋 Afficher la liste' }}
+                            </button>
                             <button (click)="handleExport()" class="export-button">
                                 📥 Exporter les correspondances
                             </button>
                         </div>
-                        <div class="volume-summary">
+                        <div class="volume-summary" *ngIf="showVolumeSummary">
                             <h4>📊 Résumé des volumes</h4>
                             <div class="volume-grid">
                                 <div class="volume-card">
@@ -285,12 +254,13 @@ interface ApiError {
                                 </div>
                             </div>
                         </div>
-                        <div class="pagination-controls">
-                            <button (click)="prevPage('matches')" [disabled]="matchesPage === 1">Précédent</button>
-                            <span>Page {{matchesPage}} / {{getTotalPages('matches')}}</span>
-                            <button (click)="nextPage('matches')" [disabled]="matchesPage === getTotalPages('matches')">Suivant</button>
-                        </div>
-                        <div class="match-card" *ngFor="let match of getPagedMatches(); let i = index">
+                        <div class="matches-list-section" *ngIf="showMatchesList">
+                            <div class="pagination-controls">
+                                <button (click)="prevPage('matches')" [disabled]="matchesPage === 1">Précédent</button>
+                                <span>Page {{matchesPage}} / {{getTotalPages('matches')}}</span>
+                                <button (click)="nextPage('matches')" [disabled]="matchesPage === getTotalPages('matches')">Suivant</button>
+                            </div>
+                            <div class="match-card" *ngFor="let match of getPagedMatches(); let i = index">
                             <!-- Fiche des champs clés -->
                             <div class="match-header fiche-header">
                                 <div class="fiche-row">
@@ -360,6 +330,7 @@ interface ApiError {
                                 </div>
                             </div>
                         </div>
+                        </div>
                     </div>
 
                     <!-- Les écarts BO sont maintenant sur une page séparée -->
@@ -374,6 +345,9 @@ interface ApiError {
                                 placeholder="Rechercher par clé..."
                                 class="search-input"
                             >
+                            <button (click)="showVolumeSummary = !showVolumeSummary" class="toggle-volume-btn" [class.active]="showVolumeSummary">
+                                {{ showVolumeSummary ? '📊 Masquer les volumes' : '📊 Afficher les volumes' }}
+                            </button>
                             <label style="display:flex;align-items:center;gap:6px;">
                                 <input type="checkbox" [checked]="allPartnerSelectedOnPage" (change)="toggleSelectAllPartnerOnPage($event)">
                                 <span>Sélectionner la page</span>
@@ -385,7 +359,7 @@ interface ApiError {
                                 {{ isSavingEcartPartnerToImpactOP ? '💾 Sauvegarde...' : '💾 Sauvegarder dans Import OP' }}
                             </button>
                         </div>
-                        <div class="volume-summary">
+                        <div class="volume-summary" *ngIf="showVolumeSummary">
                             <h4>📊 Résumé des volumes</h4>
                             <div class="volume-grid">
                                 <div class="volume-card">
@@ -434,6 +408,95 @@ interface ApiError {
                                     <span class="label">{{key}}:</span>
                                     <span class="value">{{getRecordValue(record, key)}}</span>
                                 </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Section informative en bas -->
+            <div class="bottom-info-section" *ngIf="response">
+                <div class="info-section-grid">
+                    <div class="info-card">
+                        <div class="info-card-header">
+                            <div class="info-icon">📈</div>
+                            <h4>Taux de correspondance</h4>
+                        </div>
+                        <div class="info-card-content">
+                            <div class="match-rate">
+                                <div class="match-rate-value">{{getMatchRate() | number:'1.1-1'}}%</div>
+                                <div class="match-rate-bar">
+                                    <div class="match-rate-fill" [style.width.%]="getMatchRate()"></div>
+                                </div>
+                            </div>
+                            <div class="info-details">
+                                <span>{{filteredMatches.length || 0}} / {{getTotalTransactions()}} transactions</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="info-card">
+                        <div class="info-card-header">
+                            <div class="info-icon">⚖️</div>
+                            <h4>Équilibre des volumes</h4>
+                        </div>
+                        <div class="info-card-content">
+                            <div class="volume-comparison">
+                                <div class="volume-item">
+                                    <span class="volume-item-label">BO</span>
+                                    <span class="volume-item-value">{{calculateTotalVolume('bo') | number:'1.0-0'}}</span>
+                                </div>
+                                <div class="volume-separator">↔</div>
+                                <div class="volume-item">
+                                    <span class="volume-item-label">Partenaire</span>
+                                    <span class="volume-item-value">{{calculateTotalVolume('partner') | number:'1.0-0'}}</span>
+                                </div>
+                            </div>
+                            <div class="volume-diff" [class.positive]="calculateVolumeDifference() > 0" [class.negative]="calculateVolumeDifference() < 0" [class.neutral]="calculateVolumeDifference() === 0">
+                                <span>Différence: {{calculateVolumeDifference() | number:'1.0-0'}}</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="info-card">
+                        <div class="info-card-header">
+                            <div class="info-icon">🔍</div>
+                            <h4>Statut de la réconciliation</h4>
+                        </div>
+                        <div class="info-card-content">
+                            <div class="status-indicators">
+                                <div class="status-item" [class.has-issues]="(response?.mismatches?.length || 0) + (response?.boOnly?.length || 0) > 0">
+                                    <span class="status-dot"></span>
+                                    <span>Écarts BO: {{(response?.mismatches?.length || 0) + (response?.boOnly?.length || 0)}}</span>
+                                </div>
+                                <div class="status-item" [class.has-issues]="filteredPartnerOnly.length > 0">
+                                    <span class="status-dot"></span>
+                                    <span>Écarts Partenaire: {{filteredPartnerOnly.length || 0}}</span>
+                                </div>
+                                <div class="status-item" [class.success]="filteredMatches.length > 0">
+                                    <span class="status-dot"></span>
+                                    <span>Correspondances: {{filteredMatches.length || 0}}</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="info-card">
+                        <div class="info-card-header">
+                            <div class="info-icon">💡</div>
+                            <h4>Actions rapides</h4>
+                        </div>
+                        <div class="info-card-content">
+                            <div class="quick-actions">
+                                <button class="quick-action-btn" (click)="goToMatches()" [disabled]="filteredMatches.length === 0">
+                                    ✅ Correspondances
+                                </button>
+                                <button class="quick-action-btn" (click)="goToEcartBo()" [disabled]="(response?.mismatches?.length || 0) + (response?.boOnly?.length || 0) === 0">
+                                    ⚠️ Écarts BO
+                                </button>
+                                <button class="quick-action-btn" (click)="goToEcartPartner()" [disabled]="filteredPartnerOnly.length === 0">
+                                    ⚠️ Écarts Partenaire
+                                </button>
                             </div>
                         </div>
                     </div>
@@ -507,14 +570,19 @@ interface ApiError {
     `,
     styles: [`
         .results-container {
-            padding: 20px;
+            padding: 24px;
+            width: 100%;
+            min-height: 100vh;
+            box-sizing: border-box;
         }
 
         .summary-section {
-            background: #f8f9fa;
-            border-radius: 8px;
-            padding: 20px;
-            margin-bottom: 30px;
+            background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
+            border-radius: 16px;
+            padding: 28px;
+            margin-bottom: 32px;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+            border: 1px solid rgba(0, 0, 0, 0.05);
         }
 
         .summary-header {
@@ -752,8 +820,8 @@ interface ApiError {
 
         .stats-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 24px;
+            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+            gap: 20px;
             margin-top: 24px;
             margin-bottom: 24px;
         }
@@ -841,9 +909,27 @@ interface ApiError {
 
         .results-tabs {
             background: white;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            border-radius: 16px;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
             overflow: hidden;
+            margin-bottom: 32px;
+            border: 1px solid rgba(0, 0, 0, 0.05);
+            min-height: 400px;
+        }
+
+        .tab-content {
+            min-height: 300px;
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        .matches-section, .partner-only-section {
+            width: 100%;
+            padding: 20px;
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
         }
 
         .tab-buttons {
@@ -944,9 +1030,19 @@ interface ApiError {
 
         .match-card, .unmatched-card {
             background: #f8f9fa;
-            border-radius: 8px;
-            padding: 15px;
+            border-radius: 12px;
+            padding: 20px;
             border: 1px solid #dee2e6;
+            width: 100%;
+            box-sizing: border-box;
+            margin-bottom: 16px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+            transition: all 0.3s ease;
+        }
+
+        .match-card:hover, .unmatched-card:hover {
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            transform: translateY(-2px);
         }
 
         .match-header {
@@ -1087,25 +1183,53 @@ interface ApiError {
         }
 
         .volume-summary {
-            background: #fff;
-            border-radius: 8px;
-            padding: 15px;
-            margin-bottom: 20px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 24px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+            border: 1px solid rgba(0, 0, 0, 0.05);
+            animation: slideDown 0.3s ease-out;
+        }
+
+        @keyframes slideDown {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .volume-summary h4 {
+            margin: 0 0 16px 0;
+            color: #2c3e50;
+            font-size: 1.1em;
+            font-weight: 600;
         }
 
         .volume-grid {
             display: grid;
             grid-template-columns: repeat(3, 1fr);
-            gap: 15px;
+            gap: 16px;
             margin-top: 10px;
         }
 
         .volume-card {
-            background: #f8f9fa;
-            padding: 15px;
-            border-radius: 6px;
+            background: white;
+            padding: 18px;
+            border-radius: 10px;
             text-align: center;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.06);
+            transition: all 0.3s ease;
+            border: 1px solid rgba(0, 0, 0, 0.05);
+        }
+
+        .volume-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
         }
 
         .volume-label {
@@ -1133,18 +1257,19 @@ interface ApiError {
         }
 
         .search-input {
-            width: 100%;
-            padding: 10px 15px;
-            border: 1px solid #dee2e6;
-            border-radius: 6px;
+            flex: 1;
+            padding: 12px 18px;
+            border: 2px solid #dee2e6;
+            border-radius: 10px;
             font-size: 1em;
             transition: all 0.3s ease;
+            background: white;
         }
 
         .search-input:focus {
             outline: none;
-            border-color: #2196F3;
-            box-shadow: 0 0 0 2px rgba(33, 150, 243, 0.2);
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.15);
         }
 
         .agency-service-info {
@@ -1499,20 +1624,267 @@ interface ApiError {
             gap: 10px;
         }
 
+        /* Section informative en bas */
+        .bottom-info-section {
+            margin-top: 40px;
+            margin-bottom: 30px;
+            padding: 30px;
+            background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+            border-radius: 16px;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        .info-section-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 24px;
+            width: 100%;
+        }
+
+        .info-card {
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+            transition: all 0.3s ease;
+            border: 1px solid rgba(0, 0, 0, 0.05);
+        }
+
+        .info-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
+
+        .info-card-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 20px;
+            padding-bottom: 16px;
+            border-bottom: 2px solid #f0f0f0;
+        }
+
+        .info-icon {
+            font-size: 1.8em;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 48px;
+            height: 48px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 12px;
+            color: white;
+        }
+
+        .info-card-header h4 {
+            margin: 0;
+            font-size: 1.1em;
+            font-weight: 600;
+            color: #2c3e50;
+        }
+
+        .info-card-content {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .match-rate {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .match-rate-value {
+            font-size: 2.2em;
+            font-weight: 700;
+            color: #28a745;
+            text-align: center;
+        }
+
+        .match-rate-bar {
+            width: 100%;
+            height: 12px;
+            background: #e9ecef;
+            border-radius: 6px;
+            overflow: hidden;
+        }
+
+        .match-rate-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #28a745 0%, #20c997 100%);
+            border-radius: 6px;
+            transition: width 0.5s ease;
+        }
+
+        .info-details {
+            text-align: center;
+            color: #6c757d;
+            font-size: 0.9em;
+        }
+
+        .volume-comparison {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            padding: 16px;
+            background: #f8f9fa;
+            border-radius: 8px;
+        }
+
+        .volume-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+            flex: 1;
+        }
+
+        .volume-item-label {
+            font-size: 0.85em;
+            color: #6c757d;
+            font-weight: 500;
+        }
+
+        .volume-item-value {
+            font-size: 1.5em;
+            font-weight: 700;
+            color: #2196F3;
+        }
+
+        .volume-separator {
+            font-size: 1.5em;
+            color: #667eea;
+            font-weight: bold;
+        }
+
+        .volume-diff {
+            text-align: center;
+            padding: 10px;
+            border-radius: 6px;
+            font-weight: 600;
+            font-size: 0.95em;
+        }
+
+        .volume-diff.positive {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .volume-diff.negative {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .volume-diff.neutral {
+            background: #e2e3e5;
+            color: #383d41;
+        }
+
+        .status-indicators {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .status-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px;
+            border-radius: 6px;
+            background: #f8f9fa;
+            transition: all 0.3s ease;
+        }
+
+        .status-item.has-issues {
+            background: #fff3cd;
+            border-left: 3px solid #ffc107;
+        }
+
+        .status-item.success {
+            background: #d4edda;
+            border-left: 3px solid #28a745;
+        }
+
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #6c757d;
+            flex-shrink: 0;
+        }
+
+        .status-item.has-issues .status-dot {
+            background: #ffc107;
+        }
+
+        .status-item.success .status-dot {
+            background: #28a745;
+        }
+
+        .status-item span:last-child {
+            flex: 1;
+            font-size: 0.9em;
+            color: #2c3e50;
+        }
+
+        .quick-actions {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .quick-action-btn {
+            padding: 10px 16px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.9em;
+            font-weight: 500;
+            transition: all 0.3s ease;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            text-align: left;
+        }
+
+        .quick-action-btn:hover:not(:disabled) {
+            transform: translateX(4px);
+            box-shadow: 0 4px 8px rgba(102, 126, 234, 0.3);
+        }
+
+        .quick-action-btn:disabled {
+            background: #e9ecef;
+            color: #adb5bd;
+            cursor: not-allowed;
+            transform: none;
+        }
+
         .action-buttons {
             display: flex;
-            gap: 10px;
+            gap: 16px;
             justify-content: center;
-            margin-top: 20px;
+            margin-top: 30px;
+            margin-bottom: 20px;
         }
 
         .export-btn, .new-reconciliation-btn, .stats-btn {
-            padding: 10px 20px;
+            padding: 14px 28px;
             border: none;
-            border-radius: 4px;
+            border-radius: 10px;
             cursor: pointer;
             font-size: 1em;
+            font-weight: 600;
             transition: all 0.3s ease;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+        }
+
+        .export-btn:hover, .new-reconciliation-btn:hover, .stats-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
         }
 
         .export-btn {
@@ -1574,8 +1946,79 @@ interface ApiError {
         .search-section {
             display: flex;
             align-items: center;
-            gap: 10px;
-            margin-bottom: 20px;
+            gap: 12px;
+            margin-bottom: 24px;
+            padding: 16px;
+            background: linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%);
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+            border: 1px solid rgba(0, 0, 0, 0.05);
+            flex-wrap: wrap;
+        }
+
+        .toggle-volume-btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 10px 18px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.9em;
+            font-weight: 500;
+            transition: all 0.3s ease;
+            box-shadow: 0 2px 4px rgba(102, 126, 234, 0.3);
+            white-space: nowrap;
+        }
+
+        .toggle-volume-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(102, 126, 234, 0.4);
+            background: linear-gradient(135deg, #5a6fd8 0%, #6a4190 100%);
+        }
+
+        .toggle-volume-btn.active {
+            background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+            box-shadow: 0 2px 4px rgba(40, 167, 69, 0.3);
+        }
+
+        .toggle-volume-btn.active:hover {
+            background: linear-gradient(135deg, #218838 0%, #1ea080 100%);
+            box-shadow: 0 4px 8px rgba(40, 167, 69, 0.4);
+        }
+
+        .toggle-matches-btn {
+            background: linear-gradient(135deg, #2196F3 0%, #1976D2 100%);
+            color: white;
+            padding: 10px 18px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.9em;
+            font-weight: 500;
+            transition: all 0.3s ease;
+            box-shadow: 0 2px 4px rgba(33, 150, 243, 0.3);
+            white-space: nowrap;
+        }
+
+        .toggle-matches-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(33, 150, 243, 0.4);
+            background: linear-gradient(135deg, #1976D2 0%, #1565C0 100%);
+        }
+
+        .toggle-matches-btn.active {
+            background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+            box-shadow: 0 2px 4px rgba(40, 167, 69, 0.3);
+        }
+
+        .toggle-matches-btn.active:hover {
+            background: linear-gradient(135deg, #218838 0%, #1ea080 100%);
+            box-shadow: 0 4px 8px rgba(40, 167, 69, 0.4);
+        }
+
+        .matches-list-section {
+            animation: slideDown 0.3s ease-out;
+            width: 100%;
         }
 
         .export-progress {
@@ -1695,6 +2138,12 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
     availableColumns: string[] = [];
     selectedColumns: { [key: string]: boolean } = {};
     defaultColumns = ['Service', 'téléphone client', 'montant', 'Agence', 'Date', 'HEURE', 'SOURCE'];
+    
+    // Propriété pour afficher/masquer le résumé des volumes
+    showVolumeSummary = false;
+    
+    // Propriété pour afficher/masquer la liste des correspondances
+    showMatchesList = false;
 
     // Ajout pour sélection Résumé par Agence
     selectedAgencySummaries: string[] = [];
@@ -4697,6 +5146,13 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
         const boMismatches = (this.response?.mismatches?.length || 0) + (this.response?.boOnly?.length || 0);
         const partnerMismatches = this.filteredPartnerOnly.length || 0;
         return matches + boMismatches + partnerMismatches;
+    }
+
+    getMatchRate(): number {
+        const total = this.getTotalTransactions();
+        if (total === 0) return 0;
+        const matches = this.filteredMatches.length || 0;
+        return (matches / total) * 100;
     }
 
     getTotalVolumeAll(): number {
