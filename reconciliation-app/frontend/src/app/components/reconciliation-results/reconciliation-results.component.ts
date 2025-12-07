@@ -4721,7 +4721,9 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
             const amount = type === 'bo' 
                 ? parseFloat(match.boData[amountColumn] || '0')
                 : parseFloat(match.partnerData[amountColumn] || '0');
-            return total + (isNaN(amount) ? 0 : amount);
+            // Pour le volume partenaire des correspondances, utiliser la valeur absolue
+            const finalAmount = type === 'partner' ? Math.abs(amount) : amount;
+            return total + (isNaN(finalAmount) ? 0 : finalAmount);
         }, 0);
     }
 
@@ -4767,6 +4769,21 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
 
     calculateTotalVolumePartnerOnly(): number {
         if (!this.filteredPartnerOnly || this.filteredPartnerOnly.length === 0) return 0;
+        
+        // Pour OPPART, faire la somme uniquement des lignes IMPACT_COMPTIMPACT-COMPTE-GENERAL
+        if (this.isTRXBOOPPARTReconciliation()) {
+            return this.filteredPartnerOnly.reduce((total, record) => {
+                const typeOperation = this.getTypeOperation(record);
+                // Ne sommer que les lignes avec IMPACT_COMPTIMPACT-COMPTE-GENERAL
+                if (typeOperation && typeOperation.includes('IMPACT_COMPTIMPACT-COMPTE-GENERAL')) {
+                    const amount = this.getPartnerOnlyVolume(record);
+                    return total + amount;
+                }
+                return total;
+            }, 0);
+        }
+        
+        // Pour les autres cas, comportement normal
         return this.filteredPartnerOnly.reduce((total, record) => {
             const amount = this.getPartnerOnlyVolume(record);
             return total + amount;
