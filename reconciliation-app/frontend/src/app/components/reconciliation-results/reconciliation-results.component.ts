@@ -4777,16 +4777,18 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
                 // Ne sommer que les lignes avec IMPACT_COMPTIMPACT-COMPTE-GENERAL
                 if (typeOperation && typeOperation.includes('IMPACT_COMPTIMPACT-COMPTE-GENERAL')) {
                     const amount = this.getPartnerOnlyVolume(record);
-                    return total + amount;
+                    // Utiliser la valeur absolue pour tous les fichiers partenaire
+                    return total + Math.abs(amount);
                 }
                 return total;
             }, 0);
         }
         
-        // Pour les autres cas, comportement normal
+        // Pour les autres cas, utiliser la valeur absolue du montant
         return this.filteredPartnerOnly.reduce((total, record) => {
             const amount = this.getPartnerOnlyVolume(record);
-            return total + amount;
+            // Utiliser la valeur absolue pour tous les fichiers partenaire
+            return total + Math.abs(amount);
         }, 0);
     }
 
