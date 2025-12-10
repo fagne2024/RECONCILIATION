@@ -144,6 +144,7 @@ public class ColumnProcessingRuleService {
                 System.out.println("  - removeAccents: " + rule.isRemoveAccents());
                 System.out.println("  - removeSpecialChars: " + rule.isRemoveSpecialChars());
                 System.out.println("  - trimSpaces: " + rule.isTrimSpaces());
+                System.out.println("  - stringToRemove: " + (rule.getStringToRemove() != null ? "\"" + rule.getStringToRemove() + "\"" : "null"));
                 
                 columnProcessingRuleRepository.save(rule);
             }

@@ -1,7 +1,7 @@
-import { Component, Input, OnInit, ChangeDetectorRef, OnChanges, SimpleChanges, OnDestroy } from '@angular/core';
+import { Component, Input, OnInit, ChangeDetectorRef, OnChanges, SimpleChanges, OnDestroy, ChangeDetectionStrategy } from '@angular/core';
 import { ReconciliationResponse, Match } from '../../models/reconciliation-response.model';
 import { AppStateService } from '../../services/app-state.service';
-import { Router } from '@angular/router';
+import { Router, ActivatedRoute } from '@angular/router';
 import { ReconciliationService } from '../../services/reconciliation.service';
 import { EcartSoldeService } from '../../services/ecart-solde.service';
 import { ReconciliationSummaryService } from '../../services/reconciliation-summary.service';
@@ -31,6 +31,7 @@ interface ApiError {
 
 @Component({
     selector: 'app-reconciliation-results',
+    changeDetection: ChangeDetectionStrategy.OnPush,
     template: `
 
         <!-- Affichage de la progression -->
@@ -89,17 +90,17 @@ interface ApiError {
                     </div>
                     <div class="stat-card stat-card-matched">
                         <div class="stat-icon">✅</div>
-                        <div class="stat-value">{{filteredMatches.length || 0}}</div>
+                        <div class="stat-value">{{filteredMatchesCount}}</div>
                         <div class="stat-label">Transactions correspondantes</div>
                     </div>
                     <div class="stat-card stat-card-bo">
                         <div class="stat-icon">⚠️</div>
-                        <div class="stat-value">{{(response?.mismatches?.length || 0) + (response?.boOnly?.length || 0)}}</div>
+                        <div class="stat-value">{{filteredBoOnlyCount}}</div>
                         <div class="stat-label">Transactions non correspondantes BO</div>
                     </div>
                     <div class="stat-card stat-card-partner">
                         <div class="stat-icon">⚠️</div>
-                        <div class="stat-value">{{filteredPartnerOnly.length || 0}}</div>
+                        <div class="stat-value">{{filteredPartnerOnlyCount}}</div>
                         <div class="stat-label">Transactions non correspondantes Partenaire</div>
                     </div>
                 </div>
@@ -110,17 +111,17 @@ interface ApiError {
                     <button 
                         class="matches-button"
                         (click)="goToMatches()">
-                        ✅ Voir les Correspondances ({{filteredMatches.length || 0}})
+                        ✅ Voir les Correspondances ({{filteredMatchesCount}})
                     </button>
                     <button 
                         class="ecart-bo-button"
                         (click)="goToEcartBo()">
-                        ⚠️ Voir les ECART BO ({{(response?.mismatches?.length || 0) + (response?.boOnly?.length || 0)}})
+                        ⚠️ Voir les ECART BO ({{filteredBoOnlyCount}})
                     </button>
                     <button 
                         class="ecart-partner-button"
                         (click)="goToEcartPartner()">
-                        ⚠️ Voir les ECART Partenaire ({{filteredPartnerOnly.length || 0}})
+                        ⚠️ Voir les ECART Partenaire ({{filteredPartnerOnlyCount}})
                     </button>
                     <button 
                         [class.active]="activeTab === 'agencySummary'"
@@ -217,7 +218,23 @@ interface ApiError {
 
                     <!-- Correspondances avec pagination -->
                     <div *ngIf="activeTab === 'matches'" class="matches-section">
-                        <div class="search-section">
+                        <!-- Indicateur de chargement avec progression -->
+                        <div *ngIf="isLoadingMatches" class="loading-indicator">
+                            <div class="spinner"></div>
+                            <div class="loading-progress">
+                                <span>Chargement des correspondances...</span>
+                                <div *ngIf="loadingProgress.matches.total > 0" class="progress-info">
+                                    <div class="progress-bar-mini">
+                                        <div class="progress-fill-mini" [style.width.%]="loadingProgress.matches.percentage"></div>
+                                    </div>
+                                    <span class="progress-text-mini">
+                                        {{loadingProgress.matches.current | number}} / {{loadingProgress.matches.total | number}} 
+                                        ({{loadingProgress.matches.percentage}}%)
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="search-section" *ngIf="!isLoadingMatches">
                             <input 
                                 type="text" 
                                 [(ngModel)]="searchKey" 
@@ -254,13 +271,17 @@ interface ApiError {
                                 </div>
                             </div>
                         </div>
-                        <div class="matches-list-section" *ngIf="showMatchesList">
-                            <div class="pagination-controls">
-                                <button (click)="prevPage('matches')" [disabled]="matchesPage === 1">Précédent</button>
-                                <span>Page {{matchesPage}} / {{getTotalPages('matches')}}</span>
-                                <button (click)="nextPage('matches')" [disabled]="matchesPage === getTotalPages('matches')">Suivant</button>
+                        <div class="matches-list-section" *ngIf="showMatchesList && !isLoadingMatches">
+                            <div *ngIf="filteredMatchesCount === 0 && matchesLoaded" class="no-data-message">
+                                <p>Aucune correspondance trouvée</p>
                             </div>
-                            <div class="match-card" *ngFor="let match of getPagedMatches(); let i = index">
+                            <div *ngIf="filteredMatchesCount > 0">
+                                <div class="pagination-controls">
+                                    <button (click)="prevPage('matches')" [disabled]="matchesPage === 1">Précédent</button>
+                                    <span>Page {{matchesPage}} / {{totalMatchesPages}}</span>
+                                    <button (click)="nextPage('matches')" [disabled]="matchesPage === totalMatchesPages">Suivant</button>
+                                </div>
+                                <div class="match-card" *ngFor="let match of pagedMatches; trackBy: trackByMatchKey">
                             <!-- Fiche des champs clés -->
                             <div class="match-header fiche-header">
                                 <div class="fiche-row">
@@ -269,8 +290,8 @@ interface ApiError {
                                 </div>
                                 <div class="fiche-row">
                                     <span class="fiche-label">Statut :</span>
-                                    <span class="fiche-value" [class.has-differences]="hasDifferences(match)">
-                                    {{hasDifferences(match) ? '⚠️ Différences détectées' : '✅ Correspondance parfaite'}}
+                                    <span class="fiche-value" [class.has-differences]="getCachedHasDifferences(match)">
+                                    {{getCachedHasDifferences(match) ? '⚠️ Différences détectées' : '✅ Correspondance parfaite'}}
                                 </span>
                             </div>
                                 <div class="fiche-row">
@@ -285,9 +306,9 @@ interface ApiError {
                                         </div>
                                 <div class="fiche-row">
                                     <span class="fiche-label">Agence :</span>
-                                    <span class="fiche-value">{{getBoAgencyAndService(match).agency}}</span>
+                                    <span class="fiche-value">{{getCachedBoAgencyAndService(match).agency}}</span>
                                     <span class="fiche-label">Service :</span>
-                                    <span class="fiche-value">{{getBoAgencyAndService(match).service}}</span>
+                                    <span class="fiche-value">{{getCachedBoAgencyAndService(match).service}}</span>
                                         </div>
                                     </div>
                             <!-- Deux colonnes alignées -->
@@ -295,7 +316,7 @@ interface ApiError {
                                 <div class="data-column">
                                     <h4>🏢 BO</h4>
                                     <div class="data-grid refined-grid">
-                                        <div class="data-row" *ngFor="let key of getBoKeys(match)">
+                                        <div class="data-row" *ngFor="let key of getCachedBoKeys(match); trackBy: trackByString">
                                             <span class="label">{{key}} :</span>
                                             <span class="value">{{getBoValue(match, key)}}</span>
                                         </div>
@@ -304,14 +325,14 @@ interface ApiError {
                                 <div class="data-column">
                                     <h4>🤝 Partenaire</h4>
                                     <div class="data-grid refined-grid">
-                                        <div class="data-row" *ngFor="let key of getPartnerKeys(match)">
+                                        <div class="data-row" *ngFor="let key of getCachedPartnerKeys(match); trackBy: trackByString">
                                             <span class="label">{{key}} :</span>
                                             <span class="value">{{getPartnerValue(match, key)}}</span>
                                         </div>
                                     </div>
                                 </div>
                             </div>
-                            <div class="differences-section" *ngIf="hasDifferences(match)">
+                            <div class="differences-section" *ngIf="getCachedHasDifferences(match)">
                                 <h4>📝 Différences détectées</h4>
                                 <div class="difference-card" *ngFor="let diff of match.differences">
                                     <div class="diff-header">
@@ -330,6 +351,7 @@ interface ApiError {
                                 </div>
                             </div>
                         </div>
+                            </div>
                         </div>
                     </div>
 
@@ -337,7 +359,23 @@ interface ApiError {
 
                     <!-- ECART Partenaire avec pagination -->
                     <div *ngIf="activeTab === 'partnerOnly'" class="partner-only-section">
-                        <div class="search-section">
+                        <!-- Indicateur de chargement avec progression -->
+                        <div *ngIf="isLoadingPartnerOnly" class="loading-indicator">
+                            <div class="spinner"></div>
+                            <div class="loading-progress">
+                                <span>Chargement des écarts partenaire...</span>
+                                <div *ngIf="loadingProgress.partnerOnly.total > 0" class="progress-info">
+                                    <div class="progress-bar-mini">
+                                        <div class="progress-fill-mini" [style.width.%]="loadingProgress.partnerOnly.percentage"></div>
+                                    </div>
+                                    <span class="progress-text-mini">
+                                        {{loadingProgress.partnerOnly.current | number}} / {{loadingProgress.partnerOnly.total | number}} 
+                                        ({{loadingProgress.partnerOnly.percentage}}%)
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="search-section" *ngIf="!isLoadingPartnerOnly">
                             <input 
                                 type="text" 
                                 [(ngModel)]="searchKey" 
@@ -372,12 +410,16 @@ interface ApiError {
                                 </div>
                             </div>
                         </div>
-                        <div class="pagination-controls">
-                            <button (click)="prevPage('partnerOnly')" [disabled]="partnerOnlyPage === 1">Précédent</button>
-                            <span>Page {{partnerOnlyPage}} / {{getTotalPages('partnerOnly')}}</span>
-                            <button (click)="nextPage('partnerOnly')" [disabled]="partnerOnlyPage === getTotalPages('partnerOnly')">Suivant</button>
+                        <div *ngIf="filteredPartnerOnlyCount === 0 && partnerOnlyLoaded" class="no-data-message">
+                            <p>Aucun écart partenaire trouvé</p>
                         </div>
-                        <div class="unmatched-card" *ngFor="let record of getPagedPartnerOnly()">
+                        <div *ngIf="filteredPartnerOnlyCount > 0">
+                            <div class="pagination-controls">
+                                <button (click)="prevPage('partnerOnly')" [disabled]="partnerOnlyPage === 1">Précédent</button>
+                                <span>Page {{partnerOnlyPage}} / {{totalPartnerOnlyPages}}</span>
+                                <button (click)="nextPage('partnerOnly')" [disabled]="partnerOnlyPage === totalPartnerOnlyPages">Suivant</button>
+                            </div>
+                            <div class="unmatched-card" *ngFor="let record of getPagedPartnerOnly(); trackBy: trackByRecordKey">
                             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;gap:8px;">
                                 <div style="display:flex;align-items:center;gap:10px;">
                                     <div style="font-weight:600;color:#1976D2;">Ligne partenaire</div>
@@ -430,7 +472,7 @@ interface ApiError {
                                 </div>
                             </div>
                             <div class="info-details">
-                                <span>{{filteredMatches.length || 0}} / {{getTotalTransactions()}} transactions</span>
+                                <span>{{filteredMatchesCount}} / {{getTotalTransactions()}} transactions</span>
                             </div>
                         </div>
                     </div>
@@ -469,13 +511,13 @@ interface ApiError {
                                     <span class="status-dot"></span>
                                     <span>Écarts BO: {{(response?.mismatches?.length || 0) + (response?.boOnly?.length || 0)}}</span>
                                 </div>
-                                <div class="status-item" [class.has-issues]="filteredPartnerOnly.length > 0">
+                                <div class="status-item" [class.has-issues]="filteredPartnerOnlyCount > 0">
                                     <span class="status-dot"></span>
-                                    <span>Écarts Partenaire: {{filteredPartnerOnly.length || 0}}</span>
+                                    <span>Écarts Partenaire: {{filteredPartnerOnlyCount}}</span>
                                 </div>
-                                <div class="status-item" [class.success]="filteredMatches.length > 0">
+                                <div class="status-item" [class.success]="filteredMatchesCount > 0">
                                     <span class="status-dot"></span>
-                                    <span>Correspondances: {{filteredMatches.length || 0}}</span>
+                                    <span>Correspondances: {{filteredMatchesCount}}</span>
                                 </div>
                             </div>
                         </div>
@@ -488,13 +530,13 @@ interface ApiError {
                         </div>
                         <div class="info-card-content">
                             <div class="quick-actions">
-                                <button class="quick-action-btn" (click)="goToMatches()" [disabled]="filteredMatches.length === 0">
+                                <button class="quick-action-btn" (click)="goToMatches()" [disabled]="filteredMatchesCount === 0">
                                     ✅ Correspondances
                                 </button>
-                                <button class="quick-action-btn" (click)="goToEcartBo()" [disabled]="(response?.mismatches?.length || 0) + (response?.boOnly?.length || 0) === 0">
+                                <button class="quick-action-btn" (click)="goToEcartBo()" [disabled]="filteredBoOnlyCount === 0">
                                     ⚠️ Écarts BO
                                 </button>
-                                <button class="quick-action-btn" (click)="goToEcartPartner()" [disabled]="filteredPartnerOnly.length === 0">
+                                <button class="quick-action-btn" (click)="goToEcartPartner()" [disabled]="filteredPartnerOnlyCount === 0">
                                     ⚠️ Écarts Partenaire
                                 </button>
                             </div>
@@ -2084,6 +2126,77 @@ interface ApiError {
             font-weight: bold;
             text-align: center;
         }
+
+        /* Styles pour les indicateurs de chargement */
+        .loading-indicator {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 40px;
+            gap: 16px;
+            color: #667eea;
+            font-size: 1.1em;
+            font-weight: 500;
+        }
+
+        .loading-progress {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 12px;
+            width: 100%;
+            max-width: 400px;
+        }
+
+        .progress-info {
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .progress-bar-mini {
+            width: 100%;
+            height: 8px;
+            background-color: #e0e0e0;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .progress-fill-mini {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+            border-radius: 4px;
+            transition: width 0.3s ease;
+        }
+
+        .progress-text-mini {
+            font-size: 0.9em;
+            color: #666;
+            text-align: center;
+        }
+
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .no-data-message {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+            font-size: 1.1em;
+        }
     `]
 })
 export class ReconciliationResultsComponent implements OnInit, OnDestroy {
@@ -2098,6 +2211,41 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
     filteredMatches: Match[] = [];
     filteredBoOnly: Record<string, string>[] = [];
     filteredPartnerOnly: Record<string, string>[] = [];
+    
+    // Propriétés pour le chargement à la demande (Lazy Loading)
+    private currentJobId: string | null = null;
+    matchesLoaded: boolean = false;
+    boOnlyLoaded: boolean = false;
+    partnerOnlyLoaded: boolean = false;
+    isLoadingMatches: boolean = false;
+    isLoadingBoOnly: boolean = false;
+    isLoadingPartnerOnly: boolean = false;
+    
+    // Cache pour éviter les recalculs
+    private matchesCache: Match[] | null = null;
+    private boOnlyCache: Record<string, string>[] | null = null;
+    private partnerOnlyCache: Record<string, string>[] | null = null;
+    private cacheKey: string | null = null;
+    
+    // Prévention des doublons : un seul chargement à la fois par onglet
+    private loadingPromises: Map<string, Promise<any>> = new Map();
+    
+    // Feedback utilisateur : progression en temps réel
+    loadingProgress: {
+        matches: { current: number; total: number; percentage: number };
+        boOnly: { current: number; total: number; percentage: number };
+        partnerOnly: { current: number; total: number; percentage: number };
+    } = {
+        matches: { current: 0, total: 0, percentage: 0 },
+        boOnly: { current: 0, total: 0, percentage: 0 },
+        partnerOnly: { current: 0, total: 0, percentage: 0 }
+    };
+    
+    // Configuration du traitement par chunks
+    private readonly CHUNK_SIZE = 1000; // Taille des chunks pour le chargement réseau
+    private readonly PROCESSING_CHUNK_SIZE = 100; // Taille des chunks pour le traitement local
+    private readonly YIELD_INTERVAL = 50; // Intervalle en ms pour yield au navigateur
+    
     agencyPage = 1;
     readonly agencyPageSize = 10;
     selectedService: string = '';
@@ -2144,6 +2292,29 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
     
     // Propriété pour afficher/masquer la liste des correspondances
     showMatchesList = false;
+    
+    // Propriétés calculées pour éviter les recalculs dans le template (optimisation performance)
+    filteredMatchesCount: number = 0;
+    filteredBoOnlyCount: number = 0;
+    filteredPartnerOnlyCount: number = 0;
+    totalMatchesPages: number = 1;
+    totalBoOnlyPages: number = 1;
+    totalPartnerOnlyPages: number = 1;
+    
+    // Propriétés paginées pour éviter les appels répétés dans le template
+    pagedMatches: Match[] = [];
+    pagedBoOnly: Record<string, string>[] = [];
+    pagedPartnerOnly: Record<string, string>[] = [];
+    
+    // Cache pour les clés de chaque match (évite les recalculs dans *ngFor)
+    private matchKeysCache = new Map<string, { boKeys: string[]; partnerKeys: string[]; hasDifferences: boolean }>();
+    
+    // Flag pour éviter les recalculs pendant l'initialisation
+    private isInitializing: boolean = false;
+    
+    // Flag pour éviter les appels multiples de updateKeysCache
+    private isUpdatingKeysCache: boolean = false;
+    private keysCacheUpdatePromise: Promise<void> | null = null;
 
     // Ajout pour sélection Résumé par Agence
     selectedAgencySummaries: string[] = [];
@@ -2891,7 +3062,6 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
         // Si une seule correspondance et type d'opération FRAIS_TRANSACTION -> "Régularisation FRAIS"
         // Si une seule correspondance avec autre type d'opération -> "SANS FRAIS"
         if (typeOperationValue && typeOperationValue.includes('FRAIS_TRANSACTION')) {
-            console.log(`DEBUG: Type d'opération FRAIS_TRANSACTION détecté - Commentaire: "Régularisation FRAIS"`);
             return 'Régularisation FRAIS';
         }
         
@@ -3304,6 +3474,7 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
         private cdr: ChangeDetectorRef, 
         private appStateService: AppStateService, 
         private router: Router,
+        private route: ActivatedRoute,
         private reconciliationService: ReconciliationService,
         private ecartSoldeService: EcartSoldeService,
         private trxSfService: TrxSfService,
@@ -3318,19 +3489,90 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
     ) {}
 
     ngOnInit() {
-        console.log('🔄 ReconciliationResultsComponent - ngOnInit appelé');
+        const initStartTime = performance.now();
+        console.log('🔄 [NGONINIT] ReconciliationResultsComponent - ngOnInit appelé', `[${new Date().toISOString()}]`);
+        console.log('🔍 [NGONINIT] État actuel:', {
+            'matchesLoaded': this.matchesLoaded,
+            'boOnlyLoaded': this.boOnlyLoaded,
+            'partnerOnlyLoaded': this.partnerOnlyLoaded,
+            'filteredMatchesCount': this.filteredMatches.length,
+            'filteredBoOnlyCount': this.filteredBoOnly.length,
+            'filteredPartnerOnlyCount': this.filteredPartnerOnly.length,
+            'hasResponse': !!this.response
+        });
+        
+        // Vérifier si les données sont déjà présentes pour éviter une réinitialisation complète
+        const hasExistingData = this.response && (
+            (this.response.matches && this.response.matches.length > 0) ||
+            (this.response.boOnly && this.response.boOnly.length > 0) ||
+            (this.response.partnerOnly && this.response.partnerOnly.length > 0)
+        );
+        
+        if (hasExistingData && this.matchesLoaded && this.boOnlyLoaded && this.partnerOnlyLoaded) {
+            console.log('✅ [NGONINIT] Données déjà chargées, skip réinitialisation complète');
+            const skipInitDuration = performance.now() - initStartTime;
+            console.log('⏱️ [NGONINIT] Skip réinitialisation:', `${skipInitDuration.toFixed(2)}ms`);
+            return;
+        }
+        
+        // Récupérer le jobId depuis les queryParams
+        this.subscription.add(
+            this.route.queryParams.subscribe(params => {
+                const jobIdStartTime = performance.now();
+                if (params['jobId']) {
+                    this.currentJobId = params['jobId'];
+                    console.log('📋 JobId récupéré depuis queryParams:', this.currentJobId, `[${(performance.now() - jobIdStartTime).toFixed(2)}ms]`);
+                } else {
+                    // Essayer de récupérer depuis le service
+                    this.currentJobId = this.reconciliationService.getCurrentJobId();
+                    console.log('📋 JobId récupéré depuis le service:', this.currentJobId, `[${(performance.now() - jobIdStartTime).toFixed(2)}ms]`);
+                }
+            })
+        );
+        
         this.subscription.add(
             this.appStateService.getReconciliationResults().subscribe((response: ReconciliationResponse | null) => {
-                console.log('📋 Données reçues dans ReconciliationResultsComponent:', response);
+                const dataReceiveStartTime = performance.now();
+                console.log('📋 [NGONINIT] Données reçues dans ReconciliationResultsComponent:', {
+                    hasResponse: !!response,
+                    matchesCount: response?.matches?.length || 0,
+                    boOnlyCount: response?.boOnly?.length || 0,
+                    partnerOnlyCount: response?.partnerOnly?.length || 0,
+                    mismatchesCount: response?.mismatches?.length || 0,
+                    timestamp: new Date().toISOString()
+                });
+                
+                // Vérifier si les données sont identiques pour éviter une réinitialisation inutile
+                const isSameData = this.response && response && 
+                    this.response.matches?.length === response.matches?.length &&
+                    this.response.boOnly?.length === response.boOnly?.length &&
+                    this.response.partnerOnly?.length === response.partnerOnly?.length;
+                
+                if (isSameData && this.matchesLoaded && this.boOnlyLoaded && this.partnerOnlyLoaded) {
+                    console.log('✅ [NGONINIT] Données identiques déjà chargées, skip réinitialisation');
+                    const skipDuration = performance.now() - dataReceiveStartTime;
+                    console.log('⏱️ [NGONINIT] Skip réinitialisation (données identiques):', `${skipDuration.toFixed(2)}ms`);
+                    return;
+                }
+                
                 if (response) {
-                    console.log('✅ Données valides reçues, initialisation...');
+                    const initDataStartTime = performance.now();
+                    console.log('✅ [NGONINIT] Données valides reçues, initialisation...', `[${(performance.now() - dataReceiveStartTime).toFixed(2)}ms depuis réception]`);
+                    
                     this.response = response;
+                    
+                    const filterStartTime = performance.now();
                     this.initializeFilteredData();
+                    const filterDuration = performance.now() - filterStartTime;
+                    console.log('⏱️ initializeFilteredData terminé:', `${filterDuration.toFixed(2)}ms`);
                     
                     // Vider le cache quand les données changent
+                    const cacheStartTime = performance.now();
                     this.agencyServiceCache.clear();
+                    console.log('⏱️ Cache vidé:', `${(performance.now() - cacheStartTime).toFixed(2)}ms`);
                     
                     // Initialiser les informations de progression
+                    const progressStartTime = performance.now();
                     console.log('⏱️ Initialisation des temps d\'exécution...');
                     console.log('📊 response.executionTimeMs:', response.executionTimeMs);
                     
@@ -3340,7 +3582,7 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                         this.executionTime = 306; // Valeur par défaut
                     }
                     
-                    console.log('⏱️ executionTime final:', this.executionTime);
+                    console.log('⏱️ executionTime final:', this.executionTime, `[${(performance.now() - progressStartTime).toFixed(2)}ms]`);
                     
                     if (response.processedRecords) {
                         this.processedRecords = response.processedRecords;
@@ -3350,6 +3592,7 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                     }
                     
                     // Calculer le total des enregistrements
+                    const totalStartTime = performance.now();
                     this.totalRecords = (response.totalBoRecords || 0) + (response.totalPartnerRecords || 0);
                     
                     // Si nous n'avons pas encore de totalRecords et que nous avons des données, les calculer
@@ -3360,9 +3603,30 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                         this.totalRecords = boCount + partnerCount + matchesCount;
                         console.log('📊 Calcul automatique du totalRecords:', this.totalRecords);
                     }
+                    console.log('⏱️ Calcul totalRecords:', `${(performance.now() - totalStartTime).toFixed(2)}ms`);
                     
-                    this.cdr.detectChanges();
+                    // NE PAS précharger automatiquement - Lazy Loading uniquement à l'activation de l'onglet
+                    // Cela évite de charger des données inutiles si l'utilisateur ne visite pas tous les onglets
+                    console.log('📦 Lazy Loading activé - Les données seront chargées uniquement à l\'activation des onglets');
                     
+                    // Marquer pour détection de changement immédiatement (pas de délai pour un affichage instantané)
+                    // Avec OnPush, markForCheck() est suffisant et plus rapide que detectChanges()
+                    const detectChangesStartTime = performance.now();
+                    this.cdr.markForCheck();
+                    const detectChangesDuration = performance.now() - detectChangesStartTime;
+                    if (detectChangesDuration > 1) {
+                        console.log('⏱️ markForCheck:', `${detectChangesDuration.toFixed(2)}ms`);
+                    }
+                    
+                    const totalInitDuration = performance.now() - initDataStartTime;
+                    console.log('⏱️ ⏱️ ⏱️ TEMPS TOTAL D\'INITIALISATION:', `${totalInitDuration.toFixed(2)}ms`, `(${(totalInitDuration / 1000).toFixed(2)}s)`);
+                    console.log('📊 Détail des temps:', {
+                        'Réception données': `${(dataReceiveStartTime - initStartTime).toFixed(2)}ms`,
+                        'Filtrage': `${filterDuration.toFixed(2)}ms`,
+                        'Vidage cache': `${(performance.now() - cacheStartTime).toFixed(2)}ms`,
+                        'Progression': `${(performance.now() - progressStartTime).toFixed(2)}ms`,
+                        'Total records': `${(performance.now() - totalStartTime).toFixed(2)}ms`
+                    });
                 }
             })
         );
@@ -3387,31 +3651,176 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
     }
 
     private initializeFilteredData() {
-        console.log('🔧 Initialisation des données filtrées...');
-        console.log('📊 Response:', this.response);
-        console.log('📊 Matches:', this.response?.matches);
-        console.log('📊 BoOnly:', this.response?.boOnly);
-        console.log('📊 PartnerOnly:', this.response?.partnerOnly);
+        const startTime = performance.now();
+        console.log('🔧 [INITFILTERED] Initialisation des données filtrées...', `[${new Date().toISOString()}]`);
+        console.log('📊 [INITFILTERED] Response:', {
+            hasResponse: !!this.response,
+            matchesCount: this.response?.matches?.length || 0,
+            boOnlyCount: this.response?.boOnly?.length || 0,
+            partnerOnlyCount: this.response?.partnerOnly?.length || 0,
+            mismatchesCount: this.response?.mismatches?.length || 0
+        });
         
-        this.filteredMatches = this.getFilteredMatches();
-        this.filteredBoOnly = this.getFilteredBoOnly();
-        this.filteredPartnerOnly = this.getFilteredPartnerOnly();
+        // Récupérer le jobId depuis le service
+        const jobIdStartTime = performance.now();
+        this.currentJobId = this.reconciliationService.getCurrentJobId();
+        console.log('⏱️ Récupération jobId:', `${(performance.now() - jobIdStartTime).toFixed(2)}ms`);
+        
+        // Pour les fichiers volumineux, initialiser les tableaux vides
+        // Les données détaillées seront chargées à la demande
+        const initArraysStartTime = performance.now();
+        this.filteredMatches = [];
+        this.filteredBoOnly = [];
+        this.filteredPartnerOnly = [];
+        
+        // Réinitialiser les flags de chargement
+        this.matchesLoaded = false;
+        this.boOnlyLoaded = false;
+        this.partnerOnlyLoaded = false;
+        console.log('⏱️ Initialisation tableaux:', `${(performance.now() - initArraysStartTime).toFixed(2)}ms`);
+        
+        // Si les données sont déjà présentes dans la réponse (petits fichiers), les utiliser et mettre en cache
+        const filterMatchesStartTime = performance.now();
+        if (this.response?.matches && this.response.matches.length > 0) {
+            console.log('🔄 Filtrage des matches...', `(${this.response.matches.length} matches à traiter)`);
+            this.filteredMatches = this.getFilteredMatches();
+            this.matchesLoaded = true;
+            this.setCache('matches', this.filteredMatches);
+            this.updateCalculatedProperties(); // Mettre à jour les propriétés calculées
+            console.log('⏱️ Filtrage matches terminé:', `${(performance.now() - filterMatchesStartTime).toFixed(2)}ms`, `(${this.filteredMatchesCount} matches filtrés)`);
+        } else {
+            this.updateCalculatedProperties(); // Mettre à jour même si vide
+            console.log('⏱️ Pas de matches à filtrer:', `${(performance.now() - filterMatchesStartTime).toFixed(2)}ms`);
+        }
+        
+        const filterBoOnlyStartTime = performance.now();
+        if ((this.response?.mismatches && this.response.mismatches.length > 0) || 
+            (this.response?.boOnly && this.response.boOnly.length > 0)) {
+            const totalBoOnly = (this.response?.mismatches?.length || 0) + (this.response?.boOnly?.length || 0);
+            console.log('🔄 Filtrage des boOnly...', `(${totalBoOnly} éléments à traiter)`);
+            this.filteredBoOnly = this.getFilteredBoOnly();
+            this.boOnlyLoaded = true;
+            this.setCache('boOnly', this.filteredBoOnly);
+            this.updateCalculatedProperties(); // Mettre à jour les propriétés calculées
+            console.log('⏱️ Filtrage boOnly terminé:', `${(performance.now() - filterBoOnlyStartTime).toFixed(2)}ms`, `(${this.filteredBoOnlyCount} éléments filtrés)`);
+        } else {
+            this.updateCalculatedProperties(); // Mettre à jour même si vide
+            console.log('⏱️ Pas de boOnly à filtrer:', `${(performance.now() - filterBoOnlyStartTime).toFixed(2)}ms`);
+        }
+        
+        const filterPartnerOnlyStartTime = performance.now();
+        if (this.response?.partnerOnly && this.response.partnerOnly.length > 0) {
+            console.log('🔄 Filtrage des partnerOnly...', `(${this.response.partnerOnly.length} éléments à traiter)`);
+            this.filteredPartnerOnly = this.getFilteredPartnerOnly();
+            this.partnerOnlyLoaded = true;
+            this.setCache('partnerOnly', this.filteredPartnerOnly);
+            this.updateCalculatedProperties(); // Mettre à jour les propriétés calculées
+            console.log('⏱️ Filtrage partnerOnly terminé:', `${(performance.now() - filterPartnerOnlyStartTime).toFixed(2)}ms`, `(${this.filteredPartnerOnlyCount} éléments filtrés)`);
+        } else {
+            this.updateCalculatedProperties(); // Mettre à jour même si vide
+            console.log('⏱️ Pas de partnerOnly à filtrer:', `${(performance.now() - filterPartnerOnlyStartTime).toFixed(2)}ms`);
+        }
         
         // Partager les données filtrées avec le service pour le rapport
+        const shareDataStartTime = performance.now();
         this.reconciliationTabsService.setFilteredMatches(this.filteredMatches);
         this.reconciliationTabsService.setFilteredBoOnly(this.filteredBoOnly);
         this.reconciliationTabsService.setFilteredPartnerOnly(this.filteredPartnerOnly);
         this.reconciliationTabsService.setFilteredMismatches(this.response?.mismatches || []);
+        console.log('⏱️ Partage données avec service:', `${(performance.now() - shareDataStartTime).toFixed(2)}ms`);
         
-        console.log('✅ Données filtrées initialisées:');
-        console.log('📊 FilteredMatches:', this.filteredMatches.length);
-        console.log('📊 FilteredBoOnly:', this.filteredBoOnly.length);
-        console.log('📊 FilteredPartnerOnly:', this.filteredPartnerOnly.length);
+        const totalDuration = performance.now() - startTime;
+        console.log('✅ Données filtrées initialisées:', `${totalDuration.toFixed(2)}ms au total`);
+        console.log('📊 Résultats:', {
+            FilteredMatches: this.filteredMatches.length,
+            FilteredBoOnly: this.filteredBoOnly.length,
+            FilteredPartnerOnly: this.filteredPartnerOnly.length,
+            JobId: this.currentJobId
+        });
+        console.log('📊 Détail des temps de filtrage:', {
+            'Récupération jobId': `${(jobIdStartTime - startTime).toFixed(2)}ms`,
+            'Init tableaux': `${(initArraysStartTime - jobIdStartTime).toFixed(2)}ms`,
+            'Filtrage matches': `${(filterMatchesStartTime - initArraysStartTime).toFixed(2)}ms`,
+            'Filtrage boOnly': `${(filterBoOnlyStartTime - filterMatchesStartTime).toFixed(2)}ms`,
+            'Filtrage partnerOnly': `${(filterPartnerOnlyStartTime - filterBoOnlyStartTime).toFixed(2)}ms`,
+            'Partage données': `${(shareDataStartTime - filterPartnerOnlyStartTime).toFixed(2)}ms`
+        });
         
-
+        // Désactiver le flag d'initialisation
+        this.isInitializing = false;
+        
+        // Mettre à jour les données paginées une seule fois à la fin de l'initialisation
+        // Pour tous les volumes, différer le calcul du cache des clés pour un affichage instantané
+        const updatePagedStartTime = performance.now();
+        this.updatePagedData(true); // Skip keys cache (sera calculé de manière asynchrone en arrière-plan)
+        const updatePagedDuration = performance.now() - updatePagedStartTime;
+        if (updatePagedDuration > 1) {
+            console.log('⏱️ [INITFILTERED] updatePagedData:', `${updatePagedDuration.toFixed(2)}ms`);
+        }
+        
+        const totalInitDuration = performance.now() - startTime;
+        console.log('✅ [INITFILTERED] initializeFilteredData terminé:', `${totalInitDuration.toFixed(2)}ms`);
+    }
+    
+    /**
+     * Génère une clé de cache basée sur les données de réponse
+     */
+    private generateCacheKey(): string {
+        if (!this.response) return '';
+        return `${this.response.totalMatches}_${this.response.totalBoOnly}_${this.response.totalPartnerOnly}_${this.response.totalMismatches}`;
+    }
+    
+    /**
+     * Vérifie si le cache est valide
+     */
+    private isCacheValid(): boolean {
+        const newCacheKey = this.generateCacheKey();
+        return this.cacheKey === newCacheKey && 
+               this.matchesCache !== null && 
+               this.boOnlyCache !== null && 
+               this.partnerOnlyCache !== null;
+    }
+    
+    /**
+     * Récupère les données depuis le cache si disponible
+     */
+    private getFromCache(type: 'matches' | 'boOnly' | 'partnerOnly'): any[] | null {
+        if (!this.isCacheValid()) {
+            return null;
+        }
+        
+        switch (type) {
+            case 'matches':
+                return this.matchesCache;
+            case 'boOnly':
+                return this.boOnlyCache;
+            case 'partnerOnly':
+                return this.partnerOnlyCache;
+            default:
+                return null;
+        }
+    }
+    
+    /**
+     * Met en cache les données
+     */
+    private setCache(type: 'matches' | 'boOnly' | 'partnerOnly', data: any[]): void {
+        this.cacheKey = this.generateCacheKey();
+        switch (type) {
+            case 'matches':
+                this.matchesCache = data;
+                break;
+            case 'boOnly':
+                this.boOnlyCache = data;
+                break;
+            case 'partnerOnly':
+                this.partnerOnlyCache = data;
+                break;
+        }
     }
 
     onSearch() {
+        const searchStartTime = performance.now();
         const searchTerm = this.searchKey.toLowerCase();
         
         if (this.activeTab === 'matches') {
@@ -3419,6 +3828,7 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                 match.key.toLowerCase().includes(searchTerm)
             );
             this.matchesPage = 1;
+            this.cachedPagedMatches = null; // Invalider le cache
             // Partager les données filtrées
             this.reconciliationTabsService.setFilteredMatches(this.filteredMatches);
         } else if (this.activeTab === 'boOnly') {
@@ -3433,6 +3843,7 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                 )
             );
             this.boOnlyPage = 1;
+            this.cachedPagedBoOnly = null; // Invalider le cache
             // Partager les données filtrées
             this.reconciliationTabsService.setFilteredBoOnly(this.filteredBoOnly);
         } else if (this.activeTab === 'partnerOnly') {
@@ -3442,59 +3853,1211 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                 )
             );
             this.partnerOnlyPage = 1;
+            this.cachedPagedPartnerOnly = null; // Invalider le cache
             // Partager les données filtrées
             this.reconciliationTabsService.setFilteredPartnerOnly(this.filteredPartnerOnly);
         }
         
-        this.cdr.detectChanges();
+        // Mettre à jour les propriétés calculées une seule fois à la fin
+        this.updateCalculatedProperties();
+        
+        const searchDuration = performance.now() - searchStartTime;
+        console.log('⏱️ Recherche terminée:', `${searchDuration.toFixed(2)}ms`);
+        this.cdr.markForCheck();
     }
 
-    // Modifier les méthodes de pagination pour utiliser les données filtrées
+    // Cache pour les pages paginées (évite les recalculs)
+    private cachedPagedMatches: Match[] | null = null;
+    private cachedPagedBoOnly: Record<string, string>[] | null = null;
+    private cachedPagedPartnerOnly: Record<string, string>[] | null = null;
+    private cachedMatchesPage: number = -1;
+    private cachedBoOnlyPage: number = -1;
+    private cachedPartnerOnlyPage: number = -1;
+    
+    /**
+     * Met à jour les propriétés calculées pour éviter les recalculs dans le template
+     * @param skipPagedDataUpdate Si true, ne met pas à jour les données paginées (pour éviter les recalculs multiples pendant l'initialisation)
+     */
+    private updateCalculatedProperties(skipPagedDataUpdate: boolean = false): void {
+        const updateStartTime = performance.now();
+        
+        this.filteredMatchesCount = this.filteredMatches.length;
+        this.filteredBoOnlyCount = this.filteredBoOnly.length;
+        this.filteredPartnerOnlyCount = this.filteredPartnerOnly.length;
+        this.totalMatchesPages = Math.max(1, Math.ceil(this.filteredMatchesCount / this.pageSize));
+        this.totalBoOnlyPages = Math.max(1, Math.ceil(this.filteredBoOnlyCount / this.pageSize));
+        this.totalPartnerOnlyPages = Math.max(1, Math.ceil(this.filteredPartnerOnlyCount / this.pageSize));
+        
+        // Mettre à jour les pages paginées uniquement si demandé (évite les recalculs multiples pendant l'initialisation)
+        if (!skipPagedDataUpdate && !this.isInitializing) {
+            this.updatePagedData();
+        }
+        
+        const updateDuration = performance.now() - updateStartTime;
+        if (updateDuration > 1) {
+            console.log('⏱️ updateCalculatedProperties:', `${updateDuration.toFixed(2)}ms`, skipPagedDataUpdate ? '(sans updatePagedData)' : '');
+        }
+    }
+    
+    /**
+     * Met à jour les données paginées et précalcule les clés pour chaque match
+     * @param skipKeysCache Si true, ne calcule pas le cache des clés (pour l'initialisation rapide)
+     */
+    private updatePagedData(skipKeysCache: boolean = false): void {
+        const updateStartTime = performance.now();
+        
+        // Mettre à jour les pages paginées
+        this.pagedMatches = this.getPagedMatches();
+        this.pagedBoOnly = this.getPagedBoOnly();
+        this.pagedPartnerOnly = this.getPagedPartnerOnly();
+        
+        // Précalculer les clés pour chaque match de la page actuelle (évite les recalculs dans *ngFor)
+        // Pour les gros volumes, différer ce calcul pour ne pas bloquer l'UI
+        if (!skipKeysCache && !this.isUpdatingKeysCache) {
+            // Utiliser un seul setTimeout pour éviter les appels multiples
+            if (!this.keysCacheUpdatePromise) {
+                this.isUpdatingKeysCache = true;
+                this.keysCacheUpdatePromise = new Promise<void>((resolve) => {
+                    setTimeout(async () => {
+                        await this.updateKeysCache();
+                        this.isUpdatingKeysCache = false;
+                        this.keysCacheUpdatePromise = null;
+                        resolve();
+                    }, 0);
+                });
+            }
+        }
+        
+        const totalDuration = performance.now() - updateStartTime;
+        if (totalDuration > 1 && !skipKeysCache) {
+            console.log('⏱️ updatePagedData:', {
+                'Durée totale': `${totalDuration.toFixed(2)}ms`,
+                'Matches paginés': this.pagedMatches.length,
+                'Cache clés différé': skipKeysCache
+            });
+        }
+    }
+    
+    /**
+     * Met à jour le cache des clés pour les matches de la page actuelle
+     * Utilise un traitement par chunks pour ne pas bloquer l'UI
+     * Prévention des appels multiples avec un flag
+     */
+    private async updateKeysCache(): Promise<void> {
+        // Vérifier si une mise à jour est déjà en cours
+        if (this.isUpdatingKeysCache && this.keysCacheUpdatePromise) {
+            console.log('⏳ [KEYS_CACHE] Mise à jour déjà en cours, attente...');
+            return this.keysCacheUpdatePromise;
+        }
+        
+        const cacheStartTime = performance.now();
+        this.matchKeysCache.clear(); // Nettoyer le cache à chaque changement de page
+        
+        const matchesToCache = this.pagedMatches;
+        
+        // Si pas de matches, ne rien faire
+        if (matchesToCache.length === 0) {
+            return;
+        }
+        
+        const CACHE_CHUNK_SIZE = 10; // Traiter 10 matches à la fois
+        
+        for (let i = 0; i < matchesToCache.length; i += CACHE_CHUNK_SIZE) {
+            const chunk = matchesToCache.slice(i, i + CACHE_CHUNK_SIZE);
+            
+            // Traiter le chunk
+            for (const match of chunk) {
+                const matchKey = match.key || JSON.stringify(match.boData);
+                if (!this.matchKeysCache.has(matchKey)) {
+                    this.matchKeysCache.set(matchKey, {
+                        boKeys: this.getBoKeys(match),
+                        partnerKeys: this.getPartnerKeys(match),
+                        hasDifferences: this.hasDifferences(match)
+                    });
+                }
+            }
+            
+            // Yield au navigateur après chaque chunk (sauf le dernier)
+            if (i + CACHE_CHUNK_SIZE < matchesToCache.length) {
+                await this.yieldToBrowser();
+            }
+        }
+        
+        const cacheDuration = performance.now() - cacheStartTime;
+        if (cacheDuration > 1) {
+            console.log('⏱️ [KEYS_CACHE] updateKeysCache terminé:', {
+                'Durée': `${cacheDuration.toFixed(2)}ms`,
+                'Matches paginés': matchesToCache.length
+            });
+        }
+        
+        // Marquer pour détection de changement uniquement si nécessaire
+        if (matchesToCache.length > 0) {
+            this.cdr.markForCheck();
+        }
+    }
+    
+    /**
+     * Récupère les clés BO depuis le cache
+     */
+    getCachedBoKeys(match: Match): string[] {
+        const matchKey = match.key || JSON.stringify(match.boData);
+        const cached = this.matchKeysCache.get(matchKey);
+        return cached?.boKeys || this.getBoKeys(match);
+    }
+    
+    /**
+     * Récupère les clés Partenaire depuis le cache
+     */
+    getCachedPartnerKeys(match: Match): string[] {
+        const matchKey = match.key || JSON.stringify(match.boData);
+        const cached = this.matchKeysCache.get(matchKey);
+        return cached?.partnerKeys || this.getPartnerKeys(match);
+    }
+    
+    /**
+     * Récupère hasDifferences depuis le cache
+     */
+    getCachedHasDifferences(match: Match): boolean {
+        const matchKey = match.key || JSON.stringify(match.boData);
+        const cached = this.matchKeysCache.get(matchKey);
+        return cached?.hasDifferences ?? this.hasDifferences(match);
+    }
+    
+    // Modifier les méthodes de pagination pour utiliser les données filtrées avec cache
     getPagedMatches(): Match[] {
+        // Vérifier le cache
+        if (this.cachedPagedMatches && this.cachedMatchesPage === this.matchesPage) {
+            return this.cachedPagedMatches;
+        }
+        
         const start = (this.matchesPage - 1) * this.pageSize;
-        return this.filteredMatches.slice(start, start + this.pageSize);
+        this.cachedPagedMatches = this.filteredMatches.slice(start, start + this.pageSize);
+        this.cachedMatchesPage = this.matchesPage;
+        return this.cachedPagedMatches;
     }
 
     getPagedBoOnly(): Record<string, string>[] {
+        // Vérifier le cache
+        if (this.cachedPagedBoOnly && this.cachedBoOnlyPage === this.boOnlyPage) {
+            return this.cachedPagedBoOnly;
+        }
+        
         const start = (this.boOnlyPage - 1) * this.pageSize;
-        return this.filteredBoOnly.slice(start, start + this.pageSize);
+        this.cachedPagedBoOnly = this.filteredBoOnly.slice(start, start + this.pageSize);
+        this.cachedBoOnlyPage = this.boOnlyPage;
+        return this.cachedPagedBoOnly;
     }
 
     getPagedPartnerOnly(): Record<string, string>[] {
+        // Vérifier le cache
+        if (this.cachedPagedPartnerOnly && this.cachedPartnerOnlyPage === this.partnerOnlyPage) {
+            return this.cachedPagedPartnerOnly;
+        }
+        
         const start = (this.partnerOnlyPage - 1) * this.pageSize;
-        return this.filteredPartnerOnly.slice(start, start + this.pageSize);
+        this.cachedPagedPartnerOnly = this.filteredPartnerOnly.slice(start, start + this.pageSize);
+        this.cachedPartnerOnlyPage = this.partnerOnlyPage;
+        return this.cachedPagedPartnerOnly;
+    }
+    
+    // TrackBy functions pour optimiser *ngFor
+    trackByMatchKey(index: number, match: Match): string {
+        return match.key || `match-${index}`;
+    }
+    
+    trackByRecordKey(index: number, record: Record<string, string>): string {
+        const key = record['IDTransaction'] || record['Référence'] || record['CLE'] || `record-${index}`;
+        return key.toString();
+    }
+    
+    trackByString(index: number, item: string): string {
+        return item;
     }
 
     getTotalPages(type: 'matches' | 'boOnly' | 'partnerOnly') {
-        const data = type === 'matches' 
-            ? this.filteredMatches 
-            : type === 'boOnly' 
-                ? this.filteredBoOnly 
-                : this.filteredPartnerOnly;
-        return Math.max(1, Math.ceil(data.length / this.pageSize));
+        // Utiliser les propriétés calculées au lieu de recalculer
+        switch (type) {
+            case 'matches':
+                return this.totalMatchesPages;
+            case 'boOnly':
+                return this.totalBoOnlyPages;
+            case 'partnerOnly':
+                return this.totalPartnerOnlyPages;
+            default:
+                return 1;
+        }
     }
 
     setActiveTab(tab: 'matches' | 'boOnly' | 'partnerOnly' | 'agencySummary') {
-        console.log('🔄 setActiveTab appelé avec:', tab);
-        console.log('🔄 activeTab avant:', this.activeTab);
+        const tabSwitchStartTime = performance.now();
+        console.log('🔄 [SETACTIVETAB] setActiveTab appelé avec:', tab, `[${new Date().toISOString()}]`);
+        
+        const setActiveTabStartTime = performance.now();
         this.activeTab = tab;
-        console.log('🔄 activeTab après:', this.activeTab);
         this.agencyPage = 1;
+        const setActiveTabDuration = performance.now() - setActiveTabStartTime;
+        console.log('⏱️ [SETACTIVETAB] Initialisation activeTab et agencyPage:', `${setActiveTabDuration.toFixed(2)}ms`);
         
-        // Forcer la détection des changements
-        setTimeout(() => {
+        // Lazy Loading : Charger les données uniquement à l'activation de l'onglet
+        // Prévention des doublons : vérifier qu'un chargement n'est pas déjà en cours
+        if (tab === 'matches' && !this.matchesLoaded && !this.isLoadingMatches) {
+            const lazyLoadStartTime = performance.now();
+            const cacheKey = 'matches';
+            console.log('🔍 [SETACTIVETAB] Vérification cache pour matches...');
+            
+            const cacheCheckStartTime = performance.now();
+            const cachedData = this.getFromCache('matches');
+            const cacheCheckDuration = performance.now() - cacheCheckStartTime;
+            console.log('⏱️ [SETACTIVETAB] Vérification cache matches:', `${cacheCheckDuration.toFixed(2)}ms`, cachedData ? '(données trouvées)' : '(cache vide)');
+            
+            if (cachedData) {
+                const cacheLoadStartTime = performance.now();
+                console.log('✅ [SETACTIVETAB] Données matches récupérées depuis le cache');
+                this.filteredMatches = cachedData;
+                this.matchesLoaded = true;
+                
+                const updatePropsStartTime = performance.now();
+                this.updateCalculatedProperties(); // Mettre à jour les propriétés calculées
+                const updatePropsDuration = performance.now() - updatePropsStartTime;
+                console.log('⏱️ [SETACTIVETAB] updateCalculatedProperties pour matches:', `${updatePropsDuration.toFixed(2)}ms`);
+                
+                const shareDataStartTime = performance.now();
+                this.reconciliationTabsService.setFilteredMatches(this.filteredMatches);
+                const shareDataDuration = performance.now() - shareDataStartTime;
+                console.log('⏱️ [SETACTIVETAB] Partage données matches avec service:', `${shareDataDuration.toFixed(2)}ms`);
+                
+                const cacheLoadDuration = performance.now() - cacheLoadStartTime;
+                console.log('⏱️ [SETACTIVETAB] Chargement depuis cache matches terminé:', `${cacheLoadDuration.toFixed(2)}ms`);
+            } else if (!this.loadingPromises.has(cacheKey)) {
+                const asyncLoadStartTime = performance.now();
+                console.log('🔄 [SETACTIVETAB] Démarrage chargement asynchrone matches...');
+                // Créer une promesse de chargement pour éviter les doublons
+                const loadPromise = this.loadMatchesDataLazy();
+                this.loadingPromises.set(cacheKey, loadPromise);
+                loadPromise.finally(() => {
+                    this.loadingPromises.delete(cacheKey);
+                    const asyncLoadDuration = performance.now() - asyncLoadStartTime;
+                    console.log('✅ [SETACTIVETAB] Chargement asynchrone matches terminé:', `${asyncLoadDuration.toFixed(2)}ms`);
+                });
+            } else {
+                console.log('⏳ [SETACTIVETAB] Chargement matches déjà en cours, attente...');
+                this.loadingPromises.get(cacheKey)?.then(() => {
+                    console.log('✅ [SETACTIVETAB] Chargement matches terminé');
+                });
+            }
+            const lazyLoadDuration = performance.now() - lazyLoadStartTime;
+            console.log('⏱️ [SETACTIVETAB] Lazy loading matches total:', `${lazyLoadDuration.toFixed(2)}ms`);
+        } else if (tab === 'boOnly' && !this.boOnlyLoaded && !this.isLoadingBoOnly) {
+            const lazyLoadStartTime = performance.now();
+            const cacheKey = 'boOnly';
+            console.log('🔍 [SETACTIVETAB] Vérification cache pour boOnly...');
+            
+            const cacheCheckStartTime = performance.now();
+            const cachedData = this.getFromCache('boOnly');
+            const cacheCheckDuration = performance.now() - cacheCheckStartTime;
+            console.log('⏱️ [SETACTIVETAB] Vérification cache boOnly:', `${cacheCheckDuration.toFixed(2)}ms`, cachedData ? '(données trouvées)' : '(cache vide)');
+            
+            if (cachedData) {
+                const cacheLoadStartTime = performance.now();
+                console.log('✅ [SETACTIVETAB] Données boOnly récupérées depuis le cache');
+                this.filteredBoOnly = cachedData;
+                this.boOnlyLoaded = true;
+                
+                const updatePropsStartTime = performance.now();
+                this.updateCalculatedProperties(); // Mettre à jour les propriétés calculées
+                const updatePropsDuration = performance.now() - updatePropsStartTime;
+                console.log('⏱️ [SETACTIVETAB] updateCalculatedProperties pour boOnly:', `${updatePropsDuration.toFixed(2)}ms`);
+                
+                const shareDataStartTime = performance.now();
+                this.reconciliationTabsService.setFilteredBoOnly(this.filteredBoOnly);
+                const shareDataDuration = performance.now() - shareDataStartTime;
+                console.log('⏱️ [SETACTIVETAB] Partage données boOnly avec service:', `${shareDataDuration.toFixed(2)}ms`);
+                
+                const cacheLoadDuration = performance.now() - cacheLoadStartTime;
+                console.log('⏱️ [SETACTIVETAB] Chargement depuis cache boOnly terminé:', `${cacheLoadDuration.toFixed(2)}ms`);
+            } else if (!this.loadingPromises.has(cacheKey)) {
+                const asyncLoadStartTime = performance.now();
+                console.log('🔄 [SETACTIVETAB] Démarrage chargement asynchrone boOnly...');
+                const loadPromise = this.loadBoOnlyDataLazy();
+                this.loadingPromises.set(cacheKey, loadPromise);
+                loadPromise.finally(() => {
+                    this.loadingPromises.delete(cacheKey);
+                    const asyncLoadDuration = performance.now() - asyncLoadStartTime;
+                    console.log('✅ [SETACTIVETAB] Chargement asynchrone boOnly terminé:', `${asyncLoadDuration.toFixed(2)}ms`);
+                });
+            }
+            const lazyLoadDuration = performance.now() - lazyLoadStartTime;
+            console.log('⏱️ [SETACTIVETAB] Lazy loading boOnly total:', `${lazyLoadDuration.toFixed(2)}ms`);
+        } else if (tab === 'partnerOnly' && !this.partnerOnlyLoaded && !this.isLoadingPartnerOnly) {
+            const lazyLoadStartTime = performance.now();
+            const cacheKey = 'partnerOnly';
+            console.log('🔍 [SETACTIVETAB] Vérification cache pour partnerOnly...');
+            
+            const cacheCheckStartTime = performance.now();
+            const cachedData = this.getFromCache('partnerOnly');
+            const cacheCheckDuration = performance.now() - cacheCheckStartTime;
+            console.log('⏱️ [SETACTIVETAB] Vérification cache partnerOnly:', `${cacheCheckDuration.toFixed(2)}ms`, cachedData ? '(données trouvées)' : '(cache vide)');
+            
+            if (cachedData) {
+                const cacheLoadStartTime = performance.now();
+                console.log('✅ [SETACTIVETAB] Données partnerOnly récupérées depuis le cache');
+                this.filteredPartnerOnly = cachedData;
+                this.partnerOnlyLoaded = true;
+                
+                const updatePropsStartTime = performance.now();
+                this.updateCalculatedProperties(); // Mettre à jour les propriétés calculées
+                const updatePropsDuration = performance.now() - updatePropsStartTime;
+                console.log('⏱️ [SETACTIVETAB] updateCalculatedProperties pour partnerOnly:', `${updatePropsDuration.toFixed(2)}ms`);
+                
+                const shareDataStartTime = performance.now();
+                this.reconciliationTabsService.setFilteredPartnerOnly(this.filteredPartnerOnly);
+                const shareDataDuration = performance.now() - shareDataStartTime;
+                console.log('⏱️ [SETACTIVETAB] Partage données partnerOnly avec service:', `${shareDataDuration.toFixed(2)}ms`);
+                
+                const cacheLoadDuration = performance.now() - cacheLoadStartTime;
+                console.log('⏱️ [SETACTIVETAB] Chargement depuis cache partnerOnly terminé:', `${cacheLoadDuration.toFixed(2)}ms`);
+            } else if (!this.loadingPromises.has(cacheKey)) {
+                const asyncLoadStartTime = performance.now();
+                console.log('🔄 [SETACTIVETAB] Démarrage chargement asynchrone partnerOnly...');
+                const loadPromise = this.loadPartnerOnlyDataLazy();
+                this.loadingPromises.set(cacheKey, loadPromise);
+                loadPromise.finally(() => {
+                    this.loadingPromises.delete(cacheKey);
+                    const asyncLoadDuration = performance.now() - asyncLoadStartTime;
+                    console.log('✅ [SETACTIVETAB] Chargement asynchrone partnerOnly terminé:', `${asyncLoadDuration.toFixed(2)}ms`);
+                });
+            }
+            const lazyLoadDuration = performance.now() - lazyLoadStartTime;
+            console.log('⏱️ [SETACTIVETAB] Lazy loading partnerOnly total:', `${lazyLoadDuration.toFixed(2)}ms`);
+        }
+        
+        const markForCheckStartTime = performance.now();
+        // Détection des changements immédiate pour un affichage instantané
+        // Avec OnPush, markForCheck() est suffisant et plus rapide
+        this.cdr.markForCheck();
+        const markForCheckDuration = performance.now() - markForCheckStartTime;
+        console.log('⏱️ [SETACTIVETAB] markForCheck:', `${markForCheckDuration.toFixed(2)}ms`);
+        
+        const tabSwitchDuration = performance.now() - tabSwitchStartTime;
+        console.log('✅ [SETACTIVETAB] setActiveTab terminé pour:', tab, `[${tabSwitchDuration.toFixed(2)}ms]`);
+    }
+    
+    /**
+     * Charge les données de matches avec lazy loading et traitement par chunks
+     */
+    private async loadMatchesDataLazy(): Promise<void> {
+        const loadStartTime = performance.now();
+        console.log('🔄 loadMatchesDataLazy démarré (Lazy Loading)', `[${new Date().toISOString()}]`);
+        
+        // Vérifier le cache d'abord
+        const cachedData = this.getFromCache('matches');
+        if (cachedData) {
+            console.log('✅ Données matches récupérées depuis le cache');
+            this.filteredMatches = cachedData;
+            this.matchesLoaded = true;
+            this.reconciliationTabsService.setFilteredMatches(this.filteredMatches);
+            return;
+        }
+        
+        // Si les données sont déjà dans la réponse (petits fichiers), les utiliser
+        if (this.response?.matches && this.response.matches.length > 0) {
+            console.log('✅ Données matches déjà présentes dans la réponse');
+            this.filteredMatches = this.getFilteredMatches();
+            this.matchesLoaded = true;
+            this.setCache('matches', this.filteredMatches);
+            this.reconciliationTabsService.setFilteredMatches(this.filteredMatches);
+            return;
+        }
+        
+        if (!this.currentJobId) {
+            this.currentJobId = this.reconciliationService.getCurrentJobId();
+        }
+        
+        if (!this.currentJobId) {
+            console.warn('⚠️ Aucun jobId disponible pour charger les matches');
+            return;
+        }
+        
+        this.isLoadingMatches = true;
+        this.loadingProgress.matches = { current: 0, total: 0, percentage: 0 };
+        this.cdr.detectChanges();
+        
+        try {
+            // Charger toutes les pages avec traitement par chunks
+            await this.loadAllMatchesChunked(0, [], loadStartTime);
+        } catch (error) {
+            console.error('❌ Erreur lors du chargement lazy des matches:', error);
+            this.isLoadingMatches = false;
             this.cdr.detectChanges();
-            console.log('✅ Détection des changements forcée pour:', tab);
-        }, 0);
+        }
+    }
+    
+    /**
+     * Charge toutes les matches par pages avec traitement asynchrone par chunks
+     */
+    private async loadAllMatchesChunked(page: number, accumulatedMatches: Match[], overallStartTime: number): Promise<void> {
+        const pageStartTime = performance.now();
+        console.log(`📥 Chargement page ${page + 1} des matches (chunk ${this.CHUNK_SIZE})...`);
         
-        // Forcer un rechargement complet
-        setTimeout(() => {
-            this.cdr.markForCheck();
+        return new Promise((resolve, reject) => {
+            this.reconciliationService.getMatches(this.currentJobId!, page, this.CHUNK_SIZE).subscribe({
+                next: async (response) => {
+                    const receiveTime = performance.now();
+                    const networkDuration = receiveTime - pageStartTime;
+                    
+                    // Mettre à jour la progression
+                    this.loadingProgress.matches.total = response.total;
+                    this.loadingProgress.matches.current = accumulatedMatches.length + response.matches.length;
+                    this.loadingProgress.matches.percentage = Math.round((this.loadingProgress.matches.current / this.loadingProgress.matches.total) * 100);
+                    
+                    // Traitement par chunks avec yield au navigateur
+                    const processStartTime = performance.now();
+                    await this.processChunked(response.matches, accumulatedMatches, 'matches');
+                    const processDuration = performance.now() - processStartTime;
+                    
+                    console.log(`⏱️ Page ${page + 1}/${response.totalPages} chargée:`, {
+                        'Durée réseau': `${networkDuration.toFixed(2)}ms`,
+                        'Durée traitement': `${processDuration.toFixed(2)}ms`,
+                        'Matches reçus': response.matches.length,
+                        'Total accumulé': accumulatedMatches.length,
+                        'Progression': `${this.loadingProgress.matches.percentage}%`
+                    });
+                    
+                    // Mettre à jour l'UI périodiquement
+                    if (page % 5 === 0 || page + 1 >= response.totalPages) {
+                        requestAnimationFrame(() => {
+                            this.cdr.markForCheck();
+                            this.cdr.detectChanges();
+                        });
+                    }
+                    
+                    if (page + 1 < response.totalPages) {
+                        // Yield au navigateur avant de charger la page suivante
+                        await this.yieldToBrowser();
+                        await this.loadAllMatchesChunked(page + 1, accumulatedMatches, overallStartTime);
+                        resolve();
+                    } else {
+                        // Toutes les données sont chargées
+                        const finalizeStartTime = performance.now();
+                        this.response = {
+                            ...this.response!,
+                            matches: accumulatedMatches
+                        };
+                        
+                        const filterStartTime = performance.now();
+                        this.filteredMatches = this.getFilteredMatches();
+                        const filterDuration = performance.now() - filterStartTime;
+                        
+                        // Mettre en cache
+                        this.setCache('matches', this.filteredMatches);
+                        
+                        this.matchesLoaded = true;
+                        this.isLoadingMatches = false;
+                        this.updateCalculatedProperties(); // Mettre à jour les propriétés calculées
+                        
+                        const shareStartTime = performance.now();
+                        this.reconciliationTabsService.setFilteredMatches(this.filteredMatches);
+                        const shareDuration = performance.now() - shareStartTime;
+                        
+                        const totalDuration = performance.now() - overallStartTime;
+                        console.log(`✅ ${accumulatedMatches.length} matches chargés en ${totalDuration.toFixed(2)}ms (${(totalDuration / 1000).toFixed(2)}s)`);
+                        console.log('📊 Détail finalisation:', {
+                            'Filtrage': `${filterDuration.toFixed(2)}ms`,
+                            'Partage données': `${shareDuration.toFixed(2)}ms`
+                        });
+                        
+                        // Dernière mise à jour UI
+                        requestAnimationFrame(() => {
+                            this.cdr.markForCheck();
+                            this.cdr.detectChanges();
+                        });
+                        
+                        resolve();
+                    }
+                },
+                error: (error) => {
+                    const errorDuration = performance.now() - pageStartTime;
+                    console.error(`❌ Erreur lors du chargement de la page ${page + 1} des matches (après ${errorDuration.toFixed(2)}ms):`, error);
+                    this.isLoadingMatches = false;
+                    this.cdr.detectChanges();
+                    reject(error);
+                }
+            });
+        });
+    }
+    
+    /**
+     * Traite les données par chunks avec yield au navigateur
+     */
+    private async processChunked<T>(data: T[], accumulator: T[], type: 'matches' | 'boOnly' | 'partnerOnly'): Promise<void> {
+        for (let i = 0; i < data.length; i += this.PROCESSING_CHUNK_SIZE) {
+            const chunk = data.slice(i, i + this.PROCESSING_CHUNK_SIZE);
+            accumulator.push(...chunk);
+            
+            // Yield au navigateur tous les YIELD_INTERVAL ms
+            if (i % (this.PROCESSING_CHUNK_SIZE * 2) === 0) {
+                await this.yieldToBrowser();
+            }
+        }
+    }
+    
+    /**
+     * Yield au navigateur pour permettre le rendu
+     */
+    private yieldToBrowser(): Promise<void> {
+        return new Promise(resolve => {
+            setTimeout(() => {
+                requestAnimationFrame(() => {
+                    resolve();
+                });
+            }, this.YIELD_INTERVAL);
+        });
+    }
+    
+    /**
+     * Charge toutes les matches par pages
+     */
+    private loadAllMatches(page: number, accumulatedMatches: Match[], overallStartTime: number): void {
+        const pageStartTime = performance.now();
+        console.log(`📥 Chargement page ${page + 1} des matches...`);
+        
+        this.reconciliationService.getMatches(this.currentJobId!, page, 1000).subscribe({
+            next: (response) => {
+                const receiveTime = performance.now();
+                const networkDuration = receiveTime - pageStartTime;
+                
+                const pushStartTime = performance.now();
+                accumulatedMatches.push(...response.matches);
+                const pushDuration = performance.now() - pushStartTime;
+                
+                console.log(`⏱️ Page ${page + 1}/${response.totalPages} chargée:`, {
+                    'Durée réseau': `${networkDuration.toFixed(2)}ms`,
+                    'Durée push': `${pushDuration.toFixed(2)}ms`,
+                    'Matches reçus': response.matches.length,
+                    'Total accumulé': accumulatedMatches.length
+                });
+                
+                if (page + 1 < response.totalPages) {
+                    // Charger la page suivante
+                    this.loadAllMatches(page + 1, accumulatedMatches, overallStartTime);
+                } else {
+                    // Toutes les données sont chargées
+                    const finalizeStartTime = performance.now();
+                    this.response = {
+                        ...this.response!,
+                        matches: accumulatedMatches
+                    };
+                    
+                    const filterStartTime = performance.now();
+                    this.filteredMatches = this.getFilteredMatches();
+                    const filterDuration = performance.now() - filterStartTime;
+                    
+                    this.matchesLoaded = true;
+                    this.isLoadingMatches = false;
+                    
+                    const shareStartTime = performance.now();
+                    // Partager les données filtrées
+                    this.reconciliationTabsService.setFilteredMatches(this.filteredMatches);
+                    const shareDuration = performance.now() - shareStartTime;
+                    
+                    const detectChangesStartTime = performance.now();
+                    this.cdr.detectChanges();
+                    const detectChangesDuration = performance.now() - detectChangesStartTime;
+                    
+                    const totalDuration = performance.now() - overallStartTime;
+                    console.log(`✅ ${accumulatedMatches.length} matches chargés en ${totalDuration.toFixed(2)}ms (${(totalDuration / 1000).toFixed(2)}s)`);
+                    console.log('📊 Détail finalisation:', {
+                        'Mise à jour response': `${(filterStartTime - finalizeStartTime).toFixed(2)}ms`,
+                        'Filtrage': `${filterDuration.toFixed(2)}ms`,
+                        'Partage données': `${shareDuration.toFixed(2)}ms`,
+                        'DetectChanges': `${detectChangesDuration.toFixed(2)}ms`
+                    });
+                }
+            },
+            error: (error) => {
+                const errorDuration = performance.now() - pageStartTime;
+                console.error(`❌ Erreur lors du chargement de la page ${page + 1} des matches (après ${errorDuration.toFixed(2)}ms):`, error);
+                this.isLoadingMatches = false;
+                this.cdr.detectChanges();
+            }
+        });
+    }
+    
+    /**
+     * Charge les données de boOnly avec lazy loading et traitement par chunks
+     */
+    private async loadBoOnlyDataLazy(): Promise<void> {
+        const loadStartTime = performance.now();
+        console.log('🔄 loadBoOnlyDataLazy démarré (Lazy Loading)', `[${new Date().toISOString()}]`);
+        
+        // Vérifier le cache d'abord
+        const cachedData = this.getFromCache('boOnly');
+        if (cachedData) {
+            console.log('✅ Données boOnly récupérées depuis le cache');
+            this.filteredBoOnly = cachedData;
+            this.boOnlyLoaded = true;
+            this.reconciliationTabsService.setFilteredBoOnly(this.filteredBoOnly);
+            return;
+        }
+        
+        // Si les données sont déjà dans la réponse, les utiliser
+        if ((this.response?.mismatches && this.response.mismatches.length > 0) || 
+            (this.response?.boOnly && this.response.boOnly.length > 0)) {
+            console.log('✅ Données boOnly déjà présentes dans la réponse');
+            this.filteredBoOnly = this.getFilteredBoOnly();
+            this.boOnlyLoaded = true;
+            this.setCache('boOnly', this.filteredBoOnly);
+            this.reconciliationTabsService.setFilteredBoOnly(this.filteredBoOnly);
+            return;
+        }
+        
+        if (!this.currentJobId) {
+            this.currentJobId = this.reconciliationService.getCurrentJobId();
+        }
+        
+        if (!this.currentJobId) {
+            console.warn('⚠️ Aucun jobId disponible pour charger les boOnly');
+            return;
+        }
+        
+        this.isLoadingBoOnly = true;
+        this.loadingProgress.boOnly = { current: 0, total: 0, percentage: 0 };
+        this.cdr.detectChanges();
+        
+        try {
+            // Charger boOnly et mismatches en parallèle avec traitement par chunks
+            await Promise.all([
+                this.loadAllBoOnlyChunked(0, [], loadStartTime),
+                this.loadAllMismatchesChunked(0, [], loadStartTime)
+            ]);
+        } catch (error) {
+            console.error('❌ Erreur lors du chargement lazy des boOnly:', error);
+            this.isLoadingBoOnly = false;
             this.cdr.detectChanges();
-            console.log('✅ Rechargement complet forcé pour:', tab);
-        }, 100);
+        }
+    }
+    
+    /**
+     * Charge toutes les boOnly par pages avec traitement asynchrone par chunks
+     */
+    private async loadAllBoOnlyChunked(page: number, accumulatedBoOnly: Record<string, string>[], overallStartTime: number): Promise<void> {
+        const pageStartTime = performance.now();
+        console.log(`📥 Chargement page ${page + 1} des boOnly (chunk ${this.CHUNK_SIZE})...`);
         
-        console.log('✅ setActiveTab terminé pour:', tab);
+        return new Promise((resolve, reject) => {
+            this.reconciliationService.getBoOnly(this.currentJobId!, page, this.CHUNK_SIZE).subscribe({
+                next: async (response) => {
+                    const receiveTime = performance.now();
+                    const networkDuration = receiveTime - pageStartTime;
+                    
+                    // Mettre à jour la progression
+                    this.loadingProgress.boOnly.total = response.total;
+                    this.loadingProgress.boOnly.current = accumulatedBoOnly.length + response.boOnly.length;
+                    this.loadingProgress.boOnly.percentage = Math.round((this.loadingProgress.boOnly.current / this.loadingProgress.boOnly.total) * 100);
+                    
+                    // Traitement par chunks avec yield au navigateur
+                    const processStartTime = performance.now();
+                    await this.processChunked(response.boOnly, accumulatedBoOnly, 'boOnly');
+                    const processDuration = performance.now() - processStartTime;
+                    
+                    console.log(`⏱️ Page ${page + 1}/${response.totalPages} boOnly chargée:`, {
+                        'Durée réseau': `${networkDuration.toFixed(2)}ms`,
+                        'Durée traitement': `${processDuration.toFixed(2)}ms`,
+                        'BoOnly reçus': response.boOnly.length,
+                        'Total accumulé': accumulatedBoOnly.length,
+                        'Progression': `${this.loadingProgress.boOnly.percentage}%`
+                    });
+                    
+                    if (page + 1 < response.totalPages) {
+                        await this.yieldToBrowser();
+                        await this.loadAllBoOnlyChunked(page + 1, accumulatedBoOnly, overallStartTime);
+                        resolve();
+                    } else {
+                        // Mettre à jour la réponse avec les boOnly chargés
+                        this.response = {
+                            ...this.response!,
+                            boOnly: accumulatedBoOnly
+                        };
+                        
+                        // Vérifier si les mismatches sont aussi chargés avant de finaliser
+                        if (this.response.mismatches && this.response.mismatches.length > 0) {
+                            const filterStartTime = performance.now();
+                            this.filteredBoOnly = this.getFilteredBoOnly();
+                            const filterDuration = performance.now() - filterStartTime;
+                            
+                            // Mettre en cache
+                            this.setCache('boOnly', this.filteredBoOnly);
+                            
+                            this.boOnlyLoaded = true;
+                            this.isLoadingBoOnly = false;
+                            
+                            this.reconciliationTabsService.setFilteredBoOnly(this.filteredBoOnly);
+                            
+                            requestAnimationFrame(() => {
+                                this.cdr.markForCheck();
+                                this.cdr.detectChanges();
+                            });
+                            
+                            console.log(`✅ ${accumulatedBoOnly.length} boOnly chargés`);
+                        }
+                        resolve();
+                    }
+                },
+                error: (error) => {
+                    const errorDuration = performance.now() - pageStartTime;
+                    console.error(`❌ Erreur lors du chargement de la page ${page + 1} des boOnly (après ${errorDuration.toFixed(2)}ms):`, error);
+                    reject(error);
+                }
+            });
+        });
+    }
+    
+    /**
+     * Charge toutes les mismatches par pages avec traitement asynchrone par chunks
+     */
+    private async loadAllMismatchesChunked(page: number, accumulatedMismatches: Record<string, string>[], overallStartTime: number): Promise<void> {
+        const pageStartTime = performance.now();
+        console.log(`📥 Chargement page ${page + 1} des mismatches (chunk ${this.CHUNK_SIZE})...`);
+        
+        return new Promise((resolve, reject) => {
+            this.reconciliationService.getMismatches(this.currentJobId!, page, this.CHUNK_SIZE).subscribe({
+                next: async (response) => {
+                    const receiveTime = performance.now();
+                    const networkDuration = receiveTime - pageStartTime;
+                    
+                    // Traitement par chunks avec yield au navigateur
+                    const processStartTime = performance.now();
+                    await this.processChunked(response.mismatches, accumulatedMismatches, 'boOnly');
+                    const processDuration = performance.now() - processStartTime;
+                    
+                    console.log(`⏱️ Page ${page + 1}/${response.totalPages} mismatches chargée:`, {
+                        'Durée réseau': `${networkDuration.toFixed(2)}ms`,
+                        'Durée traitement': `${processDuration.toFixed(2)}ms`,
+                        'Mismatches reçus': response.mismatches.length,
+                        'Total accumulé': accumulatedMismatches.length
+                    });
+                    
+                    if (page + 1 < response.totalPages) {
+                        await this.yieldToBrowser();
+                        await this.loadAllMismatchesChunked(page + 1, accumulatedMismatches, overallStartTime);
+                        resolve();
+                    } else {
+                        // Mettre à jour la réponse avec les mismatches chargés
+                        this.response = {
+                            ...this.response!,
+                            mismatches: accumulatedMismatches
+                        };
+                        
+                        // Vérifier si les boOnly sont aussi chargés avant de finaliser
+                        if (this.response.boOnly && this.response.boOnly.length > 0) {
+                            const filterStartTime = performance.now();
+                            this.filteredBoOnly = this.getFilteredBoOnly();
+                            const filterDuration = performance.now() - filterStartTime;
+                            
+                            // Mettre en cache
+                            this.setCache('boOnly', this.filteredBoOnly);
+                            
+                            this.boOnlyLoaded = true;
+                            this.isLoadingBoOnly = false;
+                            
+                            this.reconciliationTabsService.setFilteredBoOnly(this.filteredBoOnly);
+                            
+                            requestAnimationFrame(() => {
+                                this.cdr.markForCheck();
+                                this.cdr.detectChanges();
+                            });
+                            
+                            console.log(`✅ ${accumulatedMismatches.length} mismatches chargés`);
+                        }
+                        resolve();
+                    }
+                },
+                error: (error) => {
+                    const errorDuration = performance.now() - pageStartTime;
+                    console.error(`❌ Erreur lors du chargement de la page ${page + 1} des mismatches (après ${errorDuration.toFixed(2)}ms):`, error);
+                    // Continuer même si les mismatches échouent
+                    if (this.response?.boOnly && this.response.boOnly.length > 0) {
+                        this.filteredBoOnly = this.getFilteredBoOnly();
+                        this.boOnlyLoaded = true;
+                        this.isLoadingBoOnly = false;
+                        this.cdr.detectChanges();
+                    }
+                    resolve(); // Résoudre quand même pour ne pas bloquer
+                }
+            });
+        });
+    }
+    
+    /**
+     * Charge toutes les boOnly par pages
+     */
+    private loadAllBoOnly(page: number, accumulatedBoOnly: Record<string, string>[], overallStartTime: number): void {
+        const pageStartTime = performance.now();
+        console.log(`📥 Chargement page ${page + 1} des boOnly...`);
+        
+        this.reconciliationService.getBoOnly(this.currentJobId!, page, 1000).subscribe({
+            next: (response) => {
+                const receiveTime = performance.now();
+                const networkDuration = receiveTime - pageStartTime;
+                
+                const pushStartTime = performance.now();
+                accumulatedBoOnly.push(...response.boOnly);
+                const pushDuration = performance.now() - pushStartTime;
+                
+                console.log(`⏱️ Page ${page + 1}/${response.totalPages} boOnly chargée:`, {
+                    'Durée réseau': `${networkDuration.toFixed(2)}ms`,
+                    'Durée push': `${pushDuration.toFixed(2)}ms`,
+                    'BoOnly reçus': response.boOnly.length,
+                    'Total accumulé': accumulatedBoOnly.length
+                });
+                
+                if (page + 1 < response.totalPages) {
+                    this.loadAllBoOnly(page + 1, accumulatedBoOnly, overallStartTime);
+                } else {
+                    // Mettre à jour la réponse avec les boOnly chargés
+                    const finalizeStartTime = performance.now();
+                    this.response = {
+                        ...this.response!,
+                        boOnly: accumulatedBoOnly
+                    };
+                    
+                    // Vérifier si les mismatches sont aussi chargés
+                    if (this.response.mismatches && this.response.mismatches.length > 0) {
+                        const filterStartTime = performance.now();
+                        this.filteredBoOnly = this.getFilteredBoOnly();
+                        const filterDuration = performance.now() - filterStartTime;
+                        
+                        this.boOnlyLoaded = true;
+                        this.isLoadingBoOnly = false;
+                        
+                        const shareStartTime = performance.now();
+                        this.reconciliationTabsService.setFilteredBoOnly(this.filteredBoOnly);
+                        const shareDuration = performance.now() - shareStartTime;
+                        
+                        const totalDuration = performance.now() - overallStartTime;
+                        console.log(`✅ ${accumulatedBoOnly.length} boOnly chargés en ${totalDuration.toFixed(2)}ms`);
+                        console.log('📊 Détail finalisation boOnly:', {
+                            'Filtrage': `${filterDuration.toFixed(2)}ms`,
+                            'Partage données': `${shareDuration.toFixed(2)}ms`
+                        });
+                        
+                        // Différer detectChanges pour éviter de bloquer l'UI
+                        setTimeout(() => {
+                            requestAnimationFrame(() => {
+                                const detectChangesStartTime = performance.now();
+                                this.cdr.markForCheck();
+                                this.cdr.detectChanges();
+                                const detectChangesDuration = performance.now() - detectChangesStartTime;
+                                console.log('⏱️ detectChanges (après chargement boOnly):', `${detectChangesDuration.toFixed(2)}ms`);
+                            });
+                        }, 0);
+                    }
+                }
+            },
+            error: (error) => {
+                const errorDuration = performance.now() - pageStartTime;
+                console.error(`❌ Erreur lors du chargement de la page ${page + 1} des boOnly (après ${errorDuration.toFixed(2)}ms):`, error);
+                this.isLoadingBoOnly = false;
+                this.cdr.detectChanges();
+            }
+        });
+    }
+    
+    /**
+     * Charge toutes les mismatches par pages
+     */
+    private loadAllMismatches(page: number, accumulatedMismatches: Record<string, string>[], overallStartTime: number): void {
+        const pageStartTime = performance.now();
+        console.log(`📥 Chargement page ${page + 1} des mismatches...`);
+        
+        this.reconciliationService.getMismatches(this.currentJobId!, page, 1000).subscribe({
+            next: (response) => {
+                const receiveTime = performance.now();
+                const networkDuration = receiveTime - pageStartTime;
+                
+                const pushStartTime = performance.now();
+                accumulatedMismatches.push(...response.mismatches);
+                const pushDuration = performance.now() - pushStartTime;
+                
+                console.log(`⏱️ Page ${page + 1}/${response.totalPages} mismatches chargée:`, {
+                    'Durée réseau': `${networkDuration.toFixed(2)}ms`,
+                    'Durée push': `${pushDuration.toFixed(2)}ms`,
+                    'Mismatches reçus': response.mismatches.length,
+                    'Total accumulé': accumulatedMismatches.length
+                });
+                
+                if (page + 1 < response.totalPages) {
+                    this.loadAllMismatches(page + 1, accumulatedMismatches, overallStartTime);
+                } else {
+                    // Mettre à jour la réponse avec les mismatches chargés
+                    const finalizeStartTime = performance.now();
+                    this.response = {
+                        ...this.response!,
+                        mismatches: accumulatedMismatches
+                    };
+                    
+                    // Vérifier si les boOnly sont aussi chargés
+                    if (this.response.boOnly && this.response.boOnly.length > 0) {
+                        const filterStartTime = performance.now();
+                        this.filteredBoOnly = this.getFilteredBoOnly();
+                        const filterDuration = performance.now() - filterStartTime;
+                        
+                        this.boOnlyLoaded = true;
+                        this.isLoadingBoOnly = false;
+                        
+                        const shareStartTime = performance.now();
+                        this.reconciliationTabsService.setFilteredBoOnly(this.filteredBoOnly);
+                        const shareDuration = performance.now() - shareStartTime;
+                        
+                        const totalDuration = performance.now() - overallStartTime;
+                        console.log(`✅ ${accumulatedMismatches.length} mismatches chargés en ${totalDuration.toFixed(2)}ms`);
+                        console.log('📊 Détail finalisation mismatches:', {
+                            'Filtrage': `${filterDuration.toFixed(2)}ms`,
+                            'Partage données': `${shareDuration.toFixed(2)}ms`
+                        });
+                        
+                        // Différer detectChanges pour éviter de bloquer l'UI
+                        setTimeout(() => {
+                            requestAnimationFrame(() => {
+                                const detectChangesStartTime = performance.now();
+                                this.cdr.markForCheck();
+                                this.cdr.detectChanges();
+                                const detectChangesDuration = performance.now() - detectChangesStartTime;
+                                console.log('⏱️ detectChanges (après chargement mismatches):', `${detectChangesDuration.toFixed(2)}ms`);
+                            });
+                        }, 0);
+                    }
+                }
+            },
+            error: (error) => {
+                const errorDuration = performance.now() - pageStartTime;
+                console.error(`❌ Erreur lors du chargement de la page ${page + 1} des mismatches (après ${errorDuration.toFixed(2)}ms):`, error);
+                // Continuer même si les mismatches échouent
+                if (this.response?.boOnly && this.response.boOnly.length > 0) {
+                    this.filteredBoOnly = this.getFilteredBoOnly();
+                    this.boOnlyLoaded = true;
+                    this.isLoadingBoOnly = false;
+                    this.cdr.detectChanges();
+                }
+            }
+        });
+    }
+    
+    /**
+     * Charge les données de partnerOnly avec lazy loading et traitement par chunks
+     */
+    private async loadPartnerOnlyDataLazy(): Promise<void> {
+        const loadStartTime = performance.now();
+        console.log('🔄 loadPartnerOnlyDataLazy démarré (Lazy Loading)', `[${new Date().toISOString()}]`);
+        
+        // Vérifier le cache d'abord
+        const cachedData = this.getFromCache('partnerOnly');
+        if (cachedData) {
+            console.log('✅ Données partnerOnly récupérées depuis le cache');
+            this.filteredPartnerOnly = cachedData;
+            this.partnerOnlyLoaded = true;
+            this.reconciliationTabsService.setFilteredPartnerOnly(this.filteredPartnerOnly);
+            return;
+        }
+        
+        // Si les données sont déjà dans la réponse, les utiliser
+        if (this.response?.partnerOnly && this.response.partnerOnly.length > 0) {
+            console.log('✅ Données partnerOnly déjà présentes dans la réponse');
+            this.filteredPartnerOnly = this.getFilteredPartnerOnly();
+            this.partnerOnlyLoaded = true;
+            this.setCache('partnerOnly', this.filteredPartnerOnly);
+            this.reconciliationTabsService.setFilteredPartnerOnly(this.filteredPartnerOnly);
+            return;
+        }
+        
+        if (!this.currentJobId) {
+            this.currentJobId = this.reconciliationService.getCurrentJobId();
+        }
+        
+        if (!this.currentJobId) {
+            console.warn('⚠️ Aucun jobId disponible pour charger les partnerOnly');
+            return;
+        }
+        
+        this.isLoadingPartnerOnly = true;
+        this.loadingProgress.partnerOnly = { current: 0, total: 0, percentage: 0 };
+        this.cdr.detectChanges();
+        
+        try {
+            await this.loadAllPartnerOnlyChunked(0, [], loadStartTime);
+        } catch (error) {
+            console.error('❌ Erreur lors du chargement lazy des partnerOnly:', error);
+            this.isLoadingPartnerOnly = false;
+            this.cdr.detectChanges();
+        }
+    }
+    
+    /**
+     * Charge toutes les partnerOnly par pages avec traitement asynchrone par chunks
+     */
+    private async loadAllPartnerOnlyChunked(page: number, accumulatedPartnerOnly: Record<string, string>[], overallStartTime: number): Promise<void> {
+        const pageStartTime = performance.now();
+        console.log(`📥 Chargement page ${page + 1} des partnerOnly (chunk ${this.CHUNK_SIZE})...`);
+        
+        return new Promise((resolve, reject) => {
+            this.reconciliationService.getPartnerOnly(this.currentJobId!, page, this.CHUNK_SIZE).subscribe({
+                next: async (response) => {
+                    const receiveTime = performance.now();
+                    const networkDuration = receiveTime - pageStartTime;
+                    
+                    // Mettre à jour la progression
+                    this.loadingProgress.partnerOnly.total = response.total;
+                    this.loadingProgress.partnerOnly.current = accumulatedPartnerOnly.length + response.partnerOnly.length;
+                    this.loadingProgress.partnerOnly.percentage = Math.round((this.loadingProgress.partnerOnly.current / this.loadingProgress.partnerOnly.total) * 100);
+                    
+                    // Traitement par chunks avec yield au navigateur
+                    const processStartTime = performance.now();
+                    await this.processChunked(response.partnerOnly, accumulatedPartnerOnly, 'partnerOnly');
+                    const processDuration = performance.now() - processStartTime;
+                    
+                    console.log(`⏱️ Page ${page + 1}/${response.totalPages} partnerOnly chargée:`, {
+                        'Durée réseau': `${networkDuration.toFixed(2)}ms`,
+                        'Durée traitement': `${processDuration.toFixed(2)}ms`,
+                        'PartnerOnly reçus': response.partnerOnly.length,
+                        'Total accumulé': accumulatedPartnerOnly.length,
+                        'Progression': `${this.loadingProgress.partnerOnly.percentage}%`
+                    });
+                    
+                    // Mettre à jour l'UI périodiquement
+                    if (page % 5 === 0 || page + 1 >= response.totalPages) {
+                        requestAnimationFrame(() => {
+                            this.cdr.markForCheck();
+                            this.cdr.detectChanges();
+                        });
+                    }
+                    
+                    if (page + 1 < response.totalPages) {
+                        // Yield au navigateur avant de charger la page suivante
+                        await this.yieldToBrowser();
+                        await this.loadAllPartnerOnlyChunked(page + 1, accumulatedPartnerOnly, overallStartTime);
+                        resolve();
+                    } else {
+                        // Toutes les données sont chargées
+                        const finalizeStartTime = performance.now();
+                        this.response = {
+                            ...this.response!,
+                            partnerOnly: accumulatedPartnerOnly
+                        };
+                        
+                        const filterStartTime = performance.now();
+                        this.filteredPartnerOnly = this.getFilteredPartnerOnly();
+                        const filterDuration = performance.now() - filterStartTime;
+                        
+                        // Mettre en cache
+                        this.setCache('partnerOnly', this.filteredPartnerOnly);
+                        
+                        this.partnerOnlyLoaded = true;
+                        this.isLoadingPartnerOnly = false;
+                        
+                        const shareStartTime = performance.now();
+                        this.reconciliationTabsService.setFilteredPartnerOnly(this.filteredPartnerOnly);
+                        const shareDuration = performance.now() - shareStartTime;
+                        
+                        const totalDuration = performance.now() - overallStartTime;
+                        console.log(`✅ ${accumulatedPartnerOnly.length} partnerOnly chargés en ${totalDuration.toFixed(2)}ms (${(totalDuration / 1000).toFixed(2)}s)`);
+                        console.log('📊 Détail finalisation partnerOnly:', {
+                            'Filtrage': `${filterDuration.toFixed(2)}ms`,
+                            'Partage données': `${shareDuration.toFixed(2)}ms`
+                        });
+                        
+                        // Dernière mise à jour UI
+                        requestAnimationFrame(() => {
+                            this.cdr.markForCheck();
+                            this.cdr.detectChanges();
+                        });
+                        
+                        resolve();
+                    }
+                },
+                error: (error) => {
+                    const errorDuration = performance.now() - pageStartTime;
+                    console.error(`❌ Erreur lors du chargement de la page ${page + 1} des partnerOnly (après ${errorDuration.toFixed(2)}ms):`, error);
+                    this.isLoadingPartnerOnly = false;
+                    this.cdr.detectChanges();
+                    reject(error);
+                }
+            });
+        });
+    }
+    
+    /**
+     * Charge toutes les partnerOnly par pages
+     */
+    private loadAllPartnerOnly(page: number, accumulatedPartnerOnly: Record<string, string>[], overallStartTime: number): void {
+        const pageStartTime = performance.now();
+        console.log(`📥 Chargement page ${page + 1} des partnerOnly...`);
+        
+        this.reconciliationService.getPartnerOnly(this.currentJobId!, page, 1000).subscribe({
+            next: (response) => {
+                const receiveTime = performance.now();
+                const networkDuration = receiveTime - pageStartTime;
+                
+                const pushStartTime = performance.now();
+                accumulatedPartnerOnly.push(...response.partnerOnly);
+                const pushDuration = performance.now() - pushStartTime;
+                
+                console.log(`⏱️ Page ${page + 1}/${response.totalPages} partnerOnly chargée:`, {
+                    'Durée réseau': `${networkDuration.toFixed(2)}ms`,
+                    'Durée push': `${pushDuration.toFixed(2)}ms`,
+                    'PartnerOnly reçus': response.partnerOnly.length,
+                    'Total accumulé': accumulatedPartnerOnly.length
+                });
+                
+                if (page + 1 < response.totalPages) {
+                    this.loadAllPartnerOnly(page + 1, accumulatedPartnerOnly, overallStartTime);
+                } else {
+                    // Toutes les données sont chargées
+                    const finalizeStartTime = performance.now();
+                    this.response = {
+                        ...this.response!,
+                        partnerOnly: accumulatedPartnerOnly
+                    };
+                    
+                    const filterStartTime = performance.now();
+                    this.filteredPartnerOnly = this.getFilteredPartnerOnly();
+                    const filterDuration = performance.now() - filterStartTime;
+                    
+                    this.partnerOnlyLoaded = true;
+                    this.isLoadingPartnerOnly = false;
+                    
+                    const shareStartTime = performance.now();
+                    // Partager les données filtrées
+                    this.reconciliationTabsService.setFilteredPartnerOnly(this.filteredPartnerOnly);
+                    const shareDuration = performance.now() - shareStartTime;
+                    
+                    const totalDuration = performance.now() - overallStartTime;
+                    console.log(`✅ ${accumulatedPartnerOnly.length} partnerOnly chargés en ${totalDuration.toFixed(2)}ms (${(totalDuration / 1000).toFixed(2)}s)`);
+                    console.log('📊 Détail finalisation partnerOnly:', {
+                        'Mise à jour response': `${(filterStartTime - finalizeStartTime).toFixed(2)}ms`,
+                        'Filtrage': `${filterDuration.toFixed(2)}ms`,
+                        'Partage données': `${shareDuration.toFixed(2)}ms`
+                    });
+                    
+                    // Différer detectChanges pour éviter de bloquer l'UI
+                    setTimeout(() => {
+                        requestAnimationFrame(() => {
+                            const detectChangesStartTime = performance.now();
+                            this.cdr.markForCheck();
+                            this.cdr.detectChanges();
+                            const detectChangesDuration = performance.now() - detectChangesStartTime;
+                            console.log('⏱️ detectChanges (après chargement partnerOnly):', `${detectChangesDuration.toFixed(2)}ms`);
+                        });
+                    }, 0);
+                }
+            },
+            error: (error) => {
+                const errorDuration = performance.now() - pageStartTime;
+                console.error(`❌ Erreur lors du chargement de la page ${page + 1} des partnerOnly (après ${errorDuration.toFixed(2)}ms):`, error);
+                this.isLoadingPartnerOnly = false;
+                this.cdr.detectChanges();
+            }
+        });
     }
 
     openReconciliationReport() {
@@ -3525,17 +5088,51 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
     }
 
     nextPage(type: 'matches' | 'boOnly' | 'partnerOnly') {
-        if (type === 'matches' && this.matchesPage < this.getTotalPages('matches')) this.matchesPage++;
-        if (type === 'boOnly' && this.boOnlyPage < this.getTotalPages('boOnly')) this.boOnlyPage++;
-        if (type === 'partnerOnly' && this.partnerOnlyPage < this.getTotalPages('partnerOnly')) this.partnerOnlyPage++;
-        this.cdr.detectChanges();
+        const pageStartTime = performance.now();
+        if (type === 'matches' && this.matchesPage < this.getTotalPages('matches')) {
+            this.matchesPage++;
+            this.cachedPagedMatches = null; // Invalider le cache
+            this.updatePagedData(); // Mettre à jour les données paginées
+        }
+        if (type === 'boOnly' && this.boOnlyPage < this.getTotalPages('boOnly')) {
+            this.boOnlyPage++;
+            this.cachedPagedBoOnly = null; // Invalider le cache
+            this.pagedBoOnly = this.getPagedBoOnly();
+        }
+        if (type === 'partnerOnly' && this.partnerOnlyPage < this.getTotalPages('partnerOnly')) {
+            this.partnerOnlyPage++;
+            this.cachedPagedPartnerOnly = null; // Invalider le cache
+            this.pagedPartnerOnly = this.getPagedPartnerOnly();
+        }
+        const pageDuration = performance.now() - pageStartTime;
+        if (pageDuration > 1) {
+            console.log(`⏱️ nextPage(${type}):`, `${pageDuration.toFixed(2)}ms`);
+        }
+        this.cdr.markForCheck();
     }
 
     prevPage(type: 'matches' | 'boOnly' | 'partnerOnly') {
-        if (type === 'matches' && this.matchesPage > 1) this.matchesPage--;
-        if (type === 'boOnly' && this.boOnlyPage > 1) this.boOnlyPage--;
-        if (type === 'partnerOnly' && this.partnerOnlyPage > 1) this.partnerOnlyPage--;
-        this.cdr.detectChanges();
+        const pageStartTime = performance.now();
+        if (type === 'matches' && this.matchesPage > 1) {
+            this.matchesPage--;
+            this.cachedPagedMatches = null; // Invalider le cache
+            this.updatePagedData(); // Mettre à jour les données paginées
+        }
+        if (type === 'boOnly' && this.boOnlyPage > 1) {
+            this.boOnlyPage--;
+            this.cachedPagedBoOnly = null; // Invalider le cache
+            this.pagedBoOnly = this.getPagedBoOnly();
+        }
+        if (type === 'partnerOnly' && this.partnerOnlyPage > 1) {
+            this.partnerOnlyPage--;
+            this.cachedPagedPartnerOnly = null; // Invalider le cache
+            this.pagedPartnerOnly = this.getPagedPartnerOnly();
+        }
+        const pageDuration = performance.now() - pageStartTime;
+        if (pageDuration > 1) {
+            console.log(`⏱️ prevPage(${type}):`, `${pageDuration.toFixed(2)}ms`);
+        }
+        this.cdr.markForCheck();
     }
 
     getBoKeys(match: Match): string[] {
@@ -3726,31 +5323,17 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
     detectTSOPDuplicates(data: any[]): Map<string, any[]> {
         // Vérifier si c'est une réconciliation TRXBO-OPPART
         if (!this.isTRXBOOPPARTReconciliation()) {
-            console.log('🔍 detectTSOPDuplicates: Pas une réconciliation TRXBO-OPPART, retour d\'une map vide');
             return new Map<string, any[]>();
-        }
-        
-        console.log('🔍 DÉBUT detectTSOPDuplicates - Nombre d\'enregistrements:', data.length);
-        
-        if (data.length > 0) {
-            console.log('🔍 Premier enregistrement (colonnes disponibles):', Object.keys(data[0]));
-            console.log('🔍 Premier enregistrement (données):', data[0]);
         }
 
         const duplicatesMap = new Map<string, any[]>();
         const keyCount = new Map<string, any[]>();
 
         // Grouper les enregistrements par clé de réconciliation
-        data.forEach((record, index) => {
+        data.forEach((record) => {
             // Essayer différents noms de colonnes pour la clé de réconciliation
             const reconciliationKey = this.getReconciliationKey(record);
             const typeOperation = this.getTypeOperation(record);
-
-            console.log(`🔍 Enregistrement ${index + 1}:`, {
-                reconciliationKey: reconciliationKey,
-                typeOperation: typeOperation,
-                colonnesDisponibles: Object.keys(record)
-            });
 
             if (reconciliationKey && typeOperation) {
                 if (!keyCount.has(reconciliationKey)) {
@@ -3760,48 +5343,28 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                     record: record,
                     typeOperation: typeOperation
                 });
-                console.log(`✅ Ajouté à keyCount: ${reconciliationKey} -> ${typeOperation}`);
-            } else {
-                console.log(`❌ Ignoré (clé: "${reconciliationKey}", type: "${typeOperation}")`);
             }
         });
-
-        console.log('🔍 keyCount après groupement:', Array.from(keyCount.entries()));
 
         // Identifier les doublons avec les types d'opération spécifiques
         keyCount.forEach((records, key) => {
             const types = records.map(r => r.typeOperation);
-            console.log(`🔍 Clé ${key} a ${records.length} enregistrements avec types:`, types);
             
             // Vérifier si on a les deux types spécifiques
             const hasImpactCompte = types.includes('IMPACT_COMPTIMPACT-COMPTE-GENERAL');
             const hasFraisTransaction = types.includes('FRAIS_TRANSACTION');
 
-            console.log(`🔍 Pour clé ${key}:`, {
-                hasImpactCompte,
-                hasFraisTransaction,
-                types,
-                recordCount: records.length
-            });
-
             if (records.length >= 2 && hasImpactCompte && hasFraisTransaction) {
                 // Cas 1: Doublon TSOP complet (IMPACT + FRAIS)
                 duplicatesMap.set(key, records.map(r => ({ ...r, tsopType: 'COMPLETE' })));
-                console.log(`🎯 TSOP Duplicate COMPLET détecté pour clé ${key}:`, types);
             } else if (records.length === 1 && hasImpactCompte && !hasFraisTransaction) {
                 // Cas 2: IMPACT seul sans FRAIS (SANS FRAIS)
                 duplicatesMap.set(key, records.map(r => ({ ...r, tsopType: 'SANS_FRAIS' })));
-                console.log(`🟡 IMPACT SANS FRAIS détecté pour clé ${key}:`, types);
             } else if (records.length === 1 && hasFraisTransaction && !hasImpactCompte) {
                 // Cas 3: FRAIS_TRANSACTION seul (Régularisation FRAIS)
                 duplicatesMap.set(key, records.map(r => ({ ...r, tsopType: 'REGULARISATION_FRAIS' })));
-                console.log(`🟠 FRAIS_TRANSACTION seul détecté pour clé ${key}:`, types);
-            } else {
-                console.log(`❌ Pas de doublon TSOP pour clé ${key} (ne correspond à aucun cas)`);
             }
         });
-
-        console.log('🔍 FIN detectTSOPDuplicates - Nombre de doublons TSOP trouvés:', duplicatesMap.size);
         return duplicatesMap;
     }
 
@@ -3826,11 +5389,9 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
 
         for (const key of possibleKeys) {
             if (record[key] !== undefined && record[key] !== null && record[key] !== '') {
-                console.log(`🔍 Clé de réconciliation trouvée: "${key}" = "${record[key]}"`);
                 return record[key].toString();
             }
         }
-        console.log('❌ Aucune clé de réconciliation trouvée dans:', Object.keys(record));
         return '';
     }
 
@@ -3852,11 +5413,9 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
 
         for (const key of possibleKeys) {
             if (record[key] !== undefined && record[key] !== null && record[key] !== '') {
-                console.log(`🔍 Type d'opération trouvé: "${key}" = "${record[key]}"`);
                 return record[key].toString();
             }
         }
-        console.log('❌ Aucun type d\'opération trouvé dans:', Object.keys(record));
         return '';
     }
 
@@ -4714,16 +6273,65 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
     }
 
     calculateTotalVolume(type: 'bo' | 'partner'): number {
+        if (type === 'partner') {
+            // Pour le volume partenaire, inclure les correspondances ET les écarts partenaire
+            const matchesVolume = this.calculateTotalVolumePartnerMatches();
+            const partnerOnlyVolume = this.calculateTotalVolumePartnerOnly();
+            return matchesVolume + partnerOnlyVolume;
+        }
+        
+        // Pour le volume BO, utiliser la logique originale
         if (!this.filteredMatches || this.filteredMatches.length === 0) return 0;
         const amountColumn = this.findAmountColumn(type);
         if (!amountColumn) return 0;
         return this.filteredMatches.reduce((total, match) => {
-            const amount = type === 'bo' 
-                ? parseFloat(match.boData[amountColumn] || '0')
-                : parseFloat(match.partnerData[amountColumn] || '0');
-            // Pour le volume partenaire des correspondances, utiliser la valeur absolue
-            const finalAmount = type === 'partner' ? Math.abs(amount) : amount;
-            return total + (isNaN(finalAmount) ? 0 : finalAmount);
+            const amount = parseFloat(match.boData[amountColumn] || '0');
+            return total + (isNaN(amount) ? 0 : amount);
+        }, 0);
+    }
+
+    /**
+     * Calcule le volume partenaire des correspondances en sommant TOUS les montants possibles
+     * (Amount, debit, credit, etc.) en valeur absolue
+     */
+    calculateTotalVolumePartnerMatches(): number {
+        if (!this.filteredMatches || this.filteredMatches.length === 0) return 0;
+        
+        return this.filteredMatches.reduce((total, match) => {
+            const partnerData = match.partnerData || {};
+            let recordTotal = 0;
+            
+            // Liste exhaustive des colonnes qui peuvent contenir des montants
+            const possibleAmountColumns = [
+                'amount', 'Amount', 'AMOUNT',
+                'montant', 'Montant', 'MONTANT',
+                'debit', 'Debit', 'DEBIT', 'débit', 'Débit', 'DÉBIT',
+                'credit', 'Credit', 'CREDIT', 'crédit', 'Crédit', 'CRÉDIT',
+                'valeur', 'Valeur', 'VALEUR',
+                'value', 'Value', 'VALUE',
+                'somme', 'Somme', 'SOMME',
+                'sum', 'Sum', 'SUM',
+                'total', 'Total', 'TOTAL',
+                'montant_credit', 'montant_debit', 'montant_débit', 'montant_crédit',
+                'montant_operation', 'montant_opération', 'montant_transaction',
+                'montant_credit_operation', 'montant_débit_operation',
+                'external_amount', 'External amount', 'EXTERNAL_AMOUNT',
+                'externalAmount', 'ExternalAmount',
+                'balance', 'Balance', 'BALANCE'
+            ];
+            
+            // Parcourir toutes les colonnes et sommer tous les montants trouvés en valeur absolue
+            for (const column of Object.keys(partnerData)) {
+                const lowerColumn = column.toLowerCase();
+                if (possibleAmountColumns.some(name => lowerColumn.includes(name.toLowerCase()))) {
+                    const amount = parseFloat(partnerData[column] || '0');
+                    if (!isNaN(amount)) {
+                        recordTotal += Math.abs(amount);
+                    }
+                }
+            }
+            
+            return total + recordTotal;
         }, 0);
     }
 
@@ -4793,29 +6401,61 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
     }
 
     getPartnerOnlyVolume(record: Record<string, string>): number {
-        // Liste des noms possibles pour la colonne de montant
+        // Liste exhaustive des colonnes qui peuvent contenir des montants
         const possibleAmountColumns = [
-            'montant', 'amount', 'valeur', 'value', 'somme', 'sum', 'total',
-            'credit', 'crédit', 'debit', 'débit', 'montant_credit', 'montant_débit',
-            'montant_credit', 'montant_debit', 'montant_crédit', 'montant_débit',
+            'amount', 'Amount', 'AMOUNT',
+            'montant', 'Montant', 'MONTANT',
+            'debit', 'Debit', 'DEBIT', 'débit', 'Débit', 'DÉBIT',
+            'credit', 'Credit', 'CREDIT', 'crédit', 'Crédit', 'CRÉDIT',
+            'valeur', 'Valeur', 'VALEUR',
+            'value', 'Value', 'VALUE',
+            'somme', 'Somme', 'SOMME',
+            'sum', 'Sum', 'SUM',
+            'total', 'Total', 'TOTAL',
+            'montant_credit', 'montant_debit', 'montant_débit', 'montant_crédit',
             'montant_operation', 'montant_opération', 'montant_transaction',
-            'montant_credit_operation', 'montant_débit_operation'
+            'montant_credit_operation', 'montant_débit_operation',
+            'external_amount', 'External amount', 'EXTERNAL_AMOUNT',
+            'externalAmount', 'ExternalAmount',
+            'balance', 'Balance', 'BALANCE'
         ];
         
-        // Chercher directement dans le record
+        let total = 0;
+        
+        // Parcourir toutes les colonnes et sommer tous les montants trouvés en valeur absolue
         for (const column of Object.keys(record)) {
             const lowerColumn = column.toLowerCase();
-            if (possibleAmountColumns.some(name => lowerColumn.includes(name))) {
+            if (possibleAmountColumns.some(name => lowerColumn.includes(name.toLowerCase()))) {
                 const amount = parseFloat(record[column] || '0');
                 if (!isNaN(amount)) {
-                    return amount;
+                    total += Math.abs(amount);
                 }
             }
         }
         
-        return 0;
+        return total;
     }
 
+    // Cache pour getBoAgencyAndService par match key (évite les recalculs dans le template)
+    private boAgencyServiceCacheByKey = new Map<string, { agency: string; service: string; volume: number; date: string; country: string }>();
+    
+    /**
+     * Version optimisée avec cache par clé de match pour le template
+     */
+    getCachedBoAgencyAndService(match: Match): { agency: string; service: string; volume: number; date: string; country: string } {
+        const matchKey = match.key || JSON.stringify(match.boData);
+        
+        // Vérifier le cache d'abord
+        if (this.boAgencyServiceCacheByKey.has(matchKey)) {
+            return this.boAgencyServiceCacheByKey.get(matchKey)!;
+        }
+        
+        // Calculer et mettre en cache
+        const result = this.getBoAgencyAndService(match);
+        this.boAgencyServiceCacheByKey.set(matchKey, result);
+        return result;
+    }
+    
     getBoAgencyAndService(match: Match): { agency: string; service: string; volume: number; date: string; country: string } {
         // Créer une clé de cache basée sur les données du match
         const cacheKey = JSON.stringify(match.boData);
@@ -5227,30 +6867,93 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
 
     // Filtre utilitaire pour ignorer les lignes où PAYS = 'CM'
     private getFilteredMatches(): Match[] {
+        const startTime = performance.now();
         const matches = this.response?.matches || [];
-        if (!this.selectedService) return matches;
-        return matches.filter(match => {
+        const totalMatches = matches.length;
+        
+        if (!this.selectedService) {
+            console.log('⏱️ getFilteredMatches (pas de filtre):', `${(performance.now() - startTime).toFixed(2)}ms`, `(${totalMatches} matches)`);
+            return matches;
+        }
+        
+        const filterStartTime = performance.now();
+        const filtered = matches.filter(match => {
             const boService = match.boData['Service'] || '';
             return boService === this.selectedService;
         });
+        const filterDuration = performance.now() - filterStartTime;
+        const totalDuration = performance.now() - startTime;
+        
+        console.log('⏱️ getFilteredMatches:', {
+            'Durée totale': `${totalDuration.toFixed(2)}ms`,
+            'Durée filtrage': `${filterDuration.toFixed(2)}ms`,
+            'Total matches': totalMatches,
+            'Matches filtrés': filtered.length,
+            'Service sélectionné': this.selectedService
+        });
+        
+        return filtered;
     }
 
     private getFilteredBoOnly(): Record<string, string>[] {
+        const startTime = performance.now();
         // Pour TRXBO/OPPART, utiliser mismatches au lieu de boOnly
         const mismatches = this.response?.mismatches || [];
         const boOnly = this.response?.boOnly || [];
         
+        const combineStartTime = performance.now();
         // Combiner mismatches et boOnly pour l'affichage des écarts
         const allMismatches = [...mismatches, ...boOnly];
+        const combineDuration = performance.now() - combineStartTime;
         
-        if (!this.selectedService) return allMismatches;
-        return allMismatches.filter(record => (record['Service'] || '') === this.selectedService);
+        if (!this.selectedService) {
+            console.log('⏱️ getFilteredBoOnly (pas de filtre):', `${(performance.now() - startTime).toFixed(2)}ms`, `(${allMismatches.length} éléments)`);
+            return allMismatches;
+        }
+        
+        const filterStartTime = performance.now();
+        const filtered = allMismatches.filter(record => (record['Service'] || '') === this.selectedService);
+        const filterDuration = performance.now() - filterStartTime;
+        const totalDuration = performance.now() - startTime;
+        
+        console.log('⏱️ getFilteredBoOnly:', {
+            'Durée totale': `${totalDuration.toFixed(2)}ms`,
+            'Durée combinaison': `${combineDuration.toFixed(2)}ms`,
+            'Durée filtrage': `${filterDuration.toFixed(2)}ms`,
+            'Total mismatches': mismatches.length,
+            'Total boOnly': boOnly.length,
+            'Total combiné': allMismatches.length,
+            'Éléments filtrés': filtered.length,
+            'Service sélectionné': this.selectedService
+        });
+        
+        return filtered;
     }
 
     private getFilteredPartnerOnly(): Record<string, string>[] {
+        const startTime = performance.now();
         const partnerOnly = this.response?.partnerOnly || [];
-        if (!this.selectedService) return partnerOnly;
-        return partnerOnly.filter(record => (record['Service'] || '') === this.selectedService);
+        const totalPartnerOnly = partnerOnly.length;
+        
+        if (!this.selectedService) {
+            console.log('⏱️ getFilteredPartnerOnly (pas de filtre):', `${(performance.now() - startTime).toFixed(2)}ms`, `(${totalPartnerOnly} éléments)`);
+            return partnerOnly;
+        }
+        
+        const filterStartTime = performance.now();
+        const filtered = partnerOnly.filter(record => (record['Service'] || '') === this.selectedService);
+        const filterDuration = performance.now() - filterStartTime;
+        const totalDuration = performance.now() - startTime;
+        
+        console.log('⏱️ getFilteredPartnerOnly:', {
+            'Durée totale': `${totalDuration.toFixed(2)}ms`,
+            'Durée filtrage': `${filterDuration.toFixed(2)}ms`,
+            'Total partnerOnly': totalPartnerOnly,
+            'Éléments filtrés': filtered.length,
+            'Service sélectionné': this.selectedService
+        });
+        
+        return filtered;
     }
 
     private invalidateCache() {
@@ -5348,30 +7051,105 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
     }
 
     goToMatches() {
-        console.log('Navigation vers les correspondances');
+        const buttonClickStartTime = performance.now();
+        console.log('🔵 [BOUTON] goToMatches() - Clic détecté', `[${new Date().toISOString()}]`);
+        
+        const setActiveTabStartTime = performance.now();
+        // Utiliser setActiveTab pour avoir le même comportement que les autres boutons
+        // Cela garantit un comportement cohérent et une navigation immédiate
+        this.setActiveTab('matches');
+        const setActiveTabDuration = performance.now() - setActiveTabStartTime;
+        console.log('⏱️ [BOUTON] goToMatches - setActiveTab terminé:', `${setActiveTabDuration.toFixed(2)}ms`);
+        
+        const navigateStartTime = performance.now();
+        // Navigation immédiate - les données se chargeront en arrière-plan si nécessaire
         this.router.navigate(['/matches']).then(() => {
-            console.log('Navigation vers /matches réussie');
+            const navigateDuration = performance.now() - navigateStartTime;
+            const totalDuration = performance.now() - buttonClickStartTime;
+            console.log('✅ [BOUTON] goToMatches - Navigation vers /matches réussie:', {
+                'Durée navigation': `${navigateDuration.toFixed(2)}ms`,
+                'Durée totale': `${totalDuration.toFixed(2)}ms`
+            });
         }).catch(err => {
-            console.error('Erreur lors de la navigation vers /matches:', err);
+            const navigateDuration = performance.now() - navigateStartTime;
+            const totalDuration = performance.now() - buttonClickStartTime;
+            console.error('❌ [BOUTON] goToMatches - Erreur lors de la navigation vers /matches:', {
+                'Erreur': err,
+                'Durée navigation': `${navigateDuration.toFixed(2)}ms`,
+                'Durée totale': `${totalDuration.toFixed(2)}ms`
+            });
         });
+        
+        const beforeReturnDuration = performance.now() - buttonClickStartTime;
+        console.log('⏱️ [BOUTON] goToMatches - Retour de la fonction:', `${beforeReturnDuration.toFixed(2)}ms`);
     }
 
     goToEcartBo() {
-        console.log('Navigation vers les écarts BO');
+        const buttonClickStartTime = performance.now();
+        console.log('🟡 [BOUTON] goToEcartBo() - Clic détecté', `[${new Date().toISOString()}]`);
+        
+        const setActiveTabStartTime = performance.now();
+        // Utiliser setActiveTab pour avoir le même comportement que les autres boutons
+        // Cela garantit un comportement cohérent et une navigation immédiate
+        this.setActiveTab('boOnly');
+        const setActiveTabDuration = performance.now() - setActiveTabStartTime;
+        console.log('⏱️ [BOUTON] goToEcartBo - setActiveTab terminé:', `${setActiveTabDuration.toFixed(2)}ms`);
+        
+        const navigateStartTime = performance.now();
+        // Navigation immédiate - les données se chargeront en arrière-plan si nécessaire
         this.router.navigate(['/ecart-bo']).then(() => {
-            console.log('Navigation vers /ecart-bo réussie');
+            const navigateDuration = performance.now() - navigateStartTime;
+            const totalDuration = performance.now() - buttonClickStartTime;
+            console.log('✅ [BOUTON] goToEcartBo - Navigation vers /ecart-bo réussie:', {
+                'Durée navigation': `${navigateDuration.toFixed(2)}ms`,
+                'Durée totale': `${totalDuration.toFixed(2)}ms`
+            });
         }).catch(err => {
-            console.error('Erreur lors de la navigation vers /ecart-bo:', err);
+            const navigateDuration = performance.now() - navigateStartTime;
+            const totalDuration = performance.now() - buttonClickStartTime;
+            console.error('❌ [BOUTON] goToEcartBo - Erreur lors de la navigation vers /ecart-bo:', {
+                'Erreur': err,
+                'Durée navigation': `${navigateDuration.toFixed(2)}ms`,
+                'Durée totale': `${totalDuration.toFixed(2)}ms`
+            });
         });
+        
+        const beforeReturnDuration = performance.now() - buttonClickStartTime;
+        console.log('⏱️ [BOUTON] goToEcartBo - Retour de la fonction:', `${beforeReturnDuration.toFixed(2)}ms`);
     }
 
     goToEcartPartner() {
-        console.log('Navigation vers les écarts Partenaire');
+        const buttonClickStartTime = performance.now();
+        console.log('🟢 [BOUTON] goToEcartPartner() - Clic détecté', `[${new Date().toISOString()}]`);
+        
+        const setActiveTabStartTime = performance.now();
+        // Utiliser setActiveTab pour avoir le même comportement que les autres boutons
+        // Cela garantit un comportement cohérent et une navigation immédiate
+        this.setActiveTab('partnerOnly');
+        const setActiveTabDuration = performance.now() - setActiveTabStartTime;
+        console.log('⏱️ [BOUTON] goToEcartPartner - setActiveTab terminé:', `${setActiveTabDuration.toFixed(2)}ms`);
+        
+        const navigateStartTime = performance.now();
+        // Navigation immédiate - les données se chargeront en arrière-plan si nécessaire
         this.router.navigate(['/ecart-partner']).then(() => {
-            console.log('Navigation vers /ecart-partner réussie');
+            const navigateDuration = performance.now() - navigateStartTime;
+            const totalDuration = performance.now() - buttonClickStartTime;
+            console.log('✅ [BOUTON] goToEcartPartner - Navigation vers /ecart-partner réussie:', {
+                'Durée navigation': `${navigateDuration.toFixed(2)}ms`,
+                'Durée totale': `${totalDuration.toFixed(2)}ms`
+            });
         }).catch(err => {
-            console.error('Erreur lors de la navigation vers /ecart-partner:', err);
+            const navigateDuration = performance.now() - navigateStartTime;
+            const totalDuration = performance.now() - buttonClickStartTime;
+            console.error('❌ [BOUTON] goToEcartPartner - Erreur lors de la navigation vers /ecart-partner:', {
+                'Erreur': err,
+                'Durée navigation': `${navigateDuration.toFixed(2)}ms`,
+                'Durée totale': `${totalDuration.toFixed(2)}ms`
+            });
         });
+        
+        const beforeReturnDuration = performance.now() - buttonClickStartTime;
+        console.log('⏱️ [BOUTON] goToEcartPartner - Retour de la fonction:', `${beforeReturnDuration.toFixed(2)}ms`);
     }
 
     goToStats() {

@@ -26,6 +26,9 @@
       <button class="btn btn-info" (click)="downloadTemplate()">
         <i class="fas fa-download"></i> Télécharger le modèle
       </button>
+      <button class="btn btn-success" (click)="exportData()" [disabled]="filteredEcarts.length === 0">
+        <i class="fas fa-file-excel"></i> Exporter les données
+      </button>
     </div>
   </div>
 
@@ -220,6 +223,8 @@
             <th>IDPartenaire</th>
             <th>Statut</th>
             <th>Traitement</th>
+            <th>Téléphone</th>
+            <th>Commentaire</th>
             <th>ID TICKET</th>
             <th>Utilisateur</th>
             <th>Actions</th>
@@ -268,6 +273,12 @@
               </ng-template>
             </td>
             <td class="text-cell">
+              {{ item.telephone || '-' }}
+            </td>
+            <td class="text-cell comment-cell">
+              <span class="comment-text" [title]="item.commentaire || ''">{{ item.commentaire || '-' }}</span>
+            </td>
+            <td class="text-cell">
               <div class="glpi-cell">
                 <ng-container *ngIf="item.glpiId && item.glpiId.trim(); else glpiInput">
                   <span class="glpi-link" (click)="showTicketOptionsPopup(item.glpiId)" title="Choisir une option pour ouvrir le ticket" style="cursor: pointer;">{{item.glpiId}}</span>
@@ -307,7 +318,7 @@
             </td>
           </tr>
           <tr *ngIf="filteredEcarts.length === 0">
-            <td colspan="12" class="no-data">Aucun écart trouvé</td>
+            <td colspan="14" class="no-data">Aucun écart trouvé</td>
           </tr>
         </tbody>
       </table>
@@ -402,6 +413,16 @@
               <option value="">Sélectionner un traitement</option>
               <option *ngFor="let traitement of traitementOptions" [value]="traitement">{{ traitement }}</option>
             </select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Téléphone</label>
+            <input type="text" formControlName="telephone" class="form-control" placeholder="Ex: +225 07 00 00 00 00">
+          </div>
+          <div class="form-group full-width">
+            <label>Commentaire</label>
+            <textarea formControlName="commentaire" class="form-control" rows="3" placeholder="Ajouter un commentaire..."></textarea>
           </div>
         </div>
         <div class="form-actions">

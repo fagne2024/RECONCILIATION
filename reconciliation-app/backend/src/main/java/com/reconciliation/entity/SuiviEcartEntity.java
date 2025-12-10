@@ -44,12 +44,19 @@ public class SuiviEcartEntity {
     @Column(name = "glpi_id")
     private String glpiId;
     
+    @Column(name = "telephone")
+    private String telephone;
+    
+    @Column(name = "commentaire", columnDefinition = "TEXT")
+    private String commentaire;
+    
     // Constructeurs
     public SuiviEcartEntity() {}
     
     public SuiviEcartEntity(LocalDate date, String agence, String service, String pays,
                            Double montant, String token, String idPartenaire,
-                           String statut, String traitement, String username, String glpiId) {
+                           String statut, String traitement, String username, String glpiId,
+                           String telephone, String commentaire) {
         this.date = date;
         this.agence = agence;
         this.service = service;
@@ -61,6 +68,8 @@ public class SuiviEcartEntity {
         this.traitement = traitement;
         this.username = username;
         this.glpiId = glpiId;
+        this.telephone = telephone;
+        this.commentaire = commentaire;
     }
     
     // Getters et Setters
@@ -158,6 +167,22 @@ public class SuiviEcartEntity {
     
     public void setGlpiId(String glpiId) {
         this.glpiId = glpiId;
+    }
+    
+    public String getTelephone() {
+        return telephone;
+    }
+    
+    public void setTelephone(String telephone) {
+        this.telephone = telephone;
+    }
+    
+    public String getCommentaire() {
+        return commentaire;
+    }
+    
+    public void setCommentaire(String commentaire) {
+        this.commentaire = commentaire;
     }
 }
 

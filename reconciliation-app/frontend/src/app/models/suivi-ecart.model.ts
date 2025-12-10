@@ -9,6 +9,8 @@ export interface SuiviEcart {
     idPartenaire: string;
     statut: string;
     traitement: string;
+    telephone?: string;
+    commentaire?: string;
     username?: string;
     glpiId?: string;
 }

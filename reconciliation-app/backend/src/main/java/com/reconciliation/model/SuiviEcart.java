@@ -13,13 +13,16 @@ public class SuiviEcart {
     private String traitement;
     private String username;
     private String glpiId;
+    private String telephone;
+    private String commentaire;
     
     // Constructeurs
     public SuiviEcart() {}
     
     public SuiviEcart(Long id, String date, String agence, String service, String pays,
                      Double montant, String token, String idPartenaire,
-                     String statut, String traitement, String username, String glpiId) {
+                     String statut, String traitement, String username, String glpiId,
+                     String telephone, String commentaire) {
         this.id = id;
         this.date = date;
         this.agence = agence;
@@ -32,6 +35,8 @@ public class SuiviEcart {
         this.traitement = traitement;
         this.username = username;
         this.glpiId = glpiId;
+        this.telephone = telephone;
+        this.commentaire = commentaire;
     }
     
     // Getters et Setters
@@ -129,6 +134,22 @@ public class SuiviEcart {
     
     public void setGlpiId(String glpiId) {
         this.glpiId = glpiId;
+    }
+    
+    public String getTelephone() {
+        return telephone;
+    }
+    
+    public void setTelephone(String telephone) {
+        this.telephone = telephone;
+    }
+    
+    public String getCommentaire() {
+        return commentaire;
+    }
+    
+    public void setCommentaire(String commentaire) {
+        this.commentaire = commentaire;
     }
 }
 

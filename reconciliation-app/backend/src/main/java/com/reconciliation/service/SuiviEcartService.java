@@ -78,6 +78,8 @@ public class SuiviEcartService {
         entity.setStatut(suiviEcart.getStatut());
         entity.setTraitement(suiviEcart.getTraitement());
         entity.setGlpiId(suiviEcart.getGlpiId());
+        entity.setTelephone(suiviEcart.getTelephone());
+        entity.setCommentaire(suiviEcart.getCommentaire());
         
         // Mettre à jour le username depuis le contexte de la requête
         String username = RequestContextUtil.getUsernameFromRequest();
@@ -162,6 +164,8 @@ public class SuiviEcartService {
                     } catch (Exception e) {
                         System.err.println("Erreur lors du parsing de la ligne CSV: " + e.getMessage());
                     }
+                } else {
+                    System.err.println("Ligne CSV incomplète: " + line + " (attendu au moins 9 colonnes, trouvé " + values.length + ")");
                 }
             }
         }
@@ -216,6 +220,8 @@ public class SuiviEcartService {
         suiviEcart.setIdPartenaire(cleanValue(values[6]));
         suiviEcart.setStatut(cleanValue(values[7]));
         suiviEcart.setTraitement(values.length > 8 ? cleanValue(values[8]) : "");
+        suiviEcart.setTelephone(values.length > 9 ? cleanValue(values[9]) : "");
+        suiviEcart.setCommentaire(values.length > 10 ? cleanValue(values[10]) : "");
         return suiviEcart;
     }
     
@@ -231,6 +237,8 @@ public class SuiviEcartService {
         suiviEcart.setIdPartenaire(getCellValueAsString(row.getCell(6)));
         suiviEcart.setStatut(getCellValueAsString(row.getCell(7)));
         suiviEcart.setTraitement(row.getCell(8) != null ? getCellValueAsString(row.getCell(8)) : "");
+        suiviEcart.setTelephone(row.getCell(9) != null ? getCellValueAsString(row.getCell(9)) : "");
+        suiviEcart.setCommentaire(row.getCell(10) != null ? getCellValueAsString(row.getCell(10)) : "");
         
         return suiviEcart;
     }
@@ -326,6 +334,8 @@ public class SuiviEcartService {
         entity.setTraitement(model.getTraitement());
         entity.setUsername(model.getUsername());
         entity.setGlpiId(model.getGlpiId());
+        entity.setTelephone(model.getTelephone());
+        entity.setCommentaire(model.getCommentaire());
         return entity;
     }
     
@@ -343,6 +353,8 @@ public class SuiviEcartService {
         model.setTraitement(entity.getTraitement());
         model.setUsername(entity.getUsername());
         model.setGlpiId(entity.getGlpiId());
+        model.setTelephone(entity.getTelephone());
+        model.setCommentaire(entity.getCommentaire());
         return model;
     }
 }

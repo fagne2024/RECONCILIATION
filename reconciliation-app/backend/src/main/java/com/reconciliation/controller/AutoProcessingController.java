@@ -132,9 +132,20 @@ public class AutoProcessingController {
             
             // Convertir le DTO en entité
             AutoProcessingModel model = convertDTOToEntity(modelDTO);
-            model.setId(Long.parseLong(id)); // S'assurer que l'ID est correct
             
-            AutoProcessingModel updatedModel = autoProcessingService.updateModelById(Long.parseLong(id), model);
+            AutoProcessingModel updatedModel;
+            
+            // Vérifier si l'ID est numérique (Long) ou un modelId (String)
+            try {
+                Long numericId = Long.parseLong(id);
+                // C'est un ID numérique
+                model.setId(numericId);
+                updatedModel = autoProcessingService.updateModelById(numericId, model);
+            } catch (NumberFormatException e) {
+                // C'est un modelId (String)
+                System.out.println("🔄 Détection d'un modelId (String): " + id);
+                updatedModel = autoProcessingService.updateModel(id, model);
+            }
             
             if (updatedModel != null) {
                 System.out.println("✅ Modèle mis à jour: " + updatedModel);
@@ -445,8 +456,10 @@ public class AutoProcessingController {
         dto.setToLowerCase(entity.isToLowerCase());
         dto.setTrimSpaces(entity.isTrimSpaces());
         dto.setRemoveSpecialChars(entity.isRemoveSpecialChars());
+        dto.setRemoveAccents(entity.isRemoveAccents());
         dto.setPadZeros(entity.isPadZeros());
         dto.setRegexReplace(entity.getRegexReplace());
+        dto.setStringToRemove(entity.getStringToRemove());
         dto.setSpecialCharReplacementMap(entity.getSpecialCharReplacementMap());
         dto.setRuleOrder(entity.getRuleOrder());
         return dto;
@@ -462,8 +475,10 @@ public class AutoProcessingController {
         entity.setToLowerCase(dto.isToLowerCase());
         entity.setTrimSpaces(dto.isTrimSpaces());
         entity.setRemoveSpecialChars(dto.isRemoveSpecialChars());
+        entity.setRemoveAccents(dto.isRemoveAccents());
         entity.setPadZeros(dto.isPadZeros());
         entity.setRegexReplace(dto.getRegexReplace());
+        entity.setStringToRemove(dto.getStringToRemove());
         entity.setSpecialCharReplacementMap(dto.getSpecialCharReplacementMap());
         entity.setRuleOrder(dto.getRuleOrder());
         return entity;

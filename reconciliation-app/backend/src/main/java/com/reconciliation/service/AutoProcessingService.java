@@ -145,6 +145,9 @@ public class AutoProcessingService {
     public AutoProcessingModel updateModelById(Long id, AutoProcessingModel model) {
         Optional<AutoProcessingModel> existingModel = autoProcessingModelRepository.findById(id);
         if (existingModel.isPresent()) {
+            // Normaliser le modèle avant la mise à jour
+            model = modelNormalizationService.normalizeModel(model);
+            
             AutoProcessingModel existing = existingModel.get();
             existing.setName(model.getName());
             existing.setFilePattern(model.getFilePattern());
@@ -152,6 +155,9 @@ public class AutoProcessingService {
             existing.setAutoApply(model.isAutoApply());
             existing.setTemplateFile(model.getTemplateFile());
             existing.setReconciliationKeys(model.getReconciliationKeys());
+            existing.setReconciliationLogic(model.getReconciliationLogic());
+            existing.setCorrespondenceRules(model.getCorrespondenceRules());
+            existing.setComparisonColumns(model.getComparisonColumns());
             existing.setUpdatedAt(LocalDateTime.now());
             
             AutoProcessingModel savedModel = autoProcessingModelRepository.save(existing);

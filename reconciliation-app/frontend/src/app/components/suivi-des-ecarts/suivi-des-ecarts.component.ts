@@ -83,7 +83,9 @@ export class SuiviDesEcartsComponent implements OnInit, OnDestroy {
       token: ['', Validators.required],
       idPartenaire: ['', Validators.required],
       statut: ['', Validators.required],
-      traitement: ['']
+      traitement: [''],
+      telephone: [''],
+      commentaire: ['']
     });
   }
 
@@ -284,7 +286,9 @@ export class SuiviDesEcartsComponent implements OnInit, OnDestroy {
       token: item.token,
       idPartenaire: item.idPartenaire,
       statut: item.statut,
-      traitement: item.traitement || ''
+      traitement: item.traitement || '',
+      telephone: item.telephone || '',
+      commentaire: item.commentaire || ''
     });
     this.showEditModal = true;
   }
@@ -406,7 +410,7 @@ export class SuiviDesEcartsComponent implements OnInit, OnDestroy {
     const worksheet = workbook.addWorksheet('Modèle Suivi Écarts');
 
     // En-têtes
-    worksheet.addRow(['Date', 'Agence', 'Service', 'Pays', 'Montant', 'Token', 'IDPartenaire', 'Statut', 'Traitement', 'ID TICKET']);
+    worksheet.addRow(['Date', 'Agence', 'Service', 'Pays', 'Montant', 'Token', 'IDPartenaire', 'Statut', 'Traitement', 'Téléphone', 'Commentaire', 'ID TICKET']);
 
     // Style des en-têtes
     const headerRow = worksheet.getRow(1);
@@ -429,18 +433,113 @@ export class SuiviDesEcartsComponent implements OnInit, OnDestroy {
       'PART001',
       'En cours...',
       'Niveau Support',
+      '+225 07 00 00 00 00',
+      'Exemple de commentaire',
       ''
     ]);
 
     // Ajuster les largeurs de colonnes
-    worksheet.columns.forEach(column => {
-      column.width = 15;
+    worksheet.columns.forEach((column, index) => {
+      if (index === 10) { // Commentaire
+        column.width = 30;
+      } else {
+        column.width = 15;
+      }
     });
 
     // Générer le fichier
     workbook.xlsx.writeBuffer().then((buffer) => {
       const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
       saveAs(blob, 'modele-suivi-ecarts.xlsx');
+    });
+  }
+
+  exportData() {
+    if (this.filteredEcarts.length === 0) {
+      this.popupService.showWarning('Aucune donnée à exporter', 'Il n\'y a aucune donnée à exporter avec les filtres actuels.');
+      return;
+    }
+
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Suivi des Écarts');
+
+    // En-têtes
+    const headers = ['Date', 'Agence', 'Service', 'Pays', 'Montant', 'Token', 'IDPartenaire', 'Statut', 'Traitement', 'Téléphone', 'Commentaire', 'ID TICKET', 'Utilisateur'];
+    worksheet.addRow(headers);
+
+    // Style des en-têtes
+    const headerRow = worksheet.getRow(1);
+    headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 12 };
+    headerRow.fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FF28a745' }
+    };
+    headerRow.alignment = { vertical: 'middle', horizontal: 'center' };
+    headerRow.height = 20;
+
+    // Ajouter les données filtrées
+    this.filteredEcarts.forEach(item => {
+      worksheet.addRow([
+        item.date ? new Date(item.date) : '',
+        item.agence || '',
+        item.service || '',
+        item.pays || '',
+        item.montant || 0,
+        item.token || '',
+        item.idPartenaire || '',
+        item.statut || '',
+        item.traitement || '',
+        item.telephone || '',
+        item.commentaire || '',
+        item.glpiId || '',
+        item.username || ''
+      ]);
+    });
+
+    // Ajuster les largeurs de colonnes
+    worksheet.columns.forEach((column, index) => {
+      if (index === 0) { // Date
+        column.width = 12;
+      } else if (index === 4) { // Montant
+        column.width = 12;
+        column.numFmt = '#,##0.00';
+      } else if (index === 10) { // Commentaire
+        column.width = 30;
+      } else {
+        column.width = 15;
+      }
+    });
+
+    // Appliquer des styles aux lignes de données
+    worksheet.eachRow((row, rowNumber) => {
+      if (rowNumber > 1) {
+        row.alignment = { vertical: 'middle', horizontal: 'left' };
+        row.height = 18;
+        
+        // Alterner les couleurs de fond pour une meilleure lisibilité
+        if (rowNumber % 2 === 0) {
+          row.fill = {
+            type: 'pattern',
+            pattern: 'solid',
+            fgColor: { argb: 'FFF8F9FA' }
+          };
+        }
+      }
+    });
+
+    // Générer le nom du fichier avec la date
+    const dateStr = new Date().toISOString().split('T')[0];
+    const fileName = `suivi-ecarts-export-${dateStr}.xlsx`;
+
+    // Générer le fichier
+    workbook.xlsx.writeBuffer().then((buffer) => {
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      saveAs(blob, fileName);
+      this.popupService.showSuccess(`Export réussi`, `${this.filteredEcarts.length} ligne(s) exportée(s) avec succès.`);
+    }).catch((error) => {
+      console.error('Erreur lors de l\'export', error);
+      this.popupService.showError('Erreur', 'Une erreur est survenue lors de l\'export des données.');
     });
   }
 

@@ -88,7 +88,35 @@ export class MatchesTableComponent implements OnInit, OnDestroy {
     this.cdr.markForCheck();
     
     try {
-      const total = matches.length;
+      // Filtrer les correspondances pour OPPART avant le chargement progressif
+      let filteredMatches = matches;
+      if (this.isTRXBOOPPARTReconciliation(matches)) {
+        console.log('🔍 Filtrage OPPART: Début du filtrage des correspondances');
+        console.log(`📊 Nombre initial de correspondances: ${matches.length}`);
+        filteredMatches = matches.filter(match => {
+          if (!match.partnerData) {
+            return false;
+          }
+          const typeOperation = this.getTypeOperation(match.partnerData);
+          if (!typeOperation) {
+            return false;
+          }
+          // Exclure explicitement FRAIS_TRANSACTION
+          if (typeOperation.includes('FRAIS_TRANSACTION')) {
+            console.log(`❌ Correspondance ${match.key} exclue (FRAIS_TRANSACTION):`, typeOperation);
+            return false;
+          }
+          // Ne garder que les lignes avec IMPACT_COMPTIMPACT-COMPTE-GENERAL
+          const shouldKeep = typeOperation.includes('IMPACT_COMPTIMPACT-COMPTE-GENERAL');
+          if (shouldKeep) {
+            console.log(`✅ Correspondance ${match.key} conservée (IMPACT_COMPTIMPACT-COMPTE-GENERAL):`, typeOperation);
+          }
+          return shouldKeep;
+        });
+        console.log(`📊 Nombre de correspondances après filtrage OPPART: ${filteredMatches.length} (${matches.length - filteredMatches.length} exclues)`);
+      }
+      
+      const total = filteredMatches.length;
       
       if (total === 0) {
         this.filteredMatches = [];
@@ -98,7 +126,7 @@ export class MatchesTableComponent implements OnInit, OnDestroy {
 
       // Charger immédiatement un échantillon pour l'initialisation rapide
       const sampleSize = Math.min(100, total);
-      const sample = matches.slice(0, sampleSize);
+      const sample = filteredMatches.slice(0, sampleSize);
       this.filteredMatches = [...sample];
       this.loadProgress = 5;
       this.initializeColumnsOptimized(sample);
@@ -598,6 +626,85 @@ export class MatchesTableComponent implements OnInit, OnDestroy {
   private getOriginalKey(record: Record<string, any>, correctedKey: string): string {
     const keys = Object.keys(record);
     return keys.find(key => fixGarbledCharacters(key) === correctedKey) || correctedKey;
+  }
+
+  /**
+   * Vérifie si les matches correspondent à une réconciliation TRXBO/OPPART
+   */
+  private isTRXBOOPPARTReconciliation(matches: Match[]): boolean {
+    if (!matches || matches.length === 0) {
+      return false;
+    }
+
+    let hasTRXBO = false;
+    let hasOPPART = false;
+
+    // Vérifier dans les données BO pour TRXBO
+    for (const match of matches) {
+      if (match.boData) {
+        // Vérifier les valeurs pour "TRXBO"
+        const boValues = Object.values(match.boData).join(' ').toUpperCase();
+        if (boValues.includes('TRXBO')) {
+          hasTRXBO = true;
+          break;
+        }
+        // Vérifier les colonnes spécifiques TRXBO
+        const boKeys = Object.keys(match.boData);
+        if (boKeys.some(key => ['IDTransaction', 'téléphone client', 'telephone client', 'GRX'].includes(key))) {
+          hasTRXBO = true;
+          break;
+        }
+      }
+    }
+
+    // Vérifier dans les données partenaire pour OPPART
+    for (const match of matches) {
+      if (match.partnerData) {
+        // Vérifier les valeurs pour "OPPART"
+        const partnerValues = Object.values(match.partnerData).join(' ').toUpperCase();
+        if (partnerValues.includes('OPPART')) {
+          hasOPPART = true;
+          break;
+        }
+        // Vérifier les colonnes spécifiques OPPART
+        const partnerKeys = Object.keys(match.partnerData);
+        if (partnerKeys.some(key => ['ID Opération', 'Type Opération', 'Type Operation', 'Solde avant', 'Solde après', 'Solde aprés', 'Numéro Trans GU', 'Numero Trans GU'].includes(key))) {
+          hasOPPART = true;
+          break;
+        }
+      }
+    }
+
+    return hasTRXBO && hasOPPART;
+  }
+
+  /**
+   * Extrait le type d'opération depuis les données partenaire
+   */
+  private getTypeOperation(partnerData: Record<string, any>): string {
+    if (!partnerData) {
+      return '';
+    }
+
+    const possibleKeys = [
+      'Type Opération',
+      'Type Opration', // Avec caractères d'encodage
+      'type operation',
+      'type_operation',
+      'typeOperation',
+      'TYPE_OPERATION',
+      'TypeOperation',
+      'Operation',
+      'operation'
+    ];
+
+    for (const key of possibleKeys) {
+      if (partnerData[key] !== undefined && partnerData[key] !== null && partnerData[key] !== '') {
+        return partnerData[key].toString();
+      }
+    }
+
+    return '';
   }
 
   goBack(): void {

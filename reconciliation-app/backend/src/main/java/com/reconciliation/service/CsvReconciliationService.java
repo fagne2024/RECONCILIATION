@@ -67,21 +67,33 @@ public class CsvReconciliationService implements DisposableBean {
             request.getBoFileContent().size(), request.getPartnerFileContent().size());
         
         // Application des règles de traitement des colonnes
-        String modelId = request.getModelId();
+        // Détecter séparément le modèle pour les données BO et les données partenaires
+        String boModelId = request.getModelId();
+        String partnerModelId = null;
+        
         // Si modelId n'est pas fourni directement, essayer de le récupérer depuis les filtres BO
-        if (modelId == null && request.getBoColumnFilters() != null && !request.getBoColumnFilters().isEmpty()) {
-            modelId = request.getBoColumnFilters().get(0).getModelId();
+        if (boModelId == null && request.getBoColumnFilters() != null && !request.getBoColumnFilters().isEmpty()) {
+            boModelId = request.getBoColumnFilters().get(0).getModelId();
         }
-        // Si modelId n'est toujours pas fourni, essayer de le détecter automatiquement depuis le modèle partenaire
-        if (modelId == null || modelId.isEmpty()) {
-            String detectedModelId = configurableReconciliationService.getPartnerModelId(request);
-            if (detectedModelId != null && !detectedModelId.isEmpty()) {
-                modelId = detectedModelId;
-                logger.info("🔑 ModelId détecté automatiquement depuis le modèle partenaire: {}", modelId);
-            }
+        
+        // Détecter automatiquement le modèle partenaire pour les données partenaires
+        logger.info("🔍 Recherche du modèle partenaire pour les données partenaires...");
+        partnerModelId = configurableReconciliationService.getPartnerModelId(request);
+        if (partnerModelId != null && !partnerModelId.isEmpty()) {
+            logger.info("✅ ModelId partenaire détecté automatiquement: {}", partnerModelId);
+        } else {
+            // Fallback: utiliser le modelId général si aucun modèle partenaire n'est trouvé
+            logger.warn("⚠️ Aucun modèle partenaire spécifique trouvé pour les données partenaires");
+            logger.info("  📋 Colonnes partenaires détectées: {}", 
+                request.getPartnerFileContent().isEmpty() ? "aucune" : 
+                String.join(", ", request.getPartnerFileContent().get(0).keySet()));
+            partnerModelId = boModelId;
+            logger.info("⚠️ Utilisation du modelId général (BO) comme fallback: {}", partnerModelId);
         }
-        List<Map<String, String>> processedBoData = applyColumnProcessingRules(request.getBoFileContent(), "bo", modelId);
-        List<Map<String, String>> processedPartnerData = applyColumnProcessingRules(request.getPartnerFileContent(), "partner", modelId);
+        
+        // Appliquer les règles avec les modèles appropriés
+        List<Map<String, String>> processedBoData = applyColumnProcessingRules(request.getBoFileContent(), "bo", boModelId);
+        List<Map<String, String>> processedPartnerData = applyColumnProcessingRules(request.getPartnerFileContent(), "partner", partnerModelId);
         
                     // DEBUG: Afficher quelques exemples de valeurs (après traitement)
             if (!processedBoData.isEmpty()) {
@@ -105,30 +117,30 @@ public class CsvReconciliationService implements DisposableBean {
             }
         
         logger.info("🚀 Début de la réconciliation optimisée");
-        logger.info("📊 Données BO: {} lignes", request.getBoFileContent().size());
-        logger.info("📊 Données Partenaire: {} lignes", request.getPartnerFileContent().size());
+        logger.info("📊 Données BO: {} lignes", processedBoData.size());
+        logger.info("📊 Données Partenaire: {} lignes", processedPartnerData.size());
         logger.info("🔑 Clé BO: '{}'", request.getBoKeyColumn());
         logger.info("🔑 Clé Partenaire: '{}'", request.getPartnerKeyColumn());
         
-        // DEBUG: Afficher quelques exemples de valeurs
-        if (!request.getBoFileContent().isEmpty()) {
-            Map<String, String> firstBoRecord = request.getBoFileContent().get(0);
+        // DEBUG: Afficher quelques exemples de valeurs (APRÈS traitement)
+        if (!processedBoData.isEmpty()) {
+            Map<String, String> firstBoRecord = processedBoData.get(0);
             String boKeyValue = firstBoRecord.get(request.getBoKeyColumn());
-            logger.info("🔍 Exemple clé BO: '{}' -> '{}'", request.getBoKeyColumn(), boKeyValue);
+            logger.info("🔍 Exemple clé BO (après traitement): '{}' -> '{}'", request.getBoKeyColumn(), boKeyValue);
         }
         
-        if (!request.getPartnerFileContent().isEmpty()) {
-            Map<String, String> firstPartnerRecord = request.getPartnerFileContent().get(0);
+        if (!processedPartnerData.isEmpty()) {
+            Map<String, String> firstPartnerRecord = processedPartnerData.get(0);
             String partnerKeyValue = firstPartnerRecord.get(request.getPartnerKeyColumn());
-            logger.info("🔍 Exemple clé Partenaire: '{}' -> '{}'", request.getPartnerKeyColumn(), partnerKeyValue);
+            logger.info("🔍 Exemple clé Partenaire (après traitement): '{}' -> '{}'", request.getPartnerKeyColumn(), partnerKeyValue);
         }
         
-        // DEBUG: Afficher toutes les colonnes disponibles
-        if (!request.getBoFileContent().isEmpty()) {
-            logger.info("📋 Colonnes BO disponibles: {}", request.getBoFileContent().get(0).keySet());
+        // DEBUG: Afficher toutes les colonnes disponibles (après traitement)
+        if (!processedBoData.isEmpty()) {
+            logger.info("📋 Colonnes BO disponibles: {}", processedBoData.get(0).keySet());
         }
-        if (!request.getPartnerFileContent().isEmpty()) {
-            logger.info("📋 Colonnes Partenaire disponibles: {}", request.getPartnerFileContent().get(0).keySet());
+        if (!processedPartnerData.isEmpty()) {
+            logger.info("📋 Colonnes Partenaire disponibles: {}", processedPartnerData.get(0).keySet());
         }
         
         try {
@@ -292,8 +304,9 @@ public class CsvReconciliationService implements DisposableBean {
             // Utilisation d'un Set pour une recherche O(1) au lieu de O(n)
             Set<String> processedBoKeysSet = new HashSet<>(processedBoKeys);
             
-            for (Map<String, String> partnerRecord : request.getPartnerFileContent()) {
-                String partnerKey = partnerRecord.get(request.getPartnerKeyColumn());
+            // Utiliser processedPartnerData (données transformées) au lieu de request.getPartnerFileContent()
+            for (Map<String, String> partnerRecord : processedPartnerData) {
+                String partnerKey = findKeyWithNormalization(partnerRecord, normalizedPartnerKeyColumn);
                 if (partnerKey != null && !processedBoKeysSet.contains(partnerKey)) {
                     response.getPartnerOnly().add(partnerRecord);
                     partnerOnlyCount++;
@@ -306,9 +319,9 @@ public class CsvReconciliationService implements DisposableBean {
             
             logger.info("✅ Nombre total d'enregistrements uniquement partenaire: {}", partnerOnlyCount);
 
-            // Calcule les totaux
+            // Calcule les totaux (utiliser les données traitées)
             response.setTotalBoRecords(filteredBoRecords.size());
-            response.setTotalPartnerRecords(request.getPartnerFileContent().size());
+            response.setTotalPartnerRecords(processedPartnerData.size());
             response.setTotalMatches(response.getMatches().size());
             response.setTotalMismatches(response.getMismatches().size());
             response.setTotalBoOnly(response.getBoOnly().size());

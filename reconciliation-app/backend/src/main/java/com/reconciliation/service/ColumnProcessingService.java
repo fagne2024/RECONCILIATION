@@ -20,20 +20,110 @@ public class ColumnProcessingService {
      */
     public Map<String, Object> processDataRow(String modelId, Map<String, Object> data) {
         List<ColumnProcessingRule> rules = columnProcessingRuleService.getRulesByModelId(modelId);
+        
+        // Log pour debug
+        if (!rules.isEmpty()) {
+            System.out.println("🔧 [PROCESS] Application de " + rules.size() + " règle(s) pour le modèle: " + modelId);
+            System.out.println("  📋 Colonnes disponibles dans les données: " + String.join(", ", data.keySet()));
+            rules.forEach(rule -> {
+                System.out.println("  - Règle pour colonne: \"" + rule.getSourceColumn() + "\"" + 
+                                 ", stringToRemove: " + (rule.getStringToRemove() != null ? "\"" + rule.getStringToRemove() + "\"" : "null") +
+                                 ", removeSpecialChars: " + rule.isRemoveSpecialChars());
+            });
+        }
+        
         Map<String, Object> processedData = new HashMap<>(data);
         
         for (ColumnProcessingRule rule : rules) {
             String sourceColumn = rule.getSourceColumn();
             String targetColumn = rule.getTargetColumn();
             
-            if (processedData.containsKey(sourceColumn)) {
-                Object value = processedData.get(sourceColumn);
+            // Recherche flexible de la colonne avec normalisation
+            String actualColumnKey = findColumnKey(processedData, sourceColumn);
+            
+            if (actualColumnKey != null) {
+                Object value = processedData.get(actualColumnKey);
+                String originalValueStr = value != null ? value.toString() : null;
+                
                 Object processedValue = applyRule(value, rule);
-                processedData.put(targetColumn, processedValue);
+                String processedValueStr = processedValue != null ? processedValue.toString() : null;
+                
+                // Si targetColumn est vide ou null, mettre à jour la valeur dans sourceColumn
+                // Sinon, créer une nouvelle colonne targetColumn avec la valeur traitée
+                if (targetColumn == null || targetColumn.trim().isEmpty()) {
+                    processedData.put(actualColumnKey, processedValue);
+                    if (originalValueStr != null && !originalValueStr.equals(processedValueStr)) {
+                        System.out.println("✅ [PROCESS] Colonne \"" + actualColumnKey + "\": \"" + originalValueStr + "\" -> \"" + processedValueStr + "\"");
+                    }
+                } else {
+                    processedData.put(targetColumn, processedValue);
+                    if (originalValueStr != null && !originalValueStr.equals(processedValueStr)) {
+                        System.out.println("✅ [PROCESS] Colonne \"" + actualColumnKey + "\" -> \"" + targetColumn + "\": \"" + originalValueStr + "\" -> \"" + processedValueStr + "\"");
+                    }
+                }
+            } else {
+                System.out.println("⚠️ [PROCESS] Colonne \"" + sourceColumn + "\" non trouvée dans les données");
             }
         }
         
         return processedData;
+    }
+    
+    /**
+     * Trouve la clé de colonne correspondante dans les données avec recherche flexible
+     * Gère les problèmes d'encodage et les différences de casse
+     */
+    private String findColumnKey(Map<String, Object> data, String sourceColumn) {
+        // Recherche exacte d'abord
+        if (data.containsKey(sourceColumn)) {
+            return sourceColumn;
+        }
+        
+        // Normalisation pour la recherche flexible
+        String normalizedSource = normalizeColumnName(sourceColumn);
+        
+        // Recherche avec normalisation
+        for (String key : data.keySet()) {
+            String normalizedKey = normalizeColumnName(key);
+            if (normalizedSource.equalsIgnoreCase(normalizedKey)) {
+                System.out.println("🔍 [PROCESS] Colonne trouvée avec normalisation: \"" + sourceColumn + "\" -> \"" + key + "\"");
+                return key;
+            }
+        }
+        
+        // Recherche partielle (contient)
+        for (String key : data.keySet()) {
+            if (key.contains(normalizedSource) || normalizedSource.contains(key)) {
+                System.out.println("🔍 [PROCESS] Colonne trouvée avec recherche partielle: \"" + sourceColumn + "\" -> \"" + key + "\"");
+                return key;
+            }
+        }
+        
+        return null;
+    }
+    
+    /**
+     * Normalise un nom de colonne pour la comparaison
+     */
+    private String normalizeColumnName(String columnName) {
+        if (columnName == null) return "";
+        
+        // Correction des caractères mal encodés courants
+        String normalized = columnName;
+        
+        // Corriger les caractères corrompus
+        normalized = normalized.replace("Num??ro", "Numéro");
+        normalized = normalized.replace("??", "é");
+        normalized = normalized.replace("?", "");
+        
+        // Normalisation Unicode
+        normalized = java.text.Normalizer.normalize(normalized, java.text.Normalizer.Form.NFD);
+        normalized = normalized.replaceAll("\\p{InCombiningDiacriticalMarks}+", "");
+        
+        // Normaliser la casse et les espaces
+        normalized = normalized.trim().toLowerCase().replaceAll("\\s+", " ");
+        
+        return normalized;
     }
 
     /**
@@ -74,11 +164,13 @@ public class ColumnProcessingService {
         //    (pour normaliser les caractères accentués avant qu'ils ne soient supprimés)
         stringValue = applyAccentRemoval(stringValue, rule);
         
-        // 3. Suppression des caractères spéciaux (après normalisation des accents)
-        stringValue = applySpecialCharTransformations(stringValue, rule);
-        
-        // 4. Suppression de chaînes spécifiques (ex: _CM, _ML, etc.)
+        // 3. Suppression de chaînes spécifiques (ex: -ENV_BET, _CM, _ML, etc.)
+        //    IMPORTANT: Doit être appliqué AVANT removeSpecialChars pour éviter que les caractères spéciaux
+        //    (comme le tiret dans "-ENV_BET") ne soient supprimés avant la recherche
         stringValue = applyStringRemoval(stringValue, rule);
+        
+        // 4. Suppression des caractères spéciaux (après suppression des chaînes spécifiques)
+        stringValue = applySpecialCharTransformations(stringValue, rule);
         
         // 5. Transformations de casse (après nettoyage des caractères)
         stringValue = applyCaseTransformations(stringValue, rule);
@@ -169,8 +261,33 @@ public class ColumnProcessingService {
     private String applyStringRemoval(String value, ColumnProcessingRule rule) {
         String stringToRemove = rule.getStringToRemove();
         if (stringToRemove != null && !stringToRemove.isEmpty()) {
-            // Supprimer toutes les occurrences de la chaîne spécifiée
-            value = value.replace(stringToRemove, "");
+            String originalValue = value;
+            // Supprimer toutes les occurrences de la chaîne spécifiée (pas seulement la première)
+            // Échapper les caractères spéciaux pour éviter les problèmes avec les regex
+            String escapedString = stringToRemove.replace("\\", "\\\\")
+                                                 .replace(".", "\\.")
+                                                 .replace("*", "\\*")
+                                                 .replace("+", "\\+")
+                                                 .replace("?", "\\?")
+                                                 .replace("^", "\\^")
+                                                 .replace("$", "\\$")
+                                                 .replace("{", "\\{")
+                                                 .replace("}", "\\}")
+                                                 .replace("(", "\\(")
+                                                 .replace(")", "\\)")
+                                                 .replace("[", "\\[")
+                                                 .replace("]", "\\]")
+                                                 .replace("|", "\\|");
+            
+            // Remplacer toutes les occurrences (comme le frontend)
+            value = value.replaceAll(escapedString, "");
+            
+            // Log pour vérifier l'application de la règle
+            if (!originalValue.equals(value)) {
+                System.out.println("✅ [APPLY] stringToRemove appliqué pour colonne \"" + rule.getSourceColumn() + "\": \"" + stringToRemove + "\" sur \"" + originalValue + "\" -> \"" + value + "\"");
+            } else {
+                System.out.println("⚠️ [APPLY] stringToRemove \"" + stringToRemove + "\" non trouvé dans \"" + originalValue + "\" pour colonne \"" + rule.getSourceColumn() + "\"");
+            }
         }
         return value;
     }

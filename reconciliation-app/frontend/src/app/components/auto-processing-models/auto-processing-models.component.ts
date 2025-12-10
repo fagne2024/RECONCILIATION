@@ -466,6 +466,17 @@ export class AutoProcessingModelsComponent implements OnInit {
     this.autoProcessingService.getColumnProcessingRules(modelId)
       .then(rules => {
         this.columnProcessingRules = rules;
+        
+        // Vérifier que stringToRemove est bien chargé depuis la base
+        console.log('🔍 [DEBUG] Règles chargées depuis la base de données:');
+        rules.forEach((rule, index) => {
+          console.log(`  Règle ${index}:`, {
+            sourceColumn: rule.sourceColumn,
+            stringToRemove: rule.stringToRemove || '(aucun)',
+            removeSpecialChars: rule.removeSpecialChars,
+            id: rule.id
+          });
+        });
       })
       .catch(error => {
         console.error('Erreur lors du chargement des règles:', error);
@@ -873,34 +884,51 @@ export class AutoProcessingModelsComponent implements OnInit {
       
       // Données à sauvegarder
 
-      // 🔧 SOLUTION: Supprimer l'ancien modèle puis créer un nouveau (éviter les conflits de structure)
+      // Utiliser updateModel si on modifie, createModel si création
       let savePromise: Promise<any>;
       
+      console.log('🔍 [DEBUG] État editingModel:', {
+        editingModel: this.editingModel,
+        hasEditingModel: !!this.editingModel,
+        id: this.editingModel?.id,
+        modelId: this.editingModel?.modelId
+      });
+      
       if (this.editingModel) {
-        // Supprimer l'ancien modèle d'abord
-        savePromise = this.autoProcessingService.deleteModel(this.editingModel.id)
-          .then(() => {
-            return this.autoProcessingService.createModel(modelData);
-          })
-          .catch(error => {
-            console.error('Erreur lors de la suppression:', error);
-            // Si la suppression échoue, essayer quand même la création
-            return this.autoProcessingService.createModel(modelData);
-          });
+        // Mise à jour du modèle existant
+        // Le backend utilise l'ID numérique (Long) dans l'URL, pas le modelId
+        const modelIdToUse = this.editingModel.id || this.editingModel.modelId;
+        if (!modelIdToUse) {
+          console.error('❌ Erreur: Aucun ID disponible pour la mise à jour du modèle');
+          console.error('   - editingModel:', this.editingModel);
+          this.errorMessage = 'Erreur: Aucun ID disponible pour la mise à jour du modèle';
+          return;
+        }
+        
+        console.log('🔄 Mise à jour du modèle avec ID:', modelIdToUse);
+        console.log('   - Type:', typeof modelIdToUse);
+        console.log('   - Données à envoyer:', JSON.stringify(modelData, null, 2));
+        savePromise = this.autoProcessingService.updateModel(modelIdToUse, modelData);
       } else {
         // Création d'un nouveau modèle
+        console.log('➕ Création d\'un nouveau modèle');
+        console.log('   - Données à envoyer:', JSON.stringify(modelData, null, 2));
         savePromise = this.autoProcessingService.createModel(modelData);
       }
 
       savePromise.then(savedModel => {
         // Sauvegarder les règles de traitement des colonnes si elles existent
-        if (this.columnProcessingRules.length > 0 && savedModel.modelId) {
-          this.autoProcessingService.saveColumnProcessingRulesBatch(savedModel.modelId, this.columnProcessingRules)
+        // Note: Les règles sont déjà incluses dans modelData.columnProcessingRules
+        // mais on les sauvegarde séparément pour s'assurer qu'elles sont bien persistées
+        const finalModelId = savedModel.modelId || savedModel.id;
+        if (this.columnProcessingRules.length > 0 && finalModelId) {
+          this.autoProcessingService.saveColumnProcessingRulesBatch(finalModelId, this.columnProcessingRules)
             .then((savedRules) => {
+              console.log('✅ Règles de traitement sauvegardées:', savedRules.length);
               this.successMessage = `Modèle ${this.editingModel ? 'modifié' : 'créé'} avec ${this.columnProcessingRules.length} règle(s) de traitement`;
             })
             .catch(error => {
-              console.error('Erreur lors de la sauvegarde des règles:', error);
+              console.error('❌ Erreur lors de la sauvegarde des règles:', error);
               this.successMessage = `Modèle ${this.editingModel ? 'modifié' : 'créé'} mais erreur lors de la sauvegarde des règles`;
             });
         } else {
@@ -2043,21 +2071,31 @@ export class AutoProcessingModelsComponent implements OnInit {
     this.ensureModelColumnsLoaded();
     this.updateAllSectionsWithModelColumns();
     
+    // Charger la colonne source dans selectedColumns
+    if (rule.sourceColumn) {
+      this.selectedColumns = [rule.sourceColumn];
+    } else if (rule.sourceColumns && rule.sourceColumns.length > 0) {
+      this.selectedColumns = [...rule.sourceColumns];
+    } else {
+      this.selectedColumns = [];
+    }
+    
     this.columnProcessingRuleForm.patchValue({
       sourceColumn: rule.sourceColumn,
-      targetColumn: rule.targetColumn,
-      formatType: rule.formatType,
-      toUpperCase: rule.toUpperCase,
-      toLowerCase: rule.toLowerCase,
-      trimSpaces: rule.trimSpaces,
-      removeSpecialChars: rule.removeSpecialChars,
+      targetColumn: rule.targetColumn || '',
+      formatType: rule.formatType || '',
+      toUpperCase: rule.toUpperCase || false,
+      toLowerCase: rule.toLowerCase || false,
+      trimSpaces: rule.trimSpaces || false,
+      removeSpecialChars: rule.removeSpecialChars || false,
       stringToRemove: rule.stringToRemove || '',
-      padZeros: rule.padZeros,
-      regexReplace: rule.regexReplace
+      padZeros: rule.padZeros || false,
+      regexReplace: rule.regexReplace || ''
     });
     
     console.log('✅ Édition de règle de traitement avec colonnes centralisées:', {
       ruleSourceColumn: rule.sourceColumn,
+      selectedColumns: this.selectedColumns,
       availableTemplateColumns: this.availableTemplateColumns.length,
       availableColumnsForTemplate: this.availableColumnsForTemplate.length
     });
@@ -2107,16 +2145,49 @@ export class AutoProcessingModelsComponent implements OnInit {
           sourceColumns: [finalColumn] // Ajouter le support pour les colonnes multiples
         };
         
+        // Log pour vérifier que stringToRemove est bien inclus
+        if (ruleForColumn.stringToRemove) {
+          console.log(`🔍 [DEBUG] Règle créée avec stringToRemove: "${ruleForColumn.stringToRemove}" pour la colonne: ${finalColumn}`);
+        }
+        
         // Vérifier si une règle existe déjà pour cette colonne
-        const existingRuleIndex = this.columnProcessingRules.findIndex(rule => 
-          rule.sourceColumn === finalColumn || 
-          (rule.sourceColumns && rule.sourceColumns.includes(finalColumn))
-        );
+        // Normaliser les noms de colonnes pour la comparaison
+        const existingRuleIndex = this.columnProcessingRules.findIndex(rule => {
+          if (!rule) return false;
+          
+          // Normaliser le sourceColumn de la règle existante
+          const existingSourceColumn = rule.sourceColumn ? this.normalizeColumnName(rule.sourceColumn) : '';
+          const normalizedFinalColumn = this.normalizeColumnName(finalColumn);
+          
+          // Comparaison avec sourceColumn
+          if (existingSourceColumn === normalizedFinalColumn) {
+            console.log(`🔍 [DEBUG] Règle existante trouvée par sourceColumn: "${rule.sourceColumn}" === "${finalColumn}"`);
+            return true;
+          }
+          
+          // Comparaison avec sourceColumns
+          if (rule.sourceColumns && rule.sourceColumns.length > 0) {
+            const matchingColumn = rule.sourceColumns.find(col => {
+              const normalizedCol = this.normalizeColumnName(col);
+              return normalizedCol === normalizedFinalColumn;
+            });
+            if (matchingColumn) {
+              console.log(`🔍 [DEBUG] Règle existante trouvée par sourceColumns: "${matchingColumn}" === "${finalColumn}"`);
+              return true;
+            }
+          }
+          
+          return false;
+        });
         
         if (existingRuleIndex !== -1) {
-          // Mettre à jour la règle existante
-          this.columnProcessingRules[existingRuleIndex] = ruleForColumn;
-          console.log(`✅ [DEBUG] Règle mise à jour pour la colonne: ${finalColumn}`);
+          // Mettre à jour la règle existante (préserver l'ID si elle existe)
+          const existingRule = this.columnProcessingRules[existingRuleIndex];
+          this.columnProcessingRules[existingRuleIndex] = {
+            ...ruleForColumn,
+            id: existingRule.id // Préserver l'ID de la règle existante
+          };
+          console.log(`✅ [DEBUG] Règle mise à jour pour la colonne: ${finalColumn} (index: ${existingRuleIndex}, id: ${existingRule.id})`);
         } else {
           // Ajouter une nouvelle règle
           this.columnProcessingRules.push(ruleForColumn);
@@ -2126,10 +2197,88 @@ export class AutoProcessingModelsComponent implements OnInit {
       
       console.log('✅ [DEBUG] Total des règles après modification:', this.columnProcessingRules.length);
       
-      this.editingColumnProcessingRule = null;
-      this.columnProcessingRuleForm.reset();
-      this.selectedColumns = []; // Réinitialiser la sélection
-      this.successMessage = `Règles de traitement sauvegardées pour ${this.selectedColumns.length} colonne(s)`;
+      // Sauvegarder les valeurs du formulaire et l'état avant réinitialisation (pour préserver l'état)
+      const savedFormValues = { ...this.columnProcessingRuleForm.value };
+      const savedSelectedColumns = [...this.selectedColumns];
+      const wasEditing = this.editingColumnProcessingRule !== null && this.editingColumnProcessingRule !== -1;
+      const wasEditingModel = this.editingModel && this.editingModel.modelId;
+      
+      // Sauvegarder immédiatement dans la base de données si le modèle existe déjà
+      if (wasEditingModel) {
+        const columnsCount = this.selectedColumns.length; // Sauvegarder avant réinitialisation
+        console.log('💾 [DEBUG] Sauvegarde immédiate des règles pour le modèle:', this.editingModel.modelId);
+        
+        this.autoProcessingService.saveColumnProcessingRulesBatch(this.editingModel.modelId, this.columnProcessingRules)
+          .then((savedRules) => {
+            console.log('✅ [DEBUG] Règles sauvegardées avec succès dans la base de données');
+            
+            // Vérifier que stringToRemove est bien présent dans les règles sauvegardées
+            savedRules.forEach((rule, index) => {
+              if (rule.stringToRemove) {
+                console.log(`  ✓ Règle ${index} - stringToRemove: "${rule.stringToRemove}" pour colonne: ${rule.sourceColumn}`);
+              } else {
+                console.log(`  ✓ Règle ${index} - Aucun stringToRemove pour colonne: ${rule.sourceColumn}`);
+              }
+            });
+            
+            this.successMessage = `Règles de traitement sauvegardées pour ${columnsCount} colonne(s)`;
+            
+            // Si on était en mode édition d'un modèle existant, préserver l'état du formulaire
+            if (wasEditing) {
+              // Mettre à jour les règles locales avec celles sauvegardées (pour avoir les IDs)
+              this.columnProcessingRules = savedRules;
+              
+              // Trouver l'index de la règle qui correspond aux colonnes sauvegardées
+              const matchingRuleIndex = this.columnProcessingRules.findIndex(rule => 
+                rule.sourceColumn === savedSelectedColumns[0] ||
+                (rule.sourceColumns && rule.sourceColumns.length > 0 && 
+                 rule.sourceColumns.includes(savedSelectedColumns[0]))
+              );
+              
+              if (matchingRuleIndex !== -1) {
+                // Rééditer la règle mise à jour pour préserver l'affichage
+                this.editColumnProcessingRule(matchingRuleIndex);
+              } else {
+                // Si pas trouvé, restaurer manuellement le formulaire et la sélection
+                this.selectedColumns = savedSelectedColumns;
+                this.columnProcessingRuleForm.patchValue(savedFormValues);
+              }
+            } else {
+              // Si c'était une nouvelle règle, réinitialiser
+              this.editingColumnProcessingRule = null;
+              this.columnProcessingRuleForm.reset();
+              this.selectedColumns = [];
+            }
+          })
+          .catch(error => {
+            console.error('❌ [DEBUG] Erreur lors de la sauvegarde des règles:', error);
+            this.errorMessage = 'Erreur lors de la sauvegarde des règles dans la base de données';
+            // Afficher quand même un message de succès local
+            this.successMessage = `Règles de traitement mises à jour localement pour ${columnsCount} colonne(s) (sauvegarde en base échouée)`;
+            
+            // En cas d'erreur, préserver quand même l'état si on était en mode édition
+            if (wasEditing) {
+              this.selectedColumns = savedSelectedColumns;
+              this.columnProcessingRuleForm.patchValue(savedFormValues);
+            } else {
+              this.editingColumnProcessingRule = null;
+              this.columnProcessingRuleForm.reset();
+              this.selectedColumns = [];
+            }
+          });
+      } else {
+        // Si le modèle n'existe pas encore, sauvegarder seulement localement
+        // Les règles seront sauvegardées lors de la création du modèle
+        const columnsCount = this.selectedColumns.length; // Sauvegarder avant réinitialisation
+        this.successMessage = `Règles de traitement préparées pour ${columnsCount} colonne(s) (seront sauvegardées avec le modèle)`;
+        
+        // Réinitialiser seulement si on n'est pas en mode édition
+        if (!wasEditing) {
+          this.editingColumnProcessingRule = null;
+          this.columnProcessingRuleForm.reset();
+          this.selectedColumns = []; // Réinitialiser la sélection
+        }
+      }
       
       console.log('🔍 [DEBUG] Règles après modification:', this.columnProcessingRules);
     }
@@ -2138,7 +2287,24 @@ export class AutoProcessingModelsComponent implements OnInit {
   deleteColumnProcessingRule(index: number): void {
     if (confirm('Êtes-vous sûr de vouloir supprimer cette règle de traitement ?')) {
       this.columnProcessingRules.splice(index, 1);
-      this.successMessage = 'Règle de traitement supprimée';
+      
+      // Sauvegarder immédiatement dans la base de données si le modèle existe déjà
+      if (this.editingModel && this.editingModel.modelId) {
+        console.log('💾 [DEBUG] Sauvegarde immédiate après suppression de règle pour le modèle:', this.editingModel.modelId);
+        
+        this.autoProcessingService.saveColumnProcessingRulesBatch(this.editingModel.modelId, this.columnProcessingRules)
+          .then((savedRules) => {
+            console.log('✅ [DEBUG] Règles sauvegardées avec succès après suppression');
+            this.successMessage = 'Règle de traitement supprimée et sauvegardée';
+          })
+          .catch(error => {
+            console.error('❌ [DEBUG] Erreur lors de la sauvegarde après suppression:', error);
+            this.errorMessage = 'Erreur lors de la sauvegarde dans la base de données';
+            this.successMessage = 'Règle supprimée localement (sauvegarde en base échouée)';
+          });
+      } else {
+        this.successMessage = 'Règle de traitement supprimée';
+      }
     }
   }
 

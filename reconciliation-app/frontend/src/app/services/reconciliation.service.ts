@@ -617,10 +617,21 @@ export class ReconciliationService implements OnInit, OnDestroy {
             return this.getFrontendChunkedResults(jobId);
         }
         
-        return this.http.get<ReconciliationResponse>(`${this.apiUrl}/results/${jobId}`)
+        // Pour les fichiers volumineux, charger uniquement le résumé
+        return this.getJobResultsSummary(jobId);
+    }
+
+    /**
+     * Charge uniquement le résumé des résultats (sans les données détaillées)
+     * Optimisé pour les fichiers volumineux
+     */
+    getJobResultsSummary(jobId: string): Observable<ReconciliationResponse> {
+        console.log('📋 Chargement du résumé pour le job:', jobId);
+        
+        return this.http.get<ReconciliationResponse>(`${this.apiUrl}/results/summary?sessionId=${jobId}`)
             .pipe(
                 tap(results => {
-                    console.log('✅ Résultats obtenus:', results);
+                    console.log('✅ Résumé obtenu:', results);
                     
                     this.updateProgress({
                         percentage: 100,
@@ -632,6 +643,70 @@ export class ReconciliationService implements OnInit, OnDestroy {
                 }),
                 catchError(this.handleError)
             );
+    }
+
+    /**
+     * Charge les matches avec pagination
+     */
+    getMatches(jobId: string, page: number = 0, size: number = 1000): Observable<{ matches: any[], total: number, page: number, size: number, totalPages: number }> {
+        console.log(`📋 Chargement des matches pour le job ${jobId} (page: ${page}, size: ${size})`);
+        
+        return this.http.get<{ matches: any[], total: number, page: number, size: number, totalPages: number }>(
+            `${this.apiUrl}/results/matches?sessionId=${jobId}&page=${page}&size=${size}`
+        ).pipe(
+            tap(response => {
+                console.log(`✅ ${response.matches.length} matches chargés (page ${page + 1}/${response.totalPages})`);
+            }),
+            catchError(this.handleError)
+        );
+    }
+
+    /**
+     * Charge les mismatches avec pagination
+     */
+    getMismatches(jobId: string, page: number = 0, size: number = 1000): Observable<{ mismatches: any[], total: number, page: number, size: number, totalPages: number }> {
+        console.log(`📋 Chargement des mismatches pour le job ${jobId} (page: ${page}, size: ${size})`);
+        
+        return this.http.get<{ mismatches: any[], total: number, page: number, size: number, totalPages: number }>(
+            `${this.apiUrl}/results/mismatches?sessionId=${jobId}&page=${page}&size=${size}`
+        ).pipe(
+            tap(response => {
+                console.log(`✅ ${response.mismatches.length} mismatches chargés (page ${page + 1}/${response.totalPages})`);
+            }),
+            catchError(this.handleError)
+        );
+    }
+
+    /**
+     * Charge les boOnly avec pagination
+     */
+    getBoOnly(jobId: string, page: number = 0, size: number = 1000): Observable<{ boOnly: any[], total: number, page: number, size: number, totalPages: number }> {
+        console.log(`📋 Chargement des boOnly pour le job ${jobId} (page: ${page}, size: ${size})`);
+        
+        return this.http.get<{ boOnly: any[], total: number, page: number, size: number, totalPages: number }>(
+            `${this.apiUrl}/results/bo-only?sessionId=${jobId}&page=${page}&size=${size}`
+        ).pipe(
+            tap(response => {
+                console.log(`✅ ${response.boOnly.length} boOnly chargés (page ${page + 1}/${response.totalPages})`);
+            }),
+            catchError(this.handleError)
+        );
+    }
+
+    /**
+     * Charge les partnerOnly avec pagination
+     */
+    getPartnerOnly(jobId: string, page: number = 0, size: number = 1000): Observable<{ partnerOnly: any[], total: number, page: number, size: number, totalPages: number }> {
+        console.log(`📋 Chargement des partnerOnly pour le job ${jobId} (page: ${page}, size: ${size})`);
+        
+        return this.http.get<{ partnerOnly: any[], total: number, page: number, size: number, totalPages: number }>(
+            `${this.apiUrl}/results/partner-only?sessionId=${jobId}&page=${page}&size=${size}`
+        ).pipe(
+            tap(response => {
+                console.log(`✅ ${response.partnerOnly.length} partnerOnly chargés (page ${page + 1}/${response.totalPages})`);
+            }),
+            catchError(this.handleError)
+        );
     }
 
     /**

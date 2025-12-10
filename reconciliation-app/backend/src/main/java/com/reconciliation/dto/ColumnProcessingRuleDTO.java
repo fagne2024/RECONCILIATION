@@ -37,6 +37,9 @@ public class ColumnProcessingRuleDTO {
     @JsonProperty("regexReplace")
     private String regexReplace;
     
+    @JsonProperty("stringToRemove")
+    private String stringToRemove;
+    
     @JsonProperty("specialCharReplacementMap")
     private Map<String, String> specialCharReplacementMap;
     
@@ -138,6 +141,14 @@ public class ColumnProcessingRuleDTO {
     
     public void setRegexReplace(String regexReplace) {
         this.regexReplace = regexReplace;
+    }
+    
+    public String getStringToRemove() {
+        return stringToRemove;
+    }
+    
+    public void setStringToRemove(String stringToRemove) {
+        this.stringToRemove = stringToRemove;
     }
     
     public Map<String, String> getSpecialCharReplacementMap() {

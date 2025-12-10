@@ -289,6 +289,21 @@
           &.actions-cell {
             text-align: center;
           }
+
+          &.comment-cell {
+            white-space: normal;
+            max-width: 200px;
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+
+            .comment-text {
+              display: block;
+              max-height: 60px;
+              overflow: hidden;
+              text-overflow: ellipsis;
+              line-height: 1.4;
+            }
+          }
         }
       }
     }

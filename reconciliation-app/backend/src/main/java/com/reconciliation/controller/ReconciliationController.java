@@ -599,6 +599,283 @@ public class ReconciliationController {
         }
     }
 
+    /**
+     * Récupère uniquement le résumé des résultats (sans les données détaillées)
+     * Optimisé pour les fichiers volumineux
+     */
+    @GetMapping("/results/summary")
+    public ResponseEntity<Map<String, Object>> getResultsSummary(@RequestParam String sessionId) {
+        try {
+            log.info("📋 Récupération du résumé pour le job: {}", sessionId);
+            
+            Optional<ReconciliationJob> jobOpt = jobService.getJobStatus(sessionId);
+            if (!jobOpt.isPresent()) {
+                log.warn("⚠️ Job non trouvé: {}", sessionId);
+                return ResponseEntity.notFound().build();
+            }
+            
+            ReconciliationJob job = jobOpt.get();
+            if (job.getStatus() != ReconciliationJob.JobStatus.COMPLETED) {
+                log.warn("⚠️ Job non terminé: {} (status: {})", sessionId, job.getStatus());
+                Map<String, Object> errorResponse = new HashMap<>();
+                errorResponse.put("success", false);
+                errorResponse.put("error", "Job non terminé - status: " + job.getStatus());
+                return ResponseEntity.badRequest().body(errorResponse);
+            }
+            
+            if (job.getResultJson() == null) {
+                log.error("❌ Aucun résultat JSON trouvé pour le job: {}", sessionId);
+                Map<String, Object> errorResponse = new HashMap<>();
+                errorResponse.put("success", false);
+                errorResponse.put("error", "Aucun résultat disponible");
+                return ResponseEntity.badRequest().body(errorResponse);
+            }
+            
+            ReconciliationResponse result = objectMapper.readValue(job.getResultJson(), ReconciliationResponse.class);
+            
+            // Retourner uniquement le résumé (sans les données détaillées)
+            Map<String, Object> summary = new HashMap<>();
+            summary.put("success", true);
+            summary.put("totalMatches", result.getTotalMatches());
+            summary.put("totalMismatches", result.getTotalMismatches());
+            summary.put("totalBoOnly", result.getTotalBoOnly());
+            summary.put("totalPartnerOnly", result.getTotalPartnerOnly());
+            summary.put("totalBoRecords", result.getTotalBoRecords());
+            summary.put("totalPartnerRecords", result.getTotalPartnerRecords());
+            summary.put("executionTime", result.getExecutionTimeMs());
+            summary.put("processedRecords", result.getProcessedRecords());
+            
+            // Ne pas inclure les données détaillées
+            summary.put("matches", new ArrayList<>());
+            summary.put("mismatches", new ArrayList<>());
+            summary.put("boOnly", new ArrayList<>());
+            summary.put("partnerOnly", new ArrayList<>());
+            
+            log.info("✅ Résumé retourné pour le job: {} - {} correspondances, {} écarts BO, {} écarts Partenaire", 
+                sessionId, result.getTotalMatches(), result.getTotalBoOnly() + result.getTotalMismatches(), result.getTotalPartnerOnly());
+            return ResponseEntity.ok(summary);
+            
+        } catch (Exception e) {
+            log.error("❌ Erreur lors de la récupération du résumé pour le job {}: {}", sessionId, e.getMessage());
+            Map<String, Object> errorResponse = new HashMap<>();
+            errorResponse.put("success", false);
+            errorResponse.put("error", "Impossible de récupérer le résumé: " + e.getMessage());
+            return ResponseEntity.badRequest().body(errorResponse);
+        }
+    }
+
+    /**
+     * Récupère les matches avec pagination
+     */
+    @GetMapping("/results/matches")
+    public ResponseEntity<Map<String, Object>> getMatches(
+            @RequestParam String sessionId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "1000") int size) {
+        try {
+            log.info("📋 Récupération des matches pour le job: {} (page: {}, size: {})", sessionId, page, size);
+            
+            Optional<ReconciliationJob> jobOpt = jobService.getJobStatus(sessionId);
+            if (!jobOpt.isPresent()) {
+                return ResponseEntity.notFound().build();
+            }
+            
+            ReconciliationJob job = jobOpt.get();
+            if (job.getResultJson() == null) {
+                Map<String, Object> errorResponse = new HashMap<>();
+                errorResponse.put("success", false);
+                errorResponse.put("error", "Aucun résultat disponible");
+                return ResponseEntity.badRequest().body(errorResponse);
+            }
+            
+            ReconciliationResponse result = objectMapper.readValue(job.getResultJson(), ReconciliationResponse.class);
+            List<ReconciliationResponse.Match> matches = result.getMatches() != null ? result.getMatches() : new ArrayList<>();
+            
+            int start = page * size;
+            int end = Math.min(start + size, matches.size());
+            List<ReconciliationResponse.Match> pagedMatches = start < matches.size() 
+                ? matches.subList(start, end) 
+                : new ArrayList<>();
+            
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("matches", pagedMatches);
+            response.put("total", matches.size());
+            response.put("page", page);
+            response.put("size", size);
+            response.put("totalPages", (int) Math.ceil((double) matches.size() / size));
+            
+            log.info("✅ {} matches retournés (page {}/{})", pagedMatches.size(), page + 1, (int) Math.ceil((double) matches.size() / size));
+            return ResponseEntity.ok(response);
+            
+        } catch (Exception e) {
+            log.error("❌ Erreur lors de la récupération des matches: {}", e.getMessage());
+            Map<String, Object> errorResponse = new HashMap<>();
+            errorResponse.put("success", false);
+            errorResponse.put("error", "Impossible de récupérer les matches: " + e.getMessage());
+            return ResponseEntity.badRequest().body(errorResponse);
+        }
+    }
+
+    /**
+     * Récupère les mismatches avec pagination
+     */
+    @GetMapping("/results/mismatches")
+    public ResponseEntity<Map<String, Object>> getMismatches(
+            @RequestParam String sessionId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "1000") int size) {
+        try {
+            log.info("📋 Récupération des mismatches pour le job: {} (page: {}, size: {})", sessionId, page, size);
+            
+            Optional<ReconciliationJob> jobOpt = jobService.getJobStatus(sessionId);
+            if (!jobOpt.isPresent()) {
+                return ResponseEntity.notFound().build();
+            }
+            
+            ReconciliationJob job = jobOpt.get();
+            if (job.getResultJson() == null) {
+                Map<String, Object> errorResponse = new HashMap<>();
+                errorResponse.put("success", false);
+                errorResponse.put("error", "Aucun résultat disponible");
+                return ResponseEntity.badRequest().body(errorResponse);
+            }
+            
+            ReconciliationResponse result = objectMapper.readValue(job.getResultJson(), ReconciliationResponse.class);
+            List<Map<String, String>> mismatches = result.getMismatches() != null ? result.getMismatches() : new ArrayList<>();
+            
+            int start = page * size;
+            int end = Math.min(start + size, mismatches.size());
+            List<Map<String, String>> pagedMismatches = start < mismatches.size() 
+                ? mismatches.subList(start, end) 
+                : new ArrayList<>();
+            
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("mismatches", pagedMismatches);
+            response.put("total", mismatches.size());
+            response.put("page", page);
+            response.put("size", size);
+            response.put("totalPages", (int) Math.ceil((double) mismatches.size() / size));
+            
+            log.info("✅ {} mismatches retournés (page {}/{})", pagedMismatches.size(), page + 1, (int) Math.ceil((double) mismatches.size() / size));
+            return ResponseEntity.ok(response);
+            
+        } catch (Exception e) {
+            log.error("❌ Erreur lors de la récupération des mismatches: {}", e.getMessage());
+            Map<String, Object> errorResponse = new HashMap<>();
+            errorResponse.put("success", false);
+            errorResponse.put("error", "Impossible de récupérer les mismatches: " + e.getMessage());
+            return ResponseEntity.badRequest().body(errorResponse);
+        }
+    }
+
+    /**
+     * Récupère les boOnly avec pagination
+     */
+    @GetMapping("/results/bo-only")
+    public ResponseEntity<Map<String, Object>> getBoOnly(
+            @RequestParam String sessionId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "1000") int size) {
+        try {
+            log.info("📋 Récupération des boOnly pour le job: {} (page: {}, size: {})", sessionId, page, size);
+            
+            Optional<ReconciliationJob> jobOpt = jobService.getJobStatus(sessionId);
+            if (!jobOpt.isPresent()) {
+                return ResponseEntity.notFound().build();
+            }
+            
+            ReconciliationJob job = jobOpt.get();
+            if (job.getResultJson() == null) {
+                Map<String, Object> errorResponse = new HashMap<>();
+                errorResponse.put("success", false);
+                errorResponse.put("error", "Aucun résultat disponible");
+                return ResponseEntity.badRequest().body(errorResponse);
+            }
+            
+            ReconciliationResponse result = objectMapper.readValue(job.getResultJson(), ReconciliationResponse.class);
+            List<Map<String, String>> boOnly = result.getBoOnly() != null ? result.getBoOnly() : new ArrayList<>();
+            
+            int start = page * size;
+            int end = Math.min(start + size, boOnly.size());
+            List<Map<String, String>> pagedBoOnly = start < boOnly.size() 
+                ? boOnly.subList(start, end) 
+                : new ArrayList<>();
+            
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("boOnly", pagedBoOnly);
+            response.put("total", boOnly.size());
+            response.put("page", page);
+            response.put("size", size);
+            response.put("totalPages", (int) Math.ceil((double) boOnly.size() / size));
+            
+            log.info("✅ {} boOnly retournés (page {}/{})", pagedBoOnly.size(), page + 1, (int) Math.ceil((double) boOnly.size() / size));
+            return ResponseEntity.ok(response);
+            
+        } catch (Exception e) {
+            log.error("❌ Erreur lors de la récupération des boOnly: {}", e.getMessage());
+            Map<String, Object> errorResponse = new HashMap<>();
+            errorResponse.put("success", false);
+            errorResponse.put("error", "Impossible de récupérer les boOnly: " + e.getMessage());
+            return ResponseEntity.badRequest().body(errorResponse);
+        }
+    }
+
+    /**
+     * Récupère les partnerOnly avec pagination
+     */
+    @GetMapping("/results/partner-only")
+    public ResponseEntity<Map<String, Object>> getPartnerOnly(
+            @RequestParam String sessionId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "1000") int size) {
+        try {
+            log.info("📋 Récupération des partnerOnly pour le job: {} (page: {}, size: {})", sessionId, page, size);
+            
+            Optional<ReconciliationJob> jobOpt = jobService.getJobStatus(sessionId);
+            if (!jobOpt.isPresent()) {
+                return ResponseEntity.notFound().build();
+            }
+            
+            ReconciliationJob job = jobOpt.get();
+            if (job.getResultJson() == null) {
+                Map<String, Object> errorResponse = new HashMap<>();
+                errorResponse.put("success", false);
+                errorResponse.put("error", "Aucun résultat disponible");
+                return ResponseEntity.badRequest().body(errorResponse);
+            }
+            
+            ReconciliationResponse result = objectMapper.readValue(job.getResultJson(), ReconciliationResponse.class);
+            List<Map<String, String>> partnerOnly = result.getPartnerOnly() != null ? result.getPartnerOnly() : new ArrayList<>();
+            
+            int start = page * size;
+            int end = Math.min(start + size, partnerOnly.size());
+            List<Map<String, String>> pagedPartnerOnly = start < partnerOnly.size() 
+                ? partnerOnly.subList(start, end) 
+                : new ArrayList<>();
+            
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("partnerOnly", pagedPartnerOnly);
+            response.put("total", partnerOnly.size());
+            response.put("page", page);
+            response.put("size", size);
+            response.put("totalPages", (int) Math.ceil((double) partnerOnly.size() / size));
+            
+            log.info("✅ {} partnerOnly retournés (page {}/{})", pagedPartnerOnly.size(), page + 1, (int) Math.ceil((double) partnerOnly.size() / size));
+            return ResponseEntity.ok(response);
+            
+        } catch (Exception e) {
+            log.error("❌ Erreur lors de la récupération des partnerOnly: {}", e.getMessage());
+            Map<String, Object> errorResponse = new HashMap<>();
+            errorResponse.put("success", false);
+            errorResponse.put("error", "Impossible de récupérer les partnerOnly: " + e.getMessage());
+            return ResponseEntity.badRequest().body(errorResponse);
+        }
+    }
+
     @PostMapping("/analyze-keys")
     public ResponseEntity<Map<String, Object>> analyzeKeys(
             @RequestParam("boFile") MultipartFile boFile,

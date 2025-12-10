@@ -296,27 +296,102 @@ export class DashboardReconciliationComponent implements OnInit, OnDestroy {
 
         // Filtrer par intervalle de dates
         if (this.selectedDateStart || this.selectedDateEnd) {
+            // Normaliser les dates de filtrage
+            let normalizedStart: Date | null = null;
+            let normalizedEnd: Date | null = null;
+            
+            if (this.selectedDateStart) {
+                // Créer une nouvelle date pour éviter les problèmes de référence
+                normalizedStart = new Date(this.selectedDateStart.getFullYear(), this.selectedDateStart.getMonth(), this.selectedDateStart.getDate());
+                normalizedStart.setHours(0, 0, 0, 0); // Début de journée
+            }
+            
+            if (this.selectedDateEnd) {
+                // Créer une nouvelle date pour éviter les problèmes de référence
+                normalizedEnd = new Date(this.selectedDateEnd.getFullYear(), this.selectedDateEnd.getMonth(), this.selectedDateEnd.getDate());
+                normalizedEnd.setHours(23, 59, 59, 999); // Fin de journée pour inclure toute la journée
+            }
+            
+            console.log('[DEBUG] Filtrage par dates:', {
+                selectedDateStart: this.selectedDateStart,
+                selectedDateEnd: this.selectedDateEnd,
+                normalizedStart: normalizedStart,
+                normalizedEnd: normalizedEnd
+            });
+            
             filtered = filtered.map(country => {
                 const filteredServices: {[serviceName: string]: any} = {};
                 Object.entries(country.services).forEach(([serviceName, serviceData]) => {
                     if (serviceData.date) {
-                        const serviceDate = new Date(serviceData.date.split(' ')[0]); // Prendre seulement la partie date
+                        // Extraire et normaliser la date du service
+                        const dateStr = serviceData.date.split(' ')[0]; // Prendre seulement la partie date
+                        let serviceDate: Date;
+                        
+                        // Parser la date selon le format (YYYY-MM-DD ou autre)
+                        if (dateStr.includes('-')) {
+                            // Format ISO: YYYY-MM-DD
+                            const [year, month, day] = dateStr.split('-').map(Number);
+                            serviceDate = new Date(year, month - 1, day);
+                        } else if (dateStr.includes('/')) {
+                            // Format avec slash: DD/MM/YYYY ou MM/DD/YYYY
+                            const parts = dateStr.split('/').map(Number);
+                            // Supposer format DD/MM/YYYY (format français)
+                            serviceDate = new Date(parts[2], parts[1] - 1, parts[0]);
+                        } else {
+                            // Essayer de parser directement
+                            serviceDate = new Date(dateStr);
+                        }
+                        
+                        // Vérifier que la date est valide
+                        if (isNaN(serviceDate.getTime())) {
+                            console.log('[DEBUG] Date invalide ignorée:', { serviceName, dateStr, serviceData });
+                            return; // Ignorer cette entrée si la date est invalide
+                        }
+                        
+                        serviceDate.setHours(0, 0, 0, 0); // Normaliser à minuit
                         
                         let dateMatch = true;
                         
                         // Vérifier la date de début
-                        if (this.selectedDateStart) {
-                            dateMatch = dateMatch && serviceDate >= this.selectedDateStart;
+                        if (normalizedStart) {
+                            const isAfterStart = serviceDate >= normalizedStart;
+                            dateMatch = dateMatch && isAfterStart;
+                            if (!isAfterStart) {
+                                console.log('[DEBUG] Service exclu (avant date début):', {
+                                    serviceName,
+                                    serviceDate: serviceDate.toISOString(),
+                                    normalizedStart: normalizedStart.toISOString()
+                                });
+                            }
                         }
                         
                         // Vérifier la date de fin
-                        if (this.selectedDateEnd) {
-                            dateMatch = dateMatch && serviceDate <= this.selectedDateEnd;
+                        if (normalizedEnd) {
+                            const isBeforeEnd = serviceDate <= normalizedEnd;
+                            dateMatch = dateMatch && isBeforeEnd;
+                            if (!isBeforeEnd) {
+                                console.log('[DEBUG] Service exclu (après date fin):', {
+                                    serviceName,
+                                    serviceDate: serviceDate.toISOString(),
+                                    normalizedEnd: normalizedEnd.toISOString()
+                                });
+                            }
                         }
                         
                         if (dateMatch) {
+                            console.log('[DEBUG] Service inclus:', {
+                                serviceName,
+                                serviceDate: serviceDate.toISOString(),
+                                dateStr,
+                                normalizedStart: normalizedStart?.toISOString(),
+                                normalizedEnd: normalizedEnd?.toISOString()
+                            });
                             filteredServices[serviceName] = serviceData;
                         }
+                    } else {
+                        // Exclure les services sans date si un filtre de date est actif
+                        console.log('[DEBUG] Service exclu (pas de date):', serviceName);
+                        // Ne pas ajouter ce service aux résultats filtrés
                     }
                 });
                 return {

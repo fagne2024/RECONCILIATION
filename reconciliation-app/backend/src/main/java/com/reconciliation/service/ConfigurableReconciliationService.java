@@ -1,9 +1,7 @@
 package com.reconciliation.service;
 
 import com.reconciliation.dto.ReconciliationRequest;
-import com.reconciliation.dto.ReconciliationResponse;
 import com.reconciliation.entity.AutoProcessingModel;
-import com.reconciliation.service.AutoProcessingService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -88,17 +86,64 @@ public class ConfigurableReconciliationService {
             List<AutoProcessingModel> models = autoProcessingService.getAllModels();
             log.info("📋 {} modèles récupérés depuis la base de données", models.size());
             
+            // Récupérer les colonnes partenaires pour la détection
+            Set<String> partnerColumns = new HashSet<>();
+            if (!request.getPartnerFileContent().isEmpty()) {
+                partnerColumns = request.getPartnerFileContent().get(0).keySet();
+                log.info("📋 Colonnes partenaires disponibles: {}", partnerColumns);
+            }
+            
+            List<AutoProcessingModel> matchingModels = new ArrayList<>();
+            
             for (AutoProcessingModel model : models) {
                 if (model.getFileType() == AutoProcessingModel.FileType.PARTNER) {
-                    log.info("🔍 Test du modèle partenaire: {}", model.getName());
+                    log.info("🔍 Test du modèle partenaire: {} (pattern: {}, template: {})", 
+                            model.getName(), model.getFilePattern(), model.getTemplateFile());
                     // Vérifier si le modèle correspond aux fichiers
                     if (matchesFilePattern(request, model)) {
-                        log.info("✅ Modèle partenaire trouvé: {}", model.getName());
-                        // Mettre en cache pour cette requête
-                        cachedPartnerModel = model;
-                        cachedRequest = request;
-                        return model;
+                        matchingModels.add(model);
+                        log.info("✅ Modèle partenaire correspondant: {}", model.getName());
                     }
+                }
+            }
+            
+            // Si plusieurs modèles correspondent, choisir le plus spécifique ou celui avec des règles
+            if (!matchingModels.isEmpty()) {
+                // Prioriser les modèles qui ont des règles de traitement
+                AutoProcessingModel bestModel = null;
+                int maxRules = -1;
+                
+                for (AutoProcessingModel model : matchingModels) {
+                    int ruleCount = 0;
+                    try {
+                        List<com.reconciliation.entity.ColumnProcessingRule> rules = 
+                            autoProcessingService.getModelByModelId(model.getModelId()).getColumnProcessingRules();
+                        if (rules != null) {
+                            ruleCount = rules.size();
+                        }
+                    } catch (Exception e) {
+                        log.debug("Erreur lors du comptage des règles pour le modèle {}: {}", model.getName(), e.getMessage());
+                    }
+                    
+                    log.info("  - Modèle {}: {} règle(s) de traitement", model.getName(), ruleCount);
+                    
+                    if (ruleCount > maxRules) {
+                        maxRules = ruleCount;
+                        bestModel = model;
+                    }
+                }
+                
+                if (bestModel != null) {
+                    log.info("✅ Modèle partenaire sélectionné: {} ({} règles)", bestModel.getName(), maxRules);
+                    cachedPartnerModel = bestModel;
+                    cachedRequest = request;
+                    return bestModel;
+                } else {
+                    // Si aucun modèle n'a de règles, prendre le premier
+                    log.info("✅ Modèle partenaire sélectionné (premier trouvé): {}", matchingModels.get(0).getName());
+                    cachedPartnerModel = matchingModels.get(0);
+                    cachedRequest = request;
+                    return matchingModels.get(0);
                 }
             }
             
@@ -115,16 +160,75 @@ public class ConfigurableReconciliationService {
 
     /**
      * Vérifie si les fichiers correspondent au pattern du modèle
-     * Pour l'instant, on utilise une détection basée sur le contenu
+     * Détection basée sur les colonnes présentes dans les données
      */
     private boolean matchesFilePattern(ReconciliationRequest request, AutoProcessingModel model) {
         try {
             String filePattern = model.getFilePattern();
             log.info("🔍 Test pattern: '{}' pour le modèle {}", filePattern, model.getName());
             
-            // Pour l'instant, on accepte tous les modèles partenaires
-            // La détection se fait principalement par le contenu TRXBO/OPPART
-            return true;
+            // Détection basée sur les colonnes présentes dans les données partenaires
+            if (!request.getPartnerFileContent().isEmpty()) {
+                Map<String, String> firstPartnerRecord = request.getPartnerFileContent().get(0);
+                Set<String> partnerColumns = firstPartnerRecord.keySet();
+                
+                // Récupérer le templateFile du modèle pour identifier le type de fichier
+                String templateFile = model.getTemplateFile();
+                if (templateFile != null && !templateFile.isEmpty()) {
+                    log.info("  - Template file du modèle: {}", templateFile);
+                    
+                    // Vérifier si le templateFile correspond aux colonnes présentes
+                    // CIMTNCM.xlsx a des colonnes spécifiques comme "External id", "From", "To", etc.
+                    if (templateFile.toLowerCase().contains("cimtncm")) {
+                        // Vérifier les colonnes spécifiques à CIMTNCM
+                        boolean hasExternalId = partnerColumns.contains("External id") || partnerColumns.stream().anyMatch(col -> col.equalsIgnoreCase("External id"));
+                        boolean hasFrom = partnerColumns.contains("From") || partnerColumns.stream().anyMatch(col -> col.equalsIgnoreCase("From"));
+                        boolean hasTo = partnerColumns.contains("To") || partnerColumns.stream().anyMatch(col -> col.equalsIgnoreCase("To"));
+                        
+                        if (hasExternalId && hasFrom && hasTo) {
+                            log.info("✅ Modèle CIMTNCM détecté par colonnes: External id, From, To");
+                            return true;
+                        }
+                    }
+                    
+                    // OPPART.xls a des colonnes spécifiques
+                    if (templateFile.toLowerCase().contains("oppart")) {
+                        boolean hasIdOperation = partnerColumns.contains("ID Opération") || partnerColumns.stream().anyMatch(col -> col.equalsIgnoreCase("ID Opération"));
+                        boolean hasTypeOperation = partnerColumns.contains("Type Opération") || partnerColumns.stream().anyMatch(col -> col.equalsIgnoreCase("Type Opération"));
+                        
+                        if (hasIdOperation && hasTypeOperation) {
+                            log.info("✅ Modèle OPPART détecté par colonnes: ID Opération, Type Opération");
+                            return true;
+                        }
+                    }
+                    
+                    // Autres modèles partenaires - vérifier avec le pattern si défini
+                    // Si le templateFile ne correspond à aucun pattern connu, vérifier le filePattern
+                    if (filePattern != null && !filePattern.isEmpty()) {
+                        // Vérifier si le pattern correspond vraiment aux colonnes présentes
+                        // Par exemple, si le pattern contient "CIMTNCM" et qu'on a les colonnes CIMTNCM
+                        String lowerPattern = filePattern.toLowerCase();
+                        if (lowerPattern.contains("cimtncm")) {
+                            boolean hasExternalId = partnerColumns.contains("External id") || 
+                                                   partnerColumns.stream().anyMatch(col -> col.equalsIgnoreCase("External id"));
+                            if (hasExternalId) {
+                                log.info("✅ Modèle détecté par pattern et colonnes: {} (pattern: {}, colonne: External id)", model.getName(), filePattern);
+                                return true;
+                            }
+                        }
+                        
+                        log.info("⚠️ Pattern '{}' du modèle {} ne correspond pas aux colonnes présentes", filePattern, model.getName());
+                        return false;
+                    }
+                    
+                    // Si pas de templateFile ni de pattern spécifique, ne pas accepter par défaut
+                    log.info("⚠️ Modèle {} n'a ni templateFile spécifique ni pattern vérifiable, ignoré", model.getName());
+                    return false;
+                }
+            }
+            
+            // Fallback: accepter le modèle si aucun autre critère n'a été vérifié
+            return false;
         } catch (Exception e) {
             log.error("❌ Erreur lors de la vérification du pattern: {}", e.getMessage());
             return false;
