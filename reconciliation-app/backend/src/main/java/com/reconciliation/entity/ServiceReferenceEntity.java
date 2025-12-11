@@ -1,6 +1,9 @@
 package com.reconciliation.entity;
 
 import jakarta.persistence.*;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 
 import java.time.LocalDateTime;
 
@@ -12,36 +15,57 @@ public class ServiceReferenceEntity {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @NotNull(message = "Le pays ne peut pas être nul")
+    @NotBlank(message = "Le pays ne peut pas être vide")
+    @Size(max = 10, message = "Le pays ne peut pas dépasser 10 caractères")
     @Column(name = "pays", nullable = false, length = 10)
     private String pays;
 
+    @NotNull(message = "Le code service ne peut pas être nul")
+    @NotBlank(message = "Le code service ne peut pas être vide")
+    @Size(max = 150, message = "Le code service ne peut pas dépasser 150 caractères")
     @Column(name = "code_service", nullable = false, length = 150)
     private String codeService;
 
+    @NotNull(message = "Le libellé du service ne peut pas être nul")
+    @NotBlank(message = "Le libellé du service ne peut pas être vide")
+    @Size(max = 150, message = "Le libellé du service ne peut pas dépasser 150 caractères")
     @Column(name = "service_label", nullable = false, length = 150)
     private String serviceLabel;
 
+    @NotNull(message = "Le code RECO ne peut pas être nul")
+    @NotBlank(message = "Le code RECO ne peut pas être vide")
+    @Size(max = 150, message = "Le code RECO ne peut pas dépasser 150 caractères")
     @Column(name = "code_reco", nullable = false, length = 150, unique = true)
     private String codeReco;
 
+    @Size(max = 100, message = "Le type de service ne peut pas dépasser 100 caractères")
     @Column(name = "service_type", length = 100)
     private String serviceType;
 
+    @Size(max = 100, message = "L'opérateur ne peut pas dépasser 100 caractères")
     @Column(name = "operateur", length = 100)
     private String operateur;
 
+    @Size(max = 50, message = "Le réseau ne peut pas dépasser 50 caractères")
     @Column(name = "reseau", length = 50)
     private String reseau;
 
+    @NotNull(message = "Le champ 'réconciliable' ne peut pas être nul")
     @Column(name = "reconciliable", nullable = false)
     private Boolean reconciliable = Boolean.TRUE;
 
+    @Size(max = 255, message = "Le motif ne peut pas dépasser 255 caractères")
     @Column(name = "motif", length = 255)
     private String motif;
 
+    @Size(max = 255, message = "Le retenu opérateur ne peut pas dépasser 255 caractères")
     @Column(name = "retenu_operateur", length = 255)
     private String retenuOperateur;
 
+    @NotNull(message = "Le statut ne peut pas être nul")
+    @NotBlank(message = "Le statut ne peut pas être vide")
+    @Size(max = 20, message = "Le statut ne peut pas dépasser 20 caractères")
     @Column(name = "status", nullable = false, length = 20)
     private String status = "ACTIF";
 

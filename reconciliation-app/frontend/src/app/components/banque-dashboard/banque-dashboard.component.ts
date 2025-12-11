@@ -50,6 +50,14 @@ export class BanqueDashboardComponent implements OnInit {
   }
 
   // === FLAGS ===
+  private readonly validCountryCodes = new Set([
+    'BF', 'BJ', 'CI', 'CM', 'GA', 'GN', 'KE', 'ML', 'MZ', 'NG', 'SN', 'TG',
+    'CF', 'TD', 'CG', 'CD', 'GQ', 'ST', 'AO',
+    'NE', 'GW', 'SL', 'LR', 'GH', 'MR', 'GM', 'CV',
+    'TZ', 'UG', 'RW', 'BI', 'ET', 'SO', 'DJ', 'ER', 'SS', 'SD', 'SC', 'MU', 'KM', 'MG',
+    'EG', 'ZA'
+  ]);
+
   getCountryFlag(code: string): string {
     const flagMap: Record<string, string> = {
       'BF': '🇧🇫','BJ': '🇧🇯','CI': '🇨🇮','CM': '🇨🇲','GA': '🇬🇦','GN': '🇬🇳','KE': '🇰🇪','ML': '🇲🇱','MZ': '🇲🇿','NG': '🇳🇬','SN': '🇸🇳','TG': '🇹🇬'
@@ -58,8 +66,15 @@ export class BanqueDashboardComponent implements OnInit {
   }
 
   getCountryFlagUrl(code: string): string | null {
-    const c = (code || '').toLowerCase();
+    const normalizedCode = (code || '').toUpperCase();
+    const c = normalizedCode.toLowerCase();
     if (!c) return null;
+    
+    // Ne retourner une URL que pour les codes pays valides
+    if (!this.validCountryCodes.has(normalizedCode)) {
+      return null;
+    }
+    
     if (this.flagLoadError[c]) return null;
     return `assets/flags/${c}.svg`;
   }

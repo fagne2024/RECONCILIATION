@@ -5,6 +5,7 @@ import com.reconciliation.entity.ServiceReferenceEntity;
 import com.reconciliation.service.ServiceReferenceService;
 import com.reconciliation.util.RequestContextUtil;
 import jakarta.persistence.EntityNotFoundException;
+import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -49,44 +50,24 @@ public class ServiceReferenceController {
     }
 
     @PostMapping
-    public ResponseEntity<?> create(@RequestBody ServiceReferenceEntity payload) {
+    public ResponseEntity<?> create(@Valid @RequestBody ServiceReferenceEntity payload) {
         String username = RequestContextUtil.getUsernameFromRequest();
-        try {
-            ServiceReferenceEntity created = serviceReferenceService.create(payload, username);
-            return ResponseEntity.status(HttpStatus.CREATED).body(created);
-        } catch (SecurityException e) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(e.getMessage());
-        } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(e.getMessage());
-        }
+        ServiceReferenceEntity created = serviceReferenceService.create(payload, username);
+        return ResponseEntity.status(HttpStatus.CREATED).body(created);
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<?> update(@PathVariable Long id, @RequestBody ServiceReferenceEntity payload) {
+    public ResponseEntity<?> update(@PathVariable Long id, @Valid @RequestBody ServiceReferenceEntity payload) {
         String username = RequestContextUtil.getUsernameFromRequest();
-        try {
-            ServiceReferenceEntity updated = serviceReferenceService.update(id, payload, username);
-            return ResponseEntity.ok(updated);
-        } catch (EntityNotFoundException e) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(e.getMessage());
-        } catch (SecurityException e) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(e.getMessage());
-        } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(e.getMessage());
-        }
+        ServiceReferenceEntity updated = serviceReferenceService.update(id, payload, username);
+        return ResponseEntity.ok(updated);
     }
 
     @DeleteMapping("/{id}")
     public ResponseEntity<?> delete(@PathVariable Long id) {
         String username = RequestContextUtil.getUsernameFromRequest();
-        try {
-            serviceReferenceService.delete(id, username);
-            return ResponseEntity.noContent().build();
-        } catch (EntityNotFoundException e) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(e.getMessage());
-        } catch (SecurityException e) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(e.getMessage());
-        }
+        serviceReferenceService.delete(id, username);
+        return ResponseEntity.noContent().build();
     }
 
     @GetMapping("/dashboard")

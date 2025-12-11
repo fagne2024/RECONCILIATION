@@ -121,6 +121,17 @@ export class DashboardReconciliationComponent implements OnInit, OnDestroy {
     }
 
     /**
+     * Liste des codes pays valides pour lesquels des drapeaux existent
+     */
+    private readonly validCountryCodes = new Set([
+        'BF', 'BJ', 'CI', 'CM', 'GA', 'GN', 'KE', 'ML', 'MZ', 'NG', 'SN', 'TG',
+        'CF', 'TD', 'CG', 'CD', 'GQ', 'ST', 'AO',
+        'NE', 'GW', 'SL', 'LR', 'GH', 'MR', 'GM', 'CV',
+        'TZ', 'UG', 'RW', 'BI', 'ET', 'SO', 'DJ', 'ER', 'SS', 'SD', 'SC', 'MU', 'KM', 'MG',
+        'EG', 'ZA'
+    ]);
+
+    /**
      * Retourne le drapeau (emoji) d'un pays à partir de son code
      */
     getCountryFlag(countryCode: string): string {
@@ -128,7 +139,8 @@ export class DashboardReconciliationComponent implements OnInit, OnDestroy {
             'BF': '🇧🇫', 'BJ': '🇧🇯', 'CI': '🇨🇮', 'CM': '🇨🇲', 'GA': '🇬🇦', 'GN': '🇬🇳', 'KE': '🇰🇪', 'ML': '🇲🇱', 'MZ': '🇲🇿', 'NG': '🇳🇬', 'SN': '🇸🇳', 'TG': '🇹🇬',
             'CF': '🇨🇫', 'TD': '🇹🇩', 'CG': '🇨🇬', 'CD': '🇨🇩', 'GQ': '🇬🇶', 'ST': '🇸🇹', 'AO': '🇦🇴',
             'NE': '🇳🇪', 'GW': '🇬🇼', 'SL': '🇸🇱', 'LR': '🇱🇷', 'GH': '🇬🇭', 'MR': '🇲🇷', 'GM': '🇬🇲', 'CV': '🇨🇻',
-            'TZ': '🇹🇿', 'UG': '🇺🇬', 'RW': '🇷🇼', 'BI': '🇧🇮', 'ET': '🇪🇹', 'SO': '🇸🇴', 'DJ': '🇩🇯', 'ER': '🇪🇷', 'SS': '🇸🇸', 'SD': '🇸🇩', 'SC': '🇸🇨', 'MU': '🇲🇺', 'KM': '🇰🇲', 'MG': '🇲🇬'
+            'TZ': '🇹🇿', 'UG': '🇺🇬', 'RW': '🇷🇼', 'BI': '🇧🇮', 'ET': '🇪🇹', 'SO': '🇸🇴', 'DJ': '🇩🇯', 'ER': '🇪🇷', 'SS': '🇸🇸', 'SD': '🇸🇩', 'SC': '🇸🇨', 'MU': '🇲🇺', 'KM': '🇰🇲', 'MG': '🇲🇬',
+            'EG': '🇪🇬', 'ZA': '🇿🇦'
         };
         return flagMap[(countryCode || '').toUpperCase()] || '🌍';
     }
@@ -137,8 +149,15 @@ export class DashboardReconciliationComponent implements OnInit, OnDestroy {
      * URL du drapeau SVG dans les assets (fallback vers emoji si indisponible)
      */
     getCountryFlagUrl(countryCode: string): string | null {
-        const code = (countryCode || '').toLowerCase();
+        const normalizedCode = (countryCode || '').toUpperCase();
+        const code = normalizedCode.toLowerCase();
         if (!code) return null;
+        
+        // Ne retourner une URL que pour les codes pays valides
+        if (!this.validCountryCodes.has(normalizedCode)) {
+            return null;
+        }
+        
         if (this.flagLoadError[code]) return null;
         return `assets/flags/${code}.svg`;
     }

@@ -12,5 +12,7 @@ public interface ServiceReferenceRepository extends JpaRepository<ServiceReferen
     Optional<ServiceReferenceEntity> findByCodeReco(String codeReco);
     Optional<ServiceReferenceEntity> findByCodeService(String codeService);
     Optional<ServiceReferenceEntity> findByPaysAndCodeReco(String pays, String codeReco);
+    Optional<ServiceReferenceEntity> findByPaysAndCodeServiceAndServiceLabelAndCodeReco(
+        String pays, String codeService, String serviceLabel, String codeReco);
 }
 

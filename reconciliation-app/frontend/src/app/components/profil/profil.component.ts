@@ -1211,13 +1211,31 @@ export class ProfilComponent implements OnInit {
   }
 
   /**
+   * Liste des codes pays valides pour lesquels des drapeaux existent
+   */
+  private readonly validCountryCodes = new Set([
+    'BF', 'BJ', 'CI', 'CM', 'GA', 'GN', 'KE', 'ML', 'MZ', 'NG', 'SN', 'TG',
+    'CF', 'TD', 'CG', 'CD', 'GQ', 'ST', 'AO',
+    'NE', 'GW', 'SL', 'LR', 'GH', 'MR', 'GM', 'CV',
+    'TZ', 'UG', 'RW', 'BI', 'ET', 'SO', 'DJ', 'ER', 'SS', 'SD', 'SC', 'MU', 'KM', 'MG',
+    'EG', 'ZA'
+  ]);
+
+  /**
    * Retourne l'URL du drapeau SVG pour un code pays
    */
   getCountryFlagUrl(countryCode: string): string | null {
-    const code = (countryCode || '').toLowerCase();
+    const normalizedCode = (countryCode || '').toUpperCase();
+    const code = normalizedCode.toLowerCase();
     if (!code) return null;
     // Si le pays est GNL (tous les pays), ne pas afficher de drapeau
     if (code === 'gnl') return null;
+    
+    // Ne retourner une URL que pour les codes pays valides
+    if (!this.validCountryCodes.has(normalizedCode)) {
+      return null;
+    }
+    
     if (this.flagLoadError[code]) return null;
     return `assets/flags/${code}.svg`;
   }

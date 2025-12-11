@@ -68,7 +68,13 @@ public class ServiceReferenceService {
         if (!canAccessPays(username, entity.getPays())) {
             throw new SecurityException("Utilisateur non autorisé pour ce pays");
         }
-        validateUniqueCombination(entity.getPays(), entity.getCodeReco(), null);
+        validateUniqueCombination(
+            entity.getPays(), 
+            entity.getCodeService(), 
+            entity.getServiceLabel(), 
+            entity.getCodeReco(), 
+            null
+        );
         ensureStatusDefault(entity);
         return repository.save(entity);
     }
@@ -116,7 +122,13 @@ public class ServiceReferenceService {
             existing.setRetenuOperateur(payload.getRetenuOperateur());
         }
 
-        validateUniqueCombination(existing.getPays(), existing.getCodeReco(), existing.getId());
+        validateUniqueCombination(
+            existing.getPays(), 
+            existing.getCodeService(), 
+            existing.getServiceLabel(), 
+            existing.getCodeReco(), 
+            existing.getId()
+        );
         ensureStatusDefault(existing);
 
         return repository.save(existing);
@@ -242,14 +254,16 @@ public class ServiceReferenceService {
         return username == null || username.isBlank() || paysFilterService.canAccessPays(username, pays);
     }
 
-    private void validateUniqueCombination(String pays, String codeReco, Long excludeId) {
-        repository.findByPaysAndCodeReco(pays, codeReco).ifPresent(duplicate -> {
-            if (excludeId == null || !duplicate.getId().equals(excludeId)) {
-                throw new IllegalArgumentException(
-                    String.format("Une référence existe déjà pour le pays %s et le code RECO %s", pays, codeReco)
-                );
-            }
-        });
+    private void validateUniqueCombination(String pays, String codeService, String serviceLabel, String codeReco, Long excludeId) {
+        repository.findByPaysAndCodeServiceAndServiceLabelAndCodeReco(pays, codeService, serviceLabel, codeReco)
+            .ifPresent(duplicate -> {
+                if (excludeId == null || !duplicate.getId().equals(excludeId)) {
+                    throw new IllegalArgumentException(
+                        String.format("Une référence existe déjà pour le pays %s, le code service %s, le service %s et le code RECO %s", 
+                            pays, codeService, serviceLabel, codeReco)
+                    );
+                }
+            });
     }
 
     private void ensureStatusDefault(ServiceReferenceEntity entity) {

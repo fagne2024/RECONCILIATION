@@ -439,6 +439,29 @@ export class ServiceReferencesComponent implements OnInit {
                 return;
             }
 
+            // S'assurer que les références sont chargées pour la vérification des doublons
+            if (this.references.length === 0) {
+                this.references = await firstValueFrom(this.serviceReferenceService.listAll());
+            }
+
+            // Vérifier les doublons dans le fichier lui-même
+            const duplicatesInFile = this.findDuplicatesInFile(payloads);
+            if (duplicatesInFile.length > 0) {
+                this.errorMessage = `${duplicatesInFile.length} doublon(s) détecté(s) dans le fichier.`;
+                this.errorDetails = duplicatesInFile;
+                await this.showErrorPopup(this.errorMessage);
+                return;
+            }
+
+            // Vérifier les doublons avec les données existantes
+            const duplicatesInDatabase = this.findDuplicatesInDatabase(payloads);
+            if (duplicatesInDatabase.length > 0) {
+                this.errorMessage = `${duplicatesInDatabase.length} doublon(s) détecté(s) avec les données existantes.`;
+                this.errorDetails = duplicatesInDatabase;
+                await this.showErrorPopup(this.errorMessage);
+                return;
+            }
+
             let successCount = 0;
             const failures: string[] = [];
 
@@ -475,6 +498,81 @@ export class ServiceReferencesComponent implements OnInit {
                 this.fileInput.nativeElement.value = '';
             }
         }
+    }
+
+    /**
+     * Crée une clé unique pour la combinaison pays + codeService + serviceLabel + codeReco
+     */
+    private createUniqueKey(
+        pays: string | null | undefined, 
+        codeService: string | null | undefined, 
+        serviceLabel: string | null | undefined, 
+        codeReco: string | null | undefined
+    ): string {
+        const normalizedPays = (pays || '').trim().toUpperCase();
+        const normalizedCodeService = (codeService || '').trim().toUpperCase();
+        const normalizedServiceLabel = (serviceLabel || '').trim();
+        const normalizedCodeReco = (codeReco || '').trim().toUpperCase();
+        return `${normalizedPays}_${normalizedCodeService}_${normalizedServiceLabel}_${normalizedCodeReco}`;
+    }
+
+    /**
+     * Trouve les doublons dans le fichier (même pays + codeService + serviceLabel + codeReco)
+     */
+    private findDuplicatesInFile(payloads: ImportPayload[]): string[] {
+        const seen = new Map<string, number>();
+        const duplicates: string[] = [];
+
+        for (const payload of payloads) {
+            const normalizedPayload = this.normalizePayload(payload);
+            const key = this.createUniqueKey(
+                normalizedPayload.pays, 
+                normalizedPayload.codeService, 
+                normalizedPayload.serviceLabel, 
+                normalizedPayload.codeReco
+            );
+            if (seen.has(key)) {
+                const firstRow = seen.get(key)!;
+                if (!duplicates.some(d => d.includes(`Ligne ${firstRow}`))) {
+                    duplicates.push(`Ligne ${firstRow} : Doublon détecté (${normalizedPayload.pays || 'N/A'} / ${normalizedPayload.codeService || 'N/A'} / ${normalizedPayload.serviceLabel || 'N/A'} / ${normalizedPayload.codeReco || 'N/A'})`);
+                }
+                duplicates.push(`Ligne ${payload.rowNumber ?? '?'} : Doublon détecté (${normalizedPayload.pays || 'N/A'} / ${normalizedPayload.codeService || 'N/A'} / ${normalizedPayload.serviceLabel || 'N/A'} / ${normalizedPayload.codeReco || 'N/A'})`);
+            } else {
+                seen.set(key, payload.rowNumber ?? 0);
+            }
+        }
+
+        return duplicates;
+    }
+
+    /**
+     * Trouve les doublons avec les données existantes en base
+     */
+    private findDuplicatesInDatabase(payloads: ImportPayload[]): string[] {
+        const duplicates: string[] = [];
+        
+        // Créer un Set des combinaisons pays + codeService + serviceLabel + codeReco existantes
+        const existingKeys = new Set<string>();
+        for (const ref of this.references) {
+            const key = this.createUniqueKey(ref.pays, ref.codeService, ref.serviceLabel, ref.codeReco);
+            existingKeys.add(key);
+        }
+
+        // Vérifier chaque payload contre les données existantes
+        for (const payload of payloads) {
+            const normalizedPayload = this.normalizePayload(payload);
+            const key = this.createUniqueKey(
+                normalizedPayload.pays, 
+                normalizedPayload.codeService, 
+                normalizedPayload.serviceLabel, 
+                normalizedPayload.codeReco
+            );
+            if (existingKeys.has(key)) {
+                duplicates.push(`Ligne ${payload.rowNumber ?? '?'} : Doublon avec une référence existante (${normalizedPayload.pays || 'N/A'} / ${normalizedPayload.codeService || 'N/A'} / ${normalizedPayload.serviceLabel || 'N/A'} / ${normalizedPayload.codeReco || 'N/A'})`);
+            }
+        }
+
+        return duplicates;
     }
 
     private async parseFile(file: File): Promise<ImportPayload[]> {
@@ -761,6 +859,17 @@ export class ServiceReferencesComponent implements OnInit {
     }
 
     /**
+     * Liste des codes pays valides pour lesquels des drapeaux existent
+     */
+    private readonly validCountryCodes = new Set([
+        'BF', 'BJ', 'CI', 'CM', 'GA', 'GN', 'KE', 'ML', 'MZ', 'NG', 'SN', 'TG',
+        'CF', 'TD', 'CG', 'CD', 'GQ', 'ST', 'AO',
+        'NE', 'GW', 'SL', 'LR', 'GH', 'MR', 'GM', 'CV',
+        'TZ', 'UG', 'RW', 'BI', 'ET', 'SO', 'DJ', 'ER', 'SS', 'SD', 'SC', 'MU', 'KM', 'MG',
+        'EG', 'ZA'
+    ]);
+
+    /**
      * Retourne le drapeau (emoji) d'un pays à partir de son code
      */
     getCountryFlag(countryCode: string): string {
@@ -783,6 +892,12 @@ export class ServiceReferencesComponent implements OnInit {
         const normalizedCode = this.normalizeCountryCode(countryCode);
         const code = normalizedCode.toLowerCase();
         if (!code) return null;
+        
+        // Ne retourner une URL que pour les codes pays valides
+        if (!this.validCountryCodes.has(normalizedCode)) {
+            return null;
+        }
+        
         if (this.flagLoadError[code]) return null;
         return `assets/flags/${code}.svg`;
     }
