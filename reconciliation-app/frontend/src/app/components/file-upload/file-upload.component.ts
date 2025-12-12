@@ -101,6 +101,20 @@ export class FileUploadComponent implements OnDestroy {
     manualSelectedServices: string[] = [];
     manualServiceSelectionData: Record<string, string>[] = [];
 
+    // Sélection de services/type/statut pour les fichiers partenaires
+    showPartnerServiceSelection = false;
+    partnerAvailableServices: string[] = [];
+    partnerSelectedServices: string[] = [];
+    partnerServiceSelectionData: Record<string, string>[] = [];
+    partnerServiceColumn: string | null = null; // Colonne utilisée pour la sélection (service, type, etc.)
+    partnerStatusColumn: string | null = null; // Colonne statut
+    
+    // Sélection des statuts pour les fichiers partenaires (étape 2)
+    showPartnerStatusSelection = false;
+    partnerAvailableStatuses: string[] = [];
+    partnerSelectedStatuses: string[] = [];
+    partnerStatusSelectionData: Record<string, string>[] = []; // Données déjà filtrées par service
+
     // Configuration des formats supportés
     supportedFormats = [
         { name: 'CSV', extensions: ['.csv'], mimeType: 'text/csv' },
@@ -1927,6 +1941,57 @@ export class FileUploadComponent implements OnDestroy {
         return false;
     }
 
+    // Méthode pour détecter les colonnes service/type/statut dans les fichiers partenaires
+    private detectPartnerServiceTypeAndStatus(data: Record<string, string>[]): boolean {
+        if (!data || data.length === 0) return false;
+        
+        const firstRow = data[0];
+        const columns = Object.keys(firstRow);
+        
+        // Chercher une colonne service ou type
+        const serviceColumn = columns.find(col => {
+            const colLower = col.toLowerCase();
+            return colLower.includes('service') || 
+                   colLower.includes('serv') ||
+                   colLower.includes('type');
+        });
+        
+        // Chercher une colonne statut
+        const statusColumn = columns.find(col => {
+            const colLower = col.toLowerCase();
+            return colLower.includes('statut') || 
+                   colLower.includes('status') ||
+                   colLower.includes('état');
+        });
+        
+        // Si on trouve au moins une colonne service/type, on active la sélection
+        if (serviceColumn) {
+            console.log('🔍 Fichier partenaire avec colonne service/type détectée, extraction des valeurs...');
+            console.log('📋 Colonne service/type trouvée:', serviceColumn);
+            if (statusColumn) {
+                console.log('📋 Colonne statut trouvée:', statusColumn);
+            }
+            
+            // Extraire toutes les valeurs uniques de service/type
+            const services = [...new Set(
+                data.map(row => row[serviceColumn])
+                    .filter(service => service && service.toString().trim())
+            )];
+            
+            this.partnerAvailableServices = services.sort();
+            this.partnerServiceSelectionData = data;
+            this.partnerServiceColumn = serviceColumn;
+            this.partnerStatusColumn = statusColumn || null;
+            
+            console.log('📋 Services/Types disponibles (partenaire):', this.partnerAvailableServices);
+            console.log('📊 Nombre total de lignes:', data.length);
+            
+            return true;
+        }
+        
+        return false;
+    }
+
     // Méthode pour afficher la sélection des services
     private showServiceSelectionStep(): void {
         this.showServiceSelection = true;
@@ -2023,6 +2088,185 @@ export class FileUploadComponent implements OnDestroy {
         this.selectedServices = [];
     }
 
+    // Méthode pour afficher la sélection des services/type/statut pour le partenaire
+    private showPartnerServiceSelectionStep(): void {
+        this.showPartnerServiceSelection = true;
+        this.partnerSelectedServices = [...this.partnerAvailableServices]; // Sélectionner tous par défaut
+    }
+
+    // Méthode pour confirmer la sélection des services/type/statut partenaire
+    confirmPartnerServiceSelection(): void {
+        if (this.partnerSelectedServices.length === 0) {
+            this.errorMessage = 'Veuillez sélectionner au moins un service/type.';
+            return;
+        }
+
+        console.log('✅ Services/Types sélectionnés (partenaire):', this.partnerSelectedServices);
+        
+        if (!this.partnerServiceColumn || !this.partnerServiceSelectionData || this.partnerServiceSelectionData.length === 0) {
+            this.errorMessage = 'Erreur: colonne service/type non trouvée.';
+            return;
+        }
+        
+        // Filtrer les données pour ne garder que les lignes des services/types sélectionnés
+        const filteredData = this.partnerServiceSelectionData.filter(row => 
+            this.partnerSelectedServices.includes(row[this.partnerServiceColumn!])
+        );
+        
+        console.log('📊 Données filtrées par service (partenaire):', filteredData.length, 'lignes sur', this.partnerServiceSelectionData.length, 'originales');
+        
+        // Si une colonne statut existe, passer à la sélection des statuts
+        if (this.partnerStatusColumn && filteredData.length > 0) {
+            // Extraire les statuts uniques des données filtrées par service
+            const statuses = [...new Set(
+                filteredData.map(row => row[this.partnerStatusColumn!])
+                    .filter(status => status && status.toString().trim())
+            )];
+            
+            this.partnerAvailableStatuses = statuses.sort();
+            this.partnerStatusSelectionData = filteredData;
+            
+            console.log('📋 Statuts disponibles (partenaire):', this.partnerAvailableStatuses);
+            
+            // Masquer la sélection des services et afficher la sélection des statuts
+            this.showPartnerServiceSelection = false;
+            this.showPartnerStatusSelectionStep();
+            
+            // Forcer la détection des changements pour mettre à jour la vue
+            this.cd.detectChanges();
+        } else {
+            // Pas de colonne statut, terminer directement
+            this.autoPartnerData = this.convertDebitCreditToNumber(filteredData);
+            this.showPartnerServiceSelection = false;
+            this.cd.detectChanges();
+        }
+    }
+
+    // Méthode pour annuler la sélection des services partenaire
+    cancelPartnerServiceSelection(): void {
+        this.showPartnerServiceSelection = false;
+        this.showPartnerStatusSelection = false;
+        this.partnerAvailableServices = [];
+        this.partnerSelectedServices = [];
+        this.partnerServiceSelectionData = [];
+        this.partnerServiceColumn = null;
+        this.partnerStatusColumn = null;
+        // Nettoyer aussi les variables de statut
+        this.partnerAvailableStatuses = [];
+        this.partnerSelectedStatuses = [];
+        this.partnerStatusSelectionData = [];
+    }
+
+    // Méthode pour gérer le changement de sélection des services partenaire
+    onPartnerServiceSelectionChange(event: Event, service: string): void {
+        const checkbox = event.target as HTMLInputElement;
+        if (checkbox.checked) {
+            if (!this.partnerSelectedServices.includes(service)) {
+                this.partnerSelectedServices.push(service);
+            }
+        } else {
+            this.partnerSelectedServices = this.partnerSelectedServices.filter(s => s !== service);
+        }
+    }
+
+    // Méthode pour compter le nombre de lignes par service/type partenaire
+    getPartnerServiceCount(service: string): number {
+        if (!this.partnerServiceSelectionData || this.partnerServiceSelectionData.length === 0 || !this.partnerServiceColumn) return 0;
+        
+        return this.partnerServiceSelectionData.filter(row => row[this.partnerServiceColumn!] === service).length;
+    }
+
+    // Méthode pour sélectionner tous les services partenaire
+    selectAllPartnerServices(): void {
+        this.partnerSelectedServices = [...this.partnerAvailableServices];
+    }
+
+    // Méthode pour désélectionner tous les services partenaire
+    deselectAllPartnerServices(): void {
+        this.partnerSelectedServices = [];
+    }
+
+    // Méthode pour afficher la sélection des statuts pour le partenaire (étape 2)
+    private showPartnerStatusSelectionStep(): void {
+        this.showPartnerStatusSelection = true;
+        this.partnerSelectedStatuses = [...this.partnerAvailableStatuses]; // Sélectionner tous par défaut
+    }
+
+    // Méthode pour confirmer la sélection des statuts partenaire
+    confirmPartnerStatusSelection(): void {
+        if (this.partnerSelectedStatuses.length === 0) {
+            this.errorMessage = 'Veuillez sélectionner au moins un statut.';
+            return;
+        }
+
+        console.log('✅ Statuts sélectionnés (partenaire):', this.partnerSelectedStatuses);
+        
+        if (!this.partnerStatusColumn || !this.partnerStatusSelectionData || this.partnerStatusSelectionData.length === 0) {
+            this.errorMessage = 'Erreur: colonne statut non trouvée.';
+            return;
+        }
+        
+        // Filtrer les données pour ne garder que les lignes des statuts sélectionnés
+        const filteredData = this.partnerStatusSelectionData.filter(row => 
+            this.partnerSelectedStatuses.includes(row[this.partnerStatusColumn!])
+        );
+        
+        console.log('📊 Données filtrées par statut (partenaire):', filteredData.length, 'lignes sur', this.partnerStatusSelectionData.length, 'originales');
+        
+        // Mettre à jour les données partenaire avec les données filtrées (par service ET statut)
+        this.autoPartnerData = this.convertDebitCreditToNumber(filteredData);
+        
+        // Masquer la sélection des statuts
+        this.showPartnerStatusSelection = false;
+        
+        // Nettoyer les variables temporaires
+        this.partnerStatusSelectionData = [];
+        this.partnerAvailableStatuses = [];
+        this.partnerSelectedStatuses = [];
+        
+        // Forcer la détection des changements pour mettre à jour la vue
+        this.cd.detectChanges();
+    }
+
+    // Méthode pour annuler la sélection des statuts partenaire
+    cancelPartnerStatusSelection(): void {
+        this.showPartnerStatusSelection = false;
+        this.partnerStatusSelectionData = [];
+        this.partnerAvailableStatuses = [];
+        this.partnerSelectedStatuses = [];
+        // Revenir à la sélection des services
+        this.showPartnerServiceSelection = true;
+    }
+
+    // Méthode pour gérer le changement de sélection des statuts partenaire
+    onPartnerStatusSelectionChange(event: Event, status: string): void {
+        const checkbox = event.target as HTMLInputElement;
+        if (checkbox.checked) {
+            if (!this.partnerSelectedStatuses.includes(status)) {
+                this.partnerSelectedStatuses.push(status);
+            }
+        } else {
+            this.partnerSelectedStatuses = this.partnerSelectedStatuses.filter(s => s !== status);
+        }
+    }
+
+    // Méthode pour compter le nombre de lignes par statut partenaire
+    getPartnerStatusCount(status: string): number {
+        if (!this.partnerStatusSelectionData || this.partnerStatusSelectionData.length === 0 || !this.partnerStatusColumn) return 0;
+        
+        return this.partnerStatusSelectionData.filter(row => row[this.partnerStatusColumn!] === status).length;
+    }
+
+    // Méthode pour sélectionner tous les statuts partenaire
+    selectAllPartnerStatuses(): void {
+        this.partnerSelectedStatuses = [...this.partnerAvailableStatuses];
+    }
+
+    // Méthode pour désélectionner tous les statuts partenaire
+    deselectAllPartnerStatuses(): void {
+        this.partnerSelectedStatuses = [];
+    }
+
 
     private parseAutoFile(file: File, isBo: boolean): void {
         const fileName = file.name.toLowerCase();
@@ -2077,6 +2321,11 @@ export class FileUploadComponent implements OnDestroy {
                             }
                         } else {
                             this.autoPartnerData = this.convertDebitCreditToNumber(results.data as Record<string, string>[]);
+                            
+                            // Vérifier si le fichier partenaire contient des colonnes service/type/statut
+                            if (this.detectPartnerServiceTypeAndStatus(this.autoPartnerData)) {
+                                this.showPartnerServiceSelectionStep();
+                            }
                         }
                         // Forcer la détection des changements pour mettre à jour la vue
                         this.cd.detectChanges();
@@ -2256,6 +2505,11 @@ export class FileUploadComponent implements OnDestroy {
                         this.autoBoData = rows;
                     } else {
                         this.autoPartnerData = this.convertDebitCreditToNumber(rows);
+                        
+                        // Vérifier si le fichier partenaire contient des colonnes service/type/statut
+                        if (this.detectPartnerServiceTypeAndStatus(this.autoPartnerData)) {
+                            this.showPartnerServiceSelectionStep();
+                        }
                     }
                     
                     // Invalider le cache de canProceed
@@ -2308,6 +2562,11 @@ export class FileUploadComponent implements OnDestroy {
                         }
                     } else {
                         this.autoPartnerData = this.convertDebitCreditToNumber(rows);
+                        
+                        // Vérifier si le fichier partenaire contient des colonnes service/type/statut
+                        if (this.detectPartnerServiceTypeAndStatus(this.autoPartnerData)) {
+                            this.showPartnerServiceSelectionStep();
+                        }
                     }
                     
                     // Invalider le cache de canProceed
@@ -2476,6 +2735,11 @@ export class FileUploadComponent implements OnDestroy {
                     this.autoBoData = rows;
                 } else {
                     this.autoPartnerData = this.convertDebitCreditToNumber(rows);
+                    
+                    // Vérifier si le fichier partenaire contient des colonnes service/type/statut
+                    if (this.detectPartnerServiceTypeAndStatus(this.autoPartnerData)) {
+                        this.showPartnerServiceSelectionStep();
+                    }
                 }
             } else {
                 const correctedHeaders = headers.map(header => this.normalizeColumnName(header));
@@ -2500,6 +2764,11 @@ export class FileUploadComponent implements OnDestroy {
                     }
                 } else {
                     this.autoPartnerData = this.convertDebitCreditToNumber(rows);
+                    
+                    // Vérifier si le fichier partenaire contient des colonnes service/type/statut
+                    if (this.detectPartnerServiceTypeAndStatus(this.autoPartnerData)) {
+                        this.showPartnerServiceSelectionStep();
+                    }
                 }
             }
 
@@ -2586,6 +2855,11 @@ export class FileUploadComponent implements OnDestroy {
                                 this.autoBoData = rows;
                             } else {
                                 this.autoPartnerData = this.convertDebitCreditToNumber(rows);
+                                
+                                // Vérifier si le fichier partenaire contient des colonnes service/type/statut
+                                if (this.detectPartnerServiceTypeAndStatus(this.autoPartnerData)) {
+                                    this.showPartnerServiceSelectionStep();
+                                }
                             }
 
                             console.log(`✅ Fallback réussi: ${rows.length} lignes traitées`);
@@ -2729,6 +3003,11 @@ export class FileUploadComponent implements OnDestroy {
                                     this.autoBoData = rows;
                                 } else {
                                     this.autoPartnerData = this.convertDebitCreditToNumber(rows);
+                                    
+                                    // Vérifier si le fichier partenaire contient des colonnes service/type/statut
+                                    if (this.detectPartnerServiceTypeAndStatus(this.autoPartnerData)) {
+                                        this.showPartnerServiceSelectionStep();
+                                    }
                                 }
 
                                 console.log(`✅ Fallback ultime réussi avec ${approach.name}: ${rows.length} lignes`);

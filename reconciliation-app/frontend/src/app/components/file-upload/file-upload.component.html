@@ -469,6 +469,138 @@
                 </div>
             </div>
         </div>
+
+        <!-- Sélection des services/types/statut pour les fichiers partenaires - Design Moderne -->
+        <div class="service-selection-overlay" *ngIf="showPartnerServiceSelection">
+            <div class="service-selection-modal">
+                <!-- En-tête moderne -->
+                <div class="service-selection-header">
+                    <div class="header-badge">
+                        <span class="badge-text">Services/Types disponibles (Partenaire): {{ partnerAvailableServices.length }}</span>
+                        <span class="status-info" *ngIf="partnerStatusColumn">
+                            <i class="fas fa-info-circle"></i>
+                            Étape 1/2 - Colonne statut détectée: {{ partnerStatusColumn }} (sélection à l'étape suivante)
+                        </span>
+                    </div>
+                </div>
+                
+                <div class="service-selection-content">
+                    <!-- Boutons d'action principaux -->
+                    <div class="service-controls">
+                        <button class="modern-btn select-all-btn" (click)="selectAllPartnerServices()">
+                            <i class="fas fa-check-double"></i>
+                            Tout sélectionner
+                        </button>
+                        <button class="modern-btn deselect-all-btn" (click)="deselectAllPartnerServices()">
+                            <i class="fas fa-check-double"></i>
+                            Tout désélectionner
+                        </button>
+                    </div>
+                    
+                    <!-- Grille de services en cartes -->
+                    <div class="service-grid">
+                        <div class="service-card" *ngFor="let service of partnerAvailableServices">
+                            <div class="service-card-content">
+                                <div class="service-checkbox-modern">
+                                    <input type="checkbox" 
+                                           [id]="'partner-service-' + service"
+                                           [value]="service" 
+                                           [checked]="partnerSelectedServices.includes(service)"
+                                           (change)="onPartnerServiceSelectionChange($event, service)">
+                                    <label [for]="'partner-service-' + service" class="checkbox-label">
+                                        <span class="checkmark"></span>
+                                    </label>
+                                </div>
+                                <div class="service-info">
+                                    <h4 class="service-name-modern">{{ service }}</h4>
+                                    <p class="service-count-modern">{{ getPartnerServiceCount(service) }} lignes</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Boutons de confirmation modernes -->
+                <div class="service-selection-actions">
+                    <button class="modern-btn cancel-btn" (click)="cancelPartnerServiceSelection()">
+                        <i class="fas fa-times"></i>
+                        Annuler
+                    </button>
+                    <button class="modern-btn confirm-btn" 
+                            [disabled]="partnerSelectedServices.length === 0"
+                            (click)="confirmPartnerServiceSelection()">
+                        <i class="fas fa-check"></i>
+                        Confirmer la sélection
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Sélection des statuts pour les fichiers partenaires (Étape 2) - Design Moderne -->
+        <div class="service-selection-overlay" *ngIf="showPartnerStatusSelection">
+            <div class="service-selection-modal">
+                <!-- En-tête moderne -->
+                <div class="service-selection-header">
+                    <div class="header-badge">
+                        <span class="badge-text">Statuts disponibles (Partenaire): {{ partnerAvailableStatuses.length }}</span>
+                        <span class="status-info">
+                            <i class="fas fa-info-circle"></i>
+                            Sélection après filtrage par service/type - Colonne: {{ partnerStatusColumn }}
+                        </span>
+                    </div>
+                </div>
+                
+                <div class="service-selection-content">
+                    <!-- Boutons d'action principaux -->
+                    <div class="service-controls">
+                        <button class="modern-btn select-all-btn" (click)="selectAllPartnerStatuses()">
+                            <i class="fas fa-check-double"></i>
+                            Tout sélectionner
+                        </button>
+                        <button class="modern-btn deselect-all-btn" (click)="deselectAllPartnerStatuses()">
+                            <i class="fas fa-check-double"></i>
+                            Tout désélectionner
+                        </button>
+                    </div>
+                    
+                    <!-- Grille de statuts en cartes -->
+                    <div class="service-grid">
+                        <div class="service-card" *ngFor="let status of partnerAvailableStatuses">
+                            <div class="service-card-content">
+                                <div class="service-checkbox-modern">
+                                    <input type="checkbox" 
+                                           [id]="'partner-status-' + status"
+                                           [value]="status" 
+                                           [checked]="partnerSelectedStatuses.includes(status)"
+                                           (change)="onPartnerStatusSelectionChange($event, status)">
+                                    <label [for]="'partner-status-' + status" class="checkbox-label">
+                                        <span class="checkmark"></span>
+                                    </label>
+                                </div>
+                                <div class="service-info">
+                                    <h4 class="service-name-modern">{{ status }}</h4>
+                                    <p class="service-count-modern">{{ getPartnerStatusCount(status) }} lignes</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Boutons de confirmation modernes -->
+                <div class="service-selection-actions">
+                    <button class="modern-btn cancel-btn" (click)="cancelPartnerStatusSelection()">
+                        <i class="fas fa-arrow-left"></i>
+                        Retour aux services
+                    </button>
+                    <button class="modern-btn confirm-btn" 
+                            [disabled]="partnerSelectedStatuses.length === 0"
+                            (click)="confirmPartnerStatusSelection()">
+                        <i class="fas fa-check"></i>
+                        Confirmer la sélection
+                    </button>
+                </div>
+            </div>
+        </div>
     </div>
 
     <!-- Mode Super Auto - COMMENTÉ
