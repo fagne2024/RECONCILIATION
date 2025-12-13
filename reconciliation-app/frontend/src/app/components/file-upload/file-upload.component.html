@@ -177,13 +177,83 @@
         </div>
     </div>
 
-    <!-- Sélection des services pour TRXBO en mode manuel -->
+    <!-- Sélection des agences pour TRXBO (Étape 1) -->
+    <div class="manual-service-selection-overlay" *ngIf="showAgencySelection && reconciliationMode === 'manual'">
+        <div class="manual-service-selection-modal">
+            <!-- En-tête moderne -->
+            <div class="manual-service-selection-header">
+                <div class="header-badge">
+                    <span class="badge-text">Agences disponibles (TRXBO - Mode Manuel): {{ availableAgencies.length }}</span>
+                    <span class="status-info">
+                        <i class="fas fa-info-circle"></i>
+                        Étape 1/2 - Sélection des agences avant les services
+                    </span>
+                </div>
+            </div>
+            
+            <div class="manual-service-selection-content">
+                <!-- Boutons d'action principaux -->
+                <div class="manual-service-controls">
+                    <button class="modern-btn select-all-btn" (click)="selectAllAgencies()">
+                        <i class="fas fa-check-double"></i>
+                        Tout sélectionner
+                    </button>
+                    <button class="modern-btn deselect-all-btn" (click)="deselectAllAgencies()">
+                        <i class="fas fa-check-double"></i>
+                        Tout désélectionner
+                    </button>
+                </div>
+                
+                <!-- Grille d'agences en cartes -->
+                <div class="manual-service-grid">
+                    <div class="service-card" *ngFor="let agency of availableAgencies">
+                        <div class="service-card-content">
+                            <div class="service-checkbox-modern">
+                                <input type="checkbox" 
+                                       [id]="'manual-agency-' + agency"
+                                       [value]="agency" 
+                                       [checked]="selectedAgencies.includes(agency)"
+                                       (change)="onAgencySelectionChange($event, agency)">
+                                <label [for]="'manual-agency-' + agency" class="checkbox-label">
+                                    <span class="checkmark"></span>
+                                </label>
+                            </div>
+                            <div class="service-info">
+                                <h4 class="service-name-modern">{{ agency }}</h4>
+                                <p class="service-count-modern">{{ getAgencyCount(agency) }} lignes</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Boutons de confirmation modernes -->
+            <div class="manual-service-selection-actions">
+                <button class="modern-btn cancel-btn" (click)="cancelAgencySelection()">
+                    <i class="fas fa-times"></i>
+                    Annuler
+                </button>
+                <button class="modern-btn confirm-btn" 
+                        [disabled]="selectedAgencies.length === 0"
+                        (click)="confirmAgencySelection()">
+                    <i class="fas fa-check"></i>
+                    Confirmer la sélection
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Sélection des services pour TRXBO en mode manuel (Étape 2) -->
     <div class="manual-service-selection-overlay" *ngIf="showManualServiceSelection">
         <div class="manual-service-selection-modal">
             <!-- En-tête moderne -->
             <div class="manual-service-selection-header">
                 <div class="header-badge">
-                    <span class="badge-text">Services disponibles: {{ manualAvailableServices.length }}</span>
+                    <span class="badge-text">Services disponibles (TRXBO - Mode Manuel): {{ manualAvailableServices.length }}</span>
+                    <span class="status-info" *ngIf="availableAgencies.length > 0">
+                        <i class="fas fa-info-circle"></i>
+                        Étape 2/2 - Services après filtrage par agence
+                    </span>
                 </div>
             </div>
             
@@ -408,13 +478,83 @@
             </div>
         </div>
 
-        <!-- Sélection des services pour TRXBO - Design Moderne -->
+        <!-- Sélection des agences pour TRXBO (Étape 1) - Design Moderne -->
+        <div class="service-selection-overlay" *ngIf="showAgencySelection && reconciliationMode === 'automatic'">
+            <div class="service-selection-modal">
+                <!-- En-tête moderne -->
+                <div class="service-selection-header">
+                    <div class="header-badge">
+                        <span class="badge-text">Agences disponibles (TRXBO): {{ availableAgencies.length }}</span>
+                        <span class="status-info">
+                            <i class="fas fa-info-circle"></i>
+                            Étape 1/2 - Sélection des agences avant les services
+                        </span>
+                    </div>
+                </div>
+                
+                <div class="service-selection-content">
+                    <!-- Boutons d'action principaux -->
+                    <div class="service-controls">
+                        <button class="modern-btn select-all-btn" (click)="selectAllAgencies()">
+                            <i class="fas fa-check-double"></i>
+                            Tout sélectionner
+                        </button>
+                        <button class="modern-btn deselect-all-btn" (click)="deselectAllAgencies()">
+                            <i class="fas fa-check-double"></i>
+                            Tout désélectionner
+                        </button>
+                    </div>
+                    
+                    <!-- Grille d'agences en cartes -->
+                    <div class="service-grid">
+                        <div class="service-card" *ngFor="let agency of availableAgencies">
+                            <div class="service-card-content">
+                                <div class="service-checkbox-modern">
+                                    <input type="checkbox" 
+                                           [id]="'agency-' + agency"
+                                           [value]="agency" 
+                                           [checked]="selectedAgencies.includes(agency)"
+                                           (change)="onAgencySelectionChange($event, agency)">
+                                    <label [for]="'agency-' + agency" class="checkbox-label">
+                                        <span class="checkmark"></span>
+                                    </label>
+                                </div>
+                                <div class="service-info">
+                                    <h4 class="service-name-modern">{{ agency }}</h4>
+                                    <p class="service-count-modern">{{ getAgencyCount(agency) }} lignes</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Boutons de confirmation modernes -->
+                <div class="service-selection-actions">
+                    <button class="modern-btn cancel-btn" (click)="cancelAgencySelection()">
+                        <i class="fas fa-times"></i>
+                        Annuler
+                    </button>
+                    <button class="modern-btn confirm-btn" 
+                            [disabled]="selectedAgencies.length === 0"
+                            (click)="confirmAgencySelection()">
+                        <i class="fas fa-check"></i>
+                        Confirmer la sélection
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Sélection des services pour TRXBO (Étape 2) - Design Moderne -->
         <div class="service-selection-overlay" *ngIf="showServiceSelection">
             <div class="service-selection-modal">
                 <!-- En-tête moderne -->
                 <div class="service-selection-header">
                     <div class="header-badge">
-                        <span class="badge-text">Services disponibles: {{ availableServices.length }}</span>
+                        <span class="badge-text">Services disponibles (TRXBO): {{ availableServices.length }}</span>
+                        <span class="status-info" *ngIf="availableAgencies.length > 0">
+                            <i class="fas fa-info-circle"></i>
+                            Étape 2/2 - Services après filtrage par agence
+                        </span>
                     </div>
                 </div>
                 
@@ -471,7 +611,8 @@
         </div>
 
         <!-- Sélection des services/types/statut pour les fichiers partenaires - Design Moderne -->
-        <div class="service-selection-overlay" *ngIf="showPartnerServiceSelection">
+        <!-- DEBUG: showPartnerServiceSelection = {{ showPartnerServiceSelection }}, partnerAvailableServices.length = {{ partnerAvailableServices?.length }} -->
+        <div class="service-selection-overlay" *ngIf="showPartnerServiceSelection" style="z-index: 1001;">
             <div class="service-selection-modal">
                 <!-- En-tête moderne -->
                 <div class="service-selection-header">
@@ -479,7 +620,7 @@
                         <span class="badge-text">Services/Types disponibles (Partenaire): {{ partnerAvailableServices.length }}</span>
                         <span class="status-info" *ngIf="partnerStatusColumn">
                             <i class="fas fa-info-circle"></i>
-                            Étape 1/2 - Colonne statut détectée: {{ partnerStatusColumn }} (sélection à l'étape suivante)
+                            Étape 1/3 - Colonne statut détectée: {{ partnerStatusColumn }} (sélection à l'étape suivante)
                         </span>
                     </div>
                 </div>
@@ -545,7 +686,7 @@
                         <span class="badge-text">Statuts disponibles (Partenaire): {{ partnerAvailableStatuses.length }}</span>
                         <span class="status-info">
                             <i class="fas fa-info-circle"></i>
-                            Sélection après filtrage par service/type - Colonne: {{ partnerStatusColumn }}
+                            Étape 2/3 - Sélection après filtrage par service/type - Colonne: {{ partnerStatusColumn }}
                         </span>
                     </div>
                 </div>
@@ -595,6 +736,72 @@
                     <button class="modern-btn confirm-btn" 
                             [disabled]="partnerSelectedStatuses.length === 0"
                             (click)="confirmPartnerStatusSelection()">
+                        <i class="fas fa-check"></i>
+                        Confirmer la sélection
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Sélection des paiements pour les fichiers partenaires (Étape 3) - Design Moderne -->
+        <div class="service-selection-overlay" *ngIf="showPartnerPaymentSelection">
+            <div class="service-selection-modal">
+                <!-- En-tête moderne -->
+                <div class="service-selection-header">
+                    <div class="header-badge">
+                        <span class="badge-text">Paiements disponibles (Partenaire): {{ partnerAvailablePayments.length }}</span>
+                        <span class="status-info">
+                            <i class="fas fa-info-circle"></i>
+                            Étape 3/3 - Sélection après filtrage par service/type et statut - Colonne: {{ partnerPaymentColumn }}
+                        </span>
+                    </div>
+                </div>
+                
+                <div class="service-selection-content">
+                    <!-- Boutons d'action principaux -->
+                    <div class="service-controls">
+                        <button class="modern-btn select-all-btn" (click)="selectAllPartnerPayments()">
+                            <i class="fas fa-check-double"></i>
+                            Tout sélectionner
+                        </button>
+                        <button class="modern-btn deselect-all-btn" (click)="deselectAllPartnerPayments()">
+                            <i class="fas fa-check-double"></i>
+                            Tout désélectionner
+                        </button>
+                    </div>
+                    
+                    <!-- Grille de paiements en cartes -->
+                    <div class="service-grid">
+                        <div class="service-card" *ngFor="let payment of partnerAvailablePayments">
+                            <div class="service-card-content">
+                                <div class="service-checkbox-modern">
+                                    <input type="checkbox" 
+                                           [id]="'partner-payment-' + payment"
+                                           [value]="payment" 
+                                           [checked]="partnerSelectedPayments.includes(payment)"
+                                           (change)="onPartnerPaymentSelectionChange($event, payment)">
+                                    <label [for]="'partner-payment-' + payment" class="checkbox-label">
+                                        <span class="checkmark"></span>
+                                    </label>
+                                </div>
+                                <div class="service-info">
+                                    <h4 class="service-name-modern">{{ payment }}</h4>
+                                    <p class="service-count-modern">{{ getPartnerPaymentCount(payment) }} lignes</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Boutons de confirmation modernes -->
+                <div class="service-selection-actions">
+                    <button class="modern-btn cancel-btn" (click)="cancelPartnerPaymentSelection()">
+                        <i class="fas fa-arrow-left"></i>
+                        Retour aux statuts
+                    </button>
+                    <button class="modern-btn confirm-btn" 
+                            [disabled]="partnerSelectedPayments.length === 0"
+                            (click)="confirmPartnerPaymentSelection()">
                         <i class="fas fa-check"></i>
                         Confirmer la sélection
                     </button>

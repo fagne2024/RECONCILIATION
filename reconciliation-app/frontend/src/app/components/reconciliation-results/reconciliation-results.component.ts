@@ -6801,10 +6801,11 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
     }
 
     getTotalTransactions(): number {
-        const matches = this.filteredMatches.length || 0;
-        const boMismatches = (this.response?.mismatches?.length || 0) + (this.response?.boOnly?.length || 0);
-        const partnerMismatches = this.filteredPartnerOnly.length || 0;
-        return matches + boMismatches + partnerMismatches;
+        // Nombre de transactions = correspondances + écarts BO
+        // Utiliser les données filtrées directement pour garantir la cohérence
+        const matches = this.filteredMatches?.length || 0;
+        const boMismatches = this.getFilteredBoOnly()?.length || 0;
+        return matches + boMismatches;
     }
 
     getMatchRate(): number {

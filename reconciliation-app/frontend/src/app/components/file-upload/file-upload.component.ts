@@ -89,7 +89,14 @@ export class FileUploadComponent implements OnDestroy {
     };
     private reconciliationProgressSubscription?: Subscription;
 
-    // Sélection de services pour TRXBO
+    // Sélection d'agences pour TRXBO (étape 1)
+    showAgencySelection = false;
+    availableAgencies: string[] = [];
+    selectedAgencies: string[] = [];
+    agencySelectionData: Record<string, string>[] = [];
+    agencyColumn: string | null = null; // Colonne utilisée pour la sélection des agences
+
+    // Sélection de services pour TRXBO (étape 2)
     showServiceSelection = false;
     availableServices: string[] = [];
     selectedServices: string[] = [];
@@ -114,6 +121,13 @@ export class FileUploadComponent implements OnDestroy {
     partnerAvailableStatuses: string[] = [];
     partnerSelectedStatuses: string[] = [];
     partnerStatusSelectionData: Record<string, string>[] = []; // Données déjà filtrées par service
+
+    // Sélection des paiements pour les fichiers partenaires (étape 3)
+    showPartnerPaymentSelection = false;
+    partnerAvailablePayments: string[] = [];
+    partnerSelectedPayments: string[] = [];
+    partnerPaymentSelectionData: Record<string, string>[] = []; // Données déjà filtrées par service et statut
+    partnerPaymentColumn: string | null = null; // Colonne utilisée pour la sélection des paiements
 
     // Configuration des formats supportés
     supportedFormats = [
@@ -854,12 +868,40 @@ export class FileUploadComponent implements OnDestroy {
                                 if (this.boData && this.boData.length > 0) {
                                     console.log('🔍 Vérification TRXBO sur les données BO chargées...');
                                     if (this.detectTRXBOAndExtractServicesForManual(this.boData)) {
-                                        this.showManualServiceSelectionStep();
+                                        if (this.availableAgencies.length > 0) {
+                                            this.showAgencySelectionStep();
+                                        } else {
+                                            this.showManualServiceSelectionStep();
+                                        }
                                     }
                                 }
                             }, 100);
                         } else {
                             this.partnerData = this.convertDebitCreditToNumber(results.data as Record<string, string>[]);
+                            
+                            // Vérifier si le fichier partenaire a des colonnes service/type/statut et déclencher la sélection (pour le mode manuel)
+                            if (this.reconciliationMode === 'manual') {
+                                // Utiliser setTimeout pour laisser Angular terminer le cycle de détection en cours
+                                setTimeout(() => {
+                                    console.log('🕐 setTimeout exécuté pour la détection partenaire (mode manuel)');
+                                    if (this.partnerData && this.partnerData.length > 0) {
+                                        console.log('🔍 Vérification service/type/statut sur les données partenaire chargées (mode manuel)...');
+                                        const detected = this.detectPartnerServiceTypeAndStatusForManual(this.partnerData);
+                                        console.log('🔍 Résultat de la détection:', detected);
+                                        if (detected) {
+                                            console.log('✅ Détection réussie, appel de showManualPartnerServiceSelectionStep()');
+                                            // Utiliser requestAnimationFrame pour s'assurer que le changement est bien détecté
+                                            requestAnimationFrame(() => {
+                                                this.showManualPartnerServiceSelectionStep();
+                                            });
+                                        } else {
+                                            console.log('❌ Détection échouée, pas de popup à afficher');
+                                        }
+                                    } else {
+                                        console.log('⚠️ partnerData est vide ou null');
+                                    }
+                                }, 100);
+                            }
                         }
                         
                         // Mettre à jour l'estimation si les deux fichiers sont chargés
@@ -1083,7 +1125,30 @@ export class FileUploadComponent implements OnDestroy {
      * Méthode simple qui retourne les données sans modification
      */
     private normalizeData(data: Record<string, string>[]): Record<string, string>[] {
-        return data;
+        // Nettoyer les données pour éviter les erreurs de sérialisation JSON
+        return data.map(row => {
+            const cleanedRow: Record<string, string> = {};
+            for (const [key, value] of Object.entries(row)) {
+                // Convertir toutes les valeurs en chaînes de caractères valides
+                if (value === null || value === undefined) {
+                    cleanedRow[key] = '';
+                } else if (typeof value === 'object') {
+                    // Si c'est un objet (Date, etc.), le convertir en chaîne
+                    try {
+                        cleanedRow[key] = JSON.stringify(value);
+                    } catch (e) {
+                        cleanedRow[key] = String(value);
+                    }
+                } else if (typeof value === 'number') {
+                    // Préserver les nombres en les convertissant en chaîne
+                    cleanedRow[key] = isNaN(value) || !isFinite(value) ? '' : String(value);
+                } else {
+                    // Pour les autres types, convertir en chaîne
+                    cleanedRow[key] = String(value);
+                }
+            }
+            return cleanedRow;
+        });
     }
 
     /**
@@ -1524,8 +1589,36 @@ export class FileUploadComponent implements OnDestroy {
                     
                     if (isBo) {
                         this.boData = this.applyOrangeMoneyColumnSelection(this.normalizeData(rows), file.name);
+                        
+                        // Vérifier si c'est un fichier TRXBO et déclencher la sélection des services (pour le mode manuel)
+                        if (this.reconciliationMode === 'manual') {
+                            setTimeout(() => {
+                                if (this.boData && this.boData.length > 0) {
+                                    console.log('🔍 Vérification TRXBO sur les données BO chargées (Excel - fallback)...');
+                                    if (this.detectTRXBOAndExtractServicesForManual(this.boData)) {
+                                        if (this.availableAgencies.length > 0) {
+                                            this.showAgencySelectionStep();
+                                        } else {
+                                            this.showManualServiceSelectionStep();
+                                        }
+                                    }
+                                }
+                            }, 100);
+                        }
                     } else {
                         this.partnerData = this.applyOrangeMoneyColumnSelection(this.normalizeData(this.convertDebitCreditToNumber(rows)), file.name);
+                        
+                        // Vérifier si le fichier partenaire a des colonnes service/type/statut et déclencher la sélection (pour le mode manuel)
+                        if (this.reconciliationMode === 'manual') {
+                            setTimeout(() => {
+                                if (this.partnerData && this.partnerData.length > 0) {
+                                    console.log('🔍 Vérification service/type/statut sur les données partenaire chargées (mode manuel, Excel - fallback)...');
+                                    if (this.detectPartnerServiceTypeAndStatusForManual(this.partnerData)) {
+                                        this.showManualPartnerServiceSelectionStep();
+                                    }
+                                }
+                            }, 100);
+                        }
                     }
                     // Forcer la détection des changements
                     this.cd.detectChanges();
@@ -1552,8 +1645,36 @@ export class FileUploadComponent implements OnDestroy {
                     
                     if (isBo) {
                         this.boData = this.applyOrangeMoneyColumnSelection(this.normalizeData(rows), file.name);
+                        
+                        // Vérifier si c'est un fichier TRXBO et déclencher la sélection des services (pour le mode manuel)
+                        if (this.reconciliationMode === 'manual') {
+                            setTimeout(() => {
+                                if (this.boData && this.boData.length > 0) {
+                                    console.log('🔍 Vérification TRXBO sur les données BO chargées (Excel)...');
+                                    if (this.detectTRXBOAndExtractServicesForManual(this.boData)) {
+                                        if (this.availableAgencies.length > 0) {
+                                            this.showAgencySelectionStep();
+                                        } else {
+                                            this.showManualServiceSelectionStep();
+                                        }
+                                    }
+                                }
+                            }, 100);
+                        }
                     } else {
                         this.partnerData = this.applyOrangeMoneyColumnSelection(this.normalizeData(this.convertDebitCreditToNumber(rows)), file.name);
+                        
+                        // Vérifier si le fichier partenaire a des colonnes service/type/statut et déclencher la sélection (pour le mode manuel)
+                        if (this.reconciliationMode === 'manual') {
+                            setTimeout(() => {
+                                if (this.partnerData && this.partnerData.length > 0) {
+                                    console.log('🔍 Vérification service/type/statut sur les données partenaire chargées (mode manuel, Excel)...');
+                                    if (this.detectPartnerServiceTypeAndStatusForManual(this.partnerData)) {
+                                        this.showManualPartnerServiceSelectionStep();
+                                    }
+                                }
+                            }, 100);
+                        }
                     }
                     // Forcer la détection des changements
                     this.cd.detectChanges();
@@ -1865,7 +1986,7 @@ export class FileUploadComponent implements OnDestroy {
         }
     }
 
-    // Méthode pour détecter si le fichier est TRXBO et extraire les services
+    // Méthode pour détecter si le fichier est TRXBO et extraire les agences (étape 1)
     private detectTRXBOAndExtractServices(data: Record<string, string>[]): boolean {
         if (!data || data.length === 0) return false;
         
@@ -1879,31 +2000,66 @@ export class FileUploadComponent implements OnDestroy {
         );
         
         if (hasServiceColumn) {
-            console.log('🔍 Fichier TRXBO détecté, extraction des services...');
+            console.log('🔍 Fichier TRXBO détecté, extraction des agences...');
             
-            // Trouver la colonne service
-            const serviceColumn = columns.find(col => 
-                col.toLowerCase().includes('service') || 
-                col.toLowerCase().includes('serv')
+            // D'abord, chercher la colonne Agence pour filtrer
+            const agencyColumn = columns.find(col => 
+                col.toLowerCase().includes('agence') || 
+                col.toLowerCase().includes('agency')
             );
             
-            if (serviceColumn) {
-                // Extraire tous les services uniques
-                const services = [...new Set(data.map(row => row[serviceColumn]).filter(service => service && service.trim()))];
-                this.availableServices = services.sort();
-                this.serviceSelectionData = data;
+            if (agencyColumn) {
+                console.log('📋 Colonne Agence trouvée:', agencyColumn);
                 
-                console.log('📋 Services disponibles:', this.availableServices);
+                // Extraire toutes les agences uniques
+                const agencies = [...new Set(data.map(row => row[agencyColumn]).filter(agency => agency && agency.toString().trim()))];
+                this.availableAgencies = agencies.sort();
+                this.agencySelectionData = data;
+                this.agencyColumn = agencyColumn;
+                
+                console.log('📋 Agences disponibles:', this.availableAgencies);
                 console.log('📊 Nombre total de lignes:', data.length);
                 
                 return true;
+            } else {
+                // Pas de colonne Agence, passer directement à l'extraction des services
+                console.log('⚠️ Colonne Agence non trouvée, passage direct à l\'extraction des services...');
+                return this.extractServicesFromTRXBO(data);
             }
         }
         
         return false;
     }
 
-    // Méthode pour détecter TRXBO et extraire les services pour le mode manuel
+    // Méthode pour extraire les services après filtrage par agence
+    private extractServicesFromTRXBO(data: Record<string, string>[]): boolean {
+        if (!data || data.length === 0) return false;
+        
+        const firstRow = data[0];
+        const columns = Object.keys(firstRow);
+        
+        // Trouver la colonne service
+        const serviceColumn = columns.find(col => 
+            col.toLowerCase().includes('service') || 
+            col.toLowerCase().includes('serv')
+        );
+        
+        if (serviceColumn) {
+            // Extraire tous les services uniques
+            const services = [...new Set(data.map(row => row[serviceColumn]).filter(service => service && service.trim()))];
+            this.availableServices = services.sort();
+            this.serviceSelectionData = data;
+            
+            console.log('📋 Services disponibles:', this.availableServices);
+            console.log('📊 Nombre total de lignes:', data.length);
+            
+            return true;
+        }
+        
+        return false;
+    }
+
+    // Méthode pour détecter TRXBO et extraire les agences pour le mode manuel (étape 1)
     private detectTRXBOAndExtractServicesForManual(data: Record<string, string>[]): boolean {
         if (!data || data.length === 0) return false;
         
@@ -1917,31 +2073,117 @@ export class FileUploadComponent implements OnDestroy {
         );
         
         if (hasServiceColumn) {
-            console.log('🔍 Fichier TRXBO détecté en mode manuel, extraction des services...');
+            console.log('🔍 Fichier TRXBO détecté en mode manuel, extraction des agences...');
             
-            // Trouver la colonne service
-            const serviceColumn = columns.find(col => 
-                col.toLowerCase().includes('service') || 
-                col.toLowerCase().includes('serv')
+            // D'abord, chercher la colonne Agence pour filtrer
+            const agencyColumn = columns.find(col => 
+                col.toLowerCase().includes('agence') || 
+                col.toLowerCase().includes('agency')
             );
             
-            if (serviceColumn) {
-                // Extraire tous les services uniques
-                const services = [...new Set(data.map(row => row[serviceColumn]).filter(service => service && service.trim()))];
-                this.manualAvailableServices = services.sort();
-                this.manualServiceSelectionData = data;
+            if (agencyColumn) {
+                console.log('📋 Colonne Agence trouvée (mode manuel):', agencyColumn);
                 
-                console.log('📋 Services disponibles (mode manuel):', this.manualAvailableServices);
+                // Extraire toutes les agences uniques
+                const agencies = [...new Set(data.map(row => row[agencyColumn]).filter(agency => agency && agency.toString().trim()))];
+                this.availableAgencies = agencies.sort();
+                this.agencySelectionData = data;
+                this.agencyColumn = agencyColumn;
+                
+                console.log('📋 Agences disponibles (mode manuel):', this.availableAgencies);
                 console.log('📊 Nombre total de lignes:', data.length);
                 
                 return true;
+            } else {
+                // Pas de colonne Agence, passer directement à l'extraction des services
+                console.log('⚠️ Colonne Agence non trouvée, passage direct à l\'extraction des services (mode manuel)...');
+                return this.extractServicesFromTRXBOForManual(data);
             }
         }
         
         return false;
     }
 
-    // Méthode pour détecter les colonnes service/type/statut dans les fichiers partenaires
+    // Méthode pour extraire les services après filtrage par agence (mode manuel)
+    private extractServicesFromTRXBOForManual(data: Record<string, string>[]): boolean {
+        if (!data || data.length === 0) return false;
+        
+        const firstRow = data[0];
+        const columns = Object.keys(firstRow);
+        
+        // Trouver la colonne service
+        const serviceColumn = columns.find(col => 
+            col.toLowerCase().includes('service') || 
+            col.toLowerCase().includes('serv')
+        );
+        
+        if (serviceColumn) {
+            // Extraire tous les services uniques
+            const services = [...new Set(data.map(row => row[serviceColumn]).filter(service => service && service.trim()))];
+            this.manualAvailableServices = services.sort();
+            this.manualServiceSelectionData = data;
+            
+            console.log('📋 Services disponibles (mode manuel):', this.manualAvailableServices);
+            console.log('📊 Nombre total de lignes:', data.length);
+            
+            return true;
+        }
+        
+        return false;
+    }
+
+    // Méthode pour détecter les colonnes service/type/statut dans les fichiers partenaires (mode manuel)
+    private detectPartnerServiceTypeAndStatusForManual(data: Record<string, string>[]): boolean {
+        if (!data || data.length === 0) return false;
+        
+        const firstRow = data[0];
+        const columns = Object.keys(firstRow);
+        
+        // Chercher une colonne service ou type
+        const serviceColumn = columns.find(col => {
+            const colLower = col.toLowerCase();
+            return colLower.includes('service') || 
+                   colLower.includes('serv') ||
+                   colLower.includes('type');
+        });
+        
+        // Chercher une colonne statut
+        const statusColumn = columns.find(col => {
+            const colLower = col.toLowerCase();
+            return colLower.includes('statut') || 
+                   colLower.includes('status') ||
+                   colLower.includes('état');
+        });
+        
+        // Si on trouve au moins une colonne service/type, on active la sélection
+        if (serviceColumn) {
+            console.log('🔍 Fichier partenaire avec colonne service/type détectée en mode manuel, extraction des valeurs...');
+            console.log('📋 Colonne service/type trouvée:', serviceColumn);
+            if (statusColumn) {
+                console.log('📋 Colonne statut trouvée:', statusColumn);
+            }
+            
+            // Extraire toutes les valeurs uniques de service/type
+            const services = [...new Set(
+                data.map(row => row[serviceColumn])
+                    .filter(service => service && service.toString().trim())
+            )];
+            
+            this.partnerAvailableServices = services.sort();
+            this.partnerServiceSelectionData = data;
+            this.partnerServiceColumn = serviceColumn;
+            this.partnerStatusColumn = statusColumn || null;
+            
+            console.log('📋 Services/Types disponibles (partenaire, mode manuel):', this.partnerAvailableServices);
+            console.log('📊 Nombre total de lignes:', data.length);
+            
+            return true;
+        }
+        
+        return false;
+    }
+
+    // Méthode pour détecter les colonnes service/type/statut dans les fichiers partenaires (mode automatique)
     private detectPartnerServiceTypeAndStatus(data: Record<string, string>[]): boolean {
         if (!data || data.length === 0) return false;
         
@@ -1990,6 +2232,102 @@ export class FileUploadComponent implements OnDestroy {
         }
         
         return false;
+    }
+
+    // Méthode pour afficher la sélection des agences (TRXBO - étape 1)
+    private showAgencySelectionStep(): void {
+        this.showAgencySelection = true;
+        this.selectedAgencies = [...this.availableAgencies]; // Sélectionner toutes par défaut
+    }
+
+    // Méthode pour confirmer la sélection des agences (TRXBO)
+    confirmAgencySelection(): void {
+        if (this.selectedAgencies.length === 0) {
+            this.errorMessage = 'Veuillez sélectionner au moins une agence.';
+            return;
+        }
+
+        console.log('✅ Agences sélectionnées:', this.selectedAgencies);
+        
+        // Filtrer les données pour ne garder que les lignes des agences sélectionnées
+        if (!this.agencyColumn || !this.agencySelectionData || this.agencySelectionData.length === 0) {
+            this.errorMessage = 'Erreur: colonne Agence non trouvée.';
+            return;
+        }
+        
+        const filteredData = this.agencySelectionData.filter(row => 
+            this.selectedAgencies.includes(row[this.agencyColumn!])
+        );
+        
+        console.log('📊 Données filtrées par agence:', filteredData.length, 'lignes sur', this.agencySelectionData.length, 'originales');
+        
+        // Maintenant extraire les services des données filtrées
+        // Vérifier si on est en mode manuel ou automatique
+        if (this.reconciliationMode === 'manual') {
+            if (this.extractServicesFromTRXBOForManual(filteredData)) {
+                // Masquer la sélection des agences
+                this.showAgencySelection = false;
+                
+                // Forcer la détection des changements pour mettre à jour la vue
+                this.cd.detectChanges();
+                
+                // Afficher la sélection des services (mode manuel)
+                this.showManualServiceSelectionStep();
+            } else {
+                this.errorMessage = 'Erreur lors de l\'extraction des services.';
+            }
+        } else {
+            if (this.extractServicesFromTRXBO(filteredData)) {
+                // Masquer la sélection des agences
+                this.showAgencySelection = false;
+                
+                // Forcer la détection des changements pour mettre à jour la vue
+                this.cd.detectChanges();
+                
+                // Afficher la sélection des services
+                this.showServiceSelectionStep();
+            } else {
+                this.errorMessage = 'Erreur lors de l\'extraction des services.';
+            }
+        }
+    }
+
+    // Méthode pour annuler la sélection des agences
+    cancelAgencySelection(): void {
+        this.showAgencySelection = false;
+        this.availableAgencies = [];
+        this.selectedAgencies = [];
+        this.agencySelectionData = [];
+        this.agencyColumn = null;
+    }
+
+    // Méthode pour gérer le changement de sélection des agences
+    onAgencySelectionChange(event: Event, agency: string): void {
+        const checkbox = event.target as HTMLInputElement;
+        if (checkbox.checked) {
+            if (!this.selectedAgencies.includes(agency)) {
+                this.selectedAgencies.push(agency);
+            }
+        } else {
+            this.selectedAgencies = this.selectedAgencies.filter(a => a !== agency);
+        }
+    }
+
+    // Méthode pour compter le nombre de lignes par agence
+    getAgencyCount(agency: string): number {
+        if (!this.agencySelectionData || this.agencySelectionData.length === 0 || !this.agencyColumn) return 0;
+        
+        return this.agencySelectionData.filter(row => row[this.agencyColumn!] === agency).length;
+    }
+
+    // Méthode pour sélectionner toutes les agences
+    selectAllAgencies(): void {
+        this.selectedAgencies = [...this.availableAgencies];
+    }
+
+    // Méthode pour désélectionner toutes les agences
+    deselectAllAgencies(): void {
+        this.selectedAgencies = [];
     }
 
     // Méthode pour afficher la sélection des services
@@ -2088,10 +2426,50 @@ export class FileUploadComponent implements OnDestroy {
         this.selectedServices = [];
     }
 
-    // Méthode pour afficher la sélection des services/type/statut pour le partenaire
+    // Méthode pour afficher la sélection des services/type/statut pour le partenaire (mode automatique)
     private showPartnerServiceSelectionStep(): void {
         this.showPartnerServiceSelection = true;
         this.partnerSelectedServices = [...this.partnerAvailableServices]; // Sélectionner tous par défaut
+    }
+
+    // Méthode pour afficher la sélection des services/type/statut pour le partenaire (mode manuel)
+    private showManualPartnerServiceSelectionStep(): void {
+        console.log('🎯 showManualPartnerServiceSelectionStep() appelée');
+        console.log('📊 État avant changement - showPartnerServiceSelection:', this.showPartnerServiceSelection);
+        console.log('📊 État des autres overlays - showManualServiceSelection:', this.showManualServiceSelection);
+        console.log('📊 État des autres overlays - showServiceSelection:', this.showServiceSelection);
+        console.log('📊 partnerAvailableServices:', this.partnerAvailableServices);
+        console.log('📊 partnerAvailableServices.length:', this.partnerAvailableServices?.length);
+        
+        // S'assurer que les autres overlays sont fermés
+        if (this.showManualServiceSelection) {
+            console.log('⚠️ showManualServiceSelection est encore à true, on le ferme');
+            this.showManualServiceSelection = false;
+        }
+        if (this.showServiceSelection) {
+            console.log('⚠️ showServiceSelection est encore à true, on le ferme');
+            this.showServiceSelection = false;
+        }
+        
+        this.showPartnerServiceSelection = true;
+        this.partnerSelectedServices = [...this.partnerAvailableServices]; // Sélectionner tous par défaut
+        
+        console.log('✅ Affichage de la sélection des services partenaire (mode manuel)');
+        console.log('📊 État après changement - showPartnerServiceSelection:', this.showPartnerServiceSelection);
+        console.log('📊 État après changement - showManualServiceSelection:', this.showManualServiceSelection);
+        console.log('📋 Services disponibles:', this.partnerAvailableServices);
+        console.log('✅ Services sélectionnés par défaut:', this.partnerSelectedServices);
+        console.log('📊 partnerSelectedServices.length:', this.partnerSelectedServices?.length);
+        
+        // Forcer la détection des changements pour mettre à jour la vue
+        this.cd.detectChanges();
+        console.log('✅ detectChanges() appelé');
+        
+        // Double vérification après un court délai
+        setTimeout(() => {
+            console.log('🔍 Vérification finale - showPartnerServiceSelection:', this.showPartnerServiceSelection);
+            console.log('🔍 Vérification finale - showManualServiceSelection:', this.showManualServiceSelection);
+        }, 200);
     }
 
     // Méthode pour confirmer la sélection des services/type/statut partenaire
@@ -2136,9 +2514,23 @@ export class FileUploadComponent implements OnDestroy {
             this.cd.detectChanges();
         } else {
             // Pas de colonne statut, terminer directement
-            this.autoPartnerData = this.convertDebitCreditToNumber(filteredData);
-            this.showPartnerServiceSelection = false;
-            this.cd.detectChanges();
+            // Nettoyer et normaliser les données avant de les assigner
+            const cleanedData = this.normalizeData(filteredData);
+            const convertedData = this.convertDebitCreditToNumber(cleanedData);
+            
+            if (this.reconciliationMode === 'manual') {
+                // Mode manuel : mettre à jour partnerData
+                this.partnerData = convertedData;
+                this.showPartnerServiceSelection = false;
+                this.cd.detectChanges();
+                // Continuer avec la réconciliation manuelle
+                this.continueWithManualReconciliation();
+            } else {
+                // Mode automatique : mettre à jour autoPartnerData
+                this.autoPartnerData = convertedData;
+                this.showPartnerServiceSelection = false;
+                this.cd.detectChanges();
+            }
         }
     }
 
@@ -2146,6 +2538,7 @@ export class FileUploadComponent implements OnDestroy {
     cancelPartnerServiceSelection(): void {
         this.showPartnerServiceSelection = false;
         this.showPartnerStatusSelection = false;
+        this.showPartnerPaymentSelection = false;
         this.partnerAvailableServices = [];
         this.partnerSelectedServices = [];
         this.partnerServiceSelectionData = [];
@@ -2155,6 +2548,11 @@ export class FileUploadComponent implements OnDestroy {
         this.partnerAvailableStatuses = [];
         this.partnerSelectedStatuses = [];
         this.partnerStatusSelectionData = [];
+        // Nettoyer aussi les variables de paiement
+        this.partnerAvailablePayments = [];
+        this.partnerSelectedPayments = [];
+        this.partnerPaymentSelectionData = [];
+        this.partnerPaymentColumn = null;
     }
 
     // Méthode pour gérer le changement de sélection des services partenaire
@@ -2213,8 +2611,57 @@ export class FileUploadComponent implements OnDestroy {
         
         console.log('📊 Données filtrées par statut (partenaire):', filteredData.length, 'lignes sur', this.partnerStatusSelectionData.length, 'originales');
         
-        // Mettre à jour les données partenaire avec les données filtrées (par service ET statut)
-        this.autoPartnerData = this.convertDebitCreditToNumber(filteredData);
+        // Vérifier si une colonne Paiement existe dans les données filtrées
+        if (filteredData.length > 0) {
+            const firstRow = filteredData[0];
+            const columns = Object.keys(firstRow);
+            
+            // Chercher une colonne Paiement
+            const paymentColumn = columns.find(col => {
+                const colLower = col.toLowerCase();
+                return colLower.includes('paiement') || 
+                       colLower.includes('payment') ||
+                       colLower.includes('moyen de paiement') ||
+                       colLower.includes('moyen paiement');
+            });
+            
+            if (paymentColumn) {
+                console.log('📋 Colonne Paiement trouvée:', paymentColumn);
+                
+                // Extraire toutes les valeurs uniques de paiement
+                const payments = [...new Set(
+                    filteredData.map(row => row[paymentColumn])
+                        .filter(payment => payment && payment.toString().trim())
+                )];
+                
+                this.partnerAvailablePayments = payments.sort();
+                this.partnerPaymentSelectionData = filteredData;
+                this.partnerPaymentColumn = paymentColumn;
+                
+                console.log('📋 Paiements disponibles (partenaire):', this.partnerAvailablePayments);
+                
+                // Masquer la sélection des statuts
+                this.showPartnerStatusSelection = false;
+                
+                // Nettoyer les variables temporaires de statut
+                this.partnerStatusSelectionData = [];
+                this.partnerAvailableStatuses = [];
+                this.partnerSelectedStatuses = [];
+                
+                // Afficher la sélection des paiements
+                this.showPartnerPaymentSelectionStep();
+                
+                // Forcer la détection des changements pour mettre à jour la vue
+                this.cd.detectChanges();
+                
+                return;
+            }
+        }
+        
+        // Pas de colonne Paiement, terminer directement
+        // Nettoyer et normaliser les données avant de les assigner
+        const cleanedData = this.normalizeData(filteredData);
+        const convertedData = this.convertDebitCreditToNumber(cleanedData);
         
         // Masquer la sélection des statuts
         this.showPartnerStatusSelection = false;
@@ -2224,8 +2671,112 @@ export class FileUploadComponent implements OnDestroy {
         this.partnerAvailableStatuses = [];
         this.partnerSelectedStatuses = [];
         
-        // Forcer la détection des changements pour mettre à jour la vue
-        this.cd.detectChanges();
+        if (this.reconciliationMode === 'manual') {
+            // Mode manuel : mettre à jour partnerData
+            this.partnerData = convertedData;
+            this.cd.detectChanges();
+            // Continuer avec la réconciliation manuelle
+            this.continueWithManualReconciliation();
+        } else {
+            // Mode automatique : mettre à jour autoPartnerData
+            this.autoPartnerData = convertedData;
+            // Forcer la détection des changements pour mettre à jour la vue
+            this.cd.detectChanges();
+        }
+    }
+
+    // Méthode pour afficher la sélection des paiements pour le partenaire (étape 3)
+    private showPartnerPaymentSelectionStep(): void {
+        this.showPartnerPaymentSelection = true;
+        this.partnerSelectedPayments = [...this.partnerAvailablePayments]; // Sélectionner tous par défaut
+    }
+
+    // Méthode pour confirmer la sélection des paiements partenaire
+    confirmPartnerPaymentSelection(): void {
+        if (this.partnerSelectedPayments.length === 0) {
+            this.errorMessage = 'Veuillez sélectionner au moins un paiement.';
+            return;
+        }
+
+        console.log('✅ Paiements sélectionnés (partenaire):', this.partnerSelectedPayments);
+        
+        if (!this.partnerPaymentColumn || !this.partnerPaymentSelectionData || this.partnerPaymentSelectionData.length === 0) {
+            this.errorMessage = 'Erreur: colonne Paiement non trouvée.';
+            return;
+        }
+        
+        // Filtrer les données pour ne garder que les lignes des paiements sélectionnés
+        const filteredData = this.partnerPaymentSelectionData.filter(row => 
+            this.partnerSelectedPayments.includes(row[this.partnerPaymentColumn!])
+        );
+        
+        console.log('📊 Données filtrées par paiement (partenaire):', filteredData.length, 'lignes sur', this.partnerPaymentSelectionData.length, 'originales');
+        
+        // Nettoyer et normaliser les données avant de les assigner
+        const cleanedData = this.normalizeData(filteredData);
+        const convertedData = this.convertDebitCreditToNumber(cleanedData);
+        
+        // Masquer la sélection des paiements
+        this.showPartnerPaymentSelection = false;
+        
+        // Nettoyer les variables temporaires
+        this.partnerPaymentSelectionData = [];
+        this.partnerAvailablePayments = [];
+        this.partnerSelectedPayments = [];
+        this.partnerPaymentColumn = null;
+        
+        if (this.reconciliationMode === 'manual') {
+            // Mode manuel : mettre à jour partnerData
+            this.partnerData = convertedData;
+            this.cd.detectChanges();
+            // Continuer avec la réconciliation manuelle
+            this.continueWithManualReconciliation();
+        } else {
+            // Mode automatique : mettre à jour autoPartnerData
+            this.autoPartnerData = convertedData;
+            // Forcer la détection des changements pour mettre à jour la vue
+            this.cd.detectChanges();
+        }
+    }
+
+    // Méthode pour annuler la sélection des paiements partenaire
+    cancelPartnerPaymentSelection(): void {
+        this.showPartnerPaymentSelection = false;
+        this.partnerPaymentSelectionData = [];
+        this.partnerAvailablePayments = [];
+        this.partnerSelectedPayments = [];
+        this.partnerPaymentColumn = null;
+        // Revenir à la sélection des statuts
+        this.showPartnerStatusSelection = true;
+    }
+
+    // Méthode pour gérer le changement de sélection des paiements partenaire
+    onPartnerPaymentSelectionChange(event: Event, payment: string): void {
+        const checkbox = event.target as HTMLInputElement;
+        if (checkbox.checked) {
+            if (!this.partnerSelectedPayments.includes(payment)) {
+                this.partnerSelectedPayments.push(payment);
+            }
+        } else {
+            this.partnerSelectedPayments = this.partnerSelectedPayments.filter(p => p !== payment);
+        }
+    }
+
+    // Méthode pour compter le nombre de lignes par paiement partenaire
+    getPartnerPaymentCount(payment: string): number {
+        if (!this.partnerPaymentSelectionData || this.partnerPaymentSelectionData.length === 0 || !this.partnerPaymentColumn) return 0;
+        
+        return this.partnerPaymentSelectionData.filter(row => row[this.partnerPaymentColumn!] === payment).length;
+    }
+
+    // Méthode pour sélectionner tous les paiements partenaire
+    selectAllPartnerPayments(): void {
+        this.partnerSelectedPayments = [...this.partnerAvailablePayments];
+    }
+
+    // Méthode pour désélectionner tous les paiements partenaire
+    deselectAllPartnerPayments(): void {
+        this.partnerSelectedPayments = [];
     }
 
     // Méthode pour annuler la sélection des statuts partenaire
@@ -2315,9 +2866,13 @@ export class FileUploadComponent implements OnDestroy {
                         if (isBo) {
                             this.autoBoData = results.data as Record<string, string>[];
                             
-                            // Vérifier si c'est un fichier TRXBO et déclencher la sélection des services
+                            // Vérifier si c'est un fichier TRXBO et déclencher la sélection des agences ou services
                             if (this.detectTRXBOAndExtractServices(this.autoBoData)) {
-                                this.showServiceSelectionStep();
+                                if (this.availableAgencies.length > 0) {
+                                    this.showAgencySelectionStep();
+                                } else {
+                                    this.showServiceSelectionStep();
+                                }
                             }
                         } else {
                             this.autoPartnerData = this.convertDebitCreditToNumber(results.data as Record<string, string>[]);
@@ -2556,9 +3111,13 @@ export class FileUploadComponent implements OnDestroy {
                     if (isBo) {
                         this.autoBoData = rows;
                         
-                        // Vérifier si c'est un fichier TRXBO et déclencher la sélection des services
+                        // Vérifier si c'est un fichier TRXBO et déclencher la sélection des agences ou services
                         if (this.detectTRXBOAndExtractServices(this.autoBoData)) {
-                            this.showServiceSelectionStep();
+                            if (this.availableAgencies.length > 0) {
+                                this.showAgencySelectionStep();
+                            } else {
+                                this.showServiceSelectionStep();
+                            }
                         }
                     } else {
                         this.autoPartnerData = this.convertDebitCreditToNumber(rows);
@@ -3834,15 +4393,35 @@ export class FileUploadComponent implements OnDestroy {
                     }
                 }
                     
+            // Normaliser les données avant de créer la requête pour éviter les erreurs JSON
+            const normalizedBoData = this.normalizeData(processedBoData);
+            const normalizedPartnerData = this.normalizeData(processedPartnerData);
+            
+            console.log('🔍 Normalisation des données:', {
+                boDataLength: normalizedBoData.length,
+                partnerDataLength: normalizedPartnerData.length,
+                boSample: normalizedBoData[0],
+                partnerSample: normalizedPartnerData[0]
+            });
+            
             // Créer la requête de réconciliation
                     const reconciliationRequest = {
-                        boFileContent: processedBoData,
-                        partnerFileContent: processedPartnerData,
+                        boFileContent: normalizedBoData,
+                        partnerFileContent: normalizedPartnerData,
                     boKeyColumn: keyDetectionResult.boKeyColumn,
                     partnerKeyColumn: keyDetectionResult.partnerKeyColumn,
                         comparisonColumns: comparisonColumns,
                 boColumnFilters: []
             };
+
+            // Vérifier que la requête peut être sérialisée en JSON
+            try {
+                const jsonTest = JSON.stringify(reconciliationRequest);
+                console.log('✅ Requête JSON valide, taille:', (jsonTest.length / 1024 / 1024).toFixed(2), 'MB');
+            } catch (error) {
+                console.error('❌ Erreur de sérialisation JSON:', error);
+                throw new Error('Erreur: Les données ne peuvent pas être sérialisées en JSON. Vérifiez la structure des données.');
+            }
 
             console.log('🔄 Lancement de la réconciliation...');
 

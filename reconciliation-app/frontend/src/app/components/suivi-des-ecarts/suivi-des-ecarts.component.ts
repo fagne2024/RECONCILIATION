@@ -386,9 +386,23 @@ export class SuiviDesEcartsComponent implements OnInit, OnDestroy {
     this.subscription.add(
       this.suiviEcartService.uploadFile(this.selectedFile).subscribe({
         next: (response: any) => {
+          let message = response.message || 'Fichier uploadé avec succès';
+          
+          // Construire un message détaillé avec les statistiques
+          if (response.count !== undefined && response.duplicates !== undefined) {
+            message = `Fichier uploadé avec succès. `;
+            message += `${response.count} enregistrement(s) ajouté(s).`;
+            if (response.duplicates > 0) {
+              message += ` ${response.duplicates} doublon(s) ignoré(s).`;
+            }
+            if (response.total !== undefined) {
+              message += ` (${response.total} ligne(s) traitée(s) au total)`;
+            }
+          }
+          
           this.uploadMessage = { 
             type: 'success', 
-            text: response.message || 'Fichier uploadé avec succès' 
+            text: message
           };
           this.selectedFile = null;
           this.loadData();
@@ -397,7 +411,7 @@ export class SuiviDesEcartsComponent implements OnInit, OnDestroy {
         error: (err) => {
           this.uploadMessage = { 
             type: 'error', 
-            text: err.error?.message || 'Erreur lors de l\'upload du fichier' 
+            text: err.error?.message || err.error?.error || 'Erreur lors de l\'upload du fichier' 
           };
           this.isUploading = false;
         }

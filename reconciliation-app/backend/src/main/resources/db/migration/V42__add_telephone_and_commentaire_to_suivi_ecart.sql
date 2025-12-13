@@ -4,3 +4,8 @@ ADD COLUMN telephone VARCHAR(255) NULL,
 ADD COLUMN commentaire TEXT NULL;
 
 
+
+
+
+
+

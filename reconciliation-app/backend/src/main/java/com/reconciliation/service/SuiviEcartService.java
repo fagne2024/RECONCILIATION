@@ -29,6 +29,37 @@ public class SuiviEcartService {
     
     private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd");
     
+    // Classe pour stocker les résultats de l'upload
+    public static class UploadResult {
+        private final List<SuiviEcart> savedItems;
+        private final int duplicatesCount;
+        private final int totalCount;
+        private final int savedCount;
+        
+        public UploadResult(List<SuiviEcart> savedItems, int duplicatesCount, int totalCount) {
+            this.savedItems = savedItems;
+            this.duplicatesCount = duplicatesCount;
+            this.totalCount = totalCount;
+            this.savedCount = savedItems.size();
+        }
+        
+        public List<SuiviEcart> getSavedItems() {
+            return savedItems;
+        }
+        
+        public int getDuplicatesCount() {
+            return duplicatesCount;
+        }
+        
+        public int getTotalCount() {
+            return totalCount;
+        }
+        
+        public int getSavedCount() {
+            return savedCount;
+        }
+    }
+    
     public List<SuiviEcart> getAll() {
         return suiviEcartRepository.findAllOrderByDateDesc().stream()
                 .map(this::convertToModel)
@@ -99,7 +130,7 @@ public class SuiviEcartService {
     }
     
     @Transactional
-    public List<SuiviEcart> uploadFile(MultipartFile file) throws IOException {
+    public UploadResult uploadFile(MultipartFile file) throws IOException {
         if (file == null || file.isEmpty()) {
             throw new IllegalArgumentException("Le fichier ne peut pas être vide");
         }
@@ -118,24 +149,60 @@ public class SuiviEcartService {
         // Récupérer le username depuis le contexte de la requête
         String username = RequestContextUtil.getUsernameFromRequest();
         
-        // Sauvegarder tous les enregistrements
-        List<SuiviEcartEntity> entities = suiviEcarts.stream()
-                .map(this::convertToEntity)
-                .toList();
+        // Filtrer les doublons avant de sauvegarder
+        List<SuiviEcartEntity> entitiesToSave = new ArrayList<>();
+        int duplicatesCount = 0;
+        int newRecordsCount = 0;
         
-        // Définir le username pour tous les enregistrements
-        if (username != null && !username.isEmpty()) {
-            entities.forEach(entity -> entity.setUsername(username));
+        for (SuiviEcart suiviEcart : suiviEcarts) {
+            LocalDate date = parseDate(suiviEcart.getDate());
+            String agence = suiviEcart.getAgence();
+            String service = suiviEcart.getService();
+            String pays = suiviEcart.getPays();
+            String token = suiviEcart.getToken();
+            String idPartenaire = suiviEcart.getIdPartenaire();
+            
+            // Vérifier si tous les champs requis sont présents
+            if (date != null && agence != null && !agence.trim().isEmpty() &&
+                service != null && !service.trim().isEmpty() && pays != null && !pays.trim().isEmpty() &&
+                token != null && !token.trim().isEmpty() && idPartenaire != null && !idPartenaire.trim().isEmpty()) {
+                
+                // Vérifier si c'est un doublon
+                if (suiviEcartRepository.existsByDateAndAgenceAndServiceAndPaysAndTokenAndIdPartenaire(
+                        date, agence, service, pays, token, idPartenaire)) {
+                    System.out.println("DEBUG: Doublon détecté - Date: " + date + ", Agence: " + agence + 
+                                     ", Service: " + service + ", Pays: " + pays + ", Token: " + token + 
+                                     ", IDPartenaire: " + idPartenaire);
+                    duplicatesCount++;
+                    continue; // Ignorer ce doublon
+                }
+            }
+            
+            // Convertir en entité et ajouter à la liste à sauvegarder
+            SuiviEcartEntity entity = convertToEntity(suiviEcart);
+            if (username != null && !username.isEmpty()) {
+                entity.setUsername(username);
+            }
+            entitiesToSave.add(entity);
+            newRecordsCount++;
         }
         
-        if (!entities.isEmpty()) {
-            List<SuiviEcartEntity> savedEntities = suiviEcartRepository.saveAll(entities);
-            return savedEntities.stream()
+        System.out.println("DEBUG: Résultats de la vérification des doublons:");
+        System.out.println("  - Total de lignes parsées: " + suiviEcarts.size());
+        System.out.println("  - Doublons ignorés: " + duplicatesCount);
+        System.out.println("  - Nouveaux enregistrements à sauvegarder: " + newRecordsCount);
+        
+        // Sauvegarder seulement les nouveaux enregistrements
+        List<SuiviEcart> savedItems = new ArrayList<>();
+        if (!entitiesToSave.isEmpty()) {
+            List<SuiviEcartEntity> savedEntities = suiviEcartRepository.saveAll(entitiesToSave);
+            System.out.println("DEBUG: Enregistrements sauvegardés avec succès: " + savedEntities.size());
+            savedItems = savedEntities.stream()
                     .map(this::convertToModel)
                     .toList();
         }
         
-        return new ArrayList<>();
+        return new UploadResult(savedItems, duplicatesCount, suiviEcarts.size());
     }
     
     private List<SuiviEcart> parseCSVFile(MultipartFile file) throws IOException {

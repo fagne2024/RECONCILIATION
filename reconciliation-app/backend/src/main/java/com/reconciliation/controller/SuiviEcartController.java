@@ -84,11 +84,21 @@ public class SuiviEcartController {
         }
         
         try {
-            List<SuiviEcart> uploaded = suiviEcartService.uploadFile(file);
+            SuiviEcartService.UploadResult uploadResult = suiviEcartService.uploadFile(file);
             Map<String, Object> response = new HashMap<>();
             response.put("message", "Fichier uploadé avec succès");
-            response.put("count", uploaded.size());
-            response.put("data", uploaded);
+            response.put("count", uploadResult.getSavedCount());
+            response.put("duplicates", uploadResult.getDuplicatesCount());
+            response.put("total", uploadResult.getTotalCount());
+            response.put("data", uploadResult.getSavedItems());
+            
+            String message = "Fichier uploadé avec succès. " + uploadResult.getSavedCount() + 
+                           " enregistrement(s) ajouté(s).";
+            if (uploadResult.getDuplicatesCount() > 0) {
+                message += " " + uploadResult.getDuplicatesCount() + " doublon(s) ignoré(s).";
+            }
+            response.put("message", message);
+            
             return ResponseEntity.ok(response);
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest()

@@ -35,10 +35,7 @@ export class SuiviEcartService {
     const formData = new FormData();
     formData.append('file', file);
 
-    return this.http.post(`${this.apiUrl}/upload`, formData, {
-      reportProgress: true,
-      observe: 'events'
-    });
+    return this.http.post(`${this.apiUrl}/upload`, formData);
   }
 }
 
