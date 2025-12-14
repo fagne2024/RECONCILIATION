@@ -64,10 +64,92 @@ export class DashboardReconciliationService {
     /**
      * Calcule les métriques de réconciliation par pays et service
      */
-    getDashboardMetrics(statusFilter: DashboardStatusFilter = 'encours'): Observable<CountryServiceMetrics[]> {
+    getDashboardMetrics(
+        statusFilter: DashboardStatusFilter = 'encours',
+        startDate?: Date | null,
+        endDate?: Date | null
+    ): Observable<CountryServiceMetrics[]> {
         return this.getResult8RecData().pipe(
-            map(data => this.calculateMetrics(data, statusFilter))
+            map(data => {
+                // Filtrer les données par date si des dates sont fournies
+                let filteredData = data;
+                if (startDate || endDate) {
+                    filteredData = this.filterDataByDate(data, startDate, endDate);
+                }
+                return this.calculateMetrics(filteredData, statusFilter);
+            })
         );
+    }
+
+    /**
+     * Filtre les données par intervalle de dates
+     */
+    private filterDataByDate(
+        data: Result8RecData[],
+        startDate?: Date | null,
+        endDate?: Date | null
+    ): Result8RecData[] {
+        if (!startDate && !endDate) {
+            return data;
+        }
+
+        // Normaliser les dates de filtrage
+        let normalizedStart: Date | null = null;
+        let normalizedEnd: Date | null = null;
+
+        if (startDate) {
+            normalizedStart = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate());
+            normalizedStart.setHours(0, 0, 0, 0);
+        }
+
+        if (endDate) {
+            normalizedEnd = new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate());
+            normalizedEnd.setHours(23, 59, 59, 999);
+        }
+
+        return data.filter(item => {
+            if (!item.date) {
+                return false; // Exclure les éléments sans date si un filtre de date est actif
+            }
+
+            // Extraire et normaliser la date de l'élément
+            const dateStr = item.date.split(' ')[0]; // Prendre seulement la partie date
+            let itemDate: Date;
+
+            // Parser la date selon le format
+            if (dateStr.includes('-')) {
+                // Format ISO: YYYY-MM-DD
+                const [year, month, day] = dateStr.split('-').map(Number);
+                itemDate = new Date(year, month - 1, day);
+            } else if (dateStr.includes('/')) {
+                // Format avec slash: DD/MM/YYYY ou MM/DD/YYYY
+                const parts = dateStr.split('/').map(Number);
+                // Supposer format DD/MM/YYYY (format français)
+                itemDate = new Date(parts[2], parts[1] - 1, parts[0]);
+            } else {
+                // Essayer de parser directement
+                itemDate = new Date(dateStr);
+            }
+
+            // Vérifier que la date est valide
+            if (isNaN(itemDate.getTime())) {
+                return false;
+            }
+
+            itemDate.setHours(0, 0, 0, 0);
+
+            // Vérifier la date de début
+            if (normalizedStart && itemDate < normalizedStart) {
+                return false;
+            }
+
+            // Vérifier la date de fin
+            if (normalizedEnd && itemDate > normalizedEnd) {
+                return false;
+            }
+
+            return true;
+        });
     }
 
     /**

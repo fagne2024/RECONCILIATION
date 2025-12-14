@@ -61,9 +61,13 @@ export class DashboardReconciliationComponent implements OnInit, OnDestroy {
         this.subscription.unsubscribe();
         this.subscription = new Subscription();
         
-        // Récupérer les données réelles de la table result8rec
+        // Récupérer les données réelles de la table result8rec avec filtres de date
         this.subscription.add(
-            this.dashboardReconciliationService.getDashboardMetrics(this.statusView).subscribe({
+            this.dashboardReconciliationService.getDashboardMetrics(
+                this.statusView,
+                this.selectedDateStart,
+                this.selectedDateEnd
+            ).subscribe({
                 next: (data) => {
                     this.countryServiceData = data;
                     this.initializeFilters();
@@ -304,6 +308,7 @@ export class DashboardReconciliationComponent implements OnInit, OnDestroy {
 
     /**
      * Applique les filtres sélectionnés
+     * Note: Le filtrage par date est maintenant géré par le service lors du chargement des données
      */
     applyFilters(): void {
         let filtered = [...this.countryServiceData];
@@ -313,114 +318,7 @@ export class DashboardReconciliationComponent implements OnInit, OnDestroy {
             filtered = filtered.filter(country => this.selectedCountry.includes(country.country));
         }
 
-        // Filtrer par intervalle de dates
-        if (this.selectedDateStart || this.selectedDateEnd) {
-            // Normaliser les dates de filtrage
-            let normalizedStart: Date | null = null;
-            let normalizedEnd: Date | null = null;
-            
-            if (this.selectedDateStart) {
-                // Créer une nouvelle date pour éviter les problèmes de référence
-                normalizedStart = new Date(this.selectedDateStart.getFullYear(), this.selectedDateStart.getMonth(), this.selectedDateStart.getDate());
-                normalizedStart.setHours(0, 0, 0, 0); // Début de journée
-            }
-            
-            if (this.selectedDateEnd) {
-                // Créer une nouvelle date pour éviter les problèmes de référence
-                normalizedEnd = new Date(this.selectedDateEnd.getFullYear(), this.selectedDateEnd.getMonth(), this.selectedDateEnd.getDate());
-                normalizedEnd.setHours(23, 59, 59, 999); // Fin de journée pour inclure toute la journée
-            }
-            
-            console.log('[DEBUG] Filtrage par dates:', {
-                selectedDateStart: this.selectedDateStart,
-                selectedDateEnd: this.selectedDateEnd,
-                normalizedStart: normalizedStart,
-                normalizedEnd: normalizedEnd
-            });
-            
-            filtered = filtered.map(country => {
-                const filteredServices: {[serviceName: string]: any} = {};
-                Object.entries(country.services).forEach(([serviceName, serviceData]) => {
-                    if (serviceData.date) {
-                        // Extraire et normaliser la date du service
-                        const dateStr = serviceData.date.split(' ')[0]; // Prendre seulement la partie date
-                        let serviceDate: Date;
-                        
-                        // Parser la date selon le format (YYYY-MM-DD ou autre)
-                        if (dateStr.includes('-')) {
-                            // Format ISO: YYYY-MM-DD
-                            const [year, month, day] = dateStr.split('-').map(Number);
-                            serviceDate = new Date(year, month - 1, day);
-                        } else if (dateStr.includes('/')) {
-                            // Format avec slash: DD/MM/YYYY ou MM/DD/YYYY
-                            const parts = dateStr.split('/').map(Number);
-                            // Supposer format DD/MM/YYYY (format français)
-                            serviceDate = new Date(parts[2], parts[1] - 1, parts[0]);
-                        } else {
-                            // Essayer de parser directement
-                            serviceDate = new Date(dateStr);
-                        }
-                        
-                        // Vérifier que la date est valide
-                        if (isNaN(serviceDate.getTime())) {
-                            console.log('[DEBUG] Date invalide ignorée:', { serviceName, dateStr, serviceData });
-                            return; // Ignorer cette entrée si la date est invalide
-                        }
-                        
-                        serviceDate.setHours(0, 0, 0, 0); // Normaliser à minuit
-                        
-                        let dateMatch = true;
-                        
-                        // Vérifier la date de début
-                        if (normalizedStart) {
-                            const isAfterStart = serviceDate >= normalizedStart;
-                            dateMatch = dateMatch && isAfterStart;
-                            if (!isAfterStart) {
-                                console.log('[DEBUG] Service exclu (avant date début):', {
-                                    serviceName,
-                                    serviceDate: serviceDate.toISOString(),
-                                    normalizedStart: normalizedStart.toISOString()
-                                });
-                            }
-                        }
-                        
-                        // Vérifier la date de fin
-                        if (normalizedEnd) {
-                            const isBeforeEnd = serviceDate <= normalizedEnd;
-                            dateMatch = dateMatch && isBeforeEnd;
-                            if (!isBeforeEnd) {
-                                console.log('[DEBUG] Service exclu (après date fin):', {
-                                    serviceName,
-                                    serviceDate: serviceDate.toISOString(),
-                                    normalizedEnd: normalizedEnd.toISOString()
-                                });
-                            }
-                        }
-                        
-                        if (dateMatch) {
-                            console.log('[DEBUG] Service inclus:', {
-                                serviceName,
-                                serviceDate: serviceDate.toISOString(),
-                                dateStr,
-                                normalizedStart: normalizedStart?.toISOString(),
-                                normalizedEnd: normalizedEnd?.toISOString()
-                            });
-                            filteredServices[serviceName] = serviceData;
-                        }
-                    } else {
-                        // Exclure les services sans date si un filtre de date est actif
-                        console.log('[DEBUG] Service exclu (pas de date):', serviceName);
-                        // Ne pas ajouter ce service aux résultats filtrés
-                    }
-                });
-                return {
-                    ...country,
-                    services: filteredServices
-                };
-            }).filter(country => Object.keys(country.services).length > 0);
-        }
-
-        // Filtrer par services (multi) après pays/date
+        // Filtrer par services (multi)
         if (this.selectedService && this.selectedService.length > 0) {
             filtered = filtered.map(country => {
                 const filteredServices: {[serviceName: string]: any} = {};
@@ -464,14 +362,16 @@ export class DashboardReconciliationComponent implements OnInit, OnDestroy {
      * Gère le changement de filtre date de début
      */
     onDateStartChange(): void {
-        this.applyFilters();
+        // Recharger les données avec le nouveau filtre de date
+        this.loadReconciliationData();
     }
 
     /**
      * Gère le changement de filtre date de fin
      */
     onDateEndChange(): void {
-        this.applyFilters();
+        // Recharger les données avec le nouveau filtre de date
+        this.loadReconciliationData();
     }
 
     /**
@@ -504,7 +404,8 @@ export class DashboardReconciliationComponent implements OnInit, OnDestroy {
         this.selectedDateStart = null;
         this.selectedDateEnd = null;
         this.filteredServices = [...this.availableServices];
-        this.applyFilters();
+        // Recharger les données pour réinitialiser les filtres de date
+        this.loadReconciliationData();
     }
 
     /**
