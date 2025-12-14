@@ -2289,9 +2289,9 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
     
     // Propriété pour afficher/masquer le résumé des volumes
     showVolumeSummary = false;
-    
-    // Propriété pour afficher/masquer la liste des correspondances (true par défaut pour affichage automatique)
-    showMatchesList = true;
+
+    // Propriété pour afficher/masquer la liste des correspondances (false par défaut - masquée)
+    showMatchesList = false;
     
     // Propriétés calculées pour éviter les recalculs dans le template (optimisation performance)
     filteredMatchesCount: number = 0;
@@ -3588,9 +3588,9 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                         console.log('🟢 [NGONINIT] Onglet actif défini à:', this.activeTab);
                     }
                     
-                    // S'assurer que la liste des correspondances est affichée par défaut
-                    this.showMatchesList = true;
-                    console.log('🟢 [NGONINIT] showMatchesList activé pour affichage automatique');
+                    // La liste des correspondances est masquée par défaut
+                    this.showMatchesList = false;
+                    console.log('🟢 [NGONINIT] showMatchesList masqué par défaut');
                     
                     const filterStartTime = performance.now();
                     this.initializeFilteredData();
@@ -4028,6 +4028,23 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
             totalBoOnlyPages: this.totalBoOnlyPages,
             totalPartnerOnlyPages: this.totalPartnerOnlyPages,
             pageSize: this.pageSize
+        });
+        
+        // Étape 2.5: Mettre à jour matchRate et totalTransactions
+        const step2_5Start = performance.now();
+        console.log('🟣 [UPDATE_CALCULATED] Étape 2.5: Mise à jour matchRate et totalTransactions...');
+        // Invalider le cache pour forcer le recalcul
+        this.cachedMatchRate = null;
+        this.cachedTotalTransactions = null;
+        // Appeler les méthodes pour calculer et mettre à jour les propriétés
+        this.getTotalTransactions();
+        this.getMatchRate();
+        const step2_5Duration = performance.now() - step2_5Start;
+        console.log(`🟣 [UPDATE_CALCULATED] Étape 2.5 terminée: ${step2_5Duration.toFixed(2)}ms`);
+        console.log('🟣 [UPDATE_CALCULATED] Statistiques:', {
+            totalTransactions: this.totalTransactions,
+            matchRate: this.matchRate.toFixed(2) + '%',
+            filteredMatchesCount: this.filteredMatchesCount
         });
         
         // Mettre à jour les pages paginées uniquement si demandé (évite les recalculs multiples pendant l'initialisation)
@@ -7361,6 +7378,11 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
 
     private getMatchRateCallCount = 0;
     getMatchRate(): number {
+        // Utiliser le cache si disponible
+        if (this.cachedMatchRate !== null) {
+            return this.cachedMatchRate;
+        }
+        
         this.getMatchRateCallCount++;
         const startTime = performance.now();
         if (this.getMatchRateCallCount <= 5) {
@@ -7373,10 +7395,17 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
             if (this.getMatchRateCallCount <= 5) {
                 console.log(`🔴 [TEMPLATE] getMatchRate() terminé: ${duration.toFixed(2)}ms (résultat: 0)`);
             }
+            // Mettre en cache et mettre à jour la propriété publique
+            this.cachedMatchRate = 0;
+            this.matchRate = 0;
             return 0;
         }
         const matches = this.filteredMatches.length || 0;
         const result = (matches / total) * 100;
+        
+        // Mettre en cache et mettre à jour la propriété publique
+        this.cachedMatchRate = result;
+        this.matchRate = result;
         
         const duration = performance.now() - startTime;
         if (duration > 0.1 || this.getMatchRateCallCount <= 5) {
