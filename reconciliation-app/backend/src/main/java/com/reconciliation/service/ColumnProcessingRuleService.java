@@ -10,6 +10,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Service
 public class ColumnProcessingRuleService {
@@ -19,9 +20,44 @@ public class ColumnProcessingRuleService {
     
     @Autowired
     private AutoProcessingModelRepository autoProcessingModelRepository;
+    
+    // Cache pour éviter de recharger les règles à chaque fois
+    // Clé: modelId, Valeur: Liste des règles
+    private final ConcurrentHashMap<String, List<ColumnProcessingRule>> rulesCache = new ConcurrentHashMap<>();
 
+    /**
+     * Récupère les règles par modelId avec cache
+     * OPTIMISATION: Utilise un cache en mémoire pour éviter les requêtes répétées
+     */
     public List<ColumnProcessingRule> getRulesByModelId(String modelId) {
-        return columnProcessingRuleRepository.findByAutoProcessingModelModelIdOrderByRuleOrderAsc(modelId);
+        // Vérifier le cache d'abord
+        List<ColumnProcessingRule> cachedRules = rulesCache.get(modelId);
+        if (cachedRules != null) {
+            return cachedRules;
+        }
+        
+        // Charger depuis la base de données
+        List<ColumnProcessingRule> rules = columnProcessingRuleRepository.findByAutoProcessingModelModelIdOrderByRuleOrderAsc(modelId);
+        
+        // Mettre en cache (même si la liste est vide pour éviter de recharger)
+        rulesCache.put(modelId, rules);
+        
+        return rules;
+    }
+    
+    /**
+     * Invalide le cache pour un modelId donné
+     * À appeler après modification/suppression de règles
+     */
+    public void invalidateCache(String modelId) {
+        rulesCache.remove(modelId);
+    }
+    
+    /**
+     * Invalide tout le cache
+     */
+    public void clearCache() {
+        rulesCache.clear();
     }
 
     public List<ColumnProcessingRule> getRulesByModelId(Long modelId) {
@@ -41,7 +77,12 @@ public class ColumnProcessingRuleService {
                 rule.setRuleOrder(existingRules.size());
             }
             
-            return columnProcessingRuleRepository.save(rule);
+            ColumnProcessingRule savedRule = columnProcessingRuleRepository.save(rule);
+            
+            // Invalider le cache après création
+            invalidateCache(modelId);
+            
+            return savedRule;
         }
         throw new IllegalArgumentException("Modèle non trouvé avec l'ID: " + modelId);
     }
@@ -51,6 +92,7 @@ public class ColumnProcessingRuleService {
         Optional<ColumnProcessingRule> existingRuleOpt = columnProcessingRuleRepository.findById(ruleId);
         if (existingRuleOpt.isPresent()) {
             ColumnProcessingRule existingRule = existingRuleOpt.get();
+            String modelId = existingRule.getAutoProcessingModel().getModelId();
             
             existingRule.setSourceColumn(updatedRule.getSourceColumn());
             existingRule.setTargetColumn(updatedRule.getTargetColumn());
@@ -65,7 +107,12 @@ public class ColumnProcessingRuleService {
             existingRule.setSpecialCharReplacementMap(updatedRule.getSpecialCharReplacementMap());
             existingRule.setRuleOrder(updatedRule.getRuleOrder());
             
-            return columnProcessingRuleRepository.save(existingRule);
+            ColumnProcessingRule savedRule = columnProcessingRuleRepository.save(existingRule);
+            
+            // Invalider le cache après modification
+            invalidateCache(modelId);
+            
+            return savedRule;
         }
         throw new IllegalArgumentException("Règle non trouvée avec l'ID: " + ruleId);
     }
@@ -74,7 +121,14 @@ public class ColumnProcessingRuleService {
     public boolean deleteRule(Long ruleId) {
         Optional<ColumnProcessingRule> ruleOpt = columnProcessingRuleRepository.findById(ruleId);
         if (ruleOpt.isPresent()) {
-            columnProcessingRuleRepository.delete(ruleOpt.get());
+            ColumnProcessingRule rule = ruleOpt.get();
+            String modelId = rule.getAutoProcessingModel().getModelId();
+            
+            columnProcessingRuleRepository.delete(rule);
+            
+            // Invalider le cache après suppression
+            invalidateCache(modelId);
+            
             return true;
         }
         return false;
@@ -86,6 +140,9 @@ public class ColumnProcessingRuleService {
             System.out.println("🔍 [DEBUG] ColumnProcessingRuleService.deleteRulesByModelId() appelé avec modelId: " + modelId);
             columnProcessingRuleRepository.deleteByAutoProcessingModelModelId(modelId);
             System.out.println("✅ [DEBUG] Règles supprimées avec succès pour le modèle: " + modelId);
+            
+            // Invalider le cache après suppression
+            invalidateCache(modelId);
         } catch (Exception e) {
             System.err.println("⚠️ [DEBUG] Erreur lors de la suppression des règles pour le modèle " + modelId + ": " + e.getMessage());
             // Essayer une approche alternative si la suppression en masse échoue
@@ -100,6 +157,9 @@ public class ColumnProcessingRuleService {
                     System.err.println("❌ [DEBUG] Erreur lors de la suppression de la règle " + rule.getId() + ": " + deleteException.getMessage());
                 }
             }
+            
+            // Invalider le cache après suppression alternative
+            invalidateCache(modelId);
         }
     }
 
@@ -149,7 +209,9 @@ public class ColumnProcessingRuleService {
                 columnProcessingRuleRepository.save(rule);
             }
             
-            return getRulesByModelId(modelId);
+            // Le cache sera invalidé par deleteRulesByModelId, mais on recharge quand même
+            List<ColumnProcessingRule> savedRules = getRulesByModelId(modelId);
+            return savedRules;
         }
         throw new IllegalArgumentException("Modèle non trouvé avec l'ID: " + modelId);
     }

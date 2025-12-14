@@ -15,6 +15,7 @@ import java.util.stream.Collectors;
 public class ConfigurableReconciliationService {
 
     private final AutoProcessingService autoProcessingService;
+    private final ColumnProcessingRuleService columnProcessingRuleService;
     
     // Cache local pour éviter les appels multiples à getAllModels() dans la même requête
     private AutoProcessingModel cachedPartnerModel = null;
@@ -116,8 +117,10 @@ public class ConfigurableReconciliationService {
                 for (AutoProcessingModel model : matchingModels) {
                     int ruleCount = 0;
                     try {
+                        // OPTIMISATION: Utiliser directement le service de règles au lieu de charger tout le modèle
+                        // Cela évite de charger toutes les données du modèle juste pour compter les règles
                         List<com.reconciliation.entity.ColumnProcessingRule> rules = 
-                            autoProcessingService.getModelByModelId(model.getModelId()).getColumnProcessingRules();
+                            columnProcessingRuleService.getRulesByModelId(model.getModelId());
                         if (rules != null) {
                             ruleCount = rules.size();
                         }

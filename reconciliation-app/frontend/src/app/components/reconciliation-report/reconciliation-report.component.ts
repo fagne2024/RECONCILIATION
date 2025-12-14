@@ -2854,17 +2854,17 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             return;
         }
         
+        // Si la ligne est "sété" (sauvegardée avec un ID), préserver TOUJOURS le commentaire
+        // SAUF si force est activé explicitement
+        if (this.isRowSete(item) && !options?.force) {
+            console.log('🔒 updateCommentFromCounts: Commentaire préservé pour ligne sété', item.id);
+            return;
+        }
+        
         // Vérifier s'il n'y a vraiment pas d'écarts
         const hasNoEcarts = boOnly === 0 && partnerOnly === 0 && mismatches === 0;
         const totalTransactions = this.normalizeNumericValue(item.totalTransactions);
         const allMatches = totalTransactions > 0 && matches === totalTransactions;
-        
-        // Si la ligne est "sété", préserver le commentaire existant SAUF si:
-        // - force est activé OU
-        // - il n'y a vraiment pas d'écarts (pour corriger les commentaires incorrects)
-        if (this.isRowSete(item) && !options?.force && !hasNoEcarts && !allMatches) {
-            return;
-        }
         
         if (!this.shouldAutoUpdateComment(item, options)) {
             return;
@@ -2915,15 +2915,15 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             item.totalTransactions = calculatedTotal;
         }
         
+        // Si la ligne est "sété" (sauvegardée avec un ID), préserver TOUJOURS le commentaire
+        if (this.isRowSete(item)) {
+            console.log('🔒 syncCommentWithValues: Commentaire préservé pour ligne sété', item.id);
+            return;
+        }
+        
         // Vérifier s'il n'y a vraiment pas d'écarts
         const hasNoEcarts = boOnly === 0 && partnerOnly === 0 && mismatches === 0;
         const allMatches = totalTransactions > 0 && matches === totalTransactions;
-        
-        // Si la ligne est "sété", préserver le commentaire existant SAUF s'il n'y a vraiment pas d'écarts
-        // (pour corriger les commentaires incorrects qui montrent des écarts alors qu'il n'y en a pas)
-        if (this.isRowSete(item) && !hasNoEcarts && !allMatches) {
-            return;
-        }
         
         // Recalculer le commentaire pour qu'il corresponde aux valeurs réelles
         item.comment = this.buildCommentForCounts(matches, boOnly, partnerOnly, mismatches, item.totalTransactions);
@@ -3934,7 +3934,10 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                                 item.totalTransactions = totalTransactions;
                                 item.matchRate = totalTransactions > 0 ? (matches / totalTransactions) * 100 : 0;
                                 item.status = this.computeStatusFromCounts(matches, boOnly, 0, mismatches, totalTransactions);
-                                this.updateCommentFromCounts(item, matches, boOnly, 0, mismatches, { force: true });
+                                // Ne forcer la mise à jour du commentaire que pour les lignes NON sauvegardées
+                                if (!item.id) {
+                                    this.updateCommentFromCounts(item, matches, boOnly, 0, mismatches, { force: true });
+                                }
                             }
                         });
                         
@@ -4640,18 +4643,11 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         // Si on doit préserver le commentaire, le restaurer maintenant
         if (preserveComment && savedComment !== null) {
             item.comment = savedComment;
-        } else {
-            // Sinon, mettre à jour le commentaire normalement
-            // Vérifier s'il n'y a vraiment pas d'écarts
-            const hasNoEcarts = boOnly === 0 && partnerOnly === 0 && mismatches === 0;
-            const allMatches = totalTransactions > 0 && matches === totalTransactions;
-            
-            // Mettre à jour le commentaire après recalcul
-            // Pour les lignes "sété", forcer la mise à jour seulement s'il n'y a vraiment pas d'écarts
-            // (pour corriger les commentaires incorrects qui montrent des écarts alors qu'il n'y en a pas)
-            const shouldForce = !this.isRowSete(item) || hasNoEcarts || allMatches;
-            this.updateCommentFromCounts(item, matches, boOnly, partnerOnly, mismatches, { force: shouldForce });
+        } else if (!this.isRowSete(item)) {
+            // Seulement pour les lignes NON sauvegardées, mettre à jour le commentaire
+            this.updateCommentFromCounts(item, matches, boOnly, partnerOnly, mismatches, { force: false });
         }
+        // Pour les lignes sauvegardées (isRowSete), ne jamais modifier le commentaire
     }
 
     /**
@@ -4842,16 +4838,14 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
     }
 
     /**
-     * Vérifie si une ligne est "sété" (traitée) et ne doit plus être modifiée
-     * Une ligne est considérée comme "sété" si :
-     * - Le statut est "OK", OU
-     * - Le traitement est "Terminé"
+     * Vérifie si une ligne est "sété" (sauvegardée) et ne doit plus être modifiée
+     * Une ligne est considérée comme "sété" si elle a un ID (sauvegardée en base)
      */
     private isRowSete(item: ReconciliationReportData): boolean {
         if (!item) {
             return false;
         }
-        return item.status === 'OK' || item.traitement === 'Terminé';
+        return !!item.id;
     }
 
     // Méthodes pour l'édition directe du traitement (comme dans banque)

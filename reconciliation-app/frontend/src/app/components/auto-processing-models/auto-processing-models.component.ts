@@ -465,15 +465,21 @@ export class AutoProcessingModelsComponent implements OnInit {
   loadColumnProcessingRules(modelId: string): void {
     this.autoProcessingService.getColumnProcessingRules(modelId)
       .then(rules => {
-        this.columnProcessingRules = rules;
+        // Trier les règles par ruleOrder pour garantir l'ordre d'application
+        this.columnProcessingRules = rules.sort((a, b) => {
+          const orderA = a.ruleOrder !== undefined ? a.ruleOrder : 0;
+          const orderB = b.ruleOrder !== undefined ? b.ruleOrder : 0;
+          return orderA - orderB;
+        });
         
         // Vérifier que stringToRemove est bien chargé depuis la base
-        console.log('🔍 [DEBUG] Règles chargées depuis la base de données:');
-        rules.forEach((rule, index) => {
-          console.log(`  Règle ${index}:`, {
+        console.log('🔍 [DEBUG] Règles chargées depuis la base de données (triées par ruleOrder):');
+        this.columnProcessingRules.forEach((rule, index) => {
+          console.log(`  Règle ${index} (ruleOrder: ${rule.ruleOrder}):`, {
             sourceColumn: rule.sourceColumn,
             stringToRemove: rule.stringToRemove || '(aucun)',
             removeSpecialChars: rule.removeSpecialChars,
+            removeAccents: rule.removeAccents,
             id: rule.id
           });
         });
@@ -2051,6 +2057,7 @@ export class AutoProcessingModelsComponent implements OnInit {
       toLowerCase: false,
       trimSpaces: false,
       removeSpecialChars: true,
+      removeAccents: false,
       stringToRemove: '',
       padZeros: false,
       regexReplace: ''
@@ -2088,6 +2095,7 @@ export class AutoProcessingModelsComponent implements OnInit {
       toLowerCase: rule.toLowerCase || false,
       trimSpaces: rule.trimSpaces || false,
       removeSpecialChars: rule.removeSpecialChars || false,
+      removeAccents: rule.removeAccents || false,
       stringToRemove: rule.stringToRemove || '',
       padZeros: rule.padZeros || false,
       regexReplace: rule.regexReplace || ''
@@ -2125,75 +2133,75 @@ export class AutoProcessingModelsComponent implements OnInit {
       this.ensureModelColumnsLoaded();
       this.updateAllSectionsWithModelColumns();
       
-      // Créer une règle pour chaque colonne sélectionnée
-      this.selectedColumns.forEach(columnName => {
-        // Vérifier que la colonne existe dans les colonnes disponibles
-        const normalizedColumn = this.normalizeColumnName(columnName);
-        const availableColumns = [...this.availableTemplateColumns, ...this.availableColumnsForTemplate];
+      // Si on est en mode édition, mettre à jour uniquement la règle en cours d'édition
+      if (this.editingColumnProcessingRule !== null && this.editingColumnProcessingRule !== -1) {
+        const editingIndex = this.editingColumnProcessingRule;
+        const editingRule = this.columnProcessingRules[editingIndex];
         
-        if (!availableColumns.includes(normalizedColumn) && !availableColumns.includes(columnName)) {
-          console.warn(`Colonne "${columnName}" non disponible, ignorée`);
-          return;
-        }
-        
-        const finalColumn = normalizedColumn !== columnName ? normalizedColumn : columnName;
-        
-        // Créer la règle pour cette colonne
-        const ruleForColumn = {
-          ...ruleData,
-          sourceColumn: finalColumn,
-          sourceColumns: [finalColumn] // Ajouter le support pour les colonnes multiples
-        };
-        
-        // Log pour vérifier que stringToRemove est bien inclus
-        if (ruleForColumn.stringToRemove) {
-          console.log(`🔍 [DEBUG] Règle créée avec stringToRemove: "${ruleForColumn.stringToRemove}" pour la colonne: ${finalColumn}`);
-        }
-        
-        // Vérifier si une règle existe déjà pour cette colonne
-        // Normaliser les noms de colonnes pour la comparaison
-        const existingRuleIndex = this.columnProcessingRules.findIndex(rule => {
-          if (!rule) return false;
+        if (editingRule) {
+          // Pour l'édition, on ne met à jour que la première colonne sélectionnée (ou la colonne de la règle)
+          const columnToUpdate = this.selectedColumns.length > 0 ? this.selectedColumns[0] : editingRule.sourceColumn;
+          const normalizedColumn = this.normalizeColumnName(columnToUpdate);
+          const availableColumns = [...this.availableTemplateColumns, ...this.availableColumnsForTemplate];
           
-          // Normaliser le sourceColumn de la règle existante
-          const existingSourceColumn = rule.sourceColumn ? this.normalizeColumnName(rule.sourceColumn) : '';
-          const normalizedFinalColumn = this.normalizeColumnName(finalColumn);
+          if (availableColumns.includes(normalizedColumn) || availableColumns.includes(columnToUpdate)) {
+            const finalColumn = normalizedColumn !== columnToUpdate ? normalizedColumn : columnToUpdate;
+            
+            const updatedRule = {
+              ...ruleData,
+              sourceColumn: finalColumn,
+              sourceColumns: [finalColumn],
+              removeAccents: ruleData.removeAccents || false
+            };
+            
+            // Préserver l'ID et ruleOrder de la règle existante
+            this.columnProcessingRules[editingIndex] = {
+              ...updatedRule,
+              id: editingRule.id,
+              ruleOrder: editingRule.ruleOrder !== undefined ? editingRule.ruleOrder : editingIndex
+            };
+            
+            console.log(`✅ [DEBUG] Règle mise à jour pour la colonne: ${finalColumn} (index: ${editingIndex}, id: ${editingRule.id})`);
+          }
+        }
+      } else {
+        // Créer une règle pour chaque colonne sélectionnée (mode création)
+        this.selectedColumns.forEach(columnName => {
+          // Vérifier que la colonne existe dans les colonnes disponibles
+          const normalizedColumn = this.normalizeColumnName(columnName);
+          const availableColumns = [...this.availableTemplateColumns, ...this.availableColumnsForTemplate];
           
-          // Comparaison avec sourceColumn
-          if (existingSourceColumn === normalizedFinalColumn) {
-            console.log(`🔍 [DEBUG] Règle existante trouvée par sourceColumn: "${rule.sourceColumn}" === "${finalColumn}"`);
-            return true;
+          if (!availableColumns.includes(normalizedColumn) && !availableColumns.includes(columnName)) {
+            console.warn(`Colonne "${columnName}" non disponible, ignorée`);
+            return;
           }
           
-          // Comparaison avec sourceColumns
-          if (rule.sourceColumns && rule.sourceColumns.length > 0) {
-            const matchingColumn = rule.sourceColumns.find(col => {
-              const normalizedCol = this.normalizeColumnName(col);
-              return normalizedCol === normalizedFinalColumn;
-            });
-            if (matchingColumn) {
-              console.log(`🔍 [DEBUG] Règle existante trouvée par sourceColumns: "${matchingColumn}" === "${finalColumn}"`);
-              return true;
-            }
-          }
+          const finalColumn = normalizedColumn !== columnName ? normalizedColumn : columnName;
           
-          return false;
-        });
-        
-        if (existingRuleIndex !== -1) {
-          // Mettre à jour la règle existante (préserver l'ID si elle existe)
-          const existingRule = this.columnProcessingRules[existingRuleIndex];
-          this.columnProcessingRules[existingRuleIndex] = {
-            ...ruleForColumn,
-            id: existingRule.id // Préserver l'ID de la règle existante
+          // Créer la règle pour cette colonne
+          const ruleForColumn = {
+            ...ruleData,
+            sourceColumn: finalColumn,
+            sourceColumns: [finalColumn],
+            removeAccents: ruleData.removeAccents || false
           };
-          console.log(`✅ [DEBUG] Règle mise à jour pour la colonne: ${finalColumn} (index: ${existingRuleIndex}, id: ${existingRule.id})`);
-        } else {
-          // Ajouter une nouvelle règle
+          
+          // Log pour vérifier que stringToRemove est bien inclus
+          if (ruleForColumn.stringToRemove) {
+            console.log(`🔍 [DEBUG] Règle créée avec stringToRemove: "${ruleForColumn.stringToRemove}" pour la colonne: ${finalColumn}`);
+          }
+          
+          // Calculer le ruleOrder pour la nouvelle règle (plus grand ordre existant + 1)
+          const maxOrder = this.columnProcessingRules.length > 0 
+            ? Math.max(...this.columnProcessingRules.map(r => r.ruleOrder || 0)) 
+            : -1;
+          ruleForColumn.ruleOrder = maxOrder + 1;
+          
+          // Ajouter une nouvelle règle (permet plusieurs règles pour la même colonne)
           this.columnProcessingRules.push(ruleForColumn);
-          console.log(`✅ [DEBUG] Nouvelle règle ajoutée pour la colonne: ${finalColumn}`);
-        }
-      });
+          console.log(`✅ [DEBUG] Nouvelle règle ajoutée pour la colonne: ${finalColumn} (ruleOrder: ${ruleForColumn.ruleOrder})`);
+        });
+      }
       
       console.log('✅ [DEBUG] Total des règles après modification:', this.columnProcessingRules.length);
       

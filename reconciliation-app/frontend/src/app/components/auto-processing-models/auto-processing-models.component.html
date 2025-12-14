@@ -344,10 +344,15 @@
             <h5>Règles configurées ({{ columnProcessingRules.length }})</h5>
             <div *ngFor="let rule of columnProcessingRules; let i = index" class="processing-rule-item">
               <div class="rule-header">
-                <span class="rule-order">{{ i + 1 }}</span>
+                <span class="rule-order" title="Ordre d'application: {{ rule.ruleOrder !== undefined ? rule.ruleOrder : i + 1 }}">
+                  {{ rule.ruleOrder !== undefined ? rule.ruleOrder : i + 1 }}
+                </span>
                 <span class="rule-title">
                   <i class="fas fa-columns"></i> 
                   {{ rule.sourceColumns ? rule.sourceColumns.length : 1 }} colonne(s)
+                  <small class="text-muted" *ngIf="rule.sourceColumn">
+                    ({{ rule.sourceColumn }})
+                  </small>
                 </span>
                 <div class="rule-actions">
                   <button type="button" class="btn btn-sm btn-outline-primary" (click)="editColumnProcessingRule(i)">
@@ -505,19 +510,17 @@
               </div>
                 
               <!-- Champ pour spécifier les chaînes à supprimer -->
-              <div class="form-row" *ngIf="columnProcessingRuleForm.get('removeSpecialChars')?.value">
+              <div class="form-row">
                 <div class="form-group">
                   <label>Chaîne à supprimer</label>
                   <input type="text" formControlName="stringToRemove" class="form-control" 
                          placeholder="Ex: _CM ou abc123">
                   <small class="form-text text-muted">
                     <strong>Sensible à la casse</strong><br>
-                    🔍 <strong>Appliquer seulement sur les lignes avec une valeur exacte</strong><br>
-                    💡 <strong>Suppression de chaînes spécifiques autorisées :</strong><br>
-                    • Seules les chaînes suivantes sont autorisées : <code>_CM, _ML, _GN, _CI, _BF, _KE, _SN, _KN, _BJ, _GB</code><br>
+                    Cette option supprime automatiquement la chaîne spécifiée de la colonne sélectionnée<br>
                     • Exemple : <code>"_CM"</code> supprimera <code>"_CM"</code> dans <code>"ID_CM_123"</code> → <code>"ID_123"</code><br>
                     • Exemple : <code>"_ML"</code> supprimera <code>"_ML"</code> dans <code>"REF_ML_456"</code> → <code>"REF_456"</code><br>
-                    ⚠️ <strong>Note :</strong> Les caractères individuels (C, M, P, etc.) ne sont pas autorisés
+                    • Cette option peut être combinée avec d'autres règles de nettoyage
                   </small>
                 </div>
               </div>

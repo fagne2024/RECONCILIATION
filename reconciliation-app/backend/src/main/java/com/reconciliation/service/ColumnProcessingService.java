@@ -14,24 +14,11 @@ public class ColumnProcessingService {
 
     /**
      * Applique les règles de traitement des colonnes à une ligne de données
-     * @param modelId L'ID du modèle de traitement
+     * @param rules Les règles de traitement (chargées une seule fois)
      * @param data La ligne de données à traiter (Map<String, Object>)
      * @return La ligne de données traitée
      */
-    public Map<String, Object> processDataRow(String modelId, Map<String, Object> data) {
-        List<ColumnProcessingRule> rules = columnProcessingRuleService.getRulesByModelId(modelId);
-        
-        // Log pour debug
-        if (!rules.isEmpty()) {
-            System.out.println("🔧 [PROCESS] Application de " + rules.size() + " règle(s) pour le modèle: " + modelId);
-            System.out.println("  📋 Colonnes disponibles dans les données: " + String.join(", ", data.keySet()));
-            rules.forEach(rule -> {
-                System.out.println("  - Règle pour colonne: \"" + rule.getSourceColumn() + "\"" + 
-                                 ", stringToRemove: " + (rule.getStringToRemove() != null ? "\"" + rule.getStringToRemove() + "\"" : "null") +
-                                 ", removeSpecialChars: " + rule.isRemoveSpecialChars());
-            });
-        }
-        
+    public Map<String, Object> processDataRow(List<ColumnProcessingRule> rules, Map<String, Object> data) {
         Map<String, Object> processedData = new HashMap<>(data);
         
         for (ColumnProcessingRule rule : rules) {
@@ -67,6 +54,29 @@ public class ColumnProcessingService {
         }
         
         return processedData;
+    }
+    
+    /**
+     * Applique les règles de traitement des colonnes à une ligne de données (méthode de compatibilité)
+     * @param modelId L'ID du modèle de traitement
+     * @param data La ligne de données à traiter (Map<String, Object>)
+     * @return La ligne de données traitée
+     */
+    public Map<String, Object> processDataRow(String modelId, Map<String, Object> data) {
+        List<ColumnProcessingRule> rules = columnProcessingRuleService.getRulesByModelId(modelId);
+        
+        // Log pour debug
+        if (!rules.isEmpty()) {
+            System.out.println("🔧 [PROCESS] Application de " + rules.size() + " règle(s) pour le modèle: " + modelId);
+            System.out.println("  📋 Colonnes disponibles dans les données: " + String.join(", ", data.keySet()));
+            rules.forEach(rule -> {
+                System.out.println("  - Règle pour colonne: \"" + rule.getSourceColumn() + "\"" + 
+                                 ", stringToRemove: " + (rule.getStringToRemove() != null ? "\"" + rule.getStringToRemove() + "\"" : "null") +
+                                 ", removeSpecialChars: " + rule.isRemoveSpecialChars());
+            });
+        }
+        
+        return processDataRow(rules, data);
     }
     
     /**
@@ -128,15 +138,27 @@ public class ColumnProcessingService {
 
     /**
      * Applique les règles de traitement des colonnes à une liste de lignes de données
+     * OPTIMISATION: Charge les règles une seule fois au lieu de les charger pour chaque ligne
      * @param modelId L'ID du modèle de traitement
      * @param dataList La liste des lignes de données à traiter
      * @return La liste des lignes de données traitées
      */
     public List<Map<String, Object>> processDataList(String modelId, List<Map<String, Object>> dataList) {
-        List<Map<String, Object>> processedDataList = new ArrayList<>();
+        // OPTIMISATION CRITIQUE: Charger les règles une seule fois au lieu de les charger pour chaque ligne
+        // Cela évite des centaines/milliers de requêtes SQL (problème N+1)
+        List<ColumnProcessingRule> rules = columnProcessingRuleService.getRulesByModelId(modelId);
         
+        // Log pour debug (seulement si des règles existent)
+        if (!rules.isEmpty() && !dataList.isEmpty()) {
+            System.out.println("🔧 [PROCESS] Application de " + rules.size() + " règle(s) pour le modèle: " + modelId + " sur " + dataList.size() + " lignes");
+            System.out.println("  📋 Colonnes disponibles dans les données: " + String.join(", ", dataList.get(0).keySet()));
+        }
+        
+        List<Map<String, Object>> processedDataList = new ArrayList<>(dataList.size());
+        
+        // Traiter toutes les lignes avec les règles déjà chargées
         for (Map<String, Object> dataRow : dataList) {
-            Map<String, Object> processedRow = processDataRow(modelId, dataRow);
+            Map<String, Object> processedRow = processDataRow(rules, dataRow);
             processedDataList.add(processedRow);
         }
         

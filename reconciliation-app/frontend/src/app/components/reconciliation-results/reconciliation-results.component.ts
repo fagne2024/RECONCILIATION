@@ -85,7 +85,7 @@ interface ApiError {
                 <div class="stats-grid">
                     <div class="stat-card stat-card-total">
                         <div class="stat-icon">📊</div>
-                        <div class="stat-value">{{getTotalTransactions()}}</div>
+                        <div class="stat-value">{{totalTransactions}}</div>
                         <div class="stat-label">Nombres de Transactions</div>
                     </div>
                     <div class="stat-card stat-card-matched">
@@ -257,16 +257,16 @@ interface ApiError {
                             <div class="volume-grid">
                                 <div class="volume-card">
                                     <div class="volume-label">Volume total BO</div>
-                                    <div class="volume-value">{{calculateTotalVolume('bo') | number:'1.0-0'}}</div>
+                                    <div class="volume-value">{{totalVolumeBo | number:'1.0-0'}}</div>
                                 </div>
                                 <div class="volume-card">
                                     <div class="volume-label">Volume total Partenaire</div>
-                                    <div class="volume-value">{{calculateTotalVolume('partner') | number:'1.0-0'}}</div>
+                                    <div class="volume-value">{{totalVolumePartner | number:'1.0-0'}}</div>
                                 </div>
                                 <div class="volume-card">
                                     <div class="volume-label">Différence totale</div>
-                                    <div class="volume-value" [class.positive]="calculateVolumeDifference() > 0" [class.negative]="calculateVolumeDifference() < 0">
-                                        {{calculateVolumeDifference() | number:'1.0-0'}}
+                                    <div class="volume-value" [class.positive]="volumeDifference > 0" [class.negative]="volumeDifference < 0">
+                                        {{volumeDifference | number:'1.0-0'}}
                                     </div>
                                 </div>
                             </div>
@@ -466,13 +466,13 @@ interface ApiError {
                         </div>
                         <div class="info-card-content">
                             <div class="match-rate">
-                                <div class="match-rate-value">{{getMatchRate() | number:'1.1-1'}}%</div>
+                                <div class="match-rate-value">{{matchRate | number:'1.1-1'}}%</div>
                                 <div class="match-rate-bar">
-                                    <div class="match-rate-fill" [style.width.%]="getMatchRate()"></div>
+                                    <div class="match-rate-fill" [style.width.%]="matchRate"></div>
                                 </div>
                             </div>
                             <div class="info-details">
-                                <span>{{filteredMatchesCount}} / {{getTotalTransactions()}} transactions</span>
+                                <span>{{filteredMatchesCount}} / {{totalTransactions}} transactions</span>
                             </div>
                         </div>
                     </div>
@@ -486,16 +486,16 @@ interface ApiError {
                             <div class="volume-comparison">
                                 <div class="volume-item">
                                     <span class="volume-item-label">BO</span>
-                                    <span class="volume-item-value">{{calculateTotalVolume('bo') | number:'1.0-0'}}</span>
+                                    <span class="volume-item-value">{{totalVolumeBo | number:'1.0-0'}}</span>
                                 </div>
                                 <div class="volume-separator">↔</div>
                                 <div class="volume-item">
                                     <span class="volume-item-label">Partenaire</span>
-                                    <span class="volume-item-value">{{calculateTotalVolume('partner') | number:'1.0-0'}}</span>
+                                    <span class="volume-item-value">{{totalVolumePartner | number:'1.0-0'}}</span>
                                 </div>
                             </div>
-                            <div class="volume-diff" [class.positive]="calculateVolumeDifference() > 0" [class.negative]="calculateVolumeDifference() < 0" [class.neutral]="calculateVolumeDifference() === 0">
-                                <span>Différence: {{calculateVolumeDifference() | number:'1.0-0'}}</span>
+                            <div class="volume-diff" [class.positive]="volumeDifference > 0" [class.negative]="volumeDifference < 0" [class.neutral]="volumeDifference === 0">
+                                <span>Différence: {{volumeDifference | number:'1.0-0'}}</span>
                             </div>
                         </div>
                     </div>
@@ -2290,8 +2290,8 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
     // Propriété pour afficher/masquer le résumé des volumes
     showVolumeSummary = false;
     
-    // Propriété pour afficher/masquer la liste des correspondances
-    showMatchesList = false;
+    // Propriété pour afficher/masquer la liste des correspondances (true par défaut pour affichage automatique)
+    showMatchesList = true;
     
     // Propriétés calculées pour éviter les recalculs dans le template (optimisation performance)
     filteredMatchesCount: number = 0;
@@ -2300,6 +2300,23 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
     totalMatchesPages: number = 1;
     totalBoOnlyPages: number = 1;
     totalPartnerOnlyPages: number = 1;
+    
+    // Cache pour les volumes calculés (évite les recalculs coûteux)
+    private cachedTotalVolumeBo: number | null = null;
+    private cachedTotalVolumePartner: number | null = null;
+    private cachedVolumeDifference: number | null = null;
+    private isCalculatingVolumes: boolean = false;
+    
+    // Propriétés publiques pour le template (évite les appels de fonctions)
+    totalVolumeBo: number = 0;
+    totalVolumePartner: number = 0;
+    volumeDifference: number = 0;
+    
+    // Cache pour les statistiques (évite les appels répétés depuis le template)
+    private cachedTotalTransactions: number | null = null;
+    private cachedMatchRate: number | null = null;
+    totalTransactions: number = 0; // Propriété publique pour le template
+    matchRate: number = 0; // Propriété publique pour le template
     
     // Propriétés paginées pour éviter les appels répétés dans le template
     pagedMatches: Match[] = [];
@@ -3490,15 +3507,19 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
 
     ngOnInit() {
         const initStartTime = performance.now();
-        console.log('🔄 [NGONINIT] ReconciliationResultsComponent - ngOnInit appelé', `[${new Date().toISOString()}]`);
-        console.log('🔍 [NGONINIT] État actuel:', {
+        (window as any).pageLoadTime = initStartTime;
+        console.log('🔴 [NGONINIT] ============================================');
+        console.log('🔴 [NGONINIT] ReconciliationResultsComponent - ngOnInit appelé', `[${new Date().toISOString()}]`);
+        console.log('🔴 [NGONINIT] Timestamp absolu:', initStartTime);
+        console.log('🔴 [NGONINIT] État actuel:', {
             'matchesLoaded': this.matchesLoaded,
             'boOnlyLoaded': this.boOnlyLoaded,
             'partnerOnlyLoaded': this.partnerOnlyLoaded,
             'filteredMatchesCount': this.filteredMatches.length,
             'filteredBoOnlyCount': this.filteredBoOnly.length,
             'filteredPartnerOnlyCount': this.filteredPartnerOnly.length,
-            'hasResponse': !!this.response
+            'hasResponse': !!this.response,
+            'activeTab': this.activeTab
         });
         
         // Vérifier si les données sont déjà présentes pour éviter une réinitialisation complète
@@ -3561,6 +3582,16 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                     
                     this.response = response;
                     
+                    // S'assurer que l'onglet actif est bien défini pour afficher les résultats
+                    if (!this.activeTab || this.activeTab === 'matches') {
+                        this.activeTab = 'matches'; // Onglet par défaut pour afficher les correspondances
+                        console.log('🟢 [NGONINIT] Onglet actif défini à:', this.activeTab);
+                    }
+                    
+                    // S'assurer que la liste des correspondances est affichée par défaut
+                    this.showMatchesList = true;
+                    console.log('🟢 [NGONINIT] showMatchesList activé pour affichage automatique');
+                    
                     const filterStartTime = performance.now();
                     this.initializeFilteredData();
                     const filterDuration = performance.now() - filterStartTime;
@@ -3605,18 +3636,59 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                     }
                     console.log('⏱️ Calcul totalRecords:', `${(performance.now() - totalStartTime).toFixed(2)}ms`);
                     
+                    // Calculer et mettre en cache les statistiques immédiatement
+                    const statsStartTime = performance.now();
+                    this.getTotalTransactions(); // Calcule et met en cache
+                    this.getMatchRate(); // Calcule et met en cache
+                    console.log('⏱️ Calcul statistiques:', `${(performance.now() - statsStartTime).toFixed(2)}ms`);
+                    
                     // NE PAS précharger automatiquement - Lazy Loading uniquement à l'activation de l'onglet
                     // Cela évite de charger des données inutiles si l'utilisateur ne visite pas tous les onglets
                     console.log('📦 Lazy Loading activé - Les données seront chargées uniquement à l\'activation des onglets');
                     
-                    // Marquer pour détection de changement immédiatement (pas de délai pour un affichage instantané)
-                    // Avec OnPush, markForCheck() est suffisant et plus rapide que detectChanges()
+                    // Forcer l'affichage immédiat des résultats après l'initialisation
+                    console.log('🟢 [NGONINIT] ============================================');
+                    console.log('🟢 [NGONINIT] Forçage de l\'affichage des résultats...');
                     const detectChangesStartTime = performance.now();
+                    
+                    // Vérifier que les données paginées sont bien initialisées
+                    console.log('🟢 [NGONINIT] Vérification des données avant rendu:', {
+                        filteredMatchesCount: this.filteredMatchesCount,
+                        filteredBoOnlyCount: this.filteredBoOnlyCount,
+                        filteredPartnerOnlyCount: this.filteredPartnerOnlyCount,
+                        pagedMatches: this.pagedMatches?.length || 0,
+                        pagedBoOnly: this.pagedBoOnly?.length || 0,
+                        pagedPartnerOnly: this.pagedPartnerOnly?.length || 0,
+                        activeTab: this.activeTab,
+                        showMatchesList: this.showMatchesList,
+                        matchesLoaded: this.matchesLoaded
+                    });
+                    
+                    // Forcer le rendu immédiatement (sans attendre requestAnimationFrame)
+                    // Avec OnPush, on doit forcer detectChanges() pour garantir le rendu
+                    console.log('🟢 [NGONINIT] Appel markForCheck()...');
                     this.cdr.markForCheck();
-                    const detectChangesDuration = performance.now() - detectChangesStartTime;
-                    if (detectChangesDuration > 1) {
-                        console.log('⏱️ markForCheck:', `${detectChangesDuration.toFixed(2)}ms`);
-                    }
+                    console.log('🟢 [NGONINIT] Appel detectChanges()...');
+                    this.cdr.detectChanges();
+                    console.log('🟢 [NGONINIT] Rendu immédiat effectué');
+                    
+                    // Utiliser requestAnimationFrame pour un rendu supplémentaire après le cycle actuel
+                    requestAnimationFrame(() => {
+                        console.log('🟢 [NGONINIT] Rendu supplémentaire dans RAF...');
+                        this.cdr.markForCheck();
+                        this.cdr.detectChanges();
+                        const detectChangesDuration = performance.now() - detectChangesStartTime;
+                        console.log(`🟢 [NGONINIT] Rendu forcé terminé: ${detectChangesDuration.toFixed(2)}ms`);
+                        console.log('🟢 [NGONINIT] État final pour affichage:', {
+                            filteredMatchesCount: this.filteredMatchesCount,
+                            filteredBoOnlyCount: this.filteredBoOnlyCount,
+                            filteredPartnerOnlyCount: this.filteredPartnerOnlyCount,
+                            pagedMatches: this.pagedMatches?.length || 0,
+                            activeTab: this.activeTab,
+                            showMatchesList: this.showMatchesList
+                        });
+                        console.log('🟢 [NGONINIT] ============================================');
+                    });
                     
                     const totalInitDuration = performance.now() - initDataStartTime;
                     console.log('⏱️ ⏱️ ⏱️ TEMPS TOTAL D\'INITIALISATION:', `${totalInitDuration.toFixed(2)}ms`, `(${(totalInitDuration / 1000).toFixed(2)}s)`);
@@ -3686,10 +3758,10 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
             this.filteredMatches = this.getFilteredMatches();
             this.matchesLoaded = true;
             this.setCache('matches', this.filteredMatches);
-            this.updateCalculatedProperties(); // Mettre à jour les propriétés calculées
+            this.updateCalculatedProperties(true); // Skip pagedDataUpdate (sera fait à la fin)
             console.log('⏱️ Filtrage matches terminé:', `${(performance.now() - filterMatchesStartTime).toFixed(2)}ms`, `(${this.filteredMatchesCount} matches filtrés)`);
         } else {
-            this.updateCalculatedProperties(); // Mettre à jour même si vide
+            this.updateCalculatedProperties(true); // Skip pagedDataUpdate (sera fait à la fin)
             console.log('⏱️ Pas de matches à filtrer:', `${(performance.now() - filterMatchesStartTime).toFixed(2)}ms`);
         }
         
@@ -3701,10 +3773,10 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
             this.filteredBoOnly = this.getFilteredBoOnly();
             this.boOnlyLoaded = true;
             this.setCache('boOnly', this.filteredBoOnly);
-            this.updateCalculatedProperties(); // Mettre à jour les propriétés calculées
+            this.updateCalculatedProperties(true); // Skip pagedDataUpdate (sera fait à la fin)
             console.log('⏱️ Filtrage boOnly terminé:', `${(performance.now() - filterBoOnlyStartTime).toFixed(2)}ms`, `(${this.filteredBoOnlyCount} éléments filtrés)`);
         } else {
-            this.updateCalculatedProperties(); // Mettre à jour même si vide
+            this.updateCalculatedProperties(true); // Skip pagedDataUpdate (sera fait à la fin)
             console.log('⏱️ Pas de boOnly à filtrer:', `${(performance.now() - filterBoOnlyStartTime).toFixed(2)}ms`);
         }
         
@@ -3714,10 +3786,10 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
             this.filteredPartnerOnly = this.getFilteredPartnerOnly();
             this.partnerOnlyLoaded = true;
             this.setCache('partnerOnly', this.filteredPartnerOnly);
-            this.updateCalculatedProperties(); // Mettre à jour les propriétés calculées
+            this.updateCalculatedProperties(true); // Skip pagedDataUpdate (sera fait à la fin)
             console.log('⏱️ Filtrage partnerOnly terminé:', `${(performance.now() - filterPartnerOnlyStartTime).toFixed(2)}ms`, `(${this.filteredPartnerOnlyCount} éléments filtrés)`);
         } else {
-            this.updateCalculatedProperties(); // Mettre à jour même si vide
+            this.updateCalculatedProperties(true); // Skip pagedDataUpdate (sera fait à la fin)
             console.log('⏱️ Pas de partnerOnly à filtrer:', `${(performance.now() - filterPartnerOnlyStartTime).toFixed(2)}ms`);
         }
         
@@ -3749,14 +3821,58 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
         // Désactiver le flag d'initialisation
         this.isInitializing = false;
         
+        // Invalider les caches de volumes pour forcer le recalcul
+        this.cachedTotalVolumeBo = null;
+        this.cachedTotalVolumePartner = null;
+        this.cachedVolumeDifference = null;
+        
+        // Invalider les caches de statistiques pour forcer le recalcul
+        this.cachedTotalTransactions = null;
+        this.cachedMatchRate = null;
+        
         // Mettre à jour les données paginées une seule fois à la fin de l'initialisation
         // Pour tous les volumes, différer le calcul du cache des clés pour un affichage instantané
         const updatePagedStartTime = performance.now();
+        console.log('🟢 [INITFILTERED] ============================================');
+        console.log('🟢 [INITFILTERED] Mise à jour des données paginées pour affichage immédiat...');
+        console.log('🟢 [INITFILTERED] État avant updatePagedData:', {
+            filteredMatches: this.filteredMatches.length,
+            filteredBoOnly: this.filteredBoOnly.length,
+            filteredPartnerOnly: this.filteredPartnerOnly.length,
+            matchesPage: this.matchesPage,
+            activeTab: this.activeTab
+        });
+        
         this.updatePagedData(true); // Skip keys cache (sera calculé de manière asynchrone en arrière-plan)
         const updatePagedDuration = performance.now() - updatePagedStartTime;
-        if (updatePagedDuration > 1) {
-            console.log('⏱️ [INITFILTERED] updatePagedData:', `${updatePagedDuration.toFixed(2)}ms`);
-        }
+        console.log(`🟢 [INITFILTERED] updatePagedData terminé: ${updatePagedDuration.toFixed(2)}ms`);
+        console.log('🟢 [INITFILTERED] Données paginées initialisées:', {
+            pagedMatches: this.pagedMatches?.length || 0,
+            pagedBoOnly: this.pagedBoOnly?.length || 0,
+            pagedPartnerOnly: this.pagedPartnerOnly?.length || 0,
+            activeTab: this.activeTab,
+            showMatchesList: this.showMatchesList
+        });
+        
+        // Forcer l'affichage immédiat des résultats (sans attendre les calculs de volumes)
+        const forceRenderStartTime = performance.now();
+        console.log('🟢 [INITFILTERED] Forçage du rendu IMMÉDIAT pour affichage (volumes calculés en arrière-plan)...');
+        // Forcer le rendu immédiatement (sans attendre requestAnimationFrame)
+        this.cdr.markForCheck();
+        this.cdr.detectChanges();
+        
+        // Démarrer le calcul asynchrone des volumes en arrière-plan
+        console.log('🟢 [INITFILTERED] Démarrage du calcul asynchrone des volumes...');
+        this.calculateVolumesAsync();
+        
+        // Utiliser requestAnimationFrame pour un rendu supplémentaire après le cycle actuel
+        requestAnimationFrame(() => {
+            this.cdr.markForCheck();
+            this.cdr.detectChanges();
+            const forceRenderDuration = performance.now() - forceRenderStartTime;
+            console.log(`🟢 [INITFILTERED] Rendu forcé terminé: ${forceRenderDuration.toFixed(2)}ms`);
+            console.log('🟢 [INITFILTERED] ============================================');
+        });
         
         const totalInitDuration = performance.now() - startTime;
         console.log('✅ [INITFILTERED] initializeFilteredData terminé:', `${totalInitDuration.toFixed(2)}ms`);
@@ -3880,23 +3996,54 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
      */
     private updateCalculatedProperties(skipPagedDataUpdate: boolean = false): void {
         const updateStartTime = performance.now();
+        console.log('🟣 [UPDATE_CALCULATED] ============================================');
+        console.log('🟣 [UPDATE_CALCULATED] Début updateCalculatedProperties()', `[${new Date().toISOString()}]`);
+        console.log('🟣 [UPDATE_CALCULATED] Paramètres:', {
+            skipPagedDataUpdate,
+            isInitializing: this.isInitializing
+        });
         
+        const step1Start = performance.now();
+        console.log('🟣 [UPDATE_CALCULATED] Étape 1: Calcul des compteurs...');
         this.filteredMatchesCount = this.filteredMatches.length;
         this.filteredBoOnlyCount = this.filteredBoOnly.length;
         this.filteredPartnerOnlyCount = this.filteredPartnerOnly.length;
+        const step1Duration = performance.now() - step1Start;
+        console.log(`🟣 [UPDATE_CALCULATED] Étape 1 terminée: ${step1Duration.toFixed(2)}ms`);
+        console.log('🟣 [UPDATE_CALCULATED] Compteurs:', {
+            filteredMatchesCount: this.filteredMatchesCount,
+            filteredBoOnlyCount: this.filteredBoOnlyCount,
+            filteredPartnerOnlyCount: this.filteredPartnerOnlyCount
+        });
+        
+        const step2Start = performance.now();
+        console.log('🟣 [UPDATE_CALCULATED] Étape 2: Calcul des pages totales...');
         this.totalMatchesPages = Math.max(1, Math.ceil(this.filteredMatchesCount / this.pageSize));
         this.totalBoOnlyPages = Math.max(1, Math.ceil(this.filteredBoOnlyCount / this.pageSize));
         this.totalPartnerOnlyPages = Math.max(1, Math.ceil(this.filteredPartnerOnlyCount / this.pageSize));
+        const step2Duration = performance.now() - step2Start;
+        console.log(`🟣 [UPDATE_CALCULATED] Étape 2 terminée: ${step2Duration.toFixed(2)}ms`);
+        console.log('🟣 [UPDATE_CALCULATED] Pages totales:', {
+            totalMatchesPages: this.totalMatchesPages,
+            totalBoOnlyPages: this.totalBoOnlyPages,
+            totalPartnerOnlyPages: this.totalPartnerOnlyPages,
+            pageSize: this.pageSize
+        });
         
         // Mettre à jour les pages paginées uniquement si demandé (évite les recalculs multiples pendant l'initialisation)
         if (!skipPagedDataUpdate && !this.isInitializing) {
+            const step3Start = performance.now();
+            console.log('🟣 [UPDATE_CALCULATED] Étape 3: Appel updatePagedData()...');
             this.updatePagedData();
+            const step3Duration = performance.now() - step3Start;
+            console.log(`🟣 [UPDATE_CALCULATED] Étape 3 terminée: ${step3Duration.toFixed(2)}ms`);
+        } else {
+            console.log('🟣 [UPDATE_CALCULATED] Étape 3: updatePagedData() ignoré (skipPagedDataUpdate ou isInitializing)');
         }
         
         const updateDuration = performance.now() - updateStartTime;
-        if (updateDuration > 1) {
-            console.log('⏱️ updateCalculatedProperties:', `${updateDuration.toFixed(2)}ms`, skipPagedDataUpdate ? '(sans updatePagedData)' : '');
-        }
+        console.log(`🟣 [UPDATE_CALCULATED] Durée totale: ${updateDuration.toFixed(2)}ms`, skipPagedDataUpdate ? '(sans updatePagedData)' : '');
+        console.log('🟣 [UPDATE_CALCULATED] ============================================');
     }
     
     /**
@@ -3905,11 +4052,59 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
      */
     private updatePagedData(skipKeysCache: boolean = false): void {
         const updateStartTime = performance.now();
+        console.log('🔵 [UPDATE_PAGED_DATA] ============================================');
+        console.log('🔵 [UPDATE_PAGED_DATA] Début updatePagedData()', `[${new Date().toISOString()}]`);
+        console.log('🔵 [UPDATE_PAGED_DATA] Paramètres:', {
+            skipKeysCache,
+            activeTab: this.activeTab,
+            matchesPage: this.matchesPage,
+            boOnlyPage: this.boOnlyPage,
+            partnerOnlyPage: this.partnerOnlyPage,
+            filteredMatchesLength: this.filteredMatches?.length || 0,
+            filteredBoOnlyLength: this.filteredBoOnly?.length || 0,
+            filteredPartnerOnlyLength: this.filteredPartnerOnly?.length || 0
+        });
         
         // Mettre à jour les pages paginées
-        this.pagedMatches = this.getPagedMatches();
-        this.pagedBoOnly = this.getPagedBoOnly();
-        this.pagedPartnerOnly = this.getPagedPartnerOnly();
+        const step1Start = performance.now();
+        console.log('🔵 [UPDATE_PAGED_DATA] Étape 1: Mise à jour des données paginées...');
+        console.log('🔵 [UPDATE_PAGED_DATA] Avant getPagedMatches:', {
+            filteredMatches: this.filteredMatches?.length || 0,
+            matchesPage: this.matchesPage,
+            pageSize: this.pageSize
+        });
+        
+        // Initialiser directement les données paginées pour un affichage immédiat
+        const matchesStart = (this.matchesPage - 1) * this.pageSize;
+        const matchesEnd = matchesStart + this.pageSize;
+        this.pagedMatches = (this.filteredMatches || []).slice(matchesStart, matchesEnd);
+        this.cachedPagedMatches = this.pagedMatches;
+        this.cachedMatchesPage = this.matchesPage;
+        
+        const boOnlyStart = (this.boOnlyPage - 1) * this.pageSize;
+        const boOnlyEnd = boOnlyStart + this.pageSize;
+        this.pagedBoOnly = (this.filteredBoOnly || []).slice(boOnlyStart, boOnlyEnd);
+        this.cachedPagedBoOnly = this.pagedBoOnly;
+        this.cachedBoOnlyPage = this.boOnlyPage;
+        
+        const partnerOnlyStart = (this.partnerOnlyPage - 1) * this.pageSize;
+        const partnerOnlyEnd = partnerOnlyStart + this.pageSize;
+        this.pagedPartnerOnly = (this.filteredPartnerOnly || []).slice(partnerOnlyStart, partnerOnlyEnd);
+        this.cachedPagedPartnerOnly = this.pagedPartnerOnly;
+        this.cachedPartnerOnlyPage = this.partnerOnlyPage;
+        
+        const step1Duration = performance.now() - step1Start;
+        console.log(`🔵 [UPDATE_PAGED_DATA] Étape 1 terminée: ${step1Duration.toFixed(2)}ms`);
+        console.log('🔵 [UPDATE_PAGED_DATA] Données paginées mises à jour DIRECTEMENT:', {
+            pagedMatches: this.pagedMatches?.length || 0,
+            pagedBoOnly: this.pagedBoOnly?.length || 0,
+            pagedPartnerOnly: this.pagedPartnerOnly?.length || 0,
+            showMatchesList: this.showMatchesList,
+            activeTab: this.activeTab,
+            'Slice matches': `${matchesStart}-${matchesEnd}`,
+            'Slice boOnly': `${boOnlyStart}-${boOnlyEnd}`,
+            'Slice partnerOnly': `${partnerOnlyStart}-${partnerOnlyEnd}`
+        });
         
         // Précalculer les clés pour chaque match de la page actuelle (évite les recalculs dans *ngFor)
         // Pour les gros volumes, différer ce calcul pour ne pas bloquer l'UI
@@ -3929,13 +4124,20 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
         }
         
         const totalDuration = performance.now() - updateStartTime;
-        if (totalDuration > 1 && !skipKeysCache) {
-            console.log('⏱️ updatePagedData:', {
-                'Durée totale': `${totalDuration.toFixed(2)}ms`,
-                'Matches paginés': this.pagedMatches.length,
-                'Cache clés différé': skipKeysCache
-            });
-        }
+        console.log(`🔵 [UPDATE_PAGED_DATA] Durée totale: ${totalDuration.toFixed(2)}ms`);
+        console.log('🔵 [UPDATE_PAGED_DATA] ============================================');
+        
+        // Forcer le rendu IMMÉDIAT après la mise à jour des données paginées (sans attendre requestAnimationFrame)
+        console.log('🔵 [UPDATE_PAGED_DATA] Forçage du rendu IMMÉDIAT...');
+        this.cdr.markForCheck();
+        this.cdr.detectChanges(); // Forcer immédiatement le rendu
+        
+        // Utiliser requestAnimationFrame pour un rendu supplémentaire après le cycle actuel
+        requestAnimationFrame(() => {
+            this.cdr.markForCheck();
+            this.cdr.detectChanges();
+            console.log('🔵 [UPDATE_PAGED_DATA] Rendu supplémentaire effectué (dans RAF)');
+        });
     }
     
     /**
@@ -3945,42 +4147,55 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
      */
     private async updateKeysCache(): Promise<void> {
         // Vérifier si une mise à jour est déjà en cours
-        if (this.isUpdatingKeysCache && this.keysCacheUpdatePromise) {
-            console.log('⏳ [KEYS_CACHE] Mise à jour déjà en cours, attente...');
-            return this.keysCacheUpdatePromise;
+        if (this.isUpdatingKeysCache) {
+            return;
         }
         
+        this.isUpdatingKeysCache = true;
         const cacheStartTime = performance.now();
-        this.matchKeysCache.clear(); // Nettoyer le cache à chaque changement de page
         
+        // Ne pas nettoyer le cache immédiatement, seulement les entrées obsolètes
         const matchesToCache = this.pagedMatches;
         
         // Si pas de matches, ne rien faire
         if (matchesToCache.length === 0) {
+            this.isUpdatingKeysCache = false;
             return;
         }
         
-        const CACHE_CHUNK_SIZE = 10; // Traiter 10 matches à la fois
+        // Nettoyer uniquement les entrées qui ne sont plus dans la page actuelle
+        const currentMatchKeys = new Set(matchesToCache.map(m => m.key || JSON.stringify(m.boData)));
+        for (const [key] of this.matchKeysCache) {
+            if (!currentMatchKeys.has(key)) {
+                this.matchKeysCache.delete(key);
+            }
+        }
         
-        for (let i = 0; i < matchesToCache.length; i += CACHE_CHUNK_SIZE) {
-            const chunk = matchesToCache.slice(i, i + CACHE_CHUNK_SIZE);
-            
-            // Traiter le chunk
-            for (const match of chunk) {
-                const matchKey = match.key || JSON.stringify(match.boData);
-                if (!this.matchKeysCache.has(matchKey)) {
-                    this.matchKeysCache.set(matchKey, {
-                        boKeys: this.getBoKeys(match),
-                        partnerKeys: this.getPartnerKeys(match),
-                        hasDifferences: this.hasDifferences(match)
-                    });
+        const CACHE_CHUNK_SIZE = 5; // Réduire la taille du chunk pour plus de réactivité
+        
+        try {
+            for (let i = 0; i < matchesToCache.length; i += CACHE_CHUNK_SIZE) {
+                const chunk = matchesToCache.slice(i, i + CACHE_CHUNK_SIZE);
+                
+                // Traiter le chunk
+                for (const match of chunk) {
+                    const matchKey = match.key || JSON.stringify(match.boData);
+                    if (!this.matchKeysCache.has(matchKey)) {
+                        this.matchKeysCache.set(matchKey, {
+                            boKeys: this.getBoKeys(match),
+                            partnerKeys: this.getPartnerKeys(match),
+                            hasDifferences: this.hasDifferences(match)
+                        });
+                    }
+                }
+                
+                // Yield au navigateur après chaque chunk pour maintenir la réactivité
+                if (i + CACHE_CHUNK_SIZE < matchesToCache.length) {
+                    await this.yieldToBrowser();
                 }
             }
-            
-            // Yield au navigateur après chaque chunk (sauf le dernier)
-            if (i + CACHE_CHUNK_SIZE < matchesToCache.length) {
-                await this.yieldToBrowser();
-            }
+        } finally {
+            this.isUpdatingKeysCache = false;
         }
         
         const cacheDuration = performance.now() - cacheStartTime;
@@ -3993,7 +4208,9 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
         
         // Marquer pour détection de changement uniquement si nécessaire
         if (matchesToCache.length > 0) {
-            this.cdr.markForCheck();
+            requestAnimationFrame(() => {
+                this.cdr.markForCheck();
+            });
         }
     }
     
@@ -4032,8 +4249,15 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
         }
         
         const start = (this.matchesPage - 1) * this.pageSize;
-        this.cachedPagedMatches = this.filteredMatches.slice(start, start + this.pageSize);
+        const end = start + this.pageSize;
+        this.cachedPagedMatches = (this.filteredMatches || []).slice(start, end);
         this.cachedMatchesPage = this.matchesPage;
+        
+        // Log pour debug
+        if (this.cachedPagedMatches.length > 0) {
+            console.log(`🔵 [GET_PAGED_MATCHES] Page ${this.matchesPage}: ${this.cachedPagedMatches.length} matches (de ${start} à ${end})`);
+        }
+        
         return this.cachedPagedMatches;
     }
 
@@ -5089,26 +5313,96 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
 
     nextPage(type: 'matches' | 'boOnly' | 'partnerOnly') {
         const pageStartTime = performance.now();
+        console.log(`🟢 [NEXT_PAGE] ============================================`);
+        console.log(`🟢 [NEXT_PAGE] nextPage(${type}) appelé`, `[${new Date().toISOString()}]`);
+        console.log(`🟢 [NEXT_PAGE] Page actuelle:`, {
+            matches: this.matchesPage,
+            boOnly: this.boOnlyPage,
+            partnerOnly: this.partnerOnlyPage
+        });
+        console.log(`🟢 [NEXT_PAGE] Total pages:`, {
+            matches: this.getTotalPages('matches'),
+            boOnly: this.getTotalPages('boOnly'),
+            partnerOnly: this.getTotalPages('partnerOnly')
+        });
+        console.log(`🟢 [NEXT_PAGE] Données disponibles:`, {
+            filteredMatches: this.filteredMatches?.length || 0,
+            filteredBoOnly: this.filteredBoOnly?.length || 0,
+            filteredPartnerOnly: this.filteredPartnerOnly?.length || 0
+        });
+        
         if (type === 'matches' && this.matchesPage < this.getTotalPages('matches')) {
+            const step1Start = performance.now();
+            console.log(`🟢 [NEXT_PAGE] Étape 1: Incrémentation page matches...`);
             this.matchesPage++;
             this.cachedPagedMatches = null; // Invalider le cache
-            this.updatePagedData(); // Mettre à jour les données paginées
+            const step1Duration = performance.now() - step1Start;
+            console.log(`🟢 [NEXT_PAGE] Étape 1 terminée: ${step1Duration.toFixed(2)}ms (page: ${this.matchesPage})`);
+            
+            const step2Start = performance.now();
+            console.log(`🟢 [NEXT_PAGE] Étape 2: Calcul slice sur filteredMatches...`);
+            console.log(`🟢 [NEXT_PAGE] filteredMatches.length: ${this.filteredMatches?.length || 0}`);
+            console.log(`🟢 [NEXT_PAGE] pageSize: ${this.pageSize}`);
+            const start = (this.matchesPage - 1) * this.pageSize;
+            const end = start + this.pageSize;
+            console.log(`🟢 [NEXT_PAGE] Slice de ${start} à ${end}`);
+            this.pagedMatches = (this.filteredMatches || []).slice(start, end);
+            this.cachedPagedMatches = this.pagedMatches;
+            this.cachedMatchesPage = this.matchesPage;
+            const step2Duration = performance.now() - step2Start;
+            console.log(`🟢 [NEXT_PAGE] Étape 2 terminée: ${step2Duration.toFixed(2)}ms (${this.pagedMatches.length} éléments)`);
+            
+            const step3Start = performance.now();
+            console.log(`🟢 [NEXT_PAGE] Étape 3: Planification updateKeysCache...`);
+            requestAnimationFrame(() => {
+                const cacheStart = performance.now();
+                console.log(`🟢 [NEXT_PAGE] updateKeysCache démarré (dans RAF)`);
+                this.updateKeysCache();
+                const cacheDuration = performance.now() - cacheStart;
+                console.log(`🟢 [NEXT_PAGE] updateKeysCache terminé: ${cacheDuration.toFixed(2)}ms`);
+            });
+            const step3Duration = performance.now() - step3Start;
+            console.log(`🟢 [NEXT_PAGE] Étape 3 terminée: ${step3Duration.toFixed(2)}ms (planifié)`);
         }
         if (type === 'boOnly' && this.boOnlyPage < this.getTotalPages('boOnly')) {
+            const step1Start = performance.now();
+            console.log(`🟢 [NEXT_PAGE] Étape 1: Incrémentation page boOnly...`);
             this.boOnlyPage++;
-            this.cachedPagedBoOnly = null; // Invalider le cache
-            this.pagedBoOnly = this.getPagedBoOnly();
+            this.cachedPagedBoOnly = null;
+            const start = (this.boOnlyPage - 1) * this.pageSize;
+            this.pagedBoOnly = (this.filteredBoOnly || []).slice(start, start + this.pageSize);
+            this.cachedPagedBoOnly = this.pagedBoOnly;
+            this.cachedBoOnlyPage = this.boOnlyPage;
+            const step1Duration = performance.now() - step1Start;
+            console.log(`🟢 [NEXT_PAGE] boOnly terminé: ${step1Duration.toFixed(2)}ms`);
         }
         if (type === 'partnerOnly' && this.partnerOnlyPage < this.getTotalPages('partnerOnly')) {
+            const step1Start = performance.now();
+            console.log(`🟢 [NEXT_PAGE] Étape 1: Incrémentation page partnerOnly...`);
             this.partnerOnlyPage++;
-            this.cachedPagedPartnerOnly = null; // Invalider le cache
-            this.pagedPartnerOnly = this.getPagedPartnerOnly();
+            this.cachedPagedPartnerOnly = null;
+            const start = (this.partnerOnlyPage - 1) * this.pageSize;
+            this.pagedPartnerOnly = (this.filteredPartnerOnly || []).slice(start, start + this.pageSize);
+            this.cachedPagedPartnerOnly = this.pagedPartnerOnly;
+            this.cachedPartnerOnlyPage = this.partnerOnlyPage;
+            const step1Duration = performance.now() - step1Start;
+            console.log(`🟢 [NEXT_PAGE] partnerOnly terminé: ${step1Duration.toFixed(2)}ms`);
         }
         const pageDuration = performance.now() - pageStartTime;
-        if (pageDuration > 1) {
-            console.log(`⏱️ nextPage(${type}):`, `${pageDuration.toFixed(2)}ms`);
-        }
-        this.cdr.markForCheck();
+        console.log(`🟢 [NEXT_PAGE] Durée totale nextPage(${type}): ${pageDuration.toFixed(2)}ms`);
+        
+        const step4Start = performance.now();
+        console.log(`🟢 [NEXT_PAGE] Étape 4: Planification markForCheck...`);
+        requestAnimationFrame(() => {
+            const markStart = performance.now();
+            console.log(`🟢 [NEXT_PAGE] markForCheck appelé (dans RAF)`);
+            this.cdr.markForCheck();
+            const markDuration = performance.now() - markStart;
+            console.log(`🟢 [NEXT_PAGE] markForCheck terminé: ${markDuration.toFixed(2)}ms`);
+        });
+        const step4Duration = performance.now() - step4Start;
+        console.log(`🟢 [NEXT_PAGE] Étape 4 terminée: ${step4Duration.toFixed(2)}ms (planifié)`);
+        console.log(`🟢 [NEXT_PAGE] ============================================`);
     }
 
     prevPage(type: 'matches' | 'boOnly' | 'partnerOnly') {
@@ -5116,23 +5410,43 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
         if (type === 'matches' && this.matchesPage > 1) {
             this.matchesPage--;
             this.cachedPagedMatches = null; // Invalider le cache
-            this.updatePagedData(); // Mettre à jour les données paginées
+            // Mettre à jour directement les données paginées SANS attendre de filtrage
+            // Utiliser directement filteredMatches qui est déjà filtré, pas besoin de refiltrer
+            const start = (this.matchesPage - 1) * this.pageSize;
+            this.pagedMatches = (this.filteredMatches || []).slice(start, start + this.pageSize);
+            this.cachedPagedMatches = this.pagedMatches;
+            this.cachedMatchesPage = this.matchesPage;
+            // Différer la mise à jour du cache des clés pour ne pas bloquer l'UI
+            requestAnimationFrame(() => {
+                this.updateKeysCache();
+            });
         }
         if (type === 'boOnly' && this.boOnlyPage > 1) {
             this.boOnlyPage--;
             this.cachedPagedBoOnly = null; // Invalider le cache
-            this.pagedBoOnly = this.getPagedBoOnly();
+            // Mettre à jour directement sans attendre de filtrage
+            const start = (this.boOnlyPage - 1) * this.pageSize;
+            this.pagedBoOnly = (this.filteredBoOnly || []).slice(start, start + this.pageSize);
+            this.cachedPagedBoOnly = this.pagedBoOnly;
+            this.cachedBoOnlyPage = this.boOnlyPage;
         }
         if (type === 'partnerOnly' && this.partnerOnlyPage > 1) {
             this.partnerOnlyPage--;
             this.cachedPagedPartnerOnly = null; // Invalider le cache
-            this.pagedPartnerOnly = this.getPagedPartnerOnly();
+            // Mettre à jour directement sans attendre de filtrage
+            const start = (this.partnerOnlyPage - 1) * this.pageSize;
+            this.pagedPartnerOnly = (this.filteredPartnerOnly || []).slice(start, start + this.pageSize);
+            this.cachedPagedPartnerOnly = this.pagedPartnerOnly;
+            this.cachedPartnerOnlyPage = this.partnerOnlyPage;
         }
         const pageDuration = performance.now() - pageStartTime;
         if (pageDuration > 1) {
             console.log(`⏱️ prevPage(${type}):`, `${pageDuration.toFixed(2)}ms`);
         }
-        this.cdr.markForCheck();
+        // Utiliser requestAnimationFrame pour un rendu plus fluide
+        requestAnimationFrame(() => {
+            this.cdr.markForCheck();
+        });
     }
 
     getBoKeys(match: Match): string[] {
@@ -6272,22 +6586,191 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
         });
     }
 
+    private calculateTotalVolumeCallCount = 0;
     calculateTotalVolume(type: 'bo' | 'partner'): number {
+        this.calculateTotalVolumeCallCount++;
+        const startTime = performance.now();
+        if (this.calculateTotalVolumeCallCount <= 5) {
+            console.log(`🔴 [TEMPLATE] calculateTotalVolume(${type}) appelé (${this.calculateTotalVolumeCallCount} fois)`, `[${new Date().toISOString()}]`);
+        }
+        
+        // Utiliser le cache si disponible pour éviter les recalculs coûteux
+        if (type === 'bo' && this.cachedTotalVolumeBo !== null) {
+            const duration = performance.now() - startTime;
+            if (this.calculateTotalVolumeCallCount <= 5) {
+                console.log(`🔴 [TEMPLATE] calculateTotalVolume(${type}) depuis cache: ${duration.toFixed(2)}ms (résultat: ${this.cachedTotalVolumeBo})`);
+            }
+            return this.cachedTotalVolumeBo;
+        }
+        
+        if (type === 'partner' && this.cachedTotalVolumePartner !== null) {
+            const duration = performance.now() - startTime;
+            if (this.calculateTotalVolumeCallCount <= 5) {
+                console.log(`🔴 [TEMPLATE] calculateTotalVolume(${type}) depuis cache: ${duration.toFixed(2)}ms (résultat: ${this.cachedTotalVolumePartner})`);
+            }
+            return this.cachedTotalVolumePartner;
+        }
+        
+        // Si pas de cache, retourner 0 temporairement et calculer en arrière-plan
+        if (type === 'partner' && !this.isCalculatingVolumes) {
+            console.log(`🔴 [TEMPLATE] calculateTotalVolume(${type}) - Calcul différé en arrière-plan pour ne pas bloquer l'affichage`);
+            this.calculateVolumesAsync();
+            return 0; // Retourner 0 temporairement pendant le calcul
+        }
+        
+        let result: number;
         if (type === 'partner') {
             // Pour le volume partenaire, inclure les correspondances ET les écarts partenaire
             const matchesVolume = this.calculateTotalVolumePartnerMatches();
             const partnerOnlyVolume = this.calculateTotalVolumePartnerOnly();
-            return matchesVolume + partnerOnlyVolume;
+            result = matchesVolume + partnerOnlyVolume;
+            this.cachedTotalVolumePartner = result; // Mettre en cache
+        } else {
+            // Pour le volume BO, utiliser la logique originale
+            if (!this.filteredMatches || this.filteredMatches.length === 0) {
+                result = 0;
+            } else {
+                const amountColumn = this.findAmountColumn(type);
+                if (!amountColumn) {
+                    result = 0;
+                } else {
+                    result = this.filteredMatches.reduce((total, match) => {
+                        const amount = parseFloat(match.boData[amountColumn] || '0');
+                        return total + (isNaN(amount) ? 0 : amount);
+                    }, 0);
+                }
+            }
+            this.cachedTotalVolumeBo = result; // Mettre en cache
         }
         
-        // Pour le volume BO, utiliser la logique originale
-        if (!this.filteredMatches || this.filteredMatches.length === 0) return 0;
-        const amountColumn = this.findAmountColumn(type);
-        if (!amountColumn) return 0;
-        return this.filteredMatches.reduce((total, match) => {
-            const amount = parseFloat(match.boData[amountColumn] || '0');
-            return total + (isNaN(amount) ? 0 : amount);
+        const duration = performance.now() - startTime;
+        if (duration > 1 || this.calculateTotalVolumeCallCount <= 5) {
+            console.log(`🔴 [TEMPLATE] calculateTotalVolume(${type}) terminé: ${duration.toFixed(2)}ms (résultat: ${result})`);
+        }
+        return result;
+    }
+    
+    /**
+     * Calcule les volumes de manière asynchrone en arrière-plan pour ne pas bloquer l'affichage
+     */
+    private calculateVolumesAsync(): void {
+        if (this.isCalculatingVolumes) {
+            return; // Déjà en cours
+        }
+        
+        this.isCalculatingVolumes = true;
+        console.log('🟡 [VOLUMES] Début calcul asynchrone des volumes en arrière-plan...');
+        
+        // Calculer en arrière-plan avec yield au navigateur
+        setTimeout(async () => {
+            const startTime = performance.now();
+            
+            // Calculer le volume BO (rapide)
+            const boStart = performance.now();
+            if (!this.filteredMatches || this.filteredMatches.length === 0) {
+                this.cachedTotalVolumeBo = 0;
+            } else {
+                const amountColumn = this.findAmountColumn('bo');
+                if (amountColumn) {
+                    this.cachedTotalVolumeBo = this.filteredMatches.reduce((total, match) => {
+                        const amount = parseFloat(match.boData[amountColumn] || '0');
+                        return total + (isNaN(amount) ? 0 : amount);
+                    }, 0);
+                } else {
+                    this.cachedTotalVolumeBo = 0;
+                }
+            }
+            const boDuration = performance.now() - boStart;
+            console.log(`🟡 [VOLUMES] Volume BO calculé: ${boDuration.toFixed(2)}ms (${this.cachedTotalVolumeBo})`);
+            
+            // Calculer le volume Partner (lent - par chunks)
+            const partnerStart = performance.now();
+            const matchesVolume = await this.calculateTotalVolumePartnerMatchesAsync();
+            const partnerOnlyVolume = this.calculateTotalVolumePartnerOnly();
+            this.cachedTotalVolumePartner = matchesVolume + partnerOnlyVolume;
+            const partnerDuration = performance.now() - partnerStart;
+            console.log(`🟡 [VOLUMES] Volume Partner calculé: ${partnerDuration.toFixed(2)}ms (${this.cachedTotalVolumePartner})`);
+            
+            // Calculer la différence
+            this.cachedVolumeDifference = (this.cachedTotalVolumeBo || 0) - (this.cachedTotalVolumePartner || 0);
+            
+            // Mettre à jour les propriétés publiques pour le template
+            this.totalVolumeBo = this.cachedTotalVolumeBo || 0;
+            this.totalVolumePartner = this.cachedTotalVolumePartner || 0;
+            this.volumeDifference = this.cachedVolumeDifference;
+            
+            const totalDuration = performance.now() - startTime;
+            console.log(`🟡 [VOLUMES] Calcul des volumes terminé: ${totalDuration.toFixed(2)}ms`);
+            console.log('🟡 [VOLUMES] Résultats:', {
+                bo: this.cachedTotalVolumeBo,
+                partner: this.cachedTotalVolumePartner,
+                difference: this.cachedVolumeDifference
+            });
+            
+            this.isCalculatingVolumes = false;
+            
+            // Forcer le rendu pour mettre à jour l'affichage avec les valeurs calculées
+            this.cdr.markForCheck();
+            this.cdr.detectChanges();
         }, 0);
+    }
+    
+    /**
+     * Calcule le volume partenaire des correspondances de manière asynchrone par chunks
+     */
+    private async calculateTotalVolumePartnerMatchesAsync(): Promise<number> {
+        if (!this.filteredMatches || this.filteredMatches.length === 0) return 0;
+        
+        let total = 0;
+        const CHUNK_SIZE = 1000; // Traiter 1000 matches à la fois
+        
+        for (let i = 0; i < this.filteredMatches.length; i += CHUNK_SIZE) {
+            const chunk = this.filteredMatches.slice(i, i + CHUNK_SIZE);
+            
+            for (const match of chunk) {
+                const partnerData = match.partnerData || {};
+                let recordTotal = 0;
+                
+                // Liste exhaustive des colonnes qui peuvent contenir des montants
+                const possibleAmountColumns = [
+                    'amount', 'Amount', 'AMOUNT',
+                    'montant', 'Montant', 'MONTANT',
+                    'debit', 'Debit', 'DEBIT', 'débit', 'Débit', 'DÉBIT',
+                    'credit', 'Credit', 'CREDIT', 'crédit', 'Crédit', 'CRÉDIT',
+                    'valeur', 'Valeur', 'VALEUR',
+                    'value', 'Value', 'VALUE',
+                    'somme', 'Somme', 'SOMME',
+                    'sum', 'Sum', 'SUM',
+                    'total', 'Total', 'TOTAL',
+                    'montant_credit', 'montant_debit', 'montant_débit', 'montant_crédit',
+                    'montant_operation', 'montant_opération', 'montant_transaction',
+                    'montant_credit_operation', 'montant_débit_operation',
+                    'external_amount', 'External amount', 'EXTERNAL_AMOUNT',
+                    'externalAmount', 'ExternalAmount',
+                    'balance', 'Balance', 'BALANCE'
+                ];
+                
+                // Parcourir toutes les colonnes et sommer tous les montants trouvés en valeur absolue
+                for (const column of Object.keys(partnerData)) {
+                    const lowerColumn = column.toLowerCase();
+                    if (possibleAmountColumns.some(name => lowerColumn.includes(name.toLowerCase()))) {
+                        const amount = parseFloat(partnerData[column] || '0');
+                        if (!isNaN(amount)) {
+                            recordTotal += Math.abs(amount);
+                        }
+                    }
+                }
+                
+                total += recordTotal;
+            }
+            
+            // Yield au navigateur après chaque chunk pour ne pas bloquer
+            if (i + CHUNK_SIZE < this.filteredMatches.length) {
+                await this.yieldToBrowser();
+            }
+        }
+        
+        return total;
     }
 
     /**
@@ -6361,8 +6844,38 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
         return null;
     }
 
+    private calculateVolumeDifferenceCallCount = 0;
     calculateVolumeDifference(): number {
-        return this.calculateTotalVolume('bo') - this.calculateTotalVolume('partner');
+        this.calculateVolumeDifferenceCallCount++;
+        const startTime = performance.now();
+        if (this.calculateVolumeDifferenceCallCount <= 5) {
+            console.log(`🔴 [TEMPLATE] calculateVolumeDifference() appelé (${this.calculateVolumeDifferenceCallCount} fois)`, `[${new Date().toISOString()}]`);
+        }
+        
+        // Utiliser le cache si disponible
+        if (this.cachedVolumeDifference !== null) {
+            const duration = performance.now() - startTime;
+            if (this.calculateVolumeDifferenceCallCount <= 5) {
+                console.log(`🔴 [TEMPLATE] calculateVolumeDifference() depuis cache: ${duration.toFixed(2)}ms (résultat: ${this.cachedVolumeDifference})`);
+            }
+            return this.cachedVolumeDifference;
+        }
+        
+        // Si pas de cache, calculer (mais cela déclenchera le calcul asynchrone)
+        const boVolume = this.calculateTotalVolume('bo');
+        const partnerVolume = this.calculateTotalVolume('partner');
+        const result = boVolume - partnerVolume;
+        
+        // Mettre en cache si les deux volumes sont calculés
+        if (this.cachedTotalVolumeBo !== null && this.cachedTotalVolumePartner !== null) {
+            this.cachedVolumeDifference = result;
+        }
+        
+        const duration = performance.now() - startTime;
+        if (duration > 1 || this.calculateVolumeDifferenceCallCount <= 5) {
+            console.log(`🔴 [TEMPLATE] calculateVolumeDifference() terminé: ${duration.toFixed(2)}ms (résultat: ${result})`);
+        }
+        return result;
     }
 
     calculateTotalVolumeBoOnly(): number {
@@ -6761,10 +7274,21 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
         return JSON.stringify(summary) + '_' + this.agencyPage + '_' + this.agencyPageSize;
     }
 
+    private getPagedAgencySummaryCallCount = 0;
     getPagedAgencySummary(): Array<{agency: string; service: string; date: string; country: string; totalVolume: number; recordCount: number}> {
+        this.getPagedAgencySummaryCallCount++;
+        const startTime = performance.now();
+        if (this.getPagedAgencySummaryCallCount <= 5) {
+            console.log(`🔴 [TEMPLATE] getPagedAgencySummary() appelé (${this.getPagedAgencySummaryCallCount} fois)`, `[${new Date().toISOString()}]`);
+        }
+        
         const currentHash = this.getAgencySummaryHash();
         
         if (this.cachedPagedAgencySummary && this.lastAgencySummaryHash === currentHash) {
+            const duration = performance.now() - startTime;
+            if (this.getPagedAgencySummaryCallCount <= 5) {
+                console.log(`🔴 [TEMPLATE] getPagedAgencySummary() (cache): ${duration.toFixed(2)}ms`);
+            }
             return this.cachedPagedAgencySummary;
         }
         
@@ -6773,6 +7297,10 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
         this.cachedPagedAgencySummary = summary.slice(start, start + this.agencyPageSize);
         this.lastAgencySummaryHash = currentHash;
         
+        const duration = performance.now() - startTime;
+        if (duration > 1 || this.getPagedAgencySummaryCallCount <= 5) {
+            console.log(`🔴 [TEMPLATE] getPagedAgencySummary() terminé: ${duration.toFixed(2)}ms (${this.cachedPagedAgencySummary.length} éléments)`);
+        }
         return this.cachedPagedAgencySummary;
     }
 
@@ -6800,19 +7328,61 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
         return this.cachedTotalRecords;
     }
 
+    private getTotalTransactionsCallCount = 0;
     getTotalTransactions(): number {
+        // Utiliser le cache si disponible
+        if (this.cachedTotalTransactions !== null) {
+            return this.cachedTotalTransactions;
+        }
+        
+        this.getTotalTransactionsCallCount++;
+        const startTime = performance.now();
+        if (this.getTotalTransactionsCallCount <= 5) {
+            console.log(`🔴 [TEMPLATE] getTotalTransactions() appelé (${this.getTotalTransactionsCallCount} fois)`, `[${new Date().toISOString()}]`);
+        }
+        
         // Nombre de transactions = correspondances + écarts BO
-        // Utiliser les données filtrées directement pour garantir la cohérence
-        const matches = this.filteredMatches?.length || 0;
-        const boMismatches = this.getFilteredBoOnly()?.length || 0;
-        return matches + boMismatches;
+        // CORRECTION: Utiliser directement les données de la réponse au lieu des versions filtrées
+        // pour garantir que le nombre total de transactions est toujours correct
+        const matches = this.response?.matches?.length || 0;
+        const boMismatches = this.response?.boOnly?.length || 0;
+        const result = matches + boMismatches;
+        
+        // Mettre en cache et mettre à jour la propriété publique
+        this.cachedTotalTransactions = result;
+        this.totalTransactions = result;
+        
+        const duration = performance.now() - startTime;
+        if (duration > 0.1 || this.getTotalTransactionsCallCount <= 5) {
+            console.log(`🔴 [TEMPLATE] getTotalTransactions() terminé: ${duration.toFixed(2)}ms (résultat: ${result}, matches: ${matches}, boOnly: ${boMismatches})`);
+        }
+        return result;
     }
 
+    private getMatchRateCallCount = 0;
     getMatchRate(): number {
+        this.getMatchRateCallCount++;
+        const startTime = performance.now();
+        if (this.getMatchRateCallCount <= 5) {
+            console.log(`🔴 [TEMPLATE] getMatchRate() appelé (${this.getMatchRateCallCount} fois)`, `[${new Date().toISOString()}]`);
+        }
+        
         const total = this.getTotalTransactions();
-        if (total === 0) return 0;
+        if (total === 0) {
+            const duration = performance.now() - startTime;
+            if (this.getMatchRateCallCount <= 5) {
+                console.log(`🔴 [TEMPLATE] getMatchRate() terminé: ${duration.toFixed(2)}ms (résultat: 0)`);
+            }
+            return 0;
+        }
         const matches = this.filteredMatches.length || 0;
-        return (matches / total) * 100;
+        const result = (matches / total) * 100;
+        
+        const duration = performance.now() - startTime;
+        if (duration > 0.1 || this.getMatchRateCallCount <= 5) {
+            console.log(`🔴 [TEMPLATE] getMatchRate() terminé: ${duration.toFixed(2)}ms (résultat: ${result.toFixed(2)}%)`);
+        }
+        return result;
     }
 
     getTotalVolumeAll(): number {
@@ -6869,56 +7439,74 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
     // Filtre utilitaire pour ignorer les lignes où PAYS = 'CM'
     private getFilteredMatches(): Match[] {
         const startTime = performance.now();
+        console.log('🟡 [GET_FILTERED_MATCHES] ============================================');
+        console.log('🟡 [GET_FILTERED_MATCHES] Début getFilteredMatches()', `[${new Date().toISOString()}]`);
+        
+        const step1Start = performance.now();
         const matches = this.response?.matches || [];
         const totalMatches = matches.length;
-        
+        const step1Duration = performance.now() - step1Start;
+        console.log(`🟡 [GET_FILTERED_MATCHES] Étape 1: Récupération matches: ${step1Duration.toFixed(2)}ms (${totalMatches} matches)`);
+
         if (!this.selectedService) {
-            console.log('⏱️ getFilteredMatches (pas de filtre):', `${(performance.now() - startTime).toFixed(2)}ms`, `(${totalMatches} matches)`);
+            const totalDuration = performance.now() - startTime;
+            console.log(`🟡 [GET_FILTERED_MATCHES] Pas de filtre service, retour direct: ${totalDuration.toFixed(2)}ms`);
+            console.log('🟡 [GET_FILTERED_MATCHES] ============================================');
             return matches;
         }
-        
-        const filterStartTime = performance.now();
+
+        const step2Start = performance.now();
+        console.log(`🟡 [GET_FILTERED_MATCHES] Étape 2: Filtrage par service "${this.selectedService}"...`);
+        console.log(`🟡 [GET_FILTERED_MATCHES] Filtrage de ${totalMatches} matches...`);
         const filtered = matches.filter(match => {
             const boService = match.boData['Service'] || '';
             return boService === this.selectedService;
         });
-        const filterDuration = performance.now() - filterStartTime;
+        const step2Duration = performance.now() - step2Start;
         const totalDuration = performance.now() - startTime;
-        
-        console.log('⏱️ getFilteredMatches:', {
+
+        console.log(`🟡 [GET_FILTERED_MATCHES] Étape 2 terminée: ${step2Duration.toFixed(2)}ms`);
+        console.log('🟡 [GET_FILTERED_MATCHES] Résultats:', {
             'Durée totale': `${totalDuration.toFixed(2)}ms`,
-            'Durée filtrage': `${filterDuration.toFixed(2)}ms`,
+            'Durée filtrage': `${step2Duration.toFixed(2)}ms`,
             'Total matches': totalMatches,
             'Matches filtrés': filtered.length,
-            'Service sélectionné': this.selectedService
+            'Service sélectionné': this.selectedService,
+            'Taux de filtrage': totalMatches > 0 ? `${((filtered.length / totalMatches) * 100).toFixed(2)}%` : '0%'
         });
-        
+        console.log('🟡 [GET_FILTERED_MATCHES] ============================================');
+
         return filtered;
     }
 
+    private getFilteredBoOnlyCallCount = 0;
     private getFilteredBoOnly(): Record<string, string>[] {
+        this.getFilteredBoOnlyCallCount++;
         const startTime = performance.now();
+        console.log(`🟠 [TEMPLATE] getFilteredBoOnly() appelé (${this.getFilteredBoOnlyCallCount} fois)`, `[${new Date().toISOString()}]`);
+        console.trace('🟠 [TEMPLATE] Stack trace getFilteredBoOnly()'); // Pour voir d'où vient l'appel
+        
         // Pour TRXBO/OPPART, utiliser mismatches au lieu de boOnly
         const mismatches = this.response?.mismatches || [];
         const boOnly = this.response?.boOnly || [];
-        
+
         const combineStartTime = performance.now();
         // Combiner mismatches et boOnly pour l'affichage des écarts
         const allMismatches = [...mismatches, ...boOnly];
         const combineDuration = performance.now() - combineStartTime;
-        
+
         if (!this.selectedService) {
-            console.log('⏱️ getFilteredBoOnly (pas de filtre):', `${(performance.now() - startTime).toFixed(2)}ms`, `(${allMismatches.length} éléments)`);
+            const totalDuration = performance.now() - startTime;
+            console.log(`🟠 [TEMPLATE] getFilteredBoOnly (pas de filtre): ${totalDuration.toFixed(2)}ms (${allMismatches.length} éléments)`);
             return allMismatches;
         }
-        
+
         const filterStartTime = performance.now();
         const filtered = allMismatches.filter(record => (record['Service'] || '') === this.selectedService);
         const filterDuration = performance.now() - filterStartTime;
         const totalDuration = performance.now() - startTime;
         
-        console.log('⏱️ getFilteredBoOnly:', {
-            'Durée totale': `${totalDuration.toFixed(2)}ms`,
+        console.log(`🟠 [TEMPLATE] getFilteredBoOnly (avec filtre): ${totalDuration.toFixed(2)}ms`, {
             'Durée combinaison': `${combineDuration.toFixed(2)}ms`,
             'Durée filtrage': `${filterDuration.toFixed(2)}ms`,
             'Total mismatches': mismatches.length,
@@ -6927,7 +7515,7 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
             'Éléments filtrés': filtered.length,
             'Service sélectionné': this.selectedService
         });
-        
+
         return filtered;
     }
 

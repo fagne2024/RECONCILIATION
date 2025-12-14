@@ -4712,22 +4712,61 @@ export class FileUploadComponent implements OnDestroy {
      * Ferme le popup de progression de réconciliation
      */
     closeReconciliationProgress(): void {
-        console.log('❌ Fermeture du popup de progression demandée');
+        const clickStartTime = performance.now();
+        console.log('🔵 [CLIC_SUIVANT] ============================================');
+        console.log('🔵 [CLIC_SUIVANT] Clic sur "Suivant" détecté', `[${new Date().toISOString()}]`);
+        console.log('🔵 [CLIC_SUIVANT] Temps depuis chargement page:', `${(clickStartTime - (window as any).pageLoadTime || 0).toFixed(2)}ms`);
+        
+        const step1Start = performance.now();
+        console.log('🔵 [CLIC_SUIVANT] Étape 1: Fermeture du popup...');
         this.showReconciliationProgress = false;
+        const step1Duration = performance.now() - step1Start;
+        console.log(`🔵 [CLIC_SUIVANT] Étape 1 terminée: ${step1Duration.toFixed(2)}ms`);
         
         // Nettoyer l'abonnement si toujours actif
+        const step2Start = performance.now();
+        console.log('🔵 [CLIC_SUIVANT] Étape 2: Nettoyage des abonnements...');
         if (this.reconciliationProgressSubscription) {
             this.reconciliationProgressSubscription.unsubscribe();
+            console.log('🔵 [CLIC_SUIVANT] Abonnement nettoyé');
         }
+        const step2Duration = performance.now() - step2Start;
+        console.log(`🔵 [CLIC_SUIVANT] Étape 2 terminée: ${step2Duration.toFixed(2)}ms`);
         
         // Si la réconciliation est terminée (step à 100%), naviguer vers les résultats
+        const step3Start = performance.now();
+        console.log('🔵 [CLIC_SUIVANT] Étape 3: Vérification conditions navigation...');
+        console.log('🔵 [CLIC_SUIVANT] Pourcentage:', this.reconciliationProgress.percentage);
+        console.log('🔵 [CLIC_SUIVANT] Résultats disponibles:', !!this.appStateService.getReconciliationResults());
+        
         if (this.reconciliationProgress.percentage === 100 && 
             this.appStateService.getReconciliationResults()) {
-            console.log('🚀 Navigation vers les résultats après fermeture du popup...');
-            this.router.navigate(['/results']);
+            const navStart = performance.now();
+            console.log('🔵 [CLIC_SUIVANT] Étape 4: Début navigation vers /results...');
+            console.log('🔵 [CLIC_SUIVANT] Router.navigate appelé');
+            this.router.navigate(['/results']).then(() => {
+                const navDuration = performance.now() - navStart;
+                console.log(`🔵 [CLIC_SUIVANT] Navigation réussie: ${navDuration.toFixed(2)}ms`);
+                console.log('🔵 [CLIC_SUIVANT] ============================================');
+            }).catch((error) => {
+                const navDuration = performance.now() - navStart;
+                console.error(`🔵 [CLIC_SUIVANT] Erreur navigation: ${navDuration.toFixed(2)}ms`, error);
+                console.log('🔵 [CLIC_SUIVANT] ============================================');
+            });
+        } else {
+            console.log('🔵 [CLIC_SUIVANT] Conditions non remplies, pas de navigation');
         }
+        const step3Duration = performance.now() - step3Start;
+        console.log(`🔵 [CLIC_SUIVANT] Étape 3 terminée: ${step3Duration.toFixed(2)}ms`);
         
+        const step4Start = performance.now();
+        console.log('🔵 [CLIC_SUIVANT] Étape 5: detectChanges()...');
         this.cd.detectChanges();
+        const step4Duration = performance.now() - step4Start;
+        console.log(`🔵 [CLIC_SUIVANT] Étape 5 terminée: ${step4Duration.toFixed(2)}ms`);
+        
+        const totalDuration = performance.now() - clickStartTime;
+        console.log(`🔵 [CLIC_SUIVANT] Durée totale closeReconciliationProgress: ${totalDuration.toFixed(2)}ms`);
     }
 
     ngOnDestroy(): void {
