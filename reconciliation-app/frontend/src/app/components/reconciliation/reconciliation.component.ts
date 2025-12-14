@@ -134,23 +134,50 @@ export class ReconciliationComponent implements OnInit, OnDestroy {
 
     /**
      * Démarre le suivi de progression pour un job
+     * Optimisé pour fonctionner à distance avec latence réseau
      */
     private startProgressTracking(jobId: string): void {
         console.log('📊 Démarrage du suivi de progression pour le job:', jobId);
         
         let isCompleted = false; // Flag pour éviter les appels répétés
-        let retryCount = 0;
-        const maxRetries = 3;
+        let consecutiveErrors = 0; // Compteur d'erreurs consécutives
+        let pollInterval = 3000; // Intervalle initial de 3 secondes (plus fréquent au début)
+        let pollIntervalId: any = null;
+        const maxConsecutiveErrors = 5; // Tolérer plus d'erreurs consécutives avant d'abandonner
+        const basePollInterval = 3000; // 3 secondes de base
+        const maxPollInterval = 15000; // Maximum 15 secondes entre les polls
+        const maxTotalTime = 3600000; // 60 minutes maximum pour la réconciliation complète
+        const startTime = Date.now();
         
-        // Polling de la progression toutes les 5 secondes avec retry limité (plus long pour permettre le traitement)
-        const progressInterval = setInterval(() => {
+        // Fonction de polling avec retry exponentiel adaptatif
+        const pollProgress = () => {
             if (isCompleted) {
-                clearInterval(progressInterval);
+                return;
+            }
+            
+            // Vérifier le timeout global
+            const elapsedTime = Date.now() - startTime;
+            if (elapsedTime > maxTotalTime) {
+                console.log('⏰ Timeout global atteint (60 minutes), arrêt du polling');
+                isCompleted = true;
+                if (pollIntervalId) {
+                    clearInterval(pollIntervalId);
+                }
+                this.showProgress = false;
+                this.isLoading = false;
+                this.error = `Délai d'attente dépassé pour la réconciliation (60 minutes). Le processus prend plus de temps que prévu. Veuillez réessayer avec des fichiers plus petits ou contacter le support technique.`;
+                this.cd.detectChanges();
                 return;
             }
             
             this.reconciliationService.getJobProgress(jobId).subscribe({
                 next: (progress: any) => {
+                    // Réinitialiser le compteur d'erreurs en cas de succès
+                    consecutiveErrors = 0;
+                    
+                    // Réduire l'intervalle de polling après un succès (backoff inverse)
+                    pollInterval = Math.max(basePollInterval, pollInterval * 0.8);
+                    
                     console.log('📊 Progression reçue:', progress);
                     console.log('📊 Progress value:', progress.progress, 'Step:', progress.step);
                     
@@ -159,14 +186,17 @@ export class ReconciliationComponent implements OnInit, OnDestroy {
                         this.progressStep = progress.step || 'Traitement en cours...';
                         
                         // Si la réconciliation est terminée ou a échoué
-                        if (progress.progress >= 100 || progress.step.includes('Échec')) {
+                        if (progress.progress >= 100 || progress.step.includes('Échec') || progress.step.includes('Terminé')) {
                             console.log('✅ Réconciliation terminée, arrêt du polling');
                             isCompleted = true;
-                            clearInterval(progressInterval);
+                            if (pollIntervalId) {
+                                clearInterval(pollIntervalId);
+                            }
                             this.showProgress = false;
                             
                             if (progress.step.includes('Échec')) {
                                 this.error = progress.step;
+                                this.isLoading = false;
                             } else {
                                 console.log('📋 Chargement des résultats...');
                                 this.isLoading = false; // Important : mettre isLoading à false
@@ -179,121 +209,172 @@ export class ReconciliationComponent implements OnInit, OnDestroy {
                     }
                 },
                 error: (error) => {
-                    console.error('❌ Erreur lors du suivi de progression:', error);
+                    consecutiveErrors++;
+                    console.error(`❌ Erreur lors du suivi de progression (${consecutiveErrors}/${maxConsecutiveErrors}):`, error);
                     
                     // Si c'est une erreur 404, c'est normal pendant le traitement initial
                     if (error.status === 404) {
                         console.log('⚠️ Job en cours de traitement (404 normal), continuation du polling...');
-                        // Ne pas incrémenter retryCount pour les 404
+                        // Ne pas compter les 404 comme erreurs
+                        consecutiveErrors = Math.max(0, consecutiveErrors - 1);
                         this.cd.detectChanges();
                         return;
                     }
                     
-                    retryCount++;
+                    // Augmenter l'intervalle de polling en cas d'erreur (backoff exponentiel)
+                    pollInterval = Math.min(maxPollInterval, pollInterval * 1.5);
+                    console.log(`⏱️ Intervalle de polling ajusté à ${pollInterval}ms après erreur`);
                     
-                    if (retryCount >= maxRetries) {
-                        console.log('⚠️ Nombre maximum de tentatives atteint, arrêt du processus');
+                    // Si trop d'erreurs consécutives, arrêter le polling
+                    if (consecutiveErrors >= maxConsecutiveErrors) {
+                        console.log(`⚠️ ${maxConsecutiveErrors} erreurs consécutives atteintes, arrêt du processus`);
                         isCompleted = true;
-                        clearInterval(progressInterval);
+                        if (pollIntervalId) {
+                            clearInterval(pollIntervalId);
+                        }
                         this.showProgress = false;
                         this.isLoading = false;
                         
-                        // Afficher un message d'erreur clair au lieu de continuer avec des données factices
-                        this.error = `Impossible de suivre la progression de la réconciliation. 
-                            Erreur: ${error.status || 'Unknown'} - ${error.message || 'Unknown error'}. 
-                            Veuillez contacter le support technique.`;
+                        // Message d'erreur adaptatif selon le type d'erreur
+                        let errorMessage = `Impossible de suivre la progression de la réconciliation après ${maxConsecutiveErrors} tentatives. `;
+                        if (error.status === 0 || error.message?.includes('network') || error.message?.includes('Network')) {
+                            errorMessage += `Problème de connexion réseau détecté. Vérifiez votre connexion et réessayez. `;
+                        } else if (error.status >= 500) {
+                            errorMessage += `Erreur serveur (${error.status}). Le serveur peut être temporairement indisponible. `;
+                        } else {
+                            errorMessage += `Erreur: ${error.status || 'Unknown'} - ${error.message || 'Unknown error'}. `;
+                        }
+                        errorMessage += `Veuillez contacter le support technique si le problème persiste.`;
+                        this.error = errorMessage;
                         this.cd.detectChanges();
                     } else {
-                        console.log(`⚠️ Tentative ${retryCount}/${maxRetries} échouée, nouvelle tentative dans 5 secondes`);
+                        console.log(`⚠️ Erreur ${consecutiveErrors}/${maxConsecutiveErrors}, nouvelle tentative dans ${pollInterval}ms`);
                         this.cd.detectChanges();
                     }
                 }
             });
-        }, 5000); // Polling toutes les 5 secondes
+        };
         
-        // Timeout de 60 secondes pour permettre le traitement asynchrone
-        setTimeout(() => {
-            if (!isCompleted) {
-                console.log('⏰ Timeout atteint, arrêt du processus');
-                isCompleted = true;
-                clearInterval(progressInterval);
-                this.showProgress = false;
-                this.isLoading = false;
-                
-                // Afficher un message d'erreur de timeout
-                this.error = `Délai d'attente dépassé pour la réconciliation. 
-                    Le processus prend plus de temps que prévu. 
-                    Veuillez réessayer ou contacter le support technique.`;
-                this.cd.detectChanges();
-            }
-        }, 60000);
+        // Premier appel immédiat
+        pollProgress();
+        
+        // Démarrer le polling avec intervalle adaptatif
+        pollIntervalId = setInterval(() => {
+            pollProgress();
+        }, pollInterval);
         
         // Nettoyer l'intervalle lors de la destruction du composant
         this.destroy$.subscribe({
             next: () => {
-                clearInterval(progressInterval);
+                if (pollIntervalId) {
+                    clearInterval(pollIntervalId);
+                }
             }
         });
     }
 
     /**
      * Charge les résultats de la réconciliation
+     * Optimisé pour les connexions distantes avec retry automatique
      */
     private loadReconciliationResults(jobId: string): void {
         console.log('📋 Chargement des résultats pour le job:', jobId);
         
-        this.reconciliationService.getJobResults(jobId).subscribe({
-            next: (results: any) => {
-                console.log('📊 Résultats reçus du backend:', results);
-                
-                // Extraire les résultats de la réponse
-                let reconciliationResult;
-                if (results && results.result) {
-                    reconciliationResult = results.result;
-                } else if (results && results.matches !== undefined) {
-                    reconciliationResult = results;
-                } else {
-                    console.error('❌ Aucun résultat valide reçu du backend');
-                    this.error = 'Aucun résultat de réconciliation valide reçu du serveur';
+        let retryCount = 0;
+        const maxRetries = 3;
+        
+        const attemptLoad = () => {
+            this.reconciliationService.getJobResults(jobId).subscribe({
+                next: (results: any) => {
+                    console.log('📊 Résultats reçus du backend:', results);
+                    
+                    // Extraire les résultats de la réponse
+                    let reconciliationResult;
+                    if (results && results.result) {
+                        reconciliationResult = results.result;
+                    } else if (results && results.matches !== undefined) {
+                        reconciliationResult = results;
+                    } else {
+                        console.error('❌ Aucun résultat valide reçu du backend');
+                        this.error = 'Aucun résultat de réconciliation valide reçu du serveur';
+                        this.isLoading = false;
+                        this.cd.detectChanges();
+                        return;
+                    }
+                    
+                    // Traitement universel des résultats (magique et manuel)
+                    this.reconciliationResponse = {
+                        totalMatches: reconciliationResult.totalMatches || 0,
+                        totalMismatches: reconciliationResult.totalMismatches || 0,
+                        totalBoOnly: reconciliationResult.totalBoOnly || 0,
+                        totalPartnerOnly: reconciliationResult.totalPartnerOnly || 0,
+                        totalBoRecords: reconciliationResult.totalBoRecords || 0,
+                        totalPartnerRecords: reconciliationResult.totalPartnerRecords || 0,
+                        matches: reconciliationResult.matches || [],
+                        mismatches: reconciliationResult.mismatches || [],
+                        boOnly: reconciliationResult.boOnly || [],
+                        partnerOnly: reconciliationResult.partnerOnly || []
+                    };
+                    
+                    this.executionTime = reconciliationResult.executionTime || 0;
+                    this.processedRecords = reconciliationResult.processedRecords || 0;
+                    
+                    console.log('✅ Résultats chargés:', this.reconciliationResponse);
+                    
+                    // Stocker les résultats dans AppStateService
+                    this.appStateService.setReconciliationResults(this.reconciliationResponse);
+                    
+                    // Rediriger vers la page des résultats
+                    this.router.navigate(['/results'], { queryParams: { jobId } });
+                    
+                    this.cd.detectChanges();
+                },
+                error: (error) => {
+                    console.error(`❌ Erreur lors du chargement des résultats (tentative ${retryCount + 1}/${maxRetries + 1}):`, error);
+                    
+                    retryCount++;
+                    
+                    // Si c'est une erreur 404 et qu'on n'a pas encore atteint le max, retry après un délai
+                    if (error.status === 404 && retryCount <= maxRetries) {
+                        const delay = Math.min(2000 * Math.pow(2, retryCount - 1), 8000); // Backoff exponentiel : 2s, 4s, 8s
+                        console.log(`⏳ Résultats pas encore disponibles (404), retry dans ${delay}ms...`);
+                        setTimeout(() => {
+                            attemptLoad();
+                        }, delay);
+                        return;
+                    }
+                    
+                    // Pour les autres erreurs réseau, retry aussi
+                    if ((error.status === 0 || error.status >= 500) && retryCount <= maxRetries) {
+                        const delay = Math.min(2000 * Math.pow(2, retryCount - 1), 8000);
+                        console.log(`⏳ Erreur réseau (${error.status}), retry dans ${delay}ms...`);
+                        setTimeout(() => {
+                            attemptLoad();
+                        }, delay);
+                        return;
+                    }
+                    
+                    // Après maxRetries tentatives, afficher l'erreur
+                    let errorMessage = `Impossible de récupérer les résultats de la réconciliation après ${retryCount} tentative(s). `;
+                    if (error.status === 0 || error.message?.includes('network') || error.message?.includes('Network')) {
+                        errorMessage += `Problème de connexion réseau détecté. Vérifiez votre connexion et réessayez. `;
+                    } else if (error.status === 404) {
+                        errorMessage += `Les résultats ne sont pas encore disponibles. Le job est peut-être toujours en cours de traitement. `;
+                    } else if (error.status >= 500) {
+                        errorMessage += `Erreur serveur (${error.status}). Le serveur peut être temporairement indisponible. `;
+                    } else {
+                        errorMessage += `Erreur: ${error.status || 'Unknown'} - ${error.message || 'Unknown error'}. `;
+                    }
+                    errorMessage += `Veuillez réessayer dans quelques instants ou contacter le support technique.`;
+                    this.error = errorMessage;
                     this.isLoading = false;
                     this.cd.detectChanges();
-                    return;
                 }
-                
-                // Traitement universel des résultats (magique et manuel)
-                        this.reconciliationResponse = {
-                            totalMatches: reconciliationResult.totalMatches || 0,
-                            totalMismatches: reconciliationResult.totalMismatches || 0,
-                            totalBoOnly: reconciliationResult.totalBoOnly || 0,
-                            totalPartnerOnly: reconciliationResult.totalPartnerOnly || 0,
-                            totalBoRecords: reconciliationResult.totalBoRecords || 0,
-                            totalPartnerRecords: reconciliationResult.totalPartnerRecords || 0,
-                            matches: reconciliationResult.matches || [],
-                            mismatches: reconciliationResult.mismatches || [],
-                            boOnly: reconciliationResult.boOnly || [],
-                            partnerOnly: reconciliationResult.partnerOnly || []
-                        };
-                        
-                        this.executionTime = reconciliationResult.executionTime || 0;
-                        this.processedRecords = reconciliationResult.processedRecords || 0;
-                        
-                        console.log('✅ Résultats chargés:', this.reconciliationResponse);
-                        
-                        // Stocker les résultats dans AppStateService
-                        this.appStateService.setReconciliationResults(this.reconciliationResponse);
-                        
-                // Rediriger vers la page des résultats
-                this.router.navigate(['/results'], { queryParams: { jobId } });
-                
-                this.cd.detectChanges();
-            },
-            error: (error) => {
-                console.error('❌ Erreur lors du chargement des résultats:', error);
-                this.error = `Impossible de récupérer les résultats de la réconciliation. Erreur: ${error.status} - ${error.message}`;
-                this.isLoading = false;
-                this.cd.detectChanges();
-            }
-        });
+            });
+        };
+        
+        // Démarrer le chargement
+        attemptLoad();
     }
 
 

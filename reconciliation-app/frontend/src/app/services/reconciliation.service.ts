@@ -1,7 +1,7 @@
 import { Injectable, OnInit, OnDestroy } from '@angular/core';
 import { HttpClient, HttpErrorResponse, HttpHeaders, HttpParams } from '@angular/common/http';
-import { Observable, throwError, BehaviorSubject, Subject, timer, from, timeout } from 'rxjs';
-import { catchError, tap, map, finalize, retry, takeUntil, switchMap } from 'rxjs/operators';
+import { Observable, throwError, BehaviorSubject, Subject, timer, from, timeout, of } from 'rxjs';
+import { catchError, tap, map, finalize, retry, takeUntil, switchMap, retryWhen, delay, concatMap } from 'rxjs/operators';
 import { ReconciliationRequest } from '../models/reconciliation-request.model';
 import { ReconciliationResponse } from '../models/reconciliation-response.model';
 import { AppStateService } from './app-state.service';
@@ -623,13 +623,36 @@ export class ReconciliationService implements OnInit, OnDestroy {
 
     /**
      * Charge uniquement le résumé des résultats (sans les données détaillées)
-     * Optimisé pour les fichiers volumineux
+     * Optimisé pour les fichiers volumineux et les connexions distantes
      */
     getJobResultsSummary(jobId: string): Observable<ReconciliationResponse> {
         console.log('📋 Chargement du résumé pour le job:', jobId);
         
+        // Timeout adapté pour les connexions distantes (60 secondes pour les gros fichiers)
+        const RESULTS_TIMEOUT = 60000;
+        
         return this.http.get<ReconciliationResponse>(`${this.apiUrl}/results/summary?sessionId=${jobId}`)
             .pipe(
+                timeout(RESULTS_TIMEOUT),
+                // Retry avec backoff exponentiel pour les erreurs réseau
+                retryWhen(errors =>
+                    errors.pipe(
+                        concatMap((error, index) => {
+                            const retryAttempt = index + 1;
+                            // Ne pas retry les erreurs 404 (résultats non trouvés) ou 4xx (erreurs client)
+                            if (error.status === 404 || (error.status >= 400 && error.status < 500)) {
+                                return throwError(error);
+                            }
+                            // Maximum 3 tentatives avec backoff exponentiel : 2s, 4s, 8s
+                            if (retryAttempt > 3) {
+                                return throwError(error);
+                            }
+                            const delayTime = Math.min(2000 * Math.pow(2, retryAttempt - 1), 8000);
+                            console.log(`⏳ Retry getJobResultsSummary (tentative ${retryAttempt}/3) dans ${delayTime}ms...`);
+                            return timer(delayTime);
+                        })
+                    )
+                ),
                 tap(results => {
                     console.log('✅ Résumé obtenu:', results);
                     
