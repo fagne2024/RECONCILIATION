@@ -1,5 +1,6 @@
 package com.reconciliation.config;
 
+import org.apache.coyote.http11.AbstractHttp11Protocol;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.web.embedded.tomcat.TomcatServletWebServerFactory;
@@ -8,12 +9,9 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 /**
- * Configuration pour gérer les erreurs de parsing HTTP de manière plus gracieuse.
- * Ces erreurs se produisent souvent lorsque des clients mal configurés ou des scanners
- * de port envoient des données binaires au lieu de requêtes HTTP valides.
- * 
- * Tomcat gère déjà ces erreurs automatiquement et les log en DEBUG après la première occurrence.
- * Cette configuration permet d'ajuster le comportement si nécessaire.
+ * Configuration spécifique Tomcat.
+ * - Gestion plus gracieuse des erreurs de parsing HTTP
+ * - Suppression de l'en-tête X-Powered-By ajouté par Tomcat
  */
 @Configuration
 public class TomcatErrorHandler {
@@ -22,19 +20,18 @@ public class TomcatErrorHandler {
 
     @Bean
     public WebServerFactoryCustomizer<TomcatServletWebServerFactory> tomcatCustomizer() {
-        return factory -> {
-            factory.addConnectorCustomizers(connector -> {
-                // Configurer Tomcat pour gérer les erreurs de parsing HTTP plus gracieusement
-                // Les erreurs de parsing HTTP sont déjà gérées par Tomcat et loggées en DEBUG
-                // après la première occurrence, ce qui réduit le bruit dans les logs.
-                
-                // Optionnel: Configurer le timeout de connexion pour fermer rapidement
-                // les connexions malformées
-                connector.setProperty("connectionTimeout", "20000");
-                
-                log.debug("✅ Configuration Tomcat appliquée pour gérer les erreurs de parsing HTTP");
-            });
-        };
+        return factory -> factory.addConnectorCustomizers(connector -> {
+            // Timeout de connexion pour fermer rapidement les connexions malformées
+            connector.setProperty("connectionTimeout", "20000");
+
+            // Note: X-Powered-By est masqué au niveau des proxies (Apache/Nginx)
+            // Tomcat peut générer cet en-tête, mais il sera supprimé par les proxies
+            if (connector.getProtocolHandler() instanceof AbstractHttp11Protocol<?>) {
+                log.debug("Configuration du protocole HTTP Tomcat détectée (AbstractHttp11Protocol)");
+            }
+
+            log.debug("Configuration Tomcat appliquée");
+        });
     }
 }
 

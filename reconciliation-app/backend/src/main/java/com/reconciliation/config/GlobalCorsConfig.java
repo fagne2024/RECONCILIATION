@@ -42,20 +42,25 @@ public class GlobalCorsConfig {
     @Bean
     public FilterRegistrationBean<OncePerRequestFilter> privateNetworkAccessFilter() {
         FilterRegistrationBean<OncePerRequestFilter> registration = new FilterRegistrationBean<>();
-        registration.setFilter(new OncePerRequestFilter() {
-            @Override
-            protected void doFilterInternal(@NonNull HttpServletRequest request,
-                                            @NonNull HttpServletResponse response,
-                                            @NonNull FilterChain filterChain) throws ServletException, IOException {
-                if ("OPTIONS".equalsIgnoreCase(request.getMethod())
-                        && request.getHeader("Access-Control-Request-Private-Network") != null) {
-                    response.setHeader("Access-Control-Allow-Private-Network", "true");
-                }
-                filterChain.doFilter(request, response);
-            }
-        });
+        registration.setFilter(new PrivateNetworkAccessFilter());
         registration.setOrder(Ordered.HIGHEST_PRECEDENCE);
         return registration;
+    }
+
+    /**
+     * Filtre pour gérer l'accès au réseau privé (CORS)
+     */
+    private static class PrivateNetworkAccessFilter extends OncePerRequestFilter {
+        @Override
+        protected void doFilterInternal(@NonNull HttpServletRequest request,
+                                        @NonNull HttpServletResponse response,
+                                        @NonNull FilterChain filterChain) throws ServletException, IOException {
+            if ("OPTIONS".equalsIgnoreCase(request.getMethod())
+                    && request.getHeader("Access-Control-Request-Private-Network") != null) {
+                response.setHeader("Access-Control-Allow-Private-Network", "true");
+            }
+            filterChain.doFilter(request, response);
+        }
     }
 }
 

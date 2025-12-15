@@ -1,0 +1,291 @@
+package com.reconciliation.filter;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
+import jakarta.servlet.FilterChain;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.lang.NonNull;
+import org.springframework.stereotype.Component;
+import org.springframework.web.filter.OncePerRequestFilter;
+
+import java.io.IOException;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.concurrent.TimeUnit;
+
+/**
+ * Filtre de limitation de débit (Rate Limiting) pour protéger l'API
+ * contre les abus et les attaques par déni de service (DDoS)
+ * 
+ * Utilise l'algorithme de fenêtre glissante avec Caffeine Cache
+ */
+@Component
+public class RateLimitingFilter extends OncePerRequestFilter {
+
+    // Cache pour stocker les compteurs de requêtes par clé (IP ou utilisateur)
+    private final Cache<String, RequestCounter> requestCache;
+
+    @Value("${rate.limit.enabled:true}")
+    private boolean rateLimitEnabled;
+
+    @Value("${rate.limit.requests-per-minute:60}")
+    private int requestsPerMinute;
+
+    @Value("${rate.limit.requests-per-hour:1000}")
+    private int requestsPerHour;
+
+    @Value("${rate.limit.by-ip:true}")
+    private boolean limitByIp;
+
+    // Chemins exclus du rate limiting
+    private static final String[] EXCLUDED_PATHS = {
+        "/actuator/health",
+        "/health",
+        "/error"
+    };
+
+    public RateLimitingFilter() {
+        // Initialiser le cache avec expiration automatique
+        this.requestCache = Caffeine.newBuilder()
+                .maximumSize(10000) // Maximum 10000 entrées (IPs ou utilisateurs)
+                .expireAfterWrite(1, TimeUnit.HOURS) // Expirer après 1 heure d'inactivité
+                .recordStats()
+                .build();
+    }
+
+    @Override
+    protected void doFilterInternal(
+            @NonNull HttpServletRequest request,
+            @NonNull HttpServletResponse response,
+            @NonNull FilterChain filterChain
+    ) throws ServletException, IOException {
+
+        // Si le rate limiting est désactivé, continuer
+        if (!rateLimitEnabled) {
+            filterChain.doFilter(request, response);
+            return;
+        }
+
+        // Ignorer les chemins exclus
+        String path = request.getRequestURI();
+        if (isExcludedPath(path)) {
+            filterChain.doFilter(request, response);
+            return;
+        }
+
+        // Ignorer les requêtes OPTIONS (CORS preflight)
+        if ("OPTIONS".equalsIgnoreCase(request.getMethod())) {
+            filterChain.doFilter(request, response);
+            return;
+        }
+
+        // Obtenir la clé de rate limiting (IP ou utilisateur)
+        String rateLimitKey = getRateLimitKey(request);
+
+        // Vérifier les limites
+        if (!checkRateLimit(rateLimitKey, response)) {
+            return; // La réponse d'erreur a déjà été envoyée
+        }
+
+        // Continuer avec la chaîne de filtres
+        filterChain.doFilter(request, response);
+    }
+
+    /**
+     * Vérifie si le chemin est exclu du rate limiting
+     */
+    private boolean isExcludedPath(String path) {
+        for (String excludedPath : EXCLUDED_PATHS) {
+            if (path.equals(excludedPath) || path.startsWith(excludedPath + "/")) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Obtient la clé de rate limiting (IP ou utilisateur)
+     */
+    private String getRateLimitKey(HttpServletRequest request) {
+        if (limitByIp) {
+            // Utiliser l'adresse IP
+            String ip = getClientIpAddress(request);
+            return "ip:" + ip;
+        } else {
+            // Utiliser l'utilisateur authentifié (si disponible)
+            // Pour l'instant, on utilise l'IP comme fallback
+            String ip = getClientIpAddress(request);
+            return "ip:" + ip;
+        }
+    }
+
+    /**
+     * Récupère l'adresse IP réelle du client
+     */
+    private String getClientIpAddress(HttpServletRequest request) {
+        String ip = request.getHeader("X-Forwarded-For");
+        if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
+            ip = request.getHeader("X-Real-IP");
+        }
+        if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
+            ip = request.getHeader("Proxy-Client-IP");
+        }
+        if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
+            ip = request.getHeader("WL-Proxy-Client-IP");
+        }
+        if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
+            ip = request.getRemoteAddr();
+        }
+        
+        // Si plusieurs IPs (proxies), prendre la première
+        if (ip != null && ip.contains(",")) {
+            ip = ip.split(",")[0].trim();
+        }
+        
+        return ip != null ? ip : "unknown";
+    }
+
+    /**
+     * Vérifie si la requête respecte les limites de débit
+     * Retourne true si la requête peut continuer, false sinon
+     */
+    private boolean checkRateLimit(String key, HttpServletResponse response) throws IOException {
+        RequestCounter counter = requestCache.get(key, k -> new RequestCounter());
+
+        long currentTime = System.currentTimeMillis();
+        
+        // Nettoyer les anciennes entrées
+        counter.cleanup(currentTime);
+
+        // Vérifier la limite par minute
+        if (counter.getRequestsInLastMinute(currentTime) >= requestsPerMinute) {
+            sendRateLimitError(response, "Trop de requêtes par minute", requestsPerMinute, "minute");
+            return false;
+        }
+
+        // Vérifier la limite par heure
+        if (counter.getRequestsInLastHour(currentTime) >= requestsPerHour) {
+            sendRateLimitError(response, "Trop de requêtes par heure", requestsPerHour, "heure");
+            return false;
+        }
+
+        // Enregistrer la requête
+        counter.addRequest(currentTime);
+
+        // Ajouter les en-têtes de rate limiting
+        addRateLimitHeaders(response, counter, currentTime);
+
+        return true;
+    }
+
+    /**
+     * Ajoute les en-têtes de rate limiting à la réponse
+     */
+    private void addRateLimitHeaders(HttpServletResponse response, RequestCounter counter, long currentTime) {
+        int remainingPerMinute = Math.max(0, requestsPerMinute - counter.getRequestsInLastMinute(currentTime));
+        int remainingPerHour = Math.max(0, requestsPerHour - counter.getRequestsInLastHour(currentTime));
+        
+        response.setHeader("X-RateLimit-Limit-PerMinute", String.valueOf(requestsPerMinute));
+        response.setHeader("X-RateLimit-Remaining-PerMinute", String.valueOf(remainingPerMinute));
+        response.setHeader("X-RateLimit-Limit-PerHour", String.valueOf(requestsPerHour));
+        response.setHeader("X-RateLimit-Remaining-PerHour", String.valueOf(remainingPerHour));
+        
+        // Calculer le temps de réinitialisation
+        long resetTimeMinute = counter.getResetTimeForMinute(currentTime);
+        long resetTimeHour = counter.getResetTimeForHour(currentTime);
+        
+        response.setHeader("X-RateLimit-Reset-Minute", String.valueOf(resetTimeMinute));
+        response.setHeader("X-RateLimit-Reset-Hour", String.valueOf(resetTimeHour));
+    }
+
+    /**
+     * Envoie une réponse d'erreur de rate limiting
+     */
+    private void sendRateLimitError(HttpServletResponse response, String message, int limit, String period) throws IOException {
+        response.setStatus(HttpStatus.TOO_MANY_REQUESTS.value());
+        response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+        response.setCharacterEncoding("UTF-8");
+        
+        Map<String, Object> errorResponse = new HashMap<>();
+        errorResponse.put("error", "Rate Limit Exceeded");
+        errorResponse.put("message", message + ". Limite: " + limit + " requêtes par " + period);
+        errorResponse.put("status", HttpStatus.TOO_MANY_REQUESTS.value());
+        errorResponse.put("limit", limit);
+        errorResponse.put("period", period);
+        
+        ObjectMapper mapper = new ObjectMapper();
+        response.getWriter().write(mapper.writeValueAsString(errorResponse));
+    }
+
+    /**
+     * Classe interne pour compter les requêtes dans une fenêtre glissante
+     */
+    private static class RequestCounter {
+        private final java.util.concurrent.ConcurrentLinkedQueue<Long> requests = new java.util.concurrent.ConcurrentLinkedQueue<>();
+
+        /**
+         * Ajoute une requête au compteur
+         */
+        public void addRequest(long timestamp) {
+            requests.offer(timestamp);
+        }
+
+        /**
+         * Nettoie les requêtes expirées
+         */
+        public void cleanup(long currentTime) {
+            long oneHourAgo = currentTime - TimeUnit.HOURS.toMillis(1);
+            requests.removeIf(timestamp -> timestamp < oneHourAgo);
+        }
+
+        /**
+         * Retourne le nombre de requêtes dans la dernière minute
+         */
+        public int getRequestsInLastMinute(long currentTime) {
+            long oneMinuteAgo = currentTime - TimeUnit.MINUTES.toMillis(1);
+            return (int) requests.stream()
+                    .filter(timestamp -> timestamp >= oneMinuteAgo)
+                    .count();
+        }
+
+        /**
+         * Retourne le nombre de requêtes dans la dernière heure
+         */
+        public int getRequestsInLastHour(long currentTime) {
+            long oneHourAgo = currentTime - TimeUnit.HOURS.toMillis(1);
+            return (int) requests.stream()
+                    .filter(timestamp -> timestamp >= oneHourAgo)
+                    .count();
+        }
+
+        /**
+         * Retourne le temps de réinitialisation pour la limite par minute
+         */
+        public long getResetTimeForMinute(long currentTime) {
+            long oneMinuteAgo = currentTime - TimeUnit.MINUTES.toMillis(1);
+            Long oldestInMinute = requests.stream()
+                    .filter(timestamp -> timestamp >= oneMinuteAgo)
+                    .min(Long::compareTo)
+                    .orElse(currentTime);
+            return oldestInMinute + TimeUnit.MINUTES.toMillis(1);
+        }
+
+        /**
+         * Retourne le temps de réinitialisation pour la limite par heure
+         */
+        public long getResetTimeForHour(long currentTime) {
+            long oneHourAgo = currentTime - TimeUnit.HOURS.toMillis(1);
+            Long oldestInHour = requests.stream()
+                    .filter(timestamp -> timestamp >= oneHourAgo)
+                    .min(Long::compareTo)
+                    .orElse(currentTime);
+            return oldestInHour + TimeUnit.HOURS.toMillis(1);
+        }
+    }
+}
