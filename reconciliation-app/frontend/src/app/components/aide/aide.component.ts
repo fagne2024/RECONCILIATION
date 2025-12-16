@@ -56,11 +56,12 @@ export class AideComponent implements OnInit {
       route: '/users'
     },
     {
-      title: 'Support',
+      title: 'Guide',
       description: 'Obtenez de l\'aide et contactez notre équipe de support pour toute question',
       icon: 'fas fa-headset',
       tag: '24/7',
-      tagColor: 'red'
+      tagColor: 'red',
+      route: '/guide-utilisation'
     }
   ];
 

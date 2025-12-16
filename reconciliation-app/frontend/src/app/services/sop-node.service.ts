@@ -30,11 +30,16 @@ export interface SopNodeResponse {
 })
 export class SopNodeService {
   private apiUrl = '/api/sop-nodes';
+  private guideApiUrl = '/api/guide-nodes';
 
   constructor(private http: HttpClient) {}
 
   getStructure(): Observable<SopStructureResponse> {
     return this.http.get<SopStructureResponse>(`${this.apiUrl}/structure`);
+  }
+
+  getGuideStructure(): Observable<SopStructureResponse> {
+    return this.http.get<SopStructureResponse>(`${this.guideApiUrl}/structure`);
   }
 
   createNode(nodeId: string, label: string, parentNodeId?: string, displayOrder?: number): Observable<SopNodeResponse> {
@@ -81,6 +86,51 @@ export class SopNodeService {
   deleteNode(nodeId: string): Observable<SopNodeResponse> {
     const params = new HttpParams().set('nodeId', nodeId);
     return this.http.delete<SopNodeResponse>(`${this.apiUrl}/delete`, { params });
+  }
+
+  // Méthodes pour les guides
+  createGuideNode(nodeId: string, label: string, parentNodeId?: string, displayOrder?: number): Observable<SopNodeResponse> {
+    let params = new HttpParams()
+      .set('nodeId', nodeId)
+      .set('label', label);
+    
+    if (parentNodeId) {
+      params = params.set('parentNodeId', parentNodeId);
+    }
+    if (displayOrder !== undefined) {
+      params = params.set('displayOrder', displayOrder.toString());
+    }
+    
+    return this.http.post<SopNodeResponse>(`${this.guideApiUrl}/create`, null, { params });
+  }
+
+  updateGuideNode(nodeId: string, label?: string, route?: string, description?: string): Observable<SopNodeResponse> {
+    let params = new HttpParams().set('nodeId', nodeId);
+    
+    if (label) {
+      params = params.set('label', label);
+    }
+    if (route) {
+      params = params.set('route', route);
+    }
+    if (description) {
+      params = params.set('description', description);
+    }
+    
+    return this.http.put<SopNodeResponse>(`${this.guideApiUrl}/update`, null, { params }).pipe(
+      catchError((error) => {
+        if (error.status === 404) {
+          console.warn('PUT échoué avec 404, tentative avec POST...');
+          return this.http.post<SopNodeResponse>(`${this.guideApiUrl}/update`, null, { params });
+        }
+        throw error;
+      })
+    );
+  }
+
+  deleteGuideNode(nodeId: string): Observable<SopNodeResponse> {
+    const params = new HttpParams().set('nodeId', nodeId);
+    return this.http.delete<SopNodeResponse>(`${this.guideApiUrl}/delete`, { params });
   }
 }
 

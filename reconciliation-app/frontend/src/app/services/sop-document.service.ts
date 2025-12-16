@@ -24,6 +24,7 @@ export interface SopDocumentUploadResponse {
 })
 export class SopDocumentService {
   private apiUrl = '/api/sop-documents';
+  private guideApiUrl = '/api/guide-documents';
 
   constructor(private http: HttpClient) {}
 
@@ -77,6 +78,59 @@ export class SopDocumentService {
       .set('nodeId', nodeId)
       .set('optionType', optionType);
     return this.http.delete<{ success: boolean; message: string; error?: string }>(`${this.apiUrl}/delete`, { params });
+  }
+
+  // Méthodes pour les guides
+  checkGuideDocumentExists(nodeId: string, optionType: string): Observable<{ exists: boolean }> {
+    const params = new HttpParams()
+      .set('nodeId', nodeId)
+      .set('optionType', optionType);
+    return this.http.get<{ exists: boolean }>(`${this.guideApiUrl}/exists`, { params });
+  }
+
+  getGuideDocumentContent(nodeId: string, optionType: string): Observable<SopDocumentResponse> {
+    const params = new HttpParams()
+      .set('nodeId', nodeId)
+      .set('optionType', optionType);
+    return this.http.get<SopDocumentResponse>(`${this.guideApiUrl}/content`, { params });
+  }
+
+  uploadGuideDocument(file: File, nodeId: string, optionType: string, extractedText?: string): Observable<SopDocumentUploadResponse> {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('nodeId', nodeId);
+    formData.append('optionType', optionType);
+    if (extractedText) {
+      formData.append('extractedText', extractedText);
+    }
+    return this.http.post<SopDocumentUploadResponse>(`${this.guideApiUrl}/upload`, formData);
+  }
+
+  downloadGuideDocument(nodeId: string, optionType: string): Observable<Blob> {
+    const params = new HttpParams()
+      .set('nodeId', nodeId)
+      .set('optionType', optionType);
+    return this.http.get(`${this.guideApiUrl}/download`, { params, responseType: 'blob' });
+  }
+
+  updateGuideDocument(nodeId: string, optionType: string, file?: File, extractedText?: string): Observable<SopDocumentUploadResponse> {
+    const formData = new FormData();
+    formData.append('nodeId', nodeId);
+    formData.append('optionType', optionType);
+    if (file) {
+      formData.append('file', file);
+    }
+    if (extractedText) {
+      formData.append('extractedText', extractedText);
+    }
+    return this.http.put<SopDocumentUploadResponse>(`${this.guideApiUrl}/update`, formData);
+  }
+
+  deleteGuideDocument(nodeId: string, optionType: string): Observable<{ success: boolean; message: string; error?: string }> {
+    const params = new HttpParams()
+      .set('nodeId', nodeId)
+      .set('optionType', optionType);
+    return this.http.delete<{ success: boolean; message: string; error?: string }>(`${this.guideApiUrl}/delete`, { params });
   }
 }
 

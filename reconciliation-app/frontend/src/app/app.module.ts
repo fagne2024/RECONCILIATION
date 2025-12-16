@@ -84,6 +84,7 @@ import { UserProfileComponent } from './components/user-profile/user-profile.com
 import { ServiceReferencesComponent } from './components/service-references/service-references.component';
 import { AideComponent } from './components/aide/aide.component';
 import { SopOperationComponent } from './components/sop-operation/sop-operation.component';
+import { GuideUtilisationComponent } from './components/guide-utilisation/guide-utilisation.component';
 import { MatchesTableComponent } from './components/matches-table/matches-table.component';
 import { PartnerMatchesTableComponent } from './components/partner-matches-table/partner-matches-table.component';
 import { EcartBoTableComponent } from './components/ecart-bo-table/ecart-bo-table.component';
@@ -140,6 +141,7 @@ import { SuiviDesEcartsComponent } from './components/suivi-des-ecarts/suivi-des
                 ServiceReferencesComponent,
                 AideComponent,
                 SopOperationComponent,
+                GuideUtilisationComponent,
                 MatchesTableComponent,
                 PartnerMatchesTableComponent,
                 EcartBoTableComponent,

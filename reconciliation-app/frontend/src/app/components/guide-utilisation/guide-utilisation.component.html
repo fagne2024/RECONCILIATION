@@ -1,0 +1,253 @@
+<div class="guide-container">
+  <div class="guide-header">
+    <h1 class="guide-main-title">Guide d'utilisation</h1>
+    <h2 class="guide-subtitle">Visualisation des Guides</h2>
+  </div>
+
+  <div class="guide-content">
+    <div class="guide-tree" *ngIf="guideStructure">
+      <!-- Bouton d'ajout principal -->
+      <div class="add-guide-section">
+        <button class="btn-add-guide" (click)="openAddModal(guideStructure, $event)">
+          <i class="fas fa-plus-circle"></i>
+          <span>Ajouter un nouveau guide</span>
+        </button>
+      </div>
+
+      <!-- Liste des guides -->
+      <div class="guides-list" *ngIf="guideStructure.children && guideStructure.children.length > 0">
+        <div 
+          *ngFor="let guide of guideStructure.children" 
+          class="guide-item"
+          (click)="onNodeClick(guide, $event)">
+          <div class="node-content guide-content">
+            <i class="fas fa-file-alt"></i>
+            <span>{{ guide.label }}</span>
+          </div>
+          <div class="node-actions" (click)="$event.stopPropagation()">
+            <button class="action-btn add-btn" (click)="openAddModal(guide, $event)" title="Ajouter un sous-guide">
+              <i class="fas fa-plus"></i>
+            </button>
+            <button class="action-btn edit-btn" (click)="openEditModal(guide, $event)" title="Modifier">
+              <i class="fas fa-edit"></i>
+            </button>
+            <button class="action-btn delete-btn" (click)="openDeleteModal(guide, $event)" title="Supprimer">
+              <i class="fas fa-trash"></i>
+            </button>
+          </div>
+
+          <!-- Sous-guides -->
+          <div class="sub-guides" *ngIf="guide.children && guide.children.length > 0">
+            <div 
+              *ngFor="let subGuide of guide.children" 
+              class="sub-guide-item"
+              (click)="onNodeClick(subGuide, $event); $event.stopPropagation()">
+              <div class="node-content sub-guide-content">
+                <i class="fas fa-circle"></i>
+                <span>{{ subGuide.label }}</span>
+              </div>
+              <div class="node-actions" (click)="$event.stopPropagation()">
+                <button class="action-btn add-btn" (click)="openAddModal(subGuide, $event)" title="Ajouter">
+                  <i class="fas fa-plus"></i>
+                </button>
+                <button class="action-btn edit-btn" (click)="openEditModal(subGuide, $event)" title="Modifier">
+                  <i class="fas fa-edit"></i>
+                </button>
+                <button class="action-btn delete-btn" (click)="openDeleteModal(subGuide, $event)" title="Supprimer">
+                  <i class="fas fa-trash"></i>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Message si aucun guide -->
+      <div class="empty-state" *ngIf="!guideStructure.children || guideStructure.children.length === 0">
+        <i class="fas fa-folder-open"></i>
+        <p>Aucun guide disponible pour le moment</p>
+        <p class="empty-hint">Cliquez sur le bouton <i class="fas fa-plus"></i> ci-dessus pour ajouter votre premier guide</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Popup pour les options -->
+  <div class="popup-overlay" *ngIf="showPopup && popupNode" (click)="closePopup()">
+    <div class="popup-content" (click)="$event.stopPropagation()">
+      <div class="popup-header">
+        <h3>{{ popupNode.label }}</h3>
+        <button class="btn-close-popup" (click)="closePopup()">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+      <div class="popup-body">
+        <p class="popup-description">Choisissez une option pour consulter les informations :</p>
+        <div class="popup-options">
+          <button class="popup-option-btn" (click)="onOptionClick('grandes-lignes')">
+            <i class="fas fa-list-ul"></i>
+            <span>Les grandes lignes</span>
+          </button>
+          <button class="popup-option-btn" (click)="onOptionClick('document-complet')">
+            <i class="fas fa-file-alt"></i>
+            <span>Document complet</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal d'upload de document -->
+  <div class="modal-overlay" *ngIf="showUploadModal" (click)="closeUploadModal()">
+    <div class="modal-content upload-modal" (click)="$event.stopPropagation()">
+      <div class="modal-header">
+        <h3>Uploader un document</h3>
+        <button class="btn-close-modal" (click)="closeUploadModal()">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+      <div class="modal-body">
+        <p class="upload-description">
+          Veuillez sélectionner un document à uploader (PDF, Image, ou fichier texte).
+        </p>
+        <div class="file-upload-area">
+          <input 
+            type="file" 
+            id="fileInput" 
+            (change)="onFileSelected($event)"
+            accept=".pdf,.png,.jpg,.jpeg,.gif,.txt,.doc,.docx"
+            class="file-input"
+            [disabled]="isExtractingText">
+          <label for="fileInput" class="file-label" [class.extracting]="isExtractingText">
+            <i class="fas fa-cloud-upload-alt" *ngIf="!isExtractingText"></i>
+            <i class="fas fa-spinner fa-spin" *ngIf="isExtractingText"></i>
+            <span *ngIf="!selectedFile && !isExtractingText">Cliquez pour sélectionner un fichier</span>
+            <span *ngIf="selectedFile && !isExtractingText" class="selected-file">{{ selectedFile.name }}</span>
+            <span *ngIf="isExtractingText" class="extracting-text">Extraction du texte en cours...</span>
+          </label>
+        </div>
+        
+        <!-- Zone de saisie manuelle du texte -->
+        <div class="manual-text-section" *ngIf="showManualTextInput || selectedFile">
+          <div class="manual-text-header">
+            <label>
+              <input 
+                type="checkbox" 
+                [(ngModel)]="showManualTextInput"
+                (change)="toggleManualTextInput()">
+              <span>Saisir le texte manuellement</span>
+            </label>
+          </div>
+          <div class="manual-text-input" *ngIf="showManualTextInput">
+            <textarea 
+              [(ngModel)]="manualText"
+              class="text-input"
+              placeholder="Collez ou saisissez le texte du document ici..."
+              rows="10"
+              [disabled]="isUploading"></textarea>
+            <p class="text-hint">
+              <i class="fas fa-info-circle"></i>
+              Le texte saisi ici sera utilisé pour l'affichage du document.
+            </p>
+          </div>
+        </div>
+
+        <div class="upload-error" *ngIf="uploadError">
+          <i class="fas fa-exclamation-circle"></i>
+          {{ uploadError }}
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" (click)="closeUploadModal()" [disabled]="isUploading || isExtractingText">Annuler</button>
+        <button class="btn btn-primary" (click)="uploadDocument()" [disabled]="!selectedFile || isUploading || isExtractingText">
+          <span *ngIf="!isUploading">Uploader</span>
+          <span *ngIf="isUploading">
+            <i class="fas fa-spinner fa-spin"></i> Upload en cours...
+          </span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Vue d'affichage du document -->
+  <div class="document-view-overlay" *ngIf="showDocumentView" (click)="closeDocumentView()">
+    <div class="document-view-content" (click)="$event.stopPropagation()">
+      <div class="document-view-header">
+        <h2>{{ documentTitle }}</h2>
+        <div class="document-header-actions">
+          <button class="btn-document-action btn-download" (click)="downloadDocument(); $event.stopPropagation()" title="Télécharger">
+            <i class="fas fa-download"></i>
+          </button>
+          <button class="btn-document-action btn-edit" (click)="openEditDocumentModal(); $event.stopPropagation()" title="Modifier">
+            <i class="fas fa-edit"></i>
+          </button>
+          <button class="btn-document-action btn-delete" (click)="openDeleteDocumentModal(); $event.stopPropagation()" title="Supprimer">
+            <i class="fas fa-trash"></i>
+          </button>
+          <button class="btn-close-document" (click)="closeDocumentView()">
+            <i class="fas fa-times"></i>
+          </button>
+        </div>
+      </div>
+      <div class="document-view-body">
+        <div class="document-text-content" [innerHTML]="safeDocumentContent"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal de modification de document -->
+  <div class="modal-overlay" *ngIf="showEditDocumentModal" (click)="closeEditDocumentModal()">
+    <div class="modal-content upload-modal" (click)="$event.stopPropagation()">
+      <div class="modal-header">
+        <h3>Modifier le document</h3>
+        <button class="btn-close-modal" (click)="closeEditDocumentModal()">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+      <div class="modal-body">
+        <p class="upload-description">
+          Vous pouvez remplacer le fichier ou modifier le texte du document.
+        </p>
+        <div class="file-upload-area">
+          <input 
+            type="file" 
+            id="editFileInput" 
+            (change)="onEditFileSelected($event)"
+            accept=".pdf,.png,.jpg,.jpeg,.gif,.txt,.doc,.docx"
+            class="file-input"
+            [disabled]="isEditingDocument">
+          <label for="editFileInput" class="file-label">
+            <i class="fas fa-cloud-upload-alt"></i>
+            <span *ngIf="!editDocumentFile">Cliquez pour remplacer le fichier (optionnel)</span>
+            <span *ngIf="editDocumentFile" class="selected-file">{{ editDocumentFile.name }}</span>
+          </label>
+        </div>
+        
+        <div class="manual-text-section">
+          <div class="manual-text-header">
+            <label>
+              <span>Texte du document</span>
+            </label>
+          </div>
+          <div class="manual-text-input">
+            <textarea 
+              [(ngModel)]="editDocumentText"
+              class="text-input"
+              placeholder="Modifiez le texte du document ici..."
+              rows="10"
+              [disabled]="isEditingDocument"></textarea>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" (click)="closeEditDocumentModal()" [disabled]="isEditingDocument">Annuler</button>
+        <button class="btn btn-primary" (click)="updateDocument()" [disabled]="isEditingDocument || !editDocumentText.trim()">
+          <span *ngIf="!isEditingDocument">Enregistrer</span>
+          <span *ngIf="isEditingDocument">
+            <i class="fas fa-spinner fa-spin"></i> Modification en cours...
+          </span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+</div>
