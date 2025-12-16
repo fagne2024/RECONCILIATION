@@ -251,29 +251,22 @@ export class DashboardComponent implements OnInit, OnDestroy {
       if (end) {
         end.setHours(0, 0, 0, 0);
       }
-      
-      console.log('[DEBUG] filterByPeriod: start =', start, 'end =', end);
 
       return data.filter((item: any) => {
         const dateStr = item.date || item.dateOperation;
         if (!dateStr) return false;
         
-        // Normaliser la date en utilisant uniquement la partie date (YYYY-MM-DD)
         const dateOnly = dateStr.split('T')[0];
         const [year, month, day] = dateOnly.split('-').map(Number);
-        // Créer la date en heure locale pour éviter les problèmes de fuseau horaire
         const date = new Date(year, month - 1, day);
         date.setHours(0, 0, 0, 0);
         
-        // Normaliser start et end aussi pour la comparaison
         const normalizedStart = new Date(start!);
         normalizedStart.setHours(0, 0, 0, 0);
         const normalizedEnd = new Date(end!);
         normalizedEnd.setHours(0, 0, 0, 0);
         
-        const inPeriod = date >= normalizedStart && date < normalizedEnd;
-        console.log('[DEBUG] filterByPeriod: date =', date, 'inPeriod =', inPeriod, 'raw =', dateStr);
-        return inPeriod;
+        return date >= normalizedStart && date < normalizedEnd;
       });
     }
 
@@ -326,9 +319,6 @@ export class DashboardComponent implements OnInit, OnDestroy {
         // Line chart : évolution par service et par date (filtrée par agence)
         const allServices = Array.from(new Set(filteredAgencySummary.map(s => s.service)));
         const allDates = Array.from(new Set(filteredAgencySummary.map(s => s.date))).sort();
-        console.log('[DEBUG] filteredAgencySummary:', filteredAgencySummary);
-        console.log('[DEBUG] allServices:', allServices);
-        console.log('[DEBUG] allDates:', allDates);
         const datasets = allServices.map((service, idx) => {
           const data = allDates.map(date => {
             const found = filteredAgencySummary.find(s => s.service === service && s.date === date);
@@ -348,10 +338,6 @@ export class DashboardComponent implements OnInit, OnDestroy {
             pointBorderColor: color,
             borderWidth: 2
           };
-        });
-        console.log('[DEBUG] datasets:', datasets);
-        datasets.forEach(ds => {
-          console.log(`[DEBUG] dataset label: ${ds.label}, data:`, ds.data);
         });
         this.lineChartData = {
           labels: allDates,
@@ -494,10 +480,6 @@ export class DashboardComponent implements OnInit, OnDestroy {
             borderWidth: 2
           };
         });
-        console.log('[DEBUG] datasets:', datasets);
-        datasets.forEach(ds => {
-          console.log(`[DEBUG] dataset label: ${ds.label}, data:`, ds.data);
-        });
         this.lineChartData = {
           labels: allDates,
           datasets
@@ -561,7 +543,6 @@ export class DashboardComponent implements OnInit, OnDestroy {
             filter(event => event instanceof NavigationEnd)
         ).subscribe((event) => {
             if (event instanceof NavigationEnd && (event.url === '/' || event.url === '/dashboard')) {
-                console.log('Dashboard became active, refreshing metrics...');
                 this.refreshMetrics();
             }
         });
@@ -569,7 +550,6 @@ export class DashboardComponent implements OnInit, OnDestroy {
         // Écouter les notifications de mise à jour de données
         this.dataUpdateSubscription = this.appStateService.dataUpdate$.subscribe(needsUpdate => {
             if (needsUpdate) {
-                console.log('Data update notification received, refreshing dashboard...');
                 this.refreshMetrics();
                 // Marquer que les données ont été rafraîchies
                 this.appStateService.markDataRefreshed();
@@ -691,7 +671,6 @@ export class DashboardComponent implements OnInit, OnDestroy {
                 this.selectedService = [];
                 this.selectedCountry = [];
                 this.onFilterChange();
-                console.log('Filter options loaded:', options);
             },
             error: (error) => {
                 console.error('Error loading filter options:', error);
@@ -722,14 +701,6 @@ export class DashboardComponent implements OnInit, OnDestroy {
     private loadDetailedMetrics() {
         this.detailedLoading = true;
         this.detailedError = null;
-        // Ajout de logs pour diagnostic
-        console.log('[loadDetailedMetrics] Appelée avec :');
-        console.log('selectedAgency:', this.selectedAgency);
-        console.log('selectedService:', this.selectedService);
-        console.log('selectedCountry:', this.selectedCountry);
-        console.log('selectedTimeFilter:', this.selectedTimeFilter);
-        console.log('startDate:', this.startDate);
-        console.log('endDate:', this.endDate);
         // Adapter les filtres envoyés au backend
         const agencies = this.selectedAgency.length === 0 ? undefined : this.selectedAgency;
         const services = this.selectedService.length === 0 ? undefined : this.selectedService;
@@ -762,7 +733,6 @@ export class DashboardComponent implements OnInit, OnDestroy {
                 this.detailedError = null;
                 this.filterOperationStats();
                 this.updateBarChartData();
-                console.log('Detailed metrics loaded:', metrics);
             },
             error: (error) => {
                 // En cas d'erreur, vider les données et afficher un message explicite
@@ -816,8 +786,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
                     lowerCaseType === 'transaction_cree' ||
                     (lowerCaseType.startsWith('annulation_') && lowerCaseType !== 'annulation_bo'));
         });
-
-        console.log('[filterOperationStats] Statistiques filtrées:', {
+        const result = {
             original: this.detailedMetrics.operationStats?.length || 0,
             filtered: this.filteredOperationStats.length,
             excluded: (this.detailedMetrics.operationStats || []).filter(stat => {
@@ -854,7 +823,6 @@ export class DashboardComponent implements OnInit, OnDestroy {
             next: (stats: TransactionCreatedStats) => {
                 this.transactionCreatedStats = stats;
                 this.transactionCreatedLoading = false;
-                console.log('Transaction created stats loaded:', stats);
             },
             error: (error) => {
                 console.error('Error loading transaction created stats:', error);
@@ -886,8 +854,6 @@ export class DashboardComponent implements OnInit, OnDestroy {
     }
 
     onFilterChange() {
-        console.log('onFilterChange', this.selectedCountry, this.selectedService);
-        
         // Mettre à jour les listes filtrées pour le cloisonnement
         this.updateFilteredLists();
         
@@ -1117,7 +1083,6 @@ export class DashboardComponent implements OnInit, OnDestroy {
     }
 
     refreshMetrics() {
-        console.log('Refreshing dashboard metrics...');
         this.loading = true;
         this.error = null;
         
@@ -1138,7 +1103,6 @@ export class DashboardComponent implements OnInit, OnDestroy {
     }
 
     startNewReconciliation() {
-        console.log('Navigation vers nouvelle réconciliation');
         this.router.navigate(['/upload']);
     }
 
@@ -1148,7 +1112,6 @@ export class DashboardComponent implements OnInit, OnDestroy {
     }
 
     goToResults() {
-        console.log('Navigation vers les résultats');
         this.router.navigate(['/results']);
     }
 
@@ -1449,7 +1412,6 @@ export class DashboardComponent implements OnInit, OnDestroy {
     }
 
     loadAllOperations() {
-      console.log('[DEBUG] loadAllOperations called');
       const normalize = (str: string) => (str || '').toLowerCase().normalize('NFD').replace(/[ \u0300-\u036f]/g, '');
       const agencies = this.selectedAgency?.length === 0 ? undefined : this.selectedAgency;
       const services = this.selectedService?.length === 0 ? undefined : this.selectedService;
