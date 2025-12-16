@@ -78,21 +78,12 @@ export class GuideUtilisationComponent implements OnInit {
     this.isLoadingStructure = true;
     this.sopNodeService.getGuideStructure().subscribe({
       next: (response) => {
-        console.log('📥 Réponse reçue complète:', JSON.stringify(response));
-        console.log('📥 Structure brute:', response.structure);
-        console.log('📥 Type de structure:', typeof response.structure);
-        console.log('📥 Clés de structure:', Object.keys(response.structure));
         if (response.success && response.structure) {
-          // Réassignation directe avec création d'une nouvelle référence
           this.guideStructure = {
             id: response.structure.id,
             label: response.structure.label,
             children: response.structure.children ? [...response.structure.children] : []
           };
-          console.log('✅ Structure mise à jour:', this.guideStructure);
-          console.log('✅ Nombre d\'enfants:', this.guideStructure.children?.length || 0);
-        } else {
-          console.error('Erreur lors du chargement de la structure:', response.error);
         }
         this.isLoadingStructure = false;
       },

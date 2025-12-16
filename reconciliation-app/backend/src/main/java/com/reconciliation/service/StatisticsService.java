@@ -40,22 +40,13 @@ public class StatisticsService {
 
     @Transactional
     public List<Statistics> saveStatistics(List<Statistics> statistics) {
-        logger.info("Starting to save {} statistics records", statistics.size());
         try {
             for (Statistics stat : statistics) {
-                logger.debug("Processing statistics record: agency={}, service={}, date={}", 
-                    stat.getAgency(), stat.getService(), stat.getDate());
-                
                 if (stat.getDate() == null) {
-                    logger.warn("Statistics record has null date: agency={}, service={}", 
-                        stat.getAgency(), stat.getService());
                     stat.setDate(LocalDate.now());
                 }
-                
-                Statistics savedStat = statisticsRepository.save(stat);
-                logger.debug("Successfully saved statistics record with ID: {}", savedStat.getId());
+                statisticsRepository.save(stat);
             }
-            logger.info("Successfully saved all statistics records");
             return statistics;
         } catch (Exception e) {
             logger.error("Error saving statistics: {}", e.getMessage(), e);

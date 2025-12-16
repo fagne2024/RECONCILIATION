@@ -30,27 +30,12 @@ public class StatisticsController {
 
     @PostMapping("/save")
     public ResponseEntity<?> saveStatistics(@RequestBody List<Statistics> statistics, HttpServletRequest request) {
-        logger.info("=== STATISTICS SAVE REQUEST RECEIVED ===");
-        logger.info("Method: {}", request.getMethod());
-        logger.info("Origin: {}", request.getHeader("Origin"));
-        logger.info("Content-Type: {}", request.getContentType());
-        logger.info("Number of statistics records: {}", statistics.size());
-        
         try {
             if (statistics == null || statistics.isEmpty()) {
-                logger.warn("Received empty statistics list");
                 return ResponseEntity.badRequest().body("Statistics list cannot be empty");
             }
 
-            logger.debug("Processing statistics records:");
-            for (Statistics stat : statistics) {
-                logger.debug("Record: agency={}, service={}, date={}, totalVolume={}, recordCount={}",
-                    stat.getAgency(), stat.getService(), stat.getDate(), 
-                    stat.getTotalVolume(), stat.getRecordCount());
-            }
-
             List<Statistics> savedStats = statisticsService.saveStatistics(statistics);
-            logger.info("Successfully saved {} statistics records", savedStats.size());
             return ResponseEntity.ok(savedStats);
         } catch (Exception e) {
             logger.error("Error saving statistics: {}", e.getMessage(), e);
@@ -63,19 +48,12 @@ public class StatisticsController {
     public ResponseEntity<?> getStatisticsByDate(
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date,
             HttpServletRequest request) {
-        logger.info("=== STATISTICS BY DATE REQUEST RECEIVED ===");
-        logger.info("Method: {}", request.getMethod());
-        logger.info("Origin: {}", request.getHeader("Origin"));
-        logger.info("Date parameter: {}", date);
-        
         try {
             String username = RequestContextUtil.getUsernameFromRequest();
             List<Statistics> stats = statisticsService.getStatisticsByDate(date, username);
-            logger.info("Found {} statistics records for date {}", stats.size(), date);
             return ResponseEntity.ok(stats);
         } catch (Exception e) {
             logger.error("Error fetching statistics by date {}: {}", date, e.getMessage(), e);
-            e.printStackTrace();
             return ResponseEntity.internalServerError()
                 .body("Failed to fetch statistics: " + e.getMessage());
         }
@@ -88,16 +66,9 @@ public class StatisticsController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate,
             HttpServletRequest request) {
-        logger.info("=== STATISTICS BY FILTERS REQUEST RECEIVED ===");
-        logger.info("Method: {}", request.getMethod());
-        logger.info("Origin: {}", request.getHeader("Origin"));
-        logger.info("Filters: agency={}, service={}, startDate={}, endDate={}", 
-            agency, service, startDate, endDate);
-        
         try {
             String username = RequestContextUtil.getUsernameFromRequest();
             List<Statistics> stats = statisticsService.getStatisticsByFilters(agency, service, startDate, endDate, username);
-            logger.info("Found {} statistics records matching filters", stats.size());
             return ResponseEntity.ok(stats);
         } catch (Exception e) {
             logger.error("Error fetching statistics with filters: {}", e.getMessage(), e);
@@ -128,18 +99,12 @@ public class StatisticsController {
 
     @GetMapping("/filter-options")
     public ResponseEntity<?> getFilterOptions(HttpServletRequest request) {
-        logger.info("=== FILTER OPTIONS REQUEST RECEIVED ===");
-        logger.info("Method: {}", request.getMethod());
-        logger.info("Origin: {}", request.getHeader("Origin"));
-        
         try {
             String username = RequestContextUtil.getUsernameFromRequest();
             Map<String, Object> filterOptions = statisticsService.getFilterOptions(username);
-            logger.info("Filter options retrieved successfully");
             return ResponseEntity.ok(filterOptions);
         } catch (Exception e) {
             logger.error("Error fetching filter options: {}", e.getMessage(), e);
-            e.printStackTrace();
             return ResponseEntity.internalServerError()
                 .body("Failed to fetch filter options: " + e.getMessage());
         }
@@ -154,20 +119,12 @@ public class StatisticsController {
             @RequestParam(required = false) String startDate,
             @RequestParam(required = false) String endDate,
             HttpServletRequest request) {
-        logger.info("=== DETAILED METRICS REQUEST RECEIVED ===");
-        logger.info("Method: {}", request.getMethod());
-        logger.info("Origin: {}", request.getHeader("Origin"));
-        logger.info("Filters: agency={}, service={}, country={}, timeFilter={}, startDate={}, endDate={}", 
-            agency, service, country, timeFilter, startDate, endDate);
-        
         try {
             String username = RequestContextUtil.getUsernameFromRequest();
             Map<String, Object> metrics = statisticsService.getDetailedMetrics(agency, service, country, timeFilter, startDate, endDate, username);
-            logger.info("Detailed metrics calculated successfully");
             return ResponseEntity.ok(metrics);
         } catch (Exception e) {
             logger.error("Error fetching detailed metrics: {}", e.getMessage(), e);
-            e.printStackTrace();
             return ResponseEntity.internalServerError()
                 .body("Failed to fetch detailed metrics: " + e.getMessage());
         }
@@ -182,20 +139,12 @@ public class StatisticsController {
             @RequestParam(required = false) String startDate,
             @RequestParam(required = false) String endDate,
             HttpServletRequest request) {
-        logger.info("=== TRANSACTION CREATED STATS REQUEST RECEIVED ===");
-        logger.info("Method: {}", request.getMethod());
-        logger.info("Origin: {}", request.getHeader("Origin"));
-        logger.info("Filters: agency={}, service={}, country={}, timeFilter={}, startDate={}, endDate={}", 
-            agency, service, country, timeFilter, startDate, endDate);
-        
         try {
             String username = RequestContextUtil.getUsernameFromRequest();
             Map<String, Object> stats = statisticsService.getTransactionCreatedStatsByService(agency, service, country, timeFilter, startDate, endDate, username);
-            logger.info("Transaction created stats calculated successfully");
             return ResponseEntity.ok(stats);
         } catch (Exception e) {
             logger.error("Error fetching transaction created stats: {}", e.getMessage(), e);
-            e.printStackTrace();
             return ResponseEntity.internalServerError()
                 .body("Failed to fetch transaction created stats: " + e.getMessage());
         }

@@ -23,12 +23,10 @@ public class GuideNodeController {
     @GetMapping("/structure")
     public ResponseEntity<Map<String, Object>> getStructure() {
         try {
-            log.info("📋 Requête GET /api/guide-nodes/structure reçue");
             Map<String, Object> structure = guideNodeService.getStructure();
             Map<String, Object> response = new HashMap<>();
             response.put("success", true);
             response.put("structure", structure);
-            log.info("✅ Structure des guides retournée avec succès");
             return ResponseEntity.ok(response);
         } catch (Exception e) {
             log.error("❌ Erreur lors de la récupération de la structure: {}", e.getMessage(), e);
@@ -56,8 +54,6 @@ public class GuideNodeController {
             @RequestParam(required = false) String parentNodeId,
             @RequestParam(required = false) Integer displayOrder) {
         try {
-            log.info("📝 Création nœud guide - nodeId: {}, label: {}, parentNodeId: {}", nodeId, label, parentNodeId);
-            
             GuideNodeEntity createdNode = guideNodeService.createNode(nodeId, label, parentNodeId, displayOrder);
             
             Map<String, Object> response = new HashMap<>();
@@ -67,7 +63,6 @@ public class GuideNodeController {
             response.put("label", createdNode.getLabel());
             return ResponseEntity.ok(response);
         } catch (IllegalArgumentException e) {
-            log.error("❌ Erreur lors de la création: {}", e.getMessage());
             Map<String, Object> error = new HashMap<>();
             error.put("success", false);
             error.put("error", e.getMessage());
@@ -88,16 +83,6 @@ public class GuideNodeController {
             @RequestParam(required = false) String route,
             @RequestParam(required = false) String description) {
         try {
-            log.info("📝 Requête PUT/POST /api/guide-nodes/update reçue - nodeId: {}, label: {}", nodeId, label);
-            
-            if (guideNodeService == null) {
-                log.error("❌ GuideNodeService n'est pas injecté!");
-                Map<String, Object> error = new HashMap<>();
-                error.put("success", false);
-                error.put("error", "Service non disponible");
-                return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);
-            }
-            
             GuideNodeEntity updatedNode = guideNodeService.updateNode(nodeId, label, route, description);
             
             Map<String, Object> response = new HashMap<>();
@@ -105,10 +90,8 @@ public class GuideNodeController {
             response.put("message", "Guide modifié avec succès");
             response.put("nodeId", updatedNode.getNodeId());
             response.put("label", updatedNode.getLabel());
-            log.info("✅ Guide mis à jour avec succès");
             return ResponseEntity.ok(response);
         } catch (IllegalArgumentException e) {
-            log.error("❌ Erreur lors de la mise à jour: {}", e.getMessage());
             Map<String, Object> error = new HashMap<>();
             error.put("success", false);
             error.put("error", e.getMessage());
@@ -157,13 +140,11 @@ public class GuideNodeController {
     @PostMapping("/initialize")
     public ResponseEntity<Map<String, Object>> initializeStructure() {
         try {
-            log.info("🔧 Requête POST /api/guide-nodes/initialize reçue");
             guideNodeService.initializeDefaultStructure();
             
             Map<String, Object> response = new HashMap<>();
             response.put("success", true);
             response.put("message", "Structure des guides initialisée avec succès");
-            log.info("✅ Structure des guides initialisée");
             return ResponseEntity.ok(response);
         } catch (Exception e) {
             log.error("❌ Erreur lors de l'initialisation: {}", e.getMessage(), e);
