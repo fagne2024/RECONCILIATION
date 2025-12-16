@@ -800,7 +800,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
                         lowerCaseType === 'transaction_cree' ||
                         (lowerCaseType.startsWith('annulation_') && lowerCaseType !== 'annulation_bo'));
             }).map(stat => stat.operationType)
-        });
+        };
     }
 
     private loadTransactionCreatedStats() {
