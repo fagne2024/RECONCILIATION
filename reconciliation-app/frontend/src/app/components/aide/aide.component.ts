@@ -1,4 +1,6 @@
 import { Component, OnInit } from '@angular/core';
+import { Location } from '@angular/common';
+import { Router } from '@angular/router';
 
 interface HelpOption {
   title: string;
@@ -57,15 +59,18 @@ export class AideComponent implements OnInit {
     },
     {
       title: 'Guide',
-      description: 'Obtenez de l\'aide et contactez notre équipe de support pour toute question',
-      icon: 'fas fa-headset',
-      tag: '24/7',
+      description: 'Accédez au guide d\'utilisation complet de l\'application',
+      icon: 'fas fa-book-open',
+      tag: 'Documentation',
       tagColor: 'red',
       route: '/guide-utilisation'
     }
   ];
 
-  constructor() { }
+  constructor(
+    private location: Location,
+    private router: Router
+  ) { }
 
   ngOnInit(): void {
   }
@@ -74,6 +79,14 @@ export class AideComponent implements OnInit {
     if (option.route) {
       // Navigation sera gérée par le routerLink dans le template
     }
+  }
+
+  goBack(): void {
+    this.location.back();
+  }
+
+  goHome(): void {
+    this.router.navigate(['/']);
   }
 }
 

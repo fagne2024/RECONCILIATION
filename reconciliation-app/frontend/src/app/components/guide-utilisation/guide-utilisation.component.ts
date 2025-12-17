@@ -1,5 +1,7 @@
 import { Component, OnInit } from '@angular/core';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
+import { Location } from '@angular/common';
+import { Router } from '@angular/router';
 import { SopDocumentService } from '../../services/sop-document.service';
 import { SopNodeService } from '../../services/sop-node.service';
 import { PopupService } from '../../services/popup.service';
@@ -18,6 +20,7 @@ interface GuideNode {
   styleUrls: ['./guide-utilisation.component.scss']
 })
 export class GuideUtilisationComponent implements OnInit {
+  Math = Math; // Rendre Math disponible dans le template
   selectedNode: GuideNode | null = null;
   showPopup: boolean = false;
   popupNode: GuideNode | null = null;
@@ -63,11 +66,19 @@ export class GuideUtilisationComponent implements OnInit {
     children: []
   };
 
+  // Pagination
+  currentPage: number = 1;
+  itemsPerPage: number = 10;
+  totalPages: number = 1;
+  paginatedGuides: GuideNode[] = [];
+
   constructor(
     private sopDocumentService: SopDocumentService,
     private sopNodeService: SopNodeService,
     private popupService: PopupService,
-    private sanitizer: DomSanitizer
+    private sanitizer: DomSanitizer,
+    private location: Location,
+    private router: Router
   ) { }
 
   ngOnInit(): void {
@@ -76,19 +87,53 @@ export class GuideUtilisationComponent implements OnInit {
 
   loadStructure(): void {
     this.isLoadingStructure = true;
+    console.log('🔄 Chargement de la structure des guides...');
+    
     this.sopNodeService.getGuideStructure().subscribe({
       next: (response) => {
+        console.log('📦 Réponse reçue:', response);
+        
         if (response.success && response.structure) {
           this.guideStructure = {
             id: response.structure.id,
             label: response.structure.label,
             children: response.structure.children ? [...response.structure.children] : []
           };
+          
+          console.log('✅ Structure chargée avec succès:', this.guideStructure);
+          console.log('📊 Nombre de guides:', this.guideStructure.children?.length || 0);
+          
+          // Calculer la pagination
+          this.updatePagination();
+          
+          // Afficher un message si aucune donnée
+          if (!this.guideStructure.children || this.guideStructure.children.length === 0) {
+            console.warn('⚠️ Aucun guide trouvé dans la base de données');
+            this.popupService.showInfo(
+              'Aucun guide n\'a été trouvé dans la base de données. Cliquez sur le bouton "Ajouter un nouveau guide" pour créer votre premier guide.',
+              'Information'
+            );
+          }
+        } else {
+          console.error('❌ La réponse ne contient pas de structure valide:', response);
         }
+        
         this.isLoadingStructure = false;
       },
       error: (error) => {
-        console.error('Erreur lors du chargement de la structure:', error);
+        console.error('❌ Erreur lors du chargement de la structure:', error);
+        console.error('Détails de l\'erreur:', {
+          status: error.status,
+          statusText: error.statusText,
+          message: error.message,
+          url: error.url
+        });
+        
+        this.popupService.showError(
+          'Impossible de charger les guides depuis le serveur. Vérifiez que le backend est démarré.',
+          'Erreur de connexion'
+        );
+        
         this.isLoadingStructure = false;
       }
     });
@@ -644,7 +689,10 @@ export class GuideUtilisationComponent implements OnInit {
     }
 
     const newNodeId = this.generateId(newLabel);
-    const parentNodeId = this.parentNodeForAdd.id === 'root' ? undefined : this.parentNodeForAdd.id;
+    // CORRECTION: Toujours envoyer l'ID du parent, même si c'est 'root'
+    const parentNodeId = this.parentNodeForAdd.id;
+
+    console.log('📝 Création du guide:', { newNodeId, newLabel, parentNodeId });
 
     this.sopNodeService.createGuideNode(newNodeId, newLabel, parentNodeId).subscribe({
       next: async (response) => {
@@ -802,5 +850,89 @@ export class GuideUtilisationComponent implements OnInit {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
+  }
+
+  // Méthodes de pagination
+  updatePagination(): void {
+    const children = this.guideStructure.children || [];
+    this.totalPages = Math.ceil(children.length / this.itemsPerPage);
+    
+    // S'assurer que currentPage est valide
+    if (this.currentPage > this.totalPages) {
+      this.currentPage = Math.max(1, this.totalPages);
+    }
+    
+    // Calculer les guides à afficher pour la page actuelle
+    const startIndex = (this.currentPage - 1) * this.itemsPerPage;
+    const endIndex = startIndex + this.itemsPerPage;
+    this.paginatedGuides = children.slice(startIndex, endIndex);
+  }
+
+  goToPage(page: number): void {
+    if (page >= 1 && page <= this.totalPages) {
+      this.currentPage = page;
+      this.updatePagination();
+    }
+  }
+
+  previousPage(): void {
+    if (this.currentPage > 1) {
+      this.currentPage--;
+      this.updatePagination();
+    }
+  }
+
+  nextPage(): void {
+    if (this.currentPage < this.totalPages) {
+      this.currentPage++;
+      this.updatePagination();
+    }
+  }
+
+  get pageNumbers(): number[] {
+    const pages: number[] = [];
+    const maxPagesToShow = 5;
+    
+    if (this.totalPages <= maxPagesToShow) {
+      // Afficher toutes les pages si le nombre est petit
+      for (let i = 1; i <= this.totalPages; i++) {
+        pages.push(i);
+      }
+    } else {
+      // Afficher les pages avec ellipses
+      const halfRange = Math.floor(maxPagesToShow / 2);
+      let startPage = Math.max(1, this.currentPage - halfRange);
+      let endPage = Math.min(this.totalPages, startPage + maxPagesToShow - 1);
+      
+      // Ajuster si on est près de la fin
+      if (endPage - startPage < maxPagesToShow - 1) {
+        startPage = Math.max(1, endPage - maxPagesToShow + 1);
+      }
+      
+      for (let i = startPage; i <= endPage; i++) {
+        pages.push(i);
+      }
+    }
+    
+    return pages;
+  }
+
+  changeItemsPerPage(event: Event): void {
+    const select = event.target as HTMLSelectElement;
+    this.itemsPerPage = parseInt(select.value, 10);
+    this.currentPage = 1; // Retour à la première page
+    this.updatePagination();
+  }
+
+  goBack(): void {
+    this.location.back();
+  }
+
+  goHome(): void {
+    this.router.navigate(['/']);
+  }
+
+  goToAide(): void {
+    this.router.navigate(['/aide']);
   }
 }

@@ -1,6 +1,7 @@
 import { Component, OnInit, OnDestroy } from '@angular/core';
 import { FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { Subscription } from 'rxjs';
+import { delay, retryWhen, scan, tap } from 'rxjs/operators';
 import { ActivatedRoute } from '@angular/router';
 import { EcartSolde, EcartSoldeFilter } from '../../models/ecart-solde.model';
 import { EcartSoldeService } from '../../services/ecart-solde.service';
@@ -117,57 +118,138 @@ export class EcartSoldeComponent implements OnInit, OnDestroy {
   loadEcartSoldes() {
     this.isLoading = true;
     this.subscription.add(
-      this.ecartSoldeService.getEcartSoldes().subscribe({
-        next: (data) => {
-          this.ecartSoldes = data;
-          this.filteredEcartSoldes = [...data];
-          
-          // Trier par date décroissante (du plus récent au plus ancien)
-          this.filteredEcartSoldes.sort((a, b) => new Date(b.dateTransaction).getTime() - new Date(a.dateTransaction).getTime());
-          
-          this.calculatePagination();
-          this.isLoading = false;
-        },
-        error: (err) => {
-          console.error('Erreur de chargement des écarts de solde', err);
-          this.isLoading = false;
-        }
-      })
+      this.ecartSoldeService.getEcartSoldes()
+        .pipe(
+          retryWhen(errors => errors.pipe(
+            scan((retryCount, err) => {
+              if (retryCount >= 3 || err.status !== 429) {
+                throw err;
+              }
+              console.log(`Trop de requêtes (429). Nouvelle tentative (${retryCount + 1}/3) dans 2 secondes...`);
+              return retryCount + 1;
+            }, 0),
+            delay(2000) // Attendre 2 secondes avant de réessayer
+          ))
+        )
+        .subscribe({
+          next: (data) => {
+            this.ecartSoldes = data;
+            this.filteredEcartSoldes = [...data];
+            
+            // Trier par date décroissante (du plus récent au plus ancien)
+            this.filteredEcartSoldes.sort((a, b) => new Date(b.dateTransaction).getTime() - new Date(a.dateTransaction).getTime());
+            
+            this.calculatePagination();
+            this.isLoading = false;
+          },
+          error: (err) => {
+            console.error('Erreur de chargement des écarts de solde', err);
+            if (err.status === 429) {
+              this.popupService.showError(
+                'Le serveur reçoit trop de requêtes. Veuillez réessayer dans quelques instants.',
+                'Trop de requêtes'
+              );
+            }
+            this.isLoading = false;
+          }
+        })
     );
   }
 
   loadFilterOptions() {
+    // Charger les options de filtrage avec des délais pour éviter les erreurs 429 (Too Many Requests)
+    // Délai de 200ms entre chaque appel
+    
     // Charger les agences
     this.subscription.add(
-      this.ecartSoldeService.getDistinctAgences().subscribe({
-        next: (agences) => this.agences = agences,
-        error: (err) => console.error('Erreur de chargement des agences', err)
-      })
+      this.ecartSoldeService.getDistinctAgences()
+        .pipe(
+          delay(0), // Pas de délai pour le premier appel
+          retryWhen(errors => errors.pipe(
+            scan((retryCount, err) => {
+              if (retryCount >= 3 || err.status !== 429) {
+                throw err;
+              }
+              return retryCount + 1;
+            }, 0),
+            tap(retryCount => console.log(`Nouvelle tentative (${retryCount}) pour les agences...`)),
+            delay(1000) // Attendre 1 seconde avant de réessayer
+          ))
+        )
+        .subscribe({
+          next: (agences) => this.agences = agences,
+          error: (err) => console.error('Erreur de chargement des agences', err)
+        })
     );
 
-    // Charger les services
-    this.subscription.add(
-      this.ecartSoldeService.getDistinctServices().subscribe({
-        next: (services) => this.services = services,
-        error: (err) => console.error('Erreur de chargement des services', err)
-      })
-    );
+    // Charger les services avec un délai
+    setTimeout(() => {
+      this.subscription.add(
+        this.ecartSoldeService.getDistinctServices()
+          .pipe(
+            retryWhen(errors => errors.pipe(
+              scan((retryCount, err) => {
+                if (retryCount >= 3 || err.status !== 429) {
+                  throw err;
+                }
+                return retryCount + 1;
+              }, 0),
+              tap(retryCount => console.log(`Nouvelle tentative (${retryCount}) pour les services...`)),
+              delay(1000)
+            ))
+          )
+          .subscribe({
+            next: (services) => this.services = services,
+            error: (err) => console.error('Erreur de chargement des services', err)
+          })
+      );
+    }, 200);
 
-    // Charger les pays
-    this.subscription.add(
-      this.ecartSoldeService.getDistinctPays().subscribe({
-        next: (pays) => this.pays = pays,
-        error: (err) => console.error('Erreur de chargement des pays', err)
-      })
-    );
+    // Charger les pays avec un délai
+    setTimeout(() => {
+      this.subscription.add(
+        this.ecartSoldeService.getDistinctPays()
+          .pipe(
+            retryWhen(errors => errors.pipe(
+              scan((retryCount, err) => {
+                if (retryCount >= 3 || err.status !== 429) {
+                  throw err;
+                }
+                return retryCount + 1;
+              }, 0),
+              tap(retryCount => console.log(`Nouvelle tentative (${retryCount}) pour les pays...`)),
+              delay(1000)
+            ))
+          )
+          .subscribe({
+            next: (pays) => this.pays = pays,
+            error: (err) => console.error('Erreur de chargement des pays', err)
+          })
+      );
+    }, 400);
 
-    // Charger les numéros Trans GU
-    this.subscription.add(
-      this.ecartSoldeService.getDistinctNumeroTransGu().subscribe({
-        next: (numeroTransGUs) => this.numeroTransGUs = numeroTransGUs,
-        error: (err) => console.error('Erreur de chargement des numéros Trans GU', err)
-      })
-    );
+    // Charger les numéros Trans GU avec un délai
+    setTimeout(() => {
+      this.subscription.add(
+        this.ecartSoldeService.getDistinctNumeroTransGu()
+          .pipe(
+            retryWhen(errors => errors.pipe(
+              scan((retryCount, err) => {
+                if (retryCount >= 3 || err.status !== 429) {
+                  throw err;
+                }
+                return retryCount + 1;
+              }, 0),
+              tap(retryCount => console.log(`Nouvelle tentative (${retryCount}) pour les numéros Trans GU...`)),
+              delay(1000)
+            ))
+          )
+          .subscribe({
+            next: (numeroTransGUs) => this.numeroTransGUs = numeroTransGUs,
+            error: (err) => console.error('Erreur de chargement des numéros Trans GU', err)
+          })
+      );
+    }, 600);
   }
 
   setupFilterListener() {
@@ -632,13 +714,14 @@ export class EcartSoldeComponent implements OnInit, OnDestroy {
       'ID Transaction': ecart.idTransaction,
       'Téléphone Client': ecart.telephoneClient || '',
       'Montant': ecart.montant,
+      'Frais': ecart.fraisAssocie ? ecart.fraisAssocie.montant : 0,
+      'Écart': this.calculateEcart(ecart),
       'Service': ecart.service || '',
       'Agence': ecart.agence || '',
       'Date Transaction': ecart.dateTransaction ? new Date(ecart.dateTransaction).toLocaleDateString('fr-FR') : '',
       'Numéro Trans GU': ecart.numeroTransGu || '',
       'Pays': ecart.pays || '',
       'Statut': ecart.statut || 'EN_ATTENTE',
-      'Frais': ecart.fraisAssocie ? ecart.fraisAssocie.montant : 0,
       'Type Frais': ecart.fraisAssocie ? this.getFraisTypeLabel(ecart.fraisAssocie.typeCalcul) : '',
       'Pourcentage Frais': ecart.fraisAssocie?.pourcentage || '',
       'Commentaire': ecart.commentaire || '',
@@ -655,13 +738,14 @@ export class EcartSoldeComponent implements OnInit, OnDestroy {
       'ID Transaction': row['ID Transaction'],
       'Téléphone Client': row['Téléphone Client'],
       'Montant': row['Montant'],
+      'Frais': row['Frais'],
+      'Écart': row['Écart'],
       'Service': row['Service'],
       'Agence': row['Agence'],
       'Date Transaction': row['Date Transaction'],
       'Numéro Trans GU': row['Numéro Trans GU'],
       'Pays': row['Pays'],
       'Statut': row['Statut'],
-      'Frais': row['Frais'],
       'Type Frais': row['Type Frais'],
       'Pourcentage Frais': row['Pourcentage Frais'],
       'Commentaire': row['Commentaire'],
@@ -671,8 +755,8 @@ export class EcartSoldeComponent implements OnInit, OnDestroy {
     const worksheet = XLSX.utils.json_to_sheet(exportData);
 
     const columnWidths = [
-      { wch: 15 }, { wch: 15 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 15 },
-      { wch: 15 }, { wch: 10 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 15 }, { wch: 20 }, { wch: 15 }
+      { wch: 15 }, { wch: 15 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 15 },
+      { wch: 15 }, { wch: 10 }, { wch: 12 }, { wch: 12 }, { wch: 15 }, { wch: 20 }, { wch: 15 }
     ];
     worksheet['!cols'] = columnWidths;
 
@@ -702,6 +786,15 @@ export class EcartSoldeComponent implements OnInit, OnDestroy {
           if (header === 'Montant' && typeof value === 'number') {
             style.font = { ...style.font, bold: true, color: { rgb: '28A745' } };
             style.fill = { fgColor: { rgb: 'D4EDDA' } };
+          } else if (header === 'Écart' && typeof value === 'number') {
+            // Style pour l'écart : bleu si positif ou zéro, rouge si négatif
+            if (value >= 0) {
+              style.font = { ...style.font, bold: true, color: { rgb: '0066CC' } };
+              style.fill = { fgColor: { rgb: 'E6F2FF' } };
+            } else {
+              style.font = { ...style.font, bold: true, color: { rgb: 'CC0000' } };
+              style.fill = { fgColor: { rgb: 'FFE6E6' } };
+            }
           } else if (header === 'Statut') {
             if (value === 'EN_ATTENTE') {
               style.fill = { fgColor: { rgb: 'FFF3CD' } };
@@ -751,6 +844,14 @@ export class EcartSoldeComponent implements OnInit, OnDestroy {
   formatMontantTotal(): string {
     const total = this.filteredEcartSoldes.reduce((sum, ecart) => sum + ecart.montant, 0);
     return this.formatMontant(total);
+  }
+
+  // Méthode pour calculer l'écart (montant - frais)
+  calculateEcart(ecart: EcartSolde): number {
+    const montant = ecart.montant || 0;
+    const frais = ecart.fraisAssocie ? ecart.fraisAssocie.montant : 0;
+    // Toujours soustraire les frais du montant
+    return montant - frais;
   }
 
   // Méthodes pour la sélection multiple

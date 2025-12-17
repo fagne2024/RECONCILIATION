@@ -89,13 +89,14 @@
           <th>ID Transaction</th>
           <th>Téléphone Client</th>
           <th>Montant</th>
+          <th>Frais</th>
+          <th>Écart</th>
           <th>Service</th>
           <th>Agence</th>
           <th>Date Transaction</th>
           <th>Numéro Trans GU</th>
           <th>Pays</th>
           <th>Statut</th>
-          <th>Frais</th>
           <th>Commentaire</th>
           <th>Date Import</th>
           <th>Actions</th>
@@ -118,16 +119,6 @@
             <td class="id-cell">{{ row.data.idTransaction }}</td>
             <td class="phone-cell">{{ row.data.telephoneClient || '-' }}</td>
             <td class="amount-cell">{{ formatMontant(row.data.montant) }}</td>
-            <td class="service-cell">{{ row.data.service || '-' }}</td>
-            <td class="agence-cell">{{ row.data.agence || '-' }}</td>
-            <td class="date-cell">{{ formatDate(row.data.dateTransaction) }}</td>
-            <td class="gu-cell">{{ row.data.numeroTransGu || '-' }}</td>
-            <td class="pays-cell">{{ row.data.pays || '-' }}</td>
-            <td>
-              <span class="status-badge" [ngClass]="getStatutClass(row.data.statut || '')">
-                {{ row.data.statut || 'EN_ATTENTE' }}
-              </span>
-            </td>
             <td class="frais-cell">
               <div *ngIf="row.data.fraisAssocie" class="frais-info">
                 <span class="frais-amount">{{ formatMontantFrais(row.data.fraisAssocie.montant) }}</span>
@@ -141,6 +132,17 @@
               <div *ngIf="!row.data.fraisAssocie" class="no-frais">
                 <span class="no-frais-text">Aucun frais</span>
               </div>
+            </td>
+            <td class="amount-cell ecart-cell">{{ formatMontant(calculateEcart(row.data)) }}</td>
+            <td class="service-cell">{{ row.data.service || '-' }}</td>
+            <td class="agence-cell">{{ row.data.agence || '-' }}</td>
+            <td class="date-cell">{{ formatDate(row.data.dateTransaction) }}</td>
+            <td class="gu-cell">{{ row.data.numeroTransGu || '-' }}</td>
+            <td class="pays-cell">{{ row.data.pays || '-' }}</td>
+            <td>
+              <span class="status-badge" [ngClass]="getStatutClass(row.data.statut || '')">
+                {{ row.data.statut || 'EN_ATTENTE' }}
+              </span>
             </td>
             <td class="commentaire-cell">
               <div *ngIf="row.data.commentaire" class="commentaire-content">
@@ -173,6 +175,13 @@
             <td class="id-cell">-</td>
             <td class="phone-cell">-</td>
             <td class="amount-cell">-</td>
+            <td class="frais-cell">
+              <div class="frais-info">
+                <span class="frais-amount">{{ formatMontantFrais(row.data.ecartFrais) }}</span>
+                <span class="frais-type">Écart Frais</span>
+              </div>
+            </td>
+            <td class="amount-cell">-</td>
             <td class="service-cell">Revenu Journalier</td>
             <td class="agence-cell">{{ agence }}</td>
             <td class="date-cell">{{ formatDate(row.data.date) }}</td>
@@ -182,12 +191,6 @@
               <span class="status-badge revenu-badge">
                 REVENU
               </span>
-            </td>
-            <td class="frais-cell">
-              <div class="frais-info">
-                <span class="frais-amount">{{ formatMontantFrais(row.data.ecartFrais) }}</span>
-                <span class="frais-type">Écart Frais</span>
-              </div>
             </td>
             <td class="commentaire-cell">
               <div class="commentaire-content">

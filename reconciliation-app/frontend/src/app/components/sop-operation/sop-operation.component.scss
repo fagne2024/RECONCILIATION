@@ -14,6 +14,52 @@
   text-align: center;
   margin-bottom: 20px;
   flex-shrink: 0;
+  position: relative;
+}
+
+.header-navigation {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  margin-bottom: 20px;
+}
+
+.btn-back, .btn-aide, .btn-home {
+  padding: 12px 24px;
+  border: 2px solid #1976d2;
+  background: white;
+  border-radius: 12px;
+  color: #1976d2;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.3s ease;
+
+  i {
+    font-size: 1.1rem;
+  }
+
+  &:hover {
+    background: #1976d2;
+    color: white;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(25, 118, 210, 0.3);
+  }
+
+  &:active {
+    transform: translateY(0);
+  }
+}
+
+.btn-home {
+  padding: 12px 20px;
+  
+  i {
+    font-size: 1.2rem;
+  }
 }
 
 .sop-title {

@@ -294,21 +294,13 @@ export class EcartSoldeTabComponent implements OnInit, OnDestroy, OnChanges {
     let totalEcart = 0;
     
     // Calculer le total des écarts de solde
+    // La règle est TOUJOURS : montant - frais
     this.filteredEcartSoldes.forEach(ecart => {
       const montant = ecart.montant || 0;
       const frais = ecart.fraisAssocie?.montant || 0;
-      const service = ecart.service?.toUpperCase() || '';
       
-      if (service.includes('CASHIN')) {
-        // Pour CASHIN : montant + frais
-        totalEcart += montant + frais;
-      } else if (service.includes('PAIEMENT')) {
-        // Pour PAIEMENT : montant - frais
-        totalEcart += montant - frais;
-      } else {
-        // Pour les autres services : montant seulement
-        totalEcart += montant;
-      }
+      // Toujours faire montant - frais, peu importe le service
+      totalEcart += montant - frais;
     });
     
     // Soustraire les montants ecartFrais des lignes de revenu journalier
@@ -326,6 +318,14 @@ export class EcartSoldeTabComponent implements OnInit, OnDestroy, OnChanges {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2
     }).format(total) + ' F CFA';
+  }
+
+  // Méthode pour calculer l'écart individuel (montant - frais)
+  calculateEcart(ecart: EcartSolde): number {
+    const montant = ecart.montant || 0;
+    const frais = ecart.fraisAssocie ? ecart.fraisAssocie.montant : 0;
+    // Toujours soustraire les frais du montant
+    return montant - frais;
   }
 
   async validateEcartSolde(ecart: EcartSolde): Promise<void> {
@@ -464,13 +464,14 @@ export class EcartSoldeTabComponent implements OnInit, OnDestroy, OnChanges {
       'ID Transaction': ecart.idTransaction,
       'Téléphone Client': ecart.telephoneClient || '',
       'Montant': ecart.montant,
+      'Frais': ecart.fraisAssocie ? ecart.fraisAssocie.montant : 0,
+      'Écart': this.calculateEcart(ecart),
       'Service': ecart.service || '',
       'Agence': ecart.agence || '',
       'Date Transaction': ecart.dateTransaction ? new Date(ecart.dateTransaction).toLocaleDateString('fr-FR') : '',
       'Numéro Trans GU': ecart.numeroTransGu || '',
       'Pays': ecart.pays || '',
       'Statut': ecart.statut || 'EN_ATTENTE',
-      'Frais': ecart.fraisAssocie ? ecart.fraisAssocie.montant : 0,
       'Type Frais': ecart.fraisAssocie ? this.getFraisTypeLabel(ecart.fraisAssocie.typeCalcul) : '',
       'Pourcentage Frais': ecart.fraisAssocie?.pourcentage || '',
       'Commentaire': ecart.commentaire || '',
@@ -523,13 +524,14 @@ export class EcartSoldeTabComponent implements OnInit, OnDestroy, OnChanges {
       'ID Transaction': row['ID Transaction'],
       'Téléphone Client': row['Téléphone Client'],
       'Montant': row['Montant'],
+      'Frais': row['Frais'],
+      'Écart': row['Écart'],
       'Service': row['Service'],
       'Agence': row['Agence'],
       'Date Transaction': row['Date Transaction'],
       'Numéro Trans GU': row['Numéro Trans GU'],
       'Pays': row['Pays'],
       'Statut': row['Statut'],
-      'Frais': row['Frais'],
       'Type Frais': row['Type Frais'],
       'Pourcentage Frais': row['Pourcentage Frais'],
       'Commentaire': row['Commentaire'],
@@ -544,13 +546,14 @@ export class EcartSoldeTabComponent implements OnInit, OnDestroy, OnChanges {
       { wch: 15 }, // ID Transaction
       { wch: 15 }, // Téléphone Client
       { wch: 12 }, // Montant
+      { wch: 12 }, // Frais
+      { wch: 12 }, // Écart
       { wch: 12 }, // Service
       { wch: 12 }, // Agence
       { wch: 15 }, // Date Transaction
       { wch: 15 }, // Numéro Trans GU
       { wch: 10 }, // Pays
       { wch: 12 }, // Statut
-      { wch: 12 }, // Frais
       { wch: 12 }, // Type Frais
       { wch: 15 }, // Pourcentage Frais
       { wch: 20 }, // Commentaire
@@ -587,6 +590,15 @@ export class EcartSoldeTabComponent implements OnInit, OnDestroy, OnChanges {
           if (header === 'Montant' && typeof value === 'number') {
             style.font = { ...style.font, bold: true, color: { rgb: '28A745' } };
             style.fill = { fgColor: { rgb: 'D4EDDA' } };
+          } else if (header === 'Écart' && typeof value === 'number') {
+            // Style pour l'écart : bleu si positif ou zéro, rouge si négatif
+            if (value >= 0) {
+              style.font = { ...style.font, bold: true, color: { rgb: '0066CC' } };
+              style.fill = { fgColor: { rgb: 'E6F2FF' } };
+            } else {
+              style.font = { ...style.font, bold: true, color: { rgb: 'CC0000' } };
+              style.fill = { fgColor: { rgb: 'FFE6E6' } };
+            }
           } else if (header === 'Statut') {
             if (value === 'EN_ATTENTE') {
               style.fill = { fgColor: { rgb: 'FFF3CD' } };

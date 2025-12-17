@@ -1,4 +1,20 @@
 <div class="users-container">
+  <div class="header-navigation-bar">
+    <div class="header-navigation">
+      <button class="btn-back" (click)="goBack()" title="Retour">
+        <i class="fas fa-arrow-left"></i>
+        <span>Retour</span>
+      </button>
+      <button class="btn-aide" (click)="goToAide()" title="Page d'aide">
+        <i class="fas fa-question-circle"></i>
+        <span>Aide</span>
+      </button>
+      <button class="btn-home" (click)="goHome()" title="Accueil">
+        <i class="fas fa-home"></i>
+      </button>
+    </div>
+  </div>
+  
   <div class="header">
     <div class="header-title">
       <h2><i class="fas fa-users"></i> Gestion des utilisateurs</h2>

@@ -154,4 +154,41 @@ public class GuideNodeController {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);
         }
     }
+
+    @GetMapping("/diagnostic")
+    public ResponseEntity<Map<String, Object>> getDiagnostic() {
+        try {
+            Map<String, Object> diagnostic = guideNodeService.getDiagnostic();
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("diagnostic", diagnostic);
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            log.error("❌ Erreur lors du diagnostic: {}", e.getMessage(), e);
+            Map<String, Object> error = new HashMap<>();
+            error.put("success", false);
+            error.put("error", "Erreur lors du diagnostic: " + e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);
+        }
+    }
+
+    @PostMapping("/fix-orphans")
+    public ResponseEntity<Map<String, Object>> fixOrphans() {
+        try {
+            log.info("🔧 Correction des nœuds orphelins...");
+            int fixedCount = guideNodeService.fixOrphanNodes();
+            
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("message", "Nœuds orphelins corrigés avec succès");
+            response.put("fixedCount", fixedCount);
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            log.error("❌ Erreur lors de la correction: {}", e.getMessage(), e);
+            Map<String, Object> error = new HashMap<>();
+            error.put("success", false);
+            error.put("error", "Erreur lors de la correction: " + e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);
+        }
+    }
 }

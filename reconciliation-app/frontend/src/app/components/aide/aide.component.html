@@ -1,5 +1,14 @@
 <div class="aide-container">
   <div class="aide-header">
+    <div class="header-navigation">
+      <button class="btn-back" (click)="goBack()" title="Retour">
+        <i class="fas fa-arrow-left"></i>
+        <span>Retour</span>
+      </button>
+      <button class="btn-home" (click)="goHome()" title="Accueil">
+        <i class="fas fa-home"></i>
+      </button>
+    </div>
     <h1 class="aide-title">Choisissez une Option</h1>
   </div>
   
@@ -19,8 +28,19 @@
         <h2 class="card-title">{{ option.title }}</h2>
         <p class="card-description">{{ option.description }}</p>
       </div>
-      <div class="card-tag" [ngClass]="'tag-' + option.tagColor">
-        {{ option.tag }}
+      <div class="card-footer">
+        <div class="card-tag" [ngClass]="'tag-' + option.tagColor">
+          {{ option.tag }}
+        </div>
+        <button 
+          *ngIf="option.route" 
+          class="btn-card-action" 
+          (click)="$event.preventDefault(); $event.stopPropagation()"
+          [routerLink]="option.route"
+          title="Accéder">
+          <span>Accéder</span>
+          <i class="fas fa-arrow-right"></i>
+        </button>
       </div>
     </a>
   </div>

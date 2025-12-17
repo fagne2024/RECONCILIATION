@@ -1,4 +1,6 @@
 import { Component, OnInit } from '@angular/core';
+import { Location } from '@angular/common';
+import { Router } from '@angular/router';
 import { UserService } from '../../services/user.service';
 import { User } from '../../models/user.model';
 import { Profil } from '../../models/profil.model';
@@ -33,7 +35,9 @@ export class UsersComponent implements OnInit {
     private userService: UserService, 
     private profilService: ProfilService,
     private twoFactorService: TwoFactorAuthService,
-    private popupService: PopupService
+    private popupService: PopupService,
+    private location: Location,
+    private router: Router
   ) { }
 
   ngOnInit(): void {
@@ -343,5 +347,17 @@ export class UsersComponent implements OnInit {
         await this.popupService.showError(`Erreur lors de la réinitialisation du 2FA: ${errorMsg}`, 'Erreur');
       }
     });
+  }
+
+  goBack(): void {
+    this.location.back();
+  }
+
+  goHome(): void {
+    this.router.navigate(['/']);
+  }
+
+  goToAide(): void {
+    this.router.navigate(['/aide']);
   }
 } 

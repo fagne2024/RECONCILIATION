@@ -1,11 +1,30 @@
 <div class="guide-container">
   <div class="guide-header">
+    <div class="header-navigation">
+      <button class="btn-back" (click)="goBack()" title="Retour">
+        <i class="fas fa-arrow-left"></i>
+        <span>Retour</span>
+      </button>
+      <button class="btn-aide" (click)="goToAide()" title="Page d'aide">
+        <i class="fas fa-question-circle"></i>
+        <span>Aide</span>
+      </button>
+      <button class="btn-home" (click)="goHome()" title="Accueil">
+        <i class="fas fa-home"></i>
+      </button>
+    </div>
     <h1 class="guide-main-title">Guide d'utilisation</h1>
     <h2 class="guide-subtitle">Visualisation des Guides</h2>
   </div>
 
   <div class="guide-content">
-    <div class="guide-tree" *ngIf="guideStructure">
+    <!-- Indicateur de chargement -->
+    <div class="loading-indicator" *ngIf="isLoadingStructure">
+      <i class="fas fa-spinner fa-spin"></i>
+      <p>Chargement des guides depuis la base de données...</p>
+    </div>
+
+    <div class="guide-tree" *ngIf="guideStructure && !isLoadingStructure">
       <!-- Bouton d'ajout principal -->
       <div class="add-guide-section">
         <button class="btn-add-guide" (click)="openAddModal(guideStructure, $event)">
@@ -14,10 +33,38 @@
         </button>
       </div>
 
+      <!-- Contrôles de pagination en haut -->
+      <div class="pagination-controls" *ngIf="guideStructure.children && guideStructure.children.length > 0">
+        <div class="pagination-info">
+          <span>Affichage {{ (currentPage - 1) * itemsPerPage + 1 }} - {{ Math.min(currentPage * itemsPerPage, guideStructure.children.length) }} sur {{ guideStructure.children.length }} guides</span>
+          <select (change)="changeItemsPerPage($event)" [value]="itemsPerPage" class="items-per-page-select">
+            <option value="5">5 par page</option>
+            <option value="10">10 par page</option>
+            <option value="20">20 par page</option>
+            <option value="50">50 par page</option>
+          </select>
+        </div>
+        <div class="pagination-buttons">
+          <button class="pagination-btn" (click)="previousPage()" [disabled]="currentPage === 1">
+            <i class="fas fa-chevron-left"></i>
+          </button>
+          <button 
+            *ngFor="let page of pageNumbers"
+            class="pagination-btn"
+            [class.active]="page === currentPage"
+            (click)="goToPage(page)">
+            {{ page }}
+          </button>
+          <button class="pagination-btn" (click)="nextPage()" [disabled]="currentPage === totalPages">
+            <i class="fas fa-chevron-right"></i>
+          </button>
+        </div>
+      </div>
+
       <!-- Liste des guides -->
       <div class="guides-list" *ngIf="guideStructure.children && guideStructure.children.length > 0">
         <div 
-          *ngFor="let guide of guideStructure.children" 
+          *ngFor="let guide of paginatedGuides" 
           class="guide-item"
           (click)="onNodeClick(guide, $event)">
           <div class="node-content guide-content">
@@ -59,6 +106,19 @@
               </div>
             </div>
           </div>
+        </div>
+      </div>
+
+      <!-- Contrôles de pagination en bas -->
+      <div class="pagination-controls pagination-bottom" *ngIf="guideStructure.children && guideStructure.children.length > 0 && totalPages > 1">
+        <div class="pagination-buttons">
+          <button class="pagination-btn" (click)="previousPage()" [disabled]="currentPage === 1">
+            <i class="fas fa-chevron-left"></i> Précédent
+          </button>
+          <span class="page-indicator">Page {{ currentPage }} sur {{ totalPages }}</span>
+          <button class="pagination-btn" (click)="nextPage()" [disabled]="currentPage === totalPages">
+            Suivant <i class="fas fa-chevron-right"></i>
+          </button>
         </div>
       </div>
 

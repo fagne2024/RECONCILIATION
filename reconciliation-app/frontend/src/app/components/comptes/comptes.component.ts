@@ -1,6 +1,7 @@
 import { Component, OnInit, OnDestroy, ViewChild } from '@angular/core';
 import { FormBuilder, FormGroup, Validators, FormControl } from '@angular/forms';
-import { Subscription } from 'rxjs';
+import { Subscription, timer, from } from 'rxjs';
+import { delay, retryWhen, scan, concatMap, tap } from 'rxjs/operators';
 import { CompteService } from '../../services/compte.service';
 import { Compte, CompteFilter } from '../../models/compte.model';
 import * as ExcelJS from 'exceljs';
@@ -1344,18 +1345,40 @@ export class ComptesComponent implements OnInit, OnDestroy {
         // Vider le cache
         this.impactOPSums = {};
 
-        // Charger les sommes pour chaque date
-        this.releveSoldesJournaliers.forEach(solde => {
-            this.impactOPService.getImpactOPSumForDate(solde.date, this.selectedCompte!.numeroCompte).subscribe({
-                next: (sum) => {
-                    this.impactOPSums[solde.date] = sum;
+        // Charger les sommes pour chaque date de manière séquentielle avec délai
+        // pour éviter les erreurs 429 (Too Many Requests)
+        this.subscription.add(
+            from(this.releveSoldesJournaliers).pipe(
+                concatMap((solde, index) => 
+                    this.impactOPService.getImpactOPSumForDate(solde.date, this.selectedCompte!.numeroCompte).pipe(
+                        delay(index * 150), // Délai progressif de 150ms entre chaque appel
+                        retryWhen(errors => errors.pipe(
+                            scan((retryCount, err) => {
+                                if (retryCount >= 2 || err.status !== 429) {
+                                    throw err;
+                                }
+                                console.log(`Rate limit atteint pour ${solde.date}. Nouvelle tentative (${retryCount + 1}/2)...`);
+                                return retryCount + 1;
+                            }, 0),
+                            delay(1000) // Attendre 1 seconde avant de réessayer
+                        )),
+                        tap(sum => {
+                            this.impactOPSums[solde.date] = sum;
+                        })
+                    )
+                )
+            ).subscribe({
+                next: () => {
+                    // Chaque réponse individuelle est traitée dans le tap ci-dessus
                 },
                 error: (error) => {
-                    console.error('Erreur lors du chargement de la somme Impact OP pour la date:', solde.date, error);
-                    this.impactOPSums[solde.date] = 0;
+                    console.error('Erreur lors du chargement des sommes Impact OP:', error);
+                },
+                complete: () => {
+                    console.log('Chargement des sommes Impact OP terminé');
                 }
-            });
-        });
+            })
+        );
     }
 
     // Méthode pour traiter les opérations du relevé (calcul des soldes, etc.)
@@ -1376,13 +1399,39 @@ export class ComptesComponent implements OnInit, OnDestroy {
 
         this.loadManualClosingOverrides();
 
-        // Après le calcul de this.releveSoldesJournaliers dans loadReleveOperations()
-        this.releveSoldesJournaliers.forEach(solde => {
-            this.compteService.getSoldeBo(this.selectedCompte?.numeroCompte || '', solde.date)
-                .subscribe(val => {
-                    if (val !== null && val !== undefined) solde.closingBo = val;
-                });
-        });
+        // Charger les soldes BO de manière séquentielle pour éviter les erreurs 429
+        this.subscription.add(
+            from(this.releveSoldesJournaliers).pipe(
+                concatMap((solde, index) =>
+                    this.compteService.getSoldeBo(this.selectedCompte?.numeroCompte || '', solde.date).pipe(
+                        delay(index * 150), // Délai progressif de 150ms entre chaque appel
+                        retryWhen(errors => errors.pipe(
+                            scan((retryCount, err) => {
+                                if (retryCount >= 2 || err.status !== 429) {
+                                    throw err;
+                                }
+                                console.log(`Rate limit atteint pour le solde BO ${solde.date}. Nouvelle tentative (${retryCount + 1}/2)...`);
+                                return retryCount + 1;
+                            }, 0),
+                            delay(1000)
+                        )),
+                        tap(val => {
+                            if (val !== null && val !== undefined) solde.closingBo = val;
+                        })
+                    )
+                )
+            ).subscribe({
+                next: () => {
+                    // Chaque réponse individuelle est traitée dans le tap ci-dessus
+                },
+                error: (error) => {
+                    console.error('Erreur lors du chargement des soldes BO:', error);
+                },
+                complete: () => {
+                    console.log('Chargement des soldes BO terminé');
+                }
+            })
+        );
 
         this.calculateRelevePagination();
         this.isLoadingReleve = false;

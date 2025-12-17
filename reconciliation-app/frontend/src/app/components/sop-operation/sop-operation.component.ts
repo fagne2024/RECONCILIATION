@@ -1,5 +1,7 @@
 import { Component, OnInit } from '@angular/core';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
+import { Location } from '@angular/common';
+import { Router } from '@angular/router';
 import { SopDocumentService } from '../../services/sop-document.service';
 import { SopNodeService } from '../../services/sop-node.service';
 import { PopupService } from '../../services/popup.service';
@@ -149,7 +151,9 @@ export class SopOperationComponent implements OnInit {
     private sopDocumentService: SopDocumentService,
     private sopNodeService: SopNodeService,
     private popupService: PopupService,
-    private sanitizer: DomSanitizer
+    private sanitizer: DomSanitizer,
+    private location: Location,
+    private router: Router
   ) { }
 
   ngOnInit(): void {
@@ -1238,6 +1242,18 @@ export class SopOperationComponent implements OnInit {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
+  }
+
+  goBack(): void {
+    this.location.back();
+  }
+
+  goHome(): void {
+    this.router.navigate(['/']);
+  }
+
+  goToAide(): void {
+    this.router.navigate(['/aide']);
   }
 }
 

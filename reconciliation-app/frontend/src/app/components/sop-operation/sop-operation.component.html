@@ -1,5 +1,18 @@
 <div class="sop-operation-container">
   <div class="sop-header">
+    <div class="header-navigation">
+      <button class="btn-back" (click)="goBack()" title="Retour">
+        <i class="fas fa-arrow-left"></i>
+        <span>Retour</span>
+      </button>
+      <button class="btn-aide" (click)="goToAide()" title="Page d'aide">
+        <i class="fas fa-question-circle"></i>
+        <span>Aide</span>
+      </button>
+      <button class="btn-home" (click)="goHome()" title="Accueil">
+        <i class="fas fa-home"></i>
+      </button>
+    </div>
     <h1 class="sop-title">Visualisation des SOP</h1>
   </div>
 

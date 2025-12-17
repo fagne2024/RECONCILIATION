@@ -237,13 +237,14 @@
             <th>ID Transaction</th>
             <th>Téléphone Client</th>
             <th>Montant</th>
+            <th>Frais</th>
+            <th>Écart</th>
             <th>Service</th>
             <th>Agence</th>
             <th>Date Transaction</th>
             <th>Numéro Trans GU</th>
             <th>Pays</th>
             <th>Statut</th>
-            <th>Frais</th>
             <th>Commentaire</th>
             <th>Date Import</th>
             <th>Actions</th>
@@ -260,16 +261,6 @@
             <td>{{ ecart.idTransaction }}</td>
             <td>{{ ecart.telephoneClient || '-' }}</td>
             <td class="amount">{{ formatMontant(ecart.montant) }}</td>
-            <td>{{ ecart.service || '-' }}</td>
-            <td>{{ ecart.agence || '-' }}</td>
-            <td>{{ formatDate(ecart.dateTransaction) }}</td>
-            <td>{{ ecart.numeroTransGu || '-' }}</td>
-            <td>{{ ecart.pays || '-' }}</td>
-            <td>
-              <span class="status-badge" [ngClass]="getStatutClass(ecart.statut || '')">
-                {{ ecart.statut || 'EN_ATTENTE' }}
-              </span>
-            </td>
             <td class="frais-cell">
               <div *ngIf="ecart.fraisAssocie" class="frais-info">
                 <span class="frais-amount">{{ formatMontantFrais(ecart.fraisAssocie.montant) }}</span>
@@ -283,6 +274,17 @@
               <div *ngIf="!ecart.fraisAssocie" class="no-frais">
                 <span class="no-frais-text">Aucun frais</span>
               </div>
+            </td>
+            <td class="amount ecart-cell">{{ formatMontant(calculateEcart(ecart)) }}</td>
+            <td>{{ ecart.service || '-' }}</td>
+            <td>{{ ecart.agence || '-' }}</td>
+            <td>{{ formatDate(ecart.dateTransaction) }}</td>
+            <td>{{ ecart.numeroTransGu || '-' }}</td>
+            <td>{{ ecart.pays || '-' }}</td>
+            <td>
+              <span class="status-badge" [ngClass]="getStatutClass(ecart.statut || '')">
+                {{ ecart.statut || 'EN_ATTENTE' }}
+              </span>
             </td>
             <td class="commentaire-cell">
               <div *ngIf="ecart.commentaire" class="commentaire-content">
