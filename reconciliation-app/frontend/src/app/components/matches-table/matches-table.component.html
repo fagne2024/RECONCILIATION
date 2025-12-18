@@ -194,6 +194,12 @@
         <button (click)="closeColumnSelector()" class="cancel-btn">
           Fermer
         </button>
+        <button 
+          (click)="exportResults(); closeColumnSelector()" 
+          class="export-btn"
+          [disabled]="selectedColumnsCount === 0 || isExporting">
+          {{ isExporting ? '⏳ Export en cours...' : '📥 Exporter' }}
+        </button>
       </div>
     </div>
   </div>
