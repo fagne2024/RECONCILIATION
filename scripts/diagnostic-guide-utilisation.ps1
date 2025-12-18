@@ -211,3 +211,5 @@ if ($diagnosticResponse -and $diagnosticResponse.diagnostic.totalNodes -eq 0) {
 }
 
 Write-Host ""
+
+

@@ -79,3 +79,5 @@ ORDER BY
 -- INSERT INTO guide_node (node_id, label, parent_id, display_order, created_at, updated_at)
 -- SELECT 'sous-guide-test-1', 'Sous-Guide de Test 1', id, 0, NOW(), NOW()
 -- FROM guide_node WHERE node_id = 'guide-test-1';
+
+

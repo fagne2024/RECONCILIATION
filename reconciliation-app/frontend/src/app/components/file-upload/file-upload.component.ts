@@ -231,6 +231,41 @@ export class FileUploadComponent implements OnDestroy {
         }
     }
 
+    // Méthodes de suppression des fichiers
+    removeBoFile(event: Event): void {
+        event.stopPropagation(); // Empêcher le déclenchement du clic sur le conteneur
+        console.log('🗑️ Suppression du fichier BO');
+        this.boFile = null;
+        this.boData = [];
+        this.estimatedTime = '';
+        this.updateEstimatedTime();
+    }
+
+    removePartnerFile(event: Event): void {
+        event.stopPropagation(); // Empêcher le déclenchement du clic sur le conteneur
+        console.log('🗑️ Suppression du fichier Partenaire');
+        this.partnerFile = null;
+        this.partnerData = [];
+        this.estimatedTime = '';
+        this.updateEstimatedTime();
+    }
+
+    removeAutoBoFile(event: Event): void {
+        event.stopPropagation(); // Empêcher le déclenchement du clic sur le conteneur
+        console.log('🗑️ Suppression du fichier BO automatique');
+        this.autoBoFile = null;
+        this.autoBoData = [];
+        this.autoBoFileName = '';
+    }
+
+    removeAutoPartnerFile(event: Event): void {
+        event.stopPropagation(); // Empêcher le déclenchement du clic sur le conteneur
+        console.log('🗑️ Suppression du fichier Partenaire automatique');
+        this.autoPartnerFile = null;
+        this.autoPartnerData = [];
+        this.autoPartnerFileName = '';
+    }
+
     // Nouvelle méthode pour traiter le fichier BO en mode manuel avec détection TRXBO
     private processManualBoFile(file: File): void {
         console.log('🔧 Traitement du fichier BO en mode manuel:', file.name);
@@ -2152,7 +2187,9 @@ export class FileUploadComponent implements OnDestroy {
             const colLower = col.toLowerCase();
             return colLower.includes('statut') || 
                    colLower.includes('status') ||
-                   colLower.includes('état');
+                   colLower.includes('état') ||
+                   colLower.includes('généré le') ||
+                   colLower.includes('genere le');
         });
         
         // Si on trouve au moins une colonne service/type, on active la sélection
@@ -2203,7 +2240,9 @@ export class FileUploadComponent implements OnDestroy {
             const colLower = col.toLowerCase();
             return colLower.includes('statut') || 
                    colLower.includes('status') ||
-                   colLower.includes('état');
+                   colLower.includes('état') ||
+                   colLower.includes('généré le') ||
+                   colLower.includes('genere le');
         });
         
         // Si on trouve au moins une colonne service/type, on active la sélection
@@ -2622,7 +2661,10 @@ export class FileUploadComponent implements OnDestroy {
                 return colLower.includes('paiement') || 
                        colLower.includes('payment') ||
                        colLower.includes('moyen de paiement') ||
-                       colLower.includes('moyen paiement');
+                       colLower.includes('moyen paiement') ||
+                       colLower.includes('application :') ||
+                       colLower.includes('application:') ||
+                       colLower.includes('application');
             });
             
             if (paymentColumn) {

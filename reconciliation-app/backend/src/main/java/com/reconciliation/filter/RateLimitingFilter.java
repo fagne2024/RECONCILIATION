@@ -43,6 +43,9 @@ public class RateLimitingFilter extends OncePerRequestFilter {
     @Value("${rate.limit.by-ip:true}")
     private boolean limitByIp;
 
+    @Value("${rate.limit.expose-headers:false}")
+    private boolean exposeRateLimitHeaders;
+
     // Chemins exclus du rate limiting
     private static final String[] EXCLUDED_PATHS = {
         "/actuator/health",
@@ -178,8 +181,10 @@ public class RateLimitingFilter extends OncePerRequestFilter {
         // Enregistrer la requête
         counter.addRequest(currentTime);
 
-        // Ajouter les en-têtes de rate limiting
-        addRateLimitHeaders(response, counter, currentTime);
+        // Ajouter les en-têtes de rate limiting seulement si configuré
+        if (exposeRateLimitHeaders) {
+            addRateLimitHeaders(response, counter, currentTime);
+        }
 
         return true;
     }
@@ -214,10 +219,18 @@ public class RateLimitingFilter extends OncePerRequestFilter {
         
         Map<String, Object> errorResponse = new HashMap<>();
         errorResponse.put("error", "Rate Limit Exceeded");
-        errorResponse.put("message", message + ". Limite: " + limit + " requêtes par " + period);
+        
+        // Ne divulguer les détails que si les en-têtes sont exposés
+        if (exposeRateLimitHeaders) {
+            errorResponse.put("message", message + ". Limite: " + limit + " requêtes par " + period);
+            errorResponse.put("limit", limit);
+            errorResponse.put("period", period);
+        } else {
+            // Message générique pour la sécurité
+            errorResponse.put("message", "Trop de requêtes. Veuillez réessayer plus tard.");
+        }
+        
         errorResponse.put("status", HttpStatus.TOO_MANY_REQUESTS.value());
-        errorResponse.put("limit", limit);
-        errorResponse.put("period", period);
         
         ObjectMapper mapper = new ObjectMapper();
         response.getWriter().write(mapper.writeValueAsString(errorResponse));

@@ -6,6 +6,9 @@ import fileWatcherRoutes from './routes/file-watcher.routes';
 
 const app = express();
 
+// Sécurité : Masquer l'en-tête X-Powered-By pour ne pas divulguer Express
+app.disable('x-powered-by');
+
 app.use(cors());
 app.use(express.json());
 

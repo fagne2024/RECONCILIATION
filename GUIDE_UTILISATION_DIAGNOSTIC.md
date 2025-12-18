@@ -247,3 +247,5 @@ Si le problème persiste après avoir suivi ces étapes :
    - Configuration réseau et pare-feu
 
 3. Contactez l'équipe de développement avec les informations collectées.
+
+

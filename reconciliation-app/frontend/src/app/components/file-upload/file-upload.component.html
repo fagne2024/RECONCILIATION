@@ -163,6 +163,9 @@
             <input #boFileInput type="file" (change)="onBoFileSelected($event)" accept=".csv, .xls, .xlsx, .xlsm, .xlsb" style="display: none">
             <div class="file-info" [class.loaded]="boFile">
                 {{ boFile ? boFile.name : 'Aucun fichier sélectionné' }}
+                <button *ngIf="boFile" class="remove-file-btn" (click)="removeBoFile($event)">
+                    <i class="fas fa-times"></i>
+                </button>
             </div>
         </div>
 
@@ -173,6 +176,9 @@
             <input #partnerFileInput type="file" (change)="onPartnerFileSelected($event)" accept=".csv, .xls, .xlsx, .xlsm, .xlsb" style="display: none">
             <div class="file-info" [class.loaded]="partnerFile">
                 {{ partnerFile ? partnerFile.name : 'Aucun fichier sélectionné' }}
+                <button *ngIf="partnerFile" class="remove-file-btn" (click)="removePartnerFile($event)">
+                    <i class="fas fa-times"></i>
+                </button>
             </div>
         </div>
     </div>
@@ -319,6 +325,9 @@
                 <input #autoBoFileInput type="file" (change)="onAutoBoFileSelected($event)" accept=".csv, .xls, .xlsx, .xlsm, .xlsb" style="display: none">
                 <div class="file-info" [class.loaded]="autoBoFile || autoBoData.length > 0">
                     {{ autoBoFileName || (autoBoFile ? autoBoFile.name : (autoBoData.length > 0 ? 'Fichier chargé (' + autoBoData.length + ' lignes)' : 'Aucun fichier sélectionné')) }}
+                    <button *ngIf="autoBoFile || autoBoData.length > 0" class="remove-file-btn" (click)="removeAutoBoFile($event)">
+                        <i class="fas fa-times"></i>
+                    </button>
                 </div>
             </div>
 
@@ -329,6 +338,9 @@
                 <input #autoPartnerFileInput type="file" (change)="onAutoPartnerFileSelected($event)" accept=".csv, .xls, .xlsx, .xlsm, .xlsb" style="display: none">
                 <div class="file-info" [class.loaded]="autoPartnerFile || autoPartnerData.length > 0">
                     {{ autoPartnerFileName || (autoPartnerFile ? autoPartnerFile.name : (autoPartnerData.length > 0 ? 'Fichier chargé (' + autoPartnerData.length + ' lignes)' : 'Aucun fichier sélectionné')) }}
+                    <button *ngIf="autoPartnerFile || autoPartnerData.length > 0" class="remove-file-btn" (click)="removeAutoPartnerFile($event)">
+                        <i class="fas fa-times"></i>
+                    </button>
                 </div>
             </div>
         </div>

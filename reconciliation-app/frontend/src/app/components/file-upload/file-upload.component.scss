@@ -741,11 +741,47 @@
     margin-top: 15px;
     font-size: 0.9em;
     color: #666;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
 }
 
 .file-info.loaded {
     color: #4CAF50;
     font-weight: bold;
+}
+
+.remove-file-btn {
+    background: #dc3545;
+    color: white;
+    border: none;
+    border-radius: 50%;
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 14px;
+    transition: all 0.3s ease;
+    padding: 0;
+    flex-shrink: 0;
+
+    i {
+        font-size: 12px;
+    }
+
+    &:hover {
+        background: #c82333;
+        transform: scale(1.1);
+        box-shadow: 0 2px 8px rgba(220, 53, 69, 0.3);
+    }
+
+    &:active {
+        transform: scale(0.95);
+    }
 }
 
 .status-panel {
