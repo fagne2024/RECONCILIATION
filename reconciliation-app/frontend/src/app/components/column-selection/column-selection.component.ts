@@ -17,7 +17,7 @@ import { ReconciliationRequest } from '../../models/reconciliation-request.model
     template: `
         <div class="column-selection-container">
             <h2>📊 Sélection des colonnes</h2>
-            <p class="description">Sélectionnez les colonnes clés et les colonnes à comparer</p>
+            <p class="description">Sélectionnez les colonnes clés pour la réconciliation</p>
 
             <!-- Option pour désactiver l'analyse automatique (seulement en mode assisté) -->
             <div class="section analysis-options-section" *ngIf="!disableAutoAnalysis">
@@ -39,7 +39,7 @@ import { ReconciliationRequest } from '../../models/reconciliation-request.model
             <div class="section manual-mode-section" *ngIf="disableAutoAnalysis">
                 <h3>🖐️ Mode Manuel</h3>
                 <p class="manual-mode-description">
-                    Vous êtes en mode manuel. Sélectionnez manuellement les colonnes clés et les colonnes à comparer sans analyse automatique.
+                    Vous êtes en mode manuel. Sélectionnez manuellement les colonnes clés sans analyse automatique.
                 </p>
             </div>
 
@@ -123,38 +123,40 @@ import { ReconciliationRequest } from '../../models/reconciliation-request.model
             </div>
 
             <!-- Clés supplémentaires -->
-            <div class="section">
+            <div class="section" *ngIf="additionalKeys.length > 0">
                 <h3>🔑 Clés supplémentaires (optionnel)</h3>
                 <p class="section-description">Ajoutez des clés supplémentaires pour une réconciliation plus précise</p>
                 
                 <div class="additional-keys">
-                    <div class="additional-key-row" *ngFor="let keyPair of additionalKeys; let i = index">
-                        <div class="column-group">
-                            <label>Colonne BO supplémentaire</label>
-                            <select 
-                                [(ngModel)]="keyPair.boColumn"
-                                (ngModelChange)="onAdditionalBoKeyChange($event, i)">
-                                <option value="">Sélectionnez une colonne</option>
-                                <option *ngFor="let column of boColumns" [ngValue]="column">
-                                    {{column}}
-                                </option>
-                            </select>
-                        </div>
+                    <div class="additional-key-pair" *ngFor="let keyPair of additionalKeys; let i = index">
+                        <div class="key-columns-wrapper">
+                            <div class="column-group">
+                                <label>Colonne clé BO</label>
+                                <select 
+                                    [(ngModel)]="keyPair.boColumn"
+                                    (ngModelChange)="onAdditionalBoKeyChange($event, i)">
+                                    <option value="">Sélectionnez une colonne</option>
+                                    <option *ngFor="let column of boColumns" [ngValue]="column">
+                                        {{column}}
+                                    </option>
+                                </select>
+                            </div>
 
-                        <div class="column-group">
-                            <label>Colonne Partenaire supplémentaire</label>
-                            <select 
-                                [(ngModel)]="keyPair.partnerColumn"
-                                (ngModelChange)="onAdditionalPartnerKeyChange($event, i)">
-                                <option value="">Sélectionnez une colonne</option>
-                                <option *ngFor="let column of partnerColumns" [ngValue]="column">
-                                    {{column}}
-                                </option>
-                            </select>
+                            <div class="column-group">
+                                <label>Colonne clé Partenaire</label>
+                                <select 
+                                    [(ngModel)]="keyPair.partnerColumn"
+                                    (ngModelChange)="onAdditionalPartnerKeyChange($event, i)">
+                                    <option value="">Sélectionnez une colonne</option>
+                                    <option *ngFor="let column of partnerColumns" [ngValue]="column">
+                                        {{column}}
+                                    </option>
+                                </select>
+                            </div>
                         </div>
-
-                        <button class="remove-btn" (click)="removeAdditionalKey(i)">
-                            🗑️
+                        
+                        <button class="remove-key-btn" (click)="removeAdditionalKey(i)" title="Supprimer cette clé">
+                            🗑️ Supprimer
                         </button>
                     </div>
                 </div>
@@ -163,46 +165,13 @@ import { ReconciliationRequest } from '../../models/reconciliation-request.model
                     ➕ Ajouter une clé supplémentaire
                 </button>
             </div>
-
-            <!-- Colonnes à comparer -->
-            <div class="section">
-                <h3>🔄 Colonnes à comparer</h3>
-                <p class="section-description">Sélectionnez les colonnes que vous souhaitez comparer entre les deux fichiers</p>
-                
-                <div class="comparison-columns">
-                    <div class="comparison-row" *ngFor="let comparison of comparisonColumns; let i = index">
-                        <div class="column-group">
-                            <label>Colonne BO</label>
-                            <select 
-                                [(ngModel)]="comparison.boColumn"
-                                (ngModelChange)="onBoComparisonColumnChange($event, i)">
-                                <option value="">Sélectionnez une colonne</option>
-                                <option *ngFor="let column of boColumns" [ngValue]="column">
-                                    {{column}}
-                                </option>
-                            </select>
-                        </div>
-
-                        <div class="column-group">
-                            <label>Colonne Partenaire</label>
-                            <select 
-                                [(ngModel)]="comparison.partnerColumn"
-                                (ngModelChange)="onPartnerComparisonColumnChange($event, i)">
-                                <option value="">Sélectionnez une colonne</option>
-                                <option *ngFor="let column of partnerColumns" [ngValue]="column">
-                                    {{column}}
-                                </option>
-                            </select>
-                        </div>
-
-                        <button class="remove-btn" (click)="removeComparisonColumn(i)" *ngIf="comparisonColumns.length > 1">
-                            🗑️
-                        </button>
-                    </div>
-                </div>
-
-                <button class="add-btn" (click)="addComparisonColumn()">
-                    ➕ Ajouter une colonne à comparer
+            
+            <!-- Bouton pour ajouter la première clé supplémentaire -->
+            <div class="section" *ngIf="additionalKeys.length === 0">
+                <h3>🔑 Clés supplémentaires (optionnel)</h3>
+                <p class="section-description">Ajoutez des clés supplémentaires pour une réconciliation plus précise</p>
+                <button class="add-btn" (click)="addAdditionalKey()">
+                    ➕ Ajouter une clé supplémentaire
                 </button>
             </div>
 
@@ -333,6 +302,47 @@ import { ReconciliationRequest } from '../../models/reconciliation-request.model
 
         .add-btn:hover {
             background: #2196F3;
+            color: white;
+        }
+
+        /* Styles pour les clés supplémentaires */
+        .additional-keys {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .additional-key-pair {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            padding: 15px;
+            background: white;
+            border-radius: 8px;
+            border: 1px solid #e0e0e0;
+        }
+
+        .key-columns-wrapper {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        .remove-key-btn {
+            background: #fff3f3;
+            border: 1px solid #dc3545;
+            color: #dc3545;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.9em;
+            transition: all 0.3s ease;
+            align-self: flex-start;
+        }
+
+        .remove-key-btn:hover {
+            background: #dc3545;
             color: white;
         }
 
@@ -707,7 +717,7 @@ export class ColumnSelectionComponent implements OnDestroy, OnChanges, OnInit {
     selectedPartnerKeyColumn: string = '';
 
     additionalKeys: { boColumn: string, partnerColumn: string }[] = [];
-    comparisonColumns: { boColumn: string, partnerColumn: string }[] = [{ boColumn: '', partnerColumn: '' }];
+    comparisonColumns: { boColumn: string, partnerColumn: string }[] = [];
     isValid: boolean = false;
     private subscription: Subscription = new Subscription();
 

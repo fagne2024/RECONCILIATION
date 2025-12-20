@@ -12,6 +12,9 @@ public class ReconciliationRequest {
     private String partnerKeyColumn;
     private List<ColumnComparison> comparisonColumns;
     
+    // Clés supplémentaires pour une réconciliation plus précise (optionnel)
+    private List<AdditionalKey> additionalKeys;
+    
     // ID du modèle de traitement à utiliser pour les règles de nettoyage
     private String modelId;
     
@@ -20,6 +23,12 @@ public class ReconciliationRequest {
     
     // Type de réconciliation (1-1, 1-2, 1-3, 1-4, 1-5)
     private String reconciliationType = "1-1";
+    
+    @Data
+    public static class AdditionalKey {
+        private String boColumn;
+        private String partnerColumn;
+    }
     
     @Data
     public static class BOColumnFilter {

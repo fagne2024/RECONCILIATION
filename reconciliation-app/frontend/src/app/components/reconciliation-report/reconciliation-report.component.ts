@@ -2792,8 +2792,8 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         // Indisponible si aucun enregistrement
         if (totalTransactions === 0) return 'REPORTING INDISPONIBLE';
 
-        // ✅ OK si 100% de correspondances (aucun écart)
-        if (boOnly === 0 && partnerOnly === 0 && mismatches === 0 && matches === totalTransactions) {
+        // ✅ OK si pas d'écarts constatés (prioritaire)
+        if (boOnly === 0 && partnerOnly === 0 && mismatches === 0) {
             return 'OK';
         }
 

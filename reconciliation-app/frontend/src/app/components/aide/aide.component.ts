@@ -32,7 +32,7 @@ export class AideComponent implements OnInit {
       icon: 'fas fa-sync-alt',
       tag: 'TRANSACTIONS',
       tagColor: 'pink',
-      route: '/reconciliation-report'
+      route: '/sop-reconciliation-trx'
     },
     {
       title: 'SOP RECONCILIATION BANQUE',

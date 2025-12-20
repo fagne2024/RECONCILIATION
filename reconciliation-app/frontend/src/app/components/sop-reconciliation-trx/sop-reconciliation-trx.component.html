@@ -1,0 +1,445 @@
+<div class="sop-operation-container">
+  <div class="sop-header">
+    <div class="header-navigation">
+      <button class="btn-back" (click)="goBack()" title="Retour">
+        <i class="fas fa-arrow-left"></i>
+        <span>Retour</span>
+      </button>
+      <button class="btn-aide" (click)="goToAide()" title="Page d'aide">
+        <i class="fas fa-question-circle"></i>
+        <span>Aide</span>
+      </button>
+      <button class="btn-home" (click)="goHome()" title="Accueil">
+        <i class="fas fa-home"></i>
+      </button>
+    </div>
+    <h1 class="sop-title">Visualisation des SOP</h1>
+  </div>
+
+  <div class="mind-map-container">
+    <div class="mind-map" *ngIf="sopStructure">
+      <!-- Nœud racine -->
+      <div class="root-node" (click)="onNodeClick(sopStructure, $event)">
+        <div class="node-content root">
+          <i class="fas fa-sitemap"></i>
+          <span>{{ sopStructure.label }}</span>
+        </div>
+        <div class="node-actions" (click)="$event.stopPropagation()">
+          <button class="action-btn add-btn" (click)="openAddModal(sopStructure, $event)" title="Ajouter un sous-titre">
+            <i class="fas fa-plus"></i>
+          </button>
+          <button class="action-btn edit-btn" (click)="openEditModal(sopStructure, $event)" title="Modifier">
+            <i class="fas fa-edit"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- Container pour les deux branches principales -->
+      <div class="branches-container">
+        <!-- Branche Back Office -->
+        <div class="branch branch-back-office">
+          <div class="branch-node level-1" (click)="onNodeClick(sopStructure.children![0], $event)">
+            <div class="node-content level-1-content">
+              <i class="fas fa-building"></i>
+              <span>{{ sopStructure.children![0].label }}</span>
+            </div>
+            <div class="node-actions" (click)="$event.stopPropagation()">
+              <button class="action-btn add-btn" (click)="openAddModal(sopStructure.children![0], $event)" title="Ajouter un sous-titre">
+                <i class="fas fa-plus"></i>
+              </button>
+              <button class="action-btn edit-btn" (click)="openEditModal(sopStructure.children![0], $event)" title="Modifier">
+                <i class="fas fa-edit"></i>
+              </button>
+              <button class="action-btn delete-btn" (click)="openDeleteModal(sopStructure.children![0], $event)" title="Supprimer">
+                <i class="fas fa-trash"></i>
+              </button>
+            </div>
+          </div>
+
+          <!-- Sous-branches Back Office -->
+          <div class="sub-branches">
+            <!-- Métier -->
+            <div class="sub-branch">
+              <div class="branch-node level-2" (click)="onNodeClick(sopStructure.children![0].children![0], $event)">
+                <div class="node-content level-2-content">
+                  <i class="fas fa-briefcase"></i>
+                  <span>{{ sopStructure.children![0].children![0].label }}</span>
+                </div>
+                <div class="node-actions" (click)="$event.stopPropagation()">
+                  <button class="action-btn add-btn" (click)="openAddModal(sopStructure.children![0].children![0], $event)" title="Ajouter un sous-titre">
+                    <i class="fas fa-plus"></i>
+                  </button>
+                  <button class="action-btn edit-btn" (click)="openEditModal(sopStructure.children![0].children![0], $event)" title="Modifier">
+                    <i class="fas fa-edit"></i>
+                  </button>
+                  <button class="action-btn delete-btn" (click)="openDeleteModal(sopStructure.children![0].children![0], $event)" title="Supprimer">
+                    <i class="fas fa-trash"></i>
+                  </button>
+                </div>
+              </div>
+              <div class="leaf-nodes">
+                <div 
+                  *ngFor="let child of sopStructure.children![0].children![0].children" 
+                  class="leaf-node"
+                  (click)="onNodeClick(child, $event)">
+                  <div class="node-content leaf-content">
+                    <i class="fas fa-circle"></i>
+                    <span>{{ child.label }}</span>
+                  </div>
+                  <div class="node-actions" (click)="$event.stopPropagation()">
+                    <button class="action-btn add-btn" (click)="openAddModal(child, $event)" title="Ajouter un sous-titre">
+                      <i class="fas fa-plus"></i>
+                    </button>
+                    <button class="action-btn edit-btn" (click)="openEditModal(child, $event)" title="Modifier">
+                      <i class="fas fa-edit"></i>
+                    </button>
+                    <button class="action-btn delete-btn" (click)="openDeleteModal(child, $event)" title="Supprimer">
+                      <i class="fas fa-trash"></i>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Classique -->
+            <div class="sub-branch">
+              <div class="branch-node level-2" (click)="onNodeClick(sopStructure.children![0].children![1], $event)">
+                <div class="node-content level-2-content">
+                  <i class="fas fa-file-alt"></i>
+                  <span>{{ sopStructure.children![0].children![1].label }}</span>
+                </div>
+                <div class="node-actions" (click)="$event.stopPropagation()">
+                  <button class="action-btn add-btn" (click)="openAddModal(sopStructure.children![0].children![1], $event)" title="Ajouter un sous-titre">
+                    <i class="fas fa-plus"></i>
+                  </button>
+                  <button class="action-btn edit-btn" (click)="openEditModal(sopStructure.children![0].children![1], $event)" title="Modifier">
+                    <i class="fas fa-edit"></i>
+                  </button>
+                  <button class="action-btn delete-btn" (click)="openDeleteModal(sopStructure.children![0].children![1], $event)" title="Supprimer">
+                    <i class="fas fa-trash"></i>
+                  </button>
+                </div>
+              </div>
+              <div class="leaf-nodes">
+                <div 
+                  *ngFor="let child of sopStructure.children![0].children![1].children" 
+                  class="leaf-node"
+                  (click)="onNodeClick(child, $event)">
+                  <div class="node-content leaf-content">
+                    <i class="fas fa-circle"></i>
+                    <span>{{ child.label }}</span>
+                  </div>
+                  <div class="node-actions" (click)="$event.stopPropagation()">
+                    <button class="action-btn add-btn" (click)="openAddModal(child, $event)" title="Ajouter un sous-titre">
+                      <i class="fas fa-plus"></i>
+                    </button>
+                    <button class="action-btn edit-btn" (click)="openEditModal(child, $event)" title="Modifier">
+                      <i class="fas fa-edit"></i>
+                    </button>
+                    <button class="action-btn delete-btn" (click)="openDeleteModal(child, $event)" title="Supprimer">
+                      <i class="fas fa-trash"></i>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Branche Partenaire -->
+        <div class="branch branch-partenaire">
+          <div class="branch-node level-1" (click)="onNodeClick(sopStructure.children![1], $event)">
+            <div class="node-content level-1-content">
+              <i class="fas fa-handshake"></i>
+              <span>{{ sopStructure.children![1].label }}</span>
+            </div>
+            <div class="node-actions" (click)="$event.stopPropagation()">
+              <button class="action-btn add-btn" (click)="openAddModal(sopStructure.children![1], $event)" title="Ajouter un sous-titre">
+                <i class="fas fa-plus"></i>
+              </button>
+              <button class="action-btn edit-btn" (click)="openEditModal(sopStructure.children![1], $event)" title="Modifier">
+                <i class="fas fa-edit"></i>
+              </button>
+              <button class="action-btn delete-btn" (click)="openDeleteModal(sopStructure.children![1], $event)" title="Supprimer">
+                <i class="fas fa-trash"></i>
+              </button>
+            </div>
+          </div>
+
+          <!-- Sous-branches Partenaire -->
+          <div class="sub-branches">
+            <!-- Opérations -->
+            <div class="sub-branch">
+              <div class="branch-node level-2" (click)="onNodeClick(sopStructure.children![1].children![0], $event)">
+                <div class="node-content level-2-content">
+                  <i class="fas fa-exchange-alt"></i>
+                  <span>{{ sopStructure.children![1].children![0].label }}</span>
+                </div>
+                <div class="node-actions" (click)="$event.stopPropagation()">
+                  <button class="action-btn add-btn" (click)="openAddModal(sopStructure.children![1].children![0], $event)" title="Ajouter un sous-titre">
+                    <i class="fas fa-plus"></i>
+                  </button>
+                  <button class="action-btn edit-btn" (click)="openEditModal(sopStructure.children![1].children![0], $event)" title="Modifier">
+                    <i class="fas fa-edit"></i>
+                  </button>
+                  <button class="action-btn delete-btn" (click)="openDeleteModal(sopStructure.children![1].children![0], $event)" title="Supprimer">
+                    <i class="fas fa-trash"></i>
+                  </button>
+                </div>
+              </div>
+              <div class="leaf-nodes">
+                <div 
+                  *ngFor="let child of sopStructure.children![1].children![0].children" 
+                  class="leaf-node"
+                  (click)="onNodeClick(child, $event)">
+                  <div class="node-content leaf-content">
+                    <i class="fas fa-circle"></i>
+                    <span>{{ child.label }}</span>
+                  </div>
+                  <div class="node-actions" (click)="$event.stopPropagation()">
+                    <button class="action-btn add-btn" (click)="openAddModal(child, $event)" title="Ajouter un sous-titre">
+                      <i class="fas fa-plus"></i>
+                    </button>
+                    <button class="action-btn edit-btn" (click)="openEditModal(child, $event)" title="Modifier">
+                      <i class="fas fa-edit"></i>
+                    </button>
+                    <button class="action-btn delete-btn" (click)="openDeleteModal(child, $event)" title="Supprimer">
+                      <i class="fas fa-trash"></i>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Réconciliation -->
+            <div class="sub-branch">
+              <div class="branch-node level-2" (click)="onNodeClick(sopStructure.children![1].children![1], $event)">
+                <div class="node-content level-2-content">
+                  <i class="fas fa-balance-scale"></i>
+                  <span>{{ sopStructure.children![1].children![1].label }}</span>
+                </div>
+                <div class="node-actions" (click)="$event.stopPropagation()">
+                  <button class="action-btn add-btn" (click)="openAddModal(sopStructure.children![1].children![1], $event)" title="Ajouter un sous-titre">
+                    <i class="fas fa-plus"></i>
+                  </button>
+                  <button class="action-btn edit-btn" (click)="openEditModal(sopStructure.children![1].children![1], $event)" title="Modifier">
+                    <i class="fas fa-edit"></i>
+                  </button>
+                  <button class="action-btn delete-btn" (click)="openDeleteModal(sopStructure.children![1].children![1], $event)" title="Supprimer">
+                    <i class="fas fa-trash"></i>
+                  </button>
+                </div>
+              </div>
+              <div class="leaf-nodes">
+                <div 
+                  *ngFor="let child of sopStructure.children![1].children![1].children" 
+                  class="leaf-node"
+                  (click)="onNodeClick(child, $event)">
+                  <div class="node-content leaf-content">
+                    <i class="fas fa-circle"></i>
+                    <span>{{ child.label }}</span>
+                  </div>
+                  <div class="node-actions" (click)="$event.stopPropagation()">
+                    <button class="action-btn add-btn" (click)="openAddModal(child, $event)" title="Ajouter un sous-titre">
+                      <i class="fas fa-plus"></i>
+                    </button>
+                    <button class="action-btn edit-btn" (click)="openEditModal(child, $event)" title="Modifier">
+                      <i class="fas fa-edit"></i>
+                    </button>
+                    <button class="action-btn delete-btn" (click)="openDeleteModal(child, $event)" title="Supprimer">
+                      <i class="fas fa-trash"></i>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Popup pour les options -->
+  <div class="popup-overlay" *ngIf="showPopup && popupNode" (click)="closePopup()">
+    <div class="popup-content" (click)="$event.stopPropagation()">
+      <div class="popup-header">
+        <h3>{{ popupNode.label }}</h3>
+        <button class="btn-close-popup" (click)="closePopup()">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+      <div class="popup-body">
+        <p class="popup-description">Choisissez une option pour consulter les informations :</p>
+        <div class="popup-options">
+          <button class="popup-option-btn" (click)="onOptionClick('grandes-lignes')">
+            <i class="fas fa-list-ul"></i>
+            <span>Les grandes lignes</span>
+          </button>
+          <button class="popup-option-btn" (click)="onOptionClick('document-complet')">
+            <i class="fas fa-file-alt"></i>
+            <span>Document complet</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal d'upload de document -->
+  <div class="modal-overlay" *ngIf="showUploadModal" (click)="closeUploadModal()">
+    <div class="modal-content upload-modal" (click)="$event.stopPropagation()">
+      <div class="modal-header">
+        <h3>Uploader un document</h3>
+        <button class="btn-close-modal" (click)="closeUploadModal()">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+      <div class="modal-body">
+        <p class="upload-description">
+          Veuillez sélectionner un document à uploader (PDF, Image, ou fichier texte).
+        </p>
+        <div class="file-upload-area">
+          <input 
+            type="file" 
+            id="fileInput" 
+            (change)="onFileSelected($event)"
+            accept=".pdf,.png,.jpg,.jpeg,.gif,.txt,.doc,.docx"
+            class="file-input"
+            [disabled]="isExtractingText">
+          <label for="fileInput" class="file-label" [class.extracting]="isExtractingText">
+            <i class="fas fa-cloud-upload-alt" *ngIf="!isExtractingText"></i>
+            <i class="fas fa-spinner fa-spin" *ngIf="isExtractingText"></i>
+            <span *ngIf="!selectedFile && !isExtractingText">Cliquez pour sélectionner un fichier</span>
+            <span *ngIf="selectedFile && !isExtractingText" class="selected-file">{{ selectedFile.name }}</span>
+            <span *ngIf="isExtractingText" class="extracting-text">Extraction du texte en cours...</span>
+          </label>
+        </div>
+        
+        <!-- Zone de saisie manuelle du texte -->
+        <div class="manual-text-section" *ngIf="showManualTextInput || selectedFile">
+          <div class="manual-text-header">
+            <label>
+              <input 
+                type="checkbox" 
+                [(ngModel)]="showManualTextInput"
+                (change)="toggleManualTextInput()">
+              <span>Saisir le texte manuellement</span>
+            </label>
+          </div>
+          <div class="manual-text-input" *ngIf="showManualTextInput">
+            <textarea 
+              [(ngModel)]="manualText"
+              class="text-input"
+              placeholder="Collez ou saisissez le texte du document ici..."
+              rows="10"
+              [disabled]="isUploading"></textarea>
+            <p class="text-hint">
+              <i class="fas fa-info-circle"></i>
+              Le texte saisi ici sera utilisé pour l'affichage du document. Vous pouvez coller le contenu depuis un autre document.
+            </p>
+          </div>
+        </div>
+
+        <div class="upload-error" *ngIf="uploadError">
+          <i class="fas fa-exclamation-circle"></i>
+          {{ uploadError }}
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" (click)="closeUploadModal()" [disabled]="isUploading || isExtractingText">Annuler</button>
+        <button class="btn btn-primary" (click)="uploadDocument()" [disabled]="!selectedFile || isUploading || isExtractingText">
+          <span *ngIf="!isUploading">Uploader</span>
+          <span *ngIf="isUploading">
+            <i class="fas fa-spinner fa-spin"></i> Upload en cours...
+          </span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Vue d'affichage du document -->
+  <div class="document-view-overlay" *ngIf="showDocumentView" (click)="closeDocumentView()">
+    <div class="document-view-content" (click)="$event.stopPropagation()">
+      <div class="document-view-header">
+        <h2>{{ documentTitle }}</h2>
+        <div class="document-header-actions">
+          <button class="btn-document-action btn-download" (click)="downloadDocument(); $event.stopPropagation()" title="Télécharger">
+            <i class="fas fa-download"></i>
+          </button>
+          <button class="btn-document-action btn-edit" (click)="openEditDocumentModal(); $event.stopPropagation()" title="Modifier">
+            <i class="fas fa-edit"></i>
+          </button>
+          <button class="btn-document-action btn-delete" (click)="openDeleteDocumentModal(); $event.stopPropagation()" title="Supprimer">
+            <i class="fas fa-trash"></i>
+          </button>
+          <button class="btn-close-document" (click)="closeDocumentView()">
+            <i class="fas fa-times"></i>
+          </button>
+        </div>
+      </div>
+      <div class="document-view-body">
+        <div class="document-text-content" [innerHTML]="safeDocumentContent"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal de modification de document -->
+  <div class="modal-overlay" *ngIf="showEditDocumentModal" (click)="closeEditDocumentModal()">
+    <div class="modal-content upload-modal" (click)="$event.stopPropagation()">
+      <div class="modal-header">
+        <h3>Modifier le document</h3>
+        <button class="btn-close-modal" (click)="closeEditDocumentModal()">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+      <div class="modal-body">
+        <p class="upload-description">
+          Vous pouvez remplacer le fichier ou modifier le texte du document.
+        </p>
+        <div class="file-upload-area">
+          <input 
+            type="file" 
+            id="editFileInput" 
+            (change)="onEditFileSelected($event)"
+            accept=".pdf,.png,.jpg,.jpeg,.gif,.txt,.doc,.docx"
+            class="file-input"
+            [disabled]="isEditingDocument">
+          <label for="editFileInput" class="file-label">
+            <i class="fas fa-cloud-upload-alt"></i>
+            <span *ngIf="!editDocumentFile">Cliquez pour remplacer le fichier (optionnel)</span>
+            <span *ngIf="editDocumentFile" class="selected-file">{{ editDocumentFile.name }}</span>
+          </label>
+        </div>
+        
+        <div class="manual-text-section">
+          <div class="manual-text-header">
+            <label>
+              <span>Texte du document</span>
+            </label>
+          </div>
+          <div class="manual-text-input">
+            <textarea 
+              [(ngModel)]="editDocumentText"
+              class="text-input"
+              placeholder="Modifiez le texte du document ici..."
+              rows="10"
+              [disabled]="isEditingDocument"></textarea>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" (click)="closeEditDocumentModal()" [disabled]="isEditingDocument">Annuler</button>
+        <button class="btn btn-primary" (click)="updateDocument()" [disabled]="isEditingDocument || !editDocumentText.trim()">
+          <span *ngIf="!isEditingDocument">Enregistrer</span>
+          <span *ngIf="isEditingDocument">
+            <i class="fas fa-spinner fa-spin"></i> Modification en cours...
+          </span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+
+
+

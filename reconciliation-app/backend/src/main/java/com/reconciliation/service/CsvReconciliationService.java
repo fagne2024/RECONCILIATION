@@ -212,6 +212,9 @@ public class CsvReconciliationService implements DisposableBean {
 
             // Création optimisée de l'index partenaire avec HashMap au lieu de HashMap avec List
             logger.info("🔍 Création de l'index optimisé des enregistrements partenaire...");
+            if (request.getAdditionalKeys() != null && !request.getAdditionalKeys().isEmpty()) {
+                logger.info("🔑 Clés supplémentaires utilisées: {} paires", request.getAdditionalKeys().size());
+            }
             Map<String, Map<String, String>> partnerIndex = new HashMap<>();
             
             // Vérifier que l'ExecutorService est disponible
@@ -239,8 +242,9 @@ public class CsvReconciliationService implements DisposableBean {
                 CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
                     for (int j = startIndex; j < endIndex; j++) {
                         Map<String, String> partnerRecord = processedPartnerData.get(j);
-                        // Chercher la clé avec normalisation
-                        String partnerKey = findKeyWithNormalization(partnerRecord, normalizedPartnerKeyColumn);
+                        // Construire la clé composite (incluant clés supplémentaires)
+                        String partnerKey = buildCompositeKey(partnerRecord, normalizedPartnerKeyColumn, 
+                                                             request.getAdditionalKeys(), false);
                         if (partnerKey != null) {
                             synchronized (partnerIndex) {
                                 partnerIndex.put(partnerKey, partnerRecord);
@@ -254,7 +258,11 @@ public class CsvReconciliationService implements DisposableBean {
             
             // Attendre la fin de l'indexation
             CompletableFuture.allOf(partnerIndexFutures.toArray(new CompletableFuture[0])).join();
-            logger.info("✅ Index partenaire optimisé créé avec {} clés", partnerIndex.size());
+            if (request.getAdditionalKeys() != null && !request.getAdditionalKeys().isEmpty()) {
+                logger.info("✅ Index partenaire optimisé créé avec {} clés (incluant clés supplémentaires)", partnerIndex.size());
+            } else {
+                logger.info("✅ Index partenaire optimisé créé avec {} clés", partnerIndex.size());
+            }
 
             // Traitement parallèle des enregistrements BO
             logger.info("🔄 Début du traitement parallèle par lots (taille: {})", BATCH_SIZE);
@@ -306,7 +314,9 @@ public class CsvReconciliationService implements DisposableBean {
             
             // Utiliser processedPartnerData (données transformées) au lieu de request.getPartnerFileContent()
             for (Map<String, String> partnerRecord : processedPartnerData) {
-                String partnerKey = findKeyWithNormalization(partnerRecord, normalizedPartnerKeyColumn);
+                // Construire la clé composite (incluant clés supplémentaires)
+                String partnerKey = buildCompositeKey(partnerRecord, normalizedPartnerKeyColumn, 
+                                                     request.getAdditionalKeys(), false);
                 if (partnerKey != null && !processedBoKeysSet.contains(partnerKey)) {
                     response.getPartnerOnly().add(partnerRecord);
                     partnerOnlyCount++;
@@ -596,14 +606,18 @@ public class CsvReconciliationService implements DisposableBean {
         response.setPartnerOnly(new ArrayList<>());
         response.setMismatches(new ArrayList<>());
         
-        // Créer un index des enregistrements OPPART groupés par clé
+        // Créer un index des enregistrements OPPART groupés par clé composite
         Map<String, List<Map<String, String>>> partnerIndex = new HashMap<>();
         
         logger.info("🔍 DEBUG - Création de l'index Partner avec colonne clé: '{}'", request.getPartnerKeyColumn());
+        if (request.getAdditionalKeys() != null && !request.getAdditionalKeys().isEmpty()) {
+            logger.info("🔑 Clés supplémentaires utilisées: {} paires", request.getAdditionalKeys().size());
+        }
         
         int partnerKeysWithNull = 0;
         for (Map<String, String> partnerRecord : request.getPartnerFileContent()) {
-            String partnerKey = partnerRecord.get(request.getPartnerKeyColumn());
+            String partnerKey = buildCompositeKey(partnerRecord, request.getPartnerKeyColumn(), 
+                                                  request.getAdditionalKeys(), false);
             if (partnerKey != null) {
                 partnerIndex.computeIfAbsent(partnerKey, k -> new ArrayList<>()).add(partnerRecord);
             } else {
@@ -611,7 +625,7 @@ public class CsvReconciliationService implements DisposableBean {
             }
         }
         
-        logger.info("✅ Index OPPART créé avec {} clés uniques ({} enregistrements avec clé null)", 
+        logger.info("✅ Index OPPART créé avec {} clés uniques (incluant clés supplémentaires) ({} enregistrements avec clé null)", 
             partnerIndex.size(), partnerKeysWithNull);
         
         // DEBUG: Afficher quelques exemples de clés Partner
@@ -637,7 +651,8 @@ public class CsvReconciliationService implements DisposableBean {
         logger.info("🔍 DEBUG - Traitement des enregistrements BO avec colonne clé: '{}'", request.getBoKeyColumn());
         
         for (Map<String, String> boRecord : filteredBoRecords) {
-            String boKey = boRecord.get(request.getBoKeyColumn());
+            String boKey = buildCompositeKey(boRecord, request.getBoKeyColumn(), 
+                                           request.getAdditionalKeys(), true);
             if (boKey == null) {
                 boKeysWithNull++;
                 response.getBoOnly().add(boRecord);
@@ -692,7 +707,8 @@ public class CsvReconciliationService implements DisposableBean {
                     
                     // Créer un match avec les enregistrements partenaires
                     ReconciliationResponse.Match match = new ReconciliationResponse.Match();
-                    match.setKey(boKey);
+                    // Utiliser la clé principale pour l'affichage (pas la clé composite)
+                    match.setKey(boRecord.get(request.getBoKeyColumn()));
                     match.setBoData(boRecord);
                     
                     // Combiner les enregistrements partenaires
@@ -874,6 +890,41 @@ public class CsvReconciliationService implements DisposableBean {
     }
 
     /**
+     * Construit une clé composite incluant la clé principale et les clés supplémentaires
+     * @param record L'enregistrement (BO ou Partner)
+     * @param primaryKeyColumn La colonne de clé principale
+     * @param additionalKeys Liste des clés supplémentaires
+     * @param isBoRecord true si c'est un enregistrement BO, false si c'est Partner
+     * @return Une clé composite (String) ou null si la clé principale est null
+     */
+    private String buildCompositeKey(Map<String, String> record, String primaryKeyColumn, 
+                                     List<ReconciliationRequest.AdditionalKey> additionalKeys,
+                                     boolean isBoRecord) {
+        String primaryKey = record.get(primaryKeyColumn);
+        if (primaryKey == null) {
+            return null;
+        }
+        
+        // Si pas de clés supplémentaires, retourner la clé principale
+        if (additionalKeys == null || additionalKeys.isEmpty()) {
+            return primaryKey;
+        }
+        
+        // Construire la clé composite en concaténant toutes les clés
+        StringBuilder compositeKey = new StringBuilder(primaryKey);
+        
+        for (ReconciliationRequest.AdditionalKey additionalKey : additionalKeys) {
+            String columnName = isBoRecord ? additionalKey.getBoColumn() : additionalKey.getPartnerColumn();
+            String value = record.get(columnName);
+            
+            // Ajouter la valeur de la clé supplémentaire (ou une valeur par défaut si null)
+            compositeKey.append("||").append(value != null ? value : "");
+        }
+        
+        return compositeKey.toString();
+    }
+
+    /**
      * Réconciliation avec types paramétrables (1-1, 1-2, 1-3, 1-4, 1-5)
      * Gère les correspondances multiples selon le type sélectionné
      */
@@ -891,17 +942,21 @@ public class CsvReconciliationService implements DisposableBean {
         response.setPartnerOnly(new ArrayList<>());
         response.setMismatches(new ArrayList<>());
         
-        // Créer un index des enregistrements partenaire groupés par clé
+        // Créer un index des enregistrements partenaire groupés par clé composite
         Map<String, List<Map<String, String>>> partnerIndex = new HashMap<>();
         
         for (Map<String, String> partnerRecord : request.getPartnerFileContent()) {
-            String partnerKey = partnerRecord.get(request.getPartnerKeyColumn());
+            String partnerKey = buildCompositeKey(partnerRecord, request.getPartnerKeyColumn(), 
+                                                  request.getAdditionalKeys(), false);
             if (partnerKey != null) {
                 partnerIndex.computeIfAbsent(partnerKey, k -> new ArrayList<>()).add(partnerRecord);
             }
         }
         
-        logger.info("✅ Index partenaire créé avec {} clés uniques", partnerIndex.size());
+        logger.info("✅ Index partenaire créé avec {} clés uniques (incluant clés supplémentaires)", partnerIndex.size());
+        if (request.getAdditionalKeys() != null && !request.getAdditionalKeys().isEmpty()) {
+            logger.info("🔑 Clés supplémentaires utilisées: {} paires", request.getAdditionalKeys().size());
+        }
         
         // Déterminer le nombre de correspondances attendues
         int expectedPartnerCount = getExpectedPartnerCount(request.getReconciliationType());
@@ -912,7 +967,8 @@ public class CsvReconciliationService implements DisposableBean {
         int processedCount = 0;
         
         for (Map<String, String> boRecord : filteredBoRecords) {
-            String boKey = boRecord.get(request.getBoKeyColumn());
+            String boKey = buildCompositeKey(boRecord, request.getBoKeyColumn(), 
+                                           request.getAdditionalKeys(), true);
             if (boKey == null) {
                 response.getBoOnly().add(boRecord);
                 processedCount++;
@@ -929,7 +985,8 @@ public class CsvReconciliationService implements DisposableBean {
                 
                 // Créer un match avec les enregistrements partenaires
                 ReconciliationResponse.Match match = new ReconciliationResponse.Match();
-                match.setKey(boKey);
+                // Utiliser la clé principale pour l'affichage (pas la clé composite)
+                match.setKey(boRecord.get(request.getBoKeyColumn()));
                 match.setBoData(boRecord);
                 match.setReconciliationType(request.getReconciliationType());
                 
@@ -1051,8 +1108,9 @@ public class CsvReconciliationService implements DisposableBean {
         int processedCount = 0;
 
         for (Map<String, String> boRecord : batch) {
-            // Utiliser la normalisation pour trouver la clé BO
-            String boKey = findKeyWithNormalization(boRecord, normalizedBoKeyColumn);
+            // Construire la clé composite (incluant clés supplémentaires)
+            String boKey = buildCompositeKey(boRecord, normalizedBoKeyColumn, 
+                                           request.getAdditionalKeys(), true);
             if (boKey == null) {
                 boOnly.add(boRecord);
                 processedCount++;
@@ -1089,7 +1147,8 @@ public class CsvReconciliationService implements DisposableBean {
 
                 if (isMatch) {
                     ReconciliationResponse.Match match = new ReconciliationResponse.Match();
-                    match.setKey(boKey);
+                    // Utiliser la clé principale pour l'affichage (pas la clé composite)
+                    match.setKey(boRecord.get(request.getBoKeyColumn()));
                     match.setBoData(boRecord);
                     match.setPartnerData(partnerRecord);
                     match.setDifferences(differences);
