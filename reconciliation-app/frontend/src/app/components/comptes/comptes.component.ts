@@ -1845,7 +1845,7 @@ export class ComptesComponent implements OnInit, OnDestroy {
         const worksheet = workbook.addWorksheet('Soldes Journaliers');
 
         // En-tête
-        worksheet.addRow(['Date', 'Solde d\'ouverture', 'Solde de clôture', 'Variation', 'Solde de Clôture BO', 'Ecart de solde', 'Ecart régularisé']);
+        worksheet.addRow(['Numéro de compte', 'Date', 'Solde d\'ouverture', 'Solde de clôture', 'Variation', 'Solde de Clôture BO', 'Ecart de solde', 'Ecart régularisé']);
 
         // Données
         this.releveSoldesJournaliers.forEach(solde => {
@@ -1854,6 +1854,7 @@ export class ComptesComponent implements OnInit, OnDestroy {
           const ecart = this.getEcartValue(solde);
           const impactOP = this.getImpactOPValue(solde);
           const row = worksheet.addRow([
+            this.selectedCompte?.numeroCompte || '',
             this.formatDate(solde.date).split(' ')[0],
             solde.opening,
             closingValue,
@@ -1869,58 +1870,34 @@ export class ComptesComponent implements OnInit, OnDestroy {
             const closingBo = Math.round(solde.closingBo * 100) / 100;
             if (closing === closingBo) {
               // Les deux en vert
-              row.getCell(3).fill = row.getCell(5).fill = {
+              row.getCell(4).fill = row.getCell(6).fill = {
                 type: 'pattern',
                 pattern: 'solid',
                 fgColor: { argb: 'FFD0FFD0' } // Vert clair
               };
-              row.getCell(3).font = row.getCell(5).font = { color: { argb: 'FF2E7D32' }, bold: true };
+              row.getCell(4).font = row.getCell(6).font = { color: { argb: 'FF2E7D32' }, bold: true };
             } else {
               // Clôture en noir, BO en rouge
-              row.getCell(3).font = { color: { argb: 'FF222222' }, bold: true };
-              row.getCell(5).fill = {
+              row.getCell(4).font = { color: { argb: 'FF222222' }, bold: true };
+              row.getCell(6).fill = {
                 type: 'pattern',
                 pattern: 'solid',
                 fgColor: { argb: 'FFFFD0D0' } // Rouge clair
               };
-              row.getCell(5).font = { color: { argb: 'FFC62828' }, bold: true };
+              row.getCell(6).font = { color: { argb: 'FFC62828' }, bold: true };
             }
           }
 
           // Appliquer les couleurs pour la colonne Ecart de solde
           const tolerance = 0.01; // 1 centime de tolérance
           if (Math.abs(ecart) <= tolerance) {
-            row.getCell(6).fill = {
-              type: 'pattern',
-              pattern: 'solid',
-              fgColor: { argb: 'FFE8F5E8' } // Vert clair amélioré
-            };
-            row.getCell(6).font = { color: { argb: 'FF2E7D32' }, bold: true };
-          } else if (ecart > 0) {
-            row.getCell(6).fill = {
-              type: 'pattern',
-              pattern: 'solid',
-              fgColor: { argb: 'FFFFF3E0' } // Orange clair amélioré
-            };
-            row.getCell(6).font = { color: { argb: 'FFF57C00' }, bold: true };
-          } else {
-            row.getCell(6).fill = {
-              type: 'pattern',
-              pattern: 'solid',
-              fgColor: { argb: 'FFFFEBEE' } // Rouge clair amélioré
-            };
-            row.getCell(6).font = { color: { argb: 'FFC62828' }, bold: true };
-          }
-
-          // Appliquer les couleurs pour la colonne Ecart régularisé
-          if (Math.abs(impactOP) <= tolerance) {
             row.getCell(7).fill = {
               type: 'pattern',
               pattern: 'solid',
               fgColor: { argb: 'FFE8F5E8' } // Vert clair amélioré
             };
             row.getCell(7).font = { color: { argb: 'FF2E7D32' }, bold: true };
-          } else if (impactOP > 0) {
+          } else if (ecart > 0) {
             row.getCell(7).fill = {
               type: 'pattern',
               pattern: 'solid',
@@ -1935,17 +1912,42 @@ export class ComptesComponent implements OnInit, OnDestroy {
             };
             row.getCell(7).font = { color: { argb: 'FFC62828' }, bold: true };
           }
+
+          // Appliquer les couleurs pour la colonne Ecart régularisé
+          if (Math.abs(impactOP) <= tolerance) {
+            row.getCell(8).fill = {
+              type: 'pattern',
+              pattern: 'solid',
+              fgColor: { argb: 'FFE8F5E8' } // Vert clair amélioré
+            };
+            row.getCell(8).font = { color: { argb: 'FF2E7D32' }, bold: true };
+          } else if (impactOP > 0) {
+            row.getCell(8).fill = {
+              type: 'pattern',
+              pattern: 'solid',
+              fgColor: { argb: 'FFFFF3E0' } // Orange clair amélioré
+            };
+            row.getCell(8).font = { color: { argb: 'FFF57C00' }, bold: true };
+          } else {
+            row.getCell(8).fill = {
+              type: 'pattern',
+              pattern: 'solid',
+              fgColor: { argb: 'FFFFEBEE' } // Rouge clair amélioré
+            };
+            row.getCell(8).font = { color: { argb: 'FFC62828' }, bold: true };
+          }
         });
 
         // Largeurs de colonnes
         worksheet.columns = [
-          { width: 15 },
-          { width: 20 },
-          { width: 20 },
-          { width: 20 },
-          { width: 20 },
-          { width: 20 },
-          { width: 20 }
+          { width: 20 },  // Numéro de compte
+          { width: 15 },  // Date
+          { width: 20 },  // Solde d'ouverture
+          { width: 20 },  // Solde de clôture
+          { width: 20 },  // Variation
+          { width: 20 },  // Solde de Clôture BO
+          { width: 20 },  // Ecart de solde
+          { width: 20 }   // Ecart régularisé
         ];
 
         // Style de l'en-tête
