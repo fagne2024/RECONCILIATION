@@ -893,6 +893,10 @@ export class FileUploadComponent implements OnDestroy {
                     header: true,
                     delimiter: delimiter,
                     skipEmptyLines: true,
+                    transformHeader: (header: string) => {
+                        // Normaliser les noms de colonnes pour assurer la cohérence avec les fichiers XLSX
+                        return this.normalizeColumnName(header);
+                    },
                     complete: (results) => {
                         console.log('Première ligne lue:', results.data[0]);
                         if (isBo) {
@@ -2903,6 +2907,10 @@ export class FileUploadComponent implements OnDestroy {
                     header: true,
                     delimiter: delimiter,
                     skipEmptyLines: true,
+                    transformHeader: (header: string) => {
+                        // Normaliser les noms de colonnes pour assurer la cohérence avec les fichiers XLSX
+                        return this.normalizeColumnName(header);
+                    },
                     complete: (results) => {
                         console.log('Première ligne lue:', results.data[0]);
                         if (isBo) {

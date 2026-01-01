@@ -6997,10 +6997,71 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
         
         const boData = match.boData;
         
-        const agency = boData['Agence'] || '';
-        const service = boData['Service'] || '';
-        const volume = boData['montant'] ? parseFloat(boData['montant'].toString().replace(',', '.')) : 0;
-        const date = boData['Date'] || '';
+        // Fonction helper pour trouver une valeur avec plusieurs noms de colonnes possibles
+        const getValueWithFallback = (possibleKeys: string[]): string => {
+            for (const key of possibleKeys) {
+                if (boData[key] !== undefined && boData[key] !== null && boData[key] !== '') {
+                    return boData[key].toString();
+                }
+            }
+            return '';
+        };
+        
+        const agency = getValueWithFallback(['Agence', 'agence', 'AGENCE', 'agency', 'Agency', 'AGENCY']) || '';
+        const service = getValueWithFallback(['Service', 'service', 'SERVICE', 'serv', 'Serv']) || '';
+        
+        // Recherche de volume/montant avec une liste exhaustive (comme dans calculateTotalVolumePartnerMatches)
+        const possibleAmountColumns = [
+            'amount', 'Amount', 'AMOUNT',
+            'montant', 'Montant', 'MONTANT',
+            'debit', 'Debit', 'DEBIT', 'débit', 'Débit', 'DÉBIT',
+            'credit', 'Credit', 'CREDIT', 'crédit', 'Crédit', 'CRÉDIT',
+            'valeur', 'Valeur', 'VALEUR',
+            'value', 'Value', 'VALUE',
+            'somme', 'Somme', 'SOMME',
+            'sum', 'Sum', 'SUM',
+            'total', 'Total', 'TOTAL',
+            'volume', 'Volume', 'VOLUME',
+            'montant_credit', 'montant_debit', 'montant_débit', 'montant_crédit',
+            'montant_operation', 'montant_opération', 'montant_transaction',
+            'montant_credit_operation', 'montant_débit_operation',
+            'external_amount', 'External amount', 'EXTERNAL_AMOUNT',
+            'externalAmount', 'ExternalAmount',
+            'balance', 'Balance', 'BALANCE'
+        ];
+        
+        let volume = 0;
+        // Parcourir toutes les colonnes et chercher celles qui contiennent des montants
+        for (const column of Object.keys(boData)) {
+            const lowerColumn = column.toLowerCase();
+            if (possibleAmountColumns.some(name => lowerColumn === name.toLowerCase() || lowerColumn.includes(name.toLowerCase()))) {
+                const value = boData[column];
+                if (value !== undefined && value !== null && value !== '') {
+                    // Normaliser le format : remplacer virgule par point, supprimer espaces
+                    const normalizedValue = value.toString().trim().replace(/\s/g, '').replace(',', '.');
+                    const parsedValue = parseFloat(normalizedValue);
+                    if (!isNaN(parsedValue)) {
+                        volume += Math.abs(parsedValue);
+                    }
+                }
+            }
+        }
+        
+        // Si aucune colonne trouvée, essayer avec getValueWithFallback pour compatibilité
+        if (volume === 0) {
+            const volumeStr = getValueWithFallback(['montant', 'Montant', 'MONTANT', 'amount', 'Amount', 'volume', 'Volume', 'VOLUME']);
+            if (volumeStr) {
+                const normalizedVolumeStr = volumeStr.toString().trim().replace(/\s/g, '').replace(',', '.');
+                volume = parseFloat(normalizedVolumeStr) || 0;
+            }
+        }
+        
+        // Debug: log si volume est 0 mais qu'on a des données
+        if (volume === 0 && Object.keys(boData).length > 0) {
+            console.warn(`⚠️ [getBoAgencyAndService] Volume=0. Colonnes disponibles:`, Object.keys(boData));
+        }
+        
+        const date = getValueWithFallback(['Date', 'date', 'DATE', 'jour', 'Jour', 'JOUR', 'created', 'Created', 'CREATED']) || '';
         const countryColumn = this.findCountryColumn(boData);
         let country = 'Non spécifié';
         
@@ -7036,9 +7097,56 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
         // Recherche de service avec plusieurs noms possibles
         const service = getValueWithFallback(['Service', 'service', 'SERVICE', 'serv', 'Serv']);
         
-        // Recherche de volume/montant avec plusieurs noms possibles
-        const volumeStr = getValueWithFallback(['montant', 'Montant', 'MONTANT', 'amount', 'Amount', 'volume', 'Volume', 'VOLUME']);
-        const volume = volumeStr ? parseFloat(volumeStr.toString().replace(',', '.')) : 0;
+        // Recherche de volume/montant avec une liste exhaustive (comme dans calculateTotalVolumePartnerMatches)
+        const possibleAmountColumns = [
+            'amount', 'Amount', 'AMOUNT',
+            'montant', 'Montant', 'MONTANT',
+            'debit', 'Debit', 'DEBIT', 'débit', 'Débit', 'DÉBIT',
+            'credit', 'Credit', 'CREDIT', 'crédit', 'Crédit', 'CRÉDIT',
+            'valeur', 'Valeur', 'VALEUR',
+            'value', 'Value', 'VALUE',
+            'somme', 'Somme', 'SOMME',
+            'sum', 'Sum', 'SUM',
+            'total', 'Total', 'TOTAL',
+            'volume', 'Volume', 'VOLUME',
+            'montant_credit', 'montant_debit', 'montant_débit', 'montant_crédit',
+            'montant_operation', 'montant_opération', 'montant_transaction',
+            'montant_credit_operation', 'montant_débit_operation',
+            'external_amount', 'External amount', 'EXTERNAL_AMOUNT',
+            'externalAmount', 'ExternalAmount',
+            'balance', 'Balance', 'BALANCE'
+        ];
+        
+        let volume = 0;
+        // Parcourir toutes les colonnes et chercher celles qui contiennent des montants
+        for (const column of Object.keys(record)) {
+            const lowerColumn = column.toLowerCase();
+            if (possibleAmountColumns.some(name => lowerColumn === name.toLowerCase() || lowerColumn.includes(name.toLowerCase()))) {
+                const value = record[column];
+                if (value !== undefined && value !== null && value !== '') {
+                    // Normaliser le format : remplacer virgule par point, supprimer espaces
+                    const normalizedValue = value.toString().trim().replace(/\s/g, '').replace(',', '.');
+                    const parsedValue = parseFloat(normalizedValue);
+                    if (!isNaN(parsedValue)) {
+                        volume += Math.abs(parsedValue);
+                    }
+                }
+            }
+        }
+        
+        // Si aucune colonne trouvée, essayer avec getValueWithFallback pour compatibilité
+        if (volume === 0) {
+            const volumeStr = getValueWithFallback(['montant', 'Montant', 'MONTANT', 'amount', 'Amount', 'volume', 'Volume', 'VOLUME']);
+            if (volumeStr) {
+                const normalizedVolumeStr = volumeStr.toString().trim().replace(/\s/g, '').replace(',', '.');
+                volume = parseFloat(normalizedVolumeStr) || 0;
+            }
+        }
+        
+        // Debug: log si volume est 0 mais qu'on a des données
+        if (volume === 0 && Object.keys(record).length > 0) {
+            console.warn(`⚠️ [getBoOnlyAgencyAndService] Volume=0. Colonnes disponibles:`, Object.keys(record));
+        }
         
         // Recherche de date avec plusieurs noms possibles
         const date = getValueWithFallback(['Date', 'date', 'DATE', 'jour', 'Jour', 'JOUR', 'created', 'Created', 'CREATED']);
@@ -7075,9 +7183,56 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
         // Recherche de service avec plusieurs noms possibles
         const service = getValueWithFallback(['Service', 'service', 'SERVICE', 'serv', 'Serv']);
         
-        // Recherche de volume/montant avec plusieurs noms possibles
-        const volumeStr = getValueWithFallback(['montant', 'Montant', 'MONTANT', 'amount', 'Amount', 'volume', 'Volume', 'VOLUME']);
-        const volume = volumeStr ? parseFloat(volumeStr.toString().replace(',', '.')) : 0;
+        // Recherche de volume/montant avec une liste exhaustive (comme dans calculateTotalVolumePartnerMatches)
+        const possibleAmountColumns = [
+            'amount', 'Amount', 'AMOUNT',
+            'montant', 'Montant', 'MONTANT',
+            'debit', 'Debit', 'DEBIT', 'débit', 'Débit', 'DÉBIT',
+            'credit', 'Credit', 'CREDIT', 'crédit', 'Crédit', 'CRÉDIT',
+            'valeur', 'Valeur', 'VALEUR',
+            'value', 'Value', 'VALUE',
+            'somme', 'Somme', 'SOMME',
+            'sum', 'Sum', 'SUM',
+            'total', 'Total', 'TOTAL',
+            'volume', 'Volume', 'VOLUME',
+            'montant_credit', 'montant_debit', 'montant_débit', 'montant_crédit',
+            'montant_operation', 'montant_opération', 'montant_transaction',
+            'montant_credit_operation', 'montant_débit_operation',
+            'external_amount', 'External amount', 'EXTERNAL_AMOUNT',
+            'externalAmount', 'ExternalAmount',
+            'balance', 'Balance', 'BALANCE'
+        ];
+        
+        let volume = 0;
+        // Parcourir toutes les colonnes et chercher celles qui contiennent des montants
+        for (const column of Object.keys(record)) {
+            const lowerColumn = column.toLowerCase();
+            if (possibleAmountColumns.some(name => lowerColumn === name.toLowerCase() || lowerColumn.includes(name.toLowerCase()))) {
+                const value = record[column];
+                if (value !== undefined && value !== null && value !== '') {
+                    // Normaliser le format : remplacer virgule par point, supprimer espaces
+                    const normalizedValue = value.toString().trim().replace(/\s/g, '').replace(',', '.');
+                    const parsedValue = parseFloat(normalizedValue);
+                    if (!isNaN(parsedValue)) {
+                        volume += Math.abs(parsedValue);
+                    }
+                }
+            }
+        }
+        
+        // Si aucune colonne trouvée, essayer avec getValueWithFallback pour compatibilité
+        if (volume === 0) {
+            const volumeStr = getValueWithFallback(['montant', 'Montant', 'MONTANT', 'amount', 'Amount', 'volume', 'Volume', 'VOLUME']);
+            if (volumeStr) {
+                const normalizedVolumeStr = volumeStr.toString().trim().replace(/\s/g, '').replace(',', '.');
+                volume = parseFloat(normalizedVolumeStr) || 0;
+            }
+        }
+        
+        // Debug: log si volume est 0 mais qu'on a des données
+        if (volume === 0 && Object.keys(record).length > 0) {
+            console.warn(`⚠️ [getPartnerOnlyAgencyAndService] Volume=0. Colonnes disponibles:`, Object.keys(record));
+        }
         
         // Recherche de date avec plusieurs noms possibles
         const date = getValueWithFallback(['Date', 'date', 'DATE', 'jour', 'Jour', 'JOUR', 'created', 'Created', 'CREATED']);
@@ -7233,6 +7388,11 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
             const boInfo = this.getBoAgencyAndService(match);
             const key = `${boInfo.agency}-${boInfo.service}-${boInfo.country}`;
             
+            // Debug: log pour voir les volumes extraits
+            if (boInfo.volume > 0) {
+                console.log(`🔍 [AGENCY_SUMMARY] Match - Agence: ${boInfo.agency}, Service: ${boInfo.service}, Volume: ${boInfo.volume}`, match.boData);
+            }
+            
             if (!summaryMap.has(key)) {
                 summaryMap.set(key, {
                     agency: boInfo.agency,
@@ -7253,6 +7413,11 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
         this.filteredBoOnly.forEach(record => {
             const boInfo = this.getBoOnlyAgencyAndService(record);
             const key = `${boInfo.agency}-${boInfo.service}-${boInfo.country}`;
+            
+            // Debug: log pour voir les volumes extraits
+            if (boInfo.volume > 0) {
+                console.log(`🔍 [AGENCY_SUMMARY] BO Only - Agence: ${boInfo.agency}, Service: ${boInfo.service}, Volume: ${boInfo.volume}`, record);
+            }
             
             if (!summaryMap.has(key)) {
                 summaryMap.set(key, {
