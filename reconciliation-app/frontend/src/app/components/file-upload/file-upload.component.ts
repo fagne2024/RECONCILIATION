@@ -107,6 +107,13 @@ export class FileUploadComponent implements OnDestroy {
     manualAvailableServices: string[] = [];
     manualSelectedServices: string[] = [];
     manualServiceSelectionData: Record<string, string>[] = [];
+    manualStatusColumn: string | null = null; // Colonne statut pour TRXBO en mode manuel
+    
+    // Sélection des statuts pour TRXBO en mode manuel (étape 3)
+    showManualStatusSelection = false;
+    manualAvailableStatuses: string[] = [];
+    manualSelectedStatuses: string[] = [];
+    manualStatusSelectionData: Record<string, string>[] = []; // Données déjà filtrées par agence et service
 
     // Sélection de services/type/statut pour les fichiers partenaires
     showPartnerServiceSelection = false;
@@ -2156,11 +2163,25 @@ export class FileUploadComponent implements OnDestroy {
             col.toLowerCase().includes('serv')
         );
         
+        // Trouver la colonne statut
+        const statusColumn = columns.find(col => {
+            const colLower = col.toLowerCase();
+            return colLower.includes('statut') || 
+                   colLower.includes('status') ||
+                   colLower.includes('état') ||
+                   colLower.includes('state');
+        });
+        
         if (serviceColumn) {
             // Extraire tous les services uniques
             const services = [...new Set(data.map(row => row[serviceColumn]).filter(service => service && service.trim()))];
             this.manualAvailableServices = services.sort();
             this.manualServiceSelectionData = data;
+            this.manualStatusColumn = statusColumn || null;
+            
+            if (statusColumn) {
+                console.log('📋 Colonne statut trouvée (mode manuel):', statusColumn);
+            }
             
             console.log('📋 Services disponibles (mode manuel):', this.manualAvailableServices);
             console.log('📊 Nombre total de lignes:', data.length);
@@ -4649,14 +4670,35 @@ export class FileUploadComponent implements OnDestroy {
             
             console.log('📊 Données filtrées (mode manuel):', filteredData.length, 'lignes sur', this.manualServiceSelectionData.length, 'originales');
             
-            // Mettre à jour les données BO avec les données filtrées
-            this.boData = filteredData;
-            
-            // Masquer la sélection des services
-            this.showManualServiceSelection = false;
-            
-            // Continuer avec la réconciliation manuelle
-            this.continueWithManualReconciliation();
+            // Si une colonne statut existe, extraire les statuts et afficher la sélection
+            if (this.manualStatusColumn && filteredData.length > 0) {
+                // Extraire les statuts uniques des données filtrées par service
+                const statuses = [...new Set(
+                    filteredData.map(row => row[this.manualStatusColumn!])
+                        .filter(status => status && status.toString().trim())
+                )];
+                
+                this.manualAvailableStatuses = statuses.sort();
+                this.manualStatusSelectionData = filteredData;
+                
+                console.log('📋 Statuts disponibles (mode manuel):', this.manualAvailableStatuses);
+                
+                // Masquer la sélection des services et afficher la sélection des statuts
+                this.showManualServiceSelection = false;
+                this.showManualStatusSelectionStep();
+                
+                // Forcer la détection des changements pour mettre à jour la vue
+                this.cd.detectChanges();
+            } else {
+                // Pas de colonne statut, mettre à jour les données BO directement
+                this.boData = filteredData;
+                
+                // Masquer la sélection des services
+                this.showManualServiceSelection = false;
+                
+                // Continuer avec la réconciliation manuelle
+                this.continueWithManualReconciliation();
+            }
         }
     }
 
@@ -4665,6 +4707,12 @@ export class FileUploadComponent implements OnDestroy {
         this.manualAvailableServices = [];
         this.manualSelectedServices = [];
         this.manualServiceSelectionData = [];
+        // Nettoyer aussi les variables de statut
+        this.manualStatusColumn = null;
+        this.showManualStatusSelection = false;
+        this.manualAvailableStatuses = [];
+        this.manualSelectedStatuses = [];
+        this.manualStatusSelectionData = [];
     }
 
     private continueWithManualReconciliation(): void {
@@ -4726,6 +4774,80 @@ export class FileUploadComponent implements OnDestroy {
 
     deselectAllManualServices(): void {
         this.manualSelectedServices = [];
+    }
+
+    // Méthode pour afficher la sélection des statuts pour TRXBO en mode manuel (étape 3)
+    private showManualStatusSelectionStep(): void {
+        this.showManualStatusSelection = true;
+        this.manualSelectedStatuses = [...this.manualAvailableStatuses]; // Sélectionner tous par défaut
+    }
+
+    // Méthode pour confirmer la sélection des statuts (mode manuel)
+    confirmManualStatusSelection(): void {
+        if (this.manualSelectedStatuses.length === 0) {
+            this.errorMessage = 'Veuillez sélectionner au moins un statut.';
+            return;
+        }
+
+        console.log('✅ Statuts sélectionnés (mode manuel):', this.manualSelectedStatuses);
+        
+        if (!this.manualStatusColumn || !this.manualStatusSelectionData || this.manualStatusSelectionData.length === 0) {
+            this.errorMessage = 'Erreur: colonne statut non trouvée.';
+            return;
+        }
+        
+        // Filtrer les données pour ne garder que les lignes des statuts sélectionnés
+        const filteredData = this.manualStatusSelectionData.filter(row => 
+            this.manualSelectedStatuses.includes(row[this.manualStatusColumn!])
+        );
+        
+        console.log('📊 Données filtrées par statut (mode manuel):', filteredData.length, 'lignes sur', this.manualStatusSelectionData.length, 'originales');
+        
+        // Mettre à jour les données BO avec les données filtrées
+        this.boData = filteredData;
+        
+        // Masquer la sélection des statuts
+        this.showManualStatusSelection = false;
+        
+        // Continuer avec la réconciliation manuelle
+        this.continueWithManualReconciliation();
+    }
+
+    // Méthode pour annuler la sélection des statuts (mode manuel)
+    cancelManualStatusSelection(): void {
+        this.showManualStatusSelection = false;
+        this.manualAvailableStatuses = [];
+        this.manualSelectedStatuses = [];
+        this.manualStatusSelectionData = [];
+    }
+
+    // Méthode pour gérer le changement de sélection des statuts (mode manuel)
+    onManualStatusSelectionChange(event: Event, status: string): void {
+        const checkbox = event.target as HTMLInputElement;
+        if (checkbox.checked) {
+            if (!this.manualSelectedStatuses.includes(status)) {
+                this.manualSelectedStatuses.push(status);
+            }
+        } else {
+            this.manualSelectedStatuses = this.manualSelectedStatuses.filter(s => s !== status);
+        }
+    }
+
+    // Méthode pour compter le nombre de lignes par statut (mode manuel)
+    getManualStatusCount(status: string): number {
+        if (!this.manualStatusSelectionData || this.manualStatusSelectionData.length === 0 || !this.manualStatusColumn) return 0;
+        
+        return this.manualStatusSelectionData.filter(row => row[this.manualStatusColumn!] === status).length;
+    }
+
+    // Méthode pour sélectionner tous les statuts (mode manuel)
+    selectAllManualStatuses(): void {
+        this.manualSelectedStatuses = [...this.manualAvailableStatuses];
+    }
+
+    // Méthode pour désélectionner tous les statuts (mode manuel)
+    deselectAllManualStatuses(): void {
+        this.manualSelectedStatuses = [];
     }
 
     // Méthodes pour l'aide et la configuration des modèles

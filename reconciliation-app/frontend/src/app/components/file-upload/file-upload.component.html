@@ -258,7 +258,11 @@
                     <span class="badge-text">Services disponibles (TRXBO - Mode Manuel): {{ manualAvailableServices.length }}</span>
                     <span class="status-info" *ngIf="availableAgencies.length > 0">
                         <i class="fas fa-info-circle"></i>
-                        Étape 2/2 - Services après filtrage par agence
+                        Étape 2/3 - Services après filtrage par agence
+                    </span>
+                    <span class="status-info" *ngIf="availableAgencies.length === 0">
+                        <i class="fas fa-info-circle"></i>
+                        Étape 1/2 - Services disponibles
                     </span>
                 </div>
             </div>
@@ -308,6 +312,76 @@
                 <button class="modern-btn confirm-btn" 
                         [disabled]="manualSelectedServices.length === 0"
                         (click)="confirmManualServiceSelection()">
+                    <i class="fas fa-check"></i>
+                    Confirmer la sélection
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Sélection des statuts pour TRXBO en mode manuel (Étape 3) -->
+    <div class="manual-service-selection-overlay" *ngIf="showManualStatusSelection">
+        <div class="manual-service-selection-modal">
+            <!-- En-tête moderne -->
+            <div class="manual-service-selection-header">
+                <div class="header-badge">
+                    <span class="badge-text">Statuts disponibles (TRXBO - Mode Manuel): {{ manualAvailableStatuses.length }}</span>
+                    <span class="status-info" *ngIf="availableAgencies.length > 0">
+                        <i class="fas fa-info-circle"></i>
+                        Étape 3/3 - Statuts après filtrage par agence et service
+                    </span>
+                    <span class="status-info" *ngIf="availableAgencies.length === 0">
+                        <i class="fas fa-info-circle"></i>
+                        Étape 2/2 - Statuts après filtrage par service
+                    </span>
+                </div>
+            </div>
+            
+            <div class="manual-service-selection-content">
+                <!-- Boutons d'action principaux -->
+                <div class="manual-service-controls">
+                    <button class="modern-btn select-all-btn" (click)="selectAllManualStatuses()">
+                        <i class="fas fa-check-double"></i>
+                        Tout sélectionner
+                    </button>
+                    <button class="modern-btn deselect-all-btn" (click)="deselectAllManualStatuses()">
+                        <i class="fas fa-check-double"></i>
+                        Tout désélectionner
+                    </button>
+                </div>
+                
+                <!-- Grille de statuts en cartes -->
+                <div class="manual-service-grid">
+                    <div class="manual-service-card" *ngFor="let status of manualAvailableStatuses">
+                        <div class="manual-service-card-content">
+                            <div class="manual-service-checkbox-modern">
+                                <input type="checkbox" 
+                                       [id]="'manual-status-' + status"
+                                       [value]="status" 
+                                       [checked]="manualSelectedStatuses.includes(status)"
+                                       (change)="onManualStatusSelectionChange($event, status)">
+                                <label [for]="'manual-status-' + status" class="checkbox-label">
+                                    <span class="checkmark"></span>
+                                </label>
+                            </div>
+                            <div class="manual-service-info">
+                                <h4 class="manual-service-name-modern">{{ status }}</h4>
+                                <p class="manual-service-count-modern">{{ getManualStatusCount(status) }} lignes</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Boutons de confirmation modernes -->
+            <div class="manual-service-selection-actions">
+                <button class="modern-btn cancel-btn" (click)="cancelManualStatusSelection()">
+                    <i class="fas fa-times"></i>
+                    Annuler
+                </button>
+                <button class="modern-btn confirm-btn" 
+                        [disabled]="manualSelectedStatuses.length === 0"
+                        (click)="confirmManualStatusSelection()">
                     <i class="fas fa-check"></i>
                     Confirmer la sélection
                 </button>
