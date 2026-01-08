@@ -256,6 +256,38 @@
     border-color: #2196F3;
 }
 
+.btn-show-more {
+    background: #4CAF50;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    padding: 10px 20px;
+    font-size: 0.9em;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    white-space: nowrap;
+}
+
+.btn-show-more:hover {
+    background: #45a049;
+    transform: translateY(-2px);
+}
+
+.btn-show-more.active {
+    background: #f44336;
+}
+
+.btn-show-more.active:hover {
+    background: #da190b;
+}
+
+.btn-show-more i {
+    margin-right: 4px;
+}
+
 .reset-btn {
     padding: 8px 16px;
     background-color: #6c757d;

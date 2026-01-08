@@ -86,6 +86,24 @@
             background-color: #ccc;
             cursor: not-allowed;
         }
+        
+        &.btn-show-more {
+            background: #4CAF50;
+            color: white;
+            
+            &:hover:not(:disabled) {
+                background: #45a049;
+                transform: translateY(-2px);
+            }
+            
+            &.active {
+                background: #f44336;
+                
+                &:hover:not(:disabled) {
+                    background: #da190b;
+                }
+            }
+        }
     }
 
     .card {

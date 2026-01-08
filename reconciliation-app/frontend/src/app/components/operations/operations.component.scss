@@ -1218,6 +1218,38 @@
   border-top: 1px solid var(--border-color);
 }
 
+.btn-show-more {
+    background: #4CAF50;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    padding: 8px 16px;
+    font-size: 0.9em;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-right: 8px;
+}
+
+.btn-show-more:hover {
+    background: #45a049;
+    transform: translateY(-2px);
+}
+
+.btn-show-more.active {
+    background: #f44336;
+}
+
+.btn-show-more.active:hover {
+    background: #da190b;
+}
+
+.btn-show-more i {
+    margin-right: 4px;
+}
+
 .btn-clear-date {
   padding: 0.5rem 1rem;
   background: transparent;

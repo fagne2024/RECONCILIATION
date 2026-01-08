@@ -857,10 +857,19 @@
                                    class="date-input-field">
                         </div>
                     </div>
-                    <div class="date-filter-actions" *ngIf="filterForm.get('dateDebut')?.value || filterForm.get('dateFin')?.value">
+                    <div class="date-filter-actions">
+                        <button type="button" 
+                                class="btn-show-more" 
+                                (click)="toggleShowAllData()"
+                                [class.active]="showAllData"
+                                title="{{ showAllData ? 'Afficher uniquement le mois en cours' : 'Afficher toutes les données' }}">
+                            <i class="fas" [ngClass]="showAllData ? 'fa-eye-slash' : 'fa-eye'"></i>
+                            {{ showAllData ? 'Voir moins' : 'Voir plus' }}
+                        </button>
                         <button type="button" 
                                 class="btn-clear-date" 
                                 (click)="clearDateFilter()"
+                                *ngIf="filterForm.get('dateDebut')?.value || filterForm.get('dateFin')?.value"
                                 title="Effacer le filtre de date">
                             <i class="fas fa-times"></i> Effacer
                         </button>

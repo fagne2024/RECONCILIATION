@@ -178,12 +178,18 @@
                 <div class="filter-group">
                   <mat-form-field appearance="fill" class="filter-select">
                     <mat-label>Période</mat-label>
-                    <mat-select [(ngModel)]="selectedTimeFilter" (selectionChange)="onTimeFilterChange()">
+                    <mat-select [(ngModel)]="selectedTimeFilter" (selectionChange)="onTimeFilterChange()" [disabled]="showAllData">
                       <mat-option *ngFor="let timeFilter of filterOptions?.timeFilters" [value]="timeFilter">
                         {{ timeFilter }}
                       </mat-option>
                     </mat-select>
                   </mat-form-field>
+                </div>
+                <div class="filter-group">
+                  <button type="button" (click)="toggleShowAllData()" class="btn-show-more" [class.active]="showAllData">
+                    <i class="fas" [ngClass]="showAllData ? 'fa-eye-slash' : 'fa-eye'"></i>
+                    {{ showAllData ? 'Voir moins' : 'Voir plus' }}
+                  </button>
                 </div>
               </div>
               <button type="button" (click)="resetFilters()" class="reset-btn">

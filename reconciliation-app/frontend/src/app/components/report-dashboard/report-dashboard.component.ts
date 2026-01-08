@@ -82,6 +82,7 @@ import { ModernExcelExportService, ExcelColumn } from '../../services/modern-exc
                         <select 
                             [(ngModel)]="selectedPeriod" 
                             (change)="onPeriodChange()"
+                            [disabled]="showAllDataReport"
                             class="filter-select">
                             <option value="day">Aujourd'hui</option>
                             <option value="week">Cette semaine</option>
@@ -90,6 +91,14 @@ import { ModernExcelExportService, ExcelColumn } from '../../services/modern-exc
                             <option value="year">Cette année</option>
                             <option value="custom">Période personnalisée</option>
                         </select>
+                    </div>
+                    
+                    <!-- Bouton Voir plus -->
+                    <div class="filter-group">
+                        <button type="button" (click)="toggleShowAllDataReport()" class="btn-show-more" [class.active]="showAllDataReport">
+                            <i class="fas" [ngClass]="showAllDataReport ? 'fa-eye-slash' : 'fa-eye'"></i>
+                            {{ showAllDataReport ? 'Voir moins' : 'Voir plus' }}
+                        </button>
                     </div>
 
                     <!-- Date personnalisée -->
@@ -535,6 +544,33 @@ import { ModernExcelExportService, ExcelColumn } from '../../services/modern-exc
             font-weight: 600;
             transition: all 0.3s ease;
             font-size: 1rem;
+        }
+        
+        .btn-show-more {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            white-space: nowrap;
+            
+            &:hover:not(:disabled) {
+                background: #45a049;
+                transform: translateY(-2px);
+            }
+            
+            &.active {
+                background: #f44336;
+                
+                &:hover:not(:disabled) {
+                    background: #da190b;
+                }
+            }
+            
+            i {
+                margin-right: 4px;
+            }
         }
 
         .btn-clear {
@@ -1099,6 +1135,7 @@ export class ReportDashboardComponent implements OnInit, OnDestroy {
     selectedPeriod = 'month';
     customStartDate = '';
     customEndDate = '';
+    showAllDataReport: boolean = false; // Flag pour afficher toutes les données
     
     // Options disponibles
     availableAgencies: string[] = [];
@@ -1263,6 +1300,18 @@ export class ReportDashboardComponent implements OnInit, OnDestroy {
             this.customStartDate = '';
             this.customEndDate = '';
         }
+        this.showAllDataReport = false; // Réinitialiser le flag "Voir plus" quand on change la période
+        this.applyFilters();
+    }
+    
+    toggleShowAllDataReport() {
+        this.showAllDataReport = !this.showAllDataReport;
+        if (this.showAllDataReport) {
+            // Désactiver les filtres de date
+            this.selectedPeriod = 'month'; // Garder la valeur mais ne pas l'utiliser
+            this.customStartDate = '';
+            this.customEndDate = '';
+        }
         this.applyFilters();
     }
 
@@ -1315,7 +1364,8 @@ export class ReportDashboardComponent implements OnInit, OnDestroy {
         }
 
         // Filtre par période
-        if (this.selectedPeriod !== 'custom') {
+        // Si showAllDataReport est activé, ne pas filtrer par date
+        if (!this.showAllDataReport && this.selectedPeriod !== 'custom') {
             const now = new Date();
             let startDate: Date;
             let endDate: Date | null = null;

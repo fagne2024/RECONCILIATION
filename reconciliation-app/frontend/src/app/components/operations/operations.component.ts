@@ -183,6 +183,9 @@ export class OperationsComponent implements OnInit, OnDestroy, AfterViewInit {
     // Flag pour indiquer si les dates du formulaire ont été définies automatiquement par le système
     // Si true, on ne filtre pas par date dans applyFilters car les données sont déjà filtrées par le backend
     dateFilterAutoSet: boolean = false;
+    
+    // Flag pour afficher toutes les données (sans filtre de date)
+    showAllData: boolean = false;
 
     // Propriétés pour les popups personnalisés
     showApproClientPopup = false;
@@ -485,6 +488,12 @@ export class OperationsComponent implements OnInit, OnDestroy, AfterViewInit {
     }
 
     loadOperations() {
+        // Si showAllData est activé, charger toutes les données sans filtre de date
+        if (this.showAllData) {
+            this.loadAllOperationsWithoutDateFilter();
+            return;
+        }
+        
         // Calculer les dates du mois en cours par défaut
         const today = new Date();
         const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
@@ -495,6 +504,31 @@ export class OperationsComponent implements OnInit, OnDestroy, AfterViewInit {
         const dateFin = lastDayOfMonth.toISOString().split('T')[0];
         
         this.loadOperationsByDateRange(dateDebut, dateFin);
+    }
+    
+    loadAllOperationsWithoutDateFilter() {
+        this.isLoading = true;
+        this.operationService.getAllOperations().subscribe({
+            next: (ops: Operation[]) => {
+                this.operations = ops;
+                this.applyFilters();
+                this.isLoading = false;
+            },
+            error: (err) => {
+                console.error('Erreur lors du chargement de toutes les opérations:', err);
+                this.isLoading = false;
+            }
+        });
+    }
+    
+    toggleShowAllData() {
+        this.showAllData = !this.showAllData;
+        if (this.showAllData) {
+            // Désactiver le filtre de date
+            this.filterForm.patchValue({ dateDebut: '', dateFin: '' });
+            this.showDateFilter = false;
+        }
+        this.loadOperations();
     }
 
     // Méthode pour charger les opérations avec une plage de dates spécifique
@@ -2993,6 +3027,7 @@ Mises à jour: ${updated}/${total}${failed > 0 ? `\nEchecs: ${failed}` : ''}`;
         this.filterForm.patchValue({ dateDebut: '', dateFin: '' });
         // Masquer le filtre après l'effacement
         this.showDateFilter = false;
+        this.showAllData = false; // Réinitialiser aussi le flag "Voir plus"
         // Recharger les opérations du mois en cours par défaut
         this.loadOperations();
     }

@@ -2,6 +2,10 @@
   <div class="header">
     <h2>Gestion des Transactions SF (TRX SF)</h2>
     <div class="header-actions">
+      <button class="btn btn-show-more" (click)="toggleShowAllDataTrxSf()" [class.active]="showAllDataTrxSf" [disabled]="isLoading">
+        <i class="fas" [ngClass]="showAllDataTrxSf ? 'fa-eye-slash' : 'fa-eye'"></i>
+        {{ showAllDataTrxSf ? 'Voir moins' : 'Voir plus' }}
+      </button>
       <button class="btn btn-primary" (click)="refreshData()" [disabled]="isLoading">
         <i class="fas fa-sync-alt"></i> Actualiser
       </button>

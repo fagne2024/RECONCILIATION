@@ -21,6 +21,7 @@ export class TrxSfComponent implements OnInit, OnDestroy {
   trxSfData: TrxSfData[] = [];
   filteredTrxSfData: TrxSfData[] = [];
   isLoading = false;
+  showAllDataTrxSf: boolean = false; // Flag pour afficher toutes les données
   
   // Upload
   selectedFile: File | null = null;
@@ -428,21 +429,27 @@ export class TrxSfComponent implements OnInit, OnDestroy {
     this.isAdminUser = isAdmin;
     this.userAgency = username || '';
     
-    // Calculer les dates du mois en cours pour le chargement par défaut
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = now.getMonth();
+    // Si showAllDataTrxSf est activé, ne pas appliquer de filtre de date
+    let dateDebutStr: string | undefined = undefined;
+    let dateFinStr: string | undefined = undefined;
     
-    // Premier jour du mois en cours à 00:00:00
-    const dateDebut = new Date(year, month, 1);
-    const dateDebutStr = `${year}-${String(month + 1).padStart(2, '0')}-01 00:00:00`;
-    
-    // Dernier jour du mois en cours à 23:59:59
-    const dateFin = new Date(year, month + 1, 0, 23, 59, 59);
-    const dateFinStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(dateFin.getDate()).padStart(2, '0')} 23:59:59`;
+    if (!this.showAllDataTrxSf) {
+      // Calculer les dates du mois en cours pour le chargement par défaut
+      const now = new Date();
+      const year = now.getFullYear();
+      const month = now.getMonth();
+      
+      // Premier jour du mois en cours à 00:00:00
+      const dateDebut = new Date(year, month, 1);
+      dateDebutStr = `${year}-${String(month + 1).padStart(2, '0')}-01 00:00:00`;
+      
+      // Dernier jour du mois en cours à 23:59:59
+      const dateFin = new Date(year, month + 1, 0, 23, 59, 59);
+      dateFinStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(dateFin.getDate()).padStart(2, '0')} 23:59:59`;
+    }
     
     if (isAdmin) {
-      // Admin : charger uniquement les données du mois en cours
+      // Admin : charger les données (avec ou sans filtre de date selon showAllDataTrxSf)
       this.trxSfService.getTrxSfs({
         dateDebut: dateDebutStr,
         dateFin: dateFinStr
@@ -465,7 +472,7 @@ export class TrxSfComponent implements OnInit, OnDestroy {
         }
       });
     } else {
-      // Utilisateur non-admin : utiliser l'username comme agence et filtrer par mois en cours
+      // Utilisateur non-admin : utiliser l'username comme agence et filtrer par mois en cours (ou toutes les données)
       const userAgency = username;
       if (userAgency) {
         this.trxSfService.getTrxSfs({
@@ -1280,6 +1287,11 @@ export class TrxSfComponent implements OnInit, OnDestroy {
   }
 
   refreshData(): void {
+    this.loadTrxSfData();
+  }
+  
+  toggleShowAllDataTrxSf(): void {
+    this.showAllDataTrxSf = !this.showAllDataTrxSf;
     this.loadTrxSfData();
   }
 

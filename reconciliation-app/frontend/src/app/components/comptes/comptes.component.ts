@@ -82,6 +82,7 @@ export class ComptesComponent implements OnInit, OnDestroy {
     releveTypeOperation = '';
     releveDateDebutCustom = '';
     releveDateFinCustom = '';
+    showAllDataReleve: boolean = false; // Flag pour afficher toutes les données du relevé
     showSoldesSeulement = false; // Pour basculer la vue
     releveSoldesJournaliers: DailySolde[] = [];
     private groupedReleveOperationsCache: Array<{ main: Operation; frais: Operation[] }> = [];
@@ -1275,6 +1276,18 @@ export class ComptesComponent implements OnInit, OnDestroy {
             this.releveDateDebutCustom = '';
             this.releveDateFinCustom = '';
         }
+        this.showAllDataReleve = false; // Réinitialiser le flag "Voir plus" quand on change la période
+        this.loadReleveOperations();
+    }
+    
+    toggleShowAllDataReleve(): void {
+        this.showAllDataReleve = !this.showAllDataReleve;
+        if (this.showAllDataReleve) {
+            // Désactiver les filtres de date
+            this.releveDateDebut = '';
+            this.releveDateDebutCustom = '';
+            this.releveDateFinCustom = '';
+        }
         this.loadReleveOperations();
     }
 
@@ -1291,7 +1304,11 @@ export class ComptesComponent implements OnInit, OnDestroy {
         let dateFin: string | null = null;
 
         // Ajouter les filtres de date
-        if (this.releveDateDebut === 'custom') {
+        // Si showAllDataReleve est activé, ne pas appliquer de filtre de date
+        if (this.showAllDataReleve) {
+            dateDebut = null;
+            dateFin = null;
+        } else if (this.releveDateDebut === 'custom') {
             dateDebut = this.releveDateDebutCustom || null;
             dateFin = this.releveDateFinCustom || null;
         } else if (this.releveDateDebut) {

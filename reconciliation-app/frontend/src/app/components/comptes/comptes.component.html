@@ -471,13 +471,19 @@
                     <div class="releve-filters">
                         <div class="filter-group">
                             <label>Période:</label>
-                            <select [(ngModel)]="releveDateDebut" (change)="onRelevePeriodChange()">
+                            <select [(ngModel)]="releveDateDebut" (change)="onRelevePeriodChange()" [disabled]="showAllDataReleve">
                                 <option value="">Toutes les opérations</option>
                                 <option value="7">7 derniers jours</option>
                                 <option value="30">30 derniers jours</option>
                                 <option value="90">3 derniers mois</option>
                                 <option value="custom">Période personnalisée</option>
                             </select>
+                        </div>
+                        <div class="filter-group">
+                            <button type="button" (click)="toggleShowAllDataReleve()" class="btn-show-more" [class.active]="showAllDataReleve">
+                                <i class="fas" [ngClass]="showAllDataReleve ? 'fa-eye-slash' : 'fa-eye'"></i>
+                                {{ showAllDataReleve ? 'Voir moins' : 'Voir plus' }}
+                            </button>
                         </div>
                         
                         <!-- Filtres de date personnalisés -->

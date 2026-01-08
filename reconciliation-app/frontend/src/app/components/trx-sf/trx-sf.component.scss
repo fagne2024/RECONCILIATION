@@ -34,6 +34,24 @@
           box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
         }
       }
+      
+      .btn-show-more {
+        background: #4CAF50;
+        color: white;
+        border: none;
+        
+        &:hover:not(:disabled) {
+          background: #45a049;
+        }
+        
+        &.active {
+          background: #f44336;
+          
+          &:hover:not(:disabled) {
+            background: #da190b;
+          }
+        }
+      }
     }
   }
 

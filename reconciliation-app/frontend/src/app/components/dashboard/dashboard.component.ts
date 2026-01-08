@@ -70,6 +70,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
     selectedTimeFilter: string = 'Ce mois';
     startDate: string = '';
     endDate: string = '';
+    showAllData: boolean = false; // Flag pour afficher toutes les données
     // selectedBanque: string = 'Tous'; // supprimé
 
     // Listes pour les filtres
@@ -199,6 +200,11 @@ export class DashboardComponent implements OnInit, OnDestroy {
 
     // Ajout d'une fonction utilitaire pour filtrer par période
     private filterByPeriod<T extends { date?: string; dateOperation?: string }>(data: T[]): T[] {
+      // Si showAllData est activé, retourner toutes les données sans filtre
+      if (this.showAllData) {
+        return data;
+      }
+      
       const today = new Date();
       let start: Date | null = null;
       let end: Date | null = null;
@@ -698,14 +704,15 @@ export class DashboardComponent implements OnInit, OnDestroy {
         });
     }
 
-    private loadDetailedMetrics() {
+    private     loadDetailedMetrics() {
         this.detailedLoading = true;
         this.detailedError = null;
         // Adapter les filtres envoyés au backend
         const agencies = this.selectedAgency.length === 0 ? undefined : this.selectedAgency;
         const services = this.selectedService.length === 0 ? undefined : this.selectedService;
         const countries = this.selectedCountry.length === 0 ? undefined : this.selectedCountry;
-        const timeFilter = this.selectedTimeFilter !== 'Tous' ? this.selectedTimeFilter : undefined;
+        // Si showAllData est activé, ne pas envoyer de filtre de temps
+        const timeFilter = this.showAllData ? undefined : (this.selectedTimeFilter !== 'Tous' ? this.selectedTimeFilter : undefined);
         
         this.dashboardService.getDetailedMetrics(
             agencies,
@@ -803,14 +810,15 @@ export class DashboardComponent implements OnInit, OnDestroy {
         };
     }
 
-    private loadTransactionCreatedStats() {
+    private     loadTransactionCreatedStats() {
         this.transactionCreatedLoading = true;
         this.transactionCreatedError = null;
 
         const agencies = this.selectedAgency.length === 0 ? undefined : this.selectedAgency;
         const services = this.selectedService.length === 0 ? undefined : this.selectedService;
         const countries = this.selectedCountry.length === 0 ? undefined : this.selectedCountry;
-        const timeFilter = this.selectedTimeFilter !== 'Tous' ? this.selectedTimeFilter : undefined;
+        // Si showAllData est activé, ne pas envoyer de filtre de temps
+        const timeFilter = this.showAllData ? undefined : (this.selectedTimeFilter !== 'Tous' ? this.selectedTimeFilter : undefined);
 
         this.dashboardService.getTransactionCreatedStats(
             agencies,
@@ -1129,9 +1137,15 @@ export class DashboardComponent implements OnInit, OnDestroy {
         this.startDate = '';
         this.endDate = '';
         this.showCustomDateInputs = false;
+        this.showAllData = false; // Réinitialiser aussi le flag "Voir plus"
         this.loadDetailedMetrics();
         this.loadTransactionCreatedStats();
         this.updateBarChartData();
+    }
+    
+    toggleShowAllData() {
+        this.showAllData = !this.showAllData;
+        this.onFilterChange();
     }
 
     exportDetailedMetricsExcel() {
