@@ -1720,6 +1720,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         console.log('🔄 ReconciliationReportComponent - ngOnInit appelé');
         
         // Réinitialiser les données pour éviter le cache du navigateur
+        // Cette réinitialisation se fait toujours au démarrage pour garantir des données fraîches
         this.reportData = [];
         this.filteredReportData = [];
         this.loadedFromDb = false;
@@ -2017,13 +2018,20 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             const detailedStats = this.calculateDetailedStatsForSummaryItem(item);
             
             // Si on a plusieurs agences, ne pas mettre les écarts partenaires sur les lignes d'agence
-            const finalPartnerOnly = 0; // Toujours 0 maintenant, les écarts partenaires iront sur une ligne séparée
+            // Si on a une seule agence, attribuer TOUS les écarts partenaires à la première ligne pour éviter les doubles comptages
+            let finalPartnerOnly = 0;
+            if (!hasMultipleAgencies && index === 0 && totalPartnerOnly > 0) {
+                // Attribuer tous les écarts partenaires à la première ligne si une seule agence
+                finalPartnerOnly = totalPartnerOnly;
+            }
             
             console.log(`📊 Rapport final pour index ${index}:`, {
                 agency: item.agency,
                 service: item.service,
                 partnerOnly: finalPartnerOnly,
-                totalPartnerOnly: totalPartnerOnly
+                totalPartnerOnly: totalPartnerOnly,
+                hasMultipleAgencies: hasMultipleAgencies,
+                isFirstLine: index === 0
             });
             
             const boOnly = detailedStats.boOnly;
@@ -2130,6 +2138,16 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             return dateB - dateA; // Décroissant (plus récent en premier)
         });
         
+        // Vérifier que tous les écarts partenaires sont bien présents dans le rapport
+        const totalPartnerOnlyInReport = this.reportData.reduce((sum, item) => sum + (this.normalizeNumericValue(item.partnerOnly) || 0), 0);
+        const totalBoOnlyInReport = this.reportData.reduce((sum, item) => sum + (this.normalizeNumericValue(item.boOnly) || 0), 0);
+        console.log('📊 Rapport final généré - Totaux vérifiés:', {
+            totalPartnerOnly: totalPartnerOnly,
+            totalPartnerOnlyInReport: totalPartnerOnlyInReport,
+            totalBoOnlyInReport: totalBoOnlyInReport,
+            nombreLignes: this.reportData.length,
+            correspondance: totalPartnerOnly === totalPartnerOnlyInReport ? '✅ OK' : '❌ ERREUR'
+        });
         console.log('📊 Rapport final généré - reportData:', this.reportData);
         console.log('📊 Premier élément du rapport:', this.reportData[0]);
 
@@ -2191,23 +2209,23 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                    countryMatch;
         });
 
-        // Les écarts partenaires sont maintenant regroupés sur la première ligne
-        // Donc on ne les calcule plus par agence/service
+        // Calculer les écarts partenaires par agence/service
+        // IMPORTANT: Ne pas compter les écarts partenaires ici car ils seront répartis globalement
+        // pour éviter les doubles comptages quand plusieurs lignes correspondent à la même agence/service
         const agencyPartnerOnly: any[] = [];
 
         // Calculer le total des écarts BO (boOnly + mismatches)
         const totalBoOnly = agencyBoOnly.length + agencyMismatches.length;
         
-        // Pour le calcul du taux de correspondance, inclure les écarts partenaires
-        // car ils sont maintenant regroupés sur la première ligne
-        const totalPartnerOnly = this.calculateTotalPartnerOnly();
-        const totalDetailed = agencyMatches.length + totalBoOnly + totalPartnerOnly;
+        // Pour le calcul du taux de correspondance, ne pas inclure les écarts partenaires ici
+        // car ils seront répartis globalement dans generateReportDataFromSummary
+        const totalDetailed = agencyMatches.length + totalBoOnly;
         const matchRate = totalDetailed > 0 ? (agencyMatches.length / totalDetailed) * 100 : 0;
 
         return {
             matches: agencyMatches.length,
             boOnly: totalBoOnly, // Écarts BO totaux (boOnly + mismatches)
-            partnerOnly: 0, // Les écarts partenaires sont maintenant regroupés sur la première ligne
+            partnerOnly: 0, // Les écarts partenaires seront répartis globalement pour éviter les doubles comptages
             mismatches: agencyMismatches.length, // Incohérences séparées
             matchRate: matchRate
         };
@@ -2675,7 +2693,11 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                 return false;
             }
 
-            const agencyMatch = !this.selectedAgency || item.agency.toLowerCase().includes(this.selectedAgency.toLowerCase());
+            // Pour les lignes avec agence vide (lignes de service pour écarts partenaires), 
+            // les inclure si aucun filtre d'agence n'est sélectionné, ou si elles ont des écarts partenaires
+            const agencyMatch = !this.selectedAgency || 
+                               (item.agency && item.agency.trim() !== '' && item.agency.toLowerCase().includes(this.selectedAgency.toLowerCase())) ||
+                               (!item.agency || item.agency.trim() === '');
             const serviceMatch = !this.selectedService || item.service.toLowerCase().includes(this.selectedService.toLowerCase());
             const countryFilterMatch = !this.selectedCountry || item.country?.toLowerCase().includes(this.selectedCountry.toLowerCase());
             const statusMatch = !this.selectedStatus || item.status === this.selectedStatus;
@@ -3708,10 +3730,68 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                     return;
                 }
                 this.reportData = rows.map(r => {
-                    // Calculer les écarts
-                    const boOnly = Number(r.boOnly) || 0;
-                    const partnerOnly = Number(r.partnerOnly) || 0;
-                    const mismatches = Number(r.mismatches) || 0;
+                    // Log pour voir la structure complète de l'objet r
+                    if (r.comment && r.comment.includes('323 écart(s) Partenaire')) {
+                        console.log('🔍 Chargement depuis DB - Structure complète de l\'objet r:', r);
+                        console.log('🔍 Chargement depuis DB - Toutes les clés de l\'objet:', Object.keys(r));
+                    }
+                    
+                    // Calculer les écarts - essayer plusieurs variantes de noms de champs
+                    let boOnly = Number(r.boOnly || r.bo_only || r.boOnlyCount || 0) || 0;
+                    let partnerOnly = Number(r.partnerOnly || r.partner_only || r.partnerOnlyCount || 0) || 0;
+                    const mismatches = Number(r.mismatches || r.mismatch || 0) || 0;
+                    
+                    // Log pour débogage - vérifier les valeurs brutes depuis la base
+                    if (r.comment && (r.comment.includes('écart(s) Partenaire') || r.comment.includes('écart(s) BO'))) {
+                        console.log('🔍 Chargement depuis DB - Valeurs brutes:', {
+                            id: r.id,
+                            agency: r.agency,
+                            service: r.service,
+                            r_boOnly: r.boOnly,
+                            r_partnerOnly: r.partnerOnly,
+                            r_bo_only: r.bo_only,
+                            r_partner_only: r.partner_only,
+                            r_mismatches: r.mismatches,
+                            boOnly: boOnly,
+                            partnerOnly: partnerOnly,
+                            mismatches: mismatches,
+                            comment: r.comment
+                        });
+                    }
+                    
+                    // Si partnerOnly est 0 mais que le commentaire contient des écarts partenaires,
+                    // extraire les écarts depuis le commentaire (cas où la base n'a pas sauvegardé partnerOnly correctement)
+                    if (partnerOnly === 0 && r.comment && r.comment.includes('écart(s) Partenaire')) {
+                        const discrepancies = this.extractDiscrepanciesFromComment(r.comment);
+                        if (discrepancies.partnerCount > 0) {
+                            partnerOnly = discrepancies.partnerCount;
+                            console.log('🔧 Correction - Écarts partenaires extraits depuis le commentaire:', {
+                                id: r.id,
+                                agency: r.agency,
+                                service: r.service,
+                                partnerOnlyFromDB: r.partnerOnly,
+                                partnerOnlyFromComment: partnerOnly,
+                                comment: r.comment
+                            });
+                        }
+                    }
+                    
+                    // Si boOnly est 0 mais que le commentaire contient des écarts BO,
+                    // extraire les écarts depuis le commentaire
+                    if (boOnly === 0 && r.comment && r.comment.includes('écart(s) BO')) {
+                        const discrepancies = this.extractDiscrepanciesFromComment(r.comment);
+                        if (discrepancies.boCount > 0) {
+                            boOnly = discrepancies.boCount;
+                            console.log('🔧 Correction - Écarts BO extraits depuis le commentaire:', {
+                                id: r.id,
+                                agency: r.agency,
+                                service: r.service,
+                                boOnlyFromComment: boOnly,
+                                comment: r.comment
+                            });
+                        }
+                    }
+                    
                     const totalEcarts = boOnly + partnerOnly + mismatches;
                     
                     // Recalculer le traitement selon les écarts réels si non défini ou incorrect
@@ -3808,6 +3888,15 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                         username: r.username || ''
                     };
                 });
+                // Log pour vérifier les valeurs après extraction depuis le commentaire
+                const totalPartnerOnlyAfterExtraction = this.reportData.reduce((sum, item) => sum + (item.partnerOnly || 0), 0);
+                const totalBoOnlyAfterExtraction = this.reportData.reduce((sum, item) => sum + (item.boOnly || 0), 0);
+                console.log('📊 Après extraction depuis commentaire:', {
+                    totalPartnerOnly: totalPartnerOnlyAfterExtraction,
+                    totalBoOnly: totalBoOnlyAfterExtraction,
+                    nombreLignes: this.reportData.length
+                });
+                
                 // Détecter si on a plusieurs agences et des écarts partenaires à regrouper
                 // Exclure les lignes avec agence vide (qui sont déjà des lignes de service)
                 const uniqueAgenciesInDb = new Set(
@@ -3827,63 +3916,93 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                 });
                 
                 // Si on a plusieurs agences et des écarts partenaires, créer une ligne supplémentaire et retirer les écarts des lignes d'agence
+                // MAIS seulement pour les lignes avec statut "OK" (les écarts sont soldés)
+                // Pour les statuts autres que "OK", préserver les écarts sur les lignes d'agence pour l'affichage
                 if (hasMultipleAgenciesInDb && totalPartnerOnlyInDb > 0) {
-                    // Trouver la première ligne avec un service valide pour créer la ligne supplémentaire
-                    const firstItemWithService = this.reportData.find(item => item.service && item.service.trim() !== '');
+                    // Séparer les écarts partenaires selon le statut
+                    const partnerOnlyForOkStatus = this.reportData
+                        .filter(item => item.agency && item.agency.trim() !== '' && item.status === 'OK')
+                        .reduce((sum, item) => sum + (item.partnerOnly || 0), 0);
+                    const partnerOnlyForNonOkStatus = totalPartnerOnlyInDb - partnerOnlyForOkStatus;
                     
-                    if (firstItemWithService) {
-                        // Créer la ligne supplémentaire pour le service
-                        const servicePartnerOnlyRow: ReconciliationReportData = {
-                            date: firstItemWithService.date,
-                            agency: '', // Agence vide
-                            service: firstItemWithService.service,
-                            country: firstItemWithService.country,
-                            totalTransactions: totalPartnerOnlyInDb,
-                            totalVolume: 0, // Volume vide
-                            matches: 0, // Correspondances vides
-                            boOnly: 0, // Écart BO vide
-                            partnerOnly: totalPartnerOnlyInDb, // Écart partenaire attribué au service
-                            mismatches: 0,
-                            matchRate: 0,
-                            status: this.computeStatusFromCounts(0, 0, totalPartnerOnlyInDb, 0, totalPartnerOnlyInDb),
-                            comment: '',
-                            traitement: totalPartnerOnlyInDb > 0 ? 'Niveau Support' : 'Niveau Group'
-                        };
-                        this.updateCommentFromCounts(
-                            servicePartnerOnlyRow,
-                            0,
-                            0,
-                            totalPartnerOnlyInDb,
-                            0,
-                            { force: true }
-                        );
+                    // Si on a des écarts partenaires pour les statuts "OK", créer une ligne supplémentaire
+                    if (partnerOnlyForOkStatus > 0) {
+                        // Trouver la première ligne avec un service valide pour créer la ligne supplémentaire
+                        const firstItemWithService = this.reportData.find(item => item.service && item.service.trim() !== '');
                         
-                        // Retirer les écarts partenaires de toutes les lignes d'agence
-                        this.reportData.forEach(item => {
-                            if (item.agency && item.agency.trim() !== '') {
-                                item.partnerOnly = 0;
-                                // Recalculer le commentaire et le statut sans les écarts partenaires
-                                const matches = item.matches || 0;
-                                const boOnly = item.boOnly || 0;
-                                const mismatches = item.mismatches || 0;
-                                const totalTransactions = matches + boOnly + mismatches;
-                                item.totalTransactions = totalTransactions;
-                                item.matchRate = totalTransactions > 0 ? (matches / totalTransactions) * 100 : 0;
-                                item.status = this.computeStatusFromCounts(matches, boOnly, 0, mismatches, totalTransactions);
-                                // Ne forcer la mise à jour du commentaire que pour les lignes NON sauvegardées
-                                if (!item.id) {
-                                    this.updateCommentFromCounts(item, matches, boOnly, 0, mismatches, { force: true });
+                        if (firstItemWithService) {
+                            // Créer la ligne supplémentaire pour le service (uniquement pour les statuts OK)
+                            const servicePartnerOnlyRow: ReconciliationReportData = {
+                                date: firstItemWithService.date,
+                                agency: '', // Agence vide
+                                service: firstItemWithService.service,
+                                country: firstItemWithService.country,
+                                totalTransactions: partnerOnlyForOkStatus,
+                                totalVolume: 0, // Volume vide
+                                matches: 0, // Correspondances vides
+                                boOnly: 0, // Écart BO vide
+                                partnerOnly: partnerOnlyForOkStatus, // Écart partenaire attribué au service (uniquement pour OK)
+                                mismatches: 0,
+                                matchRate: 0,
+                                status: this.computeStatusFromCounts(0, 0, partnerOnlyForOkStatus, 0, partnerOnlyForOkStatus),
+                                comment: '',
+                                traitement: partnerOnlyForOkStatus > 0 ? 'Niveau Support' : 'Niveau Group'
+                            };
+                            this.updateCommentFromCounts(
+                                servicePartnerOnlyRow,
+                                0,
+                                0,
+                                partnerOnlyForOkStatus,
+                                0,
+                                { force: true }
+                            );
+                            
+                            // Retirer les écarts partenaires UNIQUEMENT des lignes d'agence avec statut "OK"
+                            this.reportData.forEach(item => {
+                                if (item.agency && item.agency.trim() !== '' && item.status === 'OK') {
+                                    item.partnerOnly = 0;
+                                    // Recalculer le commentaire et le statut sans les écarts partenaires
+                                    const matches = item.matches || 0;
+                                    const boOnly = item.boOnly || 0;
+                                    const mismatches = item.mismatches || 0;
+                                    const totalTransactions = matches + boOnly + mismatches;
+                                    item.totalTransactions = totalTransactions;
+                                    item.matchRate = totalTransactions > 0 ? (matches / totalTransactions) * 100 : 0;
+                                    item.status = this.computeStatusFromCounts(matches, boOnly, 0, mismatches, totalTransactions);
+                                    // Ne forcer la mise à jour du commentaire que pour les lignes NON sauvegardées
+                                    if (!item.id) {
+                                        this.updateCommentFromCounts(item, matches, boOnly, 0, mismatches, { force: true });
+                                    }
                                 }
-                            }
-                        });
-                        
-                        // Ajouter la ligne supplémentaire
-                        this.reportData.push(servicePartnerOnlyRow);
-                        console.log('📊 Ligne supplémentaire créée pour écarts partenaires (multi-agences DB):', servicePartnerOnlyRow);
+                                // Pour les statuts autres que "OK", préserver les écarts partenaires sur les lignes d'agence
+                            });
+                            
+                            // Ajouter la ligne supplémentaire
+                            this.reportData.push(servicePartnerOnlyRow);
+                            console.log('📊 Ligne supplémentaire créée pour écarts partenaires (multi-agences DB, statut OK uniquement):', servicePartnerOnlyRow);
+                        }
                     }
+                    // Pour les statuts autres que "OK", les écarts partenaires restent sur les lignes d'agence
                 }
                 
                 this.enforceDefaultStatusForReportData();
+
+                // Log final pour vérifier les valeurs après regroupement
+                const totalPartnerOnlyAfterRegroupment = this.reportData.reduce((sum, item) => sum + (item.partnerOnly || 0), 0);
+                const totalBoOnlyAfterRegroupment = this.reportData.reduce((sum, item) => sum + (item.boOnly || 0), 0);
+                const linesWithPartnerOnly = this.reportData.filter(item => (item.partnerOnly || 0) > 0);
+                console.log('📊 Après regroupement multi-agences:', {
+                    totalPartnerOnly: totalPartnerOnlyAfterRegroupment,
+                    totalBoOnly: totalBoOnlyAfterRegroupment,
+                    nombreLignes: this.reportData.length,
+                    lignesAvecEcartsPartenaires: linesWithPartnerOnly.length,
+                    detailsLignesAvecEcarts: linesWithPartnerOnly.map(item => ({
+                        id: item.id,
+                        agency: item.agency,
+                        service: item.service,
+                        partnerOnly: item.partnerOnly
+                    }))
+                });
 
                 // Appliquer la logique de recalcul sur les données chargées depuis la base
                 this.reportData.forEach(item => {
@@ -4029,7 +4148,8 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                 item.id = saved.id;
                 this.popupService.showSuccess('Ligne sauvegardée avec succès');
                 // Forcer le rechargement sans cache après sauvegarde
-                this.forceReload();
+                // Ne pas recharger la page pour conserver les logs dans la console
+                // this.forceReload();
             },
             error: (err: HttpErrorResponse) => {
                 if (err.status === 409) {
@@ -4123,7 +4243,8 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                 // Mettre à jour localement l'item avec le commentaire préservé
                 item.comment = savedComment;
                 // Forcer le rechargement sans cache après mise à jour
-                this.forceReload();
+                // Ne pas recharger la page pour conserver les logs dans la console
+                // this.forceReload();
                 
                 // Créer une map pour préserver les commentaires lors du rechargement
                 const preserveComments = new Map<number, string>();
@@ -4164,7 +4285,31 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
     }
 
     async saveAll() {
-        const rowsSource = this.filteredReportData.length > 0 ? this.filteredReportData : this.reportData;
+        // Utiliser reportData pour s'assurer que toutes les lignes (y compris celles avec agence vide) sont incluses
+        // Si filteredReportData existe et contient des lignes, l'utiliser, sinon utiliser reportData
+        // Mais s'assurer d'inclure toutes les lignes avec des écarts partenaires
+        let rowsSource = this.filteredReportData.length > 0 ? this.filteredReportData : this.reportData;
+        
+        // S'assurer que toutes les lignes avec des écarts partenaires sont incluses
+        // Si on utilise filteredReportData, vérifier qu'on n'a pas perdu de lignes avec des écarts partenaires
+        if (this.filteredReportData.length > 0) {
+            // Vérifier si des lignes avec écarts partenaires sont manquantes
+            const partnerOnlyLinesInReport = this.reportData.filter(item => (item.partnerOnly || 0) > 0);
+            const partnerOnlyLinesInFiltered = this.filteredReportData.filter(item => (item.partnerOnly || 0) > 0);
+            
+            // Si des lignes avec écarts partenaires sont manquantes dans filteredReportData, les ajouter
+            partnerOnlyLinesInReport.forEach(reportLine => {
+                const existsInFiltered = partnerOnlyLinesInFiltered.some(
+                    filteredLine => filteredLine.agency === reportLine.agency && 
+                                   filteredLine.service === reportLine.service &&
+                                   filteredLine.date === reportLine.date
+                );
+                if (!existsInFiltered) {
+                    rowsSource.push(reportLine);
+                    console.log('💾 Ajout ligne avec écarts partenaires manquante:', reportLine);
+                }
+            });
+        }
         
         // Afficher un popup pour sélectionner la date à appliquer à toutes les lignes
         const selectedDate = await this.popupService.showDateInput(
@@ -4184,33 +4329,84 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         );
         if (!confirmed) return;
 
-        const payload = rowsSource.map(item => {
-            // Recalculer les valeurs selon le statut pour chaque item
-            const recalculatedData = this.recalculateDataBasedOnStatus(item);
+        // Calculer le total des écarts partenaires avant sauvegarde pour vérification
+        const totalPartnerOnlyBeforeSave = rowsSource.reduce((sum, item) => sum + (this.normalizeNumericValue(item.partnerOnly) || 0), 0);
+        const totalBoOnlyBeforeSave = rowsSource.reduce((sum, item) => sum + (this.normalizeNumericValue(item.boOnly) || 0), 0);
+        console.log('💾 Sauvegarde - Totaux avant sauvegarde:', {
+            totalPartnerOnly: totalPartnerOnlyBeforeSave,
+            totalBoOnly: totalBoOnlyBeforeSave,
+            nombreLignes: rowsSource.length
+        });
+
+        const payload = rowsSource.map((item, index) => {
+            // Lors de la sauvegarde, "séter" (fixer) les écarts BO et partenaires sans recalcul
+            // Utiliser les valeurs actuelles de l'item pour les écarts
+            const boOnly = this.normalizeNumericValue(item.boOnly);
+            const partnerOnly = this.normalizeNumericValue(item.partnerOnly);
+            const mismatches = this.normalizeNumericValue(item.mismatches);
+            const matches = this.normalizeNumericValue(item.matches);
+            const totalTransactions = this.normalizeNumericValue(item.totalTransactions);
+            
+            // Log pour débogage
+            if (partnerOnly > 0 || boOnly > 0) {
+                console.log(`💾 Sauvegarde ligne ${index}:`, {
+                    agency: item.agency,
+                    service: item.service,
+                    boOnly: boOnly,
+                    partnerOnly: partnerOnly,
+                    mismatches: mismatches,
+                    matches: matches,
+                    totalTransactions: totalTransactions
+                });
+            }
+            
+            // Recalculer uniquement le matchRate et le totalTransactions si nécessaire
+            const effectiveTotalTransactions = totalTransactions > 0 ? totalTransactions : matches + boOnly + partnerOnly + mismatches;
+            const matchRate = effectiveTotalTransactions > 0 ? (matches / effectiveTotalTransactions) * 100 : 0;
             
             // Définir le traitement par défaut si non spécifié
-            const traitement = recalculatedData.traitement && recalculatedData.traitement.trim() !== ''
-                ? recalculatedData.traitement
-                : this.determineDefaultTraitement(recalculatedData);
+            const traitement = item.traitement && item.traitement.trim() !== ''
+                ? item.traitement
+                : this.determineDefaultTraitement(item);
             
             return {
                 date: selectedDate, // Utiliser la date sélectionnée pour toutes les lignes
-                agency: recalculatedData.agency,
-                service: recalculatedData.service,
-                country: recalculatedData.country,
-                glpiId: recalculatedData.glpiId || '',
-                totalTransactions: recalculatedData.totalTransactions,
-                totalVolume: recalculatedData.totalVolume,
-                matches: recalculatedData.matches,
-                boOnly: recalculatedData.boOnly,
-                partnerOnly: recalculatedData.partnerOnly,
-                mismatches: recalculatedData.mismatches,
-                matchRate: recalculatedData.matchRate,
-                status: recalculatedData.status,
-                comment: recalculatedData.comment,
+                agency: item.agency || '', // Permettre les agences vides (lignes de service)
+                service: item.service,
+                country: item.country,
+                glpiId: item.glpiId || '',
+                totalTransactions: effectiveTotalTransactions,
+                totalVolume: item.totalVolume || 0,
+                matches: matches,
+                boOnly: boOnly, // Écarts BO "sétés" (fixés) sans recalcul
+                partnerOnly: partnerOnly, // Écarts partenaires "sétés" (fixés) sans recalcul
+                mismatches: mismatches,
+                matchRate: matchRate,
+                status: item.status,
+                comment: item.comment || '',
                 traitement: traitement
             };
         });
+
+        // Vérifier le total des écarts partenaires dans le payload
+        const totalPartnerOnlyInPayload = payload.reduce((sum, item) => sum + (item.partnerOnly || 0), 0);
+        const totalBoOnlyInPayload = payload.reduce((sum, item) => sum + (item.boOnly || 0), 0);
+        console.log('💾 Sauvegarde - Totaux dans le payload:', {
+            totalPartnerOnly: totalPartnerOnlyInPayload,
+            totalBoOnly: totalBoOnlyInPayload,
+            nombreLignes: payload.length,
+            correspondanceAvant: totalPartnerOnlyBeforeSave === totalPartnerOnlyInPayload ? '✅ OK' : '❌ ERREUR',
+            differencePartnerOnly: totalPartnerOnlyBeforeSave - totalPartnerOnlyInPayload
+        });
+        
+        // Afficher les lignes avec écarts partenaires dans le payload
+        const linesWithPartnerOnly = payload.filter(item => (item.partnerOnly || 0) > 0);
+        console.log('💾 Sauvegarde - Lignes avec écarts partenaires dans le payload:', linesWithPartnerOnly.map(item => ({
+            agency: item.agency,
+            service: item.service,
+            partnerOnly: item.partnerOnly,
+            boOnly: item.boOnly
+        })));
 
         this.http.post<any>('/api/result8rec/bulk', payload, { responseType: 'text' as 'json' })
         .subscribe({
@@ -4218,9 +4414,10 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                 // La réponse peut être une string ou un objet JSON
                 const message = typeof res === 'string' ? res : `${rowsSource.length} ligne(s) sauvegardée(s)`;
                 console.log('✅ Sauvegarde bulk réussie:', message);
+                console.log('✅ Réponse complète du serveur:', res);
                 this.popupService.showSuccess(message);
-                // Forcer le rechargement sans cache après sauvegarde en masse
-                this.forceReload();
+                // Ne pas recharger la page pour conserver les logs dans la console
+                // this.forceReload();
             },
             error: (err: HttpErrorResponse) => {
                 console.error('❌ Erreur de sauvegarde bulk', err);
@@ -4492,8 +4689,9 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
     }
 
     private validateEditData(item: ReconciliationReportData): boolean {
-        if (!item.date || !item.agency || !item.service || !item.country) {
-            this.popupService.showError('Données invalides', 'Veuillez remplir tous les champs obligatoires (Date, Agence, Service, Pays)');
+        // Permettre les lignes avec agence vide (lignes de service pour écarts partenaires)
+        if (!item.date || !item.service || !item.country) {
+            this.popupService.showError('Données invalides', 'Veuillez remplir tous les champs obligatoires (Date, Service, Pays). L\'agence peut être vide pour les lignes de service.');
             return false;
         }
 

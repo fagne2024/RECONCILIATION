@@ -5304,11 +5304,23 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
     openReconciliationReport() {
         console.log('📈 Ouverture du rapport de réconciliation...');
         
+        // Forcer le rechargement en ajoutant un timestamp pour éviter le cache
+        const timestamp = Date.now();
+        
         // 1. Vérifier si un résumé par agence existe déjà dans le service
         const existingSummary = this.reconciliationSummaryService.getAgencySummary();
         if (existingSummary && existingSummary.length > 0) {
-            console.log('✅ Résumé existant trouvé, navigation immédiate vers le rapport');
-            this.router.navigate(['/reconciliation-report']);
+            console.log('✅ Résumé existant trouvé, navigation avec rechargement forcé vers le rapport');
+            this.router.navigate(['/reconciliation-report'], { 
+                queryParams: { refresh: timestamp },
+                skipLocationChange: false 
+            }).then(() => {
+                // Attendre un court délai pour que la navigation soit complète, puis recharger
+                setTimeout(() => {
+                    console.log('🔄 Rechargement de la page pour enlever les caches...');
+                    window.location.reload();
+                }, 100);
+            });
             return;
         }
         
@@ -5319,13 +5331,31 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
             const summary = this.getAgencySummary();
             console.log('✅ Résumé construit:', summary.length, 'éléments');
             // Le résumé est automatiquement stocké dans le service par getAgencySummary()
-            this.router.navigate(['/reconciliation-report']);
+            this.router.navigate(['/reconciliation-report'], { 
+                queryParams: { refresh: timestamp },
+                skipLocationChange: false 
+            }).then(() => {
+                // Attendre un court délai pour que la navigation soit complète, puis recharger
+                setTimeout(() => {
+                    console.log('🔄 Rechargement de la page pour enlever les caches...');
+                    window.location.reload();
+                }, 100);
+            });
             return;
         }
         
         // 3. Sinon, naviguer immédiatement (les données seront chargées en arrière-plan)
-        console.log('⏳ Pas de données disponibles, navigation immédiate (chargement en arrière-plan)');
-        this.router.navigate(['/reconciliation-report']);
+        console.log('⏳ Pas de données disponibles, navigation avec rechargement forcé (chargement en arrière-plan)');
+        this.router.navigate(['/reconciliation-report'], { 
+            queryParams: { refresh: timestamp },
+            skipLocationChange: false 
+        }).then(() => {
+            // Attendre un court délai pour que la navigation soit complète, puis recharger
+            setTimeout(() => {
+                console.log('🔄 Rechargement de la page pour enlever les caches...');
+                window.location.reload();
+            }, 100);
+        });
     }
 
     nextPage(type: 'matches' | 'boOnly' | 'partnerOnly') {
