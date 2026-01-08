@@ -43,9 +43,14 @@ export class AuthInterceptor implements HttpInterceptor {
         if (error.status === 401) {
           console.warn('Token invalide ou expiré, déconnexion...');
           this.appState.logout();
-          this.router.navigate(['/login'], {
-            queryParams: { returnUrl: this.router.url }
-          });
+          
+          // Ne rediriger vers login que si on n'y est pas déjà (évite la boucle infinie)
+          const currentUrl = this.router.url;
+          if (!currentUrl.startsWith('/login')) {
+            this.router.navigate(['/login'], {
+              queryParams: { returnUrl: currentUrl }
+            });
+          }
         }
         return throwError(() => error);
       })

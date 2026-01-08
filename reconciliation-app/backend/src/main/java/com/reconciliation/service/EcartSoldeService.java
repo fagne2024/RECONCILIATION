@@ -5,6 +5,7 @@ import com.reconciliation.entity.FraisTransactionEntity;
 import com.reconciliation.entity.OperationEntity;
 import com.reconciliation.entity.CompteEntity;
 import com.reconciliation.model.EcartSolde;
+import com.reconciliation.model.EcartBoSummaryDTO;
 import com.reconciliation.repository.EcartSoldeRepository;
 import com.reconciliation.repository.OperationRepository;
 import com.reconciliation.repository.CompteRepository;
@@ -202,6 +203,81 @@ public class EcartSoldeService {
         
         System.out.println("=== FIN createMultipleEcartSoldes ===");
         return savedEcartSoldes;
+    }
+
+    @Transactional
+    public int saveEcartBoSummary(List<EcartBoSummaryDTO> summaryData) {
+        System.out.println("=== DÉBUT saveEcartBoSummary ===");
+        System.out.println("DEBUG: Nombre de résumés à sauvegarder: " + summaryData.size());
+        
+        List<EcartSoldeEntity> entitiesToSave = new ArrayList<>();
+        DateTimeFormatter formatter = DateTimeFormatter.ISO_DATE_TIME;
+        
+        for (EcartBoSummaryDTO summary : summaryData) {
+            try {
+                // Parser la date
+                LocalDateTime dateTransaction;
+                if (summary.getDate() != null && !summary.getDate().trim().isEmpty()) {
+                    try {
+                        // Essayer de parser au format ISO
+                        if (summary.getDate().contains("T")) {
+                            dateTransaction = LocalDateTime.parse(summary.getDate(), formatter);
+                        } else {
+                            // Format simple YYYY-MM-DD
+                            dateTransaction = LocalDateTime.parse(summary.getDate() + "T00:00:00", formatter);
+                        }
+                    } catch (Exception e) {
+                        System.out.println("DEBUG: Erreur de parsing de date, utilisation de la date actuelle: " + summary.getDate());
+                        dateTransaction = LocalDateTime.now();
+                    }
+                } else {
+                    dateTransaction = LocalDateTime.now();
+                }
+
+                // Créer un ID transaction unique basé sur le service, pays et date
+                String idTransaction = String.format("ECART_BO_%s_%s_%s", 
+                    summary.getService() != null ? summary.getService().replaceAll("\\s+", "_") : "UNKNOWN",
+                    summary.getPays() != null ? summary.getPays().replaceAll("\\s+", "_") : "UNKNOWN",
+                    dateTransaction.format(DateTimeFormatter.ofPattern("yyyyMMddHHmmss")));
+
+                // Vérifier si un enregistrement similaire existe déjà
+                if (ecartSoldeRepository.existsByIdTransaction(idTransaction)) {
+                    System.out.println("DEBUG: Enregistrement déjà existant pour: " + idTransaction);
+                    continue;
+                }
+
+                // Créer l'entité
+                EcartSoldeEntity entity = new EcartSoldeEntity();
+                entity.setIdTransaction(idTransaction);
+                entity.setService(summary.getService());
+                entity.setPays(summary.getPays());
+                entity.setMontant(summary.getMontant() != null ? summary.getMontant() : 0.0);
+                entity.setDateTransaction(dateTransaction);
+                entity.setStatut(summary.getStatut() != null ? summary.getStatut() : "EN_ATTENTE");
+                entity.setCommentaire(String.format("Écart BO regroupé - %d transaction(s) - Service: %s, Pays: %s", 
+                    summary.getNombreTransactions() != null ? summary.getNombreTransactions() : 0,
+                    summary.getService(),
+                    summary.getPays()));
+                entity.setDateImport(LocalDateTime.now());
+
+                entitiesToSave.add(entity);
+                System.out.println("DEBUG: Résumé préparé pour service: " + summary.getService() + ", montant: " + summary.getMontant());
+            } catch (Exception e) {
+                System.err.println("DEBUG: Erreur lors du traitement du résumé: " + e.getMessage());
+                e.printStackTrace();
+            }
+        }
+
+        // Sauvegarder tous les enregistrements
+        if (!entitiesToSave.isEmpty()) {
+            List<EcartSoldeEntity> savedEntities = ecartSoldeRepository.saveAll(entitiesToSave);
+            System.out.println("DEBUG: " + savedEntities.size() + " résumé(s) sauvegardé(s) avec succès");
+            System.out.println("=== FIN saveEcartBoSummary ===");
+            return savedEntities.size();
+        }
+
+        System.out.println("=== FIN saveEcartBoSummary - Aucun enregistrement à sauvegarder ===");
+        return 0;
     }
     
     @Transactional

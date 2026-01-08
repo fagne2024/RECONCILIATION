@@ -6,6 +6,8 @@ import { FraisTransaction, FraisTransactionRequest } from '../../models/frais-tr
 import * as XLSX from 'xlsx';
 import { MatSelect } from '@angular/material/select';
 import { PopupService } from '../../services/popup.service';
+import { PaysService } from '../../services/pays.service';
+import { Pays } from '../../models/pays.model';
 
 interface ExportFraisData {
     'ID'?: number | undefined;
@@ -30,6 +32,8 @@ export class FraisComponent implements OnInit, OnDestroy {
     filteredFrais: FraisTransaction[] = [];
     services: string[] = [];
     agences: string[] = [];
+    pays: Pays[] = [];
+    paysList: string[] = [];
     
     isLoading = false;
     isAdding = false;
@@ -65,17 +69,22 @@ export class FraisComponent implements OnInit, OnDestroy {
     filteredServicesList: string[] = [];
     agenceSearch: string = '';
     filteredAgencesList: string[] = [];
+    paysSearch: string = '';
+    filteredPaysList: string[] = [];
     serviceSearchCtrl = new FormControl('');
     agenceSearchCtrl = new FormControl('');
+    paysSearchCtrl = new FormControl('');
     dateDebut: string = '';
     dateFin: string = '';
     @ViewChild('serviceSelect') serviceSelect!: MatSelect;
     @ViewChild('agenceSelect') agenceSelect!: MatSelect;
+    @ViewChild('paysSelect') paysSelect!: MatSelect;
     
     private subscription = new Subscription();
     
     constructor(
         private fraisTransactionService: FraisTransactionService,
+        private paysService: PaysService,
         private fb: FormBuilder,
         private popupService: PopupService
     ) {
@@ -103,6 +112,7 @@ export class FraisComponent implements OnInit, OnDestroy {
         this.filterForm = this.fb.group({
             services: [[]],
             agences: [[]],
+            pays: [[]],
             actif: [''],
             dateDebut: [''],
             dateFin: ['']
@@ -113,6 +123,7 @@ export class FraisComponent implements OnInit, OnDestroy {
         this.loadFraisTransactions();
         this.loadServices();
         this.loadAgences();
+        this.loadPays();
         this.serviceSearchCtrl.valueChanges.subscribe((search: string | null) => {
             const s = (search || '').toLowerCase();
             this.filteredServicesList = this.services.filter(p => p.toLowerCase().includes(s));
@@ -128,6 +139,15 @@ export class FraisComponent implements OnInit, OnDestroy {
             if (this.filteredAgencesList.length === 1 && !this.filterForm.controls['agences'].value.includes(this.filteredAgencesList[0])) {
                 this.filterForm.controls['agences'].setValue([this.filteredAgencesList[0]]);
                 if (this.agenceSelect) { this.agenceSelect.close(); }
+                this.applyFilters();
+            }
+        });
+        this.paysSearchCtrl.valueChanges.subscribe((search: string | null) => {
+            const s = (search || '').toLowerCase();
+            this.filteredPaysList = this.paysList.filter(p => p.toLowerCase().includes(s));
+            if (this.filteredPaysList.length === 1 && !this.filterForm.controls['pays'].value.includes(this.filteredPaysList[0])) {
+                this.filterForm.controls['pays'].setValue([this.filteredPaysList[0]]);
+                if (this.paysSelect) { this.paysSelect.close(); }
                 this.applyFilters();
             }
         });
@@ -178,6 +198,21 @@ export class FraisComponent implements OnInit, OnDestroy {
                 },
                 error: (err) => {
                     console.error('Erreur de chargement des agences', err);
+                }
+            })
+        );
+    }
+    
+    loadPays() {
+        this.subscription.add(
+            this.paysService.getPays().subscribe({
+                next: (pays) => {
+                    this.pays = pays;
+                    this.paysList = pays.map(p => p.nom);
+                    this.filteredPaysList = this.paysList;
+                },
+                error: (err) => {
+                    console.error('Erreur de chargement des pays', err);
                 }
             })
         );
@@ -315,10 +350,12 @@ export class FraisComponent implements OnInit, OnDestroy {
         // Synchroniser les champs du formulaire avec les sélections UI
         this.filterForm.controls['services'].setValue(this.filterForm.controls['services'].value);
         this.filterForm.controls['agences'].setValue(this.filterForm.controls['agences'].value);
+        this.filterForm.controls['pays'].setValue(this.filterForm.controls['pays'].value);
         const filter = {
             ...this.filterForm.value,
             services: this.filterForm.controls['services'].value,
             agences: this.filterForm.controls['agences'].value,
+            pays: this.filterForm.controls['pays'].value,
             dateDebut: this.dateDebut,
             dateFin: this.dateFin
         };
@@ -677,6 +714,16 @@ export class FraisComponent implements OnInit, OnDestroy {
         // Fermer automatiquement le dropdown après un choix
         setTimeout(() => {
             if (this.agenceSelect) this.agenceSelect.close();
+        }, 100);
+    }
+    
+    onPaysChange(event: any) {
+        this.filterForm.controls['pays'].setValue(event.value);
+        this.applyFilters();
+        
+        // Fermer automatiquement le dropdown après un choix
+        setTimeout(() => {
+            if (this.paysSelect) this.paysSelect.close();
         }, 100);
     }
     onDateDebutChange(event: any) {

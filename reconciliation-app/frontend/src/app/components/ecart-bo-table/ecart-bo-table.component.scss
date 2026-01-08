@@ -120,10 +120,37 @@ h2 {
 }
 
 .header-info {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  
   .total-count {
     font-size: 16px;
     color: #6c757d;
     font-weight: 500;
+  }
+
+  .summary-button {
+    padding: 10px 20px;
+    background: #007bff;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    box-shadow: 0 2px 4px rgba(0, 123, 255, 0.2);
+
+    &:hover {
+      background: #0056b3;
+      transform: translateY(-1px);
+      box-shadow: 0 4px 8px rgba(0, 123, 255, 0.3);
+    }
+
+    &:active {
+      transform: translateY(0);
+    }
   }
 }
 

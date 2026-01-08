@@ -1,0 +1,136 @@
+<div class="ecart-bo-summary-container">
+  <div class="page-header">
+    <div class="breadcrumb">
+      <a (click)="goBack()" class="breadcrumb-link">← Retour aux Écarts BO</a>
+    </div>
+  </div>
+
+  <div class="header-section">
+    <h2>📊 Tableau des Écarts BO</h2>
+    <div class="header-info">
+      <span class="total-count">{{filteredItems.length}} écart(s) BO</span>
+      <button 
+        (click)="saveData()" 
+        class="save-button" 
+        [disabled]="isSaving || filteredItems.length === 0"
+      >
+        {{ isSaving ? '💾 Sauvegarde en cours...' : '💾 Sauvegarder' }}
+      </button>
+    </div>
+  </div>
+
+  <!-- Filtres -->
+  <div class="filters-section">
+    <div class="filter-row">
+      <div class="filter-item">
+        <label>Recherche</label>
+        <input 
+          type="text" 
+          [(ngModel)]="searchKey" 
+          (input)="onSearch()"
+          placeholder="Rechercher..."
+          class="filter-input"
+        >
+      </div>
+      <div class="filter-item">
+        <label>Service</label>
+        <select [(ngModel)]="selectedService" (change)="applyFilters()" class="filter-select">
+          <option value="">Tous</option>
+          <option *ngFor="let service of uniqueServices" [value]="service">{{service}}</option>
+        </select>
+      </div>
+      <div class="filter-item">
+        <label>Pays</label>
+        <select [(ngModel)]="selectedPays" (change)="applyFilters()" class="filter-select">
+          <option value="">Tous</option>
+          <option *ngFor="let pays of uniquePays" [value]="pays">{{pays}}</option>
+        </select>
+      </div>
+      <div class="filter-item">
+        <label>Statut</label>
+        <select [(ngModel)]="selectedStatut" (change)="applyFilters()" class="filter-select">
+          <option value="">Tous</option>
+          <option value="ok">OK</option>
+          <option value="en cours">En cours</option>
+        </select>
+      </div>
+      <div class="filter-item">
+        <button (click)="clearFilters()" class="clear-filters-btn">Effacer les filtres</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tableau -->
+  <div class="table-section" *ngIf="!isLoading">
+    <div class="table-container">
+      <table class="summary-table">
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Service</th>
+            <th>Pays</th>
+            <th>Nombre</th>
+            <th>Statut</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let item of getPagedItems()">
+            <td>{{ item.date || '-' }}</td>
+            <td>{{ item.service || '-' }}</td>
+            <td>{{ item.pays || '-' }}</td>
+            <td class="nombre-cell">{{ item.nombre | number:'1.0-0' }}</td>
+            <td class="statut-cell">
+              <select 
+                [(ngModel)]="item.statut" 
+                (change)="onStatutChange(item, $any($event.target).value)"
+                [class]="getStatutClass(item.statut)"
+                class="statut-select"
+              >
+                <option value="en cours">En cours</option>
+                <option value="ok">OK</option>
+              </select>
+            </td>
+          </tr>
+          <tr *ngIf="getPagedItems().length === 0">
+            <td colspan="5" class="no-data">Aucun écart BO trouvé</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Chargement -->
+  <div *ngIf="isLoading" class="loading">
+    <div class="spinner"></div>
+    <p>Chargement des données...</p>
+  </div>
+
+  <!-- Pagination -->
+  <div class="pagination-section" *ngIf="!isLoading && filteredItems.length > 0">
+    <div class="pagination-info">
+      <span>
+        Page {{currentPage}} / {{totalPages}} 
+        ({{filteredItems.length}} résultat(s))
+      </span>
+    </div>
+    <div class="pagination-controls">
+      <button (click)="prevPage()" [disabled]="currentPage === 1" class="page-btn">
+        Précédent
+      </button>
+      <div class="page-numbers">
+        <button 
+          *ngFor="let page of getPageNumbers()" 
+          (click)="goToPage(page)"
+          [class.active]="page === currentPage"
+          class="page-number-btn"
+        >
+          {{page}}
+        </button>
+      </div>
+      <button (click)="nextPage()" [disabled]="currentPage === totalPages" class="page-btn">
+        Suivant
+      </button>
+    </div>
+  </div>
+</div>
+

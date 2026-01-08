@@ -46,6 +46,7 @@ import { SopOperationComponent } from './components/sop-operation/sop-operation.
 import { SopReconciliationTrxComponent } from './components/sop-reconciliation-trx/sop-reconciliation-trx.component';
 import { GuideUtilisationComponent } from './components/guide-utilisation/guide-utilisation.component';
 import { SuiviDesEcartsComponent } from './components/suivi-des-ecarts/suivi-des-ecarts.component';
+import { EcartBoSummaryComponent } from './components/ecart-bo-summary/ecart-bo-summary.component';
 import { AuthGuard } from './guards/auth.guard';
 import { AdminGuard } from './guards/admin.guard';
 
@@ -99,6 +100,7 @@ const routes: Routes = [
   { path: 'sop-reconciliation-trx', component: SopReconciliationTrxComponent, canActivate: [AuthGuard] },
   { path: 'guide-utilisation', component: GuideUtilisationComponent, canActivate: [AuthGuard] },
   { path: 'suivi-des-ecarts', component: SuiviDesEcartsComponent, canActivate: [AuthGuard] },
+  { path: 'ecart-bo-summary', component: EcartBoSummaryComponent, canActivate: [AuthGuard] },
 ];
 
 @NgModule({

@@ -396,6 +396,20 @@
                     </mat-form-field>
                 </div>
                 <div class="form-group">
+                    <label>Pays</label>
+                    <mat-form-field appearance="fill" class="filter-select">
+                        <mat-label>Pays</mat-label>
+                        <mat-select #paysSelect formControlName="pays" multiple (selectionChange)="onPaysChange($event)">
+                            <mat-option>
+                                <ngx-mat-select-search [formControl]="paysSearchCtrl" placeholderLabel="Rechercher un pays..." noEntriesFoundLabel="Aucun pays trouvé"></ngx-mat-select-search>
+                            </mat-option>
+                            <mat-option *ngFor="let pays of filteredPaysList" [value]="pays">
+                                {{ pays }}
+                            </mat-option>
+                        </mat-select>
+                    </mat-form-field>
+                </div>
+                <div class="form-group">
                     <label>Statut</label>
                     <select formControlName="actif" (change)="applyFilters()">
                         <option value="">Tous</option>

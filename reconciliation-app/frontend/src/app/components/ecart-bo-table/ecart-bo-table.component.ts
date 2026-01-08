@@ -921,4 +921,8 @@ export class EcartBoTableComponent implements OnInit, OnDestroy {
   goBack(): void {
     this.router.navigate(['/results']);
   }
+
+  goToSummary(): void {
+    this.router.navigate(['/ecart-bo-summary']);
+  }
 }

@@ -1,6 +1,7 @@
 package com.reconciliation.controller;
 
 import com.reconciliation.model.EcartSolde;
+import com.reconciliation.model.EcartBoSummaryDTO;
 import com.reconciliation.entity.EcartSoldeEntity;
 import com.reconciliation.service.EcartSoldeService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -14,6 +15,7 @@ import java.io.IOException;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.HashMap;
 
 @RestController
 @RequestMapping("/api/ecart-solde")
@@ -110,6 +112,93 @@ public class EcartSoldeController {
         return ResponseEntity.status(HttpStatus.CREATED).body(createdEcartSolde);
     }
     
+    @GetMapping("/summary")
+    public ResponseEntity<List<Map<String, Object>>> getEcartBoSummary(
+            @RequestParam(required = false) String service,
+            @RequestParam(required = false) String pays,
+            @RequestParam(required = false) String statut) {
+        try {
+            List<EcartSoldeEntity> ecartSoldes = ecartSoldeService.getEcartSoldes(
+                null, service, pays, null, statut, null, null);
+            
+            // Grouper par service et pays pour créer les résumés
+            Map<String, Map<String, Object>> grouped = new java.util.HashMap<>();
+            
+            for (EcartSoldeEntity ecart : ecartSoldes) {
+                // Filtrer seulement les écarts BO regroupés (ceux qui commencent par ECART_BO_)
+                if (ecart.getIdTransaction() != null && ecart.getIdTransaction().startsWith("ECART_BO_")) {
+                    String key = (ecart.getService() != null ? ecart.getService() : "") + "|" + 
+                                (ecart.getPays() != null ? ecart.getPays() : "");
+                    
+                    if (!grouped.containsKey(key)) {
+                        Map<String, Object> summary = new java.util.HashMap<>();
+                        summary.put("service", ecart.getService());
+                        summary.put("pays", ecart.getPays());
+                        summary.put("date", ecart.getDateTransaction() != null ? 
+                            ecart.getDateTransaction().toString() : "");
+                        summary.put("montant", ecart.getMontant());
+                        summary.put("statut", ecart.getStatut());
+                        summary.put("nombre", extractNombreFromCommentaire(ecart.getCommentaire()));
+                        summary.put("id", ecart.getId());
+                        grouped.put(key, summary);
+                    }
+                }
+            }
+            
+            return ResponseEntity.ok(new java.util.ArrayList<>(grouped.values()));
+        } catch (Exception e) {
+            System.err.println("=== ERREUR getEcartBoSummary (Controller) ===");
+            System.err.println("DEBUG: Exception: " + e.getMessage());
+            e.printStackTrace();
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
+    }
+    
+    private int extractNombreFromCommentaire(String commentaire) {
+        if (commentaire == null || commentaire.isEmpty()) {
+            return 0;
+        }
+        // Extraire le nombre de transactions du commentaire
+        // Format: "Écart BO regroupé - X transaction(s) - Service: ..."
+        try {
+            java.util.regex.Pattern pattern = java.util.regex.Pattern.compile("(\\d+)\\s+transaction");
+            java.util.regex.Matcher matcher = pattern.matcher(commentaire);
+            if (matcher.find()) {
+                return Integer.parseInt(matcher.group(1));
+            }
+        } catch (Exception e) {
+            // Ignorer les erreurs de parsing
+        }
+        return 0;
+    }
+
+    @PostMapping("/summary")
+    public ResponseEntity<Map<String, Object>> saveEcartBoSummary(@RequestBody List<EcartBoSummaryDTO> summaryData) {
+        try {
+            System.out.println("=== DÉBUT saveEcartBoSummary (Controller) ===");
+            System.out.println("DEBUG: Nombre de résumés reçus: " + summaryData.size());
+            
+            int count = ecartSoldeService.saveEcartBoSummary(summaryData);
+            
+            System.out.println("DEBUG: Résultats finaux:");
+            System.out.println("  - Résumés reçus: " + summaryData.size());
+            System.out.println("  - Enregistrements créés: " + count);
+            System.out.println("=== FIN saveEcartBoSummary (Controller) ===");
+            
+            return ResponseEntity.status(HttpStatus.CREATED).body(Map.of(
+                "message", "Résumés sauvegardés avec succès",
+                "count", count,
+                "totalReceived", summaryData.size()
+            ));
+        } catch (Exception e) {
+            System.err.println("=== ERREUR saveEcartBoSummary (Controller) ===");
+            System.err.println("DEBUG: Exception: " + e.getMessage());
+            e.printStackTrace();
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("error", "Erreur lors de la sauvegarde des résumés: " + e.getMessage()));
+        }
+    }
+
     @PostMapping("/batch")
     public ResponseEntity<Map<String, Object>> createMultipleEcartSoldes(@RequestBody List<EcartSolde> ecartSoldes) {
         try {

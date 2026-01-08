@@ -103,8 +103,14 @@ export class LoginComponent implements OnInit {
           }, response.username, token);
           
           // Rediriger vers l'URL demandée ou vers le dashboard par défaut
-          const returnUrl = this.route.snapshot.queryParams['returnUrl'] || '/dashboard';
-          this.router.navigate([returnUrl]);
+          let returnUrl = this.route.snapshot.queryParams['returnUrl'] || '/dashboard';
+          
+          // Éviter la boucle : si returnUrl pointe vers /login, rediriger vers /dashboard
+          if (returnUrl.startsWith('/login')) {
+            returnUrl = '/dashboard';
+          }
+          
+          this.router.navigateByUrl(returnUrl);
         },
         error: (err) => {
           this.loading = false;
@@ -133,8 +139,14 @@ export class LoginComponent implements OnInit {
   ngOnInit() {
     // Rediriger si déjà connecté
     if (this.appState.getUserRights() && this.appState.getUsername()) {
-      const returnUrl = this.route.snapshot.queryParams['returnUrl'] || '/dashboard';
-      this.router.navigate([returnUrl]);
+      let returnUrl = this.route.snapshot.queryParams['returnUrl'] || '/dashboard';
+      
+      // Éviter la boucle : si returnUrl pointe vers /login, rediriger vers /dashboard
+      if (returnUrl.startsWith('/login')) {
+        returnUrl = '/dashboard';
+      }
+      
+      this.router.navigateByUrl(returnUrl);
       return;
     }
     // Vérifier si l'utilisateur admin existe

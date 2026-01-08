@@ -2016,16 +2016,14 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             // Calculer les statistiques détaillées si possible
             const detailedStats = this.calculateDetailedStatsForSummaryItem(item);
             
-            // Si on a une seule agence, attribuer les écarts partenaires à cette agence (première ligne)
-            // Si on a plusieurs agences, ne pas mettre les écarts partenaires sur les lignes d'agence (ils iront sur une ligne séparée)
-            const finalPartnerOnly = (!hasMultipleAgencies && index === 0) ? totalPartnerOnly : 0;
+            // Si on a plusieurs agences, ne pas mettre les écarts partenaires sur les lignes d'agence
+            const finalPartnerOnly = 0; // Toujours 0 maintenant, les écarts partenaires iront sur une ligne séparée
             
             console.log(`📊 Rapport final pour index ${index}:`, {
                 agency: item.agency,
                 service: item.service,
                 partnerOnly: finalPartnerOnly,
-                totalPartnerOnly: totalPartnerOnly,
-                hasMultipleAgencies: hasMultipleAgencies
+                totalPartnerOnly: totalPartnerOnly
             });
             
             const boOnly = detailedStats.boOnly;
@@ -2792,14 +2790,9 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         // Indisponible si aucun enregistrement
         if (totalTransactions === 0) return 'REPORTING INDISPONIBLE';
 
-        // ✅ OK si pas d'écarts constatés (prioritaire)
-        if (boOnly === 0 && partnerOnly === 0 && mismatches === 0) {
+        // ✅ Forcer OK dès que le taux est à 100% (aucun écart) même sans données "response"
+        if (boOnly === 0 && partnerOnly === 0 && mismatches === 0 && matches === totalTransactions) {
             return 'OK';
-        }
-
-        // ✅ Par défaut, toute ligne avec écart doit être "EN COURS"
-        if (boOnly > 0 || partnerOnly > 0 || mismatches > 0) {
-            return 'EN COURS.....';
         }
 
         // En cours si les données détaillées ne sont pas encore disponibles
@@ -2846,26 +2839,18 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             return;
         }
         
-        // Si la ligne a un id (sauvegardée en base) et un commentaire non vide, préserver le commentaire
-        // Le commentaire sété en base doit rester inchangé même si la ligne est modifiée
-        // Sauf si force est activé (pour les nouvelles lignes ou les lignes sans commentaire)
-        if (item.id && item.comment && item.comment.trim() !== '' && !options?.force) {
-            console.log('🔒 updateCommentFromCounts: Commentaire préservé (sauvegardé en base) pour item', item.id, item.agency, item.service);
-            return;
-        }
-        
-        // Si la ligne est "sété" (sauvegardée avec un ID), préserver TOUJOURS le commentaire
-        // SAUF si force est activé explicitement
-        if (this.isRowSete(item) && !options?.force) {
-            console.log('🔒 updateCommentFromCounts: Commentaire préservé pour ligne sété', item.id);
-            return;
-        }
-        
         // Vérifier s'il n'y a vraiment pas d'écarts
         const hasNoEcarts = boOnly === 0 && partnerOnly === 0 && mismatches === 0;
         const totalTransactions = this.normalizeNumericValue(item.totalTransactions);
         const allMatches = totalTransactions > 0 && matches === totalTransactions;
-        
+
+        // Si la ligne est "sété" (sauvegardée avec un ID), préserver TOUJOURS le commentaire existant
+        // SAUF si force est activé explicitement
+        if (this.isRowSete(item) && !options?.force) {
+            console.log('🔒 updateCommentFromCounts: Commentaire préservé pour ligne sété', item.id, item.agency, item.service);
+            return;
+        }
+
         if (!this.shouldAutoUpdateComment(item, options)) {
             return;
         }
@@ -2895,13 +2880,6 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             return;
         }
         
-        // Si la ligne a un id (sauvegardée en base) et un commentaire non vide, préserver le commentaire
-        // Le commentaire sété en base doit rester inchangé même si la ligne est modifiée
-        if (item.id && item.comment && item.comment.trim() !== '') {
-            console.log('🔒 syncCommentWithValues: Commentaire préservé (sauvegardé en base) pour item', item.id, item.agency, item.service);
-            return;
-        }
-        
         const matches = this.normalizeNumericValue(item.matches);
         const boOnly = this.normalizeNumericValue(item.boOnly);
         const partnerOnly = this.normalizeNumericValue(item.partnerOnly);
@@ -2914,17 +2892,13 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             // Mettre à jour totalTransactions pour assurer la cohérence
             item.totalTransactions = calculatedTotal;
         }
-        
-        // Si la ligne est "sété" (sauvegardée avec un ID), préserver TOUJOURS le commentaire
+
+        // Si la ligne est "sété" (sauvegardée avec un ID), préserver TOUJOURS le commentaire existant
         if (this.isRowSete(item)) {
-            console.log('🔒 syncCommentWithValues: Commentaire préservé pour ligne sété', item.id);
+            console.log('🔒 syncCommentWithValues: Commentaire préservé pour ligne sété', item.id, item.agency, item.service);
             return;
         }
-        
-        // Vérifier s'il n'y a vraiment pas d'écarts
-        const hasNoEcarts = boOnly === 0 && partnerOnly === 0 && mismatches === 0;
-        const allMatches = totalTransactions > 0 && matches === totalTransactions;
-        
+
         // Recalculer le commentaire pour qu'il corresponde aux valeurs réelles
         item.comment = this.buildCommentForCounts(matches, boOnly, partnerOnly, mismatches, item.totalTransactions);
     }
@@ -2976,10 +2950,6 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
 
         // Si la ligne est "sété", préserver le commentaire existant
         const isSete = this.isRowSete(item);
-        
-        // Si la ligne a un id (sauvegardée en base) et un commentaire non vide, TOUJOURS préserver le commentaire
-        // Le commentaire sété en base doit rester inchangé même lors d'un changement de statut
-        const hasSavedComment = item.id && previousComment && previousComment.trim() !== '';
 
         // Si le statut est "OK", aligner les correspondances sur le total et solder les écarts
         if (item.status === 'OK') {
@@ -2989,8 +2959,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                     boOnly: item.boOnly,
                     partnerOnly: item.partnerOnly,
                     mismatches: item.mismatches,
-                    totalTransactions: item.totalTransactions,
-                    hasSavedComment: hasSavedComment
+                    totalTransactions: item.totalTransactions
                 }
             });
 
@@ -3007,14 +2976,9 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             recalculated.matchRate = effectiveTotalTransactions > 0 ? 
                 (recalculated.matches / effectiveTotalTransactions) * 100 : 0;
             
-            // TOUJOURS préserver le commentaire sauvegardé en base, même lors d'un changement de statut vers OK
-            if (hasSavedComment) {
-                recalculated.comment = previousComment;
-                console.log('🔒 recalculateDataBasedOnStatus: Commentaire préservé (sauvegardé en base) pour statut OK');
-            } else {
-                // Pour les nouvelles lignes sans commentaire sauvegardé, préserver quand même le commentaire existant
-                recalculated.comment = previousComment;
-            }
+            // Toujours préserver le commentaire lors d'un changement de statut
+            // (ne pas modifier le commentaire même si la ligne n'est pas encore "sété")
+            recalculated.comment = previousComment;
             
             console.log('🔄 Recalcul pour statut OK:', {
                 apres: {
@@ -3025,8 +2989,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                     totalTransactions: recalculated.totalTransactions,
                     matchRate: recalculated.matchRate,
                     comment: recalculated.comment,
-                    isSete: isSete,
-                    hasSavedComment: hasSavedComment
+                    isSete: isSete
                 }
             });
         } else {
@@ -3035,14 +2998,9 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             recalculated.matchRate = effectiveTotalTransactions > 0 ? 
                 (recalculated.matches / effectiveTotalTransactions) * 100 : 0;
             
-            // TOUJOURS préserver le commentaire sauvegardé en base
-            if (hasSavedComment) {
-                recalculated.comment = previousComment;
-                console.log('🔒 recalculateDataBasedOnStatus: Commentaire préservé (sauvegardé en base) pour autre statut');
-            } else {
-                // Pour les nouvelles lignes sans commentaire sauvegardé, préserver quand même le commentaire existant
-                recalculated.comment = previousComment;
-            }
+            // Toujours préserver le commentaire lors d'un changement de statut
+            // (ne pas modifier le commentaire même si la ligne n'est pas encore "sété")
+            recalculated.comment = previousComment;
         }
         
         return recalculated;
@@ -3777,11 +3735,15 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                         comment = preserveComments.get(r.id)!;
                         // Ne pas modifier le commentaire si il est préservé
                     } else {
-                        // Vérifier si la ligne est "sété" (statut OK ou traitement Terminé)
-                        const isSete = (r.status === 'OK' || (r.traitement && r.traitement.trim() === 'Terminé'));
-                        
-                        // Si la ligne est "sété", préserver le commentaire existant
-                        if (isSete && comment && comment.trim() !== '') {
+                        // Vérifier si la ligne est "sété" (a un ID, statut OK ou traitement Terminé)
+                        const isSete = (r.id || r.status === 'OK' || (r.traitement && r.traitement.trim() === 'Terminé'));
+
+                        // Si la ligne a un ID (déjà sauvegardée), préserver TOUJOURS son commentaire
+                        if (r.id && comment && comment.trim() !== '') {
+                            // Préserver le commentaire existant pour les lignes sauvegardées
+                            console.log('🔒 Commentaire préservé pour ligne sauvegardée id=' + r.id, 'commentaire:', comment);
+                        } else if (isSete && comment && comment.trim() !== '') {
+                            // Si la ligne est "sété" (statut OK ou traitement Terminé), préserver le commentaire existant
                             // Préserver le commentaire existant
                         } else if (r.status === 'OK') {
                             // Si le statut est "OK" mais pas encore "sété", mettre à jour le commentaire si tous les écarts sont à 0
@@ -3796,8 +3758,8 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                                 );
                             }
                             // Sinon, préserver le commentaire existant
-                        } else {
-                            // Recalculer le commentaire pour qu'il corresponde aux valeurs réelles
+                        } else if (!r.id) {
+                            // Seulement pour les nouvelles lignes (sans ID), recalculer le commentaire
                             const totalTransactions = r.totalTransactions || r.recordCount || 0;
                             if (!comment || comment.trim() === '') {
                                 // Si le commentaire est vide, le générer
@@ -3823,6 +3785,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                                 );
                             }
                         }
+                        // else: ligne avec ID mais commentaire vide - garder le commentaire vide
                     }
                     
                     return {
@@ -3855,10 +3818,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                 const hasMultipleAgenciesInDb = uniqueAgenciesInDb.size > 1;
                 
                 // Calculer le total des écarts partenaires dans les données de la base
-                // Exclure les lignes avec agence vide (qui sont déjà des lignes de service créées précédemment)
-                const totalPartnerOnlyInDb = this.reportData
-                    .filter(item => item.agency && item.agency.trim() !== '')
-                    .reduce((sum, item) => sum + (item.partnerOnly || 0), 0);
+                const totalPartnerOnlyInDb = this.reportData.reduce((sum, item) => sum + (item.partnerOnly || 0), 0);
                 
                 console.log('📊 Détection multi-agences dans DB:', {
                     uniqueAgencies: Array.from(uniqueAgenciesInDb),
@@ -3866,32 +3826,8 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                     totalPartnerOnlyInDb: totalPartnerOnlyInDb
                 });
                 
-                // Vérifier s'il existe déjà une ligne avec agence vide (ligne de service créée précédemment)
-                const existingServiceRow = this.reportData.find(item => 
-                    (!item.agency || item.agency.trim() === '') && 
-                    item.service && 
-                    item.service.trim() !== '' &&
-                    (item.partnerOnly || 0) > 0
-                );
-                
-                // IMPORTANT: Ne pas modifier les données déjà sauvegardées en base
-                // Les données chargées depuis la base doivent être respectées telles quelles
-                // La logique de regroupement ne s'applique que lors de la génération depuis le résumé
-                // Si une ligne de service existe déjà, c'est qu'elle a été créée lors d'une génération précédente
-                // Si des lignes d'agence ont des écarts partenaires sauvegardés, c'est qu'ils leur ont été attribués spécifiquement
-                
-                // Ne créer une ligne supplémentaire QUE si :
-                // 1. On a plusieurs agences
-                // 2. Il y a des écarts partenaires
-                // 3. Il n'existe PAS déjà de ligne de service
-                // 4. ET qu'aucune ligne d'agence n'a d'écarts partenaires sauvegardés (sinon ils ont été attribués spécifiquement)
-                const hasAgencyRowsWithPartnerGaps = this.reportData.some(item => 
-                    item.agency && 
-                    item.agency.trim() !== '' && 
-                    (item.partnerOnly || 0) > 0
-                );
-                
-                if (hasMultipleAgenciesInDb && totalPartnerOnlyInDb > 0 && !existingServiceRow && !hasAgencyRowsWithPartnerGaps) {
+                // Si on a plusieurs agences et des écarts partenaires, créer une ligne supplémentaire et retirer les écarts des lignes d'agence
+                if (hasMultipleAgenciesInDb && totalPartnerOnlyInDb > 0) {
                     // Trouver la première ligne avec un service valide pour créer la ligne supplémentaire
                     const firstItemWithService = this.reportData.find(item => item.service && item.service.trim() !== '');
                     
@@ -3944,13 +3880,6 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                         // Ajouter la ligne supplémentaire
                         this.reportData.push(servicePartnerOnlyRow);
                         console.log('📊 Ligne supplémentaire créée pour écarts partenaires (multi-agences DB):', servicePartnerOnlyRow);
-                    }
-                } else {
-                    if (existingServiceRow) {
-                        console.log('📊 Ligne de service existante trouvée, pas de création de nouvelle ligne:', existingServiceRow);
-                    }
-                    if (hasAgencyRowsWithPartnerGaps) {
-                        console.log('📊 Des lignes d\'agence ont des écarts partenaires sauvegardés, préservation des données:', hasAgencyRowsWithPartnerGaps);
                     }
                 }
                 
@@ -4236,8 +4165,21 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
 
     async saveAll() {
         const rowsSource = this.filteredReportData.length > 0 ? this.filteredReportData : this.reportData;
+        
+        // Afficher un popup pour sélectionner la date à appliquer à toutes les lignes
+        const selectedDate = await this.popupService.showDateInput(
+            `Veuillez sélectionner la date à appliquer à toutes les ${rowsSource.length} ligne(s) :`,
+            'Sélection de la date pour toutes les lignes',
+            new Date().toISOString().split('T')[0] // Date par défaut : aujourd'hui
+        );
+        
+        if (!selectedDate) {
+            // L'utilisateur a annulé la sélection de date
+            return;
+        }
+        
         const confirmed = await this.popupService.showConfirm(
-            `Confirmer la sauvegarde de ${rowsSource.length} ligne(s) ?`, 
+            `Confirmer la sauvegarde de ${rowsSource.length} ligne(s) avec la date ${selectedDate} ?`, 
             'Confirmation de sauvegarde en masse'
         );
         if (!confirmed) return;
@@ -4252,7 +4194,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                 : this.determineDefaultTraitement(recalculatedData);
             
             return {
-                date: recalculatedData.date,
+                date: selectedDate, // Utiliser la date sélectionnée pour toutes les lignes
                 agency: recalculatedData.agency,
                 service: recalculatedData.service,
                 country: recalculatedData.country,
@@ -4838,14 +4780,25 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
     }
 
     /**
-     * Vérifie si une ligne est "sété" (sauvegardée) et ne doit plus être modifiée
-     * Une ligne est considérée comme "sété" si elle a un ID (sauvegardée en base)
+     * Vérifie si une ligne est "sété" (traitée) et ne doit plus être modifiée
+     * Une ligne est considérée comme "sété" si :
+     * - Elle a un ID (elle existe en base de données), OU
+     * - Le statut est "OK", OU
+     * - Le traitement est "Terminé"
+     *
+     * Une fois qu'une ligne est sauvegardée en base (item.id existe),
+     * son commentaire ne doit plus être modifié automatiquement,
+     * même si le statut change.
      */
     private isRowSete(item: ReconciliationReportData): boolean {
         if (!item) {
             return false;
         }
-        return !!item.id;
+        // Une ligne est considérée comme "sété" (sauvegardée) si :
+        // - Elle a un ID (elle existe en base de données) OU
+        // - Son statut est 'OK' OU
+        // - Son traitement est 'Terminé'
+        return !!item.id || item.status === 'OK' || item.traitement === 'Terminé';
     }
 
     // Méthodes pour l'édition directe du traitement (comme dans banque)

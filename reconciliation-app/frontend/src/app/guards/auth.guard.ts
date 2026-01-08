@@ -28,9 +28,10 @@ export class AuthGuard implements CanActivate {
     }
 
     // L'utilisateur n'est pas connecté ou le token est manquant, rediriger vers la page de login
-    // Enregistrer l'URL demandée pour rediriger après la connexion
+    // Enregistrer l'URL demandée pour rediriger après la connexion (sauf si c'est déjà /login)
+    const returnUrl = state.url.startsWith('/login') ? '/' : state.url;
     this.router.navigate(['/login'], { 
-      queryParams: { returnUrl: state.url } 
+      queryParams: { returnUrl: returnUrl } 
     });
     return false;
   }

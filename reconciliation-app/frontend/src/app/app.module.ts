@@ -91,6 +91,7 @@ import { PartnerMatchesTableComponent } from './components/partner-matches-table
 import { EcartBoTableComponent } from './components/ecart-bo-table/ecart-bo-table.component';
 import { EcartPartnerTableComponent } from './components/ecart-partner-table/ecart-partner-table.component';
 import { SuiviDesEcartsComponent } from './components/suivi-des-ecarts/suivi-des-ecarts.component';
+import { EcartBoSummaryComponent } from './components/ecart-bo-summary/ecart-bo-summary.component';
 
 @NgModule({
     declarations: [
@@ -148,7 +149,8 @@ import { SuiviDesEcartsComponent } from './components/suivi-des-ecarts/suivi-des
                 PartnerMatchesTableComponent,
                 EcartBoTableComponent,
                 EcartPartnerTableComponent,
-                SuiviDesEcartsComponent
+                SuiviDesEcartsComponent,
+                EcartBoSummaryComponent
     ],
     imports: [
         BrowserModule,

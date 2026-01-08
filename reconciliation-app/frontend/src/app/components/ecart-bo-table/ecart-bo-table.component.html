@@ -21,6 +21,9 @@
       <h2>⚠️ Écarts BO</h2>
       <div class="header-info">
         <span class="total-count">{{filteredBoOnly.length || 0}} écart(s) BO</span>
+        <button (click)="goToSummary()" class="summary-button">
+          📊 Voir le tableau récapitulatif
+        </button>
       </div>
     </div>
     

@@ -192,6 +192,64 @@ export class EcartSoldeService {
     return this.http.put<EcartSolde>(`${this.apiUrl}/${id}`, ecartSolde);
   }
 
+  saveEcartBoSummary(summaryData: Array<{
+    service: string;
+    pays: string;
+    montant: number;
+    date: string;
+    statut: string;
+    nombreTransactions: number;
+  }>): Promise<{
+    count: number;
+    message: string;
+  }> {
+    return new Promise((resolve, reject) => {
+      this.http.post<any>(`${this.apiUrl}/summary`, summaryData).subscribe({
+        next: (response) => {
+          console.log('=== RÉPONSE saveEcartBoSummary ===');
+          console.log('DEBUG: Réponse complète:', response);
+          resolve({
+            count: response.count || 0,
+            message: response.message || 'Données sauvegardées avec succès'
+          });
+        },
+        error: (error) => {
+          console.error('=== ERREUR saveEcartBoSummary ===');
+          console.error('DEBUG: Erreur complète:', error);
+          reject(error);
+        }
+      });
+    });
+  }
+
+  getEcartBoSummary(filter?: {
+    service?: string;
+    pays?: string;
+    statut?: string;
+  }): Observable<Array<{
+    id?: number;
+    service: string;
+    pays: string;
+    date: string;
+    montant: number;
+    nombre: number;
+    statut: string;
+  }>> {
+    let params = new HttpParams();
+    if (filter) {
+      if (filter.service) {
+        params = params.set('service', filter.service);
+      }
+      if (filter.pays) {
+        params = params.set('pays', filter.pays);
+      }
+      if (filter.statut) {
+        params = params.set('statut', filter.statut);
+      }
+    }
+    return this.http.get<Array<any>>(`${this.apiUrl}/summary`, { params });
+  }
+
   deleteEcartSolde(id: number): Observable<void> {
     return this.http.delete<void>(`${this.apiUrl}/${id}`);
   }
