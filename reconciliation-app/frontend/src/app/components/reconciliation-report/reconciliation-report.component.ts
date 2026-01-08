@@ -1720,7 +1720,6 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         console.log('🔄 ReconciliationReportComponent - ngOnInit appelé');
         
         // Réinitialiser les données pour éviter le cache du navigateur
-        // Cette réinitialisation se fait toujours au démarrage pour garantir des données fraîches
         this.reportData = [];
         this.filteredReportData = [];
         this.loadedFromDb = false;
