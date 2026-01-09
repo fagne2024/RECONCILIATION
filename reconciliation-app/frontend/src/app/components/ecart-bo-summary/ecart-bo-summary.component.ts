@@ -711,8 +711,20 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
       return;
     }
 
+    // Afficher un popup pour choisir la date à appliquer
+    const selectedDate = await this.popupService.showDateInput(
+      `Veuillez sélectionner la date à appliquer aux ${itemsToSave.length} écart(s) BO :`,
+      'Sélection de la date pour la sauvegarde',
+      new Date().toISOString().split('T')[0] // Date par défaut : aujourd'hui
+    );
+
+    if (!selectedDate) {
+      // L'utilisateur a annulé la sélection de date
+      return;
+    }
+
     const confirmed = await this.popupService.showConfirm(
-      `📋 ${itemsToSave.length} écart(s) BO seront sauvegardés. Continuer ?`,
+      `📋 ${itemsToSave.length} écart(s) BO seront sauvegardés avec la date ${selectedDate}. Continuer ?`,
       'Confirmation de sauvegarde'
     );
 
@@ -773,10 +785,10 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
         return new Date().toISOString();
       };
 
-      // Formater les dates dans les données
+      // Formater les dates dans les données - utiliser la date sélectionnée pour toutes les lignes
       const formattedData = serviceSummaryData.map(item => ({
         ...item,
-        date: formatDateForBackend(item.date)
+        date: formatDateForBackend(selectedDate) // Utiliser la date sélectionnée au lieu de item.date
       }));
 
       const result = await this.ecartBoSummaryService.saveEcartBoSummary(formattedData);

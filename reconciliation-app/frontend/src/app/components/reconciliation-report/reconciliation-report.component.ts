@@ -3700,7 +3700,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         };
     }
 
-    private loadSavedReportFromDatabase(preserveComments: Map<number, string> = new Map()) {
+    private loadSavedReportFromDatabase(preserveComments: Map<number, string> = new Map(), preserveValues?: Map<number, { status: string; partnerOnly: number; comment: string }>) {
         // Ne pas charger depuis la base si on a déjà des données en cours disponibles
         if (this.currentSource === 'live') {
             console.log('ℹ️ Données en cours disponibles, chargement depuis la base ignoré');
@@ -3738,7 +3738,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                     // Calculer les écarts - essayer plusieurs variantes de noms de champs
                     let boOnly = Number(r.boOnly || r.bo_only || r.boOnlyCount || 0) || 0;
                     let partnerOnly = Number(r.partnerOnly || r.partner_only || r.partnerOnlyCount || 0) || 0;
-                    const mismatches = Number(r.mismatches || r.mismatch || 0) || 0;
+                    let mismatches = Number(r.mismatches || r.mismatch || 0) || 0;
                     
                     // Log pour débogage - vérifier les valeurs brutes depuis la base
                     if (r.comment && (r.comment.includes('écart(s) Partenaire') || r.comment.includes('écart(s) BO'))) {
@@ -3758,9 +3758,14 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                         });
                     }
                     
+                    // Si le statut est "OK", les écarts doivent être à 0 (ne pas les extraire depuis le commentaire)
+                    const status = (r.status || '').trim().toUpperCase();
+                    const isStatusOK = status === 'OK';
+                    
                     // Si partnerOnly est 0 mais que le commentaire contient des écarts partenaires,
-                    // extraire les écarts depuis le commentaire (cas où la base n'a pas sauvegardé partnerOnly correctement)
-                    if (partnerOnly === 0 && r.comment && r.comment.includes('écart(s) Partenaire')) {
+                    // extraire les écarts depuis le commentaire UNIQUEMENT si le statut n'est pas "OK"
+                    // (cas où la base n'a pas sauvegardé partnerOnly correctement)
+                    if (!isStatusOK && partnerOnly === 0 && r.comment && r.comment.includes('écart(s) Partenaire')) {
                         const discrepancies = this.extractDiscrepanciesFromComment(r.comment);
                         if (discrepancies.partnerCount > 0) {
                             partnerOnly = discrepancies.partnerCount;
@@ -3776,8 +3781,8 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                     }
                     
                     // Si boOnly est 0 mais que le commentaire contient des écarts BO,
-                    // extraire les écarts depuis le commentaire
-                    if (boOnly === 0 && r.comment && r.comment.includes('écart(s) BO')) {
+                    // extraire les écarts depuis le commentaire UNIQUEMENT si le statut n'est pas "OK"
+                    if (!isStatusOK && boOnly === 0 && r.comment && r.comment.includes('écart(s) BO')) {
                         const discrepancies = this.extractDiscrepanciesFromComment(r.comment);
                         if (discrepancies.boCount > 0) {
                             boOnly = discrepancies.boCount;
@@ -3789,6 +3794,13 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                                 comment: r.comment
                             });
                         }
+                    }
+                    
+                    // Si le statut est "OK", forcer les écarts à 0 (même si extraits depuis le commentaire)
+                    if (isStatusOK) {
+                        boOnly = 0;
+                        partnerOnly = 0;
+                        mismatches = 0;
                     }
                     
                     const totalEcarts = boOnly + partnerOnly + mismatches;
@@ -3867,7 +3879,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                         // else: ligne avec ID mais commentaire vide - garder le commentaire vide
                     }
                     
-                    return {
+                    const reportItem: ReconciliationReportData = {
                         id: r.id,
                         date: r.date,
                         agency: r.agency,
@@ -3886,6 +3898,17 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                         traitement: traitement,
                         username: r.username || ''
                     };
+                    
+                    // Si des valeurs préservées existent pour cet ID, les appliquer
+                    if (preserveValues && preserveValues.has(r.id)) {
+                        const preserved = preserveValues.get(r.id)!;
+                        reportItem.status = preserved.status;
+                        reportItem.partnerOnly = preserved.partnerOnly;
+                        reportItem.comment = preserved.comment;
+                        console.log('✅ Valeurs préservées appliquées pour id=' + r.id, preserved);
+                    }
+                    
+                    return reportItem;
                 });
                 // Log pour vérifier les valeurs après extraction depuis le commentaire
                 const totalPartnerOnlyAfterExtraction = this.reportData.reduce((sum, item) => sum + (item.partnerOnly || 0), 0);
@@ -4200,12 +4223,8 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         const savedComment = item.comment ?? '';
 
         // Recalculer les valeurs selon le statut
-        // ⚠️ Pour le statut OK, les données (matches, écarts, commentaire) ont déjà été
-        // recalculées dans recalculateDataBasedOnStatus lors du changement de statut.
-        // On réutilise donc directement l'item courant pour ne pas perdre la mémoire des écarts.
-        const recalculatedData = item.status === 'OK'
-            ? { ...item }
-            : this.recalculateDataBasedOnStatus(item);
+        // Si le statut est "OK", les écarts (boOnly et partnerOnly) seront mis à 0
+        const recalculatedData = this.recalculateDataBasedOnStatus(item);
         
         // S'assurer que le commentaire préservé est utilisé dans les données recalculées
         // et dans l'item original également
@@ -4237,40 +4256,71 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         
         this.http.put<any>('/api/result8rec/' + item.id, payload)
         .subscribe({
-            next: () => {
+            next: (updated) => {
                 this.popupService.showSuccess('Ligne mise à jour avec succès');
-                // Mettre à jour localement l'item avec le commentaire préservé
-                item.comment = savedComment;
-                // Forcer le rechargement sans cache après mise à jour
-                // Ne pas recharger la page pour conserver les logs dans la console
-                // this.forceReload();
                 
-                // Créer une map pour préserver les commentaires lors du rechargement
-                const preserveComments = new Map<number, string>();
-                if (item.id) {
-                    preserveComments.set(item.id, savedComment);
+                // Mettre à jour immédiatement l'item local avec les nouvelles valeurs
+                // pour éviter que l'affichage montre l'ancien statut
+                const preservedStatus = recalculatedData.status;
+                const preservedPartnerOnly = recalculatedData.partnerOnly;
+                
+                // Mettre à jour l'item original
+                item.status = preservedStatus;
+                item.partnerOnly = preservedPartnerOnly;
+                item.comment = savedComment;
+                
+                // Mettre à jour aussi dans reportData et filteredReportData
+                const updatedItemInReport = this.reportData.find(r => r.id === item.id);
+                const updatedItemInFiltered = this.filteredReportData.find(r => r.id === item.id);
+                
+                if (updatedItemInReport) {
+                    updatedItemInReport.status = preservedStatus;
+                    updatedItemInReport.partnerOnly = preservedPartnerOnly;
+                    updatedItemInReport.comment = savedComment;
                 }
                 
-                // Rafraîchir les données après la mise à jour en préservant les commentaires
-                this.loadSavedReportFromDatabase(preserveComments);
+                if (updatedItemInFiltered) {
+                    updatedItemInFiltered.status = preservedStatus;
+                    updatedItemInFiltered.partnerOnly = preservedPartnerOnly;
+                    updatedItemInFiltered.comment = savedComment;
+                }
                 
-                // Après le rechargement, restaurer le commentaire préservé pour cette ligne
+                // Créer une map pour préserver les valeurs lors du rechargement
+                const preserveValues = new Map<number, { status: string; partnerOnly: number; comment: string }>();
+                if (item.id) {
+                    preserveValues.set(item.id, {
+                        status: preservedStatus,
+                        partnerOnly: preservedPartnerOnly,
+                        comment: savedComment
+                    });
+                }
+                
+                // Rafraîchir les données après la mise à jour en préservant les valeurs
+                this.loadSavedReportFromDatabase(new Map(), preserveValues);
+                
+                // Après le rechargement, restaurer les valeurs préservées pour cette ligne
                 setTimeout(() => {
                     const updatedItem = this.reportData.find(r => r.id === item.id);
                     const filteredItem = this.filteredReportData.find(r => r.id === item.id);
                     
-                    if (item.id && preserveComments.has(item.id)) {
-                        const preservedComment = preserveComments.get(item.id)!;
+                    if (item.id && preserveValues.has(item.id)) {
+                        const preserved = preserveValues.get(item.id)!;
                         // Restaurer dans reportData
                         if (updatedItem) {
-                            updatedItem.comment = preservedComment;
+                            updatedItem.status = preserved.status;
+                            updatedItem.partnerOnly = preserved.partnerOnly;
+                            updatedItem.comment = preserved.comment;
                         }
                         // Restaurer dans filteredReportData
                         if (filteredItem) {
-                            filteredItem.comment = preservedComment;
+                            filteredItem.status = preserved.status;
+                            filteredItem.partnerOnly = preserved.partnerOnly;
+                            filteredItem.comment = preserved.comment;
                         }
                         // Restaurer dans l'item original
-                        item.comment = preservedComment;
+                        item.status = preserved.status;
+                        item.partnerOnly = preserved.partnerOnly;
+                        item.comment = preserved.comment;
                     }
                     // Mettre à jour la pagination pour refléter les changements
                     this.updatePagination();
@@ -4653,7 +4703,8 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             return;
         }
 
-        // Recalculer le taux de correspondance si nécessaire
+        // Recalculer le taux de correspondance et ajuster les matches en fonction des écarts
+        // Quand on modifie boOnly, les matches sont automatiquement recalculés (soustraits)
         this.recalculateMatchRate(item);
 
         // Si c'est une nouvelle ligne (pas d'ID), sauvegarder
@@ -4727,6 +4778,9 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         const partnerOnly = this.normalizeNumericValue(item.partnerOnly);
         const mismatches = this.normalizeNumericValue(item.mismatches);
 
+        // Si le statut est "OK", les écarts doivent être à 0 (logique gérée dans recalculateDataBasedOnStatus)
+        // Ici, on s'assure juste que les calculs sont cohérents
+        
         // Assurer la cohérence: totalTransactions = matches + boOnly + partnerOnly + mismatches
         const calculatedTotal = matches + boOnly + partnerOnly + mismatches;
         if (calculatedTotal > 0) {
@@ -4736,25 +4790,12 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             }
         }
 
+        // Quand on modifie boOnly, on soustrait la différence des matches
+        // Si boOnly augmente, matches diminue, et vice versa
+        // La logique: matches = totalTransactions - (boOnly + partnerOnly + mismatches)
         if (totalTransactions > 0) {
-            // Calculer l'écart Partenaire effectif en tenant compte des écarts BO déjà pris en compte
-            // Si les deux types d'écarts existent et que partnerOnly > boOnly, 
-            // on soustrait boOnly de partnerOnly pour obtenir les écarts partenaires excédentaires
-            // Sinon, on affiche les deux séparément car ils représentent des écarts différents
-            const effectivePartnerOnly =
-                boOnly > 0 && partnerOnly > 0 && partnerOnly > boOnly
-                    ? partnerOnly - boOnly
-                    : partnerOnly;
-
-            const totalEcarts = boOnly + effectivePartnerOnly + mismatches;
-
-            if (totalEcarts > 0) {
-                // Correspondances = Transactions - (Écarts BO + Écarts Partenaire restants + Incohérences)
-                matches = Math.max(0, totalTransactions - totalEcarts);
-            } else {
-                // Aucun écart : 100% de correspondance
-                matches = totalTransactions;
-            }
+            // Calculer les matches en soustrayant tous les écarts du total
+            matches = Math.max(0, totalTransactions - boOnly - partnerOnly - mismatches);
         } else {
             // Pas de transactions, donc pas de correspondances
             matches = 0;
@@ -5254,11 +5295,8 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                 return;
             }
 
-            // Recalculer le taux de correspondance si nécessaire (sans modifier le commentaire)
-            // Passer preserveComment=true pour préserver le commentaire lors d'un changement de statut
-            this.recalculateMatchRate(item, true);
-
             // Recalculer les données selon le statut (logique centralisée dans recalculateDataBasedOnStatus)
+            // Si le statut est "OK", les écarts (boOnly et partnerOnly) seront mis à 0
             const recalculatedData = this.recalculateDataBasedOnStatus(item);
             
             // S'assurer que le commentaire est préservé (recalculateDataBasedOnStatus devrait déjà le faire, mais on le force)
@@ -5266,6 +5304,9 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
 
             // Mettre à jour l'item avec les données recalculées
             Object.assign(item, recalculatedData);
+            
+            // Recalculer le taux de correspondance après la mise à jour
+            this.recalculateMatchRate(item, true);
             
             // S'assurer une dernière fois que le commentaire est préservé après Object.assign
             item.comment = previousComment;
@@ -5292,7 +5333,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                 });
             }
         } else {
-            // Pour les autres statuts, préserver le commentaire également
+            // Pour les autres statuts, préserver le commentaire et partnerOnly également
             // Sauvegarder le commentaire avant toute modification
             const savedCommentForOtherStatus = item.comment ?? '';
             
@@ -5328,12 +5369,28 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             this.http.put<any>('/api/result8rec/' + item.id, payload)
             .subscribe({
                 next: (updated) => {
-                    // Mettre à jour l'item avec les données retournées
-                    if (updated.status !== undefined) {
-                        item.status = updated.status;
-                    }
-                    // S'assurer que le commentaire est préservé après la mise à jour
+                    // Mettre à jour immédiatement l'item local avec les nouvelles valeurs
+                    // pour éviter que l'affichage montre l'ancien statut
+                    const preservedStatus = item.status;
+                    
+                    // Mettre à jour l'item original
+                    item.status = preservedStatus;
                     item.comment = savedCommentForOtherStatus;
+                    
+                    // Mettre à jour aussi dans reportData et filteredReportData
+                    const updatedItemInReport = this.reportData.find(r => r.id === item.id);
+                    const updatedItemInFiltered = this.filteredReportData.find(r => r.id === item.id);
+                    
+                    if (updatedItemInReport) {
+                        updatedItemInReport.status = preservedStatus;
+                        updatedItemInReport.comment = savedCommentForOtherStatus;
+                    }
+                    
+                    if (updatedItemInFiltered) {
+                        updatedItemInFiltered.status = preservedStatus;
+                        updatedItemInFiltered.comment = savedCommentForOtherStatus;
+                    }
+                    
                     this.stopEditStatus();
                     console.log('✅ Statut mis à jour avec succès');
                 },
