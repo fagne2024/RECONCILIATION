@@ -1,25 +1,35 @@
 package com.reconciliation.model;
 
-import java.util.List;
-
 public class EcartBoSummaryDTO {
+    private String agence;
     private String service;
     private String pays;
     private Double montant;
     private String date;
     private String statut;
     private Integer nombreTransactions;
+    private String commentaire;
+    private String env;
 
     // Constructeurs
     public EcartBoSummaryDTO() {}
 
-    public EcartBoSummaryDTO(String service, String pays, Double montant, String date, String statut, Integer nombreTransactions) {
+    public EcartBoSummaryDTO(String agence, String service, String pays, Double montant, String date, String statut, Integer nombreTransactions) {
+        this.agence = agence;
         this.service = service;
         this.pays = pays;
         this.montant = montant;
         this.date = date;
         this.statut = statut;
         this.nombreTransactions = nombreTransactions;
+    }
+    
+    public String getAgence() {
+        return agence;
+    }
+    
+    public void setAgence(String agence) {
+        this.agence = agence;
     }
 
     // Getters et Setters
@@ -70,5 +80,20 @@ public class EcartBoSummaryDTO {
     public void setNombreTransactions(Integer nombreTransactions) {
         this.nombreTransactions = nombreTransactions;
     }
-}
 
+    public String getCommentaire() {
+        return commentaire;
+    }
+
+    public void setCommentaire(String commentaire) {
+        this.commentaire = commentaire;
+    }
+    
+    public String getEnv() {
+        return env;
+    }
+    
+    public void setEnv(String env) {
+        this.env = env;
+    }
+}
