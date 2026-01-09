@@ -8,7 +8,12 @@
   <div class="header-section" style="flex-shrink: 0;">
     <h2>📊 Tableau des Écarts BO</h2>
     <div class="header-info">
-      <span class="total-count">{{filteredItems.length}} écart(s) BO</span>
+      <span class="total-count">
+        {{filteredItems.length}} écart(s) BO
+        <span class="total-nombre" *ngIf="filteredItems.length > 0">
+          (Total nombre: {{getTotalNombre() | number:'1.0-0'}})
+        </span>
+      </span>
       <button 
         (click)="saveData()" 
         class="save-button" 

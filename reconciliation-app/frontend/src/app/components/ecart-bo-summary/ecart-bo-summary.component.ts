@@ -358,10 +358,12 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
   /**
    * Lie les paires de lignes correspondantes (BO et PARTENAIRE) avec les mêmes infos
    * et un intervalle de date de 1 jour maximum, puis met leur statut à "OK"
+   * Gère aussi les correspondances un-à-plusieurs pour multiAgence
    */
   linkMatchingPairs(): void {
     const itemsToUpdate: EcartBoSummaryItem[] = [];
     
+    // Étape 1: Correspondance un-à-un (logique existante)
     for (let i = 0; i < this.summaryItems.length; i++) {
       const item1 = this.summaryItems[i];
       
@@ -424,6 +426,81 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
       }
     }
     
+    // Étape 2: Correspondance un-à-plusieurs pour multiAgence
+    // Une ligne PARTENAIRE (multiAgence) peut correspondre à plusieurs lignes BO
+    // Ensemble pour suivre les lignes BO déjà utilisées dans cette étape
+    const usedBoItemIds = new Set<number>();
+    
+    for (const partenaireItem of this.summaryItems) {
+      // Ignorer si déjà lié, pas d'ID, ou pas PARTENAIRE
+      if (partenaireItem.linkedId || !partenaireItem.id || partenaireItem.env !== 'PARTENAIRE') {
+        continue;
+      }
+      
+      // Chercher des lignes BO non liées avec le même service et pays
+      const matchingBoItems: EcartBoSummaryItem[] = [];
+      let totalNombre = 0;
+      
+      console.log(`🔍 Recherche correspondance pour PARTENAIRE: ID=${partenaireItem.id}, Date=${partenaireItem.date}, Service=${partenaireItem.service}, Pays=${partenaireItem.pays}, Nombre=${partenaireItem.nombre}`);
+      
+      for (const boItem of this.summaryItems) {
+        // Ignorer si déjà lié, pas d'ID, pas BO, ou déjà utilisé dans une correspondance un-à-plusieurs
+        if (boItem.linkedId || !boItem.id || boItem.env !== 'BO' || usedBoItemIds.has(boItem.id)) {
+          continue;
+        }
+        
+        // Vérifier service et pays
+        if (boItem.service === partenaireItem.service && 
+            boItem.pays === partenaireItem.pays) {
+          
+          // Vérifier la date (j+1 : la date BO doit être exactement 1 jour après la date PARTENAIRE)
+          const partenaireDate = this.parseDate(partenaireItem.date);
+          const boDate = this.parseDate(boItem.date);
+          
+          if (partenaireDate && boDate) {
+            const partenaireDay = this.getCalendarDay(partenaireDate);
+            const boDay = this.getCalendarDay(boDate);
+            
+            // La date BO doit être j+1 par rapport à la date PARTENAIRE (BO = PARTENAIRE + 1 jour)
+            const diffCalendarDays = boDay - partenaireDay;
+            
+            console.log(`  📅 BO candidat: ID=${boItem.id}, Date=${boItem.date}, Nombre=${boItem.nombre}, Diff=${diffCalendarDays} jours (BO - PARTENAIRE)`);
+            
+            if (diffCalendarDays === 1) {
+              // Cette ligne BO est candidate
+              matchingBoItems.push(boItem);
+              totalNombre += boItem.nombre;
+              console.log(`    ✅ Ajouté comme candidat (Total actuel: ${totalNombre})`);
+            }
+          }
+        }
+      }
+      
+      console.log(`📊 Résultat pour PARTENAIRE ${partenaireItem.id}: ${matchingBoItems.length} ligne(s) BO trouvée(s), Total nombre=${totalNombre}, Attendu=${partenaireItem.nombre}`);
+      
+      // Si la somme des nombres des lignes BO correspond au nombre de la ligne PARTENAIRE
+      if (matchingBoItems.length > 0 && totalNombre === partenaireItem.nombre) {
+        // Marquer toutes les lignes comme "ok"
+        if (partenaireItem.statut !== 'ok') {
+          partenaireItem.statut = 'ok';
+          itemsToUpdate.push(partenaireItem);
+        }
+        
+        for (const boItem of matchingBoItems) {
+          if (boItem.statut !== 'ok') {
+            boItem.statut = 'ok';
+            itemsToUpdate.push(boItem);
+          }
+          // Marquer cette ligne BO comme utilisée pour éviter les doublons
+          usedBoItemIds.add(boItem.id);
+        }
+        
+        console.log(`✅ Correspondance un-à-plusieurs: ${partenaireItem.id} (PARTENAIRE) <-> ${matchingBoItems.length} ligne(s) BO (${matchingBoItems.map(i => i.id).join(', ')})`);
+      } else if (matchingBoItems.length > 0) {
+        console.log(`⚠️ Correspondance partielle trouvée mais total ne correspond pas: ${totalNombre} ≠ ${partenaireItem.nombre}`);
+      }
+    }
+    
     // Sauvegarder les changements de statut en base de données
     if (itemsToUpdate.length > 0) {
       this.updateLinkedItemsStatus(itemsToUpdate);
@@ -474,9 +551,14 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
    * Met à jour le statut des lignes liées en base de données
    */
   private async updateLinkedItemsStatus(items: EcartBoSummaryItem[]): Promise<void> {
-    for (const item of items) {
-      if (!item.id) continue;
-      
+    // Filtrer uniquement les items avec un ID valide
+    const validItems = items.filter(item => item.id && item.id > 0);
+    
+    if (validItems.length === 0) {
+      return; // Aucun item valide à mettre à jour
+    }
+    
+    for (const item of validItems) {
       try {
         const updateData: any = {
           statut: 'OK',
@@ -484,12 +566,26 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
         };
         
         await firstValueFrom(
-          this.ecartBoSummaryService.updateEcartBoSummary(item.id, updateData)
+          this.ecartBoSummaryService.updateEcartBoSummary(item.id!, updateData)
         );
         
         console.log(`✅ Statut mis à jour pour la ligne ${item.id}`);
       } catch (error: any) {
-        console.error(`❌ Erreur lors de la mise à jour du statut pour la ligne ${item.id}:`, error);
+        // Gérer gracieusement les erreurs 404 (item n'existe plus en base)
+        // Ne pas afficher de warning pour les 404 car c'est une situation normale
+        // (lignes supprimées entre-temps)
+        if (error.status === 404) {
+          // Item supprimé entre-temps, ignorer silencieusement
+          // Optionnel: retirer l'item de la liste locale si nécessaire
+          const index = this.summaryItems.findIndex(i => i.id === item.id);
+          if (index >= 0) {
+            // Optionnel: marquer comme supprimé ou retirer de la liste
+            // Pour l'instant, on garde l'item mais on ne le met pas à jour
+          }
+        } else {
+          // Autres erreurs: les logger
+          console.error(`❌ Erreur lors de la mise à jour du statut pour la ligne ${item.id}:`, error);
+        }
       }
     }
   }
@@ -556,6 +652,13 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
 
   // Exposer Math pour le template
   Math = Math;
+
+  /**
+   * Calcule le total de la colonne "nombre" pour les items filtrés
+   */
+  getTotalNombre(): number {
+    return this.filteredItems.reduce((total, item) => total + (item.nombre || 0), 0);
+  }
 
   clearFilters(): void {
     this.searchKey = '';
