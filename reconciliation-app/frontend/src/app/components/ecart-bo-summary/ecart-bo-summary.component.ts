@@ -815,10 +815,15 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
     }
 
     // Afficher un popup pour choisir la date à appliquer
+    // Date par défaut : J-1 (hier)
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const defaultDate = yesterday.toISOString().split('T')[0];
+    
     const selectedDate = await this.popupService.showDateInput(
       `Veuillez sélectionner la date à appliquer aux ${itemsToSave.length} écart(s) BO :`,
       'Sélection de la date pour la sauvegarde',
-      new Date().toISOString().split('T')[0] // Date par défaut : aujourd'hui
+      defaultDate // Date par défaut : J-1
     );
 
     if (!selectedDate) {

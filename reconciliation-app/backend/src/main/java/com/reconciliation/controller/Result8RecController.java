@@ -268,7 +268,14 @@ public class Result8RecController {
                     existing.setMatchRate(body.getMatchRate());
                     
                     if (body.getStatus() != null) existing.setStatus(body.getStatus());
-                    if (body.getComment() != null) existing.setComment(body.getComment());
+                    log.info("📝 Update reçu - Commentaire dans body: '{}'", body.getComment());
+                    log.info("📝 Update reçu - Commentaire existant avant: '{}'", existing.getComment());
+                    if (body.getComment() != null) {
+                        existing.setComment(body.getComment());
+                        log.info("✅ Commentaire mis à jour avec: '{}'", body.getComment());
+                    } else {
+                        log.warn("⚠️ Commentaire reçu est null, conservation de l'existant: '{}'", existing.getComment());
+                    }
                     
                     // Définir le traitement par défaut si non spécifié lors de la mise à jour
                     if (body.getTraitement() != null && !body.getTraitement().trim().isEmpty()) {
@@ -287,10 +294,10 @@ public class Result8RecController {
                     }
                     
                     Result8RecEntity saved = repository.save(existing);
-                    log.info("✅ result8rec mis à jour id={} - Date: {}, Agency: {}, Service: {}, Country: {}, Transactions: {}, Volume: {}, Matches: {}, BoOnly: {}, PartnerOnly: {}, Mismatches: {}, MatchRate: {}", 
+                    log.info("✅ result8rec mis à jour id={} - Date: {}, Agency: {}, Service: {}, Country: {}, Transactions: {}, Volume: {}, Matches: {}, BoOnly: {}, PartnerOnly: {}, Mismatches: {}, MatchRate: {}, Comment: '{}'", 
                             saved.getId(), saved.getDate(), saved.getAgency(), saved.getService(), 
                             saved.getCountry(), saved.getTotalTransactions(), saved.getTotalVolume(),
-                            saved.getMatches(), saved.getBoOnly(), saved.getPartnerOnly(), saved.getMismatches(), saved.getMatchRate());
+                            saved.getMatches(), saved.getBoOnly(), saved.getPartnerOnly(), saved.getMismatches(), saved.getMatchRate(), saved.getComment());
                     return ResponseEntity.ok(saved);
                 })
                 .orElseGet(() -> ResponseEntity.notFound().build());

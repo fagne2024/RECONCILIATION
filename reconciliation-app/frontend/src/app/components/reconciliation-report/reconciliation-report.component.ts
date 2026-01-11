@@ -402,6 +402,7 @@ export interface ReconciliationReportData {
                                     <ng-template #editBoOnly>
                                         <input 
                                             [(ngModel)]="item.boOnly" 
+                                            (ngModelChange)="onBoOnlyChange(item)"
                                             type="number" 
                                             min="0" 
                                             class="edit-input" 
@@ -426,6 +427,7 @@ export interface ReconciliationReportData {
                                     <ng-template #editPartnerOnly>
                                         <input 
                                             [(ngModel)]="item.partnerOnly" 
+                                            (ngModelChange)="onPartnerOnlyChange(item)"
                                             type="number" 
                                             min="0" 
                                             class="edit-input" 
@@ -2859,24 +2861,27 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         if (!item) {
             return;
         }
-        
-        // Vérifier s'il n'y a vraiment pas d'écarts
-        const hasNoEcarts = boOnly === 0 && partnerOnly === 0 && mismatches === 0;
-        const totalTransactions = this.normalizeNumericValue(item.totalTransactions);
-        const allMatches = totalTransactions > 0 && matches === totalTransactions;
 
         // Si la ligne est "sété" (sauvegardée avec un ID), préserver TOUJOURS le commentaire existant
-        // SAUF si force est activé explicitement
+        // SAUF si force est activé explicitement (pour les modifications d'écart)
         if (this.isRowSete(item) && !options?.force) {
             console.log('🔒 updateCommentFromCounts: Commentaire préservé pour ligne sété', item.id, item.agency, item.service);
             return;
         }
 
-        if (!this.shouldAutoUpdateComment(item, options)) {
+        // Si force est activé, mettre à jour le commentaire sans vérification supplémentaire
+        if (options?.force) {
+            // Passer totalTransactions pour vérifier la cohérence
+            item.comment = this.buildCommentForCounts(matches, boOnly, partnerOnly, mismatches, item.totalTransactions);
+            console.log('✅ updateCommentFromCounts: Commentaire mis à jour (force=true)', item.id, item.agency, item.service, '->', item.comment);
             return;
         }
-        // Passer totalTransactions pour vérifier la cohérence
-        item.comment = this.buildCommentForCounts(matches, boOnly, partnerOnly, mismatches, item.totalTransactions);
+
+        // Pour les autres cas, vérifier si on doit mettre à jour automatiquement
+        if (this.shouldAutoUpdateComment(item, options)) {
+            item.comment = this.buildCommentForCounts(matches, boOnly, partnerOnly, mismatches, item.totalTransactions);
+            console.log('✅ updateCommentFromCounts: Commentaire mis à jour (auto)', item.id, item.agency, item.service, '->', item.comment);
+        }
     }
 
     /**
@@ -4219,23 +4224,60 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         );
         if (!confirmed) return;
 
-        // Sauvegarder le commentaire AVANT toute modification pour le préserver
-        const savedComment = item.comment ?? '';
+        // Détecter si l'écart BO ou Partenaire a été modifié par l'utilisateur
+        const originalBoOnly = this.originalData ? this.normalizeNumericValue(this.originalData.boOnly) : null;
+        const originalPartnerOnly = this.originalData ? this.normalizeNumericValue(this.originalData.partnerOnly) : null;
+        const currentBoOnly = this.normalizeNumericValue(item.boOnly);
+        const currentPartnerOnly = this.normalizeNumericValue(item.partnerOnly);
+        
+        const ecartModified = this.originalData && (
+            originalBoOnly !== currentBoOnly ||
+            originalPartnerOnly !== currentPartnerOnly
+        );
 
-        // Recalculer les valeurs selon le statut
+        console.log('📝 updateRow: Début - Détection modification écart', {
+            id: item.id,
+            ecartModified,
+            originalBoOnly,
+            currentBoOnly,
+            originalPartnerOnly,
+            currentPartnerOnly,
+            itemMatches: item.matches,
+            itemComment: item.comment,
+            hasOriginalData: !!this.originalData
+        });
+
+        // IMPORTANT: Recalculer d'abord le matchRate avec les valeurs actuelles pour ajuster matches
+        // Cela garantit que matches = totalTransactions - boOnly - partnerOnly - mismatches
+        this.recalculateMatchRate(item, false, false); // Ne pas mettre à jour le commentaire ici, on le fera après
+        
+        console.log('📝 updateRow: Après recalculateMatchRate', {
+            id: item.id,
+            itemBoOnly: item.boOnly,
+            itemPartnerOnly: item.partnerOnly,
+            itemMatches: item.matches,
+            itemComment: item.comment
+        });
+
+        // Maintenant recalculer les valeurs selon le statut
         // Si le statut est "OK", les écarts (boOnly et partnerOnly) seront mis à 0
         const recalculatedData = this.recalculateDataBasedOnStatus(item);
         
-        // S'assurer que le commentaire préservé est utilisé dans les données recalculées
-        // et dans l'item original également
-        recalculatedData.comment = savedComment;
-        item.comment = savedComment;
-
+        console.log('📝 updateRow: Après recalculateDataBasedOnStatus', {
+            id: item.id,
+            recalculatedBoOnly: recalculatedData.boOnly,
+            recalculatedPartnerOnly: recalculatedData.partnerOnly,
+            recalculatedMatches: recalculatedData.matches,
+            recalculatedComment: recalculatedData.comment,
+            status: recalculatedData.status
+        });
+        
         // Définir le traitement par défaut si non spécifié
         const traitement = recalculatedData.traitement && recalculatedData.traitement.trim() !== ''
             ? recalculatedData.traitement
             : this.determineDefaultTraitement(recalculatedData);
 
+        // Créer le payload d'abord avec les valeurs finales
         const payload = {
             date: recalculatedData.date,
             agency: recalculatedData.agency,
@@ -4249,10 +4291,86 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             mismatches: recalculatedData.mismatches,
             matchRate: recalculatedData.matchRate,
             status: recalculatedData.status,
-            comment: savedComment, // Utiliser le commentaire préservé
+            comment: '', // Sera recalculé juste après
             traitement: traitement,
             glpiId: recalculatedData.glpiId || ''
         };
+        
+        // CRITIQUE: TOUJOURS recalculer le commentaire avec les valeurs EXACTES du payload
+        // Cette approche garantit que le commentaire correspond toujours aux valeurs finales
+        // Si l'écart a été modifié, on DOIT recalculer. Sinon, on vérifie la cohérence.
+        const existingComment = recalculatedData.comment ?? item.comment ?? '';
+        
+        // Recalculer le commentaire avec les valeurs EXACTES du payload
+        payload.comment = this.buildCommentForCounts(
+            payload.matches,
+            payload.boOnly,
+            payload.partnerOnly,
+            payload.mismatches,
+            payload.totalTransactions
+        );
+        
+        // Log selon le cas
+        if (ecartModified) {
+            console.log('✅ updateRow: ÉCART MODIFIÉ - Commentaire recalculé avec valeurs payload', {
+                id: item.id,
+                oldComment: existingComment,
+                newComment: payload.comment,
+                boOnly: payload.boOnly,
+                partnerOnly: payload.partnerOnly,
+                matches: payload.matches,
+                mismatches: payload.mismatches,
+                totalTransactions: payload.totalTransactions
+            });
+        } else if (existingComment === payload.comment) {
+            console.log('📝 updateRow: Commentaire préservé (identique et écart non modifié)', {
+                id: item.id,
+                comment: payload.comment
+            });
+        } else {
+            console.warn('⚠️ updateRow: Commentaire existant différent, utilisation du commentaire recalculé', {
+                id: item.id,
+                oldComment: existingComment,
+                newComment: payload.comment,
+                boOnly: payload.boOnly,
+                partnerOnly: payload.partnerOnly,
+                matches: payload.matches,
+                mismatches: payload.mismatches
+            });
+        }
+        
+        // Vérification finale de cohérence
+        const verificationComment = this.buildCommentForCounts(
+            payload.matches,
+            payload.boOnly,
+            payload.partnerOnly,
+            payload.mismatches,
+            payload.totalTransactions
+        );
+        const commentEstCorrect = payload.comment === verificationComment;
+        
+        if (!commentEstCorrect) {
+            console.error('❌ updateRow: INCOHÉRENCE DÉTECTÉE - Correction FORCÉE', {
+                id: item.id,
+                payloadComment: payload.comment,
+                expectedComment: verificationComment,
+                payloadBoOnly: payload.boOnly,
+                payloadMatches: payload.matches
+            });
+            payload.comment = verificationComment;
+        }
+        
+        console.log('💾 updateRow: Payload FINAL envoyé au backend', {
+            id: item.id,
+            ecartModified,
+            comment: payload.comment,
+            boOnly: payload.boOnly,
+            partnerOnly: payload.partnerOnly,
+            matches: payload.matches,
+            mismatches: payload.mismatches,
+            totalTransactions: payload.totalTransactions,
+            commentEstCorrect: payload.comment === verificationComment
+        });
         
         this.http.put<any>('/api/result8rec/' + item.id, payload)
         .subscribe({
@@ -4263,11 +4381,12 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                 // pour éviter que l'affichage montre l'ancien statut
                 const preservedStatus = recalculatedData.status;
                 const preservedPartnerOnly = recalculatedData.partnerOnly;
+                const finalComment = payload.comment; // Utiliser le commentaire final du payload
                 
                 // Mettre à jour l'item original
                 item.status = preservedStatus;
                 item.partnerOnly = preservedPartnerOnly;
-                item.comment = savedComment;
+                item.comment = finalComment;
                 
                 // Mettre à jour aussi dans reportData et filteredReportData
                 const updatedItemInReport = this.reportData.find(r => r.id === item.id);
@@ -4276,13 +4395,13 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                 if (updatedItemInReport) {
                     updatedItemInReport.status = preservedStatus;
                     updatedItemInReport.partnerOnly = preservedPartnerOnly;
-                    updatedItemInReport.comment = savedComment;
+                    updatedItemInReport.comment = finalComment;
                 }
                 
                 if (updatedItemInFiltered) {
                     updatedItemInFiltered.status = preservedStatus;
                     updatedItemInFiltered.partnerOnly = preservedPartnerOnly;
-                    updatedItemInFiltered.comment = savedComment;
+                    updatedItemInFiltered.comment = finalComment;
                 }
                 
                 // Créer une map pour préserver les valeurs lors du rechargement
@@ -4291,7 +4410,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                     preserveValues.set(item.id, {
                         status: preservedStatus,
                         partnerOnly: preservedPartnerOnly,
-                        comment: savedComment
+                        comment: finalComment
                     });
                 }
                 
@@ -4361,10 +4480,15 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         }
         
         // Afficher un popup pour sélectionner la date à appliquer à toutes les lignes
+        // Date par défaut : J-1 (hier)
+        const yesterday = new Date();
+        yesterday.setDate(yesterday.getDate() - 1);
+        const defaultDate = yesterday.toISOString().split('T')[0];
+        
         const selectedDate = await this.popupService.showDateInput(
             `Veuillez sélectionner la date à appliquer à toutes les ${rowsSource.length} ligne(s) :`,
             'Sélection de la date pour toutes les lignes',
-            new Date().toISOString().split('T')[0] // Date par défaut : aujourd'hui
+            defaultDate // Date par défaut : J-1
         );
         
         if (!selectedDate) {
@@ -4703,9 +4827,35 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             return;
         }
 
+        // Détecter si l'écart BO ou Partenaire a été modifié
+        const ecartModified = this.originalData && (
+            this.normalizeNumericValue(this.originalData.boOnly) !== this.normalizeNumericValue(item.boOnly) ||
+            this.normalizeNumericValue(this.originalData.partnerOnly) !== this.normalizeNumericValue(item.partnerOnly)
+        );
+
+        console.log('💾 saveEdit: Détection écart modifié', {
+            id: item.id,
+            ecartModified,
+            originalBoOnly: this.originalData?.boOnly,
+            currentBoOnly: item.boOnly,
+            originalPartnerOnly: this.originalData?.partnerOnly,
+            currentPartnerOnly: item.partnerOnly,
+            commentBefore: item.comment
+        });
+
         // Recalculer le taux de correspondance et ajuster les matches en fonction des écarts
-        // Quand on modifie boOnly, les matches sont automatiquement recalculés (soustraits)
-        this.recalculateMatchRate(item);
+        // IMPORTANT: Ne PAS mettre à jour le commentaire ici, on le fera dans updateRow avec les valeurs finales
+        // On recalcule juste matches et matchRate pour avoir des valeurs cohérentes
+        this.recalculateMatchRate(item, true, false); // preserveComment=true pour ne pas modifier le commentaire ici
+        
+        console.log('💾 saveEdit: Après recalculateMatchRate (commentaire préservé)', {
+            id: item.id,
+            ecartModified,
+            commentAfter: item.comment,
+            matches: item.matches,
+            boOnly: item.boOnly,
+            partnerOnly: item.partnerOnly
+        });
 
         // Si c'est une nouvelle ligne (pas d'ID), sauvegarder
         if (!item.id) {
@@ -4718,6 +4868,48 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         // Sortir du mode édition
         this.editingRow = null;
         this.originalData = null;
+    }
+
+    // Handler pour la modification de boOnly en temps réel
+    onBoOnlyChange(item: ReconciliationReportData): void {
+        console.log('🔵 onBoOnlyChange appelé', { id: item.id, boOnly: item.boOnly });
+        // Normaliser la valeur
+        const newBoOnly = this.normalizeNumericValue(item.boOnly);
+        item.boOnly = newBoOnly;
+        
+        // Recalculer immédiatement les matches en soustrayant les écarts
+        // matches = totalTransactions - (boOnly + partnerOnly + mismatches)
+        // Forcer la mise à jour du commentaire lors de la modification de l'écart BO
+        const commentBefore = item.comment;
+        this.recalculateMatchRate(item, false, true);
+        console.log('🔵 onBoOnlyChange après recalculateMatchRate', { 
+            id: item.id, 
+            boOnly: item.boOnly,
+            commentBefore,
+            commentAfter: item.comment,
+            matches: item.matches
+        });
+    }
+
+    // Handler pour la modification de partnerOnly en temps réel
+    onPartnerOnlyChange(item: ReconciliationReportData): void {
+        console.log('🟠 onPartnerOnlyChange appelé', { id: item.id, partnerOnly: item.partnerOnly });
+        // Normaliser la valeur
+        const newPartnerOnly = this.normalizeNumericValue(item.partnerOnly);
+        item.partnerOnly = newPartnerOnly;
+        
+        // Recalculer immédiatement les matches en soustrayant les écarts
+        // matches = totalTransactions - (boOnly + partnerOnly + mismatches)
+        // Forcer la mise à jour du commentaire lors de la modification de l'écart partenaire
+        const commentBefore = item.comment;
+        this.recalculateMatchRate(item, false, true);
+        console.log('🟠 onPartnerOnlyChange après recalculateMatchRate', { 
+            id: item.id, 
+            partnerOnly: item.partnerOnly,
+            commentBefore,
+            commentAfter: item.comment,
+            matches: item.matches
+        });
     }
 
     private normalizeNumericValue(value: number | string | null | undefined): number {
@@ -4767,7 +4959,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         return true;
     }
 
-    private recalculateMatchRate(item: ReconciliationReportData, preserveComment: boolean = false) {
+    private recalculateMatchRate(item: ReconciliationReportData, preserveComment: boolean = false, updateCommentOnEcartEdit: boolean = false) {
         // Sauvegarder le commentaire si on doit le préserver
         const savedComment = preserveComment ? (item.comment ?? '') : null;
         
@@ -4790,8 +4982,8 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             }
         }
 
-        // Quand on modifie boOnly, on soustrait la différence des matches
-        // Si boOnly augmente, matches diminue, et vice versa
+        // Quand on modifie boOnly ou partnerOnly, on soustrait la différence des matches
+        // Si les écarts augmentent, matches diminue, et vice versa
         // La logique: matches = totalTransactions - (boOnly + partnerOnly + mismatches)
         if (totalTransactions > 0) {
             // Calculer les matches en soustrayant tous les écarts du total
@@ -4823,11 +5015,31 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         // Si on doit préserver le commentaire, le restaurer maintenant
         if (preserveComment && savedComment !== null) {
             item.comment = savedComment;
+            console.log('🔒 recalculateMatchRate: Commentaire préservé (preserveComment=true)', item.id, item.comment);
+        } else if (updateCommentOnEcartEdit) {
+            // Lors de la modification des colonnes ecart (BO ou Partenaire), mettre à jour le commentaire
+            // même pour les lignes sauvegardées, car c'est une modification explicite de l'écart
+            console.log('🔄 recalculateMatchRate: Mise à jour commentaire (updateCommentOnEcartEdit=true)', {
+                id: item.id,
+                matches,
+                boOnly,
+                partnerOnly,
+                mismatches,
+                totalTransactions: item.totalTransactions,
+                commentBefore: item.comment
+            });
+            this.updateCommentFromCounts(item, matches, boOnly, partnerOnly, mismatches, { force: true });
+            console.log('🔄 recalculateMatchRate: Commentaire après updateCommentFromCounts', {
+                id: item.id,
+                commentAfter: item.comment
+            });
         } else if (!this.isRowSete(item)) {
             // Seulement pour les lignes NON sauvegardées, mettre à jour le commentaire
             this.updateCommentFromCounts(item, matches, boOnly, partnerOnly, mismatches, { force: false });
+        } else {
+            console.log('🔒 recalculateMatchRate: Commentaire non modifié (ligne sété, pas de modification écart)', item.id);
         }
-        // Pour les lignes sauvegardées (isRowSete), ne jamais modifier le commentaire
+        // Pour les lignes sauvegardées (isRowSete) et si ce n'est pas une modification d'écart, ne jamais modifier le commentaire
     }
 
     /**

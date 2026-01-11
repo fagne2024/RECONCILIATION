@@ -6,7 +6,7 @@
   </div>
 
   <div class="header-section" style="flex-shrink: 0;">
-    <h2>📊 Tableau des Écarts BO</h2>
+    <h2>Ecart BO 23H</h2>
     <div class="header-info">
       <span class="total-count">
         {{filteredItems.length}} écart(s) BO
@@ -241,42 +241,54 @@
         </div>
         <div class="form-group">
           <label>Agence *</label>
-          <select 
+          <input 
+            type="text"
             [(ngModel)]="addForm.agence" 
             class="form-control"
+            placeholder="Saisir ou choisir une agence"
+            list="agenceListAdd"
+            autocomplete="off"
             required
           >
-            <option value="">-- Sélectionner une agence --</option>
+          <datalist id="agenceListAdd">
             <option *ngFor="let agence of uniqueAgencies" [value]="agence">
               {{ agence }}
             </option>
-          </select>
+          </datalist>
         </div>
         <div class="form-group">
           <label>Service *</label>
-          <select 
+          <input 
+            type="text"
             [(ngModel)]="addForm.service" 
             class="form-control"
+            placeholder="Saisir ou choisir un service"
+            list="serviceListAdd"
+            autocomplete="off"
             required
           >
-            <option value="">-- Sélectionner un service --</option>
+          <datalist id="serviceListAdd">
             <option *ngFor="let service of uniqueServices" [value]="service">
               {{ service }}
             </option>
-          </select>
+          </datalist>
         </div>
         <div class="form-group">
           <label>Pays *</label>
-          <select 
+          <input 
+            type="text"
             [(ngModel)]="addForm.pays" 
             class="form-control"
+            placeholder="Saisir ou choisir un pays"
+            list="paysListAdd"
+            autocomplete="off"
             required
           >
-            <option value="">-- Sélectionner un pays --</option>
+          <datalist id="paysListAdd">
             <option *ngFor="let pays of uniquePays" [value]="pays">
               {{ pays }}
             </option>
-          </select>
+          </datalist>
         </div>
         <div class="form-group">
           <label>Nombre (transactions) *</label>
