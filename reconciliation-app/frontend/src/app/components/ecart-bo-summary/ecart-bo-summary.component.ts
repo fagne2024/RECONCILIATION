@@ -182,6 +182,13 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
 
   ngOnDestroy(): void {
     this.subscription.unsubscribe();
+    // Nettoyer le timer de debounce
+    if (this.updateLinkedItemsStatusDebounceTimer) {
+      clearTimeout(this.updateLinkedItemsStatusDebounceTimer);
+      this.updateLinkedItemsStatusDebounceTimer = null;
+    }
+    // Vider la liste des mises à jour en attente
+    this.pendingStatusUpdates = [];
   }
 
   private loadSummaryData(): void {
@@ -547,45 +554,116 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
     return Math.floor(normalizedDate.getTime() / (1000 * 60 * 60 * 24));
   }
 
+  // Debounce pour éviter les appels répétés
+  private updateLinkedItemsStatusDebounceTimer: any = null;
+  private pendingStatusUpdates: EcartBoSummaryItem[] = [];
+
   /**
    * Met à jour le statut des lignes liées en base de données
+   * Avec debounce et gestion du rate limiting
    */
   private async updateLinkedItemsStatus(items: EcartBoSummaryItem[]): Promise<void> {
-    // Filtrer uniquement les items avec un ID valide
-    const validItems = items.filter(item => item.id && item.id > 0);
+    // Filtrer uniquement les items avec un ID valide et qui ne sont pas déjà "ok"
+    const validItems = items.filter(item => 
+      item.id && item.id > 0 && item.statut !== 'ok'
+    );
     
     if (validItems.length === 0) {
       return; // Aucun item valide à mettre à jour
     }
+
+    // Ajouter les items à la liste des mises à jour en attente
+    this.pendingStatusUpdates.push(...validItems);
     
-    for (const item of validItems) {
-      try {
-        const updateData: any = {
-          statut: 'OK',
-          env: item.env || 'BO'
-        };
+    // Débouncer les appels pour éviter les requêtes excessives
+    if (this.updateLinkedItemsStatusDebounceTimer) {
+      clearTimeout(this.updateLinkedItemsStatusDebounceTimer);
+    }
+    
+    this.updateLinkedItemsStatusDebounceTimer = setTimeout(async () => {
+      await this.processPendingStatusUpdates();
+    }, 500); // Attendre 500ms avant de traiter les mises à jour
+  }
+
+  /**
+   * Traite les mises à jour de statut en attente avec gestion du rate limiting
+   */
+  private async processPendingStatusUpdates(): Promise<void> {
+    if (this.pendingStatusUpdates.length === 0) {
+      return;
+    }
+
+    // Dédupliquer les items par ID
+    const uniqueItems = new Map<number, EcartBoSummaryItem>();
+    for (const item of this.pendingStatusUpdates) {
+      if (item.id && !uniqueItems.has(item.id)) {
+        uniqueItems.set(item.id, item);
+      }
+    }
+    
+    const itemsToUpdate = Array.from(uniqueItems.values());
+    this.pendingStatusUpdates = []; // Vider la liste des mises à jour en attente
+
+    // Traiter les items par batch de 5 avec un délai entre chaque batch
+    const batchSize = 5;
+    const delayBetweenBatches = 1000; // 1 seconde entre chaque batch
+    
+    for (let i = 0; i < itemsToUpdate.length; i += batchSize) {
+      const batch = itemsToUpdate.slice(i, i + batchSize);
+      
+      // Traiter le batch en parallèle
+      await Promise.all(
+        batch.map(item => this.updateSingleItemStatus(item))
+      );
+      
+      // Attendre avant le prochain batch (sauf pour le dernier)
+      if (i + batchSize < itemsToUpdate.length) {
+        await new Promise(resolve => setTimeout(resolve, delayBetweenBatches));
+      }
+    }
+  }
+
+  /**
+   * Met à jour le statut d'un seul item avec retry en cas d'erreur 429
+   */
+  private async updateSingleItemStatus(item: EcartBoSummaryItem, retryCount: number = 0): Promise<void> {
+    if (!item.id || item.id <= 0) {
+      return;
+    }
+
+    const maxRetries = 3;
+    const baseDelay = 1000; // 1 seconde de base
+
+    try {
+      const updateData: any = {
+        statut: 'OK',
+        env: item.env || 'BO'
+      };
+      
+      await firstValueFrom(
+        this.ecartBoSummaryService.updateEcartBoSummary(item.id, updateData)
+      );
+      
+      console.log(`✅ Statut mis à jour pour la ligne ${item.id}`);
+    } catch (error: any) {
+      // Gérer l'erreur 429 (Too Many Requests) avec retry
+      if (error.status === 429 && retryCount < maxRetries) {
+        const delay = baseDelay * Math.pow(2, retryCount); // Backoff exponentiel
+        console.warn(`⚠️ Rate limit atteint pour la ligne ${item.id}. Nouvelle tentative dans ${delay}ms...`);
         
-        await firstValueFrom(
-          this.ecartBoSummaryService.updateEcartBoSummary(item.id!, updateData)
-        );
-        
-        console.log(`✅ Statut mis à jour pour la ligne ${item.id}`);
-      } catch (error: any) {
-        // Gérer gracieusement les erreurs 404 (item n'existe plus en base)
-        // Ne pas afficher de warning pour les 404 car c'est une situation normale
-        // (lignes supprimées entre-temps)
-        if (error.status === 404) {
-          // Item supprimé entre-temps, ignorer silencieusement
-          // Optionnel: retirer l'item de la liste locale si nécessaire
-          const index = this.summaryItems.findIndex(i => i.id === item.id);
-          if (index >= 0) {
-            // Optionnel: marquer comme supprimé ou retirer de la liste
-            // Pour l'instant, on garde l'item mais on ne le met pas à jour
-          }
-        } else {
-          // Autres erreurs: les logger
-          console.error(`❌ Erreur lors de la mise à jour du statut pour la ligne ${item.id}:`, error);
-        }
+        await new Promise(resolve => setTimeout(resolve, delay));
+        return this.updateSingleItemStatus(item, retryCount + 1);
+      }
+      
+      // Gérer gracieusement les erreurs 404 (item n'existe plus en base)
+      if (error.status === 404) {
+        // Item supprimé entre-temps, ignorer silencieusement
+        return;
+      }
+      
+      // Autres erreurs: les logger
+      if (error.status !== 429) { // Ne pas logger les 429 car on les gère avec retry
+        console.error(`❌ Erreur lors de la mise à jour du statut pour la ligne ${item.id}:`, error);
       }
     }
   }
