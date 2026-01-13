@@ -139,20 +139,17 @@ public class ServiceBalanceService {
     }
     
     /**
-     * Récupère tous les comptes service (comptes avec des noms longs contenant des underscores)
+     * Récupère tous les comptes (service et agence)
+     * Le filtre a été retiré pour afficher tous les comptes agence comme service
      */
     public List<CompteEntity> getServiceComptes() {
-        logger.info("Récupération des comptes service");
+        logger.info("Récupération de tous les comptes (service et agence)");
         
         List<CompteEntity> allComptes = compteRepository.findAll();
         
-        // Filtrer les comptes service (noms longs avec underscores)
-        List<CompteEntity> serviceComptes = allComptes.stream()
-            .filter(compte -> isServiceCompte(compte.getNumeroCompte()))
-            .toList();
-        
-        logger.info("Nombre de comptes service trouvés: {}", serviceComptes.size());
-        return serviceComptes;
+        // Retourner tous les comptes sans filtre
+        logger.info("Nombre de comptes trouvés: {}", allComptes.size());
+        return allComptes;
     }
     
     /**

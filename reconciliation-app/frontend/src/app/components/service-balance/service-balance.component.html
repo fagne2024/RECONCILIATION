@@ -2,8 +2,8 @@
     <!-- En-tête -->
     <div class="header">
         <div class="header-content">
-            <h1><i class="fas fa-balance-scale"></i> Regroupement des Comptes Service</h1>
-            <p class="subtitle">Créez un compte consolidé à partir de plusieurs comptes service par pays</p>
+            <h1><i class="fas fa-balance-scale"></i> Regroupement des Comptes</h1>
+            <p class="subtitle">Créez un compte consolidé à partir de plusieurs comptes (service et agence) par pays</p>
         </div>
         <div class="header-actions">
             <button class="btn btn-secondary" (click)="loadServiceComptes()" [disabled]="isLoading">
@@ -25,7 +25,7 @@
             </div>
             <div class="stat-content">
                 <div class="stat-number">{{ serviceComptes.length }}</div>
-                <div class="stat-label">Comptes Service</div>
+                <div class="stat-label">Comptes</div>
             </div>
         </div>
         <div class="stat-card">
@@ -78,7 +78,7 @@
     <!-- Liste des comptes service -->
     <div class="comptes-section" *ngIf="!isLoading && selectedCountry && filteredServiceComptes.length > 0">
         <div class="section-header">
-            <h3><i class="fas fa-list"></i> Comptes Service - {{ selectedCountry }}</h3>
+            <h3><i class="fas fa-list"></i> Comptes - {{ selectedCountry }}</h3>
             <button 
                 class="btn btn-primary" 
                 (click)="showMergeDialog()"
@@ -215,18 +215,18 @@
         </div>
     </div>
 
-    <!-- Message si aucun compte service -->
+    <!-- Message si aucun compte -->
     <div class="no-data" *ngIf="!isLoading && serviceComptes.length === 0">
         <i class="fas fa-info-circle"></i>
-        <h3>Aucun compte service trouvé</h3>
-        <p>Il n'y a actuellement aucun compte service dans le système.</p>
+        <h3>Aucun compte trouvé</h3>
+        <p>Il n'y a actuellement aucun compte dans le système.</p>
     </div>
 
     <!-- Message si aucun pays sélectionné -->
     <div class="no-data" *ngIf="!isLoading && serviceComptes.length > 0 && !selectedCountry">
         <i class="fas fa-globe"></i>
         <h3>Sélectionnez un pays</h3>
-        <p>Choisissez un pays pour voir les comptes service disponibles.</p>
+        <p>Choisissez un pays pour voir les comptes disponibles.</p>
     </div>
 
     <!-- Message si aucun compte pour le pays sélectionné -->
@@ -239,7 +239,7 @@
     <!-- Loading -->
     <div class="loading" *ngIf="isLoading">
         <i class="fas fa-spinner fa-spin"></i>
-        <p>Chargement des comptes service...</p>
+        <p>Chargement des comptes...</p>
     </div>
 </div>
 
@@ -247,7 +247,7 @@
 <div *ngIf="showMergeForm" class="modal-overlay" (click)="cancelMerge()">
     <div class="modal-container" (click)="$event.stopPropagation()">
         <div class="modal-header">
-            <h3><i class="fas fa-layer-group"></i> Regrouper les comptes service</h3>
+            <h3><i class="fas fa-layer-group"></i> Regrouper les comptes</h3>
             <button type="button" class="modal-close" (click)="cancelMerge()">
                 <i class="fas fa-times"></i>
             </button>

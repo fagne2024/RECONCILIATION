@@ -93,14 +93,14 @@ export class ServiceBalanceComponent implements OnInit, OnDestroy {
         this.subscriptions.push(
             this.serviceBalanceService.getServiceComptes().subscribe({
                 next: (comptes) => {
-                    console.log('Comptes service reçus:', comptes);
+                    console.log('Comptes reçus:', comptes);
                     this.serviceComptes = comptes;
                     this.groupComptesByCountry();
                     this.isLoading = false;
                 },
                 error: (error) => {
-                    console.error('Erreur lors du chargement des comptes service:', error);
-                    this.popupService.showError('Erreur', 'Impossible de charger les comptes service');
+                    console.error('Erreur lors du chargement des comptes:', error);
+                    this.popupService.showError('Erreur', 'Impossible de charger les comptes');
                     this.isLoading = false;
                 }
             })
@@ -133,14 +133,47 @@ export class ServiceBalanceComponent implements OnInit, OnDestroy {
         return numeroCompte && numeroCompte.length > 10 && numeroCompte.includes('_');
     }
 
+    /**
+     * Normalise le code pays pour fusionner les variantes (ex: CITCH -> CI)
+     */
+    private normalizeCountryCode(country: string): string {
+        if (!country) {
+            return 'Non défini';
+        }
+        
+        const normalized = country.trim().toUpperCase();
+        
+        // Gérer les variantes spéciales comme "CITCH" qui signifie "CI" (Côte d'Ivoire)
+        if (normalized === 'CITCH' || normalized.startsWith('CITCH')) {
+            return 'CI';
+        }
+        
+        // Map des variantes de noms de pays vers codes normalisés
+        const countryMap: { [key: string]: string } = {
+            'CÔTE D\'IVOIRE': 'CI',
+            'COTE D\'IVOIRE': 'CI',
+            'COTE DIVOIRE': 'CI',
+            'CÔTE DIVOIRE': 'CI',
+            'IVORY COAST': 'CI'
+        };
+        
+        if (countryMap[normalized]) {
+            return countryMap[normalized];
+        }
+        
+        return normalized;
+    }
+
     groupComptesByCountry() {
         this.groupedByCountry = {};
         this.serviceComptes.forEach(compte => {
-            const country = compte.pays || 'Non défini';
-            if (!this.groupedByCountry[country]) {
-                this.groupedByCountry[country] = [];
+            const rawCountry = compte.pays || 'Non défini';
+            const normalizedCountry = this.normalizeCountryCode(rawCountry);
+            
+            if (!this.groupedByCountry[normalizedCountry]) {
+                this.groupedByCountry[normalizedCountry] = [];
             }
-            this.groupedByCountry[country].push(compte);
+            this.groupedByCountry[normalizedCountry].push(compte);
         });
     }
 
