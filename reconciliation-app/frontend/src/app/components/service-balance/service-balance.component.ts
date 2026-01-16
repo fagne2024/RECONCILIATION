@@ -36,6 +36,9 @@ export class ServiceBalanceComponent implements OnInit, OnDestroy {
     
     mergeForm: FormGroup;
     
+    // Exposer Math pour l'utiliser dans le template
+    Math = Math;
+    
     private subscriptions: Subscription[] = [];
 
     constructor(
@@ -96,6 +99,11 @@ export class ServiceBalanceComponent implements OnInit, OnDestroy {
                     console.log('Comptes reçus:', comptes);
                     this.serviceComptes = comptes;
                     this.groupComptesByCountry();
+                    // Réinitialiser les filtres et appliquer la pagination
+                    if (this.selectedCountry) {
+                        this.filteredServiceComptes = this.groupedByCountry[this.selectedCountry] || [];
+                    }
+                    this.applyFiltersAndPagination();
                     this.isLoading = false;
                 },
                 error: (error) => {
@@ -115,6 +123,11 @@ export class ServiceBalanceComponent implements OnInit, OnDestroy {
                     console.log('Tous les comptes reçus:', comptes);
                     this.serviceComptes = comptes;
                     this.groupComptesByCountry();
+                    // Réinitialiser les filtres et appliquer la pagination
+                    if (this.selectedCountry) {
+                        this.filteredServiceComptes = this.groupedByCountry[this.selectedCountry] || [];
+                    }
+                    this.applyFiltersAndPagination();
                     this.isLoading = false;
                 },
                 error: (error) => {
