@@ -6,9 +6,18 @@
     </div>
     
     <div class="dashboard-header">
-        <h2>📈 Tableau de bord de Réconciliation</h2>
-        <p class="subtitle">Vue d'ensemble des pourcentages de correspondance par service et par pays</p>
-        <p class="subtitle-small">Données réelles de la table result8rec</p>
+        <div class="header-top">
+            <div class="header-title-section">
+                <h2>📈 Tableau de bord de Réconciliation</h2>
+                <p class="subtitle">Vue d'ensemble des pourcentages de correspondance par service et par pays</p>
+                <p class="subtitle-small">Données réelles de la table result8rec</p>
+            </div>
+            <div class="header-actions">
+                <button class="btn-preview-global" (click)="goToGlobalPreview()" title="Afficher l'aperçu global avec graphiques">
+                    📊 Aperçu Global
+                </button>
+            </div>
+        </div>
         
         <!-- Résumé des données -->
         <div *ngIf="!loading && !error && countryServiceData && countryServiceData.length > 0" class="data-summary">

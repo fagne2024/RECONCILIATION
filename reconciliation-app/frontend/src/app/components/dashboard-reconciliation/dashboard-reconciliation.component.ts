@@ -423,4 +423,8 @@ export class DashboardReconciliationComponent implements OnInit, OnDestroy {
     getTotalPages(): number {
         return Math.ceil(this.filteredCountryServiceData.length / this.itemsPerPage);
     }
+
+    goToGlobalPreview() {
+        this.router.navigate(['/reconciliation-global-preview']);
+    }
 }

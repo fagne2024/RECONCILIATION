@@ -73,6 +73,7 @@ import { ProgressIndicatorComponent } from './components/progress-indicator/prog
 import { ReconciliationReportComponent } from './components/reconciliation-report/reconciliation-report.component';
 import { ReportDashboardComponent } from './components/report-dashboard/report-dashboard.component';
 import { DashboardReconciliationComponent } from './components/dashboard-reconciliation/dashboard-reconciliation.component';
+import { ReconciliationGlobalPreviewComponent } from './components/reconciliation-global-preview/reconciliation-global-preview.component';
 import { ComptabiliteComponent } from './components/comptabilite/comptabilite.component';
 import { BanqueDashboardComponent } from './components/banque-dashboard/banque-dashboard.component';
 import { UserLogComponent } from './components/user-log/user-log.component';
@@ -132,6 +133,7 @@ import { EcartBoSummaryComponent } from './components/ecart-bo-summary/ecart-bo-
                 ReconciliationReportComponent,
                 ReportDashboardComponent,
                 DashboardReconciliationComponent,
+                ReconciliationGlobalPreviewComponent,
                 ComptabiliteComponent,
                 BanqueDashboardComponent,
                 UserLogComponent,

@@ -38,6 +38,7 @@ import { ReconciliationComponent } from './components/reconciliation/reconciliat
 import { ReconciliationReportComponent } from './components/reconciliation-report/reconciliation-report.component';
 import { ReportDashboardComponent } from './components/report-dashboard/report-dashboard.component';
 import { DashboardReconciliationComponent } from './components/dashboard-reconciliation/dashboard-reconciliation.component';
+import { ReconciliationGlobalPreviewComponent } from './components/reconciliation-global-preview/reconciliation-global-preview.component';
 import { BanqueDashboardComponent } from './components/banque-dashboard/banque-dashboard.component';
 import { TwoFactorAuthComponent } from './components/two-factor-auth/two-factor-auth.component';
 import { UserProfileComponent } from './components/user-profile/user-profile.component';
@@ -89,6 +90,7 @@ const routes: Routes = [
   { path: 'reconciliation-report', component: ReconciliationReportComponent, canActivate: [AuthGuard] },
   { path: 'report-dashboard', component: ReportDashboardComponent, canActivate: [AuthGuard] },
   { path: 'reconciliation-dashboard', component: DashboardReconciliationComponent, canActivate: [AuthGuard] },
+  { path: 'reconciliation-global-preview', component: ReconciliationGlobalPreviewComponent, canActivate: [AuthGuard] },
   { path: 'banque-dashboard', component: BanqueDashboardComponent, canActivate: [AuthGuard] },
   { path: 'log-utilisateur', component: UserLogComponent, canActivate: [AuthGuard, AdminGuard] },
   { path: 'predictions', component: PredictionsNewComponent, canActivate: [AuthGuard] },
