@@ -124,10 +124,10 @@
             </tr>
           </thead>
           <tbody>
-            <tr *ngFor="let item of paginatedAgencyRankings; let i = index" [class]="getPositionClass((agencyPage-1)*agencyPageSize + i + 1)">
+            <tr *ngFor="let item of paginatedAgencyRankings; let i = index" [class]="getPositionClass(getAgencyPosition(i))">
               <td class="position">
-                <span class="position-number">{{ (agencyPage-1)*agencyPageSize + i + 1 }}</span>
-                <span *ngIf="((agencyPage-1)*agencyPageSize + i) < 3" class="medal">🏅</span>
+                <span class="position-number">{{ getAgencyPosition(i) }}</span>
+                <span *ngIf="getAgencyPosition(i) <= 3" class="medal">🏅</span>
               </td>
               <td class="agency-name">{{ item.agency }}</td>
               <td class="country">{{ item.country || '-' }}</td>
@@ -141,10 +141,17 @@
         </table>
 
         <!-- Pagination clients -->
-        <div *ngIf="agencyTotalPages > 1" class="pagination">
+        <div *ngIf="!showAllAgencies && agencyTotalPages > 1" class="pagination">
           <button (click)="prevAgencyPage()" [disabled]="agencyPage === 1">&lt;</button>
           <button *ngFor="let p of [].constructor(agencyTotalPages); let idx = index" (click)="setAgencyPage(idx+1)" [class.active]="agencyPage === (idx+1)">{{ idx+1 }}</button>
           <button (click)="nextAgencyPage()" [disabled]="agencyPage === agencyTotalPages">&gt;</button>
+        </div>
+        
+        <!-- Bouton Voir plus / Voir moins pour clients -->
+        <div *ngIf="agencyRankings.length > agencyPageSize" class="view-more-container">
+          <button (click)="toggleShowAllAgencies()" class="view-more-btn">
+            {{ showAllAgencies ? 'Voir moins' : 'Voir plus' }}
+          </button>
         </div>
 
         <div *ngIf="!loadingAgencies && !errorAgencies && agencyRankings.length === 0" class="no-data">
@@ -202,10 +209,10 @@
             </tr>
           </thead>
           <tbody>
-            <tr *ngFor="let item of paginatedServiceRankings; let i = index" [class]="getPositionClass((servicePage-1)*servicePageSize + i + 1)">
+            <tr *ngFor="let item of paginatedServiceRankings; let i = index" [class]="getPositionClass(getServicePosition(i))">
               <td class="position">
-                <span class="position-number">{{ (servicePage-1)*servicePageSize + i + 1 }}</span>
-                <span *ngIf="((servicePage-1)*servicePageSize + i) < 3" class="medal">🏅</span>
+                <span class="position-number">{{ getServicePosition(i) }}</span>
+                <span *ngIf="getServicePosition(i) <= 3" class="medal">🏅</span>
               </td>
               <td class="service-name">{{ item.service }}</td>
               <td class="country">{{ item.country || '-' }}</td>
@@ -220,10 +227,17 @@
         </table>
 
         <!-- Pagination services -->
-        <div *ngIf="serviceTotalPages > 1" class="pagination">
+        <div *ngIf="!showAllServices && serviceTotalPages > 1" class="pagination">
           <button (click)="prevServicePage()" [disabled]="servicePage === 1">&lt;</button>
           <button *ngFor="let p of [].constructor(serviceTotalPages); let idx = index" (click)="setServicePage(idx+1)" [class.active]="servicePage === (idx+1)">{{ idx+1 }}</button>
           <button (click)="nextServicePage()" [disabled]="servicePage === serviceTotalPages">&gt;</button>
+        </div>
+        
+        <!-- Bouton Voir plus / Voir moins pour services -->
+        <div *ngIf="serviceRankings.length > servicePageSize" class="view-more-container">
+          <button (click)="toggleShowAllServices()" class="view-more-btn">
+            {{ showAllServices ? 'Voir moins' : 'Voir plus' }}
+          </button>
         </div>
 
         <div *ngIf="!loadingServices && !errorServices && serviceRankings.length === 0" class="no-data">

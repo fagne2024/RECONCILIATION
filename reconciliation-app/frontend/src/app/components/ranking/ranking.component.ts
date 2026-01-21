@@ -42,23 +42,43 @@ export class RankingComponent implements OnInit {
   // Pagination agences
   agencyPage = 1;
   agencyPageSize = 5;
+  showAllAgencies = false;
   get paginatedAgencyRankings() {
+    if (this.showAllAgencies) {
+      return this.agencyRankings;
+    }
     const start = (this.agencyPage - 1) * this.agencyPageSize;
     return this.agencyRankings.slice(start, start + this.agencyPageSize);
   }
   get agencyTotalPages() {
     return Math.ceil(this.agencyRankings.length / this.agencyPageSize);
   }
+  getAgencyPosition(index: number): number {
+    if (this.showAllAgencies) {
+      return index + 1;
+    }
+    return (this.agencyPage - 1) * this.agencyPageSize + index + 1;
+  }
 
   // Pagination services
   servicePage = 1;
   servicePageSize = 5;
+  showAllServices = false;
   get paginatedServiceRankings() {
+    if (this.showAllServices) {
+      return this.serviceRankings;
+    }
     const start = (this.servicePage - 1) * this.servicePageSize;
     return this.serviceRankings.slice(start, start + this.servicePageSize);
   }
   get serviceTotalPages() {
     return Math.ceil(this.serviceRankings.length / this.servicePageSize);
+  }
+  getServicePosition(index: number): number {
+    if (this.showAllServices) {
+      return index + 1;
+    }
+    return (this.servicePage - 1) * this.servicePageSize + index + 1;
   }
 
   countries: string[] = [];
@@ -392,11 +412,23 @@ export class RankingComponent implements OnInit {
   nextAgencyPage() { if (this.agencyPage < this.agencyTotalPages) this.agencyPage++; }
   prevAgencyPage() { if (this.agencyPage > 1) this.agencyPage--; }
   setAgencyPage(page: number) { this.agencyPage = page; }
+  toggleShowAllAgencies() { 
+    this.showAllAgencies = !this.showAllAgencies;
+    if (this.showAllAgencies) {
+      this.agencyPage = 1; // Réinitialiser la page
+    }
+  }
 
   // Navigation pagination services
   nextServicePage() { if (this.servicePage < this.serviceTotalPages) this.servicePage++; }
   prevServicePage() { if (this.servicePage > 1) this.servicePage--; }
   setServicePage(page: number) { this.servicePage = page; }
+  toggleShowAllServices() { 
+    this.showAllServices = !this.showAllServices;
+    if (this.showAllServices) {
+      this.servicePage = 1; // Réinitialiser la page
+    }
+  }
 
   // Export CSV générique
   exportToCSV(data: any[], filename: string) {

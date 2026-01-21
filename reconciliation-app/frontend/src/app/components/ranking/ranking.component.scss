@@ -391,4 +391,37 @@
       cursor: not-allowed;
     }
   }
+}
+
+.view-more-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin: 20px 0 0 0;
+  padding: 15px 0;
+  border-top: 1px solid #e9ecef;
+  width: 100%;
+  
+  .view-more-btn {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    padding: 12px 24px;
+    font-weight: 600;
+    font-size: 1rem;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    
+    &:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 8px rgba(118, 75, 162, 0.3);
+      background: linear-gradient(135deg, #764ba2 0%, #667eea 100%);
+    }
+    
+    &:active {
+      transform: translateY(0);
+    }
+  }
 } 
