@@ -790,16 +790,30 @@ export class EcartPartnerTableComponent implements OnInit, OnDestroy {
         const parsedDate = parseExcelDate(dateOperationStr);
         const dateOperation = overrideDateIso || parsedDate.toISOString();
 
+        // Récupérer les valeurs réelles des colonnes ECART Partenaire
+        // Type: colonne "Type" dans les données ECART Partenaire
+        const typeOperation = getValueWithFallback(['Type', 'type', 'TYPE', 'Type Opération', 'typeOperation', 'type_operation']) || 'DEPOT';
+        
+        // Agence: colonne "Agence" dans les données ECART Partenaire
+        const codeProprietaire = getValueWithFallback(['Agence', 'agence', 'AGENCE', 'agency', 'Code propriétaire', 'Code proprietaire', 'codeProprietaire', 'code_proprietaire']) || 'UNKNOWN';
+        
+        // Pays/GRX: colonne "Pays" dans les données ECART Partenaire
+        const groupeReseau = getValueWithFallback(['Pays', 'pays', 'PAYS', 'country', 'Country', 'GRX', 'grx', 'groupe de réseau', 'groupeReseau', 'groupe_reseau']) || 'DEFAULT';
+        
+        // Soldes: colonnes "Solde_avant" et "Solde_Après" dans les données ECART Partenaire
+        const soldeAvant = getNumberWithFallback(['Solde_avant', 'Solde_Avant', 'SOLDE_AVANT', 'solde_avant', 'Solde avant', 'soldeAvant']);
+        const soldeApres = getNumberWithFallback(['Solde_Après', 'Solde_Apres', 'SOLDE_APRES', 'solde_après', 'Solde après', 'soldeApres', 'Solde aprés']);
+
         return {
           id: undefined, // Sera assigné par le backend
-          typeOperation: getValueWithFallback(['Type Opération', 'typeOperation', 'type_operation']) || 'DEPOT',
+          typeOperation: typeOperation,
           montant: getNumberWithFallback(['Montant', 'montant', 'amount']),
-          soldeAvant: getNumberWithFallback(['Solde avant', 'soldeAvant', 'solde_avant', 'Solde_avant']),
-          soldeApres: getNumberWithFallback(['Solde aprés', 'Solde après', 'soldeApres', 'solde_apres']),
-          codeProprietaire: getValueWithFallback(['Code propriétaire', 'Code proprietaire', 'codeProprietaire', 'code_proprietaire']) || 'UNKNOWN',
+          soldeAvant: soldeAvant,
+          soldeApres: soldeApres,
+          codeProprietaire: codeProprietaire,
           dateOperation: dateOperation,
-          numeroTransGU: getValueWithFallback(['Numéro Trans GU', 'numeroTransGU', 'numero_trans_gu']) || `GU-${Date.now()}-${index}`,
-          groupeReseau: (getValueWithFallback(['groupe de réseau', 'groupeReseau', 'groupe_reseau']) || 'DEFAULT').substring(0, 10),
+          numeroTransGU: getValueWithFallback(['Numéro Trans GU', 'numeroTransGU', 'numero_trans_gu', 'numeroTransGU']) || `GU-${Date.now()}-${index}`,
+          groupeReseau: groupeReseau.length > 10 ? groupeReseau.substring(0, 10) : groupeReseau,
           statut: 'EN_ATTENTE',
           commentaire: `Importé depuis ECART Partenaire - ${new Date().toLocaleString('fr-FR')}`,
           createdAt: new Date().toISOString(),

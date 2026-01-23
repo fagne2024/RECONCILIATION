@@ -331,7 +331,12 @@
             <tbody>
                 <tr *ngFor="let compte of pagedComptes">
                     <td>{{ compte.numeroCompte }}</td>
-                    <td class="solde">{{ compte.solde | number:'1.2-2' }}</td>
+                    <td class="solde solde-with-tooltip" 
+                        (mouseenter)="showTooltip($event, compte)"
+                        (mouseleave)="hideTooltip()"
+                        (mousemove)="updateTooltipPosition($event)">
+                        {{ compte.solde | number:'1.2-2' }}
+                    </td>
                     <td>{{ formatDate(compte.dateDerniereMaj) }}</td>
                     <td>{{ compte.pays }}</td>
                     <td>{{ compte.codeProprietaire || '-' }}</td>
@@ -1922,4 +1927,12 @@
       </button>
     </div>
   </div>
+</div>
+
+<!-- Tooltip global pour les soldes -->
+<div class="solde-tooltip" 
+     *ngIf="tooltipVisible" 
+     [style.left.px]="tooltipX" 
+     [style.top.px]="tooltipY"
+     [innerHTML]="tooltipContent">
 </div>

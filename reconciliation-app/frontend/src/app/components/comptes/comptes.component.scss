@@ -342,13 +342,24 @@
         }
         .solde {
             font-weight: bold;
+            
+            &.solde-with-tooltip {
+                cursor: help;
+                transition: all 0.3s ease;
+                
+                &:hover {
+                    color: #1976D2;
+                    text-decoration: underline;
+                }
+            }
         }
+        
         .actions-cell {
             display: flex;
             gap: 0.5rem;
         }
     }
-
+    
     .loading-overlay {
         position: absolute;
         inset: 0;
@@ -369,7 +380,40 @@
             margin-right: 1rem;
         }
     }
+}
 
+// Tooltip global pour les soldes (toujours au-dessus de tout)
+.solde-tooltip {
+    position: fixed;
+    z-index: 9999999 !important;
+    padding: 12px 16px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border-radius: 10px;
+    font-size: 0.875rem;
+    font-weight: 500;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+    line-height: 1.6;
+    max-width: 280px;
+    pointer-events: none;
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    transform: translate(-50%, -100%);
+    margin-top: -10px;
+    white-space: normal;
+    word-wrap: break-word;
+    
+    // Flèche pointant vers le bas
+    &::after {
+        content: '';
+        position: absolute;
+        bottom: -6px;
+        left: 50%;
+        transform: translateX(-50%);
+        border: 6px solid transparent;
+        border-top-color: #764ba2;
+    }
+    
     .no-data {
         text-align: center;
         padding: 2rem;

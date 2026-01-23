@@ -728,9 +728,21 @@ export class EcartPartenaireComponent implements OnInit, OnDestroy {
       }
 
       const impactOPData: ImpactOP[] = sourceRecords.map((record, index) => {
+        const getOriginalKey = (correctedKey: string): string => {
+          const originalKey = Object.keys(record).find(k => fixGarbledCharacters(k) === correctedKey);
+          return originalKey || correctedKey;
+        };
+
         const getValue = (keys: string[]): string => {
           for (const key of keys) {
-            if (record[key]) return record[key].toString();
+            const originalKey = getOriginalKey(key);
+            if (record[originalKey] !== undefined && record[originalKey] !== null && record[originalKey] !== '') {
+              return record[originalKey].toString();
+            }
+            // Essayer aussi directement avec la clé
+            if (record[key] !== undefined && record[key] !== null && record[key] !== '') {
+              return record[key].toString();
+            }
           }
           return '';
         };
@@ -741,16 +753,30 @@ export class EcartPartenaireComponent implements OnInit, OnDestroy {
           return isNaN(parsed) ? 0 : parsed;
         };
 
+        // Récupérer les valeurs réelles des colonnes ECART Partenaire
+        // Type: colonne "Type" dans les données ECART Partenaire
+        const typeOperation = getValue(['Type', 'type', 'TYPE', 'Type Opération', 'typeOperation', 'type_operation']) || 'DEPOT';
+        
+        // Agence: colonne "Agence" dans les données ECART Partenaire
+        const codeProprietaire = getValue(['Agence', 'agence', 'AGENCE', 'agency', 'Code propriétaire', 'Code proprietaire', 'codeProprietaire', 'code_proprietaire']) || 'UNKNOWN';
+        
+        // Pays/GRX: colonne "Pays" dans les données ECART Partenaire
+        const groupeReseau = getValue(['Pays', 'pays', 'PAYS', 'country', 'Country', 'GRX', 'grx', 'groupe de réseau', 'groupeReseau', 'groupe_reseau']) || 'DEFAULT';
+        
+        // Soldes: colonnes "Solde_avant" et "Solde_Après" dans les données ECART Partenaire
+        const soldeAvant = getNumber(['Solde_avant', 'Solde_Avant', 'SOLDE_AVANT', 'solde_avant', 'Solde avant', 'soldeAvant']);
+        const soldeApres = getNumber(['Solde_Après', 'Solde_Apres', 'SOLDE_APRES', 'solde_après', 'Solde après', 'soldeApres', 'Solde aprés']);
+
         return {
           id: undefined,
-          typeOperation: getValue(['Type Opération', 'typeOperation', 'type_operation']) || 'DEPOT',
+          typeOperation: typeOperation,
           montant: getNumber(['Montant', 'montant', 'amount']),
-          soldeAvant: getNumber(['Solde avant', 'soldeAvant', 'solde_avant']),
-          soldeApres: getNumber(['Solde aprés', 'Solde après', 'soldeApres', 'solde_apres']),
-          codeProprietaire: getValue(['Code propriétaire', 'codeProprietaire', 'code_proprietaire']) || 'UNKNOWN',
+          soldeAvant: soldeAvant,
+          soldeApres: soldeApres,
+          codeProprietaire: codeProprietaire,
           dateOperation: dateInput || new Date().toISOString(),
           numeroTransGU: getValue(['Numéro Trans GU', 'numeroTransGU', 'numero_trans_gu']) || `GU-${Date.now()}-${index}`,
-          groupeReseau: (getValue(['groupe de réseau', 'groupeReseau', 'groupe_reseau']) || 'DEFAULT').substring(0, 10),
+          groupeReseau: groupeReseau.length > 10 ? groupeReseau.substring(0, 10) : groupeReseau,
           statut: 'EN_ATTENTE',
           commentaire: `Importé depuis ECART Partenaire - ${new Date().toLocaleString('fr-FR')}`,
           createdAt: new Date().toISOString(),

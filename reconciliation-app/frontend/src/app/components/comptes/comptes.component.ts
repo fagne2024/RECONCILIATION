@@ -274,6 +274,12 @@ export class ComptesComponent implements OnInit, OnDestroy {
     // Propriété pour stocker les frais paramétrés
     fraisParametres: FraisTransaction[] = [];
 
+    // Propriétés pour le tooltip
+    tooltipVisible = false;
+    tooltipX = 0;
+    tooltipY = 0;
+    tooltipContent = '';
+
     constructor(
         private compteService: CompteService,
         private operationService: OperationService,
@@ -721,6 +727,141 @@ export class ComptesComponent implements OnInit, OnDestroy {
             hour: '2-digit',
             minute: '2-digit'
         });
+    }
+
+    // Cache pour stocker les dernières dates de solde de clôture par compte
+    private lastClosingDateCache: Map<string, string> = new Map();
+    // Cache pour les requêtes en cours pour éviter les doublons
+    private loadingDates: Set<string> = new Set();
+
+    // Récupère la dernière date du solde de clôture pour un compte (sans charger si pas en cache)
+    getLastClosingDate(compte: Compte): string {
+        // Si on a déjà chargé le relevé pour ce compte, utiliser cette date
+        if (this.selectedCompte?.numeroCompte === compte.numeroCompte && this.releveOperations.length > 0) {
+            const lastDate = this.getGlobalClosingBalanceDate();
+            if (lastDate) {
+                return this.formatDateForTooltip(lastDate);
+            }
+        }
+
+        // Vérifier le cache
+        if (this.lastClosingDateCache.has(compte.numeroCompte)) {
+            return this.lastClosingDateCache.get(compte.numeroCompte)!;
+        }
+
+        // Retourner la date de dernière mise à jour par défaut (ne pas charger automatiquement)
+        return compte.dateDerniereMaj ? this.formatDate(compte.dateDerniereMaj) : 'N/A';
+    }
+
+    // Charge la dernière date de clôture pour un compte (appelé uniquement au survol)
+    private loadLastClosingDate(compte: Compte): void {
+        // Éviter les requêtes en double
+        if (this.loadingDates.has(compte.numeroCompte) || this.lastClosingDateCache.has(compte.numeroCompte)) {
+            return;
+        }
+
+        this.loadingDates.add(compte.numeroCompte);
+        
+        this.operationService.getOperationsByCompte(compte.numeroCompte, null, null, null).subscribe({
+            next: (operations) => {
+                this.loadingDates.delete(compte.numeroCompte);
+                
+                if (operations && operations.length > 0) {
+                    // Trier par date décroissante et prendre la première
+                    const sortedOps = [...operations].sort((a, b) => {
+                        const dateA = new Date(a.dateOperation).getTime();
+                        const dateB = new Date(b.dateOperation).getTime();
+                        return dateB - dateA;
+                    });
+                    const lastOp = sortedOps[0];
+                    if (lastOp && lastOp.dateOperation) {
+                        const formattedDate = this.formatDate(lastOp.dateOperation);
+                        this.lastClosingDateCache.set(compte.numeroCompte, formattedDate);
+                        // Mettre à jour le tooltip si visible
+                        if (this.tooltipVisible) {
+                            const solde = compte.solde.toFixed(2);
+                            this.tooltipContent = `Solde de clôture: ${solde} FCFA<br>Date: ${formattedDate}`;
+                        }
+                    }
+                }
+            },
+            error: (error) => {
+                this.loadingDates.delete(compte.numeroCompte);
+                // Ne pas logger les erreurs 429 (Too Many Requests) pour éviter le spam
+                if (error.status !== 429) {
+                    console.error(`Erreur lors du chargement de la dernière date pour ${compte.numeroCompte}:`, error);
+                }
+            }
+        });
+    }
+
+    // Formate une date pour le tooltip (format YYYY-MM-DD vers format français)
+    private formatDateForTooltip(dateString: string): string {
+        try {
+            // Si c'est déjà au format YYYY-MM-DD
+            if (dateString.match(/^\d{4}-\d{2}-\d{2}$/)) {
+                const [year, month, day] = dateString.split('-');
+                return `${day}/${month}/${year}`;
+            }
+            // Sinon, parser comme date ISO
+            return new Date(dateString).toLocaleDateString('fr-FR', {
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit'
+            });
+        } catch (e) {
+            return dateString;
+        }
+    }
+
+    // Affiche le tooltip
+    showTooltip(event: MouseEvent, compte: Compte): void {
+        const solde = compte.solde.toFixed(2);
+        let date = this.getLastClosingDate(compte);
+        
+        // Si la date n'est pas en cache, charger en arrière-plan et utiliser la date par défaut
+        if (!this.lastClosingDateCache.has(compte.numeroCompte) && 
+            this.selectedCompte?.numeroCompte !== compte.numeroCompte) {
+            // Charger la date en arrière-plan
+            this.loadLastClosingDate(compte);
+        }
+        
+        this.tooltipContent = `Solde de clôture: ${solde} FCFA<br>Date: ${date}`;
+        this.updateTooltipPosition(event);
+        this.tooltipVisible = true;
+    }
+
+    // Cache le tooltip
+    hideTooltip(): void {
+        this.tooltipVisible = false;
+    }
+
+    // Met à jour la position du tooltip
+    updateTooltipPosition(event: MouseEvent): void {
+        if (!this.tooltipVisible) return;
+        
+        const offset = 15;
+        this.tooltipX = event.clientX;
+        this.tooltipY = event.clientY - offset;
+        
+        // Ajuster si le tooltip dépasse de l'écran (le transform translate(-50%, -100%) est géré par CSS)
+        setTimeout(() => {
+            const tooltipElement = document.querySelector('.solde-tooltip') as HTMLElement;
+            if (tooltipElement) {
+                const rect = tooltipElement.getBoundingClientRect();
+                // Ajuster horizontalement si nécessaire
+                if (rect.right > window.innerWidth) {
+                    this.tooltipX = window.innerWidth - rect.width / 2 - 10;
+                }
+                if (rect.left < 0) {
+                    this.tooltipX = rect.width / 2 + 10;
+                }
+                // Ajuster verticalement si nécessaire
+                if (rect.top < 0) {
+                    this.tooltipY = event.clientY + offset + 20;
+                }
+            }
+        }, 0);
     }
 
     private normalizeToYmd(dateInput: string): string {
