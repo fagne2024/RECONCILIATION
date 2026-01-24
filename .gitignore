@@ -129,6 +129,7 @@ prisma/dev.db-journal
 # Upload directories
 reconciliation-app/backend/uploads/
 reconciliation-app/watch-folder/processed/
+reconciliation-app/watch-folder/*.csv
 
 # Windows reserved names
 nul
