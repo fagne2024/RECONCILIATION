@@ -146,6 +146,20 @@ public class ProfilController {
         return profilService.addPermissionToProfil(profilId, moduleId, permissionId);
     }
 
+    // Attribution de plusieurs droits à un profil en une seule requête (pour éviter les erreurs 429)
+    @PostMapping("/{profilId}/droits/batch")
+    public ResponseEntity<List<ProfilPermissionEntity>> addMultiplePermissionsToProfil(
+            @PathVariable Long profilId,
+            @RequestParam Long moduleId,
+            @RequestBody List<Long> permissionIds) {
+        try {
+            List<ProfilPermissionEntity> result = profilService.addMultiplePermissionsToProfil(profilId, moduleId, permissionIds);
+            return ResponseEntity.ok(result);
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().build();
+        }
+    }
+
     @DeleteMapping("/droits/{profilPermissionId}")
     public void removePermissionFromProfil(@PathVariable Long profilPermissionId) {
         profilService.removePermissionFromProfil(profilPermissionId);

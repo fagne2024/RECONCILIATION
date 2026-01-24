@@ -54,6 +54,9 @@ export class ProfilService {
   addPermissionToProfil(profilId: number, moduleId: number, permissionId: number): Observable<ProfilPermission> {
     return this.http.post<ProfilPermission>(`${this.apiUrl}/${profilId}/droits?moduleId=${moduleId}&permissionId=${permissionId}`, {});
   }
+  addMultiplePermissionsToProfil(profilId: number, moduleId: number, permissionIds: number[]): Observable<ProfilPermission[]> {
+    return this.http.post<ProfilPermission[]>(`${this.apiUrl}/${profilId}/droits/batch?moduleId=${moduleId}`, permissionIds);
+  }
   removePermissionFromProfil(profilPermissionId: number): Observable<void> {
     return this.http.delete<void>(`${this.apiUrl}/droits/${profilPermissionId}`);
   }

@@ -356,34 +356,27 @@ export class ModulesComponent implements OnInit {
     if (!module.id || !profil.id) return;
     
     this.isSavingProfils = true;
-    let addedCount = 0;
-    const totalPermissions = this.permissions.length;
     
-    if (totalPermissions === 0) {
+    if (this.permissions.length === 0) {
       console.log(`⚠️ Aucune permission disponible pour le module ${module.nom}`);
       this.isSavingProfils = false;
       return;
     }
     
-    this.permissions.forEach(permission => {
-      if (permission.id) {
-        this.profilService.addPermissionToProfil(profil.id!, module.id!, permission.id).subscribe({
-          next: (pp) => {
-            this.profilPermissions.push(pp);
-            addedCount++;
-            if (addedCount === totalPermissions) {
-              console.log(`✅ Module ${module.nom} associé au profil ${profil.nom}`);
-              this.isSavingProfils = false;
-            }
-          },
-          error: (error) => {
-            console.error(`❌ Erreur lors de l'association:`, error);
-            addedCount++;
-            if (addedCount === totalPermissions) {
-              this.isSavingProfils = false;
-            }
-          }
-        });
+    // Utiliser la méthode batch pour éviter les erreurs 429 (Too Many Requests)
+    const permissionIds = this.permissions
+      .filter(permission => permission.id)
+      .map(permission => permission.id!);
+
+    this.profilService.addMultiplePermissionsToProfil(profil.id!, module.id!, permissionIds).subscribe({
+      next: (profilPermissions) => {
+        this.profilPermissions.push(...profilPermissions);
+        console.log(`✅ Module ${module.nom} associé au profil ${profil.nom} (${profilPermissions.length} permission(s))`);
+        this.isSavingProfils = false;
+      },
+      error: (error) => {
+        console.error(`❌ Erreur lors de l'association:`, error);
+        this.isSavingProfils = false;
       }
     });
   }

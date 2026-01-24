@@ -194,6 +194,51 @@ public class ProfilService {
         return profilPermissionRepository.findById(saved.getId()).orElse(saved);
     }
 
+    /**
+     * Ajoute plusieurs permissions à un profil en une seule transaction
+     * @param profilId L'ID du profil
+     * @param moduleId L'ID du module
+     * @param permissionIds Liste des IDs des permissions à ajouter
+     * @return Liste des ProfilPermissionEntity créées ou existantes
+     */
+    @Transactional
+    public List<ProfilPermissionEntity> addMultiplePermissionsToProfil(Long profilId, Long moduleId, List<Long> permissionIds) {
+        ProfilEntity profil = profilRepository.findById(profilId).orElseThrow(() -> new RuntimeException("Profil non trouvé avec l'ID: " + profilId));
+        ModuleEntity module = moduleRepository.findById(moduleId).orElseThrow(() -> new RuntimeException("Module non trouvé avec l'ID: " + moduleId));
+        
+        List<ProfilPermissionEntity> result = new ArrayList<>();
+        
+        // Charger toutes les associations existantes pour ce profil et ce module
+        List<ProfilPermissionEntity> existingPermissions = profilPermissionRepository.findAll().stream()
+            .filter(pp -> pp.getProfil() != null && pp.getProfil().getId().equals(profilId) &&
+                         pp.getModule() != null && pp.getModule().getId().equals(moduleId))
+            .toList();
+        
+        for (Long permissionId : permissionIds) {
+            // Vérifier si l'association existe déjà
+            ProfilPermissionEntity existing = existingPermissions.stream()
+                .filter(pp -> pp.getPermission() != null && pp.getPermission().getId().equals(permissionId))
+                .findFirst()
+                .orElse(null);
+            
+            if (existing != null) {
+                result.add(existing);
+            } else {
+                PermissionEntity permission = permissionRepository.findById(permissionId)
+                    .orElseThrow(() -> new RuntimeException("Permission non trouvée avec l'ID: " + permissionId));
+                
+                ProfilPermissionEntity pp = new ProfilPermissionEntity();
+                pp.setProfil(profil);
+                pp.setModule(module);
+                pp.setPermission(permission);
+                ProfilPermissionEntity saved = profilPermissionRepository.save(pp);
+                result.add(saved);
+            }
+        }
+        
+        return result;
+    }
+
     public void removePermissionFromProfil(Long profilPermissionId) {
         profilPermissionRepository.deleteById(profilPermissionId);
     }

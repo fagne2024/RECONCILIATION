@@ -11,6 +11,7 @@ import { ExportOptimizationService } from '../../services/export-optimization.se
 import { ReconciliationTabsService } from '../../services/reconciliation-tabs.service';
 import { PopupService } from '../../services/popup.service';
 import { PaysService } from '../../services/pays.service';
+import { EcartBoSummaryService } from '../../services/ecart-bo-summary.service';
 import * as ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
 
@@ -1686,6 +1687,9 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
     // Propriété pour l'édition directe du traitement (comme dans banque)
     editingTraitementRow: ReconciliationReportData | null = null;
     
+    // Flag pour éviter les recalculs automatiques lors des modifications manuelles
+    private isManuallyEditingEcart: boolean = false;
+    
     // Propriété pour l'édition directe du statut
     editingStatusRow: ReconciliationReportData | null = null;
     
@@ -1709,7 +1713,8 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         private reconciliationTabsService: ReconciliationTabsService,
         private exportService: ExportOptimizationService,
         private popupService: PopupService,
-        private paysService: PaysService
+        private paysService: PaysService,
+        private ecartBoSummaryService: EcartBoSummaryService
     ) {
         // Initialiser filteredReportData pour éviter les erreurs
         this.filteredReportData = [];
@@ -1843,6 +1848,9 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                             };
                         });
                         this.enforceDefaultStatusForReportData();
+                        
+                        // FORCER toutes les lignes avec statut OK à avoir traitement = "Niveau Group"
+                        this.enforceTraitementForOkStatus();
 
                         // Appliquer la règle métier de recalcul sur les lignes issues du résumé
                         this.reportData.forEach(item => {
@@ -2190,7 +2198,10 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         }
         
         this.enforceDefaultStatusForReportData();
-    
+        
+        // FORCER toutes les lignes avec statut OK à avoir traitement = "Niveau Group"
+        this.enforceTraitementForOkStatus();
+
         this.reportData.forEach(item => {
             // Ne pas recalculer la ligne des écarts partenaires
             if (!this.isPartnerOnlySpecialLine(item)) {
@@ -2259,6 +2270,12 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
      * Cette méthode doit être appelée chaque fois qu'une ligne spéciale est détectée.
      */
     private enforcePartnerOnlyLineValues(item: ReconciliationReportData): void {
+        // Ne pas forcer les valeurs si l'utilisateur est en train de modifier manuellement les écarts
+        if (this.isManuallyEditingEcart) {
+            console.log(`🔒 enforcePartnerOnlyLineValues: Modification manuelle en cours - skip pour ${item.agency}/${item.service}`);
+            return;
+        }
+        
         // Vérifier d'abord avec la méthode standard
         let isSpecialLine = this.isPartnerOnlySpecialLine(item);
         
@@ -2292,32 +2309,38 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         item.mismatches = 0;
         
         // S'assurer que partnerOnly est correct (utiliser totalTransactions si partnerOnly est 0)
-        item.partnerOnly = item.partnerOnly || item.totalTransactions || 0;
+        // MAIS ne pas forcer si l'utilisateur vient de le modifier
+        if (!this.isManuallyEditingEcart) {
+            item.partnerOnly = item.partnerOnly || item.totalTransactions || 0;
+        }
         
         // Normaliser les valeurs
         const currentMatches = this.normalizeNumericValue(item.matches);
         const currentBoOnly = this.normalizeNumericValue(item.boOnly);
         const currentPartnerOnly = this.normalizeNumericValue(item.partnerOnly);
         
-        // Calculer totalTransactions = matches + boOnly + partnerOnly (mismatches est toujours 0)
-        item.totalTransactions = currentMatches + currentBoOnly + currentPartnerOnly;
+        // NE PAS modifier totalTransactions - utiliser la valeur existante
+        const currentTotalTransactions = this.normalizeNumericValue(item.totalTransactions);
         
         // Recalculer le taux de correspondance
-        if (item.totalTransactions > 0) {
-            item.matchRate = (currentMatches / item.totalTransactions) * 100;
+        if (currentTotalTransactions > 0) {
+            item.matchRate = (currentMatches / currentTotalTransactions) * 100;
         } else {
             item.matchRate = 0;
         }
         
-        // Recalculer le commentaire avec les valeurs réelles (matches, boOnly, partnerOnly, mismatches)
-        // Utiliser les valeurs réelles, pas getDisplayMatches/getDisplayPartnerOnly car on veut les valeurs modifiables
-        item.comment = this.buildCommentForCounts(currentMatches, currentBoOnly, currentPartnerOnly, 0, item.totalTransactions);
+        // Ne pas recalculer le commentaire si l'utilisateur est en train de modifier manuellement
+        if (!this.isManuallyEditingEcart) {
+            // Recalculer le commentaire avec les valeurs réelles (matches, boOnly, partnerOnly, mismatches)
+            // Utiliser les valeurs réelles, pas getDisplayMatches/getDisplayPartnerOnly car on veut les valeurs modifiables
+            item.comment = this.buildCommentForCounts(currentMatches, currentBoOnly, currentPartnerOnly, 0, currentTotalTransactions);
+        }
         
         // Log si des valeurs ont été corrigées
         if (originalMatches !== 0 || originalPartnerOnly !== item.partnerOnly) {
-            console.warn(`⚠️ enforcePartnerOnlyLineValues: Ligne spéciale ${item.agency}/${item.service} corrigée - matches: ${originalMatches}→0, partnerOnly: ${originalPartnerOnly}→${item.partnerOnly}, commentaire: ${item.comment}`);
+            console.warn(`⚠️ enforcePartnerOnlyLineValues: Ligne spéciale ${item.agency}/${item.service} corrigée - matches: ${originalMatches}→${currentMatches}, partnerOnly: ${originalPartnerOnly}→${item.partnerOnly}, commentaire: ${item.comment}`);
         } else {
-            console.log(`🔒 enforcePartnerOnlyLineValues: Ligne spéciale ${item.agency}/${item.service} protégée - matches=0, partnerOnly=${item.partnerOnly}, commentaire: ${item.comment}`);
+            console.log(`🔒 enforcePartnerOnlyLineValues: Ligne spéciale ${item.agency}/${item.service} protégée - matches=${currentMatches}, partnerOnly=${item.partnerOnly}, commentaire: ${item.comment}`);
         }
     }
 
@@ -2681,6 +2704,9 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             return reportItem;
         });
         this.enforceDefaultStatusForReportData();
+        
+        // FORCER toutes les lignes avec statut OK à avoir traitement = "Niveau Group"
+        this.enforceTraitementForOkStatus();
 
         // Appliquer la règle métier de recalcul sur chaque ligne
         this.reportData.forEach(item => {
@@ -3081,8 +3107,24 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             return baseMatch;
         });
         
+        // FORCER toutes les lignes avec statut OK à avoir traitement = "Niveau Group" AVANT le recalcul
+        this.filteredReportData.forEach(item => {
+            if (item.status === 'OK') {
+                item.traitement = 'Niveau Group';
+            }
+        });
+        
         // Recalculer le traitement pour chaque ligne filtrée selon les écarts réels
+        // FORCER toutes les lignes avec statut OK à avoir traitement = "Niveau Group"
         this.filteredReportData = this.filteredReportData.map(item => {
+            // Si le statut est OK, FORCER le traitement à "Niveau Group"
+            if (item.status === 'OK') {
+                return {
+                    ...item,
+                    traitement: 'Niveau Group'
+                };
+            }
+            
             const boOnly = Number(item.boOnly) || 0;
             const partnerOnly = Number(item.partnerOnly) || 0;
             const mismatches = Number(item.mismatches) || 0;
@@ -3175,6 +3217,20 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             return;
         }
         
+        // Ne pas mettre à jour le commentaire si l'utilisateur est en train de modifier manuellement les écarts
+        if (this.isManuallyEditingEcart) {
+            console.log('🔒 updateCommentFromCounts: Modification manuelle en cours - skip pour', item.agency, item.service);
+            return;
+        }
+        
+        // PROTECTION ABSOLUE : Pour le statut OK, le commentaire ne doit JAMAIS être modifié
+        // Le commentaire ne doit pas être changé quand le statut passe à OK
+        // SAUF si force est activé explicitement (mais même alors, on devrait éviter pour statut OK)
+        if (item.status === 'OK' && !options?.force) {
+            console.log('🔒 updateCommentFromCounts: Commentaire préservé pour ligne avec statut OK', item.id, item.agency, item.service);
+            return;
+        }
+        
         // Vérifier s'il n'y a vraiment pas d'écarts
         const hasNoEcarts = boOnly === 0 && partnerOnly === 0 && mismatches === 0;
         const totalTransactions = this.normalizeNumericValue(item.totalTransactions);
@@ -3209,6 +3265,12 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             return;
         }
 
+        // Ne pas synchroniser si l'utilisateur est en train de modifier manuellement les écarts
+        if (this.isManuallyEditingEcart) {
+            console.log(`🔒 syncCommentWithValues: Modification manuelle en cours - skip pour ${item.agency}/${item.service}`);
+            return;
+        }
+
         // Ne pas modifier la ligne spéciale des écarts partenaires
         // Vérifier d'abord avec la méthode standard
         let isSpecialLine = this.isPartnerOnlySpecialLine(item);
@@ -3234,6 +3296,13 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             return;
         }
 
+        // PROTECTION ABSOLUE : Pour le statut OK, le commentaire ne doit JAMAIS être modifié
+        // Le commentaire ne doit pas être changé quand le statut passe à OK
+        if (item.status === 'OK') {
+            console.log('🔒 syncCommentWithValues: Commentaire préservé pour ligne avec statut OK', item.id, item.agency, item.service);
+            return;
+        }
+
         const matches = this.normalizeNumericValue(item.matches);
         const boOnly = this.normalizeNumericValue(item.boOnly);
         let partnerOnly = this.normalizeNumericValue(item.partnerOnly);
@@ -3245,12 +3314,8 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         // Note: Si c'est une seule agence, partnerOnly peut être > 0, donc on ne le force pas à 0
         // On laisse la valeur telle quelle pour permettre les modifications
 
-        // Assurer la cohérence: totalTransactions = matches + boOnly + partnerOnly + mismatches
-        const calculatedTotal = matches + boOnly + partnerOnly + mismatches;
-        if (totalTransactions !== calculatedTotal && calculatedTotal > 0) {
-            // Mettre à jour totalTransactions pour assurer la cohérence
-            item.totalTransactions = calculatedTotal;
-        }
+        // NE PAS modifier totalTransactions - utiliser la valeur existante
+        // Seules les correspondances, les écarts et le commentaire doivent être mis à jour
 
         // Si la ligne est "sété" (sauvegardée avec un ID), préserver TOUJOURS le commentaire existant
         if (this.isRowSete(item)) {
@@ -3286,6 +3351,18 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         this.reportData = this.reportData.map(item => this.applyDefaultStatus(item));
     }
 
+    /**
+     * Force toutes les lignes avec statut OK à avoir traitement = "Niveau Group"
+     */
+    private enforceTraitementForOkStatus(): void {
+        this.reportData.forEach(item => {
+            if (item.status === 'OK' && item.traitement !== 'Niveau Group') {
+                console.log(`🔄 enforceTraitementForOkStatus: Forcer traitement à "Niveau Group" pour ${item.agency}/${item.service} (statut OK)`);
+                item.traitement = 'Niveau Group';
+            }
+        });
+    }
+
     getDisplayStatus(status?: string | null): string {
         return this.normalizeStatus(status);
     }
@@ -3296,7 +3373,26 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
      * tout en conservant les écarts visibles pour l'utilisateur.
      */
     private recalculateDataBasedOnStatus(item: ReconciliationReportData): ReconciliationReportData {
-        // Ne pas modifier la ligne spéciale des écarts partenaires
+        // Si le statut est "OK", même les lignes spéciales doivent avoir leurs écarts à 0
+        if (item.status === 'OK' && this.isPartnerOnlySpecialLine(item)) {
+            // Pour une ligne spéciale avec statut OK, tous les écarts doivent être à 0
+            // Mais le commentaire doit être préservé et totalTransactions ne doit pas être modifié
+            const totalTransactions = this.normalizeNumericValue(item.totalTransactions) || 0;
+            const previousComment = item.comment ?? '';
+            return {
+                ...item,
+                matches: totalTransactions,
+                boOnly: 0,
+                partnerOnly: 0,
+                mismatches: 0,
+                totalTransactions: totalTransactions, // Ne pas modifier - utiliser la valeur existante
+                matchRate: totalTransactions > 0 ? 100 : 0,
+                traitement: 'Niveau Group', // Traitement automatique à "Niveau Group" pour statut OK
+                comment: previousComment // Préserver le commentaire existant
+            };
+        }
+        
+        // Ne pas modifier la ligne spéciale des écarts partenaires (sauf si statut OK)
         if (this.isPartnerOnlySpecialLine(item)) {
             // Pour la ligne des écarts partenaires, FORCER toutes les valeurs correctes
             this.enforcePartnerOnlyLineValues(item);
@@ -3344,44 +3440,61 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                 }
             });
 
-            // Les correspondances doivent refléter la totalité des transactions
-            recalculated.matches = effectiveTotalTransactions;
+            // Les correspondances doivent refléter la totalité des transactions (sans modifier totalTransactions)
+            recalculated.matches = totalTransactions;
             
             // Les écarts sont soldés (remis à zéro) puisque la ligne est finalisée
             recalculated.boOnly = 0;
             recalculated.partnerOnly = 0;
             recalculated.mismatches = 0;
             
-            // Recalculer le nombre total de transactions et le taux de correspondance
-            recalculated.totalTransactions = effectiveTotalTransactions;
-            recalculated.matchRate = effectiveTotalTransactions > 0 ? 
-                (recalculated.matches / effectiveTotalTransactions) * 100 : 0;
+            // NE PAS modifier totalTransactions - utiliser la valeur existante
+            recalculated.totalTransactions = totalTransactions;
             
-            // Toujours préserver le commentaire lors d'un changement de statut
-            // (ne pas modifier le commentaire même si la ligne n'est pas encore "sété")
+            // Recalculer le taux de correspondance
+            recalculated.matchRate = totalTransactions > 0 ? 
+                (recalculated.matches / totalTransactions) * 100 : 0;
+            
+            // Quand le statut passe à "OK", le traitement doit être automatiquement "Niveau Group"
+            recalculated.traitement = 'Niveau Group';
+            
+            // Préserver le commentaire existant quand le statut est "OK"
+            // Le commentaire ne doit pas être modifié quand le statut passe à "OK"
             recalculated.comment = previousComment;
             
-            console.log('🔄 Recalcul pour statut OK:', {
-                apres: {
-                    matches: recalculated.matches,
+            console.log('🔄 Recalcul pour statut OK - commentaire préservé, totalTransactions inchangé:', {
+                commentaire: previousComment,
+                matches: recalculated.matches,
+                totalTransactions: totalTransactions, // Non modifié
+                matchRate: recalculated.matchRate,
+                traitement: recalculated.traitement,
+                ecartsReinitialises: {
                     boOnly: recalculated.boOnly,
                     partnerOnly: recalculated.partnerOnly,
-                    mismatches: recalculated.mismatches,
-                    totalTransactions: recalculated.totalTransactions,
-                    matchRate: recalculated.matchRate,
-                    comment: recalculated.comment,
-                    isSete: isSete
-                }
+                    mismatches: recalculated.mismatches
+                },
+                isSete: isSete
             });
         } else {
-            // Pour les autres statuts, conserver les valeurs saisies mais fiabiliser les totaux
-            recalculated.totalTransactions = effectiveTotalTransactions;
-            recalculated.matchRate = effectiveTotalTransactions > 0 ? 
-                (recalculated.matches / effectiveTotalTransactions) * 100 : 0;
+            // Pour les autres statuts, NE PAS modifier totalTransactions - utiliser la valeur existante
+            recalculated.totalTransactions = totalTransactions;
+            recalculated.matchRate = totalTransactions > 0 ? 
+                (recalculated.matches / totalTransactions) * 100 : 0;
             
-            // Toujours préserver le commentaire lors d'un changement de statut
-            // (ne pas modifier le commentaire même si la ligne n'est pas encore "sété")
-            recalculated.comment = previousComment;
+            // Pour les statuts autres que "OK", mettre à jour le commentaire pour refléter les valeurs actuelles
+            // Seulement si la ligne n'est pas "sété" (pour préserver les commentaires des lignes sauvegardées)
+            if (!isSete) {
+                recalculated.comment = this.buildCommentForCounts(
+                    recalculated.matches,
+                    recalculated.boOnly,
+                    recalculated.partnerOnly,
+                    recalculated.mismatches,
+                    effectiveTotalTransactions
+                );
+            } else {
+                // Si la ligne est "sété", préserver le commentaire existant
+                recalculated.comment = previousComment;
+            }
         }
         
         return recalculated;
@@ -4109,14 +4222,16 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                     const mismatches = Number(r.mismatches) || 0;
                     const totalEcarts = boOnly + partnerOnly + mismatches;
                     
-                    // Recalculer le traitement selon les écarts réels si non défini ou incorrect
+                    // FORCER toutes les lignes avec statut OK à avoir traitement = "Niveau Group"
                     let traitement = r.traitement;
-                    if (!traitement || traitement.trim() === '') {
+                    if (r.status === 'OK') {
+                        traitement = 'Niveau Group';
+                    } else if (!traitement || traitement.trim() === '') {
                         traitement = totalEcarts > 0 ? 'Niveau Support' : 'Niveau Group';
                     } else {
                         // Vérifier si le traitement actuel correspond aux écarts réels
                         const traitementAttendu = totalEcarts > 0 ? 'Niveau Support' : 'Niveau Group';
-                        // Si le traitement ne correspond pas aux écarts, le corriger
+                        // Si le traitement ne correspond pas aux écarts, le corriger (sauf si "Terminé")
                         if (traitement !== 'Terminé' && traitement !== traitementAttendu) {
                             traitement = traitementAttendu;
                         }
@@ -4141,18 +4256,11 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                             // Si la ligne est "sété" (statut OK ou traitement Terminé), préserver le commentaire existant
                             // Préserver le commentaire existant
                         } else if (r.status === 'OK') {
-                            // Si le statut est "OK" mais pas encore "sété", mettre à jour le commentaire si tous les écarts sont à 0
-                            if (boOnly === 0 && partnerOnly === 0 && mismatches === 0) {
-                                const totalTransactions = r.totalTransactions || r.recordCount || 0;
-                                comment = this.buildCommentForCounts(
-                                    r.matches || 0,
-                                    boOnly,
-                                    partnerOnly,
-                                    mismatches,
-                                    totalTransactions
-                                );
-                            }
-                            // Sinon, préserver le commentaire existant
+                            // PROTECTION ABSOLUE : Pour le statut OK, le commentaire ne doit JAMAIS être modifié
+                            // Préserver TOUJOURS le commentaire existant, même si tous les écarts sont à 0
+                            // Le commentaire ne doit pas être changé quand le statut passe à OK
+                            console.log(`🔒 loadSavedReportFromDatabase: Commentaire préservé pour ligne avec statut OK id=${r.id}, commentaire: "${comment}"`);
+                            // Ne rien faire - le commentaire est déjà initialisé avec r.comment || ''
                         } else if (!r.id) {
                             // Seulement pour les nouvelles lignes (sans ID), recalculer le commentaire
                             const totalTransactions = r.totalTransactions || r.recordCount || 0;
@@ -4294,6 +4402,9 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                 
                 this.syncLastSavedGlpiValues(this.reportData);
                 
+                // FORCER toutes les lignes avec statut OK à avoir traitement = "Niveau Group"
+                this.enforceTraitementForOkStatus();
+                
                 // Trier par date décroissante (les plus récentes en premier)
                 this.reportData.sort((a, b) => {
                     const dateA = new Date(a.date).getTime();
@@ -4379,10 +4490,24 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         const confirmed = await this.popupService.showConfirm(message, 'Confirmation de sauvegarde');
         if (!confirmed) return;
         
-        // Définir le traitement par défaut si non spécifié
-        const traitement = item.traitement && item.traitement.trim() !== '' 
-            ? item.traitement 
-            : this.determineDefaultTraitement(item);
+        // PROTECTION ABSOLUE : Pour le statut OK, préserver le commentaire existant
+        const savedComment = item.status === 'OK' ? (item.comment ?? '') : item.comment;
+        
+        // Pour le statut OK, le traitement doit être "Niveau Group"
+        // Pour les autres statuts, utiliser le traitement existant ou le traitement par défaut
+        let traitement: string;
+        if (item.status === 'OK') {
+            // S'assurer que le traitement est bien "Niveau Group" pour le statut OK
+            traitement = item.traitement && item.traitement.trim() !== ''
+                ? item.traitement
+                : 'Niveau Group';
+            console.log(`🔄 confirmAndSave: Statut OK - traitement forcé à "${traitement}" pour ${item.agency}/${item.service}, commentaire préservé: "${savedComment}"`);
+        } else {
+            // Pour les autres statuts, utiliser le traitement existant ou le traitement par défaut
+            traitement = item.traitement && item.traitement.trim() !== ''
+                ? item.traitement
+                : this.determineDefaultTraitement(item);
+        }
         
         // Log pour déboguer les écarts partenaires
         if (item.partnerOnly > 0) {
@@ -4403,7 +4528,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             mismatches: item.mismatches,
             matchRate: item.matchRate,
             status: item.status,
-            comment: item.comment,
+            comment: savedComment, // Utiliser le commentaire préservé pour statut OK
             traitement: traitement
         };
         
@@ -4463,26 +4588,38 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         );
         if (!confirmed) return;
 
-        // Sauvegarder le commentaire AVANT toute modification pour le préserver
+        // PROTECTION ABSOLUE : Sauvegarder le commentaire AVANT toute modification pour le préserver
+        // Pour le statut OK, le commentaire ne doit JAMAIS être modifié
         const savedComment = item.comment ?? '';
 
         // Recalculer les valeurs selon le statut
-        // ⚠️ Pour le statut OK, les données (matches, écarts, commentaire) ont déjà été
+        // ⚠️ Pour le statut OK, les données (matches, écarts, traitement) ont déjà été
         // recalculées dans recalculateDataBasedOnStatus lors du changement de statut.
         // On réutilise donc directement l'item courant pour ne pas perdre la mémoire des écarts.
         const recalculatedData = item.status === 'OK'
             ? { ...item }
             : this.recalculateDataBasedOnStatus(item);
         
-        // S'assurer que le commentaire préservé est utilisé dans les données recalculées
-        // et dans l'item original également
+        // PROTECTION ABSOLUE : S'assurer que le commentaire préservé est utilisé dans les données recalculées
+        // et dans l'item original également - EN AUCUN CAS le commentaire ne doit être modifié pour statut OK
         recalculatedData.comment = savedComment;
         item.comment = savedComment;
 
-        // Définir le traitement par défaut si non spécifié
-        const traitement = recalculatedData.traitement && recalculatedData.traitement.trim() !== ''
-            ? recalculatedData.traitement
-            : this.determineDefaultTraitement(recalculatedData);
+        // Pour le statut OK, le traitement doit être "Niveau Group" (déjà défini dans recalculateDataBasedOnStatus)
+        // Pour les autres statuts, utiliser le traitement existant ou le traitement par défaut
+        let traitement: string;
+        if (item.status === 'OK') {
+            // S'assurer que le traitement est bien "Niveau Group" pour le statut OK
+            traitement = recalculatedData.traitement && recalculatedData.traitement.trim() !== ''
+                ? recalculatedData.traitement
+                : 'Niveau Group';
+            console.log(`🔄 updateRow: Statut OK - traitement forcé à "${traitement}" pour ${item.agency}/${item.service}, commentaire préservé: "${savedComment}"`);
+        } else {
+            // Pour les autres statuts, utiliser le traitement existant ou le traitement par défaut
+            traitement = recalculatedData.traitement && recalculatedData.traitement.trim() !== ''
+                ? recalculatedData.traitement
+                : this.determineDefaultTraitement(recalculatedData);
+        }
 
         // Log pour déboguer les écarts partenaires
         if (recalculatedData.partnerOnly > 0) {
@@ -4572,10 +4709,15 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         }
         
         // Afficher un popup pour sélectionner la date à appliquer à toutes les lignes
+        // Date par défaut : J-1 (hier)
+        const yesterday = new Date();
+        yesterday.setDate(yesterday.getDate() - 1);
+        const defaultDate = yesterday.toISOString().split('T')[0];
+        
         const selectedDate = await this.popupService.showDateInput(
             `Veuillez sélectionner la date à appliquer à toutes les ${rowsSource.length} ligne(s) :`,
             'Sélection de la date pour toutes les lignes',
-            new Date().toISOString().split('T')[0] // Date par défaut : aujourd'hui
+            defaultDate // Date par défaut : J-1
         );
         
         if (!selectedDate) {
@@ -4634,13 +4776,43 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
 
         this.http.post<any>('/api/result8rec/bulk', payload, { responseType: 'text' as 'json' })
         .subscribe({
-            next: (res: any) => {
+            next: async (res: any) => {
                 // La réponse peut être une string ou un objet JSON
-                const message = typeof res === 'string' ? res : `${rowsSource.length} ligne(s) sauvegardée(s)`;
+                let message = typeof res === 'string' ? res : `${rowsSource.length} ligne(s) sauvegardée(s)`;
                 console.log('✅ Sauvegarde bulk réussie:', message);
+
+                // Sauvegarder automatiquement les lignes avec écart BO (boOnly > 0) vers ecart_bo_summary
+                const ecartBoRows = payload.filter((p: { boOnly: number }) => (p.boOnly || 0) > 0);
+                if (ecartBoRows.length > 0) {
+                    try {
+                        const dateIso = selectedDate.includes('T') ? selectedDate : `${selectedDate}T00:00:00`;
+                        const ecartBoData = ecartBoRows.map((p: { agency: string; service: string; country: string; totalVolume: number; boOnly: number }) => ({
+                            agence: p.agency,
+                            service: p.service,
+                            pays: p.country,
+                            montant: p.totalVolume ?? 0,
+                            date: dateIso,
+                            statut: 'EN_COURS',
+                            nombreTransactions: p.boOnly,
+                            env: 'BO'
+                        }));
+                        const result = await this.ecartBoSummaryService.saveEcartBoSummary(ecartBoData);
+                        const ecartMsg = result.duplicates > 0
+                            ? `\n\n📋 ${result.count} écart(s) BO enregistré(s) dans ecart-bo-summary (${result.duplicates} doublon(s) ignorés).`
+                            : `\n\n📋 ${result.count} écart(s) BO enregistré(s) automatiquement dans ecart-bo-summary.`;
+                        message = message + ecartMsg;
+                        console.log('✅ Sauvegarde écarts BO vers ecart-bo-summary:', result.count, 'créés,', result.duplicates, 'doublons');
+                    } catch (err: any) {
+                        console.error('❌ Erreur sauvegarde ecart BO summary:', err);
+                        this.popupService.showSuccess(message);
+                        this.popupService.showWarning(
+                            'Le rapport a été sauvegardé, mais l\'enregistrement des écarts BO vers ecart-bo-summary a échoué. ' +
+                            'Vous pouvez les sauvegarder manuellement depuis la page Écart BO Summary.'
+                        );
+                        return;
+                    }
+                }
                 this.popupService.showSuccess(message);
-                // Rechargement automatique désactivé pour permettre de voir les logs
-                // this.forceReload();
             },
             error: (err: HttpErrorResponse) => {
                 console.error('❌ Erreur de sauvegarde bulk', err);
@@ -4959,54 +5131,138 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
     /**
      * Appelé lors de la modification de boOnly ou partnerOnly en mode édition.
      * Met à jour le commentaire et les valeurs associées en temps réel.
+     * Si le statut est OK, le commentaire reste inchangé.
      */
     onEcartChange(item: ReconciliationReportData, ecartType: 'boOnly' | 'partnerOnly'): void {
-        // Vérifier si c'est la ligne spéciale
-        const isSpecialLine = this.isPartnerOnlySpecialLine(item) || 
-            (item.agency === item.service && item.agency && item.service &&
-             item.totalTransactions > 0 && item.mismatches === 0);
-
-        const currentBoOnly = this.normalizeNumericValue(item.boOnly);
-        const currentPartnerOnly = this.normalizeNumericValue(item.partnerOnly);
-        const currentMismatches = this.normalizeNumericValue(item.mismatches);
-
-        if (isSpecialLine) {
-            // Pour la ligne spéciale : totalTransactions ne change pas
-            // Recalculer matches = totalTransactions - boOnly - partnerOnly
-            const currentTotalTransactions = this.normalizeNumericValue(item.totalTransactions);
-            
-            item.matches = Math.max(0, currentTotalTransactions - currentBoOnly - currentPartnerOnly);
-            
-            // Recalculer le taux
-            if (currentTotalTransactions > 0) {
-                item.matchRate = (item.matches / currentTotalTransactions) * 100;
-            } else {
-                item.matchRate = 0;
+        // Activer le flag pour éviter les recalculs automatiques
+        this.isManuallyEditingEcart = true;
+        
+        try {
+            // Si le statut est OK, préserver le commentaire existant et ne pas le modifier
+            if (item.status === 'OK') {
+                console.log(`🔒 onEcartChange: Statut OK - commentaire préservé pour ${item.agency}/${item.service}`);
+                // Mettre à jour uniquement les valeurs numériques, pas le commentaire
+                const currentBoOnly = this.normalizeNumericValue(item.boOnly);
+                const currentPartnerOnly = this.normalizeNumericValue(item.partnerOnly);
+                const currentMismatches = this.normalizeNumericValue(item.mismatches);
+                const currentTotalTransactions = this.normalizeNumericValue(item.totalTransactions);
+                
+                // Recalculer matches = totalTransactions - boOnly - partnerOnly - mismatches
+                const currentMatches = Math.max(0, currentTotalTransactions - currentBoOnly - currentPartnerOnly - currentMismatches);
+                item.matches = currentMatches;
+                
+                // Recalculer le taux
+                if (currentTotalTransactions > 0) {
+                    item.matchRate = (currentMatches / currentTotalTransactions) * 100;
+                } else {
+                    item.matchRate = 0;
+                }
+                
+                // Le commentaire reste inchangé quand le statut est OK
+                return;
             }
-            
-            // Mettre à jour le commentaire
-            item.comment = this.buildCommentForCounts(item.matches, currentBoOnly, currentPartnerOnly, 0, currentTotalTransactions);
-            
-            console.log(`🔒 onEcartChange: Ligne spéciale ${item.agency}/${item.service} - ${ecartType} modifié, matches=${item.matches}, commentaire=${item.comment}`);
-        } else {
-            // Pour les lignes normales : recalculer matches et mettre à jour le commentaire
-            // matches = totalTransactions - boOnly - partnerOnly - mismatches
-            const currentTotalTransactions = this.normalizeNumericValue(item.totalTransactions);
-            const currentMatches = Math.max(0, currentTotalTransactions - currentBoOnly - currentPartnerOnly - currentMismatches);
-            
-            item.matches = currentMatches;
-            
-            // Recalculer le taux
-            if (currentTotalTransactions > 0) {
-                item.matchRate = (currentMatches / currentTotalTransactions) * 100;
+
+            // Vérifier si c'est la ligne spéciale
+            const isSpecialLine = this.isPartnerOnlySpecialLine(item) || 
+                (item.agency === item.service && item.agency && item.service &&
+                 item.totalTransactions > 0 && item.mismatches === 0);
+
+            const currentBoOnly = this.normalizeNumericValue(item.boOnly);
+            const currentPartnerOnly = this.normalizeNumericValue(item.partnerOnly);
+            const currentMismatches = this.normalizeNumericValue(item.mismatches);
+
+            if (isSpecialLine) {
+                // Pour la ligne spéciale : totalTransactions ne change pas
+                // Recalculer matches = totalTransactions - boOnly - partnerOnly
+                const currentTotalTransactions = this.normalizeNumericValue(item.totalTransactions);
+                
+                item.matches = Math.max(0, currentTotalTransactions - currentBoOnly - currentPartnerOnly);
+                
+                // Recalculer le taux
+                if (currentTotalTransactions > 0) {
+                    item.matchRate = (item.matches / currentTotalTransactions) * 100;
+                } else {
+                    item.matchRate = 0;
+                }
+                
+                // Mettre à jour le commentaire
+                const newComment = this.buildCommentForCounts(item.matches, currentBoOnly, currentPartnerOnly, 0, currentTotalTransactions);
+                item.comment = newComment;
+                
+                // Forcer également la mise à jour dans reportData si l'item existe
+                const reportDataItem = this.reportData.find(r => r.id === item.id || (r.agency === item.agency && r.service === item.service && r.date === item.date));
+                if (reportDataItem) {
+                    reportDataItem.comment = newComment;
+                }
+                
+                console.log(`🔒 onEcartChange: Ligne spéciale ${item.agency}/${item.service} - ${ecartType} modifié, matches=${item.matches}, commentaire=${item.comment}`);
             } else {
-                item.matchRate = 0;
+                // Pour les lignes normales : recalculer matches et mettre à jour le commentaire
+                // matches = totalTransactions - boOnly - partnerOnly - mismatches
+                const currentTotalTransactions = this.normalizeNumericValue(item.totalTransactions);
+                const currentMatches = Math.max(0, currentTotalTransactions - currentBoOnly - currentPartnerOnly - currentMismatches);
+                
+                item.matches = currentMatches;
+                
+                // Recalculer le taux
+                if (currentTotalTransactions > 0) {
+                    item.matchRate = (currentMatches / currentTotalTransactions) * 100;
+                } else {
+                    item.matchRate = 0;
+                }
+                
+                // Mettre à jour le commentaire (toujours en mode édition, même pour les lignes "sété")
+                // Utiliser les valeurs normalisées pour garantir la cohérence
+                const commentBefore = item.comment;
+                const newComment = this.buildCommentForCounts(currentMatches, currentBoOnly, currentPartnerOnly, currentMismatches, currentTotalTransactions);
+                
+                // Forcer la mise à jour du commentaire directement
+                item.comment = newComment;
+                
+                // Forcer également la mise à jour dans reportData si l'item existe
+                const reportDataItem = this.reportData.find(r => r.id === item.id || (r.agency === item.agency && r.service === item.service && r.date === item.date));
+                if (reportDataItem) {
+                    reportDataItem.comment = newComment;
+                }
+                
+                console.log(`🔒 onEcartChange: Ligne normale ${item.agency}/${item.service} - ${ecartType} modifié`, {
+                    totalTransactions: currentTotalTransactions,
+                    matches: currentMatches,
+                    boOnly: currentBoOnly,
+                    partnerOnly: currentPartnerOnly,
+                    mismatches: currentMismatches,
+                    commentBefore: commentBefore,
+                    commentAfter: item.comment,
+                    updatedInReportData: !!reportDataItem
+                });
             }
-            
-            // Mettre à jour le commentaire (toujours en mode édition, même pour les lignes "sété")
-            item.comment = this.buildCommentForCounts(currentMatches, currentBoOnly, currentPartnerOnly, currentMismatches, currentTotalTransactions);
-            
-            console.log(`🔒 onEcartChange: Ligne normale ${item.agency}/${item.service} - ${ecartType} modifié, matches=${currentMatches}, commentaire=${item.comment}`);
+        } finally {
+            // Désactiver le flag après un délai pour permettre à Angular de terminer le cycle de détection
+            // Utiliser un délai plus long pour éviter que d'autres méthodes ne recalculent le commentaire
+            // Forcer la mise à jour du commentaire même si le flag est actif
+            setTimeout(() => {
+                // Vérifier que le commentaire a bien été mis à jour
+                if (item.status !== 'OK') {
+                    const finalBoOnly = this.normalizeNumericValue(item.boOnly);
+                    const finalPartnerOnly = this.normalizeNumericValue(item.partnerOnly);
+                    const finalMismatches = this.normalizeNumericValue(item.mismatches);
+                    const finalMatches = this.normalizeNumericValue(item.matches);
+                    const finalTotalTransactions = this.normalizeNumericValue(item.totalTransactions);
+                    
+                    // Recalculer le commentaire pour s'assurer qu'il est à jour
+                    const expectedComment = this.buildCommentForCounts(finalMatches, finalBoOnly, finalPartnerOnly, finalMismatches, finalTotalTransactions);
+                    if (item.comment !== expectedComment) {
+                        console.log(`🔒 onEcartChange: Correction du commentaire pour ${item.agency}/${item.service}`, {
+                            avant: item.comment,
+                            après: expectedComment
+                        });
+                        item.comment = expectedComment;
+                    }
+                }
+                
+                this.isManuallyEditingEcart = false;
+                console.log(`🔒 onEcartChange: Flag désactivé pour ${item.agency}/${item.service}`);
+            }, 300);
         }
     }
 
@@ -5057,6 +5313,12 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
     }
 
     private recalculateMatchRate(item: ReconciliationReportData, preserveComment: boolean = false) {
+        // Ne pas recalculer si l'utilisateur est en train de modifier manuellement les écarts
+        if (this.isManuallyEditingEcart) {
+            console.log(`🔒 recalculateMatchRate: Modification manuelle en cours - skip pour ${item.agency}/${item.service}`);
+            return;
+        }
+        
         // Ne pas recalculer la ligne spéciale des écarts partenaires
         if (this.isPartnerOnlySpecialLine(item)) {
             // Pour la ligne des écarts partenaires, FORCER toutes les valeurs correctes
@@ -5079,14 +5341,9 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             console.log(`🔍 recalculateMatchRate: ${item.agency}/${item.service} - partnerOnly avant=${item.partnerOnly}, normalisé=${partnerOnly}`);
         }
 
-        // Assurer la cohérence: totalTransactions = matches + boOnly + partnerOnly + mismatches
-        const calculatedTotal = matches + boOnly + partnerOnly + mismatches;
-        if (calculatedTotal > 0) {
-            // Si le total calculé diffère du totalTransactions, utiliser le total calculé
-            if (totalTransactions !== calculatedTotal) {
-                totalTransactions = calculatedTotal;
-            }
-        }
+        // NE PAS modifier totalTransactions - utiliser la valeur existante
+        // Seules les correspondances, les écarts et le taux de correspondance doivent être mis à jour
+        // totalTransactions reste inchangé
 
         if (totalTransactions > 0) {
             // Calculer l'écart Partenaire effectif en tenant compte des écarts BO déjà pris en compte
@@ -5112,8 +5369,8 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             matches = 0;
         }
 
-        // Réaffecter les valeurs recalculées
-        item.totalTransactions = totalTransactions;
+        // Réaffecter les valeurs recalculées (sans modifier totalTransactions)
+        // totalTransactions reste inchangé - seules les correspondances, écarts et taux sont mis à jour
         item.matches = matches;
         item.boOnly = boOnly;
         item.partnerOnly = partnerOnly;
@@ -5195,6 +5452,11 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
      * Pour la ligne spéciale (agency === service), retourne totalTransactions si partnerOnly a été modifié à 0.
      */
     getDisplayPartnerOnly(item: ReconciliationReportData): number {
+        // Si le statut est "OK", tous les écarts doivent être à 0
+        if (item.status === 'OK') {
+            return 0;
+        }
+        
         // Vérifier d'abord avec la méthode standard
         if (this.isPartnerOnlySpecialLine(item)) {
             const result = item.partnerOnly || 0;
@@ -5564,19 +5826,25 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         // Appliquer le changement de statut à toutes les lignes sélectionnées
         const savePromises = unlockedItems.map(async (item) => {
             const oldStatus = item.status;
+            const previousComment = item.comment ?? ''; // Sauvegarder le commentaire avant modification
             item.status = this.bulkStatusSelection;
             
             // Recalculer les données selon le nouveau statut
+            // Cette méthode préserve automatiquement le commentaire si le statut passe à OK
             const recalculatedData = this.recalculateDataBasedOnStatus(item);
+            
+            // Mettre à jour l'item avec les données recalculées (y compris le traitement et le commentaire préservé)
+            Object.assign(item, recalculatedData);
             
             try {
                 // Sauvegarder via l'API
-                await this.saveItemStatus(recalculatedData, oldStatus);
+                await this.saveItemStatus(item, oldStatus);
                 successCount++;
             } catch (error) {
                 errorCount++;
-                // Revenir à l'ancien statut en cas d'erreur
+                // Revenir à l'ancien statut et au commentaire précédent en cas d'erreur
                 item.status = oldStatus;
+                item.comment = previousComment;
                 console.error('❌ Erreur lors de la sauvegarde du statut:', error);
             }
         });
@@ -5686,8 +5954,21 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             // Pour le statut OK, recalculer les données selon le statut
             const recalculatedData = this.recalculateDataBasedOnStatus(item);
             
-            // Mettre à jour l'item avec les données recalculées
+            // PROTECTION ABSOLUE : Le commentaire ne doit JAMAIS être modifié quand le statut passe à OK
+            // Forcer explicitement le commentaire original avant l'assignation
+            recalculatedData.comment = previousComment;
+            
+            // Mettre à jour l'item avec les données recalculées (y compris le traitement)
             Object.assign(item, recalculatedData);
+            
+            // PROTECTION SUPPLÉMENTAIRE : S'assurer que le commentaire n'a pas été modifié après Object.assign
+            if (item.comment !== previousComment) {
+                console.warn(`⚠️ onStatusChange: Commentaire modifié détecté pour ${item.agency}/${item.service} - RESTAURATION du commentaire original`);
+                item.comment = previousComment;
+            }
+            
+            // Log pour vérifier que le traitement est bien mis à jour
+            console.log(`🔄 onStatusChange: Statut OK - traitement mis à jour à "${item.traitement}" pour ${item.agency}/${item.service}, commentaire préservé: "${item.comment}"`);
 
             // Si c'est une nouvelle ligne (pas d'ID), sauvegarder
             if (!item.id) {
