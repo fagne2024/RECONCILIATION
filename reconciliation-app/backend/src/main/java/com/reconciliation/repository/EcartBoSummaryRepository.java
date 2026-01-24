@@ -35,4 +35,6 @@ public interface EcartBoSummaryRepository extends JpaRepository<EcartBoSummaryEn
     
     @Query("SELECT e FROM EcartBoSummaryEntity e ORDER BY e.dateImport DESC")
     List<EcartBoSummaryEntity> findAllOrderByDateImportDesc();
+
+    List<EcartBoSummaryEntity> findByToken(String token);
 }

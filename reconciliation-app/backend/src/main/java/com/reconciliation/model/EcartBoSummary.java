@@ -14,7 +14,8 @@ public class EcartBoSummary {
     private LocalDateTime dateImport;
     private String commentaire;
     private String env;
-    
+    private String token;
+
     // Constructeurs
     public EcartBoSummary() {}
     
@@ -120,5 +121,13 @@ public class EcartBoSummary {
     
     public void setEnv(String env) {
         this.env = env;
+    }
+
+    public String getToken() {
+        return token;
+    }
+
+    public void setToken(String token) {
+        this.token = token;
     }
 }

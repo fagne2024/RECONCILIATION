@@ -10,6 +10,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 import java.util.Map;
+import java.util.HashMap;
 
 @RestController
 @RequestMapping("/api/ecart-bo-summary")
@@ -23,9 +24,10 @@ public class EcartBoSummaryController {
             @RequestParam(required = false) String agence,
             @RequestParam(required = false) String service,
             @RequestParam(required = false) String pays,
-            @RequestParam(required = false) String statut) {
+            @RequestParam(required = false) String statut,
+            @RequestParam(required = false) String token) {
         try {
-            List<EcartBoSummary> summaries = ecartBoSummaryService.getEcartBoSummaries(agence, service, pays, statut);
+            List<EcartBoSummary> summaries = ecartBoSummaryService.getEcartBoSummaries(agence, service, pays, statut, token);
             return ResponseEntity.ok(summaries);
         } catch (Exception e) {
             System.err.println("=== ERREUR getEcartBoSummaries (Controller) ===");
@@ -66,18 +68,30 @@ public class EcartBoSummaryController {
             System.out.println("=== DÉBUT saveEcartBoSummary (Controller) ===");
             System.out.println("DEBUG: Nombre de résumés reçus: " + summaryData.size());
             
-            int count = ecartBoSummaryService.saveEcartBoSummary(summaryData);
+            Map<String, Object> result = ecartBoSummaryService.saveEcartBoSummary(summaryData);
+            int count = (Integer) result.get("count");
+            int duplicates = (Integer) result.get("duplicates");
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> duplicateRecords = (List<Map<String, Object>>) result.get("duplicateRecords");
             
             System.out.println("DEBUG: Résultats finaux:");
             System.out.println("  - Résumés reçus: " + summaryData.size());
             System.out.println("  - Enregistrements créés: " + count);
+            System.out.println("  - Doublons détectés: " + duplicates);
             System.out.println("=== FIN saveEcartBoSummary (Controller) ===");
             
-            return ResponseEntity.status(HttpStatus.CREATED).body(Map.of(
-                "message", "Résumés sauvegardés avec succès",
-                "count", count,
-                "totalReceived", summaryData.size()
-            ));
+            Map<String, Object> response = new HashMap<>();
+            response.put("message", duplicates > 0 
+                ? String.format("Sauvegarde terminée: %d créé(s), %d doublon(s) détecté(s)", count, duplicates)
+                : "Résumés sauvegardés avec succès");
+            response.put("count", count);
+            response.put("totalReceived", summaryData.size());
+            response.put("duplicates", duplicates);
+            if (duplicates > 0) {
+                response.put("duplicateRecords", duplicateRecords);
+            }
+            
+            return ResponseEntity.status(HttpStatus.CREATED).body(response);
         } catch (Exception e) {
             System.err.println("=== ERREUR saveEcartBoSummary (Controller) ===");
             System.err.println("DEBUG: Exception: " + e.getMessage());

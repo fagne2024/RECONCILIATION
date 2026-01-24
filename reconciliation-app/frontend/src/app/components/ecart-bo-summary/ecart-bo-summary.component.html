@@ -36,6 +36,14 @@
       >
         ➕ Ajouter une ligne
       </button>
+      <button 
+        (click)="exportData()" 
+        class="export-button"
+        [disabled]="isExporting || filteredItems.length === 0"
+        title="Exporter les données filtrées en CSV"
+      >
+        {{ isExporting ? '⏳ Export en cours...' : '📥 Exporter' }}
+      </button>
     </div>
   </div>
 
@@ -43,12 +51,20 @@
   <div class="filters-section" style="flex-shrink: 0;">
     <div class="filter-row">
       <div class="filter-item">
-        <label>Recherche</label>
+        <label>Date du</label>
         <input 
-          type="text" 
-          [(ngModel)]="searchKey" 
-          (input)="onSearch()"
-          placeholder="Rechercher..."
+          type="date" 
+          [(ngModel)]="selectedDateFrom" 
+          (change)="applyFilters()"
+          class="filter-input"
+        >
+      </div>
+      <div class="filter-item">
+        <label>Date au</label>
+        <input 
+          type="date" 
+          [(ngModel)]="selectedDateTo" 
+          (change)="applyFilters()"
           class="filter-input"
         >
       </div>
@@ -74,6 +90,14 @@
         </select>
       </div>
       <div class="filter-item">
+        <label>ENV</label>
+        <select [(ngModel)]="selectedEnv" (change)="applyFilters()" class="filter-select">
+          <option value="">Tous</option>
+          <option value="BO">BO</option>
+          <option value="PARTENAIRE">PARTENAIRE</option>
+        </select>
+      </div>
+      <div class="filter-item">
         <label>Statut</label>
         <select [(ngModel)]="selectedStatut" (change)="applyFilters()" class="filter-select">
           <option value="">Tous</option>
@@ -82,20 +106,35 @@
         </select>
       </div>
       <div class="filter-item">
-        <label>Date du</label>
-        <input 
-          type="date" 
-          [(ngModel)]="selectedDateFrom" 
-          (change)="applyFilters()"
-          class="filter-input"
-        >
+        <label>Token</label>
+        <div class="filter-inline-token">
+          <input 
+            type="text" 
+            [(ngModel)]="selectedToken" 
+            (input)="applyFilters()"
+            (keyup.enter)="loadByToken()"
+            placeholder="Liaison BO/Partenaire..."
+            class="filter-input"
+            title="Filtrer par token (lien entre lignes BO et Partenaire OK)"
+          >
+          <button 
+            type="button" 
+            class="btn-search-token"
+            (click)="loadByToken()"
+            [disabled]="isLoading || !selectedToken?.trim()"
+            title="Recherche rapide par token (API)"
+          >
+            🔍
+          </button>
+        </div>
       </div>
       <div class="filter-item">
-        <label>Date au</label>
+        <label>Recherche</label>
         <input 
-          type="date" 
-          [(ngModel)]="selectedDateTo" 
-          (change)="applyFilters()"
+          type="text" 
+          [(ngModel)]="searchKey" 
+          (input)="onSearch()"
+          placeholder="Rechercher..."
           class="filter-input"
         >
       </div>
@@ -116,6 +155,7 @@
             <th>Service</th>
             <th>Pays</th>
             <th>ENV</th>
+            <th>Token</th>
             <th>Nombre</th>
             <th>Statut</th>
             <th>Actions</th>
@@ -128,6 +168,7 @@
             <td>{{ item.service || '-' }}</td>
             <td>{{ item.pays || '-' }}</td>
             <td>{{ item.env || 'BO' }}</td>
+            <td class="token-cell" [title]="item.token || 'Lien BO/Partenaire (recherche rapide)'">{{ getTokenDisplay(item.token) }}</td>
             <td class="nombre-cell">{{ item.nombre | number:'1.0-0' }}</td>
             <td class="statut-cell">
               <select 
@@ -160,7 +201,7 @@
             </td>
           </tr>
           <tr *ngIf="getPagedItems().length === 0">
-            <td colspan="7" class="no-data">Aucun écart BO trouvé</td>
+            <td colspan="9" class="no-data">Aucun écart BO trouvé</td>
           </tr>
         </tbody>
       </table>
@@ -315,6 +356,16 @@
             <option value="PARTENAIRE" selected>PARTENAIRE</option>
           </select>
         </div>
+        <div class="form-group">
+          <label>Token</label>
+          <input 
+            type="text" 
+            [(ngModel)]="addForm.token" 
+            class="form-control"
+            placeholder="Lien BO/Partenaire (optionnel)"
+            maxlength="64"
+          >
+        </div>
       </div>
       <div class="modal-footer">
         <button (click)="closeAddModal()" class="btn-cancel">Annuler</button>
@@ -408,6 +459,16 @@
             <option value="BO">BO</option>
             <option value="PARTENAIRE">PARTENAIRE</option>
           </select>
+        </div>
+        <div class="form-group">
+          <label>Token</label>
+          <input 
+            type="text" 
+            [(ngModel)]="editForm.token" 
+            class="form-control"
+            placeholder="Lien BO/Partenaire (recherche rapide)"
+            maxlength="64"
+          >
         </div>
       </div>
       <div class="modal-footer">

@@ -1,6 +1,7 @@
 import { Component, OnInit, OnDestroy, ChangeDetectorRef } from '@angular/core';
 import { Router } from '@angular/router';
 import { Subscription, firstValueFrom } from 'rxjs';
+import { finalize } from 'rxjs/operators';
 import { ReconciliationResponse } from '../../models/reconciliation-response.model';
 import { AppStateService } from '../../services/app-state.service';
 import { EcartBoSummaryService } from '../../services/ecart-bo-summary.service';
@@ -22,6 +23,7 @@ export interface EcartBoSummaryItem {
   isManual?: boolean; // Indique si la ligne a été créée manuellement
   commentaire?: string; // Commentaire pour identifier l'origine
   linkedId?: number; // ID de la ligne liée (paire BO/PARTENAIRE)
+  token?: string; // Lien entre lignes BO et PARTENAIRE (statut OK) pour recherche rapide
 }
 
 @Component({
@@ -48,9 +50,11 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
   selectedService: string = '';
   selectedPays: string = '';
   selectedStatut: string = '';
+  selectedEnv: string = '';
   selectedDateFrom: string = '';
   selectedDateTo: string = '';
-  
+  selectedToken: string = '';
+
   // Liste des valeurs uniques pour les filtres
   uniqueAgencies: string[] = [];
   uniqueServices: string[] = [];
@@ -60,6 +64,7 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
   isSaving = false;
   isDeleting = false;
   deletingItemId: number | null = null;
+  isExporting = false;
   
   // Édition
   showEditModal = false;
@@ -72,6 +77,7 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
     nombre: number;
     statut: 'ok' | 'en cours';
     env: 'BO' | 'PARTENAIRE';
+    token: string;
   } = {
     date: '',
     agence: '',
@@ -79,7 +85,8 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
     pays: '',
     nombre: 0,
     statut: 'en cours',
-    env: 'BO'
+    env: 'BO',
+    token: ''
   };
   isUpdating = false;
 
@@ -93,6 +100,7 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
     nombre: number;
     statut: 'ok' | 'en cours';
     env: 'BO' | 'PARTENAIRE';
+    token: string;
   } = {
     date: '',
     agence: '',
@@ -100,7 +108,8 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
     pays: '',
     nombre: 0,
     statut: 'en cours',
-      env: 'PARTENAIRE'
+    env: 'PARTENAIRE',
+    token: ''
   };
   isAdding = false;
 
@@ -127,6 +136,59 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
     );
   }
 
+  loadByToken(): void {
+    const t = this.selectedToken?.trim();
+    if (!t) {
+      this.popupService.showWarning('❌ Saisissez un token pour rechercher.');
+      return;
+    }
+    this.isLoading = true;
+    this.cdr.markForCheck();
+    this.ecartBoSummaryService.getEcartBoSummaries({ token: t }).pipe(
+      finalize(() => {
+        this.isLoading = false;
+        this.cdr.markForCheck();
+      })
+    ).subscribe({
+      next: (savedData) => {
+        this.applySavedDataToSummary(savedData);
+        this.filteredItems = [...this.summaryItems];
+        this.updatePagination();
+        this.popupService.showSuccess(`✅ ${this.summaryItems.length} ligne(s) trouvée(s) pour le token.`);
+      },
+      error: (err) => {
+        console.error('Erreur recherche par token:', err);
+        this.popupService.showError('❌ Erreur lors de la recherche par token.');
+      }
+    });
+  }
+
+  private applySavedDataToSummary(savedData: any[]): void {
+    this.summaryItems = savedData.map(item => {
+      const commentaire = item.commentaire || '';
+      const isManual = commentaire.includes('Ajout manuel') || commentaire.includes('ajout manuel');
+      return {
+        id: item.id,
+        date: item.dateTransaction || '',
+        agence: item.agence || 'Non spécifié',
+        service: item.service || 'Non spécifié',
+        pays: item.pays || 'Non spécifié',
+        nombre: item.nombreTransactions || 0,
+        montant: item.montantTotal || 0,
+        statut: (item.statut === 'OK' ? 'ok' : 'en cours') as 'ok' | 'en cours',
+        env: (item.env === 'BO' ? 'BO' : (item.env === 'PARTENAIRE' ? 'PARTENAIRE' : 'BO')) as 'BO' | 'PARTENAIRE',
+        originalRecords: [],
+        isManual,
+        commentaire,
+        token: item.token || undefined
+      };
+    });
+    this.uniqueAgencies = [...new Set(this.summaryItems.map(i => i.agence).filter(Boolean))].sort();
+    this.uniqueServices = [...new Set(this.summaryItems.map(i => i.service).filter(Boolean))].sort();
+    this.uniquePays = [...new Set(this.summaryItems.map(i => i.pays).filter(Boolean))].sort();
+    this.linkMatchingPairs();
+  }
+
   loadSavedSummaryData(): void {
     this.isLoading = true;
     this.cdr.markForCheck();
@@ -134,35 +196,7 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
     this.ecartBoSummaryService.getEcartBoSummaries().subscribe({
       next: (savedData) => {
         console.log('Données sauvegardées chargées:', savedData);
-        
-        this.summaryItems = savedData.map(item => {
-          const commentaire = item.commentaire || '';
-          const isManual = commentaire.includes('Ajout manuel') || commentaire.includes('ajout manuel');
-          
-          return {
-            id: item.id, // ID pour pouvoir mettre à jour
-            date: item.dateTransaction || '',
-            agence: item.agence || 'Non spécifié',
-            service: item.service || 'Non spécifié',
-            pays: item.pays || 'Non spécifié',
-            nombre: item.nombreTransactions || 0,
-            montant: item.montantTotal || 0,
-            statut: (item.statut === 'OK' ? 'ok' : 'en cours') as 'ok' | 'en cours',
-            env: (item.env === 'BO' ? 'BO' : (item.env === 'PARTENAIRE' ? 'PARTENAIRE' : 'BO')) as 'BO' | 'PARTENAIRE',
-            originalRecords: [], // Les enregistrements originaux ne sont plus disponibles après sauvegarde
-            isManual: isManual,
-            commentaire: commentaire
-          };
-        });
-
-        // Extraire les valeurs uniques pour les filtres
-        this.uniqueAgencies = [...new Set(this.summaryItems.map(item => item.agence).filter(a => a))].sort();
-        this.uniqueServices = [...new Set(this.summaryItems.map(item => item.service).filter(s => s))].sort();
-        this.uniquePays = [...new Set(this.summaryItems.map(item => item.pays).filter(p => p))].sort();
-
-        // Lier les paires correspondantes (BO/PARTENAIRE) et mettre à jour les statuts
-        this.linkMatchingPairs();
-
+        this.applySavedDataToSummary(savedData);
         this.filteredItems = [...this.summaryItems];
         this.updatePagination();
         this.isLoading = false;
@@ -259,11 +293,12 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
         agence: group.agence,
         service: group.service,
         pays: group.pays,
-        nombre: group.records.length, // Nombre de lignes/transactions
-        montant: group.totalMontant, // Montant total (pour référence)
+        nombre: group.records.length,
+        montant: group.totalMontant,
         statut: 'en cours' as 'ok' | 'en cours',
-        env: 'BO' as 'BO' | 'PARTENAIRE', // Par défaut BO pour les données de réconciliation
-        originalRecords: group.records
+        env: 'BO' as 'BO' | 'PARTENAIRE',
+        originalRecords: group.records,
+        token: undefined
       }));
 
       // Lier les paires correspondantes (BO/PARTENAIRE) et mettre à jour les statuts
@@ -292,14 +327,22 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
     // Filtre par recherche textuelle
     if (this.searchKey && this.searchKey.trim()) {
       const searchTerm = this.searchKey.toLowerCase().trim();
-      filtered = filtered.filter(item => 
+      filtered = filtered.filter(item =>
         item.date.toLowerCase().includes(searchTerm) ||
         item.agence.toLowerCase().includes(searchTerm) ||
         item.service.toLowerCase().includes(searchTerm) ||
         item.pays.toLowerCase().includes(searchTerm) ||
         item.statut.toLowerCase().includes(searchTerm) ||
-        item.nombre.toString().includes(searchTerm)
+        (item.env || '').toLowerCase().includes(searchTerm) ||
+        item.nombre.toString().includes(searchTerm) ||
+        (item.token || '').toLowerCase().includes(searchTerm)
       );
+    }
+
+    // Filtre par token (recherche rapide liaison BO / Partenaire)
+    if (this.selectedToken && this.selectedToken.trim()) {
+      const tokenTerm = this.selectedToken.trim().toLowerCase();
+      filtered = filtered.filter(item => (item.token || '').toLowerCase().includes(tokenTerm));
     }
 
     // Filtre par agence
@@ -320,6 +363,11 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
     // Filtre par statut
     if (this.selectedStatut) {
       filtered = filtered.filter(item => item.statut === this.selectedStatut);
+    }
+
+    // Filtre par environnement (ENV)
+    if (this.selectedEnv) {
+      filtered = filtered.filter(item => item.env === this.selectedEnv);
     }
 
     // Filtre par date (du - au)
@@ -411,22 +459,20 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
             const diffCalendarDays = Math.abs(day1 - day2);
             
             if (diffCalendarDays <= 1) {
-              // Les lignes correspondent : les lier et mettre à jour les statuts
               item1.linkedId = item2.id;
               item2.linkedId = item1.id;
-              
-              // Mettre les statuts à "OK"
-              if (item1.statut !== 'ok') {
-                item1.statut = 'ok';
-                itemsToUpdate.push(item1);
-              }
-              if (item2.statut !== 'ok') {
-                item2.statut = 'ok';
-                itemsToUpdate.push(item2);
-              }
-              
-              console.log(`✅ Lignes liées: ${item1.id} (${item1.env}) <-> ${item2.id} (${item2.env})`);
-              break; // Ne pas chercher d'autres correspondances pour item1
+              const linkToken = (item1.token && item2.token && item1.token === item2.token)
+                ? item1.token
+                : `LINK-${Date.now()}-${item1.id}-${item2.id}`;
+              item1.token = linkToken;
+              item2.token = linkToken;
+
+              if (item1.statut !== 'ok') item1.statut = 'ok';
+              if (item2.statut !== 'ok') item2.statut = 'ok';
+              itemsToUpdate.push(item1, item2);
+
+              console.log(`✅ Lignes liées: ${item1.id} (${item1.env}) <-> ${item2.id} (${item2.env}) token=${linkToken}`);
+              break;
             }
           }
         }
@@ -485,24 +531,24 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
       
       console.log(`📊 Résultat pour PARTENAIRE ${partenaireItem.id}: ${matchingBoItems.length} ligne(s) BO trouvée(s), Total nombre=${totalNombre}, Attendu=${partenaireItem.nombre}`);
       
-      // Si la somme des nombres des lignes BO correspond au nombre de la ligne PARTENAIRE
       if (matchingBoItems.length > 0 && totalNombre === partenaireItem.nombre) {
-        // Marquer toutes les lignes comme "ok"
-        if (partenaireItem.statut !== 'ok') {
-          partenaireItem.statut = 'ok';
-          itemsToUpdate.push(partenaireItem);
-        }
-        
+        const boIds = matchingBoItems.map(i => i.id).join('-');
+        const existing = partenaireItem.token && matchingBoItems.every(b => b.token === partenaireItem.token)
+          ? partenaireItem.token
+          : null;
+        const linkToken = existing || `LINK-${Date.now()}-P${partenaireItem.id}-B${boIds}`;
+        partenaireItem.token = linkToken;
+        if (partenaireItem.statut !== 'ok') partenaireItem.statut = 'ok';
+        itemsToUpdate.push(partenaireItem);
+
         for (const boItem of matchingBoItems) {
-          if (boItem.statut !== 'ok') {
-            boItem.statut = 'ok';
-            itemsToUpdate.push(boItem);
-          }
-          // Marquer cette ligne BO comme utilisée pour éviter les doublons
-          usedBoItemIds.add(boItem.id);
+          boItem.token = linkToken;
+          if (boItem.statut !== 'ok') boItem.statut = 'ok';
+          itemsToUpdate.push(boItem);
+          usedBoItemIds.add(boItem.id!);
         }
-        
-        console.log(`✅ Correspondance un-à-plusieurs: ${partenaireItem.id} (PARTENAIRE) <-> ${matchingBoItems.length} ligne(s) BO (${matchingBoItems.map(i => i.id).join(', ')})`);
+
+        console.log(`✅ Correspondance un-à-plusieurs: ${partenaireItem.id} (PARTENAIRE) <-> ${matchingBoItems.length} ligne(s) BO (${boIds}) token=${linkToken}`);
       } else if (matchingBoItems.length > 0) {
         console.log(`⚠️ Correspondance partielle trouvée mais total ne correspond pas: ${totalNombre} ≠ ${partenaireItem.nombre}`);
       }
@@ -563,10 +609,7 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
    * Avec debounce et gestion du rate limiting
    */
   private async updateLinkedItemsStatus(items: EcartBoSummaryItem[]): Promise<void> {
-    // Filtrer uniquement les items avec un ID valide et qui ne sont pas déjà "ok"
-    const validItems = items.filter(item => 
-      item.id && item.id > 0 && item.statut !== 'ok'
-    );
+    const validItems = items.filter(item => item.id && item.id > 0);
     
     if (validItems.length === 0) {
       return; // Aucun item valide à mettre à jour
@@ -639,12 +682,15 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
         statut: 'OK',
         env: item.env || 'BO'
       };
-      
+      if (item.token) {
+        updateData.token = item.token;
+      }
+
       await firstValueFrom(
         this.ecartBoSummaryService.updateEcartBoSummary(item.id, updateData)
       );
-      
-      console.log(`✅ Statut mis à jour pour la ligne ${item.id}`);
+
+      console.log(`✅ Statut${item.token ? ' et token' : ''} mis à jour pour la ligne ${item.id}`);
     } catch (error: any) {
       // Gérer l'erreur 429 (Too Many Requests) avec retry
       if (error.status === 429 && retryCount < maxRetries) {
@@ -744,8 +790,10 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
     this.selectedService = '';
     this.selectedPays = '';
     this.selectedStatut = '';
+    this.selectedEnv = '';
     this.selectedDateFrom = '';
     this.selectedDateTo = '';
+    this.selectedToken = '';
     this.applyFilters();
   }
 
@@ -757,6 +805,20 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
     return statut === 'ok' ? 'statut-ok' : 'statut-en-cours';
   }
 
+  /**
+   * Affiche uniquement la partie timestamp du token (ex. LINK-1769214369692-1-2 → 1769214369692).
+   * Si le token n'est pas au format LINK-*, on affiche le token complet.
+   */
+  getTokenDisplay(token: string | undefined): string {
+    if (!token || !token.trim()) return '-';
+    const t = token.trim();
+    if (t.startsWith('LINK-')) {
+      const parts = t.split('-');
+      return parts[1] ?? t;
+    }
+    return t;
+  }
+
   openEditModal(item: EcartBoSummaryItem): void {
     this.editingItem = item;
     this.editForm = {
@@ -766,7 +828,8 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
       pays: item.pays || '',
       nombre: item.nombre || 0,
       statut: item.statut || 'en cours',
-      env: item.env || 'BO'
+      env: item.env || 'BO',
+      token: item.token || ''
     };
     this.showEditModal = true;
     this.cdr.markForCheck();
@@ -775,6 +838,7 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
   closeEditModal(): void {
     this.showEditModal = false;
     this.editingItem = null;
+    this.editForm = { date: '', agence: '', service: '', pays: '', nombre: 0, statut: 'en cours', env: 'BO', token: '' };
     this.cdr.markForCheck();
   }
 
@@ -816,20 +880,23 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
           service: this.editForm.service,
           pays: this.editForm.pays,
           nombreTransactions: this.editForm.nombre,
-          montantTotal: this.editingItem.montant, // Conserver le montant existant
+          montantTotal: this.editingItem.montant,
           statut: this.editForm.statut === 'ok' ? 'OK' : 'EN_COURS',
           env: this.editForm.env || 'BO'
         };
+        if (this.editForm.token !== undefined) {
+          updatedData.token = this.editForm.token && this.editForm.token.trim() ? this.editForm.token.trim() : null;
+        }
 
         const updated = await firstValueFrom(this.ecartBoSummaryService.updateEcartBoSummary(this.editingItem.id, updatedData));
         
-        // Mettre à jour l'item local avec les données retournées
         this.editingItem.date = updated.dateTransaction || this.editForm.date;
         this.editingItem.agence = updated.agence || this.editForm.agence;
         this.editingItem.service = updated.service || this.editForm.service;
         this.editingItem.pays = updated.pays || this.editForm.pays;
         this.editingItem.nombre = updated.nombreTransactions || this.editForm.nombre;
         this.editingItem.statut = (updated.statut === 'OK' ? 'ok' : 'en cours') as 'ok' | 'en cours';
+        this.editingItem.token = updated.token || undefined;
         
         // Mettre à jour aussi dans summaryItems
         const index = this.summaryItems.findIndex(item => item.id === this.editingItem!.id);
@@ -978,7 +1045,40 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
       }));
 
       const result = await this.ecartBoSummaryService.saveEcartBoSummary(formattedData);
-      this.popupService.showSuccess(`✅ ${result.count} résumé(s) sauvegardé(s) avec succès !`);
+      
+      // Construire le message de résultat avec les informations sur les doublons
+      if (result.duplicates > 0) {
+        let message = `⚠️ DOUBLONS DÉTECTÉS LORS DE LA SAUVEGARDE\n\n`;
+        message += `📊 Résumé:\n`;
+        message += `  ✅ Enregistrements créés: ${result.count}\n`;
+        message += `  ❌ Doublons détectés: ${result.duplicates}\n`;
+        message += `  📥 Total reçu: ${result.totalReceived}\n\n`;
+        message += `📋 DÉTAILS DES DOUBLONS:\n`;
+        message += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+        
+        if (result.duplicateRecords && result.duplicateRecords.length > 0) {
+          result.duplicateRecords.forEach((dup, index) => {
+            message += `${index + 1}. ${dup.message}\n`;
+            if (index < result.duplicateRecords.length - 1) {
+              message += `\n`;
+            }
+          });
+        }
+        
+        message += `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+        message += `ℹ️ Les doublons sont détectés sur la base de:\n`;
+        message += `   • Date de transaction\n`;
+        message += `   • Agence\n`;
+        message += `   • Service\n`;
+        message += `   • Pays\n`;
+        message += `   • Nombre de transactions`;
+        
+        // Afficher un message d'avertissement avec les détails
+        await this.popupService.showWarning(message, '⚠️ Doublons détectés');
+      } else {
+        const message = `✅ ${result.count} résumé(s) sauvegardé(s) avec succès !`;
+        await this.popupService.showSuccess(message);
+      }
       
       // Optionnel: recharger les données sauvegardées après la sauvegarde
       // this.loadSavedSummaryData();
@@ -994,7 +1094,6 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
   }
 
   openAddModal(): void {
-    // Initialiser le formulaire avec la date du jour
     const today = new Date();
     this.addForm = {
       date: today.toISOString().split('T')[0],
@@ -1003,7 +1102,8 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
       pays: '',
       nombre: 0,
       statut: 'en cours',
-      env: 'PARTENAIRE' // Prérempli avec PARTENAIRE pour le formulaire
+      env: 'PARTENAIRE',
+      token: ''
     };
     this.showAddModal = true;
     this.cdr.markForCheck();
@@ -1018,7 +1118,8 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
       pays: '',
       nombre: 0,
       statut: 'en cours',
-      env: 'PARTENAIRE'
+      env: 'PARTENAIRE',
+      token: ''
     };
     this.cdr.markForCheck();
   }
@@ -1059,9 +1160,12 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
         nombreTransactions: this.addForm.nombre,
         montantTotal: 0,
         statut: this.addForm.statut === 'ok' ? 'OK' : 'EN_COURS',
-        env: this.addForm.env || 'PARTENAIRE', // PARTENAIRE pour le formulaire
+        env: this.addForm.env || 'PARTENAIRE',
         commentaire: `Ajout manuel - ${this.addForm.nombre} transaction(s)`
       };
+      if (this.addForm.token && this.addForm.token.trim()) {
+        summaryData.token = this.addForm.token.trim();
+      }
 
       // Sauvegarder en base de données
       await firstValueFrom(this.ecartBoSummaryService.createEcartBoSummary(summaryData));
@@ -1124,6 +1228,85 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
     } finally {
       this.isDeleting = false;
       this.deletingItemId = null;
+      this.cdr.markForCheck();
+    }
+  }
+
+  /**
+   * Exporte les données filtrées en CSV
+   */
+  exportData(): void {
+    if (this.filteredItems.length === 0) {
+      this.popupService.showWarning('❌ Aucune donnée à exporter.');
+      return;
+    }
+
+    this.isExporting = true;
+    this.cdr.markForCheck();
+
+    try {
+      const columns = ['Date', 'Agence', 'Service', 'Pays', 'ENV', 'Token', 'Nombre', 'Statut', 'Montant'];
+      
+      // Fonction pour échapper les valeurs CSV
+      const escapeCsvValue = (value: any): string => {
+        if (value === null || value === undefined) {
+          return '';
+        }
+        const str = String(value);
+        if (str.includes(';') || str.includes('"') || str.includes('\n')) {
+          return `"${str.replace(/"/g, '""')}"`;
+        }
+        return str;
+      };
+
+      // Créer les lignes CSV
+      const csvRows: string[] = [];
+      
+      // En-têtes
+      csvRows.push(columns.map(col => escapeCsvValue(col)).join(';'));
+      
+      // Données
+      for (const item of this.filteredItems) {
+        const row = [
+          item.date || '',
+          item.agence || '',
+          item.service || '',
+          item.pays || '',
+          item.env || 'BO',
+          item.token || '',
+          item.nombre || 0,
+          item.statut || 'en cours',
+          item.montant || 0
+        ];
+        csvRows.push(row.map(val => escapeCsvValue(val)).join(';'));
+      }
+
+      // Créer le contenu CSV
+      const csvContent = csvRows.join('\r\n');
+      
+      // Générer le nom de fichier avec la date actuelle
+      const now = new Date();
+      const dateStr = now.toISOString().split('T')[0].replace(/-/g, '');
+      const timeStr = now.toTimeString().split(' ')[0].replace(/:/g, '');
+      const fileName = `ecart-bo-summary_${dateStr}_${timeStr}.csv`;
+      
+      // Créer et télécharger le fichier
+      const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' }); // BOM pour Excel
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      
+      this.popupService.showSuccess(`✅ Export réussi: ${fileName} (${this.filteredItems.length} ligne(s))`);
+    } catch (error: any) {
+      console.error('Erreur lors de l\'export:', error);
+      this.popupService.showError(`❌ Erreur lors de l'export: ${error.message || 'Erreur inconnue'}`);
+    } finally {
+      this.isExporting = false;
       this.cdr.markForCheck();
     }
   }

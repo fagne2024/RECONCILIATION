@@ -11,6 +11,8 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.Map;
+import java.util.HashMap;
 import java.util.stream.Collectors;
 import java.util.Optional;
 
@@ -31,10 +33,12 @@ public class EcartBoSummaryService {
                 .map(this::convertToModel);
     }
     
-    public List<EcartBoSummary> getEcartBoSummaries(String agence, String service, String pays, String statut) {
+    public List<EcartBoSummary> getEcartBoSummaries(String agence, String service, String pays, String statut, String token) {
         List<EcartBoSummaryEntity> entities;
-        
-        if (agence != null && service != null && pays != null) {
+
+        if (token != null && !token.trim().isEmpty()) {
+            entities = ecartBoSummaryRepository.findByToken(token.trim());
+        } else if (agence != null && service != null && pays != null) {
             entities = ecartBoSummaryRepository.findByAgenceAndServiceAndPays(agence, service, pays);
         } else if (agence != null) {
             entities = ecartBoSummaryRepository.findByAgence(agence);
@@ -47,25 +51,26 @@ public class EcartBoSummaryService {
         } else {
             entities = ecartBoSummaryRepository.findAllOrderByDateImportDesc();
         }
-        
-        // Filtrer par statut si spécifié
-        if (statut != null && (agence == null && service == null && pays == null)) {
+
+        // Filtrer par statut si spécifié (et pas de filtre token)
+        if (statut != null && (agence == null && service == null && pays == null) && (token == null || token.trim().isEmpty())) {
             entities = entities.stream()
                     .filter(e -> statut.equals(e.getStatut()))
                     .collect(Collectors.toList());
         }
-        
+
         return entities.stream()
                 .map(this::convertToModel)
                 .collect(Collectors.toList());
     }
     
     @Transactional
-    public int saveEcartBoSummary(List<EcartBoSummaryDTO> summaryData) {
+    public java.util.Map<String, Object> saveEcartBoSummary(List<EcartBoSummaryDTO> summaryData) {
         System.out.println("=== DÉBUT saveEcartBoSummary ===");
         System.out.println("DEBUG: Nombre de résumés à sauvegarder: " + summaryData.size());
         
         List<EcartBoSummaryEntity> entitiesToSave = new java.util.ArrayList<>();
+        List<Map<String, Object>> duplicateRecords = new java.util.ArrayList<>();
         DateTimeFormatter formatter = DateTimeFormatter.ISO_DATE_TIME;
         
         for (EcartBoSummaryDTO summary : summaryData) {
@@ -93,20 +98,61 @@ public class EcartBoSummaryService {
                 final String finalAgence = summary.getAgence();
                 final String finalService = summary.getService();
                 final String finalPays = summary.getPays();
+                final Integer finalNombreTransactions = summary.getNombreTransactions() != null ? summary.getNombreTransactions() : 0;
 
                 // Vérifier si un enregistrement similaire existe déjà
                 List<EcartBoSummaryEntity> existing = ecartBoSummaryRepository.findByAgenceAndServiceAndPays(
                     finalAgence, finalService, finalPays);
                 
-                // Vérifier si c'est un doublon exact (même date, agence, service, pays)
-                boolean isDuplicate = existing.stream().anyMatch(e -> 
-                    e.getDateTransaction().toLocalDate().equals(finalDateTransaction.toLocalDate()) &&
-                    (finalStatut == null || finalStatut.equals(e.getStatut()))
-                );
+                // Vérifier si c'est un doublon exact (même date, agence, service, pays et nombre de transactions)
+                EcartBoSummaryEntity duplicateEntity = existing.stream()
+                    .filter(e -> 
+                        e.getDateTransaction().toLocalDate().equals(finalDateTransaction.toLocalDate()) &&
+                        e.getNombreTransactions() != null && 
+                        e.getNombreTransactions().equals(finalNombreTransactions)
+                    )
+                    .findFirst()
+                    .orElse(null);
                 
-                if (isDuplicate) {
-                    System.out.println("DEBUG: Enregistrement déjà existant pour: " + 
-                        finalAgence + " - " + finalService + " - " + finalPays);
+                if (duplicateEntity != null) {
+                    String duplicateMessage = String.format(
+                        "❌ DOUBLON DÉTECTÉ: Un enregistrement identique existe déjà dans la base de données!\n" +
+                        "   📋 Détails du doublon (Date, Agence, Service, Pays, Nombre):\n" +
+                        "   • Date de transaction: %s\n" +
+                        "   • Agence: %s\n" +
+                        "   • Service: %s\n" +
+                        "   • Pays: %s\n" +
+                        "   • Nombre de transactions: %d\n" +
+                        "   • Statut existant: %s\n" +
+                        "   • Montant total existant: %.2f\n" +
+                        "   • Date d'import existante: %s\n" +
+                        "   • ID de l'enregistrement existant: %d\n" +
+                        "   ⚠️ Cet enregistrement ne sera pas sauvegardé pour éviter les doublons.",
+                        finalDateTransaction.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")),
+                        finalAgence,
+                        finalService,
+                        finalPays,
+                        finalNombreTransactions,
+                        duplicateEntity.getStatut() != null ? duplicateEntity.getStatut() : "N/A",
+                        duplicateEntity.getMontantTotal(),
+                        duplicateEntity.getDateImport() != null ? 
+                            duplicateEntity.getDateImport().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")) : "N/A",
+                        duplicateEntity.getId()
+                    );
+                    
+                    System.out.println("DEBUG: " + duplicateMessage);
+                    
+                    Map<String, Object> duplicateInfo = new HashMap<>();
+                    duplicateInfo.put("agence", finalAgence);
+                    duplicateInfo.put("service", finalService);
+                    duplicateInfo.put("pays", finalPays);
+                    duplicateInfo.put("dateTransaction", finalDateTransaction.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
+                    duplicateInfo.put("statut", finalStatut);
+                    duplicateInfo.put("montant", summary.getMontant());
+                    duplicateInfo.put("nombreTransactions", summary.getNombreTransactions());
+                    duplicateInfo.put("message", duplicateMessage);
+                    duplicateInfo.put("idExistant", duplicateEntity.getId());
+                    duplicateRecords.add(duplicateInfo);
                     continue;
                 }
 
@@ -124,9 +170,12 @@ public class EcartBoSummaryService {
                 if (summary.getCommentaire() != null && !summary.getCommentaire().trim().isEmpty()) {
                     entity.setCommentaire(summary.getCommentaire());
                 } else {
-                    entity.setCommentaire("Résumé des écarts BO - " + 
-                        (summary.getNombreTransactions() != null ? summary.getNombreTransactions() : 0) + 
+                    entity.setCommentaire("Résumé des écarts BO - " +
+                        (summary.getNombreTransactions() != null ? summary.getNombreTransactions() : 0) +
                         " transaction(s)");
+                }
+                if (summary.getToken() != null && !summary.getToken().trim().isEmpty()) {
+                    entity.setToken(summary.getToken().trim());
                 }
                 entity.setDateImport(LocalDateTime.now());
 
@@ -140,32 +189,65 @@ public class EcartBoSummaryService {
         }
 
         // Sauvegarder tous les enregistrements
+        int savedCount = 0;
         if (!entitiesToSave.isEmpty()) {
             List<EcartBoSummaryEntity> savedEntities = ecartBoSummaryRepository.saveAll(entitiesToSave);
-            System.out.println("DEBUG: " + savedEntities.size() + " résumé(s) sauvegardé(s) avec succès");
-            System.out.println("=== FIN saveEcartBoSummary ===");
-            return savedEntities.size();
+            savedCount = savedEntities.size();
+            System.out.println("DEBUG: " + savedCount + " résumé(s) sauvegardé(s) avec succès");
         }
 
-        System.out.println("=== FIN saveEcartBoSummary - Aucun enregistrement à sauvegarder ===");
-        return 0;
+        Map<String, Object> result = new HashMap<>();
+        result.put("count", savedCount);
+        result.put("totalReceived", summaryData.size());
+        result.put("duplicates", duplicateRecords.size());
+        result.put("duplicateRecords", duplicateRecords);
+        
+        if (duplicateRecords.isEmpty()) {
+            System.out.println("=== FIN saveEcartBoSummary ===");
+        } else {
+            System.out.println("=== FIN saveEcartBoSummary - " + duplicateRecords.size() + " doublon(s) détecté(s) ===");
+        }
+        
+        return result;
     }
     
     @Transactional
     public EcartBoSummary updateEcartBoSummary(Long id, EcartBoSummary ecartBoSummary) {
         EcartBoSummaryEntity entity = ecartBoSummaryRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Résumé d'écart BO non trouvé"));
-        
-        entity.setDateTransaction(ecartBoSummary.getDateTransaction());
-        entity.setAgence(ecartBoSummary.getAgence());
-        entity.setService(ecartBoSummary.getService());
-        entity.setPays(ecartBoSummary.getPays());
-        entity.setNombreTransactions(ecartBoSummary.getNombreTransactions());
-        entity.setMontantTotal(ecartBoSummary.getMontantTotal());
-        entity.setStatut(ecartBoSummary.getStatut());
-        entity.setCommentaire(ecartBoSummary.getCommentaire());
-        entity.setEnv(ecartBoSummary.getEnv() != null && !ecartBoSummary.getEnv().trim().isEmpty() ? ecartBoSummary.getEnv() : "BO");
-        
+
+        // Mise à jour partielle : ne modifier que les champs fournis (non null)
+        if (ecartBoSummary.getDateTransaction() != null) {
+            entity.setDateTransaction(ecartBoSummary.getDateTransaction());
+        }
+        if (ecartBoSummary.getAgence() != null) {
+            entity.setAgence(ecartBoSummary.getAgence());
+        }
+        if (ecartBoSummary.getService() != null) {
+            entity.setService(ecartBoSummary.getService());
+        }
+        if (ecartBoSummary.getPays() != null) {
+            entity.setPays(ecartBoSummary.getPays());
+        }
+        if (ecartBoSummary.getNombreTransactions() != null) {
+            entity.setNombreTransactions(ecartBoSummary.getNombreTransactions());
+        }
+        if (ecartBoSummary.getMontantTotal() != null) {
+            entity.setMontantTotal(ecartBoSummary.getMontantTotal());
+        }
+        if (ecartBoSummary.getStatut() != null) {
+            entity.setStatut(ecartBoSummary.getStatut());
+        }
+        if (ecartBoSummary.getCommentaire() != null) {
+            entity.setCommentaire(ecartBoSummary.getCommentaire());
+        }
+        if (ecartBoSummary.getEnv() != null && !ecartBoSummary.getEnv().trim().isEmpty()) {
+            entity.setEnv(ecartBoSummary.getEnv().trim());
+        }
+        if (ecartBoSummary.getToken() != null) {
+            entity.setToken(ecartBoSummary.getToken().trim().isEmpty() ? null : ecartBoSummary.getToken().trim());
+        }
+
         entity = ecartBoSummaryRepository.save(entity);
         return convertToModel(entity);
     }
@@ -205,6 +287,7 @@ public class EcartBoSummaryService {
         model.setDateImport(entity.getDateImport());
         model.setCommentaire(entity.getCommentaire());
         model.setEnv(entity.getEnv() != null ? entity.getEnv() : "BO");
+        model.setToken(entity.getToken());
         return model;
     }
 }

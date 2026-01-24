@@ -14,6 +14,7 @@ export interface EcartBoSummary {
   dateImport?: string;
   commentaire?: string;
   env?: string;
+  token?: string;
 }
 
 export interface EcartBoSummaryFilter {
@@ -21,6 +22,7 @@ export interface EcartBoSummaryFilter {
   service?: string;
   pays?: string;
   statut?: string;
+  token?: string;
 }
 
 @Injectable({
@@ -33,7 +35,7 @@ export class EcartBoSummaryService {
 
   getEcartBoSummaries(filter?: EcartBoSummaryFilter): Observable<EcartBoSummary[]> {
     let params = new HttpParams();
-    
+
     if (filter) {
       if (filter.agence) {
         params = params.set('agence', filter.agence);
@@ -46,6 +48,9 @@ export class EcartBoSummaryService {
       }
       if (filter.statut) {
         params = params.set('statut', filter.statut);
+      }
+      if (filter.token) {
+        params = params.set('token', filter.token);
       }
     }
 
@@ -67,6 +72,19 @@ export class EcartBoSummaryService {
   }>): Promise<{
     count: number;
     message: string;
+    totalReceived: number;
+    duplicates: number;
+    duplicateRecords?: Array<{
+      agence: string;
+      service: string;
+      pays: string;
+      dateTransaction: string;
+      statut: string;
+      montant: number;
+      nombreTransactions: number;
+      message: string;
+      idExistant: number;
+    }>;
   }> {
     return new Promise((resolve, reject) => {
       this.http.post<any>(this.apiUrl, summaryData).subscribe({
@@ -75,7 +93,10 @@ export class EcartBoSummaryService {
           console.log('DEBUG: Réponse complète:', response);
           resolve({
             count: response.count || 0,
-            message: response.message || 'Données sauvegardées avec succès'
+            message: response.message || 'Données sauvegardées avec succès',
+            totalReceived: response.totalReceived || summaryData.length,
+            duplicates: response.duplicates || 0,
+            duplicateRecords: response.duplicateRecords || []
           });
         },
         error: (error) => {
@@ -108,7 +129,7 @@ export class EcartBoSummaryService {
   }
 
   createEcartBoSummary(summary: EcartBoSummary): Observable<any> {
-    const dto = {
+    const dto: any = {
       agence: summary.agence,
       service: summary.service,
       pays: summary.pays,
@@ -119,6 +140,9 @@ export class EcartBoSummaryService {
       commentaire: summary.commentaire || '',
       env: summary.env || 'BO'
     };
+    if (summary.token) {
+      dto.token = summary.token;
+    }
     return this.http.post<any>(this.apiUrl, [dto]);
   }
 }

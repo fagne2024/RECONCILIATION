@@ -10,6 +10,7 @@ public class EcartBoSummaryDTO {
     private Integer nombreTransactions;
     private String commentaire;
     private String env;
+    private String token;
 
     // Constructeurs
     public EcartBoSummaryDTO() {}
@@ -95,5 +96,13 @@ public class EcartBoSummaryDTO {
     
     public void setEnv(String env) {
         this.env = env;
+    }
+
+    public String getToken() {
+        return token;
+    }
+
+    public void setToken(String token) {
+        this.token = token;
     }
 }

@@ -40,7 +40,10 @@ public class EcartBoSummaryEntity {
     
     @Column(name = "env", length = 20)
     private String env = "BO";
-    
+
+    @Column(name = "token", length = 64)
+    private String token;
+
     // Constructeurs
     public EcartBoSummaryEntity() {}
     
@@ -143,5 +146,13 @@ public class EcartBoSummaryEntity {
     
     public void setEnv(String env) {
         this.env = env;
+    }
+
+    public String getToken() {
+        return token;
+    }
+
+    public void setToken(String token) {
+        this.token = token;
     }
 }
