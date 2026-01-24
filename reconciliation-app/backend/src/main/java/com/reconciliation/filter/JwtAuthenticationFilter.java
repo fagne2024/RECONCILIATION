@@ -97,18 +97,24 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                     if (path.contains("result8rec")) {
                         System.out.println("❌ JwtAuthenticationFilter - Token invalide pour " + username);
                     }
+                    // IMPORTANT: un token présent mais invalide/expiré doit être rejeté
+                    SecurityContextHolder.clearContext();
+                    response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+                    return;
                 }
             } else if (path.contains("result8rec")) {
                 System.out.println("⚠️ JwtAuthenticationFilter - Username null ou authentification déjà présente");
             }
         } catch (Exception e) {
-            // En cas d'erreur (token invalide, expiré, etc.), continuer sans authentification
-            // L'utilisateur sera rejeté par Spring Security si l'endpoint nécessite une authentification
+            // En cas d'erreur (token invalide, expiré, etc.), REJETER la requête si un token a été fourni
             if (path.contains("result8rec")) {
                 System.err.println("❌ JwtAuthenticationFilter - Erreur lors de la validation du token JWT: " + e.getMessage());
                 e.printStackTrace();
             }
             logger.debug("Erreur lors de la validation du token JWT: " + e.getMessage());
+            SecurityContextHolder.clearContext();
+            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+            return;
         }
 
         filterChain.doFilter(request, response);

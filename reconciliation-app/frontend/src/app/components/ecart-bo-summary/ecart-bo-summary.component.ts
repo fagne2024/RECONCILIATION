@@ -167,7 +167,7 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
     this.summaryItems = savedData.map(item => {
       const commentaire = item.commentaire || '';
       const isManual = commentaire.includes('Ajout manuel') || commentaire.includes('ajout manuel');
-      return {
+      const mapped: any = {
         id: item.id,
         date: item.dateTransaction || '',
         agence: item.agence || 'Non spécifié',
@@ -182,6 +182,10 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
         commentaire,
         token: item.token || undefined
       };
+      // Snapshots pour éviter des updates "inutiles" (rafales) lors du linking automatique
+      mapped.__originalStatut = mapped.statut;
+      mapped.__originalToken = mapped.token;
+      return mapped as EcartBoSummaryItem;
     });
     this.uniqueAgencies = [...new Set(this.summaryItems.map(i => i.agence).filter(Boolean))].sort();
     this.uniqueServices = [...new Set(this.summaryItems.map(i => i.service).filter(Boolean))].sort();
@@ -469,7 +473,12 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
 
               if (item1.statut !== 'ok') item1.statut = 'ok';
               if (item2.statut !== 'ok') item2.statut = 'ok';
-              itemsToUpdate.push(item1, item2);
+              const item1Any: any = item1 as any;
+              const item2Any: any = item2 as any;
+              const item1Changed = item1Any.__originalStatut !== item1.statut || item1Any.__originalToken !== item1.token;
+              const item2Changed = item2Any.__originalStatut !== item2.statut || item2Any.__originalToken !== item2.token;
+              if (item1Changed) itemsToUpdate.push(item1);
+              if (item2Changed) itemsToUpdate.push(item2);
 
               console.log(`✅ Lignes liées: ${item1.id} (${item1.env}) <-> ${item2.id} (${item2.env}) token=${linkToken}`);
               break;
@@ -539,12 +548,16 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
         const linkToken = existing || `LINK-${Date.now()}-P${partenaireItem.id}-B${boIds}`;
         partenaireItem.token = linkToken;
         if (partenaireItem.statut !== 'ok') partenaireItem.statut = 'ok';
-        itemsToUpdate.push(partenaireItem);
+        const partenaireAny: any = partenaireItem as any;
+        const partenaireChanged = partenaireAny.__originalStatut !== partenaireItem.statut || partenaireAny.__originalToken !== partenaireItem.token;
+        if (partenaireChanged) itemsToUpdate.push(partenaireItem);
 
         for (const boItem of matchingBoItems) {
           boItem.token = linkToken;
           if (boItem.statut !== 'ok') boItem.statut = 'ok';
-          itemsToUpdate.push(boItem);
+          const boAny: any = boItem as any;
+          const boChanged = boAny.__originalStatut !== boItem.statut || boAny.__originalToken !== boItem.token;
+          if (boChanged) itemsToUpdate.push(boItem);
           usedBoItemIds.add(boItem.id!);
         }
 
