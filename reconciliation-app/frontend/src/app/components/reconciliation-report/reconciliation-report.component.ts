@@ -2,7 +2,7 @@ import { Component, OnInit, Input, OnDestroy } from '@angular/core';
 import { ActivatedRoute, Router, NavigationEnd } from '@angular/router';
 import { HttpClient, HttpErrorResponse, HttpHeaders } from '@angular/common/http';
 import { filter } from 'rxjs/operators';
-import { Subscription } from 'rxjs';
+import { Observable, Subscription } from 'rxjs';
 import { take } from 'rxjs/operators';
 import { ReconciliationResponse, Match } from '../../models/reconciliation-response.model';
 import { AppStateService } from '../../services/app-state.service';
@@ -12,6 +12,7 @@ import { ReconciliationTabsService } from '../../services/reconciliation-tabs.se
 import { PopupService } from '../../services/popup.service';
 import { PaysService } from '../../services/pays.service';
 import { EcartBoSummaryService } from '../../services/ecart-bo-summary.service';
+import { LoggerService } from '../../services/logger.service';
 import * as ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
 
@@ -1703,6 +1704,18 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
     // Gestion des sauvegardes automatiques de l'ID TICKET
     private glpiAutoSaveTimers = new WeakMap<ReconciliationReportData, ReturnType<typeof setTimeout>>();
     private lastSavedGlpiIds = new WeakMap<ReconciliationReportData, string>();
+    
+    // Limiteur / file d'attente pour éviter les rafales (429)
+    private readonly RESULT8REC_MAX_CONCURRENCY = 1;
+    private result8RecInFlight = 0;
+    private result8RecQueue: Array<() => void> = [];
+    
+    // Debug logs désactivés par défaut (activer via localStorage.setItem('debugReconciliation','1'))
+    private readonly debugReconciliation =
+        typeof localStorage !== 'undefined' && localStorage.getItem('debugReconciliation') === '1';
+    
+    // Anti-spam popup erreurs autosave
+    private lastGlpiAutoSaveErrorAt = 0;
 
     constructor(
         private route: ActivatedRoute,
@@ -1714,12 +1727,91 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         private exportService: ExportOptimizationService,
         private popupService: PopupService,
         private paysService: PaysService,
-        private ecartBoSummaryService: EcartBoSummaryService
+        private ecartBoSummaryService: EcartBoSummaryService,
+        private logger: LoggerService
     ) {
         // Initialiser filteredReportData pour éviter les erreurs
         this.filteredReportData = [];
         // Charger les pays autorisés
         this.loadAllowedCountries();
+    }
+
+    private debugLog(...args: any[]): void {
+        if (this.debugReconciliation) {
+            this.logger.log(...args);
+        }
+    }
+
+    private debugWarn(...args: any[]): void {
+        if (this.debugReconciliation) {
+            this.logger.warn(...args);
+        }
+    }
+
+    private sleep(ms: number): Promise<void> {
+        return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    private queueResult8RecRequest<T>(requestFactory: () => Observable<T>): Promise<T> {
+        return new Promise((resolve, reject) => {
+            const run = () => {
+                this.result8RecInFlight++;
+                let settled = false;
+
+                const cleanup = () => {
+                    if (settled) return;
+                    settled = true;
+                    this.result8RecInFlight = Math.max(0, this.result8RecInFlight - 1);
+                    const next = this.result8RecQueue.shift();
+                    if (next) next();
+                };
+
+                requestFactory().subscribe({
+                    next: (value) => resolve(value),
+                    error: (err) => {
+                        cleanup();
+                        reject(err);
+                    },
+                    complete: () => {
+                        cleanup();
+                    }
+                });
+            };
+
+            if (this.result8RecInFlight < this.RESULT8REC_MAX_CONCURRENCY) {
+                run();
+            } else {
+                this.result8RecQueue.push(run);
+            }
+        });
+    }
+
+    private async putResult8RecWithRetry<T>(
+        id: number,
+        payload: any,
+        options?: { maxRetries?: number; baseDelayMs?: number }
+    ): Promise<T> {
+        const url = `/api/result8rec/${id}`;
+        const maxRetries = options?.maxRetries ?? 3;
+        const baseDelayMs = options?.baseDelayMs ?? 400;
+
+        let attempt = 0;
+        // eslint-disable-next-line no-constant-condition
+        while (true) {
+            try {
+                return await this.queueResult8RecRequest<T>(() => this.http.put<T>(url, payload));
+            } catch (err: any) {
+                const status = err?.status;
+                if (status === 429 && attempt < maxRetries) {
+                    const delay = Math.min(6000, baseDelayMs * Math.pow(2, attempt)) + Math.floor(Math.random() * 200);
+                    this.debugWarn(`⏳ 429 sur ${url} - retry dans ${delay}ms (tentative ${attempt + 1}/${maxRetries})`);
+                    await this.sleep(delay);
+                    attempt++;
+                    continue;
+                }
+                throw err;
+            }
+        }
     }
 
     ngOnInit() {
@@ -2272,7 +2364,13 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
     private enforcePartnerOnlyLineValues(item: ReconciliationReportData): void {
         // Ne pas forcer les valeurs si l'utilisateur est en train de modifier manuellement les écarts
         if (this.isManuallyEditingEcart) {
-            console.log(`🔒 enforcePartnerOnlyLineValues: Modification manuelle en cours - skip pour ${item.agency}/${item.service}`);
+            this.debugLog(`🔒 enforcePartnerOnlyLineValues: Modification manuelle en cours - skip pour ${item.agency}/${item.service}`);
+            return;
+        }
+
+        // Si la ligne spéciale est en statut OK, elle est considérée comme soldée :
+        // tout doit rester à 0 et le commentaire doit rester intact.
+        if (item.status === 'OK') {
             return;
         }
         
@@ -2295,7 +2393,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                 const currentBoOnly = this.normalizeNumericValue(item.boOnly);
                 const restoredPartnerOnly = Math.max(0, item.totalTransactions - currentMatches - currentBoOnly);
                 item.partnerOnly = restoredPartnerOnly;
-                console.log(`🔒 enforcePartnerOnlyLineValues: Ligne spéciale ${item.agency}/${item.service} détectée par critères alternatifs - partnerOnly restauré à ${restoredPartnerOnly}`);
+                this.debugLog(`🔒 enforcePartnerOnlyLineValues: Ligne spéciale ${item.agency}/${item.service} détectée par critères alternatifs - partnerOnly restauré à ${restoredPartnerOnly}`);
             }
         }
         
@@ -2308,10 +2406,15 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         // FORCER seulement mismatches à 0 (les autres valeurs peuvent être modifiées)
         item.mismatches = 0;
         
-        // S'assurer que partnerOnly est correct (utiliser totalTransactions si partnerOnly est 0)
-        // MAIS ne pas forcer si l'utilisateur vient de le modifier
+        // S'assurer que partnerOnly est défini.
+        // Important: 0 est une valeur valide (ex: l'utilisateur transfère tout vers les correspondances),
+        // donc on ne doit PAS considérer 0 comme "absent".
+        // On ne remplit avec totalTransactions que si partnerOnly est null/undefined.
         if (!this.isManuallyEditingEcart) {
-            item.partnerOnly = item.partnerOnly || item.totalTransactions || 0;
+            const hasPartnerOnlyValue = item.partnerOnly !== null && item.partnerOnly !== undefined;
+            if (!hasPartnerOnlyValue) {
+                item.partnerOnly = item.totalTransactions ?? 0;
+            }
         }
         
         // Normaliser les valeurs
@@ -2338,9 +2441,9 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         
         // Log si des valeurs ont été corrigées
         if (originalMatches !== 0 || originalPartnerOnly !== item.partnerOnly) {
-            console.warn(`⚠️ enforcePartnerOnlyLineValues: Ligne spéciale ${item.agency}/${item.service} corrigée - matches: ${originalMatches}→${currentMatches}, partnerOnly: ${originalPartnerOnly}→${item.partnerOnly}, commentaire: ${item.comment}`);
+            this.debugWarn(`⚠️ enforcePartnerOnlyLineValues: Ligne spéciale ${item.agency}/${item.service} corrigée - matches: ${originalMatches}→${currentMatches}, partnerOnly: ${originalPartnerOnly}→${item.partnerOnly}, commentaire: ${item.comment}`);
         } else {
-            console.log(`🔒 enforcePartnerOnlyLineValues: Ligne spéciale ${item.agency}/${item.service} protégée - matches=${currentMatches}, partnerOnly=${item.partnerOnly}, commentaire: ${item.comment}`);
+            this.debugLog(`🔒 enforcePartnerOnlyLineValues: Ligne spéciale ${item.agency}/${item.service} protégée - matches=${currentMatches}, partnerOnly=${item.partnerOnly}, commentaire: ${item.comment}`);
         }
     }
 
@@ -2877,7 +2980,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         // Initialiser filteredReportData avec toutes les données si pas encore fait
         if (this.filteredReportData.length === 0) {
             this.filteredReportData = [...this.reportData];
-            console.log('🔍 Debug extractUniqueValues - Initialisation filteredReportData:', {
+            this.debugLog('🔍 Debug extractUniqueValues - Initialisation filteredReportData:', {
                 reportDataLength: this.reportData.length,
                 filteredReportDataLength: this.filteredReportData.length,
                 uniqueDatesFromReportData: this.uniqueDates.length,
@@ -3188,7 +3291,10 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         const total = totalTransactions !== undefined ? totalTransactions : (matches + boOnly + partnerOnly + mismatches);
         
         // Si pas d'écarts OU si toutes les transactions sont des correspondances, retourner le commentaire par défaut
-        if ((boOnly === 0 && partnerOnly === 0 && mismatches === 0) || (total > 0 && matches === total)) {
+        // "Pas d'écarts" seulement si tous les écarts sont à 0.
+        // Ne pas utiliser "matches === total" comme raccourci, car les règles métier
+        // peuvent faire que matches == total même si partnerOnly > 0 (et on doit alors l'afficher).
+        if (boOnly === 0 && partnerOnly === 0 && mismatches === 0) {
             return "PAS D'ECARTS CONSTATES";
         }
 
@@ -3219,15 +3325,14 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         
         // Ne pas mettre à jour le commentaire si l'utilisateur est en train de modifier manuellement les écarts
         if (this.isManuallyEditingEcart) {
-            console.log('🔒 updateCommentFromCounts: Modification manuelle en cours - skip pour', item.agency, item.service);
+            this.debugLog('🔒 updateCommentFromCounts: Modification manuelle en cours - skip pour', item.agency, item.service);
             return;
         }
         
-        // PROTECTION ABSOLUE : Pour le statut OK, le commentaire ne doit JAMAIS être modifié
-        // Le commentaire ne doit pas être changé quand le statut passe à OK
-        // SAUF si force est activé explicitement (mais même alors, on devrait éviter pour statut OK)
-        if (item.status === 'OK' && !options?.force) {
-            console.log('🔒 updateCommentFromCounts: Commentaire préservé pour ligne avec statut OK', item.id, item.agency, item.service);
+        // PROTECTION ABSOLUE : Pour le statut OK, le commentaire ne doit JAMAIS être modifié,
+        // même si `force` est activé ailleurs.
+        if (item.status === 'OK') {
+            this.debugLog('🔒 updateCommentFromCounts: Commentaire préservé pour ligne avec statut OK', item.id, item.agency, item.service);
             return;
         }
         
@@ -3239,7 +3344,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         // Si la ligne est "sété" (sauvegardée avec un ID), préserver TOUJOURS le commentaire existant
         // SAUF si force est activé explicitement
         if (this.isRowSete(item) && !options?.force) {
-            console.log('🔒 updateCommentFromCounts: Commentaire préservé pour ligne sété', item.id, item.agency, item.service);
+            this.debugLog('🔒 updateCommentFromCounts: Commentaire préservé pour ligne sété', item.id, item.agency, item.service);
             return;
         }
 
@@ -3267,7 +3372,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
 
         // Ne pas synchroniser si l'utilisateur est en train de modifier manuellement les écarts
         if (this.isManuallyEditingEcart) {
-            console.log(`🔒 syncCommentWithValues: Modification manuelle en cours - skip pour ${item.agency}/${item.service}`);
+            this.debugLog(`🔒 syncCommentWithValues: Modification manuelle en cours - skip pour ${item.agency}/${item.service}`);
             return;
         }
 
@@ -3292,14 +3397,14 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         // Si on doit préserver le commentaire (lors d'un changement de statut), ne rien faire
         // Ne JAMAIS modifier le commentaire si preserveComment est true
         if (preserveComment) {
-            console.log('🔒 syncCommentWithValues: Commentaire préservé pour item', item.id, item.agency, item.service);
+            this.debugLog('🔒 syncCommentWithValues: Commentaire préservé pour item', item.id, item.agency, item.service);
             return;
         }
 
         // PROTECTION ABSOLUE : Pour le statut OK, le commentaire ne doit JAMAIS être modifié
         // Le commentaire ne doit pas être changé quand le statut passe à OK
         if (item.status === 'OK') {
-            console.log('🔒 syncCommentWithValues: Commentaire préservé pour ligne avec statut OK', item.id, item.agency, item.service);
+            this.debugLog('🔒 syncCommentWithValues: Commentaire préservé pour ligne avec statut OK', item.id, item.agency, item.service);
             return;
         }
 
@@ -3319,7 +3424,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
 
         // Si la ligne est "sété" (sauvegardée avec un ID), préserver TOUJOURS le commentaire existant
         if (this.isRowSete(item)) {
-            console.log('🔒 syncCommentWithValues: Commentaire préservé pour ligne sété', item.id, item.agency, item.service);
+            this.debugLog('🔒 syncCommentWithValues: Commentaire préservé pour ligne sété', item.id, item.agency, item.service);
             return;
         }
 
@@ -3327,7 +3432,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         // alors le commentaire doit être recalculé car il est obsolète
         if (partnerOnly === 0 && item.comment && item.comment.includes('écart(s) Partenaire') && 
             !(item.agency === item.service && item.agency && item.service)) {
-            console.log(`⚠️ syncCommentWithValues: Commentaire obsolète détecté pour ${item.agency}/${item.service} - partnerOnly=0 mais commentaire contient "écart(s) Partenaire" - recalcul nécessaire`);
+            this.debugWarn(`⚠️ syncCommentWithValues: Commentaire obsolète détecté pour ${item.agency}/${item.service} - partnerOnly=0 mais commentaire contient "écart(s) Partenaire" - recalcul nécessaire`);
         }
 
         // Recalculer le commentaire pour qu'il corresponde aux valeurs réelles
@@ -3376,17 +3481,17 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         // Si le statut est "OK", même les lignes spéciales doivent avoir leurs écarts à 0
         if (item.status === 'OK' && this.isPartnerOnlySpecialLine(item)) {
             // Pour une ligne spéciale avec statut OK, tous les écarts doivent être à 0
-            // Mais le commentaire doit être préservé et totalTransactions ne doit pas être modifié
-            const totalTransactions = this.normalizeNumericValue(item.totalTransactions) || 0;
+            // Mais le commentaire doit être préservé.
+            // Demande métier: réinitialiser aussi le nombre de transactions (ligne soldée).
             const previousComment = item.comment ?? '';
             return {
                 ...item,
-                matches: totalTransactions,
+                matches: 0,
                 boOnly: 0,
                 partnerOnly: 0,
                 mismatches: 0,
-                totalTransactions: totalTransactions, // Ne pas modifier - utiliser la valeur existante
-                matchRate: totalTransactions > 0 ? 100 : 0,
+                totalTransactions: 0,
+                matchRate: 0,
                 traitement: 'Niveau Group', // Traitement automatique à "Niveau Group" pour statut OK
                 comment: previousComment // Préserver le commentaire existant
             };
@@ -4105,31 +4210,35 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         }
 
         const lastSaved = this.lastSavedGlpiIds.get(item) || '';
-        if (!force && glpiValue === lastSaved) {
+        // Ne pas forcer un PUT si la valeur n'a pas changé (évite rafales/429)
+        if (glpiValue === lastSaved) {
             return;
         }
 
         this.saveGlpiIdAutomatically(item, glpiValue);
     }
 
-    private saveGlpiIdAutomatically(item: ReconciliationReportData, glpiId: string) {
+    private async saveGlpiIdAutomatically(item: ReconciliationReportData, glpiId: string) {
         if (!item.id) {
             return;
         }
 
         const payload = this.buildUpdatePayload(item, { glpiId });
-        this.http.put<any>(`/api/result8rec/${item.id}`, payload)
-            .subscribe({
-                next: () => {
-                    item.glpiId = glpiId;
-                    this.lastSavedGlpiIds.set(item, glpiId);
-                    this.popupService.showSuccess('ID TICKET enregistré automatiquement');
-                },
-                error: (err: HttpErrorResponse) => {
-                    console.error('❌ Erreur lors de la sauvegarde automatique de l\'ID TICKET', err);
-                    this.popupService.showError('Erreur', 'Impossible d\'enregistrer automatiquement l\'ID TICKET.');
-                }
-            });
+        try {
+            await this.putResult8RecWithRetry<any>(item.id, payload, { maxRetries: 3, baseDelayMs: 500 });
+            item.glpiId = glpiId;
+            this.lastSavedGlpiIds.set(item, glpiId);
+            // volontairement silencieux (évite spam de notifications)
+        } catch (err: any) {
+            const now = Date.now();
+            // Éviter spam si le backend rate-limit
+            if (now - this.lastGlpiAutoSaveErrorAt > 5000) {
+                this.lastGlpiAutoSaveErrorAt = now;
+                this.popupService.showError('Erreur', 'Impossible d\'enregistrer automatiquement l\'ID TICKET (réessayez).');
+            }
+            // Log seulement si debug activé
+            this.debugWarn('❌ Erreur autosave ID TICKET', err);
+        }
     }
 
     private clearGlpiAutoSaveTimer(item: ReconciliationReportData) {
@@ -4485,7 +4594,191 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         return totalEcarts > 0 ? 'Niveau Support' : 'Niveau Group';
     }
 
+    private normalizeUniqKeyPart(value: string | null | undefined): string {
+        return (value ?? '').trim().toUpperCase();
+    }
+
+    private buildUniqKeyForRow(item: Pick<ReconciliationReportData, 'date' | 'agency' | 'service' | 'country'>): string {
+        const date = (item.date ?? '').toString().trim();
+        return [
+            date,
+            this.normalizeUniqKeyPart(item.agency),
+            this.normalizeUniqKeyPart(item.service),
+            this.normalizeUniqKeyPart(item.country)
+        ].join('__');
+    }
+
+    private findDuplicateRowByKey(
+        draft: ReconciliationReportData
+    ): ReconciliationReportData | null {
+        const key = this.buildUniqKeyForRow(draft);
+        // Chercher un doublon dans les lignes déjà présentes (DB ou local), autre que la ligne courante
+        return this.reportData.find(r => r !== draft && this.buildUniqKeyForRow(r) === key) ?? null;
+    }
+
+    private computeMatchesAndRate(totalTransactions: number, boOnly: number, partnerOnly: number, mismatches: number): { matches: number; matchRate: number } {
+        // Règle métier:
+        // - Seuls les écarts BO (et les incohérences) impactent les correspondances.
+        // - Les écarts Partenaire restent visibles dans le commentaire mais ne "reviennent" pas en correspondances.
+        const totalEcartsForMatches = boOnly + mismatches;
+        const matches = totalTransactions > 0 ? Math.max(0, totalTransactions - totalEcartsForMatches) : 0;
+
+        const matchRate =
+            totalTransactions > 0
+                ? (boOnly === 0 && mismatches === 0 ? 100 : (matches / totalTransactions) * 100)
+                : 0;
+
+        return { matches, matchRate };
+    }
+
+    private removeDraftRowFromTable(draft: ReconciliationReportData): void {
+        const idx = this.reportData.indexOf(draft);
+        if (idx >= 0) {
+            this.reportData.splice(idx, 1);
+            this.extractUniqueValues();
+            this.filterReport();
+            this.updatePagination();
+        }
+    }
+
+    private async updateExistingRowPartnerOnlyOnly(existingRow: ReconciliationReportData, newPartnerOnly: number): Promise<void> {
+        if (!existingRow.id) {
+            this.popupService.showError('Mise à jour impossible', 'La ligne existante n’a pas d’identifiant.');
+            return;
+        }
+
+        if (this.isRowLocked(existingRow)) {
+            this.popupService.showWarning('Ligne verrouillée', 'Cette ligne ne peut pas être modifiée (OK + Terminé).');
+            return;
+        }
+
+        const savedComment = existingRow.comment ?? '';
+        const previousTraitement = existingRow.traitement;
+        const previousStatus = existingRow.status;
+
+        existingRow.partnerOnly = this.normalizeNumericValue(newPartnerOnly);
+        // Mettre à jour les champs calculés sans toucher au commentaire
+        this.recalculateMatchRate(existingRow, true);
+
+        // Ne pas impacter statut / traitement / commentaire
+        existingRow.comment = savedComment;
+        existingRow.traitement = previousTraitement;
+        existingRow.status = previousStatus;
+
+        const payload = {
+            date: existingRow.date,
+            agency: existingRow.agency,
+            service: existingRow.service,
+            country: existingRow.country,
+            totalTransactions: existingRow.totalTransactions,
+            totalVolume: existingRow.totalVolume,
+            matches: existingRow.matches,
+            boOnly: existingRow.boOnly,
+            partnerOnly: existingRow.partnerOnly,
+            mismatches: existingRow.mismatches,
+            matchRate: existingRow.matchRate,
+            status: existingRow.status,
+            comment: savedComment,
+            traitement: existingRow.traitement || '',
+            glpiId: existingRow.glpiId || ''
+        };
+
+        await this.putResult8RecWithRetry<any>(existingRow.id, payload, { maxRetries: 3, baseDelayMs: 500 });
+        this.popupService.showSuccess('Écarts partenaire mis à jour', `Mise à jour appliquée sur la ligne existante (id=${existingRow.id}).`);
+
+        // Rafraîchir les données DB (sans écraser les commentaires)
+        const preserveComments = new Map<number, string>();
+        preserveComments.set(existingRow.id, savedComment);
+        this.loadSavedReportFromDatabase(preserveComments);
+    }
+
+    private async updatePartnerOnlyFromExistingApiEntity(existing: any, newPartnerOnly: number): Promise<void> {
+        const id = existing?.id;
+        if (!id) {
+            this.popupService.showError('Mise à jour impossible', 'ID de la ligne existante introuvable.');
+            return;
+        }
+
+        // Si on a déjà la ligne en mémoire, on préfère la mettre à jour localement (meilleure cohérence UI)
+        const inMemory = this.reportData.find(r => r.id === id);
+        if (inMemory) {
+            await this.updateExistingRowPartnerOnlyOnly(inMemory, newPartnerOnly);
+            return;
+        }
+
+        const totalTransactions = Number(existing.totalTransactions ?? 0) || 0;
+        const totalVolume = Number(existing.totalVolume ?? 0) || 0;
+        const boOnly = Number(existing.boOnly ?? 0) || 0;
+        const mismatches = Number(existing.mismatches ?? 0) || 0;
+        const partnerOnly = this.normalizeNumericValue(newPartnerOnly);
+
+            const matches = Number(existing.matches ?? 0) || 0;
+            const matchRate = totalTransactions > 0 ? (matches / totalTransactions) * 100 : 0;
+
+            // Mettre à jour le commentaire avec les deux écarts (BO + Partenaire) pour cohérence
+            const comment =
+                existing.status === 'OK'
+                    ? (existing.comment ?? '')
+                    : this.buildCommentForCounts(matches, boOnly, partnerOnly, mismatches, totalTransactions);
+
+        const payload = {
+            date: existing.date,
+            agency: existing.agency,
+            service: existing.service,
+            country: existing.country,
+            totalTransactions,
+            totalVolume,
+            matches,
+            boOnly,
+            partnerOnly,
+            mismatches,
+            matchRate,
+            status: existing.status,
+            comment,
+            traitement: existing.traitement ?? '',
+            glpiId: existing.glpiId ?? ''
+        };
+
+        await this.putResult8RecWithRetry<any>(id, payload, { maxRetries: 3, baseDelayMs: 500 });
+        this.popupService.showSuccess('Écarts partenaire mis à jour', `Mise à jour appliquée sur la ligne existante (id=${id}).`);
+        this.loadSavedReportFromDatabase();
+    }
+
     async confirmAndSave(item: ReconciliationReportData) {
+        // Contrôle d'unicité sur la clé (date, agence, service, pays)
+        const duplicateLocal = this.findDuplicateRowByKey(item);
+        if (duplicateLocal) {
+            if (!duplicateLocal.id) {
+                this.popupService.showWarning(
+                    'Doublon détecté',
+                    'Une ligne identique existe déjà dans le tableau (non sauvegardée). Veuillez modifier la ligne existante.'
+                );
+                return;
+            }
+            const existingId = duplicateLocal.id ? `id=${duplicateLocal.id}` : 'id inconnu';
+            const msg =
+                `Cette ligne existe déjà (${existingId}).\n\n` +
+                `${this.formatDate(item.date)} | ${item.agency} | ${item.service} | ${item.country}\n\n` +
+                `Voulez-vous faire une mise à jour qui modifiera uniquement les écarts partenaire ?\n\n` +
+                `- Valeur actuelle: ${this.normalizeNumericValue(duplicateLocal.partnerOnly)}\n` +
+                `- Nouvelle valeur: ${this.normalizeNumericValue(item.partnerOnly)}`;
+
+            const confirmedUpdate = await this.popupService.showConfirm(msg, 'Doublon détecté');
+            if (!confirmedUpdate) {
+                return;
+            }
+
+            try {
+                await this.updateExistingRowPartnerOnlyOnly(duplicateLocal, this.normalizeNumericValue(item.partnerOnly));
+                // La ligne saisie était un doublon: on la retire pour éviter la confusion
+                this.removeDraftRowFromTable(item);
+            } catch (e: any) {
+                console.error('❌ Erreur mise à jour écarts partenaire (doublon local)', e);
+                this.popupService.showError('Erreur', 'Impossible de mettre à jour les écarts partenaire sur la ligne existante.');
+            }
+            return;
+        }
+
         const message = `Confirmer l'enregistrement de la ligne\n\n${this.formatDate(item.date)} | ${item.agency} | ${item.service} | ${item.country}`;
         const confirmed = await this.popupService.showConfirm(message, 'Confirmation de sauvegarde');
         if (!confirmed) return;
@@ -4545,7 +4838,24 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             error: (err: HttpErrorResponse) => {
                 if (err.status === 409) {
                     const existing = err.error;
-                    this.popupService.showWarning(`Doublon détecté : déjà enregistré (id=${existing.id})`, 'Conflit de duplication');
+                    // Doublon détecté côté backend: proposer la mise à jour "écarts partenaire uniquement"
+                    const msg =
+                        `Cette ligne existe déjà (id=${existing?.id}).\n\n` +
+                        `${this.formatDate(item.date)} | ${item.agency} | ${item.service} | ${item.country}\n\n` +
+                        `Voulez-vous faire une mise à jour qui modifiera uniquement les écarts partenaire ?\n\n` +
+                        `- Nouvelle valeur: ${this.normalizeNumericValue(item.partnerOnly)}`;
+
+                    this.popupService.showConfirm(msg, 'Doublon détecté')
+                        .then(async (ok) => {
+                            if (!ok) return;
+                            try {
+                                await this.updatePartnerOnlyFromExistingApiEntity(existing, this.normalizeNumericValue(item.partnerOnly));
+                                this.removeDraftRowFromTable(item);
+                            } catch (e: any) {
+                                console.error('❌ Erreur mise à jour écarts partenaire (doublon backend)', e);
+                                this.popupService.showError('Erreur', 'Impossible de mettre à jour les écarts partenaire sur la ligne existante.');
+                            }
+                        });
                 } else {
                     console.error('❌ Erreur de sauvegarde', err);
                     this.popupService.showError('Erreur de sauvegarde', 'Impossible de sauvegarder la ligne');
@@ -4645,53 +4955,49 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         };
         
         // Log complet du payload pour déboguer
-        console.log(`💾 updateRow - Payload complet pour ${recalculatedData.agency}/${recalculatedData.service}:`, JSON.stringify(payload, null, 2));
+        this.debugLog(
+            `💾 updateRow - Payload complet pour ${recalculatedData.agency}/${recalculatedData.service}:`,
+            JSON.stringify(payload, null, 2)
+        );
         
-        this.http.put<any>('/api/result8rec/' + item.id, payload)
-        .subscribe({
-            next: () => {
-                this.popupService.showSuccess('Ligne mise à jour avec succès');
-                // Mettre à jour localement l'item avec le commentaire préservé
-                item.comment = savedComment;
-                // Rechargement automatique désactivé pour permettre de voir les logs
-                // this.forceReload();
+        try {
+            await this.putResult8RecWithRetry<any>(item.id, payload, { maxRetries: 3, baseDelayMs: 500 });
+            this.popupService.showSuccess('Ligne mise à jour avec succès');
+            // Mettre à jour localement l'item avec le commentaire préservé
+            item.comment = savedComment;
+            
+            // Créer une map pour préserver les commentaires lors du rechargement
+            const preserveComments = new Map<number, string>();
+            preserveComments.set(item.id, savedComment);
+            
+            // Rafraîchir les données après la mise à jour en préservant les commentaires
+            this.loadSavedReportFromDatabase(preserveComments);
+            
+            // Après le rechargement, restaurer le commentaire préservé pour cette ligne
+            setTimeout(() => {
+                const updatedItem = this.reportData.find(r => r.id === item.id);
+                const filteredItem = this.filteredReportData.find(r => r.id === item.id);
                 
-                // Créer une map pour préserver les commentaires lors du rechargement
-                const preserveComments = new Map<number, string>();
-                if (item.id) {
-                    preserveComments.set(item.id, savedComment);
-                }
-                
-                // Rafraîchir les données après la mise à jour en préservant les commentaires
-                this.loadSavedReportFromDatabase(preserveComments);
-                
-                // Après le rechargement, restaurer le commentaire préservé pour cette ligne
-                setTimeout(() => {
-                    const updatedItem = this.reportData.find(r => r.id === item.id);
-                    const filteredItem = this.filteredReportData.find(r => r.id === item.id);
-                    
-                    if (item.id && preserveComments.has(item.id)) {
-                        const preservedComment = preserveComments.get(item.id)!;
-                        // Restaurer dans reportData
-                        if (updatedItem) {
-                            updatedItem.comment = preservedComment;
-                        }
-                        // Restaurer dans filteredReportData
-                        if (filteredItem) {
-                            filteredItem.comment = preservedComment;
-                        }
-                        // Restaurer dans l'item original
-                        item.comment = preservedComment;
+                if (preserveComments.has(item.id!)) {
+                    const preservedComment = preserveComments.get(item.id!)!;
+                    // Restaurer dans reportData
+                    if (updatedItem) {
+                        updatedItem.comment = preservedComment;
                     }
-                    // Mettre à jour la pagination pour refléter les changements
-                    this.updatePagination();
-                }, 200);
-            },
-            error: (err: HttpErrorResponse) => {
-                console.error('❌ Erreur de mise à jour', err);
-                this.popupService.showError('Erreur de mise à jour', 'Impossible de mettre à jour la ligne');
-            }
-        });
+                    // Restaurer dans filteredReportData
+                    if (filteredItem) {
+                        filteredItem.comment = preservedComment;
+                    }
+                    // Restaurer dans l'item original
+                    item.comment = preservedComment;
+                }
+                // Mettre à jour la pagination pour refléter les changements
+                this.updatePagination();
+            }, 200);
+        } catch (err: any) {
+            this.debugWarn('❌ Erreur de mise à jour', err);
+            this.popupService.showError('Erreur de mise à jour', 'Impossible de mettre à jour la ligne');
+        }
     }
 
     async saveAll() {
@@ -5085,13 +5391,12 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                 
                 console.log(`🔒 saveEdit: Ligne spéciale ${item.agency}/${item.service} - matches=${item.matches}, boOnly=${newBoOnly}, partnerOnly=${newPartnerOnly}, totalTransactions=${currentTotalTransactions}`);
             } else {
-                // Pour les lignes normales : ajuster les correspondances comme avant
-                if (boOnlyDifference !== 0 || partnerOnlyDifference !== 0) {
-                    // Le nombre saisi est déduit du nombre existant
-                    // La différence (écarts réduits) doit être ajoutée aux correspondances
+                // Pour les lignes normales :
+                // - Seuls les écarts BO sont reversés sur les correspondances.
+                // - Les écarts Partenaire ne doivent pas augmenter `matches`.
+                if (boOnlyDifference !== 0) {
                     const currentMatches = this.normalizeNumericValue(item.matches);
-                    const totalDifference = boOnlyDifference + partnerOnlyDifference;
-                    item.matches = Math.max(0, currentMatches + totalDifference);
+                    item.matches = Math.max(0, currentMatches + boOnlyDifference);
                     
                     // Mettre à jour les écarts avec les nouvelles valeurs (déduites)
                     item.boOnly = newBoOnly;
@@ -5197,11 +5502,19 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                 
                 console.log(`🔒 onEcartChange: Ligne spéciale ${item.agency}/${item.service} - ${ecartType} modifié, matches=${item.matches}, commentaire=${item.comment}`);
             } else {
-                // Pour les lignes normales : recalculer matches et mettre à jour le commentaire
-                // matches = totalTransactions - boOnly - partnerOnly - mismatches
+                // Pour les lignes normales :
+                // - Seuls les écarts BO sont reversés sur les correspondances.
+                // - Les écarts Partenaire ne doivent pas augmenter `matches`.
+                //
+                // On calcule donc matches en se basant sur les valeurs d'origine (début d'édition)
+                // et uniquement la variation de BO.
                 const currentTotalTransactions = this.normalizeNumericValue(item.totalTransactions);
-                const currentMatches = Math.max(0, currentTotalTransactions - currentBoOnly - currentPartnerOnly - currentMismatches);
-                
+
+                const baseMatches = this.originalData ? this.normalizeNumericValue(this.originalData.matches) : this.normalizeNumericValue(item.matches);
+                const baseBoOnly = this.originalData ? this.normalizeNumericValue(this.originalData.boOnly) : this.normalizeNumericValue(item.boOnly);
+                const boOnlyDiff = baseBoOnly - currentBoOnly; // si BO baisse, diff > 0 => matches augmente
+
+                const currentMatches = Math.max(0, baseMatches + boOnlyDiff);
                 item.matches = currentMatches;
                 
                 // Recalculer le taux
@@ -5330,56 +5643,24 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         const savedComment = preserveComment ? (item.comment ?? '') : null;
         
         // Normaliser toutes les valeurs numériques
-        let totalTransactions = this.normalizeNumericValue(item.totalTransactions);
-        let matches = this.normalizeNumericValue(item.matches);
+        const totalTransactions = this.normalizeNumericValue(item.totalTransactions);
+        const matches = this.normalizeNumericValue(item.matches);
         const boOnly = this.normalizeNumericValue(item.boOnly);
         const partnerOnly = this.normalizeNumericValue(item.partnerOnly);
         const mismatches = this.normalizeNumericValue(item.mismatches);
-        
-        // Log pour déboguer si partnerOnly est modifié
-        if (item.partnerOnly > 0) {
-            console.log(`🔍 recalculateMatchRate: ${item.agency}/${item.service} - partnerOnly avant=${item.partnerOnly}, normalisé=${partnerOnly}`);
-        }
 
-        // NE PAS modifier totalTransactions - utiliser la valeur existante
-        // Seules les correspondances, les écarts et le taux de correspondance doivent être mis à jour
-        // totalTransactions reste inchangé
-
-        if (totalTransactions > 0) {
-            // Calculer l'écart Partenaire effectif en tenant compte des écarts BO déjà pris en compte
-            // Si les deux types d'écarts existent et que partnerOnly > boOnly, 
-            // on soustrait boOnly de partnerOnly pour obtenir les écarts partenaires excédentaires
-            // Sinon, on affiche les deux séparément car ils représentent des écarts différents
-            const effectivePartnerOnly =
-                boOnly > 0 && partnerOnly > 0 && partnerOnly > boOnly
-                    ? partnerOnly - boOnly
-                    : partnerOnly;
-
-            const totalEcarts = boOnly + effectivePartnerOnly + mismatches;
-
-            if (totalEcarts > 0) {
-                // Correspondances = Transactions - (Écarts BO + Écarts Partenaire restants + Incohérences)
-                matches = Math.max(0, totalTransactions - totalEcarts);
-            } else {
-                // Aucun écart : 100% de correspondance
-                matches = totalTransactions;
-            }
-        } else {
-            // Pas de transactions, donc pas de correspondances
-            matches = 0;
-        }
-
-        // Réaffecter les valeurs recalculées (sans modifier totalTransactions)
-        // totalTransactions reste inchangé - seules les correspondances, écarts et taux sont mis à jour
+        // IMPORTANT (règle métier demandée):
+        // - On NE recalcule PAS automatiquement les correspondances à partir des écarts.
+        // - Seules les actions explicites (ex: transfert des écarts BO) doivent impacter `matches`.
+        // Ici on recalcule uniquement le taux à partir de `matches` et `totalTransactions`.
         item.matches = matches;
         item.boOnly = boOnly;
         item.partnerOnly = partnerOnly;
         item.mismatches = mismatches;
 
-        // Calcul du taux de correspondance basé sur Transactions et Correspondances
         if (totalTransactions > 0) {
-            if (boOnly === 0 && partnerOnly === 0 && mismatches === 0) {
-                // Cas "aucun écart" : taux forcé à 100%
+            // Si aucun écart, on force 100% uniquement quand matches == totalTransactions
+            if (boOnly === 0 && partnerOnly === 0 && mismatches === 0 && matches === totalTransactions) {
                 item.matchRate = 100;
             } else {
                 item.matchRate = (matches / totalTransactions) * 100;
@@ -5403,48 +5684,10 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
      * sans dépendre des valeurs éventuellement incohérentes venant de la base.
      */
     getDisplayMatches(item: ReconciliationReportData): number {
-        // Pour la ligne spéciale, retourner la valeur réelle de matches (permettre les modifications)
-        // Vérifier d'abord avec la méthode standard
-        if (this.isPartnerOnlySpecialLine(item)) {
-            return this.normalizeNumericValue(item.matches);
-        }
-        
-        // Protection supplémentaire : si agency === service ET totalTransactions > 0 ET mismatches === 0
-        // alors c'est probablement une ligne spéciale même si partnerOnly a été modifié à 0
-        if (item.agency === item.service &&
-            item.agency && item.service &&
-            item.totalTransactions > 0 &&
-            item.mismatches === 0) {
-            // C'est une ligne spéciale - retourner la valeur réelle de matches
-            return this.normalizeNumericValue(item.matches);
-        }
-
-        const totalTransactions = this.normalizeNumericValue(item.totalTransactions);
-        const boOnly = this.normalizeNumericValue(item.boOnly);
-        const partnerOnly = this.normalizeNumericValue(item.partnerOnly);
-        const mismatches = this.normalizeNumericValue(item.mismatches);
-        let matches = this.normalizeNumericValue(item.matches);
-
-        if (totalTransactions <= 0) {
-            return 0;
-        }
-
-        // Calculer l'écart Partenaire effectif en tenant compte des écarts BO déjà pris en compte
-        const effectivePartnerOnly =
-            boOnly > 0 && partnerOnly > 0
-                ? (partnerOnly > boOnly ? partnerOnly - boOnly : partnerOnly)
-                : partnerOnly;
-
-        const totalEcarts = boOnly + effectivePartnerOnly + mismatches;
-
-        if (totalEcarts <= 0) {
-            // Aucun écart : correspondances = transactions
-            return totalTransactions;
-        }
-
-        // Correspondances affichées = Transactions - (Écarts BO + Écarts Partenaire restants + Incohérences)
-        matches = Math.max(0, totalTransactions - totalEcarts);
-        return matches;
+        // Règle métier:
+        // - Les correspondances (`matches`) sont une valeur métier "authoritative" (chargée/saisie),
+        //   et ne doivent pas être recalculées automatiquement à partir des écarts.
+        return this.normalizeNumericValue(item?.matches);
     }
 
     /**
@@ -5460,7 +5703,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         // Vérifier d'abord avec la méthode standard
         if (this.isPartnerOnlySpecialLine(item)) {
             const result = item.partnerOnly || 0;
-            console.log(`🔒 getDisplayPartnerOnly: Ligne spéciale ${item.agency}/${item.service} - retourne partnerOnly=${result} (item.partnerOnly=${item.partnerOnly})`);
+            this.debugLog(`🔒 getDisplayPartnerOnly: Ligne spéciale ${item.agency}/${item.service} - retourne partnerOnly=${result} (item.partnerOnly=${item.partnerOnly})`);
             return result;
         }
 
@@ -5474,18 +5717,18 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             const matches = this.normalizeNumericValue(item.matches);
             const boOnly = this.normalizeNumericValue(item.boOnly);
             const calculatedPartnerOnly = Math.max(0, item.totalTransactions - matches - boOnly);
-            console.log(`🔒 getDisplayPartnerOnly: Ligne spéciale détectée par critères alternatifs ${item.agency}/${item.service} - retourne partnerOnly=${calculatedPartnerOnly}`);
+            this.debugLog(`🔒 getDisplayPartnerOnly: Ligne spéciale détectée par critères alternatifs ${item.agency}/${item.service} - retourne partnerOnly=${calculatedPartnerOnly}`);
             return calculatedPartnerOnly;
         }
 
         // Pour les lignes normales, retourner la valeur réelle
         const result = this.normalizeNumericValue(item.partnerOnly);
         if (item.comment && item.comment.includes('écart(s) Partenaire') && result === 0) {
-            console.warn(`⚠️ getDisplayPartnerOnly: Ligne normale ${item.agency}/${item.service} - item.partnerOnly=${item.partnerOnly}, mais commentaire contient "écart(s) Partenaire" - possible incohérence`);
+            this.debugWarn(`⚠️ getDisplayPartnerOnly: Ligne normale ${item.agency}/${item.service} - item.partnerOnly=${item.partnerOnly}, mais commentaire contient "écart(s) Partenaire" - possible incohérence`);
         }
         // Log spécifique pour la ligne problématique
         if (item.agency === 'XBTCM8057' && item.service === 'CASHINMTNCMPART') {
-            console.log(`🔍 getDisplayPartnerOnly: ${item.agency}/${item.service} (ID: ${item.id}) - item.partnerOnly=${item.partnerOnly}, result=${result}, comment: ${item.comment?.substring(0, 50)}...`);
+            this.debugLog(`🔍 getDisplayPartnerOnly: ${item.agency}/${item.service} (ID: ${item.id}) - item.partnerOnly=${item.partnerOnly}, result=${result}, comment: ${item.comment?.substring(0, 50)}...`);
         }
         return result;
     }
@@ -5558,13 +5801,29 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
 
         // Effectuer le transfert
         const newEcart = currentEcart - transferAmount;
-        const newMatches = this.normalizeNumericValue(item.matches) + transferAmount;
-
         item[ecartType] = newEcart;
-        item.matches = newMatches;
 
-        // Recalculer le taux de correspondance
+        // Règle métier demandée:
+        // - Seuls les écarts BO sont reversés sur les correspondances.
+        // - Les écarts Partenaire ne doivent pas augmenter `matches`.
+        if (ecartType === 'boOnly') {
+            const newMatches = this.normalizeNumericValue(item.matches) + transferAmount;
+            item.matches = newMatches;
+        }
+
+        // Recalculer le taux/correspondances selon les règles métier
         this.recalculateMatchRate(item);
+
+        // Mettre à jour le commentaire avec les deux écarts (BO + Partenaire) après transfert,
+        // y compris pour les lignes sauvegardées, afin d'avoir un affichage cohérent.
+        this.updateCommentFromCounts(
+            item,
+            this.normalizeNumericValue(item.matches),
+            this.normalizeNumericValue(item.boOnly),
+            this.normalizeNumericValue(item.partnerOnly),
+            this.normalizeNumericValue(item.mismatches),
+            { force: true }
+        );
 
         // Sauvegarder si la ligne existe déjà en base
         if (item.id) {
@@ -5875,49 +6134,37 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
     }
 
     private async saveItemStatus(item: ReconciliationReportData, oldStatus: string): Promise<void> {
-        return new Promise((resolve, reject) => {
-            if (!item.id) {
-                console.error('❌ Impossible de sauvegarder: ID manquant pour', item);
-                reject(new Error('ID manquant'));
-                return;
-            }
+        if (!item.id) {
+            throw new Error('ID manquant');
+        }
 
-            const payload = {
-                date: item.date,
-                agency: item.agency,
-                service: item.service,
-                country: item.country,
-                totalTransactions: item.totalTransactions,
-                totalVolume: item.totalVolume,
-                matches: item.matches,
-                boOnly: item.boOnly,
-                partnerOnly: item.partnerOnly,
-                mismatches: item.mismatches,
-                matchRate: item.matchRate,
-                status: item.status,
-                comment: item.comment,
-                traitement: item.traitement || '',
-                glpiId: item.glpiId || ''
-            };
+        const payload = {
+            date: item.date,
+            agency: item.agency,
+            service: item.service,
+            country: item.country,
+            totalTransactions: item.totalTransactions,
+            totalVolume: item.totalVolume,
+            matches: item.matches,
+            boOnly: item.boOnly,
+            partnerOnly: item.partnerOnly,
+            mismatches: item.mismatches,
+            matchRate: item.matchRate,
+            status: item.status,
+            comment: item.comment,
+            traitement: item.traitement || '',
+            glpiId: item.glpiId || ''
+        };
 
-            this.http.put<any>(`/api/result8rec/${item.id}`, payload).subscribe({
-                next: (updated) => {
-                    console.log(`✅ Statut sauvegardé pour ${item.agency} - ${item.service}`);
-                    // Mettre à jour l'item avec les données retournées
-                    if (updated.status !== undefined) {
-                        item.status = updated.status;
-                    }
-                    if (updated.traitement !== undefined) {
-                        item.traitement = updated.traitement;
-                    }
-                    resolve();
-                },
-                error: (error: HttpErrorResponse) => {
-                    console.error('❌ Erreur lors de la sauvegarde du statut:', error);
-                    reject(error);
-                }
-            });
-        });
+        const updated = await this.putResult8RecWithRetry<any>(item.id, payload, { maxRetries: 3, baseDelayMs: 500 });
+        this.debugLog(`✅ Statut sauvegardé pour ${item.agency} - ${item.service}`);
+        // Mettre à jour l'item avec les données retournées
+        if (updated?.status !== undefined) {
+            item.status = updated.status;
+        }
+        if (updated?.traitement !== undefined) {
+            item.traitement = updated.traitement;
+        }
     }
 
     // Méthodes pour l'édition directe du statut (comme pour le traitement)
