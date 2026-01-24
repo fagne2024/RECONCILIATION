@@ -270,6 +270,7 @@
         width: 100%;
         border-collapse: collapse;
         min-width: 100%;
+        table-layout: fixed;
 
         thead {
           background: #f8f9fa;
@@ -294,7 +295,6 @@
 
             &.manual-row {
               background-color: #d4edda !important;
-              border-left: 4px solid #28a745;
 
               &:hover {
                 background-color: #c3e6cb !important;
@@ -308,17 +308,6 @@
 
             &.linked-row {
               background-color: #e3f2fd !important;
-              border-left: 4px solid #2196f3;
-              position: relative;
-
-              &::before {
-                content: '🔗';
-                position: absolute;
-                left: -25px;
-                top: 50%;
-                transform: translateY(-50%);
-                font-size: 14px;
-              }
 
               &:hover {
                 background-color: #bbdefb !important;
@@ -332,7 +321,6 @@
               // Si c'est aussi une ligne manuelle, combiner les styles
               &.manual-row {
                 background-color: #c8e6c9 !important;
-                border-left: 4px solid #4caf50;
               }
             }
 
@@ -341,6 +329,9 @@
               color: #555;
               vertical-align: middle;
               text-align: center;
+              // Garantit que la couleur de fond du <tr> couvre toutes les cellules
+              // (évite notamment un fond blanc sur certaines cellules comme "Actions")
+              background-color: inherit;
 
               &.nombre-cell {
                 text-align: center;
@@ -354,11 +345,21 @@
                 max-width: 180px;
                 overflow: hidden;
                 text-overflow: ellipsis;
+                white-space: nowrap;
               }
 
               &.actions-cell {
                 text-align: center;
                 white-space: nowrap;
+                // Garder le TD en "table-cell" (ne pas mettre display:flex ici)
+                background-color: inherit;
+
+                .actions-wrap {
+                  display: flex;
+                  align-items: center;
+                  justify-content: center;
+                  gap: 6px;
+                }
 
                 .edit-button,
                 .delete-button {
@@ -415,6 +416,7 @@
                   font-size: 14px;
                   cursor: pointer;
                   min-width: 120px;
+                  height: 30px;
 
                   &.statut-ok {
                     background: #d4edda;
@@ -441,6 +443,19 @@
                 color: #999;
                 font-style: italic;
               }
+            }
+
+            // Barre visuelle à gauche sans impacter la largeur des colonnes
+            &.manual-row td:first-child {
+              box-shadow: inset 4px 0 0 #28a745;
+            }
+
+            &.linked-row td:first-child {
+              box-shadow: inset 4px 0 0 #2196f3;
+            }
+
+            &.linked-row.manual-row td:first-child {
+              box-shadow: inset 4px 0 0 #4caf50;
             }
           }
         }

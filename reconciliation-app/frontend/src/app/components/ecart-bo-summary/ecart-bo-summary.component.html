@@ -182,22 +182,24 @@
               </select>
             </td>
             <td class="actions-cell">
-              <button 
-                (click)="openEditModal(item)" 
-                class="edit-button"
-                title="Modifier cette ligne"
-              >
-                ✏️ Modifier
-              </button>
-              <button 
-                (click)="deleteItem(item)" 
-                class="delete-button"
-                title="Supprimer cette ligne"
-                [disabled]="isDeleting && deletingItemId === item.id"
-                *ngIf="item.id"
-              >
-                {{ isDeleting && deletingItemId === item.id ? '⏳ Suppression...' : '🗑️ Supprimer' }}
-              </button>
+              <div class="actions-wrap">
+                <button 
+                  (click)="openEditModal(item)" 
+                  class="edit-button"
+                  title="Modifier cette ligne"
+                >
+                  ✏️ Modifier
+                </button>
+                <button 
+                  (click)="deleteItem(item)" 
+                  class="delete-button"
+                  title="Supprimer cette ligne"
+                  [disabled]="isDeleting && deletingItemId === item.id"
+                  *ngIf="item.id"
+                >
+                  {{ isDeleting && deletingItemId === item.id ? '⏳ Suppression...' : '🗑️ Supprimer' }}
+                </button>
+              </div>
             </td>
           </tr>
           <tr *ngIf="getPagedItems().length === 0">
