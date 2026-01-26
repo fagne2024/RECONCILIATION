@@ -76,7 +76,7 @@ export interface ReconciliationReportData {
             </div>
 
             <div class="report-filters">
-                <div class="filter-group">
+                <div class="filter-group" *ngIf="!hasSelectedRows()">
                     <label>Agence:</label>
                     <div class="filter-inline">
                         <input 
@@ -99,7 +99,7 @@ export interface ReconciliationReportData {
                         <option *ngFor="let agency of filteredAgencies" [value]="agency">{{agency}}</option>
                     </datalist>
                 </div>
-                <div class="filter-group">
+                <div class="filter-group" *ngIf="!hasSelectedRows()">
                     <label>Pays:</label>
                     <div class="filter-inline">
                         <input 
@@ -122,7 +122,7 @@ export interface ReconciliationReportData {
                         <option *ngFor="let country of uniqueCountries" [value]="country">{{country}}</option>
                     </datalist>
                 </div>
-                <div class="filter-group">
+                <div class="filter-group" *ngIf="!hasSelectedRows()">
                     <label>Service:</label>
                     <div class="filter-inline">
                         <input 
@@ -145,7 +145,7 @@ export interface ReconciliationReportData {
                         <option *ngFor="let service of filteredServices" [value]="service">{{service}}</option>
                     </datalist>
                 </div>
-                <div class="filter-group">
+                <div class="filter-group" *ngIf="!hasSelectedRows()">
                     <label>Date de début:</label>
                     <input 
                         type="date" 
@@ -154,7 +154,7 @@ export interface ReconciliationReportData {
                         class="filter-date"
                         placeholder="Date de début">
                 </div>
-                <div class="filter-group">
+                <div class="filter-group" *ngIf="!hasSelectedRows()">
                     <label>Date de fin:</label>
                     <div class="filter-inline">
                         <input 
@@ -172,7 +172,7 @@ export interface ReconciliationReportData {
                         </button>
                     </div>
                 </div>
-                <div class="filter-group">
+                <div class="filter-group" *ngIf="!hasSelectedRows()">
                     <label>Statut:</label>
                     <select 
                         [(ngModel)]="selectedStatus" 
@@ -181,6 +181,25 @@ export interface ReconciliationReportData {
                         <option value="">Tous les statuts</option>
                         <option *ngFor="let status of uniqueStatuses" [value]="status">{{status}}</option>
                     </select>
+                </div>
+                <div class="filter-group" *ngIf="!hasSelectedRows()">
+                    <label>Traitement:</label>
+                    <div class="filter-inline">
+                        <select 
+                            [(ngModel)]="selectedTraitement" 
+                            (change)="filterReport()"
+                            class="filter-select">
+                            <option value="">Tous les traitements</option>
+                            <option *ngFor="let traitement of traitementOptions" [value]="traitement">{{traitement}}</option>
+                        </select>
+                        <button 
+                            type="button" 
+                            class="btn-clear-dates" 
+                            title="Effacer le filtre traitement"
+                            (click)="clearTraitementFilter()">
+                            🗑️ Effacer traitement
+                        </button>
+                    </div>
                 </div>
                 <div class="filter-group bulk-status-group" *ngIf="hasSelectedRows()">
                     <label>Changer le statut des lignes sélectionnées:</label>
@@ -195,6 +214,32 @@ export interface ReconciliationReportData {
                             class="btn btn-bulk-status" 
                             (click)="applyBulkStatusChange()" 
                             [disabled]="!bulkStatusSelection">
+                            ✅ Appliquer
+                        </button>
+                        <button 
+                            class="btn btn-clear-selection" 
+                            (click)="clearSelection()">
+                            🗑️ Désélectionner
+                        </button>
+                        <span class="selection-count">
+                            {{getSelectedRowsCount()}} ligne(s) sélectionnée(s)
+                        </span>
+                    </div>
+                </div>
+                <div class="filter-group bulk-status-group" *ngIf="hasSelectedRows()">
+                    <label>Changer le traitement des lignes sélectionnées:</label>
+                    <div class="bulk-status-controls">
+                        <select 
+                            [(ngModel)]="bulkTraitementSelection" 
+                            class="filter-select bulk-status-select">
+                            <option value="">Sélectionner un traitement</option>
+                            <option value="__CLEAR__">- (Effacer)</option>
+                            <option *ngFor="let traitement of traitementOptions" [value]="traitement">{{traitement}}</option>
+                        </select>
+                        <button 
+                            class="btn btn-bulk-status" 
+                            (click)="applyBulkTraitementChange()" 
+                            [disabled]="!bulkTraitementSelection">
                             ✅ Appliquer
                         </button>
                         <button 
@@ -471,21 +516,30 @@ export interface ReconciliationReportData {
                                 </div>
                             </td>
                             <td class="select-cell">
-                                <ng-container *ngIf="editingStatusRow !== item; else editStatus">
-                                    <span [class]="getStatusClass(item.status)" 
-                                          class="status-badge" 
-                                          [class.locked]="isRowLocked(item)"
-                                          (click)="!isRowLocked(item) && startEditStatus(item)" 
-                                          [style.cursor]="isRowLocked(item) ? 'not-allowed' : 'pointer'"
-                                          [title]="isRowLocked(item) ? 'Ligne verrouillée (OK + Terminé)' : 'Cliquer pour modifier'">
-                                        {{getDisplayStatus(item.status)}}
-                                    </span>
-                                </ng-container>
-                                <ng-template #editStatus>
-                                    <select [(ngModel)]="item.status" class="edit-select" (change)="onStatusChange(item)" (blur)="stopEditStatus()">
-                                        <option *ngFor="let s of statusOptions" [ngValue]="s">{{s}}</option>
-                                    </select>
-                                </ng-template>
+                                <div class="status-cell-container">
+                                    <ng-container *ngIf="editingStatusRow !== item; else editStatus">
+                                        <span [class]="getStatusClass(item.status)" 
+                                              class="status-badge" 
+                                              [class.locked]="isRowLocked(item)"
+                                              (click)="!isRowLocked(item) && startEditStatus(item)" 
+                                              [style.cursor]="isRowLocked(item) ? 'not-allowed' : 'pointer'"
+                                              [title]="isRowLocked(item) ? 'Ligne verrouillée (OK + Terminé)' : 'Cliquer pour modifier'">
+                                            {{getDisplayStatus(item.status)}}
+                                        </span>
+                                        <button 
+                                            *ngIf="item.status === 'OK'"
+                                            class="btn-releve" 
+                                            (click)="showReleveModal(item)"
+                                            title="Afficher le relevé pour ce service et cette date">
+                                            📋
+                                        </button>
+                                    </ng-container>
+                                    <ng-template #editStatus>
+                                        <select [(ngModel)]="item.status" class="edit-select" (change)="onStatusChange(item)" (blur)="stopEditStatus()">
+                                            <option *ngFor="let s of statusOptions" [ngValue]="s">{{s}}</option>
+                                        </select>
+                                    </ng-template>
+                                </div>
                             </td>
                             <td class="select-cell">
                                 <ng-container *ngIf="editingRow !== item; else editComment">
@@ -594,6 +648,91 @@ export interface ReconciliationReportData {
             <div *ngIf="!filteredReportData || !filteredReportData.length" class="no-data">
                 <div class="no-data-icon">📊</div>
                 <div class="no-data-message">Aucune donnée de réconciliation disponible</div>
+            </div>
+        </div>
+
+        <!-- Modal de relevé -->
+        <div *ngIf="isReleveModalVisible" class="modal-overlay" (click)="closeReleveModal()">
+            <div class="modal-content-releve" (click)="$event.stopPropagation()">
+                <div class="modal-header-releve">
+                    <h3>📋 Relevé de Service</h3>
+                    <button class="modal-close-btn" (click)="closeReleveModal()">✕</button>
+                </div>
+                <div class="modal-body-releve" *ngIf="!isLoadingReleve">
+                    <div class="releve-service-title">
+                        <h4>{{releveData?.service || '-'}}</h4>
+                        <div class="releve-date">Date: {{formatDate(releveData?.date || '')}}</div>
+                    </div>
+                    
+                    <div class="releve-section">
+                        <h5>Données du Rapport de Réconciliation</h5>
+                        <div class="releve-grid">
+                            <div class="releve-item">
+                                <span class="releve-label">Volume:</span>
+                                <span class="releve-value">{{releveData?.totalVolume | number}}</span>
+                            </div>
+                            <div class="releve-item">
+                                <span class="releve-label">Nombre de transactions:</span>
+                                <span class="releve-value">{{releveData?.totalTransactions | number}}</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="releve-section" *ngIf="releveEcartData && releveEcartData.length > 0">
+                        <h5>Données depuis Écart BO J+1</h5>
+                        <div class="releve-ecart-grid">
+                            <div class="releve-item">
+                                <span class="releve-label">Nombre total:</span>
+                                <span class="releve-value">{{getTotalEcartNombre() | number}}</span>
+                            </div>
+                            <div class="releve-item">
+                                <span class="releve-label">Volume total:</span>
+                                <span class="releve-value">{{getTotalEcartVolume() | number}}</span>
+                            </div>
+                        </div>
+                        <div class="releve-total-summary">
+                            <div class="releve-total-item">
+                                <span class="releve-total-label">💰 Volume Total (Rapport + Écart BO J+1):</span>
+                                <span class="releve-total-value">{{getTotalVolumeSum() | number}}</span>
+                            </div>
+                        </div>
+                        <div class="releve-ecart-details">
+                            <table class="releve-table">
+                                <thead>
+                                    <tr>
+                                        <th>Agence</th>
+                                        <th>Pays</th>
+                                        <th>Nombre</th>
+                                        <th>Volume</th>
+                                        <th>Statut</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr *ngFor="let ecart of releveEcartData">
+                                        <td>{{ecart.agence}}</td>
+                                        <td>{{ecart.pays}}</td>
+                                        <td>{{ecart.nombreTransactions | number}}</td>
+                                        <td>{{ecart.montantTotal | number}}</td>
+                                        <td>
+                                            <span [class]="(ecart.statut === 'OK' || ecart.statut === 'ok') ? 'statut-ok' : 'statut-en-cours'">
+                                                {{(ecart.statut === 'OK' || ecart.statut === 'ok') ? 'OK' : 'En cours'}}
+                                            </span>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div class="releve-section" *ngIf="releveEcartData && releveEcartData.length === 0">
+                        <p class="releve-no-data">Aucune donnée trouvée dans Écart BO J+1 pour ce service et cette date.</p>
+                    </div>
+                </div>
+                <div class="modal-body-releve" *ngIf="isLoadingReleve">
+                    <div class="loading-spinner">⏳ Chargement...</div>
+                </div>
+                <div class="modal-footer-releve">
+                    <button class="btn btn-close-modal" (click)="closeReleveModal()">Fermer</button>
+                </div>
             </div>
         </div>
     `,
@@ -1564,8 +1703,287 @@ export interface ReconciliationReportData {
             background: rgba(108, 117, 125, 0.1);
         }
 
+        .status-cell-container {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
 
+        .btn-releve {
+            background: #17a2b8;
+            color: white;
+            border: none;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            min-width: 32px;
+            height: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
 
+        .btn-releve:hover {
+            background: #138496;
+            transform: translateY(-1px);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+
+        /* Styles pour le modal de relevé */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+
+        .modal-content-releve {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+            max-width: 900px;
+            width: 90%;
+            max-height: 90vh;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .modal-header-releve {
+            padding: 20px;
+            border-bottom: 1px solid #dee2e6;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 12px 12px 0 0;
+        }
+
+        .modal-header-releve h3 {
+            margin: 0;
+            font-size: 1.3rem;
+            font-weight: 600;
+        }
+
+        .modal-close-btn {
+            background: transparent;
+            border: none;
+            color: white;
+            font-size: 1.5rem;
+            cursor: pointer;
+            padding: 0;
+            width: 30px;
+            height: 30px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            transition: all 0.2s ease;
+        }
+
+        .modal-close-btn:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        .modal-body-releve {
+            padding: 20px;
+            flex: 1;
+            overflow-y: auto;
+        }
+
+        .releve-service-title {
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #dee2e6;
+        }
+
+        .releve-service-title h4 {
+            margin: 0 0 8px 0;
+            font-size: 1.5rem;
+            color: #495057;
+            font-weight: 600;
+        }
+
+        .releve-date {
+            color: #6c757d;
+            font-size: 0.95rem;
+        }
+
+        .releve-section {
+            margin-bottom: 25px;
+        }
+
+        .releve-section h5 {
+            margin: 0 0 15px 0;
+            font-size: 1.1rem;
+            color: #495057;
+            font-weight: 600;
+            padding-bottom: 8px;
+            border-bottom: 1px solid #e9ecef;
+        }
+
+        .releve-grid, .releve-ecart-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 15px;
+        }
+
+        .releve-item {
+            display: flex;
+            flex-direction: column;
+            padding: 12px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            border: 1px solid #dee2e6;
+        }
+
+        .releve-label {
+            font-size: 0.85rem;
+            color: #6c757d;
+            margin-bottom: 5px;
+            font-weight: 500;
+        }
+
+        .releve-value {
+            font-size: 1.2rem;
+            color: #495057;
+            font-weight: 700;
+            font-family: 'Courier New', monospace;
+        }
+
+        .releve-total-summary {
+            margin: 20px 0;
+            padding: 15px;
+            background: linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%);
+            border: 2px solid #28a745;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(40, 167, 69, 0.2);
+        }
+
+        .releve-total-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .releve-total-label {
+            font-size: 1rem;
+            color: #155724;
+            font-weight: 600;
+        }
+
+        .releve-total-value {
+            font-size: 1.5rem;
+            color: #155724;
+            font-weight: 700;
+            font-family: 'Courier New', monospace;
+            background: white;
+            padding: 8px 16px;
+            border-radius: 6px;
+            border: 2px solid #28a745;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        .releve-ecart-details {
+            margin-top: 15px;
+        }
+
+        .releve-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.9rem;
+        }
+
+        .releve-table thead {
+            background: #e9ecef;
+        }
+
+        .releve-table th {
+            padding: 10px;
+            text-align: left;
+            font-weight: 600;
+            color: #495057;
+            border-bottom: 2px solid #dee2e6;
+        }
+
+        .releve-table td {
+            padding: 10px;
+            border-bottom: 1px solid #dee2e6;
+        }
+
+        .releve-table tbody tr:hover {
+            background: #f8f9fa;
+        }
+
+        .statut-ok {
+            background: #d4edda;
+            color: #155724;
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 0.8rem;
+            font-weight: 600;
+        }
+
+        .statut-en-cours {
+            background: #fff3cd;
+            color: #856404;
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 0.8rem;
+            font-weight: 600;
+        }
+
+        .releve-no-data {
+            color: #6c757d;
+            font-style: italic;
+            text-align: center;
+            padding: 20px;
+        }
+
+        .loading-spinner {
+            text-align: center;
+            padding: 40px;
+            font-size: 1.1rem;
+            color: #6c757d;
+        }
+
+        .modal-footer-releve {
+            padding: 15px 20px;
+            border-top: 1px solid #dee2e6;
+            display: flex;
+            justify-content: flex-end;
+            background: #f8f9fa;
+            border-radius: 0 0 12px 12px;
+        }
+
+        .btn-close-modal {
+            background: #6c757d;
+            color: white;
+            border: none;
+            padding: 8px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            font-weight: 500;
+            transition: all 0.2s ease;
+        }
+
+        .btn-close-modal:hover {
+            background: #5a6268;
+            transform: translateY(-1px);
+        }
 
         @media (max-width: 768px) {
             .report-filters {
@@ -1668,6 +2086,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
     // Sélection multiple pour changement de statut
     selectedRows: Set<ReconciliationReportData> = new Set();
     bulkStatusSelection: string = '';
+    bulkTraitementSelection: string = '';
     private autoSelectAllOnNextPagination = false;
     private hasUserSelectionChanged = false;
 
@@ -1698,6 +2117,12 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
     
     // Propriété pour contrôler l'affichage de la colonne Actions
     showActionsColumn = false;
+
+    // Propriétés pour le modal de relevé
+    isReleveModalVisible = false;
+    releveData: ReconciliationReportData | null = null;
+    releveEcartData: any[] = [];
+    isLoadingReleve = false;
 
     // Pays autorisés pour le cloisonnement
     private allowedCountryCodes: string[] | null = null;
@@ -6360,6 +6785,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
     clearSelection(): void {
         this.selectedRows.clear();
         this.bulkStatusSelection = '';
+        this.bulkTraitementSelection = '';
     }
 
     async applyBulkStatusChange(): Promise<void> {
@@ -6434,6 +6860,107 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         }
         if (errorCount > 0) {
             this.popupService.showError(`Erreur lors de la modification de ${errorCount} ligne(s)`, 'Certaines modifications ont échoué');
+        }
+    }
+
+    async applyBulkTraitementChange(): Promise<void> {
+        if (!this.bulkTraitementSelection || this.selectedRows.size === 0) {
+            return;
+        }
+
+        const selectedItems = Array.from(this.selectedRows);
+        const unlockedItems = selectedItems.filter(item => !this.isRowLocked(item));
+
+        if (unlockedItems.length === 0) {
+            this.popupService.showWarning('Aucune ligne modifiable', 'Toutes les lignes sélectionnées sont verrouillées (OK + Terminé).');
+            this.clearSelection();
+            return;
+        }
+
+        // Déterminer la valeur du traitement (undefined si __CLEAR__, sinon la valeur sélectionnée)
+        const traitementValue = this.bulkTraitementSelection === '__CLEAR__' ? undefined : this.bulkTraitementSelection;
+        const traitementDisplay = traitementValue || '-';
+
+        // Confirmer le changement avec popup moderne
+        const confirmMessage = `Voulez-vous changer le traitement de ${unlockedItems.length} ligne(s) en "${traitementDisplay}" ?`;
+        const confirmed = await this.popupService.showConfirm(confirmMessage, 'Confirmation de changement de traitement');
+        if (!confirmed) {
+            return;
+        }
+
+        let successCount = 0;
+        let errorCount = 0;
+
+        // Appliquer le changement de traitement à toutes les lignes sélectionnées
+        const savePromises = unlockedItems.map(async (item) => {
+            const oldTraitement = item.traitement;
+            item.traitement = traitementValue;
+            
+            try {
+                // Sauvegarder via l'API
+                await this.saveItemTraitement(item);
+                successCount++;
+            } catch (error) {
+                errorCount++;
+                // Revenir à l'ancien traitement en cas d'erreur
+                item.traitement = oldTraitement;
+                console.error('❌ Erreur lors de la sauvegarde du traitement:', error);
+            }
+        });
+
+        // Attendre que toutes les sauvegardes soient terminées
+        await Promise.all(savePromises);
+
+        // Vider la sélection
+        this.clearSelection();
+        
+        // Rafraîchir les données après la sauvegarde
+        if (this.currentSource === 'db') {
+            // Si on est en mode base de données, recharger depuis la DB
+            this.loadSavedReportFromDatabase();
+        } else {
+            // Si on est en mode live, re-filtrer les données
+            this.filterReport();
+            this.updatePagination();
+        }
+        
+        // Afficher les résultats
+        if (successCount > 0) {
+            this.popupService.showSuccess(`Traitement modifié pour ${successCount} ligne(s)`, 'Changement de traitement en masse réussi');
+        }
+        if (errorCount > 0) {
+            this.popupService.showError(`Erreur lors de la modification de ${errorCount} ligne(s)`, 'Certaines modifications ont échoué');
+        }
+    }
+
+    private async saveItemTraitement(item: ReconciliationReportData): Promise<void> {
+        if (!item.id) {
+            throw new Error('ID manquant');
+        }
+
+        const payload = {
+            date: item.date,
+            agency: item.agency,
+            service: item.service,
+            country: item.country,
+            totalTransactions: item.totalTransactions,
+            totalVolume: item.totalVolume,
+            matches: item.matches,
+            boOnly: item.boOnly,
+            partnerOnly: item.partnerOnly,
+            mismatches: item.mismatches,
+            matchRate: item.matchRate,
+            status: item.status,
+            comment: item.comment,
+            traitement: item.traitement || undefined,
+            glpiId: item.glpiId || ''
+        };
+
+        const updated = await this.putResult8RecWithRetry<any>(item.id, payload, { maxRetries: 3, baseDelayMs: 500 });
+        this.debugLog(`✅ Traitement sauvegardé pour ${item.agency} - ${item.service}`);
+        // Mettre à jour l'item avec les données retournées
+        if (updated?.traitement !== undefined) {
+            item.traitement = updated.traitement;
         }
     }
 
@@ -6612,6 +7139,142 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         this.router.navigate(['/suivi-des-ecarts']);
     }
 
+    /**
+     * Affiche le modal de relevé pour un service avec statut OK
+     * Récupère toutes les lignes du même service et de la même date
+     * puis récupère les données depuis ecart-bo-summary
+     */
+    async showReleveModal(item: ReconciliationReportData): Promise<void> {
+        if (item.status !== 'OK') {
+            this.popupService.showWarning('❌ Cette fonctionnalité est uniquement disponible pour les services avec statut OK.');
+            return;
+        }
+
+        // Récupérer toutes les lignes du même service et de la même date
+        const serviceDateLines = this.filteredReportData.filter(line => 
+            line.service === item.service && 
+            line.date === item.date &&
+            line.status === 'OK'
+        );
+
+        if (serviceDateLines.length === 0) {
+            this.popupService.showWarning('❌ Aucune ligne trouvée pour ce service et cette date.');
+            return;
+        }
+
+        // Calculer les totaux agrégés
+        const totalVolume = serviceDateLines.reduce((sum, line) => sum + (line.totalVolume || 0), 0);
+        const totalTransactions = serviceDateLines.reduce((sum, line) => sum + (line.totalTransactions || 0), 0);
+
+        // Préparer les données du relevé
+        this.releveData = {
+            ...item,
+            totalVolume,
+            totalTransactions
+        };
+
+        this.isReleveModalVisible = true;
+        this.isLoadingReleve = true;
+        this.releveEcartData = [];
+
+        try {
+            // Formater la date pour la recherche (format YYYY-MM-DD)
+            const searchDate = this.formatDateForSearch(item.date);
+            
+            // Récupérer les données depuis ecart-bo-summary (Écart BO J+1)
+            const ecartData = await firstValueFrom(
+                this.ecartBoSummaryService.getEcartBoSummaries({
+                    service: item.service,
+                    // Note: le service ecart-bo-summary ne supporte pas directement le filtre par date
+                    // On va filtrer côté client
+                })
+            );
+
+            // Filtrer par date, service et ENV = PARTENAIRE uniquement
+            const filteredEcartData = ecartData.filter(ecart => {
+                const ecartDate = this.formatDateForSearch(ecart.dateTransaction);
+                const isMatchingDate = ecartDate === searchDate;
+                const isMatchingService = ecart.service === item.service;
+                const isPartenaire = (ecart.env === 'PARTENAIRE' || ecart.env === 'Partenaire' || ecart.env === 'partenaire');
+                return isMatchingDate && isMatchingService && isPartenaire;
+            });
+
+            this.releveEcartData = filteredEcartData;
+        } catch (error: any) {
+            console.error('Erreur lors de la récupération des données Écart BO J+1:', error);
+            this.popupService.showError(`❌ Erreur lors de la récupération des données: ${error.message || 'Erreur inconnue'}`);
+            this.releveEcartData = [];
+        } finally {
+            this.isLoadingReleve = false;
+        }
+    }
+
+    /**
+     * Formate une date pour la recherche (format YYYY-MM-DD)
+     * Gère différents formats de date (ISO, YYYY-MM-DD, etc.)
+     */
+    private formatDateForSearch(dateStr: string): string {
+        if (!dateStr) return '';
+        
+        // Extraire la partie date si c'est un format ISO (YYYY-MM-DDTHH:mm:ss)
+        if (dateStr.includes('T')) {
+            return dateStr.split('T')[0];
+        }
+        
+        // Si la date est déjà au format YYYY-MM-DD
+        if (/^\d{4}-\d{2}-\d{2}/.test(dateStr)) {
+            return dateStr.split(' ')[0]; // Enlever l'heure si présente
+        }
+        
+        // Essayer de parser la date
+        try {
+            const date = new Date(dateStr);
+            if (!isNaN(date.getTime())) {
+                const year = date.getFullYear();
+                const month = String(date.getMonth() + 1).padStart(2, '0');
+                const day = String(date.getDate()).padStart(2, '0');
+                return `${year}-${month}-${day}`;
+            }
+        } catch (e) {
+            console.error('Erreur lors du formatage de la date:', dateStr, e);
+        }
+        
+        return dateStr;
+    }
+
+    /**
+     * Ferme le modal de relevé
+     */
+    closeReleveModal(): void {
+        this.isReleveModalVisible = false;
+        this.releveData = null;
+        this.releveEcartData = [];
+        this.isLoadingReleve = false;
+    }
+
+    /**
+     * Calcule le total du nombre de transactions depuis ecart-bo-summary
+     */
+    getTotalEcartNombre(): number {
+        return this.releveEcartData.reduce((sum, ecart) => sum + (ecart.nombreTransactions || 0), 0);
+    }
+
+    /**
+     * Calcule le total du volume depuis ecart-bo-summary
+     */
+    getTotalEcartVolume(): number {
+        return this.releveEcartData.reduce((sum, ecart) => sum + (ecart.montantTotal || 0), 0);
+    }
+
+    /**
+     * Calcule la somme des deux volumes (Rapport de Réconciliation + Écart BO Summary)
+     */
+    getTotalVolumeSum(): number {
+        const rapportVolume = this.releveData?.totalVolume || 0;
+        const ecartVolume = this.getTotalEcartVolume();
+        return rapportVolume + ecartVolume;
+    }
+
     // Méthode pour charger les données en cours
     private loadLiveData() {
         this.loadedFromDb = false;
@@ -6660,12 +7323,14 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
     private selectAllFilteredRows(): void {
         this.selectedRows.clear();
         this.bulkStatusSelection = '';
+        this.bulkTraitementSelection = '';
         this.filteredReportData.forEach(item => this.selectedRows.add(item));
     }
 
     private resetSelectionForAuto(): void {
         this.selectedRows.clear();
         this.bulkStatusSelection = '';
+        this.bulkTraitementSelection = '';
         this.hasUserSelectionChanged = false;
     }
 }
