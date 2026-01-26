@@ -265,21 +265,21 @@ export interface ReconciliationReportData {
                     <div class="summary-card clickable-card" 
                          [class.active]="activeCardFilter === 'treated'"
                          (click)="filterByTreated()"
-                         title="Cliquer pour filtrer les écarts traités">
-                        <div class="card-icon">✅</div>
+                         title="Cliquer pour filtrer">
+                        <div class="card-icon">📊</div>
                         <div class="card-content">
-                            <div class="card-title">Écarts traités</div>
-                            <div class="card-value">{{treatedDiscrepancies | number}}</div>
+                            <div class="card-title">Nbre TRX</div>
+                            <div class="card-value">{{totalTransactions | number}}</div>
                         </div>
                     </div>
                     <div class="summary-card clickable-card" 
                          [class.active]="activeCardFilter === 'ticketsToCreate'"
                          (click)="filterByTicketsToCreate()"
-                         title="Cliquer pour filtrer les tickets à créer">
-                        <div class="card-icon">🎫</div>
+                         title="Cliquer pour filtrer">
+                        <div class="card-icon">💰</div>
                         <div class="card-content">
-                            <div class="card-title">Tickets à créer</div>
-                            <div class="card-value">{{ticketsACreer | number}}</div>
+                            <div class="card-title">Volume</div>
+                            <div class="card-value">{{totalVolume | number}}</div>
                         </div>
                     </div>
                 </div>
@@ -2225,8 +2225,9 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             });
             
             const matches = detailedStats.matches;
-            const calculatedTotal = matches + boOnly + partnerOnly + mismatches;
-            const totalTransactions = calculatedTotal > 0 ? calculatedTotal : item.recordCount;
+            // Utiliser recordCount comme source de vérité principale (vient du résumé)
+            // Le recordCount représente le nombre réel de transactions dans le résumé
+            const totalTransactions = item.recordCount || (matches + boOnly + partnerOnly + mismatches);
             
             const reportItem: ReconciliationReportData = {
                 date: item.date,
@@ -3303,41 +3304,16 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             
             // Appliquer le filtre de card actif si défini
             if (this.activeCardFilter === 'inProgress') {
-                // Filtrer les items avec des écarts en cours (partnerOnly > 0)
-                return baseMatch && (item.partnerOnly || 0) > 0;
-            } else if (this.activeCardFilter === 'treated') {
-                // Filtrer les items avec des écarts traités : statut OK et au moins un écart BO ou Partenaire dans le commentaire
+                // Filtrer les items avec des écarts en cours (partnerOnly > 0 ET statut n'est pas OK)
                 const status = (item.status || '').trim().toUpperCase();
                 const isOk = status === 'OK';
-                
-                if (!isOk) {
-                    return false;
-                }
-                
-                // Extraire les écarts depuis le commentaire
-                const { boCount, partnerCount } = this.extractDiscrepanciesFromComment(item.comment);
-                const hasEcarts = boCount > 0 || partnerCount > 0;
-                
-                return baseMatch && hasEcarts;
+                return baseMatch && !isOk && (item.partnerOnly || 0) > 0;
+            } else if (this.activeCardFilter === 'treated') {
+                // Pour "Nbre TRX", pas de filtre spécial - afficher tous les éléments
+                return baseMatch;
             } else if (this.activeCardFilter === 'ticketsToCreate') {
-                // Filtrer selon la même logique que ticketsACreer
-                const idGlpiStr = (item.glpiId || '').trim();
-                const idGlpiLower = idGlpiStr.toLowerCase();
-                const status = (item.status || '').toUpperCase();
-                
-                // Exclure les tickets qui contiennent "modifier"
-                if (idGlpiLower.includes('modifier')) {
-                    return false;
-                }
-                
-                // Compter les tickets qui nécessitent une création
-                const hasNoIdGlpi = idGlpiStr === '';
-                const containsCreer = idGlpiLower.includes('créer');
-                const isNok = status === 'NOK';
-                const isEnAttenteOuEnCours = status.includes('EN COURS') || status.includes('EN ATTENTE');
-                
-                const needsTicket = (hasNoIdGlpi && isNok) || (containsCreer && isEnAttenteOuEnCours);
-                return baseMatch && needsTicket;
+                // Pour "Volume", pas de filtre spécial - afficher tous les éléments
+                return baseMatch;
             }
             
             return baseMatch;
@@ -3744,8 +3720,16 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
     // Compteurs d'écarts
     get inProgressDiscrepancies(): number {
         if (!this.filteredReportData) return 0;
-        // Afficher le total de la colonne "Écarts Partenaire" comme demandé
-        return this.filteredReportData.reduce((sum, item) => sum + (item.partnerOnly || 0), 0);
+        // Compter uniquement les écarts Partenaire où le statut n'est pas "OK"
+        return this.filteredReportData.reduce((sum, item) => {
+            const status = (item.status || '').trim().toUpperCase();
+            const isOk = status === 'OK';
+            // Ne compter que si le statut n'est pas OK
+            if (!isOk) {
+                return sum + (item.partnerOnly || 0);
+            }
+            return sum;
+        }, 0);
     }
 
     /**
@@ -3772,51 +3756,31 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         return { boCount, partnerCount };
     }
 
-    get treatedDiscrepancies(): number {
+    get totalTransactions(): number {
         if (!this.filteredReportData) return 0;
-        
-        let total = 0;
-        
-        this.filteredReportData.forEach(item => {
-            // Compter uniquement les lignes avec statut OK
-            const status = (item.status || '').trim().toUpperCase();
-            const isOk = status === 'OK';
-            
-            if (isOk) {
-                // Extraire les écarts depuis le commentaire
-                const { boCount, partnerCount } = this.extractDiscrepanciesFromComment(item.comment);
-                total += boCount + partnerCount;
+        // Somme de la colonne Transactions (totalTransactions)
+        // Exclure les lignes spéciales où agence === service
+        return this.filteredReportData.reduce((sum, item) => {
+            // Ne pas compter les lignes spéciales (agence === service)
+            if (this.isPartnerOnlySpecialLine(item)) {
+                return sum;
             }
-        });
-        
-        return total;
+            return sum + (item.totalTransactions || 0);
+        }, 0);
     }
 
-    // Compteur des tickets à créer
-    get ticketsACreer(): number {
+    // Somme de la colonne Volume
+    get totalVolume(): number {
         if (!this.filteredReportData) return 0;
-        
-        return this.filteredReportData
-            .filter(item => {
-                const idGlpiStr = (item.glpiId || '').trim();
-                const idGlpiLower = idGlpiStr.toLowerCase();
-                const status = (item.status || '').toUpperCase();
-                
-                // Exclure les tickets qui contiennent "modifier"
-                if (idGlpiLower.includes('modifier')) {
-                    return false;
-                }
-                
-                // Compter les tickets qui nécessitent une création :
-                // 1. ID TICKET vide ET statut NOK (problème nécessitant un ticket)
-                // 2. ID TICKET contient "créer" ET statut en cours/attente
-                const hasNoIdGlpi = idGlpiStr === '';
-                const containsCreer = idGlpiLower.includes('créer');
-                const isNok = status === 'NOK';
-                const isEnAttenteOuEnCours = status.includes('EN COURS') || status.includes('EN ATTENTE');
-                
-                return (hasNoIdGlpi && isNok) || (containsCreer && isEnAttenteOuEnCours);
-            }).length;
+        // Somme de la colonne Volume (totalVolume)
+        // Exclure les lignes spéciales où agence === service
+        return this.filteredReportData.reduce((sum, item) => {
+            // Ne pas compter les lignes spéciales (agence === service)
+            if (this.isPartnerOnlySpecialLine(item)) {
+                return sum;
+            }
+            return sum + (item.totalVolume || 0);
+        }, 0);
     }
 
     trackByItem(index: number, item: ReconciliationReportData): string {
