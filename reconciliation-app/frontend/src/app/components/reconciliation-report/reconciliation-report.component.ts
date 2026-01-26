@@ -2,7 +2,7 @@ import { Component, OnInit, Input, OnDestroy } from '@angular/core';
 import { ActivatedRoute, Router, NavigationEnd } from '@angular/router';
 import { HttpClient, HttpErrorResponse, HttpHeaders } from '@angular/common/http';
 import { filter } from 'rxjs/operators';
-import { Observable, Subscription } from 'rxjs';
+import { Observable, Subscription, firstValueFrom } from 'rxjs';
 import { take } from 'rxjs/operators';
 import { ReconciliationResponse, Match } from '../../models/reconciliation-response.model';
 import { AppStateService } from '../../services/app-state.service';
@@ -1668,6 +1668,8 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
     // Sélection multiple pour changement de statut
     selectedRows: Set<ReconciliationReportData> = new Set();
     bulkStatusSelection: string = '';
+    private autoSelectAllOnNextPagination = false;
+    private hasUserSelectionChanged = false;
 
     uniqueAgencies: string[] = [];
     uniqueServices: string[] = [];
@@ -1820,7 +1822,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         // Réinitialiser les données pour éviter le cache du navigateur
         this.reportData = [];
         this.filteredReportData = [];
-        this.clearSelection(); // aucune sélection par défaut
+        this.resetSelectionForAuto(); // sélection contrôlée automatiquement en mode live
         this.loadedFromDb = false;
         this.currentSource = null;
         
@@ -1830,6 +1832,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         
         if (summary && summary.length > 0) {
             this.currentSource = 'live';
+            this.autoSelectAllOnNextPagination = true;
             console.log('✅ Résumé disponible, vue "live" par défaut - chargement immédiat');
             // Charger immédiatement les données du résumé
             this.generateReportDataFromSummary(summary);
@@ -1841,6 +1844,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             this.appStateService.getReconciliationResults().pipe(take(1)).subscribe(response => {
                 if (response) {
                     this.currentSource = 'live';
+                    this.autoSelectAllOnNextPagination = true;
                     console.log('✅ Résultats de réconciliation disponibles, vue "live" par défaut - chargement immédiat');
                     // Charger immédiatement les données de réconciliation
                     this.response = response;
@@ -1857,10 +1861,15 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                 console.log('📊 ReconciliationReportComponent - Résumé reçu:', summary);
                 if (summary && summary.length > 0) {
                     console.log('📊 ReconciliationReportComponent - Génération du rapport...');
+                    this.currentSource = 'live';
+                    if (!this.hasUserSelectionChanged) {
+                        // Le flux "résumé" peut réémettre et recréer les objets: réinitialiser + re-sélectionner tant que l'utilisateur n'a pas touché.
+                        this.resetSelectionForAuto();
+                        this.autoSelectAllOnNextPagination = true;
+                    }
                     this.generateReportDataFromSummary(summary);
                     this.extractUniqueValues();
                     this.filterReport();
-                    this.currentSource = 'live';
                     this.hasSummary = true;
                 } else if (!this.response && !this.loadedFromDb && this.currentSource !== 'live') {
                     // Pas de résumé et pas de réponse en cours → charger depuis la base
@@ -1876,6 +1885,12 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                 this.response = response;
                 // Toujours recalculer à partir des onglets dès que la réponse est disponible
                 if (this.response) {
+                    this.currentSource = 'live';
+                    if (!this.hasUserSelectionChanged) {
+                        // La réponse peut se mettre à jour et recréer des objets: re-sélectionner par défaut tant que l'utilisateur n'a pas modifié.
+                        this.resetSelectionForAuto();
+                        this.autoSelectAllOnNextPagination = true;
+                    }
                     if (this.hasSummary && this.reportData.length > 0) {
                         // Si on a un résumé, on garde les colonnes Agence/Service/Pays du résumé
                         // mais on récupère les compteurs directement des onglets
@@ -1974,7 +1989,6 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                     this.syncLastSavedGlpiValues(this.reportData);
                     this.extractUniqueValues();
                     this.filterReport();
-                    this.currentSource = 'live';
                 } else if (!this.loadedFromDb && this.currentSource !== 'live') {
                     // Pas de résultat courant → charger depuis la base
                     // Mais seulement si on n'est pas déjà en mode 'live'
@@ -3338,13 +3352,12 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         
         // Recalculer le traitement pour chaque ligne filtrée selon les écarts réels
         // FORCER toutes les lignes avec statut OK à avoir traitement = "Niveau Group"
-        this.filteredReportData = this.filteredReportData.map(item => {
+        // IMPORTANT: ne pas recréer les objets (sinon l'identité de ligne change et la sélection checkbox via Set<item> casse)
+        this.filteredReportData.forEach(item => {
             // Si le statut est OK, FORCER le traitement à "Niveau Group"
             if (item.status === 'OK') {
-                return {
-                    ...item,
-                    traitement: 'Niveau Group'
-                };
+                item.traitement = 'Niveau Group';
+                return;
             }
             
             const boOnly = Number(item.boOnly) || 0;
@@ -3357,11 +3370,8 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             const traitementFinal = (item.traitement === 'Terminé') 
                 ? item.traitement 
                 : traitementAttendu;
-            
-            return {
-                ...item,
-                traitement: traitementFinal
-            };
+
+            item.traitement = traitementFinal;
         });
         
         // Trier par date décroissante (les plus récentes en premier)
@@ -4811,6 +4821,41 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         this.loadSavedReportFromDatabase(preserveComments);
     }
 
+    /**
+     * Construit un payload de mise à jour qui ne modifie que `partnerOnly` et `comment`.
+     * Tous les autres champs restent identiques à l'enregistrement existant (DB).
+     *
+     * Note: on conserve la règle "statut OK => commentaire inchangé".
+     */
+    private buildPartnerOnlyAndCommentOnlyUpdatePayloadFromExisting(
+        existing: any,
+        newPartnerOnly: number,
+        newComment: string
+    ): any {
+        const existingStatus = (existing?.status ?? '').toString();
+        const finalComment = existingStatus === 'OK' ? (existing?.comment ?? '').toString() : (newComment ?? '').toString();
+
+        const payload = {
+            date: existing?.date,
+            agency: existing?.agency,
+            service: existing?.service,
+            country: existing?.country,
+            totalTransactions: Number(existing?.totalTransactions ?? 0) || 0,
+            totalVolume: Number(existing?.totalVolume ?? 0) || 0,
+            matches: Number(existing?.matches ?? 0) || 0,
+            boOnly: Number(existing?.boOnly ?? 0) || 0,
+            partnerOnly: this.normalizeNumericValue(newPartnerOnly),
+            mismatches: Number(existing?.mismatches ?? 0) || 0,
+            matchRate: Number(existing?.matchRate ?? 0) || 0,
+            status: existingStatus,
+            comment: finalComment,
+            traitement: (existing?.traitement ?? '').toString(),
+            glpiId: (existing?.glpiId ?? '').toString()
+        };
+
+        return payload;
+    }
+
     private async updatePartnerOnlyFromExistingApiEntity(existing: any, newPartnerOnly: number): Promise<void> {
         const id = existing?.id;
         if (!id) {
@@ -5162,13 +5207,27 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         );
         if (!confirmed) return;
 
-        // Préparer les payloads (on garde une structure stable pour gérer les doublons ligne par ligne)
-        const prepared = rowsSource.map(item => {
+        // Préparer les payloads en distinguant CREATE vs UPDATE.
+        // RÈGLE MÉTIER: en UPDATE (ligne avec id), seule la colonne "écart partenaire" doit être modifiée.
+        type PreparedCreate = { mode: 'create'; sourceItem: ReconciliationReportData; payloadItem: any };
+        type PreparedUpdate = { mode: 'update'; sourceItem: ReconciliationReportData; newPartnerOnly: number; newComment: string };
+        const prepared: Array<PreparedCreate | PreparedUpdate> = rowsSource.map((item) => {
+            if (item.id) {
+                return {
+                    mode: 'update',
+                    sourceItem: item,
+                    newPartnerOnly: this.normalizeNumericValue(item.partnerOnly),
+                    newComment: (item.comment ?? '').toString()
+                };
+            }
+
             const recalculatedData = this.recalculateDataBasedOnStatus(item);
             const traitement = recalculatedData.traitement && recalculatedData.traitement.trim() !== ''
                 ? recalculatedData.traitement
                 : this.determineDefaultTraitement(recalculatedData);
+
             return {
+                mode: 'create',
                 sourceItem: item,
                 payloadItem: {
                     date: selectedDate,
@@ -5195,24 +5254,36 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         let skippedDuplicates = 0;
         let errorCount = 0;
 
+        const createdPayloads: any[] = [];
+
         // Sauvegarde séquentielle pour pouvoir proposer un update en cas de duplicata (409)
         for (const row of prepared) {
             const item = row.sourceItem;
-            const payloadItem = row.payloadItem;
 
             try {
-                // Si la ligne existe déjà (id), faire un update direct sans repasser par create
-                if (item.id) {
-                    await this.putResult8RecWithRetry<any>(item.id, payloadItem, { maxRetries: 3, baseDelayMs: 500 });
+                // UPDATE: ne modifier que partnerOnly (et ne pas toucher comment / autres colonnes)
+                if (row.mode === 'update') {
+                    const id = item.id;
+                    if (!id) {
+                        // Sécurité: ne devrait pas arriver car mode=update => id présent
+                        continue;
+                    }
+
+                    const existing = await firstValueFrom(this.http.get<any>(`/api/result8rec/${id}`));
+                    const payload = this.buildPartnerOnlyAndCommentOnlyUpdatePayloadFromExisting(existing, row.newPartnerOnly, row.newComment);
+                    await this.putResult8RecWithRetry<any>(id, payload, { maxRetries: 3, baseDelayMs: 500 });
                     updatedCount++;
                     continue;
                 }
 
+                // CREATE
+                const payloadItem = row.payloadItem;
                 await new Promise<void>((resolve, reject) => {
                     this.http.post<any>('/api/result8rec', payloadItem).subscribe({
                         next: (saved) => {
                             item.id = saved?.id;
                             createdCount++;
+                            createdPayloads.push(payloadItem);
                             resolve();
                         },
                         error: async (err: HttpErrorResponse) => {
@@ -5229,9 +5300,11 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                                 const msg =
                                     `Cette ligne existe déjà (id=${existingId}).\n\n` +
                                     `${this.formatDate(payloadItem.date)} | ${payloadItem.agency} | ${payloadItem.service} | ${payloadItem.country}\n\n` +
-                                    `Voulez-vous mettre à jour la ligne existante avec les écarts/compteurs de la ligne sélectionnée ?\n\n` +
-                                    `Ancien: matches=${existing?.matches ?? '?'} | BO=${existing?.boOnly ?? '?'} | Partenaire=${existing?.partnerOnly ?? '?'} | Incohérences=${existing?.mismatches ?? '?'}\n` +
-                                    `Nouveau: matches=${payloadItem.matches} | BO=${payloadItem.boOnly} | Partenaire=${payloadItem.partnerOnly} | Incohérences=${payloadItem.mismatches}`;
+                                    `RÈGLE: en mise à jour, seuls "Écarts partenaire" et "Commentaire" sont modifiés.\n\n` +
+                                    `Ancien partenaire: ${existing?.partnerOnly ?? '?'}\n` +
+                                    `Nouveau partenaire: ${payloadItem.partnerOnly}\n\n` +
+                                    `Ancien commentaire: ${(existing?.comment ?? '').toString()}\n` +
+                                    `Nouveau commentaire: ${(payloadItem.comment ?? '').toString()}`;
 
                                 const confirmedUpdate = await this.popupService.showConfirm(msg, 'Duplicata détecté');
                                 if (!confirmedUpdate) {
@@ -5240,15 +5313,11 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                                     return;
                                 }
 
-                                // Préserver le commentaire si la ligne existante est en OK (règle métier)
-                                const existingStatus = (existing?.status ?? payloadItem.status ?? '').toString();
-                                const shouldPreserveComment = existingStatus === 'OK';
-                                const updatePayload = {
-                                    ...payloadItem,
-                                    status: existingStatus || payloadItem.status,
-                                    comment: shouldPreserveComment ? (existing?.comment ?? '') : payloadItem.comment,
-                                    glpiId: existing?.glpiId ?? payloadItem.glpiId ?? ''
-                                };
+                                const updatePayload = this.buildPartnerOnlyAndCommentOnlyUpdatePayloadFromExisting(
+                                    existing,
+                                    this.normalizeNumericValue(payloadItem.partnerOnly),
+                                    (payloadItem.comment ?? '').toString()
+                                );
 
                                 try {
                                     await this.putResult8RecWithRetry<any>(existingId, updatePayload, { maxRetries: 3, baseDelayMs: 500 });
@@ -5272,7 +5341,8 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         }
 
         // Sauvegarder automatiquement les lignes avec écart BO (boOnly > 0) vers ecart_bo_summary
-        const ecartBoRows = prepared.map(p => p.payloadItem).filter(p => (p.boOnly || 0) > 0);
+        // IMPORTANT: uniquement pour les CRÉATIONS (pas pour les mises à jour / doublons).
+        const ecartBoRows = createdPayloads.filter(p => (p.boOnly || 0) > 0);
         let ecartMsg = '';
         if (ecartBoRows.length > 0) {
             try {
@@ -5464,6 +5534,12 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         const startIndex = (this.currentPage - 1) * this.itemsPerPage;
         const endIndex = startIndex + this.itemsPerPage;
         this.paginatedData = this.filteredReportData.slice(startIndex, endIndex);
+
+        // En mode "données en cours", cocher toutes les lignes par défaut (une seule fois)
+        if (this.autoSelectAllOnNextPagination && this.currentSource === 'live') {
+            this.selectAllFilteredRows();
+            this.autoSelectAllOnNextPagination = false;
+        }
     }
 
     goToPage(page: number) {
@@ -5536,6 +5612,29 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
     async saveEdit(item: ReconciliationReportData) {
         // Valider les données avant sauvegarde
         if (!this.validateEditData(item)) {
+            return;
+        }
+
+        // RÈGLE MÉTIER (reconciliation-report):
+        // Pour une mise à jour d'une ligne EXISTANTE, seule la colonne "écart partenaire" (partnerOnly)
+        // et le commentaire doivent être modifiés. Le reste doit rester inchangé.
+        //
+        // On s'appuie sur originalData (snapshot au startEdit) pour préserver les autres champs.
+        if (item.id) {
+            const base: ReconciliationReportData = this.originalData ? { ...this.originalData } : { ...item };
+
+            const newPartnerOnly = this.normalizeNumericValue(item.partnerOnly);
+            // Si la ligne est en statut OK, le commentaire ne doit pas être modifié (protection existante).
+            const newComment = base.status === 'OK' ? (base.comment ?? '') : ((item.comment ?? '').toString());
+
+            // Restaurer localement tous les champs (sauf partnerOnly + comment) pour éviter toute confusion.
+            Object.assign(item, base, { partnerOnly: newPartnerOnly, comment: newComment });
+
+            await this.updateRowPartnerOnlyAndCommentOnly(item, base);
+
+            // Sortir du mode édition
+            this.editingRow = null;
+            this.originalData = null;
             return;
         }
 
@@ -5615,6 +5714,61 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         // Sortir du mode édition
         this.editingRow = null;
         this.originalData = null;
+    }
+
+    /**
+     * Met à jour une ligne existante en préservant toutes les colonnes,
+     * sauf `partnerOnly` et `comment`.
+     */
+    private async updateRowPartnerOnlyAndCommentOnly(
+        item: ReconciliationReportData,
+        base: ReconciliationReportData
+    ): Promise<void> {
+        if (!item.id) return;
+
+        const confirmed = await this.popupService.showConfirm(
+            `Confirmer la mise à jour de l'enregistrement id=${item.id} ?\n\n` +
+                `Seuls "Écarts partenaire" et "Commentaire" seront modifiés.`,
+            'Confirmation de mise à jour'
+        );
+        if (!confirmed) return;
+
+        const partnerOnly = this.normalizeNumericValue(item.partnerOnly);
+        const comment = base.status === 'OK' ? (base.comment ?? '') : (item.comment ?? '');
+
+        const payload = {
+            date: base.date,
+            agency: base.agency,
+            service: base.service,
+            country: base.country,
+            totalTransactions: base.totalTransactions,
+            totalVolume: base.totalVolume,
+            matches: base.matches,
+            boOnly: base.boOnly,
+            partnerOnly,
+            mismatches: base.mismatches,
+            matchRate: base.matchRate,
+            status: base.status,
+            comment,
+            traitement: base.traitement || '',
+            glpiId: base.glpiId || ''
+        };
+
+        try {
+            await this.putResult8RecWithRetry<any>(item.id, payload, { maxRetries: 3, baseDelayMs: 500 });
+            this.popupService.showSuccess('Ligne mise à jour avec succès');
+
+            // Mettre à jour localement: préserver base + appliquer les 2 champs autorisés
+            Object.assign(item, base, { partnerOnly, comment });
+
+            // Recharger depuis la DB en préservant le commentaire (évite recalculs/écrasements)
+            const preserveComments = new Map<number, string>();
+            preserveComments.set(item.id, comment.toString());
+            this.loadSavedReportFromDatabase(preserveComments);
+        } catch (err: any) {
+            this.debugWarn('❌ Erreur de mise à jour (partnerOnly+comment only)', err);
+            this.popupService.showError('Erreur de mise à jour', 'Impossible de mettre à jour la ligne');
+        }
     }
 
     /**
@@ -6195,6 +6349,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
 
     toggleRowSelection(item: ReconciliationReportData, event: Event): void {
         const checkbox = event.target as HTMLInputElement;
+        this.hasUserSelectionChanged = true;
         if (checkbox.checked) {
             // Permettre la sélection même si des colonnes sont vides ou si la ligne est verrouillée
             this.selectedRows.add(item);
@@ -6216,6 +6371,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
 
     toggleSelectAll(event: Event): void {
         const checkbox = event.target as HTMLInputElement;
+        this.hasUserSelectionChanged = true;
         if (checkbox.checked) {
             // Sélectionner toutes les lignes, même avec des colonnes vides
             this.paginatedData.forEach(item => {
@@ -6473,10 +6629,13 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         if (this.currentSource === 'live') {
             // Basculer vers les données en base
             this.currentSource = 'db';
+            this.resetSelectionForAuto();
             this.loadSavedReportFromDatabase();
         } else {
             // Basculer vers les données en cours
             this.currentSource = 'live';
+            this.resetSelectionForAuto();
+            this.autoSelectAllOnNextPagination = true;
             this.loadLiveData();
         }
     }
@@ -6493,10 +6652,12 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
     private loadLiveData() {
         this.loadedFromDb = false;
         this.hasSummary = false;
+        this.autoSelectAllOnNextPagination = true;
         
         // Réinitialiser les données
         this.reportData = [];
         this.filteredReportData = [];
+        this.resetSelectionForAuto();
         
         // Recharger depuis les services
         const summary = this.reconciliationSummaryService.getAgencySummary();
@@ -6525,9 +6686,22 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                     this.popupService.showError('Données indisponibles', 'Aucune donnée en cours disponible. Veuillez effectuer une réconciliation d\'abord.');
                     // Revenir aux données en base
                     this.currentSource = 'db';
+                    this.autoSelectAllOnNextPagination = false;
                     this.loadSavedReportFromDatabase();
                 }
             });
         }
+    }
+
+    private selectAllFilteredRows(): void {
+        this.selectedRows.clear();
+        this.bulkStatusSelection = '';
+        this.filteredReportData.forEach(item => this.selectedRows.add(item));
+    }
+
+    private resetSelectionForAuto(): void {
+        this.selectedRows.clear();
+        this.bulkStatusSelection = '';
+        this.hasUserSelectionChanged = false;
     }
 }
