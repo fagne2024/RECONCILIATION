@@ -75,6 +75,7 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
     service: string;
     pays: string;
     nombre: number;
+    volume: number;
     statut: 'ok' | 'en cours';
     env: 'BO' | 'PARTENAIRE';
     token: string;
@@ -84,6 +85,7 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
     service: '',
     pays: '',
     nombre: 0,
+    volume: 0,
     statut: 'en cours',
     env: 'BO',
     token: ''
@@ -98,6 +100,7 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
     service: string;
     pays: string;
     nombre: number;
+    volume: number;
     statut: 'ok' | 'en cours';
     env: 'BO' | 'PARTENAIRE';
     token: string;
@@ -107,6 +110,7 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
     service: '',
     pays: '',
     nombre: 0,
+    volume: 0,
     statut: 'en cours',
     env: 'PARTENAIRE',
     token: ''
@@ -797,6 +801,13 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
     return this.filteredItems.reduce((total, item) => total + (item.nombre || 0), 0);
   }
 
+  /**
+   * Calcule le total de la colonne "volume" pour les items filtrés
+   */
+  getTotalVolume(): number {
+    return this.filteredItems.reduce((total, item) => total + (item.montant || 0), 0);
+  }
+
   clearFilters(): void {
     this.searchKey = '';
     this.selectedAgence = '';
@@ -840,6 +851,7 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
       service: item.service || '',
       pays: item.pays || '',
       nombre: item.nombre || 0,
+      volume: item.montant || 0,
       statut: item.statut || 'en cours',
       env: item.env || 'BO',
       token: item.token || ''
@@ -851,7 +863,7 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
   closeEditModal(): void {
     this.showEditModal = false;
     this.editingItem = null;
-    this.editForm = { date: '', agence: '', service: '', pays: '', nombre: 0, statut: 'en cours', env: 'BO', token: '' };
+    this.editForm = { date: '', agence: '', service: '', pays: '', nombre: 0, volume: 0, statut: 'en cours', env: 'BO', token: '' };
     this.cdr.markForCheck();
   }
 
@@ -893,7 +905,7 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
           service: this.editForm.service,
           pays: this.editForm.pays,
           nombreTransactions: this.editForm.nombre,
-          montantTotal: this.editingItem.montant,
+          montantTotal: this.editForm.volume || 0,
           statut: this.editForm.statut === 'ok' ? 'OK' : 'EN_COURS',
           env: this.editForm.env || 'BO'
         };
@@ -908,6 +920,7 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
         this.editingItem.service = updated.service || this.editForm.service;
         this.editingItem.pays = updated.pays || this.editForm.pays;
         this.editingItem.nombre = updated.nombreTransactions || this.editForm.nombre;
+        this.editingItem.montant = updated.montantTotal || this.editForm.volume || 0;
         this.editingItem.statut = (updated.statut === 'OK' ? 'ok' : 'en cours') as 'ok' | 'en cours';
         this.editingItem.token = updated.token || undefined;
         
@@ -926,6 +939,7 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
         this.editingItem.service = this.editForm.service;
         this.editingItem.pays = this.editForm.pays;
         this.editingItem.nombre = this.editForm.nombre;
+        this.editingItem.montant = this.editForm.volume || 0;
         this.editingItem.statut = this.editForm.statut;
         this.editingItem.env = this.editForm.env;
         
@@ -1114,6 +1128,7 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
       service: '',
       pays: '',
       nombre: 0,
+      volume: 0,
       statut: 'en cours',
       env: 'PARTENAIRE',
       token: ''
@@ -1130,6 +1145,7 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
       service: '',
       pays: '',
       nombre: 0,
+      volume: 0,
       statut: 'en cours',
       env: 'PARTENAIRE',
       token: ''
@@ -1171,7 +1187,7 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
         service: this.addForm.service,
         pays: this.addForm.pays,
         nombreTransactions: this.addForm.nombre,
-        montantTotal: 0,
+        montantTotal: this.addForm.volume || 0,
         statut: this.addForm.statut === 'ok' ? 'OK' : 'EN_COURS',
         env: this.addForm.env || 'PARTENAIRE',
         commentaire: `Ajout manuel - ${this.addForm.nombre} transaction(s)`
@@ -1258,7 +1274,7 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
     this.cdr.markForCheck();
 
     try {
-      const columns = ['Date', 'Agence', 'Service', 'Pays', 'ENV', 'Token', 'Nombre', 'Statut', 'Montant'];
+      const columns = ['Date', 'Agence', 'Service', 'Pays', 'ENV', 'Token', 'Nombre', 'Volume', 'Statut'];
       
       // Fonction pour échapper les valeurs CSV
       const escapeCsvValue = (value: any): string => {
@@ -1288,8 +1304,8 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
           item.env || 'BO',
           item.token || '',
           item.nombre || 0,
-          item.statut || 'en cours',
-          item.montant || 0
+          item.montant || 0,
+          item.statut || 'en cours'
         ];
         csvRows.push(row.map(val => escapeCsvValue(val)).join(';'));
       }

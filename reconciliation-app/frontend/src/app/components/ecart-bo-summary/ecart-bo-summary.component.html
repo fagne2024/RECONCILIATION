@@ -13,6 +13,9 @@
         <span class="total-nombre" *ngIf="filteredItems.length > 0">
           (Total nombre: {{getTotalNombre() | number:'1.0-0'}})
         </span>
+        <span class="total-volume" *ngIf="filteredItems.length > 0">
+          (Total volume: {{getTotalVolume() | number:'1.0-0'}})
+        </span>
       </span>
       <button 
         (click)="saveData()" 
@@ -157,6 +160,7 @@
             <th>ENV</th>
             <th>Token</th>
             <th>Nombre</th>
+            <th>Volume</th>
             <th>Statut</th>
             <th>Actions</th>
           </tr>
@@ -170,6 +174,7 @@
             <td>{{ item.env || 'BO' }}</td>
             <td class="token-cell" [title]="item.token || 'Lien BO/Partenaire (recherche rapide)'">{{ getTokenDisplay(item.token) }}</td>
             <td class="nombre-cell">{{ item.nombre | number:'1.0-0' }}</td>
+            <td class="volume-cell">{{ item.montant | number:'1.0-0' }}</td>
             <td class="statut-cell">
               <select 
                 [(ngModel)]="item.statut" 
@@ -203,7 +208,7 @@
             </td>
           </tr>
           <tr *ngIf="getPagedItems().length === 0">
-            <td colspan="9" class="no-data">Aucun écart BO trouvé</td>
+            <td colspan="10" class="no-data">Aucun écart BO trouvé</td>
           </tr>
         </tbody>
       </table>
@@ -345,6 +350,18 @@
           >
         </div>
         <div class="form-group">
+          <label>Volume (montant) *</label>
+          <input 
+            type="number" 
+            [(ngModel)]="addForm.volume" 
+            class="form-control"
+            min="0"
+            step="0.01"
+            required
+            placeholder="0"
+          >
+        </div>
+        <div class="form-group">
           <label>Statut *</label>
           <select [(ngModel)]="addForm.statut" class="form-control">
             <option value="en cours">En cours</option>
@@ -445,6 +462,17 @@
             [(ngModel)]="editForm.nombre" 
             class="form-control"
             min="0"
+            required
+          >
+        </div>
+        <div class="form-group">
+          <label>Volume (montant) *</label>
+          <input 
+            type="number" 
+            [(ngModel)]="editForm.volume" 
+            class="form-control"
+            min="0"
+            step="0.01"
             required
           >
         </div>
