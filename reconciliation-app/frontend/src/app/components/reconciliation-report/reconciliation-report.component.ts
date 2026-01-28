@@ -652,7 +652,7 @@ export interface ReconciliationReportData {
         </div>
 
         <!-- Modal de relevé -->
-        <div *ngIf="isReleveModalVisible" class="modal-overlay" (click)="closeReleveModal()">
+        <div *ngIf="isReleveModalVisible" class="modal-overlay">
             <div class="modal-content-releve" (click)="$event.stopPropagation()">
                 <div class="modal-header-releve">
                     <h3>📋 Relevé de Service</h3>
@@ -692,7 +692,7 @@ export interface ReconciliationReportData {
                         </div>
                         <div class="releve-total-summary">
                             <div class="releve-total-item">
-                                <span class="releve-total-label">💰 Volume Total (Rapport + Écart BO J+1):</span>
+                                <span class="releve-total-label">💰 Volume BO:</span>
                                 <span class="releve-total-value">{{getTotalVolumeSum() | number}}</span>
                             </div>
                         </div>
@@ -726,11 +726,128 @@ export interface ReconciliationReportData {
                     <div class="releve-section" *ngIf="releveEcartData && releveEcartData.length === 0">
                         <p class="releve-no-data">Aucune donnée trouvée dans Écart BO J+1 pour ce service et cette date.</p>
                     </div>
+
+                    <!-- Section Données ENV PARTENAIRE J-1 -->
+                    <div class="releve-section" *ngIf="releveEcartDataJ1 && releveEcartDataJ1.length > 0">
+                        <h5>Données depuis Écart BO J-1 (ENV PARTENAIRE)</h5>
+                        <div class="releve-ecart-grid">
+                            <div class="releve-item">
+                                <span class="releve-label">Nombre total:</span>
+                                <span class="releve-value">{{getTotalEcartNombreJ1() | number}}</span>
+                            </div>
+                            <div class="releve-item">
+                                <span class="releve-label">Volume total:</span>
+                                <span class="releve-value">{{getTotalEcartVolumeJ1() | number}}</span>
+                            </div>
+                        </div>
+                        <div class="releve-ecart-details">
+                            <table class="releve-table">
+                                <thead>
+                                    <tr>
+                                        <th>Agence</th>
+                                        <th>Pays</th>
+                                        <th>Nombre</th>
+                                        <th>Volume</th>
+                                        <th>Statut</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr *ngFor="let ecart of releveEcartDataJ1">
+                                        <td>{{ecart.agence}}</td>
+                                        <td>{{ecart.pays}}</td>
+                                        <td>{{ecart.nombreTransactions | number}}</td>
+                                        <td>{{ecart.montantTotal | number}}</td>
+                                        <td>
+                                            <span [class]="(ecart.statut === 'OK' || ecart.statut === 'ok') ? 'statut-ok' : 'statut-en-cours'">
+                                                {{(ecart.statut === 'OK' || ecart.statut === 'ok') ? 'OK' : 'En cours'}}
+                                            </span>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div class="releve-section" *ngIf="releveEcartDataJ1 && releveEcartDataJ1.length === 0 && !isLoadingReleve">
+                        <p class="releve-no-data">Aucune donnée trouvée dans Écart BO J-1 (ENV PARTENAIRE) pour ce service.</p>
+                    </div>
+
+                    <!-- Section Données Écart traité (saisie manuelle) -->
+                    <div class="releve-section">
+                        <h5>📝 Données Écart traité (saisie manuelle)</h5>
+                        <div class="releve-manual-input">
+                            <div class="releve-input-group">
+                                <label class="releve-input-label">Nombre:</label>
+                                <input 
+                                    type="number" 
+                                    [(ngModel)]="releveManualNombre" 
+                                    class="releve-input"
+                                    placeholder="0"
+                                    min="0"
+                                    (input)="onReleveManualChange()">
+                            </div>
+                            <div class="releve-input-group">
+                                <label class="releve-input-label">Volume:</label>
+                                <input 
+                                    type="number" 
+                                    [(ngModel)]="releveManualVolume" 
+                                    class="releve-input"
+                                    placeholder="0"
+                                    min="0"
+                                    step="0.01"
+                                    (input)="onReleveManualChange()">
+                            </div>
+                        </div>
+                        <div class="releve-manual-summary" *ngIf="releveManualNombre > 0 || releveManualVolume > 0">
+                            <div class="releve-item">
+                                <span class="releve-label">Nombre total:</span>
+                                <span class="releve-value">{{releveManualNombre | number}}</span>
+                            </div>
+                            <div class="releve-item">
+                                <span class="releve-label">Volume total:</span>
+                                <span class="releve-value">{{releveManualVolume | number}}</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Totaux finaux -->
+                    <div class="releve-section">
+                        <h5>📊 Totaux finaux</h5>
+                        <div class="releve-final-totals">
+                            <div class="releve-final-item">
+                                <span class="releve-final-label">📈 Nombre total de transactions BO:</span>
+                                <span class="releve-final-value">{{getTotalTransactionsSum() | number}}</span>
+                            </div>
+                            <div class="releve-final-item">
+                                <span class="releve-final-label">📈 Nombre total de transactions Partenaire:</span>
+                                <span class="releve-final-value">{{getTotalTransactionsPartenaire() | number}}</span>
+                            </div>
+                            <div class="releve-final-item">
+                                <span class="releve-final-label">📊 Nombre total (Rapport):</span>
+                                <span class="releve-final-value">{{releveData?.totalTransactions || 0 | number}}</span>
+                            </div>
+                            <div class="releve-final-item">
+                                <span class="releve-final-label">📊 Nombre total (Écart traité):</span>
+                                <span class="releve-final-value">{{getTotalNombreSum() | number}}</span>
+                            </div>
+                            <div class="releve-total-summary">
+                                <div class="releve-total-item">
+                                    <span class="releve-total-label">💰 Volume partenaire:</span>
+                                    <span class="releve-total-value">{{getTotalVolumeSumWithManual() | number}}</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
                 <div class="modal-body-releve" *ngIf="isLoadingReleve">
                     <div class="loading-spinner">⏳ Chargement...</div>
                 </div>
                 <div class="modal-footer-releve">
+                    <button class="btn btn-export-releve" (click)="exportReleveToExcel()" [disabled]="!releveData">
+                        📥 Exporter
+                    </button>
+                    <button class="btn btn-validate-releve" (click)="validateReleve()" [disabled]="isValidatingReleve || isReleveValidated || isReleveAlreadyValidated()" [class.btn-validated]="isReleveValidated || isReleveAlreadyValidated()">
+                        {{isValidatingReleve ? '⏳ Validation...' : ((isReleveValidated || isReleveAlreadyValidated()) ? '✅ Validé' : '✅ Valider')}}
+                    </button>
                     <button class="btn btn-close-modal" (click)="closeReleveModal()">Fermer</button>
                 </div>
             </div>
@@ -1952,6 +2069,82 @@ export interface ReconciliationReportData {
             padding: 20px;
         }
 
+        /* Styles pour la saisie manuelle */
+        .releve-manual-input {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 15px;
+        }
+
+        .releve-input-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .releve-input-label {
+            font-size: 0.9rem;
+            color: #495057;
+            font-weight: 600;
+        }
+
+        .releve-input {
+            padding: 10px;
+            border: 1px solid #ced4da;
+            border-radius: 6px;
+            font-size: 1rem;
+            font-family: 'Courier New', monospace;
+            transition: border-color 0.2s ease;
+        }
+
+        .releve-input:focus {
+            outline: none;
+            border-color: #17a2b8;
+            box-shadow: 0 0 0 2px rgba(23, 162, 184, 0.25);
+        }
+
+        .releve-manual-summary {
+            margin-top: 15px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            border: 1px solid #dee2e6;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+        }
+
+        /* Styles pour les totaux finaux */
+        .releve-final-totals {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .releve-final-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 15px;
+            background: #e9ecef;
+            border-radius: 6px;
+            border: 1px solid #dee2e6;
+        }
+
+        .releve-final-label {
+            font-size: 1rem;
+            color: #495057;
+            font-weight: 600;
+        }
+
+        .releve-final-value {
+            font-size: 1.2rem;
+            color: #495057;
+            font-weight: 700;
+            font-family: 'Courier New', monospace;
+        }
+
         .loading-spinner {
             text-align: center;
             padding: 40px;
@@ -1983,6 +2176,70 @@ export interface ReconciliationReportData {
         .btn-close-modal:hover {
             background: #5a6268;
             transform: translateY(-1px);
+        }
+
+        .btn-validate-releve {
+            background: #28a745;
+            color: white;
+            border: none;
+            padding: 8px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            font-weight: 500;
+            transition: all 0.2s ease;
+            margin-right: 10px;
+        }
+
+        .btn-validate-releve:hover:not(:disabled) {
+            background: #218838;
+            transform: translateY(-1px);
+            box-shadow: 0 2px 4px rgba(40, 167, 69, 0.3);
+        }
+
+        .btn-validate-releve:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .btn-validate-releve.btn-validated {
+            background: #6c757d;
+            color: white;
+            cursor: default;
+        }
+
+        .btn-validate-releve.btn-validated:hover {
+            background: #6c757d;
+            transform: none;
+            box-shadow: none;
+        }
+
+        .btn-export-releve {
+            background: #28a745;
+            color: white;
+            border: none;
+            padding: 8px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            font-weight: 500;
+            transition: all 0.2s ease;
+            margin-right: 10px;
+        }
+
+        .btn-export-releve:hover:not(:disabled) {
+            background: #218838;
+            transform: translateY(-1px);
+            box-shadow: 0 2px 4px rgba(40, 167, 69, 0.3);
+        }
+
+        .btn-export-releve:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .modal-footer-releve {
+            justify-content: space-between;
         }
 
         @media (max-width: 768px) {
@@ -2122,7 +2379,14 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
     isReleveModalVisible = false;
     releveData: ReconciliationReportData | null = null;
     releveEcartData: any[] = [];
+    releveEcartDataJ1: any[] = []; // Données ENV BO de J-1
     isLoadingReleve = false;
+    isValidatingReleve = false;
+    isReleveValidated = false; // Indique si le relevé a été validé
+    
+    // Propriétés pour les données manuelles d'écart traité
+    releveManualNombre: number = 0;
+    releveManualVolume: number = 0;
 
     // Pays autorisés pour le cloisonnement
     private allowedCountryCodes: string[] | null = null;
@@ -3745,8 +4009,9 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         });
         
         // FORCER toutes les lignes avec statut OK à avoir traitement = "Niveau Group" AVANT le recalcul
+        // IMPORTANT: Ne jamais écraser un traitement "Terminé"
         this.filteredReportData.forEach(item => {
-            if (item.status === 'OK') {
+            if (item.status === 'OK' && item.traitement !== 'Terminé') {
                 item.traitement = 'Niveau Group';
             }
         });
@@ -3754,10 +4019,13 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         // Recalculer le traitement pour chaque ligne filtrée selon les écarts réels
         // FORCER toutes les lignes avec statut OK à avoir traitement = "Niveau Group"
         // IMPORTANT: ne pas recréer les objets (sinon l'identité de ligne change et la sélection checkbox via Set<item> casse)
+        // IMPORTANT: Ne jamais écraser un traitement "Terminé"
         this.filteredReportData.forEach(item => {
-            // Si le statut est OK, FORCER le traitement à "Niveau Group"
+            // Si le statut est OK, FORCER le traitement à "Niveau Group" (sauf si "Terminé")
             if (item.status === 'OK') {
-                item.traitement = 'Niveau Group';
+                if (item.traitement !== 'Terminé') {
+                    item.traitement = 'Niveau Group';
+                }
                 return;
             }
             
@@ -3991,9 +4259,12 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
      */
     private enforceTraitementForOkStatus(): void {
         this.reportData.forEach(item => {
-            if (item.status === 'OK' && item.traitement !== 'Niveau Group') {
+            // IMPORTANT: Ne jamais écraser un traitement "Terminé", même si le statut est OK
+            if (item.status === 'OK' && item.traitement !== 'Niveau Group' && item.traitement !== 'Terminé') {
                 console.log(`🔄 enforceTraitementForOkStatus: Forcer traitement à "Niveau Group" pour ${item.agency}/${item.service} (statut OK)`);
                 item.traitement = 'Niveau Group';
+            } else if (item.status === 'OK' && item.traitement === 'Terminé') {
+                console.log(`✅ enforceTraitementForOkStatus: Préservation du traitement "Terminé" pour ${item.agency}/${item.service} (statut OK)`);
             }
         });
     }
@@ -4091,7 +4362,12 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                 (recalculated.matches / totalTransactions) * 100 : 0;
             
             // Quand le statut passe à "OK", le traitement doit être automatiquement "Niveau Group"
-            recalculated.traitement = 'Niveau Group';
+            // IMPORTANT: Ne jamais écraser un traitement "Terminé"
+            if (item.traitement !== 'Terminé') {
+                recalculated.traitement = 'Niveau Group';
+            } else {
+                recalculated.traitement = 'Terminé';
+            }
             
             // Préserver le commentaire existant quand le statut est "OK"
             // Le commentaire ne doit pas être modifié quand le statut passe à "OK"
@@ -4849,11 +5125,22 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                     const mismatches = Number(r.mismatches) || 0;
                     const totalEcarts = boOnly + partnerOnly + mismatches;
                     
-                    // FORCER toutes les lignes avec statut OK à avoir traitement = "Niveau Group"
+                    // Préserver le traitement depuis la base de données
+                    // IMPORTANT: Ne jamais écraser un traitement "Terminé" même si le statut est OK
                     let traitement = r.traitement;
-                    if (r.status === 'OK') {
+                    
+                    // Si le traitement est "Terminé", le préserver absolument
+                    if (traitement && traitement.trim() === 'Terminé') {
+                        // Conserver "Terminé" tel quel, même si le statut est OK
+                        traitement = 'Terminé';
+                        if (r.status === 'OK') {
+                            console.log(`✅ loadSavedReportFromDatabase: Traitement "Terminé" préservé pour ${r.agency}/${r.service} (ID: ${r.id}, statut: OK)`);
+                        }
+                    } else if (r.status === 'OK') {
+                        // Pour les lignes avec statut OK et traitement non "Terminé", utiliser "Niveau Group"
                         traitement = 'Niveau Group';
                     } else if (!traitement || traitement.trim() === '') {
+                        // Si pas de traitement, déterminer selon les écarts
                         traitement = totalEcarts > 0 ? 'Niveau Support' : 'Niveau Group';
                     } else {
                         // Vérifier si le traitement actuel correspond aux écarts réels
@@ -6938,7 +7225,13 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             throw new Error('ID manquant');
         }
 
-        const payload = {
+        // S'assurer que le traitement est toujours une chaîne non vide
+        const traitementToSave = item.traitement && item.traitement.trim() ? item.traitement.trim() : '';
+        
+        this.debugLog(`💾 Sauvegarde traitement pour ${item.agency} - ${item.service}: traitement="${traitementToSave}"`);
+        this.debugLog(`🔍 État de item.traitement avant envoi: "${item.traitement}" (type: ${typeof item.traitement})`);
+
+        const payload: any = {
             date: item.date,
             agency: item.agency,
             service: item.service,
@@ -6952,15 +7245,36 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             matchRate: item.matchRate,
             status: item.status,
             comment: item.comment,
-            traitement: item.traitement || undefined,
             glpiId: item.glpiId || ''
         };
 
+        // Toujours inclure le traitement dans le payload, même s'il est vide
+        // Le backend gérera la valeur par défaut si nécessaire
+        payload.traitement = traitementToSave;
+
+        this.debugLog(`📦 Payload complet envoyé:`, JSON.stringify(payload, null, 2));
+        this.debugLog(`🔍 Vérification traitement dans payload: "${payload.traitement}" (type: ${typeof payload.traitement})`);
+        
         const updated = await this.putResult8RecWithRetry<any>(item.id, payload, { maxRetries: 3, baseDelayMs: 500 });
-        this.debugLog(`✅ Traitement sauvegardé pour ${item.agency} - ${item.service}`);
+        this.debugLog(`✅ Traitement sauvegardé pour ${item.agency} - ${item.service}, réponse complète:`, JSON.stringify(updated, null, 2));
+        this.debugLog(`📥 Traitement dans la réponse: "${updated?.traitement}" (type: ${typeof updated?.traitement})`);
+        
         // Mettre à jour l'item avec les données retournées
-        if (updated?.traitement !== undefined) {
-            item.traitement = updated.traitement;
+        if (updated?.traitement !== undefined && updated.traitement !== null && updated.traitement.trim() !== '') {
+            item.traitement = updated.traitement.trim();
+            this.debugLog(`✅ Traitement mis à jour depuis la réponse: "${item.traitement}"`);
+        } else if (traitementToSave && traitementToSave.trim() !== '') {
+            // Si le traitement n'est pas retourné mais qu'on l'a envoyé, le conserver
+            // C'est important car le backend pourrait ne pas toujours retourner le traitement
+            item.traitement = traitementToSave.trim();
+            this.debugLog(`✅ Traitement conservé depuis valeur envoyée (non retourné par l'API): "${item.traitement}"`);
+        } else {
+            this.debugLog(`⚠️ Aucun traitement retourné et aucun traitement envoyé pour ${item.agency} - ${item.service}`);
+            // Si on a envoyé "Terminé" mais qu'il n'est pas retourné, le forcer quand même
+            if (traitementToSave === 'Terminé') {
+                item.traitement = 'Terminé';
+                this.debugLog(`🔧 Traitement forcé à "Terminé" car c'était la valeur envoyée`);
+            }
         }
     }
 
@@ -7176,12 +7490,18 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         this.isReleveModalVisible = true;
         this.isLoadingReleve = true;
         this.releveEcartData = [];
+        this.releveEcartDataJ1 = [];
 
         try {
             // Formater la date pour la recherche (format YYYY-MM-DD)
             const searchDate = this.formatDateForSearch(item.date);
             
-            // Récupérer les données depuis ecart-bo-summary (Écart BO J+1)
+            // Calculer la date J-1
+            const searchDateObj = new Date(searchDate);
+            searchDateObj.setDate(searchDateObj.getDate() - 1);
+            const searchDateJ1 = this.formatDateForSearch(searchDateObj.toISOString().split('T')[0]);
+            
+            // Récupérer les données depuis ecart-bo-summary
             const ecartData = await firstValueFrom(
                 this.ecartBoSummaryService.getEcartBoSummaries({
                     service: item.service,
@@ -7190,7 +7510,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                 })
             );
 
-            // Filtrer par date, service et ENV = PARTENAIRE uniquement
+            // Filtrer par date, service et ENV = PARTENAIRE uniquement (pour J+1)
             const filteredEcartData = ecartData.filter(ecart => {
                 const ecartDate = this.formatDateForSearch(ecart.dateTransaction);
                 const isMatchingDate = ecartDate === searchDate;
@@ -7200,12 +7520,26 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             });
 
             this.releveEcartData = filteredEcartData;
+
+            // Filtrer par date J-1, service et ENV = PARTENAIRE uniquement (pour J-1)
+            const filteredEcartDataJ1 = ecartData.filter(ecart => {
+                const ecartDate = this.formatDateForSearch(ecart.dateTransaction);
+                const isMatchingDateJ1 = ecartDate === searchDateJ1;
+                const isMatchingService = ecart.service === item.service;
+                const isPartenaire = (ecart.env === 'PARTENAIRE' || ecart.env === 'Partenaire' || ecart.env === 'partenaire');
+                return isMatchingDateJ1 && isMatchingService && isPartenaire;
+            });
+
+            this.releveEcartDataJ1 = filteredEcartDataJ1;
         } catch (error: any) {
-            console.error('Erreur lors de la récupération des données Écart BO J+1:', error);
+            console.error('Erreur lors de la récupération des données Écart BO:', error);
             this.popupService.showError(`❌ Erreur lors de la récupération des données: ${error.message || 'Erreur inconnue'}`);
             this.releveEcartData = [];
+            this.releveEcartDataJ1 = [];
         } finally {
             this.isLoadingReleve = false;
+            // Vérifier si toutes les lignes ont déjà le traitement à "Terminé"
+            this.isReleveValidated = this.isReleveAlreadyValidated();
         }
     }
 
@@ -7243,13 +7577,48 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
     }
 
     /**
+     * Vérifie si toutes les lignes non verrouillées du relevé ont déjà le traitement à "Terminé"
+     */
+    isReleveAlreadyValidated(): boolean {
+        if (!this.releveData) {
+            return false;
+        }
+
+        // Filtrer les lignes correspondant au service et à la date
+        const matchingLines = this.filteredReportData.filter(line => 
+            line.service === this.releveData!.service && 
+            line.date === this.releveData!.date
+        );
+
+        if (matchingLines.length === 0) {
+            return false;
+        }
+
+        // Filtrer les lignes non verrouillées
+        const unlockedLines = matchingLines.filter(line => !this.isRowLocked(line));
+
+        // Si toutes les lignes sont verrouillées, considérer comme validé
+        if (unlockedLines.length === 0) {
+            return true;
+        }
+
+        // Vérifier si toutes les lignes non verrouillées ont le traitement à "Terminé"
+        return unlockedLines.every(line => line.traitement === 'Terminé');
+    }
+
+    /**
      * Ferme le modal de relevé
      */
     closeReleveModal(): void {
         this.isReleveModalVisible = false;
         this.releveData = null;
         this.releveEcartData = [];
+        this.releveEcartDataJ1 = [];
         this.isLoadingReleve = false;
+        this.isReleveValidated = false; // Réinitialiser l'état de validation
+        // Réinitialiser les données manuelles
+        this.releveManualNombre = 0;
+        this.releveManualVolume = 0;
     }
 
     /**
@@ -7267,12 +7636,573 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
     }
 
     /**
-     * Calcule la somme des deux volumes (Rapport de Réconciliation + Écart BO Summary)
+     * Calcule le Volume BO (Rapport de Réconciliation + Écart traité)
      */
     getTotalVolumeSum(): number {
         const rapportVolume = this.releveData?.totalVolume || 0;
-        const ecartVolume = this.getTotalEcartVolume();
-        return rapportVolume + ecartVolume;
+        const manualVolume = this.releveManualVolume || 0;
+        return rapportVolume + manualVolume;
+    }
+
+    /**
+     * Calcule le Volume partenaire (Rapport + Écart BO J+1 + Écart traité - Écart BO J-1)
+     */
+    getTotalVolumeSumWithManual(): number {
+        const rapportVolume = this.releveData?.totalVolume || 0;
+        const ecartVolumeJ1 = this.getTotalEcartVolume(); // Écart BO J+1
+        const manualVolume = this.releveManualVolume || 0;
+        const ecartVolumeJ1Minus = this.getTotalEcartVolumeJ1(); // Écart BO J-1
+        return rapportVolume + ecartVolumeJ1 + manualVolume - ecartVolumeJ1Minus;
+    }
+
+    /**
+     * Calcule le nombre total de transactions BO (Rapport + Écart traité, sans Écart BO J+1)
+     */
+    getTotalTransactionsSum(): number {
+        const rapportTransactions = this.releveData?.totalTransactions || 0;
+        const manualNombre = this.releveManualNombre || 0;
+        return rapportTransactions + manualNombre;
+    }
+
+    /**
+     * Calcule le nombre total de transactions Partenaire (Rapport + Écart traité + Écart BO J+1 - Écart BO J-1)
+     */
+    getTotalTransactionsPartenaire(): number {
+        const rapportTransactions = this.releveData?.totalTransactions || 0;
+        const manualNombre = this.releveManualNombre || 0;
+        const ecartJ1Nombre = this.getTotalEcartNombre(); // Écart BO J+1
+        const ecartJ1NombreMinus = this.getTotalEcartNombreJ1(); // Écart BO J-1
+        return rapportTransactions + manualNombre + ecartJ1Nombre - ecartJ1NombreMinus;
+    }
+
+    /**
+     * Calcule le nombre total (Écart traité uniquement)
+     */
+    getTotalNombreSum(): number {
+        return this.releveManualNombre || 0;
+    }
+
+    /**
+     * Calcule le total du nombre de transactions depuis ecart-bo-summary J-1 (ENV BO)
+     */
+    getTotalEcartNombreJ1(): number {
+        return this.releveEcartDataJ1.reduce((sum, ecart) => sum + (ecart.nombreTransactions || 0), 0);
+    }
+
+    /**
+     * Calcule le total du volume depuis ecart-bo-summary J-1 (ENV BO)
+     */
+    getTotalEcartVolumeJ1(): number {
+        return this.releveEcartDataJ1.reduce((sum, ecart) => sum + (ecart.montantTotal || 0), 0);
+    }
+
+    /**
+     * Gère les changements dans les champs manuels
+     */
+    onReleveManualChange(): void {
+        // Cette fonction peut être utilisée pour des validations ou autres actions
+        // Pour l'instant, elle est vide mais peut être étendue si nécessaire
+    }
+
+    /**
+     * Exporte le relevé en Excel
+     */
+    async exportReleveToExcel(): Promise<void> {
+        if (!this.releveData) {
+            this.popupService.showWarning('❌ Aucune donnée de relevé disponible.');
+            return;
+        }
+
+        try {
+            const workbook = new ExcelJS.Workbook();
+            
+            // Feuille 1: Résumé du relevé
+            const summarySheet = workbook.addWorksheet('Résumé');
+            
+            // Fonction helper pour appliquer des styles
+            const applyHeaderStyle = (row: ExcelJS.Row, bgColor: string = 'FF667eea') => {
+                row.eachCell(cell => {
+                    cell.fill = {
+                        type: 'pattern',
+                        pattern: 'solid',
+                        fgColor: { argb: bgColor }
+                    };
+                    cell.font = { color: { argb: 'FFFFFFFF' }, bold: true, size: 12 };
+                    cell.alignment = { horizontal: 'left', vertical: 'middle' };
+                    cell.border = {
+                        top: { style: 'thin', color: { argb: 'FF000000' } },
+                        bottom: { style: 'thin', color: { argb: 'FF000000' } },
+                        left: { style: 'thin', color: { argb: 'FF000000' } },
+                        right: { style: 'thin', color: { argb: 'FF000000' } }
+                    };
+                });
+            };
+
+            const applySectionStyle = (row: ExcelJS.Row) => {
+                row.getCell(1).fill = {
+                    type: 'pattern',
+                    pattern: 'solid',
+                    fgColor: { argb: 'FFE3F2FD' }
+                };
+                row.getCell(1).font = { bold: true, size: 11, color: { argb: 'FF1976D2' } };
+            };
+
+            const applyValueStyle = (row: ExcelJS.Row, isTotal: boolean = false) => {
+                row.eachCell((cell, colNumber) => {
+                    if (colNumber === 1) {
+                        cell.font = { size: 10 };
+                    } else {
+                        cell.font = { size: 10, bold: isTotal };
+                        cell.numFmt = '#,##0.00';
+                        if (isTotal) {
+                            cell.fill = {
+                                type: 'pattern',
+                                pattern: 'solid',
+                                fgColor: { argb: 'FFF1F8E9' }
+                            };
+                        }
+                    }
+                    cell.border = {
+                        top: { style: 'thin', color: { argb: 'FFE0E0E0' } },
+                        bottom: { style: 'thin', color: { argb: 'FFE0E0E0' } },
+                        left: { style: 'thin', color: { argb: 'FFE0E0E0' } },
+                        right: { style: 'thin', color: { argb: 'FFE0E0E0' } }
+                    };
+                });
+            };
+
+            // Titre principal
+            const titleRow = summarySheet.addRow(['📋 Relevé de Service']);
+            titleRow.getCell(1).font = { size: 16, bold: true, color: { argb: 'FF667eea' } };
+            titleRow.height = 25;
+            summarySheet.addRow([]);
+            
+            // En-tête avec le service et la date (comme dans le modal)
+            const serviceRow = summarySheet.addRow([this.releveData.service]);
+            serviceRow.getCell(1).font = { size: 14, bold: true, color: { argb: 'FF333333' } };
+            serviceRow.height = 20;
+            
+            const dateRow = summarySheet.addRow([`Date: ${this.formatDate(this.releveData.date)}`]);
+            dateRow.getCell(1).font = { size: 11, color: { argb: 'FF666666' } };
+            dateRow.height = 18;
+            summarySheet.addRow([]);
+            
+            // Données du Rapport de Réconciliation
+            const rapportHeader = summarySheet.addRow(['Données du Rapport de Réconciliation']);
+            applySectionStyle(rapportHeader);
+            rapportHeader.height = 18;
+            
+            const rapportVolumeRow = summarySheet.addRow(['Volume:', this.releveData.totalVolume || 0]);
+            applyValueStyle(rapportVolumeRow);
+            const rapportTrxRow = summarySheet.addRow(['Nombre de transactions:', this.releveData.totalTransactions || 0]);
+            applyValueStyle(rapportTrxRow);
+            summarySheet.addRow([]);
+            
+            // Données depuis Écart BO J+1
+            if (this.releveEcartData && this.releveEcartData.length > 0) {
+                const ecartJ1Header = summarySheet.addRow(['Données depuis Écart BO J+1']);
+                applySectionStyle(ecartJ1Header);
+                ecartJ1Header.height = 18;
+                
+                const ecartJ1NombreRow = summarySheet.addRow(['Nombre total:', this.getTotalEcartNombre()]);
+                applyValueStyle(ecartJ1NombreRow);
+                const ecartJ1VolumeRow = summarySheet.addRow(['Volume total:', this.getTotalEcartVolume()]);
+                applyValueStyle(ecartJ1VolumeRow);
+                
+                // Volume BO (mis en évidence en vert comme dans le modal)
+                const volumeBORow = summarySheet.addRow(['💰 Volume BO:', this.getTotalVolumeSum()]);
+                volumeBORow.getCell(1).font = { size: 10, bold: true, color: { argb: 'FF28a745' } };
+                volumeBORow.getCell(2).font = { size: 10, bold: true, color: { argb: 'FF28a745' } };
+                volumeBORow.getCell(2).numFmt = '#,##0.00';
+                volumeBORow.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD4EDDA' } };
+                volumeBORow.getCell(2).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD4EDDA' } };
+                volumeBORow.eachCell(cell => {
+                    cell.border = {
+                        top: { style: 'thin', color: { argb: 'FFE0E0E0' } },
+                        bottom: { style: 'thin', color: { argb: 'FFE0E0E0' } },
+                        left: { style: 'thin', color: { argb: 'FFE0E0E0' } },
+                        right: { style: 'thin', color: { argb: 'FFE0E0E0' } }
+                    };
+                });
+                summarySheet.addRow([]);
+            }
+            
+            // Données depuis Écart BO J-1
+            if (this.releveEcartDataJ1 && this.releveEcartDataJ1.length > 0) {
+                const ecartJ1MinusHeader = summarySheet.addRow(['Données depuis Écart BO J-1 (ENV PARTENAIRE)']);
+                applySectionStyle(ecartJ1MinusHeader);
+                ecartJ1MinusHeader.height = 18;
+                
+                const ecartJ1MinusNombreRow = summarySheet.addRow(['Nombre total:', this.getTotalEcartNombreJ1()]);
+                applyValueStyle(ecartJ1MinusNombreRow);
+                const ecartJ1MinusVolumeRow = summarySheet.addRow(['Volume total:', this.getTotalEcartVolumeJ1()]);
+                applyValueStyle(ecartJ1MinusVolumeRow);
+                summarySheet.addRow([]);
+            }
+            
+            // Données Écart traité (saisie manuelle)
+            const manualHeader = summarySheet.addRow(['📝 Données Écart traité (saisie manuelle)']);
+            applySectionStyle(manualHeader);
+            manualHeader.height = 18;
+            
+            const manualNombreRow = summarySheet.addRow(['Nombre:', this.releveManualNombre || 0]);
+            applyValueStyle(manualNombreRow);
+            const manualVolumeRow = summarySheet.addRow(['Volume:', this.releveManualVolume || 0]);
+            applyValueStyle(manualVolumeRow);
+            
+            // Afficher le résumé seulement si des valeurs sont saisies
+            if (this.releveManualNombre > 0 || this.releveManualVolume > 0) {
+                const manualNombreTotalRow = summarySheet.addRow(['Nombre total:', this.releveManualNombre || 0]);
+                applyValueStyle(manualNombreTotalRow);
+                const manualVolumeTotalRow = summarySheet.addRow(['Volume total:', this.releveManualVolume || 0]);
+                applyValueStyle(manualVolumeTotalRow);
+            }
+            summarySheet.addRow([]);
+            
+            // Totaux finaux
+            const totauxHeader = summarySheet.addRow(['📊 Totaux finaux']);
+            applyHeaderStyle(totauxHeader, 'FF28a745');
+            totauxHeader.height = 20;
+            
+            const trxBORow = summarySheet.addRow(['📈 Nombre total de transactions BO:', this.getTotalTransactionsSum()]);
+            applyValueStyle(trxBORow);
+            const trxPartenaireRow = summarySheet.addRow(['📈 Nombre total de transactions Partenaire:', this.getTotalTransactionsPartenaire()]);
+            applyValueStyle(trxPartenaireRow);
+            const trxRapportRow = summarySheet.addRow(['📊 Nombre total (Rapport):', this.releveData.totalTransactions || 0]);
+            applyValueStyle(trxRapportRow);
+            const trxEcartRow = summarySheet.addRow(['📊 Nombre total (Écart traité):', this.getTotalNombreSum()]);
+            applyValueStyle(trxEcartRow);
+            
+            // Volume partenaire (mis en évidence comme dans le modal)
+            const volumePartenaireRow = summarySheet.addRow(['💰 Volume partenaire:', this.getTotalVolumeSumWithManual()]);
+            volumePartenaireRow.getCell(1).font = { size: 10, bold: true };
+            volumePartenaireRow.getCell(2).font = { size: 10, bold: true };
+            volumePartenaireRow.getCell(2).numFmt = '#,##0.00';
+            volumePartenaireRow.eachCell(cell => {
+                cell.border = {
+                    top: { style: 'thin', color: { argb: 'FFE0E0E0' } },
+                    bottom: { style: 'thin', color: { argb: 'FFE0E0E0' } },
+                    left: { style: 'thin', color: { argb: 'FFE0E0E0' } },
+                    right: { style: 'thin', color: { argb: 'FFE0E0E0' } }
+                };
+            });
+            
+            // Ajuster la largeur des colonnes
+            summarySheet.getColumn(1).width = 40;
+            summarySheet.getColumn(2).width = 20;
+            
+            // Feuille 2: Détails Écart BO J+1
+            if (this.releveEcartData && this.releveEcartData.length > 0) {
+                const ecartJ1Sheet = workbook.addWorksheet('Écart BO J+1');
+                ecartJ1Sheet.columns = [
+                    { header: 'Agence', key: 'agence', width: 20 },
+                    { header: 'Pays', key: 'pays', width: 15 },
+                    { header: 'Nombre', key: 'nombre', width: 15 },
+                    { header: 'Volume', key: 'volume', width: 20 },
+                    { header: 'Statut', key: 'statut', width: 15 }
+                ];
+                
+                // Style de l'en-tête
+                const headerRowJ1 = ecartJ1Sheet.getRow(1);
+                headerRowJ1.eachCell(cell => {
+                    cell.fill = {
+                        type: 'pattern',
+                        pattern: 'solid',
+                        fgColor: { argb: 'FF17a2b8' }
+                    };
+                    cell.font = { color: { argb: 'FFFFFFFF' }, bold: true, size: 11 };
+                    cell.alignment = { horizontal: 'center', vertical: 'middle' };
+                    cell.border = {
+                        top: { style: 'thin', color: { argb: 'FF000000' } },
+                        bottom: { style: 'thin', color: { argb: 'FF000000' } },
+                        left: { style: 'thin', color: { argb: 'FF000000' } },
+                        right: { style: 'thin', color: { argb: 'FF000000' } }
+                    };
+                });
+                headerRowJ1.height = 20;
+                
+                let rowIndex = 2;
+                this.releveEcartData.forEach(ecart => {
+                    const row = ecartJ1Sheet.addRow({
+                        agence: ecart.agence,
+                        pays: ecart.pays,
+                        nombre: ecart.nombreTransactions || 0,
+                        volume: ecart.montantTotal || 0,
+                        statut: (ecart.statut === 'OK' || ecart.statut === 'ok') ? 'OK' : 'En cours'
+                    });
+                    
+                    // Appliquer des styles alternés
+                    const isEven = rowIndex % 2 === 0;
+                    row.eachCell((cell, colNumber) => {
+                        if (colNumber > 2) {
+                            cell.numFmt = '#,##0.00';
+                        }
+                        if (colNumber === 5) {
+                            // Style pour la colonne statut
+                            if (cell.value === 'OK') {
+                                cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD4EDDA' } };
+                                cell.font = { color: { argb: 'FF155724' }, bold: true };
+                            } else {
+                                cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF3CD' } };
+                                cell.font = { color: { argb: 'FF856404' }, bold: true };
+                            }
+                        } else {
+                            cell.fill = isEven ? { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF8F9FA' } } : undefined;
+                        }
+                        cell.border = {
+                            top: { style: 'thin', color: { argb: 'FFE0E0E0' } },
+                            bottom: { style: 'thin', color: { argb: 'FFE0E0E0' } },
+                            left: { style: 'thin', color: { argb: 'FFE0E0E0' } },
+                            right: { style: 'thin', color: { argb: 'FFE0E0E0' } }
+                        };
+                        cell.alignment = { horizontal: colNumber === 1 ? 'left' : 'right', vertical: 'middle' };
+                    });
+                    rowIndex++;
+                });
+                
+                // Ajouter les totaux
+                ecartJ1Sheet.addRow([]);
+                const totalRowJ1 = ecartJ1Sheet.addRow(['Total', '', this.getTotalEcartNombre(), this.getTotalEcartVolume(), '']);
+                totalRowJ1.eachCell((cell, colNumber) => {
+                    if (colNumber > 1 && colNumber < 5) {
+                        cell.font = { bold: true, size: 11 };
+                        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE8F5E9' } };
+                        cell.numFmt = '#,##0.00';
+                    }
+                    cell.border = {
+                        top: { style: 'medium', color: { argb: 'FF28a745' } },
+                        bottom: { style: 'medium', color: { argb: 'FF28a745' } },
+                        left: { style: 'thin', color: { argb: 'FFE0E0E0' } },
+                        right: { style: 'thin', color: { argb: 'FFE0E0E0' } }
+                    };
+                });
+            }
+            
+            // Feuille 3: Détails Écart BO J-1
+            if (this.releveEcartDataJ1 && this.releveEcartDataJ1.length > 0) {
+                const ecartJ1MinusSheet = workbook.addWorksheet('Écart BO J-1');
+                ecartJ1MinusSheet.columns = [
+                    { header: 'Agence', key: 'agence', width: 20 },
+                    { header: 'Pays', key: 'pays', width: 15 },
+                    { header: 'Nombre', key: 'nombre', width: 15 },
+                    { header: 'Volume', key: 'volume', width: 20 },
+                    { header: 'Statut', key: 'statut', width: 15 }
+                ];
+                
+                // Style de l'en-tête
+                const headerRowJ1Minus = ecartJ1MinusSheet.getRow(1);
+                headerRowJ1Minus.eachCell(cell => {
+                    cell.fill = {
+                        type: 'pattern',
+                        pattern: 'solid',
+                        fgColor: { argb: 'FF6c757d' }
+                    };
+                    cell.font = { color: { argb: 'FFFFFFFF' }, bold: true, size: 11 };
+                    cell.alignment = { horizontal: 'center', vertical: 'middle' };
+                    cell.border = {
+                        top: { style: 'thin', color: { argb: 'FF000000' } },
+                        bottom: { style: 'thin', color: { argb: 'FF000000' } },
+                        left: { style: 'thin', color: { argb: 'FF000000' } },
+                        right: { style: 'thin', color: { argb: 'FF000000' } }
+                    };
+                });
+                headerRowJ1Minus.height = 20;
+                
+                let rowIndexJ1Minus = 2;
+                this.releveEcartDataJ1.forEach(ecart => {
+                    const row = ecartJ1MinusSheet.addRow({
+                        agence: ecart.agence,
+                        pays: ecart.pays,
+                        nombre: ecart.nombreTransactions || 0,
+                        volume: ecart.montantTotal || 0,
+                        statut: (ecart.statut === 'OK' || ecart.statut === 'ok') ? 'OK' : 'En cours'
+                    });
+                    
+                    // Appliquer des styles alternés
+                    const isEven = rowIndexJ1Minus % 2 === 0;
+                    row.eachCell((cell, colNumber) => {
+                        if (colNumber > 2) {
+                            cell.numFmt = '#,##0.00';
+                        }
+                        if (colNumber === 5) {
+                            // Style pour la colonne statut
+                            if (cell.value === 'OK') {
+                                cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD4EDDA' } };
+                                cell.font = { color: { argb: 'FF155724' }, bold: true };
+                            } else {
+                                cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF3CD' } };
+                                cell.font = { color: { argb: 'FF856404' }, bold: true };
+                            }
+                        } else {
+                            cell.fill = isEven ? { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF8F9FA' } } : undefined;
+                        }
+                        cell.border = {
+                            top: { style: 'thin', color: { argb: 'FFE0E0E0' } },
+                            bottom: { style: 'thin', color: { argb: 'FFE0E0E0' } },
+                            left: { style: 'thin', color: { argb: 'FFE0E0E0' } },
+                            right: { style: 'thin', color: { argb: 'FFE0E0E0' } }
+                        };
+                        cell.alignment = { horizontal: colNumber === 1 ? 'left' : 'right', vertical: 'middle' };
+                    });
+                    rowIndexJ1Minus++;
+                });
+                
+                // Ajouter les totaux
+                ecartJ1MinusSheet.addRow([]);
+                const totalRowJ1Minus = ecartJ1MinusSheet.addRow(['Total', '', this.getTotalEcartNombreJ1(), this.getTotalEcartVolumeJ1(), '']);
+                totalRowJ1Minus.eachCell((cell, colNumber) => {
+                    if (colNumber > 1 && colNumber < 5) {
+                        cell.font = { bold: true, size: 11 };
+                        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE8F5E9' } };
+                        cell.numFmt = '#,##0.00';
+                    }
+                    cell.border = {
+                        top: { style: 'medium', color: { argb: 'FF28a745' } },
+                        bottom: { style: 'medium', color: { argb: 'FF28a745' } },
+                        left: { style: 'thin', color: { argb: 'FFE0E0E0' } },
+                        right: { style: 'thin', color: { argb: 'FFE0E0E0' } }
+                    };
+                });
+            }
+            
+            // Générer le fichier Excel
+            const buffer = await workbook.xlsx.writeBuffer();
+            const dateStr = this.formatDate(this.releveData.date).replace(/\//g, '-');
+            const serviceStr = (this.releveData.service || 'Service').replace(/[^a-zA-Z0-9]/g, '_');
+            const fileName = `releve_${serviceStr}_${dateStr}_${new Date().toISOString().slice(0,10)}.xlsx`;
+            
+            saveAs(new Blob([buffer]), fileName);
+            
+            this.popupService.showSuccess('Export réussi', `Le fichier ${fileName} a été téléchargé avec succès.`);
+        } catch (error: any) {
+            console.error('❌ Erreur lors de l\'export Excel du relevé:', error);
+            this.popupService.showError('Erreur d\'export', `Une erreur est survenue lors de l'export Excel: ${error.message || 'Erreur inconnue'}`);
+        }
+    }
+
+    /**
+     * Valide le relevé en mettant le traitement à "Terminé" pour toutes les lignes du service et de la date
+     */
+    async validateReleve(): Promise<void> {
+        if (!this.releveData) {
+            this.popupService.showWarning('❌ Aucune donnée de relevé disponible.');
+            return;
+        }
+
+        // Filtrer les lignes correspondant au service et à la date
+        const matchingLines = this.filteredReportData.filter(line => 
+            line.service === this.releveData!.service && 
+            line.date === this.releveData!.date
+        );
+
+        if (matchingLines.length === 0) {
+            this.popupService.showWarning('❌ Aucune ligne trouvée pour ce service et cette date.');
+            return;
+        }
+
+        // Filtrer les lignes non verrouillées
+        const unlockedLines = matchingLines.filter(line => !this.isRowLocked(line));
+
+        if (unlockedLines.length === 0) {
+            this.popupService.showWarning('❌ Toutes les lignes sont déjà verrouillées (OK + Terminé).');
+            return;
+        }
+
+        // Confirmer la validation
+        const confirmMessage = `Voulez-vous mettre le traitement à "Terminé" pour ${unlockedLines.length} ligne(s) du service "${this.releveData.service}" et de la date "${this.formatDate(this.releveData.date)}" ?`;
+        const confirmed = await this.popupService.showConfirm(confirmMessage, 'Confirmation de validation');
+        
+        if (!confirmed) {
+            return;
+        }
+
+        this.isValidatingReleve = true;
+        let successCount = 0;
+        let errorCount = 0;
+
+        try {
+            // Mettre à jour le traitement pour toutes les lignes
+            const updatePromises = unlockedLines.map(async (item) => {
+                const oldTraitement = item.traitement;
+                // S'assurer que le traitement est bien défini à "Terminé"
+                item.traitement = 'Terminé';
+                
+                // Vérification avant l'appel
+                if (item.traitement !== 'Terminé') {
+                    console.error(`❌ Erreur: traitement non défini correctement avant sauvegarde pour ligne ID=${item.id}`);
+                    errorCount++;
+                    return;
+                }
+                
+                try {
+                    this.debugLog(`🔄 Validation: Mise à jour traitement pour ligne ID=${item.id}, service=${item.service}, date=${item.date}, traitement="${item.traitement}"`);
+                    await this.saveItemTraitement(item);
+                    
+                    // Vérifier que le traitement a bien été sauvegardé
+                    // Attendre un court délai pour permettre la mise à jour
+                    await new Promise(resolve => setTimeout(resolve, 100));
+                    
+                    if (item.traitement === 'Terminé') {
+                        this.debugLog(`✅ Validation réussie pour ligne ID=${item.id}, traitement confirmé: "${item.traitement}"`);
+                        successCount++;
+                    } else {
+                        const traitementActuel: string | undefined = item.traitement;
+                        console.warn(`⚠️ Traitement non confirmé pour ligne ID=${item.id}, traitement actuel: "${traitementActuel}" (attendu: "Terminé")`);
+                        // Vérifier si le traitement a été partiellement mis à jour
+                        if (traitementActuel && traitementActuel.trim()) {
+                            this.debugLog(`⚠️ Traitement différent reçu: "${traitementActuel}" au lieu de "Terminé"`);
+                        } else {
+                            this.debugLog(`⚠️ Traitement vide ou null après sauvegarde`);
+                        }
+                        successCount++; // On compte quand même comme succès si l'appel API a réussi
+                    }
+                } catch (error: any) {
+                    errorCount++;
+                    // Revenir à l'ancien traitement en cas d'erreur
+                    item.traitement = oldTraitement;
+                    console.error(`❌ Erreur lors de la validation pour ligne ID=${item.id}:`, error);
+                    this.debugLog(`❌ Erreur détaillée:`, error);
+                }
+            });
+
+            await Promise.all(updatePromises);
+
+            // Attendre un court délai pour s'assurer que la base de données a bien enregistré les changements
+            await new Promise(resolve => setTimeout(resolve, 500));
+
+            // Rafraîchir les données après la sauvegarde
+            if (this.currentSource === 'db') {
+                await this.loadSavedReportFromDatabase();
+                // Vérifier que les traitements ont bien été mis à jour après le rechargement
+                const updatedItems = this.filteredReportData.filter(item => 
+                    item.service === this.releveData?.service && 
+                    item.date === this.releveData?.date &&
+                    item.traitement === 'Terminé'
+                );
+                this.debugLog(`✅ Après rechargement: ${updatedItems.length} ligne(s) avec traitement="Terminé" pour service=${this.releveData?.service}, date=${this.releveData?.date}`);
+            } else {
+                this.filterReport();
+                this.updatePagination();
+            }
+
+            // Mettre à jour l'état de validation basé sur l'état réel des données
+            this.isReleveValidated = this.isReleveAlreadyValidated();
+
+            // Afficher les résultats
+            if (successCount > 0) {
+                this.popupService.showSuccess(`✅ Traitement mis à "Terminé" pour ${successCount} ligne(s)`, 'Validation réussie');
+            }
+            if (errorCount > 0) {
+                this.popupService.showError(`❌ Erreur lors de la validation de ${errorCount} ligne(s)`, 'Certaines validations ont échoué');
+            }
+
+            // Le modal reste ouvert - l'utilisateur doit cliquer sur "Fermer" pour le fermer
+        } catch (error: any) {
+            console.error('Erreur lors de la validation:', error);
+            this.popupService.showError(`❌ Erreur lors de la validation: ${error.message || 'Erreur inconnue'}`);
+        } finally {
+            this.isValidatingReleve = false;
+        }
     }
 
     // Méthode pour charger les données en cours
