@@ -53,6 +53,9 @@ export interface ReconciliationReportData {
                     <button class="btn btn-toggle-source" (click)="toggleDataSource()" [title]="currentSource === 'live' ? 'Basculer vers les données en base' : 'Basculer vers les données en cours'">
                         🔄 {{ currentSource === 'live' ? 'Voir données en base' : 'Voir données en cours' }}
                     </button>
+                    <button class="btn btn-voir-plus" (click)="toggleShowAllMonths()" *ngIf="!hasSelectedRows()" [title]="showAllMonths ? 'Afficher uniquement le mois en cours' : 'Afficher toutes les données'">
+                        {{ showAllMonths ? '📅 Mois en cours' : '📋 Voir plus' }}
+                    </button>
                     <button class="btn btn-add" (click)="addNewRow()" title="Ajouter une nouvelle ligne">
                         ➕ Nouvelle ligne
                     </button>
@@ -1240,6 +1243,15 @@ export interface ReconciliationReportData {
             transform: translateY(0);
         }
 
+        .btn-voir-plus {
+            background: #17a2b8;
+            color: white;
+        }
+        .btn-voir-plus:hover:not(:disabled) {
+            background: #138496;
+            transform: translateY(-1px);
+        }
+
         .report-summary {
             padding: 20px;
             background: #f8f9fa;
@@ -2390,6 +2402,8 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
     selectedStatus: string = '';
     selectedTraitement: string = '';
     activeCardFilter: 'inProgress' | 'treated' | 'ticketsToCreate' | null = null;
+    /** Par défaut false = afficher uniquement le mois en cours ; true = tout afficher */
+    showAllMonths = false;
     
     // Sélection multiple pour changement de statut
     selectedRows: Set<ReconciliationReportData> = new Set();
@@ -3977,6 +3991,11 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         this.filterReport();
     }
 
+    toggleShowAllMonths(): void {
+        this.showAllMonths = !this.showAllMonths;
+        this.filterReport();
+    }
+
     filterByInProgress(): void {
         if (this.activeCardFilter === 'inProgress') {
             // Si déjà actif, désactiver le filtre
@@ -4009,6 +4028,15 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
 
     filterReport() {
         this.filteredReportData = this.reportData.filter(item => {
+            // Par défaut : afficher uniquement le mois en cours (sinon bouton "Voir plus" pour tout afficher)
+            if (!this.showAllMonths && item.date) {
+                const d = new Date(item.date);
+                const now = new Date();
+                if (d.getFullYear() !== now.getFullYear() || d.getMonth() !== now.getMonth()) {
+                    return false;
+                }
+            }
+
             // Filtrage par pays autorisés (cloisonnement)
             const countryMatch = this.shouldIncludeCountry(item.country || '');
             if (!countryMatch) {
