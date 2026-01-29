@@ -84,6 +84,20 @@
   <div class="logs-section">
     <div class="table-header">
       <p class="total-count">Total: {{ filteredLogs.length }} log(s)</p>
+      <button 
+        class="btn btn-secondary btn-sm" 
+        (click)="toggleShowAllLogs()" 
+        [disabled]="isLoading"
+        *ngIf="!showAllLogs">
+        <i class="fas fa-eye"></i> Voir plus
+      </button>
+      <button 
+        class="btn btn-secondary btn-sm" 
+        (click)="toggleShowAllLogs()" 
+        [disabled]="isLoading"
+        *ngIf="showAllLogs">
+        <i class="fas fa-eye-slash"></i> Voir moins (mois en cours)
+      </button>
     </div>
 
     <div class="table-container" *ngIf="!isLoading">
@@ -93,6 +107,7 @@
             <th>Utilisateur</th>
             <th>Module</th>
             <th>Permission</th>
+            <th>Détails</th>
             <th>Date et Heure</th>
           </tr>
         </thead>
@@ -101,10 +116,14 @@
             <td>{{ log.username }}</td>
             <td>{{ log.module }}</td>
             <td>{{ log.permission }}</td>
+            <td class="details-cell">
+              <span *ngIf="log.details" [title]="log.details">{{ log.details }}</span>
+              <span *ngIf="!log.details" class="no-details">-</span>
+            </td>
             <td>{{ formatDate(log.dateHeure) }}</td>
           </tr>
           <tr *ngIf="pagedLogs.length === 0">
-            <td colspan="4" class="no-data">Aucun log trouvé</td>
+            <td colspan="5" class="no-data">Aucun log trouvé</td>
           </tr>
         </tbody>
       </table>

@@ -5,6 +5,7 @@ export interface UserLog {
   username: string;
   dateHeure: string;
   createdAt?: string;
+  details?: string; // Détails de la modification (ex: numéro de compte modifié, ID de l'élément, etc.)
 }
 
 export interface UserLogFilter {

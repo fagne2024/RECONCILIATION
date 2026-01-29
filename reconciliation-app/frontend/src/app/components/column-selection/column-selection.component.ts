@@ -816,12 +816,56 @@ export class ColumnSelectionComponent implements OnDestroy, OnChanges, OnInit {
             partnerDataSample: this.partnerData?.slice(0, 2)
         });
         
-        if (this.boData?.length > 0 && this.partnerData?.length > 0) {
-            console.log('✅ Données trouvées, optimisation en cours...');
-            this.optimizeAndLoadData(this.boData, this.partnerData);
+        // Permettre de charger les colonnes même si un seul fichier est disponible
+        if ((this.boData?.length > 0 || this.partnerData?.length > 0)) {
+            if (this.boData?.length > 0 && this.partnerData?.length > 0) {
+                console.log('✅ Données complètes trouvées, optimisation en cours...');
+                this.optimizeAndLoadData(this.boData, this.partnerData);
+            } else {
+                console.log('⚠️ Données partielles trouvées, chargement des colonnes disponibles...');
+                // Charger au moins les colonnes disponibles même si un fichier manque
+                this.loadAvailableColumns();
+            }
         } else {
             console.log('⚠️ Aucune donnée trouvée, tentative de parsing automatique...');
             this.tryAutoParseFiles();
+        }
+    }
+    
+    /**
+     * Charge les colonnes disponibles même si un seul fichier est disponible
+     */
+    private loadAvailableColumns(): void {
+        console.log('📊 Chargement des colonnes disponibles...');
+        
+        // Extraire les colonnes disponibles
+        if (this.boData?.length > 0) {
+            this.boColumns = Object.keys(this.boData[0]);
+            console.log('📋 Colonnes BO disponibles:', this.boColumns);
+        } else {
+            this.boColumns = [];
+            console.log('⚠️ Aucune colonne BO disponible');
+        }
+        
+        if (this.partnerData?.length > 0) {
+            this.partnerColumns = Object.keys(this.partnerData[0]);
+            console.log('📋 Colonnes Partenaire disponibles:', this.partnerColumns);
+        } else {
+            this.partnerColumns = [];
+            console.log('⚠️ Aucune colonne Partenaire disponible');
+        }
+        
+        // Si on a au moins un fichier avec des colonnes, on peut continuer
+        if (this.boColumns.length > 0 || this.partnerColumns.length > 0) {
+            console.log('✅ Colonnes chargées avec succès');
+            // Ne pas lancer l'analyse automatique si les deux fichiers ne sont pas disponibles
+            if (this.boData?.length === 0 || this.partnerData?.length === 0) {
+                console.log('⚠️ Fichier(s) manquant(s), désactivation de l\'analyse automatique');
+                this.disableAutoAnalysis = true;
+            }
+        } else {
+            console.error('❌ Aucune colonne disponible, redirection vers l\'upload');
+            this.router.navigate(['/upload']);
         }
     }
 

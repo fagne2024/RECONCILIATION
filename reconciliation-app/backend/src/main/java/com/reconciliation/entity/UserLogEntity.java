@@ -26,6 +26,9 @@ public class UserLogEntity {
     @Column(name = "created_at")
     private LocalDateTime createdAt;
     
+    @Column(name = "details", length = 1000)
+    private String details; // Détails de la modification (ex: numéro de compte modifié, ID de l'élément, etc.)
+    
     // Constructeurs
     public UserLogEntity() {
         this.createdAt = LocalDateTime.now();
@@ -37,6 +40,11 @@ public class UserLogEntity {
         this.module = module;
         this.username = username;
         this.dateHeure = dateHeure;
+    }
+    
+    public UserLogEntity(String permission, String module, String username, LocalDateTime dateHeure, String details) {
+        this(permission, module, username, dateHeure);
+        this.details = details;
     }
     
     // Getters et setters
@@ -86,6 +94,14 @@ public class UserLogEntity {
     
     public void setCreatedAt(LocalDateTime createdAt) {
         this.createdAt = createdAt;
+    }
+    
+    public String getDetails() {
+        return details;
+    }
+    
+    public void setDetails(String details) {
+        this.details = details;
     }
 }
 

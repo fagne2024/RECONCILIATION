@@ -15,6 +15,8 @@ import { EcartBoSummaryService } from '../../services/ecart-bo-summary.service';
 import { LoggerService } from '../../services/logger.service';
 import * as ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
+import * as Papa from 'papaparse';
+import * as XLSX from 'xlsx';
 
 export interface ReconciliationReportData {
     id?: number;
@@ -665,7 +667,7 @@ export interface ReconciliationReportData {
                     </div>
                     
                     <div class="releve-section">
-                        <h5>Données du Rapport de Réconciliation</h5>
+                        <h5>Données du Rapport de Réconciliation (Correspondance parfaite)</h5>
                         <div class="releve-grid">
                             <div class="releve-item">
                                 <span class="releve-label">Volume:</span>
@@ -679,7 +681,7 @@ export interface ReconciliationReportData {
                     </div>
 
                     <div class="releve-section" *ngIf="releveEcartData && releveEcartData.length > 0">
-                        <h5>Données depuis Écart BO J+1</h5>
+                        <h5>Trx BO J+1</h5>
                         <div class="releve-ecart-grid">
                             <div class="releve-item">
                                 <span class="releve-label">Nombre total:</span>
@@ -729,7 +731,7 @@ export interface ReconciliationReportData {
 
                     <!-- Section Données ENV PARTENAIRE J-1 -->
                     <div class="releve-section" *ngIf="releveEcartDataJ1 && releveEcartDataJ1.length > 0">
-                        <h5>Données depuis Écart BO J-1 (ENV PARTENAIRE)</h5>
+                        <h5>Trx Partenaire J-1</h5>
                         <div class="releve-ecart-grid">
                             <div class="releve-item">
                                 <span class="releve-label">Nombre total:</span>
@@ -771,9 +773,22 @@ export interface ReconciliationReportData {
                         <p class="releve-no-data">Aucune donnée trouvée dans Écart BO J-1 (ENV PARTENAIRE) pour ce service.</p>
                     </div>
 
-                    <!-- Section Données Écart traité (saisie manuelle) -->
+                    <!-- Section Trx traité (saisie manuelle) -->
                     <div class="releve-section">
-                        <h5>📝 Données Écart traité (saisie manuelle)</h5>
+                        <h5>📝 Trx traité (saisie manuelle)</h5>
+                        <div class="releve-manual-upload">
+                            <input 
+                                type="file" 
+                                #releveManualFileInput 
+                                accept=".csv,.xls,.xlsx" 
+                                (change)="onReleveManualFileSelected($event)"
+                                style="display: none">
+                            <button type="button" class="btn-releve-upload" (click)="releveManualFileInput.click()" [disabled]="isReleveManualFileLoading">
+                                {{ isReleveManualFileLoading ? '⏳ Chargement...' : '📤 Charger un fichier (CSV / XLS)' }}
+                            </button>
+                            <span class="releve-upload-hint">Nombre = lignes (sans en-tête), Volume = somme de la colonne « montant ».</span>
+                        </div>
+                        <div class="releve-manual-or">Ou saisir manuellement :</div>
                         <div class="releve-manual-input">
                             <div class="releve-input-group">
                                 <label class="releve-input-label">Nombre:</label>
@@ -2069,6 +2084,42 @@ export interface ReconciliationReportData {
             padding: 20px;
         }
 
+        /* Zone chargement fichier Trx traité */
+        .releve-manual-upload {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+        .btn-releve-upload {
+            padding: 10px 16px;
+            border: 1px solid #17a2b8;
+            border-radius: 6px;
+            background: #17a2b8;
+            color: #fff;
+            font-size: 0.95rem;
+            cursor: pointer;
+            transition: background 0.2s, border-color 0.2s;
+        }
+        .btn-releve-upload:hover:not(:disabled) {
+            background: #138496;
+            border-color: #138496;
+        }
+        .btn-releve-upload:disabled {
+            opacity: 0.7;
+            cursor: not-allowed;
+        }
+        .releve-upload-hint {
+            font-size: 0.85rem;
+            color: #6c757d;
+        }
+        .releve-manual-or {
+            font-size: 0.9rem;
+            color: #495057;
+            margin-bottom: 10px;
+            font-weight: 600;
+        }
         /* Styles pour la saisie manuelle */
         .releve-manual-input {
             display: grid;
@@ -2387,6 +2438,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
     // Propriétés pour les données manuelles d'écart traité
     releveManualNombre: number = 0;
     releveManualVolume: number = 0;
+    isReleveManualFileLoading = false;
 
     // Pays autorisés pour le cloisonnement
     private allowedCountryCodes: string[] | null = null;
@@ -7705,6 +7757,121 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
     }
 
     /**
+     * Gère la sélection d'un fichier CSV ou XLS pour la section Trx traité.
+     * Remplit Nombre = nombre de lignes (sans en-tête) et Volume = somme de la colonne « montant ».
+     */
+    async onReleveManualFileSelected(event: Event): Promise<void> {
+        const input = event.target as HTMLInputElement;
+        const file = input?.files?.[0];
+        if (!file) return;
+        const fileName = (file.name || '').toLowerCase();
+        const isCsv = fileName.endsWith('.csv');
+        const isExcel = fileName.endsWith('.xls') || fileName.endsWith('.xlsx');
+        if (!isCsv && !isExcel) {
+            this.popupService.showError('Format non supporté. Utilisez un fichier CSV, XLS ou XLSX.', 'Fichier invalide');
+            input.value = '';
+            return;
+        }
+        this.isReleveManualFileLoading = true;
+        try {
+            const result = isCsv
+                ? await this.parseReleveManualCsv(file)
+                : await this.parseReleveManualExcel(file);
+            this.releveManualNombre = result.nombre;
+            this.releveManualVolume = result.volume;
+            this.onReleveManualChange();
+            this.popupService.showSuccess(
+                `Fichier chargé : ${result.nombre} ligne(s), volume total = ${result.volume.toLocaleString('fr-FR', { minimumFractionDigits: 2 })}`,
+                'Chargement réussi'
+            );
+        } catch (err: any) {
+            this.popupService.showError(err?.message || 'Erreur lors de la lecture du fichier.', 'Erreur');
+        } finally {
+            this.isReleveManualFileLoading = false;
+            input.value = '';
+        }
+    }
+
+    /**
+     * Parse un CSV : première ligne = en-tête, cherche la colonne « montant », nombre = lignes données, volume = somme.
+     */
+    private parseReleveManualCsv(file: File): Promise<{ nombre: number; volume: number }> {
+        return new Promise((resolve, reject) => {
+            Papa.parse(file, {
+                encoding: 'UTF-8',
+                complete: (results) => {
+                    try {
+                        const rows = results.data as any[][];
+                        if (!rows || rows.length === 0) {
+                            resolve({ nombre: 0, volume: 0 });
+                            return;
+                        }
+                        const headerRow = rows[0];
+                        const headerNorm = (v: any) => String(v ?? '').trim().toLowerCase().replace(/\s+/g, '');
+                        const montantIndex = headerRow.findIndex((h: any) => headerNorm(h) === 'montant');
+                        if (montantIndex === -1) {
+                            reject(new Error('Colonne « montant » introuvable dans la première ligne du fichier.'));
+                            return;
+                        }
+                        const dataRows = rows.slice(1);
+                        let volume = 0;
+                        for (const row of dataRows) {
+                            const val = row[montantIndex];
+                            if (val === null || val === undefined || val === '') continue;
+                            const num = typeof val === 'number' ? val : parseFloat(String(val).replace(/\s/g, '').replace(',', '.'));
+                            if (!Number.isNaN(num)) volume += num;
+                        }
+                        resolve({ nombre: dataRows.length, volume });
+                    } catch (e: any) {
+                        reject(e);
+                    }
+                },
+                error: (err) => reject(new Error(err.message || 'Erreur de lecture CSV'))
+            });
+        });
+    }
+
+    /**
+     * Parse un fichier Excel (XLS/XLSX) : première ligne = en-tête, cherche « montant », nombre = lignes données, volume = somme.
+     */
+    private async parseReleveManualExcel(file: File): Promise<{ nombre: number; volume: number }> {
+        const data = await this.readFileAsArrayBuffer(file);
+        const workbook = XLSX.read(data, { type: 'array' });
+        const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+        if (!firstSheet) {
+            throw new Error('Aucune feuille trouvée dans le fichier.');
+        }
+        const rows = XLSX.utils.sheet_to_json(firstSheet, { header: 1, defval: '' }) as any[][];
+        if (!rows || rows.length === 0) {
+            return { nombre: 0, volume: 0 };
+        }
+        const headerRow = rows[0];
+        const headerNorm = (v: any) => String(v ?? '').trim().toLowerCase().replace(/\s+/g, '');
+        const montantIndex = headerRow.findIndex((h: any) => headerNorm(h) === 'montant');
+        if (montantIndex === -1) {
+            throw new Error('Colonne « montant » introuvable dans la première ligne du fichier.');
+        }
+        const dataRows = rows.slice(1);
+        let volume = 0;
+        for (const row of dataRows) {
+            const val = row[montantIndex];
+            if (val === null || val === undefined || val === '') continue;
+            const num = typeof val === 'number' ? val : parseFloat(String(val).replace(/\s/g, '').replace(',', '.'));
+            if (!Number.isNaN(num)) volume += num;
+        }
+        return { nombre: dataRows.length, volume };
+    }
+
+    private readFileAsArrayBuffer(file: File): Promise<ArrayBuffer> {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result as ArrayBuffer);
+            reader.onerror = () => reject(new Error('Impossible de lire le fichier.'));
+            reader.readAsArrayBuffer(file);
+        });
+    }
+
+    /**
      * Exporte le relevé en Excel
      */
     async exportReleveToExcel(): Promise<void> {
@@ -7787,8 +7954,8 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             dateRow.height = 18;
             summarySheet.addRow([]);
             
-            // Données du Rapport de Réconciliation
-            const rapportHeader = summarySheet.addRow(['Données du Rapport de Réconciliation']);
+            // Données du Rapport de Réconciliation (Correspondance parfaite)
+            const rapportHeader = summarySheet.addRow(['Données du Rapport de Réconciliation (Correspondance parfaite)']);
             applySectionStyle(rapportHeader);
             rapportHeader.height = 18;
             
@@ -7798,9 +7965,9 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             applyValueStyle(rapportTrxRow);
             summarySheet.addRow([]);
             
-            // Données depuis Écart BO J+1
+            // Trx BO J+1
             if (this.releveEcartData && this.releveEcartData.length > 0) {
-                const ecartJ1Header = summarySheet.addRow(['Données depuis Écart BO J+1']);
+                const ecartJ1Header = summarySheet.addRow(['Trx BO J+1']);
                 applySectionStyle(ecartJ1Header);
                 ecartJ1Header.height = 18;
                 
@@ -7829,7 +7996,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             
             // Données depuis Écart BO J-1
             if (this.releveEcartDataJ1 && this.releveEcartDataJ1.length > 0) {
-                const ecartJ1MinusHeader = summarySheet.addRow(['Données depuis Écart BO J-1 (ENV PARTENAIRE)']);
+                const ecartJ1MinusHeader = summarySheet.addRow(['Trx Partenaire J-1']);
                 applySectionStyle(ecartJ1MinusHeader);
                 ecartJ1MinusHeader.height = 18;
                 
@@ -7840,8 +8007,8 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                 summarySheet.addRow([]);
             }
             
-            // Données Écart traité (saisie manuelle)
-            const manualHeader = summarySheet.addRow(['📝 Données Écart traité (saisie manuelle)']);
+            // Trx traité (saisie manuelle)
+            const manualHeader = summarySheet.addRow(['📝 Trx traité (saisie manuelle)']);
             applySectionStyle(manualHeader);
             manualHeader.height = 18;
             

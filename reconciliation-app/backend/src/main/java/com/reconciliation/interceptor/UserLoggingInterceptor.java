@@ -82,6 +82,9 @@ public class UserLoggingInterceptor implements HandlerInterceptor {
                              Object handler) throws Exception {
         String path = request.getRequestURI();
         String method = request.getMethod();
+        
+        // Debug : confirmer que l'intercepteur est appelé
+        System.out.println("🔍 UserLoggingInterceptor.preHandle appelé - " + method + " " + path);
 
         // Ignorer les chemins exclus
         for (String excludedPath : EXCLUDED_PATHS) {
@@ -141,39 +144,72 @@ public class UserLoggingInterceptor implements HandlerInterceptor {
             }
         }
         
-        // Ne pas logger les actions de filtrage en POST (chargements automatiques)
-        // Mais logger les autres POST, PUT, DELETE
-        if (lowerPath.contains("/filter") && !lowerPath.contains("/export")) {
-            return true; // Ne pas logger les actions de filtrage
+        // Ne pas logger les actions de filtrage automatiques en POST (chargements automatiques)
+        // Mais logger TOUTES les autres actions POST, PUT, DELETE (actions importantes de l'utilisateur)
+        // Exception : les filtres explicites avec export sont loggés
+        if ("POST".equals(method) && lowerPath.contains("/filter") && !lowerPath.contains("/export")) {
+            return true; // Ne pas logger les POST de filtrage automatique
         }
 
         // Récupérer le nom d'utilisateur
         String username = getUsernameFromRequest(request);
         
+        // Debug : logger toutes les requêtes pour diagnostiquer
         if (username == null || username.isEmpty()) {
-            // Pas d'utilisateur, on ne log pas
+            // Pas d'utilisateur, on ne log pas mais on affiche un message de debug
+            System.out.println("⚠️ UserLoggingInterceptor - Pas de username trouvé pour " + method + " " + path);
             return true;
         }
+        
+        System.out.println("🔍 UserLoggingInterceptor - Username trouvé: " + username + " pour " + method + " " + path);
 
-        // Logger l'action utilisateur
+        // Logger TOUTES les actions importantes (POST, PUT, DELETE et GET significatifs)
+        // Toutes les actions utilisateur doivent être enregistrées en base
         try {
             String moduleName = extractModuleNameFromPath(path);
             String permissionName = extractPermissionNameFromPath(path, method);
             
-            // Debug temporaire
-            if (moduleName == null || permissionName == null) {
-                System.out.println("⚠️ Log non enregistré - Path: " + path + ", Method: " + method + 
-                    ", Module: " + moduleName + ", Permission: " + permissionName);
+            // Si on ne peut pas déterminer le module ou la permission, on log quand même avec des valeurs par défaut
+            // pour s'assurer qu'aucune action n'est perdue
+            if (moduleName == null) {
+                moduleName = "Autre";
+                System.out.println("⚠️ Module non déterminé pour le path: " + path);
+            }
+            if (permissionName == null) {
+                // Essayer de déterminer la permission depuis la méthode HTTP
+                switch (method.toUpperCase()) {
+                    case "POST":
+                        permissionName = "creer";
+                        break;
+                    case "PUT":
+                    case "PATCH":
+                        permissionName = "modifier";
+                        break;
+                    case "DELETE":
+                        permissionName = "supprimer";
+                        break;
+                    case "GET":
+                        permissionName = "consulter";
+                        break;
+                    default:
+                        permissionName = "action";
+                }
+                System.out.println("⚠️ Permission non déterminée pour le path: " + path + ", méthode: " + method + 
+                    ", permission par défaut: " + permissionName);
             }
             
-            if (moduleName != null && permissionName != null) {
-                userLogService.saveLog(permissionName, moduleName, username);
-                System.out.println("✅ Log enregistré - Path: " + path + ", Method: " + method + 
-                    ", Module: " + moduleName + ", Permission: " + permissionName + ", User: " + username);
-            }
+            // Extraire les détails de la modification depuis la requête
+            String details = extractDetailsFromRequest(request, path, method, moduleName);
+            
+            // Enregistrer le log en base de données avec les détails
+            userLogService.saveLog(permissionName, moduleName, username, details);
+            System.out.println("✅ Log enregistré - Path: " + path + ", Method: " + method + 
+                ", Module: " + moduleName + ", Permission: " + permissionName + ", User: " + username +
+                (details != null ? ", Details: " + details : ""));
         } catch (Exception e) {
-            // Ne pas bloquer la requête en cas d'erreur de logging
-            System.err.println("Erreur lors de l'enregistrement du log: " + e.getMessage());
+            // Ne pas bloquer la requête en cas d'erreur de logging, mais logger l'erreur
+            System.err.println("❌ Erreur lors de l'enregistrement du log: " + e.getMessage());
+            System.err.println("Path: " + path + ", Method: " + method + ", User: " + username);
             e.printStackTrace();
         }
 
@@ -187,6 +223,7 @@ public class UserLoggingInterceptor implements HandlerInterceptor {
         // Priorité 1 : Essayer depuis le header X-Username (toujours disponible si envoyé par le frontend)
         String username = request.getHeader("X-Username");
         if (username != null && !username.isEmpty()) {
+            System.out.println("✅ UserLoggingInterceptor - Username depuis header X-Username: " + username);
             return username;
         }
 
@@ -195,23 +232,164 @@ public class UserLoggingInterceptor implements HandlerInterceptor {
         if (authentication != null && authentication.isAuthenticated()) {
             Object principal = authentication.getPrincipal();
             if (principal instanceof UserDetails) {
-                return ((UserDetails) principal).getUsername();
+                username = ((UserDetails) principal).getUsername();
+                System.out.println("✅ UserLoggingInterceptor - Username depuis SecurityContext (UserDetails): " + username);
+                return username;
             } else if (principal instanceof String) {
-                return (String) principal;
+                username = (String) principal;
+                System.out.println("✅ UserLoggingInterceptor - Username depuis SecurityContext (String): " + username);
+                return username;
+            } else {
+                System.out.println("⚠️ UserLoggingInterceptor - Principal de type inattendu: " + (principal != null ? principal.getClass().getName() : "null"));
             }
+        } else {
+            System.out.println("⚠️ UserLoggingInterceptor - Aucune authentication dans SecurityContext");
         }
 
         // Priorité 3 : Essayer depuis la session
         try {
             Object sessionUser = request.getSession().getAttribute("username");
             if (sessionUser != null) {
-                return sessionUser.toString();
+                username = sessionUser.toString();
+                System.out.println("✅ UserLoggingInterceptor - Username depuis session: " + username);
+                return username;
             }
         } catch (Exception e) {
             // Ignorer les erreurs de session
+            System.out.println("⚠️ UserLoggingInterceptor - Erreur lors de la récupération de la session: " + e.getMessage());
         }
 
+        System.out.println("❌ UserLoggingInterceptor - Aucun username trouvé dans header, SecurityContext ou session");
         return null;
+    }
+
+    /**
+     * Extrait les détails de la modification depuis la requête
+     * Exemples :
+     * - Pour /api/comptes/123 -> "Compte ID: 123"
+     * - Pour /api/comptes/123 avec body contenant numeroCompte -> "Compte: 123456"
+     * - Pour /api/users/5 -> "Utilisateur ID: 5"
+     */
+    private String extractDetailsFromRequest(HttpServletRequest request, String path, String method, String moduleName) {
+        StringBuilder details = new StringBuilder();
+        
+        // 1. Extraire l'ID depuis l'URL si présent (ex: /api/comptes/123 -> ID: 123)
+        String idFromPath = extractIdFromPath(path);
+        if (idFromPath != null) {
+            details.append("ID: ").append(idFromPath);
+        }
+        
+        // 2. Essayer d'extraire des informations spécifiques selon le module depuis le body ou les paramètres
+        String specificDetails = extractSpecificDetails(request, path, method, moduleName, idFromPath);
+        if (specificDetails != null && !specificDetails.isEmpty()) {
+            if (details.length() > 0) {
+                details.append(" | ");
+            }
+            details.append(specificDetails);
+        }
+        
+        // 3. Si on a un ID mais pas de détails spécifiques, formater avec le nom du module
+        if (details.length() == 0 && idFromPath != null) {
+            details.append(moduleName != null ? moduleName : "Élément").append(" ID: ").append(idFromPath);
+        }
+        
+        return details.length() > 0 ? details.toString() : null;
+    }
+    
+    /**
+     * Extrait l'ID depuis le chemin de l'URL
+     * Exemples : /api/comptes/123 -> "123", /api/users/5 -> "5"
+     */
+    private String extractIdFromPath(String path) {
+        if (path == null) return null;
+        
+        // Pattern : /api/module/123 ou /api/module/123/autre
+        String[] parts = path.split("/");
+        if (parts.length >= 4) {
+            // Vérifier si la partie après le module est un nombre
+            String potentialId = parts[parts.length - 1];
+            // Si ce n'est pas un nombre, prendre l'avant-dernier élément
+            if (!potentialId.matches("\\d+") && parts.length >= 5) {
+                potentialId = parts[parts.length - 2];
+            }
+            if (potentialId.matches("\\d+")) {
+                return potentialId;
+            }
+        }
+        return null;
+    }
+    
+    /**
+     * Extrait des détails spécifiques selon le module depuis le body ou les paramètres de la requête
+     */
+    private String extractSpecificDetails(HttpServletRequest request, String path, String method, 
+                                         String moduleName, String idFromPath) {
+        if (moduleName == null) return null;
+        
+        StringBuilder details = new StringBuilder();
+        String lowerPath = path.toLowerCase();
+        
+        // Pour les comptes : essayer d'extraire le numéro de compte
+        if (lowerPath.contains("/comptes")) {
+            // Essayer depuis les paramètres de requête
+            String numeroCompte = request.getParameter("numeroCompte");
+            if (numeroCompte == null) {
+                numeroCompte = request.getParameter("numero_compte");
+            }
+            if (numeroCompte == null) {
+                numeroCompte = request.getParameter("numero");
+            }
+            if (numeroCompte != null && !numeroCompte.isEmpty()) {
+                details.append("Compte: ").append(numeroCompte);
+            } else if (idFromPath != null) {
+                details.append("Compte ID: ").append(idFromPath);
+            }
+        }
+        // Pour les utilisateurs : essayer d'extraire le nom d'utilisateur
+        else if (lowerPath.contains("/users") || lowerPath.contains("/utilisateurs")) {
+            String username = request.getParameter("username");
+            if (username != null && !username.isEmpty()) {
+                details.append("Utilisateur: ").append(username);
+            } else if (idFromPath != null) {
+                details.append("Utilisateur ID: ").append(idFromPath);
+            }
+        }
+        // Pour les opérations : essayer d'extraire la référence
+        else if (lowerPath.contains("/operations")) {
+            String reference = request.getParameter("reference");
+            if (reference == null) {
+                reference = request.getParameter("ref");
+            }
+            if (reference != null && !reference.isEmpty()) {
+                details.append("Référence: ").append(reference);
+            } else if (idFromPath != null) {
+                details.append("Opération ID: ").append(idFromPath);
+            }
+        }
+        // Pour les profils : essayer d'extraire le nom du profil
+        else if (lowerPath.contains("/profils")) {
+            String nomProfil = request.getParameter("nom");
+            if (nomProfil == null) {
+                nomProfil = request.getParameter("name");
+            }
+            if (nomProfil != null && !nomProfil.isEmpty()) {
+                details.append("Profil: ").append(nomProfil);
+            } else if (idFromPath != null) {
+                details.append("Profil ID: ").append(idFromPath);
+            }
+        }
+        // Pour les réconciliations : essayer d'extraire des informations spécifiques
+        else if (lowerPath.contains("/reconciliation")) {
+            if (idFromPath != null) {
+                details.append("Réconciliation ID: ").append(idFromPath);
+            }
+        }
+        // Pour les autres modules, utiliser l'ID si disponible
+        else if (idFromPath != null) {
+            details.append(moduleName).append(" ID: ").append(idFromPath);
+        }
+        
+        return details.length() > 0 ? details.toString() : null;
     }
 
     /**

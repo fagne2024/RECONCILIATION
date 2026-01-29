@@ -16,6 +16,7 @@ export class UserLogComponent implements OnInit {
   currentPage = 1;
   pageSize = 20;
   totalPages = 1;
+  showAllLogs = false; // Indicateur pour savoir si on affiche tous les logs ou seulement le mois
   
   // Filtres
   filterForm: FormGroup;
@@ -27,12 +28,16 @@ export class UserLogComponent implements OnInit {
     private userLogService: UserLogService,
     private fb: FormBuilder
   ) {
+    // Initialiser avec les dates du mois en cours par défaut
+    const now = new Date();
+    const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    
     this.filterForm = this.fb.group({
       username: [''],
       module: [''],
       permission: [''],
-      dateDebut: [''],
-      dateFin: ['']
+      dateDebut: [this.formatDateForInput(firstDayOfMonth)],
+      dateFin: [this.formatDateForInput(now)]
     });
   }
 
@@ -45,7 +50,25 @@ export class UserLogComponent implements OnInit {
         debounceTime(300),
         distinctUntilChanged((prev, curr) => JSON.stringify(prev) === JSON.stringify(curr))
       )
-      .subscribe(() => {
+      .subscribe((values) => {
+        // Mettre à jour showAllLogs selon si les dates sont vides ou non
+        if (!values.dateDebut && !values.dateFin) {
+          this.showAllLogs = true;
+        } else {
+          // Vérifier si les dates correspondent au mois en cours
+          const now = new Date();
+          const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+          const expectedDateDebut = this.formatDateForInput(firstDayOfMonth);
+          const expectedDateFin = this.formatDateForInput(now);
+          
+          // Si les dates correspondent exactement au mois en cours, on considère qu'on affiche le mois
+          if (values.dateDebut === expectedDateDebut && values.dateFin === expectedDateFin) {
+            this.showAllLogs = false;
+          }
+          // Sinon, on considère qu'on affiche une période personnalisée (pas "tous" ni "mois")
+          // On garde showAllLogs tel quel dans ce cas
+        }
+        
         this.currentPage = 1;
         this.loadLogs();
       });
@@ -92,7 +115,45 @@ export class UserLogComponent implements OnInit {
   }
 
   resetFilters(): void {
-    this.filterForm.reset();
+    // Réinitialiser avec les dates du mois en cours
+    const now = new Date();
+    const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    
+    this.filterForm.reset({
+      username: '',
+      module: '',
+      permission: '',
+      dateDebut: this.formatDateForInput(firstDayOfMonth),
+      dateFin: this.formatDateForInput(now)
+    });
+    this.showAllLogs = false;
+    this.currentPage = 1;
+    this.loadLogs();
+  }
+
+  /**
+   * Basculer entre l'affichage du mois en cours et tous les logs
+   */
+  toggleShowAllLogs(): void {
+    this.showAllLogs = !this.showAllLogs;
+    
+    if (this.showAllLogs) {
+      // Afficher tous les logs : supprimer les filtres de date
+      this.filterForm.patchValue({
+        dateDebut: '',
+        dateFin: ''
+      });
+    } else {
+      // Afficher seulement le mois en cours
+      const now = new Date();
+      const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+      
+      this.filterForm.patchValue({
+        dateDebut: this.formatDateForInput(firstDayOfMonth),
+        dateFin: this.formatDateForInput(now)
+      });
+    }
+    
     this.currentPage = 1;
     this.loadLogs();
   }
@@ -139,6 +200,18 @@ export class UserLogComponent implements OnInit {
       minute: '2-digit',
       second: '2-digit'
     });
+  }
+
+  /**
+   * Formate une date pour l'input datetime-local (format: YYYY-MM-DDTHH:mm)
+   */
+  private formatDateForInput(date: Date): string {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    return `${year}-${month}-${day}T${hours}:${minutes}`;
   }
 }
 

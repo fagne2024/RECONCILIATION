@@ -193,6 +193,22 @@
                 color: #999;
                 font-style: italic;
               }
+
+              &.details-cell {
+                max-width: 300px;
+                word-wrap: break-word;
+                overflow-wrap: break-word;
+
+                span {
+                  display: inline-block;
+                  max-width: 100%;
+                  
+                  &.no-details {
+                    color: #999;
+                    font-style: italic;
+                  }
+                }
+              }
             }
           }
         }
