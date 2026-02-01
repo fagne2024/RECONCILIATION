@@ -25,13 +25,36 @@ export interface EcartBoSummaryFilter {
   token?: string;
 }
 
+/** Données préremplies depuis la page /matches pour le formulaire "Ajouter une nouvelle ligne" */
+export interface EcartBoSummaryPrefill {
+  date: string;
+  agence: string;
+  service: string;
+  pays: string;
+  nombre: number;
+  volume: number;
+}
+
 @Injectable({
   providedIn: 'root'
 })
 export class EcartBoSummaryService {
   private apiUrl = '/api/ecart-bo-summary';
+  private prefillFromMatches: EcartBoSummaryPrefill | null = null;
 
   constructor(private http: HttpClient) { }
+
+  /** Définit les données à préremplir depuis la page matches (appelé avant navigation vers ecart-bo-summary). */
+  setPrefillFromMatches(data: EcartBoSummaryPrefill | null): void {
+    this.prefillFromMatches = data;
+  }
+
+  /** Récupère et consomme les données de préremplissage (utilisé par ecart-bo-summary au chargement). */
+  getAndClearPrefillFromMatches(): EcartBoSummaryPrefill | null {
+    const data = this.prefillFromMatches;
+    this.prefillFromMatches = null;
+    return data;
+  }
 
   getEcartBoSummaries(filter?: EcartBoSummaryFilter): Observable<EcartBoSummary[]> {
     let params = new HttpParams();

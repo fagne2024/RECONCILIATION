@@ -104,6 +104,32 @@ public class ImpactOPService {
     }
 
     /**
+     * Créer plusieurs impacts OP en une seule requête (évite le rate limiting 429).
+     * Chaque élément est sauvegardé individuellement ; les erreurs sont collectées.
+     */
+    public Map<String, Object> createImpactOPBatch(List<ImpactOPEntity> impacts) {
+        Map<String, Object> result = new HashMap<>();
+        List<ImpactOPEntity> created = new ArrayList<>();
+        List<String> errors = new ArrayList<>();
+        int index = 0;
+        for (ImpactOPEntity impact : impacts != null ? impacts : List.<ImpactOPEntity>of()) {
+            index++;
+            try {
+                ImpactOPEntity saved = impactOPRepository.save(impact);
+                created.add(saved);
+            } catch (Exception e) {
+                errors.add("Ligne " + index + ": " + (e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName()));
+            }
+        }
+        result.put("successCount", created.size());
+        result.put("errorCount", errors.size());
+        result.put("created", created);
+        result.put("errors", errors);
+        result.put("total", (impacts != null ? impacts.size() : 0));
+        return result;
+    }
+
+    /**
      * Mettre à jour un impact OP
      */
     public ImpactOPEntity updateImpactOP(ImpactOPEntity impactOP) {

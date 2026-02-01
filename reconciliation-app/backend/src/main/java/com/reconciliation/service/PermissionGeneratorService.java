@@ -241,6 +241,10 @@ public class PermissionGeneratorService {
      * Extrait une action spécifique basée sur des patterns connus
      */
     private String extractSpecificAction(String lowerPath, String lowerMethodName, String defaultAction) {
+        // Dashboard : Consulter (aligné avec les permissions en base)
+        if (lowerPath.contains("dashboard") || lowerMethodName.contains("dashboard")) {
+            return "Consulter";
+        }
         // Patterns d'upload/import
         if (lowerPath.contains("upload") || lowerMethodName.contains("upload")) {
             if (lowerPath.contains("operations")) {
@@ -438,16 +442,20 @@ public class PermissionGeneratorService {
     }
 
     /**
-     * Trouve le module correspondant à un chemin d'API
+     * Trouve le module correspondant à un chemin d'API.
+     * Utilise la correspondance la plus longue (plus spécifique) pour que
+     * /api/statistics/dashboard-metrics → Dashboard et non Statistiques.
      */
     private String findModuleForPath(String path, Map<String, String> apiToModuleMap) {
-        // Vérifier les correspondances exactes d'abord
+        String bestMatch = null;
+        int bestLength = -1;
         for (Map.Entry<String, String> entry : apiToModuleMap.entrySet()) {
-            if (path.startsWith(entry.getKey())) {
-                return entry.getValue();
+            if (path.startsWith(entry.getKey()) && entry.getKey().length() > bestLength) {
+                bestMatch = entry.getValue();
+                bestLength = entry.getKey().length();
             }
         }
-        return null;
+        return bestMatch;
     }
 
     /**
@@ -456,7 +464,15 @@ public class PermissionGeneratorService {
     private Map<String, String> createApiToModuleMapping() {
         Map<String, String> mapping = new HashMap<>();
         
-        // Mapping basé sur les routes de l'application
+        // Chemins Dashboard (avant /api/statistics pour priorité) :
+        mapping.put("/api/statistics/dashboard-metrics", "Dashboard");
+        mapping.put("/api/service-references/dashboard", "Dashboard");
+        mapping.put("/api/dashboard", "Dashboard");
+        mapping.put("/api/reconciliation-dashboard", "Dashboard");
+        mapping.put("/api/banque-dashboard", "Dashboard");
+        mapping.put("/api/report-dashboard", "Résultats");
+        
+        // Autres routes
         mapping.put("/api/operations", "Opérations");
         mapping.put("/api/operations-bancaires", "Opérations");
         mapping.put("/api/comptes", "Comptes");
@@ -477,13 +493,9 @@ public class PermissionGeneratorService {
         mapping.put("/api/profils", "Profil");
         mapping.put("/api/users", "Utilisateur");
         mapping.put("/api/log-utilisateur", "Log utilisateur");
-        mapping.put("/api/dashboard", "Dashboard");
         mapping.put("/api/traitement", "Traitement");
         mapping.put("/api/results", "Résultats");
         mapping.put("/api/reconciliation-report", "Résultats");
-        mapping.put("/api/report-dashboard", "Résultats");
-        mapping.put("/api/reconciliation-dashboard", "Dashboard");
-        mapping.put("/api/banque-dashboard", "Dashboard");
         mapping.put("/api/aide", "AIDE");
         
         return mapping;

@@ -691,18 +691,18 @@ export class EcartPartnerTableComponent implements OnInit, OnDestroy {
       console.log('🔄 Début de la sauvegarde des ECART Partenaire dans Import OP...');
       console.log('DEBUG: Nombre d\'enregistrements ECART Partenaire (total):', this.response.partnerOnly.length);
 
-      // Déterminer la source: lignes sélectionnées ou tout le jeu de données
+      // Toujours sauvegarder TOUTES les lignes (pas de filtre par sélection)
       const sourceRecords: Record<string, string>[] =
-        this.selectedPartnerOnlyKeys.length > 0
-          ? (this.filteredPartnerOnly || []).filter(r => this.selectedPartnerOnlyKeys.includes(this.getPartnerOnlyKey(r)))
-          : (this.response.partnerOnly || []);
+        (this.filteredPartnerOnly && this.filteredPartnerOnly.length > 0)
+          ? [...this.filteredPartnerOnly]
+          : [...(this.response.partnerOnly || [])];
 
       if (sourceRecords.length === 0) {
-        this.popupService.showWarning('❌ Aucune ligne sélectionnée pour la sauvegarde.');
+        this.popupService.showWarning('❌ Aucune donnée ECART Partenaire à sauvegarder.');
         return;
       }
 
-      console.log('DEBUG: Nombre d\'enregistrements à sauvegarder (sélection):', sourceRecords.length);
+      console.log('DEBUG: Nombre d\'enregistrements à sauvegarder (toutes les lignes):', sourceRecords.length);
 
       const defaultDateCandidate = this.selectedPartnerImportOpDate
         || this.extractIsoDay(this.getFromRecord(sourceRecords[0], ['Date opération', 'Date', 'dateOperation', 'date_operation']))
@@ -729,17 +729,16 @@ export class EcartPartnerTableComponent implements OnInit, OnDestroy {
       this.selectedPartnerImportOpDate = normalizedDateInput;
       const overrideDateIso = this.makeIsoDateTime(normalizedDateInput);
 
-      // Convertir les données ECART Partenaire en format ImpactOP
+      // Convertir les données ECART Partenaire en format ImpactOP (toutes les lignes, champs obligatoires renseignés)
       const impactOPData: ImpactOP[] = sourceRecords.map((record, index) => {
         const getValueWithFallback = (keys: string[]): string => {
           for (const key of keys) {
             const originalKey = this.getOriginalKey(record, key);
-            if (record[originalKey] !== undefined && record[originalKey] !== null && record[originalKey] !== '') {
-              return record[originalKey].toString();
+            if (record[originalKey] !== undefined && record[originalKey] !== null && String(record[originalKey]).trim() !== '') {
+              return String(record[originalKey]).trim();
             }
-            // Essayer aussi directement avec la clé
-            if (record[key] !== undefined && record[key] !== null && record[key] !== '') {
-              return record[key].toString();
+            if (record[key] !== undefined && record[key] !== null && String(record[key]).trim() !== '') {
+              return String(record[key]).trim();
             }
           }
           return '';
@@ -747,7 +746,7 @@ export class EcartPartnerTableComponent implements OnInit, OnDestroy {
 
         const getNumberWithFallback = (keys: string[]): number => {
           const value = getValueWithFallback(keys);
-          const parsed = parseFloat(value.replace(/[^\d.-]/g, ''));
+          const parsed = parseFloat(String(value).replace(/[^\d.-]/g, ''));
           return isNaN(parsed) ? 0 : parsed;
         };
 
@@ -790,30 +789,33 @@ export class EcartPartnerTableComponent implements OnInit, OnDestroy {
         const parsedDate = parseExcelDate(dateOperationStr);
         const dateOperation = overrideDateIso || parsedDate.toISOString();
 
-        // Récupérer les valeurs réelles des colonnes ECART Partenaire
-        // Type: colonne "Type" dans les données ECART Partenaire
-        const typeOperation = getValueWithFallback(['Type', 'type', 'TYPE', 'Type Opération', 'typeOperation', 'type_operation']) || 'DEPOT';
-        
-        // Agence: colonne "Agence" dans les données ECART Partenaire
-        const codeProprietaire = getValueWithFallback(['Agence', 'agence', 'AGENCE', 'agency', 'Code propriétaire', 'Code proprietaire', 'codeProprietaire', 'code_proprietaire']) || 'UNKNOWN';
-        
-        // Pays/GRX: colonne "Pays" dans les données ECART Partenaire
-        const groupeReseau = getValueWithFallback(['Pays', 'pays', 'PAYS', 'country', 'Country', 'GRX', 'grx', 'groupe de réseau', 'groupeReseau', 'groupe_reseau']) || 'DEFAULT';
-        
-        // Soldes: colonnes "Solde_avant" et "Solde_Après" dans les données ECART Partenaire
+        // Récupérer les valeurs réelles des colonnes ECART Partenaire (tous les champs obligatoires renseignés)
+        const typeOperationRaw = getValueWithFallback(['Type', 'type', 'TYPE', 'Type Opération', 'typeOperation', 'type_operation']);
+        const typeOperation = (typeOperationRaw && typeOperationRaw.trim()) ? typeOperationRaw.trim() : 'DEPOT';
+
+        const codeProprietaireRaw = getValueWithFallback(['Agence', 'agence', 'AGENCE', 'agency', 'Code propriétaire', 'Code proprietaire', 'codeProprietaire', 'code_proprietaire']);
+        const codeProprietaire = (codeProprietaireRaw && codeProprietaireRaw.trim()) ? codeProprietaireRaw.trim() : 'UNKNOWN';
+
+        const groupeReseauRaw = getValueWithFallback(['Pays', 'pays', 'PAYS', 'country', 'Country', 'GRX', 'grx', 'groupe de réseau', 'groupeReseau', 'groupe_reseau']);
+        const groupeReseauVal = (groupeReseauRaw && groupeReseauRaw.trim()) ? groupeReseauRaw.trim() : 'DEFAULT';
+        const groupeReseau = groupeReseauVal.length > 10 ? groupeReseauVal.substring(0, 10) : groupeReseauVal;
+
+        const numeroTransGURaw = getValueWithFallback(['Numéro Trans GU', 'numeroTransGU', 'numero_trans_gu', 'Numero Trans GU']);
+        const numeroTransGU = (numeroTransGURaw && numeroTransGURaw.trim()) ? numeroTransGURaw.trim() : `GU-${Date.now()}-${index}`;
+
         const soldeAvant = getNumberWithFallback(['Solde_avant', 'Solde_Avant', 'SOLDE_AVANT', 'solde_avant', 'Solde avant', 'soldeAvant']);
         const soldeApres = getNumberWithFallback(['Solde_Après', 'Solde_Apres', 'SOLDE_APRES', 'solde_après', 'Solde après', 'soldeApres', 'Solde aprés']);
 
         return {
-          id: undefined, // Sera assigné par le backend
-          typeOperation: typeOperation,
+          id: undefined,
+          typeOperation,
           montant: getNumberWithFallback(['Montant', 'montant', 'amount']),
-          soldeAvant: soldeAvant,
-          soldeApres: soldeApres,
-          codeProprietaire: codeProprietaire,
-          dateOperation: dateOperation,
-          numeroTransGU: getValueWithFallback(['Numéro Trans GU', 'numeroTransGU', 'numero_trans_gu', 'numeroTransGU']) || `GU-${Date.now()}-${index}`,
-          groupeReseau: groupeReseau.length > 10 ? groupeReseau.substring(0, 10) : groupeReseau,
+          soldeAvant,
+          soldeApres,
+          codeProprietaire,
+          dateOperation: dateOperation || new Date().toISOString(),
+          numeroTransGU,
+          groupeReseau,
           statut: 'EN_ATTENTE',
           commentaire: `Importé depuis ECART Partenaire - ${new Date().toLocaleString('fr-FR')}`,
           createdAt: new Date().toISOString(),
@@ -821,36 +823,22 @@ export class EcartPartnerTableComponent implements OnInit, OnDestroy {
         } as ImpactOP;
       });
 
-      console.log('DEBUG: Données converties pour Import OP:', impactOPData.slice(0, 2));
+      console.log('DEBUG: Données converties pour Import OP (échantillon):', impactOPData.slice(0, 2));
+      console.log('DEBUG: Envoi en une requête batch pour éviter 429 Too Many Requests...');
 
-      // Sauvegarder via le service Impact OP
-      let successCount = 0;
-      let errorCount = 0;
+      // Sauvegarder en une requête batch (évite le rate limiting 429)
+      const batchResult = await firstValueFrom(this.impactOPService.createImpactOPBatch(impactOPData));
+      const successCount = batchResult.successCount ?? 0;
+      const errorCount = batchResult.errorCount ?? 0;
 
-      for (const [index, impactOP] of impactOPData.entries()) {
-        try {
-          console.log(`🔄 [${index + 1}/${impactOPData.length}] Tentative de création Impact OP:`, impactOP);
-          const result = await firstValueFrom(this.impactOPService.createImpactOP(impactOP));
-          successCount++;
-          console.log(`✅ [${index + 1}/${impactOPData.length}] Import OP créé avec succès:`, result);
-        } catch (error: any) {
-          errorCount++;
-          console.error(`❌ [${index + 1}/${impactOPData.length}] Erreur détaillée lors de la création de l'Import OP:`, {
-            error,
-            status: error?.status,
-            statusText: error?.statusText,
-            message: error?.message,
-            errorDetails: error?.error,
-            impactOPData: impactOP
-          });
-        }
+      if (batchResult.errors?.length) {
+        console.warn('⚠️ Erreurs détaillées (batch):', batchResult.errors.slice(0, 10));
       }
 
       if (successCount > 0) {
-        this.popupService.showSuccess(`✅ Sauvegarde réussie !\n\n📊 Résumé:\n• ${successCount} Import OP créés avec succès\n• ${errorCount} erreurs\n\n💾 Les données ECART Partenaire ont été sauvegardées dans Import OP.`);
-        this.selectedPartnerOnlyKeys = [];
+        this.popupService.showSuccess(`✅ Sauvegarde réussie !\n\n📊 Résumé:\n• ${successCount} Import OP créés avec succès\n• ${errorCount} erreurs\n• ${sourceRecords.length} ligne(s) traitées\n\n💾 Les données ECART Partenaire ont été sauvegardées dans Import OP.`);
       } else {
-        this.popupService.showError(`❌ Échec de la sauvegarde !\n\nAucun Import OP n'a pu être créé.\nVeuillez vérifier les logs de la console pour plus de détails.`);
+        this.popupService.showError(`❌ Échec de la sauvegarde !\n\nAucun Import OP n'a pu être créé.\n${batchResult.errors?.length ? 'Détails: ' + batchResult.errors.slice(0, 3).join(' ; ') : 'Veuillez vérifier les logs.'}`);
       }
 
     } catch (error) {

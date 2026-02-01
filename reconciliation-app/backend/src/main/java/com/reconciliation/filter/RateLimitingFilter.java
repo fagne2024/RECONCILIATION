@@ -53,6 +53,15 @@ public class RateLimitingFilter extends OncePerRequestFilter {
         "/error"
     };
 
+    // Chemins GET bootstrap (chargement initial pages Profils, etc.) exclus du rate limiting
+    private static final String[] BOOTSTRAP_GET_PATHS = {
+        "/api/profils",
+        "/api/profils/modules",
+        "/api/profils/permissions",
+        "/api/profils/permissions/by-module",
+        "/api/pays"
+    };
+
     public RateLimitingFilter() {
         // Initialiser le cache avec expiration automatique
         this.requestCache = Caffeine.newBuilder()
@@ -82,6 +91,12 @@ public class RateLimitingFilter extends OncePerRequestFilter {
             return;
         }
 
+        // Ignorer les GET bootstrap (évite 429 au chargement des pages Profils/Permissions)
+        if ("GET".equalsIgnoreCase(request.getMethod()) && isBootstrapGetPath(path)) {
+            filterChain.doFilter(request, response);
+            return;
+        }
+
         // Ignorer les requêtes OPTIONS (CORS preflight)
         if ("OPTIONS".equalsIgnoreCase(request.getMethod())) {
             filterChain.doFilter(request, response);
@@ -106,6 +121,18 @@ public class RateLimitingFilter extends OncePerRequestFilter {
     private boolean isExcludedPath(String path) {
         for (String excludedPath : EXCLUDED_PATHS) {
             if (path.equals(excludedPath) || path.startsWith(excludedPath + "/")) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Vérifie si le chemin est un GET bootstrap (chargement initial) à exclure du rate limiting
+     */
+    private boolean isBootstrapGetPath(String path) {
+        for (String bootstrapPath : BOOTSTRAP_GET_PATHS) {
+            if (path.equals(bootstrapPath) || path.startsWith(bootstrapPath + "/") || path.startsWith(bootstrapPath + "?")) {
                 return true;
             }
         }

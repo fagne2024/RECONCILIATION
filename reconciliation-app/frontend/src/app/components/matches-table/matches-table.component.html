@@ -7,6 +7,15 @@
       <h2>✅ Correspondances</h2>
       <div class="header-info">
         <span class="total-count">{{filteredMatches.length || 0}} correspondance(s)</span>
+        <button
+          type="button"
+          (click)="saveToEcartBoSummary()"
+          class="save-to-summary-btn"
+          [disabled]="!filteredMatches?.length"
+          title="Préremplir le formulaire Écart BO Summary avec volume, nombre, date, service, pays et agence"
+        >
+          💾 Save vers Écart BO Summary
+        </button>
       </div>
     </div>
     

@@ -211,6 +211,13 @@
             <i class="fas fa-save"></i>
             {{ isUpdatingMultipleStatuts ? 'Mise à jour...' : 'Mettre à jour' }}
           </button>
+          <button class="btn btn-danger" 
+                  (click)="deleteSelectedEcartSoldes()" 
+                  [disabled]="getSelectedCount() === 0 || isDeletingSelected"
+                  title="Supprimer les lignes sélectionnées">
+            <i class="fas fa-trash"></i>
+            {{ isDeletingSelected ? 'Suppression...' : 'Supprimer la sélection' }}
+          </button>
         </div>
       </div>
       

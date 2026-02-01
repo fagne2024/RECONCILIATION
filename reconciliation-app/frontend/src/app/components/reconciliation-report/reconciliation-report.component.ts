@@ -698,6 +698,7 @@ export interface ReconciliationReportData {
                         <div class="releve-total-summary">
                             <div class="releve-total-item">
                                 <span class="releve-total-label">💰 Volume BO:</span>
+                                <span class="releve-total-value">{{getTotalTransactionsSum() | number}}</span>
                                 <span class="releve-total-value">{{getTotalVolumeSum() | number}}</span>
                             </div>
                         </div>
@@ -827,6 +828,57 @@ export interface ReconciliationReportData {
                         </div>
                     </div>
 
+                    <!-- Section Trx remboursé (saisie manuelle) -->
+                    <div class="releve-section">
+                        <h5>📝 Trx remboursé (saisie manuelle)</h5>
+                        <div class="releve-manual-upload">
+                            <input 
+                                type="file" 
+                                #releveRembourseFileInput 
+                                accept=".csv,.xls,.xlsx" 
+                                (change)="onReleveRembourseFileSelected($event)"
+                                style="display: none">
+                            <button type="button" class="btn-releve-upload" (click)="releveRembourseFileInput.click()" [disabled]="isReleveRembourseFileLoading">
+                                {{ isReleveRembourseFileLoading ? '⏳ Chargement...' : '📤 Charger un fichier (CSV / XLS)' }}
+                            </button>
+                            <span class="releve-upload-hint">Nombre = lignes (sans en-tête), Volume = somme de la colonne « montant ».</span>
+                        </div>
+                        <div class="releve-manual-or">Ou saisir manuellement :</div>
+                        <div class="releve-manual-input">
+                            <div class="releve-input-group">
+                                <label class="releve-input-label">Nombre:</label>
+                                <input 
+                                    type="number" 
+                                    [(ngModel)]="releveRembourseNombre" 
+                                    class="releve-input"
+                                    placeholder="0"
+                                    min="0"
+                                    (input)="onReleveRembourseChange()">
+                            </div>
+                            <div class="releve-input-group">
+                                <label class="releve-input-label">Volume:</label>
+                                <input 
+                                    type="number" 
+                                    [(ngModel)]="releveRembourseVolume" 
+                                    class="releve-input"
+                                    placeholder="0"
+                                    min="0"
+                                    step="0.01"
+                                    (input)="onReleveRembourseChange()">
+                            </div>
+                        </div>
+                        <div class="releve-manual-summary" *ngIf="releveRembourseNombre > 0 || releveRembourseVolume > 0">
+                            <div class="releve-item">
+                                <span class="releve-label">Nombre total:</span>
+                                <span class="releve-value">{{releveRembourseNombre | number}}</span>
+                            </div>
+                            <div class="releve-item">
+                                <span class="releve-label">Volume total:</span>
+                                <span class="releve-value">{{releveRembourseVolume | number}}</span>
+                            </div>
+                        </div>
+                    </div>
+
                     <!-- Totaux finaux -->
                     <div class="releve-section">
                         <h5>📊 Totaux finaux</h5>
@@ -847,9 +899,18 @@ export interface ReconciliationReportData {
                                 <span class="releve-final-label">📊 Nombre total (Écart traité):</span>
                                 <span class="releve-final-value">{{getTotalNombreSum() | number}}</span>
                             </div>
+                            <div class="releve-final-item">
+                                <span class="releve-final-label">📊 Nombre total (Trx remboursé):</span>
+                                <span class="releve-final-value">{{releveRembourseNombre | number}}</span>
+                            </div>
+                            <div class="releve-final-item">
+                                <span class="releve-final-label">📊 Volume total (Trx remboursé):</span>
+                                <span class="releve-final-value">{{releveRembourseVolume | number}}</span>
+                            </div>
                             <div class="releve-total-summary">
                                 <div class="releve-total-item">
                                     <span class="releve-total-label">💰 Volume partenaire:</span>
+                                    <span class="releve-total-value">{{getTotalTransactionsPartenaire() | number}}</span>
                                     <span class="releve-total-value">{{getTotalVolumeSumWithManual() | number}}</span>
                                 </div>
                             </div>
@@ -2454,6 +2515,11 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
     releveManualVolume: number = 0;
     isReleveManualFileLoading = false;
 
+    // Propriétés pour Trx remboursé (saisie manuelle)
+    releveRembourseNombre: number = 0;
+    releveRembourseVolume: number = 0;
+    isReleveRembourseFileLoading = false;
+
     // Pays autorisés pour le cloisonnement
     private allowedCountryCodes: string[] | null = null;
     private readonly DEFAULT_STATUS = 'EN COURS.....';
@@ -4028,8 +4094,9 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
 
     filterReport() {
         this.filteredReportData = this.reportData.filter(item => {
-            // Par défaut : afficher uniquement le mois en cours (sinon bouton "Voir plus" pour tout afficher)
-            if (!this.showAllMonths && item.date) {
+            // Données en cours (live) : toujours tout afficher, pas de filtre par mois
+            // Base sauvegardée : afficher uniquement le mois en cours sauf si "Voir plus"
+            if (this.currentSource !== 'live' && !this.showAllMonths && item.date) {
                 const d = new Date(item.date);
                 const now = new Date();
                 if (d.getFullYear() !== now.getFullYear() || d.getMonth() !== now.getMonth()) {
@@ -4129,6 +4196,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             const dateB = new Date(b.date).getTime();
             return dateB - dateA; // Décroissant (plus récent en premier)
         });
+        
         
         // Réinitialiser à la première page et mettre à jour la pagination
         this.currentPage = 1;
@@ -4635,12 +4703,12 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                     agency: item.agency,
                     service: item.service,
                     country: item.country,
-                    transactions: item.totalTransactions,
-                    volume: item.totalVolume,
-                    matches: item.matches,
-                    boOnly: item.boOnly,
-                    partnerOnly: item.partnerOnly,
-                    mismatches: item.mismatches,
+                    transactions: Number(item.totalTransactions) || 0,
+                    volume: Number(item.totalVolume) || 0,
+                    matches: Number(item.matches) || 0,
+                    boOnly: Number(item.boOnly) || 0,
+                    partnerOnly: Number(item.partnerOnly) || 0,
+                    mismatches: Number(item.mismatches) || 0,
                     matchRate: `${matchRate.toFixed(2)}%`,
                     glpiId: item.glpiId || '',
                     status: item.status,
@@ -4765,6 +4833,14 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                     vertical: 'middle'
                 };
 
+                // Colonnes montant en nombre avec format numérique
+                const numFmt = '#,##0.00';
+                row.getCell('transactions').numFmt = '#,##0';
+                row.getCell('volume').numFmt = numFmt;
+                row.getCell('matches').numFmt = '#,##0';
+                row.getCell('boOnly').numFmt = '#,##0';
+                row.getCell('partnerOnly').numFmt = '#,##0';
+                row.getCell('mismatches').numFmt = '#,##0';
                 // Alignement numérique pour Transactions, Volume
                 row.getCell('transactions').alignment = { horizontal: 'right', vertical: 'middle' };
                 row.getCell('volume').alignment = { horizontal: 'right', vertical: 'middle' };
@@ -7699,6 +7775,8 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         // Réinitialiser les données manuelles
         this.releveManualNombre = 0;
         this.releveManualVolume = 0;
+        this.releveRembourseNombre = 0;
+        this.releveRembourseVolume = 0;
     }
 
     /**
@@ -7725,14 +7803,15 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
     }
 
     /**
-     * Calcule le Volume partenaire (Rapport + Écart BO J+1 + Écart traité - Écart BO J-1)
+     * Calcule le Volume partenaire (Rapport + Écart BO J+1 + Écart traité - Écart BO J-1 + Trx remboursé)
      */
     getTotalVolumeSumWithManual(): number {
         const rapportVolume = this.releveData?.totalVolume || 0;
         const ecartVolumeJ1 = this.getTotalEcartVolume(); // Écart BO J+1
         const manualVolume = this.releveManualVolume || 0;
         const ecartVolumeJ1Minus = this.getTotalEcartVolumeJ1(); // Écart BO J-1
-        return rapportVolume + ecartVolumeJ1 + manualVolume - ecartVolumeJ1Minus;
+        const rembourseVolume = this.releveRembourseVolume || 0;
+        return rapportVolume + ecartVolumeJ1 + manualVolume - ecartVolumeJ1Minus + rembourseVolume;
     }
 
     /**
@@ -7745,14 +7824,15 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
     }
 
     /**
-     * Calcule le nombre total de transactions Partenaire (Rapport + Écart traité + Écart BO J+1 - Écart BO J-1)
+     * Calcule le nombre total de transactions Partenaire (Rapport + Écart traité + Écart BO J+1 - Écart BO J-1 + Trx remboursé)
      */
     getTotalTransactionsPartenaire(): number {
         const rapportTransactions = this.releveData?.totalTransactions || 0;
         const manualNombre = this.releveManualNombre || 0;
         const ecartJ1Nombre = this.getTotalEcartNombre(); // Écart BO J+1
         const ecartJ1NombreMinus = this.getTotalEcartNombreJ1(); // Écart BO J-1
-        return rapportTransactions + manualNombre + ecartJ1Nombre - ecartJ1NombreMinus;
+        const rembourseNombre = this.releveRembourseNombre || 0;
+        return rapportTransactions + manualNombre + ecartJ1Nombre - ecartJ1NombreMinus + rembourseNombre;
     }
 
     /**
@@ -7782,6 +7862,48 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
     onReleveManualChange(): void {
         // Cette fonction peut être utilisée pour des validations ou autres actions
         // Pour l'instant, elle est vide mais peut être étendue si nécessaire
+    }
+
+    /**
+     * Gère les changements dans les champs Trx remboursé
+     */
+    onReleveRembourseChange(): void {
+        // Cette fonction peut être utilisée pour des validations ou autres actions
+    }
+
+    /**
+     * Gère la sélection d'un fichier CSV ou XLS pour la section Trx remboursé.
+     */
+    async onReleveRembourseFileSelected(event: Event): Promise<void> {
+        const input = event.target as HTMLInputElement;
+        const file = input?.files?.[0];
+        if (!file) return;
+        const fileName = (file.name || '').toLowerCase();
+        const isCsv = fileName.endsWith('.csv');
+        const isExcel = fileName.endsWith('.xls') || fileName.endsWith('.xlsx');
+        if (!isCsv && !isExcel) {
+            this.popupService.showError('Format non supporté. Utilisez un fichier CSV, XLS ou XLSX.', 'Fichier invalide');
+            input.value = '';
+            return;
+        }
+        this.isReleveRembourseFileLoading = true;
+        try {
+            const result = isCsv
+                ? await this.parseReleveManualCsv(file)
+                : await this.parseReleveManualExcel(file);
+            this.releveRembourseNombre = result.nombre;
+            this.releveRembourseVolume = result.volume;
+            this.onReleveRembourseChange();
+            this.popupService.showSuccess(
+                `Fichier chargé : ${result.nombre} ligne(s), volume total = ${result.volume.toLocaleString('fr-FR', { minimumFractionDigits: 2 })}`,
+                'Chargement réussi'
+            );
+        } catch (err: any) {
+            this.popupService.showError(err?.message || 'Erreur lors de la lecture du fichier.', 'Erreur');
+        } finally {
+            this.isReleveRembourseFileLoading = false;
+            input.value = '';
+        }
     }
 
     /**
@@ -8004,13 +8126,16 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                 const ecartJ1VolumeRow = summarySheet.addRow(['Volume total:', this.getTotalEcartVolume()]);
                 applyValueStyle(ecartJ1VolumeRow);
                 
-                // Volume BO (mis en évidence en vert comme dans le modal)
-                const volumeBORow = summarySheet.addRow(['💰 Volume BO:', this.getTotalVolumeSum()]);
+                // Volume BO (mis en évidence en vert comme dans le modal) : label, nombre de transactions, volume
+                const volumeBORow = summarySheet.addRow(['💰 Volume BO:', this.getTotalTransactionsSum(), this.getTotalVolumeSum()]);
                 volumeBORow.getCell(1).font = { size: 10, bold: true, color: { argb: 'FF28a745' } };
                 volumeBORow.getCell(2).font = { size: 10, bold: true, color: { argb: 'FF28a745' } };
-                volumeBORow.getCell(2).numFmt = '#,##0.00';
+                volumeBORow.getCell(3).font = { size: 10, bold: true, color: { argb: 'FF28a745' } };
+                volumeBORow.getCell(2).numFmt = '#,##0';
+                volumeBORow.getCell(3).numFmt = '#,##0.00';
                 volumeBORow.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD4EDDA' } };
                 volumeBORow.getCell(2).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD4EDDA' } };
+                volumeBORow.getCell(3).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD4EDDA' } };
                 volumeBORow.eachCell(cell => {
                     cell.border = {
                         top: { style: 'thin', color: { argb: 'FFE0E0E0' } },
@@ -8054,6 +8179,24 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             }
             summarySheet.addRow([]);
             
+            // Trx remboursé (saisie manuelle)
+            const rembourseHeader = summarySheet.addRow(['📝 Trx remboursé (saisie manuelle)']);
+            applySectionStyle(rembourseHeader);
+            rembourseHeader.height = 18;
+            
+            const rembourseNombreRow = summarySheet.addRow(['Nombre:', this.releveRembourseNombre || 0]);
+            applyValueStyle(rembourseNombreRow);
+            const rembourseVolumeRow = summarySheet.addRow(['Volume:', this.releveRembourseVolume || 0]);
+            applyValueStyle(rembourseVolumeRow);
+            
+            if (this.releveRembourseNombre > 0 || this.releveRembourseVolume > 0) {
+                const rembourseNombreTotalRow = summarySheet.addRow(['Nombre total:', this.releveRembourseNombre || 0]);
+                applyValueStyle(rembourseNombreTotalRow);
+                const rembourseVolumeTotalRow = summarySheet.addRow(['Volume total:', this.releveRembourseVolume || 0]);
+                applyValueStyle(rembourseVolumeTotalRow);
+            }
+            summarySheet.addRow([]);
+            
             // Totaux finaux
             const totauxHeader = summarySheet.addRow(['📊 Totaux finaux']);
             applyHeaderStyle(totauxHeader, 'FF28a745');
@@ -8068,11 +8211,13 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             const trxEcartRow = summarySheet.addRow(['📊 Nombre total (Écart traité):', this.getTotalNombreSum()]);
             applyValueStyle(trxEcartRow);
             
-            // Volume partenaire (mis en évidence comme dans le modal)
-            const volumePartenaireRow = summarySheet.addRow(['💰 Volume partenaire:', this.getTotalVolumeSumWithManual()]);
+            // Volume partenaire (mis en évidence comme dans le modal) : label, nombre de transactions, volume
+            const volumePartenaireRow = summarySheet.addRow(['💰 Volume partenaire:', this.getTotalTransactionsPartenaire(), this.getTotalVolumeSumWithManual()]);
             volumePartenaireRow.getCell(1).font = { size: 10, bold: true };
             volumePartenaireRow.getCell(2).font = { size: 10, bold: true };
-            volumePartenaireRow.getCell(2).numFmt = '#,##0.00';
+            volumePartenaireRow.getCell(3).font = { size: 10, bold: true };
+            volumePartenaireRow.getCell(2).numFmt = '#,##0';
+            volumePartenaireRow.getCell(3).numFmt = '#,##0.00';
             volumePartenaireRow.eachCell(cell => {
                 cell.border = {
                     top: { style: 'thin', color: { argb: 'FFE0E0E0' } },
@@ -8085,6 +8230,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             // Ajuster la largeur des colonnes
             summarySheet.getColumn(1).width = 40;
             summarySheet.getColumn(2).width = 20;
+            summarySheet.getColumn(3).width = 20;
             
             // Feuille 2: Détails Écart BO J+1
             if (this.releveEcartData && this.releveEcartData.length > 0) {

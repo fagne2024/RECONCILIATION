@@ -1,14 +1,16 @@
 import { Component, OnInit, OnDestroy, ChangeDetectorRef, ChangeDetectionStrategy } from '@angular/core';
 import { Router } from '@angular/router';
-import { Subscription } from 'rxjs';
+import { Subscription, firstValueFrom } from 'rxjs';
 import { ReconciliationResponse } from '../../models/reconciliation-response.model';
 import { AppStateService } from '../../services/app-state.service';
 import { ExportOptimizationService, ExportProgress } from '../../services/export-optimization.service';
 import { PopupService } from '../../services/popup.service';
 import { EcartSoldeService } from '../../services/ecart-solde.service';
 import { TrxSfService } from '../../services/trx-sf.service';
+import { ImpactOPService } from '../../services/impact-op.service';
 import { EcartSolde } from '../../models/ecart-solde.model';
 import { TrxSfData } from '../../services/trx-sf.service';
+import { ImpactOP } from '../../models/impact-op.model';
 import { fixGarbledCharacters } from '../../utils/encoding-fixer';
 
 @Component({
@@ -60,6 +62,8 @@ export class EcartBoTableComponent implements OnInit, OnDestroy {
   // Sauvegarde
   isSavingEcartBo = false;
   isSavingEcartBoToTrxSf = false;
+  isSavingEcartBoToImpactOP = false;
+  selectedBoImportOpDate: string | null = null;
   
   // Chargement progressif
   isLoading = false;
@@ -72,7 +76,8 @@ export class EcartBoTableComponent implements OnInit, OnDestroy {
     private exportOptimizationService: ExportOptimizationService,
     private popupService: PopupService,
     private ecartSoldeService: EcartSoldeService,
-    private trxSfService: TrxSfService
+    private trxSfService: TrxSfService,
+    private impactOPService: ImpactOPService
   ) {}
 
   ngOnInit(): void {
@@ -565,24 +570,22 @@ export class EcartBoTableComponent implements OnInit, OnDestroy {
   }
 
   async saveEcartBoToEcartSolde(): Promise<void> {
-    const availableRecords = this.getBoSelectionDataset();
-    if (availableRecords.length === 0) {
-      this.popupService.showWarning('❌ Aucune donnée ECART BO à sauvegarder.');
-      return;
-    }
+    // Toujours sauvegarder TOUTES les lignes (pas de filtre par sélection)
+    const sourceRecords: Record<string, string>[] =
+      (this.filteredBoOnly && this.filteredBoOnly.length > 0)
+        ? [...this.filteredBoOnly]
+        : this.getBoSelectionDataset();
 
-    const sourceRecords = this.getBoRecordsForAction();
     if (sourceRecords.length === 0) {
-      this.popupService.showWarning('❌ Aucune ligne sélectionnée pour la sauvegarde.');
+      this.popupService.showWarning('❌ Aucune donnée ECART BO à sauvegarder.');
       return;
     }
 
     this.isSavingEcartBo = true;
 
     try {
-      console.log('🔄 Début de la sauvegarde des ECART BO...');
-      console.log('DEBUG: Nombre d\'enregistrements ECART BO (disponibles):', availableRecords.length);
-      console.log('DEBUG: Nombre d\'enregistrements ECART BO (à sauvegarder):', sourceRecords.length);
+      console.log('🔄 Début de la sauvegarde des ECART BO (toutes les lignes)...');
+      console.log('DEBUG: Nombre d\'enregistrements ECART BO à sauvegarder:', sourceRecords.length);
 
       // Convertir les données ECART BO en format EcartSolde
       const ecartSoldeData: EcartSolde[] = sourceRecords.map((record, index) => {
@@ -675,12 +678,8 @@ export class EcartBoTableComponent implements OnInit, OnDestroy {
       }
 
       // Afficher un message de confirmation avec les détails
-      const selectionSummary = this.selectedBoOnlyKeys.length > 0
-        ? `🎯 Lignes sélectionnées: ${sourceRecords.length}\n`
-        : '';
       const message = `📋 RÉSUMÉ DES DONNÉES À SAUVEGARDER:\n\n` +
-        `📊 Total des enregistrements ECART BO: ${availableRecords.length}\n` +
-        selectionSummary +
+        `📊 Total des enregistrements ECART BO: ${sourceRecords.length}\n` +
         `✅ Enregistrements valides: ${validRecords.length}\n` +
         `❌ Enregistrements invalides: ${ecartSoldeData.length - validRecords.length}\n\n` +
         `📝 Commentaire par défaut: "IMPACT J+1"\n` +
@@ -713,7 +712,6 @@ export class EcartBoTableComponent implements OnInit, OnDestroy {
       successMessage += `💾 Les données ont été sauvegardées dans la table Ecart Solde.`;
       
       this.popupService.showSuccess(successMessage);
-      this.selectedBoOnlyKeys = [];
       this.cdr.markForCheck();
     } catch (error: any) {
       console.error('❌ Erreur lors de la sauvegarde des ECART BO:', error);
@@ -735,24 +733,22 @@ export class EcartBoTableComponent implements OnInit, OnDestroy {
   }
 
   async saveEcartBoToTrxSf(): Promise<void> {
-    const availableRecords = this.getBoSelectionDataset();
-    if (availableRecords.length === 0) {
-      this.popupService.showWarning('❌ Aucune donnée ECART BO à sauvegarder dans TRX SF.');
-      return;
-    }
+    // Toujours sauvegarder TOUTES les lignes (pas de filtre par sélection)
+    const sourceRecords: Record<string, string>[] =
+      (this.filteredBoOnly && this.filteredBoOnly.length > 0)
+        ? [...this.filteredBoOnly]
+        : this.getBoSelectionDataset();
 
-    const sourceRecords = this.getBoRecordsForAction();
     if (sourceRecords.length === 0) {
-      this.popupService.showWarning('❌ Aucune ligne sélectionnée pour la sauvegarde.');
+      this.popupService.showWarning('❌ Aucune donnée ECART BO à sauvegarder dans TRX SF.');
       return;
     }
 
     this.isSavingEcartBoToTrxSf = true;
 
     try {
-      console.log('🔄 Début de la sauvegarde des ECART BO dans TRX SF...');
-      console.log('DEBUG: Nombre d\'enregistrements ECART BO (disponibles):', availableRecords.length);
-      console.log('DEBUG: Nombre d\'enregistrements ECART BO (à sauvegarder):', sourceRecords.length);
+      console.log('🔄 Début de la sauvegarde des ECART BO dans TRX SF (toutes les lignes)...');
+      console.log('DEBUG: Nombre d\'enregistrements ECART BO à sauvegarder:', sourceRecords.length);
 
       // Convertir les données ECART BO en format TrxSfData avec récupération des frais
       const trxSfDataPromises = sourceRecords.map(async (record, index) => {
@@ -896,7 +892,6 @@ export class EcartBoTableComponent implements OnInit, OnDestroy {
       
       // Afficher un message de succès
       this.popupService.showSuccess(`✅ ${validRecords.length} enregistrements ECART BO ont été sauvegardés dans TRX SF avec frais TSOP !`);
-      this.selectedBoOnlyKeys = [];
       this.cdr.markForCheck();
     } catch (error) {
       console.error('❌ Erreur lors de la sauvegarde dans TRX SF:', error);
@@ -914,6 +909,149 @@ export class EcartBoTableComponent implements OnInit, OnDestroy {
       this.popupService.showError(`❌ ${errorMessage}`);
     } finally {
       this.isSavingEcartBoToTrxSf = false;
+      this.cdr.markForCheck();
+    }
+  }
+
+  private extractIsoDay(input: string): string {
+    const s = String(input || '').trim();
+    if (!s) return '';
+    let m = s.match(/(\d{4})-(\d{2})-(\d{2})/);
+    if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+    m = s.match(/(\d{2})-(\d{2})-(\d{4})/);
+    if (m) return `${m[3]}-${m[2]}-${m[1]}`;
+    return '';
+  }
+
+  private toIsoLocalDate(input: string): string {
+    try {
+      const d = new Date(input);
+      if (!isNaN(d.getTime())) return d.toISOString().split('T')[0];
+    } catch {}
+    return input || '';
+  }
+
+  private makeIsoDateTime(datePart: string): string {
+    try {
+      if (/^\d{4}-\d{2}-\d{2}$/.test(datePart)) {
+        return new Date(`${datePart}T00:00:00`).toISOString();
+      }
+    } catch {}
+    return new Date().toISOString();
+  }
+
+  async saveEcartBoToImpactOP(): Promise<void> {
+    const mismatches = this.response?.mismatches || [];
+    const boOnly = this.response?.boOnly || [];
+    const allFromResponse = [...mismatches, ...boOnly];
+    const sourceRecords: Record<string, string>[] =
+      (this.filteredBoOnly && this.filteredBoOnly.length > 0)
+        ? [...this.filteredBoOnly]
+        : [...allFromResponse];
+
+    if (sourceRecords.length === 0) {
+      this.popupService.showWarning('❌ Aucune donnée ECART BO à sauvegarder dans Import OP.');
+      return;
+    }
+
+    this.isSavingEcartBoToImpactOP = true;
+    this.cdr.markForCheck();
+
+    try {
+      console.log('🔄 Début de la sauvegarde des ECART BO dans Import OP (toutes les lignes)...');
+      console.log('DEBUG: Nombre d\'enregistrements ECART BO à sauvegarder:', sourceRecords.length);
+
+      const defaultDateCandidate = this.selectedBoImportOpDate
+        || this.extractIsoDay(this.getFromRecord(sourceRecords[0], ['Date opération', 'Date', 'dateOperation', 'date_operation']))
+        || this.extractIsoDay(this.getBoOnlyAgencyAndService(sourceRecords[0]).date)
+        || this.toIsoLocalDate(new Date().toISOString());
+
+      const dateInput = await this.popupService.showDateInput(
+        'Sélectionnez la date d\'opération à appliquer pour les Import OP générés.',
+        'Date Import OP',
+        defaultDateCandidate
+      );
+
+      if (dateInput === null) {
+        await this.popupService.showInfo('Sauvegarde Import OP annulée.');
+        return;
+      }
+
+      const normalizedDateInput = this.toIsoLocalDate(dateInput || defaultDateCandidate);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(normalizedDateInput)) {
+        this.popupService.showWarning('Date d\'opération invalide. Sauvegarde annulée.');
+        return;
+      }
+
+      this.selectedBoImportOpDate = normalizedDateInput;
+      const overrideDateIso = this.makeIsoDateTime(normalizedDateInput);
+
+      const impactOPData: ImpactOP[] = sourceRecords.map((record, index) => {
+        const getValueWithFallback = (keys: string[]): string => {
+          for (const key of keys) {
+            const originalKey = this.getOriginalKey(record, key);
+            if (record[originalKey] !== undefined && record[originalKey] !== null && String(record[originalKey]).trim() !== '') {
+              return String(record[originalKey]).trim();
+            }
+            if (record[key] !== undefined && record[key] !== null && String(record[key]).trim() !== '') {
+              return String(record[key]).trim();
+            }
+          }
+          return '';
+        };
+        const getNumberWithFallback = (keys: string[]): number => {
+          const value = getValueWithFallback(keys);
+          const parsed = parseFloat(String(value).replace(/[^\d.-]/g, ''));
+          return isNaN(parsed) ? 0 : parsed;
+        };
+
+        const agencyInfo = this.getBoOnlyAgencyAndService(record);
+        const typeOperationRaw = getValueWithFallback(['Type', 'type', 'TYPE', 'Type Opération', 'typeOperation', 'type_operation']);
+        const typeOperation = (typeOperationRaw && typeOperationRaw.trim()) ? typeOperationRaw.trim() : 'DEPOT';
+        const codeProprietaireRaw = getValueWithFallback(['Agence', 'agence', 'AGENCE', 'agency']) || agencyInfo.agency;
+        const codeProprietaire = (codeProprietaireRaw && codeProprietaireRaw.trim()) ? codeProprietaireRaw.trim() : 'UNKNOWN';
+        const groupeReseauRaw = getValueWithFallback(['Pays', 'pays', 'PAYS', 'GRX', 'grx']) || agencyInfo.country;
+        const groupeReseauVal = (groupeReseauRaw && groupeReseauRaw.trim()) ? groupeReseauRaw.trim() : 'DEFAULT';
+        const groupeReseau = groupeReseauVal.length > 10 ? groupeReseauVal.substring(0, 10) : groupeReseauVal;
+        const numeroTransGURaw = getValueWithFallback(['Numéro Trans GU', 'numeroTransGU', 'numero_trans_gu', 'Numero Trans GU']);
+        const numeroTransGU = (numeroTransGURaw && numeroTransGURaw.trim()) ? numeroTransGURaw.trim() : `GU-BO-${Date.now()}-${index}`;
+
+        return {
+          id: undefined,
+          typeOperation,
+          montant: getNumberWithFallback(['Montant', 'montant', 'amount']) || agencyInfo.volume || 0,
+          soldeAvant: 0,
+          soldeApres: 0,
+          codeProprietaire,
+          dateOperation: overrideDateIso || new Date().toISOString(),
+          numeroTransGU,
+          groupeReseau,
+          statut: 'EN_ATTENTE',
+          commentaire: `Importé depuis ECART BO - ${new Date().toLocaleString('fr-FR')}`,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        } as ImpactOP;
+      });
+
+      console.log('DEBUG: Envoi batch ECART BO vers Import OP...');
+      const batchResult = await firstValueFrom(this.impactOPService.createImpactOPBatch(impactOPData));
+      const successCount = batchResult.successCount ?? 0;
+      const errorCount = batchResult.errorCount ?? 0;
+
+      if (batchResult.errors?.length) {
+        console.warn('⚠️ Erreurs détaillées (batch BO):', batchResult.errors.slice(0, 10));
+      }
+
+      if (successCount > 0) {
+        this.popupService.showSuccess(`✅ Sauvegarde réussie !\n\n📊 Résumé:\n• ${successCount} Import OP créés avec succès\n• ${errorCount} erreurs\n• ${sourceRecords.length} ligne(s) traitées\n\n💾 Les données ECART BO ont été sauvegardées dans Import OP.`);
+      } else {
+        this.popupService.showError(`❌ Échec de la sauvegarde !\n\nAucun Import OP n'a pu être créé.\n${batchResult.errors?.length ? 'Détails: ' + batchResult.errors.slice(0, 3).join(' ; ') : 'Veuillez vérifier les logs.'}`);
+      }
+    } catch (error: any) {
+      console.error('❌ Erreur lors de la sauvegarde ECART BO vers Import OP:', error);
+      this.popupService.showError('❌ Erreur lors de la sauvegarde dans Import OP.\n\nVeuillez réessayer.');
+    } finally {
+      this.isSavingEcartBoToImpactOP = false;
       this.cdr.markForCheck();
     }
   }

@@ -19,19 +19,31 @@
             </div>
         </div>
         
-        <!-- Résumé des données -->
-        <div *ngIf="!loading && !error && countryServiceData && countryServiceData.length > 0" class="data-summary">
-            <div class="summary-item">
-                <span class="summary-label">Pays:</span>
-                <span class="summary-value">{{ countryServiceData.length }}</span>
+        <!-- Résumé des données et période affichée -->
+        <div *ngIf="!loading && !error && countryServiceData && countryServiceData.length > 0" class="data-summary-row">
+            <div class="data-summary">
+                <div class="summary-item">
+                    <span class="summary-label">Pays:</span>
+                    <span class="summary-value">{{ countryServiceData.length }}</span>
+                </div>
+                <div class="summary-item">
+                    <span class="summary-label">Services:</span>
+                    <span class="summary-value">{{ getTotalServicesCount() }}</span>
+                </div>
+                <div class="summary-item">
+                    <span class="summary-label">Services uniques:</span>
+                    <span class="summary-value">{{ getAllUniqueServices().length }}</span>
+                </div>
             </div>
-            <div class="summary-item">
-                <span class="summary-label">Services:</span>
-                <span class="summary-value">{{ getTotalServicesCount() }}</span>
-            </div>
-            <div class="summary-item">
-                <span class="summary-label">Services uniques:</span>
-                <span class="summary-value">{{ getAllUniqueServices().length }}</span>
+            <div class="period-and-voir-plus">
+                <span *ngIf="!showAllData" class="period-badge">Données du mois en cours</span>
+                <span *ngIf="showAllData" class="period-badge period-badge-all">Toutes les données</span>
+                <button *ngIf="!showAllData" type="button" class="btn-voir-plus" (click)="showAllDataClick()" title="Afficher toutes les données">
+                    Voir plus
+                </button>
+                <button *ngIf="showAllData" type="button" class="btn-voir-mois" (click)="showMonthDataClick()" title="Revenir aux données du mois en cours">
+                    Voir mois en cours
+                </button>
             </div>
         </div>
 

@@ -11,6 +11,8 @@ import java.util.Optional;
 import java.util.Map;
 import java.util.HashMap;
 import java.util.ArrayList;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 @Service
 public class ProfilService {
@@ -28,6 +30,8 @@ public class ProfilService {
     private UserRepository userRepository;
     @Autowired
     private EntityManager entityManager;
+    @Autowired
+    private PermissionGeneratorService permissionGeneratorService;
 
     // CRUD Profil
     public List<ProfilEntity> getAllProfils() { return profilRepository.findAll(); }
@@ -254,55 +258,83 @@ public class ProfilService {
             .toList();
     }
 
-    // Actions disponibles pour un module
+    /**
+     * Retourne les permissions disponibles pour un module.
+     * Chaque module ne contient que les permissions réellement disponibles sur ce module
+     * (définies par les endpoints/actions analysés dans le code).
+     */
     public List<PermissionEntity> getPermissionsForModule(Long moduleId) {
-        List<ModulePermissionEntity> modulePermissions = modulePermissionRepository.findByModuleId(moduleId);
-        
-        // Si des permissions spécifiques sont définies pour ce module, les retourner
-        if (!modulePermissions.isEmpty()) {
-            return modulePermissions.stream()
-                .map(ModulePermissionEntity::getPermission)
-                .toList();
+        ModuleEntity module = moduleRepository.findById(moduleId).orElse(null);
+        if (module == null || module.getNom() == null) {
+            return List.of();
         }
-        
-        // Sinon, retourner toutes les permissions disponibles
-        return permissionRepository.findAll();
+        try {
+            String moduleName = module.getNom();
+            List<Map<String, Object>> actions = permissionGeneratorService.getActionsForModule(moduleName);
+            Set<String> actionNames = actions.stream()
+                .map(m -> (String) m.get("action"))
+                .filter(name -> name != null && !name.isEmpty())
+                .collect(Collectors.toSet());
+            List<PermissionEntity> allPermissions = permissionRepository.findAll();
+            return allPermissions.stream()
+                .filter(p -> p.getNom() != null && actionNames.contains(p.getNom()))
+                .toList();
+        } catch (Exception e) {
+            System.err.println("Erreur getPermissionsForModule(" + moduleId + "): " + e.getMessage());
+            return List.of();
+        }
     }
 
     /**
-     * Retourne toutes les permissions groupées par module
+     * Retourne toutes les permissions groupées par module.
+     * Chaque module ne contient que les permissions réellement disponibles sur ce module
+     * (définies par les endpoints/actions analysés dans le code).
      * @return Map où la clé est le nom du module et la valeur est la liste des permissions
      */
     public Map<String, List<PermissionEntity>> getPermissionsGroupedByModule() {
         Map<String, List<PermissionEntity>> permissionsByModule = new HashMap<>();
-        
-        // Récupérer toutes les associations module-permission
-        List<ModulePermissionEntity> allModulePermissions = modulePermissionRepository.findAll();
-        
-        // Grouper les permissions par module
-        for (ModulePermissionEntity mp : allModulePermissions) {
-            if (mp.getModule() != null && mp.getPermission() != null) {
-                String moduleName = mp.getModule().getNom();
-                permissionsByModule.computeIfAbsent(moduleName, k -> new ArrayList<>())
-                    .add(mp.getPermission());
-            }
-        }
-        
-        // Ajouter les permissions sans module associé dans une catégorie "Sans module"
         List<PermissionEntity> allPermissions = permissionRepository.findAll();
-        List<Long> permissionIdsWithModule = allModulePermissions.stream()
-            .map(mp -> mp.getPermission() != null ? mp.getPermission().getId() : null)
-            .filter(id -> id != null)
-            .toList();
-        
-        List<PermissionEntity> permissionsWithoutModule = allPermissions.stream()
-            .filter(p -> p.getId() != null && !permissionIdsWithModule.contains(p.getId()))
-            .toList();
-        
-        if (!permissionsWithoutModule.isEmpty()) {
-            permissionsByModule.put("Sans module", permissionsWithoutModule);
+        try {
+            Map<String, Object> analysis = permissionGeneratorService.analyzeAllModuleActions();
+            @SuppressWarnings("unchecked")
+            Map<String, List<Map<String, Object>>> modules = (Map<String, List<Map<String, Object>>>) analysis.get("modules");
+            if (modules == null) {
+                modules = new HashMap<>();
+            }
+
+            for (Map.Entry<String, List<Map<String, Object>>> entry : modules.entrySet()) {
+                String moduleName = entry.getKey();
+                Set<String> actionNames = entry.getValue().stream()
+                    .map(m -> (String) m.get("action"))
+                    .filter(name -> name != null && !name.isEmpty())
+                    .collect(Collectors.toSet());
+
+                List<PermissionEntity> permsForModule = allPermissions.stream()
+                    .filter(p -> p.getNom() != null && actionNames.contains(p.getNom()))
+                    .toList();
+
+                if (!permsForModule.isEmpty()) {
+                    permissionsByModule.put(moduleName, permsForModule);
+                }
+            }
+
+            Set<String> allActionNames = modules.values().stream()
+                .flatMap(list -> list.stream())
+                .map(m -> (String) m.get("action"))
+                .filter(name -> name != null && !name.isEmpty())
+                .collect(Collectors.toSet());
+
+            List<PermissionEntity> permissionsWithoutModule = allPermissions.stream()
+                .filter(p -> p.getNom() != null && !allActionNames.contains(p.getNom()))
+                .toList();
+
+            if (!permissionsWithoutModule.isEmpty()) {
+                permissionsByModule.put("Sans module", permissionsWithoutModule);
+            }
+        } catch (Exception e) {
+            System.err.println("Erreur getPermissionsGroupedByModule: " + e.getMessage());
+            e.printStackTrace();
         }
-        
         return permissionsByModule;
     }
 } 

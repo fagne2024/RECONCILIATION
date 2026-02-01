@@ -250,6 +250,16 @@ public class EcartSoldeController {
             return ResponseEntity.notFound().build();
         }
     }
+
+    /**
+     * Suppression en lot d'écarts de solde (sélection multiple).
+     */
+    @PostMapping("/delete-batch")
+    public ResponseEntity<Map<String, Object>> deleteEcartSoldes(@RequestBody Map<String, List<Long>> request) {
+        List<Long> ids = request != null ? request.get("ids") : null;
+        Map<String, Object> result = ecartSoldeService.deleteEcartSoldes(ids);
+        return ResponseEntity.ok(result);
+    }
     
     @PatchMapping("/{id}/statut")
     public ResponseEntity<Map<String, String>> updateStatut(@PathVariable Long id, @RequestBody Map<String, String> request) {

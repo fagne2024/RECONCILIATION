@@ -77,6 +77,19 @@ public class ImpactOPController {
     }
 
     /**
+     * Créer plusieurs impacts OP en une requête (évite 429 Too Many Requests).
+     */
+    @PostMapping("/batch")
+    public ResponseEntity<Map<String, Object>> createImpactOPBatch(@RequestBody List<ImpactOPEntity> impacts) {
+        try {
+            Map<String, Object> result = impactOPService.createImpactOPBatch(impacts);
+            return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+
+    /**
      * Mettre à jour un impact OP
      */
     @PutMapping("/{id}")

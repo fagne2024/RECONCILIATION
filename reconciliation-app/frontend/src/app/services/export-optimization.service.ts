@@ -366,12 +366,21 @@ export class ExportOptimizationService {
     const { chunkSize = 5000, useWebWorker = true, format = 'xlsx' } = options;
     const excelFormat = format === 'xls' ? 'xls' : 'xlsx';
 
+    // Normaliser les lignes : colonnes montant/volume en nombres pour Excel
+    const normalizedRows = rows.map(row => {
+      const r: any = {};
+      columns.forEach(col => {
+        r[col] = this.cellValueForExcel(col, row[col]);
+      });
+      return r;
+    });
+
     if (useWebWorker && this.worker) {
       // Export avec Web Worker
       this.worker.postMessage({
         type: 'export-excel',
         data: {
-          rows,
+          rows: normalizedRows,
           columns,
           fileName: fileName.endsWith(`.${excelFormat}`) ? fileName : fileName + `.${excelFormat}`,
           chunkSize,
@@ -380,8 +389,32 @@ export class ExportOptimizationService {
       });
     } else {
       // Export synchrone optimisé
-      await this.exportExcelSynchronous(rows, columns, fileName, chunkSize, excelFormat);
+      await this.exportExcelSynchronous(normalizedRows, columns, fileName, chunkSize, excelFormat);
     }
+  }
+
+  /**
+   * Indique si une colonne est une colonne montant/volume (à exporter en nombre)
+   */
+  private isAmountColumn(col: string): boolean {
+    const lower = (col || '').toLowerCase();
+    const amountKeys = [
+      'montant', 'amount', 'volume', 'valeur', 'value', 'somme', 'sum', 'total',
+      'credit', 'crédit', 'debit', 'débit', 'transactions', 'matches', 'boonly', 'partneronly',
+      'mismatches', 'totalvolume', 'totaltransactions', 'totalmatches', 'totalboonly',
+      'totalpartneronly', 'totalmismatches', 'nombre', 'volume total', 'total volume'
+    ];
+    return amountKeys.some(k => lower === k || lower.includes(k));
+  }
+
+  /**
+   * Convertit une valeur pour export Excel : nombre pour colonnes montant, sinon inchangé
+   */
+  private cellValueForExcel(col: string, val: any): any {
+    if (val === undefined || val === null || val === '') return '';
+    if (!this.isAmountColumn(col)) return val;
+    const num = typeof val === 'number' ? val : parseFloat(String(val).replace(/\s/g, '').replace(',', '.'));
+    return !isNaN(num) ? num : val;
   }
 
   /**
@@ -402,7 +435,7 @@ export class ExportOptimizationService {
     for (let i = 0; i < totalRows; i += chunkSize) {
       const chunk = rows.slice(i, i + chunkSize);
       const chunkData = chunk.map(row => 
-        columns.map(col => row[col] !== undefined && row[col] !== null ? row[col] : '')
+        columns.map(col => this.cellValueForExcel(col, row[col]))
       );
       
       // Ajouter les données au worksheet
@@ -476,7 +509,7 @@ export class ExportOptimizationService {
       const exportData = rows.map(row => {
         const exportRow: any = {};
         columns.forEach(col => {
-          exportRow[col] = row[col] !== undefined && row[col] !== null ? row[col] : '';
+          exportRow[col] = this.cellValueForExcel(col, row[col]);
         });
         return exportRow;
       });

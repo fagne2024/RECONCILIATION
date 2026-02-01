@@ -254,6 +254,16 @@ export class EcartSoldeService {
     return this.http.delete<void>(`${this.apiUrl}/${id}`);
   }
 
+  /**
+   * Suppression en lot des écarts de solde (sélection multiple).
+   */
+  deleteEcartSoldes(ids: number[]): Observable<{ deletedCount: number; errors: string[]; totalRequested: number }> {
+    return this.http.post<{ deletedCount: number; errors: string[]; totalRequested: number }>(
+      `${this.apiUrl}/delete-batch`,
+      { ids }
+    );
+  }
+
   updateStatut(id: number, statut: string): Observable<any> {
     const params = new HttpParams().set('statut', statut);
     return this.http.post(`${this.apiUrl}/${id}/statut`, null, { params });

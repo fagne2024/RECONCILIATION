@@ -4,7 +4,7 @@ import { Subscription, firstValueFrom } from 'rxjs';
 import { finalize } from 'rxjs/operators';
 import { ReconciliationResponse } from '../../models/reconciliation-response.model';
 import { AppStateService } from '../../services/app-state.service';
-import { EcartBoSummaryService } from '../../services/ecart-bo-summary.service';
+import { EcartBoSummaryService, EcartBoSummaryPrefill } from '../../services/ecart-bo-summary.service';
 import { PopupService } from '../../services/popup.service';
 import { fixGarbledCharacters } from '../../utils/encoding-fixer';
 import { ModernPopupComponent } from '../modern-popup/modern-popup.component';
@@ -138,6 +138,11 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
         }
       })
     );
+    // Préremplissage depuis la page /matches (bouton "Save vers Écart BO Summary")
+    const prefill = this.ecartBoSummaryService.getAndClearPrefillFromMatches();
+    if (prefill) {
+      setTimeout(() => this.openAddModalWithPrefill(prefill), 100);
+    }
   }
 
   loadByToken(): void {
@@ -1129,6 +1134,26 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
       pays: '',
       nombre: 0,
       volume: 0,
+      statut: 'en cours',
+      env: 'PARTENAIRE',
+      token: ''
+    };
+    this.showAddModal = true;
+    this.cdr.markForCheck();
+  }
+
+  /**
+   * Ouvre le formulaire "Ajouter une nouvelle ligne" prérempli avec les données venant de /matches.
+   * Le mode manuel reste disponible (l'utilisateur peut modifier avant d'ajouter).
+   */
+  openAddModalWithPrefill(prefill: EcartBoSummaryPrefill): void {
+    this.addForm = {
+      date: prefill.date || new Date().toISOString().split('T')[0],
+      agence: prefill.agence || '',
+      service: prefill.service || '',
+      pays: prefill.pays || '',
+      nombre: prefill.nombre ?? 0,
+      volume: prefill.volume ?? 0,
       statut: 'en cours',
       env: 'PARTENAIRE',
       token: ''

@@ -78,8 +78,15 @@
             >
               {{ isSavingEcartBoToTrxSf ? '💾 Sauvegarde...' : '💾 Sauvegarder dans TRX SF' }}
             </button>
+            <button 
+              (click)="saveEcartBoToImpactOP()" 
+              class="menu-option-button save-button"
+              [disabled]="isSavingEcartBoToImpactOP || filteredBoOnly.length === 0"
+            >
+              {{ isSavingEcartBoToImpactOP ? '💾 Sauvegarde...' : '💾 Sauvegarder dans Import OP' }}
+            </button>
             <span class="menu-info">
-              {{selectedBoOnlyKeys.length > 0 ? selectedBoOnlyKeys.length + ' ligne(s) sélectionnée(s)' : 'Toutes les lignes seront sauvegardées'}}
+              Toutes les lignes seront sauvegardées ({{filteredBoOnly.length}} ligne(s))
             </span>
           </div>
         </div>

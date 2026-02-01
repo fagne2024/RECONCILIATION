@@ -3,6 +3,7 @@ import { Router } from '@angular/router';
 import { Subscription } from 'rxjs';
 import { ReconciliationResponse, Match } from '../../models/reconciliation-response.model';
 import { AppStateService } from '../../services/app-state.service';
+import { EcartBoSummaryService, EcartBoSummaryPrefill } from '../../services/ecart-bo-summary.service';
 import { ExportOptimizationService, ExportProgress } from '../../services/export-optimization.service';
 import { PopupService } from '../../services/popup.service';
 import { fixGarbledCharacters } from '../../utils/encoding-fixer';
@@ -65,7 +66,8 @@ export class MatchesTableComponent implements OnInit, OnDestroy {
     private router: Router,
     private cdr: ChangeDetectorRef,
     private exportOptimizationService: ExportOptimizationService,
-    private popupService: PopupService
+    private popupService: PopupService,
+    private ecartBoSummaryService: EcartBoSummaryService
   ) {}
 
   ngOnInit(): void {
@@ -709,5 +711,98 @@ export class MatchesTableComponent implements OnInit, OnDestroy {
 
   goBack(): void {
     this.router.navigate(['/results']);
+  }
+
+  /**
+   * Extrait une valeur d'un match par noms de colonnes possibles (agence, service, pays, date).
+   * Cherche dans boData puis partnerData.
+   */
+  private getValueFromMatch(match: Match, possibleKeys: string[]): string {
+    const sources = [match.boData, match.partnerData].filter(Boolean) as Record<string, string>[];
+    for (const record of sources) {
+      for (const key of possibleKeys) {
+        const originalKey = this.getOriginalKey(record, key);
+        const value = record[originalKey];
+        if (value !== undefined && value !== null && String(value).trim() !== '') {
+          return String(value).trim();
+        }
+      }
+    }
+    return '';
+  }
+
+  /**
+   * Construit les données de préremplissage pour ecart-bo-summary à partir des correspondances affichées.
+   * Agence : "multiAgence" si plusieurs agences distinctes, sinon l'agence unique.
+   */
+  getMatchesSummaryForEcartBoSummary(): EcartBoSummaryPrefill | null {
+    const matches = this.filteredMatches;
+    if (!matches || matches.length === 0) {
+      return null;
+    }
+    const agenceKeys = ['Agence', 'agence', 'AGENCE', 'agency', 'Agency'];
+    const serviceKeys = ['Service', 'service', 'SERVICE', 'serv', 'Serv'];
+    const paysKeys = ['Pays', 'pays', 'PAYS', 'country', 'Country', 'GRX', 'grx'];
+    const dateKeys = ['Date', 'date', 'DATE', 'jour', 'Jour', 'JOUR', 'dateTransaction', 'DateTransaction'];
+
+    const agencies = new Set<string>();
+    let service = '';
+    let pays = '';
+    let date = '';
+
+    for (const match of matches) {
+      const ag = this.getValueFromMatch(match, agenceKeys);
+      if (ag) agencies.add(ag);
+      if (!service) service = this.getValueFromMatch(match, serviceKeys);
+      if (!pays) pays = this.getValueFromMatch(match, paysKeys);
+      if (!date) date = this.getValueFromMatch(match, dateKeys);
+    }
+
+    const agence = agencies.size > 1 ? 'multiAgence' : (Array.from(agencies)[0] || '');
+    const volume = this.calculateTotalVolume();
+    const nombre = matches.length;
+
+    if (!agence || !service || !pays) {
+      return null;
+    }
+
+    let dateFormatted = date;
+    if (dateFormatted) {
+      try {
+        const d = new Date(dateFormatted);
+        if (!isNaN(d.getTime())) {
+          dateFormatted = d.toISOString().split('T')[0];
+        }
+      } catch {
+        dateFormatted = new Date().toISOString().split('T')[0];
+      }
+    } else {
+      dateFormatted = new Date().toISOString().split('T')[0];
+    }
+
+    return {
+      date: dateFormatted,
+      agence,
+      service,
+      pays,
+      nombre,
+      volume
+    };
+  }
+
+  /**
+   * Enregistre les données des correspondances pour préremplir le formulaire ecart-bo-summary,
+   * puis navigue vers /ecart-bo-summary (le formulaire "Ajouter une nouvelle ligne" s'ouvrira prérempli).
+   */
+  saveToEcartBoSummary(): void {
+    const prefill = this.getMatchesSummaryForEcartBoSummary();
+    if (!prefill) {
+      this.popupService.showWarning('Impossible de préparer les données : vérifiez que des correspondances sont chargées et contiennent Agence, Service et Pays.');
+      return;
+    }
+    this.ecartBoSummaryService.setPrefillFromMatches(prefill);
+    this.router.navigate(['/ecart-bo-summary']);
+    this.popupService.showSuccess('Données prêtes. Le formulaire Écart BO Summary sera prérempli ; vous pouvez modifier et ajouter la ligne.');
+    this.cdr.markForCheck();
   }
 }

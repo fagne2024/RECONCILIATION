@@ -310,7 +310,11 @@
             </div>
             
             <div class="permissions-list scrollable-list">
-              <div *ngIf="getDisplayedPermissions(module).length === 0 || (getDisplayedPermissions(module).length === 1 && getDisplayedPermissions(module)[0]?.nom === 'module_associé')" class="no-permissions-message">
+              <div *ngIf="isModulePermissionsLoading(module)" class="permissions-loading">
+                <i class="fas fa-spinner fa-spin"></i>
+                <p>Chargement des permissions…</p>
+              </div>
+              <div *ngIf="!isModulePermissionsLoading(module) && (getDisplayedPermissions(module).length === 0 || (getDisplayedPermissions(module).length === 1 && getDisplayedPermissions(module)[0]?.nom === 'module_associé'))" class="no-permissions-message">
                 <i class="fas fa-info-circle"></i>
                 <p>Aucune permission disponible pour ce module. Le module est associé mais aucune permission n'est activée.</p>
               </div>

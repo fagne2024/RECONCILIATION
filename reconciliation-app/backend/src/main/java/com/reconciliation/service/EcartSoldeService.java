@@ -22,10 +22,11 @@ import java.io.InputStreamReader;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
-import java.util.Map;
 
 @Service
 public class EcartSoldeService {
@@ -308,6 +309,34 @@ public class EcartSoldeService {
             return true;
         }
         return false;
+    }
+
+    /**
+     * Suppression en lot d'écarts de solde par leurs IDs.
+     */
+    @Transactional
+    public Map<String, Object> deleteEcartSoldes(List<Long> ids) {
+        Map<String, Object> result = new HashMap<>();
+        List<String> errors = new ArrayList<>();
+        int deletedCount = 0;
+        if (ids != null) {
+            for (Long id : ids) {
+                try {
+                    if (ecartSoldeRepository.existsById(id)) {
+                        ecartSoldeRepository.deleteById(id);
+                        deletedCount++;
+                    } else {
+                        errors.add("ID " + id + " non trouvé");
+                    }
+                } catch (Exception e) {
+                    errors.add("ID " + id + ": " + (e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName()));
+                }
+            }
+        }
+        result.put("deletedCount", deletedCount);
+        result.put("errors", errors);
+        result.put("totalRequested", ids != null ? ids.size() : 0);
+        return result;
     }
     
     @Transactional

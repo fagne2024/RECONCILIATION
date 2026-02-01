@@ -50,6 +50,7 @@ export class EcartSoldeComponent implements OnInit, OnDestroy {
   isSelectionMode = false;
   selectedStatut = 'EN_ATTENTE';
   isUpdatingMultipleStatuts = false;
+  isDeletingSelected = false;
   
   // Propriétés pour le modal de commentaire
   showCommentModal = false;
@@ -939,6 +940,49 @@ export class EcartSoldeComponent implements OnInit, OnDestroy {
         this.isUpdatingMultipleStatuts = false;
         this.showTemporaryMessage('error', 'Erreur lors de la mise à jour des statuts.');
       });
+  }
+
+  deleteSelectedEcartSoldes(): void {
+    if (this.selectedItems.size === 0) {
+      this.popupService.showWarning('Veuillez sélectionner au moins un écart de solde à supprimer.', 'Sélection Requise');
+      return;
+    }
+
+    const count = this.selectedItems.size;
+    this.popupService.showConfirm(
+      `Êtes-vous sûr de vouloir supprimer les ${count} écart(s) de solde sélectionné(s) ? Cette action est irréversible.`,
+      'Confirmer la suppression'
+    ).then(confirmed => {
+      if (!confirmed) return;
+
+      this.isDeletingSelected = true;
+      const selectedIds = Array.from(this.selectedItems);
+
+      this.subscription.add(
+        this.ecartSoldeService.deleteEcartSoldes(selectedIds).subscribe({
+          next: (result) => {
+            const deleted = result.deletedCount ?? 0;
+            const errors = result.errors ?? [];
+            this.clearSelection();
+            this.loadEcartSoldes();
+            this.isDeletingSelected = false;
+            if (errors.length > 0) {
+              this.popupService.showWarning(
+                `${deleted} ligne(s) supprimée(s). ${errors.length} erreur(s): ${errors.slice(0, 3).join(' ; ')}`,
+                'Suppression partielle'
+              );
+            } else {
+              this.showTemporaryMessage('success', `${deleted} écart(s) de solde supprimé(s) avec succès`);
+            }
+          },
+          error: (err) => {
+            console.error('Erreur lors de la suppression multiple:', err);
+            this.isDeletingSelected = false;
+            this.showTemporaryMessage('error', err.error?.message || err.message || 'Erreur lors de la suppression.');
+          }
+        })
+      );
+    });
   }
 
   downloadTemplate(): void {

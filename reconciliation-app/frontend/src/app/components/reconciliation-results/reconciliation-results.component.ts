@@ -6078,14 +6078,19 @@ private async generateExcelFile(): Promise<ExcelJS.Workbook[]> {
                     const row = worksheet.getRow(currentRow);
                     row.getCell(1).value = match.key;
                     let cellIndex = 2;
+                    const numFmtAmount = '#,##0.00';
                     boKeysArray.forEach(key => {
+                        const cell = row.getCell(cellIndex);
                         const value = match.boData[key];
-                        row.getCell(cellIndex).value = value !== undefined && value !== null ? value : '';
+                        cell.value = this.exportAmountValue(key, value);
+                        if (this.isAmountColumnForExport(key)) cell.numFmt = numFmtAmount;
                         cellIndex++;
                     });
                     partnerKeysArray.forEach(key => {
+                        const cell = row.getCell(cellIndex);
                         const value = match.partnerData[key];
-                        row.getCell(cellIndex).value = value !== undefined && value !== null ? value : '';
+                        cell.value = this.exportAmountValue(key, value);
+                        if (this.isAmountColumnForExport(key)) cell.numFmt = numFmtAmount;
                         cellIndex++;
                     });
                     row.eachCell((cell, cellNumber) => {
@@ -6205,14 +6210,16 @@ private async generateExcelFile(): Promise<ExcelJS.Workbook[]> {
                 
                 keysArray.forEach(key => {
                     if (key === 'Commentaire') {
-                        // Ajouter le commentaire approprié
                         rowData[key] = boOnlyComment;
                     } else {
-                        rowData[key] = record[key] || '';
+                        rowData[key] = this.exportAmountValue(key, record[key]);
                     }
                 });
                 const row = worksheet.addRow(rowData);
-                
+                row.eachCell((cell, colNumber) => {
+                    const key = keysArray[colNumber - 1];
+                    if (key && this.isAmountColumnForExport(key)) cell.numFmt = '#,##0.00';
+                });
                 // Appliquer le style selon le type
                 if (boOnlyType === 'TSOP') {
                     // Style rouge pour TSOP (écarts BO sans correspondance)
@@ -6338,10 +6345,13 @@ private async generateExcelFile(): Promise<ExcelJS.Workbook[]> {
                 const commentaire = record['Commentaire'] || record['commentaire'] || '';
                 
                 keysArray.forEach(key => {
-                    rowData[key] = record[key] || '';
+                    rowData[key] = this.exportAmountValue(key, record[key]);
                 });
                 const row = worksheet.addRow(rowData);
-                
+                row.eachCell((cell, colNumber) => {
+                    const key = keysArray[colNumber - 1];
+                    if (key && this.isAmountColumnForExport(key)) cell.numFmt = '#,##0.00';
+                });
                 // Appliquer le style selon le type - ÉCARTS PARTENAIRE
                 // Priorité: Commentaire du backend (Ecart, TRXSF) > Type Opération (TSF, C_FRAIS)
                 if (commentaire === 'Ecart') {
@@ -6406,16 +6416,18 @@ private async generateExcelFile(): Promise<ExcelJS.Workbook[]> {
                 { header: 'Nombre d\'Enregistrements', key: 'recordCount', width: 25 }
             ];
             
-            // Ajouter les données
+            // Ajouter les données (colonnes montant en nombre)
             agencySummary.forEach(item => {
-                worksheet.addRow({
+                const row = worksheet.addRow({
                     agency: item.agency,
                     service: item.service,
                     country: item.country,
                     date: item.date,
-                    totalVolume: item.totalVolume,
-                    recordCount: item.recordCount
+                    totalVolume: Number(item.totalVolume) || 0,
+                    recordCount: Number(item.recordCount) || 0
                 });
+                row.getCell(5).numFmt = '#,##0.00'; // Volume Total
+                row.getCell(6).numFmt = '#,##0';    // Nombre d'enregistrements
             });
             
             // Appliquer les styles à l'en-tête
@@ -6852,6 +6864,26 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
             
             return total + recordTotal;
         }, 0);
+    }
+
+    /** Indique si une colonne est une colonne montant/volume pour l'export Excel (à écrire en nombre) */
+    private isAmountColumnForExport(key: string): boolean {
+        const lower = (key || '').toLowerCase();
+        const amountKeys = [
+            'montant', 'amount', 'valeur', 'value', 'somme', 'sum', 'total', 'volume',
+            'credit', 'crédit', 'debit', 'débit', 'montant_credit', 'montant_débit',
+            'montant_debit', 'montant_crédit', 'montant_operation', 'montant_opération',
+            'montant_transaction', 'montant_credit_operation', 'montant_débit_operation'
+        ];
+        return amountKeys.some(k => lower === k || lower.includes(k));
+    }
+
+    /** Pour l'export Excel : retourne un nombre pour les colonnes montant, sinon la valeur telle quelle */
+    private exportAmountValue(key: string, val: any): any {
+        if (val === undefined || val === null || val === '') return '';
+        if (!this.isAmountColumnForExport(key)) return val;
+        const num = typeof val === 'number' ? val : parseFloat(String(val).replace(/\s/g, '').replace(',', '.'));
+        return !isNaN(num) ? num : val;
     }
 
     private findAmountColumn(type: 'bo' | 'partner'): string | null {
@@ -8605,11 +8637,13 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
                 // Données BO
                 if (i < report.ecartBo.length) {
                     const boItem = report.ecartBo[i];
-                    const boData = [boItem.Service || boItem.CLE, boItem.telephoneClient, boItem.montant, boItem.Agence, boItem.Date, boItem.numeroTransGU, boItem.IDTransaction, boItem.SOURCE];
+                    const montantNum = this.exportAmountValue('montant', boItem.montant);
+                    const boData = [boItem.Service || boItem.CLE, boItem.telephoneClient, montantNum, boItem.Agence, boItem.Date, boItem.numeroTransGU, boItem.IDTransaction, boItem.SOURCE];
                     
                     boData.forEach((value, colIndex) => {
                         const cell = worksheet.getCell(rowIndex, colIndex + 1);
                         cell.value = value;
+                        if (colIndex === 2) cell.numFmt = '#,##0.00'; // colonne montant
                         cell.style = dataStyle;
                     });
                 }
@@ -8621,18 +8655,16 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
                     console.log(`🔍 Excel - Ligne ${i} - Données Partenaire Originales:`, originalPartnerRecord);
                     
                     selectedPartnerColumns.forEach((col, colIndex) => {
-                        let value = '';
+                        let value: any = '';
                         
-                        // Utiliser directement la valeur de la colonne dans les données originales
                         if (originalPartnerRecord && originalPartnerRecord[col] !== undefined && originalPartnerRecord[col] !== null && originalPartnerRecord[col] !== '') {
-                            value = String(originalPartnerRecord[col]);
+                            value = originalPartnerRecord[col];
                         } else {
-                            // Si pas trouvé, essayer avec les propriétés transformées comme fallback
                             const partnerItem = report.ecartPartenaire[i];
                             switch (col) {
                                 case 'CLE': value = partnerItem.CLE || ''; break;
                                 case 'téléphone client': value = partnerItem.telephoneClient || ''; break;
-                                case 'montant': value = partnerItem.montant || ''; break;
+                                case 'montant': value = partnerItem.montant ?? ''; break;
                                 case 'Agence': value = partnerItem.Agence || ''; break;
                                 case 'Date': value = partnerItem.Date || ''; break;
                                 case 'HEURE': value = partnerItem.Heure || ''; break;
@@ -8641,10 +8673,9 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
                             }
                         }
                         
-                        console.log(`  - Excel - Colonne "${col}": "${value}"`);
-                        
                         const cell = worksheet.getCell(rowIndex, boColumnsCount + spacing + colIndex + 1);
-                        cell.value = value;
+                        cell.value = this.exportAmountValue(col, value);
+                        if (this.isAmountColumnForExport(col)) cell.numFmt = '#,##0.00';
                         cell.style = dataStyle;
                     });
                 }

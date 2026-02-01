@@ -30,6 +30,9 @@ export class DashboardReconciliationComponent implements OnInit, OnDestroy {
     currentPage = 1;
     itemsPerPage = 4; // 4 cartes par page
     
+    // Affichage par défaut : données du mois en cours ; "Voir plus" = toutes les données
+    showAllData = false;
+
     // Filtres
     selectedCountry: string[] = [];
     selectedService: string[] = [];
@@ -55,18 +58,57 @@ export class DashboardReconciliationComponent implements OnInit, OnDestroy {
         this.subscription.unsubscribe();
     }
 
+    /**
+     * Premier jour du mois en cours (00:00:00)
+     */
+    getDefaultMonthStart(): Date {
+        const now = new Date();
+        return new Date(now.getFullYear(), now.getMonth(), 1);
+    }
+
+    /**
+     * Dernier jour du mois en cours (23:59:59)
+     */
+    getDefaultMonthEnd(): Date {
+        const now = new Date();
+        return new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+    }
+
+    /**
+     * Afficher toutes les données (annule le filtre "mois en cours")
+     */
+    showAllDataClick(): void {
+        this.showAllData = true;
+        this.currentPage = 1;
+        this.loadReconciliationData();
+    }
+
+    /**
+     * Revenir à l'affichage par défaut (données du mois en cours)
+     */
+    showMonthDataClick(): void {
+        this.showAllData = false;
+        this.selectedDateStart = null;
+        this.selectedDateEnd = null;
+        this.currentPage = 1;
+        this.loadReconciliationData();
+    }
+
     private loadReconciliationData() {
         this.loading = true;
         this.error = null;
         this.subscription.unsubscribe();
         this.subscription = new Subscription();
+
+        const startDate = this.showAllData ? null : (this.selectedDateStart ?? this.getDefaultMonthStart());
+        const endDate = this.showAllData ? null : (this.selectedDateEnd ?? this.getDefaultMonthEnd());
         
         // Récupérer les données réelles de la table result8rec avec filtres de date
         this.subscription.add(
             this.dashboardReconciliationService.getDashboardMetrics(
                 this.statusView,
-                this.selectedDateStart,
-                this.selectedDateEnd
+                startDate,
+                endDate
             ).subscribe({
                 next: (data) => {
                     this.countryServiceData = data;
@@ -399,12 +441,13 @@ export class DashboardReconciliationComponent implements OnInit, OnDestroy {
      * Réinitialise tous les filtres
      */
     resetFilters(): void {
+        this.showAllData = false;
         this.selectedCountry = [];
         this.selectedService = [];
         this.selectedDateStart = null;
         this.selectedDateEnd = null;
         this.filteredServices = [...this.availableServices];
-        // Recharger les données pour réinitialiser les filtres de date
+        // Recharger les données pour réinitialiser les filtres de date (mois en cours par défaut)
         this.loadReconciliationData();
     }
 

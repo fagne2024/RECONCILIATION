@@ -61,6 +61,26 @@ export class ImpactOPService {
     return this.http.post<ImpactOP>(`${this.apiUrl}/impact-op`, impactOP);
   }
 
+  /**
+   * Créer plusieurs impacts OP en une requête (évite 429 Too Many Requests).
+   * Retourne le résumé : successCount, errorCount, created, errors, total.
+   */
+  createImpactOPBatch(impactOPs: Omit<ImpactOP, 'id'>[]): Observable<{
+    successCount: number;
+    errorCount: number;
+    created: ImpactOP[];
+    errors: string[];
+    total: number;
+  }> {
+    return this.http.post<{
+      successCount: number;
+      errorCount: number;
+      created: ImpactOP[];
+      errors: string[];
+      total: number;
+    }>(`${this.apiUrl}/impact-op/batch`, impactOPs);
+  }
+
   // Mettre à jour un impact OP
   updateImpactOP(id: number, impactOP: Partial<ImpactOP>): Observable<ImpactOP> {
     return this.http.put<ImpactOP>(`${this.apiUrl}/impact-op/${id}`, impactOP);
