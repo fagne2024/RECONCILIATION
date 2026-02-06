@@ -525,7 +525,7 @@
 
                     <!-- Historique des opérations -->
                     <div class="releve-operations">
-                        <h3>{{ showSoldesSeulement ? 'Soldes Journaliers' : 'Historique des opérations' }}</h3>
+                        <h3>{{ showSoldesSeulement ? ('Soldes ' + (releveSoldeViewMode === 'day' ? 'Journaliers' : (releveSoldeViewMode === 'week' ? 'Hebdomadaires' : 'Mensuels'))) : 'Historique des opérations' }}</h3>
                         <!-- Panneau Approvisionnements: comparaison et recommandations -->
                         <div class="appro-panel" *ngIf="showReleveSummary && releveSoldesJournaliers && releveSoldesJournaliers.length > 0" style="margin:10px 0; background:#fff; border:1px solid #eee; border-radius:8px; padding:12px;">
                             <div style="display:flex; flex-wrap:wrap; gap:12px; align-items:flex-end;">
@@ -676,70 +676,82 @@
                             </table>
                          </div>
 
-                        <!-- Vue des soldes journaliers -->
+                        <!-- Vue des soldes (journaliers, hebdomadaires ou mensuels) -->
+                        <div *ngIf="showSoldesSeulement && releveSoldesJournaliers.length > 0" class="releve-solde-view-mode" style="margin-bottom: 10px;">
+                            <span style="margin-right: 8px;">Vue :</span>
+                            <button type="button" class="btn btn-sm" [class.active]="releveSoldeViewMode === 'day'" (click)="releveSoldeViewMode = 'day'; calculateRelevePagination()">
+                                <i class="fas fa-calendar-day"></i> Journalier
+                            </button>
+                            <button type="button" class="btn btn-sm" [class.active]="releveSoldeViewMode === 'week'" (click)="releveSoldeViewMode = 'week'; calculateRelevePagination()">
+                                <i class="fas fa-calendar-week"></i> Semaine
+                            </button>
+                            <button type="button" class="btn btn-sm" [class.active]="releveSoldeViewMode === 'month'" (click)="releveSoldeViewMode = 'month'; calculateRelevePagination()">
+                                <i class="fas fa-calendar-alt"></i> Mois
+                            </button>
+                        </div>
                         <div *ngIf="!isLoadingReleve && releveSoldesJournaliers.length > 0 && showSoldesSeulement" class="operations-table">
                             <div class="operations-summary">
-                                <span>Total: {{ releveSoldesJournaliers.length }} jour(s)</span>
-                                <span *ngIf="releveSoldesJournaliers.length > relevePageSize">
-                                    Affichage: {{ (releveCurrentPage - 1) * relevePageSize + 1 }} - {{ Math.min(releveCurrentPage * relevePageSize, releveSoldesJournaliers.length) }} sur {{ releveSoldesJournaliers.length }}
+                                <span>Total: {{ releveSoldesDisplayRows.length }} {{ releveSoldeViewMode === 'day' ? 'jour(s)' : (releveSoldeViewMode === 'week' ? 'semaine(s)' : 'mois') }}</span>
+                                <span *ngIf="releveSoldesDisplayRows.length > relevePageSize">
+                                    Affichage: {{ (releveCurrentPage - 1) * relevePageSize + 1 }} - {{ Math.min(releveCurrentPage * relevePageSize, releveSoldesDisplayRows.length) }} sur {{ releveSoldesDisplayRows.length }}
                                 </span>
                             </div>
                             <table class="table table-bordered table-hover table-sm">
                                 <thead>
                                     <tr>
-                                        <th>Date</th>
+                                        <th>{{ releveSoldeViewMode === 'day' ? 'Date' : 'Période' }}</th>
                                         <th>Solde d'Ouverture</th>
                                         <th>Solde de Clôture</th>
-                                        <th>Variation Journalière</th>
+                                        <th>Variation {{ releveSoldeViewMode === 'day' ? 'Journalière' : '' }}</th>
                                         <th>Solde de Clôture BO</th>
                                         <th>Ecart de solde</th>
                                         <th>Ecart régularisé</th>
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    <tr *ngFor="let solde of pagedReleveSoldes; let i = index">
-                                        <td>{{ formatDate(solde.date).split(' ')[0] }}</td>
-                                        <td class="solde-ouverture-val">{{ solde.opening | number:'1.2-2' }}</td>
+                                    <tr *ngFor="let row of pagedReleveSoldesDisplay; let i = index">
+                                        <td>{{ row.periodLabel }}</td>
+                                        <td class="solde-ouverture-val">{{ row.opening | number:'1.2-2' }}</td>
                                         <td class="solde-cloture-val"
-                                            [ngClass]="solde.closingBo !== undefined && (round2(solde.closingBo) === round2(getEffectiveClosingValue(solde))) ? 'solde-green' : ''">
+                                            [ngClass]="row.closingBo !== undefined && (round2(row.closingBo) === round2(getEffectiveClosingFromRow(row))) ? 'solde-green' : ''">
                                             <div class="closing-cell">
                                                 <div class="closing-value">
-                                                    <span [ngClass]="hasManualClosingOverride(solde) ? 'manual-closing-value' : ''">
-                                                        {{ getEffectiveClosingValue(solde) | number:'1.2-2' }}
+                                                    <span [ngClass]="hasManualClosingOverrideRow(row) ? 'manual-closing-value' : ''">
+                                                        {{ getEffectiveClosingFromRow(row) | number:'1.2-2' }}
                                                     </span>
-                                                    <span *ngIf="hasManualClosingOverride(solde)" class="manual-badge">manuel</span>
+                                                    <span *ngIf="hasManualClosingOverrideRow(row)" class="manual-badge">manuel</span>
                                                 </div>
-                                                <button type="button"
+                                                <button *ngIf="releveSoldeViewMode === 'day'" type="button"
                                                         class="btn btn-link btn-xs closing-edit-btn"
-                                                        (click)="openClosingOverrideModal(solde)"
+                                                        (click)="openClosingOverrideModal(row.ecartRef)"
                                                         title="Corriger le solde de clôture">
                                                     <i class="fas fa-edit"></i>
                                                 </button>
                                             </div>
                                         </td>
-                                        <td [ngClass]="(getEffectiveClosingValue(solde) - solde.opening) >= 0 ? 'variation-positive' : 'variation-negative'">
-                                            {{ (getEffectiveClosingValue(solde) - solde.opening) | number:'1.2-2' }}
+                                        <td [ngClass]="(getEffectiveClosingFromRow(row) - row.opening) >= 0 ? 'variation-positive' : 'variation-negative'">
+                                            {{ (getEffectiveClosingFromRow(row) - row.opening) | number:'1.2-2' }}
                                         </td>
                                         <td>
                                             <span [ngClass]="
-                                                solde.closingBo !== undefined && (round2(solde.closingBo) === round2(getEffectiveClosingValue(solde)))
+                                                row.closingBo !== undefined && (round2(row.closingBo) === round2(getEffectiveClosingFromRow(row)))
                                                     ? 'solde-green'
-                                                    : (solde.closingBo !== undefined && (round2(solde.closingBo) !== round2(getEffectiveClosingValue(solde))) ? 'solde-red' : '')
+                                                    : (row.closingBo !== undefined && (round2(row.closingBo) !== round2(getEffectiveClosingFromRow(row))) ? 'solde-red' : '')
                                               ">
-                                                {{ solde.closingBo !== undefined ? (solde.closingBo | number:'1.2-2') : '-' }}
+                                                {{ row.closingBo !== undefined ? (row.closingBo | number:'1.2-2') : '-' }}
                                             </span>
                                         </td>
-                                        <td [ngClass]="getEcartClass(solde)" 
-                                            (click)="navigateToEcartSolde(solde)"
+                                        <td [ngClass]="getEcartClass(row.ecartRef)" 
+                                            (click)="navigateToEcartSolde(row.ecartRef)"
                                             style="cursor: pointer; text-decoration: underline; font-weight: bold;"
                                             title="Cliquer pour voir les écarts de solde correspondants">
-                                            {{ getEcartValue(solde) | number:'1.2-2' }}
+                                            {{ getEcartValue(row.ecartRef) | number:'1.2-2' }}
                                         </td>
-                                        <td [ngClass]="getImpactOPClass(solde)" 
-                                            (click)="navigateToImpactOP(solde)"
+                                        <td [ngClass]="getImpactOPClass(row.ecartRef)" 
+                                            (click)="navigateToImpactOP(row.ecartRef)"
                                             style="cursor: pointer; text-decoration: underline; font-weight: bold;"
                                             title="Cliquer pour voir les écarts régularisés correspondants">
-                                            {{ getImpactOPValue(solde) | number:'1.2-2' }}
+                                            {{ getImpactOPValue(row.ecartRef) | number:'1.2-2' }}
                                         </td>
                                     </tr>
                                 </tbody>

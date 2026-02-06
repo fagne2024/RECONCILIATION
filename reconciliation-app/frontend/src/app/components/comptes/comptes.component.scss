@@ -824,6 +824,17 @@
         font-size: 1.3rem;
     }
 
+    .releve-solde-view-mode {
+        .btn-sm {
+            margin-right: 6px;
+            &.active {
+                background: #1976d2;
+                color: #fff;
+                border-color: #1976d2;
+            }
+        }
+    }
+
     .loading-releve {
         text-align: center;
         padding: 40px;

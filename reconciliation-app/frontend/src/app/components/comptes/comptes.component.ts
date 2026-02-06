@@ -29,6 +29,17 @@ type DailySolde = {
     closingManual?: number;
 };
 
+/** Ligne affichée dans le tableau des soldes (journalier, hebdo ou mensuel) */
+export type ReleveSoldeDisplayRow = {
+    periodLabel: string;
+    opening: number;
+    closing: number;
+    closingBo?: number;
+    closingManual?: number;
+    /** Référence au solde journalier pour écart / impact OP (dernier jour de la période en vue sem/mois) */
+    ecartRef: DailySolde;
+};
+
 @Component({
     selector: 'app-comptes',
     templateUrl: './comptes.component.html',
@@ -84,6 +95,8 @@ export class ComptesComponent implements OnInit, OnDestroy {
     releveDateFinCustom = '';
     showAllDataReleve: boolean = false; // Flag pour afficher toutes les données du relevé
     showSoldesSeulement = false; // Pour basculer la vue
+    /** Vue des soldes : journalier, par semaine ou par mois */
+    releveSoldeViewMode: 'day' | 'week' | 'month' = 'day';
     releveSoldesJournaliers: DailySolde[] = [];
     private groupedReleveOperationsCache: Array<{ main: Operation; frais: Operation[] }> = [];
     private flattenedReleveOperationsCache: Operation[] = [];
@@ -1763,7 +1776,7 @@ export class ComptesComponent implements OnInit, OnDestroy {
     calculateRelevePagination(): void {
         this.releveCurrentPage = 1;
         if (this.showSoldesSeulement) {
-            this.releveTotalPages = Math.ceil(this.releveSoldesJournaliers.length / this.relevePageSize);
+            this.releveTotalPages = Math.ceil(this.releveSoldesDisplayRows.length / this.relevePageSize);
         } else {
             // Calculer la pagination basée sur les groupes d'opérations
             const allOperations = this.getFlattenedReleveOperations();
@@ -1902,6 +1915,117 @@ export class ComptesComponent implements OnInit, OnDestroy {
         const startIndex = (this.releveCurrentPage - 1) * this.relevePageSize;
         const endIndex = startIndex + this.relevePageSize;
         return this.releveSoldesJournaliers.slice(startIndex, endIndex);
+    }
+
+    /** Clé de semaine (date du lundi YYYY-MM-DD) pour une date YYYY-MM-DD */
+    private getWeekKey(dateStr: string): string {
+        const d = new Date(dateStr + 'T12:00:00');
+        const day = d.getDay();
+        const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+        const monday = new Date(d.getFullYear(), d.getMonth(), diff);
+        const y = monday.getFullYear();
+        const m = String(monday.getMonth() + 1).padStart(2, '0');
+        const dayNum = String(monday.getDate()).padStart(2, '0');
+        return `${y}-${m}-${dayNum}`;
+    }
+
+    /** Clé mois pour une date YYYY-MM-DD */
+    private getMonthKey(dateStr: string): string {
+        return dateStr.slice(0, 7);
+    }
+
+    /** Libellé de semaine (ex. "Semaine du 03/02 - 09/02/2025") */
+    private getWeekLabel(dateStrStart: string, dateStrEnd: string): string {
+        const fmt = (s: string) => {
+            const d = new Date(s + 'T12:00:00');
+            return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
+        };
+        return `Semaine du ${fmt(dateStrStart)} - ${fmt(dateStrEnd)}`;
+    }
+
+    /** Libellé de mois (ex. "Février 2025") */
+    private getMonthLabelFromKey(monthKey: string): string {
+        const [y, m] = monthKey.split('-').map(Number);
+        const formatter = new Intl.DateTimeFormat('fr-FR', { month: 'long' });
+        const name = formatter.format(new Date(y, m - 1, 1));
+        return `${name.charAt(0).toUpperCase()}${name.slice(1)} ${y}`;
+    }
+
+    /** Liste unifiée des lignes à afficher (journalier, hebdo ou mensuel) */
+    get releveSoldesDisplayRows(): ReleveSoldeDisplayRow[] {
+        if (!this.releveSoldesJournaliers || this.releveSoldesJournaliers.length === 0) return [];
+        if (this.releveSoldeViewMode === 'day') {
+            return this.releveSoldesJournaliers.map(s => ({
+                periodLabel: this.formatDate(s.date).split(' ')[0],
+                opening: s.opening,
+                closing: s.closing,
+                closingBo: s.closingBo,
+                closingManual: s.closingManual,
+                ecartRef: s
+            }));
+        }
+        if (this.releveSoldeViewMode === 'week') {
+            const byWeek = new Map<string, DailySolde[]>();
+            this.releveSoldesJournaliers.forEach(s => {
+                const key = this.getWeekKey(s.date);
+                if (!byWeek.has(key)) byWeek.set(key, []);
+                byWeek.get(key)!.push(s);
+            });
+            return Array.from(byWeek.entries())
+                .map(([key, days]) => {
+                    const sorted = [...days].sort((a, b) => a.date.localeCompare(b.date));
+                    const first = sorted[0];
+                    const last = sorted[sorted.length - 1];
+                    return {
+                        periodLabel: this.getWeekLabel(first.date, last.date),
+                        opening: first.opening,
+                        closing: last.closing,
+                        closingBo: last.closingBo,
+                        closingManual: last.closingManual,
+                        ecartRef: last
+                    };
+                })
+                .sort((a, b) => (b.ecartRef.date).localeCompare(a.ecartRef.date));
+        }
+        // month
+        const byMonth = new Map<string, DailySolde[]>();
+        this.releveSoldesJournaliers.forEach(s => {
+            const key = this.getMonthKey(s.date);
+            if (!byMonth.has(key)) byMonth.set(key, []);
+            byMonth.get(key)!.push(s);
+        });
+        return Array.from(byMonth.entries())
+            .map(([key, days]) => {
+                const sorted = [...days].sort((a, b) => a.date.localeCompare(b.date));
+                const first = sorted[0];
+                const last = sorted[sorted.length - 1];
+                return {
+                    periodLabel: this.getMonthLabelFromKey(key),
+                    opening: first.opening,
+                    closing: last.closing,
+                    closingBo: last.closingBo,
+                    closingManual: last.closingManual,
+                    ecartRef: last
+                };
+            })
+            .sort((a, b) => (b.ecartRef.date).localeCompare(a.ecartRef.date));
+    }
+
+    get pagedReleveSoldesDisplay(): ReleveSoldeDisplayRow[] {
+        const rows = this.releveSoldesDisplayRows;
+        const startIndex = (this.releveCurrentPage - 1) * this.relevePageSize;
+        const endIndex = startIndex + this.relevePageSize;
+        return rows.slice(startIndex, endIndex);
+    }
+
+    /** Solde de clôture effectif pour une ligne d'affichage (manuel > BO > calculé) */
+    getEffectiveClosingFromRow(row: ReleveSoldeDisplayRow): number {
+        if (row.closingManual !== undefined && row.closingManual !== null) return row.closingManual;
+        return row.closing ?? 0;
+    }
+
+    hasManualClosingOverrideRow(row: ReleveSoldeDisplayRow): boolean {
+        return row.closingManual !== undefined && row.closingManual !== null;
     }
 
     prevRelevePage(): void {
