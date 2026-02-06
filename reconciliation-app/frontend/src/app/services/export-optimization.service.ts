@@ -1,6 +1,15 @@
 import { Injectable } from '@angular/core';
 import { BehaviorSubject, Observable } from 'rxjs';
 import * as XLSX from 'xlsx';
+import * as ExcelJS from 'exceljs';
+
+/** Couleurs par type de commentaire pour export écarts (TRXBO/OPPART) - ARGB 8 caractères */
+export const ECART_COMMENT_COLORS: Record<string, string> = {
+  TSOP: 'FFFFCDD2',   // Rouge clair
+  TRXSF: 'FFFFF9C4',  // Jaune clair
+  Ecart: 'FFFFAB91',  // Orange clair
+  RGFRAIS: 'FFB3E5FC' // Bleu clair
+};
 
 export interface ExportProgress {
   current: number;
@@ -15,6 +24,11 @@ export interface ExportOptions {
   useWebWorker?: boolean;
   enableCompression?: boolean;
   format?: 'csv' | 'xlsx' | 'xls';
+}
+
+export interface ExportWithCommentColorsOptions {
+  commentColumn?: string;
+  colorMap?: Record<string, string>;
 }
 
 @Injectable({
@@ -391,6 +405,82 @@ export class ExportOptimizationService {
       // Export synchrone optimisé
       await this.exportExcelSynchronous(normalizedRows, columns, fileName, chunkSize, excelFormat);
     }
+  }
+
+  /**
+   * Export Excel avec couleurs par type de commentaire (écarts BO / Partenaire TRXBO-OPPART).
+   * Utilise ExcelJS pour appliquer un fond de cellule selon la valeur de la colonne Commentaire.
+   */
+  public async exportExcelWithCommentColors(
+    rows: any[],
+    columns: string[],
+    fileName: string,
+    options: ExportWithCommentColorsOptions = {}
+  ): Promise<void> {
+    const commentColumn = options.commentColumn ?? 'Commentaire';
+    const colorMap = options.colorMap ?? ECART_COMMENT_COLORS;
+    const hasCommentInColumns = columns.includes(commentColumn);
+
+    this._exportProgress.next({
+      current: 0,
+      total: rows.length,
+      percentage: 0,
+      message: 'Préparation de l\'export avec couleurs...',
+      isComplete: false
+    });
+
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Écarts', { views: [{ state: 'frozen', ySplit: 1 }] });
+
+    // En-têtes
+    const headerRow = worksheet.addRow(columns);
+    headerRow.font = { bold: true };
+    headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE0E0E0' } };
+
+    const chunkSize = 2000;
+    for (let i = 0; i < rows.length; i += chunkSize) {
+      const chunk = rows.slice(i, i + chunkSize);
+      for (const row of chunk) {
+        const rowData = columns.map(col => this.cellValueForExcel(col, row[col]));
+        const excelRow = worksheet.addRow(rowData);
+        if (hasCommentInColumns) {
+          const commentValue = (row[commentColumn] ?? '').toString().trim();
+          const argb = colorMap[commentValue] || colorMap['Ecart'] || 'FFFFFFFF';
+          excelRow.eachCell((cell, colNumber) => {
+            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb } };
+          });
+        }
+      }
+      const progress = Math.min(i + chunkSize, rows.length);
+      this._exportProgress.next({
+        current: progress,
+        total: rows.length,
+        percentage: (progress / rows.length) * 100,
+        message: `Export: ${progress.toLocaleString()}/${rows.length.toLocaleString()} lignes`,
+        isComplete: false
+      });
+      if (i % (chunkSize * 2) === 0) {
+        await new Promise(resolve => setTimeout(resolve, 0));
+      }
+    }
+
+    // Largeurs colonnes
+    columns.forEach((col, idx) => {
+      worksheet.getColumn(idx + 1).width = Math.min( Math.max(String(col).length + 2, 12), 50 );
+    });
+
+    const finalFileName = fileName.endsWith('.xlsx') ? fileName : fileName + '.xlsx';
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    this.downloadFile(blob, finalFileName);
+
+    this._exportProgress.next({
+      current: rows.length,
+      total: rows.length,
+      percentage: 100,
+      message: `✅ Export terminé: ${finalFileName}`,
+      isComplete: true
+    });
   }
 
   /**

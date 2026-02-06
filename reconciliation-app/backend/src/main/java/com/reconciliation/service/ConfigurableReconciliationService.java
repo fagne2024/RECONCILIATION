@@ -307,14 +307,16 @@ public class ConfigurableReconciliationService {
             }
         }
         
-        // 5. Détection par colonnes spécifiques TRXBO
+        // 5. Détection par colonnes spécifiques TRXBO (avec variantes réelles: numeroTransGU, Telephone, etc.)
         if (!hasTRXBO && !request.getBoFileContent().isEmpty()) {
             Set<String> boColumns = request.getBoFileContent().get(0).keySet();
             boolean hasIDTransaction = boColumns.contains("IDTransaction") || boColumns.contains("ID Transaction");
-            boolean hasTelephoneClient = boColumns.contains("téléphone client") || boColumns.contains("telephone client");
+            boolean hasTelephoneClient = boColumns.contains("téléphone client") || boColumns.contains("telephone client")
+                    || boColumns.contains("Telephone");
             boolean hasMontant = boColumns.contains("montant") || boColumns.contains("Montant");
             boolean hasService = boColumns.contains("Service") || boColumns.contains("service");
-            boolean hasNumeroTransGU = boColumns.contains("Numéro Trans GU") || boColumns.contains("Numero Trans GU");
+            boolean hasNumeroTransGU = boColumns.contains("Numéro Trans GU") || boColumns.contains("Numero Trans GU")
+                    || boColumns.contains("numeroTransGU") || boColumns.contains("NumeroTransGU");
             
             int trxboColumnCount = 0;
             if (hasIDTransaction) trxboColumnCount++;
@@ -330,15 +332,19 @@ public class ConfigurableReconciliationService {
             }
         }
         
-        // 6. Détection par colonnes spécifiques OPPART
+        // 6. Détection par colonnes spécifiques OPPART (avec variantes: Type, Solde_avant, Solde_Après, numeroTransGU, statutOp)
         if (!hasOPPART && !request.getPartnerFileContent().isEmpty()) {
             Map<String, String> firstPartnerRecord = request.getPartnerFileContent().get(0);
             Set<String> partnerColumns = firstPartnerRecord.keySet();
-            boolean hasTypeOperation = partnerColumns.contains("Type Opération") || partnerColumns.contains("Type Operation");
+            boolean hasTypeOperation = partnerColumns.contains("Type Opération") || partnerColumns.contains("Type Operation")
+                    || partnerColumns.contains("Type");
             boolean hasMontant = partnerColumns.contains("Montant") || partnerColumns.contains("montant");
-            boolean hasSoldeAvant = partnerColumns.contains("Solde avant") || partnerColumns.contains("Solde avant");
-            boolean hasSoldeApres = partnerColumns.contains("Solde aprés") || partnerColumns.contains("Solde après");
-            boolean hasNumeroTransGU = partnerColumns.contains("Numéro Trans GU") || partnerColumns.contains("Numero Trans GU");
+            boolean hasSoldeAvant = partnerColumns.contains("Solde avant") || partnerColumns.contains("Solde_avant");
+            boolean hasSoldeApres = partnerColumns.contains("Solde aprés") || partnerColumns.contains("Solde après")
+                    || partnerColumns.contains("Solde_Après") || partnerColumns.contains("Solde_apres");
+            boolean hasNumeroTransGU = partnerColumns.contains("Numéro Trans GU") || partnerColumns.contains("Numero Trans GU")
+                    || partnerColumns.contains("numeroTransGU") || partnerColumns.contains("NumeroTransGU");
+            boolean hasStatutOp = partnerColumns.contains("statutOp") || partnerColumns.contains("Statut Opération");
             
             int oppartColumnCount = 0;
             if (hasTypeOperation) oppartColumnCount++;
@@ -346,6 +352,7 @@ public class ConfigurableReconciliationService {
             if (hasSoldeAvant) oppartColumnCount++;
             if (hasSoldeApres) oppartColumnCount++;
             if (hasNumeroTransGU) oppartColumnCount++;
+            if (hasStatutOp) oppartColumnCount++;
             
             hasOPPART = oppartColumnCount >= 4; // Au moins 4 colonnes OPPART spécifiques
             

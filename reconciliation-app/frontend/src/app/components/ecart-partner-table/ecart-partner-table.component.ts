@@ -3,7 +3,7 @@ import { Router } from '@angular/router';
 import { Subscription, firstValueFrom } from 'rxjs';
 import { ReconciliationResponse } from '../../models/reconciliation-response.model';
 import { AppStateService } from '../../services/app-state.service';
-import { ExportOptimizationService, ExportProgress } from '../../services/export-optimization.service';
+import { ExportOptimizationService, ExportProgress, ECART_COMMENT_COLORS } from '../../services/export-optimization.service';
 import { PopupService } from '../../services/popup.service';
 import { ImpactOPService } from '../../services/impact-op.service';
 import { OperationService } from '../../services/operation.service';
@@ -886,19 +886,22 @@ export class EcartPartnerTableComponent implements OnInit, OnDestroy {
       this.showExportMenu = false;
       this.cdr.markForCheck();
 
-      const selectedCols = this.availableColumnsForExport.filter(col => this.selectedColumnsForExport[col]);
+      let selectedCols = this.availableColumnsForExport.filter(col => this.selectedColumnsForExport[col]);
+      const hasCommentaire = this.displayedPartnerOnly.some(record => (this.getValue(record, 'Commentaire') ?? '').toString().trim() !== '');
+      if (hasCommentaire && !selectedCols.includes('Commentaire')) {
+        selectedCols = ['Commentaire', ...selectedCols];
+      }
       const columns = selectedCols;
-      
+
       const rows = this.displayedPartnerOnly.map(record => {
         const row: any = {};
-        selectedCols.forEach(col => {
+        columns.forEach(col => {
           row[col] = this.getValue(record, col);
         });
         return row;
       });
 
       const fileName = `ecart_partner_${new Date().toISOString().split('T')[0]}.xlsx`;
-      const isLargeDataset = rows.length > 5000;
 
       if (this.exportSubscription) {
         this.exportSubscription.unsubscribe();
@@ -919,17 +922,25 @@ export class EcartPartnerTableComponent implements OnInit, OnDestroy {
         }
       });
 
-      if (isLargeDataset) {
-        await this.exportOptimizationService.exportExcelOptimized(rows, columns, fileName, {
-          chunkSize: 3000,
-          useWebWorker: true,
-          enableCompression: true
+      if (hasCommentaire) {
+        await this.exportOptimizationService.exportExcelWithCommentColors(rows, columns, fileName, {
+          commentColumn: 'Commentaire',
+          colorMap: ECART_COMMENT_COLORS
         });
       } else {
-        await this.exportOptimizationService.exportExcelOptimized(rows, columns, fileName, {
-          chunkSize: 2000,
-          useWebWorker: false
-        });
+        const isLargeDataset = rows.length > 5000;
+        if (isLargeDataset) {
+          await this.exportOptimizationService.exportExcelOptimized(rows, columns, fileName, {
+            chunkSize: 3000,
+            useWebWorker: true,
+            enableCompression: true
+          });
+        } else {
+          await this.exportOptimizationService.exportExcelOptimized(rows, columns, fileName, {
+            chunkSize: 2000,
+            useWebWorker: false
+          });
+        }
       }
 
     } catch (error) {

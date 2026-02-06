@@ -701,6 +701,14 @@ public class CsvReconciliationService implements DisposableBean {
             // Appliquer les règles de correspondance configurées
             String action = determineActionFromRules(correspondenceRules, partnerMatchCount);
             
+            // TRXBO/OPPART: pour 1 seule correspondance, distinguer IMPACT_COMPTE_GENERAL (TRXSF) vs FRAIS_TRANSACTION (RGFRAIS côté partenaire, Ecart côté BO)
+            if ("MARK_AS_MISMATCH_TRXSF".equals(action) && partnerMatchCount == 1 && matchingPartnerRecords != null && matchingPartnerRecords.size() == 1) {
+                String partnerType = getPartnerType(matchingPartnerRecords.get(0));
+                if (partnerType != null && partnerType.toUpperCase().contains("FRAIS_TRANSACTION")) {
+                    action = "MARK_AS_ECART_RGFRAIS"; // BO -> Ecart, Partenaire -> RGFRAIS
+                }
+            }
+            
             switch (action) {
                 case "MARK_AS_MATCH":
                     logger.debug("✅ CORRESPONDANCE PARFAITE: {} correspondances pour key: {}", partnerMatchCount, boKey);
@@ -732,8 +740,8 @@ public class CsvReconciliationService implements DisposableBean {
                     break;
                     
                 case "MARK_AS_MISMATCH_TRXSF":
-                    // Transaction avec une seule correspondance (TRXSF)
-                    logger.debug("⚠️ TRXSF: {} correspondance pour key: {}", partnerMatchCount, boKey);
+                    // TRXSF: une seule correspondance avec type partenaire IMPACT_COMPTE_GENERAL
+                    logger.debug("⚠️ TRXSF: {} correspondance (IMPACT_COMPTE_GENERAL) pour key: {}", partnerMatchCount, boKey);
                     Map<String, String> boRecordTRXSF = new HashMap<>(boRecord);
                     boRecordTRXSF.put("Commentaire", "TRXSF");
                     response.getBoOnly().add(boRecordTRXSF);
@@ -742,6 +750,22 @@ public class CsvReconciliationService implements DisposableBean {
                             Map<String, String> partnerRecordTRXSF = new HashMap<>(partnerRecord);
                             partnerRecordTRXSF.put("Commentaire", "TRXSF");
                             response.getPartnerOnly().add(partnerRecordTRXSF);
+                        }
+                    }
+                    processedPartnerKeys.add(boKey);
+                    break;
+                
+                case "MARK_AS_ECART_RGFRAIS":
+                    // Une seule correspondance partenaire de type FRAIS_TRANSACTION: BO -> Ecart, Partenaire -> RGFRAIS
+                    logger.debug("⚠️ RGFRAIS: 1 correspondance FRAIS_TRANSACTION pour key: {}", boKey);
+                    Map<String, String> boRecordEcartRg = new HashMap<>(boRecord);
+                    boRecordEcartRg.put("Commentaire", "Ecart");
+                    response.getBoOnly().add(boRecordEcartRg);
+                    if (matchingPartnerRecords != null) {
+                        for (Map<String, String> partnerRecord : matchingPartnerRecords) {
+                            Map<String, String> partnerRecordRg = new HashMap<>(partnerRecord);
+                            partnerRecordRg.put("Commentaire", "RGFRAIS");
+                            response.getPartnerOnly().add(partnerRecordRg);
                         }
                     }
                     processedPartnerKeys.add(boKey);
@@ -790,41 +814,39 @@ public class CsvReconciliationService implements DisposableBean {
         }
         
         // Identifier les enregistrements OPPART non utilisés
-        // Créer un index inverse pour compter combien de TRXBO correspondent à chaque OPPART
+        // Créer un index inverse pour compter combien de TRXBO correspondent à chaque OPPART (clé composite pour cohérence)
         Map<String, Integer> partnerMatchCountMap = new HashMap<>();
         for (Map<String, String> boRecord : filteredBoRecords) {
-            String boKey = boRecord.get(request.getBoKeyColumn());
+            String boKey = buildCompositeKey(boRecord, request.getBoKeyColumn(), request.getAdditionalKeys(), true);
             if (boKey != null) {
                 List<Map<String, String>> matchingPartnerRecords = partnerIndex.get(boKey);
                 if (matchingPartnerRecords != null) {
                     for (Map<String, String> partnerRecord : matchingPartnerRecords) {
-                        String partnerKey = partnerRecord.get(request.getPartnerKeyColumn());
-                        if (partnerKey != null) {
-                            partnerMatchCountMap.put(partnerKey, partnerMatchCountMap.getOrDefault(partnerKey, 0) + 1);
+                        String partnerKeyComposite = buildCompositeKey(partnerRecord, request.getPartnerKeyColumn(),
+                                request.getAdditionalKeys(), false);
+                        if (partnerKeyComposite != null) {
+                            partnerMatchCountMap.put(partnerKeyComposite, partnerMatchCountMap.getOrDefault(partnerKeyComposite, 0) + 1);
                         }
                     }
                 }
             }
         }
         
-        // Classifier les OPPART non utilisés
+        // Classifier les OPPART non utilisés: Ecart (2 lignes IMPACT+FRAIS, 0 BO), RGFRAIS (1 ligne FRAIS, 0 BO), sinon Ecart
+        // Grouper par clé les enregistrements partenaire dont la clé n'est pas dans processedPartnerKeys (0 BO pour cette clé)
+        Map<String, List<Map<String, String>>> partnerOnlyByKey = new HashMap<>();
         for (Map<String, String> partnerRecord : request.getPartnerFileContent()) {
-            String partnerKey = partnerRecord.get(request.getPartnerKeyColumn());
-            if (partnerKey != null && !processedPartnerKeys.contains(partnerKey)) {
+            String partnerKeyComposite = buildCompositeKey(partnerRecord, request.getPartnerKeyColumn(),
+                    request.getAdditionalKeys(), false);
+            if (partnerKeyComposite != null && !processedPartnerKeys.contains(partnerKeyComposite)) {
+                partnerOnlyByKey.computeIfAbsent(partnerKeyComposite, k -> new ArrayList<>()).add(partnerRecord);
+            }
+        }
+        for (List<Map<String, String>> partnerRecords : partnerOnlyByKey.values()) {
+            String comment = computePartnerOnlyComment(partnerRecords);
+            for (Map<String, String> partnerRecord : partnerRecords) {
                 Map<String, String> partnerRecordWithComment = new HashMap<>(partnerRecord);
-                int boMatchCount = partnerMatchCountMap.getOrDefault(partnerKey, 0);
-                
-                if (boMatchCount == 0) {
-                    // Opération sans correspondance
-                    partnerRecordWithComment.put("Commentaire", "Ecart");
-                } else if (boMatchCount == 1) {
-                    // Opération avec une seule correspondance
-                    partnerRecordWithComment.put("Commentaire", "TRXSF");
-                } else {
-                    // Opération avec plusieurs correspondances (anormal)
-                    partnerRecordWithComment.put("Commentaire", "Ecart");
-                }
-                
+                partnerRecordWithComment.put("Commentaire", comment);
                 response.getPartnerOnly().add(partnerRecordWithComment);
             }
         }
@@ -1314,6 +1336,47 @@ public class CsvReconciliationService implements DisposableBean {
             normalizedKeyColumn, record.keySet());
         
         return null;
+    }
+
+    /**
+     * Récupère le type d'opération partenaire (colonnes "Type" ou "Type Opération").
+     */
+    private String getPartnerType(Map<String, String> partnerRecord) {
+        if (partnerRecord == null) return null;
+        String type = partnerRecord.get("Type");
+        if (type == null || type.trim().isEmpty()) {
+            type = partnerRecord.get("Type Opération");
+        }
+        return type != null ? type.trim() : null;
+    }
+
+    /**
+     * Calcule le commentaire pour des lignes partenaire orphelines (0 BO pour cette clé).
+     * Ecart: 2 lignes (IMPACT_COMPTE_GENERAL + FRAIS_TRANSACTION). RGFRAIS: 1 ligne FRAIS_TRANSACTION. Sinon Ecart.
+     */
+    private String computePartnerOnlyComment(List<Map<String, String>> partnerRecords) {
+        if (partnerRecords == null || partnerRecords.isEmpty()) return "Ecart";
+        if (partnerRecords.size() == 1) {
+            String type = getPartnerType(partnerRecords.get(0));
+            if (type != null && type.toUpperCase().contains("FRAIS_TRANSACTION")) {
+                return "RGFRAIS";
+            }
+            return "Ecart";
+        }
+        if (partnerRecords.size() == 2) {
+            boolean hasImpact = false;
+            boolean hasFrais = false;
+            for (Map<String, String> rec : partnerRecords) {
+                String t = getPartnerType(rec);
+                if (t != null) {
+                    String u = t.toUpperCase();
+                    if (u.contains("IMPACT_COMPTE_GENERAL")) hasImpact = true;
+                    if (u.contains("FRAIS_TRANSACTION")) hasFrais = true;
+                }
+            }
+            if (hasImpact && hasFrais) return "Ecart";
+        }
+        return "Ecart";
     }
 
     /**
