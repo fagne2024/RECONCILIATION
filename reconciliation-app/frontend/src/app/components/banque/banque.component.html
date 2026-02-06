@@ -1049,20 +1049,20 @@
               <td>{{ operation.reference }}</td>
               <td class="glpi-cell">
                 <button 
-                  *ngIf="!operation.idGlpi || operation.idGlpi.trim() === ''" 
+                  *ngIf="isCreateTicketCase(operation.idGlpi)" 
                   class="btn-glpi-create"
-                  (click)="openGlpiCreate()"
-                  title="Créer un ticket GLPI">
+                  (click)="showTicketCreateOptionsPopup(); $event.preventDefault()"
+                  title="Choisir la plateforme pour créer un ticket">
                   <i class="fas fa-plus-circle"></i> Créer
                 </button>
-                <a 
-                  *ngIf="operation.idGlpi && operation.idGlpi.trim() !== ''"
-                  [href]="getGlpiTicketUrl(operation.idGlpi)"
-                  target="_blank"
+                <span 
+                  *ngIf="!isCreateTicketCase(operation.idGlpi)"
                   class="glpi-link"
-                  title="Ouvrir le ticket GLPI {{ operation.idGlpi }}">
+                  (click)="showTicketOptionsPopup(operation.idGlpi)"
+                  title="Choisir une option pour ouvrir le ticket"
+                  style="cursor: pointer;">
                   <i class="fas fa-ticket-alt"></i> {{ operation.idGlpi }}
-                </a>
+                </span>
               </td>
               <td>{{ operation.bo }}</td>
               <td>
@@ -1201,13 +1201,19 @@
           <div class="detail-item">
             <label><i class="fas fa-ticket-alt"></i> ID TICKET</label>
             <span>
-              <a *ngIf="selectedOperation.idGlpi && selectedOperation.idGlpi.trim() !== ''" 
-                 [href]="getGlpiTicketUrl(selectedOperation.idGlpi)"
-                 target="_blank"
-                 class="glpi-link-small">
+              <button *ngIf="isCreateTicketCase(selectedOperation.idGlpi)"
+                      class="btn-glpi-create btn-inline"
+                      (click)="showTicketCreateOptionsPopup()"
+                      title="Choisir la plateforme pour créer un ticket">
+                <i class="fas fa-plus-circle"></i> Créer
+              </button>
+              <span *ngIf="!isCreateTicketCase(selectedOperation.idGlpi)"
+                    class="glpi-link glpi-link-small"
+                    (click)="showTicketOptionsPopup(selectedOperation.idGlpi)"
+                    title="Choisir une option pour ouvrir le ticket"
+                    style="cursor: pointer;">
                 {{ selectedOperation.idGlpi }}
-              </a>
-              <span *ngIf="!selectedOperation.idGlpi || selectedOperation.idGlpi.trim() === ''">Non renseigné</span>
+              </span>
             </span>
           </div>
           <div class="detail-item">

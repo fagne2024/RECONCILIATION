@@ -511,9 +511,9 @@ export interface ReconciliationReportData {
                                             <button 
                                                 *ngIf="!item.glpiId || item.glpiId.trim() === ''" 
                                                 class="btn-glpi-create"
-                                                (click)="openGlpiCreate()"
+                                                (click)="showTicketCreateOptionsPopup()"
                                                 [disabled]="item.status === 'OK'"
-                                                title="Créer un ticket GLPI">
+                                                title="Choisir la plateforme pour créer un ticket">
                                                 <i class="fas fa-plus-circle"></i> Créer
                                             </button>
                                         </div>
@@ -4869,7 +4869,96 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
     // Ouvrir GLPI pour créer un nouveau ticket
     openGlpiCreate() {
         const glpiCreateUrl = 'https://glpi.intouchgroup.net/glpi/front/ticket.form.php';
-        window.open(glpiCreateUrl, '_blank');
+        window.open(glpiCreateUrl, '_blank', 'noopener,noreferrer');
+    }
+
+    // Ouvrir BOMETIER pour créer un nouveau ticket
+    openBometierCreate() {
+        const bometierCreateUrl = 'https://bometier.gutouch.net/';
+        window.open(bometierCreateUrl, '_blank', 'noopener,noreferrer');
+    }
+
+    // Afficher un popup pour choisir où créer un nouveau ticket (GLPI ou BOMETIER)
+    showTicketCreateOptionsPopup(): void {
+        const message = 'Choisissez la plateforme pour créer un nouveau ticket :';
+        const title = 'Créer un ticket';
+        this.showTicketChoiceOverlay(title, message, () => this.openGlpiCreate(), () => this.openBometierCreate());
+    }
+
+    private showTicketChoiceOverlay(title: string, message: string, onGlpi: () => void, onBometier: () => void): void {
+        const overlay = document.createElement('div');
+        overlay.className = 'modern-popup-overlay';
+        overlay.innerHTML = `
+            <div class="modern-popup popup-type-info">
+                <div class="popup-header">
+                    <div class="popup-title-wrapper">
+                        <span class="popup-icon">🎫</span>
+                        <h3 class="popup-title">${title}</h3>
+                    </div>
+                    <button class="popup-close" aria-label="Fermer">×</button>
+                </div>
+                <div class="popup-content">
+                    <p class="popup-message">${message}</p>
+                </div>
+                <div class="popup-actions popup-actions-two-buttons">
+                    <button class="popup-btn popup-btn-glpi">🔵 GLPI</button>
+                    <button class="popup-btn popup-btn-bometier">🟢 BOMETIER</button>
+                </div>
+            </div>
+        `;
+
+        const style = document.createElement('style');
+        style.textContent = `
+            .modern-popup-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+                background: rgba(0, 0, 0, 0.6); backdrop-filter: blur(4px); display: flex;
+                justify-content: center; align-items: center; z-index: 9999;
+                animation: fadeIn 0.25s cubic-bezier(0.4, 0, 0.2, 1); }
+            .modern-popup { background: white; border-radius: 16px;
+                box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(0, 0, 0, 0.05);
+                max-width: 450px; width: 90%; overflow: hidden; border-top: 4px solid #007bff; }
+            .popup-header { display: flex; justify-content: space-between; align-items: center;
+                padding: 24px 24px 16px 24px; background: linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%); }
+            .popup-title-wrapper { display: flex; align-items: center; gap: 12px; }
+            .popup-icon { font-size: 24px; }
+            .popup-title { margin: 0; font-size: 20px; font-weight: 700; color: #212529; }
+            .popup-close { background: rgba(0, 0, 0, 0.05); border: none; font-size: 22px; cursor: pointer;
+                color: #6c757d; padding: 0; width: 32px; height: 32px; border-radius: 50%;
+                display: flex; align-items: center; justify-content: center; }
+            .popup-close:hover { background: rgba(0, 0, 0, 0.1); color: #212529; }
+            .popup-content { padding: 20px 24px; }
+            .popup-message { margin: 0; color: #495057; line-height: 1.6; font-size: 15px; }
+            .popup-actions-two-buttons { display: flex; justify-content: center; gap: 12px;
+                padding: 16px 24px 24px 24px; background: #f8f9fa; border-top: 1px solid #e9ecef; }
+            .popup-btn { padding: 12px 24px; border: none; border-radius: 8px; cursor: pointer;
+                font-weight: 600; font-size: 14px; min-width: 140px; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1); }
+            .popup-btn:hover { transform: translateY(-1px); box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15); }
+            .popup-btn-glpi { background: linear-gradient(135deg, #007bff 0%, #0056b3 100%); color: white; }
+            .popup-btn-glpi:hover { background: linear-gradient(135deg, #0056b3 0%, #004085 100%); }
+            .popup-btn-bometier { background: linear-gradient(135deg, #28a745 0%, #1e7e34 100%); color: white; }
+            .popup-btn-bometier:hover { background: linear-gradient(135deg, #1e7e34 0%, #155724 100%); }
+            @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        `;
+        document.head.appendChild(style);
+        document.body.appendChild(overlay);
+        document.body.style.overflow = 'hidden';
+
+        const cleanup = () => {
+            document.body.style.overflow = 'auto';
+            if (style.parentNode) style.parentNode.removeChild(style);
+            overlay.remove();
+            document.removeEventListener('keydown', handleEscape);
+        };
+
+        const handleEscape = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') cleanup();
+        };
+
+        overlay.querySelector('.popup-close')?.addEventListener('click', cleanup);
+        overlay.addEventListener('click', (e) => { if (e.target === overlay) cleanup(); });
+        document.addEventListener('keydown', handleEscape);
+
+        overlay.querySelector('.popup-btn-glpi')?.addEventListener('click', () => { cleanup(); onGlpi(); });
+        overlay.querySelector('.popup-btn-bometier')?.addEventListener('click', () => { cleanup(); onBometier(); });
     }
 
     // Obtenir l'URL du ticket GLPI avec l'ID
