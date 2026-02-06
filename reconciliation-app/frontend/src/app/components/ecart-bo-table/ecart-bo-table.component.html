@@ -21,6 +21,15 @@
       <h2>⚠️ Écarts BO</h2>
       <div class="header-info">
         <span class="total-count">{{filteredBoOnly.length || 0}} écart(s) BO</span>
+        <button
+          type="button"
+          (click)="saveToEcartBoSummary()"
+          class="save-to-summary-btn"
+          [disabled]="!filteredBoOnly?.length"
+          title="Préremplir le formulaire Écart BO Summary avec volume, nombre, date, service, pays et agence"
+        >
+          💾 Save vers Écart BO Summary
+        </button>
         <button (click)="goToSummary()" class="summary-button">
           📊 Voir le tableau récapitulatif
         </button>
