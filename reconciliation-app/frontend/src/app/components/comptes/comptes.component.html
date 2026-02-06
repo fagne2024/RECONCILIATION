@@ -591,6 +591,28 @@
                         <div *ngIf="!isLoadingReleve && releveOperations.length === 0" class="no-operations">
                             Aucune opération trouvée pour ce compte.
                         </div>
+
+                        <!-- Synthèse variation Crédits / Débits (vue Historique des opérations) -->
+                        <div *ngIf="!isLoadingReleve && releveOperations.length > 0 && !showSoldesSeulement" class="releve-variation-summary">
+                            <div class="variation-summary-title"><i class="fas fa-balance-scale"></i> Variation Crédits / Débits</div>
+                            <div class="variation-summary-grid">
+                                <div class="variation-item">
+                                    <span class="variation-label">Total Débits</span>
+                                    <span class="variation-value debit">{{ releveTotalDebits | number:'1.2-2' }}</span>
+                                    <span class="variation-pct">({{ relevePercentDebits | number:'1.1-1' }} %)</span>
+                                </div>
+                                <div class="variation-item">
+                                    <span class="variation-label">Total Crédits</span>
+                                    <span class="variation-value credit">{{ releveTotalCredits | number:'1.2-2' }}</span>
+                                    <span class="variation-pct">({{ relevePercentCredits | number:'1.1-1' }} %)</span>
+                                </div>
+                                <div class="variation-item variation-highlight">
+                                    <span class="variation-label">Variation (Crédits − Débits)</span>
+                                    <span class="variation-value" [ngClass]="releveVariation >= 0 ? 'credit' : 'debit'">{{ releveVariation | number:'1.2-2' }}</span>
+                                    <span class="variation-pct">({{ relevePercentVariation | number:'1.1-1' }} % du total)</span>
+                                </div>
+                            </div>
+                        </div>
                         
                         <!-- Vue détaillée des opérations -->
                         <div *ngIf="!isLoadingReleve && releveOperations.length > 0 && !showSoldesSeulement" class="operations-table">

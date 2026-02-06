@@ -2706,6 +2706,34 @@ export class ComptesComponent implements OnInit, OnDestroy {
         return { debit, credit };
     }
 
+    // Synthèse débits / crédits / variation pour l'historique des opérations du relevé
+    get releveTotalDebits(): number {
+        const ops = this.getFlattenedReleveOperations();
+        return ops.reduce((sum, op) => sum + this.getDebitCreditForOperation(op).debit, 0);
+    }
+    get releveTotalCredits(): number {
+        const ops = this.getFlattenedReleveOperations();
+        return ops.reduce((sum, op) => sum + this.getDebitCreditForOperation(op).credit, 0);
+    }
+    get releveVariation(): number {
+        return Math.round((this.releveTotalCredits - this.releveTotalDebits) * 100) / 100;
+    }
+    get releveTotalMouvements(): number {
+        return this.releveTotalDebits + this.releveTotalCredits;
+    }
+    get relevePercentDebits(): number {
+        const total = this.releveTotalMouvements;
+        return total === 0 ? 0 : Math.round((this.releveTotalDebits / total) * 10000) / 100;
+    }
+    get relevePercentCredits(): number {
+        const total = this.releveTotalMouvements;
+        return total === 0 ? 0 : Math.round((this.releveTotalCredits / total) * 10000) / 100;
+    }
+    get relevePercentVariation(): number {
+        const total = this.releveTotalMouvements;
+        return total === 0 ? 0 : Math.round((this.releveVariation / total) * 10000) / 100;
+    }
+
     // Résumé global pour le footer (comptes filtrés)
     get resumeGlobal() {
       let totalSolde = 0;
