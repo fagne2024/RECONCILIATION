@@ -837,16 +837,19 @@
 
     .releve-variation-summary {
         margin-bottom: 16px;
-        padding: 12px 16px;
+        padding: 14px 20px;
         background: #f8f9fa;
         border: 1px solid #e0e0e0;
         border-radius: 8px;
+        font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+        text-align: center;
 
         .variation-summary-title {
             font-weight: 600;
             color: #333;
-            margin-bottom: 10px;
-            font-size: 14px;
+            margin-bottom: 12px;
+            font-size: 15px;
+            text-align: center;
 
             i {
                 margin-right: 8px;
@@ -857,19 +860,22 @@
         .variation-summary-grid {
             display: flex;
             flex-wrap: wrap;
-            gap: 20px 24px;
+            gap: 20px 28px;
             align-items: baseline;
+            justify-content: center;
         }
 
         .variation-item {
             display: flex;
             align-items: baseline;
+            justify-content: center;
             gap: 6px;
             flex-wrap: wrap;
+            text-align: center;
 
             .variation-label {
-                font-size: 12px;
-                color: #666;
+                font-size: 13px;
+                color: #555;
                 margin-right: 4px;
             }
             .variation-value {
@@ -939,10 +945,11 @@
             min-width: 1200px;
             border-collapse: collapse;
             font-size: 13px;
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
 
             th, td {
-                padding: 8px 6px;
-                text-align: left;
+                padding: 8px 10px;
+                text-align: center;
                 border-bottom: 1px solid #e0e0e0;
                 white-space: nowrap;
             }
@@ -954,20 +961,13 @@
                 position: sticky;
                 top: 0;
                 z-index: 10;
-                text-align: center;
             }
 
             td {
                 color: #333;
-                text-align: center;
-
-                &:first-child {
-                    text-align: left;
-                }
 
                 &.montant {
                     font-weight: 600;
-                    text-align: right;
 
                     &.negative {
                         color: #dc3545;
