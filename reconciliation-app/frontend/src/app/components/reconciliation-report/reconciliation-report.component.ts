@@ -683,9 +683,10 @@ export interface ReconciliationReportData {
                         </div>
                     </div>
 
-                    <div class="releve-section" *ngIf="releveEcartData && releveEcartData.length > 0">
+                    <!-- Section Trx BO J+1 : titre et ligne Volume BO toujours affichés -->
+                    <div class="releve-section">
                         <h5>Trx BO J+1</h5>
-                        <div class="releve-ecart-grid">
+                        <div class="releve-ecart-grid" *ngIf="releveEcartData && releveEcartData.length > 0">
                             <div class="releve-item">
                                 <span class="releve-label">Nombre total:</span>
                                 <span class="releve-value">{{getTotalEcartNombre() | number}}</span>
@@ -702,7 +703,7 @@ export interface ReconciliationReportData {
                                 <span class="releve-total-value">{{getTotalVolumeSum() | number}}</span>
                             </div>
                         </div>
-                        <div class="releve-ecart-details">
+                        <div class="releve-ecart-details" *ngIf="releveEcartData && releveEcartData.length > 0">
                             <table class="releve-table">
                                 <thead>
                                     <tr>
@@ -728,9 +729,7 @@ export interface ReconciliationReportData {
                                 </tbody>
                             </table>
                         </div>
-                    </div>
-                    <div class="releve-section" *ngIf="releveEcartData && releveEcartData.length === 0">
-                        <p class="releve-no-data">Aucune donnée trouvée dans Écart BO J+1 pour ce service et cette date.</p>
+                        <p class="releve-no-data" *ngIf="!releveEcartData || releveEcartData.length === 0">Aucune donnée trouvée dans Écart BO J+1 pour ce service et cette date.</p>
                     </div>
 
                     <!-- Section Données ENV PARTENAIRE J-1 -->
@@ -8204,37 +8203,35 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             applyValueStyle(rapportTrxRow);
             summarySheet.addRow([]);
             
-            // Trx BO J+1
+            // Trx BO J+1 : titre et ligne Volume BO toujours exportés
+            const ecartJ1Header = summarySheet.addRow(['Trx BO J+1']);
+            applySectionStyle(ecartJ1Header);
+            ecartJ1Header.height = 18;
             if (this.releveEcartData && this.releveEcartData.length > 0) {
-                const ecartJ1Header = summarySheet.addRow(['Trx BO J+1']);
-                applySectionStyle(ecartJ1Header);
-                ecartJ1Header.height = 18;
-                
                 const ecartJ1NombreRow = summarySheet.addRow(['Nombre total:', this.getTotalEcartNombre()]);
                 applyValueStyle(ecartJ1NombreRow);
                 const ecartJ1VolumeRow = summarySheet.addRow(['Volume total:', this.getTotalEcartVolume()]);
                 applyValueStyle(ecartJ1VolumeRow);
-                
-                // Volume BO (mis en évidence en vert comme dans le modal) : label, nombre de transactions, volume
-                const volumeBORow = summarySheet.addRow(['💰 Volume BO:', this.getTotalTransactionsSum(), this.getTotalVolumeSum()]);
-                volumeBORow.getCell(1).font = { size: 10, bold: true, color: { argb: 'FF28a745' } };
-                volumeBORow.getCell(2).font = { size: 10, bold: true, color: { argb: 'FF28a745' } };
-                volumeBORow.getCell(3).font = { size: 10, bold: true, color: { argb: 'FF28a745' } };
-                volumeBORow.getCell(2).numFmt = '#,##0';
-                volumeBORow.getCell(3).numFmt = '#,##0.00';
-                volumeBORow.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD4EDDA' } };
-                volumeBORow.getCell(2).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD4EDDA' } };
-                volumeBORow.getCell(3).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD4EDDA' } };
-                volumeBORow.eachCell(cell => {
-                    cell.border = {
-                        top: { style: 'thin', color: { argb: 'FFE0E0E0' } },
-                        bottom: { style: 'thin', color: { argb: 'FFE0E0E0' } },
-                        left: { style: 'thin', color: { argb: 'FFE0E0E0' } },
-                        right: { style: 'thin', color: { argb: 'FFE0E0E0' } }
-                    };
-                });
-                summarySheet.addRow([]);
             }
+            // Volume BO (toujours affiché, même sans donnée Trx BO J+1)
+            const volumeBORow = summarySheet.addRow(['💰 Volume BO:', this.getTotalTransactionsSum(), this.getTotalVolumeSum()]);
+            volumeBORow.getCell(1).font = { size: 10, bold: true, color: { argb: 'FF28a745' } };
+            volumeBORow.getCell(2).font = { size: 10, bold: true, color: { argb: 'FF28a745' } };
+            volumeBORow.getCell(3).font = { size: 10, bold: true, color: { argb: 'FF28a745' } };
+            volumeBORow.getCell(2).numFmt = '#,##0';
+            volumeBORow.getCell(3).numFmt = '#,##0.00';
+            volumeBORow.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD4EDDA' } };
+            volumeBORow.getCell(2).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD4EDDA' } };
+            volumeBORow.getCell(3).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD4EDDA' } };
+            volumeBORow.eachCell(cell => {
+                cell.border = {
+                    top: { style: 'thin', color: { argb: 'FFE0E0E0' } },
+                    bottom: { style: 'thin', color: { argb: 'FFE0E0E0' } },
+                    left: { style: 'thin', color: { argb: 'FFE0E0E0' } },
+                    right: { style: 'thin', color: { argb: 'FFE0E0E0' } }
+                };
+            });
+            summarySheet.addRow([]);
             
             // Données depuis Écart BO J-1
             if (this.releveEcartDataJ1 && this.releveEcartDataJ1.length > 0) {
