@@ -8,7 +8,6 @@ import { PopupService } from '../../services/popup.service';
 import { EcartSoldeService } from '../../services/ecart-solde.service';
 import { TrxSfService } from '../../services/trx-sf.service';
 import { ImpactOPService } from '../../services/impact-op.service';
-import { EcartBoSummaryService, EcartBoSummaryPrefill } from '../../services/ecart-bo-summary.service';
 import { EcartSolde } from '../../models/ecart-solde.model';
 import { TrxSfData } from '../../services/trx-sf.service';
 import { ImpactOP } from '../../models/impact-op.model';
@@ -78,8 +77,7 @@ export class EcartBoTableComponent implements OnInit, OnDestroy {
     private popupService: PopupService,
     private ecartSoldeService: EcartSoldeService,
     private trxSfService: TrxSfService,
-    private impactOPService: ImpactOPService,
-    private ecartBoSummaryService: EcartBoSummaryService
+    private impactOPService: ImpactOPService
   ) {}
 
   ngOnInit(): void {
@@ -1077,78 +1075,4 @@ export class EcartBoTableComponent implements OnInit, OnDestroy {
     this.router.navigate(['/ecart-bo-summary']);
   }
 
-  /**
-   * Construit les données de préremplissage pour ecart-bo-summary à partir des écarts BO affichés.
-   * Agence : "multiAgence" si plusieurs agences distinctes, sinon l'agence unique.
-   */
-  getEcartBoSummaryForEcartBoSummary(): EcartBoSummaryPrefill | null {
-    const records = this.filteredBoOnly;
-    if (!records || records.length === 0) {
-      return null;
-    }
-    const agenceKeys = ['Agence', 'agence', 'AGENCE', 'agency', 'Agency'];
-    const serviceKeys = ['Service', 'service', 'SERVICE', 'serv', 'Serv'];
-    const paysKeys = ['Pays', 'pays', 'PAYS', 'country', 'Country', 'GRX', 'grx'];
-    const dateKeys = ['Date', 'date', 'DATE', 'jour', 'Jour', 'JOUR', 'dateTransaction', 'DateTransaction', 'Date opération', 'dateOperation'];
-
-    const agencies = new Set<string>();
-    let service = '';
-    let pays = '';
-    let date = '';
-
-    for (const record of records) {
-      const ag = this.getFromRecord(record, agenceKeys);
-      if (ag) agencies.add(ag);
-      if (!service) service = this.getFromRecord(record, serviceKeys);
-      if (!pays) pays = this.getFromRecord(record, paysKeys);
-      if (!date) date = this.getFromRecord(record, dateKeys);
-    }
-
-    const agence = agencies.size > 1 ? 'multiAgence' : (Array.from(agencies)[0] || '');
-    const volume = this.calculateTotalVolumeBoOnly();
-    const nombre = records.length;
-
-    if (!agence || !service || !pays) {
-      return null;
-    }
-
-    let dateFormatted = date;
-    if (dateFormatted) {
-      try {
-        const d = new Date(dateFormatted);
-        if (!isNaN(d.getTime())) {
-          dateFormatted = d.toISOString().split('T')[0];
-        }
-      } catch {
-        dateFormatted = new Date().toISOString().split('T')[0];
-      }
-    } else {
-      dateFormatted = new Date().toISOString().split('T')[0];
-    }
-
-    return {
-      date: dateFormatted,
-      agence,
-      service,
-      pays,
-      nombre,
-      volume
-    };
-  }
-
-  /**
-   * Enregistre les données des écarts BO pour préremplir le formulaire ecart-bo-summary,
-   * puis navigue vers /ecart-bo-summary (le formulaire "Ajouter une nouvelle ligne" s'ouvrira prérempli).
-   */
-  saveToEcartBoSummary(): void {
-    const prefill = this.getEcartBoSummaryForEcartBoSummary();
-    if (!prefill) {
-      this.popupService.showWarning('Impossible de préparer les données : vérifiez que des écarts BO sont chargés et contiennent Agence, Service et Pays.');
-      return;
-    }
-    this.ecartBoSummaryService.setPrefillFromMatches(prefill);
-    this.router.navigate(['/ecart-bo-summary']);
-    this.popupService.showSuccess('Données prêtes. Le formulaire Écart BO Summary sera prérempli ; vous pouvez modifier et ajouter la ligne.');
-    this.cdr.markForCheck();
-  }
 }

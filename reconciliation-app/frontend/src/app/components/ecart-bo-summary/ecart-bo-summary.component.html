@@ -47,6 +47,23 @@
       >
         {{ isExporting ? '⏳ Export en cours...' : '📥 Exporter' }}
       </button>
+      <button 
+        (click)="deleteSelected()" 
+        class="delete-selection-button"
+        [disabled]="isBulkDeleting || selectedIds.size === 0"
+        title="Supprimer les lignes sélectionnées"
+      >
+        {{ isBulkDeleting ? '⏳ Suppression...' : '🗑️ Supprimer la sélection' }}{{ selectedIds.size > 0 ? ' (' + selectedIds.size + ')' : '' }}
+      </button>
+      <button 
+        *ngIf="selectedIds.size > 0"
+        (click)="clearSelection()" 
+        class="clear-selection-button"
+        [disabled]="isBulkDeleting"
+        title="Désélectionner tout"
+      >
+        ✕ Désélectionner
+      </button>
     </div>
   </div>
 
@@ -153,6 +170,15 @@
       <table class="summary-table">
         <thead>
           <tr>
+            <th class="th-checkbox">
+              <input 
+                type="checkbox" 
+                [checked]="getSelectableItemsFiltered().length > 0 && isAllSelectedFiltered" 
+                [indeterminate]="isSomeSelectedFiltered"
+                (change)="toggleSelectAllFiltered()"
+                title="Tout sélectionner / désélectionner (toutes les pages affichées)"
+              >
+            </th>
             <th>Date</th>
             <th>Agence</th>
             <th>Service</th>
@@ -166,7 +192,17 @@
           </tr>
         </thead>
         <tbody>
-          <tr *ngFor="let item of getPagedItems()" [class.manual-row]="item.isManual" [class.linked-row]="item.linkedId">
+          <tr *ngFor="let item of getPagedItems()" [class.manual-row]="item.isManual" [class.linked-row]="item.linkedId" [class.row-selected]="isSelected(item)">
+            <td class="td-checkbox">
+              <input 
+                *ngIf="item.id"
+                type="checkbox" 
+                [checked]="isSelected(item)"
+                (change)="toggleSelection(item)"
+                title="Sélectionner pour suppression"
+              >
+              <span *ngIf="!item.id" class="no-checkbox">—</span>
+            </td>
             <td>{{ item.date || '-' }}</td>
             <td>{{ item.agence || '-' }}</td>
             <td>{{ item.service || '-' }}</td>
@@ -208,7 +244,7 @@
             </td>
           </tr>
           <tr *ngIf="getPagedItems().length === 0">
-            <td colspan="10" class="no-data">Aucun écart BO trouvé</td>
+            <td colspan="11" class="no-data">Aucun écart BO trouvé</td>
           </tr>
         </tbody>
       </table>
@@ -372,7 +408,7 @@
           <label>ENV *</label>
           <select [(ngModel)]="addForm.env" class="form-control">
             <option value="BO">BO</option>
-            <option value="PARTENAIRE" selected>PARTENAIRE</option>
+            <option value="PARTENAIRE">PARTENAIRE</option>
           </select>
         </div>
         <div class="form-group">

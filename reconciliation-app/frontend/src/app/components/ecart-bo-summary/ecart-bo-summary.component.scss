@@ -157,6 +157,49 @@
           cursor: not-allowed;
         }
       }
+
+      .delete-selection-button {
+        padding: 10px 20px;
+        background: #dc3545;
+        color: white;
+        border: none;
+        border-radius: 6px;
+        font-size: 14px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        box-shadow: 0 2px 4px rgba(220, 53, 69, 0.2);
+
+        &:hover:not(:disabled) {
+          background: #c82333;
+          transform: translateY(-1px);
+          box-shadow: 0 4px 8px rgba(220, 53, 69, 0.3);
+        }
+
+        &:disabled {
+          opacity: 0.6;
+          cursor: not-allowed;
+        }
+      }
+
+      .clear-selection-button {
+        padding: 10px 14px;
+        background: #6c757d;
+        color: white;
+        border: none;
+        border-radius: 6px;
+        font-size: 13px;
+        cursor: pointer;
+
+        &:hover:not(:disabled) {
+          background: #5a6268;
+        }
+
+        &:disabled {
+          opacity: 0.6;
+          cursor: not-allowed;
+        }
+      }
     }
   }
 
@@ -283,6 +326,18 @@
             border-bottom: 2px solid #dee2e6;
             white-space: nowrap;
           }
+
+          .th-checkbox {
+            width: 44px;
+            min-width: 44px;
+            text-align: center;
+
+            input[type="checkbox"] {
+              cursor: pointer;
+              width: 18px;
+              height: 18px;
+            }
+          }
         }
 
         tbody {
@@ -291,6 +346,13 @@
 
             &:hover {
               background: #f8f9fa;
+            }
+
+            &.row-selected {
+              background: #fff3cd;
+              &:hover {
+                background: #ffe69c;
+              }
             }
 
             &.manual-row {
@@ -332,6 +394,23 @@
               // Garantit que la couleur de fond du <tr> couvre toutes les cellules
               // (évite notamment un fond blanc sur certaines cellules comme "Actions")
               background-color: inherit;
+
+              &.td-checkbox {
+                width: 44px;
+                min-width: 44px;
+                text-align: center;
+
+                input[type="checkbox"] {
+                  cursor: pointer;
+                  width: 18px;
+                  height: 18px;
+                }
+
+                .no-checkbox {
+                  color: #adb5bd;
+                  font-size: 14px;
+                }
+              }
 
               &.nombre-cell {
                 text-align: center;

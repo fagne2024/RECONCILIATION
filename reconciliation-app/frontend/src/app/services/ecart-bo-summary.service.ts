@@ -35,18 +35,52 @@ export interface EcartBoSummaryPrefill {
   volume: number;
 }
 
+/** Contexte d’origine pour la valeur par défaut d’ENV dans le formulaire d’ajout */
+export type EcartBoSummarySource = 'ecart-bo' | 'matches';
+
+/** Ligne en attente depuis la page écarts BO (multi-agence) : rien n'est enregistré tant que l'utilisateur ne clique pas sur Sauvegarder sur ecart-bo-summary. */
+export interface EcartBoSummaryPendingLine {
+  agence: string;
+  service: string;
+  pays: string;
+  montant: number;
+  date: string;
+  statut: string;
+  nombreTransactions: number;
+}
+
 @Injectable({
   providedIn: 'root'
 })
 export class EcartBoSummaryService {
   private apiUrl = '/api/ecart-bo-summary';
   private prefillFromMatches: EcartBoSummaryPrefill | null = null;
+  /** Lignes en attente depuis écarts BO (multi-agence) : affichées sur ecart-bo-summary, enregistrées uniquement au clic sur Sauvegarder. */
+  private pendingLinesFromEcartBo: EcartBoSummaryPendingLine[] | null = null;
+  /** ENV par défaut dans le formulaire "Ajouter" : BO si on vient des écarts BO, PARTENAIRE si on vient des correspondances. */
+  private defaultEnvForAddModal: 'BO' | 'PARTENAIRE' = 'PARTENAIRE';
 
   constructor(private http: HttpClient) { }
 
-  /** Définit les données à préremplir depuis la page matches (appelé avant navigation vers ecart-bo-summary). */
-  setPrefillFromMatches(data: EcartBoSummaryPrefill | null): void {
+  /**
+   * Définit les données à préremplir et le contexte (écarts BO ou correspondances).
+   * Contexte utilisé pour ENV par défaut : écarts BO → BO, correspondances → PARTENAIRE.
+   */
+  setPrefillFromMatches(data: EcartBoSummaryPrefill | null, source?: EcartBoSummarySource): void {
     this.prefillFromMatches = data;
+    if (source === 'ecart-bo') {
+      this.defaultEnvForAddModal = 'BO';
+    } else if (source === 'matches') {
+      this.defaultEnvForAddModal = 'PARTENAIRE';
+    }
+  }
+
+  /** Définit les lignes en attente depuis écarts BO (aucun enregistrement : l'utilisateur sauvegarde sur ecart-bo-summary). */
+  setPendingLinesFromEcartBo(lines: EcartBoSummaryPendingLine[], source?: EcartBoSummarySource): void {
+    this.pendingLinesFromEcartBo = lines;
+    if (source === 'ecart-bo') {
+      this.defaultEnvForAddModal = 'BO';
+    }
   }
 
   /** Récupère et consomme les données de préremplissage (utilisé par ecart-bo-summary au chargement). */
@@ -54,6 +88,18 @@ export class EcartBoSummaryService {
     const data = this.prefillFromMatches;
     this.prefillFromMatches = null;
     return data;
+  }
+
+  /** Récupère et consomme les lignes en attente depuis écarts BO (utilisé par ecart-bo-summary au chargement). */
+  getAndClearPendingLinesFromEcartBo(): EcartBoSummaryPendingLine[] | null {
+    const data = this.pendingLinesFromEcartBo;
+    this.pendingLinesFromEcartBo = null;
+    return data;
+  }
+
+  /** Valeur par défaut d’ENV pour le formulaire "Ajouter une ligne" selon la page d’origine. */
+  getDefaultEnvForAddModal(): 'BO' | 'PARTENAIRE' {
+    return this.defaultEnvForAddModal;
   }
 
   getEcartBoSummaries(filter?: EcartBoSummaryFilter): Observable<EcartBoSummary[]> {

@@ -4,7 +4,7 @@ import { Subscription, firstValueFrom } from 'rxjs';
 import { finalize } from 'rxjs/operators';
 import { ReconciliationResponse } from '../../models/reconciliation-response.model';
 import { AppStateService } from '../../services/app-state.service';
-import { EcartBoSummaryService, EcartBoSummaryPrefill } from '../../services/ecart-bo-summary.service';
+import { EcartBoSummaryService, EcartBoSummaryPrefill, EcartBoSummaryPendingLine } from '../../services/ecart-bo-summary.service';
 import { PopupService } from '../../services/popup.service';
 import { fixGarbledCharacters } from '../../utils/encoding-fixer';
 import { ModernPopupComponent } from '../modern-popup/modern-popup.component';
@@ -64,7 +64,10 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
   isSaving = false;
   isDeleting = false;
   deletingItemId: number | null = null;
+  isBulkDeleting = false;
   isExporting = false;
+  /** IDs des lignes sélectionnées pour suppression en masse */
+  selectedIds = new Set<number>();
   
   // Édition
   showEditModal = false;
@@ -126,9 +129,17 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
   ) {}
 
   ngOnInit(): void {
+    const pendingLines = this.ecartBoSummaryService.getAndClearPendingLinesFromEcartBo();
     // Charger les données de réconciliation en cours par défaut
     this.subscription.add(
       this.appStateService.getReconciliationResults().subscribe((response: ReconciliationResponse | null) => {
+        if (pendingLines && pendingLines.length > 0) {
+          this.applyPendingLinesFromEcartBo(pendingLines);
+          this.popupService.showSuccess(
+            `${pendingLines.length} ligne(s) prêtes. Utilisez le bouton « Sauvegarder » pour enregistrer les lignes de la page.`
+          );
+          return;
+        }
         if (response) {
           this.response = response;
           this.loadSummaryData(); // Charger les données de réconciliation en cours
@@ -138,11 +149,37 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
         }
       })
     );
-    // Préremplissage depuis la page /matches (bouton "Save vers Écart BO Summary")
+    // Préremplissage depuis écarts BO ou correspondances : afficher d’abord le popup, n’ouvrir le formulaire qu’après validation (OK).
     const prefill = this.ecartBoSummaryService.getAndClearPrefillFromMatches();
     if (prefill) {
-      setTimeout(() => this.openAddModalWithPrefill(prefill), 100);
+      this.popupService.showSuccess('Données prêtes. Le formulaire Écart BO Summary sera prérempli ; vous pouvez modifier et ajouter la ligne.')
+        .then(() => {
+          this.openAddModalWithPrefill(prefill);
+          this.cdr.markForCheck();
+        });
     }
+  }
+
+  /** Applique les lignes en attente venues de la page écarts BO (aucun enregistrement : l'utilisateur clique sur Sauvegarder pour enregistrer). */
+  private applyPendingLinesFromEcartBo(pending: EcartBoSummaryPendingLine[]): void {
+    this.summaryItems = pending.map(line => ({
+      date: line.date || new Date().toISOString().split('T')[0],
+      agence: line.agence || '',
+      service: line.service || '',
+      pays: line.pays || '',
+      nombre: line.nombreTransactions ?? 1,
+      montant: line.montant ?? 0,
+      statut: 'en cours' as const,
+      env: 'BO' as const,
+      originalRecords: [],
+      token: undefined
+    } as EcartBoSummaryItem));
+    this.uniqueAgencies = [...new Set(this.summaryItems.map(i => i.agence).filter(Boolean))].sort();
+    this.uniqueServices = [...new Set(this.summaryItems.map(i => i.service).filter(Boolean))].sort();
+    this.uniquePays = [...new Set(this.summaryItems.map(i => i.pays).filter(Boolean))].sort();
+    this.filteredItems = [...this.summaryItems];
+    this.updatePagination();
+    this.cdr.markForCheck();
   }
 
   loadByToken(): void {
@@ -264,8 +301,14 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
         return '';
       };
 
-      // Regrouper par agence + service + pays
-      const groupedByService = new Map<string, {
+      // Regrouper par agence + service + pays : une ligne par combinaison (agrégat nombre + volume)
+      const dateKeys = ['Date', 'date', 'DATE', 'jour', 'Jour', 'JOUR', 'dateTransaction', 'DateTransaction'];
+      const montantKeys = ['montant', 'Montant', 'MONTANT', 'amount', 'Amount', 'volume', 'Volume', 'VOLUME'];
+      const agenceKeys = ['Agence', 'agence', 'AGENCE', 'agency', 'Agency'];
+      const serviceKeys = ['Service', 'service', 'SERVICE', 'serv', 'Serv'];
+      const paysKeys = ['Pays', 'pays', 'PAYS', 'country', 'Country', 'GRX', 'grx'];
+
+      const groupedByAgence = new Map<string, {
         agence: string;
         service: string;
         pays: string;
@@ -275,17 +318,16 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
       }>();
 
       allData.forEach(record => {
-        const agence = getValue(record, ['Agence', 'agence', 'AGENCE', 'agency', 'Agency']) || 'Non spécifié';
-        const service = getValue(record, ['Service', 'service', 'SERVICE', 'serv', 'Serv']) || 'Non spécifié';
-        const pays = getValue(record, ['Pays', 'pays', 'PAYS', 'country', 'Country', 'GRX', 'grx']) || 'Non spécifié';
-        const date = getValue(record, ['Date', 'date', 'DATE', 'jour', 'Jour', 'JOUR']) || '';
-        const montantStr = getValue(record, ['montant', 'Montant', 'MONTANT', 'amount', 'Amount', 'volume', 'Volume', 'VOLUME']);
+        const agence = getValue(record, agenceKeys) || 'Non spécifié';
+        const service = getValue(record, serviceKeys) || 'Non spécifié';
+        const pays = getValue(record, paysKeys) || 'Non spécifié';
+        const date = getValue(record, dateKeys) || '';
+        const montantStr = getValue(record, montantKeys);
         const montant = montantStr ? parseFloat(montantStr.toString().replace(',', '.')) : 0;
-
         const key = `${agence}|${service}|${pays}`;
-        
-        if (!groupedByService.has(key)) {
-          groupedByService.set(key, {
+
+        if (!groupedByAgence.has(key)) {
+          groupedByAgence.set(key, {
             agence,
             service,
             pays,
@@ -294,25 +336,51 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
             totalMontant: 0
           });
         }
-
-        const group = groupedByService.get(key)!;
+        const group = groupedByAgence.get(key)!;
         group.records.push(record);
         group.totalMontant += isNaN(montant) ? 0 : montant;
       });
 
-      // Convertir en tableau d'items
-      this.summaryItems = Array.from(groupedByService.values()).map(group => ({
-        date: group.date,
-        agence: group.agence,
-        service: group.service,
-        pays: group.pays,
-        nombre: group.records.length,
-        montant: group.totalMontant,
-        statut: 'en cours' as 'ok' | 'en cours',
-        env: 'BO' as 'BO' | 'PARTENAIRE',
-        originalRecords: group.records,
-        token: undefined
-      }));
+      // Pour multiAgence : une ligne par enregistrement (pas de regroupement). Sinon : une ligne par groupe.
+      const items: EcartBoSummaryItem[] = [];
+      for (const group of groupedByAgence.values()) {
+        if (group.agence === 'multiAgence' && group.records.length > 0) {
+          for (const record of group.records) {
+            const agence = getValue(record, agenceKeys) || group.agence;
+            const service = getValue(record, serviceKeys) || group.service;
+            const pays = getValue(record, paysKeys) || group.pays;
+            const date = getValue(record, dateKeys) || group.date;
+            const montantStr = getValue(record, montantKeys);
+            const montant = montantStr ? parseFloat(montantStr.toString().replace(',', '.')) : 0;
+            items.push({
+              date,
+              agence,
+              service,
+              pays,
+              nombre: 1,
+              montant,
+              statut: 'en cours',
+              env: 'BO',
+              originalRecords: [record],
+              token: undefined
+            } as EcartBoSummaryItem);
+          }
+        } else {
+          items.push({
+            date: group.date,
+            agence: group.agence,
+            service: group.service,
+            pays: group.pays,
+            nombre: group.records.length,
+            montant: group.totalMontant,
+            statut: 'en cours',
+            env: 'BO',
+            originalRecords: group.records,
+            token: undefined
+          } as EcartBoSummaryItem);
+        }
+      }
+      this.summaryItems = items;
 
       // Lier les paires correspondantes (BO/PARTENAIRE) et mettre à jour les statuts
       this.linkMatchingPairs();
@@ -435,16 +503,16 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
     for (let i = 0; i < this.summaryItems.length; i++) {
       const item1 = this.summaryItems[i];
       
-      // Ignorer si déjà lié ou si pas d'ID (données non sauvegardées)
-      if (item1.linkedId || !item1.id || !item1.env) {
+      // Ignorer si déjà lié ou pas d'ENV (autoriser sans id pour affichage en mémoire)
+      if (item1.linkedId || !item1.env) {
         continue;
       }
       
       for (let j = i + 1; j < this.summaryItems.length; j++) {
         const item2 = this.summaryItems[j];
         
-        // Ignorer si déjà lié ou si pas d'ID (données non sauvegardées)
-        if (item2.linkedId || !item2.id || !item2.env) {
+        // Ignorer si déjà lié ou pas d'ENV
+        if (item2.linkedId || !item2.env) {
           continue;
         }
         
@@ -476,7 +544,7 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
               item2.linkedId = item1.id;
               const linkToken = (item1.token && item2.token && item1.token === item2.token)
                 ? item1.token
-                : `LINK-${Date.now()}-${item1.id}-${item2.id}`;
+                : `LINK-${Date.now()}-${item1.id ?? 'A'}-${item2.id ?? 'B'}`;
               item1.token = linkToken;
               item2.token = linkToken;
 
@@ -486,8 +554,8 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
               const item2Any: any = item2 as any;
               const item1Changed = item1Any.__originalStatut !== item1.statut || item1Any.__originalToken !== item1.token;
               const item2Changed = item2Any.__originalStatut !== item2.statut || item2Any.__originalToken !== item2.token;
-              if (item1Changed) itemsToUpdate.push(item1);
-              if (item2Changed) itemsToUpdate.push(item2);
+              if (item1Changed && item1.id) itemsToUpdate.push(item1);
+              if (item2Changed && item2.id) itemsToUpdate.push(item2);
 
               console.log(`✅ Lignes liées: ${item1.id} (${item1.env}) <-> ${item2.id} (${item2.env}) token=${linkToken}`);
               break;
@@ -499,24 +567,22 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
     
     // Étape 2: Correspondance un-à-plusieurs pour multiAgence
     // Une ligne PARTENAIRE (multiAgence) peut correspondre à plusieurs lignes BO
-    // Ensemble pour suivre les lignes BO déjà utilisées dans cette étape
     const usedBoItemIds = new Set<number>();
+    const usedBoItemRefs = new Set<EcartBoSummaryItem>(); // pour les lignes sans id (affichage en mémoire)
     
     for (const partenaireItem of this.summaryItems) {
-      // Ignorer si déjà lié, pas d'ID, ou pas PARTENAIRE
-      if (partenaireItem.linkedId || !partenaireItem.id || partenaireItem.env !== 'PARTENAIRE') {
+      if (partenaireItem.linkedId || partenaireItem.env !== 'PARTENAIRE') {
         continue;
       }
       
-      // Chercher des lignes BO non liées avec le même service et pays
       const matchingBoItems: EcartBoSummaryItem[] = [];
       let totalNombre = 0;
       
       console.log(`🔍 Recherche correspondance pour PARTENAIRE: ID=${partenaireItem.id}, Date=${partenaireItem.date}, Service=${partenaireItem.service}, Pays=${partenaireItem.pays}, Nombre=${partenaireItem.nombre}`);
       
       for (const boItem of this.summaryItems) {
-        // Ignorer si déjà lié, pas d'ID, pas BO, ou déjà utilisé dans une correspondance un-à-plusieurs
-        if (boItem.linkedId || !boItem.id || boItem.env !== 'BO' || usedBoItemIds.has(boItem.id)) {
+        const boAlreadyUsed = boItem.id ? usedBoItemIds.has(boItem.id) : usedBoItemRefs.has(boItem);
+        if (boItem.linkedId || boItem.env !== 'BO' || boAlreadyUsed) {
           continue;
         }
         
@@ -550,24 +616,25 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
       console.log(`📊 Résultat pour PARTENAIRE ${partenaireItem.id}: ${matchingBoItems.length} ligne(s) BO trouvée(s), Total nombre=${totalNombre}, Attendu=${partenaireItem.nombre}`);
       
       if (matchingBoItems.length > 0 && totalNombre === partenaireItem.nombre) {
-        const boIds = matchingBoItems.map(i => i.id).join('-');
+        const boIds = matchingBoItems.map(i => i.id).filter((id): id is number => id != null).join('-') || 'x';
         const existing = partenaireItem.token && matchingBoItems.every(b => b.token === partenaireItem.token)
           ? partenaireItem.token
           : null;
-        const linkToken = existing || `LINK-${Date.now()}-P${partenaireItem.id}-B${boIds}`;
+        const linkToken = existing || `LINK-${Date.now()}-P${partenaireItem.id ?? 'x'}-B${boIds}`;
         partenaireItem.token = linkToken;
         if (partenaireItem.statut !== 'ok') partenaireItem.statut = 'ok';
         const partenaireAny: any = partenaireItem as any;
         const partenaireChanged = partenaireAny.__originalStatut !== partenaireItem.statut || partenaireAny.__originalToken !== partenaireItem.token;
-        if (partenaireChanged) itemsToUpdate.push(partenaireItem);
+        if (partenaireChanged && partenaireItem.id) itemsToUpdate.push(partenaireItem);
 
         for (const boItem of matchingBoItems) {
           boItem.token = linkToken;
           if (boItem.statut !== 'ok') boItem.statut = 'ok';
           const boAny: any = boItem as any;
           const boChanged = boAny.__originalStatut !== boItem.statut || boAny.__originalToken !== boItem.token;
-          if (boChanged) itemsToUpdate.push(boItem);
-          usedBoItemIds.add(boItem.id!);
+          if (boChanged && boItem.id) itemsToUpdate.push(boItem);
+          if (boItem.id) usedBoItemIds.add(boItem.id);
+          else usedBoItemRefs.add(boItem);
         }
 
         console.log(`✅ Correspondance un-à-plusieurs: ${partenaireItem.id} (PARTENAIRE) <-> ${matchingBoItems.length} ligne(s) BO (${boIds}) token=${linkToken}`);
@@ -712,6 +779,9 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
         this.ecartBoSummaryService.updateEcartBoSummary(item.id, updateData)
       );
 
+      const itemAny = item as any;
+      itemAny.__originalStatut = item.statut;
+      itemAny.__originalToken = item.token;
       console.log(`✅ Statut${item.token ? ' et token' : ''} mis à jour pour la ligne ${item.id}`);
     } catch (error: any) {
       // Gérer l'erreur 429 (Too Many Requests) avec retry
@@ -978,38 +1048,37 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
   }
 
   async saveData(): Promise<void> {
-    if (this.filteredItems.length === 0) {
+    // Sauvegarder uniquement les lignes affichées sur la page courante
+    const displayedItems = this.getPagedItems();
+    if (displayedItems.length === 0) {
       this.popupService.showWarning('❌ Aucune donnée à sauvegarder.');
       return;
     }
 
-    // Filtrer seulement les éléments avec statut "en cours" ou demander confirmation pour tous
-    const itemsToSave = this.filteredItems.filter(item => item.statut === 'en cours');
+    const itemsToSave = displayedItems.filter(item => item.statut === 'en cours');
     
     if (itemsToSave.length === 0) {
-      this.popupService.showWarning('❌ Aucun écart avec statut "en cours" à sauvegarder.');
+      this.popupService.showWarning('❌ Aucun écart avec statut "en cours" parmi les lignes affichées.');
       return;
     }
 
-    // Afficher un popup pour choisir la date à appliquer
     // Date par défaut : J-1 (hier)
     const yesterday = new Date();
     yesterday.setDate(yesterday.getDate() - 1);
     const defaultDate = yesterday.toISOString().split('T')[0];
     
     const selectedDate = await this.popupService.showDateInput(
-      `Veuillez sélectionner la date à appliquer aux ${itemsToSave.length} écart(s) BO :`,
+      `Veuillez sélectionner la date à appliquer aux ${itemsToSave.length} ligne(s) affichée(s) (page courante) :`,
       'Sélection de la date pour la sauvegarde',
-      defaultDate // Date par défaut : J-1
+      defaultDate
     );
 
     if (!selectedDate) {
-      // L'utilisateur a annulé la sélection de date
       return;
     }
 
     const confirmed = await this.popupService.showConfirm(
-      `📋 ${itemsToSave.length} écart(s) BO seront sauvegardés avec la date ${selectedDate}. Continuer ?`,
+      `📋 ${itemsToSave.length} ligne(s) affichée(s) (page courante) seront sauvegardées avec la date ${selectedDate}. Continuer ?`,
       'Confirmation de sauvegarde'
     );
 
@@ -1108,7 +1177,8 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
         // Afficher un message d'avertissement avec les détails
         await this.popupService.showWarning(message, '⚠️ Doublons détectés');
       } else {
-        const message = `✅ ${result.count} résumé(s) sauvegardé(s) avec succès !`;
+        const count = itemsToSave.length;
+        const message = `✅ ${count} ligne(s) affichée(s) (page courante) sauvegardée(s) avec succès !`;
         await this.popupService.showSuccess(message);
       }
       
@@ -1127,6 +1197,7 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
 
   openAddModal(): void {
     const today = new Date();
+    const defaultEnv = this.ecartBoSummaryService.getDefaultEnvForAddModal();
     this.addForm = {
       date: today.toISOString().split('T')[0],
       agence: '',
@@ -1135,7 +1206,7 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
       nombre: 0,
       volume: 0,
       statut: 'en cours',
-      env: 'PARTENAIRE',
+      env: defaultEnv,
       token: ''
     };
     this.showAddModal = true;
@@ -1147,6 +1218,7 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
    * Le mode manuel reste disponible (l'utilisateur peut modifier avant d'ajouter).
    */
   openAddModalWithPrefill(prefill: EcartBoSummaryPrefill): void {
+    const defaultEnv = this.ecartBoSummaryService.getDefaultEnvForAddModal();
     this.addForm = {
       date: prefill.date || new Date().toISOString().split('T')[0],
       agence: prefill.agence || '',
@@ -1155,7 +1227,7 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
       nombre: prefill.nombre ?? 0,
       volume: prefill.volume ?? 0,
       statut: 'en cours',
-      env: 'PARTENAIRE',
+      env: defaultEnv,
       token: ''
     };
     this.showAddModal = true;
@@ -1164,6 +1236,7 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
 
   closeAddModal(): void {
     this.showAddModal = false;
+    const defaultEnv = this.ecartBoSummaryService.getDefaultEnvForAddModal();
     this.addForm = {
       date: '',
       agence: '',
@@ -1172,7 +1245,7 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
       nombre: 0,
       volume: 0,
       statut: 'en cours',
-      env: 'PARTENAIRE',
+      env: defaultEnv,
       token: ''
     };
     this.cdr.markForCheck();
@@ -1214,7 +1287,7 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
         nombreTransactions: this.addForm.nombre,
         montantTotal: this.addForm.volume || 0,
         statut: this.addForm.statut === 'ok' ? 'OK' : 'EN_COURS',
-        env: this.addForm.env || 'PARTENAIRE',
+        env: this.addForm.env || this.ecartBoSummaryService.getDefaultEnvForAddModal(),
         commentaire: `Ajout manuel - ${this.addForm.nombre} transaction(s)`
       };
       if (this.addForm.token && this.addForm.token.trim()) {
@@ -1282,6 +1355,100 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
     } finally {
       this.isDeleting = false;
       this.deletingItemId = null;
+      this.cdr.markForCheck();
+    }
+  }
+
+  /** Éléments de la page courante qui ont un id (pour affichage checkbox). */
+  getSelectableItemsOnPage(): EcartBoSummaryItem[] {
+    return this.getPagedItems().filter(item => item.id != null);
+  }
+
+  /** Tous les éléments filtrés (toutes les pages) qui ont un id et sont supprimables. */
+  getSelectableItemsFiltered(): EcartBoSummaryItem[] {
+    return this.filteredItems.filter(item => item.id != null);
+  }
+
+  isSelected(item: EcartBoSummaryItem): boolean {
+    return item.id != null && this.selectedIds.has(item.id);
+  }
+
+  toggleSelection(item: EcartBoSummaryItem): void {
+    if (item.id == null) return;
+    if (this.selectedIds.has(item.id)) {
+      this.selectedIds.delete(item.id);
+    } else {
+      this.selectedIds.add(item.id);
+    }
+    this.cdr.markForCheck();
+  }
+
+  /** True si tous les éléments sélectionnables (toutes les pages / filtrés) sont sélectionnés. */
+  get isAllSelectedFiltered(): boolean {
+    const selectable = this.getSelectableItemsFiltered();
+    return selectable.length > 0 && selectable.every(item => this.selectedIds.has(item.id!));
+  }
+
+  /** True si au moins une ligne (et pas toutes) parmi les filtrées est sélectionnée (checkbox indéterminée). */
+  get isSomeSelectedFiltered(): boolean {
+    const selectable = this.getSelectableItemsFiltered();
+    if (selectable.length === 0) return false;
+    const selectedCount = selectable.filter(item => this.selectedIds.has(item.id!)).length;
+    return selectedCount > 0 && selectedCount < selectable.length;
+  }
+
+  /** Sélectionne ou désélectionne tous les éléments sélectionnables (toutes les pages en cours). */
+  toggleSelectAllFiltered(): void {
+    const selectable = this.getSelectableItemsFiltered();
+    if (this.isAllSelectedFiltered) {
+      selectable.forEach(item => this.selectedIds.delete(item.id!));
+    } else {
+      selectable.forEach(item => this.selectedIds.add(item.id!));
+    }
+    this.cdr.markForCheck();
+  }
+
+  clearSelection(): void {
+    this.selectedIds.clear();
+    this.cdr.markForCheck();
+  }
+
+  async deleteSelected(): Promise<void> {
+    if (this.selectedIds.size === 0) {
+      this.popupService.showWarning('Aucune ligne sélectionnée.');
+      return;
+    }
+    const count = this.selectedIds.size;
+    const confirmed = await ModernPopupComponent.showConfirm(
+      `Êtes-vous sûr de vouloir supprimer les ${count} ligne(s) sélectionnée(s) ?`,
+      '🗑️ Suppression en masse'
+    );
+    if (!confirmed) return;
+
+    this.isBulkDeleting = true;
+    this.cdr.markForCheck();
+    const ids = Array.from(this.selectedIds);
+    let successCount = 0;
+    let errorCount = 0;
+    try {
+      for (const id of ids) {
+        try {
+          await firstValueFrom(this.ecartBoSummaryService.deleteEcartBoSummary(id));
+          this.summaryItems = this.summaryItems.filter(i => i.id !== id);
+          this.selectedIds.delete(id);
+          successCount++;
+        } catch {
+          errorCount++;
+        }
+      }
+      this.applyFilters();
+      if (errorCount === 0) {
+        this.popupService.showSuccess(`✅ ${successCount} ligne(s) supprimée(s) avec succès.`);
+      } else {
+        this.popupService.showWarning(`${successCount} supprimée(s), ${errorCount} erreur(s).`);
+      }
+    } finally {
+      this.isBulkDeleting = false;
       this.cdr.markForCheck();
     }
   }

@@ -800,9 +800,8 @@ export class MatchesTableComponent implements OnInit, OnDestroy {
       this.popupService.showWarning('Impossible de préparer les données : vérifiez que des correspondances sont chargées et contiennent Agence, Service et Pays.');
       return;
     }
-    this.ecartBoSummaryService.setPrefillFromMatches(prefill);
+    this.ecartBoSummaryService.setPrefillFromMatches(prefill, 'matches');
     this.router.navigate(['/ecart-bo-summary']);
-    this.popupService.showSuccess('Données prêtes. Le formulaire Écart BO Summary sera prérempli ; vous pouvez modifier et ajouter la ligne.');
     this.cdr.markForCheck();
   }
 }
