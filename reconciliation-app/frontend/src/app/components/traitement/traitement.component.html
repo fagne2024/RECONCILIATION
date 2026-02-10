@@ -44,6 +44,293 @@
   </div>
   <div *ngIf="successMsg.upload" class="success-msg" [innerHTML]="successMsg.upload"></div>
 
+<div class="total-energie-section">
+  <div class="section-header">
+    <h4>
+      <i class="fas fa-bolt"></i> Total Energie
+      <button type="button" class="btn btn-sm btn-outline-info" (click)="toggleSection('totalEnergie')">
+        <i class="fas fa-eye" *ngIf="!showSections.totalEnergie"></i>
+        <i class="fas fa-eye-slash" *ngIf="showSections.totalEnergie"></i>
+        {{ showSections.totalEnergie ? 'Masquer' : 'Afficher' }}
+      </button>
+    </h4>
+  </div>
+
+  <div *ngIf="showSections.totalEnergie" class="section-content">
+    <div class="total-energie-grid">
+      <div class="total-energie-actions">
+        <div class="file-upload-group">
+          <label class="form-label">
+            <i class="fas fa-file-upload"></i> Fichier 1 : Code PDA, Station, Numéro SIM
+          </label>
+          <div class="file-picker">
+            <input type="file"
+                   id="totalEnergieFile1Input"
+                   accept=".csv,.xls,.xlsx"
+                   (change)="onTotalEnergieFile1Selected($event)"
+                   [disabled]="totalEnergieIsProcessing">
+            <button type="button"
+                    class="reset-btn"
+                    (click)="resetTotalEnergieSelection()"
+                    [disabled]="!totalEnergieFile1 || totalEnergieIsProcessing">
+              Réinitialiser
+            </button>
+          </div>
+          <div class="file-meta" *ngIf="totalEnergieFile1">
+            <strong>{{ totalEnergieFile1.name }}</strong>
+            <small>{{ (totalEnergieFile1.size / (1024 * 1024)) | number:'1.0-2' }} MB</small>
+            <div *ngIf="totalEnergieData1.length > 0" class="file-info">
+              <span class="info-badge">{{ totalEnergieData1.length }} lignes</span>
+              <span class="info-badge">{{ totalEnergieColumns1.length }} colonnes</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="file-upload-group">
+          <label class="form-label">
+            <i class="fas fa-file-upload"></i> Fichier 2 : avec colonne "N° de compte"
+          </label>
+          <div class="file-picker">
+            <input type="file"
+                   id="totalEnergieFile2Input"
+                   accept=".csv,.xls,.xlsx"
+                   (change)="onTotalEnergieFile2Selected($event)"
+                   [disabled]="totalEnergieIsProcessing">
+          </div>
+          <div class="file-meta" *ngIf="totalEnergieFile2">
+            <strong>{{ totalEnergieFile2.name }}</strong>
+            <small>{{ (totalEnergieFile2.size / (1024 * 1024)) | number:'1.0-2' }} MB</small>
+            <div *ngIf="totalEnergieData2.length > 0" class="file-info">
+              <span class="info-badge">{{ totalEnergieData2.length }} lignes</span>
+              <span class="info-badge">{{ totalEnergieColumns2.length }} colonnes</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="action-buttons">
+          <button type="button"
+                  class="main-action"
+                  (click)="processTotalEnergieFiles()"
+                  [disabled]="!totalEnergieFile1 || !totalEnergieFile2 || totalEnergieIsProcessing">
+            {{ totalEnergieIsProcessing ? 'Traitement en cours...' : 'Traiter et fusionner' }}
+          </button>
+
+          <button type="button"
+                  class="export-action"
+                  (click)="exportTotalEnergieResult()"
+                  [disabled]="totalEnergieMergedData.length === 0 || totalEnergieIsProcessing">
+            <i class="fas fa-download"></i> Exporter le résultat
+          </button>
+        </div>
+
+        <!-- Comparaison BO: Agence / PARTNER: Station -->
+        <div class="total-energie-compare-block">
+          <h5 class="compare-subtitle"><i class="fas fa-balance-scale"></i> Comparaison BO: Agence / PARTNER: Station</h5>
+          <p class="compare-description">Chargez un fichier contenant les colonnes <strong>BO: Agence</strong> et <strong>PARTNER: Station</strong>. Une colonne <strong>Commentaire</strong> sera ajoutée : « OK » si les valeurs sont égales, sinon « Trx à annuler sur '[agence]' et à créer sur '[station]' ».</p>
+          <div class="file-upload-group">
+            <label class="form-label">
+              <i class="fas fa-file-upload"></i> Fichier (CSV, XLS, XLSX)
+            </label>
+            <div class="file-picker">
+              <input type="file"
+                     id="totalEnergieCompareFileInput"
+                     accept=".csv,.xls,.xlsx"
+                     (change)="onTotalEnergieCompareFileSelected($event)"
+                     [disabled]="totalEnergieCompareIsProcessing">
+              <button type="button"
+                      class="reset-btn"
+                      (click)="resetTotalEnergieCompareSelection()"
+                      [disabled]="!totalEnergieCompareFile || totalEnergieCompareIsProcessing">
+                Réinitialiser
+              </button>
+            </div>
+            <div class="file-meta" *ngIf="totalEnergieCompareFile">
+              <strong>{{ totalEnergieCompareFile.name }}</strong>
+              <small>{{ (totalEnergieCompareFile.size / 1024) | number:'1.0-0' }} Ko</small>
+              <div *ngIf="totalEnergieCompareData.length > 0" class="file-info">
+                <span class="info-badge">{{ totalEnergieCompareData.length }} lignes</span>
+                <span class="info-badge">{{ totalEnergieCompareColumns.length }} colonnes</span>
+              </div>
+            </div>
+          </div>
+          <div class="action-buttons compare-actions">
+            <button type="button"
+                    class="main-action"
+                    (click)="processTotalEnergieCompare()"
+                    [disabled]="totalEnergieCompareData.length === 0 || totalEnergieCompareIsProcessing">
+              {{ totalEnergieCompareIsProcessing ? 'Comparaison en cours...' : 'Comparer et ajouter Commentaire' }}
+            </button>
+            <button type="button"
+                    class="export-action"
+                    (click)="exportTotalEnergieCompareResult()"
+                    [disabled]="totalEnergieCompareResult.length === 0 || totalEnergieCompareIsProcessing">
+              <i class="fas fa-download"></i> Exporter le résultat comparaison
+            </button>
+          </div>
+          <div *ngIf="totalEnergieCompareProgress && !totalEnergieCompareIsProcessing" class="status-message">
+            {{ totalEnergieCompareProgress }}
+          </div>
+          <div *ngIf="successMsg.totalEnergieCompare" class="success-msg">{{ successMsg.totalEnergieCompare }}</div>
+          <div *ngIf="errorMsg.totalEnergieCompare" class="error-msg">{{ errorMsg.totalEnergieCompare }}</div>
+        </div>
+
+        <div *ngIf="totalEnergieIsProcessing" class="processing-status">
+          <div class="spinner"></div>
+          <p>{{ totalEnergieProgress }}</p>
+        </div>
+
+        <div *ngIf="totalEnergieProgress && !totalEnergieIsProcessing" class="status-message">
+          {{ totalEnergieProgress }}
+        </div>
+
+        <div *ngIf="successMsg.totalEnergie" class="success-msg">{{ successMsg.totalEnergie }}</div>
+        <div *ngIf="errorMsg.totalEnergie" class="error-msg">{{ errorMsg.totalEnergie }}</div>
+      </div>
+
+      <div class="total-energie-summary">
+        <h5>Fonctionnement</h5>
+        <ul>
+          <li>Le fichier 1 doit contenir les colonnes : <strong>Code PDA</strong>, <strong>Station</strong> et <strong>Numéro SIM</strong></li>
+          <li>Le fichier 2 doit contenir une colonne <strong>N° de compte</strong></li>
+          <li>La correspondance se fait entre "N° de compte" (fichier 2) et "Numéro SIM" (fichier 1)</li>
+          <li><strong>Toutes les lignes du fichier 2 sont conservées</strong> dans le résultat</li>
+          <li>Si une correspondance est trouvée, les colonnes du fichier 1 sont ajoutées à la ligne du fichier 2</li>
+          <li><strong>Les doublons sont autorisés</strong> : si plusieurs lignes du fichier 1 correspondent, plusieurs lignes sont créées</li>
+          <li>Si aucune correspondance, la ligne du fichier 2 est conservée avec les colonnes du fichier 1 vides</li>
+          <li>Le résultat peut être exporté en fichier Excel</li>
+          <li><strong>Comparaison BO / PARTNER :</strong> un second outil permet de charger un fichier avec les colonnes <strong>BO: Agence</strong> et <strong>PARTNER: Station</strong>, d’ajouter une colonne <strong>Commentaire</strong> (« OK » si égal, sinon « Trx à annuler sur… et à créer sur… ») et d’exporter le résultat.</li>
+        </ul>
+
+        <div *ngIf="totalEnergieMergedData.length > 0" class="merge-results">
+          <h5>Résultats de la fusion</h5>
+          <div class="results-stats">
+            <div class="stat-item">
+              <span class="stat-label">Lignes fusionnées :</span>
+              <span class="stat-value">{{ totalEnergieMergedData.length }}</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-label">Colonnes totales :</span>
+              <span class="stat-value">{{ totalEnergieMergedColumns.length }}</span>
+            </div>
+          </div>
+          
+          <div class="preview-table" *ngIf="totalEnergieMergedData.length > 0 && totalEnergieMergedData.length <= 100">
+            <h6>Aperçu des données fusionnées ({{ totalEnergieMergedData.length }} lignes)</h6>
+            <div class="table-responsive">
+              <table>
+                <thead>
+                  <tr>
+                    <th *ngFor="let col of totalEnergieMergedColumns.slice(0, 10)">{{ col }}</th>
+                    <th *ngIf="totalEnergieMergedColumns.length > 10">...</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr *ngFor="let row of totalEnergieMergedData.slice(0, 10)">
+                    <td *ngFor="let col of totalEnergieMergedColumns.slice(0, 10)">{{ row[col] || '' }}</td>
+                    <td *ngIf="totalEnergieMergedColumns.length > 10">...</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <small *ngIf="totalEnergieMergedData.length > 10">Aperçu limité à 10 lignes. Utilisez l'export pour voir toutes les données.</small>
+          </div>
+        </div>
+
+        <div *ngIf="totalEnergieCompareResult.length > 0" class="merge-results compare-results">
+          <h5>Résultats de la comparaison BO / PARTNER</h5>
+          <div class="results-stats">
+            <div class="stat-item">
+              <span class="stat-label">Lignes :</span>
+              <span class="stat-value">{{ totalEnergieCompareResult.length }}</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-label">Colonnes :</span>
+              <span class="stat-value">{{ totalEnergieCompareResultColumns.length }}</span>
+            </div>
+          </div>
+          
+          <!-- Récapitulatif groupé par station (commentaires non OK) -->
+          <div *ngIf="totalEnergieCompareSummary.length > 0" class="compare-summary-section">
+            <div class="summary-header">
+              <h6><i class="fas fa-chart-bar"></i> Récapitulatif par station (commentaires non OK)</h6>
+              <button type="button"
+                      class="export-summary-btn"
+                      (click)="exportTotalEnergieCompareSummary()"
+                      [disabled]="totalEnergieCompareIsProcessing"
+                      title="Exporter le récapitulatif">
+                <i class="fas fa-download"></i> Exporter le récapitulatif
+              </button>
+            </div>
+            <div class="summary-table-container">
+              <table class="summary-table">
+                <thead>
+                  <tr>
+                    <th>Station (PARTNER)</th>
+                    <th>Nombre de commentaires non OK</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr *ngFor="let item of totalEnergieCompareSummary" [class]="getSummarySeverityClass(item.count)">
+                    <td class="station-name">
+                      <div class="station-content">
+                        <i class="fas fa-building"></i>
+                        <span>{{ item.station }}</span>
+                      </div>
+                    </td>
+                    <td class="count-cell">
+                      <div class="count-wrapper">
+                        <span class="count-badge" [class]="getSummarySeverityClass(item.count)">
+                          {{ item.count }}
+                        </span>
+                        <div class="progress-bar-container">
+                          <div class="progress-bar" 
+                               [class]="getSummarySeverityClass(item.count)"
+                               [style.width.%]="getSummarySeverityPercentage(item.count)">
+                          </div>
+                        </div>
+                        <span class="percentage-label">{{ getSummarySeverityPercentage(item.count) }}%</span>
+                      </div>
+                    </td>
+                  </tr>
+                </tbody>
+                <tfoot>
+                  <tr>
+                    <td class="total-label"><strong>Total</strong></td>
+                    <td class="total-count">
+                      <strong>{{ getTotalEnergieCompareSummaryTotal() }}</strong>
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
+          
+          <div class="preview-table" *ngIf="totalEnergieCompareResult.length > 0 && totalEnergieCompareResult.length <= 500">
+            <h6>Aperçu avec colonne Commentaire ({{ totalEnergieCompareResult.length }} lignes)</h6>
+            <div class="table-responsive">
+              <table>
+                <thead>
+                  <tr>
+                    <th *ngFor="let col of totalEnergieCompareResultColumns.slice(0, 8)">{{ col }}</th>
+                    <th *ngIf="totalEnergieCompareResultColumns.length > 8">...</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr *ngFor="let row of totalEnergieCompareResult.slice(0, 15)">
+                    <td *ngFor="let col of totalEnergieCompareResultColumns.slice(0, 8)">{{ row[col] || '' }}</td>
+                    <td *ngIf="totalEnergieCompareResultColumns.length > 8">...</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <small *ngIf="totalEnergieCompareResult.length > 15">Aperçu limité à 15 lignes. Utilisez « Exporter le résultat comparaison » pour tout récupérer.</small>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="sheet-split-section">
   <div class="section-header">
     <h4>

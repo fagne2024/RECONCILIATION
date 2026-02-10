@@ -232,6 +232,28 @@ export class TraitementComponent implements OnInit, AfterViewInit {
   sheetSplitColumnWidths: number[] = [8, 12, 10, 15, 12, 12, 10, 8, 15, 10, 12, 15, 10, 12, 12, 20, 15];
   sheetSplitZipName: string = '';
 
+  // --- PROPRIÉTÉS POUR TOTAL ENERGIE ---
+  totalEnergieFile1: File | null = null; // Premier fichier avec Code PDA, Station, Numéro SIM
+  totalEnergieFile2: File | null = null; // Deuxième fichier avec N° de compte
+  totalEnergieData1: any[] = []; // Données du premier fichier
+  totalEnergieData2: any[] = []; // Données du deuxième fichier
+  totalEnergieColumns1: string[] = []; // Colonnes du premier fichier
+  totalEnergieColumns2: string[] = []; // Colonnes du deuxième fichier
+  totalEnergieMergedData: any[] = []; // Données fusionnées
+  totalEnergieMergedColumns: string[] = []; // Colonnes fusionnées
+  totalEnergieIsProcessing: boolean = false;
+  totalEnergieProgress: string = '';
+
+  // Comparaison BO Agence / PARTNER Station (Total Energie)
+  totalEnergieCompareFile: File | null = null;
+  totalEnergieCompareData: any[] = [];
+  totalEnergieCompareColumns: string[] = [];
+  totalEnergieCompareResult: any[] = [];
+  totalEnergieCompareResultColumns: string[] = [];
+  totalEnergieCompareIsProcessing: boolean = false;
+  totalEnergieCompareProgress: string = '';
+  totalEnergieCompareSummary: Array<{ station: string; count: number }> = []; // Récapitulatif groupé par station
+
   constructor(
     private cd: ChangeDetectorRef, 
     private fb: FormBuilder,
@@ -2616,6 +2638,7 @@ export class TraitementComponent implements OnInit, AfterViewInit {
     dedup: false,
     format: false,
     sheetSplit: false,
+    totalEnergie: false,
     preview: true  // Aperçu des données combinées visible par défaut
   };
 
@@ -2792,6 +2815,527 @@ export class TraitementComponent implements OnInit, AfterViewInit {
     Object.keys(this.showSections).forEach(key => {
       this.showSections[key as keyof typeof this.showSections] = shouldShow;
     });
+  }
+
+  // --- MÉTHODES POUR TOTAL ENERGIE ---
+  async onTotalEnergieFile1Selected(event: Event) {
+    const input = event.target as HTMLInputElement;
+    if (input.files && input.files.length > 0) {
+      this.totalEnergieFile1 = input.files[0];
+      this.totalEnergieProgress = `Fichier 1 sélectionné : ${this.totalEnergieFile1.name}`;
+      this.successMsg.totalEnergie = '';
+      this.errorMsg.totalEnergie = '';
+      
+      try {
+        await this.loadTotalEnergieFile1();
+        this.showSuccess('totalEnergie', `Fichier 1 chargé : ${this.totalEnergieData1.length} lignes détectées`);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Erreur lors du chargement du fichier 1';
+        this.showError('totalEnergie', message);
+      }
+    }
+  }
+
+  async onTotalEnergieFile2Selected(event: Event) {
+    const input = event.target as HTMLInputElement;
+    if (input.files && input.files.length > 0) {
+      this.totalEnergieFile2 = input.files[0];
+      this.totalEnergieProgress = `Fichier 2 sélectionné : ${this.totalEnergieFile2.name}`;
+      this.successMsg.totalEnergie = '';
+      this.errorMsg.totalEnergie = '';
+      
+      try {
+        await this.loadTotalEnergieFile2();
+        this.showSuccess('totalEnergie', `Fichier 2 chargé : ${this.totalEnergieData2.length} lignes détectées`);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Erreur lors du chargement du fichier 2';
+        this.showError('totalEnergie', message);
+      }
+    }
+  }
+
+  async loadTotalEnergieFile1() {
+    if (!this.totalEnergieFile1) return;
+
+    const file = this.totalEnergieFile1;
+    const fileName = file.name.toLowerCase();
+    const isExcel = fileName.endsWith('.xls') || fileName.endsWith('.xlsx');
+    const isCsv = fileName.endsWith('.csv');
+
+    if (!isExcel && !isCsv) {
+      throw new Error('Format de fichier non supporté. Utilisez CSV, XLS ou XLSX.');
+    }
+
+    if (isExcel) {
+      const buffer = await file.arrayBuffer();
+      const workbook = XLSX.read(buffer, { type: 'array' });
+      const sheetName = workbook.SheetNames[0];
+      const sheet = workbook.Sheets[sheetName];
+      this.totalEnergieData1 = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+    } else {
+      const text = await file.text();
+      const result = Papa.parse(text, {
+        header: true,
+        skipEmptyLines: true,
+        delimiter: this.detectedDelimiter || ';'
+      });
+      this.totalEnergieData1 = result.data as any[];
+    }
+
+    if (this.totalEnergieData1.length === 0) {
+      throw new Error('Le fichier est vide ou ne contient pas de données.');
+    }
+
+    // Normaliser les clés en minuscules et détecter les colonnes
+    this.totalEnergieData1 = this.totalEnergieData1.map(row => {
+      const normalized: any = {};
+      Object.keys(row).forEach(k => {
+        normalized[String(k).trim()] = row[k];
+      });
+      return normalized;
+    });
+
+    this.totalEnergieColumns1 = Object.keys(this.totalEnergieData1[0] || {});
+    
+    // Vérifier que les colonnes requises existent
+    const requiredCols = ['Code PDA', 'Station', 'Numéro SIM'];
+    const normalizedCols = this.totalEnergieColumns1.map(col => col.trim());
+    const missingCols = requiredCols.filter(reqCol => 
+      !normalizedCols.some(col => col.toLowerCase() === reqCol.toLowerCase())
+    );
+
+    if (missingCols.length > 0) {
+      throw new Error(`Colonnes manquantes dans le fichier 1 : ${missingCols.join(', ')}. Colonnes trouvées : ${this.totalEnergieColumns1.join(', ')}`);
+    }
+  }
+
+  async loadTotalEnergieFile2() {
+    if (!this.totalEnergieFile2) return;
+
+    const file = this.totalEnergieFile2;
+    const fileName = file.name.toLowerCase();
+    const isExcel = fileName.endsWith('.xls') || fileName.endsWith('.xlsx');
+    const isCsv = fileName.endsWith('.csv');
+
+    if (!isExcel && !isCsv) {
+      throw new Error('Format de fichier non supporté. Utilisez CSV, XLS ou XLSX.');
+    }
+
+    if (isExcel) {
+      const buffer = await file.arrayBuffer();
+      const workbook = XLSX.read(buffer, { type: 'array' });
+      const sheetName = workbook.SheetNames[0];
+      const sheet = workbook.Sheets[sheetName];
+      this.totalEnergieData2 = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+    } else {
+      const text = await file.text();
+      const result = Papa.parse(text, {
+        header: true,
+        skipEmptyLines: true,
+        delimiter: this.detectedDelimiter || ';'
+      });
+      this.totalEnergieData2 = result.data as any[];
+    }
+
+    if (this.totalEnergieData2.length === 0) {
+      throw new Error('Le fichier est vide ou ne contient pas de données.');
+    }
+
+    // Normaliser les clés et détecter les colonnes
+    this.totalEnergieData2 = this.totalEnergieData2.map(row => {
+      const normalized: any = {};
+      Object.keys(row).forEach(k => {
+        normalized[String(k).trim()] = row[k];
+      });
+      return normalized;
+    });
+
+    this.totalEnergieColumns2 = Object.keys(this.totalEnergieData2[0] || {});
+    
+    // Vérifier que la colonne "N° de compte" existe
+    const normalizedCols = this.totalEnergieColumns2.map(col => col.trim());
+    const hasAccountCol = normalizedCols.some(col => 
+      col.toLowerCase().includes('n°') && col.toLowerCase().includes('compte') ||
+      col.toLowerCase().includes('numero') && col.toLowerCase().includes('compte') ||
+      col.toLowerCase() === 'n° de compte'
+    );
+
+    if (!hasAccountCol) {
+      throw new Error(`Colonne "N° de compte" non trouvée dans le fichier 2. Colonnes trouvées : ${this.totalEnergieColumns2.join(', ')}`);
+    }
+  }
+
+  async processTotalEnergieFiles() {
+    if (!this.totalEnergieFile1 || !this.totalEnergieFile2) {
+      this.showError('totalEnergie', 'Veuillez sélectionner les deux fichiers.');
+      return;
+    }
+
+    if (this.totalEnergieData1.length === 0 || this.totalEnergieData2.length === 0) {
+      this.showError('totalEnergie', 'Veuillez charger les deux fichiers avant de traiter.');
+      return;
+    }
+
+    this.totalEnergieIsProcessing = true;
+    this.totalEnergieProgress = 'Traitement en cours...';
+
+    try {
+      // Trouver la colonne "N° de compte" dans le fichier 2
+      const accountCol = this.totalEnergieColumns2.find(col => {
+        const normalized = col.trim().toLowerCase();
+        return normalized.includes('n°') && normalized.includes('compte') ||
+               normalized.includes('numero') && normalized.includes('compte') ||
+               normalized === 'n° de compte';
+      });
+
+      if (!accountCol) {
+        throw new Error('Colonne "N° de compte" non trouvée dans le fichier 2.');
+      }
+
+      // Trouver la colonne "Numéro SIM" dans le fichier 1
+      const simCol = this.totalEnergieColumns1.find(col => {
+        const normalized = col.trim().toLowerCase();
+        return normalized.includes('numéro') && normalized.includes('sim') ||
+               normalized.includes('numero') && normalized.includes('sim') ||
+               normalized === 'numéro sim';
+      });
+
+      if (!simCol) {
+        throw new Error('Colonne "Numéro SIM" non trouvée dans le fichier 1.');
+      }
+
+      // Créer un index du fichier 1 par Numéro SIM (tableau pour gérer les doublons)
+      const file1Index: { [key: string]: any[] } = {};
+      this.totalEnergieData1.forEach(row => {
+        const simNumber = String(row[simCol] || '').trim();
+        if (simNumber) {
+          // Garder toutes les lignes avec le même Numéro SIM (doublons autorisés)
+          if (!file1Index[simNumber]) {
+            file1Index[simNumber] = [];
+          }
+          file1Index[simNumber].push(row);
+        }
+      });
+
+      // Fusionner les données
+      this.totalEnergieMergedData = [];
+      this.totalEnergieMergedColumns = [...this.totalEnergieColumns2];
+
+      // Ajouter les colonnes du fichier 1 qui ne sont pas déjà présentes
+      this.totalEnergieColumns1.forEach(col => {
+        if (!this.totalEnergieMergedColumns.includes(col)) {
+          this.totalEnergieMergedColumns.push(col);
+        }
+      });
+
+      let matchCount = 0;
+      let totalRowsCreated = 0;
+      
+      // Parcourir toutes les lignes du fichier 2 (même sans correspondance)
+      this.totalEnergieData2.forEach(row => {
+        const accountNumber = String(row[accountCol] || '').trim();
+        const matchedRows = file1Index[accountNumber] || [];
+
+        if (matchedRows.length > 0) {
+          // Si correspondance(s) trouvée(s), créer une ligne pour chaque correspondance
+          matchedRows.forEach(matchedRow => {
+            const mergedRow: any = { ...row };
+            this.totalEnergieColumns1.forEach(col => {
+              mergedRow[col] = matchedRow[col] || '';
+            });
+            this.totalEnergieMergedData.push(mergedRow);
+            totalRowsCreated++;
+          });
+          matchCount++;
+        } else {
+          // Si aucune correspondance, garder la ligne du fichier 2 avec colonnes du fichier 1 vides
+          const mergedRow: any = { ...row };
+          this.totalEnergieColumns1.forEach(col => {
+            mergedRow[col] = '';
+          });
+          this.totalEnergieMergedData.push(mergedRow);
+          totalRowsCreated++;
+        }
+      });
+
+      this.totalEnergieProgress = `Traitement terminé : ${matchCount} lignes avec correspondance(s) sur ${this.totalEnergieData2.length} lignes du fichier 2. Total : ${totalRowsCreated} lignes créées`;
+      this.showSuccess('totalEnergie', `Fusion réussie : ${totalRowsCreated} lignes créées (${matchCount} avec correspondance, ${this.totalEnergieData2.length - matchCount} sans correspondance)`);
+    } catch (error) {
+      console.error('Erreur lors du traitement Total Energie:', error);
+      const message = error instanceof Error ? error.message : 'Erreur inconnue lors du traitement.';
+      this.showError('totalEnergie', message);
+    } finally {
+      this.totalEnergieIsProcessing = false;
+    }
+  }
+
+  async exportTotalEnergieResult() {
+    if (this.totalEnergieMergedData.length === 0) {
+      this.showError('totalEnergie', 'Aucune donnée à exporter. Veuillez d\'abord traiter les fichiers.');
+      return;
+    }
+
+    try {
+      this.totalEnergieIsProcessing = true;
+      this.totalEnergieProgress = 'Export en cours...';
+
+      const worksheet = XLSX.utils.json_to_sheet(this.totalEnergieMergedData);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Résultat');
+
+      const fileName = `total_energie_resultat_${new Date().toISOString().split('T')[0]}.xlsx`;
+      XLSX.writeFile(workbook, fileName);
+
+      this.totalEnergieProgress = 'Export terminé';
+      this.showSuccess('totalEnergie', `Fichier exporté : ${fileName}`);
+    } catch (error) {
+      console.error('Erreur lors de l\'export Total Energie:', error);
+      const message = error instanceof Error ? error.message : 'Erreur lors de l\'export.';
+      this.showError('totalEnergie', message);
+    } finally {
+      this.totalEnergieIsProcessing = false;
+    }
+  }
+
+  resetTotalEnergieSelection() {
+    this.totalEnergieFile1 = null;
+    this.totalEnergieFile2 = null;
+    this.totalEnergieData1 = [];
+    this.totalEnergieData2 = [];
+    this.totalEnergieColumns1 = [];
+    this.totalEnergieColumns2 = [];
+    this.totalEnergieMergedData = [];
+    this.totalEnergieMergedColumns = [];
+    this.totalEnergieProgress = '';
+    this.successMsg.totalEnergie = '';
+    this.errorMsg.totalEnergie = '';
+
+    const input1 = document.getElementById('totalEnergieFile1Input') as HTMLInputElement | null;
+    const input2 = document.getElementById('totalEnergieFile2Input') as HTMLInputElement | null;
+    if (input1) input1.value = '';
+    if (input2) input2.value = '';
+  }
+
+  // --- COMPARAISON BO AGENCE / PARTNER STATION (TOTAL ENERGIE) ---
+  async onTotalEnergieCompareFileSelected(event: Event) {
+    const input = event.target as HTMLInputElement;
+    if (input.files && input.files.length > 0) {
+      this.totalEnergieCompareFile = input.files[0];
+      this.totalEnergieCompareProgress = `Fichier sélectionné : ${this.totalEnergieCompareFile.name}`;
+      this.totalEnergieCompareResult = [];
+      this.totalEnergieCompareResultColumns = [];
+      this.successMsg.totalEnergieCompare = '';
+      this.errorMsg.totalEnergieCompare = '';
+      try {
+        await this.loadTotalEnergieCompareFile();
+        this.showSuccess('totalEnergieCompare', `Fichier chargé : ${this.totalEnergieCompareData.length} lignes. Cliquez sur "Comparer et ajouter Commentaire" pour lancer la comparaison.`);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Erreur lors du chargement du fichier.';
+        this.showError('totalEnergieCompare', message);
+      }
+    }
+  }
+
+  async loadTotalEnergieCompareFile() {
+    if (!this.totalEnergieCompareFile) return;
+    const file = this.totalEnergieCompareFile;
+    const fileName = file.name.toLowerCase();
+    const isExcel = fileName.endsWith('.xls') || fileName.endsWith('.xlsx');
+    const isCsv = fileName.endsWith('.csv');
+    if (!isExcel && !isCsv) {
+      throw new Error('Format non supporté. Utilisez CSV, XLS ou XLSX.');
+    }
+    if (isExcel) {
+      const buffer = await file.arrayBuffer();
+      const workbook = XLSX.read(buffer, { type: 'array' });
+      const sheetName = workbook.SheetNames[0];
+      const sheet = workbook.Sheets[sheetName];
+      this.totalEnergieCompareData = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+    } else {
+      const text = await file.text();
+      const result = Papa.parse(text, {
+        header: true,
+        skipEmptyLines: true,
+        delimiter: this.detectedDelimiter || ';'
+      });
+      this.totalEnergieCompareData = result.data as any[];
+    }
+    if (this.totalEnergieCompareData.length === 0) {
+      throw new Error('Le fichier est vide ou ne contient pas de données.');
+    }
+    this.totalEnergieCompareData = this.totalEnergieCompareData.map((row: any) => {
+      const normalized: any = {};
+      Object.keys(row).forEach(k => {
+        normalized[String(k).trim()] = row[k];
+      });
+      return normalized;
+    });
+    this.totalEnergieCompareColumns = Object.keys(this.totalEnergieCompareData[0] || {});
+    const normalizedCols = this.totalEnergieCompareColumns.map(col => col.trim().toLowerCase());
+    const hasBoAgence = normalizedCols.some(c =>
+      (c.includes('bo') && c.includes('agence')) || c === 'bo: agence' || c === 'bo:agence'
+    );
+    const hasPartnerStation = normalizedCols.some(c =>
+      (c.includes('partner') && c.includes('station')) || c === 'partner: station' || c === 'partner:station'
+    );
+    if (!hasBoAgence) {
+      throw new Error(`Colonne "BO: Agence" non trouvée. Colonnes : ${this.totalEnergieCompareColumns.join(', ')}`);
+    }
+    if (!hasPartnerStation) {
+      throw new Error(`Colonne "PARTNER: Station" non trouvée. Colonnes : ${this.totalEnergieCompareColumns.join(', ')}`);
+    }
+  }
+
+  processTotalEnergieCompare() {
+    if (this.totalEnergieCompareData.length === 0) {
+      this.showError('totalEnergieCompare', 'Veuillez d\'abord charger un fichier.');
+      return;
+    }
+    this.totalEnergieCompareIsProcessing = true;
+    this.successMsg.totalEnergieCompare = '';
+    this.errorMsg.totalEnergieCompare = '';
+    try {
+      const colBoAgence = this.totalEnergieCompareColumns.find(c => {
+        const n = c.trim().toLowerCase().replace(/\s+/g, ' ');
+        return n === 'bo: agence' || n === 'bo:agence' || (n.includes('bo') && n.includes('agence'));
+      });
+      const colPartnerStation = this.totalEnergieCompareColumns.find(c => {
+        const n = c.trim().toLowerCase().replace(/\s+/g, ' ');
+        return n === 'partner: station' || n === 'partner:station' || (n.includes('partner') && n.includes('station'));
+      });
+      if (!colBoAgence || !colPartnerStation) {
+        throw new Error('Colonnes "BO: Agence" ou "PARTNER: Station" introuvables.');
+      }
+      const COMMENTAIRE_KEY = 'Commentaire';
+      this.totalEnergieCompareResult = this.totalEnergieCompareData.map((row: any) => {
+        const agence = String(row[colBoAgence] ?? '').trim();
+        const station = String(row[colPartnerStation] ?? '').trim();
+        const commentaire =
+          agence === station
+            ? 'OK'
+            : `Trx à annuler sur '${agence}' et à créer sur '${station}'`;
+        return { ...row, [COMMENTAIRE_KEY]: commentaire };
+      });
+      this.totalEnergieCompareResultColumns = [...this.totalEnergieCompareColumns];
+      if (!this.totalEnergieCompareResultColumns.includes(COMMENTAIRE_KEY)) {
+        this.totalEnergieCompareResultColumns.push(COMMENTAIRE_KEY);
+      }
+      const okCount = this.totalEnergieCompareResult.filter(r => r[COMMENTAIRE_KEY] === 'OK').length;
+      const diffCount = this.totalEnergieCompareResult.length - okCount;
+      
+      // Calculer le récapitulatif groupé par station pour les commentaires non OK
+      const summaryMap: { [station: string]: number } = {};
+      const partnerStationCol = colPartnerStation; // Garder référence pour le scope
+      this.totalEnergieCompareResult.forEach((row: any) => {
+        if (row[COMMENTAIRE_KEY] !== 'OK') {
+          const station = String(row[partnerStationCol] ?? '').trim() || '(vide)';
+          summaryMap[station] = (summaryMap[station] || 0) + 1;
+        }
+      });
+      
+      // Convertir en tableau et trier par nombre décroissant
+      this.totalEnergieCompareSummary = Object.keys(summaryMap)
+        .map(station => ({ station, count: summaryMap[station] }))
+        .sort((a, b) => b.count - a.count);
+      
+      this.totalEnergieCompareProgress = `Comparaison terminée : ${okCount} OK, ${diffCount} à traiter.`;
+      this.showSuccess('totalEnergieCompare', `Comparaison terminée : ${this.totalEnergieCompareResult.length} lignes (${okCount} OK, ${diffCount} avec écart).`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Erreur lors de la comparaison.';
+      this.showError('totalEnergieCompare', message);
+    } finally {
+      this.totalEnergieCompareIsProcessing = false;
+    }
+  }
+
+  async exportTotalEnergieCompareResult() {
+    if (this.totalEnergieCompareResult.length === 0) {
+      this.showError('totalEnergieCompare', 'Aucune donnée à exporter. Lancez d\'abord la comparaison.');
+      return;
+    }
+    try {
+      this.totalEnergieCompareIsProcessing = true;
+      const worksheet = XLSX.utils.json_to_sheet(this.totalEnergieCompareResult);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Comparaison');
+      const fileName = `total_energie_comparaison_bo_partner_${new Date().toISOString().split('T')[0]}.xlsx`;
+      XLSX.writeFile(workbook, fileName);
+      this.showSuccess('totalEnergieCompare', `Fichier exporté : ${fileName}`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Erreur lors de l\'export.';
+      this.showError('totalEnergieCompare', message);
+    } finally {
+      this.totalEnergieCompareIsProcessing = false;
+    }
+  }
+
+  getTotalEnergieCompareSummaryTotal(): number {
+    return this.totalEnergieCompareSummary.reduce((sum, item) => sum + item.count, 0);
+  }
+
+  getSummarySeverityClass(count: number): string {
+    const total = this.getTotalEnergieCompareSummaryTotal();
+    if (total === 0) return 'severity-low';
+    const percentage = (count / total) * 100;
+    if (percentage >= 30 || count >= 50) return 'severity-high';
+    if (percentage >= 10 || count >= 20) return 'severity-medium';
+    return 'severity-low';
+  }
+
+  getSummarySeverityPercentage(count: number): number {
+    const total = this.getTotalEnergieCompareSummaryTotal();
+    if (total === 0) return 0;
+    return Math.round((count / total) * 100);
+  }
+
+  async exportTotalEnergieCompareSummary() {
+    if (this.totalEnergieCompareSummary.length === 0) {
+      this.showError('totalEnergieCompare', 'Aucun récapitulatif à exporter. Lancez d\'abord la comparaison.');
+      return;
+    }
+    try {
+      this.totalEnergieCompareIsProcessing = true;
+      
+      // Préparer les données pour l'export avec le total
+      const exportData = this.totalEnergieCompareSummary.map(item => ({
+        'Station (PARTNER)': item.station,
+        'Nombre de commentaires non OK': item.count
+      }));
+      
+      // Ajouter la ligne de total
+      exportData.push({
+        'Station (PARTNER)': 'TOTAL',
+        'Nombre de commentaires non OK': this.getTotalEnergieCompareSummaryTotal()
+      });
+      
+      const worksheet = XLSX.utils.json_to_sheet(exportData);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Récapitulatif');
+      
+      const fileName = `total_energie_recap_stations_${new Date().toISOString().split('T')[0]}.xlsx`;
+      XLSX.writeFile(workbook, fileName);
+      
+      this.showSuccess('totalEnergieCompare', `Récapitulatif exporté : ${fileName}`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Erreur lors de l\'export du récapitulatif.';
+      this.showError('totalEnergieCompare', message);
+    } finally {
+      this.totalEnergieCompareIsProcessing = false;
+    }
+  }
+
+  resetTotalEnergieCompareSelection() {
+    this.totalEnergieCompareFile = null;
+    this.totalEnergieCompareData = [];
+    this.totalEnergieCompareColumns = [];
+    this.totalEnergieCompareResult = [];
+    this.totalEnergieCompareResultColumns = [];
+    this.totalEnergieCompareSummary = [];
+    this.totalEnergieCompareProgress = '';
+    this.successMsg.totalEnergieCompare = '';
+    this.errorMsg.totalEnergieCompare = '';
+    const input = document.getElementById('totalEnergieCompareFileInput') as HTMLInputElement | null;
+    if (input) input.value = '';
   }
 
   // --- MÉTHODES DE SÉPARATION DES FEUILLES EXCEL ---
