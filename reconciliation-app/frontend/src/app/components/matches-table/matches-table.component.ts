@@ -116,9 +116,8 @@ export class MatchesTableComponent implements OnInit, OnDestroy {
     this.filteredMatches = [...cached];
     this.searchIndex.clear();
     this.buildSearchIndex(this.filteredMatches);
-    const sample = this.filteredMatches.slice(0, Math.min(100, this.filteredMatches.length));
-    if (sample.length > 0) {
-      this.initializeColumnsOptimized(sample);
+    if (this.filteredMatches.length > 0) {
+      this.initializeColumnsOptimized(this.filteredMatches);
     }
     this.applyFilters();
     this.isLoading = false;
@@ -157,18 +156,19 @@ export class MatchesTableComponent implements OnInit, OnDestroy {
 
       if (total <= MatchesTableComponent.FAST_PATH_THRESHOLD) {
         this.filteredMatches = filtered.slice(0);
-        this.initializeColumnsOptimized(this.filteredMatches.slice(0, Math.min(100, total)));
         this.applyFilters();
         this.cdr.markForCheck();
         requestAnimationFrame(() => {
           this.buildSearchIndex(this.filteredMatches);
+          if (this.filteredMatches.length > 0) {
+            this.initializeColumnsOptimized(this.filteredMatches);
+          }
           this.applyFilters();
           this.cdr.markForCheck();
         });
       } else {
         const sampleSize = Math.min(1500, total);
         this.filteredMatches = filtered.slice(0, sampleSize);
-        this.initializeColumnsOptimized(this.filteredMatches.slice(0, Math.min(100, this.filteredMatches.length)));
         this.loadProgress = 10;
         this.cdr.markForCheck();
         await new Promise<void>(r => setTimeout(r, 0));
@@ -185,6 +185,9 @@ export class MatchesTableComponent implements OnInit, OnDestroy {
           }
         }
         this.buildSearchIndex(this.filteredMatches);
+        if (this.filteredMatches.length > 0) {
+          this.initializeColumnsOptimized(this.filteredMatches);
+        }
         this.applyFilters();
       }
     } finally {
@@ -200,10 +203,14 @@ export class MatchesTableComponent implements OnInit, OnDestroy {
   private buildSearchIndex(matches: Match[], startIndex: number = 0): void {
     matches.forEach((match, localIndex) => {
       const globalIndex = startIndex + localIndex;
+      const partnerListValues = (match.partnerDataList || []).flatMap(record =>
+        record ? Object.values(record) : []
+      );
       const searchableText = [
         match.key || '',
         ...Object.values(match.boData || {}),
-        ...Object.values(match.partnerData || {})
+        ...Object.values(match.partnerData || {}),
+        ...partnerListValues
       ].map(val => String(val).toLowerCase()).join(' ');
       
       // Indexer chaque mot
@@ -239,11 +246,8 @@ export class MatchesTableComponent implements OnInit, OnDestroy {
     const boKeysSet = new Set<string>();
     const partnerKeysSet = new Set<string>();
     
-    // Optimisation : ne parcourir qu'un échantillon représentatif (max 100 matches)
-    const sampleSize = Math.min(100, sampleMatches.length);
-    const sample = sampleMatches.slice(0, sampleSize);
-    
-    sample.forEach(match => {
+    // Parcourir l'ensemble des matches fournis pour récupérer toutes les colonnes BO et partenaire
+    sampleMatches.forEach(match => {
       // Collecter les clés BO
       if (match.boData) {
         Object.keys(match.boData).forEach(key => boKeysSet.add(key));
@@ -431,34 +435,102 @@ export class MatchesTableComponent implements OnInit, OnDestroy {
     }
   }
 
+  /**
+   * Normalise un nom de colonne pour comparaison tolérante :
+   * - corrige l'encodage
+   * - met en minuscule
+   * - enlève accents, espaces et ponctuation
+   */
+  private normalizeColumnName(name: string): string {
+    const fixed = fixGarbledCharacters(name || '');
+    return fixed
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '') // enlever accents
+      .replace(/[^a-z0-9]/g, ''); // garder uniquement lettres/chiffres
+  }
+
+  /**
+   * Récupère une valeur dans un enregistrement en tolérant :
+   * - les problèmes d'encodage (via fixGarbledCharacters)
+   * - les variations de libellés (ex: "PARTNER: Station", "Station (PARTNER)", "Numro SIM", etc.)
+   */
+  private getValueByFlexibleKey(record: Record<string, any> | undefined | null, correctedKey: string): string {
+    if (!record) {
+      return '';
+    }
+
+    // 1) Tentative directe via getOriginalKey (corrige l'encodage simple)
+    const originalKey = this.getOriginalKey(record, correctedKey);
+    const directValue = record[originalKey];
+    if (directValue !== undefined && directValue !== null && String(directValue).trim() !== '') {
+      return String(directValue).trim();
+    }
+
+    // 2) Fallback très tolérant sur le nom de colonne (gère "PARTNER: Station", "Station (PARTNER)", "Numro SIM", etc.)
+    const targetNorm = this.normalizeColumnName(correctedKey);
+    if (!targetNorm) {
+      return '';
+    }
+
+    const keys = Object.keys(record);
+
+    for (const k of keys) {
+      const keyNorm = this.normalizeColumnName(k);
+      if (!keyNorm) continue;
+
+      if (
+        keyNorm === targetNorm ||            // équivalence stricte après normalisation
+        keyNorm.includes(targetNorm) ||      // la clé contient la cible (ex: partnerstation contient station)
+        targetNorm.includes(keyNorm)         // la cible contient la clé
+      ) {
+        const v = record[k];
+        if (v !== undefined && v !== null && String(v).trim() !== '') {
+          return String(v).trim();
+        }
+      }
+    }
+
+    return '';
+  }
+
   getValue(match: Match, column: string): string {
     const [prefix, ...keyParts] = column.split('_');
     const key = keyParts.join('_');
     
     if (prefix === 'BO') {
-      return match.boData?.[key] || '';
+      return this.getValueByFlexibleKey(match.boData, key);
     } else if (prefix === 'PARTNER') {
       // Essayer d'abord dans partnerData (peut avoir des suffixes _PARTNER_X)
       if (match.partnerData) {
-        // Chercher la clé exacte
-        if (match.partnerData[key]) {
-          return match.partnerData[key];
+        const partnerData = match.partnerData;
+
+        // 1) Chercher la clé "de base" (ex: Station, Numéro SIM, Code PDA)
+        const baseValue = this.getValueByFlexibleKey(partnerData, key);
+        if (baseValue) {
+          return baseValue;
         }
-        // Chercher avec différents suffixes
+
+        // 2) Chercher avec différents suffixes (_PARTNER_X)
         for (let i = 1; i <= 10; i++) {
           const suffixedKey = `${key}_PARTNER_${i}`;
-          if (match.partnerData[suffixedKey]) {
-            return match.partnerData[suffixedKey];
+          const suffixedValue = this.getValueByFlexibleKey(partnerData, suffixedKey);
+          if (suffixedValue) {
+            return suffixedValue;
           }
         }
       }
       
       // Essayer dans partnerDataList
       if (match.partnerDataList && match.partnerDataList.length > 0) {
-        // Prendre la valeur du premier enregistrement partenaire
-        const firstPartner = match.partnerDataList[0];
-        if (firstPartner && firstPartner[key]) {
-          return firstPartner[key];
+        // Parcourir tous les enregistrements partenaires et retourner la première valeur non vide
+        for (const partnerRecord of match.partnerDataList) {
+          if (partnerRecord) {
+            const value = this.getValueByFlexibleKey(partnerRecord, key);
+            if (value) {
+              return value;
+            }
+          }
         }
       }
       
