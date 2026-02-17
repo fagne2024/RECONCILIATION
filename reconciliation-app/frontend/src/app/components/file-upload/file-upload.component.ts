@@ -7,6 +7,7 @@ import * as Papa from 'papaparse';
 import * as XLSX from 'xlsx';
 import { Router } from '@angular/router';
 import { AppStateService } from '../../services/app-state.service';
+import { ReconciliationTabsService } from '../../services/reconciliation-tabs.service';
 import { forkJoin, Subscription } from 'rxjs';
 import { PopupService } from '../../services/popup.service';
 import { ProgressIndicatorService } from '../../services/progress-indicator.service';
@@ -149,6 +150,7 @@ export class FileUploadComponent implements OnDestroy {
         private orangeMoneyUtilsService: OrangeMoneyUtilsService,
         private router: Router, 
         private appStateService: AppStateService,
+        private reconciliationTabsService: ReconciliationTabsService,
         private popupService: PopupService,
         private progressIndicatorService: ProgressIndicatorService,
         private cd: ChangeDetectorRef
@@ -4563,8 +4565,8 @@ export class FileUploadComponent implements OnDestroy {
                             
                             // Sauvegarder les données traitées dans le service d'état
                             this.appStateService.setReconciliationData(processedBoData, processedPartnerData);
-                            
-                            // Sauvegarder le résultat de la réconciliation
+                            this.reconciliationTabsService.clearAllData();
+                            // Sauvegarder le résultat de la réconciliation (nouvelle réco = cache onglets vidé)
                             this.appStateService.setReconciliationResults(result);
                             this.appStateService.setCurrentStep(4);
                             

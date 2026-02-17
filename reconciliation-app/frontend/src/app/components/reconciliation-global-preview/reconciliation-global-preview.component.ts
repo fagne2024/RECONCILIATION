@@ -4,6 +4,7 @@ import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { Subscription } from 'rxjs';
 import { ChartConfiguration, ChartData, ChartType } from 'chart.js';
 import { BaseChartDirective } from 'ng2-charts';
+import ChartDataLabels from 'chartjs-plugin-datalabels';
 
 export interface ReconciliationReportData {
     id?: number;
@@ -41,6 +42,7 @@ interface PartnerData {
 })
 export class ReconciliationGlobalPreviewComponent implements OnInit, OnDestroy {
     @ViewChild(BaseChartDirective) chart?: BaseChartDirective;
+    ChartDataLabels = ChartDataLabels;
     
     loading = true;
     error: string | null = null;
@@ -84,6 +86,11 @@ export class ReconciliationGlobalPreviewComponent implements OnInit, OnDestroy {
             legend: {
                 display: false
             },
+            datalabels: {
+                color: '#000000',
+                font: { size: 11, weight: 'bold' },
+                formatter: (value: number) => value != null ? value.toFixed(1) + 'K' : ''
+            },
             tooltip: {
                 callbacks: {
                     label: (context) => {
@@ -93,9 +100,17 @@ export class ReconciliationGlobalPreviewComponent implements OnInit, OnDestroy {
             }
         },
         scales: {
+            x: {
+                ticks: {
+                    color: '#000000',
+                    font: { size: 11, weight: 'bold' }
+                }
+            },
             y: {
                 beginAtZero: true,
                 ticks: {
+                    color: '#000000',
+                    font: { size: 11, weight: 'bold' },
                     callback: function(value) {
                         return value + 'K';
                     }
@@ -120,7 +135,20 @@ export class ReconciliationGlobalPreviewComponent implements OnInit, OnDestroy {
         maintainAspectRatio: false,
         plugins: {
             legend: {
-                position: 'bottom'
+                position: 'bottom',
+                labels: {
+                    color: '#000000',
+                    font: { size: 12, weight: 'bold' }
+                }
+            },
+            datalabels: {
+                color: '#000000',
+                font: { size: 12, weight: 'bold' },
+                formatter: (value: number, ctx: any) => {
+                    const total = (ctx.dataset?.data as number[]).reduce((a, b) => a + b, 0);
+                    const pct = total ? ((value / total) * 100).toFixed(1) : '0';
+                    return value + ' (' + pct + '%)';
+                }
             },
             tooltip: {
                 callbacks: {
@@ -150,7 +178,16 @@ export class ReconciliationGlobalPreviewComponent implements OnInit, OnDestroy {
         maintainAspectRatio: false,
         plugins: {
             legend: {
-                position: 'bottom'
+                position: 'bottom',
+                labels: {
+                    color: '#000000',
+                    font: { size: 12, weight: 'bold' }
+                }
+            },
+            datalabels: {
+                color: '#000000',
+                font: { size: 10, weight: 'bold' },
+                formatter: (value: number) => value != null && value !== 0 ? value : ''
             },
             tooltip: {
                 mode: 'index',
@@ -159,11 +196,19 @@ export class ReconciliationGlobalPreviewComponent implements OnInit, OnDestroy {
         },
         scales: {
             x: {
-                stacked: true
+                stacked: true,
+                ticks: {
+                    color: '#000000',
+                    font: { size: 11, weight: 'bold' }
+                }
             },
             y: {
                 stacked: true,
-                beginAtZero: true
+                beginAtZero: true,
+                ticks: {
+                    color: '#000000',
+                    font: { size: 11, weight: 'bold' }
+                }
             }
         }
     };

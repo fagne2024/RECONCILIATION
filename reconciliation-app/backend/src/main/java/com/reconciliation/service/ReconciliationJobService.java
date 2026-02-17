@@ -21,6 +21,7 @@ import java.nio.file.Paths;
 import java.time.LocalDateTime;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Service
 @RequiredArgsConstructor
@@ -29,6 +30,10 @@ public class ReconciliationJobService {
     
     private final ReconciliationJobRepository jobRepository;
     private final ObjectMapper objectMapper;
+    
+    /** Cache des résultats désérialisés par jobId pour éviter de re-parser le JSON à chaque requête paginée */
+    private final ConcurrentHashMap<String, ReconciliationResponse> resultCache = new ConcurrentHashMap<>();
+    private static final int RESULT_CACHE_MAX_SIZE = 50;
     
     private static final String UPLOAD_DIR = "uploads/reconciliation";
     
@@ -118,7 +123,8 @@ public class ReconciliationJobService {
                 job.setStatus(ReconciliationJob.JobStatus.COMPLETED);
                 job.setCompletedAt(LocalDateTime.now());
                 jobRepository.save(job);
-                
+                resultCache.put(jobId, result);
+                evictResultCacheIfNeeded();
                 log.info("✅ Job terminé avec succès: {} - Résultats sauvegardés", jobId);
             } catch (JsonProcessingException e) {
                 log.error("❌ Erreur lors de la sérialisation du résultat", e);
@@ -173,6 +179,36 @@ public class ReconciliationJobService {
     }
     
     /**
+     * Récupère le résultat désérialisé d'un job (cache pour éviter de re-parser le JSON à chaque page).
+     * Utilisé par getMatches, getBoOnly, getPartnerOnly, getMismatches pour des chargements paginés rapides.
+     */
+    public Optional<ReconciliationResponse> getCachedResult(String jobId) {
+        ReconciliationResponse cached = resultCache.get(jobId);
+        if (cached != null) {
+            return Optional.of(cached);
+        }
+        Optional<ReconciliationJob> jobOpt = jobRepository.findByJobId(jobId);
+        if (jobOpt.isEmpty() || jobOpt.get().getResultJson() == null) {
+            return Optional.empty();
+        }
+        try {
+            ReconciliationResponse result = objectMapper.readValue(jobOpt.get().getResultJson(), ReconciliationResponse.class);
+            resultCache.put(jobId, result);
+            evictResultCacheIfNeeded();
+            return Optional.of(result);
+        } catch (JsonProcessingException e) {
+            log.error("Erreur désérialisation résultat job {}: {}", jobId, e.getMessage());
+            return Optional.empty();
+        }
+    }
+    
+    private void evictResultCacheIfNeeded() {
+        while (resultCache.size() > RESULT_CACHE_MAX_SIZE) {
+            resultCache.keySet().stream().findFirst().ifPresent(resultCache::remove);
+        }
+    }
+    
+    /**
      * Sauvegarde un fichier uploadé
      */
     private String saveFile(MultipartFile file, String prefix) throws IOException {
@@ -198,6 +234,7 @@ public class ReconciliationJobService {
         var staleJobs = jobRepository.findStaleJobs(cutoffDate);
         
         for (ReconciliationJob job : staleJobs) {
+            resultCache.remove(job.getJobId());
             job.setStatus(ReconciliationJob.JobStatus.FAILED);
             job.setErrorMessage("Job expiré - nettoyage automatique");
             job.setCompletedAt(LocalDateTime.now());

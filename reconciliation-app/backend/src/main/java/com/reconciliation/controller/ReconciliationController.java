@@ -675,20 +675,18 @@ public class ReconciliationController {
         try {
             log.info("📋 Récupération des matches pour le job: {} (page: {}, size: {})", sessionId, page, size);
             
-            Optional<ReconciliationJob> jobOpt = jobService.getJobStatus(sessionId);
-            if (!jobOpt.isPresent()) {
-                return ResponseEntity.notFound().build();
-            }
-            
-            ReconciliationJob job = jobOpt.get();
-            if (job.getResultJson() == null) {
+            Optional<ReconciliationResponse> resultOpt = jobService.getCachedResult(sessionId);
+            if (resultOpt.isEmpty()) {
+                Optional<ReconciliationJob> jobOpt = jobService.getJobStatus(sessionId);
+                if (jobOpt.isEmpty()) {
+                    return ResponseEntity.notFound().build();
+                }
                 Map<String, Object> errorResponse = new HashMap<>();
                 errorResponse.put("success", false);
                 errorResponse.put("error", "Aucun résultat disponible");
                 return ResponseEntity.badRequest().body(errorResponse);
             }
-            
-            ReconciliationResponse result = objectMapper.readValue(job.getResultJson(), ReconciliationResponse.class);
+            ReconciliationResponse result = resultOpt.get();
             List<ReconciliationResponse.Match> matches = result.getMatches() != null ? result.getMatches() : new ArrayList<>();
             
             int start = page * size;
@@ -728,20 +726,18 @@ public class ReconciliationController {
         try {
             log.info("📋 Récupération des mismatches pour le job: {} (page: {}, size: {})", sessionId, page, size);
             
-            Optional<ReconciliationJob> jobOpt = jobService.getJobStatus(sessionId);
-            if (!jobOpt.isPresent()) {
-                return ResponseEntity.notFound().build();
-            }
-            
-            ReconciliationJob job = jobOpt.get();
-            if (job.getResultJson() == null) {
+            Optional<ReconciliationResponse> resultOpt = jobService.getCachedResult(sessionId);
+            if (resultOpt.isEmpty()) {
+                Optional<ReconciliationJob> jobOpt = jobService.getJobStatus(sessionId);
+                if (jobOpt.isEmpty()) {
+                    return ResponseEntity.notFound().build();
+                }
                 Map<String, Object> errorResponse = new HashMap<>();
                 errorResponse.put("success", false);
                 errorResponse.put("error", "Aucun résultat disponible");
                 return ResponseEntity.badRequest().body(errorResponse);
             }
-            
-            ReconciliationResponse result = objectMapper.readValue(job.getResultJson(), ReconciliationResponse.class);
+            ReconciliationResponse result = resultOpt.get();
             List<Map<String, String>> mismatches = result.getMismatches() != null ? result.getMismatches() : new ArrayList<>();
             
             int start = page * size;
@@ -781,20 +777,18 @@ public class ReconciliationController {
         try {
             log.info("📋 Récupération des boOnly pour le job: {} (page: {}, size: {})", sessionId, page, size);
             
-            Optional<ReconciliationJob> jobOpt = jobService.getJobStatus(sessionId);
-            if (!jobOpt.isPresent()) {
-                return ResponseEntity.notFound().build();
-            }
-            
-            ReconciliationJob job = jobOpt.get();
-            if (job.getResultJson() == null) {
+            Optional<ReconciliationResponse> resultOpt = jobService.getCachedResult(sessionId);
+            if (resultOpt.isEmpty()) {
+                Optional<ReconciliationJob> jobOpt = jobService.getJobStatus(sessionId);
+                if (jobOpt.isEmpty()) {
+                    return ResponseEntity.notFound().build();
+                }
                 Map<String, Object> errorResponse = new HashMap<>();
                 errorResponse.put("success", false);
                 errorResponse.put("error", "Aucun résultat disponible");
                 return ResponseEntity.badRequest().body(errorResponse);
             }
-            
-            ReconciliationResponse result = objectMapper.readValue(job.getResultJson(), ReconciliationResponse.class);
+            ReconciliationResponse result = resultOpt.get();
             List<Map<String, String>> boOnly = result.getBoOnly() != null ? result.getBoOnly() : new ArrayList<>();
             
             int start = page * size;
@@ -834,20 +828,18 @@ public class ReconciliationController {
         try {
             log.info("📋 Récupération des partnerOnly pour le job: {} (page: {}, size: {})", sessionId, page, size);
             
-            Optional<ReconciliationJob> jobOpt = jobService.getJobStatus(sessionId);
-            if (!jobOpt.isPresent()) {
-                return ResponseEntity.notFound().build();
-            }
-            
-            ReconciliationJob job = jobOpt.get();
-            if (job.getResultJson() == null) {
+            Optional<ReconciliationResponse> resultOpt = jobService.getCachedResult(sessionId);
+            if (resultOpt.isEmpty()) {
+                Optional<ReconciliationJob> jobOpt = jobService.getJobStatus(sessionId);
+                if (jobOpt.isEmpty()) {
+                    return ResponseEntity.notFound().build();
+                }
                 Map<String, Object> errorResponse = new HashMap<>();
                 errorResponse.put("success", false);
                 errorResponse.put("error", "Aucun résultat disponible");
                 return ResponseEntity.badRequest().body(errorResponse);
             }
-            
-            ReconciliationResponse result = objectMapper.readValue(job.getResultJson(), ReconciliationResponse.class);
+            ReconciliationResponse result = resultOpt.get();
             List<Map<String, String>> partnerOnly = result.getPartnerOnly() != null ? result.getPartnerOnly() : new ArrayList<>();
             
             int start = page * size;

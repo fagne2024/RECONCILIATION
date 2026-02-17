@@ -2242,9 +2242,13 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
     };
     
     // Configuration du traitement par chunks
-    private readonly CHUNK_SIZE = 1000; // Taille des chunks pour le chargement réseau
-    private readonly PROCESSING_CHUNK_SIZE = 100; // Taille des chunks pour le traitement local
-    private readonly YIELD_INTERVAL = 50; // Intervalle en ms pour yield au navigateur
+    private readonly CHUNK_SIZE = 5000; // Taille des chunks pour le chargement réseau (moins d'appels API = chargement plus rapide)
+    private readonly PROCESSING_CHUNK_SIZE = 500;
+    private readonly YIELD_INTERVAL = 8; // Yield court pour garder l'UI réactive
+    
+    // Finalisation écarts BO : les deux flux (boOnly + mismatches) chargent en parallèle
+    private boOnlyChunkedDone = false;
+    private mismatchesChunkedDone = false;
     
     agencyPage = 1;
     readonly agencyPageSize = 10;
@@ -4618,6 +4622,7 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                         
                         const shareStartTime = performance.now();
                         this.reconciliationTabsService.setFilteredMatches(this.filteredMatches);
+                        this.appStateService.setReconciliationResults(this.response!);
                         const shareDuration = performance.now() - shareStartTime;
                         
                         const totalDuration = performance.now() - overallStartTime;
@@ -4648,18 +4653,13 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
     }
     
     /**
-     * Traite les données par chunks avec yield au navigateur
+     * Traite les données reçues (une page API) en un seul push pour éviter les yields inutiles.
+     * Le yield entre pages est déjà géré dans loadAll*Chunked.
      */
-    private async processChunked<T>(data: T[], accumulator: T[], type: 'matches' | 'boOnly' | 'partnerOnly'): Promise<void> {
-        for (let i = 0; i < data.length; i += this.PROCESSING_CHUNK_SIZE) {
-            const chunk = data.slice(i, i + this.PROCESSING_CHUNK_SIZE);
-            accumulator.push(...chunk);
-            
-            // Yield au navigateur tous les YIELD_INTERVAL ms
-            if (i % (this.PROCESSING_CHUNK_SIZE * 2) === 0) {
-                await this.yieldToBrowser();
-            }
-        }
+    private async processChunked<T>(data: T[], accumulator: T[], _type: 'matches' | 'boOnly' | 'partnerOnly'): Promise<void> {
+        if (data.length === 0) return;
+        accumulator.push(...data);
+        await this.yieldToBrowser();
     }
     
     /**
@@ -4782,6 +4782,8 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
         }
         
         this.isLoadingBoOnly = true;
+        this.boOnlyChunkedDone = false;
+        this.mismatchesChunkedDone = false;
         this.loadingProgress.boOnly = { current: 0, total: 0, percentage: 0 };
         this.cdr.detectChanges();
         
@@ -4834,33 +4836,9 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                         await this.loadAllBoOnlyChunked(page + 1, accumulatedBoOnly, overallStartTime);
                         resolve();
                     } else {
-                        // Mettre à jour la réponse avec les boOnly chargés
-                        this.response = {
-                            ...this.response!,
-                            boOnly: accumulatedBoOnly
-                        };
-                        
-                        // Vérifier si les mismatches sont aussi chargés avant de finaliser
-                        if (this.response.mismatches && this.response.mismatches.length > 0) {
-                            const filterStartTime = performance.now();
-                            this.filteredBoOnly = this.getFilteredBoOnly();
-                            const filterDuration = performance.now() - filterStartTime;
-                            
-                            // Mettre en cache
-                            this.setCache('boOnly', this.filteredBoOnly);
-                            
-                            this.boOnlyLoaded = true;
-                            this.isLoadingBoOnly = false;
-                            
-                            this.reconciliationTabsService.setFilteredBoOnly(this.filteredBoOnly);
-                            
-                            requestAnimationFrame(() => {
-                                this.cdr.markForCheck();
-                                this.cdr.detectChanges();
-                            });
-                            
-                            console.log(`✅ ${accumulatedBoOnly.length} boOnly chargés`);
-                        }
+                        this.response = { ...this.response!, boOnly: accumulatedBoOnly };
+                        this.boOnlyChunkedDone = true;
+                        this.tryFinalizeBoOnlyLoading(overallStartTime, accumulatedBoOnly.length, 'boOnly');
                         resolve();
                     }
                 },
@@ -4870,6 +4848,26 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                     reject(error);
                 }
             });
+        });
+    }
+    
+    /**
+     * Finalise l'affichage des écarts BO une fois que boOnly et mismatches ont fini de charger.
+     */
+    private tryFinalizeBoOnlyLoading(overallStartTime: number, count: number, source: 'boOnly' | 'mismatches'): void {
+        if (!this.boOnlyChunkedDone || !this.mismatchesChunkedDone) return;
+        const filterStartTime = performance.now();
+        this.filteredBoOnly = this.getFilteredBoOnly();
+        const filterDuration = performance.now() - filterStartTime;
+        this.setCache('boOnly', this.filteredBoOnly);
+        this.boOnlyLoaded = true;
+        this.isLoadingBoOnly = false;
+        this.reconciliationTabsService.setFilteredBoOnly(this.filteredBoOnly);
+        const totalDuration = performance.now() - overallStartTime;
+        console.log(`✅ Écarts BO chargés en ${totalDuration.toFixed(2)}ms (filtrage: ${filterDuration.toFixed(2)}ms)`);
+        requestAnimationFrame(() => {
+            this.cdr.markForCheck();
+            this.cdr.detectChanges();
         });
     }
     
@@ -4903,47 +4901,18 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                         await this.loadAllMismatchesChunked(page + 1, accumulatedMismatches, overallStartTime);
                         resolve();
                     } else {
-                        // Mettre à jour la réponse avec les mismatches chargés
-                        this.response = {
-                            ...this.response!,
-                            mismatches: accumulatedMismatches
-                        };
-                        
-                        // Vérifier si les boOnly sont aussi chargés avant de finaliser
-                        if (this.response.boOnly && this.response.boOnly.length > 0) {
-                            const filterStartTime = performance.now();
-                            this.filteredBoOnly = this.getFilteredBoOnly();
-                            const filterDuration = performance.now() - filterStartTime;
-                            
-                            // Mettre en cache
-                            this.setCache('boOnly', this.filteredBoOnly);
-                            
-                            this.boOnlyLoaded = true;
-                            this.isLoadingBoOnly = false;
-                            
-                            this.reconciliationTabsService.setFilteredBoOnly(this.filteredBoOnly);
-                            
-                            requestAnimationFrame(() => {
-                                this.cdr.markForCheck();
-                                this.cdr.detectChanges();
-                            });
-                            
-                            console.log(`✅ ${accumulatedMismatches.length} mismatches chargés`);
-                        }
+                        this.response = { ...this.response!, mismatches: accumulatedMismatches };
+                        this.mismatchesChunkedDone = true;
+                        this.tryFinalizeBoOnlyLoading(overallStartTime, accumulatedMismatches.length, 'mismatches');
                         resolve();
                     }
                 },
                 error: (error) => {
                     const errorDuration = performance.now() - pageStartTime;
                     console.error(`❌ Erreur lors du chargement de la page ${page + 1} des mismatches (après ${errorDuration.toFixed(2)}ms):`, error);
-                    // Continuer même si les mismatches échouent
-                    if (this.response?.boOnly && this.response.boOnly.length > 0) {
-                        this.filteredBoOnly = this.getFilteredBoOnly();
-                        this.boOnlyLoaded = true;
-                        this.isLoadingBoOnly = false;
-                        this.cdr.detectChanges();
-                    }
-                    resolve(); // Résoudre quand même pour ne pas bloquer
+                    this.mismatchesChunkedDone = true;
+                    this.tryFinalizeBoOnlyLoading(performance.now(), 0, 'mismatches');
+                    resolve();
                 }
             });
         });

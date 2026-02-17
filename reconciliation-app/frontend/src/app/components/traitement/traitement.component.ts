@@ -11,6 +11,7 @@ import * as XLSX from 'xlsx';
 import * as ExcelJS from 'exceljs';
 import * as JSZip from 'jszip';
 import { saveAs } from 'file-saver';
+import { HttpErrorResponse } from '@angular/common/http';
 import { ExcelConversionService } from '../../services/excel-conversion.service';
 
 @Component({
@@ -231,6 +232,70 @@ export class TraitementComponent implements OnInit, AfterViewInit {
   sheetSplitResults: Array<{ sheetName: string; rows: number; fileName: string }> = [];
   sheetSplitColumnWidths: number[] = [8, 12, 10, 15, 12, 12, 10, 8, 15, 10, 12, 15, 10, 12, 12, 20, 15];
   sheetSplitZipName: string = '';
+  /** Affiché quand la conversion .xls en navigateur échoue, pour proposer la macro Excel. */
+  showSheetSplitExcelFallbackHelp: boolean = false;
+
+  /** Macro VBA de secours pour séparer les feuilles dans Excel (en-tête 17 colonnes). */
+  readonly SHEET_SPLIT_VBA_MACRO = `Sub SeparerFeuillesEnteteComplet()
+    Dim ws As Worksheet
+    Dim cheminOriginal As String
+    Dim classeurOriginal As Workbook
+    Dim i As Integer
+    Dim entetePersonnalise As Variant
+
+    entetePersonnalise = Array("N°", "Date", "Heure", "Référence", "Service", "Paiement", "Statut", "Mode", _
+                              "N° de Compte", "Wallet", "N° Pseudo", "N° de Compte", "Wallet", "Débit", "Crédit", _
+                              "Compte: 657376636", "Sous-réseau")
+
+    Set classeurOriginal = ThisWorkbook
+    cheminOriginal = classeurOriginal.Path
+    Application.DisplayAlerts = False
+
+    For i = 1 To classeurOriginal.Worksheets.Count
+        Set ws = classeurOriginal.Worksheets(i)
+        ws.Copy
+
+        If i > 1 Then
+            ActiveSheet.Rows("1:1").Insert Shift:=xlDown
+            Dim j As Integer
+            For j = 0 To UBound(entetePersonnalise)
+                ActiveSheet.Cells(1, j + 1).Value = entetePersonnalise(j)
+            Next j
+            With ActiveSheet.Range("A1:Q1")
+                .Font.Bold = True
+                .Interior.Color = RGB(200, 200, 200)
+                .HorizontalAlignment = xlCenter
+            End With
+        End If
+
+        With ActiveSheet
+            .Columns("A").ColumnWidth = 8
+            .Columns("B").ColumnWidth = 12
+            .Columns("C").ColumnWidth = 10
+            .Columns("D").ColumnWidth = 15
+            .Columns("E").ColumnWidth = 12
+            .Columns("F").ColumnWidth = 12
+            .Columns("G").ColumnWidth = 10
+            .Columns("H").ColumnWidth = 8
+            .Columns("I").ColumnWidth = 15
+            .Columns("J").ColumnWidth = 10
+            .Columns("K").ColumnWidth = 12
+            .Columns("L").ColumnWidth = 15
+            .Columns("M").ColumnWidth = 10
+            .Columns("N").ColumnWidth = 12
+            .Columns("O").ColumnWidth = 12
+            .Columns("P").ColumnWidth = 20
+            .Columns("Q").ColumnWidth = 15
+        End With
+
+        ActiveWorkbook.SaveAs cheminOriginal & "\\" & ws.Name & ".xlsx"
+        ActiveWorkbook.Close SaveChanges:=False
+        classeurOriginal.Activate
+    Next i
+
+    Application.DisplayAlerts = True
+    MsgBox "Séparation terminée !"
+End Sub`;
 
   // --- PROPRIÉTÉS POUR TOTAL ENERGIE ---
   totalEnergieFile1: File | null = null; // Premier fichier avec Code PDA, Station, Numéro SIM
@@ -252,7 +317,7 @@ export class TraitementComponent implements OnInit, AfterViewInit {
   totalEnergieCompareResultColumns: string[] = [];
   totalEnergieCompareIsProcessing: boolean = false;
   totalEnergieCompareProgress: string = '';
-  totalEnergieCompareSummary: Array<{ station: string; count: number }> = []; // Récapitulatif groupé par station
+  totalEnergieCompareSummary: Array<{ station: string; agenceBo: string; count: number }> = []; // Récapitulatif groupé par station avec agence BO
 
   constructor(
     private cd: ChangeDetectorRef, 
@@ -3224,18 +3289,32 @@ export class TraitementComponent implements OnInit, AfterViewInit {
       const diffCount = this.totalEnergieCompareResult.length - okCount;
       
       // Calculer le récapitulatif groupé par station pour les commentaires non OK
-      const summaryMap: { [station: string]: number } = {};
+      const summaryMap: { [station: string]: { count: number; agences: Set<string> } } = {};
       const partnerStationCol = colPartnerStation; // Garder référence pour le scope
+      const boAgenceCol = colBoAgence; // Garder référence pour le scope
+      
       this.totalEnergieCompareResult.forEach((row: any) => {
         if (row[COMMENTAIRE_KEY] !== 'OK') {
           const station = String(row[partnerStationCol] ?? '').trim() || '(vide)';
-          summaryMap[station] = (summaryMap[station] || 0) + 1;
+          const agence = String(row[boAgenceCol] ?? '').trim() || '(vide)';
+          
+          if (!summaryMap[station]) {
+            summaryMap[station] = { count: 0, agences: new Set<string>() };
+          }
+          summaryMap[station].count++;
+          if (agence) {
+            summaryMap[station].agences.add(agence);
+          }
         }
       });
       
       // Convertir en tableau et trier par nombre décroissant
       this.totalEnergieCompareSummary = Object.keys(summaryMap)
-        .map(station => ({ station, count: summaryMap[station] }))
+        .map(station => ({
+          station,
+          agenceBo: Array.from(summaryMap[station].agences).join(', ') || '(vide)',
+          count: summaryMap[station].count
+        }))
         .sort((a, b) => b.count - a.count);
       
       this.totalEnergieCompareProgress = `Comparaison terminée : ${okCount} OK, ${diffCount} à traiter.`;
@@ -3299,12 +3378,14 @@ export class TraitementComponent implements OnInit, AfterViewInit {
       // Préparer les données pour l'export avec le total
       const exportData = this.totalEnergieCompareSummary.map(item => ({
         'Station (PARTNER)': item.station,
+        'Agence BO': item.agenceBo,
         'Nombre de commentaires non OK': item.count
       }));
       
       // Ajouter la ligne de total
       exportData.push({
         'Station (PARTNER)': 'TOTAL',
+        'Agence BO': '',
         'Nombre de commentaires non OK': this.getTotalEnergieCompareSummaryTotal()
       });
       
@@ -3348,11 +3429,13 @@ export class TraitementComponent implements OnInit, AfterViewInit {
       this.sheetSplitProgress = `${this.sheetSplitFile.name} sélectionné (${(this.sheetSplitFile.size / (1024 * 1024)).toFixed(2)} MB)`;
       this.successMsg.sheetSplit = '';
       this.errorMsg.sheetSplit = '';
+      this.showSheetSplitExcelFallbackHelp = false;
     }
   }
 
   resetSheetSplitSelection() {
     this.sheetSplitFile = null;
+    this.showSheetSplitExcelFallbackHelp = false;
     this.sheetSplitResults = [];
     this.sheetSplitZipName = '';
     this.sheetSplitProgress = '';
@@ -3373,6 +3456,7 @@ export class TraitementComponent implements OnInit, AfterViewInit {
     this.sheetSplitProgress = 'Chargement du classeur...';
     this.sheetSplitResults = [];
     this.sheetSplitZipName = '';
+    this.showSheetSplitExcelFallbackHelp = false;
 
     try {
       let sourceFile: File = this.sheetSplitFile;
@@ -3436,6 +3520,7 @@ export class TraitementComponent implements OnInit, AfterViewInit {
 
       this.sheetSplitResults = sheetResults;
       this.sheetSplitProgress = 'Séparation terminée';
+      this.showSheetSplitExcelFallbackHelp = false;
       this.showSuccess('sheetSplit', `Séparation terminée : ${sheetResults.length} fichiers générés (${zipName}).`);
     } catch (error) {
       console.error('Erreur lors de la séparation des feuilles:', error);
@@ -3494,6 +3579,27 @@ export class TraitementComponent implements OnInit, AfterViewInit {
       return false;
     }
     return file.name.toLowerCase().endsWith('.xls');
+  }
+
+  /**
+   * Conversion XLS → XLSX dans le navigateur (fallback quand le serveur est inaccessible).
+   * Les très gros .xls ou certains formats peuvent provoquer RangeError dans SheetJS ; dans ce cas on échoue proprement.
+   */
+  private async convertLegacyXlsInBrowser(file: File): Promise<File> {
+    try {
+      const buffer = await file.arrayBuffer();
+      const workbook = await this.loadExcelWorkbook(buffer, file.name);
+      const xlsxBuffer = await workbook.xlsx.writeBuffer();
+      return new File([xlsxBuffer], `${this.getBaseFileName(file.name)}_converted.xlsx`, {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      });
+    } catch (e) {
+      const isRangeError = e instanceof RangeError || (e && (e as Error).message?.includes('Invalid array length'));
+      if (isRangeError) {
+        throw new Error('BROWSER_XLS_TOO_LARGE_OR_UNSUPPORTED');
+      }
+      throw e;
+    }
   }
 
   private async convertLegacyXls(file: File): Promise<File> {
@@ -3585,7 +3691,36 @@ export class TraitementComponent implements OnInit, AfterViewInit {
           }
           
           console.error('Erreur lors de la conversion XLS -> XLSX:', err);
-          this.showError('sheetSplit', 'Erreur lors de la conversion XLS -> XLSX.');
+          const isConnectionError = err instanceof HttpErrorResponse && (err.status === 0 || err.status === 504);
+          if (isConnectionError) {
+            this.sheetSplitProgress = 'Serveur inaccessible. Conversion locale en cours...';
+            this.sheetSplitConversionMessage = 'Conversion XLS → XLSX dans le navigateur...';
+            this.sheetSplitConversionProgress = 50;
+            this.cd.detectChanges();
+            this.convertLegacyXlsInBrowser(file).then(converted => {
+              this.sheetSplitConversionProgress = 100;
+              this.sheetSplitProgress = 'Conversion locale terminée, reprise de la séparation...';
+              this.sheetSplitConversionMessage = 'Conversion terminée !';
+              this.cd.detectChanges();
+              setTimeout(() => resolve(converted), 300);
+            }).catch(fallbackErr => {
+              console.error('Fallback conversion XLS -> XLSX (navigateur) a échoué:', fallbackErr);
+              const isUnsupported = fallbackErr instanceof Error && fallbackErr.message === 'BROWSER_XLS_TOO_LARGE_OR_UNSUPPORTED';
+              const msg = isUnsupported
+                ? 'Ce fichier .xls ne peut pas être converti dans le navigateur. Utilisez la solution avec Excel ci-dessous, ou assurez-vous que le serveur est accessible.'
+                : 'Serveur inaccessible et conversion locale impossible. Vérifiez votre connexion ou réessayez avec un fichier plus petit.';
+              this.showSheetSplitExcelFallbackHelp = isUnsupported;
+              this.showError('sheetSplit', msg);
+              this.sheetSplitConversionInProgress = false;
+              this.sheetSplitConversionMessage = '';
+              this.sheetSplitConversionProgress = 0;
+              this.sheetSplitConversionElapsedTime = 0;
+              reject(fallbackErr);
+            });
+            return;
+          }
+          const message = 'Erreur lors de la conversion XLS -> XLSX.';
+          this.showError('sheetSplit', message);
           this.sheetSplitConversionInProgress = false;
           this.sheetSplitConversionMessage = '';
           this.sheetSplitConversionProgress = 0;

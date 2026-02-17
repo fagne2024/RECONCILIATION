@@ -862,6 +862,28 @@
           }
         }
 
+        .agence-bo-cell {
+          font-weight: 500;
+          color: #555;
+
+          .agence-content {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+
+            i {
+              color: #2196f3;
+              font-size: 0.95rem;
+            }
+
+            span {
+              font-size: 0.9rem;
+              font-style: italic;
+              color: #666;
+            }
+          }
+        }
+
         .count-cell {
           text-align: left;
         }
@@ -1238,6 +1260,28 @@
   .sheet-split-status {
     font-size: 13px;
     color: #495057;
+  }
+
+  .sheet-split-excel-fallback {
+    background: #fff8e1;
+    border: 1px solid #ffc107;
+    border-radius: 8px;
+    padding: 12px;
+
+    h6 {
+      color: #856404;
+      font-size: 0.95rem;
+    }
+  }
+
+  .sheet-split-vba-code {
+    max-height: 320px;
+    overflow: auto;
+    white-space: pre;
+    font-family: 'Consolas', 'Monaco', monospace;
+    font-size: 12px;
+    margin-bottom: 0;
+    user-select: all;
   }
 }
 

@@ -3,6 +3,7 @@ import { Router } from '@angular/router';
 import { Subscription } from 'rxjs';
 import { ReconciliationResponse, Match } from '../../models/reconciliation-response.model';
 import { AppStateService } from '../../services/app-state.service';
+import { ReconciliationTabsService } from '../../services/reconciliation-tabs.service';
 import { EcartBoSummaryService, EcartBoSummaryPrefill } from '../../services/ecart-bo-summary.service';
 import { ExportOptimizationService, ExportProgress } from '../../services/export-optimization.service';
 import { PopupService } from '../../services/popup.service';
@@ -61,8 +62,12 @@ export class MatchesTableComponent implements OnInit, OnDestroy {
   // Menu dropdown
   showExportMenu = false;
   
+  /** Signature du dernier résultat traité pour réutiliser le cache sans recharger */
+  private lastProcessedSignature: string = '';
+
   constructor(
     private appStateService: AppStateService,
+    private reconciliationTabsService: ReconciliationTabsService,
     private router: Router,
     private cdr: ChangeDetectorRef,
     private exportOptimizationService: ExportOptimizationService,
@@ -73,90 +78,121 @@ export class MatchesTableComponent implements OnInit, OnDestroy {
   ngOnInit(): void {
     this.subscription.add(
       this.appStateService.getReconciliationResults().subscribe((response: ReconciliationResponse | null) => {
-        if (response) {
-          this.response = response;
-          this.loadMatchesProgressively(response.matches || []);
+        if (!response) {
+          this.response = null;
+          this.filteredMatches = [];
+          this.displayedMatches = [];
+          this.lastProcessedSignature = '';
+          this.cdr.markForCheck();
+          return;
         }
+        this.response = response;
+        const matches = response.matches || [];
+        const signature = `${response.totalMatches ?? 0}_${response.totalBoOnly ?? 0}_${response.totalPartnerOnly ?? 0}_${matches.length}`;
+        const cached = this.reconciliationTabsService.getFilteredMatches();
+        const useCache = cached.length > 0 && (
+          cached.length === (response.totalMatches ?? 0) ||
+          (matches.length > 0 && cached.length === matches.length)
+        ) && this.lastProcessedSignature === signature;
+        if (useCache && cached.length > 0) {
+          this.applyCachedMatches(cached);
+          this.lastProcessedSignature = signature;
+          return;
+        }
+        if (matches.length === 0 && cached.length > 0 && (response.totalMatches ?? 0) === cached.length) {
+          this.applyCachedMatches(cached);
+          this.lastProcessedSignature = signature;
+          return;
+        }
+        this.lastProcessedSignature = signature;
+        this.loadMatchesProgressively(matches);
       })
     );
-    
-    // Fermer le menu en cliquant en dehors
     document.addEventListener('click', this.handleDocumentClick.bind(this));
   }
+
+  /** Réutilise les correspondances déjà chargées (ex: retour sur /matches sans nouvelle réconciliation). */
+  private applyCachedMatches(cached: Match[]): void {
+    this.filteredMatches = [...cached];
+    this.searchIndex.clear();
+    this.buildSearchIndex(this.filteredMatches);
+    const sample = this.filteredMatches.slice(0, Math.min(100, this.filteredMatches.length));
+    if (sample.length > 0) {
+      this.initializeColumnsOptimized(sample);
+    }
+    this.applyFilters();
+    this.isLoading = false;
+    this.loadProgress = 100;
+    this.cdr.markForCheck();
+  }
   
+  /** En dessous de ce seuil : chargement en une fois (pas de chunking). Au-dessus : chunks + index à la fin. */
+  private static readonly FAST_PATH_THRESHOLD = 35000;
+  private static readonly CHUNK_SIZE = 2500;
+  private static readonly YIELD_EVERY_N_CHUNKS = 2;
+
   private async loadMatchesProgressively(matches: Match[]): Promise<void> {
     this.isLoading = true;
     this.loadProgress = 0;
     this.cdr.markForCheck();
     
     try {
-      // Filtrer les correspondances pour OPPART avant le chargement progressif
-      let filteredMatches = matches;
+      let filtered = matches;
       if (this.isTRXBOOPPARTReconciliation(matches)) {
-        console.log('🔍 Filtrage OPPART: Début du filtrage des correspondances');
-        console.log(`📊 Nombre initial de correspondances: ${matches.length}`);
-        filteredMatches = matches.filter(match => {
-          if (!match.partnerData) {
-            return false;
-          }
+        filtered = matches.filter(match => {
+          if (!match.partnerData) return false;
           const typeOperation = this.getTypeOperation(match.partnerData);
-          if (!typeOperation) {
-            return false;
-          }
-          // Exclure explicitement FRAIS_TRANSACTION
-          if (typeOperation.includes('FRAIS_TRANSACTION')) {
-            console.log(`❌ Correspondance ${match.key} exclue (FRAIS_TRANSACTION):`, typeOperation);
-            return false;
-          }
-          // Ne garder que les lignes avec IMPACT_COMPTIMPACT-COMPTE-GENERAL
-          const shouldKeep = typeOperation.includes('IMPACT_COMPTIMPACT-COMPTE-GENERAL');
-          if (shouldKeep) {
-            console.log(`✅ Correspondance ${match.key} conservée (IMPACT_COMPTIMPACT-COMPTE-GENERAL):`, typeOperation);
-          }
-          return shouldKeep;
+          if (!typeOperation) return false;
+          if (typeOperation.includes('FRAIS_TRANSACTION')) return false;
+          return typeOperation.includes('IMPACT_COMPTIMPACT-COMPTE-GENERAL');
         });
-        console.log(`📊 Nombre de correspondances après filtrage OPPART: ${filteredMatches.length} (${matches.length - filteredMatches.length} exclues)`);
       }
       
-      const total = filteredMatches.length;
-      
+      const total = filtered.length;
       if (total === 0) {
         this.filteredMatches = [];
         this.displayedMatches = [];
         return;
       }
 
-      // Charger immédiatement un échantillon pour l'initialisation rapide
-      const sampleSize = Math.min(100, total);
-      const sample = filteredMatches.slice(0, sampleSize);
-      this.filteredMatches = [...sample];
-      this.loadProgress = 5;
-      this.initializeColumnsOptimized(sample);
-      this.buildSearchIndex(sample);
-      this.applyFilters();
-      this.cdr.markForCheck();
-      
-      // Permettre au navigateur de mettre à jour l'UI
-      await new Promise(resolve => setTimeout(resolve, 0));
-      
-      // Charger le reste par chunks pour un feedback régulier
-      const chunkSize = 500;
-      for (let i = sampleSize; i < total; i += chunkSize) {
-        const chunk = matches.slice(i, Math.min(i + chunkSize, total));
-        this.filteredMatches.push(...chunk);
-        this.buildSearchIndex(chunk, i); // Construire l'index pour ce chunk
-        this.loadProgress = Math.round(((i + chunk.length) / total) * 95 + 5); // 5-100%
+      if (total <= MatchesTableComponent.FAST_PATH_THRESHOLD) {
+        this.filteredMatches = filtered.slice(0);
+        this.initializeColumnsOptimized(this.filteredMatches.slice(0, Math.min(100, total)));
+        this.applyFilters();
         this.cdr.markForCheck();
-        
-        // Permettre au navigateur de mettre à jour l'UI
-        await new Promise(resolve => setTimeout(resolve, 0));
+        requestAnimationFrame(() => {
+          this.buildSearchIndex(this.filteredMatches);
+          this.applyFilters();
+          this.cdr.markForCheck();
+        });
+      } else {
+        const sampleSize = Math.min(1500, total);
+        this.filteredMatches = filtered.slice(0, sampleSize);
+        this.initializeColumnsOptimized(this.filteredMatches.slice(0, Math.min(100, this.filteredMatches.length)));
+        this.loadProgress = 10;
+        this.cdr.markForCheck();
+        await new Promise<void>(r => setTimeout(r, 0));
+
+        const chunkSize = MatchesTableComponent.CHUNK_SIZE;
+        for (let i = sampleSize; i < total; i += chunkSize) {
+          const chunk = filtered.slice(i, Math.min(i + chunkSize, total));
+          this.filteredMatches.push(...chunk);
+          this.loadProgress = 10 + Math.round(((this.filteredMatches.length / total) * 85));
+          this.cdr.markForCheck();
+          const chunkIndex = (i - sampleSize) / chunkSize;
+          if (chunkIndex > 0 && chunkIndex % MatchesTableComponent.YIELD_EVERY_N_CHUNKS === 0) {
+            await new Promise<void>(r => setTimeout(r, 0));
+          }
+        }
+        this.buildSearchIndex(this.filteredMatches);
+        this.applyFilters();
       }
-      
-      // Réappliquer les filtres avec toutes les données
-      this.applyFilters();
     } finally {
       this.isLoading = false;
       this.loadProgress = 100;
+      if (this.response) {
+        this.lastProcessedSignature = `${this.response.totalMatches ?? 0}_${this.response.totalBoOnly ?? 0}_${this.response.totalPartnerOnly ?? 0}_${this.filteredMatches.length}`;
+      }
       this.cdr.markForCheck();
     }
   }
@@ -504,9 +540,39 @@ export class MatchesTableComponent implements OnInit, OnDestroy {
     return Object.values(this.selectedColumnsForExport).filter(v => v).length;
   }
   
-  async exportResults(): Promise<void> {
-    if (this.displayedMatches.length === 0) {
-      this.popupService.showError('Aucune donnée à exporter');
+  /**
+   * Construit la liste complète des colonnes (BO + Partenaire) à partir de l'intégralité des matches.
+   * Garantit que toutes les colonnes partenaire présentes dans les données sont récupérées pour l'export.
+   */
+  private buildAllColumnsFromSource(source: Match[]): string[] {
+    const boKeysSet = new Set<string>();
+    const partnerKeysSet = new Set<string>();
+    for (const match of source) {
+      if (match.boData) {
+        Object.keys(match.boData).forEach(key => boKeysSet.add(key));
+      }
+      if (match.partnerData) {
+        Object.keys(match.partnerData).forEach(key => {
+          const baseKey = key.replace(/_PARTNER_\d+$/, '');
+          partnerKeysSet.add(baseKey);
+        });
+      }
+      if (match.partnerDataList?.length) {
+        match.partnerDataList.forEach(pr => {
+          if (pr) Object.keys(pr).forEach(key => partnerKeysSet.add(key));
+        });
+      }
+    }
+    const boCols = Array.from(boKeysSet).map(k => `BO_${k}`);
+    const partnerCols = Array.from(partnerKeysSet).map(k => `PARTNER_${k}`);
+    return [...boCols, ...partnerCols];
+  }
+
+  /** @param exportAll si true, exporte toute la liste (filteredMatches), sinon les résultats de la recherche (displayedMatches) */
+  async exportResults(exportAll: boolean = false): Promise<void> {
+    const source = exportAll ? this.filteredMatches : this.displayedMatches;
+    if (source.length === 0) {
+      this.popupService.showError(exportAll ? 'Aucune donnée à exporter' : 'Aucune donnée à exporter (utilisez "Exporter toute la liste" si la recherche est vide)');
       return;
     }
 
@@ -514,7 +580,7 @@ export class MatchesTableComponent implements OnInit, OnDestroy {
       this.isExporting = true;
       this.exportProgress = {
         current: 0,
-        total: this.displayedMatches.length,
+        total: source.length,
         percentage: 0,
         message: 'Préparation de l\'export...',
         isComplete: false
@@ -522,30 +588,58 @@ export class MatchesTableComponent implements OnInit, OnDestroy {
       this.showExportMenu = false;
       this.cdr.markForCheck();
 
-      // Préparer les colonnes sélectionnées
-      const selectedCols = this.availableColumnsForExport.filter(col => this.selectedColumnsForExport[col]);
+      // Colonnes complètes depuis la source : toutes les colonnes BO et partenaire présentes dans les données
+      // Garantit que toutes les colonnes partenaire sont récupérées et exportées avec leurs données
+      const allExportColumnKeys = this.buildAllColumnsFromSource(source);
+      const allExportColumns = ['Clé', 'Statut', ...allExportColumnKeys.map(c => this.getColumnLabel(c))];
+      const selectedCols = allExportColumns.filter(col =>
+        !this.availableColumnsForExport.includes(col) || this.selectedColumnsForExport[col]
+      );
       const columns = selectedCols;
-      
-      // Préparer les lignes avec les colonnes sélectionnées
-      const rows = this.displayedMatches.map(match => {
-        const row: any = {};
-        
+      const total = source.length;
+
+      const columnKeysForExport = allExportColumnKeys;
+      const buildRow = (match: Match): Record<string, unknown> => {
+        const row: Record<string, unknown> = {};
         selectedCols.forEach(col => {
           if (col === 'Clé') {
             row[col] = match.key;
           } else if (col === 'Statut') {
             row[col] = this.hasDifferences(match) ? '⚠️ Différences' : '✅ OK';
           } else {
-            // Trouver la colonne correspondante dans allColumns
-            const columnKey = this.allColumns.find(c => this.getColumnLabel(c) === col);
+            const columnKey = columnKeysForExport.find(c => this.getColumnLabel(c) === col) ??
+              this.allColumns.find(c => this.getColumnLabel(c) === col);
             if (columnKey) {
               row[col] = this.getValue(match, columnKey);
             }
           }
         });
-        
         return row;
-      });
+      };
+
+      const rows: Record<string, unknown>[] = [];
+      const exportChunkSize = 3000;
+      if (total <= exportChunkSize) {
+        for (let i = 0; i < total; i++) {
+          rows.push(buildRow(source[i]));
+        }
+      } else {
+        for (let i = 0; i < total; i += exportChunkSize) {
+          const end = Math.min(i + exportChunkSize, total);
+          for (let j = i; j < end; j++) {
+            rows.push(buildRow(source[j]));
+          }
+          this.exportProgress = {
+            current: rows.length,
+            total,
+            percentage: Math.round((rows.length / total) * 50),
+            message: `Préparation des lignes... ${rows.length.toLocaleString()} / ${total.toLocaleString()}`,
+            isComplete: false
+          };
+          this.cdr.markForCheck();
+          await new Promise<void>(r => setTimeout(r, 0));
+        }
+      }
 
       const fileName = `correspondances_${this.viewMode}_${new Date().toISOString().split('T')[0]}.xlsx`;
       const isLargeDataset = rows.length > 5000;

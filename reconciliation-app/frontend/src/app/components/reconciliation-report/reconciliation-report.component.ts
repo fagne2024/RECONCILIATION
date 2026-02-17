@@ -13,6 +13,7 @@ import { PopupService } from '../../services/popup.service';
 import { PaysService } from '../../services/pays.service';
 import { EcartBoSummaryService } from '../../services/ecart-bo-summary.service';
 import { LoggerService } from '../../services/logger.service';
+import { fixGarbledCharacters } from '../../utils/encoding-fixer';
 import * as ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
 import * as Papa from 'papaparse';
@@ -6263,30 +6264,31 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         // Sauvegarder automatiquement les lignes avec écart BO (boOnly > 0) vers ecart_bo_summary
         // IMPORTANT: uniquement pour les CRÉATIONS (pas pour les mises à jour / doublons).
         const ecartBoRows = createdPayloads.filter(p => (p.boOnly || 0) > 0);
-        let ecartMsg = '';
         if (ecartBoRows.length > 0) {
-            try {
-                const dateIso = selectedDate.includes('T') ? selectedDate : `${selectedDate}T00:00:00`;
-                const ecartBoData = ecartBoRows.map((p: any) => ({
-                    agence: p.agency,
-                    service: p.service,
-                    pays: p.country,
-                    montant: p.totalVolume ?? 0,
-                    date: dateIso,
-                    statut: 'EN_COURS',
-                    nombreTransactions: p.boOnly,
-                    env: 'BO'
-                }));
-                const result = await this.ecartBoSummaryService.saveEcartBoSummary(ecartBoData);
-                ecartMsg = result.duplicates > 0
-                    ? `\n\n📋 ${result.count} écart(s) BO enregistré(s) dans ecart-bo-summary (${result.duplicates} doublon(s) ignorés).`
-                    : `\n\n📋 ${result.count} écart(s) BO enregistré(s) automatiquement dans ecart-bo-summary.`;
-            } catch (err: any) {
-                console.error('❌ Erreur sauvegarde ecart BO summary:', err);
-                this.popupService.showWarning(
-                    'Le rapport a été sauvegardé, mais l\'enregistrement des écarts BO vers ecart-bo-summary a échoué. ' +
-                    'Vous pouvez les sauvegarder manuellement depuis la page Écart BO Summary.'
-                );
+            // Afficher un popup pour demander si l'utilisateur veut voir les écarts BO
+            const confirmed = await this.popupService.showConfirm(
+                `📋 ${ecartBoRows.length} écart(s) BO détecté(s) dans les lignes créées.\n\n` +
+                `Souhaitez-vous être redirigé vers la page "Écart BO Summary" pour les consulter et les enregistrer ?\n\n` +
+                `Les données de réconciliation en cours seront utilisées (comme si vous aviez cliqué sur "Voir le tableau récapitulatif" depuis la page Écarts BO).`,
+                'Voir les écarts BO'
+            );
+
+            if (confirmed) {
+                // Rediriger simplement vers ecart-bo-summary
+                // Le composant chargera automatiquement les données depuis AppStateService.getReconciliationResults()
+                // comme le fait le bouton "Voir le tableau récapitulatif" dans ecart-bo-table
+                this.router.navigate(['/ecart-bo-summary']);
+                // Afficher un message de succès pour le rapport
+                const summaryMessage =
+                    `✅ Sauvegarde terminée.\n\n` +
+                    `• Créées: ${createdCount}\n` +
+                    `• Mises à jour: ${updatedCount}\n` +
+                    `• Duplicatas ignorés: ${skippedDuplicates}\n` +
+                    `• Erreurs: ${errorCount}\n\n` +
+                    `📋 Redirection vers la page "Écart BO Summary".`;
+                this.popupService.showSuccess(summaryMessage);
+                this.clearSelection();
+                return; // Sortir de la fonction car on redirige
             }
         }
 
@@ -6295,8 +6297,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             `• Créées: ${createdCount}\n` +
             `• Mises à jour: ${updatedCount}\n` +
             `• Duplicatas ignorés: ${skippedDuplicates}\n` +
-            `• Erreurs: ${errorCount}` +
-            ecartMsg;
+            `• Erreurs: ${errorCount}`;
 
         this.popupService.showSuccess(summaryMessage);
         this.clearSelection();
@@ -6306,6 +6307,99 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         this.router.navigate(['/reconciliation-dashboard']);
     }
 
+    /**
+     * Calcule le volume des écarts BO uniquement pour une combinaison agence/service/pays/date
+     * Utilise EXACTEMENT la même logique que loadSummaryData() dans ecart-bo-summary.component.ts
+     */
+    private calculateBoOnlyVolume(agency: string, service: string, country: string, date: string): number {
+        // Essayer d'abord avec ReconciliationTabsService (données filtrées)
+        let boOnlyData: Record<string, string>[] = [];
+        if (this.reconciliationTabsService.getFilteredBoOnly()?.length) {
+            boOnlyData = this.reconciliationTabsService.getFilteredBoOnly();
+        } else if (this.response?.boOnly?.length) {
+            boOnlyData = this.response.boOnly;
+        }
+        
+        if (!boOnlyData || boOnlyData.length === 0) {
+            console.warn('⚠️ calculateBoOnlyVolume: Pas de données boOnly disponibles');
+            return 0;
+        }
+
+        // Fonction helper pour extraire les valeurs - EXACTEMENT comme dans ecart-bo-summary
+        const getValue = (record: Record<string, string>, keys: string[]): string => {
+            for (const key of keys) {
+                const originalKey = Object.keys(record).find(k => 
+                    fixGarbledCharacters(k).toLowerCase() === key.toLowerCase() || 
+                    k.toLowerCase() === key.toLowerCase()
+                );
+                if (originalKey && record[originalKey]) {
+                    return record[originalKey].toString();
+                }
+                if (record[key]) {
+                    return record[key].toString();
+                }
+            }
+            return '';
+        };
+
+        // Mêmes clés que dans ecart-bo-summary.component.ts ligne 305-309
+        const dateKeys = ['Date', 'date', 'DATE', 'jour', 'Jour', 'JOUR', 'dateTransaction', 'DateTransaction'];
+        const montantKeys = ['montant', 'Montant', 'MONTANT', 'amount', 'Amount', 'volume', 'Volume', 'VOLUME'];
+        const agenceKeys = ['Agence', 'agence', 'AGENCE', 'agency', 'Agency'];
+        const serviceKeys = ['Service', 'service', 'SERVICE', 'serv', 'Serv'];
+        const paysKeys = ['Pays', 'pays', 'PAYS', 'country', 'Country', 'GRX', 'grx'];
+
+        // Normaliser la date pour la comparaison (format YYYY-MM-DD)
+        const normalizeDate = (dateStr: string): string => {
+            if (!dateStr) return '';
+            const datePart = dateStr.split('T')[0];
+            return datePart;
+        };
+
+        const targetDate = normalizeDate(date);
+        let totalMontant = 0;
+
+        // Parcourir tous les enregistrements boOnly et additionner les montants qui correspondent
+        // EXACTEMENT comme dans loadSummaryData() ligne 320-342
+        boOnlyData.forEach(record => {
+            const recordAgency = getValue(record, agenceKeys) || 'Non spécifié';
+            const recordService = getValue(record, serviceKeys) || 'Non spécifié';
+            const recordCountry = getValue(record, paysKeys) || 'Non spécifié';
+            const recordDate = normalizeDate(getValue(record, dateKeys));
+
+            // Vérifier si la transaction correspond à la combinaison recherchée
+            const agencyMatch = agency && recordAgency && recordAgency.toLowerCase() === agency.toLowerCase();
+            const serviceMatch = service && recordService && recordService.toLowerCase() === service.toLowerCase();
+            const countryMatch = country && recordCountry && recordCountry.toLowerCase() === country.toLowerCase();
+            const dateMatch = targetDate && recordDate && recordDate === targetDate;
+
+            if (agencyMatch && serviceMatch && countryMatch && dateMatch) {
+                // Extraire le montant EXACTEMENT comme dans loadSummaryData() ligne 325-326
+                const montantStr = getValue(record, montantKeys);
+                const montant = montantStr ? parseFloat(montantStr.toString().replace(',', '.')) : 0;
+                totalMontant += isNaN(montant) ? 0 : montant;
+            }
+        });
+
+        // Log de débogage
+        if (totalMontant === 0) {
+            console.warn('⚠️ calculateBoOnlyVolume - Volume = 0 pour:', { agency, service, country, date, targetDate });
+            console.warn('⚠️ calculateBoOnlyVolume - Total boOnly records disponibles:', boOnlyData.length);
+            if (boOnlyData.length > 0) {
+                const sample = boOnlyData[0];
+                console.warn('⚠️ calculateBoOnlyVolume - Exemple de record (premier):', {
+                    keys: Object.keys(sample),
+                    agency: getValue(sample, agenceKeys),
+                    service: getValue(sample, serviceKeys),
+                    country: getValue(sample, paysKeys),
+                    date: normalizeDate(getValue(sample, dateKeys)),
+                    montant: getValue(sample, montantKeys)
+                });
+            }
+        }
+
+        return totalMontant;
+    }
 
     getRateClass(rate: number): string {
         if (rate >= 95) return 'rate-excellent';

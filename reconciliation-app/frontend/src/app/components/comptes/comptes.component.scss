@@ -422,11 +422,23 @@
 
     .pagination {
         display: flex;
-        justify-content: center;
+        justify-content: space-between;
         align-items: center;
         margin-top: 2rem;
-        gap: 1rem;
         padding: 20px;
+        width: 100%;
+
+        .pagination-info {
+            font-size: 0.9rem;
+            color: #6c757d;
+            font-weight: 500;
+        }
+
+        .pagination-controls {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
 
         button {
             background: #007bff;

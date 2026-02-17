@@ -366,26 +366,32 @@
         <div *ngIf="!isLoading && comptes.length === 0" class="no-data">
             Aucun compte trouvé.
         </div>
-    </div>
 
-    <!-- Pagination -->
-    <div class="pagination" *ngIf="totalPages > 1">
-        <button (click)="prevPage()" [disabled]="currentPage === 1">
-            <i class="fas fa-chevron-left"></i> Précédent
-        </button>
-        
-        <div class="pagination-indicators">
-            <span *ngFor="let page of getVisiblePages()" 
-                  class="page-indicator"
-                  [class.active]="currentPage === page"
-                  (click)="goToPage(page)">
-                {{ page }}
-            </span>
+        <!-- Pagination -->
+        <div class="pagination" *ngIf="totalPages > 1">
+            <div class="pagination-info">
+                Affichage {{ (currentPage - 1) * pageSize + 1 }} - {{ Math.min(currentPage * pageSize, comptes.length) }} sur {{ comptes.length }}
+            </div>
+            
+            <div class="pagination-controls">
+                <button (click)="prevPage()" [disabled]="currentPage === 1">
+                    <i class="fas fa-chevron-left"></i> Précédent
+                </button>
+                
+                <div class="pagination-indicators">
+                    <span *ngFor="let page of getVisiblePages()" 
+                          class="page-indicator"
+                          [class.active]="currentPage === page"
+                          (click)="goToPage(page)">
+                        {{ page }}
+                    </span>
+                </div>
+                
+                <button (click)="nextPage()" [disabled]="currentPage === totalPages">
+                    Suivant <i class="fas fa-chevron-right"></i>
+                </button>
+            </div>
         </div>
-        
-        <button (click)="nextPage()" [disabled]="currentPage === totalPages">
-            Suivant <i class="fas fa-chevron-right"></i>
-        </button>
     </div>
 </div>
 

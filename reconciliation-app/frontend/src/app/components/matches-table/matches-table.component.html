@@ -64,11 +64,20 @@
           <div class="menu-divider"></div>
           <div class="menu-section">
             <button 
-              (click)="exportResults()" 
+              (click)="exportResults(false)" 
               class="menu-export-button"
-              [disabled]="isExporting"
+              [disabled]="isExporting || displayedMatches.length === 0"
+              title="Exporter les lignes correspondant à la recherche actuelle"
             >
-              {{ isExporting ? '⏳ Export en cours...' : '🚀 Exporter optimisé (' + viewMode + ')' }}
+              {{ isExporting ? '⏳ Export...' : '📤 Exporter résultats recherche (' + (displayedMatches.length | number) + ')' }}
+            </button>
+            <button 
+              (click)="exportResults(true)" 
+              class="menu-export-button menu-export-all"
+              [disabled]="isExporting || filteredMatches.length === 0"
+              title="Exporter toutes les correspondances chargées"
+            >
+              {{ isExporting ? '⏳ Export...' : '📥 Exporter toute la liste (' + (filteredMatches.length | number) + ')' }}
             </button>
           </div>
         </div>

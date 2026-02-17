@@ -266,6 +266,7 @@
                 <thead>
                   <tr>
                     <th>Station (PARTNER)</th>
+                    <th>Agence BO</th>
                     <th>Nombre de commentaires non OK</th>
                   </tr>
                 </thead>
@@ -275,6 +276,12 @@
                       <div class="station-content">
                         <i class="fas fa-building"></i>
                         <span>{{ item.station }}</span>
+                      </div>
+                    </td>
+                    <td class="agence-bo-cell">
+                      <div class="agence-content">
+                        <i class="fas fa-store"></i>
+                        <span>{{ item.agenceBo }}</span>
                       </div>
                     </td>
                     <td class="count-cell">
@@ -295,7 +302,7 @@
                 </tbody>
                 <tfoot>
                   <tr>
-                    <td class="total-label"><strong>Total</strong></td>
+                    <td class="total-label" colspan="2"><strong>Total</strong></td>
                     <td class="total-count">
                       <strong>{{ getTotalEnergieCompareSummaryTotal() }}</strong>
                     </td>
@@ -417,6 +424,12 @@
 
         <div *ngIf="successMsg.sheetSplit" class="success-msg">{{ successMsg.sheetSplit }}</div>
         <div *ngIf="errorMsg.sheetSplit" class="error-msg">{{ errorMsg.sheetSplit }}</div>
+
+        <div *ngIf="showSheetSplitExcelFallbackHelp" class="sheet-split-excel-fallback mt-3">
+          <h6 class="mb-2">Solution de secours avec Excel</h6>
+          <p class="small text-muted mb-2">Ouvrez le fichier .xls dans Excel, puis&nbsp;: <kbd>Alt</kbd>+<kbd>F11</kbd> pour ouvrir l’éditeur VBA → <strong>Insertion</strong> → <strong>Module</strong> → collez le code ci-dessous → exécutez la macro <code>SeparerFeuillesEnteteComplet</code> (F5 ou Exécuter).</p>
+          <pre class="sheet-split-vba-code p-3 bg-light border rounded small">{{ SHEET_SPLIT_VBA_MACRO }}</pre>
+        </div>
       </div>
 
       <div class="sheet-split-summary">

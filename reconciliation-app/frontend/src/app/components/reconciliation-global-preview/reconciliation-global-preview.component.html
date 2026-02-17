@@ -159,7 +159,8 @@
                         <canvas baseChart
                                 [data]="barChartData"
                                 [options]="barChartOptions"
-                                [type]="barChartType">
+                                [type]="barChartType"
+                                [plugins]="[ChartDataLabels]">
                         </canvas>
                     </div>
                 </div>
@@ -171,7 +172,8 @@
                         <canvas baseChart
                                 [data]="pieChartData"
                                 [options]="pieChartOptions"
-                                [type]="pieChartType">
+                                [type]="pieChartType"
+                                [plugins]="[ChartDataLabels]">
                         </canvas>
                     </div>
                     <div class="pie-chart-percentages">
@@ -191,7 +193,8 @@
                     <canvas baseChart
                             [data]="stackedBarChartData"
                             [options]="stackedBarChartOptions"
-                            [type]="stackedBarChartType">
+                            [type]="stackedBarChartType"
+                            [plugins]="[ChartDataLabels]">
                     </canvas>
                 </div>
             </div>

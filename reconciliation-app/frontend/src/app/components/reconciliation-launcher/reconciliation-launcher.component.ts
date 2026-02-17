@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { AppStateService } from '../../services/app-state.service';
+import { ReconciliationTabsService } from '../../services/reconciliation-tabs.service';
 import { ReconciliationService } from '../../services/reconciliation.service';
 import { PopupService } from '../../services/popup.service';
 import { AutoProcessingService } from '../../services/auto-processing.service';
@@ -181,6 +182,7 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
   constructor(
     private router: Router,
     private appStateService: AppStateService,
+    private reconciliationTabsService: ReconciliationTabsService,
     private reconciliationService: ReconciliationService,
     private popupService: PopupService,
     private autoProcessingService: AutoProcessingService
@@ -615,7 +617,7 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
          
          if (reconciliationResponse) {
            console.log('✅ Réconciliation terminée avec succès:', reconciliationResponse);
-           
+           this.reconciliationTabsService.clearAllData();
            // Stocker les résultats dans l'état et naviguer directement vers les résultats
            this.appStateService.setReconciliationResults(reconciliationResponse);
            this.router.navigate(['/results']);
