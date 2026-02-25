@@ -94,6 +94,7 @@ export class FileUploadComponent implements OnDestroy {
     showAgencySelection = false;
     availableAgencies: string[] = [];
     selectedAgencies: string[] = [];
+    agencySearchFilter = ''; // Filtre de recherche dans le popup agences
     agencySelectionData: Record<string, string>[] = [];
     agencyColumn: string | null = null; // Colonne utilisée pour la sélection des agences
 
@@ -803,7 +804,8 @@ export class FileUploadComponent implements OnDestroy {
             for (let i = 0; i < normalizedRows.length; i += REMAP_CHUNK_SIZE) {
                 const chunk = normalizedRows.slice(i, i + REMAP_CHUNK_SIZE);
                 const remappedChunk = chunk.map(row => {
-                    const obj: any = {};
+                    // Conserver toutes les colonnes normalisées existantes (Station, Numéro SIM, Code PDA, etc.)
+                    const obj: any = { ...row };
                     mappedColumns.forEach((col, idx) => {
                         const targetName = targetOrder[idx];
                         if (col && Object.prototype.hasOwnProperty.call(row, col)) {
@@ -825,7 +827,8 @@ export class FileUploadComponent implements OnDestroy {
             }
         } else {
             remapped = normalizedRows.map(row => {
-                const obj: any = {};
+                // Conserver toutes les colonnes normalisées existantes (Station, Numéro SIM, Code PDA, etc.)
+                const obj: any = { ...row };
                 mappedColumns.forEach((col, idx) => {
                     const targetName = targetOrder[idx];
                     if (col && Object.prototype.hasOwnProperty.call(row, col)) {
@@ -2303,6 +2306,7 @@ export class FileUploadComponent implements OnDestroy {
     // Méthode pour afficher la sélection des agences (TRXBO - étape 1)
     private showAgencySelectionStep(): void {
         this.showAgencySelection = true;
+        this.agencySearchFilter = '';
         this.selectedAgencies = [...this.availableAgencies]; // Sélectionner toutes par défaut
     }
 
@@ -2361,6 +2365,7 @@ export class FileUploadComponent implements OnDestroy {
     // Méthode pour annuler la sélection des agences
     cancelAgencySelection(): void {
         this.showAgencySelection = false;
+        this.agencySearchFilter = '';
         this.availableAgencies = [];
         this.selectedAgencies = [];
         this.agencySelectionData = [];
@@ -2386,14 +2391,29 @@ export class FileUploadComponent implements OnDestroy {
         return this.agencySelectionData.filter(row => row[this.agencyColumn!] === agency).length;
     }
 
-    // Méthode pour sélectionner toutes les agences
-    selectAllAgencies(): void {
-        this.selectedAgencies = [...this.availableAgencies];
+    /** Liste des agences filtrée par le critère de recherche (popup) */
+    get filteredAvailableAgencies(): string[] {
+        const term = (this.agencySearchFilter || '').trim().toLowerCase();
+        if (!term) return this.availableAgencies;
+        return this.availableAgencies.filter(agency =>
+            agency.toLowerCase().includes(term) ||
+            String(this.getAgencyCount(agency)).includes(term)
+        );
     }
 
-    // Méthode pour désélectionner toutes les agences
+    // Méthode pour sélectionner toutes les agences (visibles si filtre actif)
+    selectAllAgencies(): void {
+        const toSelect = this.filteredAvailableAgencies;
+        toSelect.forEach(agency => {
+            if (!this.selectedAgencies.includes(agency)) this.selectedAgencies.push(agency);
+        });
+        this.selectedAgencies = [...this.selectedAgencies];
+    }
+
+    // Méthode pour désélectionner toutes les agences (visibles si filtre actif)
     deselectAllAgencies(): void {
-        this.selectedAgencies = [];
+        const toDeselect = this.filteredAvailableAgencies;
+        this.selectedAgencies = this.selectedAgencies.filter(a => !toDeselect.includes(a));
     }
 
     // Méthode pour afficher la sélection des services

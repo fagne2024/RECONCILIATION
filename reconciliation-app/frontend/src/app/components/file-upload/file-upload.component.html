@@ -198,6 +198,15 @@
             </div>
             
             <div class="manual-service-selection-content">
+                <!-- Recherche -->
+                <div class="agency-search-wrap">
+                    <i class="fas fa-search agency-search-icon"></i>
+                    <input type="text" class="agency-search-input" placeholder="Rechercher par code agence ou nombre de lignes..."
+                           [(ngModel)]="agencySearchFilter">
+                    <span class="agency-search-count" *ngIf="agencySearchFilter?.trim()">
+                        {{ filteredAvailableAgencies.length }} / {{ availableAgencies.length }}
+                    </span>
+                </div>
                 <!-- Boutons d'action principaux -->
                 <div class="manual-service-controls">
                     <button class="modern-btn select-all-btn" (click)="selectAllAgencies()">
@@ -212,7 +221,7 @@
                 
                 <!-- Grille d'agences en cartes -->
                 <div class="manual-service-grid">
-                    <div class="service-card" *ngFor="let agency of availableAgencies">
+                    <div class="service-card" *ngFor="let agency of filteredAvailableAgencies">
                         <div class="service-card-content">
                             <div class="service-checkbox-modern">
                                 <input type="checkbox" 
@@ -579,6 +588,15 @@
                 </div>
                 
                 <div class="service-selection-content">
+                    <!-- Recherche -->
+                    <div class="agency-search-wrap">
+                        <i class="fas fa-search agency-search-icon"></i>
+                        <input type="text" class="agency-search-input" placeholder="Rechercher par code agence ou nombre de lignes..."
+                               [(ngModel)]="agencySearchFilter">
+                        <span class="agency-search-count" *ngIf="agencySearchFilter?.trim()">
+                            {{ filteredAvailableAgencies.length }} / {{ availableAgencies.length }}
+                        </span>
+                    </div>
                     <!-- Boutons d'action principaux -->
                     <div class="service-controls">
                         <button class="modern-btn select-all-btn" (click)="selectAllAgencies()">
@@ -593,7 +611,7 @@
                     
                     <!-- Grille d'agences en cartes -->
                     <div class="service-grid">
-                        <div class="service-card" *ngFor="let agency of availableAgencies">
+                        <div class="service-card" *ngFor="let agency of filteredAvailableAgencies">
                             <div class="service-card-content">
                                 <div class="service-checkbox-modern">
                                     <input type="checkbox" 

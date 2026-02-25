@@ -178,6 +178,10 @@
 
 .manual-service-selection-content {
     margin-bottom: 32px;
+
+    .agency-search-wrap {
+        margin-bottom: 20px;
+    }
 }
 
 .manual-service-controls {
@@ -332,6 +336,47 @@
             font-weight: 600;
             font-size: 0.9rem;
         }
+    }
+}
+
+.agency-search-wrap {
+    position: relative;
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+
+    .agency-search-icon {
+        position: absolute;
+        left: 14px;
+        color: #6c757d;
+        font-size: 0.9rem;
+        pointer-events: none;
+    }
+
+    .agency-search-input {
+        flex: 1;
+        padding: 12px 14px 12px 40px;
+        border: 1px solid #dee2e6;
+        border-radius: 10px;
+        font-size: 0.95rem;
+        outline: none;
+        transition: border-color 0.2s;
+
+        &::placeholder {
+            color: #adb5bd;
+        }
+        &:focus {
+            border-color: #007bff;
+            box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.15);
+        }
+    }
+
+    .agency-search-count {
+        flex-shrink: 0;
+        font-size: 0.85rem;
+        color: #6c757d;
+        white-space: nowrap;
     }
 }
 

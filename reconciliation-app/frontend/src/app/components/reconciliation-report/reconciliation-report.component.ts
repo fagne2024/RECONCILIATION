@@ -52,25 +52,28 @@ export interface ReconciliationReportData {
                 <h2>📊 Rapport de Réconciliation <span class="badge" [ngClass]="currentSource === 'live' ? 'badge-live' : 'badge-db'">{{ currentSource === 'live' ? 'En cours' : 'Base sauvegardée' }}</span></h2>
                 <div class="report-actions">
                     <button class="btn btn-toggle-source" (click)="toggleDataSource()" [title]="currentSource === 'live' ? 'Basculer vers les données en base' : 'Basculer vers les données en cours'">
-                        🔄 {{ currentSource === 'live' ? 'Voir données en base' : 'Voir données en cours' }}
+                        🔄 {{ currentSource === 'live' ? 'Voir données en base' : 'Données en cours' }}
                     </button>
-                    <button class="btn btn-voir-plus" (click)="toggleShowAllMonths()" *ngIf="!hasSelectedRows()" [title]="showAllMonths ? 'Afficher uniquement le mois en cours' : 'Afficher toutes les données'">
+                    <button class="btn btn-voir-plus" (click)="toggleShowAllMonths()" *ngIf="!hasSelectedRows() && currentSource !== 'live'" [title]="showAllMonths ? 'Afficher uniquement le mois en cours' : 'Afficher toutes les données'">
                         {{ showAllMonths ? '📅 Mois en cours' : '📋 Voir plus' }}
                     </button>
+                    <span class="report-display-mode" *ngIf="!hasSelectedRows() && currentSource !== 'live'">
+                        ({{ showAllMonths ? 'Toutes' : 'Mois en cours' }} : {{ filteredReportData.length }} ligne(s))
+                    </span>
                     <button class="btn btn-add" (click)="addNewRow()" title="Ajouter une nouvelle ligne">
                         ➕ Nouvelle ligne
                     </button>
                     <button class="btn btn-export" (click)="exportToExcel()" [disabled]="!reportData.length">
-                        📥 Exporter Excel
+                        📥 Exporter
                     </button>
                     <button class="btn btn-save-all" (click)="saveAll()" [disabled]="!hasSelectedRows()">
-                        💾 Sauvegarder la sélection
+                        💾 Sauvegarder
                     </button>
                     <button class="btn btn-dashboard" (click)="goToReconciliationDashboard()" [disabled]="!filteredReportData.length && !reportData.length">
                         📈 Tableau de bord
                     </button>
                     <button class="btn btn-suivi-ecarts" (click)="goToSuiviEcarts()" title="Ouvrir le suivi remboursement">
-                        📋 Suivi remboursement
+                        📋 Remboursement
                     </button>
                     <button class="btn btn-toggle-actions" (click)="toggleActionsColumn()" [title]="showActionsColumn ? 'Masquer la colonne Actions' : 'Afficher la colonne Actions'">
                         {{ showActionsColumn ? '👁️ Masquer Actions' : '👁️‍🗨️ Afficher Actions' }}
@@ -985,6 +988,13 @@ export interface ReconciliationReportData {
         .report-actions {
             display: flex;
             gap: 10px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+        .report-display-mode {
+            font-size: 0.85rem;
+            color: rgba(255,255,255,0.9);
+            margin-left: 4px;
         }
 
         .badge {
@@ -3931,17 +3941,8 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         this.filteredServices = [...this.uniqueServices];
         this.updateFilteredAgencies();
         this.updateFilteredServices();
-        
-        // Initialiser filteredReportData avec toutes les données si pas encore fait
-        if (this.filteredReportData.length === 0) {
-            this.filteredReportData = [...this.reportData];
-            this.debugLog('🔍 Debug extractUniqueValues - Initialisation filteredReportData:', {
-                reportDataLength: this.reportData.length,
-                filteredReportDataLength: this.filteredReportData.length,
-                uniqueDatesFromReportData: this.uniqueDates.length,
-                uniqueStatusesFromReportData: this.uniqueStatuses.length
-            });
-        }
+        // Ne pas écraser filteredReportData ici : filterReport() est toujours appelé après
+        // et définit filteredReportData (y compris vide pour "mois en cours" sans données).
     }
 
     /**
@@ -4059,7 +4060,8 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
 
     toggleShowAllMonths(): void {
         this.showAllMonths = !this.showAllMonths;
-        this.filterReport();
+        this.currentPage = 1; // Toujours revenir à la page 1 pour afficher les données cohérentes
+        this.filterReport(); // filterReport() appelle updatePagination() en fin
     }
 
     filterByInProgress(): void {
@@ -4092,16 +4094,30 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         this.filterReport();
     }
 
+    /** Retourne true si la date de l'item est dans le mois en cours (comparaison locale, insensible timezone). */
+    private isItemInCurrentMonth(itemDateStr: string): boolean {
+        if (!itemDateStr || typeof itemDateStr !== 'string') return false;
+        const now = new Date();
+        const currentYear = now.getFullYear();
+        const currentMonth = now.getMonth();
+        // Chaîne YYYY-MM-DD : extraire année/mois en local pour éviter décalage timezone
+        const match = itemDateStr.trim().match(/^(\d{4})-(\d{2})/);
+        if (match) {
+            const y = parseInt(match[1], 10);
+            const m = parseInt(match[2], 10) - 1; // 0-indexed
+            return y === currentYear && m === currentMonth;
+        }
+        const d = new Date(itemDateStr);
+        if (isNaN(d.getTime())) return false;
+        return d.getFullYear() === currentYear && d.getMonth() === currentMonth;
+    }
+
     filterReport() {
         this.filteredReportData = this.reportData.filter(item => {
             // Données en cours (live) : toujours tout afficher, pas de filtre par mois
             // Base sauvegardée : afficher uniquement le mois en cours sauf si "Voir plus"
             if (this.currentSource !== 'live' && !this.showAllMonths && item.date) {
-                const d = new Date(item.date);
-                const now = new Date();
-                if (d.getFullYear() !== now.getFullYear() || d.getMonth() !== now.getMonth()) {
-                    return false;
-                }
+                if (!this.isItemInCurrentMonth(item.date)) return false;
             }
 
             // Filtrage par pays autorisés (cloisonnement)

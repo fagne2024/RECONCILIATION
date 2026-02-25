@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "scripts": {
     "ng": "node ./node_modules/@angular/cli/bin/ng",
-    "start": "node ./node_modules/cross-env/src/bin/cross-env.js NODE_OPTIONS=--no-deprecation node ./node_modules/@angular/cli/bin/ng serve --ssl --ssl-key C:/Certs/reconciliation/reconciliation.intouchgroup.net-key.pem --ssl-cert C:/Certs/reconciliation/reconciliation.intouchgroup.net-crt.pem --host 0.0.0.0",
+    "start": "node ./node_modules/cross-env/src/bin/cross-env.js NODE_OPTIONS=--no-deprecation node ./node_modules/@angular/cli/bin/ng serve --ssl --ssl-key ../../Certs/reconciliation/reconciliation.intouchgroup.net-key.pem --ssl-cert ../../Certs/reconciliation/reconciliation.intouchgroup.net-crt.pem --host 0.0.0.0",
     "start-http": "node ./node_modules/cross-env/src/bin/cross-env.js NODE_OPTIONS=--no-deprecation node ./node_modules/@angular/cli/bin/ng serve",
     "build": "node ./node_modules/cross-env/src/bin/cross-env.js NODE_OPTIONS=--no-deprecation node ./node_modules/@angular/cli/bin/ng build",
     "watch": "node ./node_modules/cross-env/src/bin/cross-env.js NODE_OPTIONS=--no-deprecation node ./node_modules/@angular/cli/bin/ng build --watch --configuration development",
