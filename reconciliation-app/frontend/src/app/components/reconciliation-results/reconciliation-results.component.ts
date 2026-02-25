@@ -248,8 +248,14 @@ interface ApiError {
                             <button (click)="showMatchesList = !showMatchesList" class="toggle-matches-btn" [class.active]="showMatchesList">
                                 {{ showMatchesList ? '📋 Masquer la liste' : '📋 Afficher la liste' }}
                             </button>
-                            <button (click)="handleExport()" class="export-button">
+                            <button (click)="exportResultsOptimized('matches')" class="export-button" [disabled]="isExporting" title="Export optimisé rapide des correspondances">
                                 📥 Exporter les correspondances
+                            </button>
+                            <button (click)="exportResultsOptimized('boOnly')" class="export-button" [disabled]="isExporting || !((response?.boOnly?.length || 0) + (response?.mismatches?.length || 0))" title="Export optimisé rapide des écarts BO">
+                                📥 Écarts BO
+                            </button>
+                            <button (click)="exportResultsOptimized('partnerOnly')" class="export-button" [disabled]="isExporting || !filteredPartnerOnlyCount" title="Export optimisé rapide des écarts Partenaire">
+                                📥 Écarts Partenaire
                             </button>
                         </div>
                         <div class="volume-summary" *ngIf="showVolumeSummary">
@@ -5880,10 +5886,14 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
         return match.differences && match.differences.length > 0;
     }
 
-   async exportResults() {
+   async exportResults(forceTab?: 'matches' | 'boOnly' | 'partnerOnly' | 'agencySummary') {
+    const previousTab = this.activeTab;
+    if (forceTab !== undefined) {
+        this.activeTab = forceTab;
+    }
     console.log('Début de l\'export...');
     console.log('Onglet actif:', this.activeTab);
-    
+
     try {
         this.isExporting = true;
         this.exportProgress = 0;
@@ -5911,6 +5921,9 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
     } finally {
         this.isExporting = false;
         this.exportProgress = 0;
+        if (forceTab !== undefined) {
+            this.activeTab = previousTab;
+        }
         this.cdr.detectChanges();
     }
 }
@@ -6462,12 +6475,16 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
 }
 
     /**
-     * Export optimisé avec Web Worker pour les gros volumes
+     * Export optimisé rapide (Web Worker pour gros volumes, export direct pour petits volumes).
+     * @param forceTab Onglet à exporter : 'matches' | 'boOnly' | 'partnerOnly' | 'agencySummary'. Si fourni, l'export utilise cet onglet sans changer l'onglet affiché.
      */
-    async exportResultsOptimized() {
-        console.log('🚀 Début de l\'export optimisé...');
-        console.log('Onglet actif:', this.activeTab);
-        
+    async exportResultsOptimized(forceTab?: 'matches' | 'boOnly' | 'partnerOnly' | 'agencySummary') {
+        const previousTab = this.activeTab;
+        if (forceTab !== undefined) {
+            this.activeTab = forceTab;
+        }
+        console.log('🚀 Début de l\'export optimisé...', 'onglet:', this.activeTab);
+
         try {
             this.isExporting = true;
             this.exportProgressOptimized = {
@@ -6486,7 +6503,7 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
                 return;
             }
 
-            // Préparer les données selon l'onglet actif
+            // Préparer les données selon l'onglet (actif ou forcé)
             const { rows, columns } = this.prepareDataForExport();
             
             if (rows.length === 0) {
@@ -6494,37 +6511,27 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
                 return;
             }
 
-            // Déterminer la stratégie d'export
-            const isLargeDataset = rows.length > 10000;
+            // Stratégie : toujours export rapide (exportQuick) pour réactivité ; Web Worker uniquement pour très gros volumes
+            const isLargeDataset = rows.length > 15000;
             const format = fileName.endsWith('.csv') ? 'csv' : 'xlsx';
             
             if (isLargeDataset) {
-                // Export optimisé avec Web Worker
+                // Gros volumes : Web Worker pour ne pas bloquer l'UI
                 if (format === 'csv') {
                     this.exportOptimizationService.exportCSVOptimized(
                         rows,
                         columns,
                         fileName,
-                        {
-                            chunkSize: 5000,
-                            useWebWorker: true,
-                            enableCompression: true
-                        }
+                        { chunkSize: 5000, useWebWorker: true, enableCompression: true }
                     );
                 } else {
                     this.exportOptimizationService.exportExcelOptimized(
                         rows,
                         columns,
                         fileName,
-                        {
-                            chunkSize: 3000,
-                            useWebWorker: true,
-                            enableCompression: true
-                        }
+                        { chunkSize: 3000, useWebWorker: true, enableCompression: true }
                     );
                 }
-                
-                // S'abonner à la progression
                 this.exportOptimizationService.exportProgress$.subscribe(progress => {
                     this.exportProgressOptimized = progress;
                     if (progress.isComplete) {
@@ -6533,15 +6540,19 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
                     }
                 });
             } else {
-                // Export rapide pour petits volumes
+                // Export rapide pour volumes petits/moyens (priorité vitesse)
                 this.exportOptimizationService.exportQuick(rows, columns, fileName, format);
                 this.isExporting = false;
                 this.cdr.detectChanges();
             }
-
         } catch (error) {
             console.error('❌ Erreur lors de l\'export optimisé:', error);
             this.isExporting = false;
+            this.cdr.detectChanges();
+        } finally {
+            if (forceTab !== undefined) {
+                this.activeTab = previousTab;
+            }
             this.cdr.detectChanges();
         }
     }
@@ -6554,31 +6565,40 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
         let columns: string[] = [];
 
         switch (this.activeTab) {
-            case 'matches':
+            case 'matches': {
                 const filteredMatches = this.getFilteredMatches();
-                rows = filteredMatches.map(match => ({
-                    ...match.boData,
-                    ...match.partnerData
-                }));
-                
-                // Récupérer toutes les colonnes uniques
-                const allKeys = new Set<string>();
+                const allBoKeys = new Set<string>();
+                const allPartnerKeys = new Set<string>();
                 filteredMatches.forEach(match => {
-                    Object.keys(match.boData).forEach(key => allKeys.add(key));
-                    Object.keys(match.partnerData).forEach(key => allKeys.add(key));
+                    Object.keys(match.boData || {}).forEach(k => allBoKeys.add(k));
+                    Object.keys(match.partnerData || {}).forEach(k => allPartnerKeys.add(k));
                 });
-                columns = Array.from(allKeys);
+                const boKeysArray = Array.from(allBoKeys);
+                const partnerKeysArray = Array.from(allPartnerKeys);
+                columns = ['Clé', ...boKeysArray.map(k => `BO_${k}`), ...partnerKeysArray.map(k => `PARTENAIRE_${k}`)];
+                rows = filteredMatches.map(match => {
+                    const row: any = { 'Clé': match.key };
+                    boKeysArray.forEach(k => { row[`BO_${k}`] = match.boData?.[k] ?? ''; });
+                    partnerKeysArray.forEach(k => { row[`PARTENAIRE_${k}`] = match.partnerData?.[k] ?? ''; });
+                    return row;
+                });
                 break;
+            }
 
-            case 'boOnly':
-                rows = this.response?.boOnly || [];
-                columns = rows.length > 0 ? Object.keys(rows[0]) : [];
+            case 'boOnly': {
+                rows = this.getFilteredBoOnly();
+                const allKeysBo = new Set<string>();
+                rows.forEach(record => Object.keys(record).forEach(k => allKeysBo.add(k)));
+                columns = Array.from(allKeysBo);
                 break;
-
-            case 'partnerOnly':
-                rows = this.response?.partnerOnly || [];
-                columns = rows.length > 0 ? Object.keys(rows[0]) : [];
+            }
+            case 'partnerOnly': {
+                rows = this.getFilteredPartnerOnly();
+                const allKeysPartner = new Set<string>();
+                rows.forEach(record => Object.keys(record).forEach(k => allKeysPartner.add(k)));
+                columns = Array.from(allKeysPartner);
                 break;
+            }
 
             case 'agencySummary':
                 // Pour le résumé par agence, on utilise les données existantes
@@ -7965,7 +7985,7 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
     }
 
     handleExport() {
-        this.exportResults();
+        this.exportResultsOptimized('matches');
     }
 
     formatTime(ms: number): string {

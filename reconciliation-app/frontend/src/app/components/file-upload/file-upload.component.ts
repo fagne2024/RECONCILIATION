@@ -102,12 +102,14 @@ export class FileUploadComponent implements OnDestroy {
     showServiceSelection = false;
     availableServices: string[] = [];
     selectedServices: string[] = [];
+    serviceSearchFilter = '';
     serviceSelectionData: Record<string, string>[] = [];
 
     // Sélection manuelle de services
     showManualServiceSelection = false;
     manualAvailableServices: string[] = [];
     manualSelectedServices: string[] = [];
+    manualServiceSearchFilter = '';
     manualServiceSelectionData: Record<string, string>[] = [];
     manualStatusColumn: string | null = null; // Colonne statut pour TRXBO en mode manuel
     
@@ -115,12 +117,14 @@ export class FileUploadComponent implements OnDestroy {
     showManualStatusSelection = false;
     manualAvailableStatuses: string[] = [];
     manualSelectedStatuses: string[] = [];
+    manualStatusSearchFilter = '';
     manualStatusSelectionData: Record<string, string>[] = []; // Données déjà filtrées par agence et service
 
     // Sélection de services/type/statut pour les fichiers partenaires
     showPartnerServiceSelection = false;
     partnerAvailableServices: string[] = [];
     partnerSelectedServices: string[] = [];
+    partnerServiceSearchFilter = '';
     partnerServiceSelectionData: Record<string, string>[] = [];
     partnerServiceColumn: string | null = null; // Colonne utilisée pour la sélection (service, type, etc.)
     partnerStatusColumn: string | null = null; // Colonne statut
@@ -129,12 +133,14 @@ export class FileUploadComponent implements OnDestroy {
     showPartnerStatusSelection = false;
     partnerAvailableStatuses: string[] = [];
     partnerSelectedStatuses: string[] = [];
+    partnerStatusSearchFilter = '';
     partnerStatusSelectionData: Record<string, string>[] = []; // Données déjà filtrées par service
 
     // Sélection des paiements pour les fichiers partenaires (étape 3)
     showPartnerPaymentSelection = false;
     partnerAvailablePayments: string[] = [];
     partnerSelectedPayments: string[] = [];
+    partnerPaymentSearchFilter = '';
     partnerPaymentSelectionData: Record<string, string>[] = []; // Données déjà filtrées par service et statut
     partnerPaymentColumn: string | null = null; // Colonne utilisée pour la sélection des paiements
 
@@ -2419,6 +2425,7 @@ export class FileUploadComponent implements OnDestroy {
     // Méthode pour afficher la sélection des services
     private showServiceSelectionStep(): void {
         this.showServiceSelection = true;
+        this.serviceSearchFilter = '';
         this.selectedServices = [...this.availableServices]; // Sélectionner tous par défaut
     }
 
@@ -2462,6 +2469,7 @@ export class FileUploadComponent implements OnDestroy {
     // Méthode pour annuler la sélection des services
     cancelServiceSelection(): void {
         this.showServiceSelection = false;
+        this.serviceSearchFilter = '';
         this.availableServices = [];
         this.selectedServices = [];
         this.serviceSelectionData = [];
@@ -2502,19 +2510,29 @@ export class FileUploadComponent implements OnDestroy {
         return 0;
     }
 
-    // Méthode pour sélectionner tous les services
-    selectAllServices(): void {
-        this.selectedServices = [...this.availableServices];
+    get filteredAvailableServices(): string[] {
+        const term = (this.serviceSearchFilter || '').trim().toLowerCase();
+        if (!term) return this.availableServices;
+        return this.availableServices.filter(s =>
+            s.toLowerCase().includes(term) || String(this.getServiceCount(s)).includes(term)
+        );
     }
 
-    // Méthode pour désélectionner tous les services
+    selectAllServices(): void {
+        const toSelect = this.filteredAvailableServices;
+        toSelect.forEach(s => { if (!this.selectedServices.includes(s)) this.selectedServices.push(s); });
+        this.selectedServices = [...this.selectedServices];
+    }
+
     deselectAllServices(): void {
-        this.selectedServices = [];
+        const toDeselect = this.filteredAvailableServices;
+        this.selectedServices = this.selectedServices.filter(s => !toDeselect.includes(s));
     }
 
     // Méthode pour afficher la sélection des services/type/statut pour le partenaire (mode automatique)
     private showPartnerServiceSelectionStep(): void {
         this.showPartnerServiceSelection = true;
+        this.partnerServiceSearchFilter = '';
         this.partnerSelectedServices = [...this.partnerAvailableServices]; // Sélectionner tous par défaut
     }
 
@@ -2538,6 +2556,7 @@ export class FileUploadComponent implements OnDestroy {
         }
         
         this.showPartnerServiceSelection = true;
+        this.partnerServiceSearchFilter = '';
         this.partnerSelectedServices = [...this.partnerAvailableServices]; // Sélectionner tous par défaut
         
         console.log('✅ Affichage de la sélection des services partenaire (mode manuel)');
@@ -2625,6 +2644,9 @@ export class FileUploadComponent implements OnDestroy {
         this.showPartnerServiceSelection = false;
         this.showPartnerStatusSelection = false;
         this.showPartnerPaymentSelection = false;
+        this.partnerServiceSearchFilter = '';
+        this.partnerStatusSearchFilter = '';
+        this.partnerPaymentSearchFilter = '';
         this.partnerAvailableServices = [];
         this.partnerSelectedServices = [];
         this.partnerServiceSelectionData = [];
@@ -2660,19 +2682,29 @@ export class FileUploadComponent implements OnDestroy {
         return this.partnerServiceSelectionData.filter(row => row[this.partnerServiceColumn!] === service).length;
     }
 
-    // Méthode pour sélectionner tous les services partenaire
-    selectAllPartnerServices(): void {
-        this.partnerSelectedServices = [...this.partnerAvailableServices];
+    get filteredPartnerAvailableServices(): string[] {
+        const term = (this.partnerServiceSearchFilter || '').trim().toLowerCase();
+        if (!term) return this.partnerAvailableServices;
+        return this.partnerAvailableServices.filter(s =>
+            s.toLowerCase().includes(term) || String(this.getPartnerServiceCount(s)).includes(term)
+        );
     }
 
-    // Méthode pour désélectionner tous les services partenaire
+    selectAllPartnerServices(): void {
+        const toSelect = this.filteredPartnerAvailableServices;
+        toSelect.forEach(s => { if (!this.partnerSelectedServices.includes(s)) this.partnerSelectedServices.push(s); });
+        this.partnerSelectedServices = [...this.partnerSelectedServices];
+    }
+
     deselectAllPartnerServices(): void {
-        this.partnerSelectedServices = [];
+        const toDeselect = this.filteredPartnerAvailableServices;
+        this.partnerSelectedServices = this.partnerSelectedServices.filter(s => !toDeselect.includes(s));
     }
 
     // Méthode pour afficher la sélection des statuts pour le partenaire (étape 2)
     private showPartnerStatusSelectionStep(): void {
         this.showPartnerStatusSelection = true;
+        this.partnerStatusSearchFilter = '';
         this.partnerSelectedStatuses = [...this.partnerAvailableStatuses]; // Sélectionner tous par défaut
     }
 
@@ -2777,6 +2809,7 @@ export class FileUploadComponent implements OnDestroy {
     // Méthode pour afficher la sélection des paiements pour le partenaire (étape 3)
     private showPartnerPaymentSelectionStep(): void {
         this.showPartnerPaymentSelection = true;
+        this.partnerPaymentSearchFilter = '';
         this.partnerSelectedPayments = [...this.partnerAvailablePayments]; // Sélectionner tous par défaut
     }
 
@@ -2831,6 +2864,7 @@ export class FileUploadComponent implements OnDestroy {
     // Méthode pour annuler la sélection des paiements partenaire
     cancelPartnerPaymentSelection(): void {
         this.showPartnerPaymentSelection = false;
+        this.partnerPaymentSearchFilter = '';
         this.partnerPaymentSelectionData = [];
         this.partnerAvailablePayments = [];
         this.partnerSelectedPayments = [];
@@ -2858,19 +2892,29 @@ export class FileUploadComponent implements OnDestroy {
         return this.partnerPaymentSelectionData.filter(row => row[this.partnerPaymentColumn!] === payment).length;
     }
 
-    // Méthode pour sélectionner tous les paiements partenaire
-    selectAllPartnerPayments(): void {
-        this.partnerSelectedPayments = [...this.partnerAvailablePayments];
+    get filteredPartnerAvailablePayments(): string[] {
+        const term = (this.partnerPaymentSearchFilter || '').trim().toLowerCase();
+        if (!term) return this.partnerAvailablePayments;
+        return this.partnerAvailablePayments.filter(p =>
+            p.toLowerCase().includes(term) || String(this.getPartnerPaymentCount(p)).includes(term)
+        );
     }
 
-    // Méthode pour désélectionner tous les paiements partenaire
+    selectAllPartnerPayments(): void {
+        const toSelect = this.filteredPartnerAvailablePayments;
+        toSelect.forEach(p => { if (!this.partnerSelectedPayments.includes(p)) this.partnerSelectedPayments.push(p); });
+        this.partnerSelectedPayments = [...this.partnerSelectedPayments];
+    }
+
     deselectAllPartnerPayments(): void {
-        this.partnerSelectedPayments = [];
+        const toDeselect = this.filteredPartnerAvailablePayments;
+        this.partnerSelectedPayments = this.partnerSelectedPayments.filter(p => !toDeselect.includes(p));
     }
 
     // Méthode pour annuler la sélection des statuts partenaire
     cancelPartnerStatusSelection(): void {
         this.showPartnerStatusSelection = false;
+        this.partnerStatusSearchFilter = '';
         this.partnerStatusSelectionData = [];
         this.partnerAvailableStatuses = [];
         this.partnerSelectedStatuses = [];
@@ -2897,14 +2941,24 @@ export class FileUploadComponent implements OnDestroy {
         return this.partnerStatusSelectionData.filter(row => row[this.partnerStatusColumn!] === status).length;
     }
 
-    // Méthode pour sélectionner tous les statuts partenaire
+    get filteredPartnerAvailableStatuses(): string[] {
+        const term = (this.partnerStatusSearchFilter || '').trim().toLowerCase();
+        if (!term) return this.partnerAvailableStatuses;
+        return this.partnerAvailableStatuses.filter(st =>
+            st.toLowerCase().includes(term) || String(this.getPartnerStatusCount(st)).includes(term)
+        );
+    }
+
     selectAllPartnerStatuses(): void {
-        this.partnerSelectedStatuses = [...this.partnerAvailableStatuses];
+        const toSelect = this.filteredPartnerAvailableStatuses;
+        toSelect.forEach(st => { if (!this.partnerSelectedStatuses.includes(st)) this.partnerSelectedStatuses.push(st); });
+        this.partnerSelectedStatuses = [...this.partnerSelectedStatuses];
     }
 
     // Méthode pour désélectionner tous les statuts partenaire
     deselectAllPartnerStatuses(): void {
-        this.partnerSelectedStatuses = [];
+        const toDeselect = this.filteredPartnerAvailableStatuses;
+        this.partnerSelectedStatuses = this.partnerSelectedStatuses.filter(st => !toDeselect.includes(st));
     }
 
 
@@ -4668,6 +4722,7 @@ export class FileUploadComponent implements OnDestroy {
 
     private showManualServiceSelectionStep(): void {
         this.showManualServiceSelection = true;
+        this.manualServiceSearchFilter = '';
         this.manualSelectedServices = [...this.manualAvailableServices]; // Sélectionner tous par défaut
     }
 
@@ -4726,6 +4781,8 @@ export class FileUploadComponent implements OnDestroy {
 
     cancelManualServiceSelection(): void {
         this.showManualServiceSelection = false;
+        this.manualServiceSearchFilter = '';
+        this.manualStatusSearchFilter = '';
         this.manualAvailableServices = [];
         this.manualSelectedServices = [];
         this.manualServiceSelectionData = [];
@@ -4775,6 +4832,14 @@ export class FileUploadComponent implements OnDestroy {
         }
     }
 
+    get filteredManualAvailableServices(): string[] {
+        const term = (this.manualServiceSearchFilter || '').trim().toLowerCase();
+        if (!term) return this.manualAvailableServices;
+        return this.manualAvailableServices.filter(s =>
+            s.toLowerCase().includes(term) || String(this.getManualServiceCount(s)).includes(term)
+        );
+    }
+
     getManualServiceCount(service: string): number {
         if (!this.manualServiceSelectionData || this.manualServiceSelectionData.length === 0) return 0;
         
@@ -4791,16 +4856,20 @@ export class FileUploadComponent implements OnDestroy {
     }
 
     selectAllManualServices(): void {
-        this.manualSelectedServices = [...this.manualAvailableServices];
+        const toSelect = this.filteredManualAvailableServices;
+        toSelect.forEach(s => { if (!this.manualSelectedServices.includes(s)) this.manualSelectedServices.push(s); });
+        this.manualSelectedServices = [...this.manualSelectedServices];
     }
 
     deselectAllManualServices(): void {
-        this.manualSelectedServices = [];
+        const toDeselect = this.filteredManualAvailableServices;
+        this.manualSelectedServices = this.manualSelectedServices.filter(s => !toDeselect.includes(s));
     }
 
     // Méthode pour afficher la sélection des statuts pour TRXBO en mode manuel (étape 3)
     private showManualStatusSelectionStep(): void {
         this.showManualStatusSelection = true;
+        this.manualStatusSearchFilter = '';
         this.manualSelectedStatuses = [...this.manualAvailableStatuses]; // Sélectionner tous par défaut
     }
 
@@ -4838,6 +4907,7 @@ export class FileUploadComponent implements OnDestroy {
     // Méthode pour annuler la sélection des statuts (mode manuel)
     cancelManualStatusSelection(): void {
         this.showManualStatusSelection = false;
+        this.manualStatusSearchFilter = '';
         this.manualAvailableStatuses = [];
         this.manualSelectedStatuses = [];
         this.manualStatusSelectionData = [];
@@ -4862,14 +4932,24 @@ export class FileUploadComponent implements OnDestroy {
         return this.manualStatusSelectionData.filter(row => row[this.manualStatusColumn!] === status).length;
     }
 
-    // Méthode pour sélectionner tous les statuts (mode manuel)
+    get filteredManualAvailableStatuses(): string[] {
+        const term = (this.manualStatusSearchFilter || '').trim().toLowerCase();
+        if (!term) return this.manualAvailableStatuses;
+        return this.manualAvailableStatuses.filter(st =>
+            st.toLowerCase().includes(term) || String(this.getManualStatusCount(st)).includes(term)
+        );
+    }
+
     selectAllManualStatuses(): void {
-        this.manualSelectedStatuses = [...this.manualAvailableStatuses];
+        const toSelect = this.filteredManualAvailableStatuses;
+        toSelect.forEach(st => { if (!this.manualSelectedStatuses.includes(st)) this.manualSelectedStatuses.push(st); });
+        this.manualSelectedStatuses = [...this.manualSelectedStatuses];
     }
 
     // Méthode pour désélectionner tous les statuts (mode manuel)
     deselectAllManualStatuses(): void {
-        this.manualSelectedStatuses = [];
+        const toDeselect = this.filteredManualAvailableStatuses;
+        this.manualSelectedStatuses = this.manualSelectedStatuses.filter(st => !toDeselect.includes(st));
     }
 
     // Méthodes pour l'aide et la configuration des modèles

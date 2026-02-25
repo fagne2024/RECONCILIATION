@@ -277,6 +277,15 @@
             </div>
             
             <div class="manual-service-selection-content">
+                <!-- Recherche -->
+                <div class="agency-search-wrap">
+                    <i class="fas fa-search agency-search-icon"></i>
+                    <input type="text" class="agency-search-input" placeholder="Rechercher un service ou nombre de lignes..."
+                           [(ngModel)]="manualServiceSearchFilter">
+                    <span class="agency-search-count" *ngIf="manualServiceSearchFilter?.trim()">
+                        {{ filteredManualAvailableServices.length }} / {{ manualAvailableServices.length }}
+                    </span>
+                </div>
                 <!-- Boutons d'action principaux -->
                 <div class="manual-service-controls">
                     <button class="modern-btn select-all-btn" (click)="selectAllManualServices()">
@@ -291,7 +300,7 @@
                 
                 <!-- Grille de services en cartes -->
                 <div class="manual-service-grid">
-                    <div class="manual-service-card" *ngFor="let service of manualAvailableServices">
+                    <div class="manual-service-card" *ngFor="let service of filteredManualAvailableServices">
                         <div class="manual-service-card-content">
                             <div class="manual-service-checkbox-modern">
                                 <input type="checkbox" 
@@ -347,6 +356,15 @@
             </div>
             
             <div class="manual-service-selection-content">
+                <!-- Recherche -->
+                <div class="agency-search-wrap">
+                    <i class="fas fa-search agency-search-icon"></i>
+                    <input type="text" class="agency-search-input" placeholder="Rechercher un statut ou nombre de lignes..."
+                           [(ngModel)]="manualStatusSearchFilter">
+                    <span class="agency-search-count" *ngIf="manualStatusSearchFilter?.trim()">
+                        {{ filteredManualAvailableStatuses.length }} / {{ manualAvailableStatuses.length }}
+                    </span>
+                </div>
                 <!-- Boutons d'action principaux -->
                 <div class="manual-service-controls">
                     <button class="modern-btn select-all-btn" (click)="selectAllManualStatuses()">
@@ -361,7 +379,7 @@
                 
                 <!-- Grille de statuts en cartes -->
                 <div class="manual-service-grid">
-                    <div class="manual-service-card" *ngFor="let status of manualAvailableStatuses">
+                    <div class="manual-service-card" *ngFor="let status of filteredManualAvailableStatuses">
                         <div class="manual-service-card-content">
                             <div class="manual-service-checkbox-modern">
                                 <input type="checkbox" 
@@ -663,6 +681,15 @@
                 </div>
                 
                 <div class="service-selection-content">
+                    <!-- Recherche -->
+                    <div class="agency-search-wrap">
+                        <i class="fas fa-search agency-search-icon"></i>
+                        <input type="text" class="agency-search-input" placeholder="Rechercher un service ou nombre de lignes..."
+                               [(ngModel)]="serviceSearchFilter">
+                        <span class="agency-search-count" *ngIf="serviceSearchFilter?.trim()">
+                            {{ filteredAvailableServices.length }} / {{ availableServices.length }}
+                        </span>
+                    </div>
                     <!-- Boutons d'action principaux -->
                     <div class="service-controls">
                         <button class="modern-btn select-all-btn" (click)="selectAllServices()">
@@ -677,7 +704,7 @@
                     
                     <!-- Grille de services en cartes -->
                     <div class="service-grid">
-                        <div class="service-card" *ngFor="let service of availableServices">
+                        <div class="service-card" *ngFor="let service of filteredAvailableServices">
                             <div class="service-card-content">
                                 <div class="service-checkbox-modern">
                                     <input type="checkbox" 
@@ -732,6 +759,15 @@
             </div>
             
             <div class="service-selection-content">
+                <!-- Recherche -->
+                <div class="agency-search-wrap">
+                    <i class="fas fa-search agency-search-icon"></i>
+                    <input type="text" class="agency-search-input" placeholder="Rechercher un service/type ou nombre de lignes..."
+                           [(ngModel)]="partnerServiceSearchFilter">
+                    <span class="agency-search-count" *ngIf="partnerServiceSearchFilter?.trim()">
+                        {{ filteredPartnerAvailableServices.length }} / {{ partnerAvailableServices.length }}
+                    </span>
+                </div>
                 <!-- Boutons d'action principaux -->
                 <div class="service-controls">
                     <button class="modern-btn select-all-btn" (click)="selectAllPartnerServices()">
@@ -746,7 +782,7 @@
                 
                 <!-- Grille de services en cartes -->
                 <div class="service-grid">
-                    <div class="service-card" *ngFor="let service of partnerAvailableServices">
+                    <div class="service-card" *ngFor="let service of filteredPartnerAvailableServices">
                         <div class="service-card-content">
                             <div class="service-checkbox-modern">
                                 <input type="checkbox" 
@@ -798,6 +834,15 @@
             </div>
             
             <div class="service-selection-content">
+                <!-- Recherche -->
+                <div class="agency-search-wrap">
+                    <i class="fas fa-search agency-search-icon"></i>
+                    <input type="text" class="agency-search-input" placeholder="Rechercher un statut ou nombre de lignes..."
+                           [(ngModel)]="partnerStatusSearchFilter">
+                    <span class="agency-search-count" *ngIf="partnerStatusSearchFilter?.trim()">
+                        {{ filteredPartnerAvailableStatuses.length }} / {{ partnerAvailableStatuses.length }}
+                    </span>
+                </div>
                 <!-- Boutons d'action principaux -->
                 <div class="service-controls">
                     <button class="modern-btn select-all-btn" (click)="selectAllPartnerStatuses()">
@@ -812,7 +857,7 @@
                 
                 <!-- Grille de statuts en cartes -->
                 <div class="service-grid">
-                    <div class="service-card" *ngFor="let status of partnerAvailableStatuses">
+                    <div class="service-card" *ngFor="let status of filteredPartnerAvailableStatuses">
                         <div class="service-card-content">
                             <div class="service-checkbox-modern">
                                 <input type="checkbox" 
@@ -864,6 +909,15 @@
             </div>
             
             <div class="service-selection-content">
+                <!-- Recherche -->
+                <div class="agency-search-wrap">
+                    <i class="fas fa-search agency-search-icon"></i>
+                    <input type="text" class="agency-search-input" placeholder="Rechercher un paiement ou nombre de lignes..."
+                           [(ngModel)]="partnerPaymentSearchFilter">
+                    <span class="agency-search-count" *ngIf="partnerPaymentSearchFilter?.trim()">
+                        {{ filteredPartnerAvailablePayments.length }} / {{ partnerAvailablePayments.length }}
+                    </span>
+                </div>
                 <!-- Boutons d'action principaux -->
                 <div class="service-controls">
                     <button class="modern-btn select-all-btn" (click)="selectAllPartnerPayments()">
@@ -878,7 +932,7 @@
                 
                 <!-- Grille de paiements en cartes -->
                 <div class="service-grid">
-                    <div class="service-card" *ngFor="let payment of partnerAvailablePayments">
+                    <div class="service-card" *ngFor="let payment of filteredPartnerAvailablePayments">
                         <div class="service-card-content">
                             <div class="service-checkbox-modern">
                                 <input type="checkbox" 
