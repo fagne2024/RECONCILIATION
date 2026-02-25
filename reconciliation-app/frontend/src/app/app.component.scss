@@ -24,6 +24,7 @@ body {
         overflow: hidden;
         display: flex;
         flex-direction: column;
+        padding-right: 1.5rem;
 
         router-outlet {
             flex: 0 0 0;

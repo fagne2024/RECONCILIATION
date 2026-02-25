@@ -936,10 +936,17 @@ export interface ReconciliationReportData {
         </div>
     `,
     styles: [`
+        :host {
+            display: block;
+            max-width: 100%;
+            overflow-x: hidden;
+        }
+
         .page-header {
             background: #f8f9fa;
             padding: 15px 20px;
             border-bottom: 1px solid #dee2e6;
+            min-width: 0;
         }
 
         .breadcrumb {
@@ -968,6 +975,8 @@ export interface ReconciliationReportData {
             box-shadow: 0 4px 12px rgba(0,0,0,0.15);
             margin: 20px;
             overflow: hidden;
+            max-width: 100%;
+            box-sizing: border-box;
         }
 
         .report-header {
@@ -977,12 +986,15 @@ export interface ReconciliationReportData {
             display: flex;
             justify-content: space-between;
             align-items: center;
+            flex-wrap: wrap;
+            gap: 1rem;
         }
 
         .report-header h2 {
             margin: 0;
             font-size: 1.5rem;
             font-weight: 600;
+            min-width: 0;
         }
 
         .report-actions {
@@ -990,6 +1002,7 @@ export interface ReconciliationReportData {
             gap: 10px;
             flex-wrap: wrap;
             align-items: center;
+            min-width: 0;
         }
         .report-display-mode {
             font-size: 0.85rem;
@@ -1128,17 +1141,16 @@ export interface ReconciliationReportData {
             border-bottom: 1px solid #dee2e6;
             display: flex;
             gap: 15px;
-            flex-wrap: nowrap;
+            flex-wrap: wrap;
             align-items: flex-end;
-            overflow-x: auto;
         }
 
         .filter-group {
             display: flex;
             flex-direction: column;
             gap: 5px;
-            flex-shrink: 0;
             min-width: 0;
+            flex: 1 1 auto;
         }
 
         .filter-group label {
@@ -1272,6 +1284,7 @@ export interface ReconciliationReportData {
             display: flex;
             align-items: center;
             gap: 8px;
+            min-width: 0;
         }
 
         .filter-select {
@@ -1332,6 +1345,7 @@ export interface ReconciliationReportData {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
             gap: 15px;
+            min-width: 0;
         }
 
         .summary-card {
@@ -1384,9 +1398,10 @@ export interface ReconciliationReportData {
 
         .report-table-container {
             overflow-x: auto;
+            overflow-y: auto;
             max-height: calc(100vh - 400px);
             min-height: 600px;
-            overflow-y: auto;
+            min-width: 0;
         }
 
         .report-table {

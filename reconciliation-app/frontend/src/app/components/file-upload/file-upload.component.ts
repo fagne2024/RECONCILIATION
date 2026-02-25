@@ -1,4 +1,4 @@
-import { Component, EventEmitter, Output, ChangeDetectorRef, OnDestroy } from '@angular/core';
+import { Component, EventEmitter, Output, ChangeDetectorRef, OnDestroy, ViewChild, ElementRef } from '@angular/core';
 import { ReconciliationService } from '../../services/reconciliation.service';
 import { AutoProcessingService, ProcessingResult } from '../../services/auto-processing.service';
 import { OrangeMoneyUtilsService } from '../../services/orange-money-utils.service';
@@ -18,6 +18,11 @@ import { ProgressIndicatorService } from '../../services/progress-indicator.serv
     styleUrls: ['./file-upload.component.scss']
 })
 export class FileUploadComponent implements OnDestroy {
+    @ViewChild('boFileInput') boFileInputRef?: ElementRef<HTMLInputElement>;
+    @ViewChild('partnerFileInput') partnerFileInputRef?: ElementRef<HTMLInputElement>;
+    @ViewChild('autoBoFileInput') autoBoFileInputRef?: ElementRef<HTMLInputElement>;
+    @ViewChild('autoPartnerFileInput') autoPartnerFileInputRef?: ElementRef<HTMLInputElement>;
+
     @Output() filesLoaded = new EventEmitter<{
         boData: Record<string, string>[];
         partnerData: Record<string, string>[];
@@ -255,6 +260,8 @@ export class FileUploadComponent implements OnDestroy {
         this.boData = [];
         this.estimatedTime = '';
         this.updateEstimatedTime();
+        this.clearCachesOnFileRemoval('bo');
+        this.resetFileInput(this.boFileInputRef);
     }
 
     removePartnerFile(event: Event): void {
@@ -264,6 +271,8 @@ export class FileUploadComponent implements OnDestroy {
         this.partnerData = [];
         this.estimatedTime = '';
         this.updateEstimatedTime();
+        this.clearCachesOnFileRemoval('partner');
+        this.resetFileInput(this.partnerFileInputRef);
     }
 
     removeAutoBoFile(event: Event): void {
@@ -272,6 +281,8 @@ export class FileUploadComponent implements OnDestroy {
         this.autoBoFile = null;
         this.autoBoData = [];
         this.autoBoFileName = '';
+        this.clearCachesOnFileRemoval('bo');
+        this.resetFileInput(this.autoBoFileInputRef);
     }
 
     removeAutoPartnerFile(event: Event): void {
@@ -280,6 +291,74 @@ export class FileUploadComponent implements OnDestroy {
         this.autoPartnerFile = null;
         this.autoPartnerData = [];
         this.autoPartnerFileName = '';
+        this.clearCachesOnFileRemoval('partner');
+        this.resetFileInput(this.autoPartnerFileInputRef);
+    }
+
+    /**
+     * Réinitialise l'input file pour permettre de re-sélectionner le même fichier
+     */
+    private resetFileInput(inputRef?: ElementRef<HTMLInputElement>): void {
+        if (inputRef?.nativeElement) {
+            inputRef.nativeElement.value = '';
+        }
+    }
+
+    /**
+     * Nettoie tous les caches (AppStateService, caches locaux) lors de la suppression d'un fichier.
+     * Permet d'éviter d'utiliser des données obsolètes sans actualiser la page.
+     */
+    private clearCachesOnFileRemoval(fileType: 'bo' | 'partner'): void {
+        // Vider le cache AppStateService (données de réconciliation et fichiers)
+        this.appStateService.clearData();
+
+        // Invalider le cache canProceed
+        this._canProceedCache = null;
+
+        // Réinitialiser les sélections dérivées des fichiers BO
+        if (fileType === 'bo') {
+            this.availableAgencies = [];
+            this.selectedAgencies = [];
+            this.agencySelectionData = [];
+            this.agencyColumn = null;
+            this.availableServices = [];
+            this.selectedServices = [];
+            this.serviceSelectionData = [];
+            this.manualAvailableServices = [];
+            this.manualSelectedServices = [];
+            this.manualServiceSelectionData = [];
+            this.manualStatusColumn = null;
+            this.manualAvailableStatuses = [];
+            this.manualSelectedStatuses = [];
+            this.manualStatusSelectionData = [];
+        }
+
+        // Réinitialiser les sélections dérivées des fichiers Partenaire
+        if (fileType === 'partner') {
+            this.partnerAvailableServices = [];
+            this.partnerSelectedServices = [];
+            this.partnerServiceSelectionData = [];
+            this.partnerServiceColumn = null;
+            this.partnerStatusColumn = null;
+            this.partnerAvailableStatuses = [];
+            this.partnerSelectedStatuses = [];
+            this.partnerStatusSelectionData = [];
+            this.partnerAvailablePayments = [];
+            this.partnerSelectedPayments = [];
+            this.partnerPaymentSelectionData = [];
+            this.partnerPaymentColumn = null;
+        }
+
+        // Fermer les modales de sélection si ouvertes
+        this.showAgencySelection = false;
+        this.showServiceSelection = false;
+        this.showManualServiceSelection = false;
+        this.showManualStatusSelection = false;
+        this.showPartnerServiceSelection = false;
+        this.showPartnerStatusSelection = false;
+        this.showPartnerPaymentSelection = false;
+
+        this.cd.detectChanges();
     }
 
     // Nouvelle méthode pour traiter le fichier BO en mode manuel avec détection TRXBO
