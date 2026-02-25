@@ -12,16 +12,37 @@ body {
     width: calc(100% - 350px);
     background-color: #f4f7fa;
     min-height: 100vh;
-    // Permettre le scroll
-    overflow-y: auto;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
     position: relative;
+
+    .page-content {
+        flex: 1;
+        min-height: 0;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+
+        router-outlet {
+            flex: 0 0 0;
+            height: 0;
+            overflow: hidden;
+        }
+
+        > *:not(router-outlet) {
+            flex: 1;
+            min-height: 0;
+            overflow: hidden;
+        }
+    }
 }
 
 .main-content.full-width {
     margin-left: 0;
     width: 100%;
-    // Permettre le scroll même en mode plein écran
-    overflow-y: auto;
+    overflow: hidden;
 }
 
 .sidebar-toggle-btn {

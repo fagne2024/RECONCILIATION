@@ -7,16 +7,16 @@
                 <input type="radio" name="reconciliationMode" value="manual" [(ngModel)]="reconciliationMode">
                 <span class="mode-label">
                     <i class="fas fa-cogs"></i>
-                    <strong>Mode Manuel</strong>
-                    <small>Choisissez les fichiers BO et Partenaire séparément</small>
+                    <strong>Option 1</strong>
+                    <span class="mode-description">Choisissez les fichiers BO et Partenaire séparément puis les colonnes clés</span>
                 </span>
             </label>
             <label class="mode-option">
                 <input type="radio" name="reconciliationMode" value="automatic" [(ngModel)]="reconciliationMode">
                 <span class="mode-label">
                     <i class="fas fa-magic"></i>
-                    <strong>Mode Automatique</strong>
-                    <small>Uploadez un fichier et le système applique automatiquement le traitement et la réconciliation</small>
+                    <strong>Option 2</strong>
+                    <span class="mode-description">Uploadez un fichier et le système applique automatiquement le traitement et la réconciliation</span>
                 </span>
             </label>
             <!-- Mode Super Auto - COMMENTÉ
