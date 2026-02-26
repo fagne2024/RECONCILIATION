@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy, ChangeDetectorRef, ChangeDetectionStrategy } from '@angular/core';
+import { Component, OnInit, OnDestroy, ChangeDetectorRef, ChangeDetectionStrategy, HostListener, ElementRef, ViewChild } from '@angular/core';
 import { Router } from '@angular/router';
 import { Subscription, firstValueFrom } from 'rxjs';
 import { ReconciliationResponse } from '../../models/reconciliation-response.model';
@@ -65,6 +65,15 @@ export class EcartPartnerTableComponent implements OnInit, OnDestroy {
   // Chargement progressif
   isLoading = false;
   loadProgress = 0;
+
+  // Scroll to top
+  showScrollTopBtn = false;
+
+  // Scroll horizontal tableau
+  @ViewChild('tableWrapper') tableWrapperRef!: ElementRef<HTMLDivElement>;
+  tableScrollLeft = 0;
+  tableScrollMax = 0;
+  private readonly TABLE_SCROLL_STEP = 300;
   
   constructor(
     private appStateService: AppStateService,
@@ -74,8 +83,15 @@ export class EcartPartnerTableComponent implements OnInit, OnDestroy {
     private popupService: PopupService,
     private impactOPService: ImpactOPService,
     private operationService: OperationService,
-    private compteService: CompteService
+    private compteService: CompteService,
+    private el: ElementRef
   ) {}
+
+  @HostListener('scroll', ['$event.target'])
+  onHostScroll(target: HTMLElement): void {
+    this.showScrollTopBtn = target.scrollTop > 300;
+    this.cdr.markForCheck();
+  }
 
   ngOnInit(): void {
     this.subscription.add(
@@ -167,6 +183,8 @@ export class EcartPartnerTableComponent implements OnInit, OnDestroy {
       this.isLoading = false;
       this.loadProgress = 100;
       this.cdr.markForCheck();
+      // Recalcul de l'état du scroll horizontal après chargement
+      setTimeout(() => this.updateTableScrollState(), 100);
     }
   }
 
@@ -953,5 +971,39 @@ export class EcartPartnerTableComponent implements OnInit, OnDestroy {
 
   goBack(): void {
     this.router.navigate(['/results']);
+  }
+
+  scrollToTop(): void {
+    this.el.nativeElement.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  onTableScroll(event: Event): void {
+    const el = event.target as HTMLDivElement;
+    this.tableScrollLeft = el.scrollLeft;
+    this.tableScrollMax = el.scrollWidth - el.clientWidth;
+    this.cdr.markForCheck();
+  }
+
+  scrollTableLeft(): void {
+    const el = this.tableWrapperRef?.nativeElement;
+    if (el) {
+      el.scrollBy({ left: -this.TABLE_SCROLL_STEP, behavior: 'smooth' });
+    }
+  }
+
+  scrollTableRight(): void {
+    const el = this.tableWrapperRef?.nativeElement;
+    if (el) {
+      el.scrollBy({ left: this.TABLE_SCROLL_STEP, behavior: 'smooth' });
+    }
+  }
+
+  private updateTableScrollState(): void {
+    const el = this.tableWrapperRef?.nativeElement;
+    if (el) {
+      this.tableScrollLeft = el.scrollLeft;
+      this.tableScrollMax = el.scrollWidth - el.clientWidth;
+      this.cdr.markForCheck();
+    }
   }
 }

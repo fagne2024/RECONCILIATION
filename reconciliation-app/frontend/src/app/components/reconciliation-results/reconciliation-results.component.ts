@@ -3592,20 +3592,11 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                     timestamp: new Date().toISOString()
                 });
                 
-                // Vérifier si les données sont identiques pour éviter une réinitialisation inutile
-                const isSameData = this.response && response && 
-                    this.response.matches?.length === response.matches?.length &&
-                    this.response.boOnly?.length === response.boOnly?.length &&
-                    this.response.partnerOnly?.length === response.partnerOnly?.length;
-                
-                if (isSameData && this.matchesLoaded && this.boOnlyLoaded && this.partnerOnlyLoaded) {
-                    console.log('✅ [NGONINIT] Données identiques déjà chargées, skip réinitialisation');
-                    const skipDuration = performance.now() - dataReceiveStartTime;
-                    console.log('⏱️ [NGONINIT] Skip réinitialisation (données identiques):', `${skipDuration.toFixed(2)}ms`);
-                    return;
-                }
-                
+                // Nouvelle réconciliation : purger les anciens résultats pour afficher les nouveaux
                 if (response) {
+                    // Purger les données des onglets et caches avant d'afficher les nouveaux résultats
+                    this.reconciliationTabsService.clearAllData();
+                    this.invalidateCache();
                     const initDataStartTime = performance.now();
                     console.log('✅ [NGONINIT] Données valides reçues, initialisation...', `[${(performance.now() - dataReceiveStartTime).toFixed(2)}ms depuis réception]`);
                     
@@ -3728,6 +3719,20 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                         'Progression': `${(performance.now() - progressStartTime).toFixed(2)}ms`,
                         'Total records': `${(performance.now() - totalStartTime).toFixed(2)}ms`
                     });
+                } else {
+                    // Pas de résultats : purger l'affichage des anciens résultats
+                    console.log('🗑️ [NGONINIT] Pas de résultats - purge des anciennes données');
+                    this.response = null;
+                    this.filteredMatches = [];
+                    this.filteredBoOnly = [];
+                    this.filteredPartnerOnly = [];
+                    this.matchesLoaded = false;
+                    this.boOnlyLoaded = false;
+                    this.partnerOnlyLoaded = false;
+                    this.reconciliationTabsService.clearAllData();
+                    this.invalidateCache();
+                    this.cdr.markForCheck();
+                    this.cdr.detectChanges();
                 }
             })
         );
@@ -5297,27 +5302,20 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
 
     openReconciliationReport() {
         console.log('📈 Ouverture du rapport de réconciliation...');
-        
-        // 1. Vérifier si un résumé par agence existe déjà dans le service
-        const existingSummary = this.reconciliationSummaryService.getAgencySummary();
-        if (existingSummary && existingSummary.length > 0) {
-            console.log('✅ Résumé existant trouvé, navigation immédiate vers le rapport');
-            this.router.navigate(['/reconciliation-report']);
-            return;
-        }
-        
-        // 2. Vérifier si les données sont déjà chargées dans les onglets
+
+        // Toujours reconstruire le résumé depuis les données actuelles afin que le rapport
+        // reflète systématiquement la réconciliation en cours (et non un cache périmé).
         if (this.response && (this.filteredMatches.length > 0 || this.filteredBoOnly.length > 0 || this.filteredPartnerOnly.length > 0)) {
-            console.log('📊 Données disponibles, construction rapide du résumé...');
-            // Construire le résumé rapidement
+            console.log('📊 Données disponibles, reconstruction du résumé depuis les données actuelles...');
+            // Vider l'ancien cache avant de reconstruire
+            this.reconciliationSummaryService.clearAgencySummary();
             const summary = this.getAgencySummary();
-            console.log('✅ Résumé construit:', summary.length, 'éléments');
-            // Le résumé est automatiquement stocké dans le service par getAgencySummary()
+            console.log('✅ Résumé reconstruit:', summary.length, 'éléments');
             this.router.navigate(['/reconciliation-report']);
             return;
         }
-        
-        // 3. Sinon, naviguer immédiatement (les données seront chargées en arrière-plan)
+
+        // Sinon, naviguer immédiatement (les données seront chargées en arrière-plan)
         console.log('⏳ Pas de données disponibles, navigation immédiate (chargement en arrière-plan)');
         this.router.navigate(['/reconciliation-report']);
     }
@@ -6616,6 +6614,10 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
 
     nouvelleReconciliation() {
         console.log('Navigation vers nouvelle réconciliation');
+        // Vider le cache du rapport et les résultats pour que la prochaine ouverture
+        // du rapport reflète la nouvelle réconciliation, pas l'ancienne.
+        this.reconciliationSummaryService.clearAgencySummary();
+        this.appStateService.clearReconciliationResults();
         this.router.navigate(['/upload']).then(() => {
             console.log('Navigation vers /upload réussie');
         }).catch(error => {

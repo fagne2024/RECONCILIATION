@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy, ChangeDetectorRef, ChangeDetectionStrategy } from '@angular/core';
+import { Component, OnInit, OnDestroy, ChangeDetectorRef, ChangeDetectionStrategy, HostListener, ElementRef, ViewChild } from '@angular/core';
 import { Router } from '@angular/router';
 import { Subscription } from 'rxjs';
 import { ReconciliationResponse, Match } from '../../models/reconciliation-response.model';
@@ -65,6 +65,15 @@ export class MatchesTableComponent implements OnInit, OnDestroy {
   /** Signature du dernier résultat traité pour réutiliser le cache sans recharger */
   private lastProcessedSignature: string = '';
 
+  // Scroll to top
+  showScrollTopBtn = false;
+
+  // Scroll horizontal tableau
+  @ViewChild('tableWrapper') tableWrapperRef!: ElementRef<HTMLDivElement>;
+  tableScrollLeft = 0;
+  tableScrollMax = 0;
+  private readonly TABLE_SCROLL_STEP = 300;
+
   constructor(
     private appStateService: AppStateService,
     private reconciliationTabsService: ReconciliationTabsService,
@@ -72,8 +81,15 @@ export class MatchesTableComponent implements OnInit, OnDestroy {
     private cdr: ChangeDetectorRef,
     private exportOptimizationService: ExportOptimizationService,
     private popupService: PopupService,
-    private ecartBoSummaryService: EcartBoSummaryService
+    private ecartBoSummaryService: EcartBoSummaryService,
+    private el: ElementRef
   ) {}
+
+  @HostListener('scroll', ['$event.target'])
+  onHostScroll(target: HTMLElement): void {
+    this.showScrollTopBtn = target.scrollTop > 300;
+    this.cdr.markForCheck();
+  }
 
   ngOnInit(): void {
     this.subscription.add(
@@ -197,6 +213,7 @@ export class MatchesTableComponent implements OnInit, OnDestroy {
         this.lastProcessedSignature = `${this.response.totalMatches ?? 0}_${this.response.totalBoOnly ?? 0}_${this.response.totalPartnerOnly ?? 0}_${this.filteredMatches.length}`;
       }
       this.cdr.markForCheck();
+      setTimeout(() => this.updateTableScrollState(), 100);
     }
   }
   
@@ -969,5 +986,33 @@ export class MatchesTableComponent implements OnInit, OnDestroy {
     this.ecartBoSummaryService.setPrefillFromMatches(prefill, 'matches');
     this.router.navigate(['/ecart-bo-summary']);
     this.cdr.markForCheck();
+  }
+
+  scrollToTop(): void {
+    this.el.nativeElement.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  onTableScroll(event: Event): void {
+    const el = event.target as HTMLDivElement;
+    this.tableScrollLeft = el.scrollLeft;
+    this.tableScrollMax = el.scrollWidth - el.clientWidth;
+    this.cdr.markForCheck();
+  }
+
+  scrollTableLeft(): void {
+    this.tableWrapperRef?.nativeElement.scrollBy({ left: -this.TABLE_SCROLL_STEP, behavior: 'smooth' });
+  }
+
+  scrollTableRight(): void {
+    this.tableWrapperRef?.nativeElement.scrollBy({ left: this.TABLE_SCROLL_STEP, behavior: 'smooth' });
+  }
+
+  private updateTableScrollState(): void {
+    const el = this.tableWrapperRef?.nativeElement;
+    if (el) {
+      this.tableScrollLeft = el.scrollLeft;
+      this.tableScrollMax = el.scrollWidth - el.clientWidth;
+      this.cdr.markForCheck();
+    }
   }
 }

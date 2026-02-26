@@ -743,6 +743,76 @@
 
     </div>
 
+    <!-- Sélection des statuts pour TRXBO en mode automatique (Étape 3) -->
+    <div class="service-selection-overlay" *ngIf="showAutoStatusSelection">
+        <div class="service-selection-modal">
+            <div class="service-selection-header">
+                <div class="header-badge">
+                    <span class="badge-text">Statuts disponibles (TRXBO - Mode Auto): {{ autoAvailableStatuses.length }}</span>
+                    <span class="status-info">
+                        <i class="fas fa-info-circle"></i>
+                        Étape 3/3 — Sélection des statuts après filtrage par service
+                    </span>
+                </div>
+            </div>
+
+            <div class="service-selection-content">
+                <div class="agency-search-wrap">
+                    <i class="fas fa-search agency-search-icon"></i>
+                    <input type="text" class="agency-search-input" placeholder="Rechercher un statut ou nombre de lignes..."
+                           [(ngModel)]="autoStatusSearchFilter">
+                    <span class="agency-search-count" *ngIf="autoStatusSearchFilter?.trim()">
+                        {{ filteredAutoAvailableStatuses.length }} / {{ autoAvailableStatuses.length }}
+                    </span>
+                </div>
+                <div class="service-controls">
+                    <button class="modern-btn select-all-btn" (click)="selectAllAutoStatuses()">
+                        <i class="fas fa-check-double"></i>
+                        Tout sélectionner
+                    </button>
+                    <button class="modern-btn deselect-all-btn" (click)="deselectAllAutoStatuses()">
+                        <i class="fas fa-check-double"></i>
+                        Tout désélectionner
+                    </button>
+                </div>
+
+                <div class="service-grid">
+                    <div class="service-card" *ngFor="let status of filteredAutoAvailableStatuses">
+                        <div class="service-card-content">
+                            <div class="service-checkbox-modern">
+                                <input type="checkbox"
+                                       [id]="'auto-status-' + status"
+                                       [value]="status"
+                                       [checked]="autoSelectedStatuses.includes(status)"
+                                       (change)="onAutoStatusSelectionChange($event, status)">
+                                <label [for]="'auto-status-' + status" class="checkbox-label">
+                                    <span class="checkmark"></span>
+                                </label>
+                            </div>
+                            <div class="service-info">
+                                <h4 class="service-name-modern">{{ status }}</h4>
+                                <p class="service-count-modern">{{ getAutoStatusCount(status) }} lignes</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="service-selection-actions">
+                <button class="modern-btn cancel-btn" (click)="cancelAutoStatusSelection()">
+                    <i class="fas fa-times"></i>
+                    Annuler
+                </button>
+                <button class="modern-btn confirm-btn"
+                        [disabled]="autoSelectedStatuses.length === 0"
+                        (click)="confirmAutoStatusSelection()">
+                    <i class="fas fa-check"></i>
+                    Confirmer la sélection
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- Sélection des services/types/statut pour les fichiers partenaires - Design Moderne (Commun aux modes manuel et automatique) -->
     <!-- DEBUG: showPartnerServiceSelection = {{ showPartnerServiceSelection }}, partnerAvailableServices.length = {{ partnerAvailableServices?.length }} -->
     <div class="service-selection-overlay" *ngIf="showPartnerServiceSelection" style="z-index: 1001;">

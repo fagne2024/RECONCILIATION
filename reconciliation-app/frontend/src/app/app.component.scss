@@ -15,13 +15,13 @@ body {
     height: 100vh;
     display: flex;
     flex-direction: column;
-    overflow: hidden;
+    overflow-y: auto;
     position: relative;
 
     .page-content {
         flex: 1;
         min-height: 0;
-        overflow: hidden;
+        overflow-y: auto;
         display: flex;
         flex-direction: column;
         padding-right: 1.5rem;
@@ -35,7 +35,7 @@ body {
         > *:not(router-outlet) {
             flex: 1;
             min-height: 0;
-            overflow: hidden;
+            overflow-y: auto;
         }
     }
 }
@@ -43,7 +43,7 @@ body {
 .main-content.full-width {
     margin-left: 0;
     width: 100%;
-    overflow: hidden;
+    overflow-y: auto;
 }
 
 .sidebar-toggle-btn {

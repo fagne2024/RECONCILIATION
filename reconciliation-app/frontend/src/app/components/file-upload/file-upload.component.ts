@@ -110,6 +110,14 @@ export class FileUploadComponent implements OnDestroy {
     serviceSearchFilter = '';
     serviceSelectionData: Record<string, string>[] = [];
 
+    // Sélection des statuts pour TRXBO en mode automatique (étape 3)
+    showAutoStatusSelection = false;
+    autoAvailableStatuses: string[] = [];
+    autoSelectedStatuses: string[] = [];
+    autoStatusSearchFilter = '';
+    autoStatusSelectionData: Record<string, string>[] = [];
+    autoStatusColumn: string | null = null;
+
     // Sélection manuelle de services
     showManualServiceSelection = false;
     manualAvailableServices: string[] = [];
@@ -2179,6 +2187,13 @@ export class FileUploadComponent implements OnDestroy {
             col.toLowerCase().includes('service') || 
             col.toLowerCase().includes('serv')
         );
+
+        // Trouver la colonne statut (mode auto)
+        const statusColumn = columns.find(col => {
+            const c = col.toLowerCase();
+            return c.includes('statut') || c.includes('status') || c.includes('état') || c.includes('state');
+        });
+        this.autoStatusColumn = statusColumn || null;
         
         if (serviceColumn) {
             // Extraire tous les services uniques
@@ -2186,6 +2201,9 @@ export class FileUploadComponent implements OnDestroy {
             this.availableServices = services.sort();
             this.serviceSelectionData = data;
             
+            if (statusColumn) {
+                console.log('📋 Colonne statut trouvée (mode auto):', statusColumn);
+            }
             console.log('📋 Services disponibles:', this.availableServices);
             console.log('📊 Nombre total de lignes:', data.length);
             
@@ -2531,16 +2549,25 @@ export class FileUploadComponent implements OnDestroy {
             
             console.log('📊 Données filtrées:', filteredData.length, 'lignes sur', this.serviceSelectionData.length, 'originales');
             
-            // Mettre à jour les données BO avec les données filtrées
-            this.autoBoData = filteredData;
-            
             // Masquer la sélection des services
             this.showServiceSelection = false;
-            
-            // Forcer la détection des changements pour mettre à jour la vue
+
+            // Si une colonne statut existe, afficher le popup de sélection des statuts
+            if (this.autoStatusColumn && filteredData.length > 0) {
+                const statuses = [...new Set(
+                    filteredData.map(row => row[this.autoStatusColumn!])
+                        .filter(s => s && s.toString().trim())
+                )];
+                this.autoAvailableStatuses = statuses.sort();
+                this.autoStatusSelectionData = filteredData;
+                this.showAutoStatusSelectionStep();
+                this.cd.detectChanges();
+                return;
+            }
+
+            // Pas de colonne statut : mettre à jour les données et continuer
+            this.autoBoData = filteredData;
             this.cd.detectChanges();
-            
-            // Continuer avec la réconciliation automatique
             this.continueWithAutoReconciliation();
         }
     }
@@ -2552,7 +2579,84 @@ export class FileUploadComponent implements OnDestroy {
         this.availableServices = [];
         this.selectedServices = [];
         this.serviceSelectionData = [];
+        // Nettoyer aussi les données de statut auto
+        this.autoStatusColumn = null;
+        this.showAutoStatusSelection = false;
+        this.autoAvailableStatuses = [];
+        this.autoSelectedStatuses = [];
+        this.autoStatusSelectionData = [];
     }
+
+    // ----- Statuts mode automatique (étape 3) -----
+    private showAutoStatusSelectionStep(): void {
+        this.showAutoStatusSelection = true;
+        this.autoStatusSearchFilter = '';
+        this.autoSelectedStatuses = [...this.autoAvailableStatuses]; // tous sélectionnés par défaut
+    }
+
+    confirmAutoStatusSelection(): void {
+        if (this.autoSelectedStatuses.length === 0) {
+            this.errorMessage = 'Veuillez sélectionner au moins un statut.';
+            return;
+        }
+
+        console.log('✅ Statuts sélectionnés (mode auto):', this.autoSelectedStatuses);
+
+        const filteredData = this.autoStatusSelectionData.filter(row =>
+            this.autoSelectedStatuses.includes(row[this.autoStatusColumn!])
+        );
+
+        console.log('📊 Données filtrées par statut (mode auto):', filteredData.length, 'lignes');
+
+        this.autoBoData = filteredData;
+        this.showAutoStatusSelection = false;
+        this.cd.detectChanges();
+        this.continueWithAutoReconciliation();
+    }
+
+    cancelAutoStatusSelection(): void {
+        this.showAutoStatusSelection = false;
+        this.autoStatusSearchFilter = '';
+        this.autoAvailableStatuses = [];
+        this.autoSelectedStatuses = [];
+        this.autoStatusSelectionData = [];
+    }
+
+    onAutoStatusSelectionChange(event: Event, status: string): void {
+        const checkbox = event.target as HTMLInputElement;
+        if (checkbox.checked) {
+            if (!this.autoSelectedStatuses.includes(status)) {
+                this.autoSelectedStatuses.push(status);
+            }
+        } else {
+            this.autoSelectedStatuses = this.autoSelectedStatuses.filter(s => s !== status);
+        }
+    }
+
+    getAutoStatusCount(status: string): number {
+        if (!this.autoStatusSelectionData.length || !this.autoStatusColumn) return 0;
+        return this.autoStatusSelectionData.filter(row => row[this.autoStatusColumn!] === status).length;
+    }
+
+    get filteredAutoAvailableStatuses(): string[] {
+        const term = (this.autoStatusSearchFilter || '').trim().toLowerCase();
+        if (!term) return this.autoAvailableStatuses;
+        return this.autoAvailableStatuses.filter(st =>
+            st.toLowerCase().includes(term) || String(this.getAutoStatusCount(st)).includes(term)
+        );
+    }
+
+    selectAllAutoStatuses(): void {
+        const toSelect = this.filteredAutoAvailableStatuses;
+        toSelect.forEach(st => { if (!this.autoSelectedStatuses.includes(st)) this.autoSelectedStatuses.push(st); });
+        this.autoSelectedStatuses = [...this.autoSelectedStatuses];
+    }
+
+    deselectAllAutoStatuses(): void {
+        const toDeselect = this.filteredAutoAvailableStatuses;
+        this.autoSelectedStatuses = this.autoSelectedStatuses.filter(st => !toDeselect.includes(st));
+    }
+    // ----- Fin statuts mode automatique -----
 
     // Méthode pour continuer avec la réconciliation automatique après sélection des services
     private continueWithAutoReconciliation(): void {

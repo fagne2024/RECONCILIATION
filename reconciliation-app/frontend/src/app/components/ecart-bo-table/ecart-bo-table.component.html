@@ -117,38 +117,45 @@
     </div>
   </div>
 
-  <div class="table-wrapper">
-    <table class="ecart-bo-table">
-      <thead>
-        <tr>
-          <th style="width: 40px;">
-            <input 
-              type="checkbox" 
-              [checked]="allBoSelectedOnPage" 
-              (change)="toggleSelectAllBoOnPage($event)"
-            >
-          </th>
-          <th *ngFor="let col of displayedColumns">{{col}}</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr *ngFor="let record of getPagedBoOnly()">
-          <td>
-            <input 
-              type="checkbox" 
-              [checked]="isBoRecordSelected(record)" 
-              (change)="toggleBoSelection(record, $event)"
-            >
-          </td>
-          <td *ngFor="let col of displayedColumns">{{getValue(record, col)}}</td>
-        </tr>
-        <tr *ngIf="getPagedBoOnly().length === 0">
-          <td [attr.colspan]="displayedColumns.length + 1" class="no-data">
-            Aucun écart BO trouvé
-          </td>
-        </tr>
-      </tbody>
-    </table>
+  <div class="table-scroll-container">
+    <div class="table-scroll-nav">
+      <span class="scroll-nav-label">← Faites défiler horizontalement →</span>
+      <button class="scroll-nav-btn" (click)="scrollTableLeft()" [disabled]="tableScrollLeft === 0" title="Défiler à gauche">◀</button>
+      <button class="scroll-nav-btn" (click)="scrollTableRight()" [disabled]="tableScrollLeft >= tableScrollMax" title="Défiler à droite">▶</button>
+    </div>
+    <div class="table-wrapper" #tableWrapper (scroll)="onTableScroll($event)">
+      <table class="ecart-bo-table">
+        <thead>
+          <tr>
+            <th style="width: 40px;">
+              <input 
+                type="checkbox" 
+                [checked]="allBoSelectedOnPage" 
+                (change)="toggleSelectAllBoOnPage($event)"
+              >
+            </th>
+            <th *ngFor="let col of displayedColumns">{{col}}</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let record of getPagedBoOnly()">
+            <td>
+              <input 
+                type="checkbox" 
+                [checked]="isBoRecordSelected(record)" 
+                (change)="toggleBoSelection(record, $event)"
+              >
+            </td>
+            <td *ngFor="let col of displayedColumns">{{getValue(record, col)}}</td>
+          </tr>
+          <tr *ngIf="getPagedBoOnly().length === 0">
+            <td [attr.colspan]="displayedColumns.length + 1" class="no-data">
+              Aucun écart BO trouvé
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
   </div>
 
   <div class="pagination-section">
@@ -177,6 +184,9 @@
       </button>
     </div>
   </div>
+
+  <!-- Bouton scroll to top -->
+  <button *ngIf="showScrollTopBtn" (click)="scrollToTop()" class="scroll-to-top-btn" title="Retour en haut">↑</button>
 
   <!-- Popup de sélection des colonnes -->
   <div *ngIf="showColumnSelector" class="column-selector-overlay" (click)="closeColumnSelector()">

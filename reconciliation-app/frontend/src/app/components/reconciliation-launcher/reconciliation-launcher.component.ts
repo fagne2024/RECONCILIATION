@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy } from '@angular/core';
+import { Component, OnInit, OnDestroy, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
@@ -8,6 +8,8 @@ import { ReconciliationService } from '../../services/reconciliation.service';
 import { PopupService } from '../../services/popup.service';
 import { AutoProcessingService } from '../../services/auto-processing.service';
 import { Subscription } from 'rxjs';
+import * as Papa from 'papaparse';
+import * as XLSX from 'xlsx';
 
 @Component({
   selector: 'app-reconciliation-launcher',
@@ -166,6 +168,201 @@ import { Subscription } from 'rxjs';
         </button>
       </div>
 
+      <!-- Popup : sélection des agences (BO TRXBO - étape 1) -->
+      <div class="selection-overlay" *ngIf="showAgencySelection">
+        <div class="selection-modal">
+          <div class="selection-header">
+            <span class="badge-text">Agences disponibles (BO) : {{ availableAgencies.length }}</span>
+          </div>
+          <div class="selection-content">
+            <div class="search-wrap">
+              <input type="text" class="search-input" placeholder="Rechercher une agence..." [(ngModel)]="agencySearchFilter">
+            </div>
+            <div class="selection-controls">
+              <button class="sel-btn" (click)="selectAllAgencies()">Tout sélectionner</button>
+              <button class="sel-btn" (click)="deselectAllAgencies()">Tout désélectionner</button>
+            </div>
+            <div class="selection-grid">
+              <div class="sel-card" *ngFor="let agency of filteredAvailableAgencies">
+                <input type="checkbox" [id]="'lnc-agency-'+agency" [checked]="selectedAgencies.includes(agency)" (change)="onAgencySelectionChange($event, agency)">
+                <label [for]="'lnc-agency-'+agency">{{ agency }} <span class="count">({{ getAgencyCount(agency) }})</span></label>
+              </div>
+            </div>
+          </div>
+          <div class="selection-actions">
+            <button class="btn-cancel" (click)="cancelAgencySelection()">Annuler</button>
+            <button class="btn-confirm" [disabled]="selectedAgencies.length === 0" (click)="confirmAgencySelection()">Confirmer</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Popup : sélection des services BO (étape 2 - mode auto) -->
+      <div class="selection-overlay" *ngIf="showServiceSelection">
+        <div class="selection-modal">
+          <div class="selection-header">
+            <span class="badge-text">Services disponibles (BO) : {{ availableServices.length }}</span>
+          </div>
+          <div class="selection-content">
+            <div class="search-wrap">
+              <input type="text" class="search-input" placeholder="Rechercher un service..." [(ngModel)]="serviceSearchFilter">
+            </div>
+            <div class="selection-controls">
+              <button class="sel-btn" (click)="selectAllServices()">Tout sélectionner</button>
+              <button class="sel-btn" (click)="deselectAllServices()">Tout désélectionner</button>
+            </div>
+            <div class="selection-grid">
+              <div class="sel-card" *ngFor="let service of filteredAvailableServices">
+                <input type="checkbox" [id]="'lnc-svc-'+service" [checked]="selectedServices.includes(service)" (change)="onServiceSelectionChange($event, service)">
+                <label [for]="'lnc-svc-'+service">{{ service }} <span class="count">({{ getServiceCount(service) }})</span></label>
+              </div>
+            </div>
+          </div>
+          <div class="selection-actions">
+            <button class="btn-cancel" (click)="cancelServiceSelection()">Annuler</button>
+            <button class="btn-confirm" [disabled]="selectedServices.length === 0" (click)="confirmServiceSelection()">Confirmer</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Popup : sélection des services BO (étape 2 - mode manuel) -->
+      <div class="selection-overlay" *ngIf="showManualServiceSelection">
+        <div class="selection-modal">
+          <div class="selection-header">
+            <span class="badge-text">Services disponibles (BO) : {{ manualAvailableServices.length }}</span>
+          </div>
+          <div class="selection-content">
+            <div class="search-wrap">
+              <input type="text" class="search-input" placeholder="Rechercher un service..." [(ngModel)]="manualServiceSearchFilter">
+            </div>
+            <div class="selection-controls">
+              <button class="sel-btn" (click)="selectAllManualServices()">Tout sélectionner</button>
+              <button class="sel-btn" (click)="deselectAllManualServices()">Tout désélectionner</button>
+            </div>
+            <div class="selection-grid">
+              <div class="sel-card" *ngFor="let service of filteredManualAvailableServices">
+                <input type="checkbox" [id]="'lnc-msvc-'+service" [checked]="manualSelectedServices.includes(service)" (change)="onManualServiceSelectionChange($event, service)">
+                <label [for]="'lnc-msvc-'+service">{{ service }} <span class="count">({{ getManualServiceCount(service) }})</span></label>
+              </div>
+            </div>
+          </div>
+          <div class="selection-actions">
+            <button class="btn-cancel" (click)="cancelManualServiceSelection()">Annuler</button>
+            <button class="btn-confirm" [disabled]="manualSelectedServices.length === 0" (click)="confirmManualServiceSelection()">Confirmer</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Popup : sélection des statuts BO (étape 3 - mode manuel) -->
+      <div class="selection-overlay" *ngIf="showManualStatusSelection">
+        <div class="selection-modal">
+          <div class="selection-header">
+            <span class="badge-text">Statuts disponibles (BO) : {{ manualAvailableStatuses.length }}</span>
+          </div>
+          <div class="selection-content">
+            <div class="search-wrap">
+              <input type="text" class="search-input" placeholder="Rechercher un statut..." [(ngModel)]="manualStatusSearchFilter">
+            </div>
+            <div class="selection-controls">
+              <button class="sel-btn" (click)="selectAllManualStatuses()">Tout sélectionner</button>
+              <button class="sel-btn" (click)="deselectAllManualStatuses()">Tout désélectionner</button>
+            </div>
+            <div class="selection-grid">
+              <div class="sel-card" *ngFor="let status of filteredManualAvailableStatuses">
+                <input type="checkbox" [id]="'lnc-st-'+status" [checked]="manualSelectedStatuses.includes(status)" (change)="onManualStatusSelectionChange($event, status)">
+                <label [for]="'lnc-st-'+status">{{ status }} <span class="count">({{ getManualStatusCount(status) }})</span></label>
+              </div>
+            </div>
+          </div>
+          <div class="selection-actions">
+            <button class="btn-cancel" (click)="cancelManualStatusSelection()">← Retour</button>
+            <button class="btn-confirm" [disabled]="manualSelectedStatuses.length === 0" (click)="confirmManualStatusSelection()">Confirmer</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Popup : sélection des services Partenaire (étape 1) -->
+      <div class="selection-overlay" *ngIf="showPartnerServiceSelection">
+        <div class="selection-modal">
+          <div class="selection-header">
+            <span class="badge-text">Services disponibles (Partenaire) : {{ partnerAvailableServices.length }}</span>
+          </div>
+          <div class="selection-content">
+            <div class="search-wrap">
+              <input type="text" class="search-input" placeholder="Rechercher un service..." [(ngModel)]="partnerServiceSearchFilter">
+            </div>
+            <div class="selection-controls">
+              <button class="sel-btn" (click)="selectAllPartnerServices()">Tout sélectionner</button>
+              <button class="sel-btn" (click)="deselectAllPartnerServices()">Tout désélectionner</button>
+            </div>
+            <div class="selection-grid">
+              <div class="sel-card" *ngFor="let service of filteredPartnerAvailableServices">
+                <input type="checkbox" [id]="'lnc-psvc-'+service" [checked]="partnerSelectedServices.includes(service)" (change)="onPartnerServiceSelectionChange($event, service)">
+                <label [for]="'lnc-psvc-'+service">{{ service }} <span class="count">({{ getPartnerServiceCount(service) }})</span></label>
+              </div>
+            </div>
+          </div>
+          <div class="selection-actions">
+            <button class="btn-cancel" (click)="cancelPartnerServiceSelection()">Annuler</button>
+            <button class="btn-confirm" [disabled]="partnerSelectedServices.length === 0" (click)="confirmPartnerServiceSelection()">Confirmer</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Popup : sélection des statuts Partenaire (étape 2) -->
+      <div class="selection-overlay" *ngIf="showPartnerStatusSelection">
+        <div class="selection-modal">
+          <div class="selection-header">
+            <span class="badge-text">Statuts disponibles (Partenaire) : {{ partnerAvailableStatuses.length }}</span>
+          </div>
+          <div class="selection-content">
+            <div class="search-wrap">
+              <input type="text" class="search-input" placeholder="Rechercher un statut..." [(ngModel)]="partnerStatusSearchFilter">
+            </div>
+            <div class="selection-controls">
+              <button class="sel-btn" (click)="selectAllPartnerStatuses()">Tout sélectionner</button>
+              <button class="sel-btn" (click)="deselectAllPartnerStatuses()">Tout désélectionner</button>
+            </div>
+            <div class="selection-grid">
+              <div class="sel-card" *ngFor="let status of filteredPartnerAvailableStatuses">
+                <input type="checkbox" [id]="'lnc-pst-'+status" [checked]="partnerSelectedStatuses.includes(status)" (change)="onPartnerStatusSelectionChange($event, status)">
+                <label [for]="'lnc-pst-'+status">{{ status }} <span class="count">({{ getPartnerStatusCount(status) }})</span></label>
+              </div>
+            </div>
+          </div>
+          <div class="selection-actions">
+            <button class="btn-cancel" (click)="cancelPartnerStatusSelection()">← Retour</button>
+            <button class="btn-confirm" [disabled]="partnerSelectedStatuses.length === 0" (click)="confirmPartnerStatusSelection()">Confirmer</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Popup : sélection des paiements Partenaire (étape 3) -->
+      <div class="selection-overlay" *ngIf="showPartnerPaymentSelection">
+        <div class="selection-modal">
+          <div class="selection-header">
+            <span class="badge-text">Paiements disponibles (Partenaire) : {{ partnerAvailablePayments.length }}</span>
+          </div>
+          <div class="selection-content">
+            <div class="search-wrap">
+              <input type="text" class="search-input" placeholder="Rechercher un paiement..." [(ngModel)]="partnerPaymentSearchFilter">
+            </div>
+            <div class="selection-controls">
+              <button class="sel-btn" (click)="selectAllPartnerPayments()">Tout sélectionner</button>
+              <button class="sel-btn" (click)="deselectAllPartnerPayments()">Tout désélectionner</button>
+            </div>
+            <div class="selection-grid">
+              <div class="sel-card" *ngFor="let payment of filteredPartnerAvailablePayments">
+                <input type="checkbox" [id]="'lnc-pay-'+payment" [checked]="partnerSelectedPayments.includes(payment)" (change)="onPartnerPaymentSelectionChange($event, payment)">
+                <label [for]="'lnc-pay-'+payment">{{ payment }} <span class="count">({{ getPartnerPaymentCount(payment) }})</span></label>
+              </div>
+            </div>
+          </div>
+          <div class="selection-actions">
+            <button class="btn-cancel" (click)="cancelPartnerPaymentSelection()">← Retour</button>
+            <button class="btn-confirm" [disabled]="partnerSelectedPayments.length === 0" (click)="confirmPartnerPaymentSelection()">Confirmer</button>
+          </div>
+        </div>
+      </div>
 
     </div>
   `,
@@ -177,6 +374,64 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
   selectedMode: 'manual' | 'assisted' | 'magic' | null = 'manual';
   isLoading: boolean = false;
 
+  // Données parsées
+  boData: Record<string, string>[] = [];
+  partnerData: Record<string, string>[] = [];
+
+  // Sélection agences BO (étape 1)
+  showAgencySelection = false;
+  availableAgencies: string[] = [];
+  selectedAgencies: string[] = [];
+  agencySearchFilter = '';
+  agencySelectionData: Record<string, string>[] = [];
+  agencyColumn: string | null = null;
+
+  // Sélection services BO auto (étape 2 auto)
+  showServiceSelection = false;
+  availableServices: string[] = [];
+  selectedServices: string[] = [];
+  serviceSearchFilter = '';
+  serviceSelectionData: Record<string, string>[] = [];
+
+  // Sélection services BO manuel (étape 2 manuel)
+  showManualServiceSelection = false;
+  manualAvailableServices: string[] = [];
+  manualSelectedServices: string[] = [];
+  manualServiceSearchFilter = '';
+  manualServiceSelectionData: Record<string, string>[] = [];
+  manualStatusColumn: string | null = null;
+
+  // Sélection statuts BO manuel (étape 3 manuel)
+  showManualStatusSelection = false;
+  manualAvailableStatuses: string[] = [];
+  manualSelectedStatuses: string[] = [];
+  manualStatusSearchFilter = '';
+  manualStatusSelectionData: Record<string, string>[] = [];
+
+  // Sélection services Partenaire
+  showPartnerServiceSelection = false;
+  partnerAvailableServices: string[] = [];
+  partnerSelectedServices: string[] = [];
+  partnerServiceSearchFilter = '';
+  partnerServiceSelectionData: Record<string, string>[] = [];
+  partnerServiceColumn: string | null = null;
+  partnerStatusColumn: string | null = null;
+
+  // Sélection statuts Partenaire
+  showPartnerStatusSelection = false;
+  partnerAvailableStatuses: string[] = [];
+  partnerSelectedStatuses: string[] = [];
+  partnerStatusSearchFilter = '';
+  partnerStatusSelectionData: Record<string, string>[] = [];
+
+  // Sélection paiements Partenaire
+  showPartnerPaymentSelection = false;
+  partnerAvailablePayments: string[] = [];
+  partnerSelectedPayments: string[] = [];
+  partnerPaymentSearchFilter = '';
+  partnerPaymentSelectionData: Record<string, string>[] = [];
+  partnerPaymentColumn: string | null = null;
+
   private subscriptions: Subscription[] = [];
 
   constructor(
@@ -185,7 +440,8 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
     private reconciliationTabsService: ReconciliationTabsService,
     private reconciliationService: ReconciliationService,
     private popupService: PopupService,
-    private autoProcessingService: AutoProcessingService
+    private autoProcessingService: AutoProcessingService,
+    private cdr: ChangeDetectorRef
   ) {}
 
   ngOnInit(): void {
@@ -223,8 +479,14 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
     if (file) {
       if (type === 'bo') {
         this.boFile = file;
+        this.boData = [];
+        this.clearBoSelections();
+        this.parseFile(file, true);
       } else {
         this.partnerFile = file;
+        this.partnerData = [];
+        this.clearPartnerSelections();
+        this.parseFile(file, false);
       }
     }
   }
@@ -237,14 +499,19 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
   onDrop(event: DragEvent, type: 'bo' | 'partner'): void {
     event.preventDefault();
     event.stopPropagation();
-    
     const files = event.dataTransfer?.files;
     if (files && files.length > 0) {
       const file = files[0];
       if (type === 'bo') {
         this.boFile = file;
+        this.boData = [];
+        this.clearBoSelections();
+        this.parseFile(file, true);
       } else {
         this.partnerFile = file;
+        this.partnerData = [];
+        this.clearPartnerSelections();
+        this.parseFile(file, false);
       }
     }
   }
@@ -252,9 +519,52 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
   removeFile(type: 'bo' | 'partner'): void {
     if (type === 'bo') {
       this.boFile = null;
+      this.boData = [];
+      this.clearBoSelections();
     } else {
       this.partnerFile = null;
+      this.partnerData = [];
+      this.clearPartnerSelections();
     }
+  }
+
+  private clearBoSelections(): void {
+    this.showAgencySelection = false;
+    this.showServiceSelection = false;
+    this.showManualServiceSelection = false;
+    this.showManualStatusSelection = false;
+    this.availableAgencies = [];
+    this.selectedAgencies = [];
+    this.agencySelectionData = [];
+    this.agencyColumn = null;
+    this.availableServices = [];
+    this.selectedServices = [];
+    this.serviceSelectionData = [];
+    this.manualAvailableServices = [];
+    this.manualSelectedServices = [];
+    this.manualServiceSelectionData = [];
+    this.manualStatusColumn = null;
+    this.manualAvailableStatuses = [];
+    this.manualSelectedStatuses = [];
+    this.manualStatusSelectionData = [];
+  }
+
+  private clearPartnerSelections(): void {
+    this.showPartnerServiceSelection = false;
+    this.showPartnerStatusSelection = false;
+    this.showPartnerPaymentSelection = false;
+    this.partnerAvailableServices = [];
+    this.partnerSelectedServices = [];
+    this.partnerServiceSelectionData = [];
+    this.partnerServiceColumn = null;
+    this.partnerStatusColumn = null;
+    this.partnerAvailableStatuses = [];
+    this.partnerSelectedStatuses = [];
+    this.partnerStatusSelectionData = [];
+    this.partnerAvailablePayments = [];
+    this.partnerSelectedPayments = [];
+    this.partnerPaymentSelectionData = [];
+    this.partnerPaymentColumn = null;
   }
 
   // Méthodes de sélection du mode
@@ -279,35 +589,24 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
 
   // Méthodes de progression
   proceedWithSelectedMode(): void {
-    if (!this.selectedMode) {
-      return;
+    if (!this.selectedMode) return;
+
+    if (this.boFile && this.partnerFile) {
+      this.appStateService.setUploadedFiles({ boFile: this.boFile, partnerFile: this.partnerFile });
     }
 
-    // Pour le mode manuel, permettre de continuer même sans fichiers
+    // Si les données sont parsées, les passer via appStateService
+    if (this.boData.length > 0 && this.partnerData.length > 0) {
+      this.appStateService.setReconciliationData(this.boData, this.partnerData);
+    }
+
     if (this.selectedMode === 'manual') {
-      // Sauvegarder les fichiers dans l'état s'ils existent
-      if (this.boFile && this.partnerFile) {
-        this.appStateService.setUploadedFiles({
-          boFile: this.boFile,
-          partnerFile: this.partnerFile
-        });
-      }
       this.router.navigate(['/column-selection'], { queryParams: { mode: 'manual' } });
       return;
     }
 
-    // Pour les autres modes, vérifier que les fichiers sont chargés
-    if (!this.canProceed) {
-      return;
-    }
+    if (!this.canProceed) return;
 
-    // Sauvegarder les fichiers dans l'état
-    this.appStateService.setUploadedFiles({
-      boFile: this.boFile!,
-      partnerFile: this.partnerFile!
-    });
-
-    // Naviguer selon le mode sélectionné
     switch (this.selectedMode) {
       case 'assisted':
         this.router.navigate(['/column-selection'], { queryParams: { mode: 'assisted' } });
@@ -1750,6 +2049,493 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
       // Afficher un message de confirmation
       this.popupService.showSuccess('Données réinitialisées avec succès');
     }
+  }
+
+  // ─── Parsing ──────────────────────────────────────────────────────────────
+
+  private parseFile(file: File, isBo: boolean): void {
+    const name = file.name.toLowerCase();
+    if (name.endsWith('.csv')) {
+      this.parseCSV(file, isBo);
+    } else if (['.xls','.xlsx','.xlsm','.xlsb','.xlt','.xltx','.xltm'].some(e => name.endsWith(e))) {
+      this.parseXLSX(file, isBo);
+    }
+  }
+
+  private parseCSV(file: File, isBo: boolean): void {
+    const reader = new FileReader();
+    reader.onload = (e: ProgressEvent<FileReader>) => {
+      let text = e.target?.result as string;
+      if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
+      const lines = text.split('\n').filter(l => l.trim());
+      if (!lines.length) return;
+      const first = lines[0];
+      const delimiter = (first.match(/;/g) || []).length > (first.match(/,/g) || []).length ? ';' : ',';
+      Papa.parse(text, {
+        header: true,
+        delimiter,
+        skipEmptyLines: true,
+        complete: (results) => {
+          const data = results.data as Record<string, string>[];
+          this.onFileParsed(data, isBo);
+        }
+      });
+    };
+    reader.readAsText(file, 'UTF-8');
+  }
+
+  private parseXLSX(file: File, isBo: boolean): void {
+    const reader = new FileReader();
+    reader.onload = (e: ProgressEvent<FileReader>) => {
+      const ab = e.target?.result as ArrayBuffer;
+      const wb = XLSX.read(ab, { type: 'array' });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows: any[] = XLSX.utils.sheet_to_json(ws, { defval: '' });
+      const data: Record<string, string>[] = rows.map(r => {
+        const row: Record<string, string> = {};
+        Object.keys(r).forEach(k => { row[k] = r[k] !== null && r[k] !== undefined ? String(r[k]) : ''; });
+        return row;
+      });
+      this.onFileParsed(data, isBo);
+    };
+    reader.readAsArrayBuffer(file);
+  }
+
+  private onFileParsed(data: Record<string, string>[], isBo: boolean): void {
+    if (isBo) {
+      this.boData = data;
+      this.cdr.detectChanges();
+      setTimeout(() => {
+        if (this.boData.length > 0) {
+          if (this.detectTRXBOAndExtractServices(this.boData)) {
+            if (this.availableAgencies.length > 0) {
+              this.showAgencySelectionStep();
+            } else if (this.selectedMode === 'manual' || this.selectedMode === 'assisted') {
+              this.showManualServiceSelectionStep();
+            } else {
+              this.showServiceSelectionStep();
+            }
+          }
+        }
+        this.cdr.detectChanges();
+      }, 100);
+    } else {
+      this.partnerData = data;
+      this.cdr.detectChanges();
+      setTimeout(() => {
+        if (this.partnerData.length > 0) {
+          if (this.detectPartnerServiceTypeAndStatus(this.partnerData)) {
+            this.showPartnerServiceSelectionStep();
+          }
+        }
+        this.cdr.detectChanges();
+      }, 100);
+    }
+  }
+
+  // ─── Détection TRXBO ───────────────────────────────────────────────────────
+
+  private detectTRXBOAndExtractServices(data: Record<string, string>[]): boolean {
+    if (!data?.length) return false;
+    const columns = Object.keys(data[0]);
+    const hasService = columns.some(c => c.toLowerCase().includes('service') || c.toLowerCase().includes('serv'));
+    if (!hasService) return false;
+
+    const agencyCol = columns.find(c => c.toLowerCase().includes('agence') || c.toLowerCase().includes('agency'));
+    if (agencyCol) {
+      this.availableAgencies = [...new Set(data.map(r => r[agencyCol]).filter(v => v?.toString().trim()))].sort();
+      this.agencySelectionData = data;
+      this.agencyColumn = agencyCol;
+      return true;
+    }
+    return this.extractServicesFromTRXBO(data);
+  }
+
+  private extractServicesFromTRXBO(data: Record<string, string>[]): boolean {
+    if (!data?.length) return false;
+    const columns = Object.keys(data[0]);
+    const serviceCol = columns.find(c => c.toLowerCase().includes('service') || c.toLowerCase().includes('serv'));
+    if (!serviceCol) return false;
+    this.availableServices = [...new Set(data.map(r => r[serviceCol]).filter(v => v?.trim()))].sort();
+    this.serviceSelectionData = data;
+    return true;
+  }
+
+  private extractServicesForManual(data: Record<string, string>[]): boolean {
+    if (!data?.length) return false;
+    const columns = Object.keys(data[0]);
+    const serviceCol = columns.find(c => c.toLowerCase().includes('service') || c.toLowerCase().includes('serv'));
+    if (!serviceCol) return false;
+    const statusCol = columns.find(c => {
+      const l = c.toLowerCase();
+      return l.includes('statut') || l.includes('status') || l.includes('état') || l.includes('state');
+    });
+    this.manualAvailableServices = [...new Set(data.map(r => r[serviceCol]).filter(v => v?.trim()))].sort();
+    this.manualServiceSelectionData = data;
+    this.manualStatusColumn = statusCol || null;
+    return true;
+  }
+
+  private detectPartnerServiceTypeAndStatus(data: Record<string, string>[]): boolean {
+    if (!data?.length) return false;
+    const columns = Object.keys(data[0]);
+    const serviceCol = columns.find(c => {
+      const l = c.toLowerCase();
+      return l.includes('service') || l.includes('serv') || l.includes('type');
+    });
+    const statusCol = columns.find(c => {
+      const l = c.toLowerCase();
+      return l.includes('statut') || l.includes('status') || l.includes('état') || l.includes('généré le') || l.includes('genere le');
+    });
+    if (!serviceCol) return false;
+    this.partnerAvailableServices = [...new Set(data.map(r => r[serviceCol]).filter(v => v?.toString().trim()))].sort();
+    this.partnerServiceSelectionData = data;
+    this.partnerServiceColumn = serviceCol;
+    this.partnerStatusColumn = statusCol || null;
+    return true;
+  }
+
+  // ─── Popup steps ──────────────────────────────────────────────────────────
+
+  private showAgencySelectionStep(): void {
+    this.showAgencySelection = true;
+    this.agencySearchFilter = '';
+    this.selectedAgencies = [...this.availableAgencies];
+    this.cdr.detectChanges();
+  }
+
+  private showServiceSelectionStep(): void {
+    this.showServiceSelection = true;
+    this.serviceSearchFilter = '';
+    this.selectedServices = [...this.availableServices];
+    this.cdr.detectChanges();
+  }
+
+  private showManualServiceSelectionStep(): void {
+    this.showManualServiceSelection = true;
+    this.manualServiceSearchFilter = '';
+    this.manualSelectedServices = [...this.manualAvailableServices];
+    this.cdr.detectChanges();
+  }
+
+  private showManualStatusSelectionStep(): void {
+    this.showManualStatusSelection = true;
+    this.manualStatusSearchFilter = '';
+    this.manualSelectedStatuses = [...this.manualAvailableStatuses];
+    this.cdr.detectChanges();
+  }
+
+  private showPartnerServiceSelectionStep(): void {
+    this.showPartnerServiceSelection = true;
+    this.partnerServiceSearchFilter = '';
+    this.partnerSelectedServices = [...this.partnerAvailableServices];
+    this.cdr.detectChanges();
+  }
+
+  private showPartnerStatusSelectionStep(): void {
+    this.showPartnerStatusSelection = true;
+    this.partnerStatusSearchFilter = '';
+    this.partnerSelectedStatuses = [...this.partnerAvailableStatuses];
+    this.cdr.detectChanges();
+  }
+
+  private showPartnerPaymentSelectionStep(): void {
+    this.showPartnerPaymentSelection = true;
+    this.partnerPaymentSearchFilter = '';
+    this.partnerSelectedPayments = [...this.partnerAvailablePayments];
+    this.cdr.detectChanges();
+  }
+
+  // ─── Confirmations BO ──────────────────────────────────────────────────────
+
+  confirmAgencySelection(): void {
+    if (!this.selectedAgencies.length || !this.agencyColumn) return;
+    const filtered = this.agencySelectionData.filter(r => this.selectedAgencies.includes(r[this.agencyColumn!]));
+    this.showAgencySelection = false;
+    const isManual = this.selectedMode === 'manual' || this.selectedMode === 'assisted';
+    if (isManual) {
+      if (this.extractServicesForManual(filtered)) this.showManualServiceSelectionStep();
+    } else {
+      if (this.extractServicesFromTRXBO(filtered)) this.showServiceSelectionStep();
+    }
+  }
+
+  cancelAgencySelection(): void {
+    this.showAgencySelection = false;
+    this.boData = [];
+    this.boFile = null;
+    this.clearBoSelections();
+    this.cdr.detectChanges();
+  }
+
+  confirmServiceSelection(): void {
+    if (!this.selectedServices.length) return;
+    const serviceCol = Object.keys(this.serviceSelectionData[0]).find(c => c.toLowerCase().includes('service') || c.toLowerCase().includes('serv'))!;
+    this.boData = this.serviceSelectionData.filter(r => this.selectedServices.includes(r[serviceCol]));
+    this.showServiceSelection = false;
+    this.cdr.detectChanges();
+  }
+
+  cancelServiceSelection(): void {
+    this.showServiceSelection = false;
+    this.boData = [];
+    this.boFile = null;
+    this.clearBoSelections();
+    this.cdr.detectChanges();
+  }
+
+  confirmManualServiceSelection(): void {
+    if (!this.manualSelectedServices.length) return;
+    const serviceCol = Object.keys(this.manualServiceSelectionData[0]).find(c => c.toLowerCase().includes('service') || c.toLowerCase().includes('serv'))!;
+    const filtered = this.manualServiceSelectionData.filter(r => this.manualSelectedServices.includes(r[serviceCol]));
+    if (this.manualStatusColumn && filtered.length > 0) {
+      const statuses = [...new Set(filtered.map(r => r[this.manualStatusColumn!]).filter(v => v?.toString().trim()))].sort();
+      this.manualAvailableStatuses = statuses;
+      this.manualStatusSelectionData = filtered;
+      this.showManualServiceSelection = false;
+      this.showManualStatusSelectionStep();
+    } else {
+      this.boData = filtered;
+      this.showManualServiceSelection = false;
+      this.cdr.detectChanges();
+    }
+  }
+
+  cancelManualServiceSelection(): void {
+    this.showManualServiceSelection = false;
+    this.boData = [];
+    this.boFile = null;
+    this.clearBoSelections();
+    this.cdr.detectChanges();
+  }
+
+  confirmManualStatusSelection(): void {
+    if (!this.manualSelectedStatuses.length || !this.manualStatusColumn) return;
+    this.boData = this.manualStatusSelectionData.filter(r => this.manualSelectedStatuses.includes(r[this.manualStatusColumn!]));
+    this.showManualStatusSelection = false;
+    this.cdr.detectChanges();
+  }
+
+  cancelManualStatusSelection(): void {
+    this.showManualStatusSelection = false;
+    this.showManualServiceSelection = true;
+    this.cdr.detectChanges();
+  }
+
+  // ─── Confirmations Partenaire ──────────────────────────────────────────────
+
+  confirmPartnerServiceSelection(): void {
+    if (!this.partnerSelectedServices.length || !this.partnerServiceColumn) return;
+    const filtered = this.partnerServiceSelectionData.filter(r => this.partnerSelectedServices.includes(r[this.partnerServiceColumn!]));
+    if (this.partnerStatusColumn && filtered.length > 0) {
+      const statuses = [...new Set(filtered.map(r => r[this.partnerStatusColumn!]).filter(v => v?.toString().trim()))].sort();
+      this.partnerAvailableStatuses = statuses;
+      this.partnerStatusSelectionData = filtered;
+      this.showPartnerServiceSelection = false;
+      this.showPartnerStatusSelectionStep();
+    } else {
+      this.partnerData = filtered;
+      this.showPartnerServiceSelection = false;
+      this.cdr.detectChanges();
+    }
+  }
+
+  cancelPartnerServiceSelection(): void {
+    this.showPartnerServiceSelection = false;
+    this.partnerData = [];
+    this.partnerFile = null;
+    this.clearPartnerSelections();
+    this.cdr.detectChanges();
+  }
+
+  confirmPartnerStatusSelection(): void {
+    if (!this.partnerSelectedStatuses.length || !this.partnerStatusColumn) return;
+    const filtered = this.partnerStatusSelectionData.filter(r => this.partnerSelectedStatuses.includes(r[this.partnerStatusColumn!]));
+    // Chercher colonne paiement
+    const paymentCol = Object.keys(filtered[0] || {}).find(c => {
+      const l = c.toLowerCase();
+      return l.includes('paiement') || l.includes('payment') || l.includes('application');
+    });
+    if (paymentCol && filtered.length > 0) {
+      this.partnerAvailablePayments = [...new Set(filtered.map(r => r[paymentCol]).filter(v => v?.toString().trim()))].sort();
+      this.partnerPaymentSelectionData = filtered;
+      this.partnerPaymentColumn = paymentCol;
+      this.partnerAvailableStatuses = [];
+      this.partnerStatusSelectionData = [];
+      this.partnerSelectedStatuses = [];
+      this.showPartnerStatusSelection = false;
+      this.showPartnerPaymentSelectionStep();
+    } else {
+      this.partnerData = filtered;
+      this.showPartnerStatusSelection = false;
+      this.cdr.detectChanges();
+    }
+  }
+
+  cancelPartnerStatusSelection(): void {
+    this.showPartnerStatusSelection = false;
+    this.showPartnerServiceSelection = true;
+    this.cdr.detectChanges();
+  }
+
+  confirmPartnerPaymentSelection(): void {
+    if (!this.partnerSelectedPayments.length || !this.partnerPaymentColumn) return;
+    this.partnerData = this.partnerPaymentSelectionData.filter(r => this.partnerSelectedPayments.includes(r[this.partnerPaymentColumn!]));
+    this.showPartnerPaymentSelection = false;
+    this.partnerPaymentColumn = null;
+    this.partnerPaymentSelectionData = [];
+    this.partnerAvailablePayments = [];
+    this.partnerSelectedPayments = [];
+    this.cdr.detectChanges();
+  }
+
+  cancelPartnerPaymentSelection(): void {
+    this.showPartnerPaymentSelection = false;
+    this.showPartnerStatusSelection = true;
+    this.cdr.detectChanges();
+  }
+
+  // ─── Checkbox handlers ─────────────────────────────────────────────────────
+
+  onAgencySelectionChange(event: Event, agency: string): void {
+    const checked = (event.target as HTMLInputElement).checked;
+    if (checked) { if (!this.selectedAgencies.includes(agency)) this.selectedAgencies.push(agency); }
+    else { this.selectedAgencies = this.selectedAgencies.filter(a => a !== agency); }
+  }
+
+  onServiceSelectionChange(event: Event, service: string): void {
+    const checked = (event.target as HTMLInputElement).checked;
+    if (checked) { if (!this.selectedServices.includes(service)) this.selectedServices.push(service); }
+    else { this.selectedServices = this.selectedServices.filter(s => s !== service); }
+  }
+
+  onManualServiceSelectionChange(event: Event, service: string): void {
+    const checked = (event.target as HTMLInputElement).checked;
+    if (checked) { if (!this.manualSelectedServices.includes(service)) this.manualSelectedServices.push(service); }
+    else { this.manualSelectedServices = this.manualSelectedServices.filter(s => s !== service); }
+  }
+
+  onManualStatusSelectionChange(event: Event, status: string): void {
+    const checked = (event.target as HTMLInputElement).checked;
+    if (checked) { if (!this.manualSelectedStatuses.includes(status)) this.manualSelectedStatuses.push(status); }
+    else { this.manualSelectedStatuses = this.manualSelectedStatuses.filter(s => s !== status); }
+  }
+
+  onPartnerServiceSelectionChange(event: Event, service: string): void {
+    const checked = (event.target as HTMLInputElement).checked;
+    if (checked) { if (!this.partnerSelectedServices.includes(service)) this.partnerSelectedServices.push(service); }
+    else { this.partnerSelectedServices = this.partnerSelectedServices.filter(s => s !== service); }
+  }
+
+  onPartnerStatusSelectionChange(event: Event, status: string): void {
+    const checked = (event.target as HTMLInputElement).checked;
+    if (checked) { if (!this.partnerSelectedStatuses.includes(status)) this.partnerSelectedStatuses.push(status); }
+    else { this.partnerSelectedStatuses = this.partnerSelectedStatuses.filter(s => s !== status); }
+  }
+
+  onPartnerPaymentSelectionChange(event: Event, payment: string): void {
+    const checked = (event.target as HTMLInputElement).checked;
+    if (checked) { if (!this.partnerSelectedPayments.includes(payment)) this.partnerSelectedPayments.push(payment); }
+    else { this.partnerSelectedPayments = this.partnerSelectedPayments.filter(p => p !== payment); }
+  }
+
+  // ─── Select/Deselect all ──────────────────────────────────────────────────
+
+  selectAllAgencies(): void { this.selectedAgencies = [...this.filteredAvailableAgencies]; }
+  deselectAllAgencies(): void { const f = this.filteredAvailableAgencies; this.selectedAgencies = this.selectedAgencies.filter(a => !f.includes(a)); }
+
+  selectAllServices(): void { this.selectedServices = [...this.filteredAvailableServices]; }
+  deselectAllServices(): void { const f = this.filteredAvailableServices; this.selectedServices = this.selectedServices.filter(s => !f.includes(s)); }
+
+  selectAllManualServices(): void { this.manualSelectedServices = [...this.filteredManualAvailableServices]; }
+  deselectAllManualServices(): void { const f = this.filteredManualAvailableServices; this.manualSelectedServices = this.manualSelectedServices.filter(s => !f.includes(s)); }
+
+  selectAllManualStatuses(): void { this.manualSelectedStatuses = [...this.filteredManualAvailableStatuses]; }
+  deselectAllManualStatuses(): void { const f = this.filteredManualAvailableStatuses; this.manualSelectedStatuses = this.manualSelectedStatuses.filter(s => !f.includes(s)); }
+
+  selectAllPartnerServices(): void { this.partnerSelectedServices = [...this.filteredPartnerAvailableServices]; }
+  deselectAllPartnerServices(): void { const f = this.filteredPartnerAvailableServices; this.partnerSelectedServices = this.partnerSelectedServices.filter(s => !f.includes(s)); }
+
+  selectAllPartnerStatuses(): void { this.partnerSelectedStatuses = [...this.filteredPartnerAvailableStatuses]; }
+  deselectAllPartnerStatuses(): void { const f = this.filteredPartnerAvailableStatuses; this.partnerSelectedStatuses = this.partnerSelectedStatuses.filter(s => !f.includes(s)); }
+
+  selectAllPartnerPayments(): void { this.partnerSelectedPayments = [...this.filteredPartnerAvailablePayments]; }
+  deselectAllPartnerPayments(): void { const f = this.filteredPartnerAvailablePayments; this.partnerSelectedPayments = this.partnerSelectedPayments.filter(p => !f.includes(p)); }
+
+  // ─── Getters filtrés ──────────────────────────────────────────────────────
+
+  get filteredAvailableAgencies(): string[] {
+    const t = this.agencySearchFilter?.trim().toLowerCase() || '';
+    return t ? this.availableAgencies.filter(a => a.toLowerCase().includes(t)) : this.availableAgencies;
+  }
+
+  get filteredAvailableServices(): string[] {
+    const t = this.serviceSearchFilter?.trim().toLowerCase() || '';
+    return t ? this.availableServices.filter(s => s.toLowerCase().includes(t)) : this.availableServices;
+  }
+
+  get filteredManualAvailableServices(): string[] {
+    const t = this.manualServiceSearchFilter?.trim().toLowerCase() || '';
+    return t ? this.manualAvailableServices.filter(s => s.toLowerCase().includes(t)) : this.manualAvailableServices;
+  }
+
+  get filteredManualAvailableStatuses(): string[] {
+    const t = this.manualStatusSearchFilter?.trim().toLowerCase() || '';
+    return t ? this.manualAvailableStatuses.filter(s => s.toLowerCase().includes(t)) : this.manualAvailableStatuses;
+  }
+
+  get filteredPartnerAvailableServices(): string[] {
+    const t = this.partnerServiceSearchFilter?.trim().toLowerCase() || '';
+    return t ? this.partnerAvailableServices.filter(s => s.toLowerCase().includes(t)) : this.partnerAvailableServices;
+  }
+
+  get filteredPartnerAvailableStatuses(): string[] {
+    const t = this.partnerStatusSearchFilter?.trim().toLowerCase() || '';
+    return t ? this.partnerAvailableStatuses.filter(s => s.toLowerCase().includes(t)) : this.partnerAvailableStatuses;
+  }
+
+  get filteredPartnerAvailablePayments(): string[] {
+    const t = this.partnerPaymentSearchFilter?.trim().toLowerCase() || '';
+    return t ? this.partnerAvailablePayments.filter(p => p.toLowerCase().includes(t)) : this.partnerAvailablePayments;
+  }
+
+  // ─── Compteurs lignes ─────────────────────────────────────────────────────
+
+  getAgencyCount(agency: string): number {
+    if (!this.agencySelectionData.length || !this.agencyColumn) return 0;
+    return this.agencySelectionData.filter(r => r[this.agencyColumn!] === agency).length;
+  }
+
+  getServiceCount(service: string): number {
+    if (!this.serviceSelectionData.length) return 0;
+    const col = Object.keys(this.serviceSelectionData[0]).find(c => c.toLowerCase().includes('service') || c.toLowerCase().includes('serv'));
+    return col ? this.serviceSelectionData.filter(r => r[col] === service).length : 0;
+  }
+
+  getManualServiceCount(service: string): number {
+    if (!this.manualServiceSelectionData.length) return 0;
+    const col = Object.keys(this.manualServiceSelectionData[0]).find(c => c.toLowerCase().includes('service') || c.toLowerCase().includes('serv'));
+    return col ? this.manualServiceSelectionData.filter(r => r[col] === service).length : 0;
+  }
+
+  getManualStatusCount(status: string): number {
+    if (!this.manualStatusSelectionData.length || !this.manualStatusColumn) return 0;
+    return this.manualStatusSelectionData.filter(r => r[this.manualStatusColumn!] === status).length;
+  }
+
+  getPartnerServiceCount(service: string): number {
+    if (!this.partnerServiceSelectionData.length || !this.partnerServiceColumn) return 0;
+    return this.partnerServiceSelectionData.filter(r => r[this.partnerServiceColumn!] === service).length;
+  }
+
+  getPartnerStatusCount(status: string): number {
+    if (!this.partnerStatusSelectionData.length || !this.partnerStatusColumn) return 0;
+    return this.partnerStatusSelectionData.filter(r => r[this.partnerStatusColumn!] === status).length;
+  }
+
+  getPartnerPaymentCount(payment: string): number {
+    if (!this.partnerPaymentSelectionData.length || !this.partnerPaymentColumn) return 0;
+    return this.partnerPaymentSelectionData.filter(r => r[this.partnerPaymentColumn!] === payment).length;
   }
 
   /**

@@ -119,32 +119,39 @@
     </div>
   </div>
 
-  <div class="table-wrapper">
-    <table class="matches-table">
-      <thead>
-        <tr>
-          <th>Clé</th>
-          <th>Statut</th>
-          <th *ngFor="let col of displayedColumns">{{getColumnLabel(col)}}</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr *ngFor="let match of getPagedMatches()" [class.has-differences]="hasDifferences(match)">
-          <td class="key-cell">{{match.key}}</td>
-          <td class="status-cell">
-            <span [class.has-differences]="hasDifferences(match)">
-              {{hasDifferences(match) ? '⚠️ Différences' : '✅ OK'}}
-            </span>
-          </td>
-          <td *ngFor="let col of displayedColumns">{{getValue(match, col)}}</td>
-        </tr>
-        <tr *ngIf="getPagedMatches().length === 0">
-          <td [attr.colspan]="displayedColumns.length + 2" class="no-data">
-            Aucune correspondance trouvée
-          </td>
-        </tr>
-      </tbody>
-    </table>
+  <div class="table-scroll-container">
+    <div class="table-scroll-nav">
+      <span class="scroll-nav-label">← Faites défiler horizontalement →</span>
+      <button class="scroll-nav-btn" (click)="scrollTableLeft()" [disabled]="tableScrollLeft === 0" title="Défiler à gauche">◀</button>
+      <button class="scroll-nav-btn" (click)="scrollTableRight()" [disabled]="tableScrollLeft >= tableScrollMax" title="Défiler à droite">▶</button>
+    </div>
+    <div class="table-wrapper" #tableWrapper (scroll)="onTableScroll($event)">
+      <table class="matches-table">
+        <thead>
+          <tr>
+            <th>Clé</th>
+            <th>Statut</th>
+            <th *ngFor="let col of displayedColumns">{{getColumnLabel(col)}}</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let match of getPagedMatches()" [class.has-differences]="hasDifferences(match)">
+            <td class="key-cell">{{match.key}}</td>
+            <td class="status-cell">
+              <span [class.has-differences]="hasDifferences(match)">
+                {{hasDifferences(match) ? '⚠️ Différences' : '✅ OK'}}
+              </span>
+            </td>
+            <td *ngFor="let col of displayedColumns">{{getValue(match, col)}}</td>
+          </tr>
+          <tr *ngIf="getPagedMatches().length === 0">
+            <td [attr.colspan]="displayedColumns.length + 2" class="no-data">
+              Aucune correspondance trouvée
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
   </div>
 
   <div class="pagination-section">
@@ -173,6 +180,9 @@
       </button>
     </div>
   </div>
+
+  <!-- Bouton scroll to top -->
+  <button *ngIf="showScrollTopBtn" (click)="scrollToTop()" class="scroll-to-top-btn" title="Retour en haut">↑</button>
 
   <!-- Popup de sélection des colonnes -->
   <div *ngIf="showColumnSelector" class="column-selector-overlay" (click)="closeColumnSelector()">
