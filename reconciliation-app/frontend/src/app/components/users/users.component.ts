@@ -28,6 +28,11 @@ export class UsersComponent implements OnInit {
   searchTerm = '';
   selectedProfilFilter: number | '' = '';
   isLoading = false;
+
+  // Pagination
+  currentPage = 1;
+  pageSize = 10;
+  Math = Math;
   user2FAStatus: Map<number, { enabled: boolean; hasSecret: boolean }> = new Map();
   loading2FAStatus: Set<number> = new Set();
 
@@ -76,6 +81,39 @@ export class UsersComponent implements OnInit {
         (user.profil && user.profil.id === Number(this.selectedProfilFilter));
       return matchesSearch && matchesProfil;
     });
+    this.currentPage = 1;
+  }
+
+  get totalPages(): number {
+    return Math.max(1, Math.ceil(this.filteredUsers.length / this.pageSize));
+  }
+
+  get pagedUsers(): User[] {
+    const start = (this.currentPage - 1) * this.pageSize;
+    return this.filteredUsers.slice(start, start + this.pageSize);
+  }
+
+  get visiblePages(): number[] {
+    const total = this.totalPages;
+    const current = this.currentPage;
+    const maxVisible = 5;
+    if (total <= maxVisible) return Array.from({ length: total }, (_, i) => i + 1);
+    let start = Math.max(1, current - Math.floor(maxVisible / 2));
+    let end = start + maxVisible - 1;
+    if (end > total) { end = total; start = Math.max(1, end - maxVisible + 1); }
+    return Array.from({ length: end - start + 1 }, (_, i) => start + i);
+  }
+
+  goToPage(page: number): void {
+    if (page >= 1 && page <= this.totalPages) this.currentPage = page;
+  }
+
+  prevPage(): void {
+    if (this.currentPage > 1) this.currentPage--;
+  }
+
+  nextPage(): void {
+    if (this.currentPage < this.totalPages) this.currentPage++;
   }
 
   clearFilters(): void {

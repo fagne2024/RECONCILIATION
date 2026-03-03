@@ -371,7 +371,7 @@ export interface ReconciliationReportData {
                         </tr>
                     </thead>
                     <tbody>
-                        <tr *ngFor="let item of paginatedData; trackBy: trackByItem" [class.editing-row]="editingRow === item" [class.row-selected]="isRowSelected(item)">
+                        <tr *ngFor="let item of paginatedData; trackBy: trackByItem" [class.editing-row]="editingRow === item" [class.row-selected]="isRowSelected(item)" [class.row-traitement-termine]="isTraitementTermine(item)">
                             <td class="checkbox-cell">
                                 <input 
                                     type="checkbox" 
@@ -1459,6 +1459,14 @@ export interface ReconciliationReportData {
         }
         .row-selected:hover {
             background-color: #bbdefb !important;
+        }
+        /* Mise en évidence des lignes avec traitement Terminé */
+        .row-traitement-termine {
+            background-color: #d4edda !important;
+            border-left: 4px solid #28a745;
+        }
+        .row-traitement-termine:hover {
+            background-color: #c3e6cb !important;
         }
         .col-date { width: 110px; }
         .col-text { width: 140px; }
@@ -7302,6 +7310,11 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         if (!traitement) return 'traitement-badge';
         const cleanTraitement = traitement.toLowerCase().replace(/\s+/g, '-');
         return `traitement-badge traitement-${cleanTraitement}`;
+    }
+
+    /** Indique si le traitement de la ligne est "Terminé" (pour mise en évidence de la ligne) */
+    isTraitementTermine(item: ReconciliationReportData): boolean {
+        return !!item?.traitement && item.traitement.trim().toLowerCase() === 'terminé';
     }
 
     // Vérifier si une ligne est verrouillée (statut OK + traitement Terminé)

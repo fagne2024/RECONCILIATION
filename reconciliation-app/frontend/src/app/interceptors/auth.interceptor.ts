@@ -4,13 +4,15 @@ import { Observable, throwError } from 'rxjs';
 import { catchError } from 'rxjs/operators';
 import { Router } from '@angular/router';
 import { AppStateService } from '../services/app-state.service';
+import { UserLogService } from '../services/user-log.service';
 
 @Injectable()
 export class AuthInterceptor implements HttpInterceptor {
 
   constructor(
     private appState: AppStateService,
-    private router: Router
+    private router: Router,
+    private userLogService: UserLogService
   ) {}
 
   intercept(req: HttpRequest<any>, next: HttpHandler): Observable<HttpEvent<any>> {
@@ -42,6 +44,10 @@ export class AuthInterceptor implements HttpInterceptor {
         // Si erreur 401 (Non autorisé), déconnecter l'utilisateur
         if (error.status === 401) {
           console.warn('Token invalide ou expiré, déconnexion...');
+          const currentUser = this.appState.getUsername();
+          if (currentUser) {
+            this.userLogService.logActivity('deconnexion', 'Authentification', currentUser, 'Session expirée (401)');
+          }
           this.appState.logout();
           
           // Ne rediriger vers login que si on n'y est pas déjà (évite la boucle infinie)

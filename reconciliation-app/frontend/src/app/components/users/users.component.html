@@ -189,7 +189,7 @@
     </div>
     
     <div *ngIf="filteredUsers.length > 0" class="users-grid">
-      <div *ngFor="let user of filteredUsers" class="user-card">
+      <div *ngFor="let user of pagedUsers" class="user-card">
         <div class="user-card-header">
           <div class="user-avatar">
             <i class="fas fa-user"></i>
@@ -269,6 +269,37 @@
             <i class="fas fa-trash"></i> Supprimer
           </button>
         </div>
+      </div>
+    </div>
+
+    <!-- Pagination -->
+    <div *ngIf="filteredUsers.length > pageSize" class="pagination-bar">
+      <div class="pagination-info">
+        Affichage {{ (currentPage - 1) * pageSize + 1 }} - {{ Math.min(currentPage * pageSize, filteredUsers.length) }} sur {{ filteredUsers.length }} utilisateur(s)
+      </div>
+      <div class="pagination-controls">
+        <button class="btn-page" (click)="prevPage()" [disabled]="currentPage === 1" title="Précédent">
+          <i class="fas fa-chevron-left"></i>
+        </button>
+        <button 
+          *ngFor="let page of visiblePages" 
+          class="btn-page" 
+          [class.active]="page === currentPage" 
+          (click)="goToPage(page)">
+          {{ page }}
+        </button>
+        <button class="btn-page" (click)="nextPage()" [disabled]="currentPage === totalPages" title="Suivant">
+          <i class="fas fa-chevron-right"></i>
+        </button>
+      </div>
+      <div class="pagination-size">
+        <label>Par page:</label>
+        <select [(ngModel)]="pageSize" (change)="currentPage = 1">
+          <option [ngValue]="5">5</option>
+          <option [ngValue]="10">10</option>
+          <option [ngValue]="20">20</option>
+          <option [ngValue]="50">50</option>
+        </select>
       </div>
     </div>
   </div>

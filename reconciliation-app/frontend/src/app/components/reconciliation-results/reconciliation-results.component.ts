@@ -251,10 +251,10 @@ interface ApiError {
                             <button (click)="exportResultsOptimized('matches')" class="export-button" [disabled]="isExporting" title="Export optimisé rapide des correspondances">
                                 📥 Exporter les correspondances
                             </button>
-                            <button (click)="exportResultsOptimized('boOnly')" class="export-button" [disabled]="isExporting || !((response?.boOnly?.length || 0) + (response?.mismatches?.length || 0))" title="Export optimisé rapide des écarts BO">
+                            <button (click)="exportResultsOptimized('boOnly')" class="export-button ecart-bo-button" [disabled]="isExporting || !((response?.boOnly?.length || 0) + (response?.mismatches?.length || 0))" title="Export optimisé rapide des écarts BO">
                                 📥 Écarts BO
                             </button>
-                            <button (click)="exportResultsOptimized('partnerOnly')" class="export-button" [disabled]="isExporting || !filteredPartnerOnlyCount" title="Export optimisé rapide des écarts Partenaire">
+                            <button (click)="exportResultsOptimized('partnerOnly')" class="export-button ecart-partner-button" [disabled]="isExporting || !filteredPartnerOnlyCount" title="Export optimisé rapide des écarts Partenaire">
                                 📥 Écarts Partenaire
                             </button>
                         </div>

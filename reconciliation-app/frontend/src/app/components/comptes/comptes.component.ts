@@ -97,6 +97,8 @@ export class ComptesComponent implements OnInit, OnDestroy {
     showSoldesSeulement = false; // Pour basculer la vue
     /** Vue des soldes : journalier, par semaine ou par mois */
     releveSoldeViewMode: 'day' | 'week' | 'month' = 'day';
+    /** Vue de l'historique des opérations : journalier, par semaine ou par mois */
+    releveOperationsViewMode: 'day' | 'week' | 'month' = 'day';
     releveSoldesJournaliers: DailySolde[] = [];
     private groupedReleveOperationsCache: Array<{ main: Operation; frais: Operation[] }> = [];
     private flattenedReleveOperationsCache: Operation[] = [];
@@ -1416,6 +1418,7 @@ export class ComptesComponent implements OnInit, OnDestroy {
         this.closeClosingOverrideModal();
         this.invalidateReleveOperationCaches();
         this.showSoldesSeulement = false;
+        this.releveOperationsViewMode = 'day';
         this.releveDateDebut = '';
         this.releveTypeOperation = '';
         this.releveDateDebutCustom = '';
@@ -1777,8 +1780,9 @@ export class ComptesComponent implements OnInit, OnDestroy {
         this.releveCurrentPage = 1;
         if (this.showSoldesSeulement) {
             this.releveTotalPages = Math.ceil(this.releveSoldesDisplayRows.length / this.relevePageSize);
+        } else if (this.releveOperationsViewMode !== 'day') {
+            this.releveTotalPages = Math.max(1, Math.ceil(this.releveOperationsGroupedSummary.length / this.relevePageSize));
         } else {
-            // Calculer la pagination basée sur les groupes d'opérations
             const allOperations = this.getFlattenedReleveOperations();
             this.releveTotalPages = Math.ceil(allOperations.length / this.relevePageSize);
         }
@@ -2110,6 +2114,8 @@ export class ComptesComponent implements OnInit, OnDestroy {
         try {
             if (this.showSoldesSeulement) {
                 this.exportReleveSoldes();
+            } else if (this.releveOperationsViewMode !== 'day') {
+                this.exportReleveOperationsGrouped();
             } else {
                 this.exportReleveComplet();
             }
@@ -2123,8 +2129,16 @@ export class ComptesComponent implements OnInit, OnDestroy {
     private exportReleveSoldes(): void {
         if (!this.selectedCompte) return;
 
+        const viewLabel = this.releveSoldeViewMode === 'day' ? 'Journaliers' : (this.releveSoldeViewMode === 'week' ? 'Hebdomadaires' : 'Mensuels');
+        const rows = this.releveSoldesDisplayRows;
+
+        if (rows.length > 0 && this.releveSoldeViewMode !== 'day') {
+            this.exportReleveSoldesGrouped(rows, viewLabel);
+            return;
+        }
+
         const workbook = new ExcelJS.Workbook();
-        const worksheet = workbook.addWorksheet('Soldes Journaliers');
+        const worksheet = workbook.addWorksheet(`Soldes ${viewLabel}`);
 
         // En-tête
         worksheet.addRow(['Numéro de compte', 'Date', 'Solde d\'ouverture', 'Solde de clôture', 'Variation', 'Solde de Clôture BO', 'Ecart de solde', 'Ecart régularisé']);
@@ -2244,6 +2258,145 @@ export class ComptesComponent implements OnInit, OnDestroy {
             blob,
             `releve_soldes_${this.selectedCompte?.numeroCompte || 'compte'}_${new Date().toISOString().split('T')[0]}.xlsx`
           );
+        });
+    }
+
+    private exportReleveSoldesGrouped(rows: ReleveSoldeDisplayRow[], viewLabel: string): void {
+        if (!this.selectedCompte) return;
+
+        const workbook = new ExcelJS.Workbook();
+        const worksheet = workbook.addWorksheet(`Soldes ${viewLabel}`);
+
+        worksheet.addRow(['Numéro de compte', 'Période', 'Solde d\'ouverture', 'Solde de clôture', 'Variation', 'Solde de Clôture BO', 'Ecart de solde', 'Ecart régularisé']);
+
+        rows.forEach(row => {
+            const closingValue = this.getEffectiveClosingFromRow(row);
+            const variation = closingValue - row.opening;
+            const ecart = this.getEcartValue(row.ecartRef);
+            const impactOP = this.getImpactOPValue(row.ecartRef);
+            const xlRow = worksheet.addRow([
+                this.selectedCompte?.numeroCompte || '',
+                row.periodLabel,
+                row.opening,
+                closingValue,
+                variation,
+                row.closingBo !== undefined ? row.closingBo : '',
+                ecart,
+                impactOP
+            ]);
+
+            const tolerance = 0.01;
+            // Couleurs variation
+            xlRow.getCell(5).font = { color: { argb: variation >= 0 ? 'FF2E7D32' : 'FFC62828' }, bold: true };
+            // Couleurs écart
+            if (Math.abs(ecart) <= tolerance) {
+                xlRow.getCell(7).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE8F5E8' } };
+                xlRow.getCell(7).font = { color: { argb: 'FF2E7D32' }, bold: true };
+            } else if (ecart > 0) {
+                xlRow.getCell(7).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF3E0' } };
+                xlRow.getCell(7).font = { color: { argb: 'FFF57C00' }, bold: true };
+            } else {
+                xlRow.getCell(7).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFEBEE' } };
+                xlRow.getCell(7).font = { color: { argb: 'FFC62828' }, bold: true };
+            }
+            // Couleurs impact OP
+            if (Math.abs(impactOP) <= tolerance) {
+                xlRow.getCell(8).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE8F5E8' } };
+                xlRow.getCell(8).font = { color: { argb: 'FF2E7D32' }, bold: true };
+            } else if (impactOP > 0) {
+                xlRow.getCell(8).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF3E0' } };
+                xlRow.getCell(8).font = { color: { argb: 'FFF57C00' }, bold: true };
+            } else {
+                xlRow.getCell(8).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFEBEE' } };
+                xlRow.getCell(8).font = { color: { argb: 'FFC62828' }, bold: true };
+            }
+        });
+
+        worksheet.columns = [
+            { width: 20 }, { width: 25 }, { width: 20 }, { width: 20 },
+            { width: 20 }, { width: 20 }, { width: 20 }, { width: 20 }
+        ];
+        worksheet.getRow(1).eachCell(cell => {
+            cell.font = { bold: true };
+            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD9E1F2' } };
+        });
+
+        const suffix = this.releveSoldeViewMode === 'week' ? 'hebdomadaires' : 'mensuels';
+        workbook.xlsx.writeBuffer().then(buffer => {
+            const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+            saveAs(blob, `releve_soldes_${suffix}_${this.selectedCompte?.numeroCompte || 'compte'}_${new Date().toISOString().split('T')[0]}.xlsx`);
+        });
+    }
+
+    private exportReleveOperationsGrouped(): void {
+        if (!this.selectedCompte || this.releveOperations.length === 0) return;
+
+        const groups = this.releveOperationsGroupedSummary;
+        const modeLabel = this.releveOperationsViewMode === 'week' ? 'Hebdomadaire' : 'Mensuel';
+        const suffix = this.releveOperationsViewMode === 'week' ? 'hebdomadaire' : 'mensuel';
+
+        const workbook = new ExcelJS.Workbook();
+        const worksheet = workbook.addWorksheet(`Historique ${modeLabel}`);
+
+        // En-tête info
+        worksheet.addRow([`RELEVÉ DE COMPTE — VUE ${modeLabel.toUpperCase()}`]);
+        worksheet.addRow([]);
+        worksheet.addRow(['Numéro de compte:', this.selectedCompte.numeroCompte, '', 'Solde actuel:', this.selectedCompte.solde]);
+        worksheet.addRow([]);
+
+        // En-tête tableau
+        const headerRow = worksheet.addRow(['Période', 'Nb opérations', 'Total Débits', 'Total Crédits', 'Variation', 'Solde d\'ouverture', 'Solde de clôture']);
+        headerRow.eachCell(cell => {
+            cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1976D2' } };
+        });
+
+        let grandTotalDebit = 0;
+        let grandTotalCredit = 0;
+
+        groups.forEach(group => {
+            const xlRow = worksheet.addRow([
+                group.periodLabel,
+                group.operations.length,
+                group.totalDebit,
+                group.totalCredit,
+                group.variation,
+                group.opening,
+                group.closing
+            ]);
+            grandTotalDebit += group.totalDebit;
+            grandTotalCredit += group.totalCredit;
+
+            xlRow.getCell(3).font = { color: { argb: 'FFC62828' } };
+            xlRow.getCell(4).font = { color: { argb: 'FF2E7D32' } };
+            xlRow.getCell(5).font = { color: { argb: group.variation >= 0 ? 'FF2E7D32' : 'FFC62828' }, bold: true };
+            xlRow.getCell(6).font = { color: { argb: 'FF1976D2' } };
+            xlRow.getCell(7).font = { color: { argb: 'FF1976D2' }, bold: true };
+        });
+
+        // Totaux
+        worksheet.addRow([]);
+        const totalRow = worksheet.addRow([
+            'TOTAL',
+            this.releveOperations.length,
+            grandTotalDebit,
+            grandTotalCredit,
+            Math.round((grandTotalCredit - grandTotalDebit) * 100) / 100,
+            '', ''
+        ]);
+        totalRow.eachCell(cell => {
+            cell.font = { bold: true };
+            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE2EFDA' } };
+        });
+
+        worksheet.columns = [
+            { width: 28 }, { width: 16 }, { width: 20 }, { width: 20 },
+            { width: 20 }, { width: 20 }, { width: 20 }
+        ];
+
+        workbook.xlsx.writeBuffer().then(buffer => {
+            const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+            saveAs(blob, `releve_operations_${suffix}_${this.selectedCompte?.numeroCompte || 'compte'}_${new Date().toISOString().split('T')[0]}.xlsx`);
         });
     }
 
@@ -2732,6 +2885,66 @@ export class ComptesComponent implements OnInit, OnDestroy {
     get relevePercentVariation(): number {
         const total = this.releveTotalMouvements;
         return total === 0 ? 0 : Math.round((this.releveVariation / total) * 10000) / 100;
+    }
+
+    /** Résumé groupé des opérations par jour/semaine/mois pour la vue "Historique" */
+    get releveOperationsGroupedSummary(): Array<{periodLabel: string; operations: Operation[]; totalDebit: number; totalCredit: number; variation: number; opening: number; closing: number}> {
+        const ops = this.getFlattenedReleveOperations();
+        if (ops.length === 0) return [];
+
+        const groupKey = (op: Operation): string => {
+            const date = this.getOpDate(op);
+            if (this.releveOperationsViewMode === 'week') return this.getWeekKey(date);
+            if (this.releveOperationsViewMode === 'month') return this.getMonthKey(date);
+            return date;
+        };
+        const groupLabel = (key: string, operations: Operation[]): string => {
+            if (this.releveOperationsViewMode === 'week') {
+                const dates = operations.map(o => this.getOpDate(o)).sort();
+                return this.getWeekLabel(dates[0], dates[dates.length - 1]);
+            }
+            if (this.releveOperationsViewMode === 'month') return this.getMonthLabelFromKey(key);
+            return key;
+        };
+
+        const grouped = new Map<string, Operation[]>();
+        ops.forEach(op => {
+            const k = groupKey(op);
+            if (!grouped.has(k)) grouped.set(k, []);
+            grouped.get(k)!.push(op);
+        });
+
+        return Array.from(grouped.entries())
+            .map(([key, groupOps]) => {
+                const totalDebit = groupOps.reduce((s, o) => s + this.getDebitCreditForOperation(o).debit, 0);
+                const totalCredit = groupOps.reduce((s, o) => s + this.getDebitCreditForOperation(o).credit, 0);
+                const sorted = [...groupOps].sort((a, b) => new Date(a.dateOperation).getTime() - new Date(b.dateOperation).getTime());
+                return {
+                    periodLabel: groupLabel(key, groupOps),
+                    operations: sorted,
+                    totalDebit: Math.round(totalDebit * 100) / 100,
+                    totalCredit: Math.round(totalCredit * 100) / 100,
+                    variation: Math.round((totalCredit - totalDebit) * 100) / 100,
+                    opening: sorted[0]?.soldeAvant ?? 0,
+                    closing: sorted[sorted.length - 1]?.soldeApres ?? 0
+                };
+            })
+            .sort((a, b) => {
+                const da = a.operations[0]?.dateOperation ?? '';
+                const db = b.operations[0]?.dateOperation ?? '';
+                return db.localeCompare(da);
+            });
+    }
+
+    get pagedReleveOperationsGrouped(): Array<{periodLabel: string; operations: Operation[]; totalDebit: number; totalCredit: number; variation: number; opening: number; closing: number}> {
+        const all = this.releveOperationsGroupedSummary;
+        const start = (this.releveCurrentPage - 1) * this.relevePageSize;
+        return all.slice(start, start + this.relevePageSize);
+    }
+
+    onReleveOperationsViewModeChange(mode: 'day' | 'week' | 'month'): void {
+        this.releveOperationsViewMode = mode;
+        this.calculateRelevePagination();
     }
 
     // Résumé global pour le footer (comptes filtrés)

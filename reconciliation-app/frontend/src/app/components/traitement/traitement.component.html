@@ -126,7 +126,7 @@
         <!-- Comparaison BO: Agence / PARTNER: Station -->
         <div class="total-energie-compare-block">
           <h5 class="compare-subtitle"><i class="fas fa-balance-scale"></i> Comparaison BO: Agence / PARTNER: Station</h5>
-          <p class="compare-description">Chargez un fichier contenant les colonnes <strong>BO: Agence</strong> et <strong>PARTNER: Station</strong>. Une colonne <strong>Commentaire</strong> sera ajoutée : « OK » si les valeurs sont égales, sinon « Trx à annuler sur '[agence]' et à créer sur '[station]' ».</p>
+          <p class="compare-description">Chargez un fichier contenant les colonnes <strong>BO: Agence</strong> / <strong>BO_Agence</strong> et <strong>PARTNER: Station</strong> / <strong>PARTENAIRE_Station</strong>. Une colonne <strong>Commentaire</strong> sera ajoutée : « OK » si les valeurs sont égales, sinon « Trx à annuler sur '[agence]' et à créer sur '[station]' ».</p>
           <div class="file-upload-group">
             <label class="form-label">
               <i class="fas fa-file-upload"></i> Fichier (CSV, XLS, XLSX)
@@ -198,7 +198,7 @@
           <li><strong>Les doublons sont autorisés</strong> : si plusieurs lignes du fichier 1 correspondent, plusieurs lignes sont créées</li>
           <li>Si aucune correspondance, la ligne du fichier 2 est conservée avec les colonnes du fichier 1 vides</li>
           <li>Le résultat peut être exporté en fichier Excel</li>
-          <li><strong>Comparaison BO / PARTNER :</strong> un second outil permet de charger un fichier avec les colonnes <strong>BO: Agence</strong> et <strong>PARTNER: Station</strong>, d’ajouter une colonne <strong>Commentaire</strong> (« OK » si égal, sinon « Trx à annuler sur… et à créer sur… ») et d’exporter le résultat.</li>
+          <li><strong>Comparaison BO / PARTNER :</strong> un second outil permet de charger un fichier avec les colonnes <strong>BO: Agence</strong> / <strong>BO_Agence</strong> et <strong>PARTNER: Station</strong> / <strong>PARTENAIRE_Station</strong>, d’ajouter une colonne <strong>Commentaire</strong> (« OK » si égal, sinon « Trx à annuler sur… et à créer sur… ») et d’exporter le résultat.</li>
         </ul>
 
         <div *ngIf="totalEnergieMergedData.length > 0" class="merge-results">

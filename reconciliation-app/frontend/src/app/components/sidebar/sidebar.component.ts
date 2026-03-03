@@ -2,6 +2,7 @@ import { Component, OnInit, ChangeDetectorRef } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Router, NavigationEnd } from '@angular/router';
 import { AppStateService } from '../../services/app-state.service';
+import { UserLogService } from '../../services/user-log.service';
 import { filter } from 'rxjs/operators';
 
 @Component({
@@ -20,7 +21,8 @@ export class SidebarComponent implements OnInit {
     private http: HttpClient,
     private router: Router,
     private appState: AppStateService,
-    private cdr: ChangeDetectorRef
+    private cdr: ChangeDetectorRef,
+    private userLogService: UserLogService
   ) { }
 
   ngOnInit(): void {
@@ -50,8 +52,11 @@ export class SidebarComponent implements OnInit {
   }
 
   logout() {
+    const username = this.appState.getUsername();
+    if (username) {
+      this.userLogService.logActivity('deconnexion', 'Authentification', username, 'Déconnexion manuelle');
+    }
     this.appState.logout();
-    // Rediriger vers la page de login
     this.router.navigate(['/login']);
   }
 

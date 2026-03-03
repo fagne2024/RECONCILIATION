@@ -531,7 +531,7 @@
 
                     <!-- Historique des opérations -->
                     <div class="releve-operations">
-                        <h3>{{ showSoldesSeulement ? ('Soldes ' + (releveSoldeViewMode === 'day' ? 'Journaliers' : (releveSoldeViewMode === 'week' ? 'Hebdomadaires' : 'Mensuels'))) : 'Historique des opérations' }}</h3>
+                        <h3>{{ showSoldesSeulement ? ('Soldes ' + (releveSoldeViewMode === 'day' ? 'Journaliers' : (releveSoldeViewMode === 'week' ? 'Hebdomadaires' : 'Mensuels'))) : ('Historique des opérations' + (releveOperationsViewMode === 'week' ? ' (Hebdomadaire)' : (releveOperationsViewMode === 'month' ? ' (Mensuel)' : ''))) }}</h3>
                         <!-- Panneau Approvisionnements: comparaison et recommandations -->
                         <div class="appro-panel" *ngIf="showReleveSummary && releveSoldesJournaliers && releveSoldesJournaliers.length > 0" style="margin:10px 0; background:#fff; border:1px solid #eee; border-radius:8px; padding:12px;">
                             <div style="display:flex; flex-wrap:wrap; gap:12px; align-items:flex-end;">
@@ -620,8 +620,22 @@
                             </div>
                         </div>
                         
-                        <!-- Vue détaillée des opérations -->
-                        <div *ngIf="!isLoadingReleve && releveOperations.length > 0 && !showSoldesSeulement" class="operations-table">
+                        <!-- Boutons de vue jour / semaine / mois (Historique des opérations) -->
+                        <div *ngIf="!isLoadingReleve && releveOperations.length > 0 && !showSoldesSeulement" class="releve-solde-view-mode" style="margin-bottom: 10px;">
+                            <span style="margin-right: 8px;">Vue :</span>
+                            <button type="button" class="btn btn-sm" [class.active]="releveOperationsViewMode === 'day'" (click)="onReleveOperationsViewModeChange('day')">
+                                <i class="fas fa-calendar-day"></i> Journalier
+                            </button>
+                            <button type="button" class="btn btn-sm" [class.active]="releveOperationsViewMode === 'week'" (click)="onReleveOperationsViewModeChange('week')">
+                                <i class="fas fa-calendar-week"></i> Semaine
+                            </button>
+                            <button type="button" class="btn btn-sm" [class.active]="releveOperationsViewMode === 'month'" (click)="onReleveOperationsViewModeChange('month')">
+                                <i class="fas fa-calendar-alt"></i> Mois
+                            </button>
+                        </div>
+
+                        <!-- Vue détaillée des opérations (Journalier) -->
+                        <div *ngIf="!isLoadingReleve && releveOperations.length > 0 && !showSoldesSeulement && releveOperationsViewMode === 'day'" class="operations-table">
                             <div class="operations-summary">
                                 <span>Total: {{ releveOperations.length }} opération(s)</span>
                                 <span *ngIf="releveOperations.length > relevePageSize">
@@ -664,7 +678,6 @@
                                                 </span>
                                             </td>
                                             <td>
-                                              <!-- Affichage correct Débit/Crédit avec logique d'annulation -->
                                               <ng-container *ngIf="operation.typeOperation.startsWith('annulation_'); else nonAnnulationDebit">
                                                 {{ isAnnulationDebit(operation) ? (operation.montant | number:'1.2-2') : '' }}
                                               </ng-container>
@@ -700,6 +713,45 @@
                                             <td colspan="8" style="text-align: right;"><b style="color: #388e3c;">Solde de clôture ({{ getOpDate(operation) }}) : {{ getDailyBalances(releveOperations)[getOpDate(operation)].closing | number:'1.2-2' }}</b></td>
                                         </tr>
                                     </ng-container>
+                                </tbody>
+                            </table>
+                         </div>
+
+                        <!-- Vue groupée des opérations (Semaine / Mois) -->
+                        <div *ngIf="!isLoadingReleve && releveOperations.length > 0 && !showSoldesSeulement && releveOperationsViewMode !== 'day'" class="operations-table">
+                            <div class="operations-summary">
+                                <span>Total: {{ releveOperationsGroupedSummary.length }} {{ releveOperationsViewMode === 'week' ? 'semaine(s)' : 'mois' }}</span>
+                                <span *ngIf="releveOperationsGroupedSummary.length > relevePageSize">
+                                    Affichage: {{ (releveCurrentPage - 1) * relevePageSize + 1 }} - {{ Math.min(releveCurrentPage * relevePageSize, releveOperationsGroupedSummary.length) }} sur {{ releveOperationsGroupedSummary.length }}
+                                </span>
+                            </div>
+                            <table class="table table-bordered table-hover table-sm">
+                                <thead>
+                                    <tr>
+                                        <th>Période</th>
+                                        <th>Nb opérations</th>
+                                        <th>Total Débits</th>
+                                        <th>Total Crédits</th>
+                                        <th>Variation</th>
+                                        <th>Solde d'ouverture</th>
+                                        <th>Solde de clôture</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr *ngFor="let group of pagedReleveOperationsGrouped">
+                                        <td style="font-weight: 600;">{{ group.periodLabel }}</td>
+                                        <td>{{ group.operations.length }}</td>
+                                        <td style="color: #e53935;">{{ group.totalDebit | number:'1.2-2' }}</td>
+                                        <td style="color: #388e3c;">{{ group.totalCredit | number:'1.2-2' }}</td>
+                                        <td [style.color]="group.variation >= 0 ? '#388e3c' : '#e53935'" style="font-weight: 600;">
+                                            {{ group.variation | number:'1.2-2' }}
+                                        </td>
+                                        <td style="color: #1976d2;">{{ group.opening | number:'1.2-2' }}</td>
+                                        <td style="color: #1976d2; font-weight: 600;">{{ group.closing | number:'1.2-2' }}</td>
+                                    </tr>
+                                    <tr *ngIf="pagedReleveOperationsGrouped.length === 0">
+                                        <td colspan="7" style="text-align: center; color: #999;">Aucune donnée</td>
+                                    </tr>
                                 </tbody>
                             </table>
                          </div>

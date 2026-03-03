@@ -1,6 +1,8 @@
 import { Component, OnInit } from '@angular/core';
 import { Router, NavigationEnd } from '@angular/router';
 import { filter } from 'rxjs/operators';
+import { AppStateService } from './services/app-state.service';
+import { UserLogService } from './services/user-log.service';
 
 @Component({
     selector: 'app-root',
@@ -12,7 +14,58 @@ export class AppComponent implements OnInit {
   isLoginPage = false;
   title = 'reconciliation-app';
 
-  constructor(private router: Router) {}
+  private readonly routeLabels: { [path: string]: string } = {
+    '/reconciliation-launcher': 'Lanceur de Réconciliation',
+    '/reconciliation': 'Réconciliation',
+    '/upload': 'Upload de fichiers',
+    '/column-selection': 'Sélection de colonnes',
+    '/stats': 'Statistiques',
+    '/agency-summary': 'Résumé Agences',
+    '/results': 'Résultats',
+    '/matches': 'Correspondances',
+    '/ecart-bo': 'Écarts BO',
+    '/ecart-partner': 'Écarts Partenaire',
+    '/dashboard': 'Dashboard',
+    '/comptes': 'Comptes',
+    '/operations': 'Opérations',
+    '/frais': 'Frais',
+    '/commission': 'Commissions',
+    '/users': 'Utilisateurs',
+    '/ranking': 'Classements',
+    '/traitement': 'Traitement',
+    '/profils': 'Profils',
+    '/modules': 'Modules',
+    '/permissions': 'Permissions',
+    '/ecart-solde': 'Écart Solde',
+    '/trx-sf': 'TRX SF',
+    '/impact-op': 'Impact OP',
+    '/service-balance': 'Service Balance',
+    '/service-references': 'Références Services',
+    '/auto-processing-models': 'Modèles Auto-Processing',
+    '/banque': 'Banque',
+    '/comptabilite': 'Comptabilité',
+    '/reconciliation-report': 'Rapport Réconciliation',
+    '/report-dashboard': 'Dashboard Rapport',
+    '/reconciliation-dashboard': 'Dashboard Réconciliation',
+    '/reconciliation-global-preview': 'Aperçu Global Réconciliation',
+    '/banque-dashboard': 'Dashboard Banque',
+    '/log-utilisateur': 'Journal Utilisateur',
+    '/predictions': 'Prédictions',
+    '/two-factor-auth': 'Authentification 2FA',
+    '/user-profile': 'Profil Utilisateur',
+    '/aide': 'Aide',
+    '/sop-operation': 'Opérations SOP',
+    '/sop-reconciliation-trx': 'Réconciliation SOP TRX',
+    '/guide-utilisation': 'Guide Utilisation',
+    '/suivi-des-ecarts': 'Suivi des Écarts',
+    '/ecart-bo-summary': 'Résumé Écarts BO'
+  };
+
+  constructor(
+    private router: Router,
+    private appState: AppStateService,
+    private userLogService: UserLogService
+  ) {}
 
     ngOnInit() {
     // Vérifier l'URL initiale pour masquer le sidebar si on est sur la page de login
@@ -22,6 +75,7 @@ export class AppComponent implements OnInit {
       filter((event): event is NavigationEnd => event instanceof NavigationEnd)
     ).subscribe((event) => {
       this.updateSidebarVisibility(event.urlAfterRedirects);
+      this.logPageView(event.urlAfterRedirects);
       // Forcer le recalcul du layout après navigation (corrige le bug d'affichage trop large)
       setTimeout(() => {
         window.dispatchEvent(new Event('resize'));
@@ -29,6 +83,15 @@ export class AppComponent implements OnInit {
     });
     // S'assurer que le scroll fonctionne
     this.enableMouseScroll();
+  }
+
+  private logPageView(url: string): void {
+    if (url === '/login' || url.startsWith('/login')) return;
+    const username = this.appState.getUsername();
+    if (!username) return;
+    const basePath = url.split('?')[0];
+    const label = this.routeLabels[basePath] || basePath;
+    this.userLogService.logActivity('vue_page', 'Navigation', username, `Page: ${label} (${basePath})`);
   }
 
   private updateSidebarVisibility(url: string): void {

@@ -4,6 +4,7 @@ import { HttpClient } from '@angular/common/http';
 import { Router, ActivatedRoute } from '@angular/router';
 import { AppStateService } from '../services/app-state.service';
 import { UserService } from '../services/user.service';
+import { UserLogService } from '../services/user-log.service';
 
 @Component({
   selector: 'app-login',
@@ -34,7 +35,8 @@ export class LoginComponent implements OnInit {
     private router: Router,
     private route: ActivatedRoute,
     private appState: AppStateService,
-    private userService: UserService
+    private userService: UserService,
+    private userLogService: UserLogService
   ) {
     this.loginForm = this.fb.group({
       username: ['', Validators.required],
@@ -101,6 +103,8 @@ export class LoginComponent implements OnInit {
             modules,
             permissions
           }, response.username, token);
+          
+          this.userLogService.logActivity('connexion', 'Authentification', response.username, 'Connexion réussie');
           
           // Rediriger vers l'URL demandée ou vers le dashboard par défaut
           let returnUrl = this.route.snapshot.queryParams['returnUrl'] || '/dashboard';
@@ -253,6 +257,8 @@ export class LoginComponent implements OnInit {
           modules,
           permissions
         }, response.username, token);
+        
+        this.userLogService.logActivity('connexion', 'Authentification', response.username, 'Connexion réussie (2FA)');
         
         // Rediriger vers l'URL demandée ou vers le dashboard par défaut
         const returnUrl = this.route.snapshot.queryParams['returnUrl'] || '/dashboard';

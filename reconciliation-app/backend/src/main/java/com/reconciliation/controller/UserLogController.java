@@ -7,6 +7,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/log-utilisateur")
@@ -32,6 +33,29 @@ public class UserLogController {
             return ResponseEntity.ok(logs);
         } catch (Exception e) {
             return ResponseEntity.internalServerError().build();
+        }
+    }
+
+    /**
+     * Enregistrer une activité utilisateur (connexion, déconnexion, vue de page)
+     * Appelé directement par le frontend.
+     */
+    @PostMapping("/log-activity")
+    public ResponseEntity<?> logActivity(@RequestBody Map<String, String> payload) {
+        try {
+            String permission = payload.get("permission");
+            String module = payload.get("module");
+            String username = payload.get("username");
+            String details = payload.get("details");
+
+            if (permission == null || module == null || username == null) {
+                return ResponseEntity.badRequest().body(Map.of("error", "permission, module et username sont requis"));
+            }
+
+            userLogService.saveLog(permission, module, username, details);
+            return ResponseEntity.ok(Map.of("status", "ok"));
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().body(Map.of("error", e.getMessage()));
         }
     }
 

@@ -3238,10 +3238,11 @@ End Sub`;
     this.totalEnergieCompareColumns = Object.keys(this.totalEnergieCompareData[0] || {});
     const normalizedCols = this.totalEnergieCompareColumns.map(col => col.trim().toLowerCase());
     const hasBoAgence = normalizedCols.some(c =>
-      (c.includes('bo') && c.includes('agence')) || c === 'bo: agence' || c === 'bo:agence'
+      (c.includes('bo') && c.includes('agence')) || c === 'bo: agence' || c === 'bo:agence' || c === 'bo_agence'
     );
     const hasPartnerStation = normalizedCols.some(c =>
-      (c.includes('partner') && c.includes('station')) || c === 'partner: station' || c === 'partner:station'
+      (c.includes('partner') && c.includes('station')) || (c.includes('partenaire') && c.includes('station')) ||
+      c === 'partner: station' || c === 'partner:station' || c === 'partenaire_station'
     );
     if (!hasBoAgence) {
       throw new Error(`Colonne "BO: Agence" non trouvée. Colonnes : ${this.totalEnergieCompareColumns.join(', ')}`);
@@ -3262,11 +3263,12 @@ End Sub`;
     try {
       const colBoAgence = this.totalEnergieCompareColumns.find(c => {
         const n = c.trim().toLowerCase().replace(/\s+/g, ' ');
-        return n === 'bo: agence' || n === 'bo:agence' || (n.includes('bo') && n.includes('agence'));
+        return n === 'bo: agence' || n === 'bo:agence' || n === 'bo_agence' || (n.includes('bo') && n.includes('agence'));
       });
       const colPartnerStation = this.totalEnergieCompareColumns.find(c => {
         const n = c.trim().toLowerCase().replace(/\s+/g, ' ');
-        return n === 'partner: station' || n === 'partner:station' || (n.includes('partner') && n.includes('station'));
+        return n === 'partner: station' || n === 'partner:station' || n === 'partenaire_station' ||
+          (n.includes('partner') && n.includes('station')) || (n.includes('partenaire') && n.includes('station'));
       });
       if (!colBoAgence || !colPartnerStation) {
         throw new Error('Colonnes "BO: Agence" ou "PARTNER: Station" introuvables.');

@@ -45,5 +45,19 @@ export class UserLogService {
       catchError(() => of(null))
     );
   }
+
+  /**
+   * Enregistre une activité utilisateur (connexion, déconnexion, vue de page).
+   * Envoie en fire-and-forget pour ne pas bloquer l'interface.
+   */
+  logActivity(permission: string, module: string, username: string, details?: string): void {
+    const payload: any = { permission, module, username };
+    if (details) {
+      payload.details = details;
+    }
+    this.http.post(`${this.apiUrl}/log-utilisateur/log-activity`, payload).pipe(
+      catchError(() => of(null))
+    ).subscribe();
+  }
 }
 
