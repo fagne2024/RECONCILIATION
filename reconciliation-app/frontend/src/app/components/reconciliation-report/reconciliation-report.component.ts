@@ -1,9 +1,11 @@
-import { Component, OnInit, Input, OnDestroy } from '@angular/core';
+import { Component, OnInit, Input, OnDestroy, ViewChild } from '@angular/core';
 import { ActivatedRoute, Router, NavigationEnd } from '@angular/router';
 import { HttpClient, HttpErrorResponse, HttpHeaders } from '@angular/common/http';
 import { filter } from 'rxjs/operators';
 import { Observable, Subscription, firstValueFrom } from 'rxjs';
 import { take } from 'rxjs/operators';
+import { FormControl } from '@angular/forms';
+import { MatSelect } from '@angular/material/select';
 import { ReconciliationResponse, Match } from '../../models/reconciliation-response.model';
 import { AppStateService } from '../../services/app-state.service';
 import { ReconciliationSummaryService, AgencySummaryData } from '../../services/reconciliation-summary.service';
@@ -86,76 +88,46 @@ export interface ReconciliationReportData {
 
             <div class="report-filters">
                 <div class="filter-group" *ngIf="!hasSelectedRows()">
-                    <label>Agence:</label>
-                    <div class="filter-inline">
-                        <input 
-                            type="text" 
-                            [(ngModel)]="selectedAgency" 
-                            (input)="onAgencyFilterChange()"
-                            placeholder="Tapez pour rechercher une agence..."
-                            class="filter-input"
-                            list="agency-list">
-                        <button 
-                            type="button" 
-                            class="btn-clear-dates" 
-                            title="Effacer le filtre agence"
-                            (click)="clearAgencyFilter()"
-                        >
-                            🗑️ Effacer agence
-                        </button>
-                    </div>
-                    <datalist id="agency-list">
-                        <option *ngFor="let agency of filteredAgencies" [value]="agency">{{agency}}</option>
-                    </datalist>
+                    <mat-form-field appearance="fill" class="filter-mat-select">
+                        <mat-label>Agence</mat-label>
+                        <mat-select #agenceSelect [(ngModel)]="selectedAgencies" multiple (selectionChange)="onAgencySelectionChange()">
+                            <mat-option>
+                                <ngx-mat-select-search [formControl]="agenceSearchCtrl" placeholderLabel="Rechercher une agence..." noEntriesFoundLabel="Aucune agence trouvée"></ngx-mat-select-search>
+                            </mat-option>
+                            <mat-option *ngFor="let agency of filteredAgenciesDropdown" [value]="agency">
+                                {{ agency }}
+                            </mat-option>
+                        </mat-select>
+                    </mat-form-field>
                 </div>
                 <div class="filter-group" *ngIf="!hasSelectedRows()">
-                    <label>Pays:</label>
-                    <div class="filter-inline">
-                        <input 
-                            type="text" 
-                            [(ngModel)]="selectedCountry" 
-                            (input)="onCountryFilterChange()"
-                            placeholder="Tapez pour rechercher un pays..."
-                            class="filter-input"
-                            list="country-list">
-                        <button 
-                            type="button" 
-                            class="btn-clear-dates" 
-                            title="Effacer le filtre pays"
-                            (click)="clearCountryFilter()"
-                        >
-                            🗑️ Effacer pays
-                        </button>
-                    </div>
-                    <datalist id="country-list">
-                        <option *ngFor="let country of uniqueCountries" [value]="country">{{country}}</option>
-                    </datalist>
+                    <mat-form-field appearance="fill" class="filter-mat-select">
+                        <mat-label>Pays</mat-label>
+                        <mat-select #paysSelect [(ngModel)]="selectedCountries" multiple (selectionChange)="onCountrySelectionChange()">
+                            <mat-option>
+                                <ngx-mat-select-search [formControl]="paysSearchCtrl" placeholderLabel="Rechercher un pays..." noEntriesFoundLabel="Aucun pays trouvé"></ngx-mat-select-search>
+                            </mat-option>
+                            <mat-option *ngFor="let country of filteredCountriesDropdown" [value]="country">
+                                {{ country }}
+                            </mat-option>
+                        </mat-select>
+                    </mat-form-field>
                 </div>
                 <div class="filter-group" *ngIf="!hasSelectedRows()">
-                    <label>Service:</label>
-                    <div class="filter-inline">
-                        <input 
-                            type="text" 
-                            [(ngModel)]="selectedService" 
-                            (input)="filterReport()"
-                            placeholder="Tapez pour rechercher un service..."
-                            class="filter-input"
-                            list="service-list">
-                        <button 
-                            type="button" 
-                            class="btn-clear-dates" 
-                            title="Effacer le filtre service"
-                            (click)="clearServiceFilter()"
-                        >
-                            🗑️ Effacer service
-                        </button>
-                    </div>
-                    <datalist id="service-list">
-                        <option *ngFor="let service of filteredServices" [value]="service">{{service}}</option>
-                    </datalist>
+                    <mat-form-field appearance="fill" class="filter-mat-select">
+                        <mat-label>Service</mat-label>
+                        <mat-select #serviceSelect [(ngModel)]="selectedServices" multiple (selectionChange)="onServiceSelectionChange()">
+                            <mat-option>
+                                <ngx-mat-select-search [formControl]="serviceSearchCtrl" placeholderLabel="Rechercher un service..." noEntriesFoundLabel="Aucun service trouvé"></ngx-mat-select-search>
+                            </mat-option>
+                            <mat-option *ngFor="let service of filteredServicesDropdown" [value]="service">
+                                {{ service }}
+                            </mat-option>
+                        </mat-select>
+                    </mat-form-field>
                 </div>
                 <div class="filter-group" *ngIf="!hasSelectedRows()">
-                    <label>Date de début:</label>
+                    <label>Date de début</label>
                     <input 
                         type="date" 
                         [(ngModel)]="selectedDateDebut" 
@@ -164,7 +136,7 @@ export interface ReconciliationReportData {
                         placeholder="Date de début">
                 </div>
                 <div class="filter-group" *ngIf="!hasSelectedRows()">
-                    <label>Date de fin:</label>
+                    <label>Date de fin</label>
                     <div class="filter-inline">
                         <input 
                             type="date" 
@@ -182,33 +154,24 @@ export interface ReconciliationReportData {
                     </div>
                 </div>
                 <div class="filter-group" *ngIf="!hasSelectedRows()">
-                    <label>Statut:</label>
-                    <select 
-                        [(ngModel)]="selectedStatus" 
-                        (change)="filterReport()"
-                        class="filter-select">
-                        <option value="">Tous les statuts</option>
-                        <option *ngFor="let status of uniqueStatuses" [value]="status">{{status}}</option>
-                    </select>
+                    <mat-form-field appearance="fill" class="filter-mat-select">
+                        <mat-label>Statut</mat-label>
+                        <mat-select [(ngModel)]="selectedStatuses" multiple (selectionChange)="onStatusSelectionChange()">
+                            <mat-option *ngFor="let status of uniqueStatuses" [value]="status">
+                                {{ status }}
+                            </mat-option>
+                        </mat-select>
+                    </mat-form-field>
                 </div>
                 <div class="filter-group" *ngIf="!hasSelectedRows()">
-                    <label>Traitement:</label>
-                    <div class="filter-inline">
-                        <select 
-                            [(ngModel)]="selectedTraitement" 
-                            (change)="filterReport()"
-                            class="filter-select">
-                            <option value="">Tous les traitements</option>
-                            <option *ngFor="let traitement of traitementOptions" [value]="traitement">{{traitement}}</option>
-                        </select>
-                        <button 
-                            type="button" 
-                            class="btn-clear-dates" 
-                            title="Effacer le filtre traitement"
-                            (click)="clearTraitementFilter()">
-                            🗑️ Effacer traitement
-                        </button>
-                    </div>
+                    <mat-form-field appearance="fill" class="filter-mat-select">
+                        <mat-label>Traitement</mat-label>
+                        <mat-select [(ngModel)]="selectedTraitements" multiple (selectionChange)="onTraitementSelectionChange()">
+                            <mat-option *ngFor="let traitement of traitementOptions" [value]="traitement">
+                                {{ traitement }}
+                            </mat-option>
+                        </mat-select>
+                    </mat-form-field>
                 </div>
                 <div class="filter-group bulk-status-group" *ngIf="hasSelectedRows()">
                     <label>Changer le statut des lignes sélectionnées:</label>
@@ -262,23 +225,14 @@ export interface ReconciliationReportData {
                     </div>
                 </div>
                 <div class="filter-group">
-                    <label>Traitement:</label>
-                    <div class="filter-inline">
-                        <select 
-                            [(ngModel)]="selectedTraitement" 
-                            (change)="filterReport()"
-                            class="filter-select">
-                            <option value="">Tous les traitements</option>
-                            <option *ngFor="let traitement of traitementOptions" [value]="traitement">{{traitement}}</option>
-                        </select>
-                        <button 
-                            type="button" 
-                            class="btn-clear-dates" 
-                            title="Effacer le filtre traitement"
-                            (click)="clearTraitementFilter()">
-                            🗑️ Effacer traitement
-                        </button>
-                    </div>
+                    <mat-form-field appearance="fill" class="filter-mat-select">
+                        <mat-label>Traitement</mat-label>
+                        <mat-select [(ngModel)]="selectedTraitements" multiple (selectionChange)="onTraitementSelectionChange()">
+                            <mat-option *ngFor="let traitement of traitementOptions" [value]="traitement">
+                                {{ traitement }}
+                            </mat-option>
+                        </mat-select>
+                    </mat-form-field>
                 </div>
             </div>
 
@@ -1303,6 +1257,21 @@ export interface ReconciliationReportData {
             outline: none;
             border-color: #007bff;
             box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25);
+        }
+
+        .filter-mat-select {
+            width: 100%;
+            min-width: 140px;
+            max-width: 200px;
+        }
+
+        .filter-mat-select .mat-form-field-wrapper {
+            padding-bottom: 0;
+        }
+
+        .filter-mat-select .mat-form-field-infix {
+            padding: 0.4em 0;
+            font-size: 0.9rem;
         }
 
         .btn-clear-dates {
@@ -2488,14 +2457,25 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
     reportData: ReconciliationReportData[] = [];
     filteredReportData: ReconciliationReportData[] = [];
     
-    selectedAgency: string = '';
-    selectedService: string = '';
-    selectedCountry: string = '';
+    selectedAgencies: string[] = [];
+    selectedServices: string[] = [];
+    selectedCountries: string[] = [];
     selectedDateDebut: string = '';
     selectedDateFin: string = '';
-    selectedStatus: string = '';
-    selectedTraitement: string = '';
+    selectedStatuses: string[] = [];
+    selectedTraitements: string[] = [];
     activeCardFilter: 'inProgress' | 'treated' | 'ticketsToCreate' | null = null;
+
+    agenceSearchCtrl = new FormControl('');
+    serviceSearchCtrl = new FormControl('');
+    paysSearchCtrl = new FormControl('');
+    filteredAgenciesDropdown: string[] = [];
+    filteredServicesDropdown: string[] = [];
+    filteredCountriesDropdown: string[] = [];
+
+    @ViewChild('agenceSelect') agenceSelect!: MatSelect;
+    @ViewChild('serviceSelect') serviceSelect!: MatSelect;
+    @ViewChild('paysSelect') paysSelect!: MatSelect;
     /** Par défaut false = afficher uniquement le mois en cours ; true = tout afficher */
     showAllMonths = false;
     
@@ -2673,6 +2653,8 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
     ngOnInit() {
         console.log('🔄 ReconciliationReportComponent - ngOnInit appelé');
         
+        this.initSearchSubscriptions();
+
         // Réinitialiser les données pour éviter le cache du navigateur
         this.reportData = [];
         this.filteredReportData = [];
@@ -3959,30 +3941,25 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         this.uniqueDates = [...new Set(this.reportData.map(item => item.date))].sort();
         this.uniqueStatuses = [...new Set(this.reportData.map(item => item.status).filter(status => status && status.trim() !== ''))].sort();
         
-        // Initialiser les listes filtrées
         this.filteredAgencies = [...this.uniqueAgencies];
         this.filteredServices = [...this.uniqueServices];
         this.updateFilteredAgencies();
         this.updateFilteredServices();
-        // Ne pas écraser filteredReportData ici : filterReport() est toujours appelé après
-        // et définit filteredReportData (y compris vide pour "mois en cours" sans données).
+        this.refreshDropdownLists();
     }
 
     /**
      * Met à jour la liste des agences filtrées selon le pays sélectionné
      */
     private updateFilteredAgencies(): void {
-        const normalizedCountry = this.selectedCountry?.trim() ?? '';
-
-        if (!normalizedCountry) {
+        if (this.selectedCountries.length === 0) {
             this.filteredAgencies = [...this.uniqueAgencies];
             return;
         }
 
-        const countrySearch = normalizedCountry.toLowerCase();
         const agenciesForCountry = new Set<string>();
         this.reportData
-            .filter(item => item.country?.toLowerCase().includes(countrySearch))
+            .filter(item => this.selectedCountries.includes(item.country))
             .forEach(item => agenciesForCountry.add(item.agency));
         
         this.filteredAgencies = Array.from(agenciesForCountry).sort();
@@ -3992,10 +3969,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
      * Met à jour la liste des services filtrés selon l'agence/pays sélectionnés
      */
     private updateFilteredServices(): void {
-        const agencySearch = this.selectedAgency ? this.selectedAgency.trim().toLowerCase() : null;
-        const countrySearch = this.selectedCountry ? this.selectedCountry.trim().toLowerCase() : null;
-
-        if (!agencySearch && !countrySearch) {
+        if (this.selectedAgencies.length === 0 && this.selectedCountries.length === 0) {
             this.filteredServices = [...this.uniqueServices];
             return;
         }
@@ -4003,8 +3977,8 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         const servicesForSelection = new Set<string>();
         this.reportData
             .filter(item => {
-                const matchesCountry = !countrySearch || item.country?.toLowerCase().includes(countrySearch);
-                const matchesAgency = !agencySearch || item.agency?.toLowerCase().includes(agencySearch);
+                const matchesCountry = this.selectedCountries.length === 0 || this.selectedCountries.includes(item.country);
+                const matchesAgency = this.selectedAgencies.length === 0 || this.selectedAgencies.includes(item.agency);
                 return matchesCountry && matchesAgency;
             })
             .forEach(item => servicesForSelection.add(item.service));
@@ -4012,43 +3986,58 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         this.filteredServices = Array.from(servicesForSelection).sort();
     }
 
-    /**
-     * Gère le changement de filtre agence avec filtrage cloisonné
-     */
-    onAgencyFilterChange(): void {
-        // Réinitialiser le service sélectionné quand l'agence change
-        this.selectedService = '';
-        
-        // Mettre à jour la liste des services disponibles pour cette agence
+    private initSearchSubscriptions(): void {
+        this.agenceSearchCtrl.valueChanges.subscribe((search: string | null) => {
+            const s = (search || '').toLowerCase();
+            this.filteredAgenciesDropdown = this.filteredAgencies.filter(a => a.toLowerCase().includes(s));
+        });
+        this.serviceSearchCtrl.valueChanges.subscribe((search: string | null) => {
+            const s = (search || '').toLowerCase();
+            this.filteredServicesDropdown = this.filteredServices.filter(a => a.toLowerCase().includes(s));
+        });
+        this.paysSearchCtrl.valueChanges.subscribe((search: string | null) => {
+            const s = (search || '').toLowerCase();
+            this.filteredCountriesDropdown = this.uniqueCountries.filter(a => a.toLowerCase().includes(s));
+        });
+    }
+
+    private refreshDropdownLists(): void {
+        this.filteredAgenciesDropdown = [...this.filteredAgencies];
+        this.filteredServicesDropdown = [...this.filteredServices];
+        this.filteredCountriesDropdown = [...this.uniqueCountries];
+        this.agenceSearchCtrl.setValue('');
+        this.serviceSearchCtrl.setValue('');
+        this.paysSearchCtrl.setValue('');
+    }
+
+    onAgencySelectionChange(): void {
         this.updateFilteredServices();
-        
+        this.refreshDropdownLists();
         this.filterReport();
     }
 
-    /**
-     * Gère le changement de filtre pays avec cloisonnement agence/service
-     */
-    onCountryFilterChange(): void {
+    onCountrySelectionChange(): void {
         this.updateFilteredAgencies();
-
-        if (this.selectedAgency) {
-            const normalizedAgency = this.selectedAgency.toLowerCase();
-            const agencyStillAvailable = this.filteredAgencies.some(agency => agency.toLowerCase() === normalizedAgency);
-            if (!agencyStillAvailable) {
-                this.selectedAgency = '';
-            }
-        }
-
+        this.selectedAgencies = this.selectedAgencies.filter(a =>
+            this.filteredAgencies.includes(a)
+        );
         this.updateFilteredServices();
+        this.selectedServices = this.selectedServices.filter(s =>
+            this.filteredServices.includes(s)
+        );
+        this.refreshDropdownLists();
+        this.filterReport();
+    }
 
-        if (this.selectedService) {
-            const normalizedService = this.selectedService.toLowerCase();
-            const serviceStillAvailable = this.filteredServices.some(service => service.toLowerCase() === normalizedService);
-            if (!serviceStillAvailable) {
-                this.selectedService = '';
-            }
-        }
+    onServiceSelectionChange(): void {
+        this.filterReport();
+    }
 
+    onStatusSelectionChange(): void {
+        this.filterReport();
+    }
+
+    onTraitementSelectionChange(): void {
         this.filterReport();
     }
 
@@ -4059,25 +4048,28 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
     }
 
     clearAgencyFilter(): void {
-        this.selectedAgency = '';
+        this.selectedAgencies = [];
         this.updateFilteredServices();
+        this.refreshDropdownLists();
         this.filterReport();
     }
 
     clearServiceFilter(): void {
-        this.selectedService = '';
+        this.selectedServices = [];
+        this.refreshDropdownLists();
         this.filterReport();
     }
 
     clearCountryFilter(): void {
-        this.selectedCountry = '';
+        this.selectedCountries = [];
         this.updateFilteredAgencies();
         this.updateFilteredServices();
+        this.refreshDropdownLists();
         this.filterReport();
     }
 
     clearTraitementFilter(): void {
-        this.selectedTraitement = '';
+        this.selectedTraitements = [];
         this.filterReport();
     }
 
@@ -4149,11 +4141,11 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                 return false;
             }
 
-            const agencyMatch = !this.selectedAgency || item.agency.toLowerCase().includes(this.selectedAgency.toLowerCase());
-            const serviceMatch = !this.selectedService || item.service.toLowerCase().includes(this.selectedService.toLowerCase());
-            const countryFilterMatch = !this.selectedCountry || item.country?.toLowerCase().includes(this.selectedCountry.toLowerCase());
-            const statusMatch = !this.selectedStatus || item.status === this.selectedStatus;
-            const traitementMatch = !this.selectedTraitement || item.traitement === this.selectedTraitement;
+            const agencyMatch = this.selectedAgencies.length === 0 || this.selectedAgencies.includes(item.agency);
+            const serviceMatch = this.selectedServices.length === 0 || this.selectedServices.includes(item.service);
+            const countryFilterMatch = this.selectedCountries.length === 0 || this.selectedCountries.includes(item.country);
+            const statusMatch = this.selectedStatuses.length === 0 || this.selectedStatuses.includes(item.status);
+            const traitementMatch = this.selectedTraitements.length === 0 || this.selectedTraitements.includes(item.traitement || '');
             
             // Filtrage par plage de dates
             let dateMatch = true;
