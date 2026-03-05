@@ -510,13 +510,37 @@ export class EcartPartnerTableComponent implements OnInit, OnDestroy {
         return;
       }
 
-      const rawType = this.getFromRecord(record, ['Type Opération', 'typeOperation', 'type_operation']);
+      // Clés étendues pour couvrir "Type", "Type Opération", etc. (aligné avec saveEcartPartnerToImpactOP)
+      const rawType = this.getFromRecord(record, ['Type', 'type', 'TYPE', 'Type Opération', 'typeOperation', 'type_operation']);
       const normalized = this.normalizeType(rawType);
-      const typeOperation = normalized.includes('compens') ? 'Compense_client'
+      // Ordre important : fournisseur avant client pour éviter Compense_fournisseur -> Compense_client
+      let typeOperation = normalized.includes('fournisseur') && normalized.includes('compens') ? 'Compense_fournisseur'
+                            : normalized.includes('fournisseur') && normalized.includes('appro') ? 'Appro_fournisseur'
+                            : normalized.includes('compens') ? 'Compense_client'
                             : normalized.includes('appro') ? 'Appro_client'
                             : normalized.includes('nivel') ? 'nivellement'
                             : normalized.includes('regularis') ? 'régularisation_solde'
-                            : rawType || 'ajustement';
+                            : normalized === 'ajustement' ? 'ajustement'
+                            : rawType ? this.mapRawTypeToBackend(rawType) : '';
+
+      // Si le type n'a pas pu être déterminé (colonne absente ou valeur non reconnue),
+      // proposer une sélection comme "Ajouter une opération" pour éviter le fallback silencieux à Ajustement
+      if (!typeOperation) {
+        const typeOptions = ['Compense_client', 'Appro_client', 'Compense_fournisseur', 'nivellement', 'régularisation_solde', 'ajustement'];
+        const typeLabels = ['Compense_client', 'Appro_client', 'Compense_fournisseur', 'Nivellement', 'Régularisation solde', 'Ajustement'];
+        const typeInput = await this.popupService.showSelectInput(
+          'Type d\'opération non détecté dans les données. Sélectionnez le type (comme "Ajouter une opération") :',
+          'Type d\'opération',
+          typeLabels,
+          typeLabels[typeLabels.length - 1]
+        );
+        if (typeInput === null) {
+          await this.popupService.showInfo('Création de l\'opération annulée.');
+          return;
+        }
+        const idx = typeLabels.indexOf(typeInput);
+        typeOperation = idx >= 0 ? typeOptions[idx] : 'ajustement';
+      }
 
       const { agency } = this.getPartnerOnlyAgencyAndService(record);
       const codeProprietaire = (this.getFromRecord(record, ['Agence','agency','Code propriétaire','Code proprietaire','codeProprietaire','code_proprietaire']) || agency || '').trim();
@@ -641,6 +665,18 @@ export class EcartPartnerTableComponent implements OnInit, OnDestroy {
 
   private normalizeType(input: string): string {
     return (input || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  }
+
+  /** Mappe une valeur brute de type vers le format backend attendu */
+  private mapRawTypeToBackend(rawType: string): string {
+    const n = this.normalizeType(rawType);
+    const known: Record<string, string> = {
+      'compense_client': 'Compense_client', 'compense_fournisseur': 'Compense_fournisseur',
+      'appro_client': 'Appro_client', 'appro_fournisseur': 'Appro_fournisseur',
+      'nivellement': 'nivellement', 'régularisation_solde': 'régularisation_solde', 'regularisation_solde': 'régularisation_solde',
+      'ajustement': 'ajustement'
+    };
+    return known[n] || '';
   }
 
   private extractIsoDay(input: string): string {
