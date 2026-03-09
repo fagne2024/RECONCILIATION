@@ -2822,6 +2822,13 @@ export class FileUploadComponent implements OnDestroy {
         }
     }
 
+    // Méthode pour passer la sélection des services/type/statut partenaire
+    // Comporte comme "aucun filtrage" en sélectionnant tous les services/types disponibles
+    skipPartnerServiceSelection(): void {
+        this.partnerSelectedServices = [...this.partnerAvailableServices];
+        this.confirmPartnerServiceSelection();
+    }
+
     // Méthode pour annuler la sélection des services partenaire
     cancelPartnerServiceSelection(): void {
         this.showPartnerServiceSelection = false;
@@ -2989,6 +2996,13 @@ export class FileUploadComponent implements OnDestroy {
         }
     }
 
+    // Méthode pour passer la sélection des statuts partenaire
+    // Comporte comme "aucun filtrage" en sélectionnant tous les statuts disponibles
+    skipPartnerStatusSelection(): void {
+        this.partnerSelectedStatuses = [...this.partnerAvailableStatuses];
+        this.confirmPartnerStatusSelection();
+    }
+
     // Méthode pour afficher la sélection des paiements pour le partenaire (étape 3)
     private showPartnerPaymentSelectionStep(): void {
         this.showPartnerPaymentSelection = true;
@@ -3041,6 +3055,43 @@ export class FileUploadComponent implements OnDestroy {
             this.autoPartnerData = convertedData;
             // Forcer la détection des changements pour mettre à jour la vue
             this.cd.detectChanges();
+        }
+    }
+
+    // Méthode pour passer la sélection des paiements partenaire
+    // Si aucune valeur de paiement n'est disponible, on applique directement les données existantes sans filtrage
+    // Sinon, on sélectionne tous les paiements disponibles et on réutilise la logique de confirmation
+    skipPartnerPaymentSelection(): void {
+        if (!this.partnerAvailablePayments || this.partnerAvailablePayments.length === 0) {
+            // Aucun paiement distinct détecté : utiliser toutes les lignes déjà filtrées par service/statut
+            const sourceData = this.partnerPaymentSelectionData && this.partnerPaymentSelectionData.length > 0
+                ? this.partnerPaymentSelectionData
+                : this.partnerStatusSelectionData;
+
+            const cleanedData = this.normalizeData(sourceData || []);
+            const convertedData = this.convertDebitCreditToNumber(cleanedData);
+
+            // Fermer l'overlay de paiement
+            this.showPartnerPaymentSelection = false;
+
+            // Nettoyer les variables temporaires
+            this.partnerPaymentSelectionData = [];
+            this.partnerAvailablePayments = [];
+            this.partnerSelectedPayments = [];
+            this.partnerPaymentColumn = null;
+
+            if (this.reconciliationMode === 'manual') {
+                this.partnerData = convertedData;
+                this.cd.detectChanges();
+                this.continueWithManualReconciliation();
+            } else {
+                this.autoPartnerData = convertedData;
+                this.cd.detectChanges();
+            }
+        } else {
+            // Paiements disponibles : sélectionner tout et confirmer
+            this.partnerSelectedPayments = [...this.partnerAvailablePayments];
+            this.confirmPartnerPaymentSelection();
         }
     }
 

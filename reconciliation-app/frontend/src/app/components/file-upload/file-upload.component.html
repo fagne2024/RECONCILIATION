@@ -879,6 +879,10 @@
                     <i class="fas fa-times"></i>
                     Annuler
                 </button>
+                <button class="modern-btn" (click)="skipPartnerServiceSelection()">
+                    <i class="fas fa-forward"></i>
+                    Passer
+                </button>
                 <button class="modern-btn confirm-btn" 
                         [disabled]="partnerSelectedServices.length === 0"
                         (click)="confirmPartnerServiceSelection()">
@@ -954,6 +958,10 @@
                     <i class="fas fa-arrow-left"></i>
                     Retour aux services
                 </button>
+                <button class="modern-btn" (click)="skipPartnerStatusSelection()">
+                    <i class="fas fa-forward"></i>
+                    Passer
+                </button>
                 <button class="modern-btn confirm-btn" 
                         [disabled]="partnerSelectedStatuses.length === 0"
                         (click)="confirmPartnerStatusSelection()">
@@ -1028,6 +1036,10 @@
                 <button class="modern-btn cancel-btn" (click)="cancelPartnerPaymentSelection()">
                     <i class="fas fa-arrow-left"></i>
                     Retour aux statuts
+                </button>
+                <button class="modern-btn" (click)="skipPartnerPaymentSelection()">
+                    <i class="fas fa-forward"></i>
+                    Passer
                 </button>
                 <button class="modern-btn confirm-btn" 
                         [disabled]="partnerSelectedPayments.length === 0"
