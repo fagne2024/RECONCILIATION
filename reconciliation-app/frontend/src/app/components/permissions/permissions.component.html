@@ -1,4 +1,38 @@
-<div class="permissions-container">
+<div class="permissions-page">
+  <!-- TOP NAV -->
+  <nav class="topnav">
+    <div class="nav-brand">
+      <div class="nav-brand-dot"></div>
+      ReconciliApp
+    </div>
+    <div class="nav-sep"></div>
+    <div class="nav-path">
+      <strong>Permissions</strong>
+    </div>
+    <div class="nav-spacer"></div>
+  </nav>
+
+  <!-- PAGE HEADER -->
+  <div class="page-header-permissions">
+    <div class="ph-permissions-left">
+      <div class="ph-eyebrow"><span></span>Sécurité</div>
+      <h1 class="ph-title-permissions">Gestion des <em>permissions</em></h1>
+      <p class="ph-subtitle-permissions">
+        Cartographiez les actions métier et alignez-les avec les contrôleurs backend.
+      </p>
+    </div>
+    <div class="ph-permissions-metrics">
+      <div class="hero-kpi-strip">
+        <div class="hk-strip-item">
+          <div class="hk-strip-label">Permissions</div>
+          <div class="hk-strip-value">{{ filteredPermissions.length }}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="main">
+  <div class="permissions-container">
   <div class="header">
     <div class="header-title">
       <h2><i class="fas fa-key"></i> Gestion des Permissions</h2>
@@ -351,4 +385,6 @@
       </div>
     </div>
   </div>
+  </div><!-- .permissions-container -->
+  </div><!-- .main -->
 </div> 

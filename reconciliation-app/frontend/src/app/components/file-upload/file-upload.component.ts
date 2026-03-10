@@ -2475,6 +2475,37 @@ export class FileUploadComponent implements OnDestroy {
         this.agencyColumn = null;
     }
 
+    // Passer la sélection des agences : tout sélectionner ou utiliser les données telles quelles si liste vide
+    skipAgencySelection(): void {
+        if (!this.availableAgencies || this.availableAgencies.length === 0) {
+            const sourceData = this.agencySelectionData && this.agencySelectionData.length > 0 ? this.agencySelectionData : [];
+            if (sourceData.length === 0) {
+                this.errorMessage = 'Aucune donnée disponible pour continuer.';
+                return;
+            }
+            if (this.reconciliationMode === 'manual') {
+                if (this.extractServicesFromTRXBOForManual(sourceData)) {
+                    this.showAgencySelection = false;
+                    this.cd.detectChanges();
+                    this.showManualServiceSelectionStep();
+                } else {
+                    this.errorMessage = 'Erreur lors de l\'extraction des services.';
+                }
+            } else {
+                if (this.extractServicesFromTRXBO(sourceData)) {
+                    this.showAgencySelection = false;
+                    this.cd.detectChanges();
+                    this.showServiceSelectionStep();
+                } else {
+                    this.errorMessage = 'Erreur lors de l\'extraction des services.';
+                }
+            }
+        } else {
+            this.selectedAgencies = [...this.availableAgencies];
+            this.confirmAgencySelection();
+        }
+    }
+
     // Méthode pour gérer le changement de sélection des agences
     onAgencySelectionChange(event: Event, agency: string): void {
         const checkbox = event.target as HTMLInputElement;
@@ -2572,6 +2603,35 @@ export class FileUploadComponent implements OnDestroy {
         }
     }
 
+    // Passer la sélection des services TRXBO (mode auto) : tout sélectionner ou utiliser les données si liste vide
+    skipServiceSelection(): void {
+        if (!this.availableServices || this.availableServices.length === 0) {
+            const sourceData = this.serviceSelectionData && this.serviceSelectionData.length > 0 ? this.serviceSelectionData : [];
+            if (sourceData.length === 0) {
+                this.errorMessage = 'Aucune donnée disponible pour continuer.';
+                return;
+            }
+            if (this.autoStatusColumn && sourceData.length > 0) {
+                const statuses = [...new Set(
+                    sourceData.map(row => row[this.autoStatusColumn!]).filter(s => s && s.toString().trim())
+                )];
+                this.autoAvailableStatuses = statuses.sort();
+                this.autoStatusSelectionData = sourceData;
+                this.showServiceSelection = false;
+                this.showAutoStatusSelectionStep();
+                this.cd.detectChanges();
+            } else {
+                this.autoBoData = sourceData;
+                this.showServiceSelection = false;
+                this.cd.detectChanges();
+                this.continueWithAutoReconciliation();
+            }
+        } else {
+            this.selectedServices = [...this.availableServices];
+            this.confirmServiceSelection();
+        }
+    }
+
     // Méthode pour annuler la sélection des services
     cancelServiceSelection(): void {
         this.showServiceSelection = false;
@@ -2612,6 +2672,25 @@ export class FileUploadComponent implements OnDestroy {
         this.showAutoStatusSelection = false;
         this.cd.detectChanges();
         this.continueWithAutoReconciliation();
+    }
+
+    // Passer la sélection des statuts TRXBO (mode auto) : tout sélectionner ou utiliser les données si liste vide
+    skipAutoStatusSelection(): void {
+        if (!this.autoAvailableStatuses || this.autoAvailableStatuses.length === 0) {
+            const sourceData = this.autoStatusSelectionData && this.autoStatusSelectionData.length > 0
+                ? this.autoStatusSelectionData : [];
+            if (sourceData.length === 0) {
+                this.errorMessage = 'Aucune donnée disponible pour continuer.';
+                return;
+            }
+            this.autoBoData = sourceData;
+            this.showAutoStatusSelection = false;
+            this.cd.detectChanges();
+            this.continueWithAutoReconciliation();
+        } else {
+            this.autoSelectedStatuses = [...this.autoAvailableStatuses];
+            this.confirmAutoStatusSelection();
+        }
     }
 
     cancelAutoStatusSelection(): void {
@@ -5013,6 +5092,35 @@ export class FileUploadComponent implements OnDestroy {
         }
     }
 
+    // Passer la sélection des services TRXBO (mode manuel) : tout sélectionner ou utiliser les données si liste vide
+    skipManualServiceSelection(): void {
+        if (!this.manualAvailableServices || this.manualAvailableServices.length === 0) {
+            const sourceData = this.manualServiceSelectionData && this.manualServiceSelectionData.length > 0
+                ? this.manualServiceSelectionData : [];
+            if (sourceData.length === 0) {
+                this.errorMessage = 'Aucune donnée disponible pour continuer.';
+                return;
+            }
+            if (this.manualStatusColumn && sourceData.length > 0) {
+                const statuses = [...new Set(
+                    sourceData.map(row => row[this.manualStatusColumn!]).filter(s => s && s.toString().trim())
+                )];
+                this.manualAvailableStatuses = statuses.sort();
+                this.manualStatusSelectionData = sourceData;
+                this.showManualServiceSelection = false;
+                this.showManualStatusSelectionStep();
+                this.cd.detectChanges();
+            } else {
+                this.boData = sourceData;
+                this.showManualServiceSelection = false;
+                this.continueWithManualReconciliation();
+            }
+        } else {
+            this.manualSelectedServices = [...this.manualAvailableServices];
+            this.confirmManualServiceSelection();
+        }
+    }
+
     cancelManualServiceSelection(): void {
         this.showManualServiceSelection = false;
         this.manualServiceSearchFilter = '';
@@ -5136,6 +5244,24 @@ export class FileUploadComponent implements OnDestroy {
         
         // Continuer avec la réconciliation manuelle
         this.continueWithManualReconciliation();
+    }
+
+    // Passer la sélection des statuts TRXBO (mode manuel) : tout sélectionner ou utiliser les données si liste vide
+    skipManualStatusSelection(): void {
+        if (!this.manualAvailableStatuses || this.manualAvailableStatuses.length === 0) {
+            const sourceData = this.manualStatusSelectionData && this.manualStatusSelectionData.length > 0
+                ? this.manualStatusSelectionData : [];
+            if (sourceData.length === 0) {
+                this.errorMessage = 'Aucune donnée disponible pour continuer.';
+                return;
+            }
+            this.boData = sourceData;
+            this.showManualStatusSelection = false;
+            this.continueWithManualReconciliation();
+        } else {
+            this.manualSelectedStatuses = [...this.manualAvailableStatuses];
+            this.confirmManualStatusSelection();
+        }
     }
 
     // Méthode pour annuler la sélection des statuts (mode manuel)

@@ -1,15 +1,69 @@
-<div class="traitement-container">
-  <div class="header-section">
-    <h2>Traitement de fichiers (CSV, XLS, XLSX)</h2>
-    <div class="header-actions">
-      <button type="button" class="btn btn-outline-secondary" (click)="toggleAllSections()">
-        <i class="fas fa-eye" *ngIf="!allSectionsVisible"></i>
-        <i class="fas fa-eye-slash" *ngIf="allSectionsVisible"></i>
+<div class="traitement-page">
+  <!-- TOP NAV (aligné sur redevance/operations) -->
+  <nav class="topnav">
+    <div class="nav-brand">
+      <div class="nav-brand-dot"></div>
+      ReconciliApp
+    </div>
+    <div class="nav-sep"></div>
+    <div class="nav-path">
+      <strong>Traitement</strong>
+    </div>
+    <div class="nav-spacer"></div>
+    <div class="nav-actions">
+      <button type="button" class="nav-btn secondary" (click)="toggleAllSections()">
+        <i class="fas" [ngClass]="allSectionsVisible ? 'fa-eye-slash' : 'fa-eye'"></i>
         {{ allSectionsVisible ? 'Masquer tout' : 'Afficher tout' }}
       </button>
-      <button type="button" class="new-treatment-btn" (click)="newTraitement()">+ Nouveau traitement</button>
+      <button type="button" class="nav-btn primary" (click)="newTraitement()">
+        <i class="fas fa-plus"></i>
+        Nouveau traitement
+      </button>
+    </div>
+  </nav>
+
+  <!-- EN-TÊTE PAGE (KPI rapides) -->
+  <div class="page-header-traitement">
+    <div class="ph-ops-left">
+      <div class="ph-eyebrow"><span></span>Outils</div>
+      <h1 class="ph-title-traitement">
+        Traitement de <em>fichiers</em>
+      </h1>
+    </div>
+    <div class="ph-ops-right">
+      <div class="hero-kpi-strip">
+        <div class="hk-strip-item">
+          <span class="hk-strip-label">Fichiers</span>
+          <span class="hk-strip-value">{{ selectedFiles.length }}</span>
+        </div>
+        <div class="hk-strip-sep"></div>
+        <div class="hk-strip-item">
+          <span class="hk-strip-label">Lignes</span>
+          <span class="hk-strip-value">{{ combinedRows.length || 0 }}</span>
+        </div>
+        <div class="hk-strip-sep"></div>
+        <div class="hk-strip-item">
+          <span class="hk-strip-label">Colonnes</span>
+          <span class="hk-strip-value">{{ columns.length || 0 }}</span>
+        </div>
+      </div>
     </div>
   </div>
+
+  <!-- CONTENU PRINCIPAL -->
+  <div class="main">
+    <div class="traitement-container">
+      <div class="header-section">
+        <h2>Traitement de fichiers (CSV, XLS, XLSX)</h2>
+        <div class="header-actions">
+          <button type="button" class="btn btn-outline-secondary" (click)="toggleAllSections()">
+            <i class="fas fa-eye" *ngIf="!allSectionsVisible"></i>
+            <i class="fas fa-eye-slash" *ngIf="allSectionsVisible"></i>
+            {{ allSectionsVisible ? 'Masquer tout' : 'Afficher tout' }}
+          </button>
+          <button type="button" class="new-treatment-btn" (click)="newTraitement()">+ Nouveau traitement</button>
+        </div>
+      </div>
   
   <!-- Barre de progression pour les fichiers volumineux -->
   <div *ngIf="dataProcessingService.isProcessing$ | async" class="processing-overlay">
@@ -336,7 +390,9 @@
       </div>
     </div>
   </div>
-</div>
+    </div> <!-- .traitement-container -->
+  </div> <!-- .main -->
+</div> <!-- .traitement-page -->
 
 <div class="sheet-split-section">
   <div class="section-header">

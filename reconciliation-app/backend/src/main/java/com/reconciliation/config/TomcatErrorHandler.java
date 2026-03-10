@@ -24,10 +24,11 @@ public class TomcatErrorHandler {
             // Timeout de connexion pour fermer rapidement les connexions malformées
             connector.setProperty("connectionTimeout", "20000");
 
-            // Note: X-Powered-By est masqué au niveau des proxies (Apache/Nginx)
-            // Tomcat peut générer cet en-tête, mais il sera supprimé par les proxies
+            // Désactiver explicitement l'en-tête X-Powered-By au niveau du connecteur Tomcat
+            connector.setXpoweredBy(false);
+
             if (connector.getProtocolHandler() instanceof AbstractHttp11Protocol<?>) {
-                log.debug("Configuration du protocole HTTP Tomcat détectée (AbstractHttp11Protocol)");
+                log.debug("Configuration du protocole HTTP Tomcat détectée, X-Powered-By désactivé via le connecteur");
             }
 
             log.debug("Configuration Tomcat appliquée");

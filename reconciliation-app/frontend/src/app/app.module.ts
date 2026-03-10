@@ -93,6 +93,7 @@ import { EcartBoTableComponent } from './components/ecart-bo-table/ecart-bo-tabl
 import { EcartPartnerTableComponent } from './components/ecart-partner-table/ecart-partner-table.component';
 import { SuiviDesEcartsComponent } from './components/suivi-des-ecarts/suivi-des-ecarts.component';
 import { EcartBoSummaryComponent } from './components/ecart-bo-summary/ecart-bo-summary.component';
+import { RedevanceLoterieComponent } from './components/redevance-loterie/redevance-loterie.component';
 
 @NgModule({
     declarations: [
@@ -152,7 +153,8 @@ import { EcartBoSummaryComponent } from './components/ecart-bo-summary/ecart-bo-
                 EcartBoTableComponent,
                 EcartPartnerTableComponent,
                 SuiviDesEcartsComponent,
-                EcartBoSummaryComponent
+                EcartBoSummaryComponent,
+                RedevanceLoterieComponent
     ],
     imports: [
         BrowserModule,

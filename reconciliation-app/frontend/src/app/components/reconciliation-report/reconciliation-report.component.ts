@@ -44,13 +44,66 @@ export interface ReconciliationReportData {
 @Component({
     selector: 'app-reconciliation-report',
     template: `
-        <div class="page-header">
-            <div class="breadcrumb">
-                <a routerLink="/results" class="breadcrumb-link">← Retour aux Résultats</a>
+        <div class="reconciliation-report-page">
+            <!-- TOP NAV (aligné sur redevance-loterie) -->
+            <nav class="topnav">
+                <div class="nav-brand">
+                    <div class="nav-brand-dot"></div>
+                    ReconciliApp
+                </div>
+                <div class="nav-sep"></div>
+                <div class="nav-path">
+                    <strong>Rapport Réconciliation</strong>
+                </div>
+                <div class="nav-spacer"></div>
+                <div class="nav-actions">
+                    <button type="button" class="nav-btn secondary" (click)="goBack()">
+                        <i class="fas fa-arrow-left"></i> Retour
+                    </button>
+                    <button type="button" class="nav-btn secondary" (click)="exportToExcel()" [disabled]="!reportData.length">
+                        <i class="fas fa-file-excel"></i> Exporter
+                    </button>
+                    <button type="button" class="nav-btn secondary" (click)="saveAll()" [disabled]="!hasSelectedRows()">
+                        <i class="fas fa-save"></i> Sauvegarder
+                    </button>
+                    <button type="button" class="nav-btn primary" (click)="goToReconciliationDashboard()" [disabled]="!filteredReportData.length && !reportData.length">
+                        <i class="fas fa-chart-line"></i> Tableau de bord
+                    </button>
+                    <button type="button" class="nav-btn secondary" (click)="goToSuiviEcarts()" title="Ouvrir le suivi remboursement">
+                        <i class="fas fa-file-invoice"></i> Remboursement
+                    </button>
+                </div>
+            </nav>
+
+            <!-- PAGE HEADER (titre + KPIs) -->
+            <div class="page-header-report">
+                <div class="ph-report-left">
+                    <div class="ph-eyebrow"><span></span>Rapport</div>
+                    <h1 class="ph-title-report">Vue du <em>rapport de réconciliation</em></h1>
+                </div>
+                <div class="ph-report-right">
+                    <div class="hero-kpi-strip">
+                        <div class="hk-strip-item">
+                            <span class="hk-strip-label">Lignes</span>
+                            <span class="hk-strip-value">{{ (filteredReportData?.length || 0) | number:'1.0-0' }}</span>
+                        </div>
+                        <div class="hk-strip-sep"></div>
+                        <div class="hk-strip-item">
+                            <span class="hk-strip-label">Agences</span>
+                            <span class="hk-strip-value">{{ (uniqueAgencies?.length || 0) | number:'1.0-0' }}</span>
+                        </div>
+                        <div class="hk-strip-sep"></div>
+                        <div class="hk-strip-item">
+                            <span class="hk-strip-label">Taux moyen</span>
+                            <span class="hk-strip-value">{{ averageMatchRate }}%</span>
+                        </div>
+                    </div>
+                </div>
             </div>
-        </div>
-        <div class="reconciliation-report-container">
-            <div class="report-header">
+
+            <div class="main">
+                <div class="reconciliation-report-container">
+                    <div class="report-header">
                 <h2>📊 Rapport de Réconciliation <span class="badge" [ngClass]="currentSource === 'live' ? 'badge-live' : 'badge-db'">{{ currentSource === 'live' ? 'En cours' : 'Base sauvegardée' }}</span></h2>
                 <div class="report-actions">
                     <button class="btn btn-toggle-source" (click)="toggleDataSource()" [title]="currentSource === 'live' ? 'Basculer vers les données en base' : 'Basculer vers les données en cours'">
@@ -225,14 +278,22 @@ export interface ReconciliationReportData {
                     </div>
                 </div>
                 <div class="filter-group">
-                    <mat-form-field appearance="fill" class="filter-mat-select">
-                        <mat-label>Traitement</mat-label>
-                        <mat-select [(ngModel)]="selectedTraitements" multiple (selectionChange)="onTraitementSelectionChange()">
-                            <mat-option *ngFor="let traitement of traitementOptions" [value]="traitement">
-                                {{ traitement }}
-                            </mat-option>
-                        </mat-select>
-                    </mat-form-field>
+                    <label>ID TICKET</label>
+                    <div class="filter-inline">
+                        <input 
+                            type="text" 
+                            [(ngModel)]="ticketIdFilter" 
+                            (ngModelChange)="onTicketIdFilterChange($event)"
+                            class="filter-date"
+                            placeholder="Rechercher un ID TICKET">
+                        <button 
+                            type="button" 
+                            (click)="clearTicketIdFilter()" 
+                            class="btn-clear-dates"
+                            title="Effacer le filtre ID TICKET">
+                            🗑️ Effacer
+                        </button>
+                    </div>
                 </div>
             </div>
 
@@ -888,12 +949,255 @@ export interface ReconciliationReportData {
                 </div>
             </div>
         </div>
+            </div>
+        </div>
     `,
     styles: [`
         :host {
             display: block;
             max-width: 100%;
             overflow-x: hidden;
+            --rd-bg: #F2F0EB;
+            --rd-surface: #FAFAF8;
+            --rd-surface2: rgba(255, 255, 255, 0.85);
+            --rd-border: #E4E0D8;
+            --rd-border2: #D6D0C6;
+            --rd-navy: #1A2535;
+            --rd-navy2: #243044;
+            --rd-text1: #1A1714;
+            --rd-text2: #5C5650;
+            --rd-text3: #9B9489;
+            --rd-green: #2E6B47;
+            --rd-green-l: #EAF4EE;
+            --rd-green-m: #5A9E74;
+            --rd-amber: #A85F1E;
+            --rd-amber-l: #FBF0E4;
+            --rd-amber-m: #D4915A;
+            --rd-blue: #1E4A7A;
+            --rd-blue-l: #E6EFF8;
+            --rd-blue-m: #5A88B8;
+            --rd-red: #8B2635;
+            --rd-red-l: #FCEAEC;
+            --rd-red-m: #C4566A;
+            --rd-r: 18px;
+            --rd-r-sm: 11px;
+            --rd-shadow: 0 2px 16px rgba(26, 23, 20, 0.07);
+            --rd-shadow-lg: 0 8px 40px rgba(26, 23, 20, 0.12);
+        }
+
+        .reconciliation-report-page {
+            font-family: 'Sora', sans-serif;
+            background: var(--rd-bg);
+            min-height: 100vh;
+            width: 100%;
+            color: var(--rd-text1);
+            font-size: 15px;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .topnav {
+            background: var(--rd-navy);
+            height: 52px;
+            display: flex;
+            align-items: center;
+            padding: 0 28px;
+            gap: 20px;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04);
+        }
+
+        .nav-brand {
+            font-family: 'Instrument Serif', serif;
+            font-size: 17px;
+            color: #fff;
+            letter-spacing: 0.01em;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-shrink: 0;
+        }
+
+        .nav-brand-dot {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: var(--rd-green-m);
+            box-shadow: 0 0 0 3px rgba(90, 158, 116, 0.25);
+        }
+
+        .nav-sep {
+            width: 1px;
+            height: 22px;
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .nav-path {
+            font-size: 13px;
+            color: rgba(255, 255, 255, 0.75);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .nav-path strong {
+            font-weight: 500;
+        }
+
+        .nav-spacer {
+            flex: 1;
+        }
+
+        .nav-actions {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
+        .nav-btn {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 7px 16px;
+            border-radius: 8px;
+            border: none;
+            font-family: 'Sora', sans-serif;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            letter-spacing: 0.02em;
+        }
+
+        .nav-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .nav-btn.primary {
+            background: var(--rd-green-m);
+            color: #fff;
+        }
+
+        .nav-btn.primary:hover:not(:disabled) {
+            background: var(--rd-green);
+        }
+
+        .nav-btn.secondary {
+            background: rgba(255, 255, 255, 0.08);
+            color: rgba(255, 255, 255, 0.75);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+        }
+
+        .nav-btn.secondary:hover:not(:disabled) {
+            background: rgba(255, 255, 255, 0.14);
+        }
+
+        .page-header-report {
+            background: var(--rd-surface);
+            border-bottom: 1px solid var(--rd-border);
+            padding: 20px 28px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 16px;
+        }
+
+        .ph-report-left {
+            min-width: 0;
+        }
+
+        .ph-eyebrow {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.12em;
+            color: var(--rd-text3);
+            margin-bottom: 6px;
+        }
+
+        .ph-eyebrow span {
+            display: inline-block;
+            width: 16px;
+            height: 1.5px;
+            background: var(--rd-text3);
+            border-radius: 2px;
+        }
+
+        .ph-title-report {
+            font-family: 'Instrument Serif', serif;
+            font-size: 28px;
+            font-weight: 400;
+            color: var(--rd-text1);
+            letter-spacing: -0.02em;
+            line-height: 1.2;
+            margin: 0;
+        }
+
+        .ph-title-report em {
+            font-style: italic;
+            color: var(--rd-amber);
+        }
+
+        .ph-report-right {
+            flex-shrink: 0;
+        }
+
+        .hero-kpi-strip {
+            display: flex;
+            align-items: center;
+            gap: 0;
+            background: var(--rd-navy);
+            border-radius: var(--rd-r-sm);
+            padding: 12px 20px;
+            box-shadow: var(--rd-shadow);
+        }
+
+        .hk-strip-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 2px;
+            padding: 0 16px;
+        }
+
+        .hk-strip-sep {
+            width: 1px;
+            height: 32px;
+            background: rgba(255, 255, 255, 0.12);
+        }
+
+        .hk-strip-label {
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: rgba(255, 255, 255, 0.5);
+        }
+
+        .hk-strip-value {
+            font-size: 22px;
+            font-weight: 700;
+            color: #fff;
+            font-family: 'Instrument Serif', serif;
+        }
+
+        .main {
+            padding: 28px 28px 60px;
+            width: 100%;
+            flex: 1;
+            position: relative;
+            box-sizing: border-box;
         }
 
         .page-header {
@@ -924,17 +1228,18 @@ export interface ReconciliationReportData {
         }
 
         .reconciliation-report-container {
-            background: white;
+            background: var(--rd-surface);
             border-radius: 12px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-            margin: 20px;
+            box-shadow: var(--rd-shadow);
+            border: 1px solid var(--rd-border);
+            margin: 0;
             overflow: hidden;
             max-width: 100%;
             box-sizing: border-box;
         }
 
         .report-header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: var(--rd-navy);
             color: white;
             padding: 20px;
             display: flex;
@@ -2464,6 +2769,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
     selectedDateFin: string = '';
     selectedStatuses: string[] = [];
     selectedTraitements: string[] = [];
+    ticketIdFilter: string = '';
     activeCardFilter: 'inProgress' | 'treated' | 'ticketsToCreate' | null = null;
 
     agenceSearchCtrl = new FormControl('');
@@ -4041,6 +4347,16 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         this.filterReport();
     }
 
+    onTicketIdFilterChange(value: string): void {
+        this.ticketIdFilter = value;
+        this.filterReport();
+    }
+
+    clearTicketIdFilter(): void {
+        this.ticketIdFilter = '';
+        this.filterReport();
+    }
+
     clearDateFilters(): void {
         this.selectedDateDebut = '';
         this.selectedDateFin = '';
@@ -4146,6 +4462,8 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             const countryFilterMatch = this.selectedCountries.length === 0 || this.selectedCountries.includes(item.country);
             const statusMatch = this.selectedStatuses.length === 0 || this.selectedStatuses.includes(item.status);
             const traitementMatch = this.selectedTraitements.length === 0 || this.selectedTraitements.includes(item.traitement || '');
+            const ticketFilter = (this.ticketIdFilter || '').trim().toLowerCase();
+            const ticketMatch = !ticketFilter || (item.glpiId || '').toLowerCase().includes(ticketFilter);
             
             // Filtrage par plage de dates
             let dateMatch = true;
@@ -4167,7 +4485,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                 }
             }
             
-            const baseMatch = agencyMatch && serviceMatch && countryFilterMatch && dateMatch && statusMatch && traitementMatch;
+            const baseMatch = agencyMatch && serviceMatch && countryFilterMatch && dateMatch && statusMatch && traitementMatch && ticketMatch;
             
             // Appliquer le filtre de card actif si défini
             if (this.activeCardFilter === 'inProgress') {

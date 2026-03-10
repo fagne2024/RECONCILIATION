@@ -1,4 +1,38 @@
-<div class="user-log-container">
+<div class="user-log-page">
+  <!-- TOP NAV -->
+  <nav class="topnav">
+    <div class="nav-brand">
+      <div class="nav-brand-dot"></div>
+      ReconciliApp
+    </div>
+    <div class="nav-sep"></div>
+    <div class="nav-path">
+      <strong>Logs utilisateur</strong>
+    </div>
+    <div class="nav-spacer"></div>
+  </nav>
+
+  <!-- PAGE HEADER -->
+  <div class="page-header-user-log">
+    <div class="ph-user-log-left">
+      <div class="ph-eyebrow"><span></span>Traçabilité</div>
+      <h1 class="ph-title-user-log">Suivi des <em>actions utilisateur</em></h1>
+      <p class="ph-subtitle-user-log">
+        Filtrez et analysez les opérations réalisées par les comptes applicatifs.
+      </p>
+    </div>
+    <div class="ph-user-log-metrics">
+      <div class="hero-kpi-strip">
+        <div class="hk-strip-item">
+          <div class="hk-strip-label">Logs filtrés</div>
+          <div class="hk-strip-value">{{ filteredLogs.length }}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="main">
+  <div class="user-log-container">
   <div class="header">
     <h2>Logs Utilisateur</h2>
     <div class="header-actions">
@@ -152,5 +186,7 @@
       </button>
     </div>
   </div>
+  </div><!-- .user-log-container -->
+  </div><!-- .main -->
 </div>
 

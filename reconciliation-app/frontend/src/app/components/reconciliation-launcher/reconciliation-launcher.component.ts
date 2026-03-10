@@ -16,11 +16,45 @@ import * as XLSX from 'xlsx';
   standalone: true,
   imports: [CommonModule, FormsModule],
   template: `
-    <div class="reconciliation-launcher-container">
-      <div class="header">
-        <h2>🔄 Réconciliation de Données</h2>
-        <p class="description">Choisissez votre mode de réconciliation préféré</p>
+    <div class="reconciliation-launcher-page">
+      <nav class="topnav">
+        <div class="nav-brand">
+          <div class="nav-brand-dot"></div>
+          ReconciliApp
+        </div>
+        <div class="nav-sep"></div>
+        <div class="nav-path">
+          <strong>Lanceur de Réconciliation</strong>
+        </div>
+        <div class="nav-spacer"></div>
+      </nav>
+
+      <div class="page-header-launcher">
+        <div class="ph-left">
+          <div class="ph-eyebrow"><span></span>Réconciliation</div>
+          <h1 class="ph-title-launcher">Réconciliation de <em>Données</em></h1>
+        </div>
+        <div class="ph-right">
+          <div class="hero-kpi-strip">
+            <div class="hk-strip-item">
+              <span class="hk-strip-label">Fichier BO</span>
+              <span class="hk-strip-value">{{ boFile ? "1" : "0" }}</span>
+            </div>
+            <div class="hk-strip-sep"></div>
+            <div class="hk-strip-item">
+              <span class="hk-strip-label">Fichier Partenaire</span>
+              <span class="hk-strip-value">{{ partnerFile ? "1" : "0" }}</span>
+            </div>
+          </div>
+        </div>
       </div>
+
+      <div class="main">
+        <div class="reconciliation-launcher-container">
+          <div class="header">
+            <h2>🔄 Réconciliation de Données</h2>
+            <p class="description">Choisissez votre mode de réconciliation préféré</p>
+          </div>
 
       <!-- Zone de téléversement des fichiers -->
       <div class="file-upload-section">
@@ -364,6 +398,8 @@ import * as XLSX from 'xlsx';
         </div>
       </div>
 
+        </div>
+      </div>
     </div>
   `,
   styleUrls: ['./reconciliation-launcher.component.scss']

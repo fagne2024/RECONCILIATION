@@ -33,48 +33,96 @@ interface ApiError {
     selector: 'app-reconciliation-results',
     changeDetection: ChangeDetectionStrategy.OnPush,
     template: `
+        <div class="results-page">
+            <!-- TOP NAV (aligné sur redevance-loterie) -->
+            <nav class="topnav">
+                <div class="nav-brand">
+                    <div class="nav-brand-dot"></div>
+                    ReconciliApp
+                </div>
+                <div class="nav-sep"></div>
+                <div class="nav-path">
+                    <strong>Résultats</strong>
+                </div>
+                <div class="nav-spacer"></div>
+                <div class="nav-actions">
+                    <button type="button" class="nav-btn secondary" (click)="openColumnSelector()">
+                        <i class="fas fa-file-alt"></i> Rapport écarts
+                    </button>
+                    <button type="button" class="nav-btn primary" (click)="openReconciliationReport()">
+                        <i class="fas fa-chart-line"></i> Rapport Réconciliation
+                    </button>
+                </div>
+            </nav>
 
-        <!-- Affichage de la progression -->
-        <div *ngIf="showProgress" class="progress-overlay">
-            <div class="progress-card">
-                <div class="progress-header">
-                    <h2>Réconciliation en cours...</h2>
-                    <div class="progress-icon">
-                        <i class="fas fa-cog fa-spin"></i>
-                    </div>
+            <!-- PAGE HEADER (titre + KPIs) -->
+            <div class="page-header-results">
+                <div class="ph-results-left">
+                    <div class="ph-eyebrow"><span></span>Réconciliation</div>
+                    <h1 class="ph-title-results">Vue des <em>résultats</em></h1>
                 </div>
-                
-                <div class="progress-bar-container">
-                    <div class="progress-bar">
-                        <div class="progress-fill" [style.width.%]="progressPercentage"></div>
-                    </div>
-                    <div class="progress-text">
-                        {{ progressPercentage | number:'1.0-0' }}% terminé
-                    </div>
-                </div>
-                
-                <div class="progress-details">
-                    <div class="detail-item">
-                        <span class="label">📊 Enregistrements traités:</span>
-                        <span class="value">{{ processedRecords | number }} / {{ totalRecords | number }}</span>
-                    </div>
-                    <div class="detail-item">
-                        <span class="label">⏱️ Temps écoulé:</span>
-                        <span class="value">{{ formatTime(getElapsedTime()) }}</span>
-                    </div>
-                    <div class="detail-item">
-                        <span class="label">🚀 Vitesse:</span>
-                        <span class="value">{{ getProcessingSpeed() }} rec/s</span>
-                    </div>
-                    <div class="detail-item">
-                        <span class="label">📈 Statut:</span>
-                        <span class="value">{{ getProgressStatus() }}</span>
+                <div class="ph-results-right">
+                    <div class="hero-kpi-strip">
+                        <div class="hk-strip-item">
+                            <span class="hk-strip-label">Transactions</span>
+                            <span class="hk-strip-value">{{ totalTransactions | number:'1.0-0' }}</span>
+                        </div>
+                        <div class="hk-strip-sep"></div>
+                        <div class="hk-strip-item">
+                            <span class="hk-strip-label">Correspondances</span>
+                            <span class="hk-strip-value">{{ filteredMatchesCount | number:'1.0-0' }}</span>
+                        </div>
+                        <div class="hk-strip-sep"></div>
+                        <div class="hk-strip-item">
+                            <span class="hk-strip-label">Écarts</span>
+                            <span class="hk-strip-value">{{ (filteredBoOnlyCount + filteredPartnerOnlyCount) | number:'1.0-0' }}</span>
+                        </div>
                     </div>
                 </div>
             </div>
-        </div>
 
-        <div class="results-container">
+            <div class="main">
+                <!-- Affichage de la progression -->
+                <div *ngIf="showProgress" class="progress-overlay">
+                    <div class="progress-card">
+                        <div class="progress-header">
+                            <h2>Réconciliation en cours...</h2>
+                            <div class="progress-icon">
+                                <i class="fas fa-cog fa-spin"></i>
+                            </div>
+                        </div>
+                        
+                        <div class="progress-bar-container">
+                            <div class="progress-bar">
+                                <div class="progress-fill" [style.width.%]="progressPercentage"></div>
+                            </div>
+                            <div class="progress-text">
+                                {{ progressPercentage | number:'1.0-0' }}% terminé
+                            </div>
+                        </div>
+                        
+                        <div class="progress-details">
+                            <div class="detail-item">
+                                <span class="label">📊 Enregistrements traités:</span>
+                                <span class="value">{{ processedRecords | number }} / {{ totalRecords | number }}</span>
+                            </div>
+                            <div class="detail-item">
+                                <span class="label">⏱️ Temps écoulé:</span>
+                                <span class="value">{{ formatTime(getElapsedTime()) }}</span>
+                            </div>
+                            <div class="detail-item">
+                                <span class="label">🚀 Vitesse:</span>
+                                <span class="value">{{ getProcessingSpeed() }} rec/s</span>
+                            </div>
+                            <div class="detail-item">
+                                <span class="label">📈 Statut:</span>
+                                <span class="value">{{ getProgressStatus() }}</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="results-container">
             <div class="summary-section">
                 <div class="summary-header">
                     <h3>📊 Résumé de la réconciliation</h3>
@@ -615,8 +663,253 @@ interface ApiError {
                 </div>
             </div>
         </div>
+        </div>
+        </div>
     `,
     styles: [`
+        :host {
+            --rd-bg: #F2F0EB;
+            --rd-surface: #FAFAF8;
+            --rd-surface2: rgba(255, 255, 255, 0.85);
+            --rd-border: #E4E0D8;
+            --rd-border2: #D6D0C6;
+            --rd-navy: #1A2535;
+            --rd-navy2: #243044;
+            --rd-text1: #1A1714;
+            --rd-text2: #5C5650;
+            --rd-text3: #9B9489;
+            --rd-green: #2E6B47;
+            --rd-green-l: #EAF4EE;
+            --rd-green-m: #5A9E74;
+            --rd-amber: #A85F1E;
+            --rd-amber-l: #FBF0E4;
+            --rd-amber-m: #D4915A;
+            --rd-blue: #1E4A7A;
+            --rd-blue-l: #E6EFF8;
+            --rd-blue-m: #5A88B8;
+            --rd-red: #8B2635;
+            --rd-red-l: #FCEAEC;
+            --rd-red-m: #C4566A;
+            --rd-r: 18px;
+            --rd-r-sm: 11px;
+            --rd-shadow: 0 2px 16px rgba(26, 23, 20, 0.07);
+            --rd-shadow-lg: 0 8px 40px rgba(26, 23, 20, 0.12);
+        }
+
+        .results-page {
+            font-family: 'Sora', sans-serif;
+            background: var(--rd-bg);
+            min-height: 100vh;
+            width: 100%;
+            color: var(--rd-text1);
+            font-size: 15px;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .topnav {
+            background: var(--rd-navy);
+            height: 52px;
+            display: flex;
+            align-items: center;
+            padding: 0 28px;
+            gap: 20px;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04);
+        }
+
+        .nav-brand {
+            font-family: 'Instrument Serif', serif;
+            font-size: 17px;
+            color: #fff;
+            letter-spacing: 0.01em;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-shrink: 0;
+        }
+
+        .nav-brand-dot {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: var(--rd-green-m);
+            box-shadow: 0 0 0 3px rgba(90, 158, 116, 0.25);
+        }
+
+        .nav-sep {
+            width: 1px;
+            height: 22px;
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .nav-path {
+            font-size: 13px;
+            color: rgba(255, 255, 255, 0.75);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .nav-path strong {
+            font-weight: 500;
+        }
+
+        .nav-spacer {
+            flex: 1;
+        }
+
+        .nav-actions {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
+        .nav-btn {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 7px 16px;
+            border-radius: 8px;
+            border: none;
+            font-family: 'Sora', sans-serif;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            letter-spacing: 0.02em;
+        }
+
+        .nav-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .nav-btn.primary {
+            background: var(--rd-green-m);
+            color: #fff;
+        }
+
+        .nav-btn.primary:hover:not(:disabled) {
+            background: var(--rd-green);
+        }
+
+        .nav-btn.secondary {
+            background: rgba(255, 255, 255, 0.06);
+            color: #fff;
+        }
+
+        .nav-btn.secondary:hover:not(:disabled) {
+            background: rgba(255, 255, 255, 0.16);
+        }
+
+        .page-header-results {
+            background: var(--rd-surface);
+            border-bottom: 1px solid var(--rd-border);
+            padding: 20px 28px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 16px;
+        }
+
+        .ph-results-left {
+            min-width: 0;
+        }
+
+        .ph-eyebrow {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.12em;
+            color: var(--rd-text3);
+            margin-bottom: 6px;
+        }
+
+        .ph-eyebrow span {
+            display: inline-block;
+            width: 16px;
+            height: 1.5px;
+            background: var(--rd-text3);
+            border-radius: 2px;
+        }
+
+        .ph-title-results {
+            font-family: 'Instrument Serif', serif;
+            font-size: 28px;
+            font-weight: 400;
+            color: var(--rd-text1);
+            letter-spacing: -0.02em;
+            line-height: 1.2;
+            margin: 0;
+        }
+
+        .ph-title-results em {
+            font-style: italic;
+            color: var(--rd-amber);
+        }
+
+        .ph-results-right {
+            flex-shrink: 0;
+        }
+
+        .hero-kpi-strip {
+            display: flex;
+            align-items: center;
+            gap: 0;
+            background: var(--rd-navy);
+            border-radius: var(--rd-r-sm);
+            padding: 12px 20px;
+            box-shadow: var(--rd-shadow);
+        }
+
+        .hk-strip-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 2px;
+            padding: 0 16px;
+        }
+
+        .hk-strip-sep {
+            width: 1px;
+            height: 32px;
+            background: rgba(255, 255, 255, 0.12);
+        }
+
+        .hk-strip-label {
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: rgba(255, 255, 255, 0.5);
+        }
+
+        .hk-strip-value {
+            font-size: 22px;
+            font-weight: 700;
+            color: #fff;
+            font-family: 'Instrument Serif', serif;
+        }
+
+        .main {
+            padding: 28px 28px 60px;
+            width: 100%;
+            flex: 1;
+            position: relative;
+            box-sizing: border-box;
+        }
+
         .results-container {
             padding: 24px;
             width: 100%;

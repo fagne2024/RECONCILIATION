@@ -1,4 +1,65 @@
-<div class="supply-prediction-container">
+<div class="supply-prediction-page">
+
+  <!-- TOP NAV (design redevance-loterie) -->
+  <nav class="topnav">
+    <div class="nav-brand">
+      <div class="nav-brand-dot"></div>
+      ReconciliApp
+    </div>
+    <div class="nav-sep"></div>
+    <div class="nav-path">
+      <strong>Prédictions</strong>
+    </div>
+    <div class="nav-spacer"></div>
+    <div class="nav-actions">
+      <button type="button" class="nav-btn secondary" (click)="goBack()">
+        <i class="fas fa-arrow-left"></i> Retour
+      </button>
+      <button 
+        type="button" 
+        class="nav-btn primary" 
+        (click)="loadMetrics()" 
+        [disabled]="!analysisForm.get('typeOperation')?.value">
+        <i class="fas fa-chart-bar"></i> Métriques
+      </button>
+      <button 
+        type="button" 
+        class="nav-btn primary" 
+        (click)="loadRecommendations()" 
+        [disabled]="isLoading || !analysisForm.get('typeOperation')?.value">
+        <i class="fas fa-list-alt"></i> Recommandations
+      </button>
+    </div>
+  </nav>
+
+  <!-- PAGE HEADER (titre + KPIs) -->
+  <div class="page-header-predictions">
+    <div class="ph-pred-left">
+      <div class="ph-eyebrow"><span></span>Prédictions</div>
+      <h1 class="ph-title-pred">Système de <em>prédiction</em> {{ isCompensationType() ? 'des compensations' : 'des approvisionnements' }}</h1>
+      <p class="ph-subtitle">
+        {{ isCompensationType() 
+          ? 'Analysez les patterns de compensation et prédisez les besoins futurs basés sur la fréquence et les soldes.'
+          : 'Analysez vos données historiques pour optimiser la gestion des approvisionnements et prédire les besoins futurs.' 
+        }}
+      </p>
+    </div>
+    <div class="ph-pred-right" *ngIf="metrics || compensationMetrics">
+      <div class="hero-kpi-strip">
+        <div class="hk-strip-item" *ngIf="metrics">
+          <span class="hk-strip-label">Agences</span>
+          <span class="hk-strip-value">{{ metrics.totalAgencies | number:'1.0-0' }}</span>
+        </div>
+        <div class="hk-strip-item" *ngIf="compensationMetrics">
+          <span class="hk-strip-label">Comptes suivis</span>
+          <span class="hk-strip-value">{{ compensationMetrics.totalAccounts | number:'1.0-0' }}</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="main">
+  <div class="supply-prediction-container">
 
   <!-- Toast notifications -->
   <div *ngIf="toastMessage" class="toast" [ngClass]="'toast-' + toastType">
@@ -914,3 +975,5 @@
     </div>
   </div>
 </div>
+  </div><!-- .main -->
+</div><!-- .supply-prediction-page -->

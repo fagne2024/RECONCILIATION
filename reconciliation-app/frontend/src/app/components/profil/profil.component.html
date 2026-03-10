@@ -1,4 +1,42 @@
-<div class="profil-container">
+<div class="profil-page">
+  <!-- TOP NAV -->
+  <nav class="topnav">
+    <div class="nav-brand">
+      <div class="nav-brand-dot"></div>
+      ReconciliApp
+    </div>
+    <div class="nav-sep"></div>
+    <div class="nav-path">
+      <strong>Profils</strong>
+    </div>
+    <div class="nav-spacer"></div>
+  </nav>
+
+  <!-- PAGE HEADER -->
+  <div class="page-header-profils">
+    <div class="ph-profils-left">
+      <div class="ph-eyebrow"><span></span>Administration</div>
+      <h1 class="ph-title-profils">Gestion des <em>profils & droits</em></h1>
+      <p class="ph-subtitle-profils">
+        Organisez les profils, modules associés et permissions par pays.
+      </p>
+    </div>
+    <div class="ph-profils-metrics">
+      <div class="hero-kpi-strip">
+        <div class="hk-strip-item">
+          <div class="hk-strip-label">Profils</div>
+          <div class="hk-strip-value">{{ filteredProfils.length }}</div>
+        </div>
+        <div class="hk-strip-item">
+          <div class="hk-strip-label">Modules</div>
+          <div class="hk-strip-value">{{ modules.length }}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="main">
+  <div class="profil-container">
   <div class="header">
     <div class="header-title">
       <h2><i class="fas fa-user-shield"></i> Gestion des profils</h2>
@@ -468,4 +506,6 @@
       </div>
     </div>
   </div>
+  </div><!-- .profil-container -->
+  </div><!-- .main -->
 </div> 

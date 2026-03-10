@@ -1,0 +1,428 @@
+<div class="redevance-page">
+  <!-- TOP NAV -->
+  <nav class="topnav">
+    <div class="nav-brand">
+      <div class="nav-brand-dot"></div>
+      ReconciliApp
+    </div>
+    <div class="nav-sep"></div>
+    <button type="button" class="nav-back" (click)="goBack()">
+      <i class="fas fa-chevron-left"></i>
+      Retour aux Comptes
+    </button>
+    <div class="nav-sep"></div>
+    <div class="nav-path">
+      Comptes
+      <i class="fas fa-chevron-right nav-path-arrow"></i>
+      <strong>{{ clientsTitle }}</strong>
+      <i class="fas fa-chevron-right nav-path-arrow"></i>
+      Redevance Loterie
+    </div>
+    <div class="nav-spacer"></div>
+    <div class="nav-actions">
+      <button class="nav-btn secondary" (click)="exportToPdf()" [disabled]="!data || isExporting">
+        <i class="fas fa-file-pdf" *ngIf="!isExporting"></i>
+        <i class="fas fa-spinner fa-spin" *ngIf="isExporting"></i>
+        {{ isExporting ? 'Export...' : 'Export PDF' }}
+      </button>
+      <button class="nav-btn secondary" (click)="openParamsModal()" [disabled]="!selectedAgence">
+        <i class="fas fa-cog"></i>
+        Paramètres agence
+      </button>
+      <button class="nav-btn primary" (click)="openFluxModal()" [disabled]="!canOpenFluxModal">
+        <i class="fas fa-edit"></i>
+        Saisir les flux
+      </button>
+    </div>
+  </nav>
+
+  <!-- FILTER BAR -->
+  <div class="filter-bar">
+    <div class="filter-label">
+      <i class="fas fa-filter"></i>
+      Filtres
+    </div>
+    <div class="filter-sep"></div>
+
+    <div class="filter-group">
+      <div class="filter-item">
+        <span class="fi-label">Agence (Client)</span>
+        <mat-form-field appearance="fill" class="fi-field">
+          <mat-select #agenceSelect [(ngModel)]="selectedAgence" (selectionChange)="onFilterChange()" placeholder="Sélectionner">
+            <mat-option>
+              <ngx-mat-select-search [formControl]="agenceSearchCtrl" placeholderLabel="Rechercher..." noEntriesFoundLabel="Aucun résultat"></ngx-mat-select-search>
+            </mat-option>
+            <mat-option [value]="">Toutes les agences</mat-option>
+            <mat-option *ngFor="let agency of filteredAgencies" [value]="agency">{{ agency }}</mat-option>
+          </mat-select>
+        </mat-form-field>
+      </div>
+      <div class="filter-item">
+        <span class="fi-label">Pays</span>
+        <mat-form-field appearance="fill" class="fi-field">
+          <mat-select #paysSelect [(ngModel)]="selectedPays" multiple (selectionChange)="onFilterChange()" placeholder="Sélectionner">
+            <mat-option>
+              <ngx-mat-select-search [formControl]="paysSearchCtrl" placeholderLabel="Rechercher..." noEntriesFoundLabel="Aucun résultat"></ngx-mat-select-search>
+            </mat-option>
+            <mat-option *ngFor="let country of filteredCountries" [value]="country">{{ country }}</mat-option>
+          </mat-select>
+        </mat-form-field>
+      </div>
+    </div>
+
+    <div class="filter-sep"></div>
+
+    <div class="filter-item">
+      <span class="fi-label">Période</span>
+      <div class="fi-date-range">
+        <input type="date" class="fi-input" [(ngModel)]="startDate" (change)="onFilterChange()">
+        <span class="fi-date-sep">→</span>
+        <input type="date" class="fi-input" [(ngModel)]="endDate" (change)="onFilterChange()">
+      </div>
+    </div>
+
+    <div class="filter-spacer"></div>
+
+    <button class="filter-apply" (click)="onFilterChange()" [disabled]="isLoading">
+      <i class="fas fa-check"></i>
+      Appliquer les filtres
+    </button>
+  </div>
+
+  <!-- MAIN CONTENT -->
+  <div class="main">
+    <div *ngIf="isLoading" class="loading-overlay">
+      <i class="fas fa-spinner fa-spin"></i> Chargement...
+    </div>
+    <div *ngIf="errorMessage" class="error-message">{{ errorMessage }}</div>
+
+    <ng-container *ngIf="!isLoading && data">
+      <!-- CONTENU À EXPORTER EN PDF (de Redevance Loterie jusqu'à la fin) -->
+      <div #exportContent class="export-content">
+      <!-- PAGE HEADER -->
+      <div class="page-header">
+        <div class="ph-left">
+          <div class="ph-logo-title">
+            <img src="assets/point-touch-logo.png" alt="Point Touch" class="ph-logo">
+            <div class="ph-title-wrap">
+              <div class="ph-eyebrow"><span></span>Rapport Financier · Filtré</div>
+              <div class="ph-title">Redevance <em>Loterie</em> — {{ clientsTitle }}</div>
+            </div>
+          </div>
+        </div>
+        <div class="ph-right" *ngIf="isNegative">
+          <div class="status-badge warning">
+            <span class="pulse"></span>
+            Valeur négative détectée
+          </div>
+        </div>
+      </div>
+
+      <!-- HERO PANEL -->
+      <div class="hero-panel" [class.hero-no-chart]="!selectedAgence">
+        <div class="hero-kpi">
+          <div class="hk-label">Redevance Loterie Totale</div>
+          <div class="hk-amount" [class.negative]="data.redevanceTotale < 0">
+            {{ data.redevanceTotale < 0 ? '−' : '' }}{{ formatNum(Math.abs(data.redevanceTotale)) }}
+          </div>
+          <div class="hk-currency">XOF · Franc CFA Ouest-Africain</div>
+          <div class="hk-operator">
+            <span class="hk-op-chip">{{ data.operateur || '—' }}</span>
+            <span class="hk-op-period">{{ data.periode }}</span>
+          </div>
+        </div>
+
+        <div class="hero-chart" *ngIf="selectedAgence">
+          <div class="hc-title">Évolution mensuelle de la redevance</div>
+          <div class="chart-area">
+            <canvas baseChart
+              [data]="redevanceChartData"
+              [options]="redevanceChartOptions"
+              [type]="'bar'"
+              [plugins]="[ChartDataLabels]">
+            </canvas>
+          </div>
+        </div>
+
+        <div class="hero-meta">
+          <div class="hm-item">
+            <div class="hm-label">Base de Calcul</div>
+            <div class="hm-value" [class.negative]="data.baseCalcul < 0">
+              {{ data.baseCalcul < 0 ? '−' : '' }}{{ formatNumDecimal(Math.abs(data.baseCalcul)) }}
+            </div>
+          </div>
+          <div class="hm-divider"></div>
+          <div class="hm-item" *ngIf="selectedAgence">
+            <div class="hm-label">Taux Appliqué</div>
+            <div class="hm-value">{{ data.tauxRedevancePourcentage }} %</div>
+          </div>
+          <div class="hm-divider" *ngIf="selectedAgence"></div>
+          <div class="hm-item">
+            <div class="hm-label">Formule</div>
+            <div class="hm-value formula">(PBJ − Rém.) × Taux</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- RATES STRIP -->
+      <div class="rates-strip" *ngIf="selectedAgence">
+        <div class="rate-card">
+          <div class="rc-icon g"><i class="fas fa-chart-line"></i></div>
+          <div class="rc-text">
+            <div class="rc-name">Taux Payin</div>
+            <div class="rc-val">{{ tauxPayin }}</div>
+          </div>
+        </div>
+        <div class="rate-card">
+          <div class="rc-icon r"><i class="fas fa-chart-line"></i></div>
+          <div class="rc-text">
+            <div class="rc-name">Taux Payout</div>
+            <div class="rc-val">{{ tauxPayout }}</div>
+          </div>
+        </div>
+        <div class="rate-card">
+          <div class="rc-icon a"><i class="fas fa-bullseye"></i></div>
+          <div class="rc-text">
+            <div class="rc-name">Retenue sur Gains</div>
+            <div class="rc-val">{{ retenueSurGainsTaux }}</div>
+          </div>
+        </div>
+        <div class="rate-card">
+          <div class="rc-icon b"><i class="fas fa-university"></i></div>
+          <div class="rc-text">
+            <div class="rc-name">Taxe Jeux Hasard</div>
+            <div class="rc-val">{{ taxeJeuxHasard }}</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- INDICATEURS BRUTS -->
+      <div class="section-head">
+        <div class="sh-icon b"><i class="fas fa-chart-bar"></i></div>
+        <span class="sh-text">Indicateurs Bruts</span>
+        <div class="sh-line"></div>
+      </div>
+
+      <div class="grid g3">
+        <div class="card" [class.card-zero]="!data.chiffreAffairesBrut">
+          <div class="card-top"><div class="card-formula">Mises – Bonus</div></div>
+          <div class="card-title">Chiffre d'Affaires Brut</div>
+          <div class="card-value">{{ formatNum(data.chiffreAffairesBrut) }}</div>
+        </div>
+        <div class="card" [class.card-zero]="!data.taxeSurJeuxHasard">
+          <div class="card-top"><div class="card-formula">{{ data.taxeJeuxHasardPourcentage }}% × CA Brut</div></div>
+          <div class="card-title">Taxe sur Jeux Hasard</div>
+          <div class="card-value">{{ formatNum(data.taxeSurJeuxHasard) }}</div>
+        </div>
+        <div class="card amber" [class.card-zero]="!data.retenueSurGains">
+          <div class="card-top">
+            <div class="card-formula">{{ data.retenueSurGainsPourcentage }}% × (gain ≥ {{ formatNum(data.retenueSurGainsSeuil) }})</div>
+            <div class="card-chip amber">Actif</div>
+          </div>
+          <div class="card-title">Retenue sur Gains</div>
+          <div class="card-value">{{ formatNum(data.retenueSurGains) }}</div>
+        </div>
+      </div>
+
+      <!-- PRODUITS DÉRIVÉS -->
+      <div class="section-head">
+        <div class="sh-icon a"><i class="fas fa-cog"></i></div>
+        <span class="sh-text">Produits Dérivés</span>
+        <div class="sh-line"></div>
+      </div>
+
+      <div class="grid g32">
+        <div class="card" [class.red]="data.produitBrutJeux < 0" [class.card-zero]="!data.produitBrutJeux">
+          <div class="card-top">
+            <div class="card-formula">CA Brut − Taxe − Retenue</div>
+            <div class="card-chip red" *ngIf="data.produitBrutJeux < 0">Négatif</div>
+          </div>
+          <div class="card-title">Produit Brut de Jeux</div>
+          <div class="card-value">{{ formatNum(data.produitBrutJeux) }}</div>
+        </div>
+        <div class="card blue" [class.card-zero]="!data.remunerationIntegrateur">
+          <div class="card-top"><div class="card-formula">(Payin × {{ data.tauxPayin }}%) + (Payout × {{ data.tauxPayout }}%)</div></div>
+          <div class="card-title">Rémunération Intégrateur</div>
+          <div class="card-value">{{ formatNum(data.remunerationIntegrateur) }}</div>
+        </div>
+        <div class="card featured">
+          <div class="card-top">
+            <div class="card-formula">PBJ − Rém. Intégrateur</div>
+            <div class="card-chip amber">Résultat Clé</div>
+          </div>
+          <div class="card-title">Revenu Généré Act. Com.</div>
+          <div class="card-value" [class.negative]="data.revenuGenereActCom < 0">{{ data.revenuGenereActCom < 0 ? '−' : '' }}{{ formatNum(Math.abs(data.revenuGenereActCom)) }}</div>
+          <div class="card-note">→ Base de calcul de la redevance</div>
+        </div>
+      </div>
+
+      <!-- FLUX PARI -->
+      <div class="section-head">
+        <div class="sh-icon g"><i class="fas fa-coins"></i></div>
+        <span class="sh-text">Flux Pari</span>
+        <div class="sh-line"></div>
+        <button class="btn-flux-inline" (click)="openFluxModal()" [disabled]="!canOpenFluxModal">
+          <i class="fas fa-edit"></i> Saisir les flux
+        </button>
+      </div>
+
+      <div class="grid g3">
+        <div class="card" [class.card-zero]="!data.totalMises">
+          <div class="card-top"><div class="card-formula">Montant total misé</div></div>
+          <div class="card-title">Total Mises</div>
+          <div class="card-value">{{ formatNum(data.totalMises) }}</div>
+        </div>
+        <div class="card" [class.card-zero]="!data.totalGains">
+          <div class="card-top"><div class="card-formula">Montant total gagné</div></div>
+          <div class="card-title">Total Gains</div>
+          <div class="card-value">{{ formatNum(data.totalGains) }}</div>
+        </div>
+        <div class="card" [class.card-zero]="!data.totalBonus">
+          <div class="card-top"><div class="card-formula">Total promotions versées</div></div>
+          <div class="card-title">Total Bonus</div>
+          <div class="card-value">{{ formatNum(data.totalBonus) }}</div>
+        </div>
+      </div>
+
+      <!-- FLUX TRANSACTION -->
+      <div class="section-head">
+        <div class="sh-icon b"><i class="fas fa-exchange-alt"></i></div>
+        <span class="sh-text">Flux Transaction</span>
+        <div class="sh-line"></div>
+      </div>
+
+      <div class="grid g2">
+        <div class="card green" [class.card-zero]="!data.payin">
+          <div class="card-top">
+            <div class="card-formula">Entrées de fonds</div>
+            <div class="card-chip green">Stats</div>
+          </div>
+          <div class="card-title">PAYIN</div>
+          <div class="card-value">{{ formatNum(data.payin) }}</div>
+        </div>
+        <div class="card blue" [class.card-zero]="!data.payout">
+          <div class="card-top">
+            <div class="card-formula">Sorties de fonds</div>
+            <div class="card-chip blue">Stats</div>
+          </div>
+          <div class="card-title">PAYOUT</div>
+          <div class="card-value">{{ formatNum(data.payout) }}</div>
+        </div>
+      </div>
+
+      <!-- FOOTER SUMMARY -->
+      <div class="footer-summary">
+        <div class="fs-item">
+          <span class="fs-label">Opérateur</span>
+          <span class="fs-value">{{ data.operateur || '—' }}</span>
+        </div>
+        <div class="fs-sep"></div>
+        <div class="fs-item">
+          <span class="fs-label">Période</span>
+          <span class="fs-value">{{ data.periode }}</span>
+        </div>
+        <div class="fs-sep"></div>
+        <div class="fs-item">
+          <span class="fs-label">Redevance</span>
+          <span class="fs-value" [class.accent]="data.redevanceTotale < 0">{{ data.redevanceTotale < 0 ? '−' : '' }}{{ formatNum(Math.abs(data.redevanceTotale)) }} XOF</span>
+        </div>
+        <div class="fs-sep"></div>
+        <div class="fs-item">
+          <span class="fs-label">Base Calcul</span>
+          <span class="fs-value" [class.accent]="data.baseCalcul < 0">{{ data.baseCalcul < 0 ? '−' : '' }}{{ formatNumDecimal(Math.abs(data.baseCalcul)) }}</span>
+        </div>
+        <div class="fs-sep" *ngIf="selectedAgence"></div>
+        <div class="fs-item" *ngIf="selectedAgence">
+          <span class="fs-label">Taux Appliqué</span>
+          <span class="fs-value">{{ data.tauxRedevancePourcentage }} %</span>
+        </div>
+      </div>
+      </div>
+    </ng-container>
+
+    <div *ngIf="!isLoading && !data && !errorMessage" class="no-data">
+      Sélectionnez des filtres et une période pour afficher les données.
+    </div>
+  </div>
+</div>
+
+<!-- Modal Saisie Flux -->
+<div *ngIf="showFluxModal" class="modal-overlay" (click)="closeFluxModal()">
+  <div class="modal-container modal-flux" (click)="$event.stopPropagation()">
+    <div class="modal-header">
+      <h3><i class="fas fa-database"></i> Saisie des flux - {{ fluxForm.agence }}</h3>
+      <button type="button" class="modal-close" (click)="closeFluxModal()"><i class="fas fa-times"></i></button>
+    </div>
+    <div class="modal-body">
+      <p class="modal-info">Période : {{ fluxForm.dateDebut }} → {{ fluxForm.dateFin }}</p>
+      <div class="form-group">
+        <label>Total Mises (FCFA)</label>
+        <input type="number" [(ngModel)]="fluxForm.totalMises" step="1" min="0" placeholder="0">
+      </div>
+      <div class="form-group">
+        <label>Total Gains (FCFA)</label>
+        <input type="number" [(ngModel)]="fluxForm.totalGains" step="1" min="0" placeholder="0">
+      </div>
+      <div class="form-group">
+        <label>Total Bonus (FCFA)</label>
+        <input type="number" [(ngModel)]="fluxForm.totalBonus" step="1" min="0" placeholder="0">
+      </div>
+      <div class="form-group">
+        <label>Retenue sur Gains (FCFA)</label>
+        <input type="number" [(ngModel)]="fluxForm.retenueSurGains" step="1" min="0" placeholder="0">
+      </div>
+      <div class="form-group">
+        <label>Payin (FCFA)</label>
+        <input type="number" [(ngModel)]="fluxForm.payin" step="1" min="0" placeholder="0">
+      </div>
+      <div class="form-group">
+        <label>Payout (FCFA)</label>
+        <input type="number" [(ngModel)]="fluxForm.payout" step="1" min="0" placeholder="0">
+      </div>
+      <div class="form-group">
+        <label>Retenue sur Gains (FCFA)</label>
+        <input type="number" [(ngModel)]="fluxForm.retenueSurGains" step="1" min="0" placeholder="0">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" (click)="closeFluxModal()">Annuler</button>
+      <button class="btn btn-primary" (click)="saveFlux()" [disabled]="isSavingFlux">
+        {{ isSavingFlux ? 'Enregistrement...' : 'Enregistrer' }}
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Paramètres agence -->
+<div *ngIf="showParamsModal" class="modal-overlay" (click)="closeParamsModal()">
+  <div class="modal-container" (click)="$event.stopPropagation()">
+    <div class="modal-header">
+      <h3>Paramètres Redevance - {{ paramsForm.agence }}</h3>
+      <button type="button" class="modal-close" (click)="closeParamsModal()"><i class="fas fa-times"></i></button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label>Retenue sur gains (%)</label>
+        <input type="number" [(ngModel)]="paramsForm.retenueSurGainsPourcentage" step="0.01" min="0" max="100">
+      </div>
+      <div class="form-group">
+        <label>Seuil retenue sur gains (FCFA)</label>
+        <input type="number" [(ngModel)]="paramsForm.retenueSurGainsSeuil" step="1000" min="0">
+      </div>
+      <div class="form-group">
+        <label>Taxe jeux hasard (%)</label>
+        <input type="number" [(ngModel)]="paramsForm.taxeJeuxHasardPourcentage" step="0.01" min="0" max="100">
+      </div>
+      <div class="form-group">
+        <label>Taux redevance (%)</label>
+        <input type="number" [(ngModel)]="paramsForm.tauxRedevancePourcentage" step="0.01" min="0" max="100">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" (click)="closeParamsModal()">Annuler</button>
+      <button class="btn btn-primary" (click)="saveParams()" [disabled]="isSavingParams">
+        {{ isSavingParams ? 'Enregistrement...' : 'Enregistrer' }}
+      </button>
+    </div>
+  </div>
+</div>

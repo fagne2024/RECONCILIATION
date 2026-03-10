@@ -1,4 +1,57 @@
-<div class="ranking-container">
+<div class="ranking-page">
+  <!-- TOP NAV (design redevance-loterie) -->
+  <nav class="topnav">
+    <div class="nav-brand">
+      <div class="nav-brand-dot"></div>
+      ReconciliApp
+    </div>
+    <div class="nav-sep"></div>
+    <div class="nav-path">
+      <strong>Classements</strong>
+    </div>
+    <div class="nav-spacer"></div>
+    <div class="nav-actions">
+      <button 
+        type="button" 
+        class="nav-btn secondary" 
+        (click)="exportAgencyExcel()" 
+        [disabled]="loadingAgencies || !agencyRankings.length">
+        <i class="fas fa-file-excel"></i> Export Clients
+      </button>
+      <button 
+        type="button" 
+        class="nav-btn primary" 
+        (click)="exportServiceExcel()" 
+        [disabled]="loadingServices || !serviceRankings.length">
+        <i class="fas fa-file-excel"></i> Export Services
+      </button>
+    </div>
+  </nav>
+
+  <!-- PAGE HEADER (titre + KPIs) -->
+  <div class="page-header-ranking">
+    <div class="ph-ranking-left">
+      <div class="ph-eyebrow"><span></span>Classements</div>
+      <h1 class="ph-title-ranking">Vue des <em>performances</em></h1>
+      <p class="ph-subtitle">Découvrez les meilleures performances par client et par service sur la période sélectionnée.</p>
+    </div>
+    <div class="ph-ranking-right">
+      <div class="hero-kpi-strip">
+        <div class="hk-strip-item">
+          <span class="hk-strip-label">Clients classés</span>
+          <span class="hk-strip-value">{{ agencyRankings.length | number:'1.0-0' }}</span>
+        </div>
+        <div class="hk-strip-sep"></div>
+        <div class="hk-strip-item">
+          <span class="hk-strip-label">Services classés</span>
+          <span class="hk-strip-value">{{ serviceRankings.length | number:'1.0-0' }}</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="main">
+  <div class="ranking-container">
   <div class="ranking-header">
     <h1 class="ranking-title">🏆 Classements</h1>
     <p>Découvrez les meilleures performances par client et par service</p>
@@ -246,4 +299,6 @@
       </div>
     </div>
   </div>
-</div> 
+  </div><!-- .ranking-container -->
+  </div><!-- .main -->
+</div><!-- .ranking-page --> 

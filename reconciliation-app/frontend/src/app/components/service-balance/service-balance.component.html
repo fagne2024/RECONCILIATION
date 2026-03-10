@@ -1,4 +1,54 @@
-<div class="service-balance-container">
+<div class="service-balance-page">
+  <!-- TOP NAV (design redevance-loterie) -->
+  <nav class="topnav">
+    <div class="nav-brand">
+      <div class="nav-brand-dot"></div>
+      ReconciliApp
+    </div>
+    <div class="nav-sep"></div>
+    <div class="nav-path">
+      <strong>Service Balance</strong>
+    </div>
+    <div class="nav-spacer"></div>
+    <div class="nav-actions">
+      <button type="button" class="nav-btn secondary" (click)="loadServiceComptes()" [disabled]="isLoading">
+        <i class="fas fa-sync-alt" [class.fa-spin]="isLoading"></i> Actualiser
+      </button>
+      <button type="button" class="nav-btn secondary" (click)="loadAllComptes()" [disabled]="isLoading">
+        <i class="fas fa-list" [class.fa-spin]="isLoading"></i> Tous les comptes
+      </button>
+    </div>
+  </nav>
+
+  <!-- PAGE HEADER (titre + KPIs) -->
+  <div class="page-header-service-balance">
+    <div class="ph-sb-left">
+      <div class="ph-eyebrow"><span></span>Comptes</div>
+      <h1 class="ph-title-sb">Regroupement des <em>comptes</em></h1>
+      <p class="ph-subtitle">Créez un compte consolidé à partir de plusieurs comptes (service et agence) par pays.</p>
+    </div>
+    <div class="ph-sb-right">
+      <div class="hero-kpi-strip">
+        <div class="hk-strip-item">
+          <span class="hk-strip-label">Comptes</span>
+          <span class="hk-strip-value">{{ serviceComptes.length | number:'1.0-0' }}</span>
+        </div>
+        <div class="hk-strip-sep"></div>
+        <div class="hk-strip-item">
+          <span class="hk-strip-label">Pays</span>
+          <span class="hk-strip-value">{{ getCountries().length | number:'1.0-0' }}</span>
+        </div>
+        <div class="hk-strip-sep"></div>
+        <div class="hk-strip-item">
+          <span class="hk-strip-label">Sélectionnés</span>
+          <span class="hk-strip-value">{{ getSelectedComptesCount() | number:'1.0-0' }}</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="main">
+  <div class="service-balance-container">
     <!-- En-tête -->
     <div class="header">
         <div class="header-content">
@@ -241,7 +291,9 @@
         <i class="fas fa-spinner fa-spin"></i>
         <p>Chargement des comptes...</p>
     </div>
-</div>
+  </div><!-- .service-balance-container -->
+  </div><!-- .main -->
+</div><!-- .service-balance-page -->
 
 <!-- Modal de fusion -->
 <div *ngIf="showMergeForm" class="modal-overlay" (click)="cancelMerge()">

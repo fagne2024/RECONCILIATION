@@ -248,6 +248,10 @@
                     <i class="fas fa-times"></i>
                     Annuler
                 </button>
+                <button class="modern-btn" (click)="skipAgencySelection()">
+                    <i class="fas fa-forward"></i>
+                    Passer
+                </button>
                 <button class="modern-btn confirm-btn" 
                         [disabled]="selectedAgencies.length === 0"
                         (click)="confirmAgencySelection()">
@@ -327,6 +331,10 @@
                     <i class="fas fa-times"></i>
                     Annuler
                 </button>
+                <button class="modern-btn" (click)="skipManualServiceSelection()">
+                    <i class="fas fa-forward"></i>
+                    Passer
+                </button>
                 <button class="modern-btn confirm-btn" 
                         [disabled]="manualSelectedServices.length === 0"
                         (click)="confirmManualServiceSelection()">
@@ -405,6 +413,10 @@
                 <button class="modern-btn cancel-btn" (click)="cancelManualStatusSelection()">
                     <i class="fas fa-times"></i>
                     Annuler
+                </button>
+                <button class="modern-btn" (click)="skipManualStatusSelection()">
+                    <i class="fas fa-forward"></i>
+                    Passer
                 </button>
                 <button class="modern-btn confirm-btn" 
                         [disabled]="manualSelectedStatuses.length === 0"
@@ -656,6 +668,10 @@
                         <i class="fas fa-times"></i>
                         Annuler
                     </button>
+                    <button class="modern-btn" (click)="skipAgencySelection()">
+                        <i class="fas fa-forward"></i>
+                        Passer
+                    </button>
                     <button class="modern-btn confirm-btn" 
                             [disabled]="selectedAgencies.length === 0"
                             (click)="confirmAgencySelection()">
@@ -731,6 +747,10 @@
                         <i class="fas fa-times"></i>
                         Annuler
                     </button>
+                    <button class="modern-btn" (click)="skipServiceSelection()">
+                        <i class="fas fa-forward"></i>
+                        Passer
+                    </button>
                     <button class="modern-btn confirm-btn" 
                             [disabled]="selectedServices.length === 0"
                             (click)="confirmServiceSelection()">
@@ -802,6 +822,10 @@
                 <button class="modern-btn cancel-btn" (click)="cancelAutoStatusSelection()">
                     <i class="fas fa-times"></i>
                     Annuler
+                </button>
+                <button class="modern-btn" (click)="skipAutoStatusSelection()">
+                    <i class="fas fa-forward"></i>
+                    Passer
                 </button>
                 <button class="modern-btn confirm-btn"
                         [disabled]="autoSelectedStatuses.length === 0"

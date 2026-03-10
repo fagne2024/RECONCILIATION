@@ -1,4 +1,53 @@
-<div class="auto-processing-models-container">
+<div class="auto-processing-page">
+  <!-- TOP NAV -->
+  <nav class="topnav">
+    <div class="nav-brand">
+      <div class="nav-brand-dot"></div>
+      ReconciliApp
+    </div>
+    <div class="nav-sep"></div>
+    <div class="nav-path">
+      <strong>Modèles auto-processing</strong>
+    </div>
+    <div class="nav-spacer"></div>
+    <div class="nav-actions">
+      <button class="nav-btn primary" (click)="resetForm()">
+        <i class="fas fa-plus"></i> Nouveau modèle
+      </button>
+    </div>
+  </nav>
+
+  <!-- PAGE HEADER -->
+  <div class="page-header-auto">
+    <div class="ph-auto-left">
+      <div class="ph-eyebrow"><span></span>Automation</div>
+      <h1 class="ph-title-auto">Modèles de <em>traitement automatique</em></h1>
+      <p class="ph-subtitle-auto">
+        Configurez des modèles autonomes pour piloter vos réconciliations sans code dur.
+      </p>
+    </div>
+    <div class="ph-auto-right">
+      <div class="hero-kpi-strip">
+        <div class="hk-strip-item">
+          <span class="hk-strip-label">Modèles</span>
+          <span class="hk-strip-value">{{ models?.length || 0 | number:'1.0-0' }}</span>
+        </div>
+        <div class="hk-strip-sep"></div>
+        <div class="hk-strip-item">
+          <span class="hk-strip-label">Groupes</span>
+          <span class="hk-strip-value">{{ availableGroups?.length || 0 | number:'1.0-0' }}</span>
+        </div>
+        <div class="hk-strip-sep"></div>
+        <div class="hk-strip-item">
+          <span class="hk-strip-label">Pays</span>
+          <span class="hk-strip-value">{{ availableCountries?.length || 0 | number:'1.0-0' }}</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="main">
+  <div class="auto-processing-models-container">
   <div class="header">
     <h2>Modèles de traitement automatique</h2>
     <button class="btn btn-primary" (click)="resetForm()">
@@ -694,4 +743,6 @@
   <div class="loading" *ngIf="loading">
     <i class="fas fa-spinner fa-spin"></i> Chargement...
   </div>
+  </div><!-- .auto-processing-models-container -->
+  </div><!-- .main -->
 </div> 

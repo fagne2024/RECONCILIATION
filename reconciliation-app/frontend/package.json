@@ -26,6 +26,8 @@
     "chartjs-plugin-datalabels": "^2.2.0",
     "exceljs": "^4.4.0",
     "file-saver": "^2.0.5",
+    "html2canvas": "^1.4.1",
+    "jspdf": "^4.2.0",
     "ng2-charts": "^4.0.0",
     "ngx-mat-select-search": "^4.2.1",
     "papaparse": "^5.4.1",

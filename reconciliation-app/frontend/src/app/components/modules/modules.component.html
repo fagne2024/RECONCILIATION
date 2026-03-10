@@ -1,4 +1,38 @@
-<div class="modules-container">
+<div class="modules-page">
+  <!-- TOP NAV -->
+  <nav class="topnav">
+    <div class="nav-brand">
+      <div class="nav-brand-dot"></div>
+      ReconciliApp
+    </div>
+    <div class="nav-sep"></div>
+    <div class="nav-path">
+      <strong>Modules</strong>
+    </div>
+    <div class="nav-spacer"></div>
+  </nav>
+
+  <!-- PAGE HEADER -->
+  <div class="page-header-modules">
+    <div class="ph-modules-left">
+      <div class="ph-eyebrow"><span></span>Administration</div>
+      <h1 class="ph-title-modules">Gestion des <em>modules applicatifs</em></h1>
+      <p class="ph-subtitle-modules">
+        Définissez les modules fonctionnels et rattachez-les aux profils.
+      </p>
+    </div>
+    <div class="ph-modules-metrics">
+      <div class="hero-kpi-strip">
+        <div class="hk-strip-item">
+          <div class="hk-strip-label">Modules</div>
+          <div class="hk-strip-value">{{ filteredModules.length }}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="main">
+  <div class="modules-container">
   <div class="header">
     <div class="header-title">
       <h2><i class="fas fa-cube"></i> Gestion des Modules</h2>
@@ -252,4 +286,6 @@
       </div>
     </div>
   </div>
+  </div><!-- .modules-container -->
+  </div><!-- .main -->
 </div> 

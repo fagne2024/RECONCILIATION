@@ -1,26 +1,75 @@
-<div class="ecart-solde-container">
-  <div class="header">
-    <h2>Gestion des Écarts de Solde</h2>
-    <div class="header-actions">
-      <button class="btn btn-primary" (click)="loadEcartSoldes()" [disabled]="isLoading">
+<div class="ecart-solde-page">
+  <!-- TOP NAV (design redevance-loterie) -->
+  <nav class="topnav">
+    <div class="nav-brand">
+      <div class="nav-brand-dot"></div>
+      ReconciliApp
+    </div>
+    <div class="nav-sep"></div>
+    <div class="nav-path">
+      <strong>Écarts de Solde</strong>
+    </div>
+    <div class="nav-spacer"></div>
+    <div class="nav-actions">
+      <button class="nav-btn secondary" (click)="loadEcartSoldes()" [disabled]="isLoading">
         <i class="fas fa-sync-alt"></i> Actualiser
       </button>
-      <button class="btn btn-success" (click)="exportEcartSoldes()" [disabled]="filteredEcartSoldes.length === 0 || isLoading">
+      <button class="nav-btn primary" (click)="exportEcartSoldes()" [disabled]="filteredEcartSoldes.length === 0 || isLoading">
         <i class="fas fa-file-excel"></i> Exporter
       </button>
     </div>
-  </div>
+  </nav>
 
-  <!-- Section Statistiques -->
-  <div class="stats-section">
-    <div class="stats-header">
-      <h3>Statistiques (Filtres appliqués)</h3>
-      <div class="stats-info">
-        <i class="fas fa-info-circle"></i>
-        <span>Les statistiques ci-dessous reflètent les filtres appliqués</span>
+  <!-- PAGE HEADER (titre + KPIs) -->
+  <div class="page-header-ecart-solde">
+    <div class="ph-ecart-left">
+      <div class="ph-eyebrow"><span></span>Écarts</div>
+      <h1 class="ph-title-ecart">Gestion des <em>écarts de solde</em></h1>
+    </div>
+    <div class="ph-ecart-right">
+      <div class="hero-kpi-strip">
+        <div class="hk-strip-item">
+          <span class="hk-strip-label">Lignes</span>
+          <span class="hk-strip-value">{{ filteredEcartSoldes.length | number:'1.0-0' }}</span>
+        </div>
+        <div class="hk-strip-sep"></div>
+        <div class="hk-strip-item">
+          <span class="hk-strip-label">En attente</span>
+          <span class="hk-strip-value">{{ getStatutCount('EN_ATTENTE') | number:'1.0-0' }}</span>
+        </div>
+        <div class="hk-strip-sep"></div>
+        <div class="hk-strip-item">
+          <span class="hk-strip-label">Volume total</span>
+          <span class="hk-strip-value">{{ formatMontantTotal() }}</span>
+        </div>
       </div>
     </div>
-    <div class="stats-grid">
+  </div>
+
+  <div class="main">
+    <div class="ecart-solde-container">
+      <div class="header">
+        <h2>Gestion des Écarts de Solde</h2>
+        <div class="header-actions">
+          <button class="btn btn-primary" (click)="loadEcartSoldes()" [disabled]="isLoading">
+            <i class="fas fa-sync-alt"></i> Actualiser
+          </button>
+          <button class="btn btn-success" (click)="exportEcartSoldes()" [disabled]="filteredEcartSoldes.length === 0 || isLoading">
+            <i class="fas fa-file-excel"></i> Exporter
+          </button>
+        </div>
+      </div>
+
+      <!-- Section Statistiques -->
+      <div class="stats-section">
+        <div class="stats-header">
+          <h3>Statistiques (Filtres appliqués)</h3>
+          <div class="stats-info">
+            <i class="fas fa-info-circle"></i>
+            <span>Les statistiques ci-dessous reflètent les filtres appliqués</span>
+          </div>
+        </div>
+        <div class="stats-grid">
       <div class="stat-card stat-total">
         <div class="stat-icon"><i class="fas fa-list"></i></div>
         <div class="stat-value">{{ filteredEcartSoldes.length }}</div>
@@ -46,11 +95,11 @@
         <div class="stat-value">{{ formatMontantTotal() }}</div>
         <div class="stat-label">VOLUME TOTAL</div>
       </div>
-    </div>
-  </div>
+        </div>
+      </div>
 
-  <!-- Section Upload -->
-  <div class="upload-section">
+      <!-- Section Upload -->
+      <div class="upload-section">
     <h3>Import de fichier (CSV, XLS, XLSX)</h3>
     <div class="upload-form">
       <div class="file-input-group">
@@ -107,11 +156,10 @@
           Formats acceptés : CSV, XLS, XLSX. La première ligne doit contenir les en-têtes.
         </small>
       </div>
-    </div>
-  </div>
+      </div>
 
-  <!-- Filtres -->
-  <div class="filters-section">
+      <!-- Filtres -->
+      <div class="filters-section">
     <h3>Filtres</h3>
     <form [formGroup]="filterForm" class="filter-form">
       <div class="filter-row">
@@ -171,10 +219,10 @@
         </div>
       </div>
     </form>
-  </div>
+      </div>
 
-  <!-- Tableau des données -->
-  <div class="table-section">
+      <!-- Tableau des données -->
+      <div class="table-section">
     <div class="table-header">
       <div class="table-header-left">
         <h3>Écarts de Solde</h3>
@@ -351,53 +399,54 @@
         Suivant <i class="fas fa-chevron-right"></i>
       </button>
     </div>
-  </div>
-</div>
+      </div>
 
-<!-- Modal de commentaire -->
-<div class="modal-overlay" *ngIf="showCommentModal">
-  <div class="modal-content">
-    <div class="modal-header">
-      <h4>Modifier le statut</h4>
-      <button class="close-btn" (click)="closeCommentModal()">
-        <i class="fas fa-times"></i>
-      </button>
-    </div>
-    
-    <div class="modal-body">
-      <form [formGroup]="commentForm">
-        <div class="form-group">
-          <label>Nouveau statut:</label>
-          <div class="statut-display" [ngClass]="getStatutClass(newStatut)">
-            {{ newStatut === 'EN_ATTENTE' ? 'En attente' : newStatut === 'TRAITE' ? 'Traité' : 'Erreur' }}
+      <!-- Modal de commentaire -->
+      <div class="modal-overlay" *ngIf="showCommentModal">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h4>Modifier le statut</h4>
+            <button class="close-btn" (click)="closeCommentModal()">
+              <i class="fas fa-times"></i>
+            </button>
+          </div>
+          
+          <div class="modal-body">
+            <form [formGroup]="commentForm">
+              <div class="form-group">
+                <label>Nouveau statut:</label>
+                <div class="statut-display" [ngClass]="getStatutClass(newStatut)">
+                  {{ newStatut === 'EN_ATTENTE' ? 'En attente' : newStatut === 'TRAITE' ? 'Traité' : 'Erreur' }}
+                </div>
+              </div>
+              
+              <div class="form-group">
+                <label for="commentaire">Commentaire (obligatoire):</label>
+                <textarea 
+                  id="commentaire"
+                  formControlName="commentaire" 
+                  class="form-control" 
+                  rows="4"
+                  placeholder="Veuillez saisir un commentaire...">
+                </textarea>
+              </div>
+            </form>
+          </div>
+          
+          <div class="modal-footer">
+            <button class="btn btn-secondary" (click)="closeCommentModal()">
+              Annuler
+            </button>
+            <button 
+              class="btn btn-primary" 
+              (click)="confirmStatutChange()"
+              [disabled]="!commentForm.valid">
+              Confirmer
+            </button>
           </div>
         </div>
-        
-        <div class="form-group">
-          <label for="commentaire">Commentaire (obligatoire):</label>
-          <textarea 
-            id="commentaire"
-            formControlName="commentaire" 
-            class="form-control" 
-            rows="4"
-            placeholder="Veuillez saisir un commentaire...">
-          </textarea>
-        </div>
-      </form>
-    </div>
-    
-    <div class="modal-footer">
-      <button class="btn btn-secondary" (click)="closeCommentModal()">
-        Annuler
-      </button>
-      <button 
-        class="btn btn-primary" 
-        (click)="confirmStatutChange()"
-        [disabled]="!commentForm.valid">
-        Confirmer
-      </button>
-    </div>
-  </div>
-</div>
+      </div>
 
- 
+    </div><!-- .ecart-solde-container -->
+  </div><!-- .main -->
+</div><!-- .ecart-solde-page --> 

@@ -943,6 +943,10 @@ export class ComptesComponent implements OnInit, OnDestroy {
         this.router.navigate(['/service-balance']);
     }
 
+    goToRedevance() {
+        this.router.navigate(['/redevance-loterie']);
+    }
+
     goToPredictions() {
         this.router.navigate(['/predictions']);
     }

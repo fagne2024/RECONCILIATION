@@ -1,6 +1,5 @@
 package com.reconciliation.interceptor;
 
-import com.reconciliation.entity.UserLogEntity;
 import com.reconciliation.service.UserLogService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -8,11 +7,15 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.HandlerInterceptor;
 
 @Component
 public class UserLoggingInterceptor implements HandlerInterceptor {
+
+    private static final Logger log = LoggerFactory.getLogger(UserLoggingInterceptor.class);
 
     @Autowired
     private UserLogService userLogService;
@@ -82,9 +85,6 @@ public class UserLoggingInterceptor implements HandlerInterceptor {
                              Object handler) throws Exception {
         String path = request.getRequestURI();
         String method = request.getMethod();
-        
-        // Debug : confirmer que l'intercepteur est appelé
-        System.out.println("🔍 UserLoggingInterceptor.preHandle appelé - " + method + " " + path);
 
         // Ignorer les chemins exclus
         for (String excludedPath : EXCLUDED_PATHS) {
@@ -151,17 +151,12 @@ public class UserLoggingInterceptor implements HandlerInterceptor {
             return true; // Ne pas logger les POST de filtrage automatique
         }
 
-        // Récupérer le nom d'utilisateur
         String username = getUsernameFromRequest(request);
         
-        // Debug : logger toutes les requêtes pour diagnostiquer
         if (username == null || username.isEmpty()) {
-            // Pas d'utilisateur, on ne log pas mais on affiche un message de debug
-            System.out.println("⚠️ UserLoggingInterceptor - Pas de username trouvé pour " + method + " " + path);
+            log.debug("Requête non authentifiée ignorée : {} {}", method, path);
             return true;
         }
-        
-        System.out.println("🔍 UserLoggingInterceptor - Username trouvé: " + username + " pour " + method + " " + path);
 
         // Logger TOUTES les actions importantes (POST, PUT, DELETE et GET significatifs)
         // Toutes les actions utilisateur doivent être enregistrées en base
@@ -169,14 +164,10 @@ public class UserLoggingInterceptor implements HandlerInterceptor {
             String moduleName = extractModuleNameFromPath(path);
             String permissionName = extractPermissionNameFromPath(path, method);
             
-            // Si on ne peut pas déterminer le module ou la permission, on log quand même avec des valeurs par défaut
-            // pour s'assurer qu'aucune action n'est perdue
             if (moduleName == null) {
                 moduleName = "Autre";
-                System.out.println("⚠️ Module non déterminé pour le path: " + path);
             }
             if (permissionName == null) {
-                // Essayer de déterminer la permission depuis la méthode HTTP
                 switch (method.toUpperCase()) {
                     case "POST":
                         permissionName = "creer";
@@ -194,73 +185,75 @@ public class UserLoggingInterceptor implements HandlerInterceptor {
                     default:
                         permissionName = "action";
                 }
-                System.out.println("⚠️ Permission non déterminée pour le path: " + path + ", méthode: " + method + 
-                    ", permission par défaut: " + permissionName);
             }
             
             // Extraire les détails de la modification depuis la requête
             String details = extractDetailsFromRequest(request, path, method, moduleName);
             
-            // Enregistrer le log en base de données avec les détails
             userLogService.saveLog(permissionName, moduleName, username, details);
-            System.out.println("✅ Log enregistré - Path: " + path + ", Method: " + method + 
-                ", Module: " + moduleName + ", Permission: " + permissionName + ", User: " + username +
-                (details != null ? ", Details: " + details : ""));
+            log.debug("Log enregistré - {} {} | Module: {} | Permission: {} | User: {}", 
+                method, path, moduleName, permissionName, username);
         } catch (Exception e) {
-            // Ne pas bloquer la requête en cas d'erreur de logging, mais logger l'erreur
-            System.err.println("❌ Erreur lors de l'enregistrement du log: " + e.getMessage());
-            System.err.println("Path: " + path + ", Method: " + method + ", User: " + username);
-            e.printStackTrace();
+            log.error("Erreur enregistrement log - {} {} | User: {} : {}", 
+                method, path, username, e.getMessage());
         }
 
         return true;
     }
 
+    private static final String ANONYMOUS_USER = "anonymousUser";
+
     /**
-     * Récupère le nom d'utilisateur depuis la requête
+     * Récupère le nom d'utilisateur depuis la requête.
+     * Retourne null si l'utilisateur est anonyme (non authentifié).
      */
     private String getUsernameFromRequest(HttpServletRequest request) {
-        // Priorité 1 : Essayer depuis le header X-Username (toujours disponible si envoyé par le frontend)
+        // Priorité 1 : Header X-Username envoyé par le frontend
         String username = request.getHeader("X-Username");
-        if (username != null && !username.isEmpty()) {
-            System.out.println("✅ UserLoggingInterceptor - Username depuis header X-Username: " + username);
+        if (isValidUsername(username)) {
             return username;
         }
 
-        // Priorité 2 : Essayer depuis le SecurityContext
+        // Priorité 2 : SecurityContext (JWT authentifié)
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication != null && authentication.isAuthenticated()) {
             Object principal = authentication.getPrincipal();
             if (principal instanceof UserDetails) {
                 username = ((UserDetails) principal).getUsername();
-                System.out.println("✅ UserLoggingInterceptor - Username depuis SecurityContext (UserDetails): " + username);
-                return username;
+                if (isValidUsername(username)) {
+                    return username;
+                }
             } else if (principal instanceof String) {
                 username = (String) principal;
-                System.out.println("✅ UserLoggingInterceptor - Username depuis SecurityContext (String): " + username);
-                return username;
-            } else {
-                System.out.println("⚠️ UserLoggingInterceptor - Principal de type inattendu: " + (principal != null ? principal.getClass().getName() : "null"));
+                if (isValidUsername(username)) {
+                    return username;
+                }
             }
-        } else {
-            System.out.println("⚠️ UserLoggingInterceptor - Aucune authentication dans SecurityContext");
         }
 
-        // Priorité 3 : Essayer depuis la session
+        // Priorité 3 : Session
         try {
-            Object sessionUser = request.getSession().getAttribute("username");
+            Object sessionUser = request.getSession(false) != null
+                    ? request.getSession(false).getAttribute("username")
+                    : null;
             if (sessionUser != null) {
                 username = sessionUser.toString();
-                System.out.println("✅ UserLoggingInterceptor - Username depuis session: " + username);
-                return username;
+                if (isValidUsername(username)) {
+                    return username;
+                }
             }
         } catch (Exception e) {
             // Ignorer les erreurs de session
-            System.out.println("⚠️ UserLoggingInterceptor - Erreur lors de la récupération de la session: " + e.getMessage());
         }
 
-        System.out.println("❌ UserLoggingInterceptor - Aucun username trouvé dans header, SecurityContext ou session");
         return null;
+    }
+
+    /**
+     * Vérifie qu'un username est valide (non null, non vide, pas "anonymousUser").
+     */
+    private boolean isValidUsername(String username) {
+        return username != null && !username.isEmpty() && !ANONYMOUS_USER.equals(username);
     }
 
     /**

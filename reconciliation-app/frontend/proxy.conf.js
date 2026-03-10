@@ -70,7 +70,7 @@ const PROXY_CONFIG = {
       }
     },
     "onProxyRes": function(proxyRes, req, res) {
-      // Ajouter les headers CORS si nécessaire
+      delete proxyRes.headers['x-powered-by'];
       if (!proxyRes.headers['access-control-allow-origin']) {
         proxyRes.headers['Access-Control-Allow-Origin'] = '*';
       }

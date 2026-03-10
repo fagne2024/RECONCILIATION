@@ -1,4 +1,59 @@
-<div class="matches-table-container">
+<div class="matches-page">
+  <!-- TOP NAV (design redevance-loterie) -->
+  <nav class="topnav">
+    <div class="nav-brand">
+      <div class="nav-brand-dot"></div>
+      ReconciliApp
+    </div>
+    <div class="nav-sep"></div>
+    <div class="nav-path">
+      <strong>Correspondances</strong>
+    </div>
+    <div class="nav-spacer"></div>
+    <div class="nav-actions">
+      <button type="button" class="nav-btn secondary" (click)="goBack()">
+        <i class="fas fa-arrow-left"></i> Retour
+      </button>
+      <button 
+        type="button" 
+        class="nav-btn secondary" 
+        (click)="saveToEcartBoSummary()" 
+        [disabled]="!filteredMatches?.length">
+        <i class="fas fa-save"></i> Vers Écart BO Summary
+      </button>
+      <button 
+        type="button" 
+        class="nav-btn primary" 
+        (click)="exportResults(true)" 
+        [disabled]="isExporting || filteredMatches.length === 0">
+        <i class="fas fa-file-export"></i> Exporter
+      </button>
+    </div>
+  </nav>
+
+  <!-- PAGE HEADER (titre + KPIs) -->
+  <div class="page-header-matches">
+    <div class="ph-matches-left">
+      <div class="ph-eyebrow"><span></span>Correspondances</div>
+      <h1 class="ph-title-matches">Vue des <em>correspondances</em></h1>
+    </div>
+    <div class="ph-matches-right">
+      <div class="hero-kpi-strip">
+        <div class="hk-strip-item">
+          <span class="hk-strip-label">Lignes</span>
+          <span class="hk-strip-value">{{ filteredMatches.length | number:'1.0-0' }}</span>
+        </div>
+        <div class="hk-strip-sep"></div>
+        <div class="hk-strip-item">
+          <span class="hk-strip-label">Volume total</span>
+          <span class="hk-strip-value">{{ calculateTotalVolume() | number:'1.0-0' }}</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="main">
+  <div class="matches-table-container">
   <div class="header-section">
     <div class="header-top">
       <button (click)="goBack()" class="back-button">

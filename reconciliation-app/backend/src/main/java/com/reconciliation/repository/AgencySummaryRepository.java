@@ -144,4 +144,16 @@ public interface AgencySummaryRepository extends JpaRepository<AgencySummaryEnti
         GROUP BY UPPER(a.country)
     """)
     List<Object[]> aggregateByCountry(@Param("countries") List<String> countries);
+
+    @Query("SELECT a FROM AgencySummaryEntity a WHERE " +
+           "(:agency IS NULL OR :agency = '' OR a.agency = :agency) AND " +
+           "(:countries IS NULL OR UPPER(TRIM(a.country)) IN :countries) AND " +
+           "(:startDate IS NULL OR :startDate = '' OR a.date >= :startDate) AND " +
+           "(:endDate IS NULL OR :endDate = '' OR a.date <= :endDate)")
+    List<AgencySummaryEntity> findByFiltersForRedevance(
+        @Param("agency") String agency,
+        @Param("countries") List<String> countries,
+        @Param("startDate") String startDate,
+        @Param("endDate") String endDate
+    );
 } 

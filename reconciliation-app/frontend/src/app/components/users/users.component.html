@@ -1,4 +1,38 @@
-<div class="users-container">
+<div class="users-page">
+  <!-- TOP NAV -->
+  <nav class="topnav">
+    <div class="nav-brand">
+      <div class="nav-brand-dot"></div>
+      ReconciliApp
+    </div>
+    <div class="nav-sep"></div>
+    <div class="nav-path">
+      <strong>Utilisateurs</strong>
+    </div>
+    <div class="nav-spacer"></div>
+  </nav>
+
+  <!-- PAGE HEADER -->
+  <div class="page-header-users">
+    <div class="ph-users-left">
+      <div class="ph-eyebrow"><span></span>Administration</div>
+      <h1 class="ph-title-users">Gestion des <em>utilisateurs</em></h1>
+      <p class="ph-subtitle-users">
+        Créez, modifiez et protégez les comptes de la plateforme.
+      </p>
+    </div>
+    <div class="ph-users-metrics">
+      <div class="hero-kpi-strip">
+        <div class="hk-strip-item">
+          <div class="hk-strip-label">Utilisateurs</div>
+          <div class="hk-strip-value">{{ filteredUsers.length }}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="main">
+  <div class="users-container">
   <div class="header-navigation-bar">
     <div class="header-navigation">
       <button class="btn-back" (click)="goBack()" title="Retour">
@@ -303,4 +337,6 @@
       </div>
     </div>
   </div>
+  </div><!-- .users-container -->
+  </div><!-- .main -->
 </div> 

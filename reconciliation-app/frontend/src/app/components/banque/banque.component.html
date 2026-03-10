@@ -1,4 +1,50 @@
-<div class="banque-container">
+<div class="banque-page">
+  <!-- TOP NAV (design redevance-loterie) -->
+  <nav class="topnav">
+    <div class="nav-brand">
+      <div class="nav-brand-dot"></div>
+      ReconciliApp
+    </div>
+    <div class="nav-sep"></div>
+    <div class="nav-path">
+      <strong>Banque</strong>
+    </div>
+    <div class="nav-spacer"></div>
+    <div class="nav-actions">
+      <button class="nav-btn secondary" (click)="goToBanqueDashboard()">
+        <i class="fas fa-chart-bar"></i> Tableau de bord
+      </button>
+    </div>
+  </nav>
+
+  <!-- PAGE HEADER (titre + KPIs) -->
+  <div class="page-header-banque">
+    <div class="ph-banque-left">
+      <div class="ph-eyebrow"><span></span>Banque</div>
+      <h1 class="ph-title-banque">Vue d’ensemble des <em>opérations bancaires</em></h1>
+    </div>
+    <div class="ph-banque-right">
+      <div class="hero-kpi-strip">
+        <div class="hk-strip-item">
+          <span class="hk-strip-label">Solde total</span>
+          <span class="hk-strip-value">{{ totalSoldeComptes | number:'1.0-0' }}</span>
+        </div>
+        <div class="hk-strip-sep"></div>
+        <div class="hk-strip-item">
+          <span class="hk-strip-label">Opérations</span>
+          <span class="hk-strip-value">{{ totalOperations | number:'1.0-0' }}</span>
+        </div>
+        <div class="hk-strip-sep"></div>
+        <div class="hk-strip-item">
+          <span class="hk-strip-label">Comptes</span>
+          <span class="hk-strip-value">{{ totalComptes | number:'1.0-0' }}</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="main">
+  <div class="banque-container">
   <div class="banque-header">
     <h1>🏦 Module BANQUE</h1>
     <p class="banque-description">Gestion des opérations bancaires et des comptes</p>
@@ -1602,4 +1648,6 @@
       </div>
     </div>
   </div>
-</div> 
+  </div><!-- .banque-container -->
+  </div><!-- .main -->
+</div><!-- .banque-page -->

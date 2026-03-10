@@ -1,49 +1,69 @@
-<div class="operations-container">
-    <!-- En-tête amélioré -->
-    <div class="header">
-        <div class="header-content">
-            <h1>Gestion des Opérations</h1>
-            <div class="header-stats">
-                <div class="quick-stat">
-                    <span class="stat-number">{{ totalOperations }}</span>
-                    <span class="stat-label">Opérations</span>
-                </div>
-                <div class="quick-stat">
-                    <span class="stat-number">{{ operationsValidees }}</span>
-                    <span class="stat-label">Validées</span>
-                </div>
-            </div>
-        </div>
-        <div class="header-actions">
-            <button class="btn-operation-type" (click)="openUploadModal('transaction_cree')" title="Créer TRX via fichier">
-                <i class="fas fa-file-upload"></i> Créer TRX
-            </button>
-            <button class="btn-operation-type" (click)="openUploadModal('annulation_bo')" title="Annuler TRX via fichier">
-                <i class="fas fa-undo"></i> Annuler TRX
-            </button>
-            <button class="btn-secondary" (click)="downloadTemplate()" title="Télécharger le modèle d'import">
-                <i class="fas fa-download"></i> Modèle
-            </button>
-            <button class="btn-operation-type" (click)="openApproClientPopup()" title="Voir Appro">
-                <i class="fas fa-money-bill-wave"></i> Appro
-            </button>
-            <button class="btn-operation-type" (click)="openCompenseClientPopup()" title="Voir Compense">
-                <i class="fas fa-exchange-alt"></i> Compense
-            </button>
-            <button class="btn-operation-type" (click)="openNivellementPopup()" title="Voir Nivellement">
-                <i class="fas fa-balance-scale"></i> Nivellement
-            </button>
-            <button class="btn-operation-type" (click)="openRegularisationSoldePopup()" title="Voir Régularisation Solde">
-                <i class="fas fa-calculator"></i> Régularisation Solde
-            </button>
-            <button class="btn-secondary" (click)="refreshData()" title="Actualiser les données">
-                <i class="fas fa-sync-alt"></i>
-            </button>
-            <button class="btn-primary" (click)="showAddForm = true" *ngIf="!showAddForm && !showEditForm">
-                <i class="fas fa-plus"></i> Ajouter une opération
-            </button>
-        </div>
+<div class="operations-page">
+  <!-- TOP NAV (même design que redevance-loterie) -->
+  <nav class="topnav">
+    <div class="nav-brand">
+      <div class="nav-brand-dot"></div>
+      ReconciliApp
     </div>
+    <div class="nav-sep"></div>
+    <div class="nav-path">
+      <strong>Opérations</strong>
+    </div>
+    <div class="nav-spacer"></div>
+    <div class="nav-actions">
+      <button type="button" class="nav-btn secondary" (click)="openUploadModal('transaction_cree')" title="Créer TRX via fichier">
+        <i class="fas fa-file-upload"></i> Créer TRX
+      </button>
+      <button type="button" class="nav-btn secondary" (click)="openUploadModal('annulation_bo')" title="Annuler TRX via fichier">
+        <i class="fas fa-undo"></i> Annuler TRX
+      </button>
+      <button type="button" class="nav-btn secondary" (click)="downloadTemplate()" title="Télécharger le modèle d'import">
+        <i class="fas fa-download"></i> Modèle
+      </button>
+      <button type="button" class="nav-btn secondary" (click)="openApproClientPopup()" title="Voir Appro">
+        <i class="fas fa-money-bill-wave"></i> Appro
+      </button>
+      <button type="button" class="nav-btn secondary" (click)="openCompenseClientPopup()" title="Voir Compense">
+        <i class="fas fa-exchange-alt"></i> Compense
+      </button>
+      <button type="button" class="nav-btn secondary" (click)="openNivellementPopup()" title="Voir Nivellement">
+        <i class="fas fa-balance-scale"></i> Nivellement
+      </button>
+      <button type="button" class="nav-btn secondary" (click)="openRegularisationSoldePopup()" title="Voir Régularisation Solde">
+        <i class="fas fa-calculator"></i> Régularisation Solde
+      </button>
+      <button type="button" class="nav-btn secondary" (click)="refreshData()" title="Actualiser les données">
+        <i class="fas fa-sync-alt"></i>
+      </button>
+      <button type="button" class="nav-btn primary" (click)="showAddForm = true" *ngIf="!showAddForm && !showEditForm">
+        <i class="fas fa-plus"></i> Ajouter une opération
+      </button>
+    </div>
+  </nav>
+
+  <!-- PAGE HEADER (KPI rapides) -->
+  <div class="page-header-ops">
+    <div class="ph-ops-left">
+      <div class="ph-eyebrow"><span></span>Gestion</div>
+      <h1 class="ph-title-ops">Gestion des <em>Opérations</em></h1>
+    </div>
+    <div class="ph-ops-right">
+      <div class="hero-kpi-strip">
+        <div class="hk-strip-item">
+          <span class="hk-strip-label">Opérations</span>
+          <span class="hk-strip-value">{{ totalOperations }}</span>
+        </div>
+        <div class="hk-strip-sep"></div>
+        <div class="hk-strip-item">
+          <span class="hk-strip-label">Validées</span>
+          <span class="hk-strip-value">{{ operationsValidees }}</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MAIN CONTENT -->
+  <div class="main">
 
     <!-- Modal Upload Operations -->
     <div *ngIf="showUploadModal" class="modal-overlay" (click)="closeUploadModal($event)">
@@ -1931,4 +1951,5 @@
       </div>
     </div>
   </div>
-</div> 
+  </div><!-- .main -->
+</div><!-- .operations-page --> 

@@ -1,5 +1,60 @@
+<div class="stats-page">
+  <!-- TOP NAV (design redevance-loterie) -->
+  <nav class="topnav">
+    <div class="nav-brand">
+      <div class="nav-brand-dot"></div>
+      ReconciliApp
+    </div>
+    <div class="nav-sep"></div>
+    <div class="nav-path">
+      <strong>Statistiques</strong>
+    </div>
+    <div class="nav-spacer"></div>
+    <div class="nav-actions">
+      <button type="button" class="nav-btn secondary" (click)="goBack()">
+        <i class="fas fa-arrow-left"></i> Retour
+      </button>
+      <button type="button" class="nav-btn secondary" (click)="startNewReconciliation()" [disabled]="isLoading">
+        <i class="fas fa-sync"></i> Nouvelle Réconciliation
+      </button>
+      <button type="button" class="nav-btn secondary" (click)="goToServiceReferences()" [disabled]="isLoading">
+        <i class="fas fa-book"></i> Référentiel Services
+      </button>
+      <button type="button" class="nav-btn primary" (click)="exportStats()" [disabled]="!agencySummaries.length || isLoading">
+        <i class="fas fa-file-excel"></i> Exporter
+      </button>
+    </div>
+  </nav>
+
+  <!-- PAGE HEADER (titre + KPIs) -->
+  <div class="page-header-stats">
+    <div class="ph-stats-left">
+      <div class="ph-eyebrow"><span></span>Statistiques</div>
+      <h1 class="ph-title-stats">Vue des <em>statistiques détaillées</em></h1>
+    </div>
+    <div class="ph-stats-right">
+      <div class="hero-kpi-strip">
+        <div class="hk-strip-item">
+          <span class="hk-strip-label">Lignes</span>
+          <span class="hk-strip-value">{{ getAggregatedStats().length | number:'1.0-0' }}</span>
+        </div>
+        <div class="hk-strip-sep"></div>
+        <div class="hk-strip-item">
+          <span class="hk-strip-label">Transactions</span>
+          <span class="hk-strip-value">{{ getTotalRecords() | number:'1.0-0' }}</span>
+        </div>
+        <div class="hk-strip-sep"></div>
+        <div class="hk-strip-item">
+          <span class="hk-strip-label">Volume total</span>
+          <span class="hk-strip-value">{{ getTotalVolume() | number:'1.0-0' }}</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="main">
 <div class="stats-container">
-    <h2>📊 Statistiques détaillées</h2>
+    <h2 class="stats-inner-title">📊 Statistiques détaillées</h2>
 
     <div *ngIf="isLoading" class="loading-message">
         Chargement des données...
@@ -165,4 +220,6 @@
     </div>
 
     <!-- Je retire les boutons d'action de la section globale en bas du fichier -->
+</div>
+  </div>
 </div> 

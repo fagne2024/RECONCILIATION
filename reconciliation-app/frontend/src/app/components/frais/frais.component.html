@@ -1,4 +1,40 @@
-<div class="frais-container">
+<div class="frais-page">
+  <!-- TOP NAV (design redevance-loterie) -->
+  <nav class="topnav">
+    <div class="nav-brand">
+      <div class="nav-brand-dot"></div>
+      ReconciliApp
+    </div>
+    <div class="nav-sep"></div>
+    <div class="nav-path">
+      <strong>Frais de Transaction</strong>
+    </div>
+    <div class="nav-spacer"></div>
+    <div class="nav-actions">
+      <button type="button" class="nav-btn primary" (click)="showAddForm = true" *ngIf="!showAddForm && !showEditForm">
+        <i class="fas fa-plus"></i> Ajouter un frais
+      </button>
+    </div>
+  </nav>
+
+  <!-- PAGE HEADER (titre + KPIs) -->
+  <div class="page-header-frais">
+    <div class="ph-frais-left">
+      <div class="ph-eyebrow"><span></span>Paramétrage</div>
+      <h1 class="ph-title-frais">Gestion des <em>frais de transaction</em></h1>
+    </div>
+    <div class="ph-frais-right">
+      <div class="hero-kpi-strip">
+        <div class="hk-strip-item">
+          <span class="hk-strip-label">Frais définis</span>
+          <span class="hk-strip-value">{{ (fraisList?.length || 0) | number:'1.0-0' }}</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="main">
+  <div class="frais-container">
     <!-- En-tête -->
     <div class="header">
         <h1>Gestion des Frais de Transaction</h1>
@@ -622,4 +658,6 @@
             </div>
         </div>
     </div>
-</div> 
+  </div><!-- .frais-container -->
+  </div><!-- .main -->
+</div><!-- .frais-page --> 

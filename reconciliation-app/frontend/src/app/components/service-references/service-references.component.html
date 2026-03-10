@@ -1,7 +1,56 @@
-<div class="service-ref-container">
+<div class="service-ref-page">
+  <!-- TOP NAV (design redevance-loterie) -->
+  <nav class="topnav">
+    <div class="nav-brand">
+      <div class="nav-brand-dot"></div>
+      ReconciliApp
+    </div>
+    <div class="nav-sep"></div>
+    <div class="nav-path">
+      <strong>Références Services</strong>
+    </div>
+    <div class="nav-spacer"></div>
+    <div class="nav-actions">
+      <button type="button" class="nav-btn secondary" (click)="goBackToStats()">
+        <i class="fas fa-arrow-left"></i> Retour Stats
+      </button>
+      <button type="button" class="nav-btn secondary" (click)="toggleDashboard()">
+        {{ isDashboardVisible ? '📋 Vue Référentiel' : '📊 Dashboard' }}
+      </button>
+      <button type="button" class="nav-btn secondary" (click)="downloadTemplate()" [disabled]="isImporting || isLoading">
+        <i class="fas fa-file-download"></i> Modèle
+      </button>
+      <button type="button" class="nav-btn secondary" (click)="triggerFileUpload()" [disabled]="isImporting || isLoading">
+        <i class="fas fa-file-upload"></i> Importer
+      </button>
+      <button type="button" class="nav-btn primary" *ngIf="!showForm" (click)="openCreateForm()">
+        <i class="fas fa-plus"></i> Nouvelle référence
+      </button>
+    </div>
+  </nav>
+
+  <!-- PAGE HEADER (titre + KPIs) -->
+  <div class="page-header-service-ref">
+    <div class="ph-service-left">
+      <div class="ph-eyebrow"><span></span>Référentiel</div>
+      <h1 class="ph-title-service">Référentiel <em>Services RECO</em></h1>
+      <p class="ph-subtitle">Gérez les correspondances Pays / Service / Code RECO utilisées dans les traitements.</p>
+    </div>
+    <div class="ph-service-right">
+      <div class="hero-kpi-strip">
+        <div class="hk-strip-item">
+          <span class="hk-strip-label">Lignes</span>
+          <span class="hk-strip-value">{{ filteredReferences.length | number:'1.0-0' }}</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="main">
+  <div class="service-ref-container">
     <div class="header">
         <div>
-            <h2>
+            <h2 class="service-ref-inner-title">
                 <button class="back-arrow-btn" (click)="goBackToStats()" title="Retour aux statistiques">⬅️</button>
                 Référentiel Services RECO
             </h2>
@@ -257,6 +306,8 @@
         </div>
     </ng-container>
 </div>
+  </div><!-- .main -->
+</div><!-- .service-ref-page -->
 
 <ng-template #dashboardView>
     <div class="dashboard-container">

@@ -58,7 +58,8 @@ export class AppComponent implements OnInit {
     '/sop-reconciliation-trx': 'Réconciliation SOP TRX',
     '/guide-utilisation': 'Guide Utilisation',
     '/suivi-des-ecarts': 'Suivi des Écarts',
-    '/ecart-bo-summary': 'Résumé Écarts BO'
+    '/ecart-bo-summary': 'Résumé Écarts BO',
+    '/redevance-loterie': 'Redevance Loterie'
   };
 
   constructor(

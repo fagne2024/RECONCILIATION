@@ -48,6 +48,7 @@ import { SopReconciliationTrxComponent } from './components/sop-reconciliation-t
 import { GuideUtilisationComponent } from './components/guide-utilisation/guide-utilisation.component';
 import { SuiviDesEcartsComponent } from './components/suivi-des-ecarts/suivi-des-ecarts.component';
 import { EcartBoSummaryComponent } from './components/ecart-bo-summary/ecart-bo-summary.component';
+import { RedevanceLoterieComponent } from './components/redevance-loterie/redevance-loterie.component';
 import { AuthGuard } from './guards/auth.guard';
 import { AdminGuard } from './guards/admin.guard';
 
@@ -70,6 +71,7 @@ const routes: Routes = [
   { path: 'ecart-partner', component: EcartPartnerTableComponent, canActivate: [AuthGuard] },
   { path: 'dashboard', component: DashboardComponent, canActivate: [AuthGuard] },
   { path: 'comptes', component: ComptesComponent, canActivate: [AuthGuard] },
+  { path: 'redevance-loterie', component: RedevanceLoterieComponent, canActivate: [AuthGuard] },
   { path: 'operations', component: OperationsComponent, canActivate: [AuthGuard] },
   { path: 'frais', component: FraisComponent, canActivate: [AuthGuard] },
   { path: 'commission', component: CommissionComponent, canActivate: [AuthGuard] },

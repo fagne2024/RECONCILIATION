@@ -1,4 +1,50 @@
-<div class="banque-dashboard-container">
+<div class="banque-dashboard-page">
+  <!-- TOP NAV -->
+  <nav class="topnav">
+    <div class="nav-brand">
+      <div class="nav-brand-dot"></div>
+      ReconciliApp
+    </div>
+    <div class="nav-sep"></div>
+    <div class="nav-path">
+      <strong>Dashboard Banque</strong>
+    </div>
+    <div class="nav-spacer"></div>
+    <div class="nav-actions">
+      <button type="button" class="nav-btn secondary" (click)="goBack()">
+        ← Retour Banque
+      </button>
+    </div>
+  </nav>
+
+  <!-- PAGE HEADER -->
+  <div class="page-header-banque-dashboard">
+    <div class="ph-bd-left">
+      <div class="ph-eyebrow"><span></span>Banque</div>
+      <h1 class="ph-title-bd">Tableau de bord de <em>réconciliation bancaire</em></h1>
+    </div>
+    <div class="ph-bd-right">
+      <div class="hero-kpi-strip">
+        <div class="hk-strip-item">
+          <span class="hk-strip-label">Pays</span>
+          <span class="hk-strip-value">{{ getCountries().length | number:'1.0-0' }}</span>
+        </div>
+        <div class="hk-strip-sep"></div>
+        <div class="hk-strip-item">
+          <span class="hk-strip-label">Opérations</span>
+          <span class="hk-strip-value">{{ totalOperations | number:'1.0-0' }}</span>
+        </div>
+        <div class="hk-strip-sep"></div>
+        <div class="hk-strip-item">
+          <span class="hk-strip-label">Relevés</span>
+          <span class="hk-strip-value">{{ totalReleves | number:'1.0-0' }}</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="main">
+  <div class="banque-dashboard-container">
   <div class="top-bar">
     <button type="button" class="btn-back" (click)="goBack()">← Retour</button>
   </div>
@@ -70,6 +116,7 @@
       </div>
     </div>
   </div>
+  </div><!-- .banque-dashboard-container -->
+  </div><!-- .main -->
 </div>
-
 
