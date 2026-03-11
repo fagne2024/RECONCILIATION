@@ -125,7 +125,8 @@ public class RedevanceService {
 
         double taxeSurJeuxHasard = chiffreAffairesBrut * (taxeJeuxHasardPct / 100.0);
         double retenueSurGains = useFlux ? retenueSurGainsFromFlux : 0;
-        double produitBrutJeux = chiffreAffairesBrut - taxeSurJeuxHasard - retenueSurGains;
+        // Produit Brut de Jeux = 95% × (PAYIN − PAYOUT)
+        double produitBrutJeux = 0.95 * (payin - payout);
         double remunerationIntegrateur = (payin * (tauxPayin / 100.0)) + (payout * (tauxPayout / 100.0));
         double revenuGenereActCom = produitBrutJeux - remunerationIntegrateur;
         double baseCalcul = revenuGenereActCom;

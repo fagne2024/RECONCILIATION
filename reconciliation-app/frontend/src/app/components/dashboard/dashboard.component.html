@@ -1,19 +1,59 @@
-<div class="dashboard-container">
-    <div class="dashboard-header">
-        <h1>📊 Dashboard - Vue d'ensemble</h1>
-        <p class="subtitle">Bienvenue dans votre outil de réconciliation de données</p>
-        <div class="header-actions">
-            <div class="last-update">
-                <span *ngIf="!loading">Dernière mise à jour : {{ lastActivity }}</span>
-                <span *ngIf="loading">Mise à jour en cours...</span>
-            </div>
-            <button class="refresh-btn" (click)="refreshMetrics()" [disabled]="loading">
-                <span *ngIf="loading">🔄 Chargement...</span>
-                <span *ngIf="!loading">🔄 Actualiser</span>
-            </button>
-        </div>
+<div class="dashboard-page">
+  <!-- TOP NAV -->
+  <nav class="topnav">
+    <div class="nav-brand">
+      <div class="nav-brand-dot"></div>
+      ReconciliApp
     </div>
+    <div class="nav-sep"></div>
+    <div class="nav-path">
+      <strong>Dashboard</strong>
+    </div>
+    <div class="nav-spacer"></div>
+    <div class="nav-actions">
+      <button class="nav-btn secondary" (click)="refreshMetrics()" [disabled]="loading">
+        <i class="fas fa-sync-alt" [class.fa-spin]="loading"></i>
+        {{ loading ? 'Chargement...' : 'Actualiser' }}
+      </button>
+    </div>
+  </nav>
 
+  <!-- PAGE HEADER (titre + KPIs) -->
+  <div class="page-header-dashboard">
+    <div class="ph-dashboard-left">
+      <div class="ph-eyebrow"><span></span>Vue d'ensemble</div>
+      <h1 class="ph-title-dashboard">Dashboard <em>réconciliation</em></h1>
+      <p class="ph-subtitle" *ngIf="!loading">Bienvenue dans votre outil de réconciliation de données · Dernière mise à jour : {{ lastActivity }}</p>
+      <p class="ph-subtitle" *ngIf="loading">Mise à jour en cours...</p>
+    </div>
+    <div class="ph-dashboard-right">
+      <div class="hero-kpi-strip">
+        <div class="hk-strip-item">
+          <span class="hk-strip-label">Total réconciliations</span>
+          <span class="hk-strip-value">{{ totalReconciliations | number:'1.0-0' }}</span>
+        </div>
+        <div class="hk-strip-sep"></div>
+        <div class="hk-strip-item">
+          <span class="hk-strip-label">Fichiers traités</span>
+          <span class="hk-strip-value">{{ totalFiles | number:'1.0-0' }}</span>
+        </div>
+        <div class="hk-strip-sep"></div>
+        <div class="hk-strip-item">
+          <span class="hk-strip-label">Aujourd'hui</span>
+          <span class="hk-strip-value">{{ todayReconciliations | number:'1.0-0' }}</span>
+        </div>
+        <div class="hk-strip-sep"></div>
+        <div class="hk-strip-item">
+          <span class="hk-strip-label">Clients / Services / Pays</span>
+          <span class="hk-strip-value">{{ totalClientsCount }} / {{ totalServicesCount }} / {{ totalCountriesCount }}</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="main">
+  <div class="dashboard-container">
+    <!-- Ancien header retiré : titre et actualiser sont dans topnav + page-header -->
     <!-- Bande défilante des soldes par compte -->
     <div class="scrolling-banner-wrapper" *ngIf="accountBalances && accountBalances.length > 0">
         <div class="scrolling-banner-header">
@@ -72,18 +112,18 @@
     </div>
 
     <!-- Barre récapitulative clients/services/pays -->
-    <div class="dashboard-summary-bar" style="display: flex; justify-content: space-between; align-items: center; background: #1976d2; color: #fff; padding: 24px 0; margin: 24px auto; border-radius: 6px; max-width: 1200px; width: 100%;">
-      <div style="flex: 1; text-align: center;">
-        <div style="font-size: 1.1rem; opacity: 0.8; margin-bottom: 10px;">Nombre de clients</div>
-        <div style="font-size: 2.2rem; font-weight: bold;">{{ totalClientsCount }}</div>
+    <div class="dashboard-summary-bar">
+      <div class="summary-bar-item">
+        <div class="summary-bar-label">Nombre de clients</div>
+        <div class="summary-bar-value">{{ totalClientsCount }}</div>
       </div>
-      <div style="flex: 1; text-align: center;">
-        <div style="font-size: 1.1rem; opacity: 0.8; margin-bottom: 10px;">Nombre de services</div>
-        <div style="font-size: 2.2rem; font-weight: bold;">{{ totalServicesCount }}</div>
+      <div class="summary-bar-item">
+        <div class="summary-bar-label">Nombre de services</div>
+        <div class="summary-bar-value">{{ totalServicesCount }}</div>
       </div>
-      <div style="flex: 1; text-align: center;">
-        <div style="font-size: 1.1rem; opacity: 0.8; margin-bottom: 10px;">Nombre de pays</div>
-        <div style="font-size: 2.2rem; font-weight: bold;">{{ totalCountriesCount }}</div>
+      <div class="summary-bar-item">
+        <div class="summary-bar-label">Nombre de pays</div>
+        <div class="summary-bar-value">{{ totalCountriesCount }}</div>
       </div>
     </div>
     <!-- Fin barre récapitulative -->
@@ -378,7 +418,7 @@
                 </div>
             </div>
         </div>
-    </div>
+  </div><!-- .dashboard-container -->
 
     <!-- Modal pour afficher les graphiques en plein écran -->
     <div *ngIf="showGraphModal" class="graph-modal-overlay" (click)="closeGraphModal()">
@@ -496,3 +536,5 @@
             </div>
         </div>
     </div>
+  </div><!-- .main -->
+</div><!-- .dashboard-page -->

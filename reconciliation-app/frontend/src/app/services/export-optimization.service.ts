@@ -58,14 +58,6 @@ export class ExportOptimizationService {
       if (typeof Worker !== 'undefined') {
         // Créer un worker inline pour les exports
         const workerCode = `
-          // Charger XLSX dans le contexte du Worker
-          try {
-            importScripts('https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js');
-          } catch (e) {
-            // Si l'import échoue, on remonte une erreur exploitable côté UI
-            self.postMessage({ type: 'error', message: 'XLSX introuvable dans le Worker' });
-          }
-
           self.onmessage = function(e) {
             const { type, data } = e.data;
             
@@ -128,6 +120,15 @@ export class ExportOptimizationService {
           }
 
           function exportExcel({ rows, columns, fileName, chunkSize = 5000 }) {
+            // Charger XLSX uniquement lorsque nécessaire (pour l'export Excel)
+            try {
+              if (typeof XLSX === 'undefined') {
+                importScripts('https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js');
+              }
+            } catch (e) {
+              self.postMessage({ type: 'error', message: 'Bibliothèque XLSX non chargée dans le Worker' });
+              return;
+            }
             if (typeof XLSX === 'undefined') {
               self.postMessage({ type: 'error', message: 'Bibliothèque XLSX non chargée dans le Worker' });
               return;
