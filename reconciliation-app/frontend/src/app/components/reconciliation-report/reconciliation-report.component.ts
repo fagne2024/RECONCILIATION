@@ -1,6 +1,6 @@
-import { Component, OnInit, Input, OnDestroy, ViewChild } from '@angular/core';
+import { Component, OnInit, Input, OnDestroy, ViewChild, ElementRef } from '@angular/core';
 import { ActivatedRoute, Router, NavigationEnd } from '@angular/router';
-import { HttpClient, HttpErrorResponse, HttpHeaders } from '@angular/common/http';
+import { HttpClient, HttpErrorResponse, HttpHeaders, HttpParams } from '@angular/common/http';
 import { filter } from 'rxjs/operators';
 import { Observable, Subscription, firstValueFrom } from 'rxjs';
 import { take } from 'rxjs/operators';
@@ -20,6 +20,8 @@ import * as ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
 import * as Papa from 'papaparse';
 import * as XLSX from 'xlsx';
+import html2canvas from 'html2canvas';
+import { jsPDF } from 'jspdf';
 
 export interface ReconciliationReportData {
     id?: number;
@@ -678,14 +680,20 @@ export interface ReconciliationReportData {
         <!-- Modal de relevé -->
         <div *ngIf="isReleveModalVisible" class="modal-overlay">
             <div class="modal-content-releve" (click)="$event.stopPropagation()">
+                <div #releveExportContent>
                 <div class="modal-header-releve">
                     <h3>📋 Relevé de Service</h3>
                     <button class="modal-close-btn" (click)="closeReleveModal()">✕</button>
                 </div>
                 <div class="modal-body-releve" *ngIf="!isLoadingReleve">
                     <div class="releve-service-title">
-                        <h4>{{releveData?.service || '-'}}</h4>
-                        <div class="releve-date">Date: {{formatDate(releveData?.date || '')}}</div>
+                        <div class="releve-service-main">
+                            <h4>{{releveData?.service || '-'}}</h4>
+                            <div class="releve-date">Date: {{formatDate(releveData?.date || '')}}</div>
+                        </div>
+                        <div class="releve-env" *ngIf="releveEnv">
+                            ENVIRONNEMENT : <span class="releve-env-value">{{ releveEnv }}</span>
+                        </div>
                     </div>
                     
                     <div class="releve-section">
@@ -938,9 +946,13 @@ export interface ReconciliationReportData {
                 <div class="modal-body-releve" *ngIf="isLoadingReleve">
                     <div class="loading-spinner">⏳ Chargement...</div>
                 </div>
+                </div>
                 <div class="modal-footer-releve">
                     <button class="btn btn-export-releve" (click)="exportReleveToExcel()" [disabled]="!releveData">
                         📥 Exporter
+                    </button>
+                    <button class="btn btn-export-releve" (click)="exportReleveToPdf()" [disabled]="!releveData">
+                        🧾 Exporter PDF
                     </button>
                     <button class="btn btn-validate-releve" (click)="validateReleve()" [disabled]="isValidatingReleve || isReleveValidated || isReleveAlreadyValidated()" [class.btn-validated]="isReleveValidated || isReleveAlreadyValidated()">
                         {{isValidatingReleve ? '⏳ Validation...' : ((isReleveValidated || isReleveAlreadyValidated()) ? '✅ Validé' : '✅ Valider')}}
@@ -2316,9 +2328,13 @@ export interface ReconciliationReportData {
             margin-bottom: 20px;
             padding-bottom: 15px;
             border-bottom: 2px solid #dee2e6;
+            display: flex;
+            align-items: flex-end;
+            justify-content: space-between;
+            gap: 16px;
         }
 
-        .releve-service-title h4 {
+        .releve-service-main h4 {
             margin: 0 0 8px 0;
             font-size: 1.5rem;
             color: #495057;
@@ -2328,6 +2344,18 @@ export interface ReconciliationReportData {
         .releve-date {
             color: #6c757d;
             font-size: 0.95rem;
+        }
+
+        .releve-env {
+            font-size: 0.95rem;
+            color: #495057;
+            font-weight: 500;
+            white-space: nowrap;
+        }
+
+        .releve-env-value {
+            font-weight: 700;
+            color: #007bff;
         }
 
         .releve-section {
@@ -2828,6 +2856,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
     isLoadingReleve = false;
     isValidatingReleve = false;
     isReleveValidated = false; // Indique si le relevé a été validé
+    @ViewChild('releveExportContent') releveExportContentRef!: ElementRef<HTMLDivElement>;
     
     // Propriétés pour les données manuelles d'écart traité
     releveManualNombre: number = 0;
@@ -2838,6 +2867,9 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
     releveRembourseNombre: number = 0;
     releveRembourseVolume: number = 0;
     isReleveRembourseFileLoading = false;
+
+    // Environnement du relevé (BET, HT, HUBAO, TOP20, GU3, TOTAL, ...)
+    releveEnv: string | null = null;
 
     // Pays autorisés pour le cloisonnement
     private allowedCountryCodes: string[] | null = null;
@@ -8179,6 +8211,12 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             totalTransactions
         };
 
+        // Réinitialiser l'environnement du relevé (sera éventuellement rechargé depuis la base)
+        this.releveEnv = null;
+
+        // Charger les éventuelles valeurs manuelles déjà enregistrées pour ce service / date / pays
+        this.loadReleveManualData();
+
         this.isReleveModalVisible = true;
         this.isLoadingReleve = true;
         this.releveEcartData = [];
@@ -8379,6 +8417,74 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
     }
 
     /**
+     * Charge depuis le backend les valeurs manuelles (Trx traité / Trx remboursé)
+     * pour le couple service + date + pays du relevé en cours.
+     */
+    private loadReleveManualData(): void {
+        if (!this.releveData) {
+            return;
+        }
+
+        const date = this.formatDateForSearch(this.releveData.date);
+        const params = new HttpParams()
+            .set('date', date)
+            .set('service', this.releveData.service)
+            .set('country', this.releveData.country);
+
+        this.http.get<any>('/api/reconciliation-report/manual-trx', { params })
+            .subscribe({
+                next: (response) => {
+                    if (!response) {
+                        return;
+                    }
+                    this.releveManualNombre = typeof response.manualNombre === 'number' ? response.manualNombre : 0;
+                    this.releveManualVolume = typeof response.manualVolume === 'number' ? response.manualVolume : 0;
+                    this.releveRembourseNombre = typeof response.rembourseNombre === 'number' ? response.rembourseNombre : 0;
+                    this.releveRembourseVolume = typeof response.rembourseVolume === 'number' ? response.rembourseVolume : 0;
+                    this.releveEnv = typeof response.env === 'string' && response.env ? response.env : null;
+                },
+                error: (err) => {
+                    console.error('Erreur lors du chargement des valeurs manuelles de relevé', err);
+                }
+            });
+    }
+
+    /**
+     * Sauvegarde en base les valeurs manuelles (Trx traité / Trx remboursé)
+     * pour le couple service + date + pays du relevé en cours.
+     */
+    private saveReleveManualData(): void {
+        if (!this.releveData) {
+            return;
+        }
+
+        const date = this.formatDateForSearch(this.releveData.date);
+        const payload = {
+            date,
+            service: this.releveData.service,
+            country: this.releveData.country,
+            env: this.releveEnv || 'TOTAL',
+            manualNombre: this.releveManualNombre || 0,
+            manualVolume: this.releveManualVolume || 0,
+            rembourseNombre: this.releveRembourseNombre || 0,
+            rembourseVolume: this.releveRembourseVolume || 0
+        };
+
+        this.http.post<any>('/api/reconciliation-report/manual-trx', payload)
+            .subscribe({
+                next: () => {
+                    // Pas de popup ici pour éviter le spam; on logge seulement au besoin
+                    if (this.debugReconciliation) {
+                        console.log('✅ Valeurs manuelles de relevé sauvegardées', payload);
+                    }
+                },
+                error: (err) => {
+                    console.error('Erreur lors de la sauvegarde des valeurs manuelles de relevé', err);
+                }
+            });
+    }
+
+    /**
      * Calcule le total du nombre de transactions depuis ecart-bo-summary J-1 (ENV BO)
      */
     getTotalEcartNombreJ1(): number {
@@ -8396,15 +8502,16 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
      * Gère les changements dans les champs manuels
      */
     onReleveManualChange(): void {
-        // Cette fonction peut être utilisée pour des validations ou autres actions
-        // Pour l'instant, elle est vide mais peut être étendue si nécessaire
+        // Point d'extension pour validations locales si besoin.
+        // La sauvegarde en base est faite uniquement lors du clic sur "Valider" du relevé.
     }
 
     /**
      * Gère les changements dans les champs Trx remboursé
      */
     onReleveRembourseChange(): void {
-        // Cette fonction peut être utilisée pour des validations ou autres actions
+        // Point d'extension pour validations locales si besoin.
+        // La sauvegarde en base est faite uniquement lors du clic sur "Valider" du relevé.
     }
 
     /**
@@ -8956,6 +9063,109 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
     }
 
     /**
+     * Exporte le relevé (modal complet) en PDF, en capturant tout le contenu
+     * comme pour l'écran redevance-loterie.
+     */
+    async exportReleveToPdf(): Promise<void> {
+        if (!this.releveData || !this.releveExportContentRef?.nativeElement) {
+            return;
+        }
+        try {
+            const element = this.releveExportContentRef.nativeElement;
+
+            // Désactiver temporairement les scrolls / hauteurs max pour capturer tout le contenu
+            const originalOverflow = element.style.overflowY;
+            const originalMaxHeight = element.style.maxHeight;
+            element.style.overflowY = 'visible';
+            element.style.maxHeight = 'none';
+
+            const bodyEl = element.querySelector('.modal-body-releve') as HTMLElement | null;
+            let bodyOriginalOverflow: string | null = null;
+            let bodyOriginalMaxHeight: string | null = null;
+            if (bodyEl) {
+                bodyOriginalOverflow = bodyEl.style.overflowY;
+                bodyOriginalMaxHeight = bodyEl.style.maxHeight;
+                bodyEl.style.overflowY = 'visible';
+                bodyEl.style.maxHeight = 'none';
+            }
+
+            const canvas = await html2canvas(element, {
+                scale: 2,
+                useCORS: true,
+                logging: false,
+                backgroundColor: '#F2F0EB'
+            });
+
+            // Restaurer les styles après la capture
+            element.style.overflowY = originalOverflow;
+            element.style.maxHeight = originalMaxHeight;
+            if (bodyEl) {
+                bodyEl.style.overflowY = bodyOriginalOverflow ?? '';
+                bodyEl.style.maxHeight = bodyOriginalMaxHeight ?? '';
+            }
+            const imgData = canvas.toDataURL('image/png');
+            const pdf = new jsPDF({
+                orientation: 'portrait',
+                unit: 'mm',
+                format: 'a4'
+            });
+            const pdfW = pdf.internal.pageSize.getWidth();
+            const pdfH = pdf.internal.pageSize.getHeight();
+            const margin = 10;
+            const pageW = pdfW - 2 * margin;
+            const pageH = pdfH - 2 * margin;
+            const imgW = canvas.width;
+            const imgH = canvas.height;
+            const ratio = pageW / imgW;
+            const pageCanvas = document.createElement('canvas');
+            const pageCtx = pageCanvas.getContext('2d');
+
+            // Hauteur de l'image (en px) correspondant à une page PDF
+            const pageImgHeight = pageH / ratio;
+            const totalPages = Math.ceil(imgH / pageImgHeight);
+
+            pageCanvas.width = imgW;
+
+            for (let page = 0; page < totalPages; page++) {
+                const sourceY = page * pageImgHeight;
+                const sliceHeight = Math.min(pageImgHeight, imgH - sourceY);
+
+                pageCanvas.height = sliceHeight;
+                if (pageCtx) {
+                    pageCtx.clearRect(0, 0, imgW, sliceHeight);
+                    pageCtx.drawImage(
+                        canvas,
+                        0,
+                        sourceY,
+                        imgW,
+                        sliceHeight,
+                        0,
+                        0,
+                        imgW,
+                        sliceHeight
+                    );
+                }
+
+                const pageData = pageCanvas.toDataURL('image/png');
+                const renderHeight = sliceHeight * ratio;
+
+                if (page > 0) {
+                    pdf.addPage();
+                }
+                pdf.addImage(pageData, 'PNG', margin, margin, pageW, renderHeight);
+            }
+
+            const datePart = this.formatDateForSearch(this.releveData.date || '').replace(/-/g, '');
+            const servicePart = (this.releveData.service || 'Service').replace(/\s+/g, '-');
+            const fileName = `Releve-${servicePart}-${datePart}.pdf`;
+            pdf.save(fileName);
+        } catch (error) {
+            console.error('Erreur export PDF relevé:', error);
+            this.popupService.showError('Erreur d\'export', 'Une erreur est survenue lors de l\'export PDF du relevé.');
+        }
+    }
+
+    /**
      * Valide le relevé en mettant le traitement à "Terminé" pour toutes les lignes du service et de la date
      */
     async validateReleve(): Promise<void> {
@@ -8963,6 +9173,24 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             this.popupService.showWarning('❌ Aucune donnée de relevé disponible.');
             return;
         }
+
+        // Demander l'environnement (BET, HT, HUBAO, TOP20, GU3, TOTAL)
+        const envOptions = ['BET', 'HT', 'HUBAO', 'TOP20', 'GU3', 'TOTAL'];
+        const envLabel = this.releveEnv && envOptions.includes(this.releveEnv) ? this.releveEnv : 'TOTAL';
+        const selectedEnv = await this.popupService.showSelectInput(
+            'Sélectionnez l\'environnement pour ce relevé :',
+            'Environnement du relevé',
+            envOptions,
+            envLabel
+        );
+
+        if (!selectedEnv) {
+            // L'utilisateur a annulé la sélection → on annule la validation
+            return;
+        }
+
+        // Mémoriser l'environnement choisi pour ce relevé
+        this.releveEnv = selectedEnv;
 
         // Filtrer les lignes correspondant au service et à la date
         const matchingLines = this.filteredReportData.filter(line => 
@@ -8990,6 +9218,10 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         if (!confirmed) {
             return;
         }
+
+        // À la validation du relevé, on fige et persiste les valeurs manuelles
+        // (Trx traité et Trx remboursé) pour ce service / date / pays.
+        this.saveReleveManualData();
 
         this.isValidatingReleve = true;
         let successCount = 0;

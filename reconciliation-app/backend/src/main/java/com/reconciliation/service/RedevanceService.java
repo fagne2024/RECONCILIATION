@@ -61,7 +61,7 @@ public class RedevanceService {
 
     /**
      * Calcule les données redevance selon les filtres.
-     * Payin = services contenant PAIEMENT, Payout = services contenant CASHIN
+     * Payin/Payout : si un flux (FLUX TRANSACTION) existe pour l'agence et la période, on utilise ses champs payin/payout pour le calcul du Produit Brut de Jeux (95% × (PAYIN − PAYOUT)). Sinon, Payin = services PAIEMENT, Payout = services CASHIN (agency_summary).
      */
     public Map<String, Object> computeRedevance(String agence, List<String> pays, String startDate, String endDate, String username) {
         List<String> allowedCountries = (username != null && !username.isEmpty())
@@ -109,6 +109,9 @@ public class RedevanceService {
                     totalGains = flux.getTotalGains() != null ? flux.getTotalGains() : 0;
                     totalBonus = flux.getTotalBonus() != null ? flux.getTotalBonus() : 0;
                     retenueSurGainsFromFlux = flux.getRetenueSurGains() != null ? flux.getRetenueSurGains() : 0;
+                    // PAYIN / PAYOUT au niveau FLUX TRANSACTION pour le calcul PBJ (95%)
+                    payin = flux.getPayin() != null ? flux.getPayin() : 0;
+                    payout = flux.getPayout() != null ? flux.getPayout() : 0;
                     useFlux = true;
                 }
             } catch (Exception ignored) {}
