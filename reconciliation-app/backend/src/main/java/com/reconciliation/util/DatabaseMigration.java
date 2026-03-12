@@ -60,6 +60,29 @@ public class DatabaseMigration implements CommandLineRunner {
             System.err.println("❌ Erreur lors de l'ajout de la colonne traitement: " + e.getMessage());
             e.printStackTrace();
         }
+
+        // Migration pour ajouter la colonne env à result8rec (MySQL)
+        try {
+            String checkEnvQuery = "SELECT COUNT(*) as count FROM INFORMATION_SCHEMA.COLUMNS " +
+                    "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'result8rec' AND COLUMN_NAME = 'env'";
+
+            Integer countEnv = jdbcTemplate.queryForObject(checkEnvQuery, Integer.class);
+
+            if (countEnv == null || countEnv == 0) {
+                System.out.println("🔄 Ajout de la colonne env à la table result8rec...");
+
+                String alterTableEnvQuery = "ALTER TABLE result8rec ADD COLUMN env VARCHAR(50) NULL AFTER country";
+                jdbcTemplate.execute(alterTableEnvQuery);
+
+                System.out.println("✅ Colonne env ajoutée avec succès à la table result8rec!");
+            } else {
+                System.out.println("✅ Colonne env déjà présente dans la table result8rec");
+            }
+
+        } catch (Exception e) {
+            System.err.println("❌ Erreur lors de l'ajout de la colonne env: " + e.getMessage());
+            e.printStackTrace();
+        }
         
         // Migration pour ajouter la colonne traitement à operation_bancaire (MySQL)
         try {

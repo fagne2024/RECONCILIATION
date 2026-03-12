@@ -13,6 +13,8 @@ public class Result8RecEntity {
     private String agency;
     private String service;
     private String country;
+    // Nouvel environnement (BET, HT, HUBAO, TOP20, GU3, TOTAL, ...)
+    private String env;
 
     private int totalTransactions;
     private double totalVolume;
@@ -45,6 +47,9 @@ public class Result8RecEntity {
 
     public String getCountry() { return country; }
     public void setCountry(String country) { this.country = country; }
+
+    public String getEnv() { return env; }
+    public void setEnv(String env) { this.env = env; }
 
     public int getTotalTransactions() { return totalTransactions; }
     public void setTotalTransactions(int totalTransactions) { this.totalTransactions = totalTransactions; }

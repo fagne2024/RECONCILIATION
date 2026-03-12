@@ -1,6 +1,6 @@
 import { Component, OnInit, OnDestroy, ViewChild } from '@angular/core';
 import { Router, NavigationEnd } from '@angular/router';
-import { filter } from 'rxjs/operators';
+import { filter, take } from 'rxjs/operators';
 import { Subscription } from 'rxjs';
 import { DashboardService, DashboardMetrics, DetailedMetrics, TransactionCreatedStats, ServiceStat } from '../../services/dashboard.service';
 import { AppStateService } from '../../services/app-state.service';
@@ -9,6 +9,7 @@ import { ChartConfiguration } from 'chart.js';
 import { AgencySummaryService } from '../../services/agency-summary.service';
 import { OperationService } from '../../services/operation.service';
 import { CompteService } from '../../services/compte.service';
+import { DashboardReconciliationService, Result8RecData } from '../../services/dashboard-reconciliation.service';
 import { MatSelectModule } from '@angular/material/select';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatOptionModule } from '@angular/material/core';
@@ -62,6 +63,45 @@ export class DashboardComponent implements OnInit, OnDestroy {
 
     // Modal pour afficher les graphiques en plein écran
     showGraphModal: boolean = false;
+
+    // Modal pour accéder rapidement au relevé (statut des réconciliations)
+    showReleveStatusModal: boolean = false;
+    releveStatusCountry: string | null = null;
+    releveStatusService: string | null = null;
+    releveStatusCountries: string[] = [];
+    releveStatusServices: string[] = [];
+    releveStatusDate: string = '';
+    releveStatusEnv: string = 'TOTAL';
+    releveStatusError: string | null = null;
+    private reconciliationCountryServices: { [country: string]: string[] } | null = null;
+
+    // Résultat du contrôle de statut pour le relevé
+    showReleveStatusResultModal: boolean = false;
+    releveStatusResultLoading: boolean = false;
+    releveStatusAllOk: boolean = false;
+    releveStatusLines: Result8RecData[] = [];
+
+    // Résumé "État des réconciliations" (bloc de gauche)
+    reconciliationSummaryDate: string = ''; // utilisé pour initialiser, mais le calcul se fait sur "cette semaine"
+    reconciliationSummaryEnv: string = 'TOTAL';
+    reconciliationSummaryCountry: string = '';
+    reconciliationSummaryCountries: string[] = [];
+    reconciliationSummaryService: string = '';
+    reconciliationSummaryServices: string[] = [];
+    readonly reconciliationEnvOptions: string[] = ['BET', 'HT', 'HUBAO', 'TOP20', 'GU3', 'TOTAL'];
+    reconciliationSummaryLoading: boolean = false;
+    reconciliationSummaryError: string | null = null;
+    reconciliationSummaryRows: {
+        service: string;
+        days: {
+            date: string;
+            status: 'RECONCILIE' | 'NON_RECONCILIE' | 'EN_COURS' | 'NON_RECONCILIE';
+            ticketId: string;
+            env: string;
+        }[];
+    }[] = [];
+    weekDays: { label: string; date: string }[] = [];
+    private allReconciliationServices: string[] = [];
 
     // Filtres
     selectedAgency: string[] = [];
@@ -528,8 +568,181 @@ export class DashboardComponent implements OnInit, OnDestroy {
         private appStateService: AppStateService,
         private agencySummaryService: AgencySummaryService,
         private operationService: OperationService,
-        private compteService: CompteService
+        private compteService: CompteService,
+        private dashboardReconciliationService: DashboardReconciliationService
     ) {}
+
+    /**
+     * Ouvre le popup "Voir le statut des réconciliations"
+     */
+    openReleveStatusModal(): void {
+        this.releveStatusError = null;
+        this.releveStatusCountry = this.releveStatusCountries && this.releveStatusCountries.length ? this.releveStatusCountries[0] : null;
+        this.releveStatusService = null;
+        this.releveStatusDate = '';
+        this.releveStatusEnv = 'TOTAL';
+        this.showReleveStatusModal = true;
+        // Mettre à jour la liste des services disponibles selon le pays pré-sélectionné
+        if (this.releveStatusCountry) {
+            this.updateReleveStatusServices();
+        }
+    }
+
+    /**
+     * Ferme le popup de statut des réconciliations
+     */
+    closeReleveStatusModal(): void {
+        this.showReleveStatusModal = false;
+    }
+
+    /**
+     * Met à jour la liste des services disponibles pour le pays choisi dans le popup statut.
+     * Utilise agencySummaryData pour cloisonner les services par pays.
+     */
+    updateReleveStatusServices(): void {
+        if (!this.releveStatusCountry) {
+            return;
+        }
+        const servicesSet = new Set<string>();
+
+        // Utiliser la map pays -> services construite à partir de result8rec
+        if (this.reconciliationCountryServices && this.reconciliationCountryServices[this.releveStatusCountry]) {
+            this.reconciliationCountryServices[this.releveStatusCountry].forEach(s => {
+                if (!s || typeof s !== 'string') return;
+                const upper = s.toUpperCase();
+                // Filtrer les codes agence de type AUCATxxxxx
+                if (upper.startsWith('AUCAT')) return;
+                servicesSet.add(s);
+            });
+        } else if (this.filterOptions && this.filterOptions.services) {
+            // Fallback: si on n'a pas de map, utiliser la liste globale de services
+            this.filterOptions.services.forEach(s => servicesSet.add(s));
+        }
+
+        this.releveStatusServices = Array.from(servicesSet).sort();
+        if (this.releveStatusService && !this.releveStatusServices.includes(this.releveStatusService)) {
+            this.releveStatusService = null;
+        }
+    }
+
+    /**
+     * Valide les critères saisis et redirige vers la page de rapport
+     * avec les paramètres nécessaires pour ouvrir directement le relevé.
+     */
+    confirmReleveStatus(): void {
+        this.releveStatusError = null;
+
+        if (!this.releveStatusCountry || !this.releveStatusService || !this.releveStatusDate) {
+            this.releveStatusError = 'Veuillez sélectionner le pays, le service et la date.';
+            return;
+        }
+
+        const env = this.releveStatusEnv || 'TOTAL';
+
+        this.showReleveStatusModal = false;
+
+        // Lancer le contrôle des statuts pour ce pays/service/date
+        this.checkReleveStatusInDashboard(env);
+    }
+
+    /**
+     * Vérifie, pour le pays / service / date choisis, si toutes les lignes
+     * result8rec sont à statut OK. Si oui, affiche un mini-relevé dans un popup,
+     * sinon affiche un message "Réconciliation en cours".
+     */
+    private checkReleveStatusInDashboard(env: string): void {
+        this.releveStatusResultLoading = true;
+        this.showReleveStatusResultModal = true;
+        this.releveStatusAllOk = false;
+        this.releveStatusLines = [];
+
+        this.dashboardReconciliationService.getResult8RecData()
+            .pipe(take(1))
+            .subscribe({
+                next: (data) => {
+                    const targetCountry = this.releveStatusCountry!;
+                    const targetService = this.releveStatusService!;
+                    const targetDateStr = this.releveStatusDate!;
+                    const targetEnv = env || 'TOTAL';
+
+                    const targetDate = new Date(targetDateStr);
+                    targetDate.setHours(0, 0, 0, 0);
+
+                    const matching = data.filter(item => {
+                        if (!item.country || !item.service || !item.date) return false;
+                        if (item.country !== targetCountry) return false;
+                        if (item.service !== targetService) return false;
+                        const itemEnv = (item.env || 'TOTAL');
+                        if (itemEnv !== targetEnv) return false;
+
+                        const itemDateStr = (item.date || '').split(' ')[0];
+                        const itemDate = new Date(itemDateStr);
+                        if (isNaN(itemDate.getTime())) return false;
+                        itemDate.setHours(0, 0, 0, 0);
+
+                        return itemDate.getTime() === targetDate.getTime();
+                    });
+
+                    this.releveStatusLines = matching;
+
+                    if (!matching.length) {
+                        this.releveStatusAllOk = false;
+                    } else {
+                        const allOk = matching.every(
+                            line => (line.status || '').trim().toUpperCase() === 'OK'
+                        );
+                        this.releveStatusAllOk = allOk;
+                    }
+
+                    this.releveStatusResultLoading = false;
+                },
+                error: (err) => {
+                    console.error('Erreur lors du chargement des données result8rec pour le relevé:', err);
+                    this.releveStatusLines = [];
+                    this.releveStatusAllOk = false;
+                    this.releveStatusResultLoading = false;
+                }
+            });
+    }
+
+    getReleveStatusTotalTransactions(): number {
+        if (!this.releveStatusLines || !this.releveStatusLines.length) {
+            return 0;
+        }
+        return this.releveStatusLines
+            .map(l => l.totalTransactions || 0)
+            .reduce((sum, v) => sum + v, 0);
+    }
+
+    getReleveStatusTotalVolume(): number {
+        if (!this.releveStatusLines || !this.releveStatusLines.length) {
+            return 0;
+        }
+        return this.releveStatusLines
+            .map(l => l.totalVolume || 0)
+            .reduce((sum, v) => sum + v, 0);
+    }
+
+    /**
+     * Ouvre la page de rapport détaillé pour le pays / service / date choisis,
+     * avec ouverture directe du relevé de service.
+     */
+    openReleveDetail(): void {
+        if (!this.releveStatusCountry || !this.releveStatusService || !this.releveStatusDate) {
+            return;
+        }
+        const env = this.releveStatusEnv || 'TOTAL';
+        this.showReleveStatusResultModal = false;
+        this.router.navigate(['/reconciliation-report'], {
+            queryParams: {
+                country: this.releveStatusCountry,
+                service: this.releveStatusService,
+                date: this.releveStatusDate,
+                env,
+                openReleve: '1'
+            }
+        });
+    }
 
     ngOnInit() {
         this.loadDashboardData();
@@ -655,6 +868,170 @@ export class DashboardComponent implements OnInit, OnDestroy {
         });
     }
 
+    /**
+     * Initialise la date / env par défaut pour le bloc "État des réconciliations"
+     * puis déclenche un premier chargement du résumé.
+     */
+    private initReconciliationSummaryDefaults(): void {
+        if (!this.reconciliationSummaryEnv) {
+            this.reconciliationSummaryEnv = 'TOTAL';
+        }
+        if (this.reconciliationSummaryCountries && this.reconciliationSummaryCountries.length && !this.reconciliationSummaryCountry) {
+            // Par défaut, pas de filtre pays (tous), mais on pourrait choisir le premier si besoin
+            this.reconciliationSummaryCountry = '';
+        }
+        if (!this.reconciliationSummaryService) {
+            this.reconciliationSummaryService = '';
+        }
+        this.loadReconciliationSummary();
+    }
+
+    /**
+     * Charge le résumé "État des réconciliations" à partir de result8rec
+     * pour la date + environnement sélectionnés.
+     */
+    loadReconciliationSummary(): void {
+        this.reconciliationSummaryError = null;
+        this.reconciliationSummaryLoading = true;
+        this.reconciliationSummaryRows = [];
+
+        this.dashboardReconciliationService.getResult8RecData()
+            .pipe(take(1))
+            .subscribe({
+                next: (data: Result8RecData[]) => {
+                    try {
+                        const targetEnv = this.reconciliationSummaryEnv || 'TOTAL';
+                        const targetCountry = this.reconciliationSummaryCountry || '';
+                        const selectedService = (this.reconciliationSummaryService || '').trim();
+                        // Fenêtre de temps : "cette semaine" (du lundi au dimanche courant)
+                        const today = new Date();
+                        const currentDay = today.getDay(); // 0 (dimanche) à 6 (samedi)
+                        const diffToMonday = (currentDay === 0 ? -6 : 1) - currentDay;
+                        const startOfWeek = new Date(today);
+                        startOfWeek.setDate(today.getDate() + diffToMonday);
+                        startOfWeek.setHours(0, 0, 0, 0);
+
+                        this.weekDays = [];
+
+                        // Construire les 7 jours de la semaine avec date normalisée
+                        for (let i = 0; i < 7; i++) {
+                            const d = new Date(startOfWeek);
+                            d.setDate(startOfWeek.getDate() + i);
+                            const y = d.getFullYear();
+                            const m = (d.getMonth() + 1).toString().padStart(2, '0');
+                            const day = d.getDate().toString().padStart(2, '0');
+                            const dateStr = `${y}-${m}-${day}`;
+
+                            const dayNames = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
+                            const label = `${dayNames[i]} ${day}/${m}`;
+                            this.weekDays.push({ label, date: dateStr });
+                        }
+
+                        // Construire la liste des services à afficher et la liste pour le filtre
+                        const servicesSet = new Set<string>();
+                        if (targetCountry && this.reconciliationCountryServices && this.reconciliationCountryServices[targetCountry]) {
+                            this.reconciliationCountryServices[targetCountry].forEach(s => s && servicesSet.add(s));
+                        } else if (this.allReconciliationServices && this.allReconciliationServices.length) {
+                            this.allReconciliationServices.forEach(s => s && servicesSet.add(s));
+                        } else {
+                            data.forEach(item => {
+                                if (item.service) servicesSet.add(item.service);
+                            });
+                        }
+                        const allServices = Array.from(servicesSet).sort();
+
+                        // Mettre à jour la liste de services disponible pour le filtre
+                        this.reconciliationSummaryServices = allServices;
+                        if (selectedService && !this.reconciliationSummaryServices.includes(selectedService)) {
+                            // Si le service sélectionné n'existe plus dans la liste, on réinitialise
+                            this.reconciliationSummaryService = '';
+                        }
+
+                        // Appliquer éventuellement le filtre service
+                        const effectiveServices = this.reconciliationSummaryService
+                            ? allServices.filter(s => s === this.reconciliationSummaryService)
+                            : allServices;
+
+                        const rows: {
+                            service: string;
+                            days: {
+                                date: string;
+                                status: 'RECONCILIE' | 'NON_RECONCILIE' | 'EN_COURS' | 'NON_RECONCILIE';
+                                ticketId: string;
+                                env: string;
+                            }[];
+                        }[] = [];
+
+                        effectiveServices.forEach(serviceName => {
+                            const dayStatuses = this.weekDays.map(dayInfo => {
+                                const matchingForDay = data.filter(item => {
+                                    if (!item.service || item.service !== serviceName) return false;
+                                    const itemEnv = (item.env || 'TOTAL');
+                                    if (itemEnv !== targetEnv) return false;
+                                    if (!item.date) return false;
+                                    if (targetCountry && item.country !== targetCountry) return false;
+
+                                    const dateOnly = (item.date || '').split(' ')[0];
+                                    return dateOnly === dayInfo.date;
+                                });
+
+                                let status: 'RECONCILIE' | 'NON_RECONCILIE' | 'EN_COURS' | 'NON_RECONCILIE';
+                                let ticketId = '';
+
+                                if (!matchingForDay.length) {
+                                    // Service non présent ce jour-là : Non réconcilié
+                                    status = 'NON_RECONCILIE';
+                                } else {
+                                    const allTermine = matchingForDay.every(line =>
+                                        (line.traitement || '').trim().toLowerCase() === 'terminé'
+                                    );
+                                    const allOk = matchingForDay.every(line =>
+                                        (line.status || '').trim().toUpperCase() === 'OK'
+                                    );
+
+                                    if (allTermine) {
+                                        status = 'RECONCILIE';
+                                    } else if (!allOk) {
+                                        status = 'EN_COURS';
+                                    } else {
+                                        // Cas intermédiaire: service présent, statuts OK mais traitement non terminé
+                                        status = 'EN_COURS';
+                                    }
+
+                                    const ticketLine = matchingForDay.find(line => (line.glpiId || '').trim().length > 0);
+                                    ticketId = ticketLine ? (ticketLine.glpiId || '') : '';
+                                }
+
+                                return {
+                                    date: dayInfo.date,
+                                    status,
+                                    ticketId,
+                                    env: targetEnv
+                                };
+                            });
+
+                            rows.push({
+                                service: serviceName,
+                                days: dayStatuses
+                            });
+                        });
+
+                        this.reconciliationSummaryRows = rows;
+                        this.reconciliationSummaryLoading = false;
+                    } catch (e: any) {
+                        console.error('Erreur lors du calcul du résumé des réconciliations:', e);
+                        this.reconciliationSummaryError = 'Erreur lors du chargement de l’état des réconciliations.';
+                        this.reconciliationSummaryLoading = false;
+                    }
+                },
+                error: (err) => {
+                    console.error('Erreur lors du chargement des données result8rec pour le résumé:', err);
+                    this.reconciliationSummaryError = 'Erreur lors du chargement de l’état des réconciliations.';
+                    this.reconciliationSummaryLoading = false;
+                }
+            });
+    }
+
     private loadFilterOptions() {
         this.dashboardService.getFilterOptions().subscribe({
             next: (options: FilterOptions) => {
@@ -700,6 +1077,24 @@ export class DashboardComponent implements OnInit, OnDestroy {
                     this.serviceSearchCtrl.setValue('');
                     this.paysSearchCtrl.setValue('');
                 }, 0);
+            }
+        });
+
+        // Charger en parallèle les pays/services distincts depuis result8rec pour le popup de statut
+        this.dashboardService.getReconciliationFilters().subscribe({
+            next: (filters) => {
+                // Ces listes servent de base pour le cloisonnement du popup
+                this.reconciliationCountryServices = filters.countryServices || {};
+                this.releveStatusCountries = filters.countries || [];
+                this.allReconciliationServices = filters.services || [];
+                this.reconciliationSummaryCountries = filters.countries || [];
+                this.reconciliationSummaryServices = filters.services || [];
+
+                // Initialiser les valeurs par défaut du résumé des réconciliations
+                this.initReconciliationSummaryDefaults();
+            },
+            error: (err) => {
+                console.error('Erreur lors du chargement des filtres de réconciliation:', err);
             }
         });
     }
@@ -1911,6 +2306,15 @@ export class DashboardComponent implements OnInit, OnDestroy {
         'HT': 'Haïti',
       };
       return countryNames[countryCode?.toUpperCase()] || countryCode;
+    }
+
+    // Ouvrir un ticket GLPI existant
+    openGlpiTicketFromDashboard(idGlpi: string): void {
+      if (!idGlpi || !idGlpi.trim()) {
+        return;
+      }
+      const url = `https://glpi.intouchgroup.net/glpi/front/ticket.form.php?id=${idGlpi.trim()}`;
+      window.open(url, '_blank', 'noopener,noreferrer');
     }
 
     // Méthodes pour gérer le modal des graphiques

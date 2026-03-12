@@ -74,15 +74,110 @@
     </div>
 
     <div class="dashboard-info">
-        <div class="info-section">
-            <h3>💡 Fonctionnalités principales</h3>
-            <ul>
-                <li>Upload et comparaison de fichiers CSV/Excel</li>
-                <li>Réconciliation automatique des données</li>
-                <li>Analyse des différences et correspondances</li>
-                <li>Génération de rapports détaillés</li>
-                <li>Export des résultats en Excel</li>
-            </ul>
+        <div class="info-section reconciliation-state">
+            <div class="info-header">
+                <div>
+                    <h3>📌 État des réconciliations</h3>
+                    <p class="reco-subtitle">Période : cette semaine (lundi à dimanche)</p>
+                </div>
+                <div class="reco-controls">
+                    <div class="reco-control">
+                        <label>Pays</label>
+                        <select
+                            [(ngModel)]="reconciliationSummaryCountry"
+                            (change)="loadReconciliationSummary()"
+                        >
+                            <option value="">Tous</option>
+                            <option *ngFor="let country of reconciliationSummaryCountries" [ngValue]="country">
+                                {{ country }}
+                            </option>
+                        </select>
+                    </div>
+                    <div class="reco-control">
+                        <label>Service</label>
+                        <select
+                            [(ngModel)]="reconciliationSummaryService"
+                            (change)="loadReconciliationSummary()"
+                        >
+                            <option value="">Tous</option>
+                            <option *ngFor="let service of reconciliationSummaryServices" [ngValue]="service">
+                                {{ service }}
+                            </option>
+                        </select>
+                    </div>
+                    <div class="reco-control">
+                        <label>Environnement</label>
+                        <select
+                            [(ngModel)]="reconciliationSummaryEnv"
+                            (change)="loadReconciliationSummary()"
+                        >
+                            <option *ngFor="let env of reconciliationEnvOptions" [ngValue]="env">
+                                {{ env }}
+                            </option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <div *ngIf="reconciliationSummaryLoading" class="reco-loading">
+                Chargement de l’état des réconciliations...
+            </div>
+            <div *ngIf="!reconciliationSummaryLoading && reconciliationSummaryError" class="reco-error">
+                {{ reconciliationSummaryError }}
+            </div>
+
+            <div *ngIf="!reconciliationSummaryLoading && !reconciliationSummaryError" class="reco-table-wrapper">
+                <table class="reco-table">
+                    <thead>
+                        <tr>
+                            <th>Service</th>
+                            <th *ngFor="let d of weekDays">{{ d.label }}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr
+                            *ngFor="let row of reconciliationSummaryRows"
+                        >
+                            <td class="reco-service" [title]="row.service">{{ row.service }}</td>
+                            <td
+                                class="reco-status"
+                                *ngFor="let day of row.days"
+                            >
+                                <span
+                                    class="status-pill"
+                                    [ngClass]="{
+                                        'status-ok': day.status === 'RECONCILIE',
+                                        'status-nok': day.status === 'NON_RECONCILIE',
+                                        'status-en-cours': day.status === 'EN_COURS'
+                                    }"
+                                >
+                                    {{
+                                        day.status === 'RECONCILIE'
+                                            ? 'Réconcilié'
+                                            : (day.status === 'EN_COURS'
+                                                ? 'En cours...'
+                                                : 'Non réconcilié')
+                                    }}
+                                </span>
+                                <div
+                                    class="reco-ticket-mini"
+                                    *ngIf="day.ticketId"
+                                >
+                                    <span class="reco-ticket-id">ID {{ day.ticketId }}</span>
+                                    <button
+                                        type="button"
+                                        class="reco-ticket-link"
+                                        (click)="openGlpiTicketFromDashboard(day.ticketId)"
+                                        title="Ouvrir le ticket dans GLPI"
+                                    >
+                                        🔗
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
         </div>
 
         <div class="info-section">
@@ -107,6 +202,11 @@
                     <div class="metric-value">{{lastActivity}}</div>
                     <div class="metric-label">Dernière activité</div>
                 </div>
+            </div>
+            <div class="metrics-actions">
+                <button type="button" class="btn-status-reconciliation" (click)="openReleveStatusModal()">
+                    Voir le statut des réconciliations
+                </button>
             </div>
         </div>
     </div>
@@ -533,6 +633,135 @@
                 <div *ngIf="(!barChartData || !barChartData.labels?.length) && (!lineChartData || !lineChartData.labels?.length)" class="no-data-modal">
                     Aucune donnée à afficher
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal pour accéder rapidement au relevé (statut des réconciliations) -->
+    <div *ngIf="showReleveStatusModal" class="status-modal-overlay" (click)="closeReleveStatusModal()">
+        <div class="status-modal-container" (click)="$event.stopPropagation()">
+            <div class="status-modal-header">
+                <h3>📋 Voir le statut des réconciliations</h3>
+                <button type="button" class="btn-close-modal" (click)="closeReleveStatusModal()" title="Fermer">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="status-modal-body">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Pays</label>
+                        <mat-form-field appearance="fill" class="filter-select full-width">
+                            <mat-select [(ngModel)]="releveStatusCountry" (selectionChange)="updateReleveStatusServices()" placeholder="Sélectionner un pays">
+                                <mat-option *ngFor="let country of releveStatusCountries" [value]="country">
+                                    {{ country }}
+                                </mat-option>
+                            </mat-select>
+                        </mat-form-field>
+                    </div>
+                    <div class="form-group">
+                        <label>Service</label>
+                        <mat-form-field appearance="fill" class="filter-select full-width">
+                            <mat-select [(ngModel)]="releveStatusService" placeholder="Sélectionner un service">
+                                <mat-option *ngFor="let service of releveStatusServices" [value]="service">
+                                    {{ service }}
+                                </mat-option>
+                            </mat-select>
+                        </mat-form-field>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Date</label>
+                        <input type="date" [(ngModel)]="releveStatusDate" class="status-date-input">
+                    </div>
+                    <div class="form-group">
+                        <label>Environnement</label>
+                        <mat-form-field appearance="fill" class="filter-select full-width">
+                            <mat-select [(ngModel)]="releveStatusEnv">
+                                <mat-option value="BET">BET</mat-option>
+                                <mat-option value="HT">HT</mat-option>
+                                <mat-option value="HUBAO">HUBAO</mat-option>
+                                <mat-option value="TOP20">TOP20</mat-option>
+                                <mat-option value="GU3">GU3</mat-option>
+                                <mat-option value="TOTAL">TOTAL</mat-option>
+                            </mat-select>
+                        </mat-form-field>
+                    </div>
+                </div>
+                <div *ngIf="releveStatusError" class="status-modal-error">
+                    {{ releveStatusError }}
+                </div>
+            </div>
+            <div class="status-modal-footer">
+                <button type="button" class="btn-cancel" (click)="closeReleveStatusModal()">Annuler</button>
+                <button type="button" class="btn-confirm" (click)="confirmReleveStatus()">Afficher le relevé</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal résultat du relevé (mini-relevé vs réconciliation en cours) -->
+    <div *ngIf="showReleveStatusResultModal" class="status-modal-overlay" (click)="showReleveStatusResultModal = false">
+        <div class="status-modal-container" (click)="$event.stopPropagation()">
+            <div class="status-modal-header">
+                <h3>📋 Statut du relevé</h3>
+                <button type="button" class="btn-close-modal" (click)="showReleveStatusResultModal = false" title="Fermer">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="status-modal-body">
+                <div *ngIf="releveStatusResultLoading">
+                    Chargement du statut de réconciliation...
+                </div>
+                <div *ngIf="!releveStatusResultLoading && (!releveStatusLines || !releveStatusLines.length)">
+                    Aucune donnée de réconciliation trouvée pour ce pays, service et date.
+                </div>
+                <div *ngIf="!releveStatusResultLoading && releveStatusLines && releveStatusLines.length">
+                    <div *ngIf="!releveStatusAllOk" class="status-modal-error">
+                        La réconciliation est en cours pour ce service et cette date (traitement en cours...).
+                    </div>
+                    <div *ngIf="releveStatusAllOk" class="releve-summary-ok">
+                        <p><strong>Réconciliation terminée</strong> pour le service sélectionné (toutes les lignes sont à statut OK).</p>
+                    </div>
+                    <div class="releve-mini-summary">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Pays</label>
+                                <div>{{ releveStatusCountry }}</div>
+                            </div>
+                            <div class="form-group">
+                                <label>Service</label>
+                                <div>{{ releveStatusService }}</div>
+                            </div>
+                            <div class="form-group">
+                                <label>Date</label>
+                                <div>{{ releveStatusDate }}</div>
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Nombre de lignes</label>
+                                <div>{{ releveStatusLines.length }}</div>
+                            </div>
+                            <div class="form-group">
+                                <label>Total transactions BO</label>
+                                <div>{{ getReleveStatusTotalTransactions() }}</div>
+                            </div>
+                            <div class="form-group">
+                                <label>Volume total BO</label>
+                                <div>{{ getReleveStatusTotalVolume() | number:'1.0-2' }}</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="status-modal-footer">
+                <button type="button" class="btn-cancel" (click)="showReleveStatusResultModal = false">Fermer</button>
+                <button *ngIf="releveStatusAllOk"
+                        type="button"
+                        class="btn-confirm"
+                        (click)="openReleveDetail()">
+                    Voir détail
+                </button>
             </div>
         </div>
     </div>

@@ -142,7 +142,7 @@ public class StatisticsService {
                 // null signifie tous les pays (GNL ou admin)
             }
             
-            // Total des réconciliations (nombre total d'enregistrements du résumé)
+            // Total des réconciliations (nombre total d'enregistrements du résumé = sauvegardes par service/date)
             long totalReconciliations;
             if (allowedCountries == null) {
                 totalReconciliations = agencySummaryRepository.count();
@@ -153,8 +153,15 @@ public class StatisticsService {
             }
             metrics.put("totalReconciliations", totalReconciliations);
             
-            // Total des fichiers traités (nombre total d'enregistrements du résumé)
-            long totalFiles = totalReconciliations; // Même valeur
+            // Total des fichiers traités (nombre de fichiers uploadés et sauvegardés dans statistics)
+            long totalFiles;
+            if (allowedCountries == null) {
+                totalFiles = statisticsRepository.count();
+            } else if (allowedCountries.isEmpty()) {
+                totalFiles = 0;
+            } else {
+                totalFiles = statisticsRepository.countByCountries(allowedCountries);
+            }
             metrics.put("totalFiles", totalFiles);
             
             // Dernière activité (date la plus récente)
@@ -181,15 +188,15 @@ public class StatisticsService {
             }
             metrics.put("lastActivity", lastActivityStr);
             
-            // Statistiques du jour (modifié : on prend la date d'hier)
-            LocalDate yesterdayDate = LocalDate.now().minusDays(1);
+            // Statistiques du jour: nombre de réconciliations pour la date J (aujourd'hui)
+            LocalDate todayDate = LocalDate.now();
             long todayReconciliations;
             if (allowedCountries == null) {
-                todayReconciliations = agencySummaryRepository.countByDate(yesterdayDate.toString());
+                todayReconciliations = agencySummaryRepository.countByDate(todayDate.toString());
             } else if (allowedCountries.isEmpty()) {
                 todayReconciliations = 0;
             } else {
-                todayReconciliations = agencySummaryRepository.countByDateAndCountries(yesterdayDate.toString(), allowedCountries);
+                todayReconciliations = agencySummaryRepository.countByDateAndCountries(todayDate.toString(), allowedCountries);
             }
             metrics.put("todayReconciliations", todayReconciliations);
             

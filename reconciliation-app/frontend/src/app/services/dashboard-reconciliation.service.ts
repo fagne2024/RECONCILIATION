@@ -9,6 +9,7 @@ export interface Result8RecData {
     agency: string;
     service: string;
     country: string;
+    env?: string;
     totalTransactions: number;
     totalVolume: number;
     matches: number;

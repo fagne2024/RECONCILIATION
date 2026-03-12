@@ -137,4 +137,12 @@ export class DashboardService {
         
         return this.http.get<TransactionCreatedStats>(`${this.apiUrl}/transaction-created-stats${params}`);
     }
+
+    /**
+     * Récupère les pays et services distincts depuis result8rec
+     * (même source que la page de rapport).
+     */
+    getReconciliationFilters(): Observable<{ countries: string[]; services: string[]; countryServices: { [country: string]: string[] } }> {
+        return this.http.get<{ countries: string[]; services: string[]; countryServices: { [country: string]: string[] } }>(`/api/result8rec/filters`);
+    }
 } 

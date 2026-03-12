@@ -399,6 +399,12 @@
     margin-bottom: 15px;
 }
 
+.reco-subtitle {
+  margin: 0;
+  font-size: 0.8rem;
+  color: #777;
+}
+
 .info-section ul {
     list-style: none;
     padding: 0;
@@ -412,6 +418,167 @@
 
 .info-section li:last-child {
     border-bottom: none;
+}
+
+// Bloc "État des réconciliations"
+.reconciliation-state {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.reconciliation-state .info-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+
+.reconciliation-state .reco-controls {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+}
+
+.reconciliation-state .reco-control {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.reconciliation-state .reco-control label {
+  font-size: 0.8rem;
+  color: #666;
+}
+
+.reconciliation-state .reco-control input[type="date"],
+.reconciliation-state .reco-control select {
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid #ddd;
+  font-size: 0.85rem;
+}
+
+.reco-table-wrapper {
+  max-height: 260px;
+  overflow-y: auto;
+  border-radius: 6px;
+  border: 1px solid #eee;
+}
+
+.reco-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.reco-table thead {
+  background: #f5f7fb;
+}
+
+.reco-table th,
+.reco-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.reco-table th {
+  text-align: left;
+  font-weight: 600;
+  color: #555;
+}
+
+.reco-service {
+  max-width: 200px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.reco-status {
+  text-align: center;
+}
+
+.reco-ticket {
+  font-family: monospace;
+  font-size: 0.8rem;
+}
+
+.reco-env {
+  text-align: center;
+  font-weight: 500;
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.status-ok {
+  background: #e8f5e9;
+  color: #2e7d32;
+}
+
+.status-nok {
+  background: #fff3e0;
+  color: #ef6c00;
+}
+
+.status-en-cours {
+  background: #e3f2fd;
+  color: #1565c0;
+}
+
+.reco-absent {
+  background: #fafafa;
+}
+
+.reco-loading,
+.reco-error {
+  font-size: 0.85rem;
+  color: #666;
+}
+
+.reco-error {
+  color: #b00020;
+}
+
+.reco-ticket-mini {
+  margin-top: 2px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.7rem;
+  color: #555;
+}
+
+.reco-ticket-id {
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: rgba(25, 118, 210, 0.08);
+  border: 1px solid rgba(25, 118, 210, 0.35);
+  font-weight: 600;
+  color: #1565c0;
+}
+
+.reco-ticket-link {
+  margin-left: 4px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 0.75rem;
+  padding: 0;
+  color: #1976d2;
+}
+
+.reco-ticket-link:hover {
+  text-decoration: underline;
 }
 
 .metrics-grid {
@@ -439,6 +606,36 @@
     color: #666;
 }
 
+.metrics-actions {
+    margin-top: 16px;
+    display: flex;
+    justify-content: center;
+}
+
+.btn-status-reconciliation {
+    padding: 10px 22px;
+    border-radius: 999px;
+    border: none;
+    background: linear-gradient(135deg, #1976D2, #5A88B8);
+    color: #fff;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.16);
+    transition: background 0.2s ease, box-shadow 0.2s ease, transform 0.1s ease;
+
+    &:hover {
+        background: linear-gradient(135deg, #155a9c, #3a6fa3);
+        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+        transform: translateY(-1px);
+    }
+
+    &:active {
+        transform: translateY(0);
+        box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18);
+    }
+}
+
 @media (max-width: 768px) {
     .dashboard-info {
         grid-template-columns: 1fr;
@@ -452,6 +649,130 @@
     border-radius: 8px;
     padding: 20px;
     box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+/* Modal statut des réconciliations */
+.status-modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.45);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 2000;
+}
+
+.status-modal-container {
+    width: 100%;
+    max-width: 620px;
+    background: #ffffff;
+    border-radius: 16px;
+    box-shadow: var(--rd-shadow-lg);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+.status-modal-header {
+    padding: 16px 20px;
+    background: linear-gradient(135deg, #1976D2, #5A88B8);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.status-modal-header h3 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
+}
+
+.status-modal-body {
+    padding: 16px 20px 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.status-modal-footer {
+    padding: 12px 20px 16px;
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    background: #fafafa;
+    border-top: 1px solid #e0e0e0;
+}
+
+.status-modal-body .form-row {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.status-modal-body .form-group {
+    flex: 1 1 0;
+    min-width: 200px;
+}
+
+.status-modal-body label {
+    display: block;
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: #555;
+    margin-bottom: 4px;
+}
+
+.status-date-input {
+    width: 100%;
+    padding: 8px 10px;
+    border-radius: 8px;
+    border: 1px solid #d0d0d0;
+    font-size: 0.9rem;
+    box-sizing: border-box;
+}
+
+.status-modal-error {
+    margin-top: 6px;
+    font-size: 0.85rem;
+    color: #b00020;
+}
+
+.releve-summary-ok {
+    padding: 8px 10px;
+    margin-bottom: 8px;
+    border-radius: 8px;
+    background: #e8f5e9;
+    color: #2e7d32;
+    font-size: 0.9rem;
+}
+
+.releve-mini-summary {
+    margin-top: 8px;
+}
+
+.btn-cancel,
+.btn-confirm {
+    padding: 8px 16px;
+    border-radius: 999px;
+    border: none;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+}
+
+.btn-cancel {
+    background: #e0e0e0;
+    color: #333;
+}
+
+.btn-confirm {
+    background: #1976D2;
+    color: #fff;
+}
+
+.btn-confirm:hover {
+    background: #155a9c;
 }
 
 .detailed-metrics-header {

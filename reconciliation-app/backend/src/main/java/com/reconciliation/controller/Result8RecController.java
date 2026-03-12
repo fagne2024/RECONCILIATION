@@ -56,6 +56,11 @@ public class Result8RecController {
             body.setTraitement(determineDefaultTraitement(body));
             log.info("🔄 Traitement par défaut défini: {}", body.getTraitement());
         }
+        // Définir l'environnement par défaut si non spécifié
+        if (body.getEnv() == null || body.getEnv().trim().isEmpty()) {
+            body.setEnv("TOTAL");
+            log.info("🔄 Env par défaut défini: TOTAL");
+        }
         
         // Définir le username depuis le contexte de la requête
         String username = RequestContextUtil.getUsernameFromRequest();
@@ -227,6 +232,10 @@ public class Result8RecController {
             if (r.getTraitement() == null || r.getTraitement().trim().isEmpty()) {
                 r.setTraitement(determineDefaultTraitement(r));
             }
+            // Définir l'environnement par défaut si non spécifié
+            if (r.getEnv() == null || r.getEnv().trim().isEmpty()) {
+                r.setEnv("TOTAL");
+            }
             
             // Définir le username depuis le contexte de la requête
             if (username != null && !username.isEmpty()) {
@@ -238,6 +247,74 @@ public class Result8RecController {
         }
         log.info("✅ bulk result8rec: {} lignes, {} doublons", rows.size(), duplicates);
         return ResponseEntity.ok().body("Saved=" + (rows.size() - duplicates) + ", Duplicates=" + duplicates);
+    }
+
+    /**
+     * Retourne la liste des pays et services distincts présents dans result8rec,
+     * ainsi qu'une map pays -> liste de services, après application éventuelle
+     * du cloisonnement par pays.
+     */
+    @GetMapping("/filters")
+    public ResponseEntity<java.util.Map<String, Object>> getDistinctCountriesAndServices() {
+        // On réutilise la méthode list() pour bénéficier du cloisonnement par pays
+        ResponseEntity<List<Result8RecEntity>> listResponse = list();
+        List<Result8RecEntity> data = listResponse.getBody();
+        if (data == null) {
+            data = java.util.Collections.emptyList();
+        }
+
+        java.util.Set<String> countries = new java.util.HashSet<>();
+        java.util.Set<String> services = new java.util.HashSet<>();
+        java.util.Map<String, java.util.Set<String>> countryServiceMap = new java.util.HashMap<>();
+
+        for (Result8RecEntity e : data) {
+            String country = e.getCountry();
+            String service = e.getService();
+            if (country != null) {
+                country = country.trim();
+            }
+            if (service != null) {
+                service = service.trim();
+            }
+
+            // Ignorer les valeurs de type "agence" dans la liste des services (ex: AUCATxxxxx)
+            boolean isAgencyLike = service != null && service.toUpperCase().startsWith("AUCAT");
+            if (isAgencyLike) {
+                service = null;
+            }
+
+            if (country != null && !country.isEmpty()) {
+                countries.add(country);
+            }
+            if (service != null && !service.isEmpty()) {
+                services.add(service);
+            }
+
+            if (country != null && !country.isEmpty() && service != null && !service.isEmpty()) {
+                countryServiceMap
+                    .computeIfAbsent(country, k -> new java.util.HashSet<>())
+                    .add(service);
+            }
+        }
+
+        java.util.List<String> countriesList = new java.util.ArrayList<>(countries);
+        java.util.List<String> servicesList = new java.util.ArrayList<>(services);
+        java.util.Collections.sort(countriesList);
+        java.util.Collections.sort(servicesList);
+
+        java.util.Map<String, java.util.List<String>> countryServiceListMap = new java.util.HashMap<>();
+        for (java.util.Map.Entry<String, java.util.Set<String>> entry : countryServiceMap.entrySet()) {
+            java.util.List<String> svcs = new java.util.ArrayList<>(entry.getValue());
+            java.util.Collections.sort(svcs);
+            countryServiceListMap.put(entry.getKey(), svcs);
+        }
+
+        java.util.Map<String, Object> result = new java.util.HashMap<>();
+        result.put("countries", countriesList);
+        result.put("services", servicesList);
+        result.put("countryServices", countryServiceListMap);
+
+        return ResponseEntity.ok(result);
     }
 
     @DeleteMapping("/{id}")
@@ -256,6 +333,7 @@ public class Result8RecController {
                     if (body.getAgency() != null) existing.setAgency(body.getAgency());
                     if (body.getService() != null) existing.setService(body.getService());
                     if (body.getCountry() != null) existing.setCountry(body.getCountry());
+                    if (body.getEnv() != null) existing.setEnv(body.getEnv());
                     
                     existing.setTotalTransactions(body.getTotalTransactions());
                     existing.setTotalVolume(body.getTotalVolume());
@@ -294,9 +372,9 @@ public class Result8RecController {
                     }
                     
                     Result8RecEntity saved = repository.save(existing);
-                    log.info("✅ result8rec mis à jour id={} - Date: {}, Agency: {}, Service: {}, Country: {}, Transactions: {}, Volume: {}, Matches: {}, BoOnly: {}, PartnerOnly: {}, Mismatches: {}, MatchRate: {}, Comment: '{}'", 
+                    log.info("✅ result8rec mis à jour id={} - Date: {}, Agency: {}, Service: {}, Country: {}, Env: {}, Transactions: {}, Volume: {}, Matches: {}, BoOnly: {}, PartnerOnly: {}, Mismatches: {}, MatchRate: {}, Comment: '{}'", 
                             saved.getId(), saved.getDate(), saved.getAgency(), saved.getService(), 
-                            saved.getCountry(), saved.getTotalTransactions(), saved.getTotalVolume(),
+                            saved.getCountry(), saved.getEnv(), saved.getTotalTransactions(), saved.getTotalVolume(),
                             saved.getMatches(), saved.getBoOnly(), saved.getPartnerOnly(), saved.getMismatches(), saved.getMatchRate(), saved.getComment());
                     return ResponseEntity.ok(saved);
                 })

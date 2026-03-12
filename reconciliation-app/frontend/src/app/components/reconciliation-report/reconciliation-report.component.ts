@@ -29,6 +29,7 @@ export interface ReconciliationReportData {
     agency: string;
     service: string;
     country: string;
+    env?: string;
     glpiId?: string;
     totalTransactions: number;
     totalVolume: number;
@@ -372,6 +373,7 @@ export interface ReconciliationReportData {
                             <th class="col-text">Agence</th>
                             <th class="col-service">Service</th>
                             <th class="col-pays">Pays</th>
+                            <th class="col-env">Env</th>
                             <th class="col-transactions">Transactions</th>
                             <th class="col-number">Volume</th>
                             <th class="col-number">Correspondances</th>
@@ -426,6 +428,20 @@ export interface ReconciliationReportData {
                                 </ng-container>
                                 <ng-template #editCountry>
                                     <input [(ngModel)]="item.country" class="edit-input" placeholder="Pays"/>
+                                </ng-template>
+                            </td>
+                            <td class="text-cell col-env">
+                                <ng-container *ngIf="editingRow !== item; else editEnv">
+                                    <span class="env-text" [title]="item.env || 'TOTAL'">
+                                        {{ item.env || 'TOTAL' }}
+                                    </span>
+                                </ng-container>
+                                <ng-template #editEnv>
+                                    <select [(ngModel)]="item.env" class="edit-select">
+                                        <option *ngFor="let env of envOptions" [ngValue]="env">
+                                            {{ env }}
+                                        </option>
+                                    </select>
                                 </ng-template>
                             </td>
                             <td class="col-transactions">
@@ -2233,6 +2249,12 @@ export interface ReconciliationReportData {
             gap: 8px;
         }
 
+        .col-env {
+            width: 70px;
+            text-align: center;
+            white-space: nowrap;
+        }
+
         .btn-releve {
             background: #17a2b8;
             color: white;
@@ -2870,6 +2892,8 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
 
     // Environnement du relevé (BET, HT, HUBAO, TOP20, GU3, TOTAL, ...)
     releveEnv: string | null = null;
+    // Liste des environnements disponibles pour édition
+    readonly envOptions: string[] = ['BET', 'HT', 'HUBAO', 'TOP20', 'GU3', 'TOTAL'];
 
     // Pays autorisés pour le cloisonnement
     private allowedCountryCodes: string[] | null = null;
@@ -2890,6 +2914,9 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
     
     // Anti-spam popup erreurs autosave
     private lastGlpiAutoSaveErrorAt = 0;
+
+    // Ouverture automatique du relevé depuis le dashboard
+    private pendingReleveFromDashboard: { country: string; service: string; date: string; env: string | null } | null = null;
 
     constructor(
         private route: ActivatedRoute,
@@ -3000,6 +3027,23 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         this.loadedFromDb = false;
         this.currentSource = null;
         
+        // Lire d'éventuels paramètres de requête (pour ouverture directe depuis le dashboard)
+        this.route.queryParams.pipe(take(1)).subscribe(params => {
+            const country = params['country'];
+            const service = params['service'];
+            const date = params['date'];
+            const env = params['env'];
+            const openReleve = params['openReleve'];
+
+            if (env) {
+                this.releveEnv = env;
+            }
+
+            if (country && service && date && openReleve === '1') {
+                this.pendingReleveFromDashboard = { country, service, date, env: env || null };
+            }
+        });
+
         // Vérifier immédiatement si on a des données en cours disponibles
         // Si oui, afficher la vue 'live' par défaut et charger les données immédiatement
         const summary = this.reconciliationSummaryService.getAgencySummary();
@@ -3013,6 +3057,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             this.extractUniqueValues();
             this.filterReport();
             this.hasSummary = true;
+            this.tryOpenReleveFromDashboard();
         } else {
             // Vérifier les résultats de réconciliation
             this.appStateService.getReconciliationResults().pipe(take(1)).subscribe(response => {
@@ -3025,6 +3070,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                     this.generateReportData();
                     this.extractUniqueValues();
                     this.filterReport();
+                    this.tryOpenReleveFromDashboard();
                 }
             });
         }
@@ -4582,6 +4628,39 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         // Réinitialiser à la première page et mettre à jour la pagination
         this.currentPage = 1;
         this.updatePagination();
+
+        // Si on vient du dashboard avec une demande spécifique de relevé, tenter de l'ouvrir
+        this.tryOpenReleveFromDashboard();
+    }
+
+    /**
+     * Si des paramètres (pays, service, date) ont été fournis via l'URL,
+     * ouvre automatiquement le relevé correspondant une fois les données chargées/filtrées.
+     */
+    private tryOpenReleveFromDashboard(): void {
+        if (!this.pendingReleveFromDashboard || !this.filteredReportData || this.filteredReportData.length === 0) {
+            return;
+        }
+
+        const target = this.pendingReleveFromDashboard;
+        const targetDate = this.formatDateForSearch(target.date);
+
+        const matchingItem = this.filteredReportData.find(item =>
+            item &&
+            item.country === target.country &&
+            item.service === target.service &&
+            this.formatDateForSearch(item.date) === targetDate &&
+            item.status === 'OK'
+        );
+
+        if (matchingItem) {
+            // Appliquer l'environnement reçu pour le relevé affiché
+            if (target.env) {
+                this.releveEnv = target.env;
+            }
+            this.showReleveModal(matchingItem);
+            this.pendingReleveFromDashboard = null;
+        }
     }
 
     formatDate(dateStr: string): string {
@@ -5688,6 +5767,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             agency: data.agency,
             service: data.service,
             country: data.country,
+            env: data.env || 'TOTAL',
             totalTransactions: data.totalTransactions,
             totalVolume: data.totalVolume,
             matches: data.matches,
@@ -5837,6 +5917,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                         agency: r.agency,
                         service: r.service,
                         country: r.country,
+                        env: r.env,
                         glpiId: r.glpiId || r.glpi_id || '',
                         totalTransactions: r.totalTransactions || r.recordCount || 0,
                         totalVolume: r.totalVolume || 0,
@@ -6101,6 +6182,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             agency: existingRow.agency,
             service: existingRow.service,
             country: existingRow.country,
+            env: existingRow.env || 'TOTAL',
             totalTransactions: existingRow.totalTransactions,
             totalVolume: existingRow.totalVolume,
             matches: existingRow.matches,
@@ -6132,7 +6214,8 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
     private buildPartnerOnlyAndCommentOnlyUpdatePayloadFromExisting(
         existing: any,
         newPartnerOnly: number,
-        newComment: string
+        newComment: string,
+        envOverride?: string
     ): any {
         const existingStatus = (existing?.status ?? '').toString();
         const finalComment = existingStatus === 'OK' ? (existing?.comment ?? '').toString() : (newComment ?? '').toString();
@@ -6142,6 +6225,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             agency: existing?.agency,
             service: existing?.service,
             country: existing?.country,
+            env: envOverride || existing?.env || 'TOTAL',
             totalTransactions: Number(existing?.totalTransactions ?? 0) || 0,
             totalVolume: Number(existing?.totalVolume ?? 0) || 0,
             matches: Number(existing?.matches ?? 0) || 0,
@@ -6192,6 +6276,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             agency: existing.agency,
             service: existing.service,
             country: existing.country,
+            env: existing?.env ?? 'TOTAL',
             totalTransactions,
             totalVolume,
             matches,
@@ -6245,7 +6330,25 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             return;
         }
 
-        const message = `Confirmer l'enregistrement de la ligne\n\n${this.formatDate(item.date)} | ${item.agency} | ${item.service} | ${item.country}`;
+        // 1) Sélectionner l'environnement pour cette ligne
+        const envOptions = ['BET', 'HT', 'HUBAO', 'TOP20', 'GU3', 'TOTAL'];
+        const currentEnv = (item.env && envOptions.includes(item.env))
+            ? item.env
+            : (this.releveEnv && envOptions.includes(this.releveEnv) ? this.releveEnv : 'TOTAL');
+        const selectedEnv = await this.popupService.showSelectInput(
+            'Sélectionnez l\'environnement pour ce résultat :',
+            'Environnement',
+            envOptions,
+            currentEnv
+        );
+        if (!selectedEnv) {
+            // Annulation du choix => on annule la sauvegarde
+            return;
+        }
+        item.env = selectedEnv;
+
+        // 2) Confirmation finale de la sauvegarde
+        const message = `Confirmer l'enregistrement de la ligne\n\n${this.formatDate(item.date)} | ${item.agency} | ${item.service} | ${item.country}\nEnvironnement : ${item.env}`;
         const confirmed = await this.popupService.showConfirm(message, 'Confirmation de sauvegarde');
         if (!confirmed) return;
         
@@ -6278,6 +6381,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             agency: item.agency,
             service: item.service,
             country: item.country,
+            env: item.env || 'TOTAL',
             glpiId: item.glpiId || '',
             totalTransactions: item.totalTransactions,
             totalVolume: item.totalVolume,
@@ -6407,6 +6511,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             agency: recalculatedData.agency,
             service: recalculatedData.service,
             country: recalculatedData.country,
+            env: recalculatedData.env || 'TOTAL',
             totalTransactions: recalculatedData.totalTransactions,
             totalVolume: recalculatedData.totalVolume,
             matches: recalculatedData.matches,
@@ -6502,9 +6607,25 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             // L'utilisateur a annulé la sélection de date
             return;
         }
+
+        // Sélectionner l'environnement à appliquer à toutes les lignes
+        const envOptions = ['BET', 'HT', 'HUBAO', 'TOP20', 'GU3', 'TOTAL'];
+        const defaultEnvAll = this.releveEnv && envOptions.includes(this.releveEnv)
+            ? this.releveEnv
+            : 'TOTAL';
+        const selectedEnvAll = await this.popupService.showSelectInput(
+            `Sélectionnez l'environnement à appliquer à toutes les ${rowsSource.length} ligne(s) :`,
+            'Environnement pour toutes les lignes',
+            envOptions,
+            defaultEnvAll
+        );
+        if (!selectedEnvAll) {
+            // Annulation du choix d'environnement
+            return;
+        }
         
         const confirmed = await this.popupService.showConfirm(
-            `Confirmer la sauvegarde de ${rowsSource.length} ligne(s) avec la date ${selectedDate} ?`, 
+            `Confirmer la sauvegarde de ${rowsSource.length} ligne(s) avec la date ${selectedDate} et l'environnement ${selectedEnvAll} ?`, 
             'Confirmation de sauvegarde en masse'
         );
         if (!confirmed) return;
@@ -6512,14 +6633,18 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         // Préparer les payloads en distinguant CREATE vs UPDATE.
         // RÈGLE MÉTIER: en UPDATE (ligne avec id), seule la colonne "écart partenaire" doit être modifiée.
         type PreparedCreate = { mode: 'create'; sourceItem: ReconciliationReportData; payloadItem: any };
-        type PreparedUpdate = { mode: 'update'; sourceItem: ReconciliationReportData; newPartnerOnly: number; newComment: string };
+        type PreparedUpdate = { mode: 'update'; sourceItem: ReconciliationReportData; newPartnerOnly: number; newComment: string; env: string };
         const prepared: Array<PreparedCreate | PreparedUpdate> = rowsSource.map((item) => {
+            // Mettre à jour l'environnement sur l'item en mémoire
+            item.env = selectedEnvAll;
+
             if (item.id) {
                 return {
                     mode: 'update',
                     sourceItem: item,
                     newPartnerOnly: this.normalizeNumericValue(item.partnerOnly),
-                    newComment: (item.comment ?? '').toString()
+                    newComment: (item.comment ?? '').toString(),
+                    env: selectedEnvAll
                 };
             }
 
@@ -6536,6 +6661,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                     agency: recalculatedData.agency,
                     service: recalculatedData.service,
                     country: recalculatedData.country,
+                    env: selectedEnvAll,
                     glpiId: recalculatedData.glpiId || '',
                     totalTransactions: recalculatedData.totalTransactions,
                     totalVolume: recalculatedData.totalVolume,
@@ -6572,7 +6698,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                     }
 
                     const existing = await firstValueFrom(this.http.get<any>(`/api/result8rec/${id}`));
-                    const payload = this.buildPartnerOnlyAndCommentOnlyUpdatePayloadFromExisting(existing, row.newPartnerOnly, row.newComment);
+                    const payload = this.buildPartnerOnlyAndCommentOnlyUpdatePayloadFromExisting(existing, row.newPartnerOnly, row.newComment, row.env);
                     await this.putResult8RecWithRetry<any>(id, payload, { maxRetries: 3, baseDelayMs: 500 });
                     updatedCount++;
                     continue;
@@ -7136,6 +7262,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             agency: base.agency,
             service: base.service,
             country: base.country,
+            env: base.env || 'TOTAL',
             totalTransactions: base.totalTransactions,
             totalVolume: base.totalVolume,
             matches: base.matches,
@@ -7960,6 +8087,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             agency: item.agency,
             service: item.service,
             country: item.country,
+            env: item.env || 'TOTAL',
             totalTransactions: item.totalTransactions,
             totalVolume: item.totalVolume,
             matches: item.matches,
@@ -8012,6 +8140,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             agency: item.agency,
             service: item.service,
             country: item.country,
+            env: item.env || 'TOTAL',
             totalTransactions: item.totalTransactions,
             totalVolume: item.totalVolume,
             matches: item.matches,
