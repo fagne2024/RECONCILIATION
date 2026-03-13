@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy, ViewChild } from '@angular/core';
+import { Component, OnInit, OnDestroy, ViewChild, ElementRef } from '@angular/core';
 import { Router, NavigationEnd } from '@angular/router';
 import { filter, take } from 'rxjs/operators';
 import { Subscription } from 'rxjs';
@@ -18,6 +18,8 @@ import { FormControl } from '@angular/forms';
 import { Chart } from 'chart.js';
 import ChartDataLabels from 'chartjs-plugin-datalabels';
 import { MatSelect } from '@angular/material/select';
+import html2canvas from 'html2canvas';
+import { jsPDF } from 'jspdf';
 
 export type DashboardMetric = 'volume' | 'transactions' | 'revenu';
 
@@ -61,6 +63,13 @@ export class DashboardComponent implements OnInit, OnDestroy {
     // Affichage section du bas (Transactions créées par service)
     showBottomSection: boolean = false;
 
+    // Masquer / afficher les sections du dashboard (comme Transactions créées par service)
+    showBannerSection: boolean = true;
+    showReconciliationSection: boolean = true;
+    showMetricsSection: boolean = true;
+    showSummaryBarSection: boolean = true;
+    showDetailedMetricsSection: boolean = true;
+
     // Modal pour afficher les graphiques en plein écran
     showGraphModal: boolean = false;
 
@@ -101,7 +110,43 @@ export class DashboardComponent implements OnInit, OnDestroy {
         }[];
     }[] = [];
     weekDays: { label: string; date: string }[] = [];
+    visibleWeekDays: { label: string; date: string }[] = [];
+    private visibleDayIndices: number[] = [];
+    recoStats = {
+        total: 0,
+        reconcilie: 0,
+        enCours: 0,
+        nonReco: 0,
+        tauxReconcilie: 0
+    };
+    reconciliationStatusFilter: 'ALL' | 'RECONCILIE' | 'EN_COURS' | 'NON_RECONCILIE' = 'ALL';
+    reconciliationPageIndex: number = 0;
+    readonly reconciliationPageSize: number = 3;
     private allReconciliationServices: string[] = [];
+
+    // Popup "Vue semaine" (État des réconciliations)
+    recoViewModalOpen: boolean = false;
+    recoViewWeekStart: string = ''; // Lundi de la semaine affichée (YYYY-MM-DD)
+    recoViewWeekDays: { label: string; date: string }[] = [];
+    recoViewRows: {
+        service: string;
+        days: {
+            date: string;
+            status: 'RECONCILIE' | 'NON_RECONCILIE' | 'EN_COURS' | 'NON_RECONCILIE';
+            ticketId: string;
+            env: string;
+        }[];
+    }[] = [];
+    recoViewLoading: boolean = false;
+    recoViewError: string | null = null;
+    recoViewStats = {
+        total: 0,
+        reconcilie: 0,
+        enCours: 0,
+        nonReco: 0,
+        tauxReconcilie: 0
+    };
+    @ViewChild('recoViewExportContent') recoViewExportContentRef!: ElementRef<HTMLDivElement>;
 
     // Filtres
     selectedAgency: string[] = [];
@@ -186,6 +231,139 @@ export class DashboardComponent implements OnInit, OnDestroy {
         }
         
         return true;
+    }
+
+    private updateVisibleDaysWindow() {
+        if (!this.weekDays || this.weekDays.length === 0) {
+            this.visibleWeekDays = [];
+            this.visibleDayIndices = [];
+            return;
+        }
+
+        // On utilise J-1 comme jour de référence pour la fenêtre de 3 jours
+        const reference = new Date();
+        reference.setDate(reference.getDate() - 1);
+        const y = reference.getFullYear();
+        const m = (reference.getMonth() + 1).toString().padStart(2, '0');
+        const d = reference.getDate().toString().padStart(2, '0');
+        const refDateStr = `${y}-${m}-${d}`;
+
+        let endIndex = this.weekDays.findIndex(day => day.date === refDateStr);
+
+        if (endIndex === -1) {
+            // Si le jour de référence n'est pas dans la semaine (cas extrême),
+            // on prend simplement les 3 derniers jours de la semaine.
+            endIndex = this.weekDays.length - 1;
+        }
+
+        // La fenêtre doit contenir 3 jours maximum, en terminant par endIndex
+        const startIndex = Math.max(0, endIndex - 2);
+        this.visibleDayIndices = [];
+        for (let i = startIndex; i <= endIndex && i < this.weekDays.length; i++) {
+            this.visibleDayIndices.push(i);
+        }
+
+        this.visibleWeekDays = this.visibleDayIndices.map(i => this.weekDays[i]);
+    }
+
+    getVisibleDays(row: { days: { date: string; status: any; ticketId: string; env: string; }[] }) {
+        if (!row || !row.days) {
+            return [];
+        }
+        if (!this.visibleDayIndices || this.visibleDayIndices.length === 0) {
+            return row.days;
+        }
+        return this.visibleDayIndices
+            .map(index => row.days[index])
+            .filter(day => !!day);
+    }
+
+    private computeReconciliationStats() {
+        let total = 0;
+        let reconcilie = 0;
+        let enCours = 0;
+        let nonReco = 0;
+
+        this.reconciliationSummaryRows.forEach(row => {
+            row.days.forEach(day => {
+                if (!day || !day.status) {
+                    return;
+                }
+                total++;
+                if (day.status === 'RECONCILIE') {
+                    reconcilie++;
+                } else if (day.status === 'EN_COURS') {
+                    enCours++;
+                } else if (day.status === 'NON_RECONCILIE') {
+                    nonReco++;
+                }
+            });
+        });
+
+        const taux = total > 0 ? (reconcilie * 100) / total : 0;
+
+        this.recoStats = {
+            total,
+            reconcilie,
+            enCours,
+            nonReco,
+            tauxReconcilie: taux
+        };
+    }
+
+    getPagedReconciliationRows() {
+        const rows = this.getFilteredReconciliationSummaryRows();
+        if (!rows || !rows.length) {
+            return [];
+        }
+        const start = this.reconciliationPageIndex * this.reconciliationPageSize;
+        return rows.slice(start, start + this.reconciliationPageSize);
+    }
+
+    getReconciliationTotalPages(): number {
+        const rows = this.getFilteredReconciliationSummaryRows();
+        if (!rows || !rows.length) {
+            return 1;
+        }
+        return Math.max(1, Math.ceil(rows.length / this.reconciliationPageSize));
+    }
+
+    nextReconciliationPage() {
+        const totalPages = this.getReconciliationTotalPages();
+        if (this.reconciliationPageIndex < totalPages - 1) {
+            this.reconciliationPageIndex++;
+        }
+    }
+
+    prevReconciliationPage() {
+        if (this.reconciliationPageIndex > 0) {
+            this.reconciliationPageIndex--;
+        }
+    }
+
+    canGoPrevDays(): boolean {
+        return this.visibleDayIndices.length > 0 && this.visibleDayIndices[0] > 0;
+    }
+
+    canGoNextDays(): boolean {
+        return this.visibleDayIndices.length > 0 &&
+            this.visibleDayIndices[this.visibleDayIndices.length - 1] < this.weekDays.length - 1;
+    }
+
+    nextDaysWindow() {
+        if (!this.canGoNextDays()) {
+            return;
+        }
+        this.visibleDayIndices = this.visibleDayIndices.map(i => i + 1).filter(i => i < this.weekDays.length);
+        this.visibleWeekDays = this.visibleDayIndices.map(i => this.weekDays[i]);
+    }
+
+    prevDaysWindow() {
+        if (!this.canGoPrevDays()) {
+            return;
+        }
+        this.visibleDayIndices = this.visibleDayIndices.map(i => i - 1).filter(i => i >= 0);
+        this.visibleWeekDays = this.visibleDayIndices.map(i => this.weekDays[i]);
     }
 
     lineChartOptions: any = {
@@ -931,6 +1109,8 @@ export class DashboardComponent implements OnInit, OnDestroy {
                             this.weekDays.push({ label, date: dateStr });
                         }
 
+                        this.updateVisibleDaysWindow();
+
                         // Construire la liste des services à afficher et la liste pour le filtre
                         const servicesSet = new Set<string>();
                         if (targetCountry && this.reconciliationCountryServices && this.reconciliationCountryServices[targetCountry]) {
@@ -1021,6 +1201,8 @@ export class DashboardComponent implements OnInit, OnDestroy {
                         });
 
                         this.reconciliationSummaryRows = rows;
+                        this.reconciliationPageIndex = 0;
+                        this.computeReconciliationStats();
                         this.reconciliationSummaryLoading = false;
                     } catch (e: any) {
                         console.error('Erreur lors du calcul du résumé des réconciliations:', e);
@@ -1034,6 +1216,231 @@ export class DashboardComponent implements OnInit, OnDestroy {
                     this.reconciliationSummaryLoading = false;
                 }
             });
+    }
+
+    /** Retourne le lundi de la semaine courante au format YYYY-MM-DD */
+    private getCurrentWeekMonday(): string {
+        const today = new Date();
+        const currentDay = today.getDay();
+        const diffToMonday = (currentDay === 0 ? -6 : 1) - currentDay;
+        const monday = new Date(today);
+        monday.setDate(today.getDate() + diffToMonday);
+        const y = monday.getFullYear();
+        const m = (monday.getMonth() + 1).toString().padStart(2, '0');
+        const d = monday.getDate().toString().padStart(2, '0');
+        return `${y}-${m}-${d}`;
+    }
+
+    /** Retourne le lundi de la semaine contenant la date donnée (YYYY-MM-DD). */
+    private getMondayOfWeek(dateStr: string): string {
+        const [y, mo, day] = dateStr.split('-').map(Number);
+        const date = new Date(y, mo - 1, day);
+        const dow = date.getDay();
+        const diffToMonday = (dow === 0 ? -6 : 1) - dow;
+        date.setDate(date.getDate() + diffToMonday);
+        const yy = date.getFullYear();
+        const mm = (date.getMonth() + 1).toString().padStart(2, '0');
+        const dd = date.getDate().toString().padStart(2, '0');
+        return `${yy}-${mm}-${dd}`;
+    }
+
+    openRecoViewModal(): void {
+        this.recoViewWeekStart = this.getCurrentWeekMonday();
+        this.recoViewModalOpen = true;
+        this.recoViewError = null;
+        this.loadReconciliationSummaryForView();
+    }
+
+    closeRecoViewModal(): void {
+        this.recoViewModalOpen = false;
+    }
+
+    async exportRecoViewToPdf(): Promise<void> {
+        if (!this.recoViewExportContentRef?.nativeElement) {
+            return;
+        }
+        try {
+            const element = this.recoViewExportContentRef.nativeElement;
+            const originalOverflow = element.style.overflowY;
+            const originalMaxHeight = element.style.maxHeight;
+            element.style.overflowY = 'visible';
+            element.style.maxHeight = 'none';
+
+            const tableWrapper = element.querySelector('.reco-view-table-wrapper') as HTMLElement | null;
+            let twOverflow: string | null = null;
+            let twMaxHeight: string | null = null;
+            if (tableWrapper) {
+                twOverflow = tableWrapper.style.overflow;
+                twMaxHeight = tableWrapper.style.maxHeight;
+                tableWrapper.style.overflow = 'visible';
+                tableWrapper.style.maxHeight = 'none';
+            }
+
+            const canvas = await html2canvas(element, {
+                scale: 2,
+                useCORS: true,
+                logging: false,
+                backgroundColor: '#ffffff'
+            });
+
+            element.style.overflowY = originalOverflow;
+            element.style.maxHeight = originalMaxHeight;
+            if (tableWrapper) {
+                tableWrapper.style.overflow = twOverflow ?? '';
+                tableWrapper.style.maxHeight = twMaxHeight ?? '';
+            }
+
+            const imgWidth = canvas.width;
+            const imgHeight = canvas.height;
+            const imgData = canvas.toDataURL('image/png');
+
+            // Créer un PDF dont la taille correspond presque exactement au contenu
+            const pdf = new jsPDF('l', 'px', [imgWidth, imgHeight]);
+            const pdfW = pdf.internal.pageSize.getWidth();
+            const pdfH = pdf.internal.pageSize.getHeight();
+
+            pdf.addImage(imgData, 'PNG', 0, 0, pdfW, pdfH);
+
+            const fileName = `Etat-reconciliations-semaine-${(this.recoViewWeekStart || '').replace(/-/g, '')}.pdf`;
+            pdf.save(fileName);
+        } catch (e) {
+            console.error('Erreur export PDF vue semaine:', e);
+        }
+    }
+
+    onRecoViewDateChange(dateStr: string): void {
+        if (!dateStr) return;
+        this.recoViewWeekStart = this.getMondayOfWeek(dateStr);
+        this.loadReconciliationSummaryForView();
+    }
+
+    loadReconciliationSummaryForView(): void {
+        this.recoViewError = null;
+        this.recoViewLoading = true;
+        this.recoViewRows = [];
+        this.recoViewWeekDays = [];
+
+        this.dashboardReconciliationService.getResult8RecData()
+            .pipe(take(1))
+            .subscribe({
+                next: (data: Result8RecData[]) => {
+                    try {
+                        const targetEnv = this.reconciliationSummaryEnv || 'TOTAL';
+                        const targetCountry = this.reconciliationSummaryCountry || '';
+                        const selectedService = (this.reconciliationSummaryService || '').trim();
+
+                        const [y, mo, d] = (this.recoViewWeekStart || '').split('-').map(Number);
+                        const startOfWeek = new Date(y, mo - 1, d);
+
+                        this.recoViewWeekDays = [];
+                        for (let i = 0; i < 7; i++) {
+                            const date = new Date(startOfWeek);
+                            date.setDate(startOfWeek.getDate() + i);
+                            const yy = date.getFullYear();
+                            const mm = (date.getMonth() + 1).toString().padStart(2, '0');
+                            const dd = date.getDate().toString().padStart(2, '0');
+                            const dateStr = `${yy}-${mm}-${dd}`;
+                            const dayNames = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
+                            this.recoViewWeekDays.push({ label: `${dayNames[i]} ${dd}/${mm}`, date: dateStr });
+                        }
+
+                        const servicesSet = new Set<string>();
+                        if (targetCountry && this.reconciliationCountryServices && this.reconciliationCountryServices[targetCountry]) {
+                            this.reconciliationCountryServices[targetCountry].forEach(s => s && servicesSet.add(s));
+                        } else if (this.allReconciliationServices?.length) {
+                            this.allReconciliationServices.forEach(s => s && servicesSet.add(s));
+                        } else {
+                            data.forEach(item => { if (item.service) servicesSet.add(item.service); });
+                        }
+                        const allServices = Array.from(servicesSet).sort();
+                        const effectiveServices = this.reconciliationSummaryService
+                            ? allServices.filter(s => s === this.reconciliationSummaryService)
+                            : allServices;
+
+                        const rows: {
+                            service: string;
+                            days: {
+                                date: string;
+                                status: 'RECONCILIE' | 'NON_RECONCILIE' | 'EN_COURS' | 'NON_RECONCILIE';
+                                ticketId: string;
+                                env: string;
+                            }[];
+                        }[] = [];
+
+                        effectiveServices.forEach(serviceName => {
+                            const dayStatuses = this.recoViewWeekDays.map(dayInfo => {
+                                const matchingForDay = data.filter(item => {
+                                    if (!item.service || item.service !== serviceName) return false;
+                                    if ((item.env || 'TOTAL') !== targetEnv) return false;
+                                    if (!item.date) return false;
+                                    if (targetCountry && item.country !== targetCountry) return false;
+                                    const dateOnly = (item.date || '').split(' ')[0];
+                                    return dateOnly === dayInfo.date;
+                                });
+                                let status: 'RECONCILIE' | 'NON_RECONCILIE' | 'EN_COURS' | 'NON_RECONCILIE';
+                                let ticketId = '';
+                                if (!matchingForDay.length) {
+                                    status = 'NON_RECONCILIE';
+                                } else {
+                                    const allTermine = matchingForDay.every(line =>
+                                        (line.traitement || '').trim().toLowerCase() === 'terminé'
+                                    );
+                                    const allOk = matchingForDay.every(line =>
+                                        (line.status || '').trim().toUpperCase() === 'OK'
+                                    );
+                                    status = allTermine ? 'RECONCILIE' : 'EN_COURS';
+                                    const ticketLine = matchingForDay.find(line => (line.glpiId || '').trim().length > 0);
+                                    ticketId = ticketLine ? (ticketLine.glpiId || '') : '';
+                                }
+                                return { date: dayInfo.date, status, ticketId, env: targetEnv };
+                            });
+                            rows.push({ service: serviceName, days: dayStatuses });
+                        });
+
+                        this.recoViewRows = rows;
+                        this.recoViewStats = this.computeReconciliationStatsFromRows(rows);
+                        this.recoViewLoading = false;
+                    } catch (e: any) {
+                        console.error('Erreur vue semaine réconciliations:', e);
+                        this.recoViewError = 'Erreur lors du chargement de la vue semaine.';
+                        this.recoViewLoading = false;
+                    }
+                },
+                error: (err) => {
+                    console.error('Erreur chargement result8rec pour vue semaine:', err);
+                    this.recoViewError = 'Erreur lors du chargement des données.';
+                    this.recoViewLoading = false;
+                }
+            });
+    }
+
+    private computeReconciliationStatsFromRows(rows: { service: string; days: { date: string; status: string }[] }[]): { total: number; reconcilie: number; enCours: number; nonReco: number; tauxReconcilie: number } {
+        let total = 0, reconcilie = 0, enCours = 0, nonReco = 0;
+        rows.forEach(row => {
+            row.days.forEach(day => {
+                total++;
+                if (day.status === 'RECONCILIE') reconcilie++;
+                else if (day.status === 'EN_COURS') enCours++;
+                else nonReco++;
+            });
+        });
+        const taux = total > 0 ? (reconcilie * 100) / total : 0;
+        return { total, reconcilie, enCours, nonReco, tauxReconcilie: taux };
+    }
+
+    setReconciliationStatusFilter(status: 'RECONCILIE' | 'EN_COURS' | 'NON_RECONCILIE'): void {
+        this.reconciliationStatusFilter =
+            this.reconciliationStatusFilter === status ? 'ALL' : status;
+    }
+
+    getFilteredReconciliationSummaryRows() {
+        if (!this.reconciliationSummaryRows || this.reconciliationStatusFilter === 'ALL') {
+            return this.reconciliationSummaryRows;
+        }
+        const target = this.reconciliationStatusFilter;
+        return this.reconciliationSummaryRows.filter(row =>
+            row.days.some(day => day.status === target)
+        );
     }
 
     private loadFilterOptions() {

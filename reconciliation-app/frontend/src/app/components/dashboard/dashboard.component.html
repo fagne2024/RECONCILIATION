@@ -55,7 +55,15 @@
   <div class="dashboard-container">
     <!-- Ancien header retiré : titre et actualiser sont dans topnav + page-header -->
     <!-- Bande défilante des soldes par compte -->
-    <div class="scrolling-banner-wrapper" *ngIf="accountBalances && accountBalances.length > 0">
+    <div class="dashboard-section section-banner" *ngIf="accountBalances && accountBalances.length > 0">
+        <div class="bottom-section-header">
+            <h4>💳 Soldes par compte</h4>
+            <button class="toggle-btn" [class.active]="showBannerSection" (click)="showBannerSection = !showBannerSection">
+                <span class="toggle-icon">▾</span>
+                {{ showBannerSection ? 'Masquer' : 'Afficher' }}
+            </button>
+        </div>
+        <div *ngIf="showBannerSection" class="scrolling-banner-wrapper">
         <div class="scrolling-banner-header">
             <span class="banner-title">{{ bannerTitle }}</span>
             <span class="accounts-count">{{ accountBalances.length / 2 }} comptes</span>
@@ -71,50 +79,93 @@
                 </div>
             </div>
         </div>
+        </div>
     </div>
 
     <div class="dashboard-info">
         <div class="info-section reconciliation-state">
+            <div class="bottom-section-header">
+                <h4>📌 État des réconciliations</h4>
+                <button class="toggle-btn" [class.active]="showReconciliationSection" (click)="showReconciliationSection = !showReconciliationSection">
+                    <span class="toggle-icon">▾</span>
+                    {{ showReconciliationSection ? 'Masquer' : 'Afficher' }}
+                </button>
+            </div>
+            <div *ngIf="showReconciliationSection">
             <div class="info-header">
-                <div>
-                    <h3>📌 État des réconciliations</h3>
+                <div class="head-left">
+                    <div class="head-title-row">
+                        <div class="head-icon">🔄</div>
+                        <h3 class="head-title">État des réconciliations</h3>
+                        <button type="button" class="reco-view-btn" (click)="openRecoViewModal()" title="Voir toute la semaine">
+                            View
+                        </button>
+                    </div>
                     <p class="reco-subtitle">Période : cette semaine (lundi à dimanche)</p>
                 </div>
-                <div class="reco-controls">
-                    <div class="reco-control">
-                        <label>Pays</label>
-                        <select
-                            [(ngModel)]="reconciliationSummaryCountry"
-                            (change)="loadReconciliationSummary()"
-                        >
-                            <option value="">Tous</option>
-                            <option *ngFor="let country of reconciliationSummaryCountries" [ngValue]="country">
-                                {{ country }}
-                            </option>
-                        </select>
+                <div class="head-right">
+                    <div class="reco-controls">
+                        <div class="filter-group">
+                            <span class="filter-label">Pays</span>
+                            <select
+                                class="filter-select"
+                                [(ngModel)]="reconciliationSummaryCountry"
+                                (change)="loadReconciliationSummary()"
+                            >
+                                <option value="">Tous</option>
+                                <option *ngFor="let country of reconciliationSummaryCountries" [ngValue]="country">
+                                    {{ country }}
+                                </option>
+                            </select>
+                        </div>
+                        <div class="filter-group">
+                            <span class="filter-label">Service</span>
+                            <select
+                                class="filter-select"
+                                [(ngModel)]="reconciliationSummaryService"
+                                (change)="loadReconciliationSummary()"
+                            >
+                                <option value="">Tous</option>
+                                <option *ngFor="let service of reconciliationSummaryServices" [ngValue]="service">
+                                    {{ service }}
+                                </option>
+                            </select>
+                        </div>
+                        <div class="filter-group">
+                            <span class="filter-label">Environnement</span>
+                            <select
+                                class="filter-select"
+                                [(ngModel)]="reconciliationSummaryEnv"
+                                (change)="loadReconciliationSummary()"
+                            >
+                                <option *ngFor="let env of reconciliationEnvOptions" [ngValue]="env">
+                                    {{ env === 'TOTAL' ? 'T-E' : env }}
+                                </option>
+                            </select>
+                        </div>
                     </div>
-                    <div class="reco-control">
-                        <label>Service</label>
-                        <select
-                            [(ngModel)]="reconciliationSummaryService"
-                            (change)="loadReconciliationSummary()"
+                    <div class="reco-legend">
+                        <div
+                            class="legend-item"
+                            [ngClass]="{ 'legend-active': reconciliationStatusFilter === 'RECONCILIE' }"
+                            (click)="setReconciliationStatusFilter('RECONCILIE')"
                         >
-                            <option value="">Tous</option>
-                            <option *ngFor="let service of reconciliationSummaryServices" [ngValue]="service">
-                                {{ service }}
-                            </option>
-                        </select>
-                    </div>
-                    <div class="reco-control">
-                        <label>Environnement</label>
-                        <select
-                            [(ngModel)]="reconciliationSummaryEnv"
-                            (change)="loadReconciliationSummary()"
+                            <span class="legend-dot legend-ok"></span>Réconcilié
+                        </div>
+                        <div
+                            class="legend-item"
+                            [ngClass]="{ 'legend-active': reconciliationStatusFilter === 'EN_COURS' }"
+                            (click)="setReconciliationStatusFilter('EN_COURS')"
                         >
-                            <option *ngFor="let env of reconciliationEnvOptions" [ngValue]="env">
-                                {{ env === 'TOTAL' ? 'T-E' : env }}
-                            </option>
-                        </select>
+                            <span class="legend-dot legend-pending"></span>En cours
+                        </div>
+                        <div
+                            class="legend-item"
+                            [ngClass]="{ 'legend-active': reconciliationStatusFilter === 'NON_RECONCILIE' }"
+                            (click)="setReconciliationStatusFilter('NON_RECONCILIE')"
+                        >
+                            <span class="legend-dot legend-failed"></span>Non réconcilié
+                        </div>
                     </div>
                 </div>
             </div>
@@ -131,17 +182,42 @@
                     <thead>
                         <tr>
                             <th>Service</th>
-                            <th *ngFor="let d of weekDays">{{ d.label }}</th>
+                            <th
+                                *ngFor="let d of visibleWeekDays; let i = index"
+                                class="reco-day-header"
+                            >
+                                <button
+                                    *ngIf="i === 0"
+                                    type="button"
+                                    class="reco-day-nav reco-day-nav-left"
+                                    (click)="prevDaysWindow()"
+                                    [disabled]="!canGoPrevDays()"
+                                    title="Jours précédents"
+                                >
+                                    ◀
+                                </button>
+                                <span class="reco-day-label">{{ d.label }}</span>
+                                <button
+                                    *ngIf="i === visibleWeekDays.length - 1"
+                                    type="button"
+                                    class="reco-day-nav reco-day-nav-right"
+                                    (click)="nextDaysWindow()"
+                                    [disabled]="!canGoNextDays()"
+                                    title="Jours suivants"
+                                >
+                                    ▶
+                                </button>
+                            </th>
                         </tr>
                     </thead>
                     <tbody>
                         <tr
-                            *ngFor="let row of reconciliationSummaryRows"
+                            *ngFor="let row of getPagedReconciliationRows()"
                         >
                             <td class="reco-service" [title]="row.service">{{ row.service }}</td>
                             <td
                                 class="reco-status"
-                                *ngFor="let day of row.days"
+                                *ngFor="let day of getVisibleDays(row)"
                             >
                                 <span
                                     class="status-pill"
@@ -150,38 +226,90 @@
                                         'status-nok': day.status === 'NON_RECONCILIE',
                                         'status-en-cours': day.status === 'EN_COURS'
                                     }"
+                                    (click)="day.status === 'RECONCILIE' && day.ticketId ? openGlpiTicketFromDashboard(day.ticketId) : null"
                                 >
-                                    {{
-                                        day.status === 'RECONCILIE'
-                                            ? 'Réconcilié'
-                                            : (day.status === 'EN_COURS'
-                                                ? 'En cours...'
-                                                : 'Non réconcilié')
-                                    }}
+                                    <span class="status-label">
+                                        {{
+                                            day.status === 'RECONCILIE'
+                                                ? 'Réconcilié'
+                                                : (day.status === 'EN_COURS'
+                                                    ? 'En cours...'
+                                                    : 'Non réconcilié')
+                                        }}
+                                    </span>
+                                    <ng-container *ngIf="day.status === 'RECONCILIE' && day.ticketId">
+                                        <span class="status-id">{{ day.ticketId }}</span>
+                                        <span class="status-link-icon">🔗</span>
+                                    </ng-container>
                                 </span>
-                                <div
-                                    class="reco-ticket-mini"
-                                    *ngIf="day.ticketId"
-                                >
-                                    <span class="reco-ticket-id">ID {{ day.ticketId }}</span>
-                                    <button
-                                        type="button"
-                                        class="reco-ticket-link"
-                                        (click)="openGlpiTicketFromDashboard(day.ticketId)"
-                                        title="Ouvrir le ticket dans GLPI"
-                                    >
-                                        🔗
-                                    </button>
-                                </div>
                             </td>
                         </tr>
                     </tbody>
                 </table>
             </div>
+            <div
+                *ngIf="!reconciliationSummaryLoading && !reconciliationSummaryError && reconciliationSummaryRows.length"
+                class="reco-stats-row"
+            >
+                <div class="reco-stat-item">
+                    <span class="reco-stat-label">Total semaine</span>
+                    <span class="reco-stat-value total">{{ recoStats.total }}</span>
+                </div>
+                <div class="reco-stat-item">
+                    <span class="reco-stat-label">Réconciliés</span>
+                    <span class="reco-stat-value ok">{{ recoStats.reconcilie }}</span>
+                </div>
+                <div class="reco-stat-item">
+                    <span class="reco-stat-label">En cours</span>
+                    <span class="reco-stat-value pending">{{ recoStats.enCours }}</span>
+                </div>
+                <div class="reco-stat-item">
+                    <span class="reco-stat-label">Non réconciliés</span>
+                    <span class="reco-stat-value failed">{{ recoStats.nonReco }}</span>
+                </div>
+                <div class="reco-stat-item">
+                    <span class="reco-stat-label">Taux réconcilié</span>
+                    <span class="reco-stat-value ok">
+                        {{ recoStats.tauxReconcilie | number:'1.0-1' }} %
+                    </span>
+                </div>
+            </div>
+            <div
+                *ngIf="!reconciliationSummaryLoading && !reconciliationSummaryError && reconciliationSummaryRows.length > reconciliationPageSize"
+                class="reco-pagination"
+            >
+                <button
+                    type="button"
+                    class="reco-page-btn"
+                    (click)="prevReconciliationPage()"
+                    [disabled]="reconciliationPageIndex === 0"
+                >
+                    ‹
+                </button>
+                <span class="reco-page-info">
+                    Page {{ reconciliationPageIndex + 1 }} / {{ getReconciliationTotalPages() }}
+                </span>
+                <button
+                    type="button"
+                    class="reco-page-btn"
+                    (click)="nextReconciliationPage()"
+                    [disabled]="reconciliationPageIndex >= getReconciliationTotalPages() - 1"
+                >
+                    ›
+                </button>
+            </div>
+            </div>
         </div>
 
         <div class="info-section">
-            <h3>📊 Métriques rapides</h3>
+            <div class="bottom-section-header">
+                <h4>📊 Métriques rapides</h4>
+                <button class="toggle-btn" [class.active]="showMetricsSection" (click)="showMetricsSection = !showMetricsSection">
+                    <span class="toggle-icon">▾</span>
+                    {{ showMetricsSection ? 'Masquer' : 'Afficher' }}
+                </button>
+            </div>
+            <div *ngIf="showMetricsSection">
             <div class="metrics-period-filter">
                 <label for="metricsPeriod">Période</label>
                 <select id="metricsPeriod" [(ngModel)]="metricsPeriod" (change)="loadDashboardData()">
@@ -218,11 +346,20 @@
                     Voir le statut des réconciliations
                 </button>
             </div>
+            </div>
         </div>
     </div>
 
     <!-- Barre récapitulative clients/services/pays -->
-    <div class="dashboard-summary-bar">
+    <div class="dashboard-section section-summary-bar">
+        <div class="bottom-section-header">
+            <h4>📋 Récap. clients / services / pays</h4>
+            <button class="toggle-btn" [class.active]="showSummaryBarSection" (click)="showSummaryBarSection = !showSummaryBarSection">
+                <span class="toggle-icon">▾</span>
+                {{ showSummaryBarSection ? 'Masquer' : 'Afficher' }}
+            </button>
+        </div>
+        <div *ngIf="showSummaryBarSection" class="dashboard-summary-bar">
       <div class="summary-bar-item">
         <div class="summary-bar-label">Nombre de clients</div>
         <div class="summary-bar-value">{{ totalClientsCount }}</div>
@@ -236,10 +373,19 @@
         <div class="summary-bar-value">{{ totalCountriesCount }}</div>
       </div>
     </div>
-    <!-- Fin barre récapitulative -->
+        </div>
+    </div>
 
     <!-- Nouvelle section pour les métriques détaillées -->
-    <div class="detailed-metrics-section">
+    <div class="dashboard-section detailed-metrics-section">
+        <div class="bottom-section-header">
+            <h4>📈 Métriques détaillées</h4>
+            <button class="toggle-btn" [class.active]="showDetailedMetricsSection" (click)="showDetailedMetricsSection = !showDetailedMetricsSection">
+                <span class="toggle-icon">▾</span>
+                {{ showDetailedMetricsSection ? 'Masquer' : 'Afficher' }}
+            </button>
+        </div>
+        <div *ngIf="showDetailedMetricsSection">
         <div class="detailed-metrics-header" style="display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 16px;">
           <div class="metric-select" style="flex: 1; text-align: left; min-width: 180px;">
             <mat-form-field appearance="fill" class="filter-select">
@@ -451,6 +597,8 @@
                     </div>
                 </div>
             </div>
+
+        </div>
 
             <!-- Statistiques des transactions créées par service -->
             <div class="transaction-created-stats-section">
@@ -772,6 +920,93 @@
                         (click)="openReleveDetail()">
                     Voir détail
                 </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Vue semaine - État des réconciliations -->
+    <div *ngIf="recoViewModalOpen" class="reco-view-modal-overlay" (click)="closeRecoViewModal()">
+        <div class="reco-view-modal-container" (click)="$event.stopPropagation()">
+            <div class="reco-view-modal-header">
+                <h3>Vue semaine – État des réconciliations</h3>
+                <button type="button" class="btn-close-modal" (click)="closeRecoViewModal()" title="Fermer">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div #recoViewExportContent class="reco-view-modal-body">
+                <div class="reco-view-date-filter">
+                    <label for="recoViewDate">Semaine du</label>
+                    <input
+                        id="recoViewDate"
+                        type="date"
+                        [ngModel]="recoViewWeekStart"
+                        (ngModelChange)="onRecoViewDateChange($event)"
+                        class="reco-view-date-input"
+                    >
+                </div>
+                <div *ngIf="recoViewLoading" class="reco-loading">Chargement...</div>
+                <div *ngIf="!recoViewLoading && recoViewError" class="reco-error">{{ recoViewError }}</div>
+                <div *ngIf="!recoViewLoading && !recoViewError" class="reco-view-table-wrapper">
+                    <table class="reco-table reco-view-table">
+                        <thead>
+                            <tr>
+                                <th>Service</th>
+                                <th *ngFor="let d of recoViewWeekDays" class="reco-day-header">{{ d.label }}</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr *ngFor="let row of recoViewRows">
+                                <td class="reco-service" [title]="row.service">{{ row.service }}</td>
+                                <td class="reco-status" *ngFor="let day of row.days">
+                                    <span
+                                        class="status-pill"
+                                        [ngClass]="{
+                                            'status-ok': day.status === 'RECONCILIE',
+                                            'status-nok': day.status === 'NON_RECONCILIE',
+                                            'status-en-cours': day.status === 'EN_COURS'
+                                        }"
+                                        (click)="day.status === 'RECONCILIE' && day.ticketId ? openGlpiTicketFromDashboard(day.ticketId) : null"
+                                    >
+                                        <span class="status-label">
+                                            {{ day.status === 'RECONCILIE' ? 'Réconcilié' : (day.status === 'EN_COURS' ? 'En cours...' : 'Non réconcilié') }}
+                                        </span>
+                                        <ng-container *ngIf="day.status === 'RECONCILIE' && day.ticketId">
+                                            <span class="status-id">{{ day.ticketId }}</span>
+                                            <span class="status-link-icon">🔗</span>
+                                        </ng-container>
+                                    </span>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div *ngIf="!recoViewLoading && !recoViewError && recoViewRows.length" class="reco-stats-row">
+                    <div class="reco-stat-item">
+                        <span class="reco-stat-label">Total semaine</span>
+                        <span class="reco-stat-value total">{{ recoViewStats.total }}</span>
+                    </div>
+                    <div class="reco-stat-item">
+                        <span class="reco-stat-label">Réconciliés</span>
+                        <span class="reco-stat-value ok">{{ recoViewStats.reconcilie }}</span>
+                    </div>
+                    <div class="reco-stat-item">
+                        <span class="reco-stat-label">En cours</span>
+                        <span class="reco-stat-value pending">{{ recoViewStats.enCours }}</span>
+                    </div>
+                    <div class="reco-stat-item">
+                        <span class="reco-stat-label">Non réconciliés</span>
+                        <span class="reco-stat-value failed">{{ recoViewStats.nonReco }}</span>
+                    </div>
+                    <div class="reco-stat-item">
+                        <span class="reco-stat-label">Taux réconcilié</span>
+                        <span class="reco-stat-value ok">{{ recoViewStats.tauxReconcilie | number:'1.0-1' }} %</span>
+                    </div>
+                </div>
+            <div class="reco-view-modal-footer">
+                <button type="button" class="btn-export-pdf" (click)="exportRecoViewToPdf()" [disabled]="recoViewLoading || !recoViewRows.length" title="Exporter en PDF">
+                    Exporter PDF
+                </button>
+                <button type="button" class="btn-cancel" (click)="closeRecoViewModal()">Fermer</button>
             </div>
         </div>
     </div>
