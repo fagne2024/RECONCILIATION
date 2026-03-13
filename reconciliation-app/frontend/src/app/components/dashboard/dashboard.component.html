@@ -112,7 +112,7 @@
                             (change)="loadReconciliationSummary()"
                         >
                             <option *ngFor="let env of reconciliationEnvOptions" [ngValue]="env">
-                                {{ env }}
+                                {{ env === 'TOTAL' ? 'T-E' : env }}
                             </option>
                         </select>
                     </div>
@@ -182,6 +182,16 @@
 
         <div class="info-section">
             <h3>📊 Métriques rapides</h3>
+            <div class="metrics-period-filter">
+                <label for="metricsPeriod">Période</label>
+                <select id="metricsPeriod" [(ngModel)]="metricsPeriod" (change)="loadDashboardData()">
+                    <option value="semaine">Semaine</option>
+                    <option value="mois">Mois</option>
+                    <option value="trimestre">Trimestre</option>
+                    <option value="semestre">Semestre</option>
+                    <option value="annee">Année</option>
+                </select>
+            </div>
             <div *ngIf="error" class="error-message">
                 {{ error }}
             </div>
@@ -683,7 +693,7 @@
                                 <mat-option value="HUBAO">HUBAO</mat-option>
                                 <mat-option value="TOP20">TOP20</mat-option>
                                 <mat-option value="GU3">GU3</mat-option>
-                                <mat-option value="TOTAL">TOTAL</mat-option>
+                                <mat-option value="TOTAL">T-E</mat-option>
                             </mat-select>
                         </mat-form-field>
                     </div>

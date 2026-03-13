@@ -68,8 +68,9 @@ export class DashboardService {
 
     constructor(private http: HttpClient) {}
 
-    getDashboardMetrics(): Observable<DashboardMetrics> {
-        return this.http.get<DashboardMetrics>(`${this.apiUrl}/dashboard-metrics`);
+    getDashboardMetrics(period?: string): Observable<DashboardMetrics> {
+        const params = period ? `?period=${encodeURIComponent(period)}` : '';
+        return this.http.get<DashboardMetrics>(`${this.apiUrl}/dashboard-metrics${params}`);
     }
 
     getFilterOptions(): Observable<FilterOptions> {

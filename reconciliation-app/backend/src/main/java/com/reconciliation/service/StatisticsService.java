@@ -38,6 +38,9 @@ public class StatisticsService {
     @Autowired
     private com.reconciliation.service.OperationService operationService;
 
+    @Autowired
+    private com.reconciliation.repository.Result8RecRepository result8RecRepository;
+
     @Transactional
     public List<Statistics> saveStatistics(List<Statistics> statistics) {
         try {
@@ -126,78 +129,119 @@ public class StatisticsService {
     }
 
     public Map<String, Object> getDashboardMetrics() {
-        return getDashboardMetrics(null);
+        return getDashboardMetrics(null, "semaine");
     }
     
     public Map<String, Object> getDashboardMetrics(String username) {
-        logger.info("Calculating dashboard metrics for username: {}", username);
+        return getDashboardMetrics(username, "semaine");
+    }
+
+    public Map<String, Object> getDashboardMetrics(String username, String period) {
+        logger.info("Calculating dashboard metrics for username: {}, period: {}", username, period);
         
         try {
             Map<String, Object> metrics = new HashMap<>();
             
-            // Récupérer les pays autorisés pour l'utilisateur
-            List<String> allowedCountries = null;
-            if (username != null && !username.isEmpty()) {
-                allowedCountries = paysFilterService.getAllowedPaysCodes(username);
-                // null signifie tous les pays (GNL ou admin)
+            // Référence temps = J-1
+            LocalDate reference = LocalDate.now().minusDays(1);
+
+            // Déterminer l'intervalle [start, end) selon la période demandée
+            LocalDate start;
+            LocalDate end;
+            String p = (period == null ? "semaine" : period.toLowerCase());
+            switch (p) {
+                case "mois":
+                    start = reference.withDayOfMonth(1);
+                    end = start.plusMonths(1);
+                    break;
+                case "trimestre":
+                    int currentQuarter = (reference.getMonthValue() - 1) / 3;
+                    start = LocalDate.of(reference.getYear(), currentQuarter * 3 + 1, 1);
+                    end = start.plusMonths(3);
+                    break;
+                case "semestre":
+                    int currentSemester = (reference.getMonthValue() - 1) / 6;
+                    start = LocalDate.of(reference.getYear(), currentSemester * 6 + 1, 1);
+                    end = start.plusMonths(6);
+                    break;
+                case "annee":
+                    start = LocalDate.of(reference.getYear(), 1, 1);
+                    end = start.plusYears(1);
+                    break;
+                case "semaine":
+                default:
+                    start = reference.with(java.time.DayOfWeek.MONDAY);
+                    end = start.plusDays(7);
+                    break;
             }
-            
-            // Total des réconciliations (nombre total d'enregistrements du résumé = sauvegardes par service/date)
-            long totalReconciliations;
-            if (allowedCountries == null) {
-                totalReconciliations = agencySummaryRepository.count();
-            } else if (allowedCountries.isEmpty()) {
-                totalReconciliations = 0;
-            } else {
-                totalReconciliations = agencySummaryRepository.countByCountries(allowedCountries);
-            }
-            metrics.put("totalReconciliations", totalReconciliations);
-            
-            // Total des fichiers traités (nombre de fichiers uploadés et sauvegardés dans statistics)
-            long totalFiles;
-            if (allowedCountries == null) {
-                totalFiles = statisticsRepository.count();
-            } else if (allowedCountries.isEmpty()) {
-                totalFiles = 0;
-            } else {
-                totalFiles = statisticsRepository.countByCountries(allowedCountries);
-            }
-            metrics.put("totalFiles", totalFiles);
-            
-            // Dernière activité (date la plus récente)
-            String lastActivity;
-            if (allowedCountries == null) {
-                lastActivity = agencySummaryRepository.findMaxDate();
-            } else if (allowedCountries.isEmpty()) {
-                lastActivity = null;
-            } else {
-                lastActivity = agencySummaryRepository.findMaxDateByCountries(allowedCountries);
-            }
-            
-            LocalDate yesterday = LocalDate.now().minusDays(1);
-            String lastActivityStr;
-            if (lastActivity != null) {
-                LocalDate lastActivityDate = LocalDate.parse(lastActivity);
-                if (lastActivityDate.equals(yesterday)) {
-                    lastActivityStr = "Aujourd'hui";
-                } else {
-                    lastActivityStr = formatLastActivity(lastActivityDate);
+
+            // Charger toutes les lignes result8rec
+            List<com.reconciliation.entity.Result8RecEntity> allResults = result8RecRepository.findAll();
+
+            // Filtrer les données de result8rec sur la période choisie
+            List<com.reconciliation.entity.Result8RecEntity> periodResults = new ArrayList<>();
+            for (com.reconciliation.entity.Result8RecEntity r : allResults) {
+                if (r.getDate() == null || r.getDate().trim().isEmpty()) continue;
+                String dateOnly = r.getDate().split(" ")[0];
+                try {
+                    LocalDate d = LocalDate.parse(dateOnly);
+                    if ((d.isEqual(start) || d.isAfter(start)) && d.isBefore(end)) {
+                        periodResults.add(r);
+                    }
+                } catch (Exception ignored) {
+                    // Date invalide : on ignore cette ligne pour les métriques rapides
                 }
+            }
+
+            // Total des réconciliations sur la période (nombre de couples distincts date+service+pays)
+            java.util.Set<String> periodKeys = new java.util.HashSet<>();
+            for (com.reconciliation.entity.Result8RecEntity r : periodResults) {
+                String key = (r.getDate() == null ? "" : r.getDate().split(" ")[0]) + "|" +
+                             (r.getService() == null ? "" : r.getService()) + "|" +
+                             (r.getCountry() == null ? "" : r.getCountry());
+                periodKeys.add(key);
+            }
+            long totalReconciliations = periodKeys.size();
+            metrics.put("totalReconciliations", totalReconciliations);
+
+            // Total des fichiers traités sur la période (approximation: nombre total de lignes result8rec de la période)
+            long totalFiles = periodResults.size();
+            metrics.put("totalFiles", totalFiles);
+
+            // Dernière activité sur la période (date max parmi les dates de la période)
+            LocalDate lastActivityDate = null;
+            for (com.reconciliation.entity.Result8RecEntity r : periodResults) {
+                if (r.getDate() == null || r.getDate().trim().isEmpty()) continue;
+                String dateOnly = r.getDate().split(" ")[0];
+                try {
+                    LocalDate d = LocalDate.parse(dateOnly);
+                    if (lastActivityDate == null || d.isAfter(lastActivityDate)) {
+                        lastActivityDate = d;
+                    }
+                } catch (Exception ignored) {}
+            }
+
+            String lastActivityStr;
+            if (lastActivityDate != null) {
+                lastActivityStr = formatLastActivity(lastActivityDate);
             } else {
                 lastActivityStr = "Aucune activité récente";
             }
             metrics.put("lastActivity", lastActivityStr);
-            
-            // Statistiques du jour: nombre de réconciliations pour la date J (aujourd'hui)
-            LocalDate todayDate = LocalDate.now();
-            long todayReconciliations;
-            if (allowedCountries == null) {
-                todayReconciliations = agencySummaryRepository.countByDate(todayDate.toString());
-            } else if (allowedCountries.isEmpty()) {
-                todayReconciliations = 0;
-            } else {
-                todayReconciliations = agencySummaryRepository.countByDateAndCountries(todayDate.toString(), allowedCountries);
+
+            // Statistiques du jour : nombre de réconciliations (relevés distincts) pour J-1
+            long todayReconciliations = 0;
+            java.util.Set<String> todayKeys = new java.util.HashSet<>();
+            for (com.reconciliation.entity.Result8RecEntity r : periodResults) {
+                if (r.getDate() == null || r.getDate().trim().isEmpty()) continue;
+                String dateOnly = r.getDate().split(" ")[0];
+                if (!dateOnly.equals(reference.toString())) continue;
+                String key = dateOnly + "|" +
+                             (r.getService() == null ? "" : r.getService()) + "|" +
+                             (r.getCountry() == null ? "" : r.getCountry());
+                todayKeys.add(key);
             }
+            todayReconciliations = todayKeys.size();
             metrics.put("todayReconciliations", todayReconciliations);
             
             logger.info("Dashboard metrics calculated: totalReconciliations={}, totalFiles={}, lastActivity={}, todayReconciliations={}", 
@@ -211,15 +255,17 @@ public class StatisticsService {
     }
     
     private String formatLastActivity(LocalDate date) {
-        LocalDate today = LocalDate.now();
-        LocalDate yesterday = today.minusDays(1);
+        // Dans le métier réconciliation, la référence temporelle est J-1.
+        // On considère donc "aujourd'hui" = J-1 réel, "hier" = J-2, etc.
+        LocalDate reference = LocalDate.now().minusDays(1);
+        LocalDate referenceYesterday = reference.minusDays(1);
         
-        if (date.equals(today)) {
+        if (date.equals(reference)) {
             return "Aujourd'hui";
-        } else if (date.equals(yesterday)) {
+        } else if (date.equals(referenceYesterday)) {
             return "Hier";
         } else {
-            long daysDiff = java.time.temporal.ChronoUnit.DAYS.between(date, today);
+            long daysDiff = java.time.temporal.ChronoUnit.DAYS.between(date, reference);
             if (daysDiff == 1) {
                 return "Il y a 1 jour";
             } else if (daysDiff < 7) {

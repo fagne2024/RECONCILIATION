@@ -432,14 +432,14 @@ export interface ReconciliationReportData {
                             </td>
                             <td class="text-cell col-env">
                                 <ng-container *ngIf="editingRow !== item; else editEnv">
-                                    <span class="env-text" [title]="item.env || 'TOTAL'">
-                                        {{ item.env || 'TOTAL' }}
+                                    <span class="env-text" [title]="item.env || 'T-E'">
+                                        {{ (item.env || 'TOTAL') === 'TOTAL' ? 'T-E' : item.env }}
                                     </span>
                                 </ng-container>
                                 <ng-template #editEnv>
                                     <select [(ngModel)]="item.env" class="edit-select">
                                         <option *ngFor="let env of envOptions" [ngValue]="env">
-                                            {{ env }}
+                                            {{ env === 'TOTAL' ? 'T-E' : env }}
                                         </option>
                                     </select>
                                 </ng-template>
@@ -707,8 +707,8 @@ export interface ReconciliationReportData {
                             <h4>{{releveData?.service || '-'}}</h4>
                             <div class="releve-date">Date: {{formatDate(releveData?.date || '')}}</div>
                         </div>
-                        <div class="releve-env" *ngIf="releveEnv">
-                            ENVIRONNEMENT : <span class="releve-env-value">{{ releveEnv }}</span>
+                    <div class="releve-env" *ngIf="releveEnv">
+                            ENVIRONNEMENT : <span class="releve-env-value">{{ releveEnv === 'TOTAL' ? 'T-E' : releveEnv }}</span>
                         </div>
                     </div>
                     
@@ -6331,7 +6331,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         }
 
         // 1) Sélectionner l'environnement pour cette ligne
-        const envOptions = ['BET', 'HT', 'HUBAO', 'TOP20', 'GU3', 'TOTAL'];
+        const envOptions = this.envOptions;
         const currentEnv = (item.env && envOptions.includes(item.env))
             ? item.env
             : (this.releveEnv && envOptions.includes(this.releveEnv) ? this.releveEnv : 'TOTAL');
@@ -6402,6 +6402,8 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             next: (saved) => {
                 item.id = saved.id;
                 this.popupService.showSuccess('Ligne sauvegardée avec succès');
+                // Notifier le dashboard que les métriques doivent être rafraîchies
+                this.appStateService.notifySummarySaved();
                 // Rechargement automatique désactivé pour permettre de voir les logs
                 // this.forceReload();
             },
@@ -6609,7 +6611,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         }
 
         // Sélectionner l'environnement à appliquer à toutes les lignes
-        const envOptions = ['BET', 'HT', 'HUBAO', 'TOP20', 'GU3', 'TOTAL'];
+        const envOptions = this.envOptions;
         const defaultEnvAll = this.releveEnv && envOptions.includes(this.releveEnv)
             ? this.releveEnv
             : 'TOTAL';
@@ -6701,6 +6703,8 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                     const payload = this.buildPartnerOnlyAndCommentOnlyUpdatePayloadFromExisting(existing, row.newPartnerOnly, row.newComment, row.env);
                     await this.putResult8RecWithRetry<any>(id, payload, { maxRetries: 3, baseDelayMs: 500 });
                     updatedCount++;
+                    // Notifier pour rafraîchir les métriques
+                    this.appStateService.notifySummarySaved();
                     continue;
                 }
 
@@ -6712,6 +6716,8 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                             item.id = saved?.id;
                             createdCount++;
                             createdPayloads.push(payloadItem);
+                            // Notifier pour rafraîchir les métriques
+                            this.appStateService.notifySummarySaved();
                             resolve();
                         },
                         error: async (err: HttpErrorResponse) => {
@@ -6750,6 +6756,8 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                                 try {
                                     await this.putResult8RecWithRetry<any>(existingId, updatePayload, { maxRetries: 3, baseDelayMs: 500 });
                                     updatedCount++;
+                                    // Notifier pour rafraîchir les métriques
+                                    this.appStateService.notifySummarySaved();
                                     resolve();
                                 } catch (e) {
                                     errorCount++;

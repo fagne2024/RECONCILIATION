@@ -79,14 +79,16 @@ public class StatisticsController {
     }
 
     @GetMapping("/dashboard-metrics")
-    public ResponseEntity<?> getDashboardMetrics(HttpServletRequest request) {
+    public ResponseEntity<?> getDashboardMetrics(
+            @RequestParam(required = false, defaultValue = "semaine") String period,
+            HttpServletRequest request) {
         logger.info("=== DASHBOARD METRICS REQUEST RECEIVED ===");
         logger.info("Method: {}", request.getMethod());
         logger.info("Origin: {}", request.getHeader("Origin"));
         
         try {
             String username = RequestContextUtil.getUsernameFromRequest();
-            Map<String, Object> metrics = statisticsService.getDashboardMetrics(username);
+            Map<String, Object> metrics = statisticsService.getDashboardMetrics(username, period);
             logger.info("Dashboard metrics calculated successfully");
             return ResponseEntity.ok(metrics);
         } catch (Exception e) {

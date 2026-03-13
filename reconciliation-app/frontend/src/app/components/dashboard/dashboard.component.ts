@@ -83,7 +83,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
 
     // Résumé "État des réconciliations" (bloc de gauche)
     reconciliationSummaryDate: string = ''; // utilisé pour initialiser, mais le calcul se fait sur "cette semaine"
-    reconciliationSummaryEnv: string = 'TOTAL';
+    reconciliationSummaryEnv: string = 'BET';
     reconciliationSummaryCountry: string = '';
     reconciliationSummaryCountries: string[] = [];
     reconciliationSummaryService: string = '';
@@ -233,6 +233,9 @@ export class DashboardComponent implements OnInit, OnDestroy {
     totalVolume: number = 0;
     totalTransactions: number = 0;
     totalClients: number = 0;
+
+    // Période pour les métriques rapides (semaine, mois, trimestre, semestre, annee)
+    metricsPeriod: 'semaine' | 'mois' | 'trimestre' | 'semestre' | 'annee' = 'semaine';
 
     // Soldes par compte pour la bande défilante
     accountBalances: Array<{accountName: string, countryCode: string, balance: number, flag: string}> = [];
@@ -852,7 +855,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
         this.loading = true;
         this.error = null;
 
-        this.dashboardService.getDashboardMetrics().subscribe({
+        this.dashboardService.getDashboardMetrics(this.metricsPeriod).subscribe({
             next: (metrics: DashboardMetrics) => {
                 this.totalReconciliations = metrics.totalReconciliations;
                 this.totalFiles = metrics.totalFiles;
@@ -873,8 +876,9 @@ export class DashboardComponent implements OnInit, OnDestroy {
      * puis déclenche un premier chargement du résumé.
      */
     private initReconciliationSummaryDefaults(): void {
+        // ENV par défaut : BET
         if (!this.reconciliationSummaryEnv) {
-            this.reconciliationSummaryEnv = 'TOTAL';
+            this.reconciliationSummaryEnv = 'BET';
         }
         if (this.reconciliationSummaryCountries && this.reconciliationSummaryCountries.length && !this.reconciliationSummaryCountry) {
             // Par défaut, pas de filtre pays (tous), mais on pourrait choisir le premier si besoin

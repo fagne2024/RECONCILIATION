@@ -396,7 +396,37 @@
 
 .info-section h3 {
     color: #1976D2;
-    margin-bottom: 15px;
+    margin-bottom: 10px;
+}
+
+// Petit filtre de période pour les métriques rapides
+.metrics-period-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 10px;
+  font-size: 0.8rem;
+  color: #666;
+
+  label {
+    font-weight: 500;
+  }
+
+  select {
+    padding: 4px 8px;
+    border-radius: 6px;
+    border: 1px solid #ddd;
+    font-size: 0.8rem;
+    background: #f8f9fa;
+    cursor: pointer;
+
+    &:focus {
+      outline: none;
+      border-color: #1976D2;
+      box-shadow: 0 0 0 2px rgba(25, 118, 210, 0.15);
+      background: #fff;
+    }
+  }
 }
 
 .reco-subtitle {

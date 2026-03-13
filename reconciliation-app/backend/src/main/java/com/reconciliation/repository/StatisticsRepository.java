@@ -144,6 +144,12 @@ public interface StatisticsRepository extends JpaRepository<Statistics, Long> {
 
     @Query("SELECT COUNT(s) FROM Statistics s WHERE (:countries IS NULL OR s.country IN :countries)")
     long countByCountries(@Param("countries") List<String> countries);
+
+    @Query("SELECT MAX(s.date) FROM Statistics s WHERE (:countries IS NULL OR s.country IN :countries)")
+    LocalDate findMaxDateByCountries(@Param("countries") List<String> countries);
+
+    @Query("SELECT COUNT(s) FROM Statistics s WHERE s.date = :date AND (:countries IS NULL OR s.country IN :countries)")
+    long countByDateAndCountries(@Param("date") LocalDate date, @Param("countries") List<String> countries);
     
     @Query("SELECT COUNT(DISTINCT s.agency) FROM Statistics s WHERE " +
            "(:agency IS NULL OR s.agency = :agency) AND " +
