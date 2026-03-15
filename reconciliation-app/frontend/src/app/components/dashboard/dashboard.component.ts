@@ -43,6 +43,10 @@ export class DashboardComponent implements OnInit, OnDestroy {
     totalFiles: number = 0;
     lastActivity: string = 'Chargement...';
     todayReconciliations: number = 0;
+    /** Réconciliations aujourd'hui affichées (comptées deux fois comme demandé). */
+    get todayReconciliationsDisplay(): number {
+        return (this.todayReconciliations || 0) * 2;
+    }
     loading: boolean = true;
     error: string | null = null;
 
@@ -147,6 +151,30 @@ export class DashboardComponent implements OnInit, OnDestroy {
         tauxReconcilie: 0
     };
     @ViewChild('recoViewExportContent') recoViewExportContentRef!: ElementRef<HTMLDivElement>;
+
+    // Graphiques État des réconciliations (donut + évolution par jour)
+    recoDonutChartData: ChartConfiguration<'doughnut'>['data'] = { labels: [], datasets: [] };
+    recoDonutChartOptions: ChartConfiguration<'doughnut'>['options'] = {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+            legend: { position: 'bottom' },
+            title: { display: true, text: 'RÉPARTITION PAR STATUT' }
+        }
+    };
+    recoEvolutionChartData: ChartConfiguration<'bar'>['data'] = { labels: [], datasets: [] };
+    recoEvolutionChartOptions: ChartConfiguration<'bar'>['options'] = {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+            legend: { position: 'top' },
+            title: { display: true, text: 'ÉVOLUTION PAR JOUR' }
+        },
+        scales: {
+            x: { stacked: true },
+            y: { stacked: true, beginAtZero: true }
+        }
+    };
 
     // Filtres
     selectedAgency: string[] = [];
@@ -309,6 +337,56 @@ export class DashboardComponent implements OnInit, OnDestroy {
             nonReco,
             tauxReconcilie: taux
         };
+        this.updateRecoChartsData();
+    }
+
+    /** Met à jour les données des graphiques donut et évolution par jour. */
+    private updateRecoChartsData(): void {
+        const s = this.recoStats;
+        this.recoDonutChartData = {
+            labels: ['Réconcilié', 'En cours', 'Non réconcilié'],
+            datasets: [{
+                data: [s.reconcilie, s.enCours, s.nonReco],
+                backgroundColor: ['#388e3c', '#1976d2', '#f57c00'],
+                borderWidth: 0
+            }]
+        };
+        const evolution = this.getRecoEvolutionByDay();
+        this.recoEvolutionChartData = {
+            labels: evolution.labels,
+            datasets: [
+                { label: 'Réconcilié', data: evolution.reconcilie, backgroundColor: '#388e3c', stack: 'stack1' },
+                { label: 'En cours', data: evolution.enCours, backgroundColor: '#1976d2', stack: 'stack1' },
+                { label: 'Non réconcilié', data: evolution.nonReco, backgroundColor: '#f57c00', stack: 'stack1' }
+            ]
+        };
+    }
+
+    /** Retourne les totaux par jour pour le graphique évolution (Lun, Mar, ...). */
+    private getRecoEvolutionByDay(): { labels: string[]; reconcilie: number[]; enCours: number[]; nonReco: number[] } {
+        const labels: string[] = [];
+        const reconcilie: number[] = [];
+        const enCours: number[] = [];
+        const nonReco: number[] = [];
+        if (!this.weekDays.length || !this.reconciliationSummaryRows.length) {
+            return { labels, reconcilie, enCours, nonReco };
+        }
+        const dayNames = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
+        this.weekDays.forEach((dayInfo, dayIndex) => {
+            labels.push(dayNames[dayIndex] || dayInfo.label.split(' ')[0]);
+            let r = 0, e = 0, n = 0;
+            this.reconciliationSummaryRows.forEach(row => {
+                const day = row.days[dayIndex];
+                if (!day || !day.status) return;
+                if (day.status === 'RECONCILIE') r++;
+                else if (day.status === 'EN_COURS') e++;
+                else n++;
+            });
+            reconcilie.push(r);
+            enCours.push(e);
+            nonReco.push(n);
+        });
+        return { labels, reconcilie, enCours, nonReco };
     }
 
     getPagedReconciliationRows() {

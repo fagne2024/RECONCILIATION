@@ -40,7 +40,7 @@
         <div class="hk-strip-sep"></div>
         <div class="hk-strip-item">
           <span class="hk-strip-label">Aujourd'hui</span>
-          <span class="hk-strip-value">{{ todayReconciliations | number:'1.0-0' }}</span>
+          <span class="hk-strip-value">{{ todayReconciliationsDisplay | number:'1.0-0' }}</span>
         </div>
         <div class="hk-strip-sep"></div>
         <div class="hk-strip-item">
@@ -333,7 +333,7 @@
                     <div class="metric-label">Fichiers traités</div>
                 </div>
                 <div class="metric">
-                    <div class="metric-value">{{todayReconciliations}}</div>
+                    <div class="metric-value">{{todayReconciliationsDisplay}}</div>
                     <div class="metric-label">Réconciliations aujourd'hui</div>
                 </div>
                 <div class="metric">
@@ -345,6 +345,38 @@
                 <button type="button" class="btn-status-reconciliation" (click)="openReleveStatusModal()">
                     Voir le statut des réconciliations
                 </button>
+            </div>
+
+            <!-- Graphiques état des réconciliations (donut + évolution par jour) -->
+            <div *ngIf="!reconciliationSummaryLoading && !reconciliationSummaryError && reconciliationSummaryRows.length && recoStats.total > 0" class="reco-charts-row">
+                <div class="reco-chart-block reco-chart-donut">
+                    <div class="reco-chart-legend-top">
+                        <span class="reco-legend-dot ok"></span> Réconcilié
+                        <span class="reco-legend-dot pending"></span> En cours
+                        <span class="reco-legend-dot failed"></span> Non réconcilié
+                    </div>
+                    <div class="reco-chart-canvas-wrap">
+                        <canvas baseChart
+                            type="doughnut"
+                            [data]="recoDonutChartData"
+                            [options]="recoDonutChartOptions">
+                        </canvas>
+                    </div>
+                    <div class="reco-chart-legend-detail">
+                        <div><span class="reco-legend-dot ok"></span> Réconcilié : {{ recoStats.reconcilie }} ({{ (recoStats.total > 0 ? (recoStats.reconcilie / recoStats.total * 100) : 0) | number:'1.0-0' }} %)</div>
+                        <div><span class="reco-legend-dot pending"></span> En cours : {{ recoStats.enCours }} ({{ (recoStats.total > 0 ? (recoStats.enCours / recoStats.total * 100) : 0) | number:'1.0-0' }} %)</div>
+                        <div><span class="reco-legend-dot failed"></span> Non réconcilié : {{ recoStats.nonReco }} ({{ (recoStats.total > 0 ? (recoStats.nonReco / recoStats.total * 100) : 0) | number:'1.0-0' }} %)</div>
+                    </div>
+                </div>
+                <div class="reco-chart-block reco-chart-evolution">
+                    <div class="reco-chart-canvas-wrap reco-chart-evolution-wrap">
+                        <canvas baseChart
+                            type="bar"
+                            [data]="recoEvolutionChartData"
+                            [options]="recoEvolutionChartOptions">
+                        </canvas>
+                    </div>
+                </div>
             </div>
             </div>
         </div>

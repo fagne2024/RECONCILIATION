@@ -204,8 +204,8 @@ public class StatisticsService {
             long totalReconciliations = periodKeys.size();
             metrics.put("totalReconciliations", totalReconciliations);
 
-            // Total des fichiers traités sur la période (approximation: nombre total de lignes result8rec de la période)
-            long totalFiles = periodResults.size();
+            // Fichiers traités = nombre de réconciliations distinctes (date+service+pays), pas chaque ligne
+            long totalFiles = periodKeys.size();
             metrics.put("totalFiles", totalFiles);
 
             // Dernière activité sur la période (date max parmi les dates de la période)
