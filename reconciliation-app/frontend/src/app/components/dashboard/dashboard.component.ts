@@ -43,9 +43,13 @@ export class DashboardComponent implements OnInit, OnDestroy {
     totalFiles: number = 0;
     lastActivity: string = 'Chargement...';
     todayReconciliations: number = 0;
-    /** Réconciliations aujourd'hui affichées (comptées deux fois comme demandé). */
+    /** Réconciliations aujourd'hui : un seul enregistrement compté. */
     get todayReconciliationsDisplay(): number {
-        return (this.todayReconciliations || 0) * 2;
+        return this.todayReconciliations || 0;
+    }
+    /** Fichiers traités : comptés 2 fois l'enregistrement. */
+    get totalFilesDisplay(): number {
+        return (this.totalFiles || 0) * 2;
     }
     loading: boolean = true;
     error: string | null = null;
