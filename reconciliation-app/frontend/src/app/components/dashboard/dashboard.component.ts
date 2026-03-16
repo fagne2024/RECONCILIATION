@@ -1168,7 +1168,9 @@ export class DashboardComponent implements OnInit, OnDestroy {
                         const targetCountry = this.reconciliationSummaryCountry || '';
                         const selectedService = (this.reconciliationSummaryService || '').trim();
                         // Fenêtre de temps : "cette semaine" (du lundi au dimanche courant)
+                        // Référence métier = J-1 : on ne bascule sur la nouvelle semaine qu'à partir du mardi.
                         const today = new Date();
+                        today.setDate(today.getDate() - 1); // J-1
                         const currentDay = today.getDay(); // 0 (dimanche) à 6 (samedi)
                         const diffToMonday = (currentDay === 0 ? -6 : 1) - currentDay;
                         const startOfWeek = new Date(today);
@@ -1300,9 +1302,14 @@ export class DashboardComponent implements OnInit, OnDestroy {
             });
     }
 
-    /** Retourne le lundi de la semaine courante au format YYYY-MM-DD */
+    /** Retourne le lundi de la semaine courante au format YYYY-MM-DD
+     *  en utilisant la référence métier J-1 (on ne bascule pas sur la
+     *  nouvelle semaine tant qu'on n'est pas mardi).
+     */
     private getCurrentWeekMonday(): string {
         const today = new Date();
+        // Référence = J-1 pour rester sur la semaine précédente le lundi réel
+        today.setDate(today.getDate() - 1);
         const currentDay = today.getDay();
         const diffToMonday = (currentDay === 0 ? -6 : 1) - currentDay;
         const monday = new Date(today);

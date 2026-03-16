@@ -2750,7 +2750,8 @@ End Sub`;
           finalFileName,
           {
             chunkSize: 5000,
-            useWebWorker: true,
+            // Désactivation du Web Worker pour éviter les erreurs d'export sur très gros fichiers
+            useWebWorker: false,
             enableCompression: true
           }
         );
@@ -5949,6 +5950,13 @@ End Sub`;
       
       if (this.allRows.length === 0) {
         console.log('⚠️ Aucune donnée à analyser');
+        return;
+      }
+
+      // Sécurité: désactiver l'analyse automatique pour les fichiers extrêmement volumineux
+      const MAX_ANALYSIS_ROWS = 100000;
+      if (this.allRows.length > MAX_ANALYSIS_ROWS) {
+        console.warn(`⚠️ Dataset trop volumineux (${this.allRows.length} lignes), analyse automatique des types de champs désactivée.`);
         return;
       }
 

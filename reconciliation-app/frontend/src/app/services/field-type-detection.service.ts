@@ -433,12 +433,15 @@ export class FieldTypeDetectionService {
    */
   analyzeDataset(data: any[]): ColumnAnalysis[] {
     if (data.length === 0) return [];
+    // Limiter l'échantillon pour éviter une surcharge mémoire / stack sur les très gros fichiers
+    const MAX_SAMPLE_ROWS = 5000;
+    const sample = data.length > MAX_SAMPLE_ROWS ? data.slice(0, MAX_SAMPLE_ROWS) : data;
 
-    const columns = Object.keys(data[0]);
+    const columns = Object.keys(sample[0]);
     const analyses: ColumnAnalysis[] = [];
 
     for (const column of columns) {
-      const values = data.map(row => row[column]);
+      const values = sample.map(row => row[column]);
       const analysis = this.analyzeColumn(column, values);
       analyses.push(analysis);
     }

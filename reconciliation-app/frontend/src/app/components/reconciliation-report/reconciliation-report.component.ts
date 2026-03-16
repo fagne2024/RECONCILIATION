@@ -8736,13 +8736,17 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                             resolve({ nombre: 0, volume: 0 });
                             return;
                         }
-                        const headerRow = rows[0];
-                        const headerNorm = (v: any) => String(v ?? '').trim().toLowerCase().replace(/\s+/g, '');
-                        const montantIndex = headerRow.findIndex((h: any) => headerNorm(h) === 'montant');
-                        if (montantIndex === -1) {
-                            reject(new Error('Colonne « montant » introuvable dans la première ligne du fichier.'));
-                            return;
-                        }
+        const headerRow = rows[0];
+        const headerNorm = (v: any) => String(v ?? '').trim().toLowerCase().replace(/\s+/g, '');
+        // Accepter « montant » ou « BO_montant » comme colonne de volume
+        const montantIndex = headerRow.findIndex((h: any) => {
+            const norm = headerNorm(h);
+            return norm === 'montant' || norm === 'bo_montant';
+        });
+        if (montantIndex === -1) {
+            reject(new Error('Colonne « montant » ou « BO_montant » introuvable dans la première ligne du fichier.'));
+            return;
+        }
                         const dataRows = rows.slice(1);
                         let volume = 0;
                         for (const row of dataRows) {
@@ -8777,9 +8781,13 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         }
         const headerRow = rows[0];
         const headerNorm = (v: any) => String(v ?? '').trim().toLowerCase().replace(/\s+/g, '');
-        const montantIndex = headerRow.findIndex((h: any) => headerNorm(h) === 'montant');
+        // Accepter « montant » ou « BO_montant » comme colonne de volume
+        const montantIndex = headerRow.findIndex((h: any) => {
+            const norm = headerNorm(h);
+            return norm === 'montant' || norm === 'bo_montant';
+        });
         if (montantIndex === -1) {
-            throw new Error('Colonne « montant » introuvable dans la première ligne du fichier.');
+            throw new Error('Colonne « montant » ou « BO_montant » introuvable dans la première ligne du fichier.');
         }
         const dataRows = rows.slice(1);
         let volume = 0;
