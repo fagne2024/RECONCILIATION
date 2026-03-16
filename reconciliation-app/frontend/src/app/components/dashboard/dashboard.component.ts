@@ -1206,7 +1206,42 @@ export class DashboardComponent implements OnInit, OnDestroy {
                                 if (item.service) servicesSet.add(item.service);
                             });
                         }
-                        const allServices = Array.from(servicesSet).sort();
+
+                        // Pour chaque service, calculer la date la plus récente où il a été réellement réconcilié (traitement terminé + status OK)
+                        const lastReconciledByService: Record<string, Date | null> = {};
+                        data.forEach(item => {
+                            if (!item.service) return;
+                            const itemEnv = (item.env || 'TOTAL');
+                            if (itemEnv !== targetEnv) return;
+                            if (targetCountry && item.country !== targetCountry) return;
+                            if (!item.date) return;
+                            const isTermine = (item.traitement || '').trim().toLowerCase() === 'terminé';
+                            const isOk = (item.status || '').trim().toUpperCase() === 'OK';
+                            if (!isTermine || !isOk) return;
+                            const dateOnly = (item.date || '').split(' ')[0];
+                            const d = new Date(dateOnly);
+                            if (Number.isNaN(d.getTime())) return;
+                            const current = lastReconciledByService[item.service];
+                            if (!current || d > current) {
+                                lastReconciledByService[item.service] = d;
+                            }
+                        });
+
+                        // Règle métier : si un service n'est pas réconcilié récemment, il ne doit plus apparaître
+                        // dans les stats de "cette semaine". On ne garde que les services dont la dernière
+                        // réconciliation (terminée + OK) est au moins sur la semaine courante (référence J-1).
+                        const allServices = Array.from(servicesSet)
+                            .filter(serviceName => {
+                                const lastReco = lastReconciledByService[serviceName] || null;
+                                if (!lastReco) {
+                                    // Jamais réconcilié : on n'affiche pas ce service dans la vue semaine courante
+                                    return false;
+                                }
+                                // Garder uniquement les services dont la dernière réconciliation est dans
+                                // la fenêtre [startOfWeek, +∞)
+                                return lastReco >= startOfWeek;
+                            })
+                            .sort();
 
                         // Mettre à jour la liste de services disponible pour le filtre
                         this.reconciliationSummaryServices = allServices;
