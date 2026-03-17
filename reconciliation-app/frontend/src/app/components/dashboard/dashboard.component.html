@@ -313,6 +313,7 @@
             <div class="metrics-period-filter">
                 <label for="metricsPeriod">Période</label>
                 <select id="metricsPeriod" [(ngModel)]="metricsPeriod" (change)="onMetricsPeriodChange()">
+                    <option value="jour">Jour</option>
                     <option value="semaine">Semaine</option>
                     <option value="semaine_passee">Semaine passée</option>
                     <option value="mois">Mois</option>

@@ -150,6 +150,10 @@ public class StatisticsService {
             LocalDate end;
             String p = (period == null ? "semaine" : period.toLowerCase());
             switch (p) {
+                case "jour":
+                    start = reference;
+                    end = start.plusDays(1);
+                    break;
                 case "semaine_passee":
                     start = reference.with(java.time.DayOfWeek.MONDAY).minusDays(7);
                     end = start.plusDays(7);

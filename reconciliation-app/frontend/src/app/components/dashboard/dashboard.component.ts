@@ -497,7 +497,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
     totalClients: number = 0;
 
     // Période pour les métriques rapides (semaine, mois, trimestre, semestre, annee)
-    metricsPeriod: 'semaine' | 'semaine_passee' | 'mois' | 'trimestre' | 'semestre' | 'annee' = 'semaine';
+    metricsPeriod: 'jour' | 'semaine' | 'semaine_passee' | 'mois' | 'trimestre' | 'semestre' | 'annee' = 'semaine';
 
     // Soldes par compte pour la bande défilante
     accountBalances: Array<{accountName: string, countryCode: string, balance: number, flag: string}> = [];
@@ -1188,6 +1188,13 @@ export class DashboardComponent implements OnInit, OnDestroy {
                         let periodEnd = new Date(reference);
 
                         switch (this.metricsPeriod) {
+                            case 'jour': {
+                                periodStart = new Date(reference);
+                                periodStart.setHours(0, 0, 0, 0);
+                                periodEnd = new Date(periodStart);
+                                periodEnd.setDate(periodStart.getDate() + 1);
+                                break;
+                            }
                             case 'semaine_passee': {
                                 const currentDay = reference.getDay(); // 0 (dimanche) à 6 (samedi)
                                 const diffToMonday = (currentDay === 0 ? -6 : 1) - currentDay;
@@ -1334,16 +1341,35 @@ export class DashboardComponent implements OnInit, OnDestroy {
 
                         // Appliquer la règle "réconciliation récente" au niveau (service, pays)
                         // Cas "Semaine en cours" : inclure aussi les services réconciliés la semaine précédente.
-                        // Ainsi, on garde visibles les services actifs récents, mais on exclut ceux qui n'ont
-                        // pas eu de réconciliation depuis au moins la semaine précédente.
+                        // Cas "Jour" : inclure aussi les services réconciliés la semaine précédente pour permettre
+                        // d'afficher les statuts EN_COURS et NON_RECONCILIE du jour (même si pas de réconciliation OK).
                         let eligibilityStart = periodStart;
-                        if (this.metricsPeriod === 'semaine') {
+                        if (this.metricsPeriod === 'semaine' || this.metricsPeriod === 'jour') {
                             eligibilityStart = new Date(periodStart);
                             eligibilityStart.setDate(periodStart.getDate() - 7);
                         }
+                        // Activité sur la période (toute ligne présente) : permet d'afficher EN_COURS
+                        // même si le service n'a pas de réconciliation OK récente.
+                        const hasActivityInPeriodByKey: Record<string, boolean> = {};
+                        data.forEach(item => {
+                            if (!item.service) return;
+                            const itemEnv = (item.env || 'TOTAL');
+                            if (itemEnv !== targetEnv) return;
+                            const c = (item.country || '').trim();
+                            if (targetCountry && c !== targetCountry) return;
+                            if (!item.date) return;
+                            const dateOnly = (item.date || '').split(' ')[0];
+                            const d = new Date(dateOnly);
+                            if (Number.isNaN(d.getTime())) return;
+                            if (d < periodStart || d >= periodEnd) return;
+                            const key = `${item.service}||${c}`;
+                            hasActivityInPeriodByKey[key] = true;
+                        });
                         const effectiveRowKeys = rowKeys.filter(k => {
                             const lastReco = lastReconciledByKey[`${k.service}||${k.country}`] || null;
-                            return !!lastReco && lastReco >= eligibilityStart;
+                            const key = `${k.service}||${k.country}`;
+                            const hasActivity = !!hasActivityInPeriodByKey[key];
+                            return hasActivity || (!!lastReco && lastReco >= eligibilityStart);
                         });
 
                         const rows: {
