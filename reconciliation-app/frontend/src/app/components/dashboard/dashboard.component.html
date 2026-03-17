@@ -214,7 +214,7 @@
                         <tr
                             *ngFor="let row of getPagedReconciliationRows()"
                         >
-                            <td class="reco-service" [title]="row.service">{{ row.service }}</td>
+                            <td class="reco-service" [title]="row.label || row.service">{{ row.label || row.service }}</td>
                             <td
                                 class="reco-status"
                                 *ngFor="let day of getVisibleDays(row)"
@@ -312,8 +312,9 @@
             <div *ngIf="showMetricsSection">
             <div class="metrics-period-filter">
                 <label for="metricsPeriod">Période</label>
-                <select id="metricsPeriod" [(ngModel)]="metricsPeriod" (change)="loadDashboardData()">
+                <select id="metricsPeriod" [(ngModel)]="metricsPeriod" (change)="onMetricsPeriodChange()">
                     <option value="semaine">Semaine</option>
+                    <option value="semaine_passee">Semaine passée</option>
                     <option value="mois">Mois</option>
                     <option value="trimestre">Trimestre</option>
                     <option value="semestre">Semestre</option>
@@ -988,7 +989,7 @@
                         </thead>
                         <tbody>
                             <tr *ngFor="let row of recoViewRows">
-                                <td class="reco-service" [title]="row.service">{{ row.service }}</td>
+                                <td class="reco-service" [title]="row.label || row.service">{{ row.label || row.service }}</td>
                                 <td class="reco-status" *ngFor="let day of row.days">
                                     <span
                                         class="status-pill"
