@@ -139,7 +139,7 @@
                                 (change)="loadReconciliationSummary()"
                             >
                                 <option *ngFor="let env of reconciliationEnvOptions" [ngValue]="env">
-                                    {{ env === 'TOTAL' ? 'T-E' : env }}
+                                    {{ env === 'ALL' ? 'Tous les ENV' : (env === 'TOTAL' ? 'T-E' : env) }}
                                 </option>
                             </select>
                         </div>
@@ -978,6 +978,29 @@
                         class="reco-view-date-input"
                     >
                 </div>
+                <div class="reco-view-date-filter" style="display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap;">
+                    <div>
+                        <label for="recoViewDay">Jour</label>
+                        <select id="recoViewDay" class="reco-view-date-input" [(ngModel)]="recoViewSelectedDay">
+                            <option value="">Tous</option>
+                            <option *ngFor="let d of recoViewWeekDays" [value]="d.date">{{ d.label }}</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="recoViewCountry">Pays</label>
+                        <select id="recoViewCountry" class="reco-view-date-input" [(ngModel)]="recoViewCountry" (change)="onRecoViewFiltersChange()">
+                            <option value="">Tous</option>
+                            <option *ngFor="let c of reconciliationSummaryCountries" [value]="c">{{ c }}</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="recoViewService">Service</label>
+                        <select id="recoViewService" class="reco-view-date-input" [(ngModel)]="recoViewService" (change)="onRecoViewFiltersChange()">
+                            <option value="">Tous</option>
+                            <option *ngFor="let s of reconciliationSummaryServices" [value]="s">{{ s }}</option>
+                        </select>
+                    </div>
+                </div>
                 <div *ngIf="recoViewLoading" class="reco-loading">Chargement...</div>
                 <div *ngIf="!recoViewLoading && recoViewError" class="reco-error">{{ recoViewError }}</div>
                 <div *ngIf="!recoViewLoading && !recoViewError" class="reco-view-table-wrapper">
@@ -985,13 +1008,13 @@
                         <thead>
                             <tr>
                                 <th>Service</th>
-                                <th *ngFor="let d of recoViewWeekDays" class="reco-day-header">{{ d.label }}</th>
+                                <th *ngFor="let d of getRecoViewDisplayedDays()" class="reco-day-header">{{ d.label }}</th>
                             </tr>
                         </thead>
                         <tbody>
                             <tr *ngFor="let row of recoViewRows">
                                 <td class="reco-service" [title]="row.label || row.service">{{ row.label || row.service }}</td>
-                                <td class="reco-status" *ngFor="let day of row.days">
+                                <td class="reco-status" *ngFor="let day of getRecoViewDisplayedRowDays(row)">
                                     <span
                                         class="status-pill"
                                         [ngClass]="{

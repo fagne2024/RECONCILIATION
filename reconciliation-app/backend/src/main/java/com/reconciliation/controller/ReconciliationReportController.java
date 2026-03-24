@@ -27,11 +27,13 @@ public class ReconciliationReportController {
     public ResponseEntity<?> getManualTrx(
             @RequestParam("date") String dateStr,
             @RequestParam("service") String service,
-            @RequestParam("country") String country
+            @RequestParam("country") String country,
+            @RequestParam(value = "env", required = false) String envStr
     ) {
         try {
             LocalDate date = LocalDate.parse(dateStr);
-            Optional<ReleveManualEntity> opt = releveManualRepository.findByDateAndServiceAndCountry(date, service, country);
+            String env = (envStr == null || envStr.isBlank()) ? "TOTAL" : envStr.trim();
+            Optional<ReleveManualEntity> opt = releveManualRepository.findByReleveKey(date, service, country, env);
 
             Map<String, Object> body = new HashMap<>();
             if (opt.isPresent()) {
@@ -65,15 +67,16 @@ public class ReconciliationReportController {
 
         try {
             LocalDate date = LocalDate.parse(dto.date);
+            String normalizedEnv = (dto.env == null || dto.env.isBlank()) ? "TOTAL" : dto.env.trim();
 
             ReleveManualEntity entity = releveManualRepository
-                    .findByDateAndServiceAndCountry(date, dto.service, dto.country)
+                    .findByReleveKey(date, dto.service, dto.country, normalizedEnv)
                     .orElseGet(ReleveManualEntity::new);
 
             entity.setDate(date);
             entity.setService(dto.service);
             entity.setCountry(dto.country);
-            entity.setEnv(dto.env);
+            entity.setEnv(normalizedEnv);
             entity.setManualNombre(dto.manualNombre != null ? dto.manualNombre : 0L);
             entity.setManualVolume(dto.manualVolume != null ? dto.manualVolume : 0.0);
             entity.setRembourseNombre(dto.rembourseNombre != null ? dto.rembourseNombre : 0L);

@@ -304,6 +304,10 @@ public class PermissionInterceptor implements HandlerInterceptor {
         if (lowerPath.contains("/upload") || lowerPath.endsWith("upload")) return "upload";
         if (lowerPath.contains("/download") || lowerPath.contains("/template") || lowerPath.contains("/export") || lowerPath.endsWith("download") || lowerPath.endsWith("template") || lowerPath.endsWith("export")) return "download";
         if ((lowerPath.contains("/filter") || lowerPath.contains("/search")) && !lowerPath.contains("statistics")) return "filter";
+        // Création en masse du rapport : même droit que POST /api/result8rec (évite 403 si seul "creer" est accordé)
+        if (lowerPath.startsWith("/api/result8rec") && lowerPath.contains("/bulk") && "post".equals(lowerMethod)) {
+            return "creer";
+        }
         if (lowerPath.contains("/bulk") || lowerPath.endsWith("bulk")) return "bulk";
         if (lowerPath.contains("/recent") || lowerPath.endsWith("recent")) return "lire_recent";
         if (lowerPath.contains("/mark-ok") || lowerPath.contains("/mark") || lowerPath.endsWith("mark-ok") || lowerPath.endsWith("mark")) return "marquer";

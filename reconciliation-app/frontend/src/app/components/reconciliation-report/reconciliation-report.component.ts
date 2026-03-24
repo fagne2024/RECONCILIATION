@@ -229,6 +229,16 @@ export interface ReconciliationReportData {
                         </mat-select>
                     </mat-form-field>
                 </div>
+                <div class="filter-group" *ngIf="!hasSelectedRows()">
+                    <mat-form-field appearance="fill" class="filter-mat-select">
+                        <mat-label>ENV</mat-label>
+                        <mat-select [(ngModel)]="selectedEnvs" multiple (selectionChange)="onEnvSelectionChange()">
+                            <mat-option *ngFor="let env of uniqueEnvs" [value]="env">
+                                {{ env === 'TOTAL' ? 'T-E' : env }}
+                            </mat-option>
+                        </mat-select>
+                    </mat-form-field>
+                </div>
                 <div class="filter-group bulk-status-group" *ngIf="hasSelectedRows()">
                     <label>Changer le statut des lignes sélectionnées:</label>
                     <div class="bulk-status-controls">
@@ -277,6 +287,22 @@ export interface ReconciliationReportData {
                         </button>
                         <span class="selection-count">
                             {{getSelectedRowsCount()}} ligne(s) sélectionnée(s)
+                        </span>
+                    </div>
+                </div>
+                <div class="filter-group bulk-status-group bulk-delete-group" *ngIf="hasSelectedRows()">
+                    <label>Supprimer les lignes sélectionnées :</label>
+                    <div class="bulk-status-controls">
+                        <button
+                            type="button"
+                            class="btn btn-bulk-delete"
+                            (click)="applyBulkDelete()"
+                            [disabled]="getBulkDeletableCount() === 0"
+                            title="Supprime en base les lignes ayant un id et non verrouillées">
+                            🗑️ Supprimer la sélection ({{ getBulkDeletableCount() }})
+                        </button>
+                        <span class="selection-hint" *ngIf="getSelectedRowsCount() > getBulkDeletableCount()">
+                            {{ getSelectedRowsCount() - getBulkDeletableCount() }} ligne(s) ignorée(s) (pas d&apos;id ou verrouillée OK + Terminé)
                         </span>
                     </div>
                 </div>
@@ -367,7 +393,7 @@ export interface ReconciliationReportData {
                                     [checked]="isAllSelected()" 
                                     [indeterminate]="isSomeSelected()"
                                     (change)="toggleSelectAll($event)"
-                                    title="Sélectionner/Désélectionner tout">
+                                    title="Sélectionner ou désélectionner toutes les lignes du filtre (toutes les pages)">
                             </th>
                             <th class="col-date">Date</th>
                             <th class="col-text">Agence</th>
@@ -572,7 +598,7 @@ export interface ReconciliationReportData {
                                             *ngIf="item.status === 'OK'"
                                             class="btn-releve" 
                                             (click)="showReleveModal(item)"
-                                            title="Afficher le relevé pour ce service et cette date">
+                                            title="Afficher le relevé pour ce service, cette date, ce pays et cet ENV">
                                             📋
                                         </button>
                                     </ng-container>
@@ -706,9 +732,21 @@ export interface ReconciliationReportData {
                         <div class="releve-service-main">
                             <h4>{{releveData?.service || '-'}}</h4>
                             <div class="releve-date">Date: {{formatDate(releveData?.date || '')}}</div>
+                            <div class="releve-date" *ngIf="releveData?.country">Pays : {{ releveData.country }}</div>
+                            <div class="releve-date" *ngIf="releveData?.agency">Agence : {{ releveData.agency }}</div>
                         </div>
-                    <div class="releve-env" *ngIf="releveEnv">
-                            ENVIRONNEMENT : <span class="releve-env-value">{{ releveEnv === 'TOTAL' ? 'T-E' : releveEnv }}</span>
+                    <div class="releve-env releve-env-select-wrap" *ngIf="releveData">
+                            <label for="releveEnvSelect">ENVIRONNEMENT</label>
+                            <select
+                                id="releveEnvSelect"
+                                class="releve-env-select"
+                                [ngModel]="releveEnv"
+                                (ngModelChange)="onReleveEnvChange($event)"
+                            >
+                                <option *ngFor="let env of envOptions" [ngValue]="env">
+                                    {{ env === 'TOTAL' ? 'T-E' : env }}
+                                </option>
+                            </select>
                         </div>
                     </div>
                     
@@ -772,7 +810,7 @@ export interface ReconciliationReportData {
                                 </tbody>
                             </table>
                         </div>
-                        <p class="releve-no-data" *ngIf="!releveEcartData || releveEcartData.length === 0">Aucune donnée trouvée dans Écart BO J+1 pour ce service et cette date.</p>
+                        <p class="releve-no-data" *ngIf="!releveEcartData || releveEcartData.length === 0">Aucune donnée trouvée dans Écart BO J+1 pour ce service, cette date, ce pays et cette agence.</p>
                     </div>
 
                     <!-- Section Données ENV PARTENAIRE J-1 -->
@@ -816,7 +854,7 @@ export interface ReconciliationReportData {
                         </div>
                     </div>
                     <div class="releve-section" *ngIf="releveEcartDataJ1 && releveEcartDataJ1.length === 0 && !isLoadingReleve">
-                        <p class="releve-no-data">Aucune donnée trouvée dans Écart BO J-1 (ENV PARTENAIRE) pour ce service.</p>
+                        <p class="releve-no-data">Aucune donnée trouvée dans Écart BO J-1 (ENV PARTENAIRE) pour ce service, ce pays et cette agence.</p>
                     </div>
 
                     <!-- Section Trx traité (saisie manuelle) -->
@@ -1498,6 +1536,38 @@ export interface ReconciliationReportData {
         .btn-bulk-status:disabled {
             opacity: 0.6;
             cursor: not-allowed;
+        }
+
+        .bulk-delete-group .bulk-status-controls {
+            align-items: center;
+        }
+
+        .btn-bulk-delete {
+            background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
+            color: white;
+            border: none;
+            padding: 8px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+
+        .btn-bulk-delete:hover:not(:disabled) {
+            background: linear-gradient(135deg, #c82333 0%, #bd2130 100%);
+            transform: translateY(-1px);
+            box-shadow: 0 4px 8px rgba(220, 53, 69, 0.35);
+        }
+
+        .btn-bulk-delete:disabled {
+            opacity: 0.55;
+            cursor: not-allowed;
+        }
+
+        .selection-hint {
+            color: #6c757d;
+            font-size: 0.85rem;
+            max-width: 420px;
         }
 
         .btn-clear-selection {
@@ -2380,6 +2450,39 @@ export interface ReconciliationReportData {
             color: #007bff;
         }
 
+        .releve-env-select-wrap {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 4px;
+        }
+
+        .releve-env-select-wrap label {
+            font-size: 0.8rem;
+            color: #6c757d;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.02em;
+        }
+
+        .releve-env-select {
+            min-width: 150px;
+            padding: 8px 12px;
+            font-size: 0.95rem;
+            font-weight: 700;
+            color: #007bff;
+            border: 1px solid #ced4da;
+            border-radius: 8px;
+            background: #fff;
+            cursor: pointer;
+        }
+
+        .releve-env-select:focus {
+            outline: none;
+            border-color: #007bff;
+            box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.2);
+        }
+
         .releve-section {
             margin-bottom: 25px;
         }
@@ -2819,6 +2922,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
     selectedDateFin: string = '';
     selectedStatuses: string[] = [];
     selectedTraitements: string[] = [];
+    selectedEnvs: string[] = [];
     ticketIdFilter: string = '';
     activeCardFilter: 'inProgress' | 'treated' | 'ticketsToCreate' | null = null;
 
@@ -2847,6 +2951,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
     uniqueCountries: string[] = [];
     uniqueDates: string[] = [];
     uniqueStatuses: string[] = [];
+    uniqueEnvs: string[] = [];
     filteredAgencies: string[] = []; // Agences filtrées selon le pays sélectionné
     filteredServices: string[] = []; // Services filtrés selon l'agence/pays sélectionnés
 
@@ -2891,7 +2996,9 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
     isReleveRembourseFileLoading = false;
 
     // Environnement du relevé (BET, HT, HUBAO, TOP20, GU3, TOTAL, ...)
-    releveEnv: string | null = null;
+    releveEnv: string = 'TOTAL';
+    /** Dernier ENV pour lequel le relevé a été chargé avec succès (annulation si aucune ligne OK). */
+    private releveEnvLastValid: string = 'TOTAL';
     // Liste des environnements disponibles pour édition
     readonly envOptions: string[] = ['BET', 'HT', 'HUBAO', 'TOP20', 'GU3', 'TOTAL'];
 
@@ -3036,7 +3143,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             const openReleve = params['openReleve'];
 
             if (env) {
-                this.releveEnv = env;
+                this.releveEnv = this.normalizeReleveEnvKey(env);
             }
 
             if (country && service && date && openReleve === '1') {
@@ -4324,6 +4431,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         this.uniqueCountries = [...new Set(this.reportData.map(item => item.country).filter(country => country && country.trim() !== ''))].sort();
         this.uniqueDates = [...new Set(this.reportData.map(item => item.date))].sort();
         this.uniqueStatuses = [...new Set(this.reportData.map(item => item.status).filter(status => status && status.trim() !== ''))].sort();
+        this.uniqueEnvs = [...new Set(this.reportData.map(item => (item.env || 'TOTAL').trim()).filter(env => env !== ''))].sort();
         
         this.filteredAgencies = [...this.uniqueAgencies];
         this.filteredServices = [...this.uniqueServices];
@@ -4422,6 +4530,10 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
     }
 
     onTraitementSelectionChange(): void {
+        this.filterReport();
+    }
+
+    onEnvSelectionChange(): void {
         this.filterReport();
     }
 
@@ -4540,6 +4652,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             const countryFilterMatch = this.selectedCountries.length === 0 || this.selectedCountries.includes(item.country);
             const statusMatch = this.selectedStatuses.length === 0 || this.selectedStatuses.includes(item.status);
             const traitementMatch = this.selectedTraitements.length === 0 || this.selectedTraitements.includes(item.traitement || '');
+            const envMatch = this.selectedEnvs.length === 0 || this.selectedEnvs.includes((item.env || 'TOTAL').trim());
             const ticketFilter = (this.ticketIdFilter || '').trim().toLowerCase();
             const ticketMatch = !ticketFilter || (item.glpiId || '').toLowerCase().includes(ticketFilter);
             
@@ -4563,7 +4676,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                 }
             }
             
-            const baseMatch = agencyMatch && serviceMatch && countryFilterMatch && dateMatch && statusMatch && traitementMatch && ticketMatch;
+            const baseMatch = agencyMatch && serviceMatch && countryFilterMatch && dateMatch && statusMatch && traitementMatch && envMatch && ticketMatch;
             
             // Appliquer le filtre de card actif si défini
             if (this.activeCardFilter === 'inProgress') {
@@ -4650,13 +4763,13 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             item.country === target.country &&
             item.service === target.service &&
             this.formatDateForSearch(item.date) === targetDate &&
-            item.status === 'OK'
+            item.status === 'OK' &&
+            (!target.env || this.normalizeReleveEnvKey(item.env) === this.normalizeReleveEnvKey(target.env))
         );
 
         if (matchingItem) {
-            // Appliquer l'environnement reçu pour le relevé affiché
             if (target.env) {
-                this.releveEnv = target.env;
+                this.releveEnv = this.normalizeReleveEnvKey(target.env);
             }
             this.showReleveModal(matchingItem);
             this.pendingReleveFromDashboard = null;
@@ -6334,7 +6447,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         const envOptions = this.envOptions;
         const currentEnv = (item.env && envOptions.includes(item.env))
             ? item.env
-            : (this.releveEnv && envOptions.includes(this.releveEnv) ? this.releveEnv : 'TOTAL');
+            : (envOptions.includes(this.releveEnv) ? this.releveEnv : 'TOTAL');
         const selectedEnv = await this.popupService.showSelectInput(
             'Sélectionnez l\'environnement pour ce résultat :',
             'Environnement',
@@ -6612,9 +6725,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
 
         // Sélectionner l'environnement à appliquer à toutes les lignes
         const envOptions = this.envOptions;
-        const defaultEnvAll = this.releveEnv && envOptions.includes(this.releveEnv)
-            ? this.releveEnv
-            : 'TOTAL';
+        const defaultEnvAll = envOptions.includes(this.releveEnv) ? this.releveEnv : 'TOTAL';
         const selectedEnvAll = await this.popupService.showSelectInput(
             `Sélectionnez l'environnement à appliquer à toutes les ${rowsSource.length} ligne(s) :`,
             'Environnement pour toutes les lignes',
@@ -6683,98 +6794,149 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         let updatedCount = 0;
         let skippedDuplicates = 0;
         let errorCount = 0;
+        const saveFailureLines: string[] = [];
+        const recordSaveFailure = (agency: string, service: string, country: string, err: unknown) => {
+            const he = err as HttpErrorResponse;
+            const st = he?.status != null ? String(he.status) : '?';
+            let detail = '';
+            const b = he?.error;
+            if (typeof b === 'string') {
+                detail = b.slice(0, 200);
+            } else if (b && typeof b === 'object' && 'message' in b) {
+                detail = String((b as { message?: string }).message || '').slice(0, 200);
+            } else if (err instanceof Error) {
+                detail = err.message.slice(0, 200);
+            }
+            saveFailureLines.push(
+                `${agency} | ${service} | ${country} — HTTP ${st}${detail ? ` — ${detail}` : ''}`
+            );
+        };
 
         const createdPayloads: any[] = [];
 
-        // Sauvegarde séquentielle pour pouvoir proposer un update en cas de duplicata (409)
+        // Mises à jour (lignes déjà persistées) : requêtes séquentielles avec léger espacement (évite le 429)
         for (const row of prepared) {
+            if (row.mode !== 'update') {
+                continue;
+            }
             const item = row.sourceItem;
-
             try {
-                // UPDATE: ne modifier que partnerOnly (et ne pas toucher comment / autres colonnes)
-                if (row.mode === 'update') {
-                    const id = item.id;
-                    if (!id) {
-                        // Sécurité: ne devrait pas arriver car mode=update => id présent
-                        continue;
-                    }
-
-                    const existing = await firstValueFrom(this.http.get<any>(`/api/result8rec/${id}`));
-                    const payload = this.buildPartnerOnlyAndCommentOnlyUpdatePayloadFromExisting(existing, row.newPartnerOnly, row.newComment, row.env);
-                    await this.putResult8RecWithRetry<any>(id, payload, { maxRetries: 3, baseDelayMs: 500 });
-                    updatedCount++;
-                    // Notifier pour rafraîchir les métriques
-                    this.appStateService.notifySummarySaved();
+                const id = item.id;
+                if (!id) {
                     continue;
                 }
-
-                // CREATE
-                const payloadItem = row.payloadItem;
-                await new Promise<void>((resolve, reject) => {
-                    this.http.post<any>('/api/result8rec', payloadItem).subscribe({
-                        next: (saved) => {
-                            item.id = saved?.id;
-                            createdCount++;
-                            createdPayloads.push(payloadItem);
-                            // Notifier pour rafraîchir les métriques
-                            this.appStateService.notifySummarySaved();
-                            resolve();
-                        },
-                        error: async (err: HttpErrorResponse) => {
-                            // Duplicata backend → proposer un update de la ligne existante
-                            if (err.status === 409) {
-                                const existing: any = (err as any).error;
-                                const existingId = existing?.id;
-                                if (!existingId) {
-                                    skippedDuplicates++;
-                                    resolve();
-                                    return;
-                                }
-
-                                const msg =
-                                    `Cette ligne existe déjà (id=${existingId}).\n\n` +
-                                    `${this.formatDate(payloadItem.date)} | ${payloadItem.agency} | ${payloadItem.service} | ${payloadItem.country}\n\n` +
-                                    `RÈGLE: en mise à jour, seuls "Écarts partenaire" et "Commentaire" sont modifiés.\n\n` +
-                                    `Ancien partenaire: ${existing?.partnerOnly ?? '?'}\n` +
-                                    `Nouveau partenaire: ${payloadItem.partnerOnly}\n\n` +
-                                    `Ancien commentaire: ${(existing?.comment ?? '').toString()}\n` +
-                                    `Nouveau commentaire: ${(payloadItem.comment ?? '').toString()}`;
-
-                                const confirmedUpdate = await this.popupService.showConfirm(msg, 'Duplicata détecté');
-                                if (!confirmedUpdate) {
-                                    skippedDuplicates++;
-                                    resolve();
-                                    return;
-                                }
-
-                                const updatePayload = this.buildPartnerOnlyAndCommentOnlyUpdatePayloadFromExisting(
-                                    existing,
-                                    this.normalizeNumericValue(payloadItem.partnerOnly),
-                                    (payloadItem.comment ?? '').toString()
-                                );
-
-                                try {
-                                    await this.putResult8RecWithRetry<any>(existingId, updatePayload, { maxRetries: 3, baseDelayMs: 500 });
-                                    updatedCount++;
-                                    // Notifier pour rafraîchir les métriques
-                                    this.appStateService.notifySummarySaved();
-                                    resolve();
-                                } catch (e) {
-                                    errorCount++;
-                                    reject(e as any);
-                                }
-                                return;
-                            }
-
-                            errorCount++;
-                            reject(err);
-                        }
-                    });
-                });
+                const existing = await firstValueFrom(this.http.get<any>(`/api/result8rec/${id}`));
+                const payload = this.buildPartnerOnlyAndCommentOnlyUpdatePayloadFromExisting(
+                    existing,
+                    row.newPartnerOnly,
+                    row.newComment,
+                    row.env
+                );
+                await this.putResult8RecWithRetry<any>(id, payload, { maxRetries: 5, baseDelayMs: 600 });
+                updatedCount++;
+                this.appStateService.notifySummarySaved();
             } catch (e) {
-                console.error('❌ saveAll: erreur lors de la sauvegarde d’une ligne', e);
+                console.error('❌ saveAll: erreur mise à jour ligne', e);
+                errorCount++;
+                recordSaveFailure(item.agency, item.service, item.country, e);
+            }
+            await this.sleep(60);
+        }
+
+        // Créations : un seul POST /bulk par lot (évite des centaines de requêtes → plus de 429)
+        const createRows = prepared.filter((r): r is PreparedCreate => r.mode === 'create');
+        const bulkChunkSize = 350;
+        const bulkConflicts: Array<{ prepared: PreparedCreate; existing: any }> = [];
+
+        for (let offset = 0; offset < createRows.length; offset += bulkChunkSize) {
+            const chunk = createRows.slice(offset, offset + bulkChunkSize);
+            const bodies = chunk.map((c) => c.payloadItem);
+            try {
+                const bulkResp = await firstValueFrom(
+                    this.http.post<{ results: Array<{ status: string; entity: any }> }>('/api/result8rec/bulk', bodies)
+                );
+                const results = bulkResp?.results ?? [];
+                if (results.length !== chunk.length) {
+                    errorCount += chunk.length;
+                    for (const c of chunk) {
+                        recordSaveFailure(c.payloadItem.agency, c.payloadItem.service, c.payloadItem.country, {
+                            status: 0,
+                            error: `Réponse bulk incohérente (${results.length}/${chunk.length})`
+                        } as HttpErrorResponse);
+                    }
+                    continue;
+                }
+                for (let i = 0; i < chunk.length; i++) {
+                    const outcome = results[i];
+                    const c = chunk[i];
+                    const st = (outcome?.status || '').toUpperCase();
+                    if (st === 'CREATED' && outcome.entity?.id != null) {
+                        c.sourceItem.id = outcome.entity.id;
+                        createdCount++;
+                        createdPayloads.push(c.payloadItem);
+                        this.appStateService.notifySummarySaved();
+                    } else if (st === 'CONFLICT' && outcome.entity?.id != null) {
+                        bulkConflicts.push({ prepared: c, existing: outcome.entity });
+                    } else {
+                        errorCount++;
+                        recordSaveFailure(
+                            c.payloadItem.agency,
+                            c.payloadItem.service,
+                            c.payloadItem.country,
+                            { status: 0, error: `Réponse bulk inattendue: ${JSON.stringify(outcome)}` } as HttpErrorResponse
+                        );
+                    }
+                }
+            } catch (e) {
+                console.error('❌ saveAll: erreur bulk create', e);
+                errorCount += chunk.length;
+                for (const c of chunk) {
+                    recordSaveFailure(c.payloadItem.agency, c.payloadItem.service, c.payloadItem.country, e);
+                }
             }
         }
+
+        if (bulkConflicts.length > 0) {
+            const mergeAll = await this.popupService.showConfirm(
+                `${bulkConflicts.length} ligne(s) existent déjà en base (même date, agence, service et pays).\n\n` +
+                    `Mettre à jour « Écarts partenaire » et « Commentaire » sur l'enregistrement existant pour toutes ces lignes ?\n\n` +
+                    `(Règle inchangée : si le statut est OK, le commentaire en base est conservé.)`,
+                'Doublons détectés'
+            );
+            if (mergeAll) {
+                for (const { prepared: p, existing } of bulkConflicts) {
+                    const existingId = existing?.id;
+                    if (!existingId) {
+                        skippedDuplicates++;
+                        continue;
+                    }
+                    try {
+                        const updatePayload = this.buildPartnerOnlyAndCommentOnlyUpdatePayloadFromExisting(
+                            existing,
+                            this.normalizeNumericValue(p.payloadItem.partnerOnly),
+                            (p.payloadItem.comment ?? '').toString(),
+                            selectedEnvAll
+                        );
+                        await this.putResult8RecWithRetry<any>(existingId, updatePayload, { maxRetries: 5, baseDelayMs: 600 });
+                        updatedCount++;
+                        p.sourceItem.id = existingId;
+                        this.appStateService.notifySummarySaved();
+                    } catch (e) {
+                        errorCount++;
+                        recordSaveFailure(p.payloadItem.agency, p.payloadItem.service, p.payloadItem.country, e);
+                    }
+                    await this.sleep(80);
+                }
+            } else {
+                skippedDuplicates += bulkConflicts.length;
+            }
+        }
+
+        const failuresAppend =
+            saveFailureLines.length > 0
+                ? `\n\nDétail des ${saveFailureLines.length} erreur(s) :\n${saveFailureLines.slice(0, 20).join('\n')}` +
+                  (saveFailureLines.length > 20 ? `\n… et ${saveFailureLines.length - 20} autre(s)` : '')
+                : '';
 
         // Sauvegarder automatiquement les lignes avec écart BO (boOnly > 0) vers ecart_bo_summary
         // IMPORTANT: uniquement pour les CRÉATIONS (pas pour les mises à jour / doublons).
@@ -6800,7 +6962,8 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                     `• Mises à jour: ${updatedCount}\n` +
                     `• Duplicatas ignorés: ${skippedDuplicates}\n` +
                     `• Erreurs: ${errorCount}\n\n` +
-                    `📋 Redirection vers la page "Écart BO Summary".`;
+                    `📋 Redirection vers la page "Écart BO Summary".` +
+                    failuresAppend;
                 this.popupService.showSuccess(summaryMessage);
                 this.clearSelection();
                 return; // Sortir de la fonction car on redirige
@@ -6812,7 +6975,8 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             `• Créées: ${createdCount}\n` +
             `• Mises à jour: ${updatedCount}\n` +
             `• Duplicatas ignorés: ${skippedDuplicates}\n` +
-            `• Erreurs: ${errorCount}`;
+            `• Erreurs: ${errorCount}` +
+            failuresAppend;
 
         this.popupService.showSuccess(summaryMessage);
         this.clearSelection();
@@ -7894,29 +8058,27 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
     }
 
     isAllSelected(): boolean {
-        if (this.paginatedData.length === 0) return false;
-        // Permettre la sélection de toutes les lignes, même avec des colonnes vides
-        return this.paginatedData.every(item => this.isRowSelected(item));
+        const data = this.filteredReportData;
+        if (!data || data.length === 0) return false;
+        // Toutes les lignes du jeu filtré (toutes pages), pas seulement la page courante
+        return data.every(item => this.isRowSelected(item));
     }
 
     isSomeSelected(): boolean {
-        const selectedCount = this.paginatedData.filter(item => this.isRowSelected(item)).length;
-        return selectedCount > 0 && selectedCount < this.paginatedData.length;
+        const data = this.filteredReportData;
+        if (!data || data.length === 0) return false;
+        const selectedInFiltered = data.filter(item => this.isRowSelected(item)).length;
+        return selectedInFiltered > 0 && selectedInFiltered < data.length;
     }
 
     toggleSelectAll(event: Event): void {
         const checkbox = event.target as HTMLInputElement;
         this.hasUserSelectionChanged = true;
+        const data = this.filteredReportData || [];
         if (checkbox.checked) {
-            // Sélectionner toutes les lignes, même avec des colonnes vides
-            this.paginatedData.forEach(item => {
-                this.selectedRows.add(item);
-            });
+            data.forEach(item => this.selectedRows.add(item));
         } else {
-            // Désélectionner toutes les lignes
-            this.paginatedData.forEach(item => {
-                this.selectedRows.delete(item);
-            });
+            data.forEach(item => this.selectedRows.delete(item));
         }
     }
 
@@ -7926,6 +8088,11 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
 
     getSelectedRowsCount(): number {
         return this.selectedRows.size;
+    }
+
+    /** Lignes sélectionnées supprimables en base (id présent, non verrouillées). */
+    getBulkDeletableCount(): number {
+        return Array.from(this.selectedRows).filter(row => !!row.id && !this.isRowLocked(row)).length;
     }
 
     clearSelection(): void {
@@ -8076,6 +8243,77 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         }
         if (errorCount > 0) {
             this.popupService.showError(`Erreur lors de la modification de ${errorCount} ligne(s)`, 'Certaines modifications ont échoué');
+        }
+    }
+
+    /**
+     * Suppression multiple : DELETE /api/result8rec/{id} pour chaque ligne sélectionnée
+     * ayant un id et non verrouillée (même règles que le bouton supprimer de la ligne).
+     */
+    async applyBulkDelete(): Promise<void> {
+        if (this.selectedRows.size === 0) {
+            return;
+        }
+
+        const selectedItems = Array.from(this.selectedRows);
+        const deletable = selectedItems.filter(item => !!item.id && !this.isRowLocked(item));
+        const skippedNoId = selectedItems.filter(item => !item.id).length;
+        const skippedLocked = selectedItems.filter(item => !!item.id && this.isRowLocked(item)).length;
+
+        if (deletable.length === 0) {
+            this.popupService.showWarning(
+                'Sélectionnez des lignes enregistrées (avec id) et non verrouillées (OK + Terminé).',
+                'Aucune ligne supprimable'
+            );
+            return;
+        }
+
+        let confirmMessage = `Supprimer définitivement ${deletable.length} enregistrement(s) en base ?`;
+        if (skippedNoId > 0 || skippedLocked > 0) {
+            confirmMessage += ` (${skippedNoId} sans id, ${skippedLocked} verrouillée(s) ignorées).`;
+        }
+
+        const confirmed = await this.popupService.showConfirm(confirmMessage, 'Confirmation de suppression multiple');
+        if (!confirmed) {
+            return;
+        }
+
+        let successCount = 0;
+        let errorCount = 0;
+        const removedFromLive: ReconciliationReportData[] = [];
+
+        for (const item of deletable) {
+            const id = item.id;
+            try {
+                await firstValueFrom(this.http.delete<void>('/api/result8rec/' + id));
+                item.id = undefined;
+                successCount++;
+                removedFromLive.push(item);
+            } catch (err) {
+                errorCount++;
+                console.error('❌ Erreur suppression multiple', id, err);
+            }
+        }
+
+        this.clearSelection();
+
+        if (this.currentSource === 'db') {
+            this.loadSavedReportFromDatabase();
+        } else {
+            this.reportData = this.reportData.filter(row => !removedFromLive.includes(row));
+            this.extractUniqueValues();
+            this.filterReport();
+            this.updatePagination();
+        }
+
+        if (successCount > 0) {
+            this.popupService.showSuccess(`${successCount} ligne(s) supprimée(s)`, 'Suppression multiple');
+        }
+        if (errorCount > 0) {
+            this.popupService.showError(
+                `${errorCount} suppression(s) en erreur`,
+                'Certaines lignes n’ont pas pu être supprimées'
+            );
         }
     }
 
@@ -8314,10 +8552,33 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         this.router.navigate(['/suivi-des-ecarts']);
     }
 
+    /** Clé ENV rapport (vide → TOTAL, comme le filtre du tableau). */
+    private normalizeReleveEnvKey(env?: string | null): string {
+        const t = (env ?? '').trim();
+        return t || 'TOTAL';
+    }
+
+    private normalizeReleveCountry(country?: string | null): string {
+        return (country ?? '').trim();
+    }
+
+    /** Même périmètre relevé : service + date + pays + ENV (pas de mélange entre pays / ENV). */
+    private isSameReleveScope(a: ReconciliationReportData, b: ReconciliationReportData): boolean {
+        return (
+            a.service === b.service &&
+            a.date === b.date &&
+            this.normalizeReleveCountry(a.country) === this.normalizeReleveCountry(b.country) &&
+            this.normalizeReleveEnvKey(a.env) === this.normalizeReleveEnvKey(b.env)
+        );
+    }
+
+    private releveStringsEqual(a?: string | null, b?: string | null): boolean {
+        return (a ?? '').trim().toLowerCase() === (b ?? '').trim().toLowerCase();
+    }
+
     /**
      * Affiche le modal de relevé pour un service avec statut OK
-     * Récupère toutes les lignes du même service et de la même date
-     * puis récupère les données depuis ecart-bo-summary
+     * Cloisonne par service, date, pays et ENV du rapport (agrégation uniquement sur ce périmètre).
      */
     async showReleveModal(item: ReconciliationReportData): Promise<void> {
         if (item.status !== 'OK') {
@@ -8325,33 +8586,27 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             return;
         }
 
-        // Récupérer toutes les lignes du même service et de la même date
-        const serviceDateLines = this.filteredReportData.filter(line => 
-            line.service === item.service && 
-            line.date === item.date &&
-            line.status === 'OK'
+        const scopeLines = this.filteredReportData.filter(line =>
+            line.status === 'OK' && this.isSameReleveScope(line, item)
         );
 
-        if (serviceDateLines.length === 0) {
-            this.popupService.showWarning('❌ Aucune ligne trouvée pour ce service et cette date.');
+        if (scopeLines.length === 0) {
+            this.popupService.showWarning('❌ Aucune ligne trouvée pour ce service, cette date, ce pays et cet environnement.');
             return;
         }
 
-        // Calculer les totaux agrégés
-        const totalVolume = serviceDateLines.reduce((sum, line) => sum + (line.totalVolume || 0), 0);
-        const totalTransactions = serviceDateLines.reduce((sum, line) => sum + (line.totalTransactions || 0), 0);
+        const totalVolume = scopeLines.reduce((sum, line) => sum + (line.totalVolume || 0), 0);
+        const totalTransactions = scopeLines.reduce((sum, line) => sum + (line.totalTransactions || 0), 0);
 
-        // Préparer les données du relevé
         this.releveData = {
             ...item,
             totalVolume,
             totalTransactions
         };
 
-        // Réinitialiser l'environnement du relevé (sera éventuellement rechargé depuis la base)
-        this.releveEnv = null;
+        this.releveEnv = this.normalizeReleveEnvKey(item.env);
+        this.releveEnvLastValid = this.releveEnv;
 
-        // Charger les éventuelles valeurs manuelles déjà enregistrées pour ce service / date / pays
         this.loadReleveManualData();
 
         this.isReleveModalVisible = true;
@@ -8360,41 +8615,48 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         this.releveEcartDataJ1 = [];
 
         try {
-            // Formater la date pour la recherche (format YYYY-MM-DD)
             const searchDate = this.formatDateForSearch(item.date);
-            
-            // Calculer la date J-1
+
             const searchDateObj = new Date(searchDate);
             searchDateObj.setDate(searchDateObj.getDate() - 1);
             const searchDateJ1 = this.formatDateForSearch(searchDateObj.toISOString().split('T')[0]);
-            
-            // Récupérer les données depuis ecart-bo-summary
+
+            const ecartFilter: { agence?: string; service: string; pays?: string } = { service: item.service };
+            if (this.normalizeReleveCountry(item.country)) {
+                ecartFilter.pays = this.normalizeReleveCountry(item.country);
+            }
+            if ((item.agency || '').trim()) {
+                ecartFilter.agence = item.agency.trim();
+            }
+
             const ecartData = await firstValueFrom(
-                this.ecartBoSummaryService.getEcartBoSummaries({
-                    service: item.service,
-                    // Note: le service ecart-bo-summary ne supporte pas directement le filtre par date
-                    // On va filtrer côté client
-                })
+                this.ecartBoSummaryService.getEcartBoSummaries(ecartFilter)
             );
 
-            // Filtrer par date, service et ENV = PARTENAIRE uniquement (pour J+1)
             const filteredEcartData = ecartData.filter(ecart => {
                 const ecartDate = this.formatDateForSearch(ecart.dateTransaction);
                 const isMatchingDate = ecartDate === searchDate;
-                const isMatchingService = ecart.service === item.service;
+                const isMatchingService = this.releveStringsEqual(ecart.service, item.service);
+                const paysMatch = !this.normalizeReleveCountry(item.country) ||
+                    this.releveStringsEqual(ecart.pays, item.country);
+                const agenceMatch = !(item.agency || '').trim() ||
+                    this.releveStringsEqual(ecart.agence, item.agency);
                 const isPartenaire = (ecart.env === 'PARTENAIRE' || ecart.env === 'Partenaire' || ecart.env === 'partenaire');
-                return isMatchingDate && isMatchingService && isPartenaire;
+                return isMatchingDate && isMatchingService && paysMatch && agenceMatch && isPartenaire;
             });
 
             this.releveEcartData = filteredEcartData;
 
-            // Filtrer par date J-1, service et ENV = PARTENAIRE uniquement (pour J-1)
             const filteredEcartDataJ1 = ecartData.filter(ecart => {
                 const ecartDate = this.formatDateForSearch(ecart.dateTransaction);
                 const isMatchingDateJ1 = ecartDate === searchDateJ1;
-                const isMatchingService = ecart.service === item.service;
+                const isMatchingService = this.releveStringsEqual(ecart.service, item.service);
+                const paysMatch = !this.normalizeReleveCountry(item.country) ||
+                    this.releveStringsEqual(ecart.pays, item.country);
+                const agenceMatch = !(item.agency || '').trim() ||
+                    this.releveStringsEqual(ecart.agence, item.agency);
                 const isPartenaire = (ecart.env === 'PARTENAIRE' || ecart.env === 'Partenaire' || ecart.env === 'partenaire');
-                return isMatchingDateJ1 && isMatchingService && isPartenaire;
+                return isMatchingDateJ1 && isMatchingService && paysMatch && agenceMatch && isPartenaire;
             });
 
             this.releveEcartDataJ1 = filteredEcartDataJ1;
@@ -8408,6 +8670,62 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             // Vérifier si toutes les lignes ont déjà le traitement à "Terminé"
             this.isReleveValidated = this.isReleveAlreadyValidated();
         }
+    }
+
+    /**
+     * Changement d'environnement dans le modal relevé : aligne agrégats et trx manuelles sur les lignes OK du même périmètre.
+     */
+    onReleveEnvChange(newEnv: string): void {
+        if (!this.releveData) {
+            this.releveEnv = this.normalizeReleveEnvKey(newEnv);
+            return;
+        }
+        if (this.isLoadingReleve) {
+            this.releveEnv = this.normalizeReleveEnvKey(newEnv);
+            return;
+        }
+
+        const envNorm = this.normalizeReleveEnvKey(newEnv);
+        if (envNorm === this.releveEnvLastValid) {
+            this.releveEnv = envNorm;
+            return;
+        }
+
+        const base = this.releveData;
+        const candidateLine = this.filteredReportData.find(
+            line =>
+                line.status === 'OK' &&
+                line.service === base.service &&
+                line.date === base.date &&
+                this.normalizeReleveCountry(line.country) === this.normalizeReleveCountry(base.country) &&
+                this.normalizeReleveEnvKey(line.env) === envNorm
+        );
+
+        if (!candidateLine) {
+            this.popupService.showWarning(
+                `Aucune ligne OK pour ce service, cette date, ce pays et l'environnement « ${envNorm === 'TOTAL' ? 'T-E' : envNorm} ».`
+            );
+            this.releveEnv = this.releveEnvLastValid;
+            return;
+        }
+
+        const scopeLines = this.filteredReportData.filter(
+            line => line.status === 'OK' && this.isSameReleveScope(line, candidateLine)
+        );
+
+        const totalVolume = scopeLines.reduce((sum, line) => sum + (line.totalVolume || 0), 0);
+        const totalTransactions = scopeLines.reduce((sum, line) => sum + (line.totalTransactions || 0), 0);
+
+        this.releveEnv = envNorm;
+        this.releveEnvLastValid = envNorm;
+        this.releveData = {
+            ...candidateLine,
+            totalVolume,
+            totalTransactions
+        };
+
+        this.loadReleveManualData();
+        this.isReleveValidated = this.isReleveAlreadyValidated();
     }
 
     /**
@@ -8451,25 +8769,20 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             return false;
         }
 
-        // Filtrer les lignes correspondant au service et à la date
-        const matchingLines = this.filteredReportData.filter(line => 
-            line.service === this.releveData!.service && 
-            line.date === this.releveData!.date
+        const matchingLines = this.filteredReportData.filter(line =>
+            this.isSameReleveScope(line, this.releveData!)
         );
 
         if (matchingLines.length === 0) {
             return false;
         }
 
-        // Filtrer les lignes non verrouillées
         const unlockedLines = matchingLines.filter(line => !this.isRowLocked(line));
 
-        // Si toutes les lignes sont verrouillées, considérer comme validé
         if (unlockedLines.length === 0) {
             return true;
         }
 
-        // Vérifier si toutes les lignes non verrouillées ont le traitement à "Terminé"
         return unlockedLines.every(line => line.traitement === 'Terminé');
     }
 
@@ -8483,6 +8796,8 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         this.releveEcartDataJ1 = [];
         this.isLoadingReleve = false;
         this.isReleveValidated = false; // Réinitialiser l'état de validation
+        this.releveEnv = 'TOTAL';
+        this.releveEnvLastValid = 'TOTAL';
         // Réinitialiser les données manuelles
         this.releveManualNombre = 0;
         this.releveManualVolume = 0;
@@ -8563,10 +8878,12 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         }
 
         const date = this.formatDateForSearch(this.releveData.date);
+        const envKey = this.normalizeReleveEnvKey(this.releveEnv ?? this.releveData.env);
         const params = new HttpParams()
             .set('date', date)
             .set('service', this.releveData.service)
-            .set('country', this.releveData.country);
+            .set('country', this.releveData.country)
+            .set('env', envKey);
 
         this.http.get<any>('/api/reconciliation-report/manual-trx', { params })
             .subscribe({
@@ -8578,7 +8895,6 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                     this.releveManualVolume = typeof response.manualVolume === 'number' ? response.manualVolume : 0;
                     this.releveRembourseNombre = typeof response.rembourseNombre === 'number' ? response.rembourseNombre : 0;
                     this.releveRembourseVolume = typeof response.rembourseVolume === 'number' ? response.rembourseVolume : 0;
-                    this.releveEnv = typeof response.env === 'string' && response.env ? response.env : null;
                 },
                 error: (err) => {
                     console.error('Erreur lors du chargement des valeurs manuelles de relevé', err);
@@ -8600,7 +8916,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             date,
             service: this.releveData.service,
             country: this.releveData.country,
-            env: this.releveEnv || 'TOTAL',
+            env: this.normalizeReleveEnvKey(this.releveEnv ?? this.releveData.env),
             manualNombre: this.releveManualNombre || 0,
             manualVolume: this.releveManualVolume || 0,
             rembourseNombre: this.releveRembourseNombre || 0,
@@ -9321,7 +9637,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
 
         // Demander l'environnement (BET, HT, HUBAO, TOP20, GU3, TOTAL)
         const envOptions = ['BET', 'HT', 'HUBAO', 'TOP20', 'GU3', 'TOTAL'];
-        const envLabel = this.releveEnv && envOptions.includes(this.releveEnv) ? this.releveEnv : 'TOTAL';
+        const envLabel = envOptions.includes(this.releveEnv) ? this.releveEnv : 'TOTAL';
         const selectedEnv = await this.popupService.showSelectInput(
             'Sélectionnez l\'environnement pour ce relevé :',
             'Environnement du relevé',
@@ -9336,19 +9652,17 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
 
         // Mémoriser l'environnement choisi pour ce relevé
         this.releveEnv = selectedEnv;
+        this.releveEnvLastValid = this.normalizeReleveEnvKey(selectedEnv);
 
-        // Filtrer les lignes correspondant au service et à la date
-        const matchingLines = this.filteredReportData.filter(line => 
-            line.service === this.releveData!.service && 
-            line.date === this.releveData!.date
+        const matchingLines = this.filteredReportData.filter(line =>
+            this.isSameReleveScope(line, this.releveData!)
         );
 
         if (matchingLines.length === 0) {
-            this.popupService.showWarning('❌ Aucune ligne trouvée pour ce service et cette date.');
+            this.popupService.showWarning('❌ Aucune ligne trouvée pour ce périmètre (service, date, pays, ENV).');
             return;
         }
 
-        // Filtrer les lignes non verrouillées
         const unlockedLines = matchingLines.filter(line => !this.isRowLocked(line));
 
         if (unlockedLines.length === 0) {
@@ -9356,8 +9670,8 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             return;
         }
 
-        // Confirmer la validation
-        const confirmMessage = `Voulez-vous mettre le traitement à "Terminé" pour ${unlockedLines.length} ligne(s) du service "${this.releveData.service}" et de la date "${this.formatDate(this.releveData.date)}" ?`;
+        const envLabelConfirm = this.normalizeReleveEnvKey(this.releveEnv);
+        const confirmMessage = `Voulez-vous mettre le traitement à "Terminé" pour ${unlockedLines.length} ligne(s) du service « ${this.releveData.service} », date « ${this.formatDate(this.releveData.date)} », pays « ${this.releveData.country} », ENV « ${envLabelConfirm === 'TOTAL' ? 'T-E' : envLabelConfirm} » ?`;
         const confirmed = await this.popupService.showConfirm(confirmMessage, 'Confirmation de validation');
         
         if (!confirmed) {

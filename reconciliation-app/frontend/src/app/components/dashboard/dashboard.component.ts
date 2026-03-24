@@ -100,12 +100,12 @@ export class DashboardComponent implements OnInit, OnDestroy {
 
     // Résumé "État des réconciliations" (bloc de gauche)
     reconciliationSummaryDate: string = ''; // utilisé pour initialiser, mais le calcul se fait sur "cette semaine"
-    reconciliationSummaryEnv: string = 'BET';
+    reconciliationSummaryEnv: string = 'ALL';
     reconciliationSummaryCountry: string = '';
     reconciliationSummaryCountries: string[] = [];
     reconciliationSummaryService: string = '';
     reconciliationSummaryServices: string[] = [];
-    readonly reconciliationEnvOptions: string[] = ['BET', 'HT', 'HUBAO', 'TOP20', 'GU3', 'TOTAL'];
+    readonly reconciliationEnvOptions: string[] = ['ALL', 'BET', 'HT', 'HUBAO', 'TOP20', 'GU3', 'TOTAL'];
     reconciliationSummaryLoading: boolean = false;
     reconciliationSummaryError: string | null = null;
     reconciliationSummaryRows: {
@@ -140,6 +140,8 @@ export class DashboardComponent implements OnInit, OnDestroy {
     recoViewWeekDays: { label: string; date: string }[] = [];
     recoViewRows: {
         service: string;
+        label?: string;
+        country?: string;
         days: {
             date: string;
             status: 'RECONCILIE' | 'NON_RECONCILIE' | 'EN_COURS' | 'NON_RECONCILIE';
@@ -147,6 +149,10 @@ export class DashboardComponent implements OnInit, OnDestroy {
             env: string;
         }[];
     }[] = [];
+    // Filtres du popup Vue semaine
+    recoViewCountry: string = '';
+    recoViewService: string = '';
+    recoViewSelectedDay: string = ''; // YYYY-MM-DD (vide = tous les jours)
     recoViewLoading: boolean = false;
     recoViewError: string | null = null;
     recoViewStats = {
@@ -265,6 +271,46 @@ export class DashboardComponent implements OnInit, OnDestroy {
         }
         
         return true;
+    }
+
+    /** Date locale YYYY-MM-DD (évite le décalage fuseau de `new Date('YYYY-MM-DD')`). */
+    private formatLocalYmd(d: Date): string {
+        const y = d.getFullYear();
+        const m = (d.getMonth() + 1).toString().padStart(2, '0');
+        const day = d.getDate().toString().padStart(2, '0');
+        return `${y}-${m}-${day}`;
+    }
+
+    /** Partie date YYYY-MM-DD depuis result8rec (ignore l’heure si présente). */
+    private extractResult8DateOnly(raw: string | undefined | null): string | null {
+        const part = (raw || '').trim().split(/[\sT]/)[0];
+        return /^\d{4}-\d{2}-\d{2}$/.test(part) ? part : null;
+    }
+
+    /**
+     * Filtre env : ALL = pas de filtre ; T-E (TOTAL) = agrégat seul ;
+     * BET/HT/... = cet env ou lignes TOTAL (sauvegardes sans env explicite).
+     */
+    private matchesReconciliationEnv(itemEnv: string | undefined | null, targetEnv: string): boolean {
+        const te = (targetEnv || 'ALL').trim() || 'ALL';
+        if (te === 'ALL') {
+            return true;
+        }
+        const ie = ((itemEnv || '').trim() || 'TOTAL');
+        if (te === 'TOTAL') {
+            return ie === 'TOTAL';
+        }
+        return ie === te || ie === 'TOTAL';
+    }
+
+    /** Traitement considéré comme « Terminé » (casse / accents). */
+    private isTraitementTermineLabel(traitement?: string | null): boolean {
+        const n = (traitement || '')
+            .trim()
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .toLowerCase();
+        return n === 'termine';
     }
 
     private updateVisibleDaysWindow() {
@@ -1026,8 +1072,11 @@ export class DashboardComponent implements OnInit, OnDestroy {
         this.routerSubscription = this.router.events.pipe(
             filter(event => event instanceof NavigationEnd)
         ).subscribe((event) => {
-            if (event instanceof NavigationEnd && (event.url === '/' || event.url === '/dashboard')) {
-                this.refreshMetrics();
+            if (event instanceof NavigationEnd) {
+                const path = (event.urlAfterRedirects || event.url || '').split('?')[0];
+                if (path === '/' || path === '/dashboard') {
+                    this.refreshMetrics();
+                }
             }
         });
 
@@ -1148,9 +1197,8 @@ export class DashboardComponent implements OnInit, OnDestroy {
      * puis déclenche un premier chargement du résumé.
      */
     private initReconciliationSummaryDefaults(): void {
-        // ENV par défaut : BET
         if (!this.reconciliationSummaryEnv) {
-            this.reconciliationSummaryEnv = 'BET';
+            this.reconciliationSummaryEnv = 'ALL';
         }
         if (this.reconciliationSummaryCountries && this.reconciliationSummaryCountries.length && !this.reconciliationSummaryCountry) {
             // Par défaut, pas de filtre pays (tous), mais on pourrait choisir le premier si besoin
@@ -1176,7 +1224,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
             .subscribe({
                 next: (data: Result8RecData[]) => {
                     try {
-                        const targetEnv = this.reconciliationSummaryEnv || 'TOTAL';
+                        const targetEnv = this.reconciliationSummaryEnv || 'ALL';
                         const targetCountry = this.reconciliationSummaryCountry || '';
                         const selectedService = (this.reconciliationSummaryService || '').trim();
                         // Fenêtre de temps : période sélectionnée (Semaine / Mois / Trimestre / Semestre / Année)
@@ -1267,35 +1315,39 @@ export class DashboardComponent implements OnInit, OnDestroy {
 
                         this.updateVisibleDaysWindow();
 
+                        const periodStartStr = this.formatLocalYmd(periodStart);
+                        const periodEndExclusiveStr = this.formatLocalYmd(periodEnd);
+                        let eligibilityStartStr = periodStartStr;
+                        if (this.metricsPeriod === 'semaine' || this.metricsPeriod === 'jour') {
+                            const elig = new Date(periodStart);
+                            elig.setDate(periodStart.getDate() - 7);
+                            eligibilityStartStr = this.formatLocalYmd(elig);
+                        }
+
                         // Construire la liste des services (pour le filtre "Service")
                         const servicesSet = new Set<string>();
                         data.forEach(item => {
                             if (!item.service) return;
-                            const itemEnv = (item.env || 'TOTAL');
-                            if (itemEnv !== targetEnv) return;
+                            if (!this.matchesReconciliationEnv(item.env, targetEnv)) return;
                             if (targetCountry && item.country !== targetCountry) return;
                             servicesSet.add(item.service);
                         });
 
-                        // Pour chaque couple (service, pays) calculer la date la plus récente où il a été réellement réconcilié (traitement terminé + status OK)
-                        const lastReconciledByKey: Record<string, Date | null> = {};
+                        // Dernière date avec statut OK (Niveau Group, Terminé, etc.) — pour l’éligibilité des lignes hors fenêtre stricte
+                        const lastOkDateByKey: Record<string, string | null> = {};
                         data.forEach(item => {
                             if (!item.service) return;
-                            const itemEnv = (item.env || 'TOTAL');
-                            if (itemEnv !== targetEnv) return;
+                            if (!this.matchesReconciliationEnv(item.env, targetEnv)) return;
                             if (targetCountry && item.country !== targetCountry) return;
                             const c = (item.country || '').trim();
-                            if (!item.date) return;
-                            const isTermine = (item.traitement || '').trim().toLowerCase() === 'terminé';
+                            const dateOnly = this.extractResult8DateOnly(item.date);
+                            if (!dateOnly) return;
                             const isOk = (item.status || '').trim().toUpperCase() === 'OK';
-                            if (!isTermine || !isOk) return;
-                            const dateOnly = (item.date || '').split(' ')[0];
-                            const d = new Date(dateOnly);
-                            if (Number.isNaN(d.getTime())) return;
+                            if (!isOk) return;
                             const key = `${item.service}||${c}`;
-                            const current = lastReconciledByKey[key];
-                            if (!current || d > current) {
-                                lastReconciledByKey[key] = d;
+                            const prev = lastOkDateByKey[key];
+                            if (!prev || dateOnly > prev) {
+                                lastOkDateByKey[key] = dateOnly;
                             }
                         });
 
@@ -1322,8 +1374,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
                             const byServiceCountry = new Map<string, Set<string>>();
                             data.forEach(item => {
                                 if (!item.service) return;
-                                const itemEnv = (item.env || 'TOTAL');
-                                if (itemEnv !== targetEnv) return;
+                                if (!this.matchesReconciliationEnv(item.env, targetEnv)) return;
                                 const c = (item.country || '').trim();
                                 if (!c) return;
                                 if (this.reconciliationSummaryService && item.service !== this.reconciliationSummaryService) return;
@@ -1340,36 +1391,26 @@ export class DashboardComponent implements OnInit, OnDestroy {
                         }
 
                         // Appliquer la règle "réconciliation récente" au niveau (service, pays)
-                        // Cas "Semaine en cours" : inclure aussi les services réconciliés la semaine précédente.
-                        // Cas "Jour" : inclure aussi les services réconciliés la semaine précédente pour permettre
-                        // d'afficher les statuts EN_COURS et NON_RECONCILIE du jour (même si pas de réconciliation OK).
-                        let eligibilityStart = periodStart;
-                        if (this.metricsPeriod === 'semaine' || this.metricsPeriod === 'jour') {
-                            eligibilityStart = new Date(periodStart);
-                            eligibilityStart.setDate(periodStart.getDate() - 7);
-                        }
+                        // (eligibilityStartStr déjà calculé : semaine/jour → inclut 7 jours avant le début de période)
                         // Activité sur la période (toute ligne présente) : permet d'afficher EN_COURS
                         // même si le service n'a pas de réconciliation OK récente.
                         const hasActivityInPeriodByKey: Record<string, boolean> = {};
                         data.forEach(item => {
                             if (!item.service) return;
-                            const itemEnv = (item.env || 'TOTAL');
-                            if (itemEnv !== targetEnv) return;
+                            if (!this.matchesReconciliationEnv(item.env, targetEnv)) return;
                             const c = (item.country || '').trim();
                             if (targetCountry && c !== targetCountry) return;
-                            if (!item.date) return;
-                            const dateOnly = (item.date || '').split(' ')[0];
-                            const d = new Date(dateOnly);
-                            if (Number.isNaN(d.getTime())) return;
-                            if (d < periodStart || d >= periodEnd) return;
+                            const dateOnly = this.extractResult8DateOnly(item.date);
+                            if (!dateOnly) return;
+                            if (dateOnly < periodStartStr || dateOnly >= periodEndExclusiveStr) return;
                             const key = `${item.service}||${c}`;
                             hasActivityInPeriodByKey[key] = true;
                         });
                         const effectiveRowKeys = rowKeys.filter(k => {
-                            const lastReco = lastReconciledByKey[`${k.service}||${k.country}`] || null;
+                            const lastRecoStr = lastOkDateByKey[`${k.service}||${k.country}`] || null;
                             const key = `${k.service}||${k.country}`;
                             const hasActivity = !!hasActivityInPeriodByKey[key];
-                            return hasActivity || (!!lastReco && lastReco >= eligibilityStart);
+                            return hasActivity || (!!lastRecoStr && lastRecoStr >= eligibilityStartStr);
                         });
 
                         const rows: {
@@ -1388,12 +1429,11 @@ export class DashboardComponent implements OnInit, OnDestroy {
                             const dayStatuses = this.weekDays.map(dayInfo => {
                                 const matchingForDay = data.filter(item => {
                                     if (!item.service || item.service !== serviceName) return false;
-                                    const itemEnv = (item.env || 'TOTAL');
-                                    if (itemEnv !== targetEnv) return false;
+                                    if (!this.matchesReconciliationEnv(item.env, targetEnv)) return false;
                                     if (!item.date) return false;
                                     if (rowCountry && item.country !== rowCountry) return false;
 
-                                    const dateOnly = (item.date || '').split(' ')[0];
+                                    const dateOnly = this.extractResult8DateOnly(item.date);
                                     return dateOnly === dayInfo.date;
                                 });
 
@@ -1406,7 +1446,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
                                 } else {
                                     // EN_COURS = dès qu'au moins une ligne n'est pas "Terminé"
                                     const anyNotTermine = matchingForDay.some(line =>
-                                        (line.traitement || '').trim().toLowerCase() !== 'terminé'
+                                        !this.isTraitementTermineLabel(line.traitement)
                                     );
                                     status = anyNotTermine ? 'EN_COURS' : 'RECONCILIE';
 
@@ -1481,6 +1521,10 @@ export class DashboardComponent implements OnInit, OnDestroy {
 
     openRecoViewModal(): void {
         this.recoViewWeekStart = this.getCurrentWeekMonday();
+        // Initialiser les filtres du popup depuis la vue principale
+        this.recoViewCountry = this.reconciliationSummaryCountry || '';
+        this.recoViewService = (this.reconciliationSummaryService || '').trim();
+        this.recoViewSelectedDay = '';
         this.recoViewModalOpen = true;
         this.recoViewError = null;
         this.loadReconciliationSummaryForView();
@@ -1546,7 +1590,23 @@ export class DashboardComponent implements OnInit, OnDestroy {
     onRecoViewDateChange(dateStr: string): void {
         if (!dateStr) return;
         this.recoViewWeekStart = this.getMondayOfWeek(dateStr);
+        this.recoViewSelectedDay = '';
         this.loadReconciliationSummaryForView();
+    }
+
+    onRecoViewFiltersChange(): void {
+        this.recoViewSelectedDay = '';
+        this.loadReconciliationSummaryForView();
+    }
+
+    getRecoViewDisplayedDays(): { label: string; date: string }[] {
+        if (!this.recoViewSelectedDay) return this.recoViewWeekDays;
+        return this.recoViewWeekDays.filter(d => d.date === this.recoViewSelectedDay);
+    }
+
+    getRecoViewDisplayedRowDays(row: { days: { date: string }[] }): any[] {
+        if (!this.recoViewSelectedDay) return row.days;
+        return row.days.filter(d => d.date === this.recoViewSelectedDay);
     }
 
     loadReconciliationSummaryForView(): void {
@@ -1560,9 +1620,9 @@ export class DashboardComponent implements OnInit, OnDestroy {
             .subscribe({
                 next: (data: Result8RecData[]) => {
                     try {
-                        const targetEnv = this.reconciliationSummaryEnv || 'TOTAL';
-                        const targetCountry = this.reconciliationSummaryCountry || '';
-                        const selectedService = (this.reconciliationSummaryService || '').trim();
+                        const targetEnv = this.reconciliationSummaryEnv || 'ALL';
+                        const targetCountry = (this.recoViewCountry || '').trim();
+                        const selectedService = (this.recoViewService || '').trim();
 
                         const [y, mo, d] = (this.recoViewWeekStart || '').split('-').map(Number);
                         const startOfWeek = new Date(y, mo - 1, d);
@@ -1580,20 +1640,21 @@ export class DashboardComponent implements OnInit, OnDestroy {
                         }
 
                         const servicesSet = new Set<string>();
-                        if (targetCountry && this.reconciliationCountryServices && this.reconciliationCountryServices[targetCountry]) {
-                            this.reconciliationCountryServices[targetCountry].forEach(s => s && servicesSet.add(s));
-                        } else if (this.allReconciliationServices?.length) {
-                            this.allReconciliationServices.forEach(s => s && servicesSet.add(s));
-                        } else {
-                            data.forEach(item => { if (item.service) servicesSet.add(item.service); });
-                        }
+                        data.forEach(item => {
+                            if (!item.service) return;
+                            if (!this.matchesReconciliationEnv(item.env, targetEnv)) return;
+                            if (targetCountry && item.country !== targetCountry) return;
+                            servicesSet.add(item.service);
+                        });
                         const allServices = Array.from(servicesSet).sort();
-                        const effectiveServices = this.reconciliationSummaryService
-                            ? allServices.filter(s => s === this.reconciliationSummaryService)
+                        const effectiveServices = selectedService
+                            ? allServices.filter(s => s === selectedService)
                             : allServices;
 
                         const rows: {
                             service: string;
+                            label?: string;
+                            country?: string;
                             days: {
                                 date: string;
                                 status: 'RECONCILIE' | 'NON_RECONCILIE' | 'EN_COURS' | 'NON_RECONCILIE';
@@ -1602,14 +1663,39 @@ export class DashboardComponent implements OnInit, OnDestroy {
                             }[];
                         }[] = [];
 
-                        effectiveServices.forEach(serviceName => {
+                        // Si pays = Tous, on sépare par (service, pays) pour éviter de mélanger
+                        type RowKey = { service: string; country: string; label: string };
+                        const rowKeys: RowKey[] = [];
+                        if (targetCountry) {
+                            effectiveServices.forEach(s => rowKeys.push({ service: s, country: targetCountry, label: s }));
+                        } else {
+                            const byServiceCountry = new Map<string, Set<string>>();
+                            data.forEach(item => {
+                                if (!item.service) return;
+                                if (!this.matchesReconciliationEnv(item.env, targetEnv)) return;
+                                const c = (item.country || '').trim();
+                                if (!c) return;
+                                if (selectedService && item.service !== selectedService) return;
+                                if (!byServiceCountry.has(item.service)) byServiceCountry.set(item.service, new Set<string>());
+                                byServiceCountry.get(item.service)!.add(c);
+                            });
+                            Array.from(byServiceCountry.entries())
+                                .sort((a, b) => a[0].localeCompare(b[0]))
+                                .forEach(([service, countries]) => {
+                                    Array.from(countries).sort().forEach(c => {
+                                        rowKeys.push({ service, country: c, label: `${service} (${c})` });
+                                    });
+                                });
+                        }
+
+                        rowKeys.forEach(({ service: serviceName, country: rowCountry, label }) => {
                             const dayStatuses = this.recoViewWeekDays.map(dayInfo => {
                                 const matchingForDay = data.filter(item => {
                                     if (!item.service || item.service !== serviceName) return false;
-                                    if ((item.env || 'TOTAL') !== targetEnv) return false;
+                                    if (!this.matchesReconciliationEnv(item.env, targetEnv)) return false;
                                     if (!item.date) return false;
-                                    if (targetCountry && item.country !== targetCountry) return false;
-                                    const dateOnly = (item.date || '').split(' ')[0];
+                                    if (rowCountry && item.country !== rowCountry) return false;
+                                    const dateOnly = this.extractResult8DateOnly(item.date);
                                     return dateOnly === dayInfo.date;
                                 });
                                 let status: 'RECONCILIE' | 'NON_RECONCILIE' | 'EN_COURS' | 'NON_RECONCILIE';
@@ -1617,19 +1703,16 @@ export class DashboardComponent implements OnInit, OnDestroy {
                                 if (!matchingForDay.length) {
                                     status = 'NON_RECONCILIE';
                                 } else {
-                                    const allTermine = matchingForDay.every(line =>
-                                        (line.traitement || '').trim().toLowerCase() === 'terminé'
+                                    const anyNotTermine = matchingForDay.some(line =>
+                                        !this.isTraitementTermineLabel(line.traitement)
                                     );
-                                    const allOk = matchingForDay.every(line =>
-                                        (line.status || '').trim().toUpperCase() === 'OK'
-                                    );
-                                    status = allTermine ? 'RECONCILIE' : 'EN_COURS';
+                                    status = anyNotTermine ? 'EN_COURS' : 'RECONCILIE';
                                     const ticketLine = matchingForDay.find(line => (line.glpiId || '').trim().length > 0);
                                     ticketId = ticketLine ? (ticketLine.glpiId || '') : '';
                                 }
                                 return { date: dayInfo.date, status, ticketId, env: targetEnv };
                             });
-                            rows.push({ service: serviceName, days: dayStatuses });
+                            rows.push({ service: serviceName, label, country: rowCountry, days: dayStatuses });
                         });
 
                         this.recoViewRows = rows;
@@ -2137,6 +2220,9 @@ export class DashboardComponent implements OnInit, OnDestroy {
         
         // Recharger les métriques de base
         this.loadDashboardData();
+        
+        // Réaligner l'état des réconciliations (nouveaux services, lignes après sauvegarde relevé, etc.)
+        this.loadReconciliationSummary();
         
         // Recharger les métriques détaillées (toujours, même sans filtres)
         this.loadDetailedMetrics();

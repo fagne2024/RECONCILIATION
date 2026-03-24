@@ -1,5 +1,6 @@
 package com.reconciliation.controller;
 
+import com.reconciliation.dto.Result8RecBulkSaveResponse;
 import com.reconciliation.entity.Result8RecEntity;
 import com.reconciliation.repository.Result8RecRepository;
 import com.reconciliation.service.PaysFilterService;
@@ -9,6 +10,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.Instant;
@@ -216,37 +218,50 @@ public class Result8RecController {
         return normalizedName;
     }
 
+    /**
+     * Création en masse en une seule requête HTTP (évite le rate-limiting 429 côté reverse-proxy).
+     * Une entrée dans {@code results} par ligne reçue, dans le même ordre.
+     */
     @PostMapping("/bulk")
-    public ResponseEntity<?> saveBulk(@RequestBody List<Result8RecEntity> rows) {
-        // Récupérer le username depuis le contexte de la requête
+    @Transactional
+    public ResponseEntity<Result8RecBulkSaveResponse> saveBulk(@RequestBody List<Result8RecEntity> rows) {
+        Result8RecBulkSaveResponse response = new Result8RecBulkSaveResponse();
+        if (rows == null || rows.isEmpty()) {
+            return ResponseEntity.ok(response);
+        }
+
         String username = RequestContextUtil.getUsernameFromRequest();
-        
-        int duplicates = 0;
+        int created = 0;
+        int conflicts = 0;
+
         for (Result8RecEntity r : rows) {
-            if (repository.existsByDateAndAgencyAndServiceAndCountry(r.getDate(), r.getAgency(), r.getService(), r.getCountry())) {
-                duplicates++;
+            if (repository.existsByDateAndAgencyAndServiceAndCountry(
+                    r.getDate(), r.getAgency(), r.getService(), r.getCountry())) {
+                Result8RecEntity existing = repository.findFirstByDateAndAgencyAndServiceAndCountryOrderByIdDesc(
+                        r.getDate(), r.getAgency(), r.getService(), r.getCountry());
+                response.results.add(new Result8RecBulkSaveResponse.RowResult("CONFLICT", existing));
+                conflicts++;
                 continue;
             }
-            
-            // Définir le traitement par défaut si non spécifié
+
             if (r.getTraitement() == null || r.getTraitement().trim().isEmpty()) {
                 r.setTraitement(determineDefaultTraitement(r));
             }
-            // Définir l'environnement par défaut si non spécifié
             if (r.getEnv() == null || r.getEnv().trim().isEmpty()) {
                 r.setEnv("TOTAL");
             }
-            
-            // Définir le username depuis le contexte de la requête
             if (username != null && !username.isEmpty()) {
                 r.setUsername(username);
             }
-            
+
             r.setCreatedAt(Instant.now().toString());
-            repository.save(r);
+            Result8RecEntity saved = repository.save(r);
+            response.results.add(new Result8RecBulkSaveResponse.RowResult("CREATED", saved));
+            created++;
         }
-        log.info("✅ bulk result8rec: {} lignes, {} doublons", rows.size(), duplicates);
-        return ResponseEntity.ok().body("Saved=" + (rows.size() - duplicates) + ", Duplicates=" + duplicates);
+
+        log.info("✅ bulk result8rec: {} lignes reçues, {} créées, {} conflits (doublons)", rows.size(), created, conflicts);
+        return ResponseEntity.ok(response);
     }
 
     /**
