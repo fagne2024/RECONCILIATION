@@ -18,6 +18,10 @@ import { FormControl } from '@angular/forms';
 import { Chart } from 'chart.js';
 import ChartDataLabels from 'chartjs-plugin-datalabels';
 import { MatSelect } from '@angular/material/select';
+import {
+  RECONCILIATION_ENV_OPTIONS,
+  normalizeReconciliationReportEnv
+} from '../../constants/reconciliation-env-options';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 
@@ -88,7 +92,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
     releveStatusCountries: string[] = [];
     releveStatusServices: string[] = [];
     releveStatusDate: string = '';
-    releveStatusEnv: string = 'TOTAL';
+    releveStatusEnv: string = 'ALL';
     releveStatusError: string | null = null;
     private reconciliationCountryServices: { [country: string]: string[] } | null = null;
 
@@ -105,7 +109,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
     reconciliationSummaryCountries: string[] = [];
     reconciliationSummaryService: string = '';
     reconciliationSummaryServices: string[] = [];
-    readonly reconciliationEnvOptions: string[] = ['ALL', 'BET', 'HT', 'HUBAO', 'TOP20', 'GU3', 'TOTAL'];
+    readonly reconciliationEnvOptions: string[] = ['ALL', ...RECONCILIATION_ENV_OPTIONS];
     reconciliationSummaryLoading: boolean = false;
     reconciliationSummaryError: string | null = null;
     reconciliationSummaryRows: {
@@ -891,7 +895,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
         this.releveStatusCountry = this.releveStatusCountries && this.releveStatusCountries.length ? this.releveStatusCountries[0] : null;
         this.releveStatusService = null;
         this.releveStatusDate = '';
-        this.releveStatusEnv = 'TOTAL';
+        this.releveStatusEnv = 'ALL';
         this.showReleveStatusModal = true;
         // Mettre à jour la liste des services disponibles selon le pays pré-sélectionné
         if (this.releveStatusCountry) {
@@ -948,7 +952,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
             return;
         }
 
-        const env = this.releveStatusEnv || 'TOTAL';
+        const env = this.releveStatusEnv || 'ALL';
 
         this.showReleveStatusModal = false;
 
@@ -974,7 +978,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
                     const targetCountry = this.releveStatusCountry!;
                     const targetService = this.releveStatusService!;
                     const targetDateStr = this.releveStatusDate!;
-                    const targetEnv = env || 'TOTAL';
+                    const targetEnv = env || 'ALL';
 
                     const targetDate = new Date(targetDateStr);
                     targetDate.setHours(0, 0, 0, 0);
@@ -983,8 +987,10 @@ export class DashboardComponent implements OnInit, OnDestroy {
                         if (!item.country || !item.service || !item.date) return false;
                         if (item.country !== targetCountry) return false;
                         if (item.service !== targetService) return false;
-                        const itemEnv = (item.env || 'TOTAL');
-                        if (itemEnv !== targetEnv) return false;
+                        if (targetEnv !== 'ALL') {
+                            const itemEnv = normalizeReconciliationReportEnv(item.env);
+                            if (itemEnv !== normalizeReconciliationReportEnv(targetEnv)) return false;
+                        }
 
                         const itemDateStr = (item.date || '').split(' ')[0];
                         const itemDate = new Date(itemDateStr);
@@ -1042,7 +1048,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
         if (!this.releveStatusCountry || !this.releveStatusService || !this.releveStatusDate) {
             return;
         }
-        const env = this.releveStatusEnv || 'TOTAL';
+        const env = this.releveStatusEnv || 'ALL';
         this.showReleveStatusResultModal = false;
         this.router.navigate(['/reconciliation-report'], {
             queryParams: {

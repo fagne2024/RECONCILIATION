@@ -8,6 +8,7 @@ import { EcartBoSummaryService, EcartBoSummaryPrefill, EcartBoSummaryPendingLine
 import { PopupService } from '../../services/popup.service';
 import { fixGarbledCharacters } from '../../utils/encoding-fixer';
 import { ModernPopupComponent } from '../modern-popup/modern-popup.component';
+import { RECONCILIATION_ENV_OPTIONS } from '../../constants/reconciliation-env-options';
 
 export interface EcartBoSummaryItem {
   id?: number; // ID si l'item est sauvegardé
@@ -18,7 +19,10 @@ export interface EcartBoSummaryItem {
   nombre: number; // Nombre de lignes/transactions
   montant: number; // Montant total (pour référence)
   statut: 'ok' | 'en cours';
-  env?: 'BO' | 'PARTENAIRE'; // Environnement : BO ou PARTENAIRE
+  /** Plateforme : BO ou Partenaire (données en plateforme partenaire) */
+  env?: 'BO' | 'PARTENAIRE';
+  /** Environnement technique : BET, HT, PROD, etc. */
+  envCode?: string;
   originalRecords: Record<string, string>[]; // Tous les enregistrements pour ce service
   isManual?: boolean; // Indique si la ligne a été créée manuellement
   commentaire?: string; // Commentaire pour identifier l'origine
@@ -50,7 +54,10 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
   selectedService: string = '';
   selectedPays: string = '';
   selectedStatut: string = '';
+  /** Filtre plateforme BO / PARTENAIRE */
   selectedEnv: string = '';
+  /** Filtre ENV technique (BET, HT, …) */
+  selectedEnvCode: string = '';
   selectedDateFrom: string = '';
   selectedDateTo: string = '';
   selectedToken: string = '';
@@ -59,7 +66,10 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
   uniqueAgencies: string[] = [];
   uniqueServices: string[] = [];
   uniquePays: string[] = [];
-  
+  /** Valeurs pour le filtre / listes ENV (BET, HT, …) */
+  uniqueEnvCodes: string[] = [];
+  readonly envCodePresetOptions: readonly string[] = [...RECONCILIATION_ENV_OPTIONS];
+
   isLoading = false;
   isSaving = false;
   isDeleting = false;
@@ -81,6 +91,7 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
     volume: number;
     statut: 'ok' | 'en cours';
     env: 'BO' | 'PARTENAIRE';
+    envCode: string;
     token: string;
   } = {
     date: '',
@@ -91,6 +102,7 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
     volume: 0,
     statut: 'en cours',
     env: 'BO',
+    envCode: '',
     token: ''
   };
   isUpdating = false;
@@ -106,6 +118,7 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
     volume: number;
     statut: 'ok' | 'en cours';
     env: 'BO' | 'PARTENAIRE';
+    envCode: string;
     token: string;
   } = {
     date: '',
@@ -116,9 +129,19 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
     volume: 0,
     statut: 'en cours',
     env: 'PARTENAIRE',
+    envCode: '',
     token: ''
   };
   isAdding = false;
+
+  /** True tant que l'utilisateur n'a pas choisi l'ENV (réconciliation ou lignes en attente écarts BO). */
+  awaitingEnvChoice = false;
+  /** Sélection temporaire dans le panneau pré-chargement. */
+  pendingEnvSelection = '';
+  /** ENV appliqué aux lignes générées (réconciliation / pending) et défaut du formulaire Ajouter. */
+  sessionDefaultEnvCode = '';
+  private pendingLinesBuffer: EcartBoSummaryPendingLine[] | null = null;
+  private prefillBuffer: EcartBoSummaryPrefill | null = null;
 
   constructor(
     private appStateService: AppStateService,
@@ -129,35 +152,87 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
   ) {}
 
   ngOnInit(): void {
+    this.refreshUniqueEnvCodes();
     const pendingLines = this.ecartBoSummaryService.getAndClearPendingLinesFromEcartBo();
-    // Charger les données de réconciliation en cours par défaut
+    const prefill = this.ecartBoSummaryService.getAndClearPrefillFromMatches();
+
     this.subscription.add(
       this.appStateService.getReconciliationResults().subscribe((response: ReconciliationResponse | null) => {
         if (pendingLines && pendingLines.length > 0) {
-          this.applyPendingLinesFromEcartBo(pendingLines);
-          this.popupService.showSuccess(
-            `${pendingLines.length} ligne(s) prêtes. Utilisez le bouton « Sauvegarder » pour enregistrer les lignes de la page.`
-          );
+          this.pendingLinesBuffer = pendingLines;
+          this.prefillBuffer = prefill;
+          this.awaitingEnvChoice = true;
+          this.pendingEnvSelection = this.sessionDefaultEnvCode || '';
+          this.cdr.markForCheck();
           return;
         }
         if (response) {
           this.response = response;
-          this.loadSummaryData(); // Charger les données de réconciliation en cours
-        } else {
-          // Si pas de données de réconciliation, charger les données sauvegardées
-          this.loadSavedSummaryData();
+          this.prefillBuffer = prefill;
+          this.awaitingEnvChoice = true;
+          this.pendingEnvSelection = this.sessionDefaultEnvCode || '';
+          this.cdr.markForCheck();
+          return;
+        }
+        this.loadSavedSummaryData();
+        if (prefill) {
+          this.popupService
+            .showSuccess(
+              'Données prêtes. Le formulaire Écart BO Summary sera prérempli ; vous pouvez modifier et ajouter la ligne.'
+            )
+            .then(() => {
+              this.openAddModalWithPrefill(prefill);
+              this.cdr.markForCheck();
+            });
         }
       })
     );
-    // Préremplissage depuis écarts BO ou correspondances : afficher d’abord le popup, n’ouvrir le formulaire qu’après validation (OK).
-    const prefill = this.ecartBoSummaryService.getAndClearPrefillFromMatches();
+  }
+
+  get envPreloadHint(): string {
+    if (this.pendingLinesBuffer && this.pendingLinesBuffer.length > 0) {
+      return `${this.pendingLinesBuffer.length} ligne(s) en attente depuis les écarts BO.`;
+    }
+    return 'Les écarts issus de la réconciliation en cours vont être chargés dans le tableau.';
+  }
+
+  /**
+   * Après choix de l'ENV : construit les lignes (réconciliation ou pending) et éventuellement ouvre le préremplissage matches.
+   */
+  confirmEnvAndLoadData(): void {
+    this.sessionDefaultEnvCode = (this.pendingEnvSelection || '').trim();
+    this.awaitingEnvChoice = false;
+    const prefill = this.prefillBuffer;
+    this.prefillBuffer = null;
+
+    if (this.pendingLinesBuffer && this.pendingLinesBuffer.length > 0) {
+      const lines = this.pendingLinesBuffer;
+      this.pendingLinesBuffer = null;
+      this.applyPendingLinesFromEcartBo(lines);
+      this.popupService.showSuccess(
+        `${lines.length} ligne(s) prêtes (ENV : ${this.sessionDefaultEnvCode || 'T-E / non renseigné'}). Utilisez « Sauvegarder » pour enregistrer.`
+      );
+    } else if (this.response) {
+      this.loadSummaryData();
+    }
+
     if (prefill) {
-      this.popupService.showSuccess('Données prêtes. Le formulaire Écart BO Summary sera prérempli ; vous pouvez modifier et ajouter la ligne.')
+      this.popupService
+        .showSuccess(
+          'Données prêtes. Le formulaire Écart BO Summary sera prérempli ; vous pouvez modifier et ajouter la ligne.'
+        )
         .then(() => {
           this.openAddModalWithPrefill(prefill);
           this.cdr.markForCheck();
         });
     }
+    this.cdr.markForCheck();
+  }
+
+  /** Lignes générées : env_code = choix session (vide = agrégat T-E côté relevé). */
+  private getEnvCodeForNewRows(): string | undefined {
+    const v = this.sessionDefaultEnvCode?.trim();
+    return v || undefined;
   }
 
   /** Applique les lignes en attente venues de la page écarts BO (aucun enregistrement : l'utilisateur clique sur Sauvegarder pour enregistrer). */
@@ -171,15 +246,26 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
       montant: line.montant ?? 0,
       statut: 'en cours' as const,
       env: 'BO' as const,
+      envCode: this.getEnvCodeForNewRows(),
       originalRecords: [],
       token: undefined
     } as EcartBoSummaryItem));
     this.uniqueAgencies = [...new Set(this.summaryItems.map(i => i.agence).filter(Boolean))].sort();
     this.uniqueServices = [...new Set(this.summaryItems.map(i => i.service).filter(Boolean))].sort();
     this.uniquePays = [...new Set(this.summaryItems.map(i => i.pays).filter(Boolean))].sort();
+    this.refreshUniqueEnvCodes();
     this.filteredItems = [...this.summaryItems];
     this.updatePagination();
     this.cdr.markForCheck();
+  }
+
+  private refreshUniqueEnvCodes(): void {
+    const fromItems = this.summaryItems
+      .map(i => (i.envCode || '').trim())
+      .filter((c): c is string => !!c);
+    this.uniqueEnvCodes = [...new Set([...this.envCodePresetOptions, ...fromItems])].sort((a, b) =>
+      a.localeCompare(b, 'fr')
+    );
   }
 
   loadByToken(): void {
@@ -223,6 +309,7 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
         montant: item.montantTotal || 0,
         statut: (item.statut === 'OK' ? 'ok' : 'en cours') as 'ok' | 'en cours',
         env: (item.env === 'BO' ? 'BO' : (item.env === 'PARTENAIRE' ? 'PARTENAIRE' : 'BO')) as 'BO' | 'PARTENAIRE',
+        envCode: item.envCode != null && String(item.envCode).trim() !== '' ? String(item.envCode).trim() : undefined,
         originalRecords: [],
         isManual,
         commentaire,
@@ -236,13 +323,17 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
     this.uniqueAgencies = [...new Set(this.summaryItems.map(i => i.agence).filter(Boolean))].sort();
     this.uniqueServices = [...new Set(this.summaryItems.map(i => i.service).filter(Boolean))].sort();
     this.uniquePays = [...new Set(this.summaryItems.map(i => i.pays).filter(Boolean))].sort();
+    this.refreshUniqueEnvCodes();
     this.linkMatchingPairs();
   }
 
   loadSavedSummaryData(): void {
+    this.awaitingEnvChoice = false;
+    this.pendingLinesBuffer = null;
+    this.prefillBuffer = null;
     this.isLoading = true;
     this.cdr.markForCheck();
-    
+
     this.ecartBoSummaryService.getEcartBoSummaries().subscribe({
       next: (savedData) => {
         console.log('Données sauvegardées chargées:', savedData);
@@ -361,6 +452,7 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
               montant,
               statut: 'en cours',
               env: 'BO',
+              envCode: this.getEnvCodeForNewRows(),
               originalRecords: [record],
               token: undefined
             } as EcartBoSummaryItem);
@@ -375,6 +467,7 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
             montant: group.totalMontant,
             statut: 'en cours',
             env: 'BO',
+            envCode: this.getEnvCodeForNewRows(),
             originalRecords: group.records,
             token: undefined
           } as EcartBoSummaryItem);
@@ -389,6 +482,7 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
       this.uniqueAgencies = [...new Set(this.summaryItems.map(item => item.agence).filter(a => a))].sort();
       this.uniqueServices = [...new Set(this.summaryItems.map(item => item.service).filter(s => s))].sort();
       this.uniquePays = [...new Set(this.summaryItems.map(item => item.pays).filter(p => p))].sort();
+      this.refreshUniqueEnvCodes();
 
       this.filteredItems = [...this.summaryItems];
       this.updatePagination();
@@ -415,6 +509,7 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
         item.pays.toLowerCase().includes(searchTerm) ||
         item.statut.toLowerCase().includes(searchTerm) ||
         (item.env || '').toLowerCase().includes(searchTerm) ||
+        (item.envCode || '').toLowerCase().includes(searchTerm) ||
         item.nombre.toString().includes(searchTerm) ||
         (item.token || '').toLowerCase().includes(searchTerm)
       );
@@ -446,9 +541,14 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
       filtered = filtered.filter(item => item.statut === this.selectedStatut);
     }
 
-    // Filtre par environnement (ENV)
+    // Filtre plateforme (BO / PARTENAIRE)
     if (this.selectedEnv) {
       filtered = filtered.filter(item => item.env === this.selectedEnv);
+    }
+
+    // Filtre ENV technique (BET, HT, …)
+    if (this.selectedEnvCode) {
+      filtered = filtered.filter(item => (item.envCode || '').trim() === this.selectedEnvCode);
     }
 
     // Filtre par date (du - au)
@@ -714,7 +814,7 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
     
     this.updateLinkedItemsStatusDebounceTimer = setTimeout(async () => {
       await this.processPendingStatusUpdates();
-    }, 500); // Attendre 500ms avant de traiter les mises à jour
+    }, 900); // Laisser retomber les rafales avant les PUT
   }
 
   /**
@@ -736,41 +836,32 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
     const itemsToUpdate = Array.from(uniqueItems.values());
     this.pendingStatusUpdates = []; // Vider la liste des mises à jour en attente
 
-    // Traiter les items par batch de 5 avec un délai entre chaque batch
-    const batchSize = 5;
-    const delayBetweenBatches = 1000; // 1 seconde entre chaque batch
-    
-    for (let i = 0; i < itemsToUpdate.length; i += batchSize) {
-      const batch = itemsToUpdate.slice(i, i + batchSize);
-      
-      // Traiter le batch en parallèle
-      await Promise.all(
-        batch.map(item => this.updateSingleItemStatus(item))
-      );
-      
-      // Attendre avant le prochain batch (sauf pour le dernier)
-      if (i + batchSize < itemsToUpdate.length) {
-        await new Promise(resolve => setTimeout(resolve, delayBetweenBatches));
+    // Un PUT à la fois + pause (évite 429 : le filtre backend compte chaque requête)
+    const throttleMs = 350;
+    for (let i = 0; i < itemsToUpdate.length; i++) {
+      await this.updateSingleItemStatus(itemsToUpdate[i]);
+      if (i < itemsToUpdate.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, throttleMs));
       }
     }
   }
 
   /**
-   * Met à jour le statut d'un seul item avec retry en cas d'erreur 429
+   * Met à jour le statut d'un seul item (retry 429 géré dans EcartBoSummaryService).
    */
-  private async updateSingleItemStatus(item: EcartBoSummaryItem, retryCount: number = 0): Promise<void> {
+  private async updateSingleItemStatus(item: EcartBoSummaryItem): Promise<void> {
     if (!item.id || item.id <= 0) {
       return;
     }
-
-    const maxRetries = 3;
-    const baseDelay = 1000; // 1 seconde de base
 
     try {
       const updateData: any = {
         statut: 'OK',
         env: item.env || 'BO'
       };
+      if (item.envCode != null && String(item.envCode).trim() !== '') {
+        updateData.envCode = String(item.envCode).trim();
+      }
       if (item.token) {
         updateData.token = item.token;
       }
@@ -784,25 +875,10 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
       itemAny.__originalToken = item.token;
       console.log(`✅ Statut${item.token ? ' et token' : ''} mis à jour pour la ligne ${item.id}`);
     } catch (error: any) {
-      // Gérer l'erreur 429 (Too Many Requests) avec retry
-      if (error.status === 429 && retryCount < maxRetries) {
-        const delay = baseDelay * Math.pow(2, retryCount); // Backoff exponentiel
-        console.warn(`⚠️ Rate limit atteint pour la ligne ${item.id}. Nouvelle tentative dans ${delay}ms...`);
-        
-        await new Promise(resolve => setTimeout(resolve, delay));
-        return this.updateSingleItemStatus(item, retryCount + 1);
-      }
-      
-      // Gérer gracieusement les erreurs 404 (item n'existe plus en base)
       if (error.status === 404) {
-        // Item supprimé entre-temps, ignorer silencieusement
         return;
       }
-      
-      // Autres erreurs: les logger
-      if (error.status !== 429) { // Ne pas logger les 429 car on les gère avec retry
-        console.error(`❌ Erreur lors de la mise à jour du statut pour la ligne ${item.id}:`, error);
-      }
+      console.error(`❌ Erreur lors de la mise à jour du statut pour la ligne ${item.id}:`, error);
     }
   }
 
@@ -890,6 +966,7 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
     this.selectedPays = '';
     this.selectedStatut = '';
     this.selectedEnv = '';
+    this.selectedEnvCode = '';
     this.selectedDateFrom = '';
     this.selectedDateTo = '';
     this.selectedToken = '';
@@ -929,6 +1006,7 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
       volume: item.montant || 0,
       statut: item.statut || 'en cours',
       env: item.env || 'BO',
+      envCode: item.envCode || '',
       token: item.token || ''
     };
     this.showEditModal = true;
@@ -938,7 +1016,7 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
   closeEditModal(): void {
     this.showEditModal = false;
     this.editingItem = null;
-    this.editForm = { date: '', agence: '', service: '', pays: '', nombre: 0, volume: 0, statut: 'en cours', env: 'BO', token: '' };
+    this.editForm = { date: '', agence: '', service: '', pays: '', nombre: 0, volume: 0, statut: 'en cours', env: 'BO', envCode: '', token: '' };
     this.cdr.markForCheck();
   }
 
@@ -982,7 +1060,8 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
           nombreTransactions: this.editForm.nombre,
           montantTotal: this.editForm.volume || 0,
           statut: this.editForm.statut === 'ok' ? 'OK' : 'EN_COURS',
-          env: this.editForm.env || 'BO'
+          env: this.editForm.env || 'BO',
+          envCode: this.editForm.envCode != null && this.editForm.envCode.trim() !== '' ? this.editForm.envCode.trim() : ''
         };
         if (this.editForm.token !== undefined) {
           updatedData.token = this.editForm.token && this.editForm.token.trim() ? this.editForm.token.trim() : null;
@@ -998,6 +1077,10 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
         this.editingItem.montant = updated.montantTotal || this.editForm.volume || 0;
         this.editingItem.statut = (updated.statut === 'OK' ? 'ok' : 'en cours') as 'ok' | 'en cours';
         this.editingItem.token = updated.token || undefined;
+        this.editingItem.envCode =
+          updated.envCode != null && String(updated.envCode).trim() !== ''
+            ? String(updated.envCode).trim()
+            : undefined;
         
         // Mettre à jour aussi dans summaryItems
         const index = this.summaryItems.findIndex(item => item.id === this.editingItem!.id);
@@ -1007,6 +1090,7 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
         
         // Vérifier si la ligne modifiée peut être liée à une autre
         this.linkMatchingPairs();
+        this.refreshUniqueEnvCodes();
       } else {
         // Si c'est un item non sauvegardé (données de réconciliation), mettre à jour localement
         this.editingItem.date = this.editForm.date;
@@ -1017,6 +1101,10 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
         this.editingItem.montant = this.editForm.volume || 0;
         this.editingItem.statut = this.editForm.statut;
         this.editingItem.env = this.editForm.env;
+        this.editingItem.envCode =
+          this.editForm.envCode != null && this.editForm.envCode.trim() !== ''
+            ? this.editForm.envCode.trim()
+            : undefined;
         
         // Vérifier si la ligne modifiée peut être liée à une autre
         this.linkMatchingPairs();
@@ -1031,6 +1119,7 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
         if (index >= 0) {
           this.summaryItems[index] = { ...this.editingItem };
         }
+        this.refreshUniqueEnvCodes();
       }
       
       // Réappliquer les filtres après modification
@@ -1097,7 +1186,10 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
         date: item.date,
         statut: item.statut === 'ok' ? 'OK' : 'EN_COURS',
         nombreTransactions: item.nombre, // Nombre de lignes/transactions
-        env: 'BO' // Prérempli avec BO pour le bouton sauvegarder
+        env: item.env || 'BO',
+        ...(item.envCode != null && String(item.envCode).trim() !== ''
+          ? { envCode: String(item.envCode).trim() }
+          : {})
       }));
 
       if (serviceSummaryData.length === 0) {
@@ -1207,6 +1299,7 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
       volume: 0,
       statut: 'en cours',
       env: defaultEnv,
+      envCode: this.sessionDefaultEnvCode || '',
       token: ''
     };
     this.showAddModal = true;
@@ -1228,6 +1321,7 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
       volume: prefill.volume ?? 0,
       statut: 'en cours',
       env: defaultEnv,
+      envCode: this.sessionDefaultEnvCode || '',
       token: ''
     };
     this.showAddModal = true;
@@ -1246,6 +1340,7 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
       volume: 0,
       statut: 'en cours',
       env: defaultEnv,
+      envCode: this.sessionDefaultEnvCode || '',
       token: ''
     };
     this.cdr.markForCheck();
@@ -1290,6 +1385,9 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
         env: this.addForm.env || this.ecartBoSummaryService.getDefaultEnvForAddModal(),
         commentaire: `Ajout manuel - ${this.addForm.nombre} transaction(s)`
       };
+      if (this.addForm.envCode != null && this.addForm.envCode.trim() !== '') {
+        summaryData.envCode = this.addForm.envCode.trim();
+      }
       if (this.addForm.token && this.addForm.token.trim()) {
         summaryData.token = this.addForm.token.trim();
       }
@@ -1431,14 +1529,18 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
     let successCount = 0;
     let errorCount = 0;
     try {
-      for (const id of ids) {
+      for (let i = 0; i < ids.length; i++) {
+        const id = ids[i];
         try {
           await firstValueFrom(this.ecartBoSummaryService.deleteEcartBoSummary(id));
-          this.summaryItems = this.summaryItems.filter(i => i.id !== id);
+          this.summaryItems = this.summaryItems.filter(item => item.id !== id);
           this.selectedIds.delete(id);
           successCount++;
         } catch {
           errorCount++;
+        }
+        if (i < ids.length - 1) {
+          await new Promise(r => setTimeout(r, 250));
         }
       }
       this.applyFilters();
@@ -1466,7 +1568,7 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
     this.cdr.markForCheck();
 
     try {
-      const columns = ['Date', 'Agence', 'Service', 'Pays', 'ENV', 'Token', 'Nombre', 'Volume', 'Statut'];
+      const columns = ['Date', 'Agence', 'Service', 'Pays', 'Plateforme', 'ENV', 'Token', 'Nombre', 'Volume', 'Statut'];
       
       // Fonction pour échapper les valeurs CSV
       const escapeCsvValue = (value: any): string => {
@@ -1494,6 +1596,7 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
           item.service || '',
           item.pays || '',
           item.env || 'BO',
+          item.envCode || '',
           item.token || '',
           item.nombre || 0,
           item.montant || 0,

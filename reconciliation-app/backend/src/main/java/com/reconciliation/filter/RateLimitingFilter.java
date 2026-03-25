@@ -46,6 +46,10 @@ public class RateLimitingFilter extends OncePerRequestFilter {
     @Value("${rate.limit.expose-headers:false}")
     private boolean exposeRateLimitHeaders;
 
+    /** Exclut /api/ecart-bo-summary (rafales PUT/DELETE légitimes : liaisons auto, édition). */
+    @Value("${rate.limit.exclude-ecart-bo-summary-api:true}")
+    private boolean excludeEcartBoSummaryApi;
+
     // Chemins exclus du rate limiting
     private static final String[] EXCLUDED_PATHS = {
         "/actuator/health",
@@ -99,6 +103,11 @@ public class RateLimitingFilter extends OncePerRequestFilter {
 
         // Ignorer les requêtes OPTIONS (CORS preflight)
         if ("OPTIONS".equalsIgnoreCase(request.getMethod())) {
+            filterChain.doFilter(request, response);
+            return;
+        }
+
+        if (excludeEcartBoSummaryApi && path.startsWith("/api/ecart-bo-summary")) {
             filterChain.doFilter(request, response);
             return;
         }

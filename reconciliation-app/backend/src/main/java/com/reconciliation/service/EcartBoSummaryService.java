@@ -166,6 +166,9 @@ public class EcartBoSummaryService {
                 entity.setMontantTotal(summary.getMontant() != null ? summary.getMontant() : 0.0);
                 entity.setStatut(finalStatut != null ? finalStatut : "EN_COURS");
                 entity.setEnv(summary.getEnv() != null && !summary.getEnv().trim().isEmpty() ? summary.getEnv() : "BO");
+                if (summary.getEnvCode() != null && !summary.getEnvCode().trim().isEmpty()) {
+                    entity.setEnvCode(summary.getEnvCode().trim());
+                }
                 // Utiliser le commentaire fourni ou générer un commentaire par défaut
                 if (summary.getCommentaire() != null && !summary.getCommentaire().trim().isEmpty()) {
                     entity.setCommentaire(summary.getCommentaire());
@@ -244,6 +247,10 @@ public class EcartBoSummaryService {
         if (ecartBoSummary.getEnv() != null && !ecartBoSummary.getEnv().trim().isEmpty()) {
             entity.setEnv(ecartBoSummary.getEnv().trim());
         }
+        if (ecartBoSummary.getEnvCode() != null) {
+            String code = ecartBoSummary.getEnvCode().trim();
+            entity.setEnvCode(code.isEmpty() ? null : code);
+        }
         if (ecartBoSummary.getToken() != null) {
             entity.setToken(ecartBoSummary.getToken().trim().isEmpty() ? null : ecartBoSummary.getToken().trim());
         }
@@ -287,6 +294,7 @@ public class EcartBoSummaryService {
         model.setDateImport(entity.getDateImport());
         model.setCommentaire(entity.getCommentaire());
         model.setEnv(entity.getEnv() != null ? entity.getEnv() : "BO");
+        model.setEnvCode(entity.getEnvCode());
         model.setToken(entity.getToken());
         return model;
     }

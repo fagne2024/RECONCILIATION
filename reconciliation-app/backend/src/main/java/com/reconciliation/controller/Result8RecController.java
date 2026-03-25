@@ -60,8 +60,8 @@ public class Result8RecController {
         }
         // Définir l'environnement par défaut si non spécifié
         if (body.getEnv() == null || body.getEnv().trim().isEmpty()) {
-            body.setEnv("TOTAL");
-            log.info("🔄 Env par défaut défini: TOTAL");
+            body.setEnv("T-E");
+            log.info("🔄 Env par défaut défini: T-E");
         }
         
         // Définir le username depuis le contexte de la requête

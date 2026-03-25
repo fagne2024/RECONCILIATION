@@ -13,7 +13,11 @@ import { ExportOptimizationService } from '../../services/export-optimization.se
 import { ReconciliationTabsService } from '../../services/reconciliation-tabs.service';
 import { PopupService } from '../../services/popup.service';
 import { PaysService } from '../../services/pays.service';
-import { EcartBoSummaryService } from '../../services/ecart-bo-summary.service';
+import { EcartBoSummaryService, EcartBoSummary } from '../../services/ecart-bo-summary.service';
+import {
+  RECONCILIATION_ENV_OPTIONS,
+  normalizeReconciliationReportEnv
+} from '../../constants/reconciliation-env-options';
 import { LoggerService } from '../../services/logger.service';
 import { fixGarbledCharacters } from '../../utils/encoding-fixer';
 import * as ExcelJS from 'exceljs';
@@ -234,7 +238,7 @@ export interface ReconciliationReportData {
                         <mat-label>ENV</mat-label>
                         <mat-select [(ngModel)]="selectedEnvs" multiple (selectionChange)="onEnvSelectionChange()">
                             <mat-option *ngFor="let env of uniqueEnvs" [value]="env">
-                                {{ env === 'TOTAL' ? 'T-E' : env }}
+                                {{ formatEnvFilterLabel(env) }}
                             </mat-option>
                         </mat-select>
                     </mat-form-field>
@@ -458,14 +462,14 @@ export interface ReconciliationReportData {
                             </td>
                             <td class="text-cell col-env">
                                 <ng-container *ngIf="editingRow !== item; else editEnv">
-                                    <span class="env-text" [title]="item.env || 'T-E'">
-                                        {{ (item.env || 'TOTAL') === 'TOTAL' ? 'T-E' : item.env }}
+                                    <span class="env-text" [title]="formatEnvFilterLabel(item.env)">
+                                        {{ formatEnvFilterLabel(item.env) }}
                                     </span>
                                 </ng-container>
                                 <ng-template #editEnv>
                                     <select [(ngModel)]="item.env" class="edit-select">
                                         <option *ngFor="let env of envOptions" [ngValue]="env">
-                                            {{ env === 'TOTAL' ? 'T-E' : env }}
+                                            {{ formatEnvFilterLabel(env) }}
                                         </option>
                                     </select>
                                 </ng-template>
@@ -744,7 +748,7 @@ export interface ReconciliationReportData {
                                 (ngModelChange)="onReleveEnvChange($event)"
                             >
                                 <option *ngFor="let env of envOptions" [ngValue]="env">
-                                    {{ env === 'TOTAL' ? 'T-E' : env }}
+                                    {{ formatEnvFilterLabel(env) }}
                                 </option>
                             </select>
                         </div>
@@ -810,7 +814,7 @@ export interface ReconciliationReportData {
                                 </tbody>
                             </table>
                         </div>
-                        <p class="releve-no-data" *ngIf="!releveEcartData || releveEcartData.length === 0">Aucune donnée trouvée dans Écart BO J+1 pour ce service, cette date, ce pays et cette agence.</p>
+                        <p class="releve-no-data" *ngIf="!releveEcartData || releveEcartData.length === 0">Aucune donnée trouvée dans Écart BO J+1 pour ce service, cette date, ce pays et l'environnement « {{ releveEnvMessageLabel }} ». Vérifiez le résumé écarts BO : plateforme BO, date = date du rapport, et env_code = « {{ releveEnvMessageLabel }} » (env_code vide = agrégat T-E uniquement).</p>
                     </div>
 
                     <!-- Section Données ENV PARTENAIRE J-1 -->
@@ -854,7 +858,7 @@ export interface ReconciliationReportData {
                         </div>
                     </div>
                     <div class="releve-section" *ngIf="releveEcartDataJ1 && releveEcartDataJ1.length === 0 && !isLoadingReleve">
-                        <p class="releve-no-data">Aucune donnée trouvée dans Écart BO J-1 (ENV PARTENAIRE) pour ce service, ce pays et cette agence.</p>
+                        <p class="releve-no-data">Aucune donnée trouvée dans Écart BO J-1 (plateforme Partenaire) pour ce service, ce pays et l'environnement « {{ releveEnvMessageLabel }} ». Vérifiez : plateforme Partenaire, date = veille du rapport, env_code identique (vide = T-E).</p>
                     </div>
 
                     <!-- Section Trx traité (saisie manuelle) -->
@@ -2995,12 +2999,12 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
     releveRembourseVolume: number = 0;
     isReleveRembourseFileLoading = false;
 
-    // Environnement du relevé (BET, HT, HUBAO, TOP20, GU3, TOTAL, ...)
-    releveEnv: string = 'TOTAL';
+    // Environnement du relevé : même liste que /ecart-bo-summary (envCode), T-E = agrégat
+    releveEnv: string = 'T-E';
     /** Dernier ENV pour lequel le relevé a été chargé avec succès (annulation si aucune ligne OK). */
-    private releveEnvLastValid: string = 'TOTAL';
-    // Liste des environnements disponibles pour édition
-    readonly envOptions: string[] = ['BET', 'HT', 'HUBAO', 'TOP20', 'GU3', 'TOTAL'];
+    private releveEnvLastValid: string = 'T-E';
+    /** Liste ENV : RECONCILIATION_ENV_OPTIONS (BET, HT, T-E, HUBAO, TOP20, GU3) */
+    readonly envOptions: string[] = [...RECONCILIATION_ENV_OPTIONS];
 
     // Pays autorisés pour le cloisonnement
     private allowedCountryCodes: string[] | null = null;
@@ -3142,7 +3146,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             const env = params['env'];
             const openReleve = params['openReleve'];
 
-            if (env) {
+            if (env && env !== 'ALL') {
                 this.releveEnv = this.normalizeReleveEnvKey(env);
             }
 
@@ -4431,7 +4435,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         this.uniqueCountries = [...new Set(this.reportData.map(item => item.country).filter(country => country && country.trim() !== ''))].sort();
         this.uniqueDates = [...new Set(this.reportData.map(item => item.date))].sort();
         this.uniqueStatuses = [...new Set(this.reportData.map(item => item.status).filter(status => status && status.trim() !== ''))].sort();
-        this.uniqueEnvs = [...new Set(this.reportData.map(item => (item.env || 'TOTAL').trim()).filter(env => env !== ''))].sort();
+        this.uniqueEnvs = [...new Set(this.reportData.map(item => this.normalizeReleveEnvKey(item.env)))].filter(e => e !== '').sort();
         
         this.filteredAgencies = [...this.uniqueAgencies];
         this.filteredServices = [...this.uniqueServices];
@@ -4652,7 +4656,10 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             const countryFilterMatch = this.selectedCountries.length === 0 || this.selectedCountries.includes(item.country);
             const statusMatch = this.selectedStatuses.length === 0 || this.selectedStatuses.includes(item.status);
             const traitementMatch = this.selectedTraitements.length === 0 || this.selectedTraitements.includes(item.traitement || '');
-            const envMatch = this.selectedEnvs.length === 0 || this.selectedEnvs.includes((item.env || 'TOTAL').trim());
+            const itemEnvNorm = this.normalizeReleveEnvKey(item.env);
+            const envMatch =
+                this.selectedEnvs.length === 0 ||
+                this.selectedEnvs.some(sel => this.normalizeReleveEnvKey(sel) === itemEnvNorm);
             const ticketFilter = (this.ticketIdFilter || '').trim().toLowerCase();
             const ticketMatch = !ticketFilter || (item.glpiId || '').toLowerCase().includes(ticketFilter);
             
@@ -4764,11 +4771,13 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             item.service === target.service &&
             this.formatDateForSearch(item.date) === targetDate &&
             item.status === 'OK' &&
-            (!target.env || this.normalizeReleveEnvKey(item.env) === this.normalizeReleveEnvKey(target.env))
+            (!target.env ||
+                target.env === 'ALL' ||
+                this.normalizeReleveEnvKey(item.env) === this.normalizeReleveEnvKey(target.env))
         );
 
         if (matchingItem) {
-            if (target.env) {
+            if (target.env && target.env !== 'ALL') {
                 this.releveEnv = this.normalizeReleveEnvKey(target.env);
             }
             this.showReleveModal(matchingItem);
@@ -5880,7 +5889,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             agency: data.agency,
             service: data.service,
             country: data.country,
-            env: data.env || 'TOTAL',
+            env: this.normalizeReleveEnvKey(data.env),
             totalTransactions: data.totalTransactions,
             totalVolume: data.totalVolume,
             matches: data.matches,
@@ -6295,7 +6304,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             agency: existingRow.agency,
             service: existingRow.service,
             country: existingRow.country,
-            env: existingRow.env || 'TOTAL',
+            env: this.normalizeReleveEnvKey(existingRow.env),
             totalTransactions: existingRow.totalTransactions,
             totalVolume: existingRow.totalVolume,
             matches: existingRow.matches,
@@ -6338,7 +6347,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             agency: existing?.agency,
             service: existing?.service,
             country: existing?.country,
-            env: envOverride || existing?.env || 'TOTAL',
+            env: this.normalizeReleveEnvKey(envOverride || existing?.env),
             totalTransactions: Number(existing?.totalTransactions ?? 0) || 0,
             totalVolume: Number(existing?.totalVolume ?? 0) || 0,
             matches: Number(existing?.matches ?? 0) || 0,
@@ -6389,7 +6398,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             agency: existing.agency,
             service: existing.service,
             country: existing.country,
-            env: existing?.env ?? 'TOTAL',
+            env: this.normalizeReleveEnvKey(existing?.env),
             totalTransactions,
             totalVolume,
             matches,
@@ -6445,9 +6454,12 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
 
         // 1) Sélectionner l'environnement pour cette ligne
         const envOptions = this.envOptions;
-        const currentEnv = (item.env && envOptions.includes(item.env))
-            ? item.env
-            : (envOptions.includes(this.releveEnv) ? this.releveEnv : 'TOTAL');
+        const itemEnvNorm = this.normalizeReleveEnvKey(item.env);
+        const currentEnv = envOptions.includes(itemEnvNorm)
+            ? itemEnvNorm
+            : (envOptions.includes(this.normalizeReleveEnvKey(this.releveEnv))
+                  ? this.normalizeReleveEnvKey(this.releveEnv)
+                  : 'T-E');
         const selectedEnv = await this.popupService.showSelectInput(
             'Sélectionnez l\'environnement pour ce résultat :',
             'Environnement',
@@ -6494,7 +6506,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             agency: item.agency,
             service: item.service,
             country: item.country,
-            env: item.env || 'TOTAL',
+            env: this.normalizeReleveEnvKey(item.env),
             glpiId: item.glpiId || '',
             totalTransactions: item.totalTransactions,
             totalVolume: item.totalVolume,
@@ -6626,7 +6638,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             agency: recalculatedData.agency,
             service: recalculatedData.service,
             country: recalculatedData.country,
-            env: recalculatedData.env || 'TOTAL',
+            env: this.normalizeReleveEnvKey(recalculatedData.env),
             totalTransactions: recalculatedData.totalTransactions,
             totalVolume: recalculatedData.totalVolume,
             matches: recalculatedData.matches,
@@ -6725,7 +6737,8 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
 
         // Sélectionner l'environnement à appliquer à toutes les lignes
         const envOptions = this.envOptions;
-        const defaultEnvAll = envOptions.includes(this.releveEnv) ? this.releveEnv : 'TOTAL';
+        const releveNorm = this.normalizeReleveEnvKey(this.releveEnv);
+        const defaultEnvAll = envOptions.includes(releveNorm) ? releveNorm : 'T-E';
         const selectedEnvAll = await this.popupService.showSelectInput(
             `Sélectionnez l'environnement à appliquer à toutes les ${rowsSource.length} ligne(s) :`,
             'Environnement pour toutes les lignes',
@@ -7434,7 +7447,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             agency: base.agency,
             service: base.service,
             country: base.country,
-            env: base.env || 'TOTAL',
+            env: this.normalizeReleveEnvKey(base.env),
             totalTransactions: base.totalTransactions,
             totalVolume: base.totalVolume,
             matches: base.matches,
@@ -8333,7 +8346,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             agency: item.agency,
             service: item.service,
             country: item.country,
-            env: item.env || 'TOTAL',
+            env: this.normalizeReleveEnvKey(item.env),
             totalTransactions: item.totalTransactions,
             totalVolume: item.totalVolume,
             matches: item.matches,
@@ -8386,7 +8399,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             agency: item.agency,
             service: item.service,
             country: item.country,
-            env: item.env || 'TOTAL',
+            env: this.normalizeReleveEnvKey(item.env),
             totalTransactions: item.totalTransactions,
             totalVolume: item.totalVolume,
             matches: item.matches,
@@ -8552,10 +8565,96 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         this.router.navigate(['/suivi-des-ecarts']);
     }
 
-    /** Clé ENV rapport (vide → TOTAL, comme le filtre du tableau). */
+    /** Clé ENV rapport : vide ou ancien TOTAL → T-E (liste BET, HT, T-E, HUBAO, TOP20, GU3). */
     private normalizeReleveEnvKey(env?: string | null): string {
-        const t = (env ?? '').trim();
-        return t || 'TOTAL';
+        return normalizeReconciliationReportEnv(env);
+    }
+
+    /** Libellé affichage filtre / tableau (alias normalisation). */
+    formatEnvFilterLabel(env?: string | null): string {
+        return this.normalizeReleveEnvKey(env);
+    }
+
+    get releveEnvMessageLabel(): string {
+        return this.normalizeReleveEnvKey(this.releveEnv);
+    }
+
+    private isBoPlatformEcart(ecart: EcartBoSummary): boolean {
+        return (ecart.env || '').trim().toUpperCase() === 'BO';
+    }
+
+    private isPartenairePlatformEcart(ecart: EcartBoSummary): boolean {
+        return (ecart.env || '').trim().toUpperCase() === 'PARTENAIRE';
+    }
+
+    /** Lit env_code renvoyé par l’API (camelCase) ou variante snake_case si jamais présente. */
+    private getEcartEnvCodeRaw(ecart: EcartBoSummary): string {
+        const anyE = ecart as EcartBoSummary & { env_code?: string | null };
+        const v = ecart.envCode ?? anyE.env_code;
+        return v != null ? String(v).trim() : '';
+    }
+
+    /** env_code ecart_bo_summary vs ENV relevé ; code absent → T-E (agrégat). */
+    private ecartEnvCodeMatchesReleve(ecart: EcartBoSummary, releveEnvNorm: string): boolean {
+        const code = this.getEcartEnvCodeRaw(ecart);
+        const ecartKey = !code || code.toUpperCase() === 'TOTAL' ? 'T-E' : code;
+        return ecartKey.toUpperCase() === releveEnvNorm.toUpperCase();
+    }
+
+    /**
+     * Jour calendaire précédent pour une date YYYY-MM-DD (évite le décalage dû à new Date('YYYY-MM-DD') en UTC).
+     */
+    private subtractCalendarDaysFromYmd(ymd: string, days: number): string {
+        const base = this.formatDateForSearch(ymd);
+        const m = base.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+        if (!m) {
+            return base;
+        }
+        const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+        d.setDate(d.getDate() - days);
+        const y = d.getFullYear();
+        const mo = String(d.getMonth() + 1).padStart(2, '0');
+        const da = String(d.getDate()).padStart(2, '0');
+        return `${y}-${mo}-${da}`;
+    }
+
+    /** Charge Trx BO J+1 (plateforme BO, date rapport, ENV) et Trx Partenaire J-1 (plateforme Partenaire, J-1, ENV). */
+    private async loadReleveEcartBoSummariesForCurrentReleve(): Promise<void> {
+        if (!this.releveData) {
+            return;
+        }
+        const item = this.releveData;
+        const searchDate = this.formatDateForSearch(item.date);
+        const searchDateJ1 = this.subtractCalendarDaysFromYmd(searchDate, 1);
+        const envKey = this.normalizeReleveEnvKey(this.releveEnv);
+
+        // Uniquement le service côté API : findByAgenceAndServiceAndPays exigerait pays identique en base,
+        // alors que beaucoup de lignes ont pays vide → aucun résultat. Agence : pas de cloisonnement côté relevé.
+        const ecartData = await firstValueFrom(
+            this.ecartBoSummaryService.getEcartBoSummaries({ service: item.service })
+        );
+
+        this.releveEcartData = ecartData.filter(ecart => {
+            const ecartDate = this.formatDateForSearch(ecart.dateTransaction);
+            return (
+                ecartDate === searchDate &&
+                this.releveStringsEqual(ecart.service, item.service) &&
+                this.ecartPaysMatchesReleve(ecart, item.country) &&
+                this.isBoPlatformEcart(ecart) &&
+                this.ecartEnvCodeMatchesReleve(ecart, envKey)
+            );
+        });
+
+        this.releveEcartDataJ1 = ecartData.filter(ecart => {
+            const ecartDate = this.formatDateForSearch(ecart.dateTransaction);
+            return (
+                ecartDate === searchDateJ1 &&
+                this.releveStringsEqual(ecart.service, item.service) &&
+                this.ecartPaysMatchesReleve(ecart, item.country) &&
+                this.isPartenairePlatformEcart(ecart) &&
+                this.ecartEnvCodeMatchesReleve(ecart, envKey)
+            );
+        });
     }
 
     private normalizeReleveCountry(country?: string | null): string {
@@ -8577,8 +8676,24 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
     }
 
     /**
+     * Pays côté ecart_bo_summary souvent vide à la sauvegarde : vide = non cloisonné, compatible relevé.
+     * Si les deux sont renseignés, ils doivent coïncider.
+     */
+    private ecartPaysMatchesReleve(ecart: EcartBoSummary, reportCountry: string): boolean {
+        const rep = this.normalizeReleveCountry(reportCountry);
+        const ep = this.normalizeReleveCountry(ecart.pays);
+        if (!rep) {
+            return true;
+        }
+        if (!ep) {
+            return true;
+        }
+        return this.releveStringsEqual(ep, rep);
+    }
+
+    /**
      * Affiche le modal de relevé pour un service avec statut OK
-     * Cloisonne par service, date, pays et ENV du rapport (agrégation uniquement sur ce périmètre).
+     * Cloisonne par service, date, pays et ENV du rapport (agrégation uniquement sur ce périmètre ; agence écart non filtrée).
      */
     async showReleveModal(item: ReconciliationReportData): Promise<void> {
         if (item.status !== 'OK') {
@@ -8615,51 +8730,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         this.releveEcartDataJ1 = [];
 
         try {
-            const searchDate = this.formatDateForSearch(item.date);
-
-            const searchDateObj = new Date(searchDate);
-            searchDateObj.setDate(searchDateObj.getDate() - 1);
-            const searchDateJ1 = this.formatDateForSearch(searchDateObj.toISOString().split('T')[0]);
-
-            const ecartFilter: { agence?: string; service: string; pays?: string } = { service: item.service };
-            if (this.normalizeReleveCountry(item.country)) {
-                ecartFilter.pays = this.normalizeReleveCountry(item.country);
-            }
-            if ((item.agency || '').trim()) {
-                ecartFilter.agence = item.agency.trim();
-            }
-
-            const ecartData = await firstValueFrom(
-                this.ecartBoSummaryService.getEcartBoSummaries(ecartFilter)
-            );
-
-            const filteredEcartData = ecartData.filter(ecart => {
-                const ecartDate = this.formatDateForSearch(ecart.dateTransaction);
-                const isMatchingDate = ecartDate === searchDate;
-                const isMatchingService = this.releveStringsEqual(ecart.service, item.service);
-                const paysMatch = !this.normalizeReleveCountry(item.country) ||
-                    this.releveStringsEqual(ecart.pays, item.country);
-                const agenceMatch = !(item.agency || '').trim() ||
-                    this.releveStringsEqual(ecart.agence, item.agency);
-                const isPartenaire = (ecart.env === 'PARTENAIRE' || ecart.env === 'Partenaire' || ecart.env === 'partenaire');
-                return isMatchingDate && isMatchingService && paysMatch && agenceMatch && isPartenaire;
-            });
-
-            this.releveEcartData = filteredEcartData;
-
-            const filteredEcartDataJ1 = ecartData.filter(ecart => {
-                const ecartDate = this.formatDateForSearch(ecart.dateTransaction);
-                const isMatchingDateJ1 = ecartDate === searchDateJ1;
-                const isMatchingService = this.releveStringsEqual(ecart.service, item.service);
-                const paysMatch = !this.normalizeReleveCountry(item.country) ||
-                    this.releveStringsEqual(ecart.pays, item.country);
-                const agenceMatch = !(item.agency || '').trim() ||
-                    this.releveStringsEqual(ecart.agence, item.agency);
-                const isPartenaire = (ecart.env === 'PARTENAIRE' || ecart.env === 'Partenaire' || ecart.env === 'partenaire');
-                return isMatchingDateJ1 && isMatchingService && paysMatch && agenceMatch && isPartenaire;
-            });
-
-            this.releveEcartDataJ1 = filteredEcartDataJ1;
+            await this.loadReleveEcartBoSummariesForCurrentReleve();
         } catch (error: any) {
             console.error('Erreur lors de la récupération des données Écart BO:', error);
             this.popupService.showError(`❌ Erreur lors de la récupération des données: ${error.message || 'Erreur inconnue'}`);
@@ -8703,7 +8774,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
 
         if (!candidateLine) {
             this.popupService.showWarning(
-                `Aucune ligne OK pour ce service, cette date, ce pays et l'environnement « ${envNorm === 'TOTAL' ? 'T-E' : envNorm} ».`
+                `Aucune ligne OK pour ce service, cette date, ce pays et l'environnement « ${this.formatEnvFilterLabel(envNorm)} ».`
             );
             this.releveEnv = this.releveEnvLastValid;
             return;
@@ -8726,6 +8797,20 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
 
         this.loadReleveManualData();
         this.isReleveValidated = this.isReleveAlreadyValidated();
+
+        this.isLoadingReleve = true;
+        this.loadReleveEcartBoSummariesForCurrentReleve()
+            .catch((err: any) => {
+                console.error('Erreur lors de la récupération des données Écart BO:', err);
+                this.popupService.showError(
+                    `❌ Erreur lors de la récupération des données: ${err?.message || 'Erreur inconnue'}`
+                );
+                this.releveEcartData = [];
+                this.releveEcartDataJ1 = [];
+            })
+            .finally(() => {
+                this.isLoadingReleve = false;
+            });
     }
 
     /**
@@ -8796,8 +8881,8 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         this.releveEcartDataJ1 = [];
         this.isLoadingReleve = false;
         this.isReleveValidated = false; // Réinitialiser l'état de validation
-        this.releveEnv = 'TOTAL';
-        this.releveEnvLastValid = 'TOTAL';
+        this.releveEnv = 'T-E';
+        this.releveEnvLastValid = 'T-E';
         // Réinitialiser les données manuelles
         this.releveManualNombre = 0;
         this.releveManualVolume = 0;
@@ -9635,13 +9720,12 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             return;
         }
 
-        // Demander l'environnement (BET, HT, HUBAO, TOP20, GU3, TOTAL)
-        const envOptions = ['BET', 'HT', 'HUBAO', 'TOP20', 'GU3', 'TOTAL'];
-        const envLabel = envOptions.includes(this.releveEnv) ? this.releveEnv : 'TOTAL';
+        const releveN = this.normalizeReleveEnvKey(this.releveEnv);
+        const envLabel = this.envOptions.includes(releveN) ? releveN : 'T-E';
         const selectedEnv = await this.popupService.showSelectInput(
             'Sélectionnez l\'environnement pour ce relevé :',
             'Environnement du relevé',
-            envOptions,
+            this.envOptions,
             envLabel
         );
 
@@ -9671,7 +9755,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         }
 
         const envLabelConfirm = this.normalizeReleveEnvKey(this.releveEnv);
-        const confirmMessage = `Voulez-vous mettre le traitement à "Terminé" pour ${unlockedLines.length} ligne(s) du service « ${this.releveData.service} », date « ${this.formatDate(this.releveData.date)} », pays « ${this.releveData.country} », ENV « ${envLabelConfirm === 'TOTAL' ? 'T-E' : envLabelConfirm} » ?`;
+        const confirmMessage = `Voulez-vous mettre le traitement à "Terminé" pour ${unlockedLines.length} ligne(s) du service « ${this.releveData.service} », date « ${this.formatDate(this.releveData.date)} », pays « ${this.releveData.country} », ENV « ${this.formatEnvFilterLabel(envLabelConfirm)} » ?`;
         const confirmed = await this.popupService.showConfirm(confirmMessage, 'Confirmation de validation');
         
         if (!confirmed) {

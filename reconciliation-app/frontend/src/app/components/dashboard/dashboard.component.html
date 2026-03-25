@@ -870,12 +870,9 @@
                         <label>Environnement</label>
                         <mat-form-field appearance="fill" class="filter-select full-width">
                             <mat-select [(ngModel)]="releveStatusEnv">
-                                <mat-option value="BET">BET</mat-option>
-                                <mat-option value="HT">HT</mat-option>
-                                <mat-option value="HUBAO">HUBAO</mat-option>
-                                <mat-option value="TOP20">TOP20</mat-option>
-                                <mat-option value="GU3">GU3</mat-option>
-                                <mat-option value="TOTAL">T-E</mat-option>
+                                <mat-option *ngFor="let e of reconciliationEnvOptions" [value]="e">
+                                    {{ e === 'ALL' ? 'Tous' : e }}
+                                </mat-option>
                             </mat-select>
                         </mat-form-field>
                     </div>

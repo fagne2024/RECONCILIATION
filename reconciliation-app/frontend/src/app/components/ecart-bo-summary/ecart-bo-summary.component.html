@@ -29,6 +29,31 @@
     </div>
   </nav>
 
+  <!-- Choix ENV obligatoire avant affichage (réconciliation ou lignes en attente depuis écarts BO) -->
+  <div *ngIf="awaitingEnvChoice" class="env-preload-panel">
+    <div class="env-preload-card">
+      <h2 class="env-preload-title">Environnement (ENV)</h2>
+      <p class="env-preload-text">{{ envPreloadHint }}</p>
+      <p class="env-preload-sub">
+        Sélectionnez l’ENV avant de charger le tableau. Il sera appliqué à chaque ligne générée et proposé par défaut dans le formulaire « Ajouter ».
+      </p>
+      <div class="env-preload-row">
+        <label for="pendingEnvSelect">ENV</label>
+        <select id="pendingEnvSelect" [(ngModel)]="pendingEnvSelection" class="env-preload-select">
+          <option value="">T-E (agrégat / non renseigné)</option>
+          <option *ngFor="let code of envCodePresetOptions" [value]="code">{{ code }}</option>
+        </select>
+        <button type="button" class="env-preload-btn primary" (click)="confirmEnvAndLoadData()">
+          Afficher les données
+        </button>
+      </div>
+      <button type="button" class="env-preload-btn ghost" (click)="loadSavedSummaryData()">
+        Charger les données sauvegardées à la place
+      </button>
+    </div>
+  </div>
+
+  <ng-container *ngIf="!awaitingEnvChoice">
   <!-- PAGE HEADER (titre + KPIs) -->
   <div class="page-header-ecart">
     <div class="ph-ecart-left">
@@ -162,11 +187,18 @@
         </select>
       </div>
       <div class="filter-item">
-        <label>ENV</label>
-        <select [(ngModel)]="selectedEnv" (change)="applyFilters()" class="filter-select">
-          <option value="">Tous</option>
+        <label>Plateforme</label>
+        <select [(ngModel)]="selectedEnv" (change)="applyFilters()" class="filter-select" title="BO ou Partenaire (données en plateforme partenaire)">
+          <option value="">Toutes</option>
           <option value="BO">BO</option>
           <option value="PARTENAIRE">PARTENAIRE</option>
+        </select>
+      </div>
+      <div class="filter-item">
+        <label>ENV</label>
+        <select [(ngModel)]="selectedEnvCode" (change)="applyFilters()" class="filter-select" title="Environnement technique (BET, HT, PROD, …)">
+          <option value="">Tous</option>
+          <option *ngFor="let code of uniqueEnvCodes" [value]="code">{{ code }}</option>
         </select>
       </div>
       <div class="filter-item">
@@ -235,6 +267,7 @@
             <th>Agence</th>
             <th>Service</th>
             <th>Pays</th>
+            <th>Plateforme</th>
             <th>ENV</th>
             <th>Token</th>
             <th>Nombre</th>
@@ -260,6 +293,7 @@
             <td>{{ item.service || '-' }}</td>
             <td>{{ item.pays || '-' }}</td>
             <td>{{ item.env || 'BO' }}</td>
+            <td>{{ item.envCode || '—' }}</td>
             <td class="token-cell" [title]="item.token || 'Lien BO/Partenaire (recherche rapide)'">{{ getTokenDisplay(item.token) }}</td>
             <td class="nombre-cell">{{ item.nombre | number:'1.0-0' }}</td>
             <td class="volume-cell">{{ item.montant | number:'1.0-0' }}</td>
@@ -296,7 +330,7 @@
             </td>
           </tr>
           <tr *ngIf="getPagedItems().length === 0">
-            <td colspan="11" class="no-data">Aucun écart BO trouvé</td>
+            <td colspan="12" class="no-data">Aucun écart BO trouvé</td>
           </tr>
         </tbody>
       </table>
@@ -457,10 +491,17 @@
           </select>
         </div>
         <div class="form-group">
-          <label>ENV *</label>
-          <select [(ngModel)]="addForm.env" class="form-control">
+          <label>Plateforme *</label>
+          <select [(ngModel)]="addForm.env" class="form-control" title="BO ou Partenaire">
             <option value="BO">BO</option>
             <option value="PARTENAIRE">PARTENAIRE</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>ENV</label>
+          <select [(ngModel)]="addForm.envCode" class="form-control" title="Environnement technique (BET, HT, …)">
+            <option value="">— Non renseigné —</option>
+            <option *ngFor="let code of uniqueEnvCodes" [value]="code">{{ code }}</option>
           </select>
         </div>
         <div class="form-group">
@@ -572,10 +613,17 @@
           </select>
         </div>
         <div class="form-group">
-          <label>ENV *</label>
-          <select [(ngModel)]="editForm.env" class="form-control">
+          <label>Plateforme *</label>
+          <select [(ngModel)]="editForm.env" class="form-control" title="BO ou Partenaire">
             <option value="BO">BO</option>
             <option value="PARTENAIRE">PARTENAIRE</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>ENV</label>
+          <select [(ngModel)]="editForm.envCode" class="form-control" title="Environnement technique (BET, HT, …)">
+            <option value="">— Non renseigné —</option>
+            <option *ngFor="let code of uniqueEnvCodes" [value]="code">{{ code }}</option>
           </select>
         </div>
         <div class="form-group">
@@ -603,4 +651,5 @@
   </div>
     </div>
   </div>
+  </ng-container>
 </div>

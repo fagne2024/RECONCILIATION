@@ -41,6 +41,10 @@ public class EcartBoSummaryEntity {
     @Column(name = "env", length = 20)
     private String env = "BO";
 
+    /** Environnement technique (BET, HT, PROD, etc.) */
+    @Column(name = "env_code", length = 32)
+    private String envCode;
+
     @Column(name = "token", length = 64)
     private String token;
 
@@ -146,6 +150,14 @@ public class EcartBoSummaryEntity {
     
     public void setEnv(String env) {
         this.env = env;
+    }
+
+    public String getEnvCode() {
+        return envCode;
+    }
+
+    public void setEnvCode(String envCode) {
+        this.envCode = envCode;
     }
 
     public String getToken() {
