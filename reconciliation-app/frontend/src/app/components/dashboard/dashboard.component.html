@@ -313,7 +313,9 @@
             <div class="metrics-period-filter">
                 <label for="metricsPeriod">Période</label>
                 <select id="metricsPeriod" [(ngModel)]="metricsPeriod" (change)="onMetricsPeriodChange()">
-                    <option value="jour">Jour</option>
+                    <option value="jour">Jour (J-1)</option>
+                    <option value="7_jours">7 derniers jours</option>
+                    <option value="30_jours">30 derniers jours</option>
                     <option value="semaine">Semaine</option>
                     <option value="semaine_passee">Semaine passée</option>
                     <option value="mois">Mois</option>
@@ -346,6 +348,9 @@
             <div class="metrics-actions">
                 <button type="button" class="btn-status-reconciliation" (click)="openReleveStatusModal()">
                     Voir le statut des réconciliations
+                </button>
+                <button type="button" class="btn-transact-stats-reconciliation" (click)="openTransactStatsModal()" title="Volumes agrégés depuis les rapports (result8rec)">
+                    Statistiques réconciliation
                 </button>
             </div>
 
@@ -869,7 +874,7 @@
                     <div class="form-group">
                         <label>Environnement</label>
                         <mat-form-field appearance="fill" class="filter-select full-width">
-                            <mat-select [(ngModel)]="releveStatusEnv">
+                            <mat-select [(ngModel)]="releveStatusEnv" (selectionChange)="onReleveStatusEnvChange()">
                                 <mat-option *ngFor="let e of reconciliationEnvOptions" [value]="e">
                                     {{ e === 'ALL' ? 'Tous' : e }}
                                 </mat-option>
@@ -955,6 +960,129 @@
         </div>
     </div>
 
+    <!-- Modal Statistiques réconciliation (transactions / correspondances) -->
+    <div *ngIf="transactStatsModalOpen" class="reco-view-modal-overlay" (click)="closeTransactStatsModal()">
+        <div class="reco-view-modal-container transact-stats-modal-container" (click)="$event.stopPropagation()">
+            <div class="reco-view-modal-header">
+                <h3>Statistiques réconciliation</h3>
+                <button type="button" class="btn-close-modal" (click)="closeTransactStatsModal()" title="Fermer">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div #transactStatsExportContent class="reco-view-modal-body">
+                <div class="reco-view-date-filter">
+                    <label for="transactStatsWeekDate">Semaine du</label>
+                    <input
+                        id="transactStatsWeekDate"
+                        type="date"
+                        [ngModel]="transactStatsWeekStart"
+                        (ngModelChange)="onTransactStatsDateChange($event)"
+                        class="reco-view-date-input"
+                    >
+                </div>
+                <div class="reco-view-date-filter" style="display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap;">
+                    <div>
+                        <label for="transactStatsPeriodStart">Du</label>
+                        <input
+                            id="transactStatsPeriodStart"
+                            type="date"
+                            [(ngModel)]="transactStatsPeriodStart"
+                            (ngModelChange)="onTransactStatsPeriodRangeChange()"
+                            class="reco-view-date-input"
+                        >
+                    </div>
+                    <div>
+                        <label for="transactStatsPeriodEnd">Au</label>
+                        <input
+                            id="transactStatsPeriodEnd"
+                            type="date"
+                            [(ngModel)]="transactStatsPeriodEnd"
+                            (ngModelChange)="onTransactStatsPeriodRangeChange()"
+                            class="reco-view-date-input"
+                        >
+                    </div>
+                </div>
+                <div class="reco-view-date-filter" style="display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap;">
+                    <div>
+                        <label for="transactStatsDay">Jour</label>
+                        <select id="transactStatsDay" class="reco-view-date-input" [(ngModel)]="transactStatsSelectedDay" (ngModelChange)="loadTransactStats()">
+                            <option value="">Tous</option>
+                            <option *ngFor="let d of transactStatsWeekDays" [value]="d.date">{{ d.label }}</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="transactStatsCountry">Pays</label>
+                        <select id="transactStatsCountry" class="reco-view-date-input" [(ngModel)]="transactStatsCountry" (ngModelChange)="onTransactStatsFiltersChange()">
+                            <option value="">Tous</option>
+                            <option *ngFor="let c of reconciliationSummaryCountries" [value]="c">{{ c }}</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="transactStatsEnv">Environnement</label>
+                        <select id="transactStatsEnv" class="reco-view-date-input" [(ngModel)]="transactStatsEnv" (ngModelChange)="onTransactStatsFiltersChange()">
+                            <option *ngFor="let env of transactStatsEnvSelectOptions" [ngValue]="env">
+                                {{ formatRecoViewEnvOptionLabel(env) }}
+                            </option>
+                        </select>
+                    </div>
+                    <div class="reco-popup-service-field">
+                        <mat-form-field appearance="fill" class="filter-select reco-popup-service-multiple">
+                            <mat-label>Service(s)</mat-label>
+                            <mat-select multiple [(ngModel)]="transactStatsSelectedServices" (selectionChange)="onTransactStatsFiltersChange()">
+                                <mat-option *ngFor="let s of transactStatsServiceOptions" [value]="s">{{ s }}</mat-option>
+                            </mat-select>
+                            <mat-hint>Vide = tous les services</mat-hint>
+                        </mat-form-field>
+                    </div>
+                </div>
+                <div *ngIf="transactStatsLoading" class="reco-loading">Chargement...</div>
+                <div *ngIf="!transactStatsLoading && transactStatsError" class="reco-error">{{ transactStatsError }}</div>
+                <div *ngIf="!transactStatsLoading && !transactStatsError" class="transact-stats-content">
+                    <div class="transact-stats-grid">
+                        <div class="transact-stats-card transact-stats-card--correspondance">
+                            <div class="transact-stats-card-title">Correspondance</div>
+                            <p class="transact-stats-card-desc">Synthèse <strong>(rapport + écart traité)</strong> : somme des <em>totalTransactions</em> (rapport) + <em>trx traité</em> saisi sur le relevé, par ligne</p>
+                            <div class="transact-stats-card-value">{{ transactStats.correspondance | number:'1.0-0' }}</div>
+                            <div class="transact-stats-card-volume">Volume : {{ transactStats.correspondanceVolume | number:'1.0-2' }} FCFA</div>
+                            <div class="transact-stats-card-pct">{{ transactStats.pctCorrespondance | number:'1.1-1' }} % du total (synthèse + remboursés)</div>
+                            <div class="transact-stats-card-pct transact-stats-card-pct--vol">{{ transactStats.pctCorrespondanceVolume | number:'1.1-1' }} % vol. du total (synthèse + remboursés)</div>
+                        </div>
+                        <div class="transact-stats-card transact-stats-card--denoue">
+                            <div class="transact-stats-card-title">Transaction dénouée</div>
+                            <p class="transact-stats-card-desc"><strong>Trx traité (saisie manuelle)</strong> — <em>releve_manual</em></p>
+                            <div class="transact-stats-card-value">{{ transactStats.transactionDenoue | number:'1.0-0' }}</div>
+                            <div class="transact-stats-card-volume">Volume : {{ transactStats.transactionDenoueVolume | number:'1.0-2' }} FCFA</div>
+                            <div class="transact-stats-card-pct">{{ transactStats.pctDenoue | number:'1.1-1' }} % de la synthèse</div>
+                            <div class="transact-stats-card-pct transact-stats-card-pct--vol">{{ transactStats.pctDenoueVolume | number:'1.1-1' }} % vol. de la synthèse</div>
+                        </div>
+                        <div class="transact-stats-card transact-stats-card--echec">
+                            <div class="transact-stats-card-title">Transaction en échec</div>
+                            <p class="transact-stats-card-desc"><strong>Trx remboursé (saisie manuelle)</strong></p>
+                            <div class="transact-stats-card-value">{{ transactStats.transactionEchec | number:'1.0-0' }}</div>
+                            <div class="transact-stats-card-volume">Volume : {{ transactStats.transactionEchecVolume | number:'1.0-2' }} FCFA</div>
+                            <div class="transact-stats-card-pct">{{ transactStats.pctEchec | number:'1.1-1' }} % du total (synthèse + remboursés)</div>
+                            <div class="transact-stats-card-pct transact-stats-card-pct--vol">{{ transactStats.pctEchecVolume | number:'1.1-1' }} % vol. du total (synthèse + remboursés)</div>
+                        </div>
+                    </div>
+                    <p class="transact-stats-total-ref">
+                        Total pour les taux « synthèse + remboursés » : <strong>{{ transactStats.totalReference | number:'1.0-0' }}</strong> trx
+                        · volume de référence : <strong>{{ transactStats.totalReferenceVolume | number:'1.0-2' }}</strong> FCFA
+                        (synthèse + trx remboursé ; les trx traités sont déjà incluses dans la synthèse).
+                    </p>
+                    <p class="transact-stats-footnote">
+                        Même cloisonnement que la vue semaine : options ENV dérivées des données <strong>result8rec</strong> sur la période (et jour) affichés ; services filtrés de la même façon.
+                    </p>
+                </div>
+            </div>
+            <div class="reco-view-modal-footer">
+                <button type="button" class="btn-export-pdf" (click)="exportTransactStatsToPdf()" [disabled]="transactStatsLoading" title="Exporter en PDF">
+                    Exporter PDF
+                </button>
+                <button type="button" class="btn-cancel" (click)="closeTransactStatsModal()">Fermer</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Modal Vue semaine - État des réconciliations -->
     <div *ngIf="recoViewModalOpen" class="reco-view-modal-overlay" (click)="closeRecoViewModal()">
         <div class="reco-view-modal-container" (click)="$event.stopPropagation()">
@@ -977,25 +1105,57 @@
                 </div>
                 <div class="reco-view-date-filter" style="display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap;">
                     <div>
+                        <label for="recoViewPeriodStart">Du</label>
+                        <input
+                            id="recoViewPeriodStart"
+                            type="date"
+                            [(ngModel)]="recoViewPeriodStart"
+                            (ngModelChange)="onRecoViewPeriodRangeChange()"
+                            class="reco-view-date-input"
+                        >
+                    </div>
+                    <div>
+                        <label for="recoViewPeriodEnd">Au</label>
+                        <input
+                            id="recoViewPeriodEnd"
+                            type="date"
+                            [(ngModel)]="recoViewPeriodEnd"
+                            (ngModelChange)="onRecoViewPeriodRangeChange()"
+                            class="reco-view-date-input"
+                        >
+                    </div>
+                </div>
+                <div class="reco-view-date-filter" style="display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap;">
+                    <div>
                         <label for="recoViewDay">Jour</label>
-                        <select id="recoViewDay" class="reco-view-date-input" [(ngModel)]="recoViewSelectedDay">
+                        <select id="recoViewDay" class="reco-view-date-input" [(ngModel)]="recoViewSelectedDay" (ngModelChange)="onRecoViewDayChange()">
                             <option value="">Tous</option>
                             <option *ngFor="let d of recoViewWeekDays" [value]="d.date">{{ d.label }}</option>
                         </select>
                     </div>
                     <div>
                         <label for="recoViewCountry">Pays</label>
-                        <select id="recoViewCountry" class="reco-view-date-input" [(ngModel)]="recoViewCountry" (change)="onRecoViewFiltersChange()">
+                        <select id="recoViewCountry" class="reco-view-date-input" [(ngModel)]="recoViewCountry" (ngModelChange)="onRecoViewFiltersChange()">
                             <option value="">Tous</option>
                             <option *ngFor="let c of reconciliationSummaryCountries" [value]="c">{{ c }}</option>
                         </select>
                     </div>
                     <div>
-                        <label for="recoViewService">Service</label>
-                        <select id="recoViewService" class="reco-view-date-input" [(ngModel)]="recoViewService" (change)="onRecoViewFiltersChange()">
-                            <option value="">Tous</option>
-                            <option *ngFor="let s of reconciliationSummaryServices" [value]="s">{{ s }}</option>
+                        <label for="recoViewEnv">Environnement</label>
+                        <select id="recoViewEnv" class="reco-view-date-input" [(ngModel)]="recoViewEnv" (ngModelChange)="onRecoViewFiltersChange()">
+                            <option *ngFor="let env of recoViewEnvSelectOptions" [ngValue]="env">
+                                {{ formatRecoViewEnvOptionLabel(env) }}
+                            </option>
                         </select>
+                    </div>
+                    <div class="reco-popup-service-field">
+                        <mat-form-field appearance="fill" class="filter-select reco-popup-service-multiple">
+                            <mat-label>Service(s)</mat-label>
+                            <mat-select multiple [(ngModel)]="recoViewSelectedServices" (selectionChange)="onRecoViewFiltersChange()">
+                                <mat-option *ngFor="let s of recoViewServiceOptions" [value]="s">{{ s }}</mat-option>
+                            </mat-select>
+                            <mat-hint>Vide = tous les services</mat-hint>
+                        </mat-form-field>
                     </div>
                 </div>
                 <div *ngIf="recoViewLoading" class="reco-loading">Chargement...</div>
@@ -1036,7 +1196,7 @@
                 </div>
                 <div *ngIf="!recoViewLoading && !recoViewError && recoViewRows.length" class="reco-stats-row">
                     <div class="reco-stat-item">
-                        <span class="reco-stat-label">Total semaine</span>
+                        <span class="reco-stat-label">Total période</span>
                         <span class="reco-stat-value total">{{ recoViewStats.total }}</span>
                     </div>
                     <div class="reco-stat-item">
@@ -1056,6 +1216,7 @@
                         <span class="reco-stat-value ok">{{ recoViewStats.tauxReconcilie | number:'1.0-1' }} %</span>
                     </div>
                 </div>
+            </div>
             <div class="reco-view-modal-footer">
                 <button type="button" class="btn-export-pdf" (click)="exportRecoViewToPdf()" [disabled]="recoViewLoading || !recoViewRows.length" title="Exporter en PDF">
                     Exporter PDF
@@ -1064,5 +1225,4 @@
             </div>
         </div>
     </div>
-  </div><!-- .main -->
 </div><!-- .dashboard-page -->

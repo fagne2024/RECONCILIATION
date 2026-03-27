@@ -1078,6 +1078,9 @@
     margin-top: 16px;
     display: flex;
     justify-content: center;
+    flex-wrap: wrap;
+    gap: 12px;
+    align-items: center;
 }
 
 .btn-status-reconciliation {
@@ -1102,6 +1105,135 @@
         transform: translateY(0);
         box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18);
     }
+}
+
+.btn-transact-stats-reconciliation {
+    padding: 10px 22px;
+    border-radius: 999px;
+    border: 2px solid #1976d2;
+    background: #fff;
+    color: #1976d2;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.2s ease, color 0.2s ease, box-shadow 0.2s ease, transform 0.1s ease;
+
+    &:hover {
+        background: rgba(25, 118, 210, 0.08);
+        box-shadow: 0 2px 8px rgba(25, 118, 210, 0.2);
+        transform: translateY(-1px);
+    }
+
+    &:active {
+        transform: translateY(0);
+    }
+}
+
+.transact-stats-modal-container {
+    max-width: 920px;
+}
+
+.transact-stats-content {
+    margin-top: 8px;
+}
+
+.transact-stats-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 14px;
+    margin-top: 12px;
+}
+
+@media (max-width: 900px) {
+    .transact-stats-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+.transact-stats-card {
+    border-radius: 12px;
+    padding: 16px 14px;
+    border: 1px solid #e0e0e0;
+    background: #fafafa;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.transact-stats-card--correspondance {
+    border-top: 4px solid #388e3c;
+}
+
+.transact-stats-card--denoue {
+    border-top: 4px solid #1976d2;
+}
+
+.transact-stats-card--echec {
+    border-top: 4px solid #e65100;
+}
+
+.transact-stats-card-title {
+    font-size: 1rem;
+    font-weight: 700;
+    color: #212121;
+}
+
+.transact-stats-card-desc {
+    font-size: 0.78rem;
+    color: #616161;
+    line-height: 1.35;
+    margin: 0;
+}
+
+.transact-stats-card-value {
+    font-size: 1.75rem;
+    font-weight: 700;
+    color: #1565c0;
+}
+
+.transact-stats-card-volume {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: #37474f;
+}
+
+.transact-stats-card-pct {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: #424242;
+}
+
+.transact-stats-card-pct--vol {
+    font-size: 0.82rem;
+    font-weight: 500;
+    color: #616161;
+}
+
+.reco-popup-service-field {
+    min-width: 200px;
+    max-width: 340px;
+
+    .mat-mdc-form-field-subscript-wrapper {
+        margin-top: 2px;
+    }
+}
+
+.reco-popup-service-multiple {
+    width: 100%;
+}
+
+.transact-stats-total-ref {
+    margin-top: 18px;
+    font-size: 0.88rem;
+    color: #424242;
+    line-height: 1.45;
+}
+
+.transact-stats-footnote {
+    margin-top: 10px;
+    font-size: 0.78rem;
+    color: #757575;
+    line-height: 1.4;
 }
 
 @media (max-width: 768px) {

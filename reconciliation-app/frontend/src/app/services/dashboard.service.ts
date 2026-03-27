@@ -1,6 +1,18 @@
 import { Injectable } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
+
+/** Ligne saisie manuelle relevé (API /manual-trx/range). */
+export interface ReleveManualRangeRow {
+    date: string;
+    service: string;
+    country: string;
+    env?: string | null;
+    manualNombre: number;
+    manualVolume: number;
+    rembourseNombre: number;
+    rembourseVolume: number;
+}
 
 export interface DashboardMetrics {
     totalReconciliations: number;
@@ -143,7 +155,41 @@ export class DashboardService {
      * Récupère les pays et services distincts depuis result8rec
      * (même source que la page de rapport).
      */
-    getReconciliationFilters(): Observable<{ countries: string[]; services: string[]; countryServices: { [country: string]: string[] } }> {
-        return this.http.get<{ countries: string[]; services: string[]; countryServices: { [country: string]: string[] } }>(`/api/result8rec/filters`);
+    getReconciliationFilters(): Observable<{
+        countries: string[];
+        services: string[];
+        countryServices: { [country: string]: string[] };
+        countryEnvServices?: { [country: string]: { [envKey: string]: string[] } };
+    }> {
+        return this.http.get<{
+            countries: string[];
+            services: string[];
+            countryServices: { [country: string]: string[] };
+            countryEnvServices?: { [country: string]: { [envKey: string]: string[] } };
+        }>(`/api/result8rec/filters`);
+    }
+
+    /**
+     * Saisies manuelles relevé (trx traité / trx remboursé) sur une plage de dates.
+     */
+    getReleveManualTrxRange(
+        startDate: string,
+        endDate: string,
+        country?: string,
+        services?: string[],
+        env?: string
+    ): Observable<ReleveManualRangeRow[]> {
+        let p = new HttpParams().set('startDate', startDate).set('endDate', endDate);
+        if (country) {
+            p = p.set('country', country);
+        }
+        const svcList = (services || []).map(s => (s || '').trim()).filter(Boolean);
+        svcList.forEach(s => {
+            p = p.append('service', s);
+        });
+        if (env && env !== 'ALL') {
+            p = p.set('env', env);
+        }
+        return this.http.get<ReleveManualRangeRow[]>(`/api/reconciliation-report/manual-trx/range`, { params: p });
     }
 } 

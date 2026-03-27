@@ -148,11 +148,21 @@ public class StatisticsService {
             // Déterminer l'intervalle [start, end) selon la période demandée
             LocalDate start;
             LocalDate end;
+            // Semaine (et période inconnue → semaine) : borne supérieure d'affichage = J-1, pas le jour calendaire
+            boolean capWeekEndToJ1 = false;
             String p = (period == null ? "semaine" : period.toLowerCase());
             switch (p) {
                 case "jour":
                     start = reference;
                     end = start.plusDays(1);
+                    break;
+                case "7_jours":
+                    start = reference.minusDays(6);
+                    end = reference.plusDays(1);
+                    break;
+                case "30_jours":
+                    start = reference.minusDays(29);
+                    end = reference.plusDays(1);
                     break;
                 case "semaine_passee":
                     start = reference.with(java.time.DayOfWeek.MONDAY).minusDays(7);
@@ -178,9 +188,20 @@ public class StatisticsService {
                     break;
                 case "semaine":
                 default:
+                    capWeekEndToJ1 = true;
                     start = reference.with(java.time.DayOfWeek.MONDAY);
                     end = start.plusDays(7);
                     break;
+            }
+
+            // Semaine : jusqu'à J-1 exclusif (référence métier). Autres périodes : pas après aujourd'hui (calendrier).
+            LocalDate today = LocalDate.now();
+            LocalDate maxExclusive = capWeekEndToJ1 ? reference.plusDays(1) : today.plusDays(1);
+            if (end.isAfter(maxExclusive)) {
+                end = maxExclusive;
+            }
+            if (!start.isBefore(end)) {
+                end = start.plusDays(1);
             }
 
             // Charger toutes les lignes result8rec

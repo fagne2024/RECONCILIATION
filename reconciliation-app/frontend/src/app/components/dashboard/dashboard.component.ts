@@ -1,7 +1,7 @@
 import { Component, OnInit, OnDestroy, ViewChild, ElementRef } from '@angular/core';
 import { Router, NavigationEnd } from '@angular/router';
 import { filter, take } from 'rxjs/operators';
-import { Subscription } from 'rxjs';
+import { forkJoin, Subscription } from 'rxjs';
 import { DashboardService, DashboardMetrics, DetailedMetrics, TransactionCreatedStats, ServiceStat } from '../../services/dashboard.service';
 import { AppStateService } from '../../services/app-state.service';
 import * as XLSX from 'xlsx';
@@ -95,6 +95,8 @@ export class DashboardComponent implements OnInit, OnDestroy {
     releveStatusEnv: string = 'ALL';
     releveStatusError: string | null = null;
     private reconciliationCountryServices: { [country: string]: string[] } | null = null;
+    /** Pays -> clé ENV stricte -> services (cloisonnement pour les listes déroulantes). */
+    private reconciliationCountryEnvServices: { [country: string]: { [envKey: string]: string[] } } | null = null;
 
     // Résultat du contrôle de statut pour le relevé
     showReleveStatusResultModal: boolean = false;
@@ -141,6 +143,9 @@ export class DashboardComponent implements OnInit, OnDestroy {
     // Popup "Vue semaine" (État des réconciliations)
     recoViewModalOpen: boolean = false;
     recoViewWeekStart: string = ''; // Lundi de la semaine affichée (YYYY-MM-DD)
+    /** Période réelle filtrée (inclusif), peut dépasser une semaine civile. */
+    recoViewPeriodStart = '';
+    recoViewPeriodEnd = '';
     recoViewWeekDays: { label: string; date: string }[] = [];
     recoViewRows: {
         service: string;
@@ -155,7 +160,14 @@ export class DashboardComponent implements OnInit, OnDestroy {
     }[] = [];
     // Filtres du popup Vue semaine
     recoViewCountry: string = '';
-    recoViewService: string = '';
+    /** Services sélectionnés (vide = tous). */
+    recoViewSelectedServices: string[] = [];
+    /** ENV du popup (indépendant du bloc principal) : cloisonne les services et les lignes. */
+    recoViewEnv: string = 'ALL';
+    /** Options ENV du popup = liste métier + ENV réellement présents dans result8rec (cloisonnement affichable). */
+    recoViewEnvSelectOptions: string[] = ['ALL', ...RECONCILIATION_ENV_OPTIONS];
+    /** Services présents dans result8rec pour le couple pays + ENV courants du popup. */
+    recoViewServiceOptions: string[] = [];
     recoViewSelectedDay: string = ''; // YYYY-MM-DD (vide = tous les jours)
     recoViewLoading: boolean = false;
     recoViewError: string | null = null;
@@ -167,6 +179,39 @@ export class DashboardComponent implements OnInit, OnDestroy {
         tauxReconcilie: 0
     };
     @ViewChild('recoViewExportContent') recoViewExportContentRef!: ElementRef<HTMLDivElement>;
+    @ViewChild('transactStatsExportContent') transactStatsExportContentRef!: ElementRef<HTMLDivElement>;
+
+    /** Popup « Statistiques réconciliation » (agrégats result8rec, mêmes filtres que la vue semaine) */
+    transactStatsModalOpen = false;
+    transactStatsWeekStart = '';
+    transactStatsPeriodStart = '';
+    transactStatsPeriodEnd = '';
+    transactStatsWeekDays: { label: string; date: string }[] = [];
+    transactStatsCountry = '';
+    /** Services sélectionnés (vide = tous). */
+    transactStatsSelectedServices: string[] = [];
+    transactStatsEnv = 'ALL';
+    transactStatsSelectedDay = '';
+    transactStatsEnvSelectOptions: string[] = ['ALL', ...RECONCILIATION_ENV_OPTIONS];
+    transactStatsServiceOptions: string[] = [];
+    transactStatsLoading = false;
+    transactStatsError: string | null = null;
+    transactStats = {
+        correspondance: 0,
+        transactionDenoue: 0,
+        transactionEchec: 0,
+        totalReference: 0,
+        pctCorrespondance: 0,
+        pctDenoue: 0,
+        pctEchec: 0,
+        correspondanceVolume: 0,
+        transactionDenoueVolume: 0,
+        transactionEchecVolume: 0,
+        totalReferenceVolume: 0,
+        pctCorrespondanceVolume: 0,
+        pctDenoueVolume: 0,
+        pctEchecVolume: 0
+    };
 
     // Graphiques État des réconciliations (donut + évolution par jour)
     recoDonutChartData: ChartConfiguration<'doughnut'>['data'] = { labels: [], datasets: [] };
@@ -291,6 +336,31 @@ export class DashboardComponent implements OnInit, OnDestroy {
         return /^\d{4}-\d{2}-\d{2}$/.test(part) ? part : null;
     }
 
+    /** Champ env tel que renvoyé par l’API (camelCase ou variante). */
+    private getResult8RecItemEnv(item: Result8RecData): string {
+        const anyItem = item as Result8RecData & { env_code?: string | null };
+        const v = item.env ?? item.envCode ?? anyItem.env_code;
+        return v != null ? String(v).trim() : '';
+    }
+
+    /** Options du sélecteur ENV du popup : ALL + ENV connus + toute valeur présente en base. */
+    private buildRecoViewEnvSelectOptions(data: Result8RecData[]): string[] {
+        const opts = new Set<string>(['ALL', ...RECONCILIATION_ENV_OPTIONS]);
+        data.forEach(row => {
+            const k = this.reconciliationEnvStrictKey(this.getResult8RecItemEnv(row));
+            opts.add(k);
+        });
+        return Array.from(opts).sort((a, b) => {
+            if (a === 'ALL') {
+                return -1;
+            }
+            if (b === 'ALL') {
+                return 1;
+            }
+            return a.localeCompare(b, 'fr');
+        });
+    }
+
     /**
      * Filtre env : ALL = pas de filtre ; T-E (TOTAL) = agrégat seul ;
      * BET/HT/... = cet env ou lignes TOTAL (sauvegardes sans env explicite).
@@ -305,6 +375,46 @@ export class DashboardComponent implements OnInit, OnDestroy {
             return ie === 'TOTAL';
         }
         return ie === te || ie === 'TOTAL';
+    }
+
+    /**
+     * Filtre ENV pour « État des réconciliations » : dès qu’un ENV précis est choisi,
+     * cloisonnement strict (pas de mélange T-E / BET / HT sur les services et lignes).
+     */
+    private matchesRecoSummaryEnv(itemEnv: string | undefined | null, targetEnv: string): boolean {
+        const te = (targetEnv || 'ALL').trim() || 'ALL';
+        if (te === 'ALL') {
+            return true;
+        }
+        return this.matchesReconciliationEnvStrict(itemEnv, targetEnv);
+    }
+
+    /**
+     * Clé ENV pour cloisonnement strict (popup vue semaine) : vide / TOTAL / T-E → agrégat T-E uniquement ;
+     * pas de rattachement des agrégats à BET, HT, etc.
+     */
+    private reconciliationEnvStrictKey(env?: string | null): string {
+        const raw = (env ?? '').trim();
+        if (!raw) {
+            return 'T-E';
+        }
+        const u = raw.toUpperCase();
+        if (u === 'TOTAL' || u === 'T-E') {
+            return 'T-E';
+        }
+        return u;
+    }
+
+    /**
+     * Filtre ENV strict : une ligne n’apparaît pour BET que si son env est explicitement BET (idem pour HT, …).
+     * T-E regroupe uniquement lignes sans env explicite, TOTAL ou T-E. ALL = pas de filtre.
+     */
+    private matchesReconciliationEnvStrict(itemEnv: string | undefined | null, targetEnv: string): boolean {
+        const te = (targetEnv || 'ALL').trim() || 'ALL';
+        if (te === 'ALL') {
+            return true;
+        }
+        return this.reconciliationEnvStrictKey(itemEnv) === this.reconciliationEnvStrictKey(targetEnv);
     }
 
     /** Traitement considéré comme « Terminé » (casse / accents). */
@@ -547,7 +657,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
     totalClients: number = 0;
 
     // Période pour les métriques rapides (semaine, mois, trimestre, semestre, annee)
-    metricsPeriod: 'jour' | 'semaine' | 'semaine_passee' | 'mois' | 'trimestre' | 'semestre' | 'annee' = 'semaine';
+    metricsPeriod: 'jour' | 'semaine' | 'semaine_passee' | '7_jours' | '30_jours' | 'mois' | 'trimestre' | 'semestre' | 'annee' = 'semaine';
 
     // Soldes par compte pour la bande défilante
     accountBalances: Array<{accountName: string, countryCode: string, balance: number, flag: string}> = [];
@@ -903,6 +1013,11 @@ export class DashboardComponent implements OnInit, OnDestroy {
         }
     }
 
+    /** Quand l’ENV change dans le popup relevé, recalculer les services cloisonnés. */
+    onReleveStatusEnvChange(): void {
+        this.updateReleveStatusServices();
+    }
+
     /**
      * Ferme le popup de statut des réconciliations
      */
@@ -911,27 +1026,38 @@ export class DashboardComponent implements OnInit, OnDestroy {
     }
 
     /**
-     * Met à jour la liste des services disponibles pour le pays choisi dans le popup statut.
-     * Utilise agencySummaryData pour cloisonner les services par pays.
+     * Met à jour la liste des services pour le popup statut : par pays, puis par ENV si un
+     * environnement précis est choisi (cloisonnement aligné sur result8rec).
      */
     updateReleveStatusServices(): void {
         if (!this.releveStatusCountry) {
             return;
         }
         const servicesSet = new Set<string>();
+        const country = this.releveStatusCountry;
+        const env = (this.releveStatusEnv || 'ALL').trim() || 'ALL';
+        const perEnv = this.reconciliationCountryEnvServices?.[country];
 
-        // Utiliser la map pays -> services construite à partir de result8rec
-        if (this.reconciliationCountryServices && this.reconciliationCountryServices[this.releveStatusCountry]) {
-            this.reconciliationCountryServices[this.releveStatusCountry].forEach(s => {
-                if (!s || typeof s !== 'string') return;
-                const upper = s.toUpperCase();
-                // Filtrer les codes agence de type AUCATxxxxx
-                if (upper.startsWith('AUCAT')) return;
-                servicesSet.add(s);
-            });
-        } else if (this.filterOptions && this.filterOptions.services) {
-            // Fallback: si on n'a pas de map, utiliser la liste globale de services
-            this.filterOptions.services.forEach(s => servicesSet.add(s));
+        const addSvc = (s: string) => {
+            if (!s || typeof s !== 'string') return;
+            const upper = s.toUpperCase();
+            if (upper.startsWith('AUCAT')) return;
+            servicesSet.add(s);
+        };
+
+        if (perEnv && Object.keys(perEnv).length > 0) {
+            if (env !== 'ALL') {
+                const envKey = this.reconciliationEnvStrictKey(env);
+                (perEnv[envKey] || []).forEach(addSvc);
+            } else {
+                Object.values(perEnv).forEach(arr => (arr || []).forEach(addSvc));
+            }
+        }
+
+        if (servicesSet.size === 0 && this.reconciliationCountryServices && this.reconciliationCountryServices[country]) {
+            this.reconciliationCountryServices[country].forEach(addSvc);
+        } else if (servicesSet.size === 0 && this.filterOptions?.services) {
+            this.filterOptions.services.forEach(addSvc);
         }
 
         this.releveStatusServices = Array.from(servicesSet).sort();
@@ -1240,6 +1366,8 @@ export class DashboardComponent implements OnInit, OnDestroy {
 
                         let periodStart = new Date(reference);
                         let periodEnd = new Date(reference);
+                        /** Semaine (et default) : colonnes jusqu’à J-1, pas le jour calendaire. */
+                        let capWeekDisplayToJ1 = false;
 
                         switch (this.metricsPeriod) {
                             case 'jour': {
@@ -1247,6 +1375,24 @@ export class DashboardComponent implements OnInit, OnDestroy {
                                 periodStart.setHours(0, 0, 0, 0);
                                 periodEnd = new Date(periodStart);
                                 periodEnd.setDate(periodStart.getDate() + 1);
+                                break;
+                            }
+                            case '7_jours': {
+                                periodStart = new Date(reference);
+                                periodStart.setHours(0, 0, 0, 0);
+                                periodStart.setDate(periodStart.getDate() - 6);
+                                periodEnd = new Date(reference);
+                                periodEnd.setHours(0, 0, 0, 0);
+                                periodEnd.setDate(periodEnd.getDate() + 1);
+                                break;
+                            }
+                            case '30_jours': {
+                                periodStart = new Date(reference);
+                                periodStart.setHours(0, 0, 0, 0);
+                                periodStart.setDate(periodStart.getDate() - 29);
+                                periodEnd = new Date(reference);
+                                periodEnd.setHours(0, 0, 0, 0);
+                                periodEnd.setDate(periodEnd.getDate() + 1);
                                 break;
                             }
                             case 'semaine_passee': {
@@ -1287,6 +1433,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
                             }
                             case 'semaine':
                             default: {
+                                capWeekDisplayToJ1 = true;
                                 const currentDay = reference.getDay(); // 0 (dimanche) à 6 (samedi)
                                 const diffToMonday = (currentDay === 0 ? -6 : 1) - currentDay;
                                 periodStart = new Date(reference);
@@ -1296,6 +1443,27 @@ export class DashboardComponent implements OnInit, OnDestroy {
                                 periodEnd.setDate(periodStart.getDate() + 7);
                                 break;
                             }
+                        }
+
+                        // Semaine : afficher les jours jusqu’à J-1 (référence métier). Autres périodes : pas après aujourd’hui.
+                        const refExclusiveEnd = new Date(reference);
+                        refExclusiveEnd.setHours(0, 0, 0, 0);
+                        refExclusiveEnd.setDate(refExclusiveEnd.getDate() + 1);
+                        let maxExclusiveEnd: Date;
+                        if (capWeekDisplayToJ1) {
+                            maxExclusiveEnd = refExclusiveEnd;
+                        } else {
+                            const todayStart = new Date();
+                            todayStart.setHours(0, 0, 0, 0);
+                            maxExclusiveEnd = new Date(todayStart);
+                            maxExclusiveEnd.setDate(todayStart.getDate() + 1);
+                        }
+                        if (periodEnd.getTime() > maxExclusiveEnd.getTime()) {
+                            periodEnd = maxExclusiveEnd;
+                        }
+                        if (periodStart.getTime() >= periodEnd.getTime()) {
+                            periodEnd = new Date(periodStart);
+                            periodEnd.setDate(periodStart.getDate() + 1);
                         }
 
                         this.weekDays = [];
@@ -1324,7 +1492,12 @@ export class DashboardComponent implements OnInit, OnDestroy {
                         const periodStartStr = this.formatLocalYmd(periodStart);
                         const periodEndExclusiveStr = this.formatLocalYmd(periodEnd);
                         let eligibilityStartStr = periodStartStr;
-                        if (this.metricsPeriod === 'semaine' || this.metricsPeriod === 'jour') {
+                        if (
+                            this.metricsPeriod === 'semaine' ||
+                            this.metricsPeriod === 'jour' ||
+                            this.metricsPeriod === '7_jours' ||
+                            this.metricsPeriod === '30_jours'
+                        ) {
                             const elig = new Date(periodStart);
                             elig.setDate(periodStart.getDate() - 7);
                             eligibilityStartStr = this.formatLocalYmd(elig);
@@ -1334,7 +1507,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
                         const servicesSet = new Set<string>();
                         data.forEach(item => {
                             if (!item.service) return;
-                            if (!this.matchesReconciliationEnv(item.env, targetEnv)) return;
+                            if (!this.matchesRecoSummaryEnv(item.env, targetEnv)) return;
                             if (targetCountry && item.country !== targetCountry) return;
                             servicesSet.add(item.service);
                         });
@@ -1343,7 +1516,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
                         const lastOkDateByKey: Record<string, string | null> = {};
                         data.forEach(item => {
                             if (!item.service) return;
-                            if (!this.matchesReconciliationEnv(item.env, targetEnv)) return;
+                            if (!this.matchesRecoSummaryEnv(item.env, targetEnv)) return;
                             if (targetCountry && item.country !== targetCountry) return;
                             const c = (item.country || '').trim();
                             const dateOnly = this.extractResult8DateOnly(item.date);
@@ -1380,7 +1553,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
                             const byServiceCountry = new Map<string, Set<string>>();
                             data.forEach(item => {
                                 if (!item.service) return;
-                                if (!this.matchesReconciliationEnv(item.env, targetEnv)) return;
+                                if (!this.matchesRecoSummaryEnv(item.env, targetEnv)) return;
                                 const c = (item.country || '').trim();
                                 if (!c) return;
                                 if (this.reconciliationSummaryService && item.service !== this.reconciliationSummaryService) return;
@@ -1403,7 +1576,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
                         const hasActivityInPeriodByKey: Record<string, boolean> = {};
                         data.forEach(item => {
                             if (!item.service) return;
-                            if (!this.matchesReconciliationEnv(item.env, targetEnv)) return;
+                            if (!this.matchesRecoSummaryEnv(item.env, targetEnv)) return;
                             const c = (item.country || '').trim();
                             if (targetCountry && c !== targetCountry) return;
                             const dateOnly = this.extractResult8DateOnly(item.date);
@@ -1435,7 +1608,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
                             const dayStatuses = this.weekDays.map(dayInfo => {
                                 const matchingForDay = data.filter(item => {
                                     if (!item.service || item.service !== serviceName) return false;
-                                    if (!this.matchesReconciliationEnv(item.env, targetEnv)) return false;
+                                    if (!this.matchesRecoSummaryEnv(item.env, targetEnv)) return false;
                                     if (!item.date) return false;
                                     if (rowCountry && item.country !== rowCountry) return false;
 
@@ -1525,15 +1698,100 @@ export class DashboardComponent implements OnInit, OnDestroy {
         return `${yy}-${mm}-${dd}`;
     }
 
+    /** Limite de jours pour les popups (performance / lisibilité du tableau). */
+    private readonly popupDateRangeMaxDays = 120;
+
+    private addDaysToIsoDate(isoDate: string, deltaDays: number): string {
+        const [y, mo, d] = isoDate.split('-').map(Number);
+        if (isNaN(y) || isNaN(mo) || isNaN(d)) {
+            return isoDate;
+        }
+        const dt = new Date(y, mo - 1, d);
+        dt.setDate(dt.getDate() + deltaDays);
+        const yy = dt.getFullYear();
+        const mm = (dt.getMonth() + 1).toString().padStart(2, '0');
+        const dd = dt.getDate().toString().padStart(2, '0');
+        return `${yy}-${mm}-${dd}`;
+    }
+
+    /** Jours calendaires entre deux dates ISO (inclus), avec libellés courts. */
+    private buildCalendarDaysInclusive(startIso: string, endIso: string): { label: string; date: string }[] {
+        const dayNames = ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam'];
+        const [sy, smo, sd] = startIso.split('-').map(Number);
+        const [ey, emo, ed] = endIso.split('-').map(Number);
+        if ([sy, smo, sd, ey, emo, ed].some(n => isNaN(n))) {
+            return [];
+        }
+        const start = new Date(sy, smo - 1, sd);
+        const end = new Date(ey, emo - 1, ed);
+        if (start > end) {
+            return [];
+        }
+        const out: { label: string; date: string }[] = [];
+        for (const cur = new Date(start); cur <= end; cur.setDate(cur.getDate() + 1)) {
+            const yy = cur.getFullYear();
+            const mm = (cur.getMonth() + 1).toString().padStart(2, '0');
+            const dd = cur.getDate().toString().padStart(2, '0');
+            const dateStr = `${yy}-${mm}-${dd}`;
+            out.push({ label: `${dayNames[cur.getDay()]} ${dd}/${mm}`, date: dateStr });
+        }
+        return out;
+    }
+
+    private validatePopupPeriod(
+        startIso: string,
+        endIso: string
+    ): { ok: true; start: string; end: string } | { ok: false; message: string } {
+        const s = (startIso || '').trim();
+        const e = (endIso || '').trim();
+        if (!s || !e) {
+            return { ok: false, message: 'Indiquez une date de début et une date de fin.' };
+        }
+        let lo = s;
+        let hi = e;
+        if (lo > hi) {
+            lo = e;
+            hi = s;
+        }
+        const days = this.buildCalendarDaysInclusive(lo, hi);
+        if (!days.length) {
+            return { ok: false, message: 'Période invalide.' };
+        }
+        if (days.length > this.popupDateRangeMaxDays) {
+            return {
+                ok: false,
+                message: `L'intervalle ne peut pas dépasser ${this.popupDateRangeMaxDays} jours.`
+            };
+        }
+        return { ok: true, start: lo, end: hi };
+    }
+
     openRecoViewModal(): void {
         this.recoViewWeekStart = this.getCurrentWeekMonday();
+        this.recoViewPeriodStart = this.recoViewWeekStart;
+        this.recoViewPeriodEnd = this.addDaysToIsoDate(this.recoViewWeekStart, 6);
         // Initialiser les filtres du popup depuis la vue principale
         this.recoViewCountry = this.reconciliationSummaryCountry || '';
-        this.recoViewService = (this.reconciliationSummaryService || '').trim();
+        const rs = (this.reconciliationSummaryService || '').trim();
+        this.recoViewSelectedServices = rs ? [rs] : [];
+        this.recoViewEnv = this.reconciliationSummaryEnv || 'ALL';
+        this.recoViewEnvSelectOptions = ['ALL', ...RECONCILIATION_ENV_OPTIONS];
+        this.recoViewServiceOptions = [];
         this.recoViewSelectedDay = '';
         this.recoViewModalOpen = true;
         this.recoViewError = null;
         this.loadReconciliationSummaryForView();
+    }
+
+    /** Libellé option ENV (popup / cohérence avec le bloc principal). */
+    formatRecoViewEnvOptionLabel(env: string): string {
+        if (env === 'ALL') {
+            return 'Tous les ENV';
+        }
+        if (env === 'TOTAL') {
+            return 'T-E';
+        }
+        return normalizeReconciliationReportEnv(env);
     }
 
     closeRecoViewModal(): void {
@@ -1586,17 +1844,85 @@ export class DashboardComponent implements OnInit, OnDestroy {
 
             pdf.addImage(imgData, 'PNG', 0, 0, pdfW, pdfH);
 
-            const fileName = `Etat-reconciliations-semaine-${(this.recoViewWeekStart || '').replace(/-/g, '')}.pdf`;
+            const p0 = (this.recoViewPeriodStart || this.recoViewWeekStart || '').replace(/-/g, '');
+            const p1 = (this.recoViewPeriodEnd || '').replace(/-/g, '');
+            const fileName = `Etat-reconciliations-${p0}${p1 ? '-' + p1 : ''}.pdf`;
             pdf.save(fileName);
         } catch (e) {
             console.error('Erreur export PDF vue semaine:', e);
         }
     }
 
+    async exportTransactStatsToPdf(): Promise<void> {
+        if (!this.transactStatsExportContentRef?.nativeElement) {
+            return;
+        }
+        try {
+            const element = this.transactStatsExportContentRef.nativeElement;
+            const originalOverflow = element.style.overflowY;
+            const originalMaxHeight = element.style.maxHeight;
+            element.style.overflowY = 'visible';
+            element.style.maxHeight = 'none';
+
+            const canvas = await html2canvas(element, {
+                scale: 2,
+                useCORS: true,
+                logging: false,
+                backgroundColor: '#ffffff'
+            });
+
+            element.style.overflowY = originalOverflow;
+            element.style.maxHeight = originalMaxHeight;
+
+            const imgWidth = canvas.width;
+            const imgHeight = canvas.height;
+            const imgData = canvas.toDataURL('image/png');
+            const pdf = new jsPDF('l', 'px', [imgWidth, imgHeight]);
+            const pdfW = pdf.internal.pageSize.getWidth();
+            const pdfH = pdf.internal.pageSize.getHeight();
+            pdf.addImage(imgData, 'PNG', 0, 0, pdfW, pdfH);
+
+            const t0 = (this.transactStatsPeriodStart || this.transactStatsWeekStart || '').replace(/-/g, '');
+            const t1 = (this.transactStatsPeriodEnd || '').replace(/-/g, '');
+            const fileName = `Statistiques-reconciliation-${t0}${t1 ? '-' + t1 : ''}.pdf`;
+            pdf.save(fileName);
+        } catch (e) {
+            console.error('Erreur export PDF statistiques réconciliation:', e);
+        }
+    }
+
+    /** Changement du filtre « Jour » uniquement (ne réinitialise pas le jour choisi). */
+    onRecoViewDayChange(): void {
+        this.loadReconciliationSummaryForView();
+    }
+
     onRecoViewDateChange(dateStr: string): void {
         if (!dateStr) return;
         this.recoViewWeekStart = this.getMondayOfWeek(dateStr);
+        this.recoViewPeriodStart = this.recoViewWeekStart;
+        this.recoViewPeriodEnd = this.addDaysToIsoDate(this.recoViewWeekStart, 6);
         this.recoViewSelectedDay = '';
+        this.loadReconciliationSummaryForView();
+    }
+
+    /** Ajustement manuel de l'intervalle (Du / Au). */
+    onRecoViewPeriodRangeChange(): void {
+        const s = (this.recoViewPeriodStart || '').trim();
+        const e = (this.recoViewPeriodEnd || '').trim();
+        if (!s || !e) {
+            this.recoViewError = null;
+            return;
+        }
+        const v = this.validatePopupPeriod(s, e);
+        if (v.ok === false) {
+            this.recoViewError = v.message;
+            return;
+        }
+        this.recoViewPeriodStart = v.start;
+        this.recoViewPeriodEnd = v.end;
+        this.recoViewWeekStart = this.getMondayOfWeek(v.start);
+        this.recoViewSelectedDay = '';
+        this.recoViewError = null;
         this.loadReconciliationSummaryForView();
     }
 
@@ -1621,40 +1947,51 @@ export class DashboardComponent implements OnInit, OnDestroy {
         this.recoViewRows = [];
         this.recoViewWeekDays = [];
 
+        const periodCheck = this.validatePopupPeriod(this.recoViewPeriodStart, this.recoViewPeriodEnd);
+        if (periodCheck.ok === false) {
+            this.recoViewError = periodCheck.message;
+            this.recoViewLoading = false;
+            return;
+        }
+        this.recoViewPeriodStart = periodCheck.start;
+        this.recoViewPeriodEnd = periodCheck.end;
+
         this.dashboardReconciliationService.getResult8RecData()
             .pipe(take(1))
             .subscribe({
                 next: (data: Result8RecData[]) => {
                     try {
-                        const targetEnv = this.reconciliationSummaryEnv || 'ALL';
-                        const targetCountry = (this.recoViewCountry || '').trim();
-                        const selectedService = (this.recoViewService || '').trim();
-
-                        const [y, mo, d] = (this.recoViewWeekStart || '').split('-').map(Number);
-                        const startOfWeek = new Date(y, mo - 1, d);
-
-                        this.recoViewWeekDays = [];
-                        for (let i = 0; i < 7; i++) {
-                            const date = new Date(startOfWeek);
-                            date.setDate(startOfWeek.getDate() + i);
-                            const yy = date.getFullYear();
-                            const mm = (date.getMonth() + 1).toString().padStart(2, '0');
-                            const dd = date.getDate().toString().padStart(2, '0');
-                            const dateStr = `${yy}-${mm}-${dd}`;
-                            const dayNames = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
-                            this.recoViewWeekDays.push({ label: `${dayNames[i]} ${dd}/${mm}`, date: dateStr });
+                        this.recoViewEnvSelectOptions = this.buildRecoViewEnvSelectOptions(data);
+                        if (!this.recoViewEnvSelectOptions.includes(this.recoViewEnv)) {
+                            this.recoViewEnv = 'ALL';
                         }
 
+                        const targetEnv = (this.recoViewEnv || 'ALL').trim() || 'ALL';
+                        const targetCountry = (this.recoViewCountry || '').trim();
+
+                        this.recoViewWeekDays = this.buildCalendarDaysInclusive(
+                            this.recoViewPeriodStart,
+                            this.recoViewPeriodEnd
+                        );
+                        const weekDates = new Set(this.recoViewWeekDays.map(w => w.date));
                         const servicesSet = new Set<string>();
                         data.forEach(item => {
                             if (!item.service) return;
-                            if (!this.matchesReconciliationEnv(item.env, targetEnv)) return;
+                            if (!this.matchesReconciliationEnvStrict(this.getResult8RecItemEnv(item), targetEnv)) return;
                             if (targetCountry && item.country !== targetCountry) return;
+                            const dateOnly = this.extractResult8DateOnly(item.date);
+                            if (!dateOnly || !weekDates.has(dateOnly)) return;
+                            if (this.recoViewSelectedDay && dateOnly !== this.recoViewSelectedDay) return;
                             servicesSet.add(item.service);
                         });
                         const allServices = Array.from(servicesSet).sort();
-                        const effectiveServices = selectedService
-                            ? allServices.filter(s => s === selectedService)
+                        this.recoViewServiceOptions = allServices;
+                        const sel = (this.recoViewSelectedServices || [])
+                            .map(s => (s || '').trim())
+                            .filter(s => s.length > 0);
+                        this.recoViewSelectedServices = sel.filter(s => allServices.includes(s));
+                        const effectiveServices = this.recoViewSelectedServices.length
+                            ? allServices.filter(s => this.recoViewSelectedServices.includes(s))
                             : allServices;
 
                         const rows: {
@@ -1678,10 +2015,13 @@ export class DashboardComponent implements OnInit, OnDestroy {
                             const byServiceCountry = new Map<string, Set<string>>();
                             data.forEach(item => {
                                 if (!item.service) return;
-                                if (!this.matchesReconciliationEnv(item.env, targetEnv)) return;
+                                if (!this.matchesReconciliationEnvStrict(this.getResult8RecItemEnv(item), targetEnv)) return;
+                                const dateOnly = this.extractResult8DateOnly(item.date);
+                                if (!dateOnly || !weekDates.has(dateOnly)) return;
+                                if (this.recoViewSelectedDay && dateOnly !== this.recoViewSelectedDay) return;
                                 const c = (item.country || '').trim();
                                 if (!c) return;
-                                if (selectedService && item.service !== selectedService) return;
+                                if (this.recoViewSelectedServices.length && !this.recoViewSelectedServices.includes(item.service)) return;
                                 if (!byServiceCountry.has(item.service)) byServiceCountry.set(item.service, new Set<string>());
                                 byServiceCountry.get(item.service)!.add(c);
                             });
@@ -1698,7 +2038,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
                             const dayStatuses = this.recoViewWeekDays.map(dayInfo => {
                                 const matchingForDay = data.filter(item => {
                                     if (!item.service || item.service !== serviceName) return false;
-                                    if (!this.matchesReconciliationEnv(item.env, targetEnv)) return false;
+                                    if (!this.matchesReconciliationEnvStrict(this.getResult8RecItemEnv(item), targetEnv)) return false;
                                     if (!item.date) return false;
                                     if (rowCountry && item.country !== rowCountry) return false;
                                     const dateOnly = this.extractResult8DateOnly(item.date);
@@ -1716,7 +2056,14 @@ export class DashboardComponent implements OnInit, OnDestroy {
                                     const ticketLine = matchingForDay.find(line => (line.glpiId || '').trim().length > 0);
                                     ticketId = ticketLine ? (ticketLine.glpiId || '') : '';
                                 }
-                                return { date: dayInfo.date, status, ticketId, env: targetEnv };
+                                return {
+                                    date: dayInfo.date,
+                                    status,
+                                    ticketId,
+                                    env: targetEnv === 'ALL'
+                                        ? (matchingForDay[0] ? this.getResult8RecItemEnv(matchingForDay[0]) : '')
+                                        : targetEnv
+                                };
                             });
                             rows.push({ service: serviceName, label, country: rowCountry, days: dayStatuses });
                         });
@@ -1736,6 +2083,279 @@ export class DashboardComponent implements OnInit, OnDestroy {
                     this.recoViewLoading = false;
                 }
             });
+    }
+
+    openTransactStatsModal(): void {
+        this.transactStatsWeekStart = this.getCurrentWeekMonday();
+        this.transactStatsPeriodStart = this.transactStatsWeekStart;
+        this.transactStatsPeriodEnd = this.addDaysToIsoDate(this.transactStatsWeekStart, 6);
+        this.transactStatsCountry = this.reconciliationSummaryCountry || '';
+        const ts = (this.reconciliationSummaryService || '').trim();
+        this.transactStatsSelectedServices = ts ? [ts] : [];
+        this.transactStatsEnv = this.reconciliationSummaryEnv || 'ALL';
+        this.transactStatsEnvSelectOptions = ['ALL', ...RECONCILIATION_ENV_OPTIONS];
+        this.transactStatsServiceOptions = [];
+        this.transactStatsSelectedDay = '';
+        this.transactStatsModalOpen = true;
+        this.transactStatsError = null;
+        this.loadTransactStats();
+    }
+
+    closeTransactStatsModal(): void {
+        this.transactStatsModalOpen = false;
+    }
+
+    onTransactStatsDateChange(dateStr: string): void {
+        if (!dateStr) {
+            return;
+        }
+        this.transactStatsWeekStart = this.getMondayOfWeek(dateStr);
+        this.transactStatsPeriodStart = this.transactStatsWeekStart;
+        this.transactStatsPeriodEnd = this.addDaysToIsoDate(this.transactStatsWeekStart, 6);
+        this.transactStatsSelectedDay = '';
+        this.loadTransactStats();
+    }
+
+    onTransactStatsPeriodRangeChange(): void {
+        const s = (this.transactStatsPeriodStart || '').trim();
+        const e = (this.transactStatsPeriodEnd || '').trim();
+        if (!s || !e) {
+            this.transactStatsError = null;
+            return;
+        }
+        const v = this.validatePopupPeriod(s, e);
+        if (v.ok === false) {
+            this.transactStatsError = v.message;
+            return;
+        }
+        this.transactStatsPeriodStart = v.start;
+        this.transactStatsPeriodEnd = v.end;
+        this.transactStatsWeekStart = this.getMondayOfWeek(v.start);
+        this.transactStatsSelectedDay = '';
+        this.transactStatsError = null;
+        this.loadTransactStats();
+    }
+
+    onTransactStatsFiltersChange(): void {
+        this.transactStatsSelectedDay = '';
+        this.loadTransactStats();
+    }
+
+    /**
+     * Statistiques relevé : synthèse (rapport + écart traité), trx traité, trx remboursé.
+     * Données : result8rec + releve_manual. Pourcentages : corr. / échec vs (synthèse + remboursés) ; trx traité vs synthèse.
+     */
+    loadTransactStats(): void {
+        this.transactStatsError = null;
+        this.transactStatsLoading = true;
+
+        const periodCheck = this.validatePopupPeriod(this.transactStatsPeriodStart, this.transactStatsPeriodEnd);
+        if (periodCheck.ok === false) {
+            this.transactStatsError = periodCheck.message;
+            this.transactStatsLoading = false;
+            return;
+        }
+        this.transactStatsPeriodStart = periodCheck.start;
+        this.transactStatsPeriodEnd = periodCheck.end;
+
+        this.transactStatsWeekDays = this.buildCalendarDaysInclusive(
+            this.transactStatsPeriodStart,
+            this.transactStatsPeriodEnd
+        );
+        const weekDates = new Set(this.transactStatsWeekDays.map(w => w.date));
+        const rangeStart = this.transactStatsPeriodStart;
+        const rangeEnd = this.transactStatsPeriodEnd;
+        const targetEnv = (this.transactStatsEnv || 'ALL').trim() || 'ALL';
+        const targetCountry = (this.transactStatsCountry || '').trim();
+        const servicesForApi = [
+            ...new Set(
+                (this.transactStatsSelectedServices || [])
+                    .map(s => (s || '').trim())
+                    .filter(s => s.length > 0)
+            )
+        ];
+
+        forkJoin({
+            recData: this.dashboardReconciliationService.getResult8RecData().pipe(take(1)),
+            manualRows: this.dashboardService
+                .getReleveManualTrxRange(
+                    rangeStart,
+                    rangeEnd,
+                    targetCountry || undefined,
+                    servicesForApi.length ? servicesForApi : undefined,
+                    targetEnv !== 'ALL' ? targetEnv : undefined
+                )
+                .pipe(take(1))
+        }).subscribe({
+            next: ({ recData, manualRows }) => {
+                try {
+                    this.transactStatsEnvSelectOptions = this.buildRecoViewEnvSelectOptions(recData);
+                    if (!this.transactStatsEnvSelectOptions.includes(this.transactStatsEnv)) {
+                        this.transactStatsEnv = 'ALL';
+                    }
+
+                    const envEff = (this.transactStatsEnv || 'ALL').trim() || 'ALL';
+                    const countryEff = (this.transactStatsCountry || '').trim();
+
+                    const servicesSet = new Set<string>();
+                    recData.forEach(item => {
+                        if (!item.service) {
+                            return;
+                        }
+                        if (!this.matchesReconciliationEnvStrict(this.getResult8RecItemEnv(item), envEff)) {
+                            return;
+                        }
+                        if (countryEff && item.country !== countryEff) {
+                            return;
+                        }
+                        const dateOnly = this.extractResult8DateOnly(item.date);
+                        if (!dateOnly || !weekDates.has(dateOnly)) {
+                            return;
+                        }
+                        if (this.transactStatsSelectedDay && dateOnly !== this.transactStatsSelectedDay) {
+                            return;
+                        }
+                        servicesSet.add(item.service);
+                    });
+                    const allServices = Array.from(servicesSet).sort();
+                    this.transactStatsServiceOptions = allServices;
+                    this.transactStatsSelectedServices = servicesForApi.filter(s => allServices.includes(s));
+                    const restrictServices = this.transactStatsSelectedServices.length > 0;
+
+                    const manualMap = new Map<string, { mn: number; rn: number; mv: number; rv: number }>();
+                    (manualRows || []).forEach(row => {
+                        if (!row.date || !weekDates.has(row.date)) {
+                            return;
+                        }
+                        if (this.transactStatsSelectedDay && row.date !== this.transactStatsSelectedDay) {
+                            return;
+                        }
+                        if (restrictServices && !this.transactStatsSelectedServices.includes(row.service)) {
+                            return;
+                        }
+                        const k = this.releveStatCompositeKey(row.date, row.service, row.country, row.env);
+                        const cur = manualMap.get(k) || { mn: 0, rn: 0, mv: 0, rv: 0 };
+                        cur.mn += Number(row.manualNombre) || 0;
+                        cur.rn += Number(row.rembourseNombre) || 0;
+                        cur.mv += Number(row.manualVolume) || 0;
+                        cur.rv += Number(row.rembourseVolume) || 0;
+                        manualMap.set(k, cur);
+                    });
+
+                    const rapportMap = new Map<string, { tt: number; tv: number }>();
+                    recData.forEach(item => {
+                        if (!item.service) {
+                            return;
+                        }
+                        if (!this.matchesReconciliationEnvStrict(this.getResult8RecItemEnv(item), envEff)) {
+                            return;
+                        }
+                        if (countryEff && item.country !== countryEff) {
+                            return;
+                        }
+                        if (restrictServices && !this.transactStatsSelectedServices.includes(item.service)) {
+                            return;
+                        }
+                        const dateOnly = this.extractResult8DateOnly(item.date);
+                        if (!dateOnly || !weekDates.has(dateOnly)) {
+                            return;
+                        }
+                        if (this.transactStatsSelectedDay && dateOnly !== this.transactStatsSelectedDay) {
+                            return;
+                        }
+                        const k = this.releveStatCompositeKey(
+                            dateOnly,
+                            item.service,
+                            (item.country || '').trim(),
+                            this.getResult8RecItemEnv(item)
+                        );
+                        const cur = rapportMap.get(k) || { tt: 0, tv: 0 };
+                        cur.tt += Number(item.totalTransactions) || 0;
+                        cur.tv += Number(item.totalVolume) || 0;
+                        rapportMap.set(k, cur);
+                    });
+
+                    let correspondance = 0;
+                    let transactionDenoue = 0;
+                    let transactionEchec = 0;
+                    let correspondanceVolume = 0;
+                    let transactionDenoueVolume = 0;
+                    let transactionEchecVolume = 0;
+
+                    const manualRemain = new Map(manualMap);
+                    rapportMap.forEach((rapport, key) => {
+                        const man = manualRemain.get(key) || { mn: 0, rn: 0, mv: 0, rv: 0 };
+                        const mn = man.mn;
+                        const rn = man.rn;
+                        const mv = man.mv;
+                        const rv = man.rv;
+                        correspondance += rapport.tt + mn;
+                        transactionDenoue += mn;
+                        transactionEchec += rn;
+                        correspondanceVolume += rapport.tv + mv;
+                        transactionDenoueVolume += mv;
+                        transactionEchecVolume += rv;
+                        manualRemain.delete(key);
+                    });
+                    manualRemain.forEach(man => {
+                        correspondance += man.mn;
+                        transactionDenoue += man.mn;
+                        transactionEchec += man.rn;
+                        correspondanceVolume += man.mv;
+                        transactionDenoueVolume += man.mv;
+                        transactionEchecVolume += man.rv;
+                    });
+
+                    const totalMajeur = correspondance + transactionEchec;
+                    const pctMaj = (v: number) => (totalMajeur > 0 ? (v * 100) / totalMajeur : 0);
+                    const pctDenoueDansSynth =
+                        correspondance > 0 ? (transactionDenoue * 100) / correspondance : 0;
+
+                    const totalMajeurVol = correspondanceVolume + transactionEchecVolume;
+                    const pctMajVol = (v: number) => (totalMajeurVol > 0 ? (v * 100) / totalMajeurVol : 0);
+                    const pctDenoueVol =
+                        correspondanceVolume > 0 ? (transactionDenoueVolume * 100) / correspondanceVolume : 0;
+
+                    this.transactStats = {
+                        correspondance,
+                        transactionDenoue,
+                        transactionEchec,
+                        totalReference: totalMajeur,
+                        pctCorrespondance: pctMaj(correspondance),
+                        pctDenoue: pctDenoueDansSynth,
+                        pctEchec: pctMaj(transactionEchec),
+                        correspondanceVolume,
+                        transactionDenoueVolume,
+                        transactionEchecVolume,
+                        totalReferenceVolume: totalMajeurVol,
+                        pctCorrespondanceVolume: pctMajVol(correspondanceVolume),
+                        pctDenoueVolume: pctDenoueVol,
+                        pctEchecVolume: pctMajVol(transactionEchecVolume)
+                    };
+                    this.transactStatsLoading = false;
+                } catch (e: any) {
+                    console.error('Erreur statistiques réconciliation:', e);
+                    this.transactStatsError = 'Erreur lors du calcul des statistiques.';
+                    this.transactStatsLoading = false;
+                }
+            },
+            error: (err) => {
+                console.error('Erreur chargement données statistiques réconciliation:', err);
+                this.transactStatsError = 'Erreur lors du chargement des données (rapport ou relevé manuel).';
+                this.transactStatsLoading = false;
+            }
+        });
+    }
+
+    /** Clé alignée relevé : date|service|country|env normalisé (T-E / BET / …). */
+    private releveStatCompositeKey(
+        dateStr: string,
+        service: string,
+        country: string,
+        envRaw: string | null | undefined
+    ): string {
+        const env = normalizeReconciliationReportEnv(envRaw ?? '');
+        return `${dateStr}|${service}|${country}|${env}`;
     }
 
     private computeReconciliationStatsFromRows(rows: { service: string; days: { date: string; status: string }[] }[]): { total: number; reconcilie: number; enCours: number; nonReco: number; tauxReconcilie: number } {
@@ -1820,6 +2440,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
             next: (filters) => {
                 // Ces listes servent de base pour le cloisonnement du popup
                 this.reconciliationCountryServices = filters.countryServices || {};
+                this.reconciliationCountryEnvServices = filters.countryEnvServices || {};
                 this.releveStatusCountries = filters.countries || [];
                 this.allReconciliationServices = filters.services || [];
                 this.reconciliationSummaryCountries = filters.countries || [];

@@ -6,6 +6,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.time.LocalDate;
+import java.util.List;
 import java.util.Optional;
 
 public interface ReleveManualRepository extends JpaRepository<ReleveManualEntity, Long> {
@@ -21,5 +22,7 @@ public interface ReleveManualRepository extends JpaRepository<ReleveManualEntity
             @Param("service") String service,
             @Param("country") String country,
             @Param("env") String env);
+
+    List<ReleveManualEntity> findByDateBetween(LocalDate startInclusive, LocalDate endInclusive);
 }
 

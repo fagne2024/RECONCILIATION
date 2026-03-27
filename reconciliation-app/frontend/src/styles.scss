@@ -218,3 +218,9 @@ form, .form-group, .form-section {
 } 
 html, body { height: 100%; }
 body { margin: 0; font-family: Roboto, "Helvetica Neue", sans-serif; }
+
+/* Angular CDK (mat-select, menus, dialogs overlay) : défaut ~1000, sinon les panneaux passent derrière
+   les modales du dashboard (2000) et le modal graphique (10000). */
+.cdk-overlay-container {
+  z-index: 11000 !important;
+}

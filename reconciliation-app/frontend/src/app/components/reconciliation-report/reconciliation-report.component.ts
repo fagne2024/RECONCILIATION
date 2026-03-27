@@ -768,9 +768,9 @@ export interface ReconciliationReportData {
                         </div>
                     </div>
 
-                    <!-- Section Trx BO J+1 : titre et ligne Volume BO toujours affichés -->
+                    <!-- Section Trx Partenaire J+1 : synthèse rapport + traité toujours affichée -->
                     <div class="releve-section">
-                        <h5>Trx BO J+1</h5>
+                        <h5>Trx Partenaire J+1</h5>
                         <div class="releve-ecart-grid" *ngIf="releveEcartData && releveEcartData.length > 0">
                             <div class="releve-item">
                                 <span class="releve-label">Nombre total:</span>
@@ -783,7 +783,7 @@ export interface ReconciliationReportData {
                         </div>
                         <div class="releve-total-summary">
                             <div class="releve-total-item">
-                                <span class="releve-total-label">💰 Volume BO:</span>
+                                <span class="releve-total-label">💰 Synthèse (rapport + écart traité):</span>
                                 <span class="releve-total-value">{{getTotalTransactionsSum() | number}}</span>
                                 <span class="releve-total-value">{{getTotalVolumeSum() | number}}</span>
                             </div>
@@ -814,7 +814,7 @@ export interface ReconciliationReportData {
                                 </tbody>
                             </table>
                         </div>
-                        <p class="releve-no-data" *ngIf="!releveEcartData || releveEcartData.length === 0">Aucune donnée trouvée dans Écart BO J+1 pour ce service, cette date, ce pays et l'environnement « {{ releveEnvMessageLabel }} ». Vérifiez le résumé écarts BO : plateforme BO, date = date du rapport, et env_code = « {{ releveEnvMessageLabel }} » (env_code vide = agrégat T-E uniquement).</p>
+                        <p class="releve-no-data" *ngIf="!releveEcartData || releveEcartData.length === 0">Aucune donnée trouvée pour Trx Partenaire J+1 (même source que Résumé écarts BO, filtre Partenaire) : service, date du rapport, pays, env « {{ releveEnvMessageLabel }} », plateforme Partenaire uniquement (env_code vide = T-E).</p>
                     </div>
 
                     <!-- Section Données ENV PARTENAIRE J-1 -->
@@ -2983,7 +2983,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
     isReleveModalVisible = false;
     releveData: ReconciliationReportData | null = null;
     releveEcartData: any[] = [];
-    releveEcartDataJ1: any[] = []; // Données ENV BO de J-1
+    releveEcartDataJ1: any[] = []; // Écarts plateforme Partenaire, date veille (J-1)
     isLoadingReleve = false;
     isValidatingReleve = false;
     isReleveValidated = false; // Indique si le relevé a été validé
@@ -6522,43 +6522,38 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         
         // Log complet du payload pour déboguer
         console.log(`💾 confirmAndSave - Payload complet pour ${item.agency}/${item.service}:`, JSON.stringify(payload, null, 2));
-        this.http.post<any>('/api/result8rec', payload)
-        .subscribe({
-            next: (saved) => {
-                item.id = saved.id;
-                this.popupService.showSuccess('Ligne sauvegardée avec succès');
-                // Notifier le dashboard que les métriques doivent être rafraîchies
-                this.appStateService.notifySummarySaved();
-                // Rechargement automatique désactivé pour permettre de voir les logs
-                // this.forceReload();
-            },
-            error: (err: HttpErrorResponse) => {
-                if (err.status === 409) {
-                    const existing = err.error;
-                    // Doublon détecté côté backend: proposer la mise à jour "écarts partenaire uniquement"
-                    const msg =
-                        `Cette ligne existe déjà (id=${existing?.id}).\n\n` +
-                        `${this.formatDate(item.date)} | ${item.agency} | ${item.service} | ${item.country}\n\n` +
-                        `Voulez-vous faire une mise à jour qui modifiera uniquement les écarts partenaire ?\n\n` +
-                        `- Nouvelle valeur: ${this.normalizeNumericValue(item.partnerOnly)}`;
+        try {
+            const saved = await firstValueFrom(this.http.post<any>('/api/result8rec', payload));
+            item.id = saved.id;
+            this.appStateService.notifySummarySaved();
+            await this.popupService.showSuccess('Ligne sauvegardée avec succès');
+            await this.maybeOfferEcartBoSummaryRedirectForRows([item]);
+        } catch (err: unknown) {
+            const httpErr = err as HttpErrorResponse;
+            if (httpErr?.status === 409) {
+                const existing = httpErr.error;
+                const msg =
+                    `Cette ligne existe déjà (id=${existing?.id}).\n\n` +
+                    `${this.formatDate(item.date)} | ${item.agency} | ${item.service} | ${item.country}\n\n` +
+                    `Voulez-vous faire une mise à jour qui modifiera uniquement les écarts partenaire ?\n\n` +
+                    `- Nouvelle valeur: ${this.normalizeNumericValue(item.partnerOnly)}`;
 
-                    this.popupService.showConfirm(msg, 'Doublon détecté')
-                        .then(async (ok) => {
-                            if (!ok) return;
-                            try {
-                                await this.updatePartnerOnlyFromExistingApiEntity(existing, this.normalizeNumericValue(item.partnerOnly));
-                                this.removeDraftRowFromTable(item);
-                            } catch (e: any) {
-                                console.error('❌ Erreur mise à jour écarts partenaire (doublon backend)', e);
-                                this.popupService.showError('Erreur', 'Impossible de mettre à jour les écarts partenaire sur la ligne existante.');
-                            }
-                        });
-                } else {
-                    console.error('❌ Erreur de sauvegarde', err);
-                    this.popupService.showError('Erreur de sauvegarde', 'Impossible de sauvegarder la ligne');
+                const ok = await this.popupService.showConfirm(msg, 'Doublon détecté');
+                if (!ok) {
+                    return;
                 }
+                try {
+                    await this.updatePartnerOnlyFromExistingApiEntity(existing, this.normalizeNumericValue(item.partnerOnly));
+                    this.removeDraftRowFromTable(item);
+                } catch (e: any) {
+                    console.error('❌ Erreur mise à jour écarts partenaire (doublon backend)', e);
+                    this.popupService.showError('Erreur', 'Impossible de mettre à jour les écarts partenaire sur la ligne existante.');
+                }
+            } else {
+                console.error('❌ Erreur de sauvegarde', err);
+                this.popupService.showError('Erreur de sauvegarde', 'Impossible de sauvegarder la ligne');
             }
-        });
+        }
     }
 
     async deleteRow(item: ReconciliationReportData) {
@@ -6657,10 +6652,13 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             `💾 updateRow - Payload complet pour ${recalculatedData.agency}/${recalculatedData.service}:`,
             JSON.stringify(payload, null, 2)
         );
-        
+
+        const ecartBoRedirectSnapshot: ReconciliationReportData = { ...item };
+
         try {
             await this.putResult8RecWithRetry<any>(item.id, payload, { maxRetries: 3, baseDelayMs: 500 });
-            this.popupService.showSuccess('Ligne mise à jour avec succès');
+            await this.popupService.showSuccess('Ligne mise à jour avec succès');
+            await this.maybeOfferEcartBoSummaryRedirectForRows([ecartBoRedirectSnapshot]);
             // Mettre à jour localement l'item avec le commentaire préservé
             item.comment = savedComment;
             
@@ -6758,11 +6756,26 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
 
         // Préparer les payloads en distinguant CREATE vs UPDATE.
         // RÈGLE MÉTIER: en UPDATE (ligne avec id), seule la colonne "écart partenaire" doit être modifiée.
-        type PreparedCreate = { mode: 'create'; sourceItem: ReconciliationReportData; payloadItem: any };
-        type PreparedUpdate = { mode: 'update'; sourceItem: ReconciliationReportData; newPartnerOnly: number; newComment: string; env: string };
+        type PreparedCreate = {
+            mode: 'create';
+            sourceItem: ReconciliationReportData;
+            payloadItem: any;
+            /** boOnly avant recalcul (le recalcul OK met souvent boOnly à 0 dans le payload). */
+            ecartBoHintPreRecalc: number;
+        };
+        type PreparedUpdate = {
+            mode: 'update';
+            sourceItem: ReconciliationReportData;
+            newPartnerOnly: number;
+            newComment: string;
+            env: string;
+            ecartBoHintPreRecalc: number;
+        };
         const prepared: Array<PreparedCreate | PreparedUpdate> = rowsSource.map((item) => {
             // Mettre à jour l'environnement sur l'item en mémoire
             item.env = selectedEnvAll;
+
+            const ecartBoHintPreRecalc = this.normalizeNumericValue(item.boOnly) || 0;
 
             if (item.id) {
                 return {
@@ -6770,7 +6783,8 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                     sourceItem: item,
                     newPartnerOnly: this.normalizeNumericValue(item.partnerOnly),
                     newComment: (item.comment ?? '').toString(),
-                    env: selectedEnvAll
+                    env: selectedEnvAll,
+                    ecartBoHintPreRecalc
                 };
             }
 
@@ -6799,7 +6813,8 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                     status: recalculatedData.status,
                     comment: recalculatedData.comment,
                     traitement: traitement
-                }
+                },
+                ecartBoHintPreRecalc
             };
         });
 
@@ -6824,8 +6839,6 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                 `${agency} | ${service} | ${country} — HTTP ${st}${detail ? ` — ${detail}` : ''}`
             );
         };
-
-        const createdPayloads: any[] = [];
 
         // Mises à jour (lignes déjà persistées) : requêtes séquentielles avec léger espacement (évite le 429)
         for (const row of prepared) {
@@ -6886,7 +6899,6 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                     if (st === 'CREATED' && outcome.entity?.id != null) {
                         c.sourceItem.id = outcome.entity.id;
                         createdCount++;
-                        createdPayloads.push(c.payloadItem);
                         this.appStateService.notifySummarySaved();
                     } else if (st === 'CONFLICT' && outcome.entity?.id != null) {
                         bulkConflicts.push({ prepared: c, existing: outcome.entity });
@@ -6951,37 +6963,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                   (saveFailureLines.length > 20 ? `\n… et ${saveFailureLines.length - 20} autre(s)` : '')
                 : '';
 
-        // Sauvegarder automatiquement les lignes avec écart BO (boOnly > 0) vers ecart_bo_summary
-        // IMPORTANT: uniquement pour les CRÉATIONS (pas pour les mises à jour / doublons).
-        const ecartBoRows = createdPayloads.filter(p => (p.boOnly || 0) > 0);
-        if (ecartBoRows.length > 0) {
-            // Afficher un popup pour demander si l'utilisateur veut voir les écarts BO
-            const confirmed = await this.popupService.showConfirm(
-                `📋 ${ecartBoRows.length} écart(s) BO détecté(s) dans les lignes créées.\n\n` +
-                `Souhaitez-vous être redirigé vers la page "Écart BO Summary" pour les consulter et les enregistrer ?\n\n` +
-                `Les données de réconciliation en cours seront utilisées (comme si vous aviez cliqué sur "Voir le tableau récapitulatif" depuis la page Écarts BO).`,
-                'Voir les écarts BO'
-            );
-
-            if (confirmed) {
-                // Rediriger simplement vers ecart-bo-summary
-                // Le composant chargera automatiquement les données depuis AppStateService.getReconciliationResults()
-                // comme le fait le bouton "Voir le tableau récapitulatif" dans ecart-bo-table
-                this.router.navigate(['/ecart-bo-summary']);
-                // Afficher un message de succès pour le rapport
-                const summaryMessage =
-                    `✅ Sauvegarde terminée.\n\n` +
-                    `• Créées: ${createdCount}\n` +
-                    `• Mises à jour: ${updatedCount}\n` +
-                    `• Duplicatas ignorés: ${skippedDuplicates}\n` +
-                    `• Erreurs: ${errorCount}\n\n` +
-                    `📋 Redirection vers la page "Écart BO Summary".` +
-                    failuresAppend;
-                this.popupService.showSuccess(summaryMessage);
-                this.clearSelection();
-                return; // Sortir de la fonction car on redirige
-            }
-        }
+        const anySaveOk = createdCount + updatedCount > 0;
 
         const summaryMessage =
             `✅ Sauvegarde terminée.\n\n` +
@@ -6991,12 +6973,85 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             `• Erreurs: ${errorCount}` +
             failuresAppend;
 
-        this.popupService.showSuccess(summaryMessage);
+        await this.popupService.showSuccess(summaryMessage);
+        if (anySaveOk) {
+            // Laisser le DOM se stabiliser après fermeture du popup Succès (évite que le confirm ne s’affiche pas).
+            await new Promise<void>(resolve => setTimeout(resolve, 80));
+            const redirectRows = this.collectEcartBoRedirectCandidateRows(rowsSource, prepared);
+            await this.maybeOfferEcartBoSummaryRedirectForRows(redirectRows);
+        }
         this.clearSelection();
+    }
+
+    /**
+     * Lignes pour lesquelles proposer Résumé Écarts BO après saveAll (hint boOnly avant recalcul + détection commentaire / détail BO).
+     * Aucun popup si tout est à 0 écart BO.
+     */
+    private collectEcartBoRedirectCandidateRows(
+        rowsSource: ReconciliationReportData[],
+        prepared: ReadonlyArray<{ sourceItem: ReconciliationReportData; ecartBoHintPreRecalc: number }>
+    ): ReconciliationReportData[] {
+        const set = new Set<ReconciliationReportData>();
+        for (const row of rowsSource) {
+            if (this.reportRowIndicatesBoEcartWork(row)) {
+                set.add(row);
+            }
+        }
+        for (const p of prepared) {
+            if ((p.ecartBoHintPreRecalc ?? 0) > 0) {
+                set.add(p.sourceItem);
+            }
+        }
+        return [...set];
     }
 
     goToReconciliationDashboard() {
         this.router.navigate(['/reconciliation-dashboard']);
+    }
+
+    /**
+     * Ligne concernée par des écarts BO pour proposer « Résumé Écarts BO ».
+     * Inclut le cas statut OK où la colonne boOnly est à 0 mais le détail BO ou le commentaire le signale.
+     */
+    private reportRowIndicatesBoEcartWork(row: ReconciliationReportData): boolean {
+        if ((this.normalizeNumericValue(row.boOnly) || 0) > 0) {
+            return true;
+        }
+        const c = (row.comment || '')
+            .toLowerCase()
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '');
+        if (c.includes('ecart') && c.includes('bo')) {
+            return true;
+        }
+        const vol = this.calculateBoOnlyVolume(
+            row.agency || '',
+            row.service || '',
+            row.country || '',
+            row.date || ''
+        );
+        return vol > 0;
+    }
+
+    /**
+     * Propose la redirection vers /ecart-bo-summary si pertinent. Retourne true si l’utilisateur confirme la navigation.
+     */
+    private async maybeOfferEcartBoSummaryRedirectForRows(rows: ReconciliationReportData[]): Promise<boolean> {
+        const candidates = rows.filter(r => this.reportRowIndicatesBoEcartWork(r));
+        if (candidates.length === 0) {
+            return false;
+        }
+        const confirmed = await this.popupService.showConfirm(
+            `📋 ${candidates.length} ligne(s) avec écarts BO (colonne, commentaire ou détail des données BO).\n\n` +
+                `Ouvrir « Résumé Écarts BO » pour le tableau récapitulatif et l’enregistrement ecart_bo_summary ?\n\n` +
+                `Les données de réconciliation en cours seront utilisées (comme « Voir le tableau récapitulatif » depuis Écarts BO).`,
+            'Résumé Écarts BO'
+        );
+        if (confirmed) {
+            this.router.navigate(['/ecart-bo-summary']);
+            return true;
+        }
+        return false;
     }
 
     /**
@@ -8579,10 +8634,6 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         return this.normalizeReleveEnvKey(this.releveEnv);
     }
 
-    private isBoPlatformEcart(ecart: EcartBoSummary): boolean {
-        return (ecart.env || '').trim().toUpperCase() === 'BO';
-    }
-
     private isPartenairePlatformEcart(ecart: EcartBoSummary): boolean {
         return (ecart.env || '').trim().toUpperCase() === 'PARTENAIRE';
     }
@@ -8618,7 +8669,11 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         return `${y}-${mo}-${da}`;
     }
 
-    /** Charge Trx BO J+1 (plateforme BO, date rapport, ENV) et Trx Partenaire J-1 (plateforme Partenaire, J-1, ENV). */
+    /**
+     * Charge les blocs écarts du relevé à partir du même périmètre que la page Résumé écarts BO (données sauvegardées).
+     * J+1 : date = date du rapport ; plateforme Partenaire uniquement (comme /ecart-bo-summary filtré Partenaire).
+     * J-1 : date = veille ; plateforme Partenaire uniquement.
+     */
     private async loadReleveEcartBoSummariesForCurrentReleve(): Promise<void> {
         if (!this.releveData) {
             return;
@@ -8628,11 +8683,9 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         const searchDateJ1 = this.subtractCalendarDaysFromYmd(searchDate, 1);
         const envKey = this.normalizeReleveEnvKey(this.releveEnv);
 
-        // Uniquement le service côté API : findByAgenceAndServiceAndPays exigerait pays identique en base,
-        // alors que beaucoup de lignes ont pays vide → aucun résultat. Agence : pas de cloisonnement côté relevé.
-        const ecartData = await firstValueFrom(
-            this.ecartBoSummaryService.getEcartBoSummaries({ service: item.service })
-        );
+        // Même chargement que « Données sauvegardées » sur /ecart-bo-summary (liste complète puis filtre client),
+        // pour ne pas exclure des lignes visibles sur cette page (ex. autre libellé de service, pas de filtre API service).
+        const ecartData = await firstValueFrom(this.ecartBoSummaryService.getEcartBoSummaries());
 
         this.releveEcartData = ecartData.filter(ecart => {
             const ecartDate = this.formatDateForSearch(ecart.dateTransaction);
@@ -8640,7 +8693,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                 ecartDate === searchDate &&
                 this.releveStringsEqual(ecart.service, item.service) &&
                 this.ecartPaysMatchesReleve(ecart, item.country) &&
-                this.isBoPlatformEcart(ecart) &&
+                this.isPartenairePlatformEcart(ecart) &&
                 this.ecartEnvCodeMatchesReleve(ecart, envKey)
             );
         });
@@ -8914,11 +8967,11 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
     }
 
     /**
-     * Calcule le Volume partenaire (Rapport + Écart BO J+1 + Écart traité - Écart BO J-1 + Trx remboursé)
+     * Calcule le Volume partenaire (Rapport + Écart Partenaire J+1 + Écart traité - Écart Partenaire J-1 + Trx remboursé)
      */
     getTotalVolumeSumWithManual(): number {
         const rapportVolume = this.releveData?.totalVolume || 0;
-        const ecartVolumeJ1 = this.getTotalEcartVolume(); // Écart BO J+1
+        const ecartVolumeJ1 = this.getTotalEcartVolume(); // Écart Partenaire J+1
         const manualVolume = this.releveManualVolume || 0;
         const ecartVolumeJ1Minus = this.getTotalEcartVolumeJ1(); // Écart BO J-1
         const rembourseVolume = this.releveRembourseVolume || 0;
@@ -8926,7 +8979,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
     }
 
     /**
-     * Calcule le nombre total de transactions BO (Rapport + Écart traité, sans Écart BO J+1)
+     * Calcule le nombre total de transactions BO (Rapport + Écart traité, sans écart Partenaire J+1)
      */
     getTotalTransactionsSum(): number {
         const rapportTransactions = this.releveData?.totalTransactions || 0;
@@ -8935,13 +8988,13 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
     }
 
     /**
-     * Calcule le nombre total de transactions Partenaire (Rapport + Écart traité + Écart BO J+1 - Écart BO J-1 + Trx remboursé)
+     * Calcule le nombre total de transactions Partenaire (Rapport + Écart traité + Écart Partenaire J+1 - Écart Partenaire J-1 + Trx remboursé)
      */
     getTotalTransactionsPartenaire(): number {
         const rapportTransactions = this.releveData?.totalTransactions || 0;
         const manualNombre = this.releveManualNombre || 0;
-        const ecartJ1Nombre = this.getTotalEcartNombre(); // Écart BO J+1
-        const ecartJ1NombreMinus = this.getTotalEcartNombreJ1(); // Écart BO J-1
+        const ecartJ1Nombre = this.getTotalEcartNombre(); // Écart Partenaire J+1
+        const ecartJ1NombreMinus = this.getTotalEcartNombreJ1(); // Écart Partenaire J-1
         const rembourseNombre = this.releveRembourseNombre || 0;
         return rapportTransactions + manualNombre + ecartJ1Nombre - ecartJ1NombreMinus + rembourseNombre;
     }
@@ -9304,8 +9357,8 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             applyValueStyle(rapportTrxRow);
             summarySheet.addRow([]);
             
-            // Trx BO J+1 : titre et ligne Volume BO toujours exportés
-            const ecartJ1Header = summarySheet.addRow(['Trx BO J+1']);
+            // Trx Partenaire J+1 : titre et synthèse rapport + traité toujours exportés
+            const ecartJ1Header = summarySheet.addRow(['Trx Partenaire J+1']);
             applySectionStyle(ecartJ1Header);
             ecartJ1Header.height = 18;
             if (this.releveEcartData && this.releveEcartData.length > 0) {
@@ -9314,8 +9367,8 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                 const ecartJ1VolumeRow = summarySheet.addRow(['Volume total:', this.getTotalEcartVolume()]);
                 applyValueStyle(ecartJ1VolumeRow);
             }
-            // Volume BO (toujours affiché, même sans donnée Trx BO J+1)
-            const volumeBORow = summarySheet.addRow(['💰 Volume BO:', this.getTotalTransactionsSum(), this.getTotalVolumeSum()]);
+            // Synthèse rapport + écart traité (toujours affichée, même sans ligne Partenaire J+1)
+            const volumeBORow = summarySheet.addRow(['💰 Synthèse (rapport + écart traité):', this.getTotalTransactionsSum(), this.getTotalVolumeSum()]);
             volumeBORow.getCell(1).font = { size: 10, bold: true, color: { argb: 'FF28a745' } };
             volumeBORow.getCell(2).font = { size: 10, bold: true, color: { argb: 'FF28a745' } };
             volumeBORow.getCell(3).font = { size: 10, bold: true, color: { argb: 'FF28a745' } };
@@ -9419,9 +9472,9 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             summarySheet.getColumn(2).width = 20;
             summarySheet.getColumn(3).width = 20;
             
-            // Feuille 2: Détails Écart BO J+1
+            // Feuille 2: détails écarts Partenaire J+1
             if (this.releveEcartData && this.releveEcartData.length > 0) {
-                const ecartJ1Sheet = workbook.addWorksheet('Écart BO J+1');
+                const ecartJ1Sheet = workbook.addWorksheet('Écart Partenaire J+1');
                 ecartJ1Sheet.columns = [
                     { header: 'Agence', key: 'agence', width: 20 },
                     { header: 'Pays', key: 'pays', width: 15 },

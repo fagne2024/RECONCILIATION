@@ -11,7 +11,9 @@ import org.springframework.web.bind.annotation.*;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeParseException;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
@@ -57,6 +59,92 @@ public class ReconciliationReportController {
             log.error("Error in getManualTrx", e);
             return ResponseEntity.internalServerError().body(Map.of("error", e.getMessage()));
         }
+    }
+
+    /**
+     * Liste des saisies manuelles relevé (trx traité / trx remboursé) sur une plage de dates,
+     * pour agrégation dashboard (statistiques réconciliation).
+     */
+    @GetMapping("/manual-trx/range")
+    public ResponseEntity<?> listManualTrxByRange(
+            @RequestParam("startDate") String startDateStr,
+            @RequestParam("endDate") String endDateStr,
+            @RequestParam(value = "country", required = false) String countryFilter,
+            @RequestParam(value = "service", required = false) List<String> servicesFilter,
+            @RequestParam(value = "env", required = false) String envFilter
+    ) {
+        try {
+            LocalDate start = LocalDate.parse(startDateStr);
+            LocalDate end = LocalDate.parse(endDateStr);
+            if (end.isBefore(start)) {
+                return ResponseEntity.badRequest().body(Map.of("error", "endDate must be >= startDate"));
+            }
+
+            List<ReleveManualEntity> rows = releveManualRepository.findByDateBetween(start, end);
+            String country = (countryFilter == null || countryFilter.isBlank()) ? null : countryFilter.trim();
+            List<String> serviceAllowList = null;
+            if (servicesFilter != null && !servicesFilter.isEmpty()) {
+                serviceAllowList = servicesFilter.stream()
+                        .filter(s -> s != null && !s.isBlank())
+                        .map(String::trim)
+                        .distinct()
+                        .toList();
+                if (serviceAllowList.isEmpty()) {
+                    serviceAllowList = null;
+                }
+            }
+            String envNorm = normalizeEnvForRangeFilter(envFilter);
+
+            List<Map<String, Object>> out = new ArrayList<>();
+            for (ReleveManualEntity e : rows) {
+                if (country != null && !country.equals(e.getCountry())) {
+                    continue;
+                }
+                if (serviceAllowList != null && !serviceAllowList.contains(e.getService())) {
+                    continue;
+                }
+                if (envNorm != null && !envNorm.equals(normalizeStoredEnvForRange(e.getEnv()))) {
+                    continue;
+                }
+                Map<String, Object> m = new HashMap<>();
+                m.put("date", e.getDate().toString());
+                m.put("service", e.getService());
+                m.put("country", e.getCountry());
+                m.put("env", e.getEnv());
+                m.put("manualNombre", e.getManualNombre() != null ? e.getManualNombre() : 0L);
+                m.put("manualVolume", e.getManualVolume() != null ? e.getManualVolume() : 0.0);
+                m.put("rembourseNombre", e.getRembourseNombre() != null ? e.getRembourseNombre() : 0L);
+                m.put("rembourseVolume", e.getRembourseVolume() != null ? e.getRembourseVolume() : 0.0);
+                out.add(m);
+            }
+            return ResponseEntity.ok(out);
+        } catch (DateTimeParseException ex) {
+            log.warn("Invalid date in /manual-trx/range: {} {}", startDateStr, endDateStr, ex);
+            return ResponseEntity.badRequest().body(Map.of("error", "Invalid date format, expected YYYY-MM-DD"));
+        } catch (Exception e) {
+            log.error("Error in listManualTrxByRange", e);
+            return ResponseEntity.internalServerError().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    /** Paramètre requête : ALL → pas de filtre env ; sinon clé comparable aux lignes stockées. */
+    private static String normalizeEnvForRangeFilter(String env) {
+        if (env == null || env.isBlank() || "ALL".equalsIgnoreCase(env.trim())) {
+            return null;
+        }
+        return normalizeStoredEnvForRange(env);
+    }
+
+    /** Ligne releve_manual : env null / TOTAL / T-E regroupés comme le front (T-E). */
+    private static String normalizeStoredEnvForRange(String env) {
+        if (env == null || env.isBlank()) {
+            return "T-E";
+        }
+        String u = env.trim().toUpperCase();
+        if ("TOTAL".equals(u) || "T-E".equals(u) || "T_E".equals(u)) {
+            return "T-E";
+        }
+        return u;
     }
 
     @PostMapping("/manual-trx")

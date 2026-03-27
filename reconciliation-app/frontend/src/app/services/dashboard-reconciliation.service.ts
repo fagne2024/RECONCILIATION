@@ -10,6 +10,8 @@ export interface Result8RecData {
     service: string;
     country: string;
     env?: string;
+    /** Variante API (snake_case) si présente */
+    envCode?: string;
     totalTransactions: number;
     totalVolume: number;
     matches: number;

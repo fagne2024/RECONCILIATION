@@ -281,6 +281,8 @@ public class Result8RecController {
         java.util.Set<String> countries = new java.util.HashSet<>();
         java.util.Set<String> services = new java.util.HashSet<>();
         java.util.Map<String, java.util.Set<String>> countryServiceMap = new java.util.HashMap<>();
+        // Pays -> clé ENV stricte (BET, HT, T-E, …) -> services présents pour cet ENV
+        java.util.Map<String, java.util.Map<String, java.util.Set<String>>> countryEnvServiceMap = new java.util.HashMap<>();
 
         for (Result8RecEntity e : data) {
             String country = e.getCountry();
@@ -309,6 +311,12 @@ public class Result8RecController {
                 countryServiceMap
                     .computeIfAbsent(country, k -> new java.util.HashSet<>())
                     .add(service);
+
+                String envKey = envStrictKeyForResult8RecFilters(e.getEnv());
+                countryEnvServiceMap
+                    .computeIfAbsent(country, k -> new java.util.HashMap<>())
+                    .computeIfAbsent(envKey, k -> new java.util.HashSet<>())
+                    .add(service);
             }
         }
 
@@ -324,12 +332,40 @@ public class Result8RecController {
             countryServiceListMap.put(entry.getKey(), svcs);
         }
 
+        java.util.Map<String, java.util.Map<String, java.util.List<String>>> countryEnvServiceListMap = new java.util.HashMap<>();
+        for (java.util.Map.Entry<String, java.util.Map<String, java.util.Set<String>>> ce : countryEnvServiceMap.entrySet()) {
+            java.util.Map<String, java.util.List<String>> inner = new java.util.HashMap<>();
+            for (java.util.Map.Entry<String, java.util.Set<String>> ie : ce.getValue().entrySet()) {
+                java.util.List<String> sv = new java.util.ArrayList<>(ie.getValue());
+                java.util.Collections.sort(sv);
+                inner.put(ie.getKey(), sv);
+            }
+            countryEnvServiceListMap.put(ce.getKey(), inner);
+        }
+
         java.util.Map<String, Object> result = new java.util.HashMap<>();
         result.put("countries", countriesList);
         result.put("services", servicesList);
         result.put("countryServices", countryServiceListMap);
+        result.put("countryEnvServices", countryEnvServiceListMap);
 
         return ResponseEntity.ok(result);
+    }
+
+    /** Aligné sur le front (T-E = vide, TOTAL ou T-E explicite). */
+    private static String envStrictKeyForResult8RecFilters(String env) {
+        if (env == null) {
+            return "T-E";
+        }
+        String t = env.trim();
+        if (t.isEmpty()) {
+            return "T-E";
+        }
+        String u = t.toUpperCase();
+        if ("TOTAL".equals(u) || "T-E".equals(u)) {
+            return "T-E";
+        }
+        return u;
     }
 
     @DeleteMapping("/{id}")
