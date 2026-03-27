@@ -2,7 +2,14 @@ import { Component, OnInit, OnDestroy, ViewChild, ElementRef } from '@angular/co
 import { Router, NavigationEnd } from '@angular/router';
 import { filter, take } from 'rxjs/operators';
 import { forkJoin, Subscription } from 'rxjs';
-import { DashboardService, DashboardMetrics, DetailedMetrics, TransactionCreatedStats, ServiceStat } from '../../services/dashboard.service';
+import {
+    DashboardService,
+    DashboardMetrics,
+    DetailedMetrics,
+    TransactionCreatedStats,
+    ServiceStat,
+    ReleveManualRangeRow
+} from '../../services/dashboard.service';
 import { AppStateService } from '../../services/app-state.service';
 import * as XLSX from 'xlsx';
 import { ChartConfiguration } from 'chart.js';
@@ -26,6 +33,24 @@ import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 
 export type DashboardMetric = 'volume' | 'transactions' | 'revenu';
+
+/** Agrégat affiché dans la popup Statistiques réconciliation (nombres + volumes + %). */
+export interface TransactStatsSnapshot {
+    correspondance: number;
+    transactionDenoue: number;
+    transactionEchec: number;
+    totalReference: number;
+    pctCorrespondance: number;
+    pctDenoue: number;
+    pctEchec: number;
+    correspondanceVolume: number;
+    transactionDenoueVolume: number;
+    transactionEchecVolume: number;
+    totalReferenceVolume: number;
+    pctCorrespondanceVolume: number;
+    pctDenoueVolume: number;
+    pctEchecVolume: number;
+}
 
 // Correction du type FilterOptions pour rendre 'banques' optionnel
 interface FilterOptions {
@@ -196,7 +221,8 @@ export class DashboardComponent implements OnInit, OnDestroy {
     transactStatsServiceOptions: string[] = [];
     transactStatsLoading = false;
     transactStatsError: string | null = null;
-    transactStats = {
+    /** Total sur le périmètre filtré (toujours renseigné). */
+    transactStats: TransactStatsSnapshot = {
         correspondance: 0,
         transactionDenoue: 0,
         transactionEchec: 0,
@@ -212,6 +238,8 @@ export class DashboardComponent implements OnInit, OnDestroy {
         pctDenoueVolume: 0,
         pctEchecVolume: 0
     };
+    /** Détail par service lorsque ≥ 2 services sont sélectionnés. */
+    transactStatsPerService: { service: string; stats: TransactStatsSnapshot }[] = [];
 
     // Graphiques État des réconciliations (donut + évolution par jour)
     recoDonutChartData: ChartConfiguration<'doughnut'>['data'] = { labels: [], datasets: [] };
@@ -2141,6 +2169,17 @@ export class DashboardComponent implements OnInit, OnDestroy {
         this.loadTransactStats();
     }
 
+    /** Sections du modal : détail par service si ≥ 2 choisis, puis ligne total (ou un seul bloc agrégé). */
+    get transactStatsDisplayBlocks(): { title: string | null; stats: TransactStatsSnapshot }[] {
+        if (this.transactStatsPerService.length >= 2) {
+            return [
+                ...this.transactStatsPerService.map(({ service, stats }) => ({ title: service, stats })),
+                { title: 'Total (sélection)', stats: this.transactStats }
+            ];
+        }
+        return [{ title: null, stats: this.transactStats }];
+    }
+
     /**
      * Statistiques relevé : synthèse (rapport + écart traité), trx traité, trx remboursé.
      * Données : result8rec + releve_manual. Pourcentages : corr. / échec vs (synthèse + remboursés) ; trx traité vs synthèse.
@@ -2148,11 +2187,13 @@ export class DashboardComponent implements OnInit, OnDestroy {
     loadTransactStats(): void {
         this.transactStatsError = null;
         this.transactStatsLoading = true;
+        this.transactStatsPerService = [];
 
         const periodCheck = this.validatePopupPeriod(this.transactStatsPeriodStart, this.transactStatsPeriodEnd);
         if (periodCheck.ok === false) {
             this.transactStatsError = periodCheck.message;
             this.transactStatsLoading = false;
+            this.transactStatsPerService = [];
             return;
         }
         this.transactStatsPeriodStart = periodCheck.start;
@@ -2220,131 +2261,179 @@ export class DashboardComponent implements OnInit, OnDestroy {
                     const allServices = Array.from(servicesSet).sort();
                     this.transactStatsServiceOptions = allServices;
                     this.transactStatsSelectedServices = servicesForApi.filter(s => allServices.includes(s));
-                    const restrictServices = this.transactStatsSelectedServices.length > 0;
 
-                    const manualMap = new Map<string, { mn: number; rn: number; mv: number; rv: number }>();
-                    (manualRows || []).forEach(row => {
-                        if (!row.date || !weekDates.has(row.date)) {
-                            return;
-                        }
-                        if (this.transactStatsSelectedDay && row.date !== this.transactStatsSelectedDay) {
-                            return;
-                        }
-                        if (restrictServices && !this.transactStatsSelectedServices.includes(row.service)) {
-                            return;
-                        }
-                        const k = this.releveStatCompositeKey(row.date, row.service, row.country, row.env);
-                        const cur = manualMap.get(k) || { mn: 0, rn: 0, mv: 0, rv: 0 };
-                        cur.mn += Number(row.manualNombre) || 0;
-                        cur.rn += Number(row.rembourseNombre) || 0;
-                        cur.mv += Number(row.manualVolume) || 0;
-                        cur.rv += Number(row.rembourseVolume) || 0;
-                        manualMap.set(k, cur);
-                    });
+                    const sel = this.transactStatsSelectedServices;
+                    const dayEff = this.transactStatsSelectedDay;
 
-                    const rapportMap = new Map<string, { tt: number; tv: number }>();
-                    recData.forEach(item => {
-                        if (!item.service) {
-                            return;
-                        }
-                        if (!this.matchesReconciliationEnvStrict(this.getResult8RecItemEnv(item), envEff)) {
-                            return;
-                        }
-                        if (countryEff && item.country !== countryEff) {
-                            return;
-                        }
-                        if (restrictServices && !this.transactStatsSelectedServices.includes(item.service)) {
-                            return;
-                        }
-                        const dateOnly = this.extractResult8DateOnly(item.date);
-                        if (!dateOnly || !weekDates.has(dateOnly)) {
-                            return;
-                        }
-                        if (this.transactStatsSelectedDay && dateOnly !== this.transactStatsSelectedDay) {
-                            return;
-                        }
-                        const k = this.releveStatCompositeKey(
-                            dateOnly,
-                            item.service,
-                            (item.country || '').trim(),
-                            this.getResult8RecItemEnv(item)
-                        );
-                        const cur = rapportMap.get(k) || { tt: 0, tv: 0 };
-                        cur.tt += Number(item.totalTransactions) || 0;
-                        cur.tv += Number(item.totalVolume) || 0;
-                        rapportMap.set(k, cur);
-                    });
+                    if (sel.length >= 2) {
+                        this.transactStatsPerService = sel.map(service => ({
+                            service,
+                            stats: this.computeTransactStatsSlice(
+                                recData,
+                                manualRows || [],
+                                weekDates,
+                                envEff,
+                                countryEff,
+                                dayEff,
+                                [service]
+                            )
+                        }));
+                    } else {
+                        this.transactStatsPerService = [];
+                    }
 
-                    let correspondance = 0;
-                    let transactionDenoue = 0;
-                    let transactionEchec = 0;
-                    let correspondanceVolume = 0;
-                    let transactionDenoueVolume = 0;
-                    let transactionEchecVolume = 0;
-
-                    const manualRemain = new Map(manualMap);
-                    rapportMap.forEach((rapport, key) => {
-                        const man = manualRemain.get(key) || { mn: 0, rn: 0, mv: 0, rv: 0 };
-                        const mn = man.mn;
-                        const rn = man.rn;
-                        const mv = man.mv;
-                        const rv = man.rv;
-                        correspondance += rapport.tt + mn;
-                        transactionDenoue += mn;
-                        transactionEchec += rn;
-                        correspondanceVolume += rapport.tv + mv;
-                        transactionDenoueVolume += mv;
-                        transactionEchecVolume += rv;
-                        manualRemain.delete(key);
-                    });
-                    manualRemain.forEach(man => {
-                        correspondance += man.mn;
-                        transactionDenoue += man.mn;
-                        transactionEchec += man.rn;
-                        correspondanceVolume += man.mv;
-                        transactionDenoueVolume += man.mv;
-                        transactionEchecVolume += man.rv;
-                    });
-
-                    const totalMajeur = correspondance + transactionEchec;
-                    const pctMaj = (v: number) => (totalMajeur > 0 ? (v * 100) / totalMajeur : 0);
-                    const pctDenoueDansSynth =
-                        correspondance > 0 ? (transactionDenoue * 100) / correspondance : 0;
-
-                    const totalMajeurVol = correspondanceVolume + transactionEchecVolume;
-                    const pctMajVol = (v: number) => (totalMajeurVol > 0 ? (v * 100) / totalMajeurVol : 0);
-                    const pctDenoueVol =
-                        correspondanceVolume > 0 ? (transactionDenoueVolume * 100) / correspondanceVolume : 0;
-
-                    this.transactStats = {
-                        correspondance,
-                        transactionDenoue,
-                        transactionEchec,
-                        totalReference: totalMajeur,
-                        pctCorrespondance: pctMaj(correspondance),
-                        pctDenoue: pctDenoueDansSynth,
-                        pctEchec: pctMaj(transactionEchec),
-                        correspondanceVolume,
-                        transactionDenoueVolume,
-                        transactionEchecVolume,
-                        totalReferenceVolume: totalMajeurVol,
-                        pctCorrespondanceVolume: pctMajVol(correspondanceVolume),
-                        pctDenoueVolume: pctDenoueVol,
-                        pctEchecVolume: pctMajVol(transactionEchecVolume)
-                    };
+                    const filterForTotal = sel.length > 0 ? sel : null;
+                    this.transactStats = this.computeTransactStatsSlice(
+                        recData,
+                        manualRows || [],
+                        weekDates,
+                        envEff,
+                        countryEff,
+                        dayEff,
+                        filterForTotal
+                    );
                     this.transactStatsLoading = false;
                 } catch (e: any) {
                     console.error('Erreur statistiques réconciliation:', e);
                     this.transactStatsError = 'Erreur lors du calcul des statistiques.';
                     this.transactStatsLoading = false;
+                    this.transactStatsPerService = [];
                 }
             },
             error: (err) => {
                 console.error('Erreur chargement données statistiques réconciliation:', err);
                 this.transactStatsError = 'Erreur lors du chargement des données (rapport ou relevé manuel).';
                 this.transactStatsLoading = false;
+                this.transactStatsPerService = [];
             }
         });
+    }
+
+    /**
+     * Agrège synthèse (rapport + manuel), dénoués et remboursés pour un sous-ensemble de services.
+     * @param serviceFilter null = tous les services ; sinon uniquement les services listés.
+     */
+    private computeTransactStatsSlice(
+        recData: Result8RecData[],
+        manualRows: ReleveManualRangeRow[],
+        weekDates: Set<string>,
+        envEff: string,
+        countryEff: string,
+        selectedDay: string,
+        serviceFilter: string[] | null
+    ): TransactStatsSnapshot {
+        const restrictByService = serviceFilter !== null && serviceFilter.length > 0;
+
+        const manualMap = new Map<string, { mn: number; rn: number; mv: number; rv: number }>();
+        (manualRows || []).forEach(row => {
+            if (!row.date || !weekDates.has(row.date)) {
+                return;
+            }
+            if (selectedDay && row.date !== selectedDay) {
+                return;
+            }
+            if (restrictByService && !serviceFilter!.includes(row.service)) {
+                return;
+            }
+            const k = this.releveStatCompositeKey(row.date, row.service, row.country, row.env);
+            const cur = manualMap.get(k) || { mn: 0, rn: 0, mv: 0, rv: 0 };
+            cur.mn += Number(row.manualNombre) || 0;
+            cur.rn += Number(row.rembourseNombre) || 0;
+            cur.mv += Number(row.manualVolume) || 0;
+            cur.rv += Number(row.rembourseVolume) || 0;
+            manualMap.set(k, cur);
+        });
+
+        const rapportMap = new Map<string, { tt: number; tv: number }>();
+        recData.forEach(item => {
+            if (!item.service) {
+                return;
+            }
+            if (!this.matchesReconciliationEnvStrict(this.getResult8RecItemEnv(item), envEff)) {
+                return;
+            }
+            if (countryEff && item.country !== countryEff) {
+                return;
+            }
+            if (restrictByService && !serviceFilter!.includes(item.service)) {
+                return;
+            }
+            const dateOnly = this.extractResult8DateOnly(item.date);
+            if (!dateOnly || !weekDates.has(dateOnly)) {
+                return;
+            }
+            if (selectedDay && dateOnly !== selectedDay) {
+                return;
+            }
+            const k = this.releveStatCompositeKey(
+                dateOnly,
+                item.service,
+                (item.country || '').trim(),
+                this.getResult8RecItemEnv(item)
+            );
+            const cur = rapportMap.get(k) || { tt: 0, tv: 0 };
+            cur.tt += Number(item.totalTransactions) || 0;
+            cur.tv += Number(item.totalVolume) || 0;
+            rapportMap.set(k, cur);
+        });
+
+        let correspondance = 0;
+        let transactionDenoue = 0;
+        let transactionEchec = 0;
+        let correspondanceVolume = 0;
+        let transactionDenoueVolume = 0;
+        let transactionEchecVolume = 0;
+
+        const manualRemain = new Map(manualMap);
+        rapportMap.forEach((rapport, key) => {
+            const man = manualRemain.get(key) || { mn: 0, rn: 0, mv: 0, rv: 0 };
+            const mn = man.mn;
+            const rn = man.rn;
+            const mv = man.mv;
+            const rv = man.rv;
+            correspondance += rapport.tt + mn;
+            transactionDenoue += mn;
+            transactionEchec += rn;
+            correspondanceVolume += rapport.tv + mv;
+            transactionDenoueVolume += mv;
+            transactionEchecVolume += rv;
+            manualRemain.delete(key);
+        });
+        manualRemain.forEach(man => {
+            correspondance += man.mn;
+            transactionDenoue += man.mn;
+            transactionEchec += man.rn;
+            correspondanceVolume += man.mv;
+            transactionDenoueVolume += man.mv;
+            transactionEchecVolume += man.rv;
+        });
+
+        const totalMajeur = correspondance + transactionEchec;
+        const pctMaj = (v: number) => (totalMajeur > 0 ? (v * 100) / totalMajeur : 0);
+        const pctDenoueDansSynth =
+            correspondance > 0 ? (transactionDenoue * 100) / correspondance : 0;
+
+        const totalMajeurVol = correspondanceVolume + transactionEchecVolume;
+        const pctMajVol = (v: number) => (totalMajeurVol > 0 ? (v * 100) / totalMajeurVol : 0);
+        const pctDenoueVol =
+            correspondanceVolume > 0 ? (transactionDenoueVolume * 100) / correspondanceVolume : 0;
+
+        return {
+            correspondance,
+            transactionDenoue,
+            transactionEchec,
+            totalReference: totalMajeur,
+            pctCorrespondance: pctMaj(correspondance),
+            pctDenoue: pctDenoueDansSynth,
+            pctEchec: pctMaj(transactionEchec),
+            correspondanceVolume,
+            transactionDenoueVolume,
+            transactionEchecVolume,
+            totalReferenceVolume: totalMajeurVol,
+            pctCorrespondanceVolume: pctMajVol(correspondanceVolume),
+            pctDenoueVolume: pctDenoueVol,
+            pctEchecVolume: pctMajVol(transactionEchecVolume)
+        };
     }
 
     /** Clé alignée relevé : date|service|country|env normalisé (T-E / BET / …). */

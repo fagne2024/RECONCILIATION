@@ -1038,40 +1038,46 @@
                 <div *ngIf="transactStatsLoading" class="reco-loading">Chargement...</div>
                 <div *ngIf="!transactStatsLoading && transactStatsError" class="reco-error">{{ transactStatsError }}</div>
                 <div *ngIf="!transactStatsLoading && !transactStatsError" class="transact-stats-content">
-                    <div class="transact-stats-grid">
-                        <div class="transact-stats-card transact-stats-card--correspondance">
-                            <div class="transact-stats-card-title">Correspondance</div>
-                            <p class="transact-stats-card-desc">Synthèse <strong>(rapport + écart traité)</strong> : somme des <em>totalTransactions</em> (rapport) + <em>trx traité</em> saisi sur le relevé, par ligne</p>
-                            <div class="transact-stats-card-value">{{ transactStats.correspondance | number:'1.0-0' }}</div>
-                            <div class="transact-stats-card-volume">Volume : {{ transactStats.correspondanceVolume | number:'1.0-2' }} FCFA</div>
-                            <div class="transact-stats-card-pct">{{ transactStats.pctCorrespondance | number:'1.1-1' }} % du total (synthèse + remboursés)</div>
-                            <div class="transact-stats-card-pct transact-stats-card-pct--vol">{{ transactStats.pctCorrespondanceVolume | number:'1.1-1' }} % vol. du total (synthèse + remboursés)</div>
+                    <div *ngFor="let block of transactStatsDisplayBlocks; let isLast = last" class="transact-stats-display-block">
+                        <h4 *ngIf="block.title" class="transact-stats-section-title">{{ block.title }}</h4>
+                        <div class="transact-stats-grid">
+                            <div class="transact-stats-card transact-stats-card--correspondance">
+                                <div class="transact-stats-card-title">Correspondance</div>
+                                <p class="transact-stats-card-desc">Synthèse <strong>(rapport + écart traité)</strong> : somme des <em>totalTransactions</em> (rapport) + <em>trx traité</em> saisi sur le relevé, par ligne</p>
+                                <div class="transact-stats-card-value">{{ block.stats.correspondance | number:'1.0-0' }}</div>
+                                <div class="transact-stats-card-volume">Volume : {{ block.stats.correspondanceVolume | number:'1.0-2' }} FCFA</div>
+                                <div class="transact-stats-card-pct">{{ block.stats.pctCorrespondance | number:'1.1-1' }} % du total (synthèse + remboursés)</div>
+                                <div class="transact-stats-card-pct transact-stats-card-pct--vol">{{ block.stats.pctCorrespondanceVolume | number:'1.1-1' }} % vol. du total (synthèse + remboursés)</div>
+                            </div>
+                            <div class="transact-stats-card transact-stats-card--denoue">
+                                <div class="transact-stats-card-title">Transaction dénouée</div>
+                                <p class="transact-stats-card-desc"><strong>Trx traité (saisie manuelle)</strong> — <em>releve_manual</em></p>
+                                <div class="transact-stats-card-value">{{ block.stats.transactionDenoue | number:'1.0-0' }}</div>
+                                <div class="transact-stats-card-volume">Volume : {{ block.stats.transactionDenoueVolume | number:'1.0-2' }} FCFA</div>
+                                <div class="transact-stats-card-pct">{{ block.stats.pctDenoue | number:'1.1-1' }} % de la synthèse</div>
+                                <div class="transact-stats-card-pct transact-stats-card-pct--vol">{{ block.stats.pctDenoueVolume | number:'1.1-1' }} % vol. de la synthèse</div>
+                            </div>
+                            <div class="transact-stats-card transact-stats-card--echec">
+                                <div class="transact-stats-card-title">Transaction en échec</div>
+                                <p class="transact-stats-card-desc"><strong>Trx remboursé (saisie manuelle)</strong></p>
+                                <div class="transact-stats-card-value">{{ block.stats.transactionEchec | number:'1.0-0' }}</div>
+                                <div class="transact-stats-card-volume">Volume : {{ block.stats.transactionEchecVolume | number:'1.0-2' }} FCFA</div>
+                                <div class="transact-stats-card-pct">{{ block.stats.pctEchec | number:'1.1-1' }} % du total (synthèse + remboursés)</div>
+                                <div class="transact-stats-card-pct transact-stats-card-pct--vol">{{ block.stats.pctEchecVolume | number:'1.1-1' }} % vol. du total (synthèse + remboursés)</div>
+                            </div>
                         </div>
-                        <div class="transact-stats-card transact-stats-card--denoue">
-                            <div class="transact-stats-card-title">Transaction dénouée</div>
-                            <p class="transact-stats-card-desc"><strong>Trx traité (saisie manuelle)</strong> — <em>releve_manual</em></p>
-                            <div class="transact-stats-card-value">{{ transactStats.transactionDenoue | number:'1.0-0' }}</div>
-                            <div class="transact-stats-card-volume">Volume : {{ transactStats.transactionDenoueVolume | number:'1.0-2' }} FCFA</div>
-                            <div class="transact-stats-card-pct">{{ transactStats.pctDenoue | number:'1.1-1' }} % de la synthèse</div>
-                            <div class="transact-stats-card-pct transact-stats-card-pct--vol">{{ transactStats.pctDenoueVolume | number:'1.1-1' }} % vol. de la synthèse</div>
-                        </div>
-                        <div class="transact-stats-card transact-stats-card--echec">
-                            <div class="transact-stats-card-title">Transaction en échec</div>
-                            <p class="transact-stats-card-desc"><strong>Trx remboursé (saisie manuelle)</strong></p>
-                            <div class="transact-stats-card-value">{{ transactStats.transactionEchec | number:'1.0-0' }}</div>
-                            <div class="transact-stats-card-volume">Volume : {{ transactStats.transactionEchecVolume | number:'1.0-2' }} FCFA</div>
-                            <div class="transact-stats-card-pct">{{ transactStats.pctEchec | number:'1.1-1' }} % du total (synthèse + remboursés)</div>
-                            <div class="transact-stats-card-pct transact-stats-card-pct--vol">{{ transactStats.pctEchecVolume | number:'1.1-1' }} % vol. du total (synthèse + remboursés)</div>
-                        </div>
+                        <ng-container *ngIf="isLast">
+                            <p class="transact-stats-total-ref">
+                                Total pour les taux « synthèse + remboursés » : <strong>{{ block.stats.totalReference | number:'1.0-0' }}</strong> trx
+                                · volume de référence : <strong>{{ block.stats.totalReferenceVolume | number:'1.0-2' }}</strong> FCFA
+                                (synthèse + trx remboursé ; les trx traités sont déjà incluses dans la synthèse).
+                            </p>
+                            <p class="transact-stats-footnote">
+                                Même cloisonnement que la vue semaine : options ENV dérivées des données <strong>result8rec</strong> sur la période (et jour) affichés ; services filtrés de la même façon.
+                                <span *ngIf="transactStatsPerService.length >= 2"> Les pourcentages par service sont calculés sur le périmètre de ce service ; le total agrège la sélection.</span>
+                            </p>
+                        </ng-container>
                     </div>
-                    <p class="transact-stats-total-ref">
-                        Total pour les taux « synthèse + remboursés » : <strong>{{ transactStats.totalReference | number:'1.0-0' }}</strong> trx
-                        · volume de référence : <strong>{{ transactStats.totalReferenceVolume | number:'1.0-2' }}</strong> FCFA
-                        (synthèse + trx remboursé ; les trx traités sont déjà incluses dans la synthèse).
-                    </p>
-                    <p class="transact-stats-footnote">
-                        Même cloisonnement que la vue semaine : options ENV dérivées des données <strong>result8rec</strong> sur la période (et jour) affichés ; services filtrés de la même façon.
-                    </p>
                 </div>
             </div>
             <div class="reco-view-modal-footer">
