@@ -6,7 +6,7 @@ import { debounceTime, distinctUntilChanged } from 'rxjs/operators';
 import * as XLSX from 'xlsx';
 import * as ExcelJS from 'exceljs';
 
-import { ServiceReference, ServiceReferencePayload, ServiceReferenceDashboard } from '../../models/service-reference.model';
+import { ServiceReference, ServiceReferencePayload } from '../../models/service-reference.model';
 import { ServiceReferenceService } from '../../services/service-reference.service';
 import { ModernPopupComponent, PopupConfig } from '../modern-popup/modern-popup.component';
 
@@ -21,6 +21,18 @@ type ServiceRefFilterDimension =
     | 'codeService'
     | 'status'
     | 'reconciliable';
+
+interface ServiceRefDashboardOperatorGroup {
+    operateurLabel: string;
+    items: ServiceReference[];
+}
+
+interface ServiceRefDashboardGroup {
+    serviceTypeLabel: string;
+    operators: ServiceRefDashboardOperatorGroup[];
+}
+
+type DashboardFilterDimension = 'pays' | 'serviceType' | 'operateur';
 
 @Component({
     selector: 'app-service-references',
@@ -43,6 +55,11 @@ export class ServiceReferencesComponent implements OnInit {
     referenceForm: FormGroup;
     editingReference: ServiceReference | null = null;
     filterForm: FormGroup;
+    /** Filtres du dashboard (Pays / Type / Opérateur) — cloisonnement des listes. */
+    dashboardFilterForm: FormGroup;
+    dashboardPaysOptions: string[] = [];
+    dashboardServiceTypeOptions: string[] = [];
+    dashboardOperateurOptions: string[] = [];
 
     @ViewChild('fileInput') fileInput!: ElementRef<HTMLInputElement>;
 
@@ -72,11 +89,6 @@ export class ServiceReferencesComponent implements OnInit {
     selectedReferences: Set<number> = new Set();
     allSelected = false;
     isDashboardVisible = false;
-    dashboardStats: ServiceReferenceDashboard[] = [];
-    filteredDashboardStats: ServiceReferenceDashboard[] = [];
-    isDashboardLoading = false;
-    selectedCountries: string[] = [];
-    availableCountries: string[] = [];
 
     constructor(
         private serviceReferenceService: ServiceReferenceService,
@@ -106,6 +118,12 @@ export class ServiceReferencesComponent implements OnInit {
             status: [''],
             reconciliable: ['all']
         });
+
+        this.dashboardFilterForm = this.fb.group({
+            pays: [''],
+            serviceType: [''],
+            operateur: ['']
+        });
     }
 
     ngOnInit(): void {
@@ -113,65 +131,18 @@ export class ServiceReferencesComponent implements OnInit {
             debounceTime(200),
             distinctUntilChanged((a, b) => JSON.stringify(a) === JSON.stringify(b))
         ).subscribe(() => this.applyFilters());
+        this.dashboardFilterForm.valueChanges.pipe(
+            debounceTime(200),
+            distinctUntilChanged((a, b) => JSON.stringify(a) === JSON.stringify(b))
+        ).subscribe(() => this.updateDashboardFilterOptions());
         this.loadReferences();
     }
 
     toggleDashboard(): void {
         this.isDashboardVisible = !this.isDashboardVisible;
-        if (this.isDashboardVisible && !this.dashboardStats.length) {
-            this.loadDashboardStats();
+        if (this.isDashboardVisible) {
+            this.updateDashboardFilterOptions();
         }
-    }
-
-    private loadDashboardStats(): void {
-        this.isDashboardLoading = true;
-        this.serviceReferenceService.getDashboardStats().subscribe({
-            next: (stats) => {
-                this.dashboardStats = (stats || []).sort((a, b) => a.country.localeCompare(b.country));
-                // Extraire la liste des pays disponibles
-                this.availableCountries = [...new Set(this.dashboardStats.map(s => s.country))].sort();
-                // Initialiser filteredDashboardStats avec tous les stats
-                this.filteredDashboardStats = [...this.dashboardStats];
-                this.applyCountryFilter();
-                this.isDashboardLoading = false;
-            },
-            error: async (error) => {
-                console.error('Erreur lors du chargement du dashboard', error);
-                this.isDashboardLoading = false;
-                await this.showErrorPopup('Impossible de charger le dashboard');
-            }
-        });
-    }
-
-    applyCountryFilter(): void {
-        if (this.selectedCountries.length === 0) {
-            // Si aucun pays sélectionné, afficher tous les pays
-            this.filteredDashboardStats = [...this.dashboardStats];
-        } else {
-            // Filtrer par les pays sélectionnés
-            this.filteredDashboardStats = this.dashboardStats.filter(stat => 
-                this.selectedCountries.includes(stat.country)
-            );
-        }
-    }
-
-    toggleCountry(country: string): void {
-        const index = this.selectedCountries.indexOf(country);
-        if (index > -1) {
-            this.selectedCountries.splice(index, 1);
-        } else {
-            this.selectedCountries.push(country);
-        }
-        this.applyCountryFilter();
-    }
-
-    clearCountryFilter(): void {
-        this.selectedCountries = [];
-        this.applyCountryFilter();
-    }
-
-    isCountrySelected(country: string): boolean {
-        return this.selectedCountries.includes(country);
     }
 
     loadReferences(): void {
@@ -182,6 +153,7 @@ export class ServiceReferencesComponent implements OnInit {
             next: (refs) => {
                 this.references = refs.sort((a, b) => a.pays.localeCompare(b.pays));
                 this.applyFilters();
+                this.updateDashboardFilterOptions();
                 this.isLoading = false;
                 this.errorDetails = [];
             },
@@ -301,6 +273,136 @@ export class ServiceReferencesComponent implements OnInit {
                 .filter((ref) => this.matchesFilterForm(ref, 'codeService'))
                 .map((ref) => ref.codeService)
         );
+    }
+
+    private norm(s: string | undefined | null): string {
+        return (s ?? '').trim().toLowerCase();
+    }
+
+    private matchesDashboardFilter(ref: ServiceReference, exclude: DashboardFilterDimension | null): boolean {
+        const { pays, serviceType, operateur } = this.dashboardFilterForm.value;
+        if (exclude !== 'pays' && pays) {
+            if (this.norm(ref.pays) !== this.norm(pays)) {
+                return false;
+            }
+        }
+        if (exclude !== 'serviceType' && serviceType) {
+            if (this.norm(ref.serviceType) !== this.norm(serviceType)) {
+                return false;
+            }
+        }
+        if (exclude !== 'operateur' && operateur) {
+            if (this.norm(ref.operateur) !== this.norm(operateur)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    updateDashboardFilterOptions(): void {
+        const uniqueSorted = <T>(arr: T[]) =>
+            [...new Set(arr)].sort((a, b) => String(a).localeCompare(String(b), 'fr'));
+
+        this.dashboardPaysOptions = uniqueSorted(
+            this.references.filter((r) => this.matchesDashboardFilter(r, 'pays')).map((r) => r.pays)
+        );
+        this.dashboardServiceTypeOptions = uniqueSorted(
+            this.references
+                .filter((r) => this.matchesDashboardFilter(r, 'serviceType'))
+                .map((r) => r.serviceType)
+                .filter((st): st is string => !!st && String(st).trim().length > 0)
+        );
+        this.dashboardOperateurOptions = uniqueSorted(
+            this.references
+                .filter((r) => this.matchesDashboardFilter(r, 'operateur'))
+                .map((r) => r.operateur)
+                .filter((op): op is string => !!op && String(op).trim().length > 0)
+        );
+    }
+
+    get dashboardFilteredRefs(): ServiceReference[] {
+        return this.references.filter((r) => this.matchesDashboardFilter(r, null));
+    }
+
+    get dashboardTotalCount(): number {
+        return this.dashboardFilteredRefs.length;
+    }
+
+    get dashboardReconciliableCount(): number {
+        return this.dashboardFilteredRefs.filter((r) => r.reconciliable).length;
+    }
+
+    get dashboardNonReconciliableCount(): number {
+        return this.dashboardFilteredRefs.filter((r) => !r.reconciliable).length;
+    }
+
+    get dashboardReconciliablePercent(): number {
+        const t = this.dashboardTotalCount;
+        return t ? Math.round((100 * this.dashboardReconciliableCount) / t) : 0;
+    }
+
+    get dashboardNonReconciliablePercent(): number {
+        const t = this.dashboardTotalCount;
+        return t ? Math.round((100 * this.dashboardNonReconciliableCount) / t) : 0;
+    }
+
+    get dashboardTotalCardSubtitle(): string {
+        const p = (this.dashboardFilterForm.get('pays')?.value || '').trim();
+        return p ? `Pays : ${p}` : 'Tous pays';
+    }
+
+    get groupedDashboardReconciliable(): ServiceRefDashboardGroup[] {
+        return this.buildServiceRefGroups(this.dashboardFilteredRefs.filter((r) => r.reconciliable));
+    }
+
+    get groupedDashboardNonReconciliable(): ServiceRefDashboardGroup[] {
+        return this.buildServiceRefGroups(this.dashboardFilteredRefs.filter((r) => !r.reconciliable));
+    }
+
+    private buildServiceRefGroups(refs: ServiceReference[]): ServiceRefDashboardGroup[] {
+        const byType = new Map<string, Map<string, ServiceReference[]>>();
+        for (const ref of refs) {
+            const typeKey = (ref.serviceType || '').trim().toUpperCase() || '(SANS TYPE)';
+            const opKey = (ref.operateur || '').trim().toUpperCase() || '(SANS OPÉRATEUR)';
+            if (!byType.has(typeKey)) {
+                byType.set(typeKey, new Map());
+            }
+            const opMap = byType.get(typeKey)!;
+            if (!opMap.has(opKey)) {
+                opMap.set(opKey, []);
+            }
+            opMap.get(opKey)!.push(ref);
+        }
+        const types = [...byType.keys()].sort((a, b) => a.localeCompare(b, 'fr'));
+        return types.map((serviceTypeLabel) => {
+            const opMap = byType.get(serviceTypeLabel)!;
+            const ops = [...opMap.keys()].sort((a, b) => a.localeCompare(b, 'fr'));
+            return {
+                serviceTypeLabel,
+                operators: ops.map((operateurLabel) => ({
+                    operateurLabel,
+                    items: (opMap.get(operateurLabel) || []).sort((a, b) =>
+                        a.codeService.localeCompare(b.codeService, undefined, { sensitivity: 'base' })
+                    )
+                }))
+            };
+        });
+    }
+
+    isReferenceActive(ref: ServiceReference): boolean {
+        return String(ref.status || 'ACTIF').toUpperCase() !== 'INACTIF';
+    }
+
+    trackDashboardGroup(_index: number, g: ServiceRefDashboardGroup): string {
+        return g.serviceTypeLabel;
+    }
+
+    trackDashboardOp(_index: number, o: ServiceRefDashboardOperatorGroup): string {
+        return o.operateurLabel;
+    }
+
+    trackDashboardRef(_index: number, r: ServiceReference): string {
+        return r.id != null ? String(r.id) : `${r.pays}|${r.codeService}|${r.codeReco}`;
     }
 
     get pagedReferences(): ServiceReference[] {
@@ -753,37 +855,6 @@ export class ServiceReferencesComponent implements OnInit {
         return `Affichage ${start}-${end} / ${this.filteredReferences.length} ligne(s)`;
     }
 
-    get dashboardTotalVolume(): number {
-        return this.filteredDashboardStats.reduce((sum, stat) => sum + (stat.totalVolume || 0), 0);
-    }
-
-    get dashboardTotalTransactions(): number {
-        return this.filteredDashboardStats.reduce((sum, stat) => sum + (stat.totalTransactions || 0), 0);
-    }
-
-    get dashboardNetVolume(): number {
-        return this.filteredDashboardStats.reduce((sum, stat) => sum + (stat.reconcilableVolume || 0), 0);
-    }
-
-    get dashboardNetTransactions(): number {
-        return this.filteredDashboardStats.reduce((sum, stat) => sum + (stat.reconcilableTransactions || 0), 0);
-    }
-
-    get dashboardNonReconcilableVolume(): number {
-        return this.filteredDashboardStats.reduce((sum, stat) => sum + (stat.nonReconcilableVolume || 0), 0);
-    }
-
-    get dashboardNonReconcilableTransactions(): number {
-        return this.filteredDashboardStats.reduce((sum, stat) => sum + (stat.nonReconcilableTransactions || 0), 0);
-    }
-
-    getTrxNonReconPercentage(stat: ServiceReferenceDashboard): number {
-        const brut = typeof stat.trxReconBrut === 'number' ? stat.trxReconBrut : 0;
-        const net = typeof stat.trxReconNet === 'number' ? stat.trxReconNet : 0;
-        const difference = brut - net;
-        return difference < 0 ? 0 : difference;
-    }
-
     private cleanString(value: any): string {
         return value !== undefined && value !== null ? value.toString().trim() : '';
     }
@@ -878,37 +949,6 @@ export class ServiceReferencesComponent implements OnInit {
             minimumFractionDigits: fractionDigits,
             maximumFractionDigits: fractionDigits
         }).format(value);
-    }
-
-    getMetricClass(value: number): string {
-        if (value >= 95) {
-            return 'metric-good';
-        }
-        if (value >= 80) {
-            return 'metric-warning';
-        }
-        return 'metric-bad';
-    }
-
-    getNegativeMetricClass(value: number): string {
-        if (value <= 5) {
-            return 'metric-good';
-        }
-        if (value <= 15) {
-            return 'metric-warning';
-        }
-        return 'metric-bad';
-    }
-
-    getProgressPercentage(value: number): number {
-        if (value === null || value === undefined || isNaN(value)) {
-            return 0;
-        }
-        return Math.min(value, 100);
-    }
-
-    trackByCountry(_index: number, item: ServiceReferenceDashboard): string {
-        return item.country;
     }
 
     get hasSelection(): boolean {
