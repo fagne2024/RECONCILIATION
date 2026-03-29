@@ -1,18 +1,48 @@
 import { Injectable } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
-import { Observable } from 'rxjs';
-import { ServiceReference, ServiceReferencePayload, ServiceReferenceDashboard } from '../models/service-reference.model';
+import { HttpClient, HttpErrorResponse } from '@angular/common/http';
+import { Observable, throwError, timer } from 'rxjs';
+import { catchError, switchMap } from 'rxjs/operators';
+import {
+    ServiceReference,
+    ServiceReferencePayload,
+    ServiceReferenceDashboard,
+    ServiceReferenceBatchDeleteResult,
+    ServiceReferenceImportBatchResult
+} from '../models/service-reference.model';
 
 @Injectable({
     providedIn: 'root'
 })
 export class ServiceReferenceService {
     private readonly apiUrl = '/api/service-references';
+    private static readonly MAX_429_RETRIES = 6;
 
     constructor(private http: HttpClient) {}
 
+    private with429Retry<T>(factory: () => Observable<T>, attempt = 0): Observable<T> {
+        return factory().pipe(
+            catchError((err: HttpErrorResponse) => {
+                if (err.status === 429 && attempt < ServiceReferenceService.MAX_429_RETRIES) {
+                    const delayMs = Math.min(1500 * Math.pow(2, attempt), 30000);
+                    return timer(delayMs).pipe(switchMap(() => this.with429Retry(factory, attempt + 1)));
+                }
+                return throwError(() => err);
+            })
+        );
+    }
+
     listAll(): Observable<ServiceReference[]> {
-        return this.http.get<ServiceReference[]>(this.apiUrl);
+        return this.with429Retry(() => this.http.get<ServiceReference[]>(this.apiUrl));
+    }
+
+    /** Codes RECO déjà en base (unicité globale), pour filtrer l'import. */
+    getUsedCodeRecos(): Observable<string[]> {
+        return this.with429Retry(() => this.http.get<string[]>(`${this.apiUrl}/used-code-recos`));
+    }
+
+    /** Codes service déjà en base — filtre d’import (colonne Code Service uniquement). */
+    getUsedCodeServices(): Observable<string[]> {
+        return this.with429Retry(() => this.http.get<string[]>(`${this.apiUrl}/used-code-services`));
     }
 
     getByPays(pays: string): Observable<ServiceReference[]> {
@@ -27,15 +57,39 @@ export class ServiceReferenceService {
         return this.http.post<ServiceReference>(this.apiUrl, payload);
     }
 
+    /**
+     * Import de plusieurs lignes en une requête (évite le rate limiting sur les gros fichiers).
+     */
+    importBatch(
+        items: { rowNumber: number; payload: ServiceReferencePayload }[]
+    ): Observable<ServiceReferenceImportBatchResult> {
+        return this.with429Retry(() =>
+            this.http.post<ServiceReferenceImportBatchResult>(`${this.apiUrl}/import-batch`, {
+                items: items.map((i) => ({
+                    rowNumber: i.rowNumber,
+                    payload: i.payload
+                }))
+            })
+        );
+    }
+
     update(id: number, payload: Partial<ServiceReferencePayload>): Observable<ServiceReference> {
         return this.http.put<ServiceReference>(`${this.apiUrl}/${id}`, payload);
     }
 
     delete(id: number): Observable<void> {
-        return this.http.delete<void>(`${this.apiUrl}/${id}`);
+        return this.with429Retry(() => this.http.delete<void>(`${this.apiUrl}/${id}`));
+    }
+
+    deleteBatch(ids: number[]): Observable<ServiceReferenceBatchDeleteResult> {
+        return this.with429Retry(() =>
+            this.http.post<ServiceReferenceBatchDeleteResult>(`${this.apiUrl}/delete-batch`, { ids })
+        );
     }
 
     getDashboardStats(): Observable<ServiceReferenceDashboard[]> {
-        return this.http.get<ServiceReferenceDashboard[]>(`${this.apiUrl}/dashboard`);
+        return this.with429Retry(() =>
+            this.http.get<ServiceReferenceDashboard[]>(`${this.apiUrl}/dashboard`)
+        );
     }
 }

@@ -5,7 +5,7 @@ import { filter } from 'rxjs/operators';
 import { Observable, Subscription, firstValueFrom } from 'rxjs';
 import { take } from 'rxjs/operators';
 import { FormControl } from '@angular/forms';
-import { MatSelect } from '@angular/material/select';
+import { MatSelect, MatSelectChange } from '@angular/material/select';
 import { ReconciliationResponse, Match } from '../../models/reconciliation-response.model';
 import { AppStateService } from '../../services/app-state.service';
 import { ReconciliationSummaryService, AgencySummaryData } from '../../services/reconciliation-summary.service';
@@ -216,7 +216,7 @@ export interface ReconciliationReportData {
                 <div class="filter-group" *ngIf="!hasSelectedRows()">
                     <mat-form-field appearance="fill" class="filter-mat-select">
                         <mat-label>Statut</mat-label>
-                        <mat-select [(ngModel)]="selectedStatuses" multiple (selectionChange)="onStatusSelectionChange()">
+                        <mat-select #statusSelect [(ngModel)]="selectedStatuses" multiple (selectionChange)="onStatusSelectionChange()">
                             <mat-option *ngFor="let status of uniqueStatuses" [value]="status">
                                 {{ status }}
                             </mat-option>
@@ -226,7 +226,7 @@ export interface ReconciliationReportData {
                 <div class="filter-group" *ngIf="!hasSelectedRows()">
                     <mat-form-field appearance="fill" class="filter-mat-select">
                         <mat-label>Traitement</mat-label>
-                        <mat-select [(ngModel)]="selectedTraitements" multiple (selectionChange)="onTraitementSelectionChange()">
+                        <mat-select #traitementSelect [(ngModel)]="selectedTraitements" multiple (selectionChange)="onTraitementSelectionChange()">
                             <mat-option *ngFor="let traitement of traitementOptions" [value]="traitement">
                                 {{ traitement }}
                             </mat-option>
@@ -236,7 +236,7 @@ export interface ReconciliationReportData {
                 <div class="filter-group" *ngIf="!hasSelectedRows()">
                     <mat-form-field appearance="fill" class="filter-mat-select">
                         <mat-label>ENV</mat-label>
-                        <mat-select [(ngModel)]="selectedEnvs" multiple (selectionChange)="onEnvSelectionChange()">
+                        <mat-select #envSelect [(ngModel)]="selectedEnvs" multiple (selectionChange)="onEnvSelectionChange($event)">
                             <mat-option *ngFor="let env of uniqueEnvs" [value]="env">
                                 {{ formatEnvFilterLabel(env) }}
                             </mat-option>
@@ -2937,9 +2937,12 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
     filteredServicesDropdown: string[] = [];
     filteredCountriesDropdown: string[] = [];
 
-    @ViewChild('agenceSelect') agenceSelect!: MatSelect;
-    @ViewChild('serviceSelect') serviceSelect!: MatSelect;
-    @ViewChild('paysSelect') paysSelect!: MatSelect;
+    @ViewChild('agenceSelect') agenceSelect?: MatSelect;
+    @ViewChild('serviceSelect') serviceSelect?: MatSelect;
+    @ViewChild('paysSelect') paysSelect?: MatSelect;
+    @ViewChild('statusSelect') statusSelect?: MatSelect;
+    @ViewChild('traitementSelect') traitementSelect?: MatSelect;
+    @ViewChild('envSelect') envSelect?: MatSelect;
     /** Par défaut false = afficher uniquement le mois en cours ; true = tout afficher */
     showAllMonths = false;
     
@@ -4462,10 +4465,20 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
     }
 
     /**
-     * Met à jour la liste des services filtrés selon l'agence/pays sélectionnés
+     * Met à jour la liste des services filtrés selon pays, agence et ENV sélectionnés (ENV cloisonne les services proposés).
+     * @param envSelectionOverride Valeur ENV à appliquer tout de suite (ex. issue de MatSelectChange) : le [(ngModel)]
+     *   n’est pas toujours à jour dans le callback selectionChange, ce qui affichait tous les services.
      */
-    private updateFilteredServices(): void {
-        if (this.selectedAgencies.length === 0 && this.selectedCountries.length === 0) {
+    private updateFilteredServices(envSelectionOverride?: string[] | null): void {
+        const envsForFilter =
+            envSelectionOverride !== undefined && envSelectionOverride !== null
+                ? envSelectionOverride
+                : this.selectedEnvs;
+        const noCountry = this.selectedCountries.length === 0;
+        const noAgency = this.selectedAgencies.length === 0;
+        const noEnv = !envsForFilter || envsForFilter.length === 0;
+
+        if (noCountry && noAgency && noEnv) {
             this.filteredServices = [...this.uniqueServices];
             return;
         }
@@ -4473,9 +4486,13 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         const servicesForSelection = new Set<string>();
         this.reportData
             .filter(item => {
-                const matchesCountry = this.selectedCountries.length === 0 || this.selectedCountries.includes(item.country);
-                const matchesAgency = this.selectedAgencies.length === 0 || this.selectedAgencies.includes(item.agency);
-                return matchesCountry && matchesAgency;
+                const matchesCountry = noCountry || this.selectedCountries.includes(item.country);
+                const matchesAgency = noAgency || this.selectedAgencies.includes(item.agency);
+                const itemEnvNorm = this.normalizeReleveEnvKey(item.env);
+                const matchesEnv =
+                    noEnv ||
+                    envsForFilter.some(sel => this.normalizeReleveEnvKey(sel) === itemEnvNorm);
+                return matchesCountry && matchesAgency && matchesEnv;
             })
             .forEach(item => servicesForSelection.add(item.service));
 
@@ -4506,10 +4523,16 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         this.paysSearchCtrl.setValue('');
     }
 
+    /** Ferme le panneau du mat-select (multi) après un clic : évite la liste « figée » ouverte. */
+    private closeFilterMatSelectPanel(select?: MatSelect): void {
+        setTimeout(() => select?.close(), 0);
+    }
+
     onAgencySelectionChange(): void {
         this.updateFilteredServices();
         this.refreshDropdownLists();
         this.filterReport();
+        this.closeFilterMatSelectPanel(this.agenceSelect);
     }
 
     onCountrySelectionChange(): void {
@@ -4523,22 +4546,32 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         );
         this.refreshDropdownLists();
         this.filterReport();
+        this.closeFilterMatSelectPanel(this.paysSelect);
     }
 
     onServiceSelectionChange(): void {
         this.filterReport();
+        this.closeFilterMatSelectPanel(this.serviceSelect);
     }
 
     onStatusSelectionChange(): void {
         this.filterReport();
+        this.closeFilterMatSelectPanel(this.statusSelect);
     }
 
     onTraitementSelectionChange(): void {
         this.filterReport();
+        this.closeFilterMatSelectPanel(this.traitementSelect);
     }
 
-    onEnvSelectionChange(): void {
+    onEnvSelectionChange(event: MatSelectChange): void {
+        const raw = event?.value ?? event?.source?.value;
+        const envs: string[] = Array.isArray(raw) ? (raw as string[]) : raw != null && raw !== '' ? [String(raw)] : [];
+        this.updateFilteredServices(envs);
+        this.selectedServices = this.selectedServices.filter(s => this.filteredServices.includes(s));
+        this.refreshDropdownLists();
         this.filterReport();
+        this.closeFilterMatSelectPanel(this.envSelect);
     }
 
     onTicketIdFilterChange(value: string): void {

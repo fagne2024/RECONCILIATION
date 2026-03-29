@@ -63,7 +63,8 @@ public class RateLimitingFilter extends OncePerRequestFilter {
         "/api/profils/modules",
         "/api/profils/permissions",
         "/api/profils/permissions/by-module",
-        "/api/pays"
+        "/api/pays",
+        "/api/service-references"
     };
 
     public RateLimitingFilter() {
@@ -108,6 +109,12 @@ public class RateLimitingFilter extends OncePerRequestFilter {
         }
 
         if (excludeEcartBoSummaryApi && path.startsWith("/api/ecart-bo-summary")) {
+            filterChain.doFilter(request, response);
+            return;
+        }
+
+        // Import référentiel : remplace N POST unitaires (évite 429 lors des gros fichiers)
+        if (path.equals("/api/service-references/import-batch")) {
             filterChain.doFilter(request, response);
             return;
         }

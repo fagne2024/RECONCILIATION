@@ -17,6 +17,19 @@ export interface ServiceReference {
 
 export type ServiceReferencePayload = Omit<ServiceReference, 'id' | 'createdAt' | 'updatedAt'>;
 
+/** Réponse POST /api/service-references/delete-batch (alignée sur DeleteOperationsResponse backend). */
+export interface ServiceReferenceBatchDeleteResult {
+    success: boolean;
+    deletedCount: number;
+    errors: string[];
+}
+
+/** Réponse POST /api/service-references/import-batch */
+export interface ServiceReferenceImportBatchResult {
+    successCount: number;
+    errors: string[];
+}
+
 export interface ServiceReferenceDashboard {
     country: string;
     trxReconBrut: number;

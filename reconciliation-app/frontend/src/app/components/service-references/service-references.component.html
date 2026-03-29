@@ -186,7 +186,6 @@
                             <td>
                                 <span class="country-cell">
                                     <span class="country-flag">{{ getCountryFlag(ref.pays) }}</span>
-                                    <img *ngIf="getCountryFlagUrl(ref.pays) as flagUrl" [src]="flagUrl" (error)="onFlagError($event, ref.pays)" class="country-flag-img" alt="flag" style="display: none;" (load)="$event.target.style.display='inline-block'; $event.target.previousElementSibling.style.display='none';"/>
                                     {{ ref.pays }}
                                 </span>
                             </td>
@@ -321,7 +320,6 @@
                         [class.active]="isCountrySelected(country)"
                         (click)="toggleCountry(country)">
                         <span class="country-flag">{{ getCountryFlag(country) }}</span>
-                        <img *ngIf="getCountryFlagUrl(country) as flagUrl" [src]="flagUrl" (error)="onFlagError($event, country)" class="country-flag-img" alt="flag" style="display: none;" (load)="$event.target.style.display='inline-block'; $event.target.previousElementSibling.style.display='none';"/>
                         {{ country }}
                     </button>
                     <button 
@@ -372,7 +370,6 @@
                 <div class="card-header">
                     <h4>
                         <span class="country-flag">{{ getCountryFlag(stat.country) }}</span>
-                        <img *ngIf="getCountryFlagUrl(stat.country) as flagUrl" [src]="flagUrl" (error)="onFlagError($event, stat.country)" class="country-flag-img" alt="flag" style="display: none;" (load)="$event.target.style.display='inline-block'; $event.target.previousElementSibling.style.display='none';"/>
                         {{ stat.country }}
                     </h4>
                     <small>{{ formatNumber(stat.totalVolume, 2) }} volume • {{ formatNumber(stat.totalTransactions) }} trx</small>

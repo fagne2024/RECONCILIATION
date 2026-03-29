@@ -1,5 +1,9 @@
 package com.reconciliation.controller;
 
+import com.reconciliation.dto.DeleteOperationsRequest;
+import com.reconciliation.dto.DeleteOperationsResponse;
+import com.reconciliation.dto.ServiceReferenceImportBatchRequest;
+import com.reconciliation.dto.ServiceReferenceImportBatchResponse;
 import com.reconciliation.dto.ServiceReferenceDashboardDto;
 import com.reconciliation.entity.ServiceReferenceEntity;
 import com.reconciliation.service.ServiceReferenceService;
@@ -12,6 +16,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Set;
 
 @RestController
 @RequestMapping("/api/service-references")
@@ -25,6 +30,21 @@ public class ServiceReferenceController {
     public ResponseEntity<List<ServiceReferenceEntity>> listAll() {
         String username = RequestContextUtil.getUsernameFromRequest();
         return ResponseEntity.ok(serviceReferenceService.getAll(username));
+    }
+
+    /**
+     * Codes RECO déjà en base (unicité globale), pour filtrer l’import même si la liste filtrée par pays est partielle.
+     */
+    @GetMapping("/used-code-recos")
+    public ResponseEntity<Set<String>> listUsedCodeRecos() {
+        RequestContextUtil.getUsernameFromRequest();
+        return ResponseEntity.ok(serviceReferenceService.getAllUsedCodeRecosNormalized());
+    }
+
+    @GetMapping("/used-code-services")
+    public ResponseEntity<Set<String>> listUsedCodeServices() {
+        RequestContextUtil.getUsernameFromRequest();
+        return ResponseEntity.ok(serviceReferenceService.getAllUsedCodeServicesNormalized());
     }
 
     @GetMapping("/{id}")
@@ -56,6 +76,21 @@ public class ServiceReferenceController {
         return ResponseEntity.status(HttpStatus.CREATED).body(created);
     }
 
+    /**
+     * Import fichier : plusieurs lignes en une requête (évite 429 sur le rate limiting).
+     */
+    @PostMapping("/import-batch")
+    public ResponseEntity<ServiceReferenceImportBatchResponse> importBatch(
+            @RequestBody ServiceReferenceImportBatchRequest request) {
+        String username = RequestContextUtil.getUsernameFromRequest();
+        if (request == null || request.getItems() == null || request.getItems().isEmpty()) {
+            return ResponseEntity.badRequest().build();
+        }
+        ServiceReferenceImportBatchResponse result =
+                serviceReferenceService.importBatch(request.getItems(), username);
+        return ResponseEntity.ok(result);
+    }
+
     @PutMapping("/{id}")
     public ResponseEntity<?> update(@PathVariable Long id, @Valid @RequestBody ServiceReferenceEntity payload) {
         String username = RequestContextUtil.getUsernameFromRequest();
@@ -68,6 +103,16 @@ public class ServiceReferenceController {
         String username = RequestContextUtil.getUsernameFromRequest();
         serviceReferenceService.delete(id, username);
         return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/delete-batch")
+    public ResponseEntity<DeleteOperationsResponse> deleteBatch(@RequestBody DeleteOperationsRequest request) {
+        String username = RequestContextUtil.getUsernameFromRequest();
+        if (request.getIds() == null || request.getIds().isEmpty()) {
+            return ResponseEntity.badRequest().build();
+        }
+        DeleteOperationsResponse result = serviceReferenceService.deleteBatch(request.getIds(), username);
+        return ResponseEntity.ok(result);
     }
 
     @GetMapping("/dashboard")

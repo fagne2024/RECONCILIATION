@@ -118,6 +118,8 @@ export class DashboardComponent implements OnInit, OnDestroy {
     releveStatusServices: string[] = [];
     releveStatusDate: string = '';
     releveStatusEnv: string = 'ALL';
+    /** Options ENV du popup relevé : même logique que vue semaine / statistiques (données result8rec). */
+    releveStatusEnvSelectOptions: string[] = ['ALL', ...RECONCILIATION_ENV_OPTIONS];
     releveStatusError: string | null = null;
     private reconciliationCountryServices: { [country: string]: string[] } | null = null;
     /** Pays -> clé ENV stricte -> services (cloisonnement pour les listes déroulantes). */
@@ -1054,10 +1056,81 @@ export class DashboardComponent implements OnInit, OnDestroy {
     }
 
     /**
-     * Met à jour la liste des services pour le popup statut : par pays, puis par ENV si un
-     * environnement précis est choisi (cloisonnement aligné sur result8rec).
+     * Met à jour ENV + services du popup relevé depuis result8rec (pays, date optionnelle, cloisonnement strict ENV),
+     * comme les modales Vue semaine et Statistiques réconciliation.
      */
     updateReleveStatusServices(): void {
+        this.refreshReleveStatusEnvAndServices();
+    }
+
+    /** Après changement de date : réduit les ENV / services aux lignes de ce jour pour le pays choisi. */
+    onReleveStatusDateChange(): void {
+        this.refreshReleveStatusEnvAndServices();
+    }
+
+    private refreshReleveStatusEnvAndServices(): void {
+        if (!this.releveStatusCountry) {
+            this.releveStatusEnvSelectOptions = ['ALL', ...RECONCILIATION_ENV_OPTIONS];
+            this.releveStatusServices = [];
+            if (this.releveStatusService) {
+                this.releveStatusService = null;
+            }
+            return;
+        }
+
+        this.dashboardReconciliationService
+            .getResult8RecData()
+            .pipe(take(1))
+            .subscribe({
+                next: data => {
+                    const country = this.releveStatusCountry!;
+                    const dateOnly = (this.releveStatusDate || '').trim();
+                    const rowsForScope = data.filter(item => {
+                        if (!item.country || item.country !== country) {
+                            return false;
+                        }
+                        if (!dateOnly) {
+                            return true;
+                        }
+                        const itemDateStr = this.extractResult8DateOnly(item.date);
+                        return itemDateStr === dateOnly;
+                    });
+
+                    this.releveStatusEnvSelectOptions = this.buildRecoViewEnvSelectOptions(rowsForScope);
+                    if (!this.releveStatusEnvSelectOptions.includes(this.releveStatusEnv)) {
+                        this.releveStatusEnv = 'ALL';
+                    }
+
+                    const targetEnv = (this.releveStatusEnv || 'ALL').trim() || 'ALL';
+                    const servicesSet = new Set<string>();
+                    rowsForScope.forEach(item => {
+                        if (!item.service) {
+                            return;
+                        }
+                        if (!this.matchesReconciliationEnvStrict(this.getResult8RecItemEnv(item), targetEnv)) {
+                            return;
+                        }
+                        const upper = item.service.toUpperCase();
+                        if (upper.startsWith('AUCAT')) {
+                            return;
+                        }
+                        servicesSet.add(item.service);
+                    });
+
+                    this.releveStatusServices = Array.from(servicesSet).sort();
+                    if (this.releveStatusService && !this.releveStatusServices.includes(this.releveStatusService)) {
+                        this.releveStatusService = null;
+                    }
+                },
+                error: err => {
+                    console.error('Erreur refresh options relevé statut (result8rec):', err);
+                    this.updateReleveStatusServicesFallback();
+                }
+            });
+    }
+
+    /** Secours si result8rec indisponible (ancienne logique filtres / pays). */
+    private updateReleveStatusServicesFallback(): void {
         if (!this.releveStatusCountry) {
             return;
         }
@@ -1141,9 +1214,8 @@ export class DashboardComponent implements OnInit, OnDestroy {
                         if (!item.country || !item.service || !item.date) return false;
                         if (item.country !== targetCountry) return false;
                         if (item.service !== targetService) return false;
-                        if (targetEnv !== 'ALL') {
-                            const itemEnv = normalizeReconciliationReportEnv(item.env);
-                            if (itemEnv !== normalizeReconciliationReportEnv(targetEnv)) return false;
+                        if (!this.matchesReconciliationEnvStrict(this.getResult8RecItemEnv(item), targetEnv)) {
+                            return false;
                         }
 
                         const itemDateStr = (item.date || '').split(' ')[0];

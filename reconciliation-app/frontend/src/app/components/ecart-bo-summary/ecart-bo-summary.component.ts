@@ -8,7 +8,10 @@ import { EcartBoSummaryService, EcartBoSummaryPrefill, EcartBoSummaryPendingLine
 import { PopupService } from '../../services/popup.service';
 import { fixGarbledCharacters } from '../../utils/encoding-fixer';
 import { ModernPopupComponent } from '../modern-popup/modern-popup.component';
-import { RECONCILIATION_ENV_OPTIONS } from '../../constants/reconciliation-env-options';
+import {
+  RECONCILIATION_ENV_OPTIONS,
+  normalizeReconciliationReportEnv
+} from '../../constants/reconciliation-env-options';
 
 export interface EcartBoSummaryItem {
   id?: number; // ID si l'item est sauvegardé
@@ -69,6 +72,10 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
   /** Valeurs pour le filtre / listes ENV (BET, HT, …) */
   uniqueEnvCodes: string[] = [];
   readonly envCodePresetOptions: readonly string[] = [...RECONCILIATION_ENV_OPTIONS];
+  /** Options des filtres (cascade pays → service → ENV, cloisonnement des données affichées) */
+  filterOptionsPays: string[] = [];
+  filterOptionsServices: string[] = [];
+  filterOptionsEnvCodes: string[] = [];
 
   isLoading = false;
   isSaving = false;
@@ -254,8 +261,7 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
     this.uniqueServices = [...new Set(this.summaryItems.map(i => i.service).filter(Boolean))].sort();
     this.uniquePays = [...new Set(this.summaryItems.map(i => i.pays).filter(Boolean))].sort();
     this.refreshUniqueEnvCodes();
-    this.filteredItems = [...this.summaryItems];
-    this.updatePagination();
+    this.applyFilters();
     this.cdr.markForCheck();
   }
 
@@ -284,8 +290,7 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
     ).subscribe({
       next: (savedData) => {
         this.applySavedDataToSummary(savedData);
-        this.filteredItems = [...this.summaryItems];
-        this.updatePagination();
+        this.applyFilters();
         this.popupService.showSuccess(`✅ ${this.summaryItems.length} ligne(s) trouvée(s) pour le token.`);
       },
       error: (err) => {
@@ -338,8 +343,7 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
       next: (savedData) => {
         console.log('Données sauvegardées chargées:', savedData);
         this.applySavedDataToSummary(savedData);
-        this.filteredItems = [...this.summaryItems];
-        this.updatePagination();
+        this.applyFilters();
         this.isLoading = false;
         this.cdr.markForCheck();
       },
@@ -484,8 +488,7 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
       this.uniquePays = [...new Set(this.summaryItems.map(item => item.pays).filter(p => p))].sort();
       this.refreshUniqueEnvCodes();
 
-      this.filteredItems = [...this.summaryItems];
-      this.updatePagination();
+      this.applyFilters();
     } finally {
       this.isLoading = false;
       this.cdr.markForCheck();
@@ -496,13 +499,19 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
     this.applyFilters();
   }
 
-  applyFilters(): void {
-    let filtered = [...this.summaryItems];
+  /**
+   * Indique si une ligne passe les critères actifs. Les skips servent au cloisonnement des listes déroulantes (pays → service → ENV).
+   */
+  private itemMatchesFilters(
+    item: EcartBoSummaryItem,
+    skips?: { skipPays?: boolean; skipService?: boolean; skipEnvCode?: boolean }
+  ): boolean {
+    const s = skips || {};
 
-    // Filtre par recherche textuelle
     if (this.searchKey && this.searchKey.trim()) {
       const searchTerm = this.searchKey.toLowerCase().trim();
-      filtered = filtered.filter(item =>
+      const envNorm = normalizeReconciliationReportEnv(item.envCode).toLowerCase();
+      const matchSearch =
         item.date.toLowerCase().includes(searchTerm) ||
         item.agence.toLowerCase().includes(searchTerm) ||
         item.service.toLowerCase().includes(searchTerm) ||
@@ -510,68 +519,127 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
         item.statut.toLowerCase().includes(searchTerm) ||
         (item.env || '').toLowerCase().includes(searchTerm) ||
         (item.envCode || '').toLowerCase().includes(searchTerm) ||
+        envNorm.includes(searchTerm) ||
         item.nombre.toString().includes(searchTerm) ||
-        (item.token || '').toLowerCase().includes(searchTerm)
-      );
+        (item.token || '').toLowerCase().includes(searchTerm);
+      if (!matchSearch) return false;
     }
 
-    // Filtre par token (recherche rapide liaison BO / Partenaire)
     if (this.selectedToken && this.selectedToken.trim()) {
       const tokenTerm = this.selectedToken.trim().toLowerCase();
-      filtered = filtered.filter(item => (item.token || '').toLowerCase().includes(tokenTerm));
+      if (!(item.token || '').toLowerCase().includes(tokenTerm)) return false;
     }
 
-    // Filtre par agence
-    if (this.selectedAgence) {
-      filtered = filtered.filter(item => item.agence === this.selectedAgence);
+    if (this.selectedAgence && item.agence !== this.selectedAgence) return false;
+
+    if (!s.skipService && this.selectedService && item.service !== this.selectedService) return false;
+
+    if (!s.skipPays && this.selectedPays && item.pays !== this.selectedPays) return false;
+
+    if (this.selectedStatut && item.statut !== this.selectedStatut) return false;
+
+    if (this.selectedEnv && item.env !== this.selectedEnv) return false;
+
+    if (!s.skipEnvCode && this.selectedEnvCode) {
+      const sel = normalizeReconciliationReportEnv(this.selectedEnvCode);
+      if (normalizeReconciliationReportEnv(item.envCode) !== sel) return false;
     }
 
-    // Filtre par service
-    if (this.selectedService) {
-      filtered = filtered.filter(item => item.service === this.selectedService);
-    }
-
-    // Filtre par pays
-    if (this.selectedPays) {
-      filtered = filtered.filter(item => item.pays === this.selectedPays);
-    }
-
-    // Filtre par statut
-    if (this.selectedStatut) {
-      filtered = filtered.filter(item => item.statut === this.selectedStatut);
-    }
-
-    // Filtre plateforme (BO / PARTENAIRE)
-    if (this.selectedEnv) {
-      filtered = filtered.filter(item => item.env === this.selectedEnv);
-    }
-
-    // Filtre ENV technique (BET, HT, …)
-    if (this.selectedEnvCode) {
-      filtered = filtered.filter(item => (item.envCode || '').trim() === this.selectedEnvCode);
-    }
-
-    // Filtre par date (du - au)
     if (this.selectedDateFrom) {
       const dateFrom = new Date(this.selectedDateFrom);
-      filtered = filtered.filter(item => {
-        if (!item.date) return false;
-        const itemDate = new Date(item.date.split('T')[0]); // Prendre seulement la partie date
-        return itemDate >= dateFrom;
-      });
+      if (!item.date) return false;
+      const itemDate = new Date(item.date.split('T')[0]);
+      if (itemDate < dateFrom) return false;
     }
 
     if (this.selectedDateTo) {
       const dateTo = new Date(this.selectedDateTo);
-      dateTo.setHours(23, 59, 59, 999); // Fin de journée
-      filtered = filtered.filter(item => {
-        if (!item.date) return false;
-        const itemDate = new Date(item.date.split('T')[0]); // Prendre seulement la partie date
-        return itemDate <= dateTo;
-      });
+      dateTo.setHours(23, 59, 59, 999);
+      if (!item.date) return false;
+      const itemDate = new Date(item.date.split('T')[0]);
+      if (itemDate > dateTo) return false;
     }
 
-    this.filteredItems = filtered;
+    return true;
+  }
+
+  /** Réinitialise les sélections de cascade si elles ne sont plus valides pour les données courantes. */
+  private sanitizeCascadeSelections(): void {
+    const paysValid = new Set(
+      this.summaryItems
+        .filter(i => this.itemMatchesFilters(i, { skipPays: true, skipService: true, skipEnvCode: true }))
+        .map(i => i.pays)
+        .filter((p): p is string => !!p)
+    );
+    if (this.selectedPays && !paysValid.has(this.selectedPays)) {
+      this.selectedPays = '';
+    }
+
+    const svcValid = new Set(
+      this.summaryItems
+        .filter(i => this.itemMatchesFilters(i, { skipService: true, skipEnvCode: true }))
+        .map(i => i.service)
+        .filter((v): v is string => !!v)
+    );
+    if (this.selectedService && !svcValid.has(this.selectedService)) {
+      this.selectedService = '';
+    }
+
+    const envValid = new Set(
+      this.summaryItems
+        .filter(i => this.itemMatchesFilters(i, { skipEnvCode: true }))
+        .map(i => normalizeReconciliationReportEnv(i.envCode))
+    );
+    if (this.selectedEnvCode) {
+      const n = normalizeReconciliationReportEnv(this.selectedEnvCode);
+      if (!envValid.has(n)) {
+        this.selectedEnvCode = '';
+      }
+    }
+  }
+
+  private rebuildFilterOptionLists(): void {
+    this.filterOptionsPays = [
+      ...new Set(
+        this.summaryItems
+          .filter(i => this.itemMatchesFilters(i, { skipPays: true, skipService: true, skipEnvCode: true }))
+          .map(i => i.pays)
+          .filter((p): p is string => !!p)
+      )
+    ].sort((a, b) => a.localeCompare(b, 'fr'));
+
+    this.filterOptionsServices = [
+      ...new Set(
+        this.summaryItems
+          .filter(i => this.itemMatchesFilters(i, { skipService: true, skipEnvCode: true }))
+          .map(i => i.service)
+          .filter((v): v is string => !!v)
+      )
+    ].sort((a, b) => a.localeCompare(b, 'fr'));
+
+    const envKeys = new Set(
+      this.summaryItems
+        .filter(i => this.itemMatchesFilters(i, { skipEnvCode: true }))
+        .map(i => normalizeReconciliationReportEnv(i.envCode))
+    );
+    const ordered: string[] = [];
+    for (const code of this.envCodePresetOptions) {
+      if (envKeys.has(code)) {
+        ordered.push(code);
+      }
+    }
+    for (const k of [...envKeys].sort((a, b) => a.localeCompare(b, 'fr'))) {
+      if (!ordered.includes(k)) {
+        ordered.push(k);
+      }
+    }
+    this.filterOptionsEnvCodes = ordered;
+  }
+
+  applyFilters(): void {
+    this.sanitizeCascadeSelections();
+    this.rebuildFilterOptionLists();
+    this.filteredItems = this.summaryItems.filter(item => this.itemMatchesFilters(item));
     this.currentPage = 1;
     this.updatePagination();
   }

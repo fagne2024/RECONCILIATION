@@ -2,6 +2,7 @@ import { Component, ElementRef, OnInit, ViewChild } from '@angular/core';
 import { FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { Router } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
+import { debounceTime, distinctUntilChanged } from 'rxjs/operators';
 import * as XLSX from 'xlsx';
 import * as ExcelJS from 'exceljs';
 
@@ -10,6 +11,16 @@ import { ServiceReferenceService } from '../../services/service-reference.servic
 import { ModernPopupComponent, PopupConfig } from '../modern-popup/modern-popup.component';
 
 type ImportPayload = ServiceReferencePayload & { rowNumber: number };
+
+/** Dimension de filtre : pour calculer les listes déroulantes en excluant une dimension (cloisonnement). */
+type ServiceRefFilterDimension =
+    | 'pays'
+    | 'operateur'
+    | 'reseau'
+    | 'serviceType'
+    | 'codeService'
+    | 'status'
+    | 'reconciliable';
 
 @Component({
     selector: 'app-service-references',
@@ -66,9 +77,6 @@ export class ServiceReferencesComponent implements OnInit {
     isDashboardLoading = false;
     selectedCountries: string[] = [];
     availableCountries: string[] = [];
-    
-    // Erreurs de chargement de drapeaux images
-    private flagLoadError: { [countryCode: string]: boolean } = {};
 
     constructor(
         private serviceReferenceService: ServiceReferenceService,
@@ -101,7 +109,10 @@ export class ServiceReferencesComponent implements OnInit {
     }
 
     ngOnInit(): void {
-        this.filterForm.valueChanges.subscribe(() => this.applyFilters());
+        this.filterForm.valueChanges.pipe(
+            debounceTime(200),
+            distinctUntilChanged((a, b) => JSON.stringify(a) === JSON.stringify(b))
+        ).subscribe(() => this.applyFilters());
         this.loadReferences();
     }
 
@@ -170,46 +181,39 @@ export class ServiceReferencesComponent implements OnInit {
         this.serviceReferenceService.listAll().subscribe({
             next: (refs) => {
                 this.references = refs.sort((a, b) => a.pays.localeCompare(b.pays));
-                this.updateFilterOptions();
                 this.applyFilters();
                 this.isLoading = false;
                 this.errorDetails = [];
             },
             error: (error) => {
                 console.error('Erreur lors du chargement des références', error);
-                this.errorMessage = 'Impossible de charger le référentiel. Veuillez réessayer.';
+                const msg = error?.error?.message || error?.message;
+                this.errorMessage = error?.status === 429 || (typeof msg === 'string' && msg.includes('Trop de requêtes'))
+                    ? (typeof msg === 'string' ? msg : 'Trop de requêtes. Veuillez réessayer plus tard.')
+                    : 'Impossible de charger le référentiel. Veuillez réessayer.';
                 this.isLoading = false;
             }
         });
     }
 
     applyFilters(): void {
+        this.updateFilterOptions();
         const term = (this.searchTerm || '').toLowerCase();
-        const { pays, operateur, serviceType, reseau, codeService, status, reconciliable } = this.filterForm.value;
-        const normalizedStatus = (status || '').trim().toUpperCase();
 
-        this.filteredReferences = this.references.filter(ref => {
-            const matchesSearch = !term || [
-                ref.pays,
-                ref.codeService,
-                ref.serviceLabel,
-                ref.codeReco,
-                ref.serviceType || '',
-                ref.operateur || '',
-                ref.reseau || ''
-            ].some(field => field.toLowerCase().includes(term));
+        this.filteredReferences = this.references.filter((ref) => {
+            const matchesSearch =
+                !term ||
+                [
+                    ref.pays,
+                    ref.codeService,
+                    ref.serviceLabel,
+                    ref.codeReco,
+                    ref.serviceType || '',
+                    ref.operateur || '',
+                    ref.reseau || ''
+                ].some((field) => field.toLowerCase().includes(term));
 
-            const matchesPays = !pays || ref.pays.toLowerCase().includes(pays.toLowerCase());
-            const matchesOperateur = !operateur || (ref.operateur || '').toLowerCase().includes(operateur.toLowerCase());
-            const matchesServiceType = !serviceType || (ref.serviceType || '').toLowerCase().includes(serviceType.toLowerCase());
-            const matchesReseau = !reseau || (ref.reseau || '').toLowerCase().includes(reseau.toLowerCase());
-            const matchesCodeService = !codeService || ref.codeService.toLowerCase().includes(codeService.toLowerCase());
-            const matchesStatus = !normalizedStatus || (ref.status || 'ACTIF').toUpperCase() === normalizedStatus;
-            const matchesReconciliable = reconciliable === 'all' ||
-                ref.reconciliable === (reconciliable === 'true');
-
-            return matchesSearch && matchesPays && matchesOperateur && matchesServiceType &&
-                matchesReseau && matchesCodeService && matchesStatus && matchesReconciliable;
+            return matchesSearch && this.matchesFilterForm(ref, null);
         });
 
         this.totalItems = this.filteredReferences.length;
@@ -218,19 +222,85 @@ export class ServiceReferencesComponent implements OnInit {
         this.updateAllSelectedState();
     }
 
+    /**
+     * Applique les critères du formulaire de filtre.
+     * Si {@code exclude} est renseigné, ce critère est ignoré (pour proposer des valeurs cohérentes sur les autres dimensions).
+     */
+    private matchesFilterForm(ref: ServiceReference, exclude: ServiceRefFilterDimension | null): boolean {
+        const { pays, operateur, serviceType, reseau, codeService, status, reconciliable } = this.filterForm.value;
+        const normalizedStatus = (status || '').trim().toUpperCase();
+
+        if (exclude !== 'pays' && pays) {
+            if (!ref.pays.toLowerCase().includes(String(pays).toLowerCase())) {
+                return false;
+            }
+        }
+        if (exclude !== 'operateur' && operateur) {
+            if (!String(ref.operateur || '').toLowerCase().includes(String(operateur).toLowerCase())) {
+                return false;
+            }
+        }
+        if (exclude !== 'serviceType' && serviceType) {
+            if (!String(ref.serviceType || '').toLowerCase().includes(String(serviceType).toLowerCase())) {
+                return false;
+            }
+        }
+        if (exclude !== 'reseau' && reseau) {
+            if (!String(ref.reseau || '').toLowerCase().includes(String(reseau).toLowerCase())) {
+                return false;
+            }
+        }
+        if (exclude !== 'codeService' && codeService) {
+            if (!ref.codeService.toLowerCase().includes(String(codeService).toLowerCase())) {
+                return false;
+            }
+        }
+        if (exclude !== 'status' && normalizedStatus) {
+            if (String(ref.status || 'ACTIF').toUpperCase() !== normalizedStatus) {
+                return false;
+            }
+        }
+        if (exclude !== 'reconciliable' && reconciliable !== 'all') {
+            if (ref.reconciliable !== (reconciliable === 'true')) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Suggestions de filtres cloisonnées : chaque liste ne contient que les valeurs présentes
+     * dans les lignes qui satisfont déjà les autres critères (pays ↔ service ↔ réseau, etc.).
+     */
     private updateFilterOptions(): void {
         const unique = <T>(arr: T[]) => Array.from(new Set(arr)).sort();
-        this.paysOptions = unique(this.references.map(ref => ref.pays));
-        this.operateurOptions = unique(this.references
-            .map(ref => ref.operateur)
-            .filter((op): op is string => !!op));
-        this.serviceTypeOptions = unique(this.references
-            .map(ref => ref.serviceType)
-            .filter((st): st is string => !!st));
-        this.reseauOptions = unique(this.references
-            .map(ref => ref.reseau)
-            .filter((rs): rs is string => !!rs));
-        this.codeServiceOptions = unique(this.references.map(ref => ref.codeService));
+
+        this.paysOptions = unique(
+            this.references.filter((ref) => this.matchesFilterForm(ref, 'pays')).map((ref) => ref.pays)
+        );
+        this.operateurOptions = unique(
+            this.references
+                .filter((ref) => this.matchesFilterForm(ref, 'operateur'))
+                .map((ref) => ref.operateur)
+                .filter((op): op is string => !!op)
+        );
+        this.serviceTypeOptions = unique(
+            this.references
+                .filter((ref) => this.matchesFilterForm(ref, 'serviceType'))
+                .map((ref) => ref.serviceType)
+                .filter((st): st is string => !!st)
+        );
+        this.reseauOptions = unique(
+            this.references
+                .filter((ref) => this.matchesFilterForm(ref, 'reseau'))
+                .map((ref) => ref.reseau)
+                .filter((rs): rs is string => !!rs)
+        );
+        this.codeServiceOptions = unique(
+            this.references
+                .filter((ref) => this.matchesFilterForm(ref, 'codeService'))
+                .map((ref) => ref.codeService)
+        );
     }
 
     get pagedReferences(): ServiceReference[] {
@@ -338,8 +408,15 @@ export class ServiceReferencesComponent implements OnInit {
             return;
         }
 
-        const confirmation = confirm(`Supprimer la référence ${reference.codeReco} (${reference.serviceLabel}) ?`);
-        if (!confirmation) {
+        const confirmed = await ModernPopupComponent.showPopup({
+            title: 'Supprimer cette référence ?',
+            message: `La référence ${reference.codeReco} (${reference.serviceLabel}) sera supprimée définitivement.`,
+            type: 'confirm',
+            showCancelButton: true,
+            cancelText: 'Annuler',
+            confirmText: 'Supprimer'
+        });
+        if (!confirmed) {
             return;
         }
 
@@ -364,24 +441,50 @@ export class ServiceReferencesComponent implements OnInit {
         if (!this.hasSelection) {
             return;
         }
-        const confirmation = confirm(`Supprimer ${this.selectedCount} référence(s) sélectionnée(s) ?`);
-        if (!confirmation) {
+        const n = this.selectedCount;
+        const confirmed = await ModernPopupComponent.showPopup({
+            title: 'Suppression en masse',
+            message: `Supprimer ${n} référence(s) sélectionnée(s) ? Cette action est irréversible.`,
+            type: 'confirm',
+            showCancelButton: true,
+            cancelText: 'Annuler',
+            confirmText: 'Supprimer tout'
+        });
+        if (!confirmed) {
             return;
         }
 
         this.errorMessage = null;
         this.successMessage = null;
+        this.errorDetails = [];
         this.isLoading = true;
         try {
             const ids = Array.from(this.selectedReferences);
-            await Promise.all(ids.map(id => firstValueFrom(this.serviceReferenceService.delete(id))));
-            this.successMessage = `${ids.length} référence(s) supprimée(s).`;
+            const result = await firstValueFrom(this.serviceReferenceService.deleteBatch(ids));
+            if (result.deletedCount === 0 && (result.errors?.length ?? 0) > 0) {
+                this.errorMessage = 'Aucune référence n’a pu être supprimée.';
+                this.errorDetails = result.errors;
+                this.isLoading = false;
+                await this.showErrorPopup(this.errorMessage);
+                return;
+            }
             this.clearSelection();
-            await this.showSuccessPopup(this.successMessage);
+            if (result.errors?.length) {
+                this.errorDetails = result.errors;
+                this.successMessage = `${result.deletedCount} référence(s) supprimée(s). Certaines lignes ont échoué (voir le détail sous le tableau).`;
+                await ModernPopupComponent.showWarning(
+                    `${result.deletedCount} supprimée(s). ${result.errors.length} erreur(s) — détail affiché sur la page.`,
+                    'Suppression partielle'
+                );
+            } else {
+                this.successMessage = `${result.deletedCount} référence(s) supprimée(s).`;
+                await this.showSuccessPopup(this.successMessage);
+            }
             this.loadReferences();
         } catch (error) {
             console.error('Erreur lors de la suppression multiple', error);
             this.errorMessage = this.extractErrorMessage(error) || 'Impossible de supprimer la sélection.';
+            this.errorDetails = [];
             this.isLoading = false;
             await this.showErrorPopup(this.errorMessage);
         }
@@ -439,53 +542,83 @@ export class ServiceReferencesComponent implements OnInit {
                 return;
             }
 
+            const globalUsedCodeServices = new Set<string>();
+            try {
+                const used = await firstValueFrom(this.serviceReferenceService.getUsedCodeServices());
+                for (const c of used || []) {
+                    const u = (c || '').trim().toUpperCase();
+                    if (u) {
+                        globalUsedCodeServices.add(u);
+                    }
+                }
+            } catch {
+                // Fallback : filtre basé sur la liste chargée uniquement
+            }
+
             // S'assurer que les références sont chargées pour la vérification des doublons
             if (this.references.length === 0) {
                 this.references = await firstValueFrom(this.serviceReferenceService.listAll());
             }
 
-            // Vérifier les doublons dans le fichier lui-même
-            const duplicatesInFile = this.findDuplicatesInFile(payloads);
-            if (duplicatesInFile.length > 0) {
-                this.errorMessage = `${duplicatesInFile.length} doublon(s) détecté(s) dans le fichier.`;
-                this.errorDetails = duplicatesInFile;
-                await this.showErrorPopup(this.errorMessage);
-                return;
-            }
+            const { toImport, skippedDuplicates } = this.filterImportablePayloads(payloads, globalUsedCodeServices);
 
-            // Vérifier les doublons avec les données existantes
-            const duplicatesInDatabase = this.findDuplicatesInDatabase(payloads);
-            if (duplicatesInDatabase.length > 0) {
-                this.errorMessage = `${duplicatesInDatabase.length} doublon(s) détecté(s) avec les données existantes.`;
-                this.errorDetails = duplicatesInDatabase;
-                await this.showErrorPopup(this.errorMessage);
-                return;
-            }
+            const batchItems = toImport.map((payload) => {
+                const { rowNumber, ...data } = payload;
+                return {
+                    rowNumber: rowNumber ?? 0,
+                    payload: this.normalizePayload(data)
+                };
+            });
 
             let successCount = 0;
             const failures: string[] = [];
+            const IMPORT_CHUNK = 400;
 
-            for (const payload of payloads) {
-                const { rowNumber, ...data } = payload;
+            for (let offset = 0; offset < batchItems.length; offset += IMPORT_CHUNK) {
+                const slice = batchItems.slice(offset, offset + IMPORT_CHUNK);
                 try {
-                    await firstValueFrom(this.serviceReferenceService.create(this.normalizePayload(data)));
-                    successCount++;
+                    const result = await firstValueFrom(this.serviceReferenceService.importBatch(slice));
+                    successCount += result.successCount;
+                    if (result.errors?.length) {
+                        failures.push(...result.errors);
+                    }
                 } catch (error) {
                     const message = this.extractErrorMessage(error) || 'Erreur inconnue';
-                    const label = `Ligne ${rowNumber ?? '?'} (${data.pays || 'N/A'} / ${data.codeReco || 'N/A'}) : ${message}`;
-                    failures.push(label);
+                    const from = offset + 1;
+                    const to = Math.min(offset + IMPORT_CHUNK, batchItems.length);
+                    failures.push(`Paquet de lignes ${from}–${to} : ${message}`);
                 }
             }
 
-            if (successCount) {
-                this.successMessage = `${successCount} référence(s) importée(s) avec succès.`;
+            const detailLines = [...skippedDuplicates, ...failures];
+            this.errorDetails = detailLines;
+
+            const totalLignesFichier = payloads.length;
+            if (successCount > 0) {
+                const parts = [
+                    `Résumé : ${totalLignesFichier} ligne(s) valide(s) dans le fichier.`,
+                    `${successCount} référence(s) enregistrée(s).`
+                ];
+                if (skippedDuplicates.length) {
+                    parts.push(
+                        `${skippedDuplicates.length} ignorée(s) avant envoi (même code service dans le fichier ou code service déjà en base).`
+                    );
+                }
+                if (failures.length) {
+                    parts.push(
+                        `${failures.length} ligne(s) ou paquet(s) en échec (voir le détail : doublon, validation, droits, etc.).`
+                    );
+                }
+                this.successMessage = parts.join(' ');
+                if (failures.length) {
+                    this.errorMessage = `${failures.length} problème(s) — ouvrez le détail ci-dessous pour chaque ligne.`;
+                }
                 await this.showSuccessPopup(this.successMessage);
                 this.loadReferences();
-            }
-
-            if (failures.length) {
-                this.errorMessage = `${failures.length} ligne(s) en erreur lors de l'import.`;
-                this.errorDetails = failures;
+            } else if (skippedDuplicates.length || failures.length) {
+                this.errorMessage = skippedDuplicates.length && !failures.length
+                    ? 'Aucune nouvelle référence : chaque code service du fichier existe déjà en base ou est en doublon dans le fichier.'
+                    : `Import impossible ou partiel : ${failures.length} erreur(s).`;
                 await this.showErrorPopup(this.errorMessage);
             }
         } catch (error) {
@@ -500,79 +633,64 @@ export class ServiceReferencesComponent implements OnInit {
         }
     }
 
-    /**
-     * Crée une clé unique pour la combinaison pays + codeService + serviceLabel + codeReco
-     */
-    private createUniqueKey(
-        pays: string | null | undefined, 
-        codeService: string | null | undefined, 
-        serviceLabel: string | null | undefined, 
-        codeReco: string | null | undefined
-    ): string {
-        const normalizedPays = (pays || '').trim().toUpperCase();
-        const normalizedCodeService = (codeService || '').trim().toUpperCase();
-        const normalizedServiceLabel = (serviceLabel || '').trim();
-        const normalizedCodeReco = (codeReco || '').trim().toUpperCase();
-        return `${normalizedPays}_${normalizedCodeService}_${normalizedServiceLabel}_${normalizedCodeReco}`;
+    private normalizeImportCodeService(codeService: string | null | undefined): string {
+        return (codeService || '').trim().toUpperCase();
     }
 
     /**
-     * Trouve les doublons dans le fichier (même pays + codeService + serviceLabel + codeReco)
+     * Filtre d’import : une seule ligne par **code service** dans le fichier (la première) ;
+     * exclusion si ce code service existe déjà en base (liste + endpoint global pour les vues filtrées par pays).
      */
-    private findDuplicatesInFile(payloads: ImportPayload[]): string[] {
-        const seen = new Map<string, number>();
-        const duplicates: string[] = [];
-
-        for (const payload of payloads) {
-            const normalizedPayload = this.normalizePayload(payload);
-            const key = this.createUniqueKey(
-                normalizedPayload.pays, 
-                normalizedPayload.codeService, 
-                normalizedPayload.serviceLabel, 
-                normalizedPayload.codeReco
-            );
-            if (seen.has(key)) {
-                const firstRow = seen.get(key)!;
-                if (!duplicates.some(d => d.includes(`Ligne ${firstRow}`))) {
-                    duplicates.push(`Ligne ${firstRow} : Doublon détecté (${normalizedPayload.pays || 'N/A'} / ${normalizedPayload.codeService || 'N/A'} / ${normalizedPayload.serviceLabel || 'N/A'} / ${normalizedPayload.codeReco || 'N/A'})`);
-                }
-                duplicates.push(`Ligne ${payload.rowNumber ?? '?'} : Doublon détecté (${normalizedPayload.pays || 'N/A'} / ${normalizedPayload.codeService || 'N/A'} / ${normalizedPayload.serviceLabel || 'N/A'} / ${normalizedPayload.codeReco || 'N/A'})`);
-            } else {
-                seen.set(key, payload.rowNumber ?? 0);
-            }
-        }
-
-        return duplicates;
-    }
-
-    /**
-     * Trouve les doublons avec les données existantes en base
-     */
-    private findDuplicatesInDatabase(payloads: ImportPayload[]): string[] {
-        const duplicates: string[] = [];
-        
-        // Créer un Set des combinaisons pays + codeService + serviceLabel + codeReco existantes
-        const existingKeys = new Set<string>();
+    private filterImportablePayloads(
+        payloads: ImportPayload[],
+        globalUsedCodeServices: Set<string> = new Set()
+    ): {
+        toImport: ImportPayload[];
+        skippedDuplicates: string[];
+    } {
+        const existingCodeServices = new Set<string>(globalUsedCodeServices);
         for (const ref of this.references) {
-            const key = this.createUniqueKey(ref.pays, ref.codeService, ref.serviceLabel, ref.codeReco);
-            existingKeys.add(key);
-        }
-
-        // Vérifier chaque payload contre les données existantes
-        for (const payload of payloads) {
-            const normalizedPayload = this.normalizePayload(payload);
-            const key = this.createUniqueKey(
-                normalizedPayload.pays, 
-                normalizedPayload.codeService, 
-                normalizedPayload.serviceLabel, 
-                normalizedPayload.codeReco
-            );
-            if (existingKeys.has(key)) {
-                duplicates.push(`Ligne ${payload.rowNumber ?? '?'} : Doublon avec une référence existante (${normalizedPayload.pays || 'N/A'} / ${normalizedPayload.codeService || 'N/A'} / ${normalizedPayload.serviceLabel || 'N/A'} / ${normalizedPayload.codeReco || 'N/A'})`);
+            const cs = this.normalizeImportCodeService(ref.codeService);
+            if (cs) {
+                existingCodeServices.add(cs);
             }
         }
 
-        return duplicates;
+        const seenCodeServiceInFile = new Set<string>();
+        const toImport: ImportPayload[] = [];
+        const skippedDuplicates: string[] = [];
+
+        for (const payload of payloads) {
+            const normalizedPayload = this.normalizePayload(payload);
+            const csNorm = this.normalizeImportCodeService(normalizedPayload.codeService);
+            const detail = `Code service « ${csNorm || 'N/A'} »`;
+
+            if (!csNorm) {
+                skippedDuplicates.push(
+                    `Ligne ${payload.rowNumber ?? '?'} : Ignorée — code service vide`
+                );
+                continue;
+            }
+
+            if (seenCodeServiceInFile.has(csNorm)) {
+                skippedDuplicates.push(
+                    `Ligne ${payload.rowNumber ?? '?'} : Ignorée — doublon dans le fichier (${detail})`
+                );
+                continue;
+            }
+
+            if (existingCodeServices.has(csNorm)) {
+                skippedDuplicates.push(
+                    `Ligne ${payload.rowNumber ?? '?'} : Ignorée — code service déjà présent en base (${detail})`
+                );
+                continue;
+            }
+
+            seenCodeServiceInFile.add(csNorm);
+            toImport.push(payload);
+        }
+
+        return { toImport, skippedDuplicates };
     }
 
     private async parseFile(file: File): Promise<ImportPayload[]> {
@@ -701,12 +819,27 @@ export class ServiceReferencesComponent implements OnInit {
         if (typeof error === 'string') {
             return error;
         }
+        if (error.status === 429) {
+            return 'Trop de requêtes (limite serveur). Patientez une minute ou réessayez ; l’import par lot limite ce cas.';
+        }
+        if (error.status === 403) {
+            const m = error.error?.message;
+            return typeof m === 'string' && m.length ? m : 'Accès refusé pour ce pays ou cette action.';
+        }
         if (error.error) {
             if (typeof error.error === 'string') {
                 return error.error;
             }
             if (error.error.message) {
-                return error.error.message;
+                let msg = String(error.error.message);
+                const fe = error.error.fieldErrors;
+                if (fe && typeof fe === 'object') {
+                    const parts = Object.entries(fe).map(([k, v]) => `${k}: ${v}`);
+                    if (parts.length) {
+                        msg += ' — ' + parts.join(' ; ');
+                    }
+                }
+                return msg;
             }
         }
         if (error.message) {
@@ -859,17 +992,6 @@ export class ServiceReferencesComponent implements OnInit {
     }
 
     /**
-     * Liste des codes pays valides pour lesquels des drapeaux existent
-     */
-    private readonly validCountryCodes = new Set([
-        'BF', 'BJ', 'CI', 'CM', 'GA', 'GN', 'KE', 'ML', 'MZ', 'NG', 'SN', 'TG',
-        'CF', 'TD', 'CG', 'CD', 'GQ', 'ST', 'AO',
-        'NE', 'GW', 'SL', 'LR', 'GH', 'MR', 'GM', 'CV',
-        'TZ', 'UG', 'RW', 'BI', 'ET', 'SO', 'DJ', 'ER', 'SS', 'SD', 'SC', 'MU', 'KM', 'MG',
-        'EG', 'ZA'
-    ]);
-
-    /**
      * Retourne le drapeau (emoji) d'un pays à partir de son code
      */
     getCountryFlag(countryCode: string): string {
@@ -882,38 +1004,6 @@ export class ServiceReferencesComponent implements OnInit {
             'EG': '🇪🇬', 'ZA': '🇿🇦'
         };
         return flagMap[normalizedCode] || '🌍';
-    }
-
-    /**
-     * URL du drapeau SVG dans les assets (fallback vers emoji si indisponible)
-     */
-    getCountryFlagUrl(countryCode: string): string | null {
-        if (!countryCode) return null;
-        const normalizedCode = this.normalizeCountryCode(countryCode);
-        const code = normalizedCode.toLowerCase();
-        if (!code) return null;
-        
-        // Ne retourner une URL que pour les codes pays valides
-        if (!this.validCountryCodes.has(normalizedCode)) {
-            return null;
-        }
-        
-        if (this.flagLoadError[code]) return null;
-        return `assets/flags/${code}.svg`;
-    }
-
-    /**
-     * Vérifie si une URL de drapeau existe pour un pays
-     */
-    hasCountryFlagUrl(countryCode: string): boolean {
-        return this.getCountryFlagUrl(countryCode) !== null;
-    }
-
-    onFlagError(event: Event, countryCode: string): void {
-        if (!countryCode) return;
-        const normalizedCode = this.normalizeCountryCode(countryCode);
-        const code = normalizedCode.toLowerCase();
-        this.flagLoadError[code] = true;
     }
 }
 

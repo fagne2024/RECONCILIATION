@@ -176,14 +176,14 @@
         <label>Service</label>
         <select [(ngModel)]="selectedService" (change)="applyFilters()" class="filter-select">
           <option value="">Tous</option>
-          <option *ngFor="let service of uniqueServices" [value]="service">{{service}}</option>
+          <option *ngFor="let service of filterOptionsServices" [value]="service">{{service}}</option>
         </select>
       </div>
       <div class="filter-item">
         <label>Pays</label>
         <select [(ngModel)]="selectedPays" (change)="applyFilters()" class="filter-select">
           <option value="">Tous</option>
-          <option *ngFor="let pays of uniquePays" [value]="pays">{{pays}}</option>
+          <option *ngFor="let pays of filterOptionsPays" [value]="pays">{{pays}}</option>
         </select>
       </div>
       <div class="filter-item">
@@ -196,9 +196,9 @@
       </div>
       <div class="filter-item">
         <label>ENV</label>
-        <select [(ngModel)]="selectedEnvCode" (change)="applyFilters()" class="filter-select" title="Environnement technique (BET, HT, PROD, …)">
+        <select [(ngModel)]="selectedEnvCode" (change)="applyFilters()" class="filter-select" title="Environnement technique (BET, HT, T-E agrégat, …)">
           <option value="">Tous</option>
-          <option *ngFor="let code of uniqueEnvCodes" [value]="code">{{ code }}</option>
+          <option *ngFor="let code of filterOptionsEnvCodes" [value]="code">{{ code }}</option>
         </select>
       </div>
       <div class="filter-item">

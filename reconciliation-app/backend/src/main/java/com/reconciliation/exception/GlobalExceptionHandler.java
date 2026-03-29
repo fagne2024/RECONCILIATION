@@ -7,6 +7,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -102,7 +103,8 @@ public class GlobalExceptionHandler {
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     public ResponseEntity<Map<String, String>> handleIllegalArgumentException(
             IllegalArgumentException ex) {
-        log.error("Argument invalide", ex);
+        // Règle métier attendue (ex. code RECO déjà pris) — pas une panne serveur : WARN sans pile.
+        log.warn("Requête refusée (règle métier): {}", ex.getMessage());
         
         Map<String, String> error = new HashMap<>();
         error.put("error", "Bad Request");
@@ -125,6 +127,46 @@ public class GlobalExceptionHandler {
         error.put("message", ex.getMessage() != null ? ex.getMessage() : "Ressource introuvable");
         
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body(error);
+    }
+
+    /**
+     * Accès refusé (ex. pays non autorisé pour l'utilisateur) — évite un 500 générique.
+     */
+    @ExceptionHandler(SecurityException.class)
+    @ResponseStatus(HttpStatus.FORBIDDEN)
+    public ResponseEntity<Map<String, String>> handleSecurityException(SecurityException ex) {
+        log.warn("Accès refusé: {}", ex.getMessage());
+        Map<String, String> error = new HashMap<>();
+        error.put("error", "Forbidden");
+        error.put("message", ex.getMessage() != null ? ex.getMessage() : "Accès refusé");
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(error);
+    }
+
+    /**
+     * Doublon ou contrainte SQL (ex. code_reco unique) — renvoie 400 avec message lisible au lieu de 500.
+     */
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public ResponseEntity<Map<String, String>> handleDataIntegrityViolation(DataIntegrityViolationException ex) {
+        Throwable cause = ex.getMostSpecificCause();
+        String detail = cause != null ? cause.getMessage() : ex.getMessage();
+        log.warn("Violation d'intégrité: {}", detail);
+
+        String message = "Cette référence entre en conflit avec des données existantes (doublon en base).";
+        if (detail != null) {
+            String lower = detail.toLowerCase();
+            if (lower.contains("code_reco") || lower.contains("idx_service_reference_code_reco")) {
+                message = "Ce code RECO est déjà utilisé par une autre ligne.";
+            }
+            if (lower.contains("duplicate") || lower.contains("unique")) {
+                message = "Doublon : une contrainte d'unicité en base a été violée.";
+            }
+        }
+
+        Map<String, String> error = new HashMap<>();
+        error.put("error", "Bad Request");
+        error.put("message", message);
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(error);
     }
 
     /**

@@ -36,6 +36,17 @@ export class ModernPopupComponent implements OnInit, OnDestroy {
     document.body.style.overflow = 'auto';
   }
 
+  private static escapeHtml(text: string | undefined | null): string {
+    if (text == null || text === '') {
+      return '';
+    }
+    return String(text)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
   onConfirm(): void {
     this.confirm.emit();
     this.closePopup();
@@ -116,27 +127,33 @@ export class ModernPopupComponent implements OnInit, OnDestroy {
 
   public static showPopup(config: PopupConfig): Promise<any> {
     return new Promise((resolve) => {
+      const title = ModernPopupComponent.escapeHtml(config.title || 'Notification');
+      const message = ModernPopupComponent.escapeHtml(config.message);
+      const cancelLabel = ModernPopupComponent.escapeHtml(config.cancelText || 'Annuler');
+      const confirmLabel = ModernPopupComponent.escapeHtml(config.confirmText || 'OK');
+
       // Créer un élément popup dynamiquement
       const popupElement = document.createElement('div');
       popupElement.className = 'modern-popup-overlay';
       popupElement.innerHTML = `
         <div class="modern-popup">
+          <div class="popup-accent"></div>
           <div class="popup-header">
-            <h3 class="popup-title">${config.title || 'Notification'}</h3>
-            <button class="popup-close">×</button>
+            <h3 class="popup-title">${title}</h3>
+            <button type="button" class="popup-close" aria-label="Fermer">×</button>
           </div>
           <div class="popup-content">
-            <p class="popup-message">${config.message}</p>
-            ${config.linesSaved ? `<p class="popup-lines-saved">Lignes sauvegardées: ${config.linesSaved}</p>` : ''}
+            <p class="popup-message">${message}</p>
+            ${config.linesSaved ? `<p class="popup-lines-saved">Lignes sauvegardées : ${config.linesSaved}</p>` : ''}
           </div>
           <div class="popup-actions">
-            ${config.showCancelButton ? `<button class="popup-btn popup-btn-cancel">${config.cancelText || 'Annuler'}</button>` : ''}
-            <button class="popup-btn popup-btn-confirm popup-btn-${config.type || 'info'}">${config.confirmText || 'OK'}</button>
+            ${config.showCancelButton ? `<button type="button" class="popup-btn popup-btn-cancel">${cancelLabel}</button>` : ''}
+            <button type="button" class="popup-btn popup-btn-primary popup-btn-${config.type || 'info'}">${confirmLabel}</button>
           </div>
         </div>
       `;
 
-      // Ajouter les styles CSS
+      // Styles alignés ReconciliApp / référentiel services (Sora, navy, tons chauds)
       const style = document.createElement('style');
       style.textContent = `
         .modern-popup-overlay {
@@ -145,156 +162,182 @@ export class ModernPopupComponent implements OnInit, OnDestroy {
           left: 0;
           width: 100%;
           height: 100%;
-          background: rgba(0, 0, 0, 0.5);
+          background: rgba(26, 37, 53, 0.42);
+          backdrop-filter: blur(5px);
+          -webkit-backdrop-filter: blur(5px);
           display: flex;
           justify-content: center;
           align-items: center;
-          z-index: 9999;
-          animation: fadeIn 0.3s ease-out;
+          z-index: 10000;
+          animation: mp-fadeIn 0.25s ease-out;
+          font-family: 'Sora', 'Segoe UI', system-ui, sans-serif;
         }
 
         .modern-popup {
-          background: white;
-          border-radius: 12px;
-          box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
-          max-width: 400px;
-          width: 90%;
-          animation: slideIn 0.3s ease-out;
+          background: #FAFAF8;
+          border-radius: 18px;
+          border: 1px solid #E4E0D8;
+          box-shadow: 0 8px 40px rgba(26, 23, 20, 0.14), 0 2px 16px rgba(26, 23, 20, 0.08);
+          max-width: 440px;
+          width: 92%;
+          animation: mp-slideIn 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+          overflow: hidden;
+        }
+
+        .popup-accent {
+          height: 3px;
+          background: linear-gradient(90deg, #1A2535 0%, #2E6B47 55%, #5A9E74 100%);
         }
 
         .popup-header {
           display: flex;
           justify-content: space-between;
-          align-items: center;
-          padding: 20px 20px 0 20px;
+          align-items: flex-start;
+          gap: 12px;
+          padding: 18px 22px 0 22px;
         }
 
         .popup-title {
           margin: 0;
-          font-size: 18px;
+          font-size: 1.15rem;
           font-weight: 600;
-          color: #333;
+          color: #1A2535;
+          letter-spacing: -0.02em;
+          line-height: 1.35;
         }
 
         .popup-close {
-          background: none;
+          flex-shrink: 0;
+          background: rgba(26, 23, 20, 0.06);
           border: none;
-          font-size: 24px;
+          font-size: 1.35rem;
+          line-height: 1;
           cursor: pointer;
-          color: #999;
+          color: #5C5650;
           padding: 0;
-          width: 30px;
-          height: 30px;
+          width: 34px;
+          height: 34px;
           display: flex;
           align-items: center;
           justify-content: center;
-          border-radius: 50%;
-          transition: all 0.2s;
+          border-radius: 10px;
+          transition: background 0.2s, color 0.2s;
         }
 
         .popup-close:hover {
-          background: #f5f5f5;
-          color: #666;
+          background: rgba(139, 38, 53, 0.1);
+          color: #8B2635;
         }
 
         .popup-content {
-          padding: 20px;
+          padding: 14px 22px 8px 22px;
         }
 
         .popup-message {
-          margin: 0 0 10px 0;
-          color: #555;
-          line-height: 1.5;
+          margin: 0;
+          color: #5C5650;
+          line-height: 1.55;
+          font-size: 0.95rem;
         }
 
         .popup-lines-saved {
-          margin: 0;
-          color: #888;
-          font-size: 14px;
+          margin: 12px 0 0 0;
+          color: #9B9489;
+          font-size: 0.875rem;
         }
 
         .popup-actions {
           display: flex;
           justify-content: flex-end;
+          flex-wrap: wrap;
           gap: 10px;
-          padding: 0 20px 20px 20px;
+          padding: 16px 22px 22px 22px;
         }
 
         .popup-btn {
           padding: 10px 20px;
           border: none;
-          border-radius: 6px;
+          border-radius: 11px;
           cursor: pointer;
-          font-weight: 500;
-          transition: all 0.2s;
-          min-width: 80px;
+          font-weight: 600;
+          font-size: 0.9rem;
+          transition: transform 0.15s, box-shadow 0.2s, background 0.2s;
+          min-width: 88px;
+          font-family: inherit;
+        }
+
+        .popup-btn:active {
+          transform: scale(0.98);
         }
 
         .popup-btn-cancel {
-          background: #f5f5f5;
-          color: #666;
+          background: #F2F0EB;
+          color: #5C5650;
+          border: 1px solid #E4E0D8;
         }
 
         .popup-btn-cancel:hover {
-          background: #e5e5e5;
+          background: #E4E0D8;
+          color: #1A1714;
         }
 
-        .popup-btn-confirm {
-          color: white;
+        .popup-btn-primary {
+          color: #fff;
+          box-shadow: 0 2px 8px rgba(26, 37, 53, 0.2);
         }
 
-        .popup-btn-info {
-          background: #007bff;
+        .popup-btn-primary.popup-btn-info {
+          background: linear-gradient(180deg, #243044 0%, #1A2535 100%);
         }
 
-        .popup-btn-info:hover {
-          background: #0056b3;
+        .popup-btn-primary.popup-btn-info:hover {
+          box-shadow: 0 4px 14px rgba(26, 37, 53, 0.28);
         }
 
-        .popup-btn-success {
-          background: #28a745 !important;
+        .popup-btn-primary.popup-btn-success {
+          background: linear-gradient(180deg, #5A9E74 0%, #2E6B47 100%);
         }
 
-        .popup-btn-success:hover {
-          background: #1e7e34 !important;
+        .popup-btn-primary.popup-btn-success:hover {
+          box-shadow: 0 4px 14px rgba(46, 107, 71, 0.35);
         }
 
-        .popup-btn-warning {
-          background: #ffc107;
-          color: #212529;
+        .popup-btn-primary.popup-btn-warning {
+          background: linear-gradient(180deg, #D4915A 0%, #A85F1E 100%);
+          color: #fff;
         }
 
-        .popup-btn-warning:hover {
-          background: #e0a800;
+        .popup-btn-primary.popup-btn-warning:hover {
+          box-shadow: 0 4px 14px rgba(168, 95, 30, 0.35);
         }
 
-        .popup-btn-error {
-          background: #dc3545 !important;
+        .popup-btn-primary.popup-btn-error {
+          background: linear-gradient(180deg, #C4566A 0%, #8B2635 100%);
         }
 
-        .popup-btn-error:hover {
-          background: #c82333 !important;
+        .popup-btn-primary.popup-btn-error:hover {
+          box-shadow: 0 4px 14px rgba(139, 38, 53, 0.35);
         }
 
-        .popup-btn-confirm {
-          background: #007bff;
+        .popup-btn-primary.popup-btn-confirm {
+          background: linear-gradient(180deg, #243044 0%, #1A2535 100%);
         }
 
-        .popup-btn-confirm:hover {
-          background: #0056b3;
+        .popup-btn-primary.popup-btn-confirm:hover {
+          box-shadow: 0 4px 14px rgba(26, 37, 53, 0.28);
         }
 
-        @keyframes fadeIn {
+        @keyframes mp-fadeIn {
           from { opacity: 0; }
           to { opacity: 1; }
         }
 
-        @keyframes slideIn {
-          from { 
+        @keyframes mp-slideIn {
+          from {
             opacity: 0;
-            transform: translateY(-20px) scale(0.95);
+            transform: translateY(16px) scale(0.97);
           }
-          to { 
+          to {
             opacity: 1;
             transform: translateY(0) scale(1);
           }
@@ -345,7 +388,7 @@ export class ModernPopupComponent implements OnInit, OnDestroy {
         });
       }
 
-      const confirmButton = popupElement.querySelector('.popup-btn-confirm');
+      const confirmButton = popupElement.querySelector('.popup-btn-primary');
       if (confirmButton) {
         confirmButton.addEventListener('click', () => {
           popupElement.remove();

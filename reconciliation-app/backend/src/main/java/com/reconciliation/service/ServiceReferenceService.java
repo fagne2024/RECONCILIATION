@@ -1,5 +1,8 @@
 package com.reconciliation.service;
 
+import com.reconciliation.dto.DeleteOperationsResponse;
+import com.reconciliation.dto.ServiceReferenceImportBatchItem;
+import com.reconciliation.dto.ServiceReferenceImportBatchResponse;
 import com.reconciliation.dto.ServiceReferenceDashboardDto;
 import com.reconciliation.entity.Result8RecEntity;
 import com.reconciliation.entity.ServiceReferenceEntity;
@@ -8,6 +11,7 @@ import com.reconciliation.repository.Result8RecRepository;
 import com.reconciliation.repository.ServiceReferenceRepository;
 import jakarta.persistence.EntityNotFoundException;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -18,6 +22,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 @Service
 public class ServiceReferenceService {
@@ -64,10 +69,30 @@ public class ServiceReferenceService {
                 .map(this::refreshStatusFromAgencySummary);
     }
 
+    /**
+     * Tous les codes RECO déjà présents en base (normalisés en majuscules), pour l’import côté UI.
+     * Indispensable quand {@link #getAll(String)} ne renvoie pas le référentiel complet (filtrage par pays).
+     */
+    public Set<String> getAllUsedCodeRecosNormalized() {
+        return repository.findAllCodeRecoValues().stream()
+                .filter(cr -> cr != null && !cr.isBlank())
+                .map(cr -> cr.trim().toUpperCase())
+                .collect(Collectors.toSet());
+    }
+
+    /** Codes service déjà en base — filtre d’import (unicité métier demandée sur cette colonne seule). */
+    public Set<String> getAllUsedCodeServicesNormalized() {
+        return repository.findAllCodeServiceValues().stream()
+                .filter(cs -> cs != null && !cs.isBlank())
+                .map(cs -> cs.trim().toUpperCase())
+                .collect(Collectors.toSet());
+    }
+
     public ServiceReferenceEntity create(ServiceReferenceEntity entity, String username) {
         if (!canAccessPays(username, entity.getPays())) {
             throw new SecurityException("Utilisateur non autorisé pour ce pays");
         }
+        normalizeCodeRecoField(entity);
         validateUniqueCombination(
             entity.getPays(), 
             entity.getCodeService(), 
@@ -75,6 +100,7 @@ public class ServiceReferenceService {
             entity.getCodeReco(), 
             null
         );
+        assertCodeRecoGloballyAvailable(entity.getCodeReco(), null);
         ensureStatusDefault(entity);
         return repository.save(entity);
     }
@@ -101,7 +127,7 @@ public class ServiceReferenceService {
             existing.setServiceLabel(payload.getServiceLabel());
         }
         if (payload.getCodeReco() != null) {
-            existing.setCodeReco(payload.getCodeReco());
+            existing.setCodeReco(normalizeCodeRecoValue(payload.getCodeReco()));
         }
         if (payload.getServiceType() != null) {
             existing.setServiceType(payload.getServiceType());
@@ -122,6 +148,8 @@ public class ServiceReferenceService {
             existing.setRetenuOperateur(payload.getRetenuOperateur());
         }
 
+        normalizeCodeRecoField(existing);
+
         validateUniqueCombination(
             existing.getPays(), 
             existing.getCodeService(), 
@@ -129,9 +157,36 @@ public class ServiceReferenceService {
             existing.getCodeReco(), 
             existing.getId()
         );
+        assertCodeRecoGloballyAvailable(existing.getCodeReco(), existing.getId());
         ensureStatusDefault(existing);
 
         return repository.save(existing);
+    }
+
+    /**
+     * La colonne {@code code_reco} est unique en base (toute la table), indépendamment du quadruplet métier.
+     */
+    private void assertCodeRecoGloballyAvailable(String codeReco, Long excludeId) {
+        if (codeReco == null || codeReco.isBlank()) {
+            return;
+        }
+        String normalized = normalizeCodeRecoValue(codeReco);
+        repository.findByCodeRecoIgnoreCase(normalized).ifPresent(other -> {
+            if (excludeId == null || !other.getId().equals(excludeId)) {
+                throw new IllegalArgumentException(
+                    "Le code RECO \"" + normalized + "\" est déjà utilisé par une autre référence.");
+            }
+        });
+    }
+
+    private static String normalizeCodeRecoValue(String codeReco) {
+        return codeReco == null ? null : codeReco.trim().toUpperCase();
+    }
+
+    private static void normalizeCodeRecoField(ServiceReferenceEntity entity) {
+        if (entity.getCodeReco() != null) {
+            entity.setCodeReco(normalizeCodeRecoValue(entity.getCodeReco()));
+        }
     }
 
     public void delete(Long id, String username) {
@@ -141,6 +196,83 @@ public class ServiceReferenceService {
             throw new SecurityException("Utilisateur non autorisé pour ce pays");
         }
         repository.delete(existing);
+    }
+
+    /**
+     * Import fichier en une seule requête HTTP (ou quelques paquets côté client) pour éviter le rate limiting
+     * sur des centaines de POST {@code /api/service-references}.
+     */
+    public ServiceReferenceImportBatchResponse importBatch(List<ServiceReferenceImportBatchItem> items, String username) {
+        if (items == null || items.isEmpty()) {
+            return new ServiceReferenceImportBatchResponse(0, List.of());
+        }
+        int successCount = 0;
+        List<String> errors = new ArrayList<>();
+        Set<String> batchCodeServices = new HashSet<>();
+        for (ServiceReferenceImportBatchItem item : items) {
+            int row = item != null && item.getRowNumber() != null ? item.getRowNumber() : 0;
+            String rowLabel = row > 0 ? String.valueOf(row) : "?";
+            if (item == null || item.getPayload() == null) {
+                errors.add("Ligne " + rowLabel + " : données manquantes");
+                continue;
+            }
+            ServiceReferenceEntity entity = item.getPayload();
+            String csRaw = entity.getCodeService();
+            String cs = csRaw != null ? csRaw.trim().toUpperCase() : "";
+            if (!cs.isEmpty() && batchCodeServices.contains(cs)) {
+                errors.add("Ligne " + rowLabel + " : code service déjà présent dans ce lot d'import");
+                continue;
+            }
+            try {
+                create(entity, username);
+                successCount++;
+                if (!cs.isEmpty()) {
+                    batchCodeServices.add(cs);
+                }
+            } catch (IllegalArgumentException | SecurityException e) {
+                errors.add("Ligne " + rowLabel + " (" + importBriefContext(entity) + ") : " + e.getMessage());
+            } catch (DataIntegrityViolationException e) {
+                errors.add("Ligne " + rowLabel + " (" + importBriefContext(entity)
+                    + ") : doublon ou contrainte en base");
+            } catch (Exception e) {
+                String msg = e.getMessage() != null ? e.getMessage() : "erreur inattendue";
+                errors.add("Ligne " + rowLabel + " (" + importBriefContext(entity) + ") : " + msg);
+            }
+        }
+        return new ServiceReferenceImportBatchResponse(successCount, errors);
+    }
+
+    private static String importBriefContext(ServiceReferenceEntity e) {
+        if (e == null) {
+            return "N/A";
+        }
+        String p = e.getPays() != null ? e.getPays() : "N/A";
+        String c = e.getCodeReco() != null ? e.getCodeReco() : "N/A";
+        return p + " / " + c;
+    }
+
+    /**
+     * Suppression en lot : une seule requête HTTP côté client (évite le rate limiting sur N DELETE).
+     */
+    public DeleteOperationsResponse deleteBatch(List<Long> ids, String username) {
+        if (ids == null || ids.isEmpty()) {
+            return new DeleteOperationsResponse(true, 0, Collections.emptyList());
+        }
+        List<String> errors = new ArrayList<>();
+        int deletedCount = 0;
+        for (Long id : ids) {
+            if (id == null) {
+                continue;
+            }
+            try {
+                delete(id, username);
+                deletedCount++;
+            } catch (Exception e) {
+                errors.add("ID " + id + " : " + e.getMessage());
+            }
+        }
+        boolean success = errors.isEmpty() || deletedCount > 0;
+        return new DeleteOperationsResponse(success, deletedCount, errors);
     }
 
     public List<ServiceReferenceDashboardDto> getDashboardStats(String username) {
