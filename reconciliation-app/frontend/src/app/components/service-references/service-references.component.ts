@@ -1,8 +1,8 @@
-import { Component, ElementRef, OnInit, ViewChild } from '@angular/core';
+import { Component, ElementRef, OnDestroy, OnInit, ViewChild } from '@angular/core';
 import { FormBuilder, FormGroup, Validators } from '@angular/forms';
-import { Router } from '@angular/router';
-import { firstValueFrom } from 'rxjs';
-import { debounceTime, distinctUntilChanged } from 'rxjs/operators';
+import { ActivatedRoute, Router } from '@angular/router';
+import { firstValueFrom, Subject } from 'rxjs';
+import { debounceTime, distinctUntilChanged, takeUntil } from 'rxjs/operators';
 import * as XLSX from 'xlsx';
 import * as ExcelJS from 'exceljs';
 
@@ -32,7 +32,7 @@ interface ServiceRefDashboardGroup {
     operators: ServiceRefDashboardOperatorGroup[];
 }
 
-type DashboardFilterDimension = 'pays' | 'serviceType' | 'operateur';
+type DashboardFilterDimension = 'pays' | 'serviceType' | 'operateur' | 'reseau';
 
 @Component({
     selector: 'app-service-references',
@@ -40,7 +40,8 @@ type DashboardFilterDimension = 'pays' | 'serviceType' | 'operateur';
     styleUrls: ['./service-references.component.scss']
 })
 
-export class ServiceReferencesComponent implements OnInit {
+export class ServiceReferencesComponent implements OnInit, OnDestroy {
+    private readonly destroy$ = new Subject<void>();
     references: ServiceReference[] = [];
     filteredReferences: ServiceReference[] = [];
     isLoading = false;
@@ -55,11 +56,12 @@ export class ServiceReferencesComponent implements OnInit {
     referenceForm: FormGroup;
     editingReference: ServiceReference | null = null;
     filterForm: FormGroup;
-    /** Filtres du dashboard (Pays / Type / Opérateur) — cloisonnement des listes. */
+    /** Filtres du dashboard (Pays / Type / Opérateur / Réseau) — cloisonnement des listes. */
     dashboardFilterForm: FormGroup;
     dashboardPaysOptions: string[] = [];
     dashboardServiceTypeOptions: string[] = [];
     dashboardOperateurOptions: string[] = [];
+    dashboardReseauOptions: string[] = [];
 
     @ViewChild('fileInput') fileInput!: ElementRef<HTMLInputElement>;
 
@@ -93,7 +95,8 @@ export class ServiceReferencesComponent implements OnInit {
     constructor(
         private serviceReferenceService: ServiceReferenceService,
         private fb: FormBuilder,
-        private router: Router
+        private router: Router,
+        private route: ActivatedRoute
     ) {
         this.referenceForm = this.fb.group({
             pays: ['', Validators.required],
@@ -122,20 +125,45 @@ export class ServiceReferencesComponent implements OnInit {
         this.dashboardFilterForm = this.fb.group({
             pays: [''],
             serviceType: [''],
-            operateur: ['']
+            operateur: [''],
+            reseau: ['']
         });
     }
 
     ngOnInit(): void {
-        this.filterForm.valueChanges.pipe(
-            debounceTime(200),
-            distinctUntilChanged((a, b) => JSON.stringify(a) === JSON.stringify(b))
-        ).subscribe(() => this.applyFilters());
-        this.dashboardFilterForm.valueChanges.pipe(
-            debounceTime(200),
-            distinctUntilChanged((a, b) => JSON.stringify(a) === JSON.stringify(b))
-        ).subscribe(() => this.updateDashboardFilterOptions());
+        this.filterForm.valueChanges
+            .pipe(
+                debounceTime(200),
+                distinctUntilChanged((a, b) => JSON.stringify(a) === JSON.stringify(b)),
+                takeUntil(this.destroy$)
+            )
+            .subscribe(() => this.applyFilters());
+        this.dashboardFilterForm.valueChanges
+            .pipe(
+                debounceTime(200),
+                distinctUntilChanged((a, b) => JSON.stringify(a) === JSON.stringify(b)),
+                takeUntil(this.destroy$)
+            )
+            .subscribe(() => this.updateDashboardFilterOptions());
+
+        this.route.queryParamMap.pipe(takeUntil(this.destroy$)).subscribe((params) => {
+            const d = params.get('dashboard');
+            const show =
+                d === '1' ||
+                d === 'true' ||
+                params.get('view') === 'dashboard';
+            this.isDashboardVisible = show;
+            if (show) {
+                this.updateDashboardFilterOptions();
+            }
+        });
+
         this.loadReferences();
+    }
+
+    ngOnDestroy(): void {
+        this.destroy$.next();
+        this.destroy$.complete();
     }
 
     toggleDashboard(): void {
@@ -280,7 +308,7 @@ export class ServiceReferencesComponent implements OnInit {
     }
 
     private matchesDashboardFilter(ref: ServiceReference, exclude: DashboardFilterDimension | null): boolean {
-        const { pays, serviceType, operateur } = this.dashboardFilterForm.value;
+        const { pays, serviceType, operateur, reseau } = this.dashboardFilterForm.value;
         if (exclude !== 'pays' && pays) {
             if (this.norm(ref.pays) !== this.norm(pays)) {
                 return false;
@@ -293,6 +321,11 @@ export class ServiceReferencesComponent implements OnInit {
         }
         if (exclude !== 'operateur' && operateur) {
             if (this.norm(ref.operateur) !== this.norm(operateur)) {
+                return false;
+            }
+        }
+        if (exclude !== 'reseau' && reseau) {
+            if (this.norm(ref.reseau) !== this.norm(reseau)) {
                 return false;
             }
         }
@@ -317,6 +350,12 @@ export class ServiceReferencesComponent implements OnInit {
                 .filter((r) => this.matchesDashboardFilter(r, 'operateur'))
                 .map((r) => r.operateur)
                 .filter((op): op is string => !!op && String(op).trim().length > 0)
+        );
+        this.dashboardReseauOptions = uniqueSorted(
+            this.references
+                .filter((r) => this.matchesDashboardFilter(r, 'reseau'))
+                .map((r) => r.reseau)
+                .filter((rs): rs is string => !!rs && String(rs).trim().length > 0)
         );
     }
 

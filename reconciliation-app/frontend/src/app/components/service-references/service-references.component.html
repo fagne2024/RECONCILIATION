@@ -353,6 +353,13 @@
                     <option *ngFor="let o of dashboardOperateurOptions" [value]="o">{{ o }}</option>
                 </select>
             </div>
+            <div class="sr-dash-filter-field">
+                <label for="sr-dash-reseau">Réseau</label>
+                <select id="sr-dash-reseau" formControlName="reseau">
+                    <option value="">Tous</option>
+                    <option *ngFor="let rs of dashboardReseauOptions" [value]="rs">{{ rs }}</option>
+                </select>
+            </div>
         </form>
 
         <div *ngIf="isLoading" class="sr-dash-loading">Chargement du référentiel…</div>

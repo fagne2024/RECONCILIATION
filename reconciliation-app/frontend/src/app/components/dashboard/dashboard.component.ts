@@ -1030,6 +1030,13 @@ export class DashboardComponent implements OnInit, OnDestroy {
     /**
      * Ouvre le popup "Voir le statut des réconciliations"
      */
+    /** Ouvre la page Références services en mode dashboard (liste réconciliables / non réconciliables). */
+    openServiceReferencesDashboard(): void {
+        this.router
+            .navigate(['/service-references'], { queryParams: { dashboard: '1' } })
+            .catch(() => {});
+    }
+
     openReleveStatusModal(): void {
         this.releveStatusError = null;
         this.releveStatusCountry = this.releveStatusCountries && this.releveStatusCountries.length ? this.releveStatusCountries[0] : null;

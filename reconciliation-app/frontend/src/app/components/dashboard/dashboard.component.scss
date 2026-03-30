@@ -1129,6 +1129,29 @@
     }
 }
 
+.btn-service-references-dash {
+    padding: 10px 22px;
+    border-radius: 999px;
+    border: none;
+    background: linear-gradient(135deg, #2e6b47, #5a9e74);
+    color: #fff;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    box-shadow: 0 2px 6px rgba(46, 107, 71, 0.28);
+    transition: background 0.2s ease, box-shadow 0.2s ease, transform 0.1s ease;
+
+    &:hover {
+        background: linear-gradient(135deg, #245538, #4a8f63);
+        box-shadow: 0 4px 12px rgba(46, 107, 71, 0.35);
+        transform: translateY(-1px);
+    }
+
+    &:active {
+        transform: translateY(0);
+    }
+}
+
 .transact-stats-modal-container {
     max-width: 920px;
 }
