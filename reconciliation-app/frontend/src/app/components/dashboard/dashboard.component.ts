@@ -250,7 +250,9 @@ export class DashboardComponent implements OnInit, OnDestroy {
         maintainAspectRatio: false,
         plugins: {
             legend: { position: 'bottom' },
-            title: { display: true, text: 'RÉPARTITION PAR STATUT' }
+            title: { display: true, text: 'RÉPARTITION PAR STATUT' },
+            // Évite tout conflit avec chartjs-plugin-datalabels (graphiques métriques détaillées).
+            datalabels: { display: false }
         }
     };
     recoEvolutionChartData: ChartConfiguration<'bar'>['data'] = { labels: [], datasets: [] };
@@ -259,7 +261,8 @@ export class DashboardComponent implements OnInit, OnDestroy {
         maintainAspectRatio: false,
         plugins: {
             legend: { position: 'top' },
-            title: { display: true, text: 'ÉVOLUTION PAR JOUR' }
+            title: { display: true, text: 'ÉVOLUTION PAR JOUR' },
+            datalabels: { display: false }
         },
         scales: {
             x: { stacked: true },
@@ -292,6 +295,9 @@ export class DashboardComponent implements OnInit, OnDestroy {
           font: { weight: 'bold' },
           color: 'black',
           formatter: (value: any, context: any) => {
+            if (value == null || context?.dataset == null) {
+              return '';
+            }
             // Si le metric sélectionné est 'volume' ou 'revenu', formater sans décimales
             if (context && context.chart && context.chart.config && context.chart.config._config &&
                 (context.chart.config._config.options?.plugins?.title?.text?.toLowerCase().includes('volume') ||
@@ -810,10 +816,11 @@ export class DashboardComponent implements OnInit, OnDestroy {
           backgroundColor: barColors[idx],
           borderRadius: 6
         }));
-        this.barChartData = {
-          labels: [''], // une seule barre par dataset
-          datasets: barDatasets
-        };
+        // Sans datasets, ne pas garder labels: [''] — sinon ChartDataLabels plante (afterDatasetsDraw / _labels).
+        this.barChartData =
+          barDatasets.length > 0
+            ? { labels: [''], datasets: barDatasets }
+            : { labels: [], datasets: [] };
         this.barChartOptions.plugins.legend.display = true;
         this.barChartOptions.plugins.title.text = "Nombre de transactions par service (toutes agences)";
 
@@ -877,10 +884,10 @@ export class DashboardComponent implements OnInit, OnDestroy {
           backgroundColor: barColors[idx],
           borderRadius: 6
         }));
-        this.barChartData = {
-          labels: [''],
-          datasets: barDatasets
-        };
+        this.barChartData =
+          barDatasets.length > 0
+            ? { labels: [''], datasets: barDatasets }
+            : { labels: [], datasets: [] };
         this.barChartOptions.plugins.legend.display = true;
         this.barChartOptions.plugins.title.text = "Volume des revenus (frais) par service";
 
@@ -920,7 +927,11 @@ export class DashboardComponent implements OnInit, OnDestroy {
         return;
       } else if (this.selectedMetric === 'volume') {
         // Bar chart : volume total par type d'opération
-        if (!this.detailedMetrics?.operationStats) return;
+        if (!this.detailedMetrics?.operationStats) {
+            this.barChartData = { labels: [], datasets: [] };
+            this.lineChartData = { labels: [], datasets: [] };
+            return;
+        }
         const excludedTypes2 = ['annulation_bo', 'ajustement', 'transaction_cree', 'depot', 'dépôt', 'versement', 'virement'];
         let filteredOperations = operationsFiltered
             .filter(op => !excludedTypes2.includes((op.typeOperation || '').toLowerCase()))
@@ -951,10 +962,10 @@ export class DashboardComponent implements OnInit, OnDestroy {
           backgroundColor: colorList[idx % colorList.length],
           borderRadius: 6
         }));
-        this.barChartData = {
-          labels: [''], // une seule barre par dataset, label vide pour aligner
-          datasets: barDatasets
-        };
+        this.barChartData =
+          barDatasets.length > 0
+            ? { labels: [''], datasets: barDatasets }
+            : { labels: [], datasets: [] };
         this.barChartOptions.plugins.legend.display = true;
         this.barChartOptions.plugins.title.text = "Volume total par type d'opération";
 

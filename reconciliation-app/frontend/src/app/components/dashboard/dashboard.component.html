@@ -446,7 +446,7 @@
           </div>
           <div style="flex: 2; display: flex; flex-direction: column; align-items: center; gap: 8px;">
             <h3 style="margin: 0;">📈 Métriques détaillées</h3>
-            <button class="btn-show-graph" (click)="openGraphModal()" [disabled]="(!barChartData || !barChartData.labels?.length) && (!lineChartData || !lineChartData.labels?.length)">
+            <button class="btn-show-graph" (click)="openGraphModal()" [disabled]="(!barChartData?.labels?.length || !barChartData?.datasets?.length) && (!lineChartData?.labels?.length || !lineChartData?.datasets?.length)">
               <i class="fas fa-chart-line"></i> Afficher graph
             </button>
           </div>
@@ -462,19 +462,19 @@
         </div>
             <!-- Espace réservé pour les futurs graphiques placé ici -->
             <div class="graph-placeholder">
-              <canvas *ngIf="selectedChartType === 'bar' && barChartData && barChartData.labels?.length" baseChart
+              <canvas *ngIf="selectedChartType === 'bar' && barChartData?.labels?.length && barChartData?.datasets?.length" baseChart
                 [data]="barChartData"
                 [options]="barChartOptions"
                 [type]="'bar'"
                 [plugins]="[ChartDataLabels]"
                 (chartClick)="onBarClick($event)">
               </canvas>
-              <canvas *ngIf="selectedChartType === 'line' && lineChartData && lineChartData.labels?.length" baseChart
+              <canvas *ngIf="selectedChartType === 'line' && lineChartData?.labels?.length && lineChartData?.datasets?.length" baseChart
                 [data]="lineChartData"
                 [options]="lineChartOptions"
                 [type]="'line'">
               </canvas>
-              <div *ngIf="(!barChartData || !barChartData.labels?.length) && (!lineChartData || !lineChartData.labels?.length)" class="text">Aucune donnée à afficher</div>
+              <div *ngIf="(!barChartData?.labels?.length || !barChartData?.datasets?.length) && (!lineChartData?.labels?.length || !lineChartData?.datasets?.length)" class="text">Aucune donnée à afficher</div>
             </div>
             <div class="filters-export-row" style="display: flex; justify-content: space-between; align-items: center; gap: 24px; margin-bottom: 16px;">
               <button class="export-btn" (click)="exportDetailedMetricsExcel()">Exporter Excel</button>
@@ -823,19 +823,19 @@
                 </div>
             </div>
             <div class="graph-modal-content">
-                <canvas *ngIf="selectedChartType === 'bar' && barChartData && barChartData.labels?.length" baseChart
+                <canvas *ngIf="selectedChartType === 'bar' && barChartData?.labels?.length && barChartData?.datasets?.length" baseChart
                     [data]="barChartData"
                     [options]="barChartOptions"
                     [type]="'bar'"
                     [plugins]="[ChartDataLabels]"
                     (chartClick)="onBarClick($event)">
                 </canvas>
-                <canvas *ngIf="selectedChartType === 'line' && lineChartData && lineChartData.labels?.length" baseChart
+                <canvas *ngIf="selectedChartType === 'line' && lineChartData?.labels?.length && lineChartData?.datasets?.length" baseChart
                     [data]="lineChartData"
                     [options]="lineChartOptions"
                     [type]="'line'">
                 </canvas>
-                <div *ngIf="(!barChartData || !barChartData.labels?.length) && (!lineChartData || !lineChartData.labels?.length)" class="no-data-modal">
+                <div *ngIf="(!barChartData?.labels?.length || !barChartData?.datasets?.length) && (!lineChartData?.labels?.length || !lineChartData?.datasets?.length)" class="no-data-modal">
                     Aucune donnée à afficher
                 </div>
             </div>

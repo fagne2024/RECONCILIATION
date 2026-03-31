@@ -45,6 +45,7 @@ export class AppComponent implements OnInit {
     '/banque': 'Banque',
     '/comptabilite': 'Comptabilité',
     '/reconciliation-report': 'Rapport Réconciliation',
+    '/rapport-reconciliation-bo-partenaire': 'Rapport BO vs Partenaire',
     '/report-dashboard': 'Dashboard Rapport',
     '/reconciliation-dashboard': 'Dashboard Réconciliation',
     '/reconciliation-global-preview': 'Aperçu Global Réconciliation',

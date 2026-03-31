@@ -47,6 +47,7 @@ import { SopOperationComponent } from './components/sop-operation/sop-operation.
 import { SopReconciliationTrxComponent } from './components/sop-reconciliation-trx/sop-reconciliation-trx.component';
 import { GuideUtilisationComponent } from './components/guide-utilisation/guide-utilisation.component';
 import { SuiviDesEcartsComponent } from './components/suivi-des-ecarts/suivi-des-ecarts.component';
+import { RapportReconciliationBoPartenaireComponent } from './components/rapport-reconciliation-bo-partenaire/rapport-reconciliation-bo-partenaire.component';
 import { EcartBoSummaryComponent } from './components/ecart-bo-summary/ecart-bo-summary.component';
 import { RedevanceLoterieComponent } from './components/redevance-loterie/redevance-loterie.component';
 import { AuthGuard } from './guards/auth.guard';
@@ -90,6 +91,7 @@ const routes: Routes = [
   { path: 'banque', component: BanqueComponent, canActivate: [AuthGuard] },
   { path: 'comptabilite', component: ComptabiliteComponent, canActivate: [AuthGuard] },
   { path: 'reconciliation-report', component: ReconciliationReportComponent, canActivate: [AuthGuard] },
+  { path: 'rapport-reconciliation-bo-partenaire', component: RapportReconciliationBoPartenaireComponent, canActivate: [AuthGuard] },
   { path: 'report-dashboard', component: ReportDashboardComponent, canActivate: [AuthGuard] },
   { path: 'reconciliation-dashboard', component: DashboardReconciliationComponent, canActivate: [AuthGuard] },
   { path: 'reconciliation-global-preview', component: ReconciliationGlobalPreviewComponent, canActivate: [AuthGuard] },

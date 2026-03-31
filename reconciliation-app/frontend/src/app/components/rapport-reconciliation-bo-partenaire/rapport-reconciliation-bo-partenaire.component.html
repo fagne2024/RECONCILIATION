@@ -1,0 +1,328 @@
+<div class="rrbp-root">
+  <nav class="topnav">
+    <div class="nav-brand">
+      <div class="nav-brand-dot"></div>
+      ReconciliApp
+    </div>
+    <div class="nav-sep"></div>
+    <div class="nav-path">
+      <strong>Rapport BO vs Partenaire</strong>
+    </div>
+    <div class="nav-spacer"></div>
+    <div class="nav-actions">
+      <button
+        type="button"
+        class="nav-btn secondary"
+        (click)="exportToPdf()"
+        [disabled]="!canExportPdf || isExportingPdf"
+        title="Exporter le rapport affiché en PDF"
+      >
+        <i class="fas fa-file-pdf"></i> {{ isExportingPdf ? 'Export…' : 'Exporter PDF' }}
+      </button>
+      <button type="button" class="nav-btn secondary" (click)="retourRapport()">
+        <i class="fas fa-arrow-left"></i> Retour au rapport détaillé
+      </button>
+    </div>
+  </nav>
+
+  <div class="rrbp-pdf-export-root" #rrbpPdfExportContent>
+  <div class="page-header-report">
+    <div class="ph-report-left">
+      <div class="ph-eyebrow"><span></span>Rapport</div>
+      <h1 class="ph-title-report">Comparaison <em>BO vs Partenaire</em></h1>
+      <p class="rrbp-subtitle-inline">{{ subtitle }}</p>
+    </div>
+    <div class="ph-report-right rrbp-header-right">
+      <div class="rrbp-user-pill">
+        <div class="rrbp-user-name">{{ displayUserName }}</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="main">
+    <div class="reconciliation-report-container">
+      <div class="report-header rrbp-filters-header">
+        <h2>📋 Périmètre &amp; filtres</h2>
+      </div>
+      <div class="rrbp-filters-body">
+        <div class="rrbp-filters">
+          <label>
+            <span>Pays</span>
+            <select [(ngModel)]="selectedCountry" (ngModelChange)="appliquerFiltres()">
+              <option value="">— Choisir —</option>
+              <option *ngFor="let c of countries" [value]="c">{{ c }}</option>
+            </select>
+          </label>
+          <label class="rrbp-date-range">
+            <span>Du</span>
+            <input type="date" [(ngModel)]="dateDebut" (change)="appliquerFiltres()" />
+          </label>
+          <label class="rrbp-date-range">
+            <span>Au</span>
+            <input type="date" [(ngModel)]="dateFin" (change)="appliquerFiltres()" />
+          </label>
+          <label>
+            <span>ENV</span>
+            <select [(ngModel)]="selectedEnv" (ngModelChange)="appliquerFiltres()">
+              <option *ngFor="let e of envOptions" [value]="e">{{ e }}</option>
+            </select>
+          </label>
+          <div class="rrbp-service-field-wrap">
+            <div class="rrbp-service-col">
+              <mat-form-field appearance="fill" class="rrbp-mat-services">
+                <mat-label>Services — la recherche sélectionne les correspondances ; sans recherche, tout le périmètre</mat-label>
+                <mat-select
+                  multiple
+                  [(ngModel)]="selectedServices"
+                  [compareWith]="compareServiceOption"
+                  (selectionChange)="appliquerFiltres()"
+                >
+                  <mat-option>
+                    <ngx-mat-select-search
+                      [formControl]="serviceSearchCtrl"
+                      [clearSearchInput]="false"
+                      placeholderLabel="Filtrer la liste affichée…"
+                      noEntriesFoundLabel="Aucun service trouvé"
+                    ></ngx-mat-select-search>
+                  </mat-option>
+                  <mat-option *ngFor="let s of filteredServicesForSelect" [value]="s">{{ s }}</mat-option>
+                </mat-select>
+              </mat-form-field>
+            </div>
+            <button
+              type="button"
+              class="nav-btn secondary rrbp-nav-btn-sm rrbp-effacer-svc"
+              *ngIf="showClearServicesButton"
+              (click)="clearServiceFilter()"
+              title="Réinitialiser services et recherche"
+            >
+              <i class="fas fa-eraser"></i> Effacer
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="rrbp-kpi-section" *ngIf="!error">
+        <div class="rrbp-kpis">
+          <div class="rrbp-kpi">
+            <span class="rrbp-kpi-line">
+              <span class="rrbp-kpi-label">Total BO</span>
+              <span class="rrbp-kpi-vals"
+                >{{ formatNombre(totalBoNombre) }} <span class="sep">·</span> vol {{ formatNombre(totalBoVolume) }}</span
+              >
+            </span>
+          </div>
+          <div class="rrbp-kpi">
+            <span class="rrbp-kpi-line">
+              <span class="rrbp-kpi-label">Total partenaire</span>
+              <span class="rrbp-kpi-vals"
+                >{{ formatNombre(totalPartNombre) }} <span class="sep">·</span> vol {{ formatNombre(totalPartVolume) }}</span
+              >
+            </span>
+          </div>
+          <div class="rrbp-kpi">
+            <span class="rrbp-kpi-line">
+              <span class="rrbp-kpi-label">Écart nombre</span>
+              <span class="rrbp-kpi-vals" [ngClass]="classeEcart(totalEcartNombreAjuste)">{{
+                formatNombre(totalEcartNombreAjuste)
+              }}</span>
+            </span>
+          </div>
+          <div class="rrbp-kpi">
+            <span class="rrbp-kpi-line">
+              <span class="rrbp-kpi-label">Écart volume</span>
+              <span class="rrbp-kpi-vals" [ngClass]="classeEcart(totalEcartVolumeAjuste)">{{
+                formatNombre(totalEcartVolumeAjuste)
+              }}</span>
+            </span>
+          </div>
+          <div class="rrbp-kpi accent">
+            <span class="rrbp-kpi-line">
+              <span class="rrbp-kpi-label">Services avec écart</span>
+              <span class="rrbp-kpi-vals warn">{{ servicesAvecEcart }}&nbsp;sur&nbsp;{{ totalServices || 0 }}</span>
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <p class="rrbp-hint" *ngIf="!selectedCountry && countries.length">
+        Choisissez un <strong>pays</strong>. Laissez <strong>Services</strong> vide pour tous les services du périmètre.
+      </p>
+
+      <p class="rrbp-error" *ngIf="error">{{ error }}</p>
+
+      <div class="rrbp-loading" *ngIf="loading">Chargement…</div>
+
+      <p class="rrbp-group-hint" *ngIf="!loading && selectedCountry && !error && hasServiceGroups">
+        Regroupement par <strong>famille</strong> (libellé fixe : CASHINOM, CASHINMTN, …) pour le pays et l’ENV sélectionnés
+        — chaque service est classé s’il <strong>contient</strong> ce texte dans son nom. Cliquez sur la ligne pour le détail.
+      </p>
+
+      <div class="rrbp-table-section" *ngIf="!loading && selectedCountry && !error">
+        <div class="rrbp-table-wrap">
+          <table class="rrbp-table">
+            <thead>
+              <tr>
+                <th rowspan="2" class="col-service">Service</th>
+                <th rowspan="2" class="col-traitement">Traitement</th>
+                <th colspan="2" class="grp bo">
+                  <div class="rrbp-th-main">BO — {{ selectedEnv === 'ALL' ? 'tous ENV' : selectedEnv }}</div>
+                  <div class="rrbp-th-sub" title="Somme des écarts BO (result8rec) sur les services affichés">
+                    {{ statutEcartBoEntete }}
+                  </div>
+                </th>
+                <th colspan="2" class="grp part">
+                  <div class="rrbp-th-main">Partenaire</div>
+                  <div class="rrbp-th-sub" title="Somme des écarts Partenaire (result8rec) sur les services affichés">
+                    {{ statutEcartPartenaireEntete }}
+                  </div>
+                </th>
+                <th colspan="2" class="grp decal">Décalage</th>
+                <th colspan="3" class="grp ecart">Écart</th>
+              </tr>
+              <tr>
+                <th class="sub bo">Nombre</th>
+                <th class="sub bo">Volume</th>
+                <th class="sub part">Nombre</th>
+                <th class="sub part">Volume</th>
+                <th class="sub decal">J-1</th>
+                <th class="sub decal">J+1</th>
+                <th class="sub ecart">Nbre</th>
+                <th class="sub ecart">Volume</th>
+                <th class="sub ecart">Taux</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngIf="!serviceRows.length">
+                <td colspan="11" class="rrbp-empty">
+                  Aucune ligne pour ce pays, cette date, cet ENV ou cette sélection de services.
+                </td>
+              </tr>
+              <ng-container *ngFor="let line of displayLines">
+                <tr *ngIf="line.type === 'single'" class="rrbp-row-single">
+                  <td class="col-service">
+                    <div class="svc-main">{{ line.row.service }}</div>
+                  </td>
+                  <td class="col-traitement">
+                    <span [class]="getTraitementClass(line.row.traitement)">{{ line.row.traitement }}</span>
+                  </td>
+                  <td class="num">{{ formatNombre(line.row.boNombre) }}</td>
+                  <td class="num">{{ formatNombre(line.row.boVolume) }}</td>
+                  <td class="num">{{ formatNombre(line.row.partenaireNombre) }}</td>
+                  <td class="num">{{ formatNombre(line.row.partenaireVolume) }}</td>
+                  <td class="num decal-cell" [title]="'Nombre · volume (relevé partenaire, veille)'">
+                    {{ formatDecalageCell(line.row.decalageJm1Nombre, line.row.decalageJm1Volume) }}
+                  </td>
+                  <td class="num decal-cell" [title]="'Nombre · volume (relevé partenaire, date rapport)'">
+                    {{ formatDecalageCell(line.row.decalageJp1Nombre, line.row.decalageJp1Volume) }}
+                  </td>
+                  <td class="num" [ngClass]="classeEcart(line.row.ecartNombre)">
+                    {{ estEcartNul(line.row.ecartNombre) ? '—' : formatNombre(line.row.ecartNombre) }}
+                  </td>
+                  <td class="num" [ngClass]="classeEcart(line.row.ecartVolume)">
+                    {{ estEcartNul(line.row.ecartVolume) ? '—' : formatNombre(line.row.ecartVolume) }}
+                  </td>
+                  <td class="num" [ngClass]="classeTaux(line.row)">{{ libelleTaux(line.row) }}</td>
+                </tr>
+                <tr
+                  *ngIf="line.type === 'group-header'"
+                  class="rrbp-row-group"
+                  (click)="toggleServiceGroup(line.id)"
+                  [title]="'Cliquer pour afficher ou masquer le détail par service'"
+                >
+                  <td class="col-service">
+                    <button
+                      type="button"
+                      class="rrbp-group-toggle"
+                      (click)="toggleServiceGroup(line.id, $event)"
+                      [attr.aria-expanded]="isGroupExpanded(line.id)"
+                    >
+                      <i class="fas" [ngClass]="isGroupExpanded(line.id) ? 'fa-chevron-down' : 'fa-chevron-right'"></i>
+                    </button>
+                    <span class="rrbp-group-label">{{ line.label }}</span>
+                    <span class="rrbp-group-meta">{{ line.count }} services · total groupe</span>
+                  </td>
+                  <td class="col-traitement">
+                    <span [class]="getTraitementClass(line.aggregate.traitement)">{{ line.aggregate.traitement }}</span>
+                  </td>
+                  <td class="num">{{ formatNombre(line.aggregate.boNombre) }}</td>
+                  <td class="num">{{ formatNombre(line.aggregate.boVolume) }}</td>
+                  <td class="num">{{ formatNombre(line.aggregate.partenaireNombre) }}</td>
+                  <td class="num">{{ formatNombre(line.aggregate.partenaireVolume) }}</td>
+                  <td class="num decal-cell" [title]="'Nombre · volume (relevé partenaire, veille)'">
+                    {{ formatDecalageCell(line.aggregate.decalageJm1Nombre, line.aggregate.decalageJm1Volume) }}
+                  </td>
+                  <td class="num decal-cell" [title]="'Nombre · volume (relevé partenaire, date rapport)'">
+                    {{ formatDecalageCell(line.aggregate.decalageJp1Nombre, line.aggregate.decalageJp1Volume) }}
+                  </td>
+                  <td class="num" [ngClass]="classeEcart(line.aggregate.ecartNombre)">
+                    {{ estEcartNul(line.aggregate.ecartNombre) ? '—' : formatNombre(line.aggregate.ecartNombre) }}
+                  </td>
+                  <td class="num" [ngClass]="classeEcart(line.aggregate.ecartVolume)">
+                    {{ estEcartNul(line.aggregate.ecartVolume) ? '—' : formatNombre(line.aggregate.ecartVolume) }}
+                  </td>
+                  <td class="num" [ngClass]="classeTaux(line.aggregate)">{{ libelleTaux(line.aggregate) }}</td>
+                </tr>
+                <tr *ngIf="line.type === 'group-detail' && isGroupExpanded(line.groupId)" class="rrbp-row-detail">
+                  <td class="col-service">
+                    <div class="svc-main rrbp-detail-indent">{{ line.row.service }}</div>
+                  </td>
+                  <td class="col-traitement">
+                    <span [class]="getTraitementClass(line.row.traitement)">{{ line.row.traitement }}</span>
+                  </td>
+                  <td class="num">{{ formatNombre(line.row.boNombre) }}</td>
+                  <td class="num">{{ formatNombre(line.row.boVolume) }}</td>
+                  <td class="num">{{ formatNombre(line.row.partenaireNombre) }}</td>
+                  <td class="num">{{ formatNombre(line.row.partenaireVolume) }}</td>
+                  <td class="num decal-cell" [title]="'Nombre · volume (relevé partenaire, veille)'">
+                    {{ formatDecalageCell(line.row.decalageJm1Nombre, line.row.decalageJm1Volume) }}
+                  </td>
+                  <td class="num decal-cell" [title]="'Nombre · volume (relevé partenaire, date rapport)'">
+                    {{ formatDecalageCell(line.row.decalageJp1Nombre, line.row.decalageJp1Volume) }}
+                  </td>
+                  <td class="num" [ngClass]="classeEcart(line.row.ecartNombre)">
+                    {{ estEcartNul(line.row.ecartNombre) ? '—' : formatNombre(line.row.ecartNombre) }}
+                  </td>
+                  <td class="num" [ngClass]="classeEcart(line.row.ecartVolume)">
+                    {{ estEcartNul(line.row.ecartVolume) ? '—' : formatNombre(line.row.ecartVolume) }}
+                  </td>
+                  <td class="num" [ngClass]="classeTaux(line.row)">{{ libelleTaux(line.row) }}</td>
+                </tr>
+              </ng-container>
+            </tbody>
+            <tfoot *ngIf="serviceRows.length">
+              <tr>
+                <td>Total</td>
+                <td class="col-traitement">—</td>
+                <td class="num">{{ formatNombre(totalBoNombre) }}</td>
+                <td class="num">{{ formatNombre(totalBoVolume) }}</td>
+                <td class="num">{{ formatNombre(totalPartNombre) }}</td>
+                <td class="num">{{ formatNombre(totalPartVolume) }}</td>
+                <td class="num decal-cell">{{ formatDecalageCell(totalDecJm1Nombre, totalDecJm1Volume) }}</td>
+                <td class="num decal-cell">{{ formatDecalageCell(totalDecJp1Nombre, totalDecJp1Volume) }}</td>
+                <td class="num" [ngClass]="classeEcart(totalEcartNombreAjuste)">
+                  {{ formatNombre(totalEcartNombreAjuste) }}
+                </td>
+                <td class="num" [ngClass]="classeEcart(totalEcartVolumeAjuste)">
+                  {{ formatNombre(totalEcartVolumeAjuste) }}
+                </td>
+                <td class="num">—</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+
+      <footer class="rrbp-footer">
+        <label for="rrbp-comment">Commentaire :</label>
+        <textarea
+          id="rrbp-comment"
+          rows="3"
+          [(ngModel)]="commentaire"
+          placeholder="Saisir un commentaire sur cette réconciliation…"
+        ></textarea>
+      </footer>
+    </div>
+  </div>
+  </div>
+</div>

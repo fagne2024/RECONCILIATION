@@ -67,17 +67,23 @@ export interface ReconciliationReportData {
                     <button type="button" class="nav-btn secondary" (click)="goBack()">
                         <i class="fas fa-arrow-left"></i> Retour
                     </button>
+                    <button type="button" class="nav-btn primary" routerLink="/rapport-reconciliation-bo-partenaire">
+                        <i class="fas fa-file-alt"></i> Rapport Réconciliation
+                    </button>
                     <button type="button" class="nav-btn secondary" (click)="exportToExcel()" [disabled]="!reportData.length">
                         <i class="fas fa-file-excel"></i> Exporter
                     </button>
                     <button type="button" class="nav-btn secondary" (click)="saveAll()" [disabled]="!hasSelectedRows()">
                         <i class="fas fa-save"></i> Sauvegarder
                     </button>
-                    <button type="button" class="nav-btn primary" (click)="goToReconciliationDashboard()" [disabled]="!filteredReportData.length && !reportData.length">
+                    <button type="button" class="nav-btn primary" *ngIf="showExtendedReportActions" (click)="goToReconciliationDashboard()" [disabled]="!filteredReportData.length && !reportData.length">
                         <i class="fas fa-chart-line"></i> Tableau de bord
                     </button>
-                    <button type="button" class="nav-btn secondary" (click)="goToSuiviEcarts()" title="Ouvrir le suivi remboursement">
+                    <button type="button" class="nav-btn secondary" *ngIf="showExtendedReportActions" (click)="goToSuiviEcarts()" title="Ouvrir le suivi remboursement">
                         <i class="fas fa-file-invoice"></i> Remboursement
+                    </button>
+                    <button type="button" class="nav-btn secondary" (click)="showExtendedReportActions = !showExtendedReportActions" [title]="showExtendedReportActions ? 'Masquer nouvelle ligne, tableau de bord et remboursement' : 'Afficher nouvelle ligne, tableau de bord et remboursement'">
+                        <i class="fas" [ngClass]="showExtendedReportActions ? 'fa-eye-slash' : 'fa-ellipsis-h'"></i> {{ showExtendedReportActions ? 'Masquer actions' : 'Plus d’actions' }}
                     </button>
                 </div>
             </nav>
@@ -122,7 +128,7 @@ export interface ReconciliationReportData {
                     <span class="report-display-mode" *ngIf="!hasSelectedRows() && currentSource !== 'live'">
                         ({{ showAllMonths ? 'Toutes' : 'Mois en cours' }} : {{ filteredReportData.length }} ligne(s))
                     </span>
-                    <button class="btn btn-add" (click)="addNewRow()" title="Ajouter une nouvelle ligne">
+                    <button class="btn btn-add" *ngIf="showExtendedReportActions" (click)="addNewRow()" title="Ajouter une nouvelle ligne">
                         ➕ Nouvelle ligne
                     </button>
                     <button class="btn btn-export" (click)="exportToExcel()" [disabled]="!reportData.length">
@@ -131,10 +137,10 @@ export interface ReconciliationReportData {
                     <button class="btn btn-save-all" (click)="saveAll()" [disabled]="!hasSelectedRows()">
                         💾 Sauvegarder
                     </button>
-                    <button class="btn btn-dashboard" (click)="goToReconciliationDashboard()" [disabled]="!filteredReportData.length && !reportData.length">
+                    <button class="btn btn-dashboard" *ngIf="showExtendedReportActions" (click)="goToReconciliationDashboard()" [disabled]="!filteredReportData.length && !reportData.length">
                         📈 Tableau de bord
                     </button>
-                    <button class="btn btn-suivi-ecarts" (click)="goToSuiviEcarts()" title="Ouvrir le suivi remboursement">
+                    <button class="btn btn-suivi-ecarts" *ngIf="showExtendedReportActions" (click)="goToSuiviEcarts()" title="Ouvrir le suivi remboursement">
                         📋 Remboursement
                     </button>
                     <button class="btn btn-toggle-actions" (click)="toggleActionsColumn()" [title]="showActionsColumn ? 'Masquer la colonne Actions' : 'Afficher la colonne Actions'">
@@ -178,7 +184,7 @@ export interface ReconciliationReportData {
                         <mat-label>Service</mat-label>
                         <mat-select #serviceSelect [(ngModel)]="selectedServices" multiple (selectionChange)="onServiceSelectionChange()">
                             <mat-option>
-                                <ngx-mat-select-search [formControl]="serviceSearchCtrl" placeholderLabel="Rechercher un service..." noEntriesFoundLabel="Aucun service trouvé"></ngx-mat-select-search>
+                                <ngx-mat-select-search [formControl]="serviceSearchCtrl" [clearSearchInput]="false" placeholderLabel="Rechercher un service..." noEntriesFoundLabel="Aucun service trouvé"></ngx-mat-select-search>
                             </mat-option>
                             <mat-option *ngFor="let service of filteredServicesDropdown" [value]="service">
                                 {{ service }}
@@ -407,8 +413,20 @@ export interface ReconciliationReportData {
                             <th class="col-transactions">Transactions</th>
                             <th class="col-number">Volume</th>
                             <th class="col-number">Correspondances</th>
-                            <th class="col-number">Écarts BO</th>
-                            <th class="col-number">Écarts Partenaire</th>
+                            <th
+                                class="col-number th-filter-ecart"
+                                [class.th-filter-ecart-active]="activeEcartColumnFilter === 'boOnly'"
+                                (click)="toggleFilterByBoEcart()"
+                                title="Afficher uniquement les lignes avec des écarts BO &gt; 0. Recliquer pour désactiver.">
+                                Écarts BO
+                            </th>
+                            <th
+                                class="col-number th-filter-ecart"
+                                [class.th-filter-ecart-active]="activeEcartColumnFilter === 'partnerOnly'"
+                                (click)="toggleFilterByPartnerEcart()"
+                                title="Afficher uniquement les lignes avec des écarts Partenaire &gt; 0. Recliquer pour désactiver.">
+                                Écarts Partenaire
+                            </th>
                             <th class="col-number">Incohérences</th>
                             <th class="col-number">Taux de Correspondance</th>
                             <th class="col-text">ID TICKET</th>
@@ -1818,6 +1836,23 @@ export interface ReconciliationReportData {
 
         /* Align headers with numeric columns */
         .col-number { text-align: right; }
+        th.th-filter-ecart {
+            cursor: pointer;
+            user-select: none;
+            text-decoration: underline;
+            text-decoration-style: dotted;
+            text-underline-offset: 3px;
+            transition: background 0.2s ease, color 0.2s ease;
+        }
+        th.th-filter-ecart:hover {
+            background: #f0f4f8;
+            color: #1565c0;
+        }
+        th.th-filter-ecart-active {
+            background: #e3f2fd !important;
+            color: #0d47a1;
+            text-decoration-style: solid;
+        }
         .col-select { text-align: left; }
         .col-text { text-align: left; }
         .col-date { text-align: left; }
@@ -2929,6 +2964,8 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
     selectedEnvs: string[] = [];
     ticketIdFilter: string = '';
     activeCardFilter: 'inProgress' | 'treated' | 'ticketsToCreate' | null = null;
+    /** Filtre au clic sur l'en-tête : lignes avec écarts BO ou Partenaire > 0 */
+    activeEcartColumnFilter: 'boOnly' | 'partnerOnly' | null = null;
 
     agenceSearchCtrl = new FormControl('');
     serviceSearchCtrl = new FormControl('');
@@ -2981,6 +3018,9 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
     
     // Propriété pour contrôler l'affichage de la colonne Actions
     showActionsColumn = false;
+
+    /** Affiche Nouvelle ligne, Tableau de bord et Remboursement (masqués par défaut). */
+    showExtendedReportActions = false;
 
     // Propriétés pour le modal de relevé
     isReleveModalVisible = false;
@@ -4505,8 +4545,15 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             this.filteredAgenciesDropdown = this.filteredAgencies.filter(a => a.toLowerCase().includes(s));
         });
         this.serviceSearchCtrl.valueChanges.subscribe((search: string | null) => {
-            const s = (search || '').toLowerCase();
+            const raw = (search || '').trim();
+            const s = raw.toLowerCase();
             this.filteredServicesDropdown = this.filteredServices.filter(a => a.toLowerCase().includes(s));
+            if (!raw) {
+                this.selectedServices = [];
+            } else {
+                this.selectedServices = this.filteredServices.filter(a => a.toLowerCase().includes(s));
+            }
+            this.filterReport();
         });
         this.paysSearchCtrl.valueChanges.subscribe((search: string | null) => {
             const s = (search || '').toLowerCase();
@@ -4652,6 +4699,18 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         this.filterReport();
     }
 
+    toggleFilterByBoEcart(): void {
+        this.activeEcartColumnFilter =
+            this.activeEcartColumnFilter === 'boOnly' ? null : 'boOnly';
+        this.filterReport();
+    }
+
+    toggleFilterByPartnerEcart(): void {
+        this.activeEcartColumnFilter =
+            this.activeEcartColumnFilter === 'partnerOnly' ? null : 'partnerOnly';
+        this.filterReport();
+    }
+
     /** Retourne true si la date de l'item est dans le mois en cours (comparaison locale, insensible timezone). */
     private isItemInCurrentMonth(itemDateStr: string): boolean {
         if (!itemDateStr || typeof itemDateStr !== 'string') return false;
@@ -4685,7 +4744,11 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             }
 
             const agencyMatch = this.selectedAgencies.length === 0 || this.selectedAgencies.includes(item.agency);
-            const serviceMatch = this.selectedServices.length === 0 || this.selectedServices.includes(item.service);
+            const qSvc = (this.serviceSearchCtrl.value || '').trim();
+            const serviceMatch =
+                qSvc.length > 0
+                    ? this.selectedServices.includes(item.service)
+                    : this.selectedServices.length === 0 || this.selectedServices.includes(item.service);
             const countryFilterMatch = this.selectedCountries.length === 0 || this.selectedCountries.includes(item.country);
             const statusMatch = this.selectedStatuses.length === 0 || this.selectedStatuses.includes(item.status);
             const traitementMatch = this.selectedTraitements.length === 0 || this.selectedTraitements.includes(item.traitement || '');
@@ -4717,22 +4780,26 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             }
             
             const baseMatch = agencyMatch && serviceMatch && countryFilterMatch && dateMatch && statusMatch && traitementMatch && envMatch && ticketMatch;
-            
-            // Appliquer le filtre de card actif si défini
+
+            let passesCard = true;
             if (this.activeCardFilter === 'inProgress') {
-                // Filtrer les items avec des écarts en cours (partnerOnly > 0 ET statut n'est pas OK)
                 const status = (item.status || '').trim().toUpperCase();
                 const isOk = status === 'OK';
-                return baseMatch && !isOk && (item.partnerOnly || 0) > 0;
-            } else if (this.activeCardFilter === 'treated') {
-                // Pour "Nbre TRX", pas de filtre spécial - afficher tous les éléments
-                return baseMatch;
-            } else if (this.activeCardFilter === 'ticketsToCreate') {
-                // Pour "Volume", pas de filtre spécial - afficher tous les éléments
-                return baseMatch;
+                const boOnly = Number(item.boOnly) || 0;
+                const partnerOnly = Number(item.partnerOnly) || 0;
+                const mismatches = Number(item.mismatches) || 0;
+                const totalEcarts = boOnly + partnerOnly + mismatches;
+                passesCard = !isOk && totalEcarts > 0;
             }
-            
-            return baseMatch;
+
+            let passesEcartColumn = true;
+            if (this.activeEcartColumnFilter === 'boOnly') {
+                passesEcartColumn = (Number(item.boOnly) || 0) > 0;
+            } else if (this.activeEcartColumnFilter === 'partnerOnly') {
+                passesEcartColumn = this.getDisplayPartnerOnly(item) > 0;
+            }
+
+            return baseMatch && passesCard && passesEcartColumn;
         });
         
         // FORCER toutes les lignes avec statut OK à avoir traitement = "Niveau Group" AVANT le recalcul
@@ -5184,15 +5251,16 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
     // Compteurs d'écarts
     get inProgressDiscrepancies(): number {
         if (!this.filteredReportData) return 0;
-        // Compter uniquement les écarts Partenaire où le statut n'est pas "OK"
+        // Somme des écarts (BO + Partenaire + incohérences) pour les lignes dont le statut n'est pas OK
         return this.filteredReportData.reduce((sum, item) => {
             const status = (item.status || '').trim().toUpperCase();
-            const isOk = status === 'OK';
-            // Ne compter que si le statut n'est pas OK
-            if (!isOk) {
-                return sum + (item.partnerOnly || 0);
+            if (status === 'OK') {
+                return sum;
             }
-            return sum;
+            const boOnly = Number(item.boOnly) || 0;
+            const partnerOnly = Number(item.partnerOnly) || 0;
+            const mismatches = Number(item.mismatches) || 0;
+            return sum + boOnly + partnerOnly + mismatches;
         }, 0);
     }
 
