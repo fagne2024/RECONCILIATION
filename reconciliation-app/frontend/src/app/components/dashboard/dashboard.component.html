@@ -226,7 +226,7 @@
                                         'status-nok': day.status === 'NON_RECONCILIE',
                                         'status-en-cours': day.status === 'EN_COURS'
                                     }"
-                                    (click)="day.status === 'RECONCILIE' && day.ticketId ? openGlpiTicketFromDashboard(day.ticketId) : null"
+                                    (click)="day.status === 'RECONCILIE' && day.ticketId ? showTicketOptionsPopupFromDashboard(day.ticketId) : null"
                                 >
                                     <span class="status-label">
                                         {{
@@ -1193,7 +1193,7 @@
                                             'status-nok': day.status === 'NON_RECONCILIE',
                                             'status-en-cours': day.status === 'EN_COURS'
                                         }"
-                                        (click)="day.status === 'RECONCILIE' && day.ticketId ? openGlpiTicketFromDashboard(day.ticketId) : null"
+                                        (click)="day.status === 'RECONCILIE' && day.ticketId ? showTicketOptionsPopupFromDashboard(day.ticketId) : null"
                                     >
                                         <span class="status-label">
                                             {{ day.status === 'RECONCILIE' ? 'Réconcilié' : (day.status === 'EN_COURS' ? 'En cours...' : 'Non réconcilié') }}

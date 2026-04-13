@@ -100,6 +100,7 @@ export class FileUploadComponent implements OnDestroy {
     availableAgencies: string[] = [];
     selectedAgencies: string[] = [];
     agencySearchFilter = ''; // Filtre de recherche dans le popup agences
+    private agenciesSelectionBeforeSearch: string[] | null = null;
     agencySelectionData: Record<string, string>[] = [];
     agencyColumn: string | null = null; // Colonne utilisée pour la sélection des agences
 
@@ -108,6 +109,7 @@ export class FileUploadComponent implements OnDestroy {
     availableServices: string[] = [];
     selectedServices: string[] = [];
     serviceSearchFilter = '';
+    private servicesSelectionBeforeSearch: string[] | null = null;
     serviceSelectionData: Record<string, string>[] = [];
 
     // Sélection des statuts pour TRXBO en mode automatique (étape 3)
@@ -123,6 +125,7 @@ export class FileUploadComponent implements OnDestroy {
     manualAvailableServices: string[] = [];
     manualSelectedServices: string[] = [];
     manualServiceSearchFilter = '';
+    private manualServicesSelectionBeforeSearch: string[] | null = null;
     manualServiceSelectionData: Record<string, string>[] = [];
     manualStatusColumn: string | null = null; // Colonne statut pour TRXBO en mode manuel
     
@@ -138,6 +141,7 @@ export class FileUploadComponent implements OnDestroy {
     partnerAvailableServices: string[] = [];
     partnerSelectedServices: string[] = [];
     partnerServiceSearchFilter = '';
+    private partnerServicesSelectionBeforeSearch: string[] | null = null;
     partnerServiceSelectionData: Record<string, string>[] = [];
     partnerServiceColumn: string | null = null; // Colonne utilisée pour la sélection (service, type, etc.)
     partnerStatusColumn: string | null = null; // Colonne statut
@@ -156,6 +160,15 @@ export class FileUploadComponent implements OnDestroy {
     partnerPaymentSearchFilter = '';
     partnerPaymentSelectionData: Record<string, string>[] = []; // Données déjà filtrées par service et statut
     partnerPaymentColumn: string | null = null; // Colonne utilisée pour la sélection des paiements
+
+    /** Sélection des agences sur fichier partenaire (si colonne Agence présente), avant services/types */
+    showPartnerAgencySelection = false;
+    partnerAvailableAgencies: string[] = [];
+    partnerSelectedAgencies: string[] = [];
+    partnerAgencySearchFilter = '';
+    private partnerAgenciesSelectionBeforeSearch: string[] | null = null;
+    partnerAgencyColumn: string | null = null;
+    partnerAgencySelectionData: Record<string, string>[] = [];
 
     // Configuration des formats supportés
     supportedFormats = [
@@ -355,6 +368,13 @@ export class FileUploadComponent implements OnDestroy {
             this.partnerSelectedPayments = [];
             this.partnerPaymentSelectionData = [];
             this.partnerPaymentColumn = null;
+            this.showPartnerAgencySelection = false;
+            this.partnerAvailableAgencies = [];
+            this.partnerSelectedAgencies = [];
+            this.partnerAgencySearchFilter = '';
+            this.partnerAgenciesSelectionBeforeSearch = null;
+            this.partnerAgencyColumn = null;
+            this.partnerAgencySelectionData = [];
         }
 
         // Fermer les modales de sélection si ouvertes
@@ -362,6 +382,7 @@ export class FileUploadComponent implements OnDestroy {
         this.showServiceSelection = false;
         this.showManualServiceSelection = false;
         this.showManualStatusSelection = false;
+        this.showPartnerAgencySelection = false;
         this.showPartnerServiceSelection = false;
         this.showPartnerStatusSelection = false;
         this.showPartnerPaymentSelection = false;
@@ -1031,15 +1052,13 @@ export class FileUploadComponent implements OnDestroy {
                                     if (this.partnerData && this.partnerData.length > 0) {
                                         console.log('🔍 Vérification service/type/statut sur les données partenaire chargées (mode manuel)...');
                                         const detected = this.detectPartnerServiceTypeAndStatusForManual(this.partnerData);
-                                        console.log('🔍 Résultat de la détection:', detected);
-                                        if (detected) {
-                                            console.log('✅ Détection réussie, appel de showManualPartnerServiceSelectionStep()');
-                                            // Utiliser requestAnimationFrame pour s'assurer que le changement est bien détecté
-                                            requestAnimationFrame(() => {
-                                                this.showManualPartnerServiceSelectionStep();
-                                            });
+                                        console.log('🔍 Résultat de la détection partenaire:', detected);
+                                        if (detected === 'agency') {
+                                            requestAnimationFrame(() => this.showPartnerAgencySelectionStep());
+                                        } else if (detected === 'services') {
+                                            requestAnimationFrame(() => this.showManualPartnerServiceSelectionStep());
                                         } else {
-                                            console.log('❌ Détection échouée, pas de popup à afficher');
+                                            console.log('❌ Détection partenaire échouée, pas de popup');
                                         }
                                     } else {
                                         console.log('⚠️ partnerData est vide ou null');
@@ -1757,7 +1776,10 @@ export class FileUploadComponent implements OnDestroy {
                             setTimeout(() => {
                                 if (this.partnerData && this.partnerData.length > 0) {
                                     console.log('🔍 Vérification service/type/statut sur les données partenaire chargées (mode manuel, Excel - fallback)...');
-                                    if (this.detectPartnerServiceTypeAndStatusForManual(this.partnerData)) {
+                                    const pr = this.detectPartnerServiceTypeAndStatusForManual(this.partnerData);
+                                    if (pr === 'agency') {
+                                        this.showPartnerAgencySelectionStep();
+                                    } else if (pr === 'services') {
                                         this.showManualPartnerServiceSelectionStep();
                                     }
                                 }
@@ -1813,7 +1835,10 @@ export class FileUploadComponent implements OnDestroy {
                             setTimeout(() => {
                                 if (this.partnerData && this.partnerData.length > 0) {
                                     console.log('🔍 Vérification service/type/statut sur les données partenaire chargées (mode manuel, Excel)...');
-                                    if (this.detectPartnerServiceTypeAndStatusForManual(this.partnerData)) {
+                                    const pr = this.detectPartnerServiceTypeAndStatusForManual(this.partnerData);
+                                    if (pr === 'agency') {
+                                        this.showPartnerAgencySelectionStep();
+                                    } else if (pr === 'services') {
                                         this.showManualPartnerServiceSelectionStep();
                                     }
                                 }
@@ -2300,66 +2325,93 @@ export class FileUploadComponent implements OnDestroy {
         return false;
     }
 
-    // Méthode pour détecter les colonnes service/type/statut dans les fichiers partenaires (mode manuel)
-    private detectPartnerServiceTypeAndStatusForManual(data: Record<string, string>[]): boolean {
+    // Méthode pour détecter les colonnes service/type/statut (et agence si présente) — fichiers partenaires, mode manuel
+    private detectPartnerServiceTypeAndStatusForManual(data: Record<string, string>[]): false | 'agency' | 'services' {
         if (!data || data.length === 0) return false;
+
+        this.partnerAgencyColumn = null;
+        this.partnerAgencySelectionData = [];
+        this.partnerAvailableAgencies = [];
+        this.partnerServiceSelectionData = [];
+        this.partnerAvailableServices = [];
         
         const firstRow = data[0];
         const columns = Object.keys(firstRow);
         
-        // Chercher une colonne service ou type
         const serviceColumn = columns.find(col => {
             const colLower = col.toLowerCase();
-            return colLower.includes('service') || 
+            return colLower.includes('service') ||
                    colLower.includes('serv') ||
                    colLower.includes('type');
         });
         
-        // Chercher une colonne statut
         const statusColumn = columns.find(col => {
             const colLower = col.toLowerCase();
-            return colLower.includes('statut') || 
+            return colLower.includes('statut') ||
                    colLower.includes('status') ||
                    colLower.includes('état') ||
                    colLower.includes('généré le') ||
                    colLower.includes('genere le');
         });
+
+        const agencyColumn = columns.find(col => {
+            const c = col.toLowerCase();
+            return c.includes('agence') || c.includes('agency');
+        });
         
-        // Si on trouve au moins une colonne service/type, on active la sélection
-        if (serviceColumn) {
-            console.log('🔍 Fichier partenaire avec colonne service/type détectée en mode manuel, extraction des valeurs...');
-            console.log('📋 Colonne service/type trouvée:', serviceColumn);
-            if (statusColumn) {
-                console.log('📋 Colonne statut trouvée:', statusColumn);
+        if (!serviceColumn) {
+            return false;
+        }
+
+        this.partnerServiceColumn = serviceColumn;
+        this.partnerStatusColumn = statusColumn || null;
+
+        if (agencyColumn) {
+            const agencies = [...new Set(
+                data.map(row => row[agencyColumn])
+                    .filter(agency => agency && agency.toString().trim())
+            )].sort();
+            if (agencies.length > 0) {
+                console.log('🔍 Fichier partenaire : colonne Agence détectée, étape sélection agences (mode manuel)');
+                console.log('📋 Colonne agence:', agencyColumn);
+                this.partnerAvailableAgencies = agencies;
+                this.partnerAgencySelectionData = data;
+                this.partnerAgencyColumn = agencyColumn;
+                return 'agency';
             }
-            
-            // Extraire toutes les valeurs uniques de service/type
-            const services = [...new Set(
-                data.map(row => row[serviceColumn])
-                    .filter(service => service && service.toString().trim())
-            )];
-            
-            this.partnerAvailableServices = services.sort();
-            this.partnerServiceSelectionData = data;
-            this.partnerServiceColumn = serviceColumn;
-            this.partnerStatusColumn = statusColumn || null;
-            
-            console.log('📋 Services/Types disponibles (partenaire, mode manuel):', this.partnerAvailableServices);
-            console.log('📊 Nombre total de lignes:', data.length);
-            
-            return true;
+            console.log('⚠️ Colonne agence présente mais vide, enchaînement direct sur les services partenaire');
         }
         
-        return false;
+        const services = [...new Set(
+            data.map(row => row[serviceColumn])
+                .filter(service => service && service.toString().trim())
+        )].sort();
+        
+        this.partnerAvailableServices = services;
+        this.partnerServiceSelectionData = data;
+        
+        console.log('🔍 Fichier partenaire avec colonne service/type (sans agence ou agence vide), mode manuel');
+        console.log('📋 Colonne service/type:', serviceColumn);
+        if (statusColumn) console.log('📋 Colonne statut:', statusColumn);
+        console.log('📋 Services/Types:', this.partnerAvailableServices);
+        console.log('📊 Lignes:', data.length);
+        
+        return 'services';
     }
 
-    // Méthode pour détecter les colonnes service/type/statut dans les fichiers partenaires (mode automatique)
-    private detectPartnerServiceTypeAndStatus(data: Record<string, string>[]): boolean {
+    // Méthode pour détecter les colonnes service/type/statut (et agence si présente) dans les fichiers partenaires (mode automatique)
+    private detectPartnerServiceTypeAndStatus(data: Record<string, string>[]): false | 'agency' | 'services' {
         if (!data || data.length === 0) return false;
-        
+
+        this.partnerAgencyColumn = null;
+        this.partnerAgencySelectionData = [];
+        this.partnerAvailableAgencies = [];
+        this.partnerServiceSelectionData = [];
+        this.partnerAvailableServices = [];
+
         const firstRow = data[0];
         const columns = Object.keys(firstRow);
-        
+
         // Chercher une colonne service ou type
         const serviceColumn = columns.find(col => {
             const colLower = col.toLowerCase();
@@ -2378,32 +2430,72 @@ export class FileUploadComponent implements OnDestroy {
                    colLower.includes('genere le');
         });
         
+        const agencyColumn = columns.find(col => {
+            const c = col.toLowerCase();
+            return c.includes('agence') || c.includes('agency');
+        });
+
         // Si on trouve au moins une colonne service/type, on active la sélection
         if (serviceColumn) {
+            this.partnerServiceColumn = serviceColumn;
+            this.partnerStatusColumn = statusColumn || null;
+
+            if (agencyColumn) {
+                const agencies = [...new Set(
+                    data.map(row => row[agencyColumn])
+                        .filter(agency => agency && agency.toString().trim())
+                )].sort();
+
+                if (agencies.length > 0) {
+                    console.log('🔍 Fichier partenaire : colonne Agence détectée, étape sélection agences (mode auto)');
+                    console.log('📋 Colonne agence:', agencyColumn);
+                    this.partnerAvailableAgencies = agencies;
+                    this.partnerAgencySelectionData = data;
+                    this.partnerAgencyColumn = agencyColumn;
+                    return 'agency';
+                }
+            }
+
             console.log('🔍 Fichier partenaire avec colonne service/type détectée, extraction des valeurs...');
             console.log('📋 Colonne service/type trouvée:', serviceColumn);
             if (statusColumn) {
                 console.log('📋 Colonne statut trouvée:', statusColumn);
             }
-            
+
             // Extraire toutes les valeurs uniques de service/type
             const services = [...new Set(
                 data.map(row => row[serviceColumn])
                     .filter(service => service && service.toString().trim())
             )];
-            
+
             this.partnerAvailableServices = services.sort();
             this.partnerServiceSelectionData = data;
-            this.partnerServiceColumn = serviceColumn;
-            this.partnerStatusColumn = statusColumn || null;
-            
+
             console.log('📋 Services/Types disponibles (partenaire):', this.partnerAvailableServices);
             console.log('📊 Nombre total de lignes:', data.length);
-            
-            return true;
+
+            return 'services';
         }
-        
+
         return false;
+    }
+
+    private handleAutoPartnerSelectionFlow(): void {
+        const detected = this.detectPartnerServiceTypeAndStatus(this.autoPartnerData);
+        if (detected === 'agency') {
+            this.showPartnerAgencySelectionStep();
+        } else if (detected === 'services') {
+            this.showPartnerServiceSelectionStep();
+        }
+    }
+
+    private showPartnerServiceSelectionForCurrentMode(): void {
+        if (this.reconciliationMode === 'manual') {
+            this.showManualPartnerServiceSelectionStep();
+            return;
+        }
+
+        this.showPartnerServiceSelectionStep();
     }
 
     // Méthode pour afficher la sélection des agences (TRXBO - étape 1)
@@ -2475,6 +2567,140 @@ export class FileUploadComponent implements OnDestroy {
         this.agencyColumn = null;
     }
 
+    // ——— Agences fichier partenaire (mode manuel), même principe que TRXBO ———
+
+    private showPartnerAgencySelectionStep(): void {
+        this.showPartnerAgencySelection = true;
+        this.partnerAgencySearchFilter = '';
+        this.partnerAgenciesSelectionBeforeSearch = null;
+        this.partnerSelectedAgencies = [...this.partnerAvailableAgencies];
+        this.cd.detectChanges();
+    }
+
+    confirmPartnerAgencySelection(): void {
+        if (this.partnerSelectedAgencies.length === 0) {
+            this.errorMessage = 'Veuillez sélectionner au moins une agence.';
+            return;
+        }
+        if (!this.partnerAgencyColumn || !this.partnerAgencySelectionData?.length || !this.partnerServiceColumn) {
+            this.errorMessage = 'Erreur : données agence partenaire incomplètes.';
+            return;
+        }
+
+        const filteredData = this.partnerAgencySelectionData.filter(row =>
+            this.partnerSelectedAgencies.includes(row[this.partnerAgencyColumn!])
+        );
+
+        console.log('📊 Partenaire filtré par agence:', filteredData.length, 'lignes sur', this.partnerAgencySelectionData.length);
+
+        const services = [...new Set(
+            filteredData.map(row => row[this.partnerServiceColumn!])
+                .filter(s => s && s.toString().trim())
+        )].sort();
+
+        this.partnerAvailableServices = services;
+        this.partnerServiceSelectionData = filteredData;
+        this.showPartnerAgencySelection = false;
+        this.partnerAgencySearchFilter = '';
+        this.partnerAgencySelectionData = [];
+        this.partnerAgencyColumn = null;
+
+        this.cd.detectChanges();
+        this.showPartnerServiceSelectionForCurrentMode();
+    }
+
+    cancelPartnerAgencySelection(): void {
+        this.showPartnerAgencySelection = false;
+        this.partnerAgencySearchFilter = '';
+        this.partnerAvailableAgencies = [];
+        this.partnerSelectedAgencies = [];
+        this.partnerAgencySelectionData = [];
+        this.partnerAgencyColumn = null;
+        this.partnerServiceColumn = null;
+        this.partnerStatusColumn = null;
+        this.partnerAgenciesSelectionBeforeSearch = null;
+    }
+
+    skipPartnerAgencySelection(): void {
+        if (!this.partnerAvailableAgencies?.length) {
+            const source = this.partnerAgencySelectionData?.length ? this.partnerAgencySelectionData : [];
+            if (!source.length) {
+                this.errorMessage = 'Aucune donnée disponible pour continuer.';
+                return;
+            }
+            if (!this.partnerServiceColumn) {
+                this.errorMessage = 'Colonne service/type introuvable.';
+                return;
+            }
+            const services = [...new Set(
+                source.map(row => row[this.partnerServiceColumn!])
+                    .filter(s => s && s.toString().trim())
+            )].sort();
+            this.partnerAvailableServices = services;
+            this.partnerServiceSelectionData = source;
+            this.showPartnerAgencySelection = false;
+            this.partnerAgencySearchFilter = '';
+            this.cd.detectChanges();
+            this.showPartnerServiceSelectionForCurrentMode();
+            return;
+        }
+        this.partnerSelectedAgencies = [...this.partnerAvailableAgencies];
+        this.confirmPartnerAgencySelection();
+    }
+
+    onPartnerAgencySelectionChange(event: Event, agency: string): void {
+        const checkbox = event.target as HTMLInputElement;
+        if (checkbox.checked) {
+            if (!this.partnerSelectedAgencies.includes(agency)) {
+                this.partnerSelectedAgencies.push(agency);
+            }
+        } else {
+            this.partnerSelectedAgencies = this.partnerSelectedAgencies.filter(a => a !== agency);
+        }
+    }
+
+    getPartnerAgencyCount(agency: string): number {
+        if (!this.partnerAgencySelectionData?.length || !this.partnerAgencyColumn) return 0;
+        return this.partnerAgencySelectionData.filter(row => row[this.partnerAgencyColumn!] === agency).length;
+    }
+
+    get filteredPartnerAvailableAgencies(): string[] {
+        const term = (this.partnerAgencySearchFilter || '').trim().toLowerCase();
+        if (!term) return this.partnerAvailableAgencies;
+        return this.partnerAvailableAgencies.filter(agency =>
+            agency.toLowerCase().includes(term) ||
+            String(this.getPartnerAgencyCount(agency)).includes(term)
+        );
+    }
+
+    onPartnerAgencySearchFilterChange(value: string): void {
+        const term = (value || '').trim();
+        const hadSnapshot = Array.isArray(this.partnerAgenciesSelectionBeforeSearch);
+        if (term && !hadSnapshot) {
+            this.partnerAgenciesSelectionBeforeSearch = [...this.partnerSelectedAgencies];
+        }
+        this.partnerAgencySearchFilter = value;
+        if (term) {
+            this.partnerSelectedAgencies = [...this.filteredPartnerAvailableAgencies];
+        } else if (hadSnapshot) {
+            this.partnerSelectedAgencies = [...(this.partnerAgenciesSelectionBeforeSearch || [])];
+            this.partnerAgenciesSelectionBeforeSearch = null;
+        }
+    }
+
+    selectAllPartnerAgencies(): void {
+        const toSelect = this.filteredPartnerAvailableAgencies;
+        toSelect.forEach(agency => {
+            if (!this.partnerSelectedAgencies.includes(agency)) this.partnerSelectedAgencies.push(agency);
+        });
+        this.partnerSelectedAgencies = [...this.partnerSelectedAgencies];
+    }
+
+    deselectAllPartnerAgencies(): void {
+        const toDeselect = this.filteredPartnerAvailableAgencies;
+        this.partnerSelectedAgencies = this.partnerSelectedAgencies.filter(a => !toDeselect.includes(a));
+    }
+
     // Passer la sélection des agences : tout sélectionner ou utiliser les données telles quelles si liste vide
     skipAgencySelection(): void {
         if (!this.availableAgencies || this.availableAgencies.length === 0) {
@@ -2533,6 +2759,26 @@ export class FileUploadComponent implements OnDestroy {
             agency.toLowerCase().includes(term) ||
             String(this.getAgencyCount(agency)).includes(term)
         );
+    }
+
+    /**
+     * Auto-cocher selon la recherche, de façon cloisonnée :
+     * - si un terme est saisi : ne sélectionner que les éléments visibles (filtrés)
+     * - si la recherche est vidée : restaurer la sélection précédente
+     */
+    onAgencySearchFilterChange(value: string): void {
+        const term = (value || '').trim();
+        const hadSnapshot = Array.isArray(this.agenciesSelectionBeforeSearch);
+        if (term && !hadSnapshot) {
+            this.agenciesSelectionBeforeSearch = [...this.selectedAgencies];
+        }
+        this.agencySearchFilter = value;
+        if (term) {
+            this.selectedAgencies = [...this.filteredAvailableAgencies];
+        } else if (hadSnapshot) {
+            this.selectedAgencies = [...(this.agenciesSelectionBeforeSearch || [])];
+            this.agenciesSelectionBeforeSearch = null;
+        }
     }
 
     // Méthode pour sélectionner toutes les agences (visibles si filtre actif)
@@ -2780,6 +3026,21 @@ export class FileUploadComponent implements OnDestroy {
         );
     }
 
+    onServiceSearchFilterChange(value: string): void {
+        const term = (value || '').trim();
+        const hadSnapshot = Array.isArray(this.servicesSelectionBeforeSearch);
+        if (term && !hadSnapshot) {
+            this.servicesSelectionBeforeSearch = [...this.selectedServices];
+        }
+        this.serviceSearchFilter = value;
+        if (term) {
+            this.selectedServices = [...this.filteredAvailableServices];
+        } else if (hadSnapshot) {
+            this.selectedServices = [...(this.servicesSelectionBeforeSearch || [])];
+            this.servicesSelectionBeforeSearch = null;
+        }
+    }
+
     selectAllServices(): void {
         const toSelect = this.filteredAvailableServices;
         toSelect.forEach(s => { if (!this.selectedServices.includes(s)) this.selectedServices.push(s); });
@@ -2910,9 +3171,16 @@ export class FileUploadComponent implements OnDestroy {
 
     // Méthode pour annuler la sélection des services partenaire
     cancelPartnerServiceSelection(): void {
+        this.showPartnerAgencySelection = false;
         this.showPartnerServiceSelection = false;
         this.showPartnerStatusSelection = false;
         this.showPartnerPaymentSelection = false;
+        this.partnerAgencySearchFilter = '';
+        this.partnerAvailableAgencies = [];
+        this.partnerSelectedAgencies = [];
+        this.partnerAgencySelectionData = [];
+        this.partnerAgencyColumn = null;
+        this.partnerAgenciesSelectionBeforeSearch = null;
         this.partnerServiceSearchFilter = '';
         this.partnerStatusSearchFilter = '';
         this.partnerPaymentSearchFilter = '';
@@ -2957,6 +3225,21 @@ export class FileUploadComponent implements OnDestroy {
         return this.partnerAvailableServices.filter(s =>
             s.toLowerCase().includes(term) || String(this.getPartnerServiceCount(s)).includes(term)
         );
+    }
+
+    onPartnerServiceSearchFilterChange(value: string): void {
+        const term = (value || '').trim();
+        const hadSnapshot = Array.isArray(this.partnerServicesSelectionBeforeSearch);
+        if (term && !hadSnapshot) {
+            this.partnerServicesSelectionBeforeSearch = [...this.partnerSelectedServices];
+        }
+        this.partnerServiceSearchFilter = value;
+        if (term) {
+            this.partnerSelectedServices = [...this.filteredPartnerAvailableServices];
+        } else if (hadSnapshot) {
+            this.partnerSelectedServices = [...(this.partnerServicesSelectionBeforeSearch || [])];
+            this.partnerServicesSelectionBeforeSearch = null;
+        }
     }
 
     selectAllPartnerServices(): void {
@@ -3338,9 +3621,7 @@ export class FileUploadComponent implements OnDestroy {
                             this.autoPartnerData = this.convertDebitCreditToNumber(results.data as Record<string, string>[]);
                             
                             // Vérifier si le fichier partenaire contient des colonnes service/type/statut
-                            if (this.detectPartnerServiceTypeAndStatus(this.autoPartnerData)) {
-                                this.showPartnerServiceSelectionStep();
-                            }
+                            this.handleAutoPartnerSelectionFlow();
                         }
                         // Forcer la détection des changements pour mettre à jour la vue
                         this.cd.detectChanges();
@@ -3522,9 +3803,7 @@ export class FileUploadComponent implements OnDestroy {
                         this.autoPartnerData = this.convertDebitCreditToNumber(rows);
                         
                         // Vérifier si le fichier partenaire contient des colonnes service/type/statut
-                        if (this.detectPartnerServiceTypeAndStatus(this.autoPartnerData)) {
-                            this.showPartnerServiceSelectionStep();
-                        }
+                        this.handleAutoPartnerSelectionFlow();
                     }
                     
                     // Invalider le cache de canProceed
@@ -3583,9 +3862,7 @@ export class FileUploadComponent implements OnDestroy {
                         this.autoPartnerData = this.convertDebitCreditToNumber(rows);
                         
                         // Vérifier si le fichier partenaire contient des colonnes service/type/statut
-                        if (this.detectPartnerServiceTypeAndStatus(this.autoPartnerData)) {
-                            this.showPartnerServiceSelectionStep();
-                        }
+                        this.handleAutoPartnerSelectionFlow();
                     }
                     
                     // Invalider le cache de canProceed
@@ -3756,9 +4033,7 @@ export class FileUploadComponent implements OnDestroy {
                     this.autoPartnerData = this.convertDebitCreditToNumber(rows);
                     
                     // Vérifier si le fichier partenaire contient des colonnes service/type/statut
-                    if (this.detectPartnerServiceTypeAndStatus(this.autoPartnerData)) {
-                        this.showPartnerServiceSelectionStep();
-                    }
+                    this.handleAutoPartnerSelectionFlow();
                 }
             } else {
                 const correctedHeaders = headers.map(header => this.normalizeColumnName(header));
@@ -3785,9 +4060,7 @@ export class FileUploadComponent implements OnDestroy {
                     this.autoPartnerData = this.convertDebitCreditToNumber(rows);
                     
                     // Vérifier si le fichier partenaire contient des colonnes service/type/statut
-                    if (this.detectPartnerServiceTypeAndStatus(this.autoPartnerData)) {
-                        this.showPartnerServiceSelectionStep();
-                    }
+                    this.handleAutoPartnerSelectionFlow();
                 }
             }
 
@@ -3876,9 +4149,7 @@ export class FileUploadComponent implements OnDestroy {
                                 this.autoPartnerData = this.convertDebitCreditToNumber(rows);
                                 
                                 // Vérifier si le fichier partenaire contient des colonnes service/type/statut
-                                if (this.detectPartnerServiceTypeAndStatus(this.autoPartnerData)) {
-                                    this.showPartnerServiceSelectionStep();
-                                }
+                                this.handleAutoPartnerSelectionFlow();
                             }
 
                             console.log(`✅ Fallback réussi: ${rows.length} lignes traitées`);
@@ -4024,9 +4295,7 @@ export class FileUploadComponent implements OnDestroy {
                                     this.autoPartnerData = this.convertDebitCreditToNumber(rows);
                                     
                                     // Vérifier si le fichier partenaire contient des colonnes service/type/statut
-                                    if (this.detectPartnerServiceTypeAndStatus(this.autoPartnerData)) {
-                                        this.showPartnerServiceSelectionStep();
-                                    }
+                                    this.handleAutoPartnerSelectionFlow();
                                 }
 
                                 console.log(`✅ Fallback ultime réussi avec ${approach.name}: ${rows.length} lignes`);
@@ -5180,6 +5449,21 @@ export class FileUploadComponent implements OnDestroy {
         return this.manualAvailableServices.filter(s =>
             s.toLowerCase().includes(term) || String(this.getManualServiceCount(s)).includes(term)
         );
+    }
+
+    onManualServiceSearchFilterChange(value: string): void {
+        const term = (value || '').trim();
+        const hadSnapshot = Array.isArray(this.manualServicesSelectionBeforeSearch);
+        if (term && !hadSnapshot) {
+            this.manualServicesSelectionBeforeSearch = [...this.manualSelectedServices];
+        }
+        this.manualServiceSearchFilter = value;
+        if (term) {
+            this.manualSelectedServices = [...this.filteredManualAvailableServices];
+        } else if (hadSnapshot) {
+            this.manualSelectedServices = [...(this.manualServicesSelectionBeforeSearch || [])];
+            this.manualServicesSelectionBeforeSearch = null;
+        }
     }
 
     getManualServiceCount(service: string): number {

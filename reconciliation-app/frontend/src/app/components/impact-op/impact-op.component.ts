@@ -260,6 +260,7 @@ export class ImpactOPComponent implements OnInit, OnDestroy {
           this.filteredImpactOPs = [...data];
           // Calculer/assigner le commentaire selon les règles métier (sans écraser un commentaire existant)
           this.applyComputedComments();
+          this.syncSelectionWithFilteredItems();
           this.calculatePagination();
           this.recalculateFilteredStats();
           this.isLoading = false;
@@ -412,6 +413,7 @@ export class ImpactOPComponent implements OnInit, OnDestroy {
           this.filteredImpactOPs = list;
           // Recalculer les commentaires après filtrage/chargement
           this.applyComputedComments();
+          this.syncSelectionWithFilteredItems();
           this.calculatePagination();
           this.recalculateFilteredStats();
           this.isLoading = false;
@@ -1046,6 +1048,31 @@ export class ImpactOPComponent implements OnInit, OnDestroy {
     this.isSelectAll = false;
   }
 
+  private syncSelectionWithFilteredItems(): void {
+    if (this.selectedItems.size === 0) {
+      this.isSelectAll = false;
+      return;
+    }
+
+    const allowedIds = new Set(
+      this.filteredImpactOPs
+        .map(item => item.id)
+        .filter((id): id is number => typeof id === 'number')
+    );
+
+    Array.from(this.selectedItems).forEach(id => {
+      if (!allowedIds.has(id)) {
+        this.selectedItems.delete(id);
+      }
+    });
+
+    if (this.selectedItems.size === 0) {
+      this.isSelectionMode = false;
+    }
+
+    this.updateSelectAllState();
+  }
+
   toggleItemSelection(item: ImpactOP): void {
     if (item.id) {
       if (this.selectedItems.has(item.id)) {
@@ -1066,6 +1093,10 @@ export class ImpactOPComponent implements OnInit, OnDestroy {
 
   getSelectedCount(): number {
     return this.selectedItems.size;
+  }
+
+  hasSelection(): boolean {
+    return this.selectedItems.size > 0;
   }
 
   isItemSelected(item: ImpactOP): boolean {

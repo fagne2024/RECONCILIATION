@@ -189,7 +189,9 @@
             <!-- En-tête moderne -->
             <div class="manual-service-selection-header">
                 <div class="header-badge">
-                    <span class="badge-text">Agences disponibles (TRXBO - Mode Manuel): {{ availableAgencies.length }}</span>
+                    <span class="badge-text">
+                        Agences : {{ availableAgencies.length }} — Sélection : {{ selectedAgencies.length }}
+                    </span>
                     <span class="status-info">
                         <i class="fas fa-info-circle"></i>
                         Étape 1/2 - Sélection des agences avant les services
@@ -202,7 +204,8 @@
                 <div class="agency-search-wrap">
                     <i class="fas fa-search agency-search-icon"></i>
                     <input type="text" class="agency-search-input" placeholder="Rechercher par code agence ou nombre de lignes..."
-                           [(ngModel)]="agencySearchFilter">
+                           [(ngModel)]="agencySearchFilter"
+                           (ngModelChange)="onAgencySearchFilterChange($event)">
                     <span class="agency-search-count" *ngIf="agencySearchFilter?.trim()">
                         {{ filteredAvailableAgencies.length }} / {{ availableAgencies.length }}
                     </span>
@@ -262,13 +265,92 @@
         </div>
     </div>
 
+    <!-- Sélection des agences — fichier Partenaire (si colonne Agence), commun aux modes manuel et automatique -->
+    <div class="manual-service-selection-overlay" *ngIf="showPartnerAgencySelection">
+        <div class="manual-service-selection-modal">
+            <div class="manual-service-selection-header">
+                <div class="header-badge">
+                    <span class="badge-text">
+                        Partenaire — Agences : {{ partnerAvailableAgencies.length }} — Sélection : {{ partnerSelectedAgencies.length }}
+                    </span>
+                    <span class="status-info">
+                        <i class="fas fa-info-circle"></i>
+                        Étape 1/2 — Filtrer par agence avant les services / types
+                    </span>
+                </div>
+            </div>
+
+            <div class="manual-service-selection-content">
+                <div class="agency-search-wrap">
+                    <i class="fas fa-search agency-search-icon"></i>
+                    <input type="text" class="agency-search-input" placeholder="Rechercher une agence ou le nombre de lignes..."
+                           [(ngModel)]="partnerAgencySearchFilter"
+                           (ngModelChange)="onPartnerAgencySearchFilterChange($event)">
+                    <span class="agency-search-count" *ngIf="partnerAgencySearchFilter?.trim()">
+                        {{ filteredPartnerAvailableAgencies.length }} / {{ partnerAvailableAgencies.length }}
+                    </span>
+                </div>
+                <div class="manual-service-controls">
+                    <button class="modern-btn select-all-btn" type="button" (click)="selectAllPartnerAgencies()">
+                        <i class="fas fa-check-double"></i>
+                        Tout sélectionner
+                    </button>
+                    <button class="modern-btn deselect-all-btn" type="button" (click)="deselectAllPartnerAgencies()">
+                        <i class="fas fa-check-double"></i>
+                        Tout désélectionner
+                    </button>
+                </div>
+
+                <div class="manual-service-grid">
+                    <div class="service-card" *ngFor="let agency of filteredPartnerAvailableAgencies">
+                        <div class="service-card-content">
+                            <div class="service-checkbox-modern">
+                                <input type="checkbox"
+                                       [id]="'partner-agency-' + agency"
+                                       [value]="agency"
+                                       [checked]="partnerSelectedAgencies.includes(agency)"
+                                       (change)="onPartnerAgencySelectionChange($event, agency)">
+                                <label [for]="'partner-agency-' + agency" class="checkbox-label">
+                                    <span class="checkmark"></span>
+                                </label>
+                            </div>
+                            <div class="service-info">
+                                <h4 class="service-name-modern">{{ agency }}</h4>
+                                <p class="service-count-modern">{{ getPartnerAgencyCount(agency) }} lignes</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="manual-service-selection-actions">
+                <button class="modern-btn cancel-btn" type="button" (click)="cancelPartnerAgencySelection()">
+                    <i class="fas fa-times"></i>
+                    Annuler
+                </button>
+                <button class="modern-btn" type="button" (click)="skipPartnerAgencySelection()">
+                    <i class="fas fa-forward"></i>
+                    Passer
+                </button>
+                <button class="modern-btn confirm-btn" type="button"
+                        [disabled]="partnerSelectedAgencies.length === 0"
+                        (click)="confirmPartnerAgencySelection()">
+                    <i class="fas fa-check"></i>
+                    Confirmer la sélection
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- Sélection des services pour TRXBO en mode manuel (Étape 2) -->
     <div class="manual-service-selection-overlay" *ngIf="showManualServiceSelection">
         <div class="manual-service-selection-modal">
             <!-- En-tête moderne -->
             <div class="manual-service-selection-header">
                 <div class="header-badge">
-                    <span class="badge-text">Services disponibles (TRXBO - Mode Manuel): {{ manualAvailableServices.length }}</span>
+                    <span class="badge-text">
+                        Agences : {{ selectedAgencies.length }} — Services : {{ manualAvailableServices.length }} — Sélection : {{ manualSelectedServices.length }}
+                    </span>
                     <span class="status-info" *ngIf="availableAgencies.length > 0">
                         <i class="fas fa-info-circle"></i>
                         Étape 2/3 - Services après filtrage par agence
@@ -285,7 +367,8 @@
                 <div class="agency-search-wrap">
                     <i class="fas fa-search agency-search-icon"></i>
                     <input type="text" class="agency-search-input" placeholder="Rechercher un service ou nombre de lignes..."
-                           [(ngModel)]="manualServiceSearchFilter">
+                           [(ngModel)]="manualServiceSearchFilter"
+                           (ngModelChange)="onManualServiceSearchFilterChange($event)">
                     <span class="agency-search-count" *ngIf="manualServiceSearchFilter?.trim()">
                         {{ filteredManualAvailableServices.length }} / {{ manualAvailableServices.length }}
                     </span>
@@ -609,7 +692,9 @@
                 <!-- En-tête moderne -->
                 <div class="service-selection-header">
                     <div class="header-badge">
-                        <span class="badge-text">Agences disponibles (TRXBO): {{ availableAgencies.length }}</span>
+                        <span class="badge-text">
+                            Agences : {{ availableAgencies.length }} — Sélection : {{ selectedAgencies.length }}
+                        </span>
                         <span class="status-info">
                             <i class="fas fa-info-circle"></i>
                             Étape 1/2 - Sélection des agences avant les services
@@ -622,7 +707,8 @@
                     <div class="agency-search-wrap">
                         <i class="fas fa-search agency-search-icon"></i>
                         <input type="text" class="agency-search-input" placeholder="Rechercher par code agence ou nombre de lignes..."
-                               [(ngModel)]="agencySearchFilter">
+                               [(ngModel)]="agencySearchFilter"
+                               (ngModelChange)="onAgencySearchFilterChange($event)">
                         <span class="agency-search-count" *ngIf="agencySearchFilter?.trim()">
                             {{ filteredAvailableAgencies.length }} / {{ availableAgencies.length }}
                         </span>
@@ -688,7 +774,9 @@
                 <!-- En-tête moderne -->
                 <div class="service-selection-header">
                     <div class="header-badge">
-                        <span class="badge-text">Services disponibles (TRXBO): {{ availableServices.length }}</span>
+                        <span class="badge-text">
+                            Agences : {{ selectedAgencies.length }} — Services : {{ availableServices.length }} — Sélection : {{ selectedServices.length }}
+                        </span>
                         <span class="status-info" *ngIf="availableAgencies.length > 0">
                             <i class="fas fa-info-circle"></i>
                             Étape 2/2 - Services après filtrage par agence
@@ -701,7 +789,8 @@
                     <div class="agency-search-wrap">
                         <i class="fas fa-search agency-search-icon"></i>
                         <input type="text" class="agency-search-input" placeholder="Rechercher un service ou nombre de lignes..."
-                               [(ngModel)]="serviceSearchFilter">
+                               [(ngModel)]="serviceSearchFilter"
+                               (ngModelChange)="onServiceSearchFilterChange($event)">
                         <span class="agency-search-count" *ngIf="serviceSearchFilter?.trim()">
                             {{ filteredAvailableServices.length }} / {{ availableServices.length }}
                         </span>
@@ -857,7 +946,8 @@
                 <div class="agency-search-wrap">
                     <i class="fas fa-search agency-search-icon"></i>
                     <input type="text" class="agency-search-input" placeholder="Rechercher un service/type ou nombre de lignes..."
-                           [(ngModel)]="partnerServiceSearchFilter">
+                           [(ngModel)]="partnerServiceSearchFilter"
+                           (ngModelChange)="onPartnerServiceSearchFilterChange($event)">
                     <span class="agency-search-count" *ngIf="partnerServiceSearchFilter?.trim()">
                         {{ filteredPartnerAvailableServices.length }} / {{ partnerAvailableServices.length }}
                     </span>

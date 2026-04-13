@@ -242,8 +242,21 @@
       <div class="selection-controls" *ngIf="isSelectionMode">
         <div class="selection-info">
           <span class="selected-count">{{ getSelectedCount() }} sélectionné(s)</span>
+          <span class="selection-hint">sur {{ filteredImpactOPs.length }} élément(s) filtré(s)</span>
         </div>
         <div class="selection-actions">
+          <button class="btn btn-outline-primary"
+                  (click)="selectAll()"
+                  [disabled]="filteredImpactOPs.length === 0">
+            <i class="fas fa-check-square"></i>
+            Tout sélectionner
+          </button>
+          <button class="btn btn-outline-secondary"
+                  (click)="clearSelection()"
+                  [disabled]="!hasSelection()">
+            <i class="fas fa-square"></i>
+            Tout désélectionner
+          </button>
           <button class="btn btn-danger"
                   (click)="deleteSelected()"
                   [disabled]="getSelectedCount() === 0 || isUpdatingMultipleStatuts">
@@ -269,7 +282,7 @@
                 [class.active]="isSelectionMode"
                 (click)="toggleSelectionMode()">
           <i class="fas fa-check-square"></i>
-          {{ isSelectionMode ? 'Mode sélection' : 'Sélection multiple' }}
+          {{ isSelectionMode ? 'Quitter la sélection multiple' : 'Activer la sélection multiple' }}
         </button>
       </div>
     </div>
