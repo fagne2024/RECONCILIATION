@@ -5,14 +5,17 @@ import { catchError } from 'rxjs/operators';
 import { Router } from '@angular/router';
 import { AppStateService } from '../services/app-state.service';
 import { UserLogService } from '../services/user-log.service';
+import { PopupService } from '../services/popup.service';
 
 @Injectable()
 export class AuthInterceptor implements HttpInterceptor {
+  private permissionPopupOpen = false;
 
   constructor(
     private appState: AppStateService,
     private router: Router,
-    private userLogService: UserLogService
+    private userLogService: UserLogService,
+    private popupService: PopupService
   ) {}
 
   intercept(req: HttpRequest<any>, next: HttpHandler): Observable<HttpEvent<any>> {
@@ -58,9 +61,36 @@ export class AuthInterceptor implements HttpInterceptor {
             });
           }
         }
+
+        if (error.status === 403 && !this.isAuthRequest(req.url)) {
+          this.showPermissionDeniedMessage(error);
+        }
+
         return throwError(() => error);
       })
     );
+  }
+
+  private isAuthRequest(url: string): boolean {
+    return url.includes('/api/auth/login') || url.includes('/api/auth/verify-2fa');
+  }
+
+  private showPermissionDeniedMessage(error: HttpErrorResponse): void {
+    if (this.permissionPopupOpen) {
+      return;
+    }
+
+    const message =
+      error.error?.message ||
+      error.error?.error ||
+      'Vous n\'avez pas la permission nécessaire pour effectuer cette action avec votre profil.';
+
+    this.permissionPopupOpen = true;
+    this.popupService
+      .showWarning(message, 'Permission refusée')
+      .finally(() => {
+        this.permissionPopupOpen = false;
+      });
   }
 }
 

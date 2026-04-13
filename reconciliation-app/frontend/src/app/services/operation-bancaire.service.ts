@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import { HttpClient, HttpParams } from '@angular/common/http';
+import { HttpClient, HttpHeaders, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { 
     OperationBancaire, 
@@ -16,9 +16,13 @@ export class OperationBancaireService {
 
     constructor(private http: HttpClient) {}
 
+    private buildContextHeaders(moduleContext?: string): HttpHeaders | undefined {
+        return moduleContext ? new HttpHeaders({ 'X-Permission-Module': moduleContext }) : undefined;
+    }
+
     // Récupérer toutes les opérations bancaires
-    getAllOperationsBancaires(): Observable<OperationBancaire[]> {
-        return this.http.get<OperationBancaire[]>(this.apiUrl);
+    getAllOperationsBancaires(moduleContext?: string): Observable<OperationBancaire[]> {
+        return this.http.get<OperationBancaire[]>(this.apiUrl, { headers: this.buildContextHeaders(moduleContext) });
     }
 
     // Récupérer une opération bancaire par ID

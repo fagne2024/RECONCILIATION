@@ -1,7 +1,6 @@
 package com.reconciliation.config;
 
-// Temporairement désactivé
-// import com.reconciliation.interceptor.PermissionInterceptor;
+import com.reconciliation.interceptor.PermissionInterceptor;
 import com.reconciliation.interceptor.UserLoggingInterceptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Configuration;
@@ -17,9 +16,8 @@ import java.util.List;
 @Configuration
 public class WebConfig implements WebMvcConfigurer {
 
-    // Temporairement désactivé
-    // @Autowired
-    // private PermissionInterceptor permissionInterceptor;
+    @Autowired
+    private PermissionInterceptor permissionInterceptor;
     
     @Autowired
     private UserLoggingInterceptor userLoggingInterceptor;
@@ -36,11 +34,8 @@ public class WebConfig implements WebMvcConfigurer {
                     "/api/log-utilisateur" // Ne pas logger les consultations de logs elles-mêmes
                 );
         
-        // TEMPORAIRE : Désactiver l'intercepteur de permissions pour tous les endpoints
-        // TODO: Réactiver la vérification des permissions en production
-        // registry.addInterceptor(permissionInterceptor)
-        //         .addPathPatterns("/api/**")
-        //         .excludePathPatterns("/api/**"); // Exclure tous les endpoints
+        registry.addInterceptor(permissionInterceptor)
+                .addPathPatterns("/api/**");
     }
 
     /**

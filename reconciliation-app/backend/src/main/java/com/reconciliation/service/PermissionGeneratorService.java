@@ -241,9 +241,20 @@ public class PermissionGeneratorService {
      * Extrait une action spécifique basée sur des patterns connus
      */
     private String extractSpecificAction(String lowerPath, String lowerMethodName, String defaultAction) {
-        // Dashboard : Consulter (aligné avec les permissions en base)
+        // Les endpoints de filtre doivent exposer explicitement la permission "filtrer",
+        // y compris lorsqu'ils alimentent le Dashboard.
+        if (lowerPath.contains("filter") || lowerMethodName.contains("filter")) {
+            if (lowerPath.contains("operations")) {
+                return "filtrer_operations";
+            } else if (lowerPath.contains("operations-bancaires")) {
+                return "filtrer_operations_bancaires";
+            }
+            return "filtrer";
+        }
+
+        // Dashboard : lecture simple des métriques/cartes
         if (lowerPath.contains("dashboard") || lowerMethodName.contains("dashboard")) {
-            return "Consulter";
+            return "consulter";
         }
         // Patterns d'upload/import
         if (lowerPath.contains("upload") || lowerMethodName.contains("upload")) {
@@ -341,16 +352,6 @@ public class PermissionGeneratorService {
         
         if (lowerPath.contains("save-summary") || lowerMethodName.contains("summary")) {
             return "sauvegarder_resume_reconciliation";
-        }
-        
-        // Patterns de filtrage/recherche
-        if (lowerPath.contains("filter") || lowerMethodName.contains("filter")) {
-            if (lowerPath.contains("operations")) {
-                return "filtrer_operations";
-            } else if (lowerPath.contains("operations-bancaires")) {
-                return "filtrer_operations_bancaires";
-            }
-            return "filtrer";
         }
         
         // Patterns de statistiques
@@ -466,6 +467,11 @@ public class PermissionGeneratorService {
         
         // Chemins Dashboard (avant /api/statistics pour priorité) :
         mapping.put("/api/statistics/dashboard-metrics", "Dashboard");
+        mapping.put("/api/statistics/filter-options", "Dashboard");
+        mapping.put("/api/statistics/detailed-metrics", "Dashboard");
+        mapping.put("/api/statistics/transaction-created-stats", "Dashboard");
+        mapping.put("/api/result8rec/filters", "Dashboard");
+        mapping.put("/api/reconciliation-report/manual-trx/range", "Dashboard");
         mapping.put("/api/service-references/dashboard", "Dashboard");
         mapping.put("/api/dashboard", "Dashboard");
         mapping.put("/api/reconciliation-dashboard", "Dashboard");

@@ -52,6 +52,7 @@ import { EcartBoSummaryComponent } from './components/ecart-bo-summary/ecart-bo-
 import { RedevanceLoterieComponent } from './components/redevance-loterie/redevance-loterie.component';
 import { AuthGuard } from './guards/auth.guard';
 import { AdminGuard } from './guards/admin.guard';
+import { ModuleAccessGuard } from './guards/module-access.guard';
 
 const routes: Routes = [
   // Route de login accessible sans authentification
@@ -70,7 +71,12 @@ const routes: Routes = [
   { path: 'matches', component: MatchesTableComponent, canActivate: [AuthGuard] },
   { path: 'ecart-bo', component: EcartBoTableComponent, canActivate: [AuthGuard] },
   { path: 'ecart-partner', component: EcartPartnerTableComponent, canActivate: [AuthGuard] },
-  { path: 'dashboard', component: DashboardComponent, canActivate: [AuthGuard] },
+  {
+    path: 'dashboard',
+    component: DashboardComponent,
+    canActivate: [AuthGuard, ModuleAccessGuard],
+    data: { module: 'Dashboard', permissions: ['consulter', 'filtrer'] }
+  },
   { path: 'comptes', component: ComptesComponent, canActivate: [AuthGuard] },
   { path: 'redevance-loterie', component: RedevanceLoterieComponent, canActivate: [AuthGuard] },
   { path: 'operations', component: OperationsComponent, canActivate: [AuthGuard] },
@@ -88,11 +94,21 @@ const routes: Routes = [
   { path: 'service-balance', component: ServiceBalanceComponent, canActivate: [AuthGuard] },
   { path: 'service-references', component: ServiceReferencesComponent, canActivate: [AuthGuard] },
   { path: 'auto-processing-models', component: AutoProcessingModelsComponent, canActivate: [AuthGuard] },
-  { path: 'banque', component: BanqueComponent, canActivate: [AuthGuard] },
+  {
+    path: 'banque',
+    component: BanqueComponent,
+    canActivate: [AuthGuard, ModuleAccessGuard],
+    data: { module: 'BANQUE', permissions: ['consulter'] }
+  },
   { path: 'comptabilite', component: ComptabiliteComponent, canActivate: [AuthGuard] },
   { path: 'reconciliation-report', component: ReconciliationReportComponent, canActivate: [AuthGuard] },
   { path: 'rapport-reconciliation-bo-partenaire', component: RapportReconciliationBoPartenaireComponent, canActivate: [AuthGuard] },
-  { path: 'report-dashboard', component: ReportDashboardComponent, canActivate: [AuthGuard] },
+  {
+    path: 'report-dashboard',
+    component: ReportDashboardComponent,
+    canActivate: [AuthGuard, ModuleAccessGuard],
+    data: { module: 'Report Dashboard', permissions: ['consulter'] }
+  },
   { path: 'reconciliation-dashboard', component: DashboardReconciliationComponent, canActivate: [AuthGuard] },
   { path: 'reconciliation-global-preview', component: ReconciliationGlobalPreviewComponent, canActivate: [AuthGuard] },
   { path: 'banque-dashboard', component: BanqueDashboardComponent, canActivate: [AuthGuard] },

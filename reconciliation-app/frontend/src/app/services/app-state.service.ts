@@ -375,6 +375,34 @@ export class AppStateService {
         return this.normalizedModuleSet.has(normalized);
     }
 
+    hasModulePermission(module: string, permission: string): boolean {
+        const normalizedModule = this.normalizeModuleName(module);
+        const normalizedPermission = this.normalizePermissionName(permission);
+
+        if (!normalizedModule || !normalizedPermission) {
+            return false;
+        }
+
+        const permissions = this.userRights?.permissions ?? {};
+        for (const [moduleName, modulePermissions] of Object.entries(permissions)) {
+            if (this.normalizeModuleName(moduleName) !== normalizedModule) {
+                continue;
+            }
+
+            if ((modulePermissions || []).some(candidate =>
+                this.normalizePermissionName(candidate) === normalizedPermission
+            )) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    hasAllModulePermissions(module: string, permissions: string[]): boolean {
+        return (permissions || []).every(permission => this.hasModulePermission(module, permission));
+    }
+
     private rebuildNormalizedModuleSet(modules?: string[]) {
         const source = modules ?? this.userRights?.modules ?? [];
         this.normalizedModuleSet = new Set(
@@ -388,6 +416,18 @@ export class AppStateService {
         if (!name) {
             return null;
         }
+        return name
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .trim()
+            .toLowerCase();
+    }
+
+    private normalizePermissionName(name?: string | null): string | null {
+        if (!name) {
+            return null;
+        }
+
         return name
             .normalize('NFD')
             .replace(/[\u0300-\u036f]/g, '')

@@ -487,11 +487,36 @@ export class ProfilComponent implements OnInit {
       this.profilService.createModule({ nom: this.selectedMenuName }).subscribe(module => {
         this.selectedMenuName = '';
         this.loadModules();
-        // Associer toutes les permissions existantes à ce profil pour ce module
-        this.permissions.forEach(permission => {
-          this.withRetry(this.profilService.addPermissionToProfil(this.selectedProfil!.id!, module.id!, permission.id!)).subscribe(pp => {
-            this.profilPermissions.push(pp);
-          });
+
+        if (!module.id) {
+          return;
+        }
+
+        // Associer uniquement les permissions réellement disponibles pour ce module
+        this.withRetry(this.profilService.getPermissionsForModule(module.id)).subscribe({
+          next: (permissionsForModule) => {
+            const permissionIds = permissionsForModule
+              .filter(permission => permission.id)
+              .map(permission => permission.id!);
+
+            if (permissionIds.length === 0) {
+              return;
+            }
+
+            this.withRetry(
+              this.profilService.addMultiplePermissionsToProfil(this.selectedProfil!.id!, module.id!, permissionIds)
+            ).subscribe({
+              next: (profilPermissions) => {
+                this.profilPermissions.push(...profilPermissions);
+              },
+              error: (error) => {
+                console.error(`❌ Erreur lors de l'association des permissions du module ${module.nom}:`, error);
+              }
+            });
+          },
+          error: (error) => {
+            console.error(`❌ Erreur lors du chargement des permissions du module ${module.nom}:`, error);
+          }
         });
       });
     }
@@ -700,8 +725,8 @@ export class ProfilComponent implements OnInit {
         },
         error: (error) => {
           console.error('Erreur lors du chargement des permissions:', error);
-          // En cas d'erreur, utiliser toutes les permissions disponibles
-          this.availableModulePermissions = this.permissions;
+          // En cas d'erreur, ne jamais afficher les permissions globales d'un autre module
+          this.availableModulePermissions = [];
           this.loadingModulePermissions = false;
         }
       });
@@ -719,7 +744,7 @@ export class ProfilComponent implements OnInit {
 
   getModulePermissionsCount(module: Module): number {
     if (!module || !module.id) return 0;
-    return this.profilPermissions.filter(pp => pp.module && pp.module.id === module.id).length;
+    return this.getModulePermissions(module).length;
   }
 
   hasAllPermissions(module: Module): boolean {
@@ -909,28 +934,34 @@ export class ProfilComponent implements OnInit {
   // Nouvelles méthodes pour l'interface améliorée
   associateModuleDirectly(module: Module) {
     if (!this.selectedProfil) return;
-    
-    // Utiliser la méthode batch pour éviter les erreurs 429 (Too Many Requests)
-    const permissionIds = this.permissions
-      .filter(permission => permission.id)
-      .map(permission => permission.id!);
 
-    if (permissionIds.length > 0) {
-      this.withRetry(this.profilService.addMultiplePermissionsToProfil(this.selectedProfil!.id!, module.id!, permissionIds)).subscribe({
-        next: (profilPermissions) => {
-          this.profilPermissions.push(...profilPermissions);
-          // Recharger les données
-          this.loadProfils();
-          this.loadModules();
-        },
-        error: (error) => {
-          console.error('❌ Erreur lors de l\'association du module:', error);
-          // Recharger les données même en cas d'erreur
-          this.loadProfils();
-          this.loadModules();
+    this.withRetry(this.profilService.getPermissionsForModule(module.id!)).subscribe({
+      next: (permissionsForModule) => {
+        const permissionIds = permissionsForModule
+          .filter(permission => permission.id)
+          .map(permission => permission.id!);
+
+        if (permissionIds.length === 0) {
+          return;
         }
-      });
-    }
+
+        this.withRetry(this.profilService.addMultiplePermissionsToProfil(this.selectedProfil!.id!, module.id!, permissionIds)).subscribe({
+          next: (profilPermissions) => {
+            this.profilPermissions.push(...profilPermissions);
+            this.loadProfils();
+            this.loadModules();
+          },
+          error: (error) => {
+            console.error('❌ Erreur lors de l\'association du module:', error);
+            this.loadProfils();
+            this.loadModules();
+          }
+        });
+      },
+      error: (error) => {
+        console.error(`❌ Erreur lors du chargement des permissions du module ${module.nom}:`, error);
+      }
+    });
   }
 
   viewModulePermissions(module: Module) {
@@ -941,8 +972,12 @@ export class ProfilComponent implements OnInit {
 
   getModulePermissions(module: Module): Permission[] {
     if (!module || !module.id) return [];
-    const modulePermissions = this.profilPermissions.filter(pp => pp.module && pp.module.id === module.id && pp.permission);
-    return modulePermissions.map(pp => pp.permission).filter(p => p !== undefined) as Permission[];
+    const cachedPermissions = this.modulePermissionsCache[module.id];
+    if (cachedPermissions) {
+      return cachedPermissions.filter(permission => permission?.nom !== 'module_associé');
+    }
+    this.loadModulePermissionsForDisplay(module);
+    return [];
   }
 
   /**

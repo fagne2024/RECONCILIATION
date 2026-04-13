@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import { HttpClient, HttpParams } from '@angular/common/http';
+import { HttpClient, HttpHeaders, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { Compte, CompteCreateRequest, CompteUpdateRequest, CompteFilter, CompteSoldeCloture } from '../models/compte.model';
 
@@ -10,6 +10,10 @@ export class CompteService {
     private apiUrl = '/api/comptes';
 
     constructor(private http: HttpClient) {}
+
+    private buildContextHeaders(moduleContext?: string): HttpHeaders | undefined {
+        return moduleContext ? new HttpHeaders({ 'X-Permission-Module': moduleContext }) : undefined;
+    }
 
     // Récupérer tous les comptes
     getAllComptes(): Observable<Compte[]> {
@@ -82,7 +86,7 @@ export class CompteService {
     }
 
     // Filtrer les comptes avec des paramètres
-    filterComptes(filter: CompteFilter): Observable<Compte[]> {
+    filterComptes(filter: CompteFilter, moduleContext?: string): Observable<Compte[]> {
         let params = new HttpParams();
 
         // pays: string | string[]
@@ -136,7 +140,10 @@ export class CompteService {
             }
         }
 
-        return this.http.get<Compte[]>(`${this.apiUrl}/filter`, { params });
+        return this.http.get<Compte[]>(`${this.apiUrl}/filter`, {
+            params,
+            headers: this.buildContextHeaders(moduleContext)
+        });
     }
 
     // Récupérer les statistiques des comptes

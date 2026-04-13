@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import { HttpClient, HttpParams } from '@angular/common/http';
+import { HttpClient, HttpHeaders, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 
 /** Ligne saisie manuelle relevé (API /manual-trx/range). */
@@ -77,16 +77,28 @@ export interface FilterOptions {
 })
 export class DashboardService {
     private apiUrl = '/api/statistics';
+    private readonly dashboardModule = 'Dashboard';
 
     constructor(private http: HttpClient) {}
 
+    private buildDashboardHeaders(action: 'consulter' | 'filtrer' = 'consulter'): HttpHeaders {
+        return new HttpHeaders({
+            'X-Permission-Module': this.dashboardModule,
+            'X-Permission-Action': action
+        });
+    }
+
     getDashboardMetrics(period?: string): Observable<DashboardMetrics> {
         const params = period ? `?period=${encodeURIComponent(period)}` : '';
-        return this.http.get<DashboardMetrics>(`${this.apiUrl}/dashboard-metrics${params}`);
+        return this.http.get<DashboardMetrics>(`${this.apiUrl}/dashboard-metrics${params}`, {
+            headers: this.buildDashboardHeaders('consulter')
+        });
     }
 
     getFilterOptions(): Observable<FilterOptions> {
-        return this.http.get<FilterOptions>(`${this.apiUrl}/filter-options`);
+        return this.http.get<FilterOptions>(`${this.apiUrl}/filter-options`, {
+            headers: this.buildDashboardHeaders('filtrer')
+        });
     }
 
     getDetailedMetrics(
@@ -117,7 +129,9 @@ export class DashboardService {
             params = '?' + queryParams.join('&');
         }
         
-        return this.http.get<DetailedMetrics>(`${this.apiUrl}/detailed-metrics${params}`);
+        return this.http.get<DetailedMetrics>(`${this.apiUrl}/detailed-metrics${params}`, {
+            headers: this.buildDashboardHeaders('filtrer')
+        });
     }
 
     getTransactionCreatedStats(
@@ -148,7 +162,9 @@ export class DashboardService {
             params = '?' + queryParams.join('&');
         }
         
-        return this.http.get<TransactionCreatedStats>(`${this.apiUrl}/transaction-created-stats${params}`);
+        return this.http.get<TransactionCreatedStats>(`${this.apiUrl}/transaction-created-stats${params}`, {
+            headers: this.buildDashboardHeaders('filtrer')
+        });
     }
 
     /**
@@ -166,7 +182,9 @@ export class DashboardService {
             services: string[];
             countryServices: { [country: string]: string[] };
             countryEnvServices?: { [country: string]: { [envKey: string]: string[] } };
-        }>(`/api/result8rec/filters`);
+        }>(`/api/result8rec/filters`, {
+            headers: this.buildDashboardHeaders('filtrer')
+        });
     }
 
     /**
@@ -190,6 +208,9 @@ export class DashboardService {
         if (env && env !== 'ALL') {
             p = p.set('env', env);
         }
-        return this.http.get<ReleveManualRangeRow[]>(`/api/reconciliation-report/manual-trx/range`, { params: p });
+        return this.http.get<ReleveManualRangeRow[]>(`/api/reconciliation-report/manual-trx/range`, {
+            params: p,
+            headers: this.buildDashboardHeaders('filtrer')
+        });
     }
 } 

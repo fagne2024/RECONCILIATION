@@ -1,6 +1,6 @@
 import { Component, OnInit, OnDestroy } from '@angular/core';
 import { Router } from '@angular/router';
-import { HttpClient, HttpErrorResponse } from '@angular/common/http';
+import { HttpClient, HttpErrorResponse, HttpHeaders } from '@angular/common/http';
 import { Subscription } from 'rxjs';
 // Interface pour les données de rapport
 interface ReconciliationReportData {
@@ -1125,6 +1125,7 @@ import { ModernExcelExportService, ExcelColumn } from '../../services/modern-exc
     `]
 })
 export class ReportDashboardComponent implements OnInit, OnDestroy {
+    private readonly reportDashboardHeaders = new HttpHeaders({ 'X-Permission-Module': 'Report Dashboard' });
     // Données
     allData: ReconciliationReportData[] = [];
     filteredData: ReconciliationReportData[] = [];
@@ -1257,7 +1258,7 @@ export class ReportDashboardComponent implements OnInit, OnDestroy {
         this.applyFilters();
 
         // Essayer de charger les vraies données en arrière-plan
-        this.http.get<any[]>('/api/result8rec')
+        this.http.get<any[]>('/api/result8rec', { headers: this.reportDashboardHeaders })
         .subscribe({
             next: (rows: any[]) => {
                 if (Array.isArray(rows) && rows.length > 0) {

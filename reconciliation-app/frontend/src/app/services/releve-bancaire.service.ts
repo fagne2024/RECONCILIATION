@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import { HttpClient, HttpParams } from '@angular/common/http';
+import { HttpClient, HttpHeaders, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { ReleveBancaireRow, ReleveUploadResponse, ReleveListFilter } from '../models/releve-bancaire.model';
 
@@ -9,17 +9,21 @@ export class ReleveBancaireService {
 
   constructor(private http: HttpClient) {}
 
+  private buildContextHeaders(moduleContext?: string): HttpHeaders | undefined {
+    return moduleContext ? new HttpHeaders({ 'X-Permission-Module': moduleContext }) : undefined;
+  }
+
   upload(file: File): Observable<ReleveUploadResponse> {
     const form = new FormData();
     form.append('file', file);
     return this.http.post<ReleveUploadResponse>(`${this.apiUrl}/upload`, form);
   }
 
-  list(filter?: ReleveListFilter | string): Observable<any> {
+  list(filter?: ReleveListFilter | string, moduleContext?: string): Observable<any> {
     // Compatibilité ascendante: si string fourni, considéré comme batchId
     if (typeof filter === 'string') {
       const url = filter ? `${this.apiUrl}/list?batchId=${encodeURIComponent(filter)}` : `${this.apiUrl}/list`;
-      return this.http.get<any>(url);
+      return this.http.get<any>(url, { headers: this.buildContextHeaders(moduleContext) });
     }
 
     let params = new HttpParams();
@@ -43,7 +47,7 @@ export class ReleveBancaireService {
       if (filter.montantMax !== undefined && filter.montantMax !== null) params = params.set('montantMax', String(filter.montantMax));
     }
 
-    return this.http.get<any>(`${this.apiUrl}/list`, { params });
+    return this.http.get<any>(`${this.apiUrl}/list`, { params, headers: this.buildContextHeaders(moduleContext) });
   }
 
   update(id: number, payload: Partial<ReleveBancaireRow>): Observable<ReleveBancaireRow> {

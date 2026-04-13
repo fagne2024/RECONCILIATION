@@ -5,7 +5,6 @@ import { ProfilService } from '../../services/profil.service';
 import { Module } from '../../models/module.model';
 import { Profil } from '../../models/profil.model';
 import { ProfilPermission } from '../../models/profil-permission.model';
-import { Permission } from '../../models/permission.model';
 
 @Component({
   selector: 'app-modules',
@@ -17,7 +16,6 @@ export class ModulesComponent implements OnInit {
   filteredModules: Module[] = [];
   pagedModules: Module[] = [];
   profils: Profil[] = [];
-  permissions: Permission[] = [];
   profilPermissions: ProfilPermission[] = [];
   showAddForm = false;
   isAdding = false;
@@ -80,7 +78,6 @@ export class ModulesComponent implements OnInit {
   ngOnInit(): void {
     this.loadModules();
     this.loadProfils();
-    this.loadPermissions();
   }
 
   loadModules(): void {
@@ -181,17 +178,6 @@ export class ModulesComponent implements OnInit {
       },
       error: (error) => {
         console.error('❌ Erreur lors du chargement des profils:', error);
-      }
-    });
-  }
-
-  loadPermissions(): void {
-    this.profilService.getPermissions().subscribe({
-      next: (permissions) => {
-        this.permissions = permissions;
-      },
-      error: (error) => {
-        console.error('❌ Erreur lors du chargement des permissions:', error);
       }
     });
   }
@@ -344,10 +330,10 @@ export class ModulesComponent implements OnInit {
     const checked = (event.target as HTMLInputElement).checked;
     
     if (checked) {
-      // Associer le module au profil en ajoutant toutes les permissions
+      // Associer le module au profil en ajoutant seulement ses permissions
       this.associateModuleToProfil(this.selectedModule, profil);
     } else {
-      // Désassocier le module du profil en supprimant toutes les permissions
+      // Désassocier le module du profil en supprimant seulement ses permissions
       this.disassociateModuleFromProfil(this.selectedModule, profil);
     }
   }
@@ -356,26 +342,38 @@ export class ModulesComponent implements OnInit {
     if (!module.id || !profil.id) return;
     
     this.isSavingProfils = true;
-    
-    if (this.permissions.length === 0) {
-      console.log(`⚠️ Aucune permission disponible pour le module ${module.nom}`);
-      this.isSavingProfils = false;
-      return;
-    }
-    
-    // Utiliser la méthode batch pour éviter les erreurs 429 (Too Many Requests)
-    const permissionIds = this.permissions
-      .filter(permission => permission.id)
-      .map(permission => permission.id!);
 
-    this.profilService.addMultiplePermissionsToProfil(profil.id!, module.id!, permissionIds).subscribe({
-      next: (profilPermissions) => {
-        this.profilPermissions.push(...profilPermissions);
-        console.log(`✅ Module ${module.nom} associé au profil ${profil.nom} (${profilPermissions.length} permission(s))`);
-        this.isSavingProfils = false;
+    this.profilService.getPermissionsForModule(module.id).subscribe({
+      next: (modulePermissions) => {
+        const permissionIds = modulePermissions
+          .filter(permission => permission.id)
+          .map(permission => permission.id!);
+
+        if (permissionIds.length === 0) {
+          console.log(`⚠️ Aucune permission disponible pour le module ${module.nom}`);
+          this.isSavingProfils = false;
+          return;
+        }
+
+        // Associer uniquement les permissions réellement disponibles sur ce module
+        this.profilService.addMultiplePermissionsToProfil(profil.id!, module.id!, permissionIds).subscribe({
+          next: (profilPermissions) => {
+            profilPermissions.forEach(pp => {
+              if (!this.profilPermissions.some(existing => existing.id === pp.id)) {
+                this.profilPermissions.push(pp);
+              }
+            });
+            console.log(`✅ Module ${module.nom} associé au profil ${profil.nom} (${profilPermissions.length} permission(s))`);
+            this.isSavingProfils = false;
+          },
+          error: (error) => {
+            console.error(`❌ Erreur lors de l'association:`, error);
+            this.isSavingProfils = false;
+          }
+        });
       },
       error: (error) => {
-        console.error(`❌ Erreur lors de l'association:`, error);
+        console.error(`❌ Erreur lors du chargement des permissions du module ${module.nom}:`, error);
         this.isSavingProfils = false;
       }
     });

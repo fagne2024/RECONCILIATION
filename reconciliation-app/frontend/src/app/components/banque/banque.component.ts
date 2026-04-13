@@ -498,7 +498,7 @@ export class BanqueComponent implements OnInit {
 
   private loadOkKeysList() {
     this.okListLoading = true;
-    this.operationApi.getOkKeys().subscribe({
+    this.operationApi.getOkKeys('BANQUE').subscribe({
       next: (keys) => {
         this.okKeysList = Array.isArray(keys) ? keys.slice().sort() : [];
         this.okListLoading = false;
@@ -925,7 +925,7 @@ export class BanqueComponent implements OnInit {
     this.loadReconOkKeys();
     // Charger aussi les clés OK depuis le backend (si disponibles)
     try {
-      this.operationApi.getOkKeys().subscribe({
+      this.operationApi.getOkKeys('BANQUE').subscribe({
         next: (keys) => {
           if (Array.isArray(keys)) {
             keys.forEach(k => this.reconOkKeySet.add(k));
@@ -936,7 +936,7 @@ export class BanqueComponent implements OnInit {
         error: (err) => console.warn('[RECON] OK keys load failed:', err)
       });
       // Charger les statuts recon persistés en base et les appliquer
-      this.operationApi.listReconStatus().subscribe({
+      this.operationApi.listReconStatus('BANQUE').subscribe({
         next: (map) => {
           console.log('[RECON] Status map loaded:', map);
           if (map && typeof map === 'object') {
@@ -1024,7 +1024,7 @@ export class BanqueComponent implements OnInit {
   loadComptesBanque() {
     this.loadingComptesBanque = true;
     this.comptesBanqueError = '';
-    this.compteService.filterComptes({ categorie: ['Banque'] }).subscribe({
+    this.compteService.filterComptes({ categorie: ['Banque'] }, 'BANQUE').subscribe({
       next: (comptes) => {
         this.comptesBanque = (comptes || []).sort((a, b) => (a.codeProprietaire || '').localeCompare(b.codeProprietaire || ''));
         // Construire la table de correspondance compte -> pays
@@ -1062,7 +1062,7 @@ export class BanqueComponent implements OnInit {
 
   loadDashboardStats() {
     // Comptes Banque uniquement
-    this.compteService.filterComptes({ categorie: 'Banque' }).subscribe({
+    this.compteService.filterComptes({ categorie: 'Banque' }, 'BANQUE').subscribe({
       next: (comptes) => {
         const list = comptes || [];
         this.totalComptes = list.length;
@@ -1071,7 +1071,7 @@ export class BanqueComponent implements OnInit {
     });
 
     // Opérations bancaires uniquement
-    this.operationBancaireService.getAllOperationsBancaires().subscribe({
+    this.operationBancaireService.getAllOperationsBancaires('BANQUE').subscribe({
       next: (ops) => {
         const list = ops || [];
         this.totalOperations = list.length;
@@ -1803,7 +1803,7 @@ export class BanqueComponent implements OnInit {
 
   private refreshRelevesFromApiWithFilters() {
     const filter = this.buildReleveFilterPayload();
-    this.releveService.list(filter).subscribe({
+    this.releveService.list(filter, 'BANQUE').subscribe({
       next: (rows) => {
         const all = Array.isArray(rows) ? rows : [];
         this.releveAllRows = all;
@@ -2129,7 +2129,7 @@ export class BanqueComponent implements OnInit {
     // Charger depuis l’API en appliquant éventuellement le batchId sélectionné
     const filter: any = {};
     if (this.releveSelectedBatchId && this.releveSelectedBatchId !== 'ALL') filter.batchId = this.releveSelectedBatchId;
-    this.releveService.list(filter).subscribe({
+    this.releveService.list(filter, 'BANQUE').subscribe({
       next: (all) => {
         const rows = Array.isArray(all) ? all : [];
         if (!rows.length) { this.releveRows = []; this.releveAllRows = []; this.totalReleveLignes = 0; this.releveBatchId = null; this.releveBatchOptions = []; this.releveSelectedBatchId = 'ALL'; return; }
@@ -2339,7 +2339,7 @@ export class BanqueComponent implements OnInit {
   // Chargement des données
   loadOperations() {
     // Charger uniquement les opérations bancaires
-    this.operationBancaireService.getAllOperationsBancaires().subscribe({
+    this.operationBancaireService.getAllOperationsBancaires('BANQUE').subscribe({
       next: (operationsBancaires) => {
         // Convertir les dates string en objets Date
         this.operations = operationsBancaires.map(op => ({

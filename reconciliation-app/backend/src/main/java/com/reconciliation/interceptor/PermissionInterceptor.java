@@ -27,50 +27,14 @@ public class PermissionInterceptor implements HandlerInterceptor {
 
     // Chemins qui ne nécessitent pas de vérification de permissions
     private static final String[] EXCLUDED_PATHS = {
-        "/api/profils/permissions/generate",
-        "/api/profils/diagnostic",
         "/api/auth/login",
+        "/api/auth/verify-2fa",
         "/api/auth/logout",
         "/api/users/check-admin",
         "/api/users/forgot-password",
         "/api/users/me",
         "/api/users/me/password",
-        "/api/reconciliation/reconcile", // Réconciliation automatique - pas de vérification de permissions
-        "/api/auto-processing/models", // Lecture des modèles - public
-        "/api/file-watcher/available-files", // Lecture des fichiers - public
-        "/api/comptes/pays/list", // Liste des pays - public
-        "/api/comptes/code-proprietaire/list", // Liste des codes propriétaires - public
-        "/api/agency-summary/all", // Résumé des agences - public
-        "/api/comptes", // Liste des comptes (GET) - public pour chargement initial
-        "/api/comptes/filter", // Filtrage des comptes (GET) - public pour chargement initial
-        "/api/operations/date-range", // Opérations par période (GET) - public pour chargement initial
-        "/api/operations-bancaires", // Opérations bancaires (GET) - public pour chargement initial
-        "/api/reconciliation/status", // Statut de réconciliation (GET) - public pour chargement initial
-        "/api/reconciliation/ok-keys", // Clés OK de réconciliation (GET) - public pour chargement initial
-        "/api/releve-bancaire/list", // Liste des relevés bancaires (GET) - public pour chargement initial
-        "/api/rankings/agencies/transactions", // Classement agences (GET) - public pour chargement initial
-        "/api/rankings/countries", // Liste des pays (GET) - public pour chargement initial
-        "/api/rankings/services/transactions", // Classement services (GET) - public pour chargement initial
-        "/api/statistics/transaction-created-stats", // Statistiques transactions créées (GET) - public pour chargement initial
-        "/api/statistics/detailed-metrics", // Métriques détaillées (GET) - public pour chargement initial
-        "/api/frais-transaction", // Frais de transaction (GET) - public pour chargement initial
-        "/api/frais-transaction/services", // Services frais transaction (GET) - public pour chargement initial
-        "/api/frais-transaction/agences", // Agences frais transaction (GET) - public pour chargement initial
-        "/api/ecart-solde", // Écarts de solde (GET) - public pour chargement initial
-        "/api/ecart-solde/agences", // Agences écarts de solde (GET) - public pour chargement initial
-        "/api/ecart-solde/services", // Services écarts de solde (GET) - public pour chargement initial
-        "/api/ecart-solde/pays", // Pays écarts de solde (GET) - public pour chargement initial
-        "/api/ecart-solde/numero-trans-gu", // Numéros Trans GU écarts de solde (GET) - public pour chargement initial
-        "/api/impact-op", // Impacts OP (GET) - public pour chargement initial
-        "/api/impact-op/filter-options", // Options de filtrage impacts OP (GET) - public pour chargement initial
-        "/api/impact-op/stats", // Statistiques impacts OP (GET) - public pour chargement initial
-        "/api/users", // Liste des utilisateurs (GET) - public pour chargement initial
-        "/api/profils", // Liste des profils (GET) - public pour chargement initial
-        "/api/profils/modules", // Modules des profils (GET) - public pour chargement initial
-        "/api/profils/permissions", // Permissions des profils (GET) - public pour chargement initial
-        "/api/profils/permissions/by-module", // Permissions par module (GET) - public pour chargement initial
-        "/api/pays", // Liste des pays (GET) - public pour chargement initial
-        "/api/log-utilisateur", // Logs utilisateur (GET) - public pour chargement initial
+        "/api/log-utilisateur/log-activity",
         "/error"
     };
 
@@ -78,13 +42,10 @@ public class PermissionInterceptor implements HandlerInterceptor {
     public boolean preHandle(@org.springframework.lang.NonNull HttpServletRequest request, 
                              @org.springframework.lang.NonNull HttpServletResponse response, 
                              @org.springframework.lang.NonNull Object handler) throws Exception {
-        // TEMPORAIRE : Autoriser toutes les requêtes sans vérification de permissions
-        // TODO: Réactiver la vérification des permissions en production
-        return true;
-        
-        /* Code désactivé temporairement
         String path = request.getRequestURI();
         String method = request.getMethod();
+        String moduleOverride = request.getHeader("X-Permission-Module");
+        String permissionOverride = request.getHeader("X-Permission-Action");
 
         // Ignorer les chemins exclus
         for (String excludedPath : EXCLUDED_PATHS) {
@@ -132,43 +93,33 @@ public class PermissionInterceptor implements HandlerInterceptor {
         // Vérifier les permissions uniquement pour les chemins API
         if (path.startsWith("/api/")) {
             try {
-                boolean hasPermission = permissionCheckService.hasPermissionForApiPath(username, path, method);
+                boolean hasPermission = permissionCheckService.hasPermissionForApiPath(username, path, method, moduleOverride, permissionOverride);
                 System.out.println("🔍 PermissionInterceptor - hasPermission: " + hasPermission + " pour " + username + " sur " + path);
                 
                 if (!hasPermission) {
                     // Log pour débogage
                     System.out.println("🔒 Permission refusée pour " + username + " sur " + method + " " + path);
                     
-                    // Pour les requêtes GET (lecture), être plus permissif si l'utilisateur n'a pas de permissions configurées
-                    // Cela permet d'éviter de bloquer complètement l'application si les permissions ne sont pas encore configurées
-                    if ("GET".equals(method)) {
-                        // Vérifier si l'utilisateur a au moins une permission configurée
-                        // Si non, autoriser les lectures (mode développement/permissif)
-                        System.out.println("⚠️ Mode permissif activé pour GET - Autorisation temporaire");
-                        return true;
-                    }
-                    
-                    // Pour les autres méthodes (POST, PUT, DELETE), bloquer strictement
                     response.setStatus(HttpStatus.FORBIDDEN.value());
                     response.setContentType("application/json");
                     response.setCharacterEncoding("UTF-8");
                     
-                    // Déterminer le nom de l'action basé sur la méthode HTTP
-                    String actionName = switch (method) {
-                        case "GET" -> "consulter";
-                        case "POST" -> "créer";
-                        case "PUT", "PATCH" -> "modifier";
-                        case "DELETE" -> "supprimer";
-                        default -> "effectuer cette action";
-                    };
-                    
-                    // Déterminer le nom du module à partir du chemin
-                    String moduleName = extractModuleNameFromPath(path);
+                    String moduleName = permissionCheckService.resolveModuleForApiPath(path, method, moduleOverride);
+                    String actionName = permissionCheckService.resolvePermissionForApiPath(path, method, moduleOverride, permissionOverride);
+                    if (actionName == null || actionName.isBlank()) {
+                        actionName = switch (method) {
+                            case "GET" -> "consulter";
+                            case "POST" -> "créer";
+                            case "PUT", "PATCH" -> "modifier";
+                            case "DELETE" -> "supprimer";
+                            default -> "effectuer cette action";
+                        };
+                    }
                     
                     Map<String, Object> errorResponse = new HashMap<>();
                     errorResponse.put("error", "Permission refusée");
                     if (moduleName != null) {
-                        errorResponse.put("message", "Vous n'avez pas la permission pour " + actionName + " dans le module " + moduleName + ".");
+                        errorResponse.put("message", "Vous n'avez pas la permission \"" + actionName + "\" dans le module \"" + moduleName + "\".");
                     } else {
                         errorResponse.put("message", "Vous n'avez pas la permission pour exécuter cette action.");
                     }
@@ -189,8 +140,8 @@ public class PermissionInterceptor implements HandlerInterceptor {
                     
                     // Logger l'action utilisateur
                     try {
-                        String moduleName = extractModuleNameFromPath(path);
-                        String permissionName = extractPermissionNameFromPath(path, method);
+                        String moduleName = permissionCheckService.resolveModuleForApiPath(path, method, moduleOverride);
+                        String permissionName = permissionCheckService.resolvePermissionForApiPath(path, method, moduleOverride, permissionOverride);
                         
                         if (moduleName != null && permissionName != null) {
                             userLogService.saveLog(permissionName, moduleName, username);
@@ -211,7 +162,6 @@ public class PermissionInterceptor implements HandlerInterceptor {
         }
 
         return true;
-        */
     }
 
     /**

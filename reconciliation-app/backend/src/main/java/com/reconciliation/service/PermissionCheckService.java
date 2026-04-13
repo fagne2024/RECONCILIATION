@@ -11,7 +11,9 @@ import com.reconciliation.repository.PermissionRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 @Service
@@ -28,6 +30,9 @@ public class PermissionCheckService {
 
     @Autowired
     private PermissionRepository permissionRepository;
+
+    @Autowired
+    private PermissionGeneratorService permissionGeneratorService;
 
     /**
      * Vérifie si un utilisateur a une permission spécifique pour un module spécifique
@@ -100,6 +105,10 @@ public class PermissionCheckService {
      * @return true si l'utilisateur a la permission, false sinon
      */
     public boolean hasPermissionForApiPath(String username, String apiPath, String httpMethod) {
+        return hasPermissionForApiPath(username, apiPath, httpMethod, null, null);
+    }
+
+    public boolean hasPermissionForApiPath(String username, String apiPath, String httpMethod, String moduleOverride, String permissionOverride) {
         // Si l'utilisateur est admin, il a toutes les permissions
         if ("admin".equals(username)) {
             return true;
@@ -118,7 +127,7 @@ public class PermissionCheckService {
         }
 
         // Mapper le chemin API vers le module
-        String moduleName = mapApiPathToModule(apiPath);
+        String moduleName = resolveModuleForApiPath(apiPath, httpMethod, moduleOverride);
         if (moduleName == null) {
             // Si le module n'est pas mappé, autoriser par défaut (pour éviter de bloquer les nouvelles routes)
             System.out.println("⚠️ Module non mappé pour le chemin: " + apiPath + " - Autorisation par défaut");
@@ -126,7 +135,7 @@ public class PermissionCheckService {
         }
 
         // Mapper la méthode HTTP vers la permission
-        String permissionName = mapHttpMethodToPermission(apiPath, httpMethod);
+        String permissionName = resolvePermissionForApiPath(apiPath, httpMethod, moduleOverride, permissionOverride);
         if (permissionName == null) {
             // Si la permission n'est pas mappée, autoriser par défaut
             System.out.println("⚠️ Permission non mappée pour " + httpMethod + " sur " + apiPath + " - Autorisation par défaut");
@@ -136,18 +145,70 @@ public class PermissionCheckService {
         return hasPermission(username, moduleName, permissionName);
     }
 
+    public String resolveModuleForApiPath(String apiPath) {
+        return resolveModuleForApiPath(apiPath, null, null);
+    }
+
+    public String resolveModuleForApiPath(String apiPath, String httpMethod) {
+        return resolveModuleForApiPath(apiPath, httpMethod, null);
+    }
+
+    public String resolveModuleForApiPath(String apiPath, String httpMethod, String moduleOverride) {
+        if (moduleOverride != null && !moduleOverride.isBlank()) {
+            return moduleOverride;
+        }
+        String dashboardModule = mapDashboardReadApiPathToModule(apiPath, httpMethod);
+        if (dashboardModule != null) {
+            return dashboardModule;
+        }
+        return mapApiPathToModule(apiPath);
+    }
+
+    public String resolvePermissionForApiPath(String apiPath, String httpMethod) {
+        return resolvePermissionForApiPath(apiPath, httpMethod, null, null);
+    }
+
+    public String resolvePermissionForApiPath(String apiPath, String httpMethod, String moduleOverride, String permissionOverride) {
+        if (permissionOverride != null && !permissionOverride.isBlank()) {
+            return permissionOverride;
+        }
+
+        if (moduleOverride != null && !moduleOverride.isBlank() && "GET".equalsIgnoreCase(httpMethod)) {
+            return "consulter";
+        }
+
+        String moduleName = resolveModuleForApiPath(apiPath, httpMethod, moduleOverride);
+        if (moduleName == null) {
+            return null;
+        }
+
+        String generatedPermission = findGeneratedPermissionForApiPath(moduleName, apiPath, httpMethod);
+        if (generatedPermission != null) {
+            return generatedPermission;
+        }
+
+        return mapHttpMethodToPermission(apiPath, httpMethod);
+    }
+
     /**
      * Mappe un chemin d'API vers un nom de module
      */
     private String mapApiPathToModule(String apiPath) {
         if (apiPath == null) return null;
-        
+
+        if (apiPath.startsWith("/api/statistics/dashboard-metrics")) return "Dashboard";
+        if (apiPath.startsWith("/api/statistics/filter-options")) return "Dashboard";
+        if (apiPath.startsWith("/api/statistics/detailed-metrics")) return "Dashboard";
+        if (apiPath.startsWith("/api/statistics/transaction-created-stats")) return "Dashboard";
         if (apiPath.startsWith("/api/operations")) return "Opérations";
         if (apiPath.startsWith("/api/operations-bancaires")) return "Opérations";
         if (apiPath.startsWith("/api/comptes")) return "Comptes";
+        if (apiPath.startsWith("/api/releve-bancaire")) return "BANQUE";
         if (apiPath.startsWith("/api/frais")) return "Frais";
+        if (apiPath.startsWith("/api/frais-transaction")) return "Frais";
         if (apiPath.startsWith("/api/commission")) return "Frais";
         if (apiPath.startsWith("/api/reconciliation")) return "Réconciliation";
+        if (apiPath.startsWith("/api/reconciliation-launcher")) return "Réconciliation";
         if (apiPath.startsWith("/api/stats")) return "Statistiques";
         if (apiPath.startsWith("/api/statistics")) return "Statistiques";
         if (apiPath.startsWith("/api/ranking")) return "Classements";
@@ -156,15 +217,38 @@ public class PermissionCheckService {
         if (apiPath.startsWith("/api/impact-op")) return "Impact OP";
         if (apiPath.startsWith("/api/service-balance")) return "Service Balance";
         if (apiPath.startsWith("/api/banque")) return "BANQUE";
+        if (apiPath.startsWith("/api/banque-dashboard")) return "Dashboard";
         if (apiPath.startsWith("/api/comptabilite")) return "Comptabilité";
         if (apiPath.startsWith("/api/auto-processing-models")) return "Modèles";
+        if (apiPath.startsWith("/api/auto-processing")) return "Modèles";
         if (apiPath.startsWith("/api/profils")) return "Profil";
         if (apiPath.startsWith("/api/users")) return "Utilisateur";
         if (apiPath.startsWith("/api/log-utilisateur")) return "Log utilisateur";
         if (apiPath.startsWith("/api/dashboard")) return "Dashboard";
         if (apiPath.startsWith("/api/traitement")) return "Traitement";
         if (apiPath.startsWith("/api/results")) return "Résultats";
+        if (apiPath.startsWith("/api/reconciliation-report")) return "Résultats";
+        if (apiPath.startsWith("/api/result8rec")) return "Résultats";
+        if (apiPath.startsWith("/api/report-dashboard")) return "Résultats";
+        if (apiPath.startsWith("/api/service-references")) return "Dashboard";
+        if (apiPath.startsWith("/api/aide")) return "AIDE";
         
+        return null;
+    }
+
+    private String mapDashboardReadApiPathToModule(String apiPath, String httpMethod) {
+        if (apiPath == null || httpMethod == null || !"GET".equalsIgnoreCase(httpMethod)) {
+            return null;
+        }
+
+        String normalizedPath = normalizeApiPath(apiPath);
+        if (normalizedPath.equals("/api/result8rec")) return "Dashboard";
+        if (normalizedPath.equals("/api/result8rec/filters")) return "Dashboard";
+        if (normalizedPath.equals("/api/reconciliation-report/manual-trx/range")) return "Dashboard";
+        if (normalizedPath.equals("/api/agency-summary/all")) return "Dashboard";
+        if (normalizedPath.equals("/api/operations")) return "Dashboard";
+        if (normalizedPath.equals("/api/comptes")) return "Dashboard";
+
         return null;
     }
 
@@ -179,14 +263,13 @@ public class PermissionCheckService {
 
         // Actions spéciales basées sur le chemin (uniquement pour les chemins spécifiques)
         // Note: Les chemins contenant "statistics" ou "stats" doivent utiliser la permission standard selon la méthode HTTP
-        if (lowerPath.contains("/upload") || lowerPath.endsWith("upload")) return "upload";
-        if (lowerPath.contains("/download") || lowerPath.contains("/template") || lowerPath.contains("/export") || lowerPath.endsWith("download") || lowerPath.endsWith("template") || lowerPath.endsWith("export")) return "download";
-        if ((lowerPath.contains("/filter") || lowerPath.contains("/search")) && !lowerPath.contains("statistics")) return "filter";
+        if (lowerPath.contains("/upload") || lowerPath.endsWith("upload")) return "importer";
+        if (lowerPath.contains("/download") || lowerPath.contains("/template") || lowerPath.contains("/export") || lowerPath.endsWith("download") || lowerPath.endsWith("template") || lowerPath.endsWith("export")) return "exporter";
+        if ((lowerPath.contains("/filter") || lowerPath.contains("/search")) && !lowerPath.contains("statistics")) return "filtrer";
         if (lowerPath.contains("/bulk") || lowerPath.endsWith("bulk")) return "bulk";
-        // Ne pas mapper "statistiques" comme permission spéciale - utiliser la méthode HTTP standard
-        if (lowerPath.contains("/recent") || lowerPath.endsWith("recent")) return "lire_recent";
-        if (lowerPath.contains("/mark-ok") || lowerPath.contains("/mark") || lowerPath.endsWith("mark-ok") || lowerPath.endsWith("mark")) return "marquer";
-        if (lowerPath.contains("/reconcil") || lowerPath.endsWith("reconcil")) return "reconcilier";
+        if (lowerPath.contains("/recent") || lowerPath.endsWith("recent")) return "consulter_recent";
+        if (lowerPath.contains("/mark-ok") || lowerPath.contains("/mark") || lowerPath.endsWith("mark-ok") || lowerPath.endsWith("mark")) return "marquer_ok";
+        if (lowerPath.contains("/reconcil") || lowerPath.endsWith("reconcil")) return "lancer_reconciliation";
         if (lowerPath.contains("/import") || lowerPath.endsWith("import")) return "importer";
         if (lowerPath.contains("/export") || lowerPath.endsWith("export")) return "exporter";
         if (lowerPath.contains("/validate") || lowerPath.endsWith("validate")) return "valider";
@@ -195,16 +278,9 @@ public class PermissionCheckService {
         if (lowerPath.contains("/reset") || lowerPath.endsWith("reset")) return "reinitialiser";
         if (lowerPath.contains("/annuler") || lowerPath.contains("/cancel") || lowerPath.endsWith("annuler") || lowerPath.endsWith("cancel")) return "annuler";
 
-        // Actions standard basées sur la méthode HTTP
-        // Pour les chemins /api/statistics/*, utiliser "lire" pour GET
         switch (lowerMethod) {
             case "get":
-                // Si c'est un endpoint de statistiques, vérifier s'il y a une permission spéciale
-                if (lowerPath.contains("dashboard-metrics") || lowerPath.contains("detailed-metrics") || lowerPath.contains("filter-options") || lowerPath.contains("transaction-created-stats")) {
-                    // Ces endpoints nécessitent la permission "lire" pour le module Statistiques
-                    return "lire";
-                }
-                return "lire";
+                return "consulter";
             case "post":
                 return "creer";
             case "put":
@@ -215,6 +291,62 @@ public class PermissionCheckService {
             default:
                 return null;
         }
+    }
+
+    private String findGeneratedPermissionForApiPath(String moduleName, String apiPath, String httpMethod) {
+        List<Map<String, Object>> actions = permissionGeneratorService.getActionsForModule(moduleName);
+        String normalizedPath = normalizeApiPath(apiPath);
+
+        return actions.stream()
+            .filter(action -> httpMethod != null && httpMethod.equalsIgnoreCase((String) action.get("httpMethod")))
+            .filter(action -> pathMatchesTemplate(normalizedPath, (String) action.get("path")))
+            .sorted(Comparator.<Map<String, Object>>comparingInt(action -> ((String) action.get("path")).length()).reversed())
+            .map(action -> (String) action.get("action"))
+            .filter(actionName -> actionName != null && !actionName.isBlank())
+            .findFirst()
+            .orElse(null);
+    }
+
+    private String normalizeApiPath(String apiPath) {
+        if (apiPath == null || apiPath.isBlank()) {
+            return "";
+        }
+
+        String normalized = apiPath.split("\\?")[0].trim();
+        if (normalized.endsWith("/") && normalized.length() > 1) {
+            normalized = normalized.substring(0, normalized.length() - 1);
+        }
+        return normalized;
+    }
+
+    private boolean pathMatchesTemplate(String actualPath, String templatePath) {
+        String normalizedTemplate = normalizeApiPath(templatePath);
+        String normalizedActual = normalizeApiPath(actualPath);
+
+        String[] templateSegments = normalizedTemplate.split("/");
+        String[] actualSegments = normalizedActual.split("/");
+
+        if (templateSegments.length != actualSegments.length) {
+            return false;
+        }
+
+        for (int i = 0; i < templateSegments.length; i++) {
+            String templateSegment = templateSegments[i];
+            String actualSegment = actualSegments[i];
+
+            if (templateSegment.startsWith("{") && templateSegment.endsWith("}")) {
+                if (actualSegment == null || actualSegment.isBlank()) {
+                    return false;
+                }
+                continue;
+            }
+
+            if (!templateSegment.equalsIgnoreCase(actualSegment)) {
+                return false;
+            }
+        }
+
+        return true;
     }
 }
 

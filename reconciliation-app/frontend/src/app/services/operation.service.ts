@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import { HttpClient, HttpParams } from '@angular/common/http';
+import { HttpClient, HttpHeaders, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 
 @Injectable({ providedIn: 'root' })
@@ -7,13 +7,17 @@ export class OperationServiceApi {
   private apiUrl = '/api/reconciliation';
   constructor(private http: HttpClient) {}
 
+  private buildContextHeaders(moduleContext?: string): HttpHeaders | undefined {
+    return moduleContext ? new HttpHeaders({ 'X-Permission-Module': moduleContext }) : undefined;
+  }
+
   markOk(key: string): Observable<{ success: boolean }> {
     const params = new HttpParams().set('key', key);
     return this.http.post<{ success: boolean }>(`${this.apiUrl}/mark-ok`, null, { params });
   }
 
-  getOkKeys(): Observable<string[]> {
-    return this.http.get<string[]>(`${this.apiUrl}/ok-keys`);
+  getOkKeys(moduleContext?: string): Observable<string[]> {
+    return this.http.get<string[]>(`${this.apiUrl}/ok-keys`, { headers: this.buildContextHeaders(moduleContext) });
   }
 
   unmarkOk(key: string): Observable<{ success: boolean }> {
@@ -26,8 +30,8 @@ export class OperationServiceApi {
     return this.http.post<{ success: boolean }>(`${this.apiUrl}/status`, null, { params });
   }
 
-  listReconStatus(): Observable<Record<string, 'OK' | 'KO'>> {
-    return this.http.get<Record<string, 'OK' | 'KO'>>(`${this.apiUrl}/status`);
+  listReconStatus(moduleContext?: string): Observable<Record<string, 'OK' | 'KO'>> {
+    return this.http.get<Record<string, 'OK' | 'KO'>>(`${this.apiUrl}/status`, { headers: this.buildContextHeaders(moduleContext) });
   }
 
   markOkBulk(keys: string[]): Observable<{ success: boolean; created: number }> {

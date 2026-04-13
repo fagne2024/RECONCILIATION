@@ -343,7 +343,7 @@
             <div class="module-header">
               <h5><i class="fas fa-folder"></i> {{ module.nom }}</h5>
               <span class="module-permissions-count">
-                {{ getModulePermissionsCount(module) }} permission(s)
+                {{ isModulePermissionsLoading(module) ? '...' : getModulePermissionsCount(module) }} permission(s)
               </span>
             </div>
             
@@ -432,9 +432,9 @@
             <div class="module-card-content">
               <div class="module-permissions-preview">
                 <span class="permissions-count">
-                  {{ getModulePermissionsCount(module) }} permission(s)
+                  {{ isModulePermissionsLoading(module) ? '...' : getModulePermissionsCount(module) }} permission(s)
                 </span>
-                <div class="permissions-preview" *ngIf="getModulePermissionsCount(module) > 0">
+                <div class="permissions-preview" *ngIf="!isModulePermissionsLoading(module) && getModulePermissionsCount(module) > 0">
                   <span *ngFor="let permission of getModulePermissions(module).slice(0, 3)" 
                         class="permission-tag">
                     {{ permission.nom }}
@@ -442,6 +442,9 @@
                   <span *ngIf="getModulePermissionsCount(module) > 3" class="more-permissions">
                     +{{ getModulePermissionsCount(module) - 3 }} autres
                   </span>
+                </div>
+                <div class="permissions-preview" *ngIf="isModulePermissionsLoading(module)">
+                  <span class="more-permissions">Chargement des permissions...</span>
                 </div>
               </div>
             </div>
