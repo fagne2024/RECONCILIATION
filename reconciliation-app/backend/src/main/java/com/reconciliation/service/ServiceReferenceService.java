@@ -203,6 +203,13 @@ public class ServiceReferenceService {
      * sur des centaines de POST {@code /api/service-references}.
      */
     public ServiceReferenceImportBatchResponse importBatch(List<ServiceReferenceImportBatchItem> items, String username) {
+        return importBatch(items, username, false);
+    }
+
+    /**
+     * @param upsert si {@code true} (ex. vue dashboard) : même pays + code service → mise à jour au lieu d’échec doublon.
+     */
+    public ServiceReferenceImportBatchResponse importBatch(List<ServiceReferenceImportBatchItem> items, String username, boolean upsert) {
         if (items == null || items.isEmpty()) {
             return new ServiceReferenceImportBatchResponse(0, List.of());
         }
@@ -219,11 +226,21 @@ public class ServiceReferenceService {
             ServiceReferenceEntity entity = item.getPayload();
             String csRaw = entity.getCodeService();
             String cs = csRaw != null ? csRaw.trim().toUpperCase() : "";
-            if (!cs.isEmpty() && batchCodeServices.contains(cs)) {
+            if (!upsert && !cs.isEmpty() && batchCodeServices.contains(cs)) {
                 errors.add("Ligne " + rowLabel + " : code service déjà présent dans ce lot d'import");
                 continue;
             }
             try {
+                if (upsert && !cs.isEmpty() && entity.getPays() != null && !entity.getPays().isBlank()) {
+                    String pays = entity.getPays().trim();
+                    Optional<ServiceReferenceEntity> existing = repository
+                            .findFirstByPaysIgnoreCaseAndCodeServiceIgnoreCaseOrderByIdDesc(pays, cs);
+                    if (existing.isPresent()) {
+                        update(existing.get().getId(), entity, username);
+                        successCount++;
+                        continue;
+                    }
+                }
                 create(entity, username);
                 successCount++;
                 if (!cs.isEmpty()) {
@@ -233,7 +250,7 @@ public class ServiceReferenceService {
                 errors.add("Ligne " + rowLabel + " (" + importBriefContext(entity) + ") : " + e.getMessage());
             } catch (DataIntegrityViolationException e) {
                 errors.add("Ligne " + rowLabel + " (" + importBriefContext(entity)
-                    + ") : doublon ou contrainte en base");
+                        + ") : doublon ou contrainte en base");
             } catch (Exception e) {
                 String msg = e.getMessage() != null ? e.getMessage() : "erreur inattendue";
                 errors.add("Ligne " + rowLabel + " (" + importBriefContext(entity) + ") : " + msg);

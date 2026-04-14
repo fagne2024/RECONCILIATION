@@ -173,6 +173,17 @@ export class ServiceReferencesComponent implements OnInit, OnDestroy {
         }
     }
 
+    /** Import assoupli : vue dashboard (?dashboard=1 ou bascule Dashboard). */
+    private isRelaxedImportMode(): boolean {
+        return this.isDashboardVisible;
+    }
+
+    get importFileAccept(): string {
+        return this.isDashboardVisible
+            ? '.xlsx,.xls,.xlsm,.csv,.tsv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv,text/tab-separated-values'
+            : '.xlsx,.xls,.csv';
+    }
+
     loadReferences(): void {
         this.clearSelection();
         this.isLoading = true;
@@ -676,7 +687,8 @@ export class ServiceReferencesComponent implements OnInit, OnDestroy {
         this.errorDetails = [];
 
         try {
-            const payloads = await this.parseFile(file);
+            const relaxed = this.isRelaxedImportMode();
+            const payloads = await this.parseFile(file, relaxed);
             if (!payloads.length) {
                 this.errorMessage = 'Le fichier ne contient aucune ligne valide.';
                 await this.showErrorPopup(this.errorMessage);
@@ -684,24 +696,29 @@ export class ServiceReferencesComponent implements OnInit, OnDestroy {
             }
 
             const globalUsedCodeServices = new Set<string>();
-            try {
-                const used = await firstValueFrom(this.serviceReferenceService.getUsedCodeServices());
-                for (const c of used || []) {
-                    const u = (c || '').trim().toUpperCase();
-                    if (u) {
-                        globalUsedCodeServices.add(u);
+            if (!relaxed) {
+                try {
+                    const used = await firstValueFrom(this.serviceReferenceService.getUsedCodeServices());
+                    for (const c of used || []) {
+                        const u = (c || '').trim().toUpperCase();
+                        if (u) {
+                            globalUsedCodeServices.add(u);
+                        }
                     }
+                } catch {
+                    // Fallback : filtre basé sur la liste chargée uniquement
                 }
-            } catch {
-                // Fallback : filtre basé sur la liste chargée uniquement
+
+                if (this.references.length === 0) {
+                    this.references = await firstValueFrom(this.serviceReferenceService.listAll());
+                }
             }
 
-            // S'assurer que les références sont chargées pour la vérification des doublons
-            if (this.references.length === 0) {
-                this.references = await firstValueFrom(this.serviceReferenceService.listAll());
-            }
-
-            const { toImport, skippedDuplicates } = this.filterImportablePayloads(payloads, globalUsedCodeServices);
+            const { toImport, skippedDuplicates } = this.filterImportablePayloads(
+                payloads,
+                globalUsedCodeServices,
+                relaxed
+            );
 
             const batchItems = toImport.map((payload) => {
                 const { rowNumber, ...data } = payload;
@@ -713,12 +730,12 @@ export class ServiceReferencesComponent implements OnInit, OnDestroy {
 
             let successCount = 0;
             const failures: string[] = [];
-            const IMPORT_CHUNK = 400;
+            const IMPORT_CHUNK = relaxed ? 600 : 400;
 
             for (let offset = 0; offset < batchItems.length; offset += IMPORT_CHUNK) {
                 const slice = batchItems.slice(offset, offset + IMPORT_CHUNK);
                 try {
-                    const result = await firstValueFrom(this.serviceReferenceService.importBatch(slice));
+                    const result = await firstValueFrom(this.serviceReferenceService.importBatch(slice, relaxed));
                     successCount += result.successCount;
                     if (result.errors?.length) {
                         failures.push(...result.errors);
@@ -742,8 +759,13 @@ export class ServiceReferencesComponent implements OnInit, OnDestroy {
                 ];
                 if (skippedDuplicates.length) {
                     parts.push(
-                        `${skippedDuplicates.length} ignorée(s) avant envoi (même code service dans le fichier ou code service déjà en base).`
+                        relaxed
+                            ? `${skippedDuplicates.length} ignorée(s) avant envoi (ex. code service vide ou doublon dans le fichier — dernière ligne conservée).`
+                            : `${skippedDuplicates.length} ignorée(s) avant envoi (même code service dans le fichier ou code service déjà en base).`
                     );
+                }
+                if (relaxed && successCount > 0) {
+                    parts.push('Mode dashboard : mises à jour possibles pour un même pays + code service déjà en base.');
                 }
                 if (failures.length) {
                     parts.push(
@@ -779,16 +801,34 @@ export class ServiceReferencesComponent implements OnInit, OnDestroy {
     }
 
     /**
-     * Filtre d’import : une seule ligne par **code service** dans le fichier (la première) ;
-     * exclusion si ce code service existe déjà en base (liste + endpoint global pour les vues filtrées par pays).
+     * Filtre d’import : mode strict = une ligne par code service (première), pas d’envoi si code service déjà en base.
+     * Mode dashboard (relaxed) = dernière occurrence par code service dans le fichier ; envoi même si déjà en base (upsert API).
      */
     private filterImportablePayloads(
         payloads: ImportPayload[],
-        globalUsedCodeServices: Set<string> = new Set()
+        globalUsedCodeServices: Set<string> = new Set(),
+        relaxed = false
     ): {
         toImport: ImportPayload[];
         skippedDuplicates: string[];
     } {
+        if (relaxed) {
+            const byCode = new Map<string, ImportPayload>();
+            const skippedDuplicates: string[] = [];
+            for (const payload of payloads) {
+                const normalizedPayload = this.normalizePayload(payload);
+                const csNorm = this.normalizeImportCodeService(normalizedPayload.codeService);
+                if (!csNorm) {
+                    skippedDuplicates.push(
+                        `Ligne ${payload.rowNumber ?? '?'} : Ignorée — code service vide`
+                    );
+                    continue;
+                }
+                byCode.set(csNorm, payload);
+            }
+            return { toImport: [...byCode.values()], skippedDuplicates };
+        }
+
         const existingCodeServices = new Set<string>(globalUsedCodeServices);
         for (const ref of this.references) {
             const cs = this.normalizeImportCodeService(ref.codeService);
@@ -834,43 +874,96 @@ export class ServiceReferencesComponent implements OnInit, OnDestroy {
         return { toImport, skippedDuplicates };
     }
 
-    private async parseFile(file: File): Promise<ImportPayload[]> {
-        const data = await file.arrayBuffer();
-        const workbook = XLSX.read(data, { type: 'array' });
+    private async parseFile(file: File, relaxed: boolean): Promise<ImportPayload[]> {
+        const name = file.name.toLowerCase();
+        let workbook: XLSX.WorkBook;
+        if (name.endsWith('.csv')) {
+            const text = await file.text();
+            workbook = XLSX.read(text, { type: 'string' });
+        } else if (name.endsWith('.tsv')) {
+            const text = await file.text();
+            workbook = XLSX.read(text, { type: 'string', FS: '\t' });
+        } else {
+            const data = await file.arrayBuffer();
+            workbook = XLSX.read(data, { type: 'array' });
+        }
         const sheetName = workbook.SheetNames[0];
         const sheet = workbook.Sheets[sheetName];
         const rows: any[] = XLSX.utils.sheet_to_json(sheet, { defval: '' });
 
         return rows
-            .map((row, index) => this.rowToPayload(row, index + 2))
+            .map((row, index) => this.rowToPayload(row, index + 2, relaxed))
             .filter((payload): payload is ImportPayload => !!payload);
     }
 
-    private rowToPayload(row: any, rowNumber: number): ImportPayload | null {
-        const pays = this.cleanString(row['Pays'] || row['PAYS'] || row['Country']);
-        const codeService = this.cleanString(row['Code Service'] || row['SERVICE CODE']);
-        const serviceLabel = this.cleanString(row['Service'] || row['SERVICE']);
-        const codeReco = this.cleanString(row['Code RECO'] || row['CODE RECO']);
+    /** Première colonne non vide parmi les clés possibles (en-têtes Excel/CSV variables). */
+    private cell(row: Record<string, unknown>, ...keys: string[]): string {
+        for (const key of keys) {
+            const v = this.cleanString(row[key]);
+            if (v) {
+                return v;
+            }
+        }
+        return '';
+    }
 
-        if (!pays || !codeService || !serviceLabel || !codeReco) {
+    private rowToPayload(row: any, rowNumber: number, relaxed: boolean): ImportPayload | null {
+        const r = row as Record<string, unknown>;
+        const pays = this.cell(r, 'Pays', 'PAYS', 'Country', 'COUNTRY', 'country', 'pays', 'PAY');
+        const codeService = this.cell(
+            r,
+            'Code Service',
+            'CODE SERVICE',
+            'Code service',
+            'SERVICE CODE',
+            'code_service',
+            'codeService',
+            'CodeService'
+        );
+        let serviceLabel = this.cell(r, 'Service', 'SERVICE', 'service', 'Libellé service', 'Service Label', 'SERVICE_LABEL');
+        let codeReco = this.cell(
+            r,
+            'Code RECO',
+            'CODE RECO',
+            'code reco',
+            'CodeReco',
+            'CODE_RECO',
+            'code_reco'
+        );
+
+        if (!pays || !codeService) {
             return null;
         }
 
-        const reconciliableRaw = this.cleanString(row['Réconciliable'] || row['RECONCILIABLE']).toLowerCase();
-        const reconciliable = reconciliableRaw === 'oui' || reconciliableRaw === 'true' || reconciliableRaw === '1';
+        if (relaxed) {
+            if (!serviceLabel) {
+                serviceLabel = codeService;
+            }
+            if (!codeReco) {
+                codeReco = codeService;
+            }
+        } else if (!serviceLabel || !codeReco) {
+            return null;
+        }
+
+        const reconciliableRaw = this.cell(r, 'Réconciliable', 'RECONCILIABLE', 'Reconciliable', 'reconciliable').toLowerCase();
+        let reconciliable = reconciliableRaw === 'oui' || reconciliableRaw === 'true' || reconciliableRaw === '1';
+        if (relaxed && !reconciliableRaw) {
+            reconciliable = true;
+        }
 
         return {
             pays: pays.toUpperCase(),
             codeService: codeService.toUpperCase(),
             serviceLabel,
             codeReco: codeReco.toUpperCase(),
-            serviceType: this.cleanString(row['Service Type'] || row['TYPE']),
-            operateur: this.cleanString(row['Opérateur'] || row['OPERATEUR']),
-            reseau: this.cleanString(row['Réseau'] || row['RESEAU']),
+            serviceType: this.cell(r, 'Service Type', 'TYPE', 'service type', 'ServiceType'),
+            operateur: this.cell(r, 'Opérateur', 'OPERATEUR', 'Operateur', 'operateur'),
+            reseau: this.cell(r, 'Réseau', 'RESEAU', 'Reseau', 'reseau'),
             reconciliable,
-            motif: this.cleanString(row['Motif'] || row['MOTIF']),
-            retenuOperateur: this.cleanString(row['Retenu Opérateur'] || row['RETENU OPERATEUR']),
-            status: (this.cleanString(row['Statut'] || row['STATUT'] || row['Status'] || row['STATUS']) || 'ACTIF').toUpperCase(),
+            motif: this.cell(r, 'Motif', 'MOTIF', 'motif'),
+            retenuOperateur: this.cell(r, 'Retenu Opérateur', 'RETENU OPERATEUR', 'Retenu operateur'),
+            status: (this.cell(r, 'Statut', 'STATUT', 'Status', 'STATUS', 'status') || 'ACTIF').toUpperCase(),
             rowNumber
         };
     }

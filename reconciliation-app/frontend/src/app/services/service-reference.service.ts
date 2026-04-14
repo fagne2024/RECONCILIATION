@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import { HttpClient, HttpErrorResponse } from '@angular/common/http';
+import { HttpClient, HttpErrorResponse, HttpParams } from '@angular/common/http';
 import { Observable, throwError, timer } from 'rxjs';
 import { catchError, switchMap } from 'rxjs/operators';
 import {
@@ -61,15 +61,24 @@ export class ServiceReferenceService {
      * Import de plusieurs lignes en une requête (évite le rate limiting sur les gros fichiers).
      */
     importBatch(
-        items: { rowNumber: number; payload: ServiceReferencePayload }[]
+        items: { rowNumber: number; payload: ServiceReferencePayload }[],
+        upsert = false
     ): Observable<ServiceReferenceImportBatchResult> {
+        let params = new HttpParams();
+        if (upsert) {
+            params = params.set('upsert', 'true');
+        }
         return this.with429Retry(() =>
-            this.http.post<ServiceReferenceImportBatchResult>(`${this.apiUrl}/import-batch`, {
-                items: items.map((i) => ({
-                    rowNumber: i.rowNumber,
-                    payload: i.payload
-                }))
-            })
+            this.http.post<ServiceReferenceImportBatchResult>(
+                `${this.apiUrl}/import-batch`,
+                {
+                    items: items.map((i) => ({
+                        rowNumber: i.rowNumber,
+                        payload: i.payload
+                    }))
+                },
+                { params }
+            )
         );
     }
 

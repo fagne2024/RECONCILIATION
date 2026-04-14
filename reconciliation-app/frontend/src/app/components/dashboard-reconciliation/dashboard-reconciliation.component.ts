@@ -108,7 +108,8 @@ export class DashboardReconciliationComponent implements OnInit, OnDestroy {
             this.dashboardReconciliationService.getDashboardMetrics(
                 this.statusView,
                 startDate,
-                endDate
+                endDate,
+                'Résultats'
             ).subscribe({
                 next: (data) => {
                     this.countryServiceData = data;

@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { FileWatcherService } from './file-watcher.service';
 import { ReconciliationService } from './reconciliation.service';
 import { FieldTypeDetectionService } from './field-type-detection.service';
@@ -115,6 +115,10 @@ export class AutoProcessingService {
   private readonly CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
   private isLoading = false;
 
+  private buildContextHeaders(moduleContext?: string): HttpHeaders | undefined {
+    return moduleContext ? new HttpHeaders({ 'X-Permission-Module': moduleContext }) : undefined;
+  }
+
   constructor(
     private fileWatcherService: FileWatcherService,
     private reconciliationService: ReconciliationService,
@@ -151,7 +155,7 @@ export class AutoProcessingService {
   }
 
   // Méthodes CRUD pour les modèles avec cache
-  async getAllModels(): Promise<AutoProcessingModel[]> {
+  async getAllModels(moduleContext?: string): Promise<AutoProcessingModel[]> {
     // Vérifier si le cache est valide
     if (this.isCacheValid()) {
       console.log('📋 Utilisation du cache pour getAllModels');
@@ -177,7 +181,9 @@ export class AutoProcessingService {
     console.log('🔄 Chargement des modèles depuis l\'API...');
 
     try {
-      const response = await this.http.get<any>(`${this.apiUrl}/auto-processing/models`).toPromise();
+      const response = await this.http.get<any>(`${this.apiUrl}/auto-processing/models`, {
+        headers: this.buildContextHeaders(moduleContext)
+      }).toPromise();
       
       let models: AutoProcessingModel[] = [];
       
@@ -499,8 +505,10 @@ export class AutoProcessingService {
   // ===== MÉTHODES POUR LES RÈGLES DE TRAITEMENT DES COLONNES =====
 
   // Récupérer les règles de traitement des colonnes pour un modèle
-  getColumnProcessingRules(modelId: string): Promise<ColumnProcessingRule[]> {
-    return this.http.get<{success: boolean, rules: ColumnProcessingRule[]}>(`${this.apiUrl}/auto-processing/models/${modelId}/column-rules`)
+  getColumnProcessingRules(modelId: string, moduleContext?: string): Promise<ColumnProcessingRule[]> {
+    return this.http.get<{success: boolean, rules: ColumnProcessingRule[]}>(`${this.apiUrl}/auto-processing/models/${modelId}/column-rules`, {
+      headers: this.buildContextHeaders(moduleContext)
+    })
       .toPromise()
       .then(response => response?.rules || []);
   }

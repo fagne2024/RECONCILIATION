@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import { HttpClient, HttpParams } from '@angular/common/http';
+import { HttpClient, HttpHeaders, HttpParams } from '@angular/common/http';
 import { Observable, forkJoin, map } from 'rxjs';
 import { EcartSolde, EcartSoldeUploadResponse, EcartSoldeFilter, FraisAssocie } from '../models/ecart-solde.model';
 
@@ -10,6 +10,7 @@ export class EcartSoldeService {
   private apiUrl = '/api/ecart-solde';
   private operationsUrl = '/api/operations';
   private fraisTransactionUrl = '/api/frais-transaction';
+  private readonly tsopHeaders = new HttpHeaders({ 'X-Permission-Module': 'TSOP' });
 
   constructor(private http: HttpClient) { }
 
@@ -42,7 +43,7 @@ export class EcartSoldeService {
 
     return forkJoin({
       ecartSoldes: this.http.get<EcartSolde[]>(this.apiUrl, { params }),
-      fraisTransactions: this.http.get<any[]>(this.fraisTransactionUrl)
+      fraisTransactions: this.http.get<any[]>(this.fraisTransactionUrl, { headers: this.tsopHeaders })
     }).pipe(
       map(result => {
         const ecartSoldes = result.ecartSoldes;
@@ -81,11 +82,16 @@ export class EcartSoldeService {
     let pourcentage = fraisConfig.pourcentage;
 
     if (typeCalcul === 'POURCENTAGE' && pourcentage) {
-      // Frais en pourcentage : Montant de l'écart × Pourcentage
-      montantFrais = ecart.montant * (pourcentage / 100.0);
+      // Frais en pourcentage : |montant| × pourcentage (sortie toujours négative)
+      montantFrais = Math.abs(ecart.montant || 0) * (pourcentage / 100.0);
     } else {
       // Frais fixe : Valeur fixe × 1 transaction (comme pour les annulations)
       montantFrais = fraisConfig.montantFrais || 0;
+    }
+
+    // Convention écran écart-solde : les frais sont toujours une sortie de trésorerie (montant négatif)
+    if (montantFrais !== 0) {
+      montantFrais = -Math.abs(montantFrais);
     }
 
     // Créer l'objet frais calculé
@@ -102,7 +108,7 @@ export class EcartSoldeService {
 
   // Méthode pour récupérer les frais associés à un écart de solde spécifique
   getFraisAssocie(ecartSolde: EcartSolde): Observable<FraisAssocie | null> {
-    return this.http.get<any[]>(this.fraisTransactionUrl).pipe(
+    return this.http.get<any[]>(this.fraisTransactionUrl, { headers: this.tsopHeaders }).pipe(
       map(fraisTransactions => {
         return this.calculerFraisPourEcart(ecartSolde, fraisTransactions);
       })

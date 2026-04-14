@@ -117,7 +117,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
     releveStatusCountries: string[] = [];
     releveStatusServices: string[] = [];
     releveStatusDate: string = '';
-    releveStatusEnv: string = 'ALL';
+    releveStatusEnv: string = 'BET';
     /** Options ENV du popup relevé : même logique que vue semaine / statistiques (données result8rec). */
     releveStatusEnvSelectOptions: string[] = ['ALL', ...RECONCILIATION_ENV_OPTIONS];
     releveStatusError: string | null = null;
@@ -133,7 +133,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
 
     // Résumé "État des réconciliations" (bloc de gauche)
     reconciliationSummaryDate: string = ''; // utilisé pour initialiser, mais le calcul se fait sur "cette semaine"
-    reconciliationSummaryEnv: string = 'ALL';
+    reconciliationSummaryEnv: string = 'BET';
     reconciliationSummaryCountry: string = '';
     reconciliationSummaryCountries: string[] = [];
     reconciliationSummaryService: string = '';
@@ -190,7 +190,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
     /** Services sélectionnés (vide = tous). */
     recoViewSelectedServices: string[] = [];
     /** ENV du popup (indépendant du bloc principal) : cloisonne les services et les lignes. */
-    recoViewEnv: string = 'ALL';
+    recoViewEnv: string = 'BET';
     /** Options ENV du popup = liste métier + ENV réellement présents dans result8rec (cloisonnement affichable). */
     recoViewEnvSelectOptions: string[] = ['ALL', ...RECONCILIATION_ENV_OPTIONS];
     /** Services présents dans result8rec pour le couple pays + ENV courants du popup. */
@@ -217,7 +217,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
     transactStatsCountry = '';
     /** Services sélectionnés (vide = tous). */
     transactStatsSelectedServices: string[] = [];
-    transactStatsEnv = 'ALL';
+    transactStatsEnv = 'BET';
     transactStatsSelectedDay = '';
     transactStatsEnvSelectOptions: string[] = ['ALL', ...RECONCILIATION_ENV_OPTIONS];
     transactStatsServiceOptions: string[] = [];
@@ -274,7 +274,8 @@ export class DashboardComponent implements OnInit, OnDestroy {
     selectedAgency: string[] = [];
     selectedService: string[] = [];
     selectedCountry: string[] = [];
-    selectedTimeFilter: string = 'Ce mois';
+    /** Période calendaire des graphiques / métriques détaillées / opérations (alignée sur la semaine en cours par défaut). */
+    selectedTimeFilter: string = 'Cette semaine';
     startDate: string = '';
     endDate: string = '';
     showAllData: boolean = false; // Flag pour afficher toutes les données
@@ -1053,7 +1054,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
         this.releveStatusCountry = this.releveStatusCountries && this.releveStatusCountries.length ? this.releveStatusCountries[0] : null;
         this.releveStatusService = null;
         this.releveStatusDate = '';
-        this.releveStatusEnv = 'ALL';
+        this.releveStatusEnv = 'BET';
         this.showReleveStatusModal = true;
         // Mettre à jour la liste des services disponibles selon le pays pré-sélectionné
         if (this.releveStatusCountry) {
@@ -1448,7 +1449,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
      */
     private initReconciliationSummaryDefaults(): void {
         if (!this.reconciliationSummaryEnv) {
-            this.reconciliationSummaryEnv = 'ALL';
+            this.reconciliationSummaryEnv = 'BET';
         }
         if (this.reconciliationSummaryCountries && this.reconciliationSummaryCountries.length && !this.reconciliationSummaryCountry) {
             // Par défaut, pas de filtre pays (tous), mais on pourrait choisir le premier si besoin
@@ -1892,7 +1893,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
         this.recoViewCountry = this.reconciliationSummaryCountry || '';
         const rs = (this.reconciliationSummaryService || '').trim();
         this.recoViewSelectedServices = rs ? [rs] : [];
-        this.recoViewEnv = this.reconciliationSummaryEnv || 'ALL';
+        this.recoViewEnv = this.reconciliationSummaryEnv || 'BET';
         this.recoViewEnvSelectOptions = ['ALL', ...RECONCILIATION_ENV_OPTIONS];
         this.recoViewServiceOptions = [];
         this.recoViewSelectedDay = '';
@@ -2210,7 +2211,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
         this.transactStatsCountry = this.reconciliationSummaryCountry || '';
         const ts = (this.reconciliationSummaryService || '').trim();
         this.transactStatsSelectedServices = ts ? [ts] : [];
-        this.transactStatsEnv = this.reconciliationSummaryEnv || 'ALL';
+        this.transactStatsEnv = this.reconciliationSummaryEnv || 'BET';
         this.transactStatsEnvSelectOptions = ['ALL', ...RECONCILIATION_ENV_OPTIONS];
         this.transactStatsServiceOptions = [];
         this.transactStatsSelectedDay = '';
@@ -2773,13 +2774,11 @@ export class DashboardComponent implements OnInit, OnDestroy {
     filteredAgencySummary: any[] = [];
 
     updateDashboardIndicators() {
-      // Utiliser les données filtrées pour recalculer les indicateurs
+      // Période : déjà appliquée dans loadAgencySummaryData (filterByPeriod) ; ne pas filtrer avec startsWith sur l’ISO date.
       const agencySummaryFiltered = this.agencySummaryData.filter((s: any) =>
         (this.selectedAgency?.length === 0 || this.selectedAgency?.includes(s.agency)) &&
         (this.selectedService?.length === 0 || this.selectedService?.includes(s.service)) &&
-        (this.selectedCountry?.length === 0 || this.selectedCountry?.includes(s.pays)) &&
-        // (this.selectedBanque === 'Tous' || this.selectedBanque === s.banque) && // supprimé
-        (this.selectedTimeFilter === 'Tous' || (s.date && s.date.startsWith(this.selectedTimeFilter)))
+        (this.selectedCountry?.length === 0 || this.selectedCountry?.includes(s.pays))
       );
       this.filteredAgencySummary = agencySummaryFiltered;
       // Volume total
@@ -3066,7 +3065,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
         this.selectedAgency = [];
         this.selectedService = [];
         this.selectedCountry = [];
-        this.selectedTimeFilter = 'Ce mois'; // valeur par défaut
+        this.selectedTimeFilter = 'Cette semaine';
         this.startDate = '';
         this.endDate = '';
         this.showCustomDateInputs = false;
@@ -3631,9 +3630,11 @@ export class DashboardComponent implements OnInit, OnDestroy {
       this.compteService.getAllComptes().subscribe({
         next: (comptes: any[]) => {
           console.log('[BALANCES] Comptes reçus:', comptes.length, 'comptes');
+          const comptesRecents = comptes.filter(compte => this.isUpdatedWithinLastTwoWeeks(compte.dateDerniereMaj));
+          console.log('[BALANCES] Comptes mis à jour sur 2 semaines:', comptesRecents.length, 'comptes');
           
           // Filtrer les comptes clients (avec un solde > 0 et de type "client")
-          const comptesClients = comptes.filter(compte => {
+          const comptesClients = comptesRecents.filter(compte => {
             const hasSolde = compte.solde && compte.solde > 0;
             const isClientType = compte.type === 'client' || compte.categorie === 'client';
             
@@ -3651,7 +3652,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
           // Si aucun compte client trouvé, afficher tous les comptes avec solde > 0
           if (comptesClients.length === 0) {
             console.log('[BALANCES] ⚠️ Aucun compte client trouvé, affichage de tous les comptes avec solde');
-            const allComptesWithSolde = comptes.filter(compte => compte.solde && compte.solde > 0);
+            const allComptesWithSolde = comptesRecents.filter(compte => compte.solde && compte.solde > 0);
             console.log('[BALANCES] Comptes avec solde (tous types):', allComptesWithSolde.length, 'comptes');
             
             // Convertir tous les comptes avec solde
@@ -3730,10 +3731,12 @@ export class DashboardComponent implements OnInit, OnDestroy {
       this.agencySummaryService.getAllSummaries().subscribe({
         next: (data: any[]) => {
           console.log('[BALANCES FALLBACK] Données reçues:', data.length, 'enregistrements');
+          const recentData = data.filter(item => this.isUpdatedWithinLastTwoWeeks(item.date));
+          console.log('[BALANCES FALLBACK] Données récentes (2 semaines):', recentData.length, 'enregistrements');
           
           const balancesByAccount: {[key: string]: {balance: number, countryCode: string}} = {};
           
-          data.forEach((item: any) => {
+          recentData.forEach((item: any) => {
             const accountName = item.agency;
             let country = item.pays || item.country;
             
@@ -3777,6 +3780,22 @@ export class DashboardComponent implements OnInit, OnDestroy {
           console.error('Erreur lors du chargement des soldes (fallback):', err);
         }
       });
+    }
+
+    private isUpdatedWithinLastTwoWeeks(dateValue?: string): boolean {
+      if (!dateValue) {
+        return false;
+      }
+
+      const updatedAt = new Date(dateValue);
+      if (isNaN(updatedAt.getTime())) {
+        return false;
+      }
+
+      const now = new Date();
+      const threshold = new Date(now);
+      threshold.setDate(now.getDate() - 14);
+      return updatedAt >= threshold && updatedAt <= now;
     }
 
     // Fonction pour calculer la durée d'animation en fonction du nombre de comptes
@@ -3869,20 +3888,20 @@ export class DashboardComponent implements OnInit, OnDestroy {
           <div class="modern-popup popup-type-info">
               <div class="popup-header">
                   <div class="popup-title-wrapper">
-                      <span class="popup-icon">Ticket</span>
+                      <span class="popup-icon">🎫</span>
                       <h3 class="popup-title">${title}</h3>
                   </div>
-                  <button class="popup-close" aria-label="Fermer">x</button>
+                  <button class="popup-close" aria-label="Fermer">×</button>
               </div>
               <div class="popup-content">
                   <p class="popup-message">${message}</p>
               </div>
               <div class="popup-actions popup-actions-two-buttons">
                   <button class="popup-btn popup-btn-glpi">
-                      GLPI
+                      🔵 GLPI
                   </button>
                   <button class="popup-btn popup-btn-bometier">
-                      BOMETIER
+                      🟢 BOMETIER
                   </button>
               </div>
           </div>

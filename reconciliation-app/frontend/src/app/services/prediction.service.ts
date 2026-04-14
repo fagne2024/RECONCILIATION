@@ -50,6 +50,7 @@ export interface PredictionType {
 })
 export class PredictionService {
   private apiUrl = '/api/predictions';
+  private readonly comptesHeaders = new HttpHeaders({ 'X-Permission-Module': 'Comptes' });
 
   constructor(private http: HttpClient) {}
 
@@ -58,7 +59,8 @@ export class PredictionService {
    */
   predict(request: PredictionRequest): Observable<PredictionResponse> {
     const headers = new HttpHeaders({
-      'Content-Type': 'application/json'
+      'Content-Type': 'application/json',
+      'X-Permission-Module': 'Comptes'
     });
 
     return this.http.post<PredictionResponse>(this.apiUrl, request, { headers });
@@ -69,7 +71,8 @@ export class PredictionService {
    */
   predictBatch(requests: PredictionRequest[]): Observable<PredictionResponse[]> {
     const headers = new HttpHeaders({
-      'Content-Type': 'application/json'
+      'Content-Type': 'application/json',
+      'X-Permission-Module': 'Comptes'
     });
 
     return this.http.post<PredictionResponse[]>(`${this.apiUrl}/batch`, requests, { headers });
@@ -79,7 +82,7 @@ export class PredictionService {
    * Récupère les types d'opérations disponibles pour les prédictions
    */
   getAvailableTypes(): Observable<PredictionType[]> {
-    return this.http.get<PredictionType[]>(`${this.apiUrl}/types`);
+    return this.http.get<PredictionType[]>(`${this.apiUrl}/types`, { headers: this.comptesHeaders });
   }
 }
 

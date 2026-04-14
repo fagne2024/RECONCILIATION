@@ -203,6 +203,11 @@ public class PermissionCheckService {
         if (apiPath.startsWith("/api/operations")) return "Opérations";
         if (apiPath.startsWith("/api/operations-bancaires")) return "Opérations";
         if (apiPath.startsWith("/api/comptes")) return "Comptes";
+        if (apiPath.startsWith("/api/service-balance")) return "Comptes";
+        if (apiPath.startsWith("/api/redevance")) return "Comptes";
+        if (apiPath.startsWith("/api/flux")) return "Comptes";
+        if (apiPath.startsWith("/api/supply")) return "Comptes";
+        if (apiPath.startsWith("/api/predictions")) return "Comptes";
         if (apiPath.startsWith("/api/releve-bancaire")) return "BANQUE";
         if (apiPath.startsWith("/api/frais")) return "Frais";
         if (apiPath.startsWith("/api/frais-transaction")) return "Frais";
@@ -212,15 +217,17 @@ public class PermissionCheckService {
         if (apiPath.startsWith("/api/stats")) return "Statistiques";
         if (apiPath.startsWith("/api/statistics")) return "Statistiques";
         if (apiPath.startsWith("/api/ranking")) return "Classements";
+        if (apiPath.startsWith("/api/rankings")) return "Classements";
         if (apiPath.startsWith("/api/ecart-solde")) return "TSOP";
         if (apiPath.startsWith("/api/trx-sf")) return "TRX SF";
         if (apiPath.startsWith("/api/impact-op")) return "Impact OP";
-        if (apiPath.startsWith("/api/service-balance")) return "Service Balance";
         if (apiPath.startsWith("/api/banque")) return "BANQUE";
         if (apiPath.startsWith("/api/banque-dashboard")) return "Dashboard";
         if (apiPath.startsWith("/api/comptabilite")) return "Comptabilité";
         if (apiPath.startsWith("/api/auto-processing-models")) return "Modèles";
         if (apiPath.startsWith("/api/auto-processing")) return "Modèles";
+        if (apiPath.startsWith("/api/model-management")) return "Modèles";
+        if (apiPath.startsWith("/api/file-watcher")) return "Modèles";
         if (apiPath.startsWith("/api/profils")) return "Profil";
         if (apiPath.startsWith("/api/users")) return "Utilisateur";
         if (apiPath.startsWith("/api/log-utilisateur")) return "Log utilisateur";
@@ -229,6 +236,7 @@ public class PermissionCheckService {
         if (apiPath.startsWith("/api/results")) return "Résultats";
         if (apiPath.startsWith("/api/reconciliation-report")) return "Résultats";
         if (apiPath.startsWith("/api/result8rec")) return "Résultats";
+        if (apiPath.startsWith("/api/ecart-bo-summary")) return "Résultats";
         if (apiPath.startsWith("/api/report-dashboard")) return "Résultats";
         if (apiPath.startsWith("/api/service-references")) return "Dashboard";
         if (apiPath.startsWith("/api/aide")) return "AIDE";

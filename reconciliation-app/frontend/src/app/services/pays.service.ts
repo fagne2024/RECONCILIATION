@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { Pays, ProfilPays } from '../models/pays.model';
 
@@ -9,9 +9,15 @@ export class PaysService {
 
   constructor(private http: HttpClient) {}
 
+  private buildContextHeaders(moduleContext?: string): HttpHeaders | undefined {
+    return moduleContext ? new HttpHeaders({ 'X-Permission-Module': moduleContext }) : undefined;
+  }
+
   // CRUD Pays
-  getPays(): Observable<Pays[]> {
-    return this.http.get<Pays[]>(this.apiUrl);
+  getPays(moduleContext?: string): Observable<Pays[]> {
+    return this.http.get<Pays[]>(this.apiUrl, {
+      headers: this.buildContextHeaders(moduleContext)
+    });
   }
 
   getPaysById(id: number): Observable<Pays> {

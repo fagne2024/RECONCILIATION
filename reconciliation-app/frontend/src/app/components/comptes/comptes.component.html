@@ -22,7 +22,7 @@
 
     <!-- Modal d'ajout de compte -->
     <div *ngIf="showAddForm" class="modal-overlay" (click)="closeAddModal($event)">
-        <div class="modal-container" (click)="$event.stopPropagation()">
+        <div class="modal-container compte-form-modal" (click)="$event.stopPropagation()">
             <div class="modal-header">
                 <h3><i class="fas fa-plus-circle"></i> Ajouter un nouveau compte</h3>
                 <button type="button" class="modal-close" (click)="cancelAdd()">
@@ -48,19 +48,35 @@
                                 </div>
                             </div>
                         </div>
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label>Pays *</label>
-                                <app-autocomplete-input
-                                    [options]="paysList"
-                                    formControlName="pays"
-                                    placeholder="Saisir un pays..."
-                                    label="Pays">
-                                </app-autocomplete-input>
+                        <div class="form-row form-row-pays">
+                            <div class="form-group full-width compte-pays-form-group">
+                                <mat-form-field appearance="outline" class="compte-pays-mat-field">
+                                    <mat-label>Pays *</mat-label>
+                                    <input matInput
+                                           formControlName="pays"
+                                           [matAutocomplete]="autoPaysAdd"
+                                           placeholder="Choisir ou saisir un pays"
+                                           autocomplete="off"
+                                           (focus)="onPaysAutocompleteFocus('add')">
+                                    <mat-autocomplete #autoPaysAdd="matAutocomplete">
+                                        <mat-option *ngFor="let p of filteredPaysAdd" [value]="p">{{ p }}</mat-option>
+                                    </mat-autocomplete>
+                                    <mat-hint>Saisie libre possible — ou choisir dans la liste ci-dessous / l’autocomplétion</mat-hint>
+                                </mat-form-field>
+                                <div *ngIf="paysList.length > 0" class="pays-existing-list">
+                                    <span class="pays-existing-title">Pays déjà enregistrés — cliquer pour remplir le champ :</span>
+                                    <div class="pays-existing-chips">
+                                        <button type="button" class="pays-chip"
+                                                *ngFor="let p of paysListSorted"
+                                                (click)="selectPaysFromList('add', p)">{{ p }}</button>
+                                    </div>
+                                </div>
                                 <div *ngIf="addForm.get('pays')?.invalid && addForm.get('pays')?.touched" class="error-message">
                                     Le pays est requis.
                                 </div>
                             </div>
+                        </div>
+                        <div class="form-row">
                             <div class="form-group">
                                 <label>Type de Compte *</label>
                                 <select formControlName="type" class="modern-select">
@@ -109,7 +125,7 @@
 
     <!-- Modal de modification de compte -->
     <div *ngIf="showEditForm" class="modal-overlay" (click)="closeEditModal($event)">
-        <div class="modal-container" (click)="$event.stopPropagation()">
+        <div class="modal-container compte-form-modal" (click)="$event.stopPropagation()">
             <div class="modal-header">
                 <h3><i class="fas fa-edit"></i> Modifier le compte</h3>
                 <button type="button" class="modal-close" (click)="cancelEdit()">
@@ -135,19 +151,35 @@
                                 </div>
                             </div>
                         </div>
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label>Pays *</label>
-                                <app-autocomplete-input
-                                    [options]="paysList"
-                                    formControlName="pays"
-                                    placeholder="Saisir un pays..."
-                                    label="Pays">
-                                </app-autocomplete-input>
+                        <div class="form-row form-row-pays">
+                            <div class="form-group full-width compte-pays-form-group">
+                                <mat-form-field appearance="outline" class="compte-pays-mat-field">
+                                    <mat-label>Pays *</mat-label>
+                                    <input matInput
+                                           formControlName="pays"
+                                           [matAutocomplete]="autoPaysEdit"
+                                           placeholder="Choisir ou saisir un pays"
+                                           autocomplete="off"
+                                           (focus)="onPaysAutocompleteFocus('edit')">
+                                    <mat-autocomplete #autoPaysEdit="matAutocomplete">
+                                        <mat-option *ngFor="let p of filteredPaysEdit" [value]="p">{{ p }}</mat-option>
+                                    </mat-autocomplete>
+                                    <mat-hint>Saisie libre possible — ou choisir dans la liste ci-dessous / l’autocomplétion</mat-hint>
+                                </mat-form-field>
+                                <div *ngIf="paysList.length > 0" class="pays-existing-list">
+                                    <span class="pays-existing-title">Pays déjà enregistrés — cliquer pour remplir le champ :</span>
+                                    <div class="pays-existing-chips">
+                                        <button type="button" class="pays-chip"
+                                                *ngFor="let p of paysListSorted"
+                                                (click)="selectPaysFromList('edit', p)">{{ p }}</button>
+                                    </div>
+                                </div>
                                 <div *ngIf="editForm.get('pays')?.invalid && editForm.get('pays')?.touched" class="error-message">
                                     Le pays est requis.
                                 </div>
                             </div>
+                        </div>
+                        <div class="form-row">
                             <div class="form-group">
                                 <label>Type de Compte *</label>
                                 <select formControlName="type" class="modern-select">

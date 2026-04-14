@@ -135,7 +135,7 @@ export class RedevanceLoterieComponent implements OnInit {
   }
 
   loadAgences(): void {
-    this.agencySummaryService.getAllSummaries().subscribe({
+    this.agencySummaryService.getAllSummaries('Comptes').subscribe({
       next: (summaries) => {
         this.agencySummaries = summaries || [];
         this.agences = this.getFilteredAgencies();

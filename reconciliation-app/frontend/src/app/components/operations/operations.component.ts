@@ -823,7 +823,7 @@ export class OperationsComponent implements OnInit, OnDestroy, AfterViewInit {
     }
 
     loadComptes() {
-        this.compteService.getAllComptes().subscribe(data => {
+        this.compteService.getAllComptes('Opérations').subscribe(data => {
             this.comptes = data;
         });
     }

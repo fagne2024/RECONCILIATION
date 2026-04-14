@@ -145,7 +145,7 @@ export class StatsComponent implements OnInit, OnDestroy {
 
     private loadData() {
         this.isLoading = true;
-        this.agencySummaryService.getAllSummaries().subscribe({
+        this.agencySummaryService.getAllSummaries('Statistiques').subscribe({
             next: (data) => {
                 console.log('Données reçues de l\'API agency-summary:', data);
                 this.agencySummaries = data;
@@ -696,7 +696,7 @@ export class StatsComponent implements OnInit, OnDestroy {
                 // Supprimer tous les IDs associés à cette statistique agrégée
                 if (summary.ids && summary.ids.length > 0) {
                     const deletePromises = summary.ids.map((id: number) => 
-                        this.agencySummaryService.deleteSummary(id).toPromise()
+                        this.agencySummaryService.deleteSummary(id, 'Statistiques').toPromise()
                     );
                     await Promise.all(deletePromises);
                 } else {
@@ -847,7 +847,7 @@ export class StatsComponent implements OnInit, OnDestroy {
                 const deletePromises = selectedArray.map(summary => {
                     if (summary.ids && summary.ids.length > 0) {
                         return Promise.all(summary.ids.map((id: number) => 
-                            this.agencySummaryService.deleteSummary(id).toPromise()
+                            this.agencySummaryService.deleteSummary(id, 'Statistiques').toPromise()
                         ));
                     } else {
                         throw new Error('Aucun ID trouvé pour cette statistique');

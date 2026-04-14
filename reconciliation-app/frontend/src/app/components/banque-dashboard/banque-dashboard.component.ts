@@ -94,11 +94,11 @@ export class BanqueDashboardComponent implements OnInit {
 
     // Charger d'abord les statuts persistés et les OK définitifs
     Promise.all([
-      this.operationApi.listReconStatus().toPromise(),
-      this.operationApi.getOkKeys().toPromise(),
-      this.operationBancaireService.getAllOperationsBancaires().toPromise(),
-      this.releveService.list().toPromise(),
-      this.compteService.getAllComptes().toPromise(),
+      this.operationApi.listReconStatus('BANQUE').toPromise(),
+      this.operationApi.getOkKeys('BANQUE').toPromise(),
+      this.operationBancaireService.getAllOperationsBancaires('BANQUE').toPromise(),
+      this.releveService.list(undefined, 'BANQUE').toPromise(),
+      this.compteService.getAllComptes('BANQUE').toPromise(),
     ]).then(([statusMap, okKeys, operationsBancaires, releves, comptes]) => {
       console.log('[BANQUE-DASH] Début loadRealData');
       this.statusByBaseKey = {};

@@ -16,8 +16,10 @@ export class CompteService {
     }
 
     // Récupérer tous les comptes
-    getAllComptes(): Observable<Compte[]> {
-        return this.http.get<Compte[]>(this.apiUrl);
+    getAllComptes(moduleContext?: string): Observable<Compte[]> {
+        return this.http.get<Compte[]>(this.apiUrl, {
+            headers: this.buildContextHeaders(moduleContext)
+        });
     }
 
     // Récupérer un compte par ID
@@ -36,8 +38,10 @@ export class CompteService {
     }
 
     // Récupérer les comptes par code propriétaire
-    getComptesByCodeProprietaire(codeProprietaire: string): Observable<Compte[]> {
-        return this.http.get<Compte[]>(`${this.apiUrl}/code-proprietaire/${codeProprietaire}`);
+    getComptesByCodeProprietaire(codeProprietaire: string, moduleContext?: string): Observable<Compte[]> {
+        return this.http.get<Compte[]>(`${this.apiUrl}/code-proprietaire/${codeProprietaire}`, {
+            headers: this.buildContextHeaders(moduleContext)
+        });
     }
 
     // Récupérer les comptes par agence

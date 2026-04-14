@@ -205,7 +205,7 @@ export class FraisComponent implements OnInit, OnDestroy {
     
     loadPays() {
         this.subscription.add(
-            this.paysService.getPays().subscribe({
+            this.paysService.getPays('Frais').subscribe({
                 next: (pays) => {
                     this.pays = pays;
                     this.paysList = pays.map(p => p.nom);

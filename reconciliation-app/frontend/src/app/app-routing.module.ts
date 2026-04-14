@@ -61,60 +61,210 @@ const routes: Routes = [
   // Toutes les autres routes nécessitent une authentification
   // Note: La route de redirection n'a pas besoin de canActivate car la route de destination est protégée
   { path: '', redirectTo: '/reconciliation-launcher', pathMatch: 'full' },
-  { path: 'reconciliation-launcher', component: ReconciliationLauncherComponent, canActivate: [AuthGuard] },
-  { path: 'reconciliation', component: ReconciliationComponent, canActivate: [AuthGuard] },
-  { path: 'upload', component: FileUploadComponent, canActivate: [AuthGuard] },
-  { path: 'column-selection', component: ColumnSelectionComponent, canActivate: [AuthGuard] },
-  { path: 'stats', component: StatsComponent, canActivate: [AuthGuard] },
-  { path: 'agency-summary', component: AgencySummaryComponent, canActivate: [AuthGuard] },
-  { path: 'results', component: ReconciliationResultsComponent, canActivate: [AuthGuard] },
-  { path: 'matches', component: MatchesTableComponent, canActivate: [AuthGuard] },
-  { path: 'ecart-bo', component: EcartBoTableComponent, canActivate: [AuthGuard] },
-  { path: 'ecart-partner', component: EcartPartnerTableComponent, canActivate: [AuthGuard] },
+  {
+    path: 'reconciliation-launcher',
+    component: ReconciliationLauncherComponent,
+    canActivate: [AuthGuard, ModuleAccessGuard],
+    data: { module: 'Réconciliation', permissions: ['consulter'] }
+  },
+  {
+    path: 'reconciliation',
+    component: ReconciliationComponent,
+    canActivate: [AuthGuard, ModuleAccessGuard],
+    data: { module: 'Réconciliation', permissions: ['consulter'] }
+  },
+  {
+    path: 'upload',
+    component: FileUploadComponent,
+    canActivate: [AuthGuard, ModuleAccessGuard],
+    data: { module: 'Réconciliation', permissions: ['consulter'] }
+  },
+  {
+    path: 'column-selection',
+    component: ColumnSelectionComponent,
+    canActivate: [AuthGuard, ModuleAccessGuard],
+    data: { module: 'Réconciliation', permissions: ['consulter'] }
+  },
+  {
+    path: 'stats',
+    component: StatsComponent,
+    canActivate: [AuthGuard, ModuleAccessGuard],
+    data: { module: 'Statistiques', permissions: ['consulter'] }
+  },
+  {
+    path: 'agency-summary',
+    component: AgencySummaryComponent,
+    canActivate: [AuthGuard, ModuleAccessGuard],
+    data: { module: 'Statistiques', permissions: ['consulter'] }
+  },
+  {
+    path: 'results',
+    component: ReconciliationResultsComponent,
+    canActivate: [AuthGuard, ModuleAccessGuard],
+    data: { module: 'Résultats', permissions: ['consulter'] }
+  },
+  {
+    path: 'matches',
+    component: MatchesTableComponent,
+    canActivate: [AuthGuard, ModuleAccessGuard],
+    data: { module: 'Résultats', permissions: ['consulter'] }
+  },
+  {
+    path: 'ecart-bo',
+    component: EcartBoTableComponent,
+    canActivate: [AuthGuard, ModuleAccessGuard],
+    data: { module: 'Résultats', permissions: ['consulter'] }
+  },
+  {
+    path: 'ecart-partner',
+    component: EcartPartnerTableComponent,
+    canActivate: [AuthGuard, ModuleAccessGuard],
+    data: { module: 'Résultats', permissions: ['consulter'] }
+  },
   {
     path: 'dashboard',
     component: DashboardComponent,
     canActivate: [AuthGuard, ModuleAccessGuard],
     data: { module: 'Dashboard', permissions: ['consulter', 'filtrer'] }
   },
-  { path: 'comptes', component: ComptesComponent, canActivate: [AuthGuard] },
-  { path: 'redevance-loterie', component: RedevanceLoterieComponent, canActivate: [AuthGuard] },
-  { path: 'operations', component: OperationsComponent, canActivate: [AuthGuard] },
-  { path: 'frais', component: FraisComponent, canActivate: [AuthGuard] },
+  {
+    path: 'comptes',
+    component: ComptesComponent,
+    canActivate: [AuthGuard, ModuleAccessGuard],
+    data: { module: 'Comptes', permissions: ['consulter'] }
+  },
+  {
+    path: 'redevance-loterie',
+    component: RedevanceLoterieComponent,
+    canActivate: [AuthGuard, ModuleAccessGuard],
+    data: { module: 'Comptes', permissions: ['consulter'] }
+  },
+  {
+    path: 'operations',
+    component: OperationsComponent,
+    canActivate: [AuthGuard, ModuleAccessGuard],
+    data: { module: 'Opérations', permissions: ['consulter'] }
+  },
+  {
+    path: 'frais',
+    component: FraisComponent,
+    canActivate: [AuthGuard, ModuleAccessGuard],
+    data: { module: 'Frais', permissions: ['consulter'] }
+  },
   { path: 'commission', component: CommissionComponent, canActivate: [AuthGuard] },
   { path: 'users', component: UsersComponent, canActivate: [AuthGuard, AdminGuard] },
-  { path: 'ranking', component: RankingComponent, canActivate: [AuthGuard] },
-  { path: 'traitement', component: TraitementComponent, canActivate: [AuthGuard] },
+  {
+    path: 'ranking',
+    component: RankingComponent,
+    canActivate: [AuthGuard, ModuleAccessGuard],
+    data: { module: 'Classements', permissions: ['consulter'] }
+  },
+  {
+    path: 'traitement',
+    component: TraitementComponent,
+    canActivate: [AuthGuard, ModuleAccessGuard],
+    data: { module: 'Traitement', permissions: ['consulter'] }
+  },
   { path: 'profils', component: ProfilComponent, canActivate: [AuthGuard, AdminGuard] },
   { path: 'modules', component: ModulesComponent, canActivate: [AuthGuard, AdminGuard] },
   { path: 'permissions', component: PermissionsComponent, canActivate: [AuthGuard, AdminGuard] },
-  { path: 'ecart-solde', component: EcartSoldeComponent, canActivate: [AuthGuard] },
-  { path: 'trx-sf', component: TrxSfComponent, canActivate: [AuthGuard] },
-  { path: 'impact-op', component: ImpactOPComponent, canActivate: [AuthGuard] },
-  { path: 'service-balance', component: ServiceBalanceComponent, canActivate: [AuthGuard] },
-  { path: 'service-references', component: ServiceReferencesComponent, canActivate: [AuthGuard] },
-  { path: 'auto-processing-models', component: AutoProcessingModelsComponent, canActivate: [AuthGuard] },
+  {
+    path: 'ecart-solde',
+    component: EcartSoldeComponent,
+    canActivate: [AuthGuard, ModuleAccessGuard],
+    data: { module: 'TSOP', permissions: ['consulter'] }
+  },
+  {
+    path: 'trx-sf',
+    component: TrxSfComponent,
+    canActivate: [AuthGuard, ModuleAccessGuard],
+    data: { module: 'TRX SF', permissions: ['consulter'] }
+  },
+  {
+    path: 'impact-op',
+    component: ImpactOPComponent,
+    canActivate: [AuthGuard, ModuleAccessGuard],
+    data: { module: 'Impact OP', permissions: ['consulter'] }
+  },
+  {
+    path: 'service-balance',
+    component: ServiceBalanceComponent,
+    canActivate: [AuthGuard, ModuleAccessGuard],
+    data: { module: 'Comptes', permissions: ['consulter'] }
+  },
+  {
+    path: 'service-references',
+    component: ServiceReferencesComponent,
+    canActivate: [AuthGuard, ModuleAccessGuard],
+    data: { module: 'Dashboard', permissions: ['consulter'] }
+  },
+  {
+    path: 'auto-processing-models',
+    component: AutoProcessingModelsComponent,
+    canActivate: [AuthGuard, ModuleAccessGuard],
+    data: { module: 'Modèles', permissions: ['consulter'] }
+  },
   {
     path: 'banque',
     component: BanqueComponent,
     canActivate: [AuthGuard, ModuleAccessGuard],
     data: { module: 'BANQUE', permissions: ['consulter'] }
   },
-  { path: 'comptabilite', component: ComptabiliteComponent, canActivate: [AuthGuard] },
-  { path: 'reconciliation-report', component: ReconciliationReportComponent, canActivate: [AuthGuard] },
-  { path: 'rapport-reconciliation-bo-partenaire', component: RapportReconciliationBoPartenaireComponent, canActivate: [AuthGuard] },
+  {
+    path: 'comptabilite',
+    component: ComptabiliteComponent,
+    canActivate: [AuthGuard, ModuleAccessGuard],
+    data: { module: 'Comptabilité', permissions: ['consulter'] }
+  },
+  {
+    path: 'reconciliation-report',
+    component: ReconciliationReportComponent,
+    canActivate: [AuthGuard, ModuleAccessGuard],
+    data: { module: 'Résultats', permissions: ['consulter'] }
+  },
+  {
+    path: 'rapport-reconciliation-bo-partenaire',
+    component: RapportReconciliationBoPartenaireComponent,
+    canActivate: [AuthGuard, ModuleAccessGuard],
+    data: { module: 'Résultats', permissions: ['consulter'] }
+  },
   {
     path: 'report-dashboard',
     component: ReportDashboardComponent,
     canActivate: [AuthGuard, ModuleAccessGuard],
     data: { module: 'Report Dashboard', permissions: ['consulter'] }
   },
-  { path: 'reconciliation-dashboard', component: DashboardReconciliationComponent, canActivate: [AuthGuard] },
-  { path: 'reconciliation-global-preview', component: ReconciliationGlobalPreviewComponent, canActivate: [AuthGuard] },
-  { path: 'banque-dashboard', component: BanqueDashboardComponent, canActivate: [AuthGuard] },
+  {
+    path: 'reconciliation-dashboard',
+    component: DashboardReconciliationComponent,
+    canActivate: [AuthGuard, ModuleAccessGuard],
+    data: { module: 'Résultats', permissions: ['consulter'] }
+  },
+  {
+    path: 'reconciliation-global-preview',
+    component: ReconciliationGlobalPreviewComponent,
+    canActivate: [AuthGuard, ModuleAccessGuard],
+    data: { module: 'Résultats', permissions: ['consulter'] }
+  },
+  {
+    path: 'banque-dashboard',
+    component: BanqueDashboardComponent,
+    canActivate: [AuthGuard, ModuleAccessGuard],
+    data: { module: 'BANQUE', permissions: ['consulter'] }
+  },
   { path: 'log-utilisateur', component: UserLogComponent, canActivate: [AuthGuard, AdminGuard] },
-  { path: 'predictions', component: PredictionsNewComponent, canActivate: [AuthGuard] },
-  { path: 'predictions-old', component: PredictionsComponent, canActivate: [AuthGuard] }, // Ancien système gardé pour référence
+  {
+    path: 'predictions',
+    component: PredictionsNewComponent,
+    canActivate: [AuthGuard, ModuleAccessGuard],
+    data: { module: 'Comptes', permissions: ['consulter'] }
+  },
+  {
+    path: 'predictions-old',
+    component: PredictionsComponent,
+    canActivate: [AuthGuard, ModuleAccessGuard],
+    data: { module: 'Comptes', permissions: ['consulter'] }
+  }, // Ancien système gardé pour référence
   { path: 'two-factor-auth', component: TwoFactorAuthComponent, canActivate: [AuthGuard, AdminGuard] },
   { path: 'user-profile', component: UserProfileComponent, canActivate: [AuthGuard] },
   { path: 'aide', component: AideComponent, canActivate: [AuthGuard] },
@@ -122,7 +272,12 @@ const routes: Routes = [
   { path: 'sop-reconciliation-trx', component: SopReconciliationTrxComponent, canActivate: [AuthGuard] },
   { path: 'guide-utilisation', component: GuideUtilisationComponent, canActivate: [AuthGuard] },
   { path: 'suivi-des-ecarts', component: SuiviDesEcartsComponent, canActivate: [AuthGuard] },
-  { path: 'ecart-bo-summary', component: EcartBoSummaryComponent, canActivate: [AuthGuard] },
+  {
+    path: 'ecart-bo-summary',
+    component: EcartBoSummaryComponent,
+    canActivate: [AuthGuard, ModuleAccessGuard],
+    data: { module: 'Résultats', permissions: ['consulter'] }
+  },
 ];
 
 @NgModule({

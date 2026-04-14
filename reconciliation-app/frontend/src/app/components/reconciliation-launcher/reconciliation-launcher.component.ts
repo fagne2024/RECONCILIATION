@@ -674,7 +674,7 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
     let columnProcessingRules: any[] = [];
     
     try {
-      const models = await this.autoProcessingService.getAllModels();
+      const models = await this.autoProcessingService.getAllModels('Réconciliation');
       
       // Trouver les modèles correspondants aux fichiers
       const boModel = models.find(m => 
@@ -693,7 +693,7 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
       // Récupérer les règles de traitement
       if (boModel?.modelId) {
         try {
-          const boRules = await this.autoProcessingService.getColumnProcessingRules(boModel.modelId);
+          const boRules = await this.autoProcessingService.getColumnProcessingRules(boModel.modelId, 'Réconciliation');
           console.log('🔧 Règles BO récupérées:', boRules.length);
           columnProcessingRules.push(...boRules);
         } catch (error) {
@@ -703,7 +703,7 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
       
       if (partnerModel?.modelId) {
         try {
-          const partnerRules = await this.autoProcessingService.getColumnProcessingRules(partnerModel.modelId);
+          const partnerRules = await this.autoProcessingService.getColumnProcessingRules(partnerModel.modelId, 'Réconciliation');
           console.log('🔧 Règles Partenaire récupérées:', partnerRules.length);
           columnProcessingRules.push(...partnerRules);
         } catch (error) {

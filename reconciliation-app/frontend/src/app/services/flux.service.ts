@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import { HttpClient, HttpParams } from '@angular/common/http';
+import { HttpClient, HttpHeaders, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 
 export interface FluxData {
@@ -18,6 +18,7 @@ export interface FluxData {
 @Injectable({ providedIn: 'root' })
 export class FluxService {
   private apiUrl = '/api/flux';
+  private readonly comptesHeaders = new HttpHeaders({ 'X-Permission-Module': 'Comptes' });
 
   constructor(private http: HttpClient) {}
 
@@ -26,14 +27,14 @@ export class FluxService {
       .set('agence', agence)
       .set('dateDebut', dateDebut)
       .set('dateFin', dateFin);
-    return this.http.get<FluxData | null>(`${this.apiUrl}`, { params });
+    return this.http.get<FluxData | null>(`${this.apiUrl}`, { params, headers: this.comptesHeaders });
   }
 
   saveFlux(flux: FluxData): Observable<FluxData> {
-    return this.http.post<FluxData>(`${this.apiUrl}`, flux);
+    return this.http.post<FluxData>(`${this.apiUrl}`, flux, { headers: this.comptesHeaders });
   }
 
   updateFlux(flux: FluxData): Observable<FluxData> {
-    return this.http.put<FluxData>(`${this.apiUrl}`, flux);
+    return this.http.put<FluxData>(`${this.apiUrl}`, flux, { headers: this.comptesHeaders });
   }
 }

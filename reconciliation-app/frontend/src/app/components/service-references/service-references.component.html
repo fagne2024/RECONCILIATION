@@ -68,7 +68,7 @@
             <button class="btn outline" (click)="triggerFileUpload()" [disabled]="isImporting || isLoading">
                 ⬆️ Importer un fichier
             </button>
-            <input #fileInput type="file" accept=".xlsx,.xls,.csv" (change)="handleFileInput($event)" hidden>
+            <input #fileInput type="file" [attr.accept]="importFileAccept" (change)="handleFileInput($event)" hidden>
         </div>
     </div>
 
@@ -330,6 +330,11 @@
                 <span class="sr-dash-card-sub">{{ dashboardTotalCardSubtitle }}</span>
             </div>
         </div>
+        <p class="sr-dash-import-hint">
+            Import (bouton du haut) : fichiers <strong>.csv</strong> / <strong>.tsv</strong> autorisés ; colonnes
+            <strong>Pays</strong> + <strong>Code Service</strong> suffisent (Service et Code RECO = code service si absents).
+            Les références déjà présentes (même pays + code service) sont <strong>mises à jour</strong>.
+        </p>
 
         <form class="sr-dash-filters" [formGroup]="dashboardFilterForm">
             <div class="sr-dash-filter-field">

@@ -119,6 +119,12 @@ public class RateLimitingFilter extends OncePerRequestFilter {
             return;
         }
 
+        // Création result8rec en masse (remplace N POST unitaires)
+        if (path.equals("/api/result8rec/bulk")) {
+            filterChain.doFilter(request, response);
+            return;
+        }
+
         // Obtenir la clé de rate limiting (IP ou utilisateur)
         String rateLimitKey = getRateLimitKey(request);
 

@@ -477,11 +477,17 @@ public class PermissionGeneratorService {
         mapping.put("/api/reconciliation-dashboard", "Dashboard");
         mapping.put("/api/banque-dashboard", "Dashboard");
         mapping.put("/api/report-dashboard", "Résultats");
+        mapping.put("/api/ecart-bo-summary", "Résultats");
         
         // Autres routes
         mapping.put("/api/operations", "Opérations");
         mapping.put("/api/operations-bancaires", "Opérations");
         mapping.put("/api/comptes", "Comptes");
+        mapping.put("/api/service-balance", "Comptes");
+        mapping.put("/api/redevance", "Comptes");
+        mapping.put("/api/flux", "Comptes");
+        mapping.put("/api/supply", "Comptes");
+        mapping.put("/api/predictions", "Comptes");
         mapping.put("/api/frais", "Frais");
         mapping.put("/api/commission", "Frais");
         mapping.put("/api/reconciliation", "Réconciliation");
@@ -489,13 +495,16 @@ public class PermissionGeneratorService {
         mapping.put("/api/stats", "Statistiques");
         mapping.put("/api/statistics", "Statistiques");
         mapping.put("/api/ranking", "Classements");
+        mapping.put("/api/rankings", "Classements");
         mapping.put("/api/ecart-solde", "TSOP");
         mapping.put("/api/trx-sf", "TRX SF");
         mapping.put("/api/impact-op", "Impact OP");
-        mapping.put("/api/service-balance", "Service Balance");
         mapping.put("/api/banque", "BANQUE");
         mapping.put("/api/comptabilite", "Comptabilité");
         mapping.put("/api/auto-processing-models", "Modèles");
+        mapping.put("/api/auto-processing", "Modèles");
+        mapping.put("/api/model-management", "Modèles");
+        mapping.put("/api/file-watcher", "Modèles");
         mapping.put("/api/profils", "Profil");
         mapping.put("/api/users", "Utilisateur");
         mapping.put("/api/log-utilisateur", "Log utilisateur");

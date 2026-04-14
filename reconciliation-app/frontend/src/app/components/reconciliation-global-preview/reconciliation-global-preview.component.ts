@@ -253,7 +253,8 @@ export class ReconciliationGlobalPreviewComponent implements OnInit, OnDestroy {
         const headers = new HttpHeaders({
             'Cache-Control': 'no-cache, no-store, must-revalidate',
             'Pragma': 'no-cache',
-            'Expires': '0'
+            'Expires': '0',
+            'X-Permission-Module': 'Résultats'
         });
         
         const cacheBuster = new Date().getTime();

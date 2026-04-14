@@ -524,6 +524,14 @@
   font-weight: 500;
 }
 
+/* 3e ligne d’en-tête : éviter de “gonfler” la hauteur (cellules vides) */
+.rrbp-table thead tr:nth-child(3) th.sub {
+  padding-top: 0.25rem;
+  padding-bottom: 0.25rem;
+  font-size: 0.72rem;
+  color: #4b5563;
+}
+
 .rrbp-table .col-service {
   text-align: left;
   min-width: 200px;
@@ -534,6 +542,111 @@
   vertical-align: middle;
   min-width: 118px;
   max-width: 160px;
+}
+
+.rrbp-table .col-statut,
+.rrbp-table .rrbp-statut-cell {
+  text-align: left;
+  vertical-align: middle;
+  min-width: 148px;
+  max-width: 240px;
+  font-size: 0.8rem;
+  line-height: 1.25;
+}
+
+.rrbp-table thead th.rrbp-th-statut {
+  background: linear-gradient(180deg, #f1f5f9 0%, #e8eef5 100%);
+  color: #334155;
+  border-color: #cbd5e1;
+}
+
+.rrbp-statut-pill {
+  display: inline-block;
+  padding: 5px 11px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1.3;
+  max-width: 100%;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+}
+
+.rrbp-statut-cell.rrbp-statut--support {
+  background: rgba(254, 243, 199, 0.45);
+}
+.rrbp-statut-cell.rrbp-statut--support .rrbp-statut-pill {
+  background: linear-gradient(180deg, #fef3c7 0%, #fde68a 100%);
+  color: #92400e;
+  border: 1px solid #f59e0b;
+}
+
+.rrbp-statut-cell.rrbp-statut--group {
+  background: rgba(219, 234, 254, 0.45);
+}
+.rrbp-statut-cell.rrbp-statut--group .rrbp-statut-pill {
+  background: linear-gradient(180deg, #dbeafe 0%, #bfdbfe 100%);
+  color: #1e3a8a;
+  border: 1px solid #3b82f6;
+}
+
+.rrbp-statut-cell.rrbp-statut--termine {
+  background: rgba(209, 250, 229, 0.45);
+}
+.rrbp-statut-cell.rrbp-statut--termine .rrbp-statut-pill {
+  background: linear-gradient(180deg, #d1fae5 0%, #a7f3d0 100%);
+  color: #065f46;
+  border: 1px solid #10b981;
+}
+
+.rrbp-statut-cell.rrbp-statut--neutre {
+  background: rgba(243, 244, 246, 0.6);
+}
+.rrbp-statut-cell.rrbp-statut--neutre .rrbp-statut-pill {
+  background: #f3f4f6;
+  color: #6b7280;
+  border: 1px solid #d1d5db;
+  font-weight: 600;
+}
+
+/* Fonds légers par bloc de colonnes (lisibilité) */
+.rrbp-table tbody td.rrbp-col-bo,
+.rrbp-table tfoot td.rrbp-col-bo {
+  background: rgba(232, 239, 250, 0.55);
+}
+
+.rrbp-table tbody td.rrbp-col-part,
+.rrbp-table tfoot td.rrbp-col-part {
+  background: rgba(232, 244, 250, 0.55);
+}
+
+.rrbp-table tbody td.rrbp-col-decal,
+.rrbp-table tfoot td.rrbp-col-decal {
+  background: rgba(237, 233, 254, 0.4);
+}
+
+.rrbp-table tbody td.rrbp-col-ecart,
+.rrbp-table tfoot td.rrbp-col-ecart {
+  background: rgba(252, 231, 243, 0.35);
+}
+
+.rrbp-table tbody tr.rrbp-row-group td.rrbp-col-bo,
+.rrbp-table tbody tr.rrbp-row-group td.rrbp-col-part,
+.rrbp-table tbody tr.rrbp-row-group td.rrbp-col-decal,
+.rrbp-table tbody tr.rrbp-row-group td.rrbp-col-ecart {
+  background: rgba(255, 255, 255, 0.35);
+}
+
+.rrbp-table tbody tr.rrbp-row-group .rrbp-statut-cell.rrbp-statut--support {
+  background: rgba(254, 243, 199, 0.55);
+}
+.rrbp-table tbody tr.rrbp-row-group .rrbp-statut-cell.rrbp-statut--group {
+  background: rgba(219, 234, 254, 0.55);
+}
+.rrbp-table tbody tr.rrbp-row-group .rrbp-statut-cell.rrbp-statut--termine {
+  background: rgba(209, 250, 229, 0.55);
+}
+.rrbp-table tbody tr.rrbp-row-group .rrbp-statut-cell.rrbp-statut--neutre {
+  background: rgba(243, 244, 246, 0.75);
 }
 
 .rrbp-traitement-badge {

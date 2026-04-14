@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { map } from 'rxjs/operators';
 
@@ -57,11 +57,17 @@ export class DashboardReconciliationService {
 
     constructor(private http: HttpClient) {}
 
+    private buildContextHeaders(moduleContext?: string): HttpHeaders | undefined {
+        return moduleContext ? new HttpHeaders({ 'X-Permission-Module': moduleContext }) : undefined;
+    }
+
     /**
      * Récupère toutes les données de la table result8rec
      */
-    getResult8RecData(): Observable<Result8RecData[]> {
-        return this.http.get<Result8RecData[]>('/api/result8rec');
+    getResult8RecData(moduleContext?: string): Observable<Result8RecData[]> {
+        return this.http.get<Result8RecData[]>('/api/result8rec', {
+            headers: this.buildContextHeaders(moduleContext)
+        });
     }
 
     /**
@@ -70,9 +76,10 @@ export class DashboardReconciliationService {
     getDashboardMetrics(
         statusFilter: DashboardStatusFilter = 'encours',
         startDate?: Date | null,
-        endDate?: Date | null
+        endDate?: Date | null,
+        moduleContext?: string
     ): Observable<CountryServiceMetrics[]> {
-        return this.getResult8RecData().pipe(
+        return this.getResult8RecData(moduleContext).pipe(
             map(data => {
                 // Filtrer les données par date si des dates sont fournies
                 let filteredData = data;

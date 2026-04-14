@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import { HttpClient, HttpParams } from '@angular/common/http';
+import { HttpClient, HttpHeaders, HttpParams } from '@angular/common/http';
 import { Observable, forkJoin, of } from 'rxjs';
 import { map, catchError } from 'rxjs/operators';
 
@@ -39,6 +39,7 @@ export interface RedevanceAgenceParam {
 @Injectable({ providedIn: 'root' })
 export class RedevanceService {
   private apiUrl = '/api/redevance';
+  private readonly comptesHeaders = new HttpHeaders({ 'X-Permission-Module': 'Comptes' });
 
   constructor(private http: HttpClient) {}
 
@@ -50,15 +51,19 @@ export class RedevanceService {
     if (pays && pays.length > 0) {
       pays.forEach(p => { params = params.append('pays', p); });
     }
-    return this.http.get<RedevanceData>(`${this.apiUrl}/compute`, { params });
+    return this.http.get<RedevanceData>(`${this.apiUrl}/compute`, { params, headers: this.comptesHeaders });
   }
 
   getParams(agence: string): Observable<RedevanceAgenceParam> {
-    return this.http.get<RedevanceAgenceParam>(`${this.apiUrl}/params/${encodeURIComponent(agence)}`);
+    return this.http.get<RedevanceAgenceParam>(`${this.apiUrl}/params/${encodeURIComponent(agence)}`, {
+      headers: this.comptesHeaders
+    });
   }
 
   saveParams(params: RedevanceAgenceParam): Observable<RedevanceAgenceParam> {
-    return this.http.put<RedevanceAgenceParam>(`${this.apiUrl}/params`, params);
+    return this.http.put<RedevanceAgenceParam>(`${this.apiUrl}/params`, params, {
+      headers: this.comptesHeaders
+    });
   }
 
   /** Récupère la redevance pour les N derniers mois (même filtres agence/pays) */

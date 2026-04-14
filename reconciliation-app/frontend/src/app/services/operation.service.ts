@@ -57,6 +57,10 @@ export class OperationService {
 
     constructor(private http: HttpClient) {}
 
+    private buildContextHeaders(moduleContext?: string): HttpHeaders | undefined {
+        return moduleContext ? new HttpHeaders({ 'X-Permission-Module': moduleContext }) : undefined;
+    }
+
     // Récupérer toutes les opérations
     getAllOperations(): Observable<Operation[]> {
         return this.http.get<Operation[]>(this.apiUrl);
@@ -157,8 +161,10 @@ export class OperationService {
     }
 
     // Créer une nouvelle opération
-    createOperation(operation: OperationCreateRequest): Observable<Operation> {
-        return this.http.post<Operation>(this.apiUrl, operation);
+    createOperation(operation: OperationCreateRequest, moduleContext?: string): Observable<Operation> {
+        return this.http.post<Operation>(this.apiUrl, operation, {
+            headers: this.buildContextHeaders(moduleContext)
+        });
     }
 
     // Créer une opération avec la logique des 4 opérations

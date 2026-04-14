@@ -79,6 +79,9 @@ export class ComptesComponent implements OnInit, OnDestroy {
 
     // Listes pour les filtres dynamiques
     paysList: string[] = [];
+    /** Suggestions pays pour les modaux ajout / édition (saisie libre hors liste autorisée) */
+    filteredPaysAdd: string[] = [];
+    filteredPaysEdit: string[] = [];
     codeProprietaireList: string[] = [];
 
     comptesCritiques: { compte: Compte, moyenneVolume: number }[] = [];
@@ -394,6 +397,62 @@ export class ComptesComponent implements OnInit, OnDestroy {
         this.filterForm.controls['type'].valueChanges.subscribe((value: string[]) => {
             this.selectedTypes = value || [];
         });
+
+        this.subscription.add(
+            this.addForm.get('pays')!.valueChanges.subscribe((v: string | null) => {
+                this.filteredPaysAdd = this.filterPaysAutocompleteOptions(v);
+            })
+        );
+        this.subscription.add(
+            this.editForm.get('pays')!.valueChanges.subscribe((v: string | null) => {
+                this.filteredPaysEdit = this.filterPaysAutocompleteOptions(v);
+            })
+        );
+        this.syncPaysAutocompleteFilteredLists();
+    }
+
+    /** Pays existants triés (affichage liste + autocomplete) */
+    get paysListSorted(): string[] {
+        return this.sortPaysCodes(this.paysList);
+    }
+
+    private sortPaysCodes(list: string[]): string[] {
+        return [...list].sort((a, b) => a.localeCompare(b, 'fr', { sensitivity: 'base' }));
+    }
+
+    /** Filtre la liste indicative ; la valeur du champ peut rester une saisie libre hors liste */
+    private filterPaysAutocompleteOptions(raw: string | null): string[] {
+        const term = typeof raw === 'string' ? raw.trim().toLowerCase() : '';
+        if (!term) {
+            return this.sortPaysCodes(this.paysList);
+        }
+        return this.sortPaysCodes(this.paysList.filter(p => p.toLowerCase().includes(term)));
+    }
+
+    private syncPaysAutocompleteFilteredLists(): void {
+        this.filteredPaysAdd = this.filterPaysAutocompleteOptions(this.addForm.get('pays')?.value ?? null);
+        this.filteredPaysEdit = this.filterPaysAutocompleteOptions(this.editForm.get('pays')?.value ?? null);
+    }
+
+    /** Au focus : réafficher toute la liste dans le panneau d’autocomplete */
+    onPaysAutocompleteFocus(mode: 'add' | 'edit'): void {
+        const full = this.sortPaysCodes(this.paysList);
+        if (mode === 'add') {
+            this.filteredPaysAdd = full;
+        } else {
+            this.filteredPaysEdit = full;
+        }
+    }
+
+    /** Sélection d’un pays depuis la liste affichée sous le champ */
+    selectPaysFromList(mode: 'add' | 'edit', pays: string): void {
+        if (mode === 'add') {
+            this.addForm.get('pays')?.setValue(pays);
+            this.addForm.get('pays')?.markAsTouched();
+        } else {
+            this.editForm.get('pays')?.setValue(pays);
+            this.editForm.get('pays')?.markAsTouched();
+        }
     }
 
     ngOnDestroy() {
@@ -1111,6 +1170,7 @@ export class ComptesComponent implements OnInit, OnDestroy {
                 next: (paysList: string[]) => {
                     this.paysList = paysList;
                     this.filteredPaysList = paysList;
+                    this.syncPaysAutocompleteFilteredLists();
                     // Mettre à jour les listes filtrées avec cloisonnement après chargement des données
                     setTimeout(() => {
                         this.updateFilteredLists();

@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { Compte } from '../models/compte.model';
 
@@ -22,6 +22,7 @@ export interface FusionResult {
 })
 export class ServiceBalanceService {
   private apiUrl = '/api/service-balance';
+  private readonly comptesHeaders = new HttpHeaders({ 'X-Permission-Module': 'Comptes' });
 
   constructor(private http: HttpClient) { }
 
@@ -29,28 +30,28 @@ export class ServiceBalanceService {
    * Test de connectivité de l'API
    */
   testConnection(): Observable<any> {
-    return this.http.get(`${this.apiUrl}/test`);
+    return this.http.get(`${this.apiUrl}/test`, { headers: this.comptesHeaders });
   }
 
   /**
    * Test de connectivité simple
    */
   testPing(): Observable<any> {
-    return this.http.get('/api/test/ping');
+    return this.http.get('/api/test/ping', { headers: this.comptesHeaders });
   }
 
   /**
    * Récupère tous les comptes service
    */
   getServiceComptes(): Observable<Compte[]> {
-    return this.http.get<Compte[]>(`${this.apiUrl}/comptes`);
+    return this.http.get<Compte[]>(`${this.apiUrl}/comptes`, { headers: this.comptesHeaders });
   }
   
   /**
    * Récupère tous les comptes (pour debug)
    */
   getAllComptes(): Observable<Compte[]> {
-    return this.http.get<Compte[]>(`${this.apiUrl}/comptes/all`);
+    return this.http.get<Compte[]>(`${this.apiUrl}/comptes/all`, { headers: this.comptesHeaders });
   }
 
   /**
@@ -65,9 +66,7 @@ export class ServiceBalanceService {
     
     console.log('Envoi de la requête de fusion:', request);
     return this.http.post<FusionResult>(`${this.apiUrl}/merge`, request, {
-      headers: {
-        'Content-Type': 'application/json'
-      }
+      headers: this.comptesHeaders,
     });
   }
 }

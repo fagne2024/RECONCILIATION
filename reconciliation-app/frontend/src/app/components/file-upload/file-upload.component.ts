@@ -4362,7 +4362,7 @@ export class FileUploadComponent implements OnDestroy {
 
         // PRIORITÉ UNIQUE : Chercher un modèle partenaire qui correspond au fichier partenaire
         try {
-            const models = await this.autoProcessingService.getAllModels();
+            const models = await this.autoProcessingService.getAllModels('Réconciliation');
             console.log(`📋 ${models.length} modèles disponibles`);
             console.log('📋 Modèles disponibles:', models.map(m => ({ name: m.name, fileType: m.fileType, filePattern: m.filePattern })));
 
@@ -5057,7 +5057,7 @@ export class FileUploadComponent implements OnDestroy {
                 // Appliquer les boTreatments du modèle
                 if (keyDetectionResult.modelId) {
                     try {
-                        const models = await this.autoProcessingService.getAllModels();
+                        const models = await this.autoProcessingService.getAllModels('Réconciliation');
                         const usedModel = models.find(m => m.id === keyDetectionResult.modelId);
                         
                         if (usedModel && usedModel.reconciliationKeys?.boTreatments) {

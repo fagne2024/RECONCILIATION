@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import { HttpClient, HttpParams } from '@angular/common/http';
+import { HttpClient, HttpHeaders, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { tap } from 'rxjs/operators';
 
@@ -172,6 +172,7 @@ export interface CompensationAnalytics {
 })
 export class SupplyPredictionService {
   private apiUrl = '/api/supply';
+  private readonly comptesHeaders = new HttpHeaders({ 'X-Permission-Module': 'Comptes' });
 
   constructor(private http: HttpClient) {}
 
@@ -181,7 +182,7 @@ export class SupplyPredictionService {
   configure(config: SupplyPredictionConfig): Observable<any> {
     console.log('[SupplyPredictionService] POST /configure - payload:', config);
     return this.http
-      .post(`${this.apiUrl}/configure`, config)
+      .post(`${this.apiUrl}/configure`, config, { headers: this.comptesHeaders })
       .pipe(
         tap({
           next: (response) => {
@@ -202,18 +203,20 @@ export class SupplyPredictionService {
     pays?: string,
     periodeAnalyseJours?: number
   ): Observable<SupplyRecommendation[]> {
-    let params = new HttpParams()
-      .set('typeOperation', typeOperation);
-    
+    let params = new HttpParams().set('typeOperation', typeOperation);
+
     if (pays) {
       params = params.set('pays', pays);
     }
-    
+
     if (periodeAnalyseJours) {
       params = params.set('periodeAnalyseJours', periodeAnalyseJours.toString());
     }
-    
-    return this.http.get<SupplyRecommendation[]>(`${this.apiUrl}/recommendations`, { params });
+
+    return this.http.get<SupplyRecommendation[]>(`${this.apiUrl}/recommendations`, {
+      params,
+      headers: this.comptesHeaders
+    });
   }
 
   /**
@@ -235,7 +238,10 @@ export class SupplyPredictionService {
       params = params.set('pays', pays);
     }
     
-    return this.http.get<SupplyCalendar>(`${this.apiUrl}/calendar`, { params });
+    return this.http.get<SupplyCalendar>(`${this.apiUrl}/calendar`, {
+      params,
+      headers: this.comptesHeaders
+    });
   }
 
   /**
@@ -253,7 +259,10 @@ export class SupplyPredictionService {
       params = params.set('periodeAnalyseJours', periodeAnalyseJours.toString());
     }
     
-    return this.http.get<AgencyAnalytics>(`${this.apiUrl}/agency/${codeProprietaire}`, { params });
+    return this.http.get<AgencyAnalytics>(`${this.apiUrl}/agency/${codeProprietaire}`, {
+      params,
+      headers: this.comptesHeaders
+    });
   }
 
   /**
@@ -270,14 +279,17 @@ export class SupplyPredictionService {
       params = params.set('pays', pays);
     }
     
-    return this.http.get<SupplyMetrics>(`${this.apiUrl}/metrics`, { params });
+    return this.http.get<SupplyMetrics>(`${this.apiUrl}/metrics`, {
+      params,
+      headers: this.comptesHeaders
+    });
   }
 
   /**
    * Crée une commande d'approvisionnement
    */
   createOrder(orderRequest: any): Observable<any> {
-    return this.http.post(`${this.apiUrl}/order`, orderRequest);
+    return this.http.post(`${this.apiUrl}/order`, orderRequest, { headers: this.comptesHeaders });
   }
 
   // ============================================
@@ -300,7 +312,10 @@ export class SupplyPredictionService {
       params = params.set('pays', pays);
     }
     
-    return this.http.get<CompensationMetrics>(`${this.apiUrl}/compensation/metrics`, { params });
+    return this.http.get<CompensationMetrics>(`${this.apiUrl}/compensation/metrics`, {
+      params,
+      headers: this.comptesHeaders
+    });
   }
 
   /**
@@ -326,7 +341,7 @@ export class SupplyPredictionService {
     
     return this.http.get<CompensationRecommendation[]>(
       `${this.apiUrl}/compensation/recommendations`,
-      { params }
+      { params, headers: this.comptesHeaders }
     );
   }
 
@@ -353,7 +368,7 @@ export class SupplyPredictionService {
     
     return this.http.get<SupplyCalendar>(
       `${this.apiUrl}/compensation/calendar`,
-      { params }
+      { params, headers: this.comptesHeaders }
     );
   }
 
@@ -376,7 +391,7 @@ export class SupplyPredictionService {
     
     return this.http.get<CompensationAnalytics>(
       `${this.apiUrl}/compensation/analytics/${codeProprietaire}`,
-      { params }
+      { params, headers: this.comptesHeaders }
     );
   }
 
@@ -395,7 +410,7 @@ export class SupplyPredictionService {
     
     return this.http.get<AgencyThreshold[]>(
       `${this.apiUrl}/compensation/thresholds`,
-      { params }
+      { params, headers: this.comptesHeaders }
     );
   }
 
@@ -407,7 +422,7 @@ export class SupplyPredictionService {
     
     return this.http.get<AgencyThreshold>(
       `${this.apiUrl}/compensation/thresholds/${codeProprietaire}`,
-      { params }
+      { params, headers: this.comptesHeaders }
     );
   }
 
@@ -417,7 +432,8 @@ export class SupplyPredictionService {
   saveAgencyThreshold(threshold: AgencyThreshold): Observable<AgencyThreshold> {
     return this.http.post<AgencyThreshold>(
       `${this.apiUrl}/compensation/thresholds`,
-      threshold
+      threshold,
+      { headers: this.comptesHeaders }
     );
   }
 
@@ -429,7 +445,7 @@ export class SupplyPredictionService {
     
     return this.http.delete<any>(
       `${this.apiUrl}/compensation/thresholds/${codeProprietaire}`,
-      { params }
+      { params, headers: this.comptesHeaders }
     );
   }
 }

@@ -184,7 +184,7 @@ export class ImpactOPComponent implements OnInit, OnDestroy {
     let compteId: number | undefined;
     let numeroCompte: string | undefined;
     try {
-      const comptes = await this.compteService.getComptesByCodeProprietaire(impact.codeProprietaire).toPromise();
+      const comptes = await this.compteService.getComptesByCodeProprietaire(impact.codeProprietaire, 'Impact OP').toPromise();
       if (!comptes || !comptes.length) {
         await this.popupService.showError(`Aucun compte trouvé pour le code propriétaire: ${impact.codeProprietaire}`);
         return;
@@ -221,7 +221,7 @@ export class ImpactOPComponent implements OnInit, OnDestroy {
 
     this.isLoading = true;
     this.subscription.add(
-      this.operationService.createOperation(payload).subscribe({
+      this.operationService.createOperation(payload, 'Impact OP').subscribe({
         next: async () => {
           await this.popupService.showSuccess('Opération créée et compte impacté');
           // Marquer l'impact comme traité pour éviter multi-validation

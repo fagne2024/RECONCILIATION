@@ -22,7 +22,7 @@ export class AgencySummaryComponent implements OnInit {
 
   exportToExcel(): void {
     this.loading = true;
-    this.agencySummaryService.exportAllSummaries().subscribe({
+    this.agencySummaryService.exportAllSummaries('Statistiques').subscribe({
       next: (response) => {
         if (response.success) {
           const data = response.data;

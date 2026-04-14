@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { Observable } from 'rxjs';
 
 @Injectable({
@@ -10,16 +10,26 @@ export class AgencySummaryService {
 
   constructor(private http: HttpClient) { }
 
-  getAllSummaries(): Observable<any> {
-    return this.http.get(`${this.apiUrl}/all`);
+  private buildContextHeaders(moduleContext?: string): HttpHeaders | undefined {
+    return moduleContext ? new HttpHeaders({ 'X-Permission-Module': moduleContext }) : undefined;
   }
 
-  exportAllSummaries(): Observable<any> {
-    return this.http.get(`${this.apiUrl}/export`);
+  getAllSummaries(moduleContext?: string): Observable<any> {
+    return this.http.get(`${this.apiUrl}/all`, {
+      headers: this.buildContextHeaders(moduleContext)
+    });
   }
 
-  deleteSummary(id: number): Observable<any> {
-    return this.http.delete(`${this.apiUrl}/${id}`);
+  exportAllSummaries(moduleContext?: string): Observable<any> {
+    return this.http.get(`${this.apiUrl}/export`, {
+      headers: this.buildContextHeaders(moduleContext)
+    });
+  }
+
+  deleteSummary(id: number, moduleContext?: string): Observable<any> {
+    return this.http.delete(`${this.apiUrl}/${id}`, {
+      headers: this.buildContextHeaders(moduleContext)
+    });
   }
 
 

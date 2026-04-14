@@ -1037,17 +1037,16 @@ export class ReconciliationService implements OnInit, OnDestroy {
         observer: any
     ): void {
         
-        // OPTIMISATION: Utiliser un Map pour un accès O(1) au lieu de O(n) pour le filtrage
-        // Créer un index des données Partner par clé pour un retrait rapide
-        const partnerDataMap = new Map<string, any>();
+        // OPTIMISATION: Index Partner avec gestion des doublons (multiset)
+        // On doit conserver TOUTES les occurrences d'une clé (ex: même numéro+montant n fois)
+        // pour permettre un matching occurrence-par-occurrence.
+        const partnerKeyCounts = new Map<string, number>();
         allPartnerData.forEach(partnerRow => {
-            const key = partnerRow[originalRequest.partnerKeyColumn];
-            if (key) {
-                // Stocker la première occurrence de chaque clé (pour 1-1)
-                if (!partnerDataMap.has(key)) {
-                    partnerDataMap.set(key, partnerRow);
-                }
-            }
+            const rawKey = partnerRow?.[originalRequest.partnerKeyColumn];
+            if (rawKey === null || rawKey === undefined) return;
+            const key = String(rawKey).trim();
+            if (!key) return;
+            partnerKeyCounts.set(key, (partnerKeyCounts.get(key) || 0) + 1);
         });
         let remainingPartnerData = [...allPartnerData]; // Garder pour compatibilité avec le backend
         let allMatches: any[] = [];
@@ -1074,7 +1073,7 @@ export class ReconciliationService implements OnInit, OnDestroy {
         }
         
         let completedChunks = 0;
-        const chunkResults = new Map<number, { matches: any[], boOnly: any[], matchedKeys: Set<string> }>();
+        const chunkResults = new Map<number, { matches: any[], boOnly: any[], matchedKeyCounts: Map<string, number> }>();
         const processingChunks = new Set<number>();
         let consecutiveErrors = 0; // Compteur d'erreurs consécutives pour réduire la concurrence dynamiquement
         
@@ -1271,20 +1270,22 @@ export class ReconciliationService implements OnInit, OnDestroy {
                                 console.log(`✅ Chunk BO ${chunkIndex + 1} traité: ${response.matches?.length || 0} matches`);
                                 
                                 // Stocker les résultats pour traitement séquentiel
-                                const matchedPartnerKeys = new Set<string>();
+                                // IMPORTANT: gérer les doublons -> on compte les occurrences matchées par clé
+                                const matchedKeyCounts = new Map<string, number>();
                                 if (response.matches && response.matches.length > 0) {
                                     response.matches.forEach(match => {
-                                        const key = match.partnerData?.[originalRequest.partnerKeyColumn];
-                                        if (key) {
-                                            matchedPartnerKeys.add(key);
-                                        }
+                                        const rawKey = match?.partnerData?.[originalRequest.partnerKeyColumn];
+                                        if (rawKey === null || rawKey === undefined) return;
+                                        const key = String(rawKey).trim();
+                                        if (!key) return;
+                                        matchedKeyCounts.set(key, (matchedKeyCounts.get(key) || 0) + 1);
                                     });
                                 }
                                 
                                 chunkResults.set(chunkIndex, {
                                     matches: response.matches || [],
                                     boOnly: response.boOnly || [],
-                                    matchedKeys: matchedPartnerKeys
+                                    matchedKeyCounts: matchedKeyCounts
                                 });
                                 
                                 // Traiter les résultats de manière séquentielle pour éviter les conflits
@@ -1335,7 +1336,7 @@ export class ReconciliationService implements OnInit, OnDestroy {
                                 chunkResults.set(chunkIndex, {
                                     matches: [],
                                     boOnly: boChunk,
-                                    matchedKeys: new Set()
+                                    matchedKeyCounts: new Map()
                                 });
                                 
                                 processChunkResults().then(() => resolve()).catch(reject);
@@ -1361,17 +1362,28 @@ export class ReconciliationService implements OnInit, OnDestroy {
                     if (result.matches.length > 0) {
                         allMatches.push(...result.matches);
                         
-                        // Retirer les clés matchées du Map
-                        result.matchedKeys.forEach(key => partnerDataMap.delete(key));
-                        
-                        // Retirer les lignes Partner matchées
+                        // Retirer UNIQUEMENT les occurrences matchées (pas toutes les lignes d'une même clé)
                         const beforeCount = remainingPartnerData.length;
+                        const toRemove = new Map<string, number>(result.matchedKeyCounts);
                         remainingPartnerData = remainingPartnerData.filter(partnerRow => {
-                            const key = partnerRow[originalRequest.partnerKeyColumn];
-                            return !result.matchedKeys.has(key);
+                            const rawKey = partnerRow?.[originalRequest.partnerKeyColumn];
+                            if (rawKey === null || rawKey === undefined) return true;
+                            const key = String(rawKey).trim();
+                            if (!key) return true;
+                            const remaining = toRemove.get(key) || 0;
+                            if (remaining > 0) {
+                                toRemove.set(key, remaining - 1);
+                                // Mettre à jour le compteur global (optionnel mais cohérent)
+                                const globalCount = partnerKeyCounts.get(key) || 0;
+                                if (globalCount > 0) partnerKeyCounts.set(key, globalCount - 1);
+                                return false; // retirer cette occurrence (une seule)
+                            }
+                            return true;
                         });
                         
-                        console.log(`📊 Chunk ${nextChunkToProcess + 1}: ${beforeCount - remainingPartnerData.length} lignes Partner retirées, ${remainingPartnerData.length} restantes`);
+                        console.log(
+                            `📊 Chunk ${nextChunkToProcess + 1}: ${beforeCount - remainingPartnerData.length} occurrence(s) Partner retirée(s), ${remainingPartnerData.length} restantes`
+                        );
                     }
                     
                     // Ajouter les bo-only

@@ -807,7 +807,7 @@ export class EcartSoldeComponent implements OnInit, OnDestroy {
               style.fill = { fgColor: { rgb: 'F8D7DA' } };
               style.font = { ...style.font, color: { rgb: '721C24' } };
             }
-          } else if (header === 'Frais' && typeof value === 'number' && value > 0) {
+          } else if (header === 'Frais' && typeof value === 'number' && value !== 0) {
             style.font = { ...style.font, bold: true, color: { rgb: 'DC3545' } };
             style.fill = { fgColor: { rgb: 'FFF5F5' } };
           } else if (header === 'Service') {
@@ -847,12 +847,11 @@ export class EcartSoldeComponent implements OnInit, OnDestroy {
     return this.formatMontant(total);
   }
 
-  // Méthode pour calculer l'écart (montant - frais)
+  // Écart net : montant + frais (frais toujours ≤ 0 sur cette page)
   calculateEcart(ecart: EcartSolde): number {
     const montant = ecart.montant || 0;
     const frais = ecart.fraisAssocie ? ecart.fraisAssocie.montant : 0;
-    // Toujours soustraire les frais du montant
-    return montant - frais;
+    return montant + frais;
   }
 
   // Méthodes pour la sélection multiple

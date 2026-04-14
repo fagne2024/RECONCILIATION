@@ -81,13 +81,14 @@ public class ServiceReferenceController {
      */
     @PostMapping("/import-batch")
     public ResponseEntity<ServiceReferenceImportBatchResponse> importBatch(
-            @RequestBody ServiceReferenceImportBatchRequest request) {
+            @RequestBody ServiceReferenceImportBatchRequest request,
+            @RequestParam(required = false, defaultValue = "false") boolean upsert) {
         String username = RequestContextUtil.getUsernameFromRequest();
         if (request == null || request.getItems() == null || request.getItems().isEmpty()) {
             return ResponseEntity.badRequest().build();
         }
         ServiceReferenceImportBatchResponse result =
-                serviceReferenceService.importBatch(request.getItems(), username);
+                serviceReferenceService.importBatch(request.getItems(), username, upsert);
         return ResponseEntity.ok(result);
     }
 

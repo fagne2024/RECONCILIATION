@@ -293,14 +293,11 @@ export class EcartSoldeTabComponent implements OnInit, OnDestroy, OnChanges {
   calculateTotalEcart(): number {
     let totalEcart = 0;
     
-    // Calculer le total des écarts de solde
-    // La règle est TOUJOURS : montant - frais
+    // Total : montant + frais (frais ≤ 0, convention écart-solde)
     this.filteredEcartSoldes.forEach(ecart => {
       const montant = ecart.montant || 0;
       const frais = ecart.fraisAssocie?.montant || 0;
-      
-      // Toujours faire montant - frais, peu importe le service
-      totalEcart += montant - frais;
+      totalEcart += montant + frais;
     });
     
     // Soustraire les montants ecartFrais des lignes de revenu journalier
@@ -320,12 +317,10 @@ export class EcartSoldeTabComponent implements OnInit, OnDestroy, OnChanges {
     }).format(total) + ' F CFA';
   }
 
-  // Méthode pour calculer l'écart individuel (montant - frais)
   calculateEcart(ecart: EcartSolde): number {
     const montant = ecart.montant || 0;
     const frais = ecart.fraisAssocie ? ecart.fraisAssocie.montant : 0;
-    // Toujours soustraire les frais du montant
-    return montant - frais;
+    return montant + frais;
   }
 
   async validateEcartSolde(ecart: EcartSolde): Promise<void> {
@@ -614,7 +609,7 @@ export class EcartSoldeTabComponent implements OnInit, OnDestroy, OnChanges {
               style.fill = { fgColor: { rgb: 'FF6B6B' } };
               style.alignment = { horizontal: 'center' };
             }
-          } else if (header === 'Frais' && typeof value === 'number' && value > 0) {
+          } else if (header === 'Frais' && typeof value === 'number' && value !== 0) {
             style.font = { ...style.font, bold: true, color: { rgb: 'DC3545' } };
             style.fill = { fgColor: { rgb: 'FFF5F5' } };
           } else if (header === 'Service') {

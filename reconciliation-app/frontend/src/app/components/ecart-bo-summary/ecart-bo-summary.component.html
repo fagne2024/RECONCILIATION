@@ -314,17 +314,19 @@
                   (click)="openEditModal(item)" 
                   class="edit-button"
                   title="Modifier cette ligne"
+                  aria-label="Modifier"
                 >
-                  ✏️ Modifier
+                  <i class="fas fa-pen"></i>
                 </button>
                 <button 
                   (click)="deleteItem(item)" 
                   class="delete-button"
                   title="Supprimer cette ligne"
+                  aria-label="Supprimer"
                   [disabled]="isDeleting && deletingItemId === item.id"
                   *ngIf="item.id"
                 >
-                  {{ isDeleting && deletingItemId === item.id ? '⏳ Suppression...' : '🗑️ Supprimer' }}
+                  <i class="fas" [ngClass]="(isDeleting && deletingItemId === item.id) ? 'fa-spinner fa-spin' : 'fa-trash'"></i>
                 </button>
               </div>
             </td>

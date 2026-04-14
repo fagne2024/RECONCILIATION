@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { FraisTransaction, FraisTransactionRequest } from '../models/frais-transaction.model';
 
@@ -11,14 +11,20 @@ export class FraisTransactionService {
 
     constructor(private http: HttpClient) {}
 
+    private buildContextHeaders(moduleContext?: string): HttpHeaders | undefined {
+        return moduleContext ? new HttpHeaders({ 'X-Permission-Module': moduleContext }) : undefined;
+    }
+
     // Récupérer tous les frais de transaction
     getAllFraisTransactions(): Observable<FraisTransaction[]> {
         return this.http.get<FraisTransaction[]>(this.apiUrl);
     }
 
     // Récupérer tous les frais de transaction actifs
-    getAllFraisTransactionsActifs(): Observable<FraisTransaction[]> {
-        return this.http.get<FraisTransaction[]>(`${this.apiUrl}/actifs`);
+    getAllFraisTransactionsActifs(moduleContext?: string): Observable<FraisTransaction[]> {
+        return this.http.get<FraisTransaction[]>(`${this.apiUrl}/actifs`, {
+            headers: this.buildContextHeaders(moduleContext)
+        });
     }
 
     // Récupérer un frais de transaction par ID

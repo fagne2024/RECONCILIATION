@@ -339,7 +339,7 @@ export class TrxSfComponent implements OnInit, OnDestroy {
   }
 
   private loadFraisConfigurations(): void {
-    this.fraisService.getAllFraisTransactionsActifs()
+    this.fraisService.getAllFraisTransactionsActifs('TRX SF')
       .pipe(takeUntil(this.destroy$))
       .subscribe({
         next: (configs) => {

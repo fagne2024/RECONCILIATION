@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import { HttpClient, HttpErrorResponse, HttpParams } from '@angular/common/http';
+import { HttpClient, HttpErrorResponse, HttpHeaders, HttpParams } from '@angular/common/http';
 import { Observable, throwError, timer } from 'rxjs';
 import { catchError, switchMap } from 'rxjs/operators';
 
@@ -57,6 +57,7 @@ export interface EcartBoSummaryPendingLine {
 })
 export class EcartBoSummaryService {
   private apiUrl = '/api/ecart-bo-summary';
+  private readonly resultsHeaders = new HttpHeaders({ 'X-Permission-Module': 'Résultats' });
   /** Retries après 429 (rate limit backend / proxy) — backoff exponentiel */
   private static readonly MAX_429_RETRIES = 6;
   private prefillFromMatches: EcartBoSummaryPrefill | null = null;
@@ -143,11 +144,11 @@ export class EcartBoSummaryService {
       }
     }
 
-    return this.http.get<EcartBoSummary[]>(this.apiUrl, { params });
+    return this.http.get<EcartBoSummary[]>(this.apiUrl, { params, headers: this.resultsHeaders });
   }
 
   getEcartBoSummaryById(id: number): Observable<EcartBoSummary> {
-    return this.http.get<EcartBoSummary>(`${this.apiUrl}/${id}`);
+    return this.http.get<EcartBoSummary>(`${this.apiUrl}/${id}`, { headers: this.resultsHeaders });
   }
 
   saveEcartBoSummary(summaryData: Array<{
@@ -176,7 +177,7 @@ export class EcartBoSummaryService {
     }>;
   }> {
     return new Promise((resolve, reject) => {
-      this.http.post<any>(this.apiUrl, summaryData).subscribe({
+      this.http.post<any>(this.apiUrl, summaryData, { headers: this.resultsHeaders }).subscribe({
         next: (response) => {
           console.log('=== RÉPONSE saveEcartBoSummary ===');
           console.log('DEBUG: Réponse complète:', response);
@@ -199,24 +200,24 @@ export class EcartBoSummaryService {
 
   updateEcartBoSummary(id: number, summary: Partial<EcartBoSummary>): Observable<EcartBoSummary> {
     return this.with429Retry(() =>
-      this.http.put<EcartBoSummary>(`${this.apiUrl}/${id}`, summary)
+      this.http.put<EcartBoSummary>(`${this.apiUrl}/${id}`, summary, { headers: this.resultsHeaders })
     );
   }
 
   deleteEcartBoSummary(id: number): Observable<void> {
-    return this.with429Retry(() => this.http.delete<void>(`${this.apiUrl}/${id}`));
+    return this.with429Retry(() => this.http.delete<void>(`${this.apiUrl}/${id}`, { headers: this.resultsHeaders }));
   }
 
   getDistinctAgences(): Observable<string[]> {
-    return this.http.get<string[]>(`${this.apiUrl}/agences`);
+    return this.http.get<string[]>(`${this.apiUrl}/agences`, { headers: this.resultsHeaders });
   }
 
   getDistinctServices(): Observable<string[]> {
-    return this.http.get<string[]>(`${this.apiUrl}/services`);
+    return this.http.get<string[]>(`${this.apiUrl}/services`, { headers: this.resultsHeaders });
   }
 
   getDistinctPays(): Observable<string[]> {
-    return this.http.get<string[]>(`${this.apiUrl}/pays`);
+    return this.http.get<string[]>(`${this.apiUrl}/pays`, { headers: this.resultsHeaders });
   }
 
   createEcartBoSummary(summary: EcartBoSummary): Observable<any> {
@@ -237,6 +238,6 @@ export class EcartBoSummaryService {
     if (summary.envCode != null && String(summary.envCode).trim() !== '') {
       dto.envCode = String(summary.envCode).trim();
     }
-    return this.http.post<any>(this.apiUrl, [dto]);
+    return this.http.post<any>(this.apiUrl, [dto], { headers: this.resultsHeaders });
   }
 }

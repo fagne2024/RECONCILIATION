@@ -2938,6 +2938,7 @@ export interface ReconciliationReportData {
     `]
 })
 export class ReconciliationReportComponent implements OnInit, OnDestroy {
+    private readonly resultsModuleName = 'Résultats';
     glpiBaseUrl = 'https://glpi.intouchgroup.net/glpi/front/ticket.form.php?id='
     
     // Propriétés de pagination
@@ -3107,6 +3108,13 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         return new Promise(resolve => setTimeout(resolve, ms));
     }
 
+    private buildResultsHeaders(extraHeaders?: Record<string, string>): HttpHeaders {
+        return new HttpHeaders({
+            'X-Permission-Module': this.resultsModuleName,
+            ...(extraHeaders ?? {})
+        });
+    }
+
     private queueResult8RecRequest<T>(requestFactory: () => Observable<T>): Promise<T> {
         return new Promise((resolve, reject) => {
             const run = () => {
@@ -3154,7 +3162,9 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         // eslint-disable-next-line no-constant-condition
         while (true) {
             try {
-                return await this.queueResult8RecRequest<T>(() => this.http.put<T>(url, payload));
+                return await this.queueResult8RecRequest<T>(() =>
+                    this.http.put<T>(url, payload, { headers: this.buildResultsHeaders() })
+                );
             } catch (err: any) {
                 const status = err?.status;
                 if (status === 429 && attempt < maxRetries) {
@@ -6015,7 +6025,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         this.loadedFromDb = true;
         
         // Headers pour désactiver le cache du navigateur
-        const headers = new HttpHeaders({
+        const headers = this.buildResultsHeaders({
             'Cache-Control': 'no-cache, no-store, must-revalidate',
             'Pragma': 'no-cache',
             'Expires': '0'
@@ -6624,7 +6634,9 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         // Log complet du payload pour déboguer
         console.log(`💾 confirmAndSave - Payload complet pour ${item.agency}/${item.service}:`, JSON.stringify(payload, null, 2));
         try {
-            const saved = await firstValueFrom(this.http.post<any>('/api/result8rec', payload));
+            const saved = await firstValueFrom(
+                this.http.post<any>('/api/result8rec', payload, { headers: this.buildResultsHeaders() })
+            );
             item.id = saved.id;
             this.appStateService.notifySummarySaved();
             await this.popupService.showSuccess('Ligne sauvegardée avec succès');
@@ -6665,7 +6677,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         );
         if (!confirmed) return;
         
-        this.http.delete('/api/result8rec/' + item.id)
+        this.http.delete('/api/result8rec/' + item.id, { headers: this.buildResultsHeaders() })
         .subscribe({
             next: () => {
                 // Ne pas supprimer la ligne du rapport (qui est calculée) mais juste retirer l'id
@@ -6952,9 +6964,9 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                 if (!id) {
                     continue;
                 }
-                const existing = await firstValueFrom(this.http.get<any>(`/api/result8rec/${id}`));
+                // Données écran = source de vérité pour les champs non modifiés (évite N GET → moitié moins de requêtes / 429)
                 const payload = this.buildPartnerOnlyAndCommentOnlyUpdatePayloadFromExisting(
-                    existing,
+                    item as any,
                     row.newPartnerOnly,
                     row.newComment,
                     row.env
@@ -6980,7 +6992,9 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             const bodies = chunk.map((c) => c.payloadItem);
             try {
                 const bulkResp = await firstValueFrom(
-                    this.http.post<{ results: Array<{ status: string; entity: any }> }>('/api/result8rec/bulk', bodies)
+                    this.http.post<{ results: Array<{ status: string; entity: any }> }>('/api/result8rec/bulk', bodies, {
+                        headers: this.buildResultsHeaders()
+                    })
                 );
                 const results = bulkResp?.results ?? [];
                 if (results.length !== chunk.length) {
@@ -7112,26 +7126,10 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
 
     /**
      * Ligne concernée par des écarts BO pour proposer « Résumé Écarts BO ».
-     * Inclut le cas statut OK où la colonne boOnly est à 0 mais le détail BO ou le commentaire le signale.
+     * La redirection ne doit être proposée que si la colonne Écarts BO est strictement > 0.
      */
     private reportRowIndicatesBoEcartWork(row: ReconciliationReportData): boolean {
-        if ((this.normalizeNumericValue(row.boOnly) || 0) > 0) {
-            return true;
-        }
-        const c = (row.comment || '')
-            .toLowerCase()
-            .normalize('NFD')
-            .replace(/[\u0300-\u036f]/g, '');
-        if (c.includes('ecart') && c.includes('bo')) {
-            return true;
-        }
-        const vol = this.calculateBoOnlyVolume(
-            row.agency || '',
-            row.service || '',
-            row.country || '',
-            row.date || ''
-        );
-        return vol > 0;
+        return (this.normalizeNumericValue(row.boOnly) || 0) > 0;
     }
 
     /**
@@ -8041,6 +8039,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                 agency: recalculatedData.agency,
                 service: recalculatedData.service,
                 country: recalculatedData.country,
+                env: this.normalizeReleveEnvKey(recalculatedData.env),
                 totalTransactions: recalculatedData.totalTransactions,
                 totalVolume: recalculatedData.totalVolume,
                 matches: recalculatedData.matches,
@@ -8054,21 +8053,20 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                 glpiId: recalculatedData.glpiId || ''
             };
 
-            this.http.put<any>('/api/result8rec/' + item.id, payload)
-            .subscribe({
-                next: () => {
-                    this.popupService.showSuccess(
-                        'Transfert effectué',
-                        `${transferAmount} écart(s) ${ecartLabel} transféré(s) vers les correspondances.`
-                    );
-                    // Rafraîchir les données après la mise à jour
-                    this.loadSavedReportFromDatabase();
-                },
-                error: (err: HttpErrorResponse) => {
-                    console.error('Erreur lors de la sauvegarde:', err);
-                    this.popupService.showError('Erreur de sauvegarde', 'Le transfert a été effectué localement mais la sauvegarde a échoué.');
-                }
-            });
+            try {
+                await this.putResult8RecWithRetry<any>(item.id, payload, { maxRetries: 3, baseDelayMs: 500 });
+                this.popupService.showSuccess(
+                    'Transfert effectué',
+                    `${transferAmount} écart(s) ${ecartLabel} transféré(s) vers les correspondances.`
+                );
+                this.loadSavedReportFromDatabase();
+            } catch (err) {
+                console.error('Erreur lors de la sauvegarde:', err);
+                this.popupService.showError(
+                    'Erreur de sauvegarde',
+                    'Le transfert a été effectué localement mais la sauvegarde a échoué.'
+                );
+            }
         } else {
             this.popupService.showSuccess(
                 'Transfert effectué',
@@ -8163,7 +8161,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         this.editingTraitementRow = null;
     }
 
-    onTraitementChange(item: ReconciliationReportData) {
+    async onTraitementChange(item: ReconciliationReportData) {
         if (!item.id) {
             // Si la ligne n'a pas d'ID, elle n'est pas encore sauvegardée
             // On peut juste mettre à jour localement
@@ -8177,6 +8175,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             agency: item.agency,
             service: item.service,
             country: item.country,
+            env: this.normalizeReleveEnvKey(item.env),
             totalTransactions: item.totalTransactions,
             totalVolume: item.totalVolume,
             matches: item.matches,
@@ -8190,24 +8189,17 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             glpiId: item.glpiId || ''
         };
 
-        this.http.put<any>('/api/result8rec/' + item.id, payload)
-        .subscribe({
-            next: (updated) => {
-                // Mettre à jour l'item avec les données retournées
-                if (updated.traitement !== undefined) {
-                    item.traitement = updated.traitement;
-                }
-                this.stopEditTraitement();
-                // Optionnel: afficher un message de succès discret
-                console.log('✅ Traitement mis à jour avec succès');
-            },
-            error: (err: HttpErrorResponse) => {
-                console.error('❌ Erreur lors de la mise à jour du traitement', err);
-                // Restaurer la valeur précédente en cas d'erreur
-                // On pourrait aussi afficher un message d'erreur
-                this.popupService.showError('Erreur', 'Impossible de mettre à jour le traitement');
+        try {
+            const updated = await this.putResult8RecWithRetry<any>(item.id, payload, { maxRetries: 3, baseDelayMs: 500 });
+            if (updated.traitement !== undefined) {
+                item.traitement = updated.traitement;
             }
-        });
+            this.stopEditTraitement();
+            console.log('✅ Traitement mis à jour avec succès');
+        } catch (err) {
+            console.error('❌ Erreur lors de la mise à jour du traitement', err);
+            this.popupService.showError('Erreur', 'Impossible de mettre à jour le traitement');
+        }
     }
 
     // Méthodes pour la sélection multiple et changement de statut en masse
@@ -8294,34 +8286,27 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         let successCount = 0;
         let errorCount = 0;
 
-        // Appliquer le changement de statut à toutes les lignes sélectionnées
-        const savePromises = unlockedItems.map(async (item) => {
+        // Séquentiel + léger espacement : la file result8rec sérialise déjà les PUT, mais le compteur rate-limit
+        // reste par requête — évite de cramer le quota / minute avec des centaines de lignes.
+        for (const item of unlockedItems) {
             const oldStatus = item.status;
-            const previousComment = item.comment ?? ''; // Sauvegarder le commentaire avant modification
+            const previousComment = item.comment ?? '';
             item.status = this.bulkStatusSelection;
-            
-            // Recalculer les données selon le nouveau statut
-            // Cette méthode préserve automatiquement le commentaire si le statut passe à OK
+
             const recalculatedData = this.recalculateDataBasedOnStatus(item);
-            
-            // Mettre à jour l'item avec les données recalculées (y compris le traitement et le commentaire préservé)
             Object.assign(item, recalculatedData);
-            
+
             try {
-                // Sauvegarder via l'API
                 await this.saveItemStatus(item, oldStatus);
                 successCount++;
             } catch (error) {
                 errorCount++;
-                // Revenir à l'ancien statut et au commentaire précédent en cas d'erreur
                 item.status = oldStatus;
                 item.comment = previousComment;
                 console.error('❌ Erreur lors de la sauvegarde du statut:', error);
             }
-        });
-
-        // Attendre que toutes les sauvegardes soient terminées
-        await Promise.all(savePromises);
+            await this.sleep(100);
+        }
 
         // Vider la sélection
         this.clearSelection();
@@ -8373,25 +8358,20 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         let successCount = 0;
         let errorCount = 0;
 
-        // Appliquer le changement de traitement à toutes les lignes sélectionnées
-        const savePromises = unlockedItems.map(async (item) => {
+        for (const item of unlockedItems) {
             const oldTraitement = item.traitement;
             item.traitement = traitementValue;
-            
+
             try {
-                // Sauvegarder via l'API
                 await this.saveItemTraitement(item);
                 successCount++;
             } catch (error) {
                 errorCount++;
-                // Revenir à l'ancien traitement en cas d'erreur
                 item.traitement = oldTraitement;
                 console.error('❌ Erreur lors de la sauvegarde du traitement:', error);
             }
-        });
-
-        // Attendre que toutes les sauvegardes soient terminées
-        await Promise.all(savePromises);
+            await this.sleep(100);
+        }
 
         // Vider la sélection
         this.clearSelection();
@@ -8454,7 +8434,9 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         for (const item of deletable) {
             const id = item.id;
             try {
-                await firstValueFrom(this.http.delete<void>('/api/result8rec/' + id));
+                await firstValueFrom(this.http.delete<void>('/api/result8rec/' + id, {
+                    headers: this.buildResultsHeaders()
+                }));
                 item.id = undefined;
                 successCount++;
                 removedFromLive.push(item);
@@ -8666,6 +8648,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                 agency: item.agency,
                 service: item.service,
                 country: item.country,
+                env: this.normalizeReleveEnvKey(item.env),
                 totalTransactions: previousTotalTransactions,
                 totalVolume: item.totalVolume,
                 matches: previousMatches,
@@ -8679,21 +8662,22 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                 glpiId: item.glpiId || ''
             };
 
-            this.http.put<any>('/api/result8rec/' + item.id, payload)
-            .subscribe({
-                next: (updated) => {
-                    // Mettre à jour uniquement le statut
+            void (async () => {
+                try {
+                    const updated = await this.putResult8RecWithRetry<any>(item.id!, payload, {
+                        maxRetries: 3,
+                        baseDelayMs: 500
+                    });
                     if (updated.status !== undefined) {
                         item.status = updated.status;
                     }
                     this.stopEditStatus();
                     console.log('✅ Statut mis à jour avec succès (autres colonnes non modifiées)');
-                },
-                error: (err: HttpErrorResponse) => {
+                } catch (err) {
                     console.error('❌ Erreur lors de la mise à jour du statut', err);
                     this.popupService.showError('Erreur', 'Impossible de mettre à jour le statut');
                 }
-            });
+            })();
         }
     }
 
@@ -9124,7 +9108,10 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             .set('country', this.releveData.country)
             .set('env', envKey);
 
-        this.http.get<any>('/api/reconciliation-report/manual-trx', { params })
+        this.http.get<any>('/api/reconciliation-report/manual-trx', {
+            params,
+            headers: this.buildResultsHeaders()
+        })
             .subscribe({
                 next: (response) => {
                     if (!response) {
@@ -9162,7 +9149,9 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             rembourseVolume: this.releveRembourseVolume || 0
         };
 
-        this.http.post<any>('/api/reconciliation-report/manual-trx', payload)
+        this.http.post<any>('/api/reconciliation-report/manual-trx', payload, {
+            headers: this.buildResultsHeaders()
+        })
             .subscribe({
                 next: () => {
                     // Pas de popup ici pour éviter le spam; on logge seulement au besoin

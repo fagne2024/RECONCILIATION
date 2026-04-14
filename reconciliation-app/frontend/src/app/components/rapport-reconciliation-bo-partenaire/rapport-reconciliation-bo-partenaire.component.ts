@@ -365,7 +365,8 @@ export class RapportReconciliationBoPartenaireComponent implements OnInit, OnDes
     const headers = new HttpHeaders({
       'Cache-Control': 'no-cache, no-store, must-revalidate',
       Pragma: 'no-cache',
-      Expires: '0'
+      Expires: '0',
+      'X-Permission-Module': 'Résultats'
     });
     const url = `/api/result8rec?_t=${Date.now()}`;
 
@@ -629,6 +630,57 @@ export class RapportReconciliationBoPartenaireComponent implements OnInit, OnDes
     }
     const slug = t.toLowerCase().replace(/\s+/g, '-');
     return `rrbp-traitement-badge rrbp-traitement-${slug}`;
+  }
+
+  /** Catégorie affichée dans la colonne Statut (couleurs + libellé). */
+  private resolveStatutKind(
+    traitement: string
+  ): 'support' | 'group' | 'termine' | 'none' {
+    const raw = (traitement || '').trim();
+    if (!raw || raw === '—') {
+      return 'none';
+    }
+    const t = raw
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/\p{M}/gu, '');
+    if (t.includes('support')) {
+      return 'support';
+    }
+    if (t.includes('group')) {
+      return 'group';
+    }
+    if (t.includes('termine')) {
+      return 'termine';
+    }
+    return 'none';
+  }
+
+  /**
+   * Libellé lisible côté métier à partir du traitement (result8rec).
+   * Support → en cours de traitement ; Group → en cours de validation ; Terminé → validé & clôturé.
+   */
+  libelleStatutFromTraitement(traitement: string): string {
+    switch (this.resolveStatutKind(traitement)) {
+      case 'support':
+        return 'En cours de traitement';
+      case 'group':
+        return 'En cours de validation';
+      case 'termine':
+        return 'Validé & Clôturé';
+      default:
+        return '—';
+    }
+  }
+
+  /** Classes pour la cellule Statut (pastille colorée). */
+  classeStatutCell(traitement: string): string {
+    const k = this.resolveStatutKind(traitement);
+    const base = 'col-statut rrbp-statut-cell';
+    if (k === 'none') {
+      return `${base} rrbp-statut--neutre`;
+    }
+    return `${base} rrbp-statut--${k}`;
   }
 
   /** Lignes result8rec pour un service (pays / période déjà dans `filtered`). */

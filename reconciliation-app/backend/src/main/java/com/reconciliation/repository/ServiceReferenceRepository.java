@@ -19,6 +19,10 @@ public interface ServiceReferenceRepository extends JpaRepository<ServiceReferen
     Optional<ServiceReferenceEntity> findByPaysAndCodeServiceAndServiceLabelAndCodeReco(
         String pays, String codeService, String serviceLabel, String codeReco);
 
+    /** Dernière ligne en cas d’historique dupliqué (import upsert dashboard). */
+    Optional<ServiceReferenceEntity> findFirstByPaysIgnoreCaseAndCodeServiceIgnoreCaseOrderByIdDesc(
+        String pays, String codeService);
+
     @Query("select s.codeReco from ServiceReferenceEntity s where s.codeReco is not null")
     List<String> findAllCodeRecoValues();
 

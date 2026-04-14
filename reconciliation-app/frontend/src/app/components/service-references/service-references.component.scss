@@ -823,6 +823,17 @@
     opacity: 0.9;
 }
 
+.sr-dash-import-hint {
+    margin: 0 0 16px;
+    padding: 12px 16px;
+    font-size: 13px;
+    line-height: 1.45;
+    color: var(--rd-text-muted, #5c6570);
+    background: var(--rd-surface, #f8f9fa);
+    border: 1px solid var(--rd-border, #e2e6ea);
+    border-radius: var(--rd-r, 8px);
+}
+
 .sr-dash-filters {
     display: flex;
     flex-direction: row;
