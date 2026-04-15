@@ -267,6 +267,7 @@ public class ProfilService {
         if (moduleId == null || !moduleRepository.existsById(moduleId)) {
             return List.of();
         }
+        moduleRepository.findById(moduleId).ifPresent(this::ensureRequiredModulePermissions);
         List<PermissionEntity> modulePermissions = modulePermissionRepository.findByModuleId(moduleId).stream()
             .map(ModulePermissionEntity::getPermission)
             .filter(permission -> permission != null)
@@ -330,5 +331,40 @@ public class ProfilService {
                 String.CASE_INSENSITIVE_ORDER
             ))
             .toList();
+    }
+
+    private void ensureRequiredModulePermissions(ModuleEntity module) {
+        if (module == null || module.getId() == null || module.getNom() == null) {
+            return;
+        }
+
+        if ("Résultats".equalsIgnoreCase(module.getNom().trim())) {
+            ensureModulePermissionAssociation(module, "modifier");
+        }
+    }
+
+    private void ensureModulePermissionAssociation(ModuleEntity module, String permissionName) {
+        if (module == null || module.getId() == null || permissionName == null || permissionName.isBlank()) {
+            return;
+        }
+
+        PermissionEntity permission = permissionRepository.findByNom(permissionName);
+        if (permission == null) {
+            PermissionEntity newPermission = new PermissionEntity();
+            newPermission.setNom(permissionName);
+            permission = permissionRepository.save(newPermission);
+        }
+
+        Long permissionId = permission.getId();
+        boolean associationExists = modulePermissionRepository.findByModuleId(module.getId()).stream()
+            .anyMatch(mp -> mp.getPermission() != null && mp.getPermission().getId() != null
+                && mp.getPermission().getId().equals(permissionId));
+
+        if (!associationExists) {
+            ModulePermissionEntity modulePermission = new ModulePermissionEntity();
+            modulePermission.setModule(module);
+            modulePermission.setPermission(permission);
+            modulePermissionRepository.save(modulePermission);
+        }
     }
 }
