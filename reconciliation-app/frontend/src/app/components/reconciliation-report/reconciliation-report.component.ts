@@ -68,7 +68,7 @@ export interface ReconciliationReportData {
                         <i class="fas fa-arrow-left"></i> Retour
                     </button>
                     <button type="button" class="nav-btn primary" routerLink="/rapport-reconciliation-bo-partenaire">
-                        <i class="fas fa-file-alt"></i> Rapport Réconciliation
+                        <i class="fas fa-file-alt"></i> Comparaison BO vs PART
                     </button>
                     <button type="button" class="nav-btn secondary" (click)="exportToExcel()" [disabled]="!reportData.length">
                         <i class="fas fa-file-excel"></i> Exporter
@@ -892,7 +892,7 @@ export interface ReconciliationReportData {
                             <button type="button" class="btn-releve-upload" (click)="releveManualFileInput.click()" [disabled]="isReleveManualFileLoading">
                                 {{ isReleveManualFileLoading ? '⏳ Chargement...' : '📤 Charger un fichier (CSV / XLS)' }}
                             </button>
-                            <span class="releve-upload-hint">Nombre = lignes (sans en-tête), Volume = somme de la colonne « montant ».</span>
+                            <span class="releve-upload-hint">Nombre = lignes valides, Volume = somme de « montant ». Contrôle sur BO_Service et BO_date (date, J-1 ou J+1).</span>
                         </div>
                         <div class="releve-manual-or">Ou saisir manuellement :</div>
                         <div class="releve-manual-input">
@@ -943,7 +943,7 @@ export interface ReconciliationReportData {
                             <button type="button" class="btn-releve-upload" (click)="releveRembourseFileInput.click()" [disabled]="isReleveRembourseFileLoading">
                                 {{ isReleveRembourseFileLoading ? '⏳ Chargement...' : '📤 Charger un fichier (CSV / XLS)' }}
                             </button>
-                            <span class="releve-upload-hint">Nombre = lignes (sans en-tête), Volume = somme de la colonne « montant ».</span>
+                            <span class="releve-upload-hint">Nombre = lignes valides, Volume = somme de « montant ». Contrôle sur BO_Service et BO_date (date, J-1 ou J+1).</span>
                         </div>
                         <div class="releve-manual-or">Ou saisir manuellement :</div>
                         <div class="releve-manual-input">
@@ -1029,6 +1029,9 @@ export interface ReconciliationReportData {
                     </button>
                     <button class="btn btn-export-releve" (click)="exportReleveToPdf()" [disabled]="!releveData">
                         🧾 Exporter PDF
+                    </button>
+                    <button class="btn btn-export-releve" (click)="saveReleveManualData(true)" [disabled]="!releveData || isSavingReleveManualData || !hasPendingReleveManualChanges">
+                        {{isSavingReleveManualData ? '⏳ Enregistrement...' : '💾 Enregistrer les saisies'}}
                     </button>
                     <button class="btn btn-validate-releve" (click)="validateReleve()" [disabled]="isValidatingReleve || isReleveValidated || isReleveAlreadyValidated()" [class.btn-validated]="isReleveValidated || isReleveAlreadyValidated()">
                         {{isValidatingReleve ? '⏳ Validation...' : ((isReleveValidated || isReleveAlreadyValidated()) ? '✅ Validé' : '✅ Valider')}}
@@ -3037,6 +3040,8 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
     releveManualNombre: number = 0;
     releveManualVolume: number = 0;
     isReleveManualFileLoading = false;
+    isSavingReleveManualData = false;
+    hasPendingReleveManualChanges = false;
 
     // Propriétés pour Trx remboursé (saisie manuelle)
     releveRembourseNombre: number = 0;
@@ -9026,6 +9031,8 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         this.releveManualVolume = 0;
         this.releveRembourseNombre = 0;
         this.releveRembourseVolume = 0;
+        this.hasPendingReleveManualChanges = false;
+        this.isSavingReleveManualData = false;
     }
 
     /**
@@ -9115,12 +9122,14 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             .subscribe({
                 next: (response) => {
                     if (!response) {
+                        this.hasPendingReleveManualChanges = false;
                         return;
                     }
                     this.releveManualNombre = typeof response.manualNombre === 'number' ? response.manualNombre : 0;
                     this.releveManualVolume = typeof response.manualVolume === 'number' ? response.manualVolume : 0;
                     this.releveRembourseNombre = typeof response.rembourseNombre === 'number' ? response.rembourseNombre : 0;
                     this.releveRembourseVolume = typeof response.rembourseVolume === 'number' ? response.rembourseVolume : 0;
+                    this.hasPendingReleveManualChanges = false;
                 },
                 error: (err) => {
                     console.error('Erreur lors du chargement des valeurs manuelles de relevé', err);
@@ -9132,9 +9141,16 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
      * Sauvegarde en base les valeurs manuelles (Trx traité / Trx remboursé)
      * pour le couple service + date + pays du relevé en cours.
      */
-    private saveReleveManualData(): void {
+    async saveReleveManualData(showSuccessMessage: boolean = false): Promise<boolean> {
         if (!this.releveData) {
-            return;
+            return false;
+        }
+
+        if (!this.hasPendingReleveManualChanges) {
+            if (showSuccessMessage) {
+                this.popupService.showSuccess('Saisies manuelles', 'Aucune modification à enregistrer.');
+            }
+            return true;
         }
 
         const date = this.formatDateForSearch(this.releveData.date);
@@ -9149,20 +9165,25 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             rembourseVolume: this.releveRembourseVolume || 0
         };
 
-        this.http.post<any>('/api/reconciliation-report/manual-trx', payload, {
-            headers: this.buildResultsHeaders()
-        })
-            .subscribe({
-                next: () => {
-                    // Pas de popup ici pour éviter le spam; on logge seulement au besoin
-                    if (this.debugReconciliation) {
-                        console.log('✅ Valeurs manuelles de relevé sauvegardées', payload);
-                    }
-                },
-                error: (err) => {
-                    console.error('Erreur lors de la sauvegarde des valeurs manuelles de relevé', err);
-                }
-            });
+        this.isSavingReleveManualData = true;
+        try {
+            await firstValueFrom(this.http.post<any>('/api/reconciliation-report/manual-trx', payload, {
+                headers: this.buildResultsHeaders()
+            }));
+            this.hasPendingReleveManualChanges = false;
+            if (showSuccessMessage) {
+                this.popupService.showSuccess('Saisies manuelles', 'Valeurs manuelles enregistrées avec succès.');
+            } else if (this.debugReconciliation) {
+                console.log('✅ Valeurs manuelles de relevé sauvegardées', payload);
+            }
+            return true;
+        } catch (err) {
+            console.error('Erreur lors de la sauvegarde des valeurs manuelles de relevé', err);
+            this.popupService.showError('Erreur', 'Impossible d’enregistrer les valeurs manuelles du relevé.');
+            return false;
+        } finally {
+            this.isSavingReleveManualData = false;
+        }
     }
 
     /**
@@ -9183,16 +9204,14 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
      * Gère les changements dans les champs manuels
      */
     onReleveManualChange(): void {
-        // Point d'extension pour validations locales si besoin.
-        // La sauvegarde en base est faite uniquement lors du clic sur "Valider" du relevé.
+        this.hasPendingReleveManualChanges = true;
     }
 
     /**
      * Gère les changements dans les champs Trx remboursé
      */
     onReleveRembourseChange(): void {
-        // Point d'extension pour validations locales si besoin.
-        // La sauvegarde en base est faite uniquement lors du clic sur "Valider" du relevé.
+        this.hasPendingReleveManualChanges = true;
     }
 
     /**
@@ -9280,26 +9299,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                             resolve({ nombre: 0, volume: 0 });
                             return;
                         }
-        const headerRow = rows[0];
-        const headerNorm = (v: any) => String(v ?? '').trim().toLowerCase().replace(/\s+/g, '');
-        // Accepter « montant » ou « BO_montant » comme colonne de volume
-        const montantIndex = headerRow.findIndex((h: any) => {
-            const norm = headerNorm(h);
-            return norm === 'montant' || norm === 'bo_montant';
-        });
-        if (montantIndex === -1) {
-            reject(new Error('Colonne « montant » ou « BO_montant » introuvable dans la première ligne du fichier.'));
-            return;
-        }
-                        const dataRows = rows.slice(1);
-                        let volume = 0;
-                        for (const row of dataRows) {
-                            const val = row[montantIndex];
-                            if (val === null || val === undefined || val === '') continue;
-                            const num = typeof val === 'number' ? val : parseFloat(String(val).replace(/\s/g, '').replace(',', '.'));
-                            if (!Number.isNaN(num)) volume += num;
-                        }
-                        resolve({ nombre: dataRows.length, volume });
+                        resolve(this.extractReleveManualData(rows));
                     } catch (e: any) {
                         reject(e);
                     }
@@ -9323,25 +9323,148 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         if (!rows || rows.length === 0) {
             return { nombre: 0, volume: 0 };
         }
-        const headerRow = rows[0];
-        const headerNorm = (v: any) => String(v ?? '').trim().toLowerCase().replace(/\s+/g, '');
-        // Accepter « montant » ou « BO_montant » comme colonne de volume
-        const montantIndex = headerRow.findIndex((h: any) => {
-            const norm = headerNorm(h);
-            return norm === 'montant' || norm === 'bo_montant';
-        });
+        return this.extractReleveManualData(rows);
+    }
+
+    private extractReleveManualData(rows: any[][]): { nombre: number; volume: number } {
+        if (!this.releveData) {
+            throw new Error('Aucun relevé actif pour contrôler le fichier.');
+        }
+
+        const headerRow = rows[0] || [];
+        const normalizeHeader = (value: any) => String(value ?? '').trim().toLowerCase().replace(/[\s-]+/g, '');
+        const findHeaderIndex = (accepted: string[]) =>
+            headerRow.findIndex((header: any) => accepted.includes(normalizeHeader(header)));
+
+        const montantIndex = findHeaderIndex(['montant', 'bomontant', 'bo_montant']);
+        const serviceIndex = findHeaderIndex(['boservice', 'bo_service']);
+        const dateIndex = findHeaderIndex(['bodate', 'bo_date']);
+
         if (montantIndex === -1) {
             throw new Error('Colonne « montant » ou « BO_montant » introuvable dans la première ligne du fichier.');
         }
-        const dataRows = rows.slice(1);
-        let volume = 0;
-        for (const row of dataRows) {
-            const val = row[montantIndex];
-            if (val === null || val === undefined || val === '') continue;
-            const num = typeof val === 'number' ? val : parseFloat(String(val).replace(/\s/g, '').replace(',', '.'));
-            if (!Number.isNaN(num)) volume += num;
+        if (serviceIndex === -1) {
+            throw new Error('Colonne « BO_Service » introuvable dans la première ligne du fichier.');
         }
-        return { nombre: dataRows.length, volume };
+        if (dateIndex === -1) {
+            throw new Error('Colonne « BO_date » introuvable dans la première ligne du fichier.');
+        }
+
+        const expectedService = (this.releveData.service || '').trim();
+        const baseDate = this.formatDateForSearch(this.releveData.date || '');
+        const allowedDates = new Set([
+            baseDate,
+            this.shiftIsoDate(baseDate, -1),
+            this.shiftIsoDate(baseDate, 1)
+        ]);
+
+        const invalidServiceLines: number[] = [];
+        const invalidDateLines: number[] = [];
+        const invalidDateFormatLines: number[] = [];
+        let volume = 0;
+        let nombre = 0;
+
+        rows.slice(1).forEach((row, index) => {
+            const lineNumber = index + 2;
+            if (!Array.isArray(row) || row.every(cell => String(cell ?? '').trim() === '')) {
+                return;
+            }
+
+            const serviceValue = String(row[serviceIndex] ?? '').trim();
+            if (!this.releveStringsEqual(serviceValue, expectedService)) {
+                invalidServiceLines.push(lineNumber);
+            }
+
+            const parsedDate = this.parseReleveUploadDate(row[dateIndex]);
+            if (!parsedDate) {
+                invalidDateFormatLines.push(lineNumber);
+            } else if (!allowedDates.has(parsedDate)) {
+                invalidDateLines.push(lineNumber);
+            }
+
+            const montantValue = row[montantIndex];
+            if (montantValue !== null && montantValue !== undefined && montantValue !== '') {
+                const numericValue = typeof montantValue === 'number'
+                    ? montantValue
+                    : parseFloat(String(montantValue).replace(/\s/g, '').replace(',', '.'));
+                if (!Number.isNaN(numericValue)) {
+                    volume += numericValue;
+                }
+            }
+
+            nombre++;
+        });
+
+        if (invalidServiceLines.length > 0) {
+            throw new Error(`Le fichier contient un service différent de « ${expectedService} » dans BO_Service (ligne(s) ${this.formatLineNumbers(invalidServiceLines)}).`);
+        }
+        if (invalidDateFormatLines.length > 0) {
+            throw new Error(`La colonne BO_date contient des dates invalides (ligne(s) ${this.formatLineNumbers(invalidDateFormatLines)}).`);
+        }
+        if (invalidDateLines.length > 0) {
+            throw new Error(`La colonne BO_date doit correspondre à la date du relevé, J-1 ou J+1 (ligne(s) ${this.formatLineNumbers(invalidDateLines)}).`);
+        }
+
+        return { nombre, volume };
+    }
+
+    private parseReleveUploadDate(value: any): string | null {
+        if (value === null || value === undefined || value === '') {
+            return null;
+        }
+
+        if (value instanceof Date && !Number.isNaN(value.getTime())) {
+            return this.toIsoLocalDate(value);
+        }
+
+        if (typeof value === 'number' && Number.isFinite(value)) {
+            const parsed = XLSX.SSF.parse_date_code(value);
+            if (parsed) {
+                const month = String(parsed.m).padStart(2, '0');
+                const day = String(parsed.d).padStart(2, '0');
+                return `${parsed.y}-${month}-${day}`;
+            }
+        }
+
+        const raw = String(value).trim();
+        if (!raw) {
+            return null;
+        }
+
+        if (/^\d{4}-\d{2}-\d{2}/.test(raw)) {
+            return raw.slice(0, 10);
+        }
+
+        const frMatch = raw.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})$/);
+        if (frMatch) {
+            const day = String(frMatch[1]).padStart(2, '0');
+            const month = String(frMatch[2]).padStart(2, '0');
+            return `${frMatch[3]}-${month}-${day}`;
+        }
+
+        const parsed = new Date(raw);
+        if (!Number.isNaN(parsed.getTime())) {
+            return this.toIsoLocalDate(parsed);
+        }
+
+        return null;
+    }
+
+    private toIsoLocalDate(date: Date): string {
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    }
+
+    private shiftIsoDate(isoDate: string, offsetDays: number): string {
+        const parsed = new Date(`${isoDate}T00:00:00`);
+        parsed.setDate(parsed.getDate() + offsetDays);
+        return this.toIsoLocalDate(parsed);
+    }
+
+    private formatLineNumbers(lines: number[]): string {
+        return lines.slice(0, 10).join(', ') + (lines.length > 10 ? ', ...' : '');
     }
 
     private readFileAsArrayBuffer(file: File): Promise<ArrayBuffer> {
@@ -9905,9 +10028,11 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             return;
         }
 
-        // À la validation du relevé, on fige et persiste les valeurs manuelles
-        // (Trx traité et Trx remboursé) pour ce service / date / pays.
-        this.saveReleveManualData();
+        // Persister les valeurs manuelles avant de passer les lignes à "Terminé".
+        const manualSaveOk = await this.saveReleveManualData();
+        if (!manualSaveOk) {
+            return;
+        }
 
         this.isValidatingReleve = true;
         let successCount = 0;
