@@ -1,76 +1,130 @@
 <div class="aide-page">
-  <!-- TOP NAV -->
   <nav class="topnav">
     <div class="nav-brand">
       <div class="nav-brand-dot"></div>
       ReconciliApp
     </div>
     <div class="nav-sep"></div>
-    <div class="nav-path">
-      <strong>Aide</strong>
-    </div>
+    <a class="nav-link active" routerLink="/aide">Aide</a>
     <div class="nav-spacer"></div>
+    <button class="nav-close" type="button" (click)="goHome()" aria-label="Fermer et revenir à l'accueil">
+      <i class="fas fa-times"></i>
+    </button>
   </nav>
 
-  <!-- PAGE HEADER -->
-  <div class="page-header-aide">
-    <div class="ph-aide-left">
-      <div class="ph-eyebrow"><span></span>Support</div>
-      <h1 class="ph-title-aide">Modèles d’<em>aide & navigation</em></h1>
-      <p class="ph-subtitle-aide">
-        Choisissez un module pour accéder rapidement à la bonne section.
-      </p>
+  <div class="page">
+    <div class="page-header">
+      <div class="header-eyebrow"><span></span>Support</div>
+      <h1 class="header-title">Modèles d'<em>aide</em> & navigation</h1>
+      <p class="header-sub">Choisissez un module pour accéder rapidement à la bonne section</p>
     </div>
-  </div>
 
-  <div class="main">
-  <div class="aide-container">
-  <div class="aide-header">
-    <div class="header-navigation">
-      <button class="btn-back" (click)="goBack()" title="Retour">
+    <div class="header-actions">
+      <button class="header-btn secondary" type="button" (click)="goBack()">
         <i class="fas fa-arrow-left"></i>
-        <span>Retour</span>
+        Retour
       </button>
-      <button class="btn-home" (click)="goHome()" title="Accueil">
+      <button class="header-btn" type="button" (click)="goHome()">
         <i class="fas fa-home"></i>
+        Accueil
       </button>
     </div>
-    <h1 class="aide-title">Choisissez une Option</h1>
-  </div>
-  
-  <div class="aide-grid">
-    <a 
-      *ngFor="let option of helpOptions" 
-      class="aide-card"
-      [class.clickable]="option.route"
-      [routerLink]="option.route || null"
-      [routerLinkActive]="option.route ? 'active' : ''"
-      (click)="!option.route && $event.preventDefault()"
-    >
-      <div class="card-icon-container">
-        <i [class]="option.icon" class="card-icon"></i>
-      </div>
-      <div class="card-content">
-        <h2 class="card-title">{{ option.title }}</h2>
-        <p class="card-description">{{ option.description }}</p>
-      </div>
-      <div class="card-footer">
-        <div class="card-tag" [ngClass]="'tag-' + option.tagColor">
-          {{ option.tag }}
+
+    <div class="search-bar" (click)="focusSearch()">
+      <i class="fas fa-search search-icon"></i>
+      <input
+        #searchInput
+        type="text"
+        [(ngModel)]="searchQuery"
+        placeholder="Rechercher dans la documentation..."
+        aria-label="Rechercher dans la documentation"
+      >
+      <button
+        *ngIf="searchQuery"
+        class="search-clear"
+        type="button"
+        (click)="clearSearch(); $event.stopPropagation()"
+        aria-label="Effacer la recherche">
+        <i class="fas fa-times"></i>
+      </button>
+      <span class="search-hint">{{ shortcutHint }}</span>
+    </div>
+
+    <ng-container *ngIf="hasResults; else emptyState">
+      <section *ngFor="let section of filteredSections" class="section-block">
+        <div class="section-label">{{ section.label }}</div>
+
+        <div class="cards-grid">
+          <article
+            *ngFor="let option of section.options; trackBy: trackByOption"
+            class="module-card"
+            [class.is-clickable]="!!option.route"
+            [class.is-disabled]="!option.route"
+            (click)="openOption(option)"
+            (keydown.enter)="openOption(option)"
+            (keydown.space)="openOption(option); $event.preventDefault()"
+            [attr.tabindex]="option.route ? 0 : -1"
+            [attr.role]="option.route ? 'link' : 'article'">
+
+            <div *ngIf="option.badge" class="notif-badge">{{ option.badge }}</div>
+            <div class="card-strip" [style.background]="option.accent"></div>
+
+            <div class="card-body">
+              <div class="card-icon-wrap" [style.background]="option.accentLight">
+                <i class="card-icon" [class]="option.icon" [style.color]="option.accent"></i>
+              </div>
+
+              <div class="card-name">{{ option.name }}</div>
+              <div class="card-title">{{ option.title }}</div>
+              <div class="card-desc">{{ option.description }}</div>
+            </div>
+
+            <div class="card-footer">
+              <span class="card-tag" [style.background]="option.accentLight" [style.color]="option.accent">
+                {{ option.tag }}
+              </span>
+
+              <button
+                class="card-cta"
+                type="button"
+                [class.disabled]="!option.route"
+                [disabled]="!option.route"
+                [style.background]="option.route ? option.accent : 'var(--surface-2)'"
+                [style.color]="option.route ? '#fff' : 'var(--text3)'"
+                (click)="openOption(option); $event.stopPropagation()">
+                {{ option.actionLabel }}
+                <i class="fas" [class.fa-arrow-right]="option.route" [class.fa-lock]="!option.route"></i>
+              </button>
+            </div>
+          </article>
         </div>
-        <button 
-          *ngIf="option.route" 
-          class="btn-card-action" 
-          (click)="$event.preventDefault(); $event.stopPropagation()"
-          [routerLink]="option.route"
-          title="Accéder">
-          <span>Accéder</span>
-          <i class="fas fa-arrow-right"></i>
-        </button>
+      </section>
+    </ng-container>
+
+    <ng-template #emptyState>
+      <div class="empty-state">
+        <div class="empty-state-icon">
+          <i class="fas fa-search"></i>
+        </div>
+        <h2>Aucun résultat</h2>
+        <p>Essayez un autre mot-clé ou ouvrez le guide complet pour parcourir toute la documentation.</p>
+        <button class="header-btn" type="button" (click)="goToGuide()">Ouvrir le guide complet</button>
       </div>
-    </a>
+    </ng-template>
+
+    <div class="footer-hint">
+      <div class="footer-hint-icon">
+        <i class="fas fa-info-circle"></i>
+      </div>
+      <div class="footer-hint-text">
+        <div class="footer-hint-title">Vous ne trouvez pas ce que vous cherchez ?</div>
+        <div class="footer-hint-sub">Consultez le guide complet pour parcourir toute la base documentaire disponible.</div>
+      </div>
+      <button class="footer-hint-btn" type="button" (click)="goToGuide()">
+        <i class="fas fa-book-open"></i>
+        Consulter le guide
+      </button>
+    </div>
   </div>
-  </div><!-- .aide-container -->
-  </div><!-- .main -->
 </div>
 
