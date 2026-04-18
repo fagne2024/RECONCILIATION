@@ -98,7 +98,8 @@ export class TraitementComponent implements OnInit, AfterViewInit {
   exportTimeRangeMinutes: number = 60;
   detectedPeriods: Array<{ label: string; count: number; key: string }> = [];
 
-  // --- SUPPRESSION DE CARACTÈRES ---
+  // --- GESTION DES CARACTÈRES ---
+  removeCharMode: 'remove' | 'keep' = 'remove';
   removeCharPosition: 'start' | 'end' | 'specific' = 'start';
   removeCharCount: number = 1;
   removeCharSpecificPosition: number = 1;
@@ -4044,24 +4045,74 @@ End Sub`;
 
 
 
+  private transformCharactersValue(value: string): string {
+    switch (this.removeCharMode) {
+      case 'keep':
+        switch (this.removeCharPosition) {
+          case 'start':
+            return value.substring(0, this.removeCharCount);
+          case 'end':
+            return value.substring(Math.max(0, value.length - this.removeCharCount));
+          default:
+            return value;
+        }
+      case 'remove':
+      default:
+        switch (this.removeCharPosition) {
+          case 'start':
+            if (value.length >= this.removeCharCount) {
+              return value.substring(this.removeCharCount);
+            }
+            return value;
+          case 'end':
+            if (value.length >= this.removeCharCount) {
+              return value.substring(0, value.length - this.removeCharCount);
+            }
+            return value;
+          case 'specific':
+            const pos = this.removeCharSpecificPosition - 1; // Convert to 0-based
+            if (pos >= 0 && pos < value.length && pos + this.removeCharCount <= value.length) {
+              return value.substring(0, pos) + value.substring(pos + this.removeCharCount);
+            }
+            return value;
+        }
+    }
+
+    return value;
+  }
+
+  onRemoveCharModeChange(): void {
+    if (this.removeCharMode === 'keep' && this.removeCharPosition === 'specific') {
+      this.removeCharPosition = 'start';
+    }
+  }
+
   applyRemoveCharactersFormatting() {
     if (!this.formatSelections['removeCharacters'].length) {
       this.showError('format', 'Veuillez sélectionner au moins une colonne');
       return;
     }
 
-    // Vérifier les paramètres de suppression
+    // Vérifier les paramètres de suppression / conservation
     if (!this.removeCharPosition) {
-      this.showError('format', 'Veuillez sélectionner une position de suppression');
+      this.showError('format', 'Veuillez sélectionner une position');
       return;
     }
 
     if (!this.removeCharCount || this.removeCharCount <= 0) {
-      this.showError('format', 'Veuillez spécifier un nombre de caractères à supprimer (supérieur à 0)');
+      const message = this.removeCharMode === 'keep'
+        ? 'Veuillez spécifier un nombre de caractères à garder (supérieur à 0)'
+        : 'Veuillez spécifier un nombre de caractères à supprimer (supérieur à 0)';
+      this.showError('format', message);
       return;
     }
 
     // Vérification supplémentaire pour la position spécifique
+    if (this.removeCharMode === 'keep' && this.removeCharPosition === 'specific') {
+      this.showError('format', 'La conservation n\'est disponible que depuis la gauche ou la droite');
+      return;
+    }
+
     if (this.removeCharPosition === 'specific' && (!this.removeCharSpecificPosition || this.removeCharSpecificPosition <= 0)) {
       this.showError('format', 'Veuillez spécifier une position valide pour la suppression spécifique');
       return;
@@ -4073,6 +4124,15 @@ End Sub`;
       let processedCells = 0;
       let totalCells = 0;
       
+      const actionLabel = this.removeCharMode === 'keep' ? 'Conservation' : 'Suppression';
+      const sideLabel = this.removeCharPosition === 'start'
+        ? 'gauche'
+        : this.removeCharPosition === 'end'
+          ? 'droite'
+          : `position ${this.removeCharSpecificPosition}`;
+
+      console.log(`🔄 Formatage: ${actionLabel} de ${this.removeCharCount} caractère(s) depuis ${sideLabel}`);
+
       // Traiter les données affichées (combinedRows)
       this.combinedRows.forEach((row, rowIndex) => {
         this.formatSelections['removeCharacters'].forEach(col => {
@@ -4087,24 +4147,7 @@ End Sub`;
       return;
     }
             
-            switch (this.removeCharPosition) {
-              case 'start':
-                if (value.length >= this.removeCharCount) {
-                value = value.substring(this.removeCharCount);
-                }
-                break;
-              case 'end':
-                if (value.length >= this.removeCharCount) {
-                value = value.substring(0, value.length - this.removeCharCount);
-                }
-                break;
-              case 'specific':
-                const pos = this.removeCharSpecificPosition - 1; // Convert to 0-based
-                if (pos >= 0 && pos < value.length && pos + this.removeCharCount <= value.length) {
-                  value = value.substring(0, pos) + value.substring(pos + this.removeCharCount);
-                }
-                break;
-            }
+            value = this.transformCharactersValue(value);
             
             if (value !== originalValue) {
               processedCells++;
@@ -4128,24 +4171,7 @@ End Sub`;
                 return;
               }
               
-              switch (this.removeCharPosition) {
-                case 'start':
-                  if (value.length >= this.removeCharCount) {
-                  value = value.substring(this.removeCharCount);
-                  }
-                  break;
-                case 'end':
-                  if (value.length >= this.removeCharCount) {
-                  value = value.substring(0, value.length - this.removeCharCount);
-                  }
-                  break;
-                case 'specific':
-                  const pos = this.removeCharSpecificPosition - 1; // Convert to 0-based
-                  if (pos >= 0 && pos < value.length && pos + this.removeCharCount <= value.length) {
-                    value = value.substring(0, pos) + value.substring(pos + this.removeCharCount);
-                  }
-                  break;
-              }
+              value = this.transformCharactersValue(value);
               
               row[col] = value;
             }
@@ -4155,7 +4181,10 @@ End Sub`;
 
       console.log(`📊 RÉSUMÉ: ${totalCells} cellules vérifiées, ${processedCells} cellules modifiées`);
 
-      this.showSuccess('format', `Suppression de caractères appliquée sur ${this.formatSelections['removeCharacters'].length} colonne(s) (${processedCells} modifications)`);
+      const actionText = this.removeCharMode === 'keep'
+        ? `Conservation de ${this.removeCharCount} caractère(s)`
+        : 'Suppression de caractères';
+      this.showSuccess('format', `${actionText} appliquée sur ${this.formatSelections['removeCharacters'].length} colonne(s) (${processedCells} modifications)`);
       
       // Forcer la mise à jour de l'affichage
       this.updateDisplayedRowsForPage();
@@ -5004,6 +5033,7 @@ End Sub`;
           exportTypeSuffix: this.exportTypeSuffix,
           exportTypeCustomSuffix: this.exportTypeCustomSuffix,
           exportTypeDescription: this.exportTypeDescription,
+          removeCharMode: this.removeCharMode,
           removeCharPosition: this.removeCharPosition,
           removeCharCount: this.removeCharCount,
           removeCharSpecificPosition: this.removeCharSpecificPosition,
@@ -5106,6 +5136,7 @@ End Sub`;
     this.exportTypeSuffix = '';
     this.exportTypeCustomSuffix = '';
     this.exportTypeDescription = '';
+    this.removeCharMode = 'remove';
     this.removeCharPosition = 'start';
     this.removeCharCount = 1;
     this.removeCharSpecificPosition = 1;

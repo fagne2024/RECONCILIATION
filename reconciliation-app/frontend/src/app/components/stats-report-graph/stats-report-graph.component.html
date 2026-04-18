@@ -1,0 +1,202 @@
+<div class="stats-graph-page">
+  <nav class="topnav">
+    <div class="nav-brand">
+      <div class="nav-brand-dot"></div>
+      ReconciliApp
+    </div>
+    <div class="nav-sep"></div>
+    <div class="nav-path">
+      Statistiques
+      <i class="fas fa-chevron-right"></i>
+      <strong>Graph Agences</strong>
+    </div>
+    <div class="nav-spacer"></div>
+    <div class="nav-actions">
+      <button type="button" class="nav-btn secondary" (click)="goBack()" [disabled]="isLoading">
+        <i class="fas fa-arrow-left"></i> Retour au rapport
+      </button>
+      <button type="button" class="nav-btn png" (click)="exportGraphsPng()" [disabled]="isLoading || !visibleReportRows.length">
+        <i class="fas fa-image"></i> PNG
+      </button>
+      <button type="button" class="nav-btn pdf" (click)="exportGraphsPdf()" [disabled]="isLoading || !visibleReportRows.length">
+        <i class="fas fa-file-pdf"></i> PDF
+      </button>
+    </div>
+  </nav>
+
+  <div class="page">
+    <div class="page-head">
+      <div>
+        <div class="ph-eyebrow"><span></span>Rapport journalier</div>
+        <h1 class="ph-title">Suivi <em>Volume & Transactions</em> en graphiques</h1>
+        <div class="ph-sub">{{ formatReportPeriodLabel() }}</div>
+      </div>
+    </div>
+
+    <div *ngIf="isLoading" class="info-state">Chargement des données...</div>
+    <div *ngIf="!isLoading && errorMessage" class="info-state error">{{ errorMessage }}</div>
+
+    <ng-container *ngIf="!isLoading && !errorMessage">
+      <div class="filters-section">
+        <form [formGroup]="filterForm" class="filter-form">
+          <div class="filter-group">
+            <mat-form-field appearance="fill" class="filter-select">
+              <mat-label>Agence</mat-label>
+              <mat-select #agenceSelect formControlName="agency" multiple (selectionChange)="onFilterChange()">
+                <mat-option>
+                  <ngx-mat-select-search [formControl]="agenceSearchCtrl" placeholderLabel="Rechercher une agence..." noEntriesFoundLabel="Aucune agence trouvée"></ngx-mat-select-search>
+                </mat-option>
+                <mat-option *ngFor="let agency of filteredAgencies" [value]="agency">
+                  {{ agency }}
+                </mat-option>
+              </mat-select>
+            </mat-form-field>
+          </div>
+          <div class="filter-group">
+            <mat-form-field appearance="fill" class="filter-select">
+              <mat-label>Service</mat-label>
+              <mat-select #serviceSelect formControlName="service" multiple (selectionChange)="onFilterChange()">
+                <mat-option>
+                  <ngx-mat-select-search [formControl]="serviceSearchCtrl" placeholderLabel="Rechercher un service..." noEntriesFoundLabel="Aucun service trouvé"></ngx-mat-select-search>
+                </mat-option>
+                <mat-option *ngFor="let service of filteredServices" [value]="service">
+                  {{ service }}
+                </mat-option>
+              </mat-select>
+            </mat-form-field>
+          </div>
+          <div class="filter-group">
+            <mat-form-field appearance="fill" class="filter-select">
+              <mat-label>Pays</mat-label>
+              <mat-select #paysSelect formControlName="country" multiple (selectionChange)="onFilterChange()">
+                <mat-option>
+                  <ngx-mat-select-search [formControl]="paysSearchCtrl" placeholderLabel="Rechercher un pays..." noEntriesFoundLabel="Aucun pays trouvé"></ngx-mat-select-search>
+                </mat-option>
+                <mat-option *ngFor="let country of filteredCountries" [value]="country">
+                  {{ country }}
+                </mat-option>
+              </mat-select>
+            </mat-form-field>
+          </div>
+          <div class="filter-group">
+            <label>Période</label>
+            <select formControlName="periodType" (change)="onPeriodTypeChange()">
+              <option value="week">Semaine</option>
+              <option value="month">Mois</option>
+            </select>
+          </div>
+          <div class="filter-group">
+            <label>Date de début</label>
+            <input type="date" formControlName="startDate">
+          </div>
+          <div class="filter-group">
+            <label>Date de fin</label>
+            <input type="date" formControlName="endDate">
+          </div>
+          <button type="button" class="apply-btn" (click)="onFilterChange()" [disabled]="isLoading">
+            Appliquer les filtres
+          </button>
+        </form>
+      </div>
+
+      <div class="kpi-strip">
+        <div class="kpi">
+          <div class="kpi-l">Volume total période</div>
+          <div class="kpi-v blue">{{ visibleReportSummary.totalVolume | number:'1.0-0' }}</div>
+          <div class="kpi-s">XOF · {{ reportDateKeys.length }} jours</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-l">Nb Trx total</div>
+          <div class="kpi-v blue">{{ visibleReportSummary.totalCount | number:'1.0-0' }}</div>
+          <div class="kpi-s">transactions</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-l">Agences actives</div>
+          <div class="kpi-v green">{{ visibleReportSummary.activeAgencies | number:'1.0-0' }}</div>
+          <div class="kpi-s">sur la période</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-l">Volume moy / jour</div>
+          <div class="kpi-v amber">{{ visibleReportSummary.avgVolumePerDay | number:'1.0-0' }}</div>
+          <div class="kpi-s">XOF</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-l">Pic journalier</div>
+          <div class="kpi-v green">{{ visibleReportSummary.peakDayVolume | number:'1.0-0' }}</div>
+          <div class="kpi-s">{{ visibleReportSummary.peakDayKey ? formatReportDateLabel(visibleReportSummary.peakDayKey) : 'Aucune donnée' }}</div>
+        </div>
+      </div>
+
+      <section class="graph-section" id="stats-graph-export-area">
+        <div class="graph-topbar">
+          <div class="graph-view-tabs">
+            <button type="button" [class.active]="graphView === 'global'" (click)="setGraphView('global')">Vue globale</button>
+            <button type="button" [class.active]="graphView === 'agency'" (click)="setGraphView('agency')">Par agence</button>
+            <button type="button" [class.active]="graphView === 'market'" (click)="setGraphView('market')">Parts de marché</button>
+          </div>
+          <div class="graph-metric-tabs">
+            <button type="button" [class.active]="graphMetric === 'volume'" (click)="setGraphMetric('volume')">Volume</button>
+            <button type="button" [class.active]="graphMetric === 'count'" (click)="setGraphMetric('count')">Nb Trx</button>
+          </div>
+        </div>
+
+        <div *ngIf="graphView === 'agency'" class="graph-agency-toolbar">
+          <select [value]="graphSelectedAgency" (change)="onGraphAgencyChange($event)">
+            <option *ngFor="let agency of visibleReportRows" [value]="agency.agency">{{ agency.agency }}</option>
+          </select>
+        </div>
+
+        <div *ngIf="graphView === 'global'" class="graph-grid global-grid">
+          <div class="graph-card graph-card-wide">
+            <div class="graph-card-title">Évolution du {{ graphMetric === 'volume' ? 'volume' : 'nombre de transactions' }} - toutes agences</div>
+            <div class="graph-canvas-wrap">
+              <canvas baseChart [type]="'bar'" [data]="globalTrendChartData" [options]="graphBarOptions"></canvas>
+            </div>
+          </div>
+          <div class="graph-card">
+            <div class="graph-card-title">Comparaison agences - courbes cumulées</div>
+            <div class="graph-canvas-wrap">
+              <canvas baseChart [type]="'line'" [data]="cumulativeChartData" [options]="graphLineOptions"></canvas>
+            </div>
+          </div>
+          <div class="graph-card">
+            <div class="graph-card-title">Tendance hebdo - {{ graphMetric === 'volume' ? 'volume' : 'nb trx' }}</div>
+            <div class="graph-canvas-wrap">
+              <canvas baseChart [type]="'bar'" [data]="weeklyTrendChartData" [options]="graphBarOptions"></canvas>
+            </div>
+          </div>
+        </div>
+
+        <div *ngIf="graphView === 'agency'" class="graph-grid agency-grid">
+          <div class="graph-card">
+            <div class="graph-card-title">{{ graphMetric === 'volume' ? 'Volume' : 'Nb Trx' }} journalier - {{ graphSelectedAgency }}</div>
+            <div class="graph-canvas-wrap">
+              <canvas baseChart [type]="'bar'" [data]="agencyDailyChartData" [options]="graphBarOptions"></canvas>
+            </div>
+          </div>
+          <div class="graph-card">
+            <div class="graph-card-title">{{ graphMetric === 'volume' ? 'Volume' : 'Nb Trx' }} cumulés - {{ graphSelectedAgency }}</div>
+            <div class="graph-canvas-wrap">
+              <canvas baseChart [type]="'line'" [data]="agencyCumulativeChartData" [options]="graphLineOptions"></canvas>
+            </div>
+          </div>
+        </div>
+
+        <div *ngIf="graphView === 'market'" class="graph-grid market-grid">
+          <div class="graph-card">
+            <div class="graph-card-title">Parts de {{ graphMetric === 'volume' ? 'volume' : 'nombre' }} par agence</div>
+            <div class="graph-canvas-wrap donut-wrap">
+              <canvas baseChart [type]="'doughnut'" [data]="marketShareChartData" [options]="graphDoughnutOptions"></canvas>
+            </div>
+          </div>
+          <div class="graph-card">
+            <div class="graph-card-title">Classement agences par {{ graphMetric === 'volume' ? 'volume total' : 'nombre total' }}</div>
+            <div class="graph-canvas-wrap">
+              <canvas baseChart [type]="'bar'" [data]="marketRankingChartData" [options]="graphHorizontalBarOptions"></canvas>
+            </div>
+          </div>
+        </div>
+      </section>
+    </ng-container>
+  </div>
+</div>

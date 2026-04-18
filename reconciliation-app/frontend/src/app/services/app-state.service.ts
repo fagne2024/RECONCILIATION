@@ -20,6 +20,25 @@ export interface UserRights {
     providedIn: 'root'
 })
 export class AppStateService {
+    private readonly postLoginRouteCandidates: Array<{ path: string; module?: string; permissions?: string[] }> = [
+        { path: '/reconciliation-launcher', module: 'Réconciliation', permissions: ['consulter'] },
+        { path: '/dashboard', module: 'Dashboard', permissions: ['consulter', 'filtrer'] },
+        { path: '/results', module: 'Résultats', permissions: ['consulter'] },
+        { path: '/stats', module: 'Statistiques', permissions: ['consulter'] },
+        { path: '/stats-report', module: 'Statistiques', permissions: ['consulter'] },
+        { path: '/stats-report-graph', module: 'Statistiques', permissions: ['consulter'] },
+        { path: '/comptes', module: 'Comptes', permissions: ['consulter'] },
+        { path: '/operations', module: 'Opérations', permissions: ['consulter'] },
+        { path: '/frais', module: 'Frais', permissions: ['consulter'] },
+        { path: '/ranking', module: 'Classements', permissions: ['consulter'] },
+        { path: '/traitement', module: 'Traitement', permissions: ['consulter'] },
+        { path: '/banque', module: 'BANQUE', permissions: ['consulter'] },
+        { path: '/comptabilite', module: 'Comptabilité', permissions: ['consulter'] },
+        { path: '/service-references', module: 'Dashboard', permissions: ['consulter'] },
+        { path: '/aide' },
+        { path: '/user-profile' }
+    ];
+
     private currentStepSubject = new BehaviorSubject<number>(1);
     currentStep$ = this.currentStepSubject.asObservable();
 
@@ -403,6 +422,36 @@ export class AppStateService {
         return (permissions || []).every(permission => this.hasModulePermission(module, permission));
     }
 
+    canAccessRoute(route: string | null | undefined): boolean {
+        if (!route) {
+            return false;
+        }
+
+        if (this.isAdmin()) {
+            return true;
+        }
+
+        const normalizedRoute = this.normalizeRoutePath(route);
+        const candidate = this.postLoginRouteCandidates.find(item => item.path === normalizedRoute);
+
+        if (!candidate || !candidate.module) {
+            return true;
+        }
+
+        return this.isModuleAllowed(candidate.module)
+            && this.hasAllModulePermissions(candidate.module, candidate.permissions ?? []);
+    }
+
+    resolveAccessibleRoute(preferredRoute?: string | null): string {
+        const normalizedPreferredRoute = this.normalizeRoutePath(preferredRoute);
+        if (normalizedPreferredRoute && this.canAccessRoute(normalizedPreferredRoute)) {
+            return preferredRoute!.trim();
+        }
+
+        const fallback = this.postLoginRouteCandidates.find(candidate => this.canAccessRoute(candidate.path));
+        return fallback?.path ?? '/aide';
+    }
+
     private rebuildNormalizedModuleSet(modules?: string[]) {
         const source = modules ?? this.userRights?.modules ?? [];
         this.normalizedModuleSet = new Set(
@@ -433,6 +482,20 @@ export class AppStateService {
             .replace(/[\u0300-\u036f]/g, '')
             .trim()
             .toLowerCase();
+    }
+
+    private normalizeRoutePath(route?: string | null): string | null {
+        if (!route) {
+            return null;
+        }
+
+        const trimmedRoute = route.trim();
+        if (!trimmedRoute) {
+            return null;
+        }
+
+        const [path] = trimmedRoute.split('?');
+        return path || null;
     }
 
     // Méthodes pour gérer les fichiers uploadés

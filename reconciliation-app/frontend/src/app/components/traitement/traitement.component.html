@@ -1595,9 +1595,9 @@
      
      <div *ngIf="showSections.format" class="section-content">
     <div class="format-options">
-      <!-- Option : Supprimer des caractères -->
+      <!-- Option : Gérer les caractères -->
       <label>
-        <input type="checkbox" [(ngModel)]="formatOptions['removeCharacters']"> Supprimer des caractères
+        <input type="checkbox" [(ngModel)]="formatOptions['removeCharacters']"> Gérer les caractères
       </label>
       <div *ngIf="formatOptions['removeCharacters']" class="format-columns">
         <label>Colonnes à traiter :</label>
@@ -1606,19 +1606,26 @@
         </select>
         <div class="remove-char-options">
           <div class="option-group">
-            <label>Position :</label>
-            <select [(ngModel)]="removeCharPosition">
-              <option value="start">Depuis le début</option>
-              <option value="end">Depuis la fin</option>
-              <option value="specific">Position spécifique</option>
+            <label>Action :</label>
+            <select [(ngModel)]="removeCharMode" (ngModelChange)="onRemoveCharModeChange()">
+              <option value="remove">Supprimer</option>
+              <option value="keep">Garder</option>
             </select>
           </div>
-          <div class="option-group" *ngIf="removeCharPosition === 'specific'">
+          <div class="option-group">
+            <label>Position :</label>
+            <select [(ngModel)]="removeCharPosition">
+              <option value="start">{{ removeCharMode === 'keep' ? 'Depuis la gauche' : 'Depuis le début' }}</option>
+              <option value="end">{{ removeCharMode === 'keep' ? 'Depuis la droite' : 'Depuis la fin' }}</option>
+              <option *ngIf="removeCharMode === 'remove'" value="specific">Position spécifique</option>
+            </select>
+          </div>
+          <div class="option-group" *ngIf="removeCharMode === 'remove' && removeCharPosition === 'specific'">
             <label>Position (1-based) :</label>
             <input type="number" [(ngModel)]="removeCharSpecificPosition" min="1" style="width: 80px;">
           </div>
           <div class="option-group">
-            <label>Nombre de caractères :</label>
+            <label>{{ removeCharMode === 'keep' ? 'Nombre de caractères à garder :' : 'Nombre de caractères :' }}</label>
             <input type="number" [(ngModel)]="removeCharCount" min="1" style="width: 80px;">
           </div>
         </div>

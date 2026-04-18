@@ -10,6 +10,31 @@ import * as ExcelJS from 'exceljs';
 import * as FileSaver from 'file-saver';
 import { MatSelect } from '@angular/material/select';
 import { ModernPopupComponent, PopupConfig } from '../modern-popup/modern-popup.component';
+import html2canvas from 'html2canvas';
+import { jsPDF } from 'jspdf';
+
+interface AggregatedStatRow {
+    agency: string;
+    service: string;
+    country: string;
+    date: string;
+    totalVolume: number;
+    recordCount: number;
+    ids: number[];
+}
+
+interface AgencyReportCell {
+    volume: number;
+    count: number;
+}
+
+interface AgencyReportRow {
+    agency: string;
+    totalVolume: number;
+    totalCount: number;
+    activeDays: number;
+    daily: { [dateKey: string]: AgencyReportCell };
+}
 
 @Component({
     selector: 'app-stats',
@@ -24,10 +49,28 @@ export class StatsComponent implements OnInit, OnDestroy {
     filterForm: FormGroup;
     agencySummaries: any[] = [];
     filteredData: any[] = [];
+    aggregatedStatsCache: AggregatedStatRow[] = [];
     statsPage: number = 1;
     statsPageSize: number = 10;
     isLoading: boolean = false;
     errorMessage: string | null = null;
+    showAgencyReport: boolean = false;
+    reportMode: 'both' | 'vol' | 'trx' = 'both';
+    reportSearchTerm: string = '';
+    reportSelectedAgency: string = 'all';
+    reportDateKeys: string[] = [];
+    reportRows: AgencyReportRow[] = [];
+    reportAgencyOptions: string[] = [];
+    visibleReportRows: AgencyReportRow[] = [];
+    visibleReportTotalsByDate: { [dateKey: string]: AgencyReportCell } = {};
+    visibleReportSummary = {
+        totalVolume: 0,
+        totalCount: 0,
+        activeAgencies: 0,
+        avgVolumePerDay: 0,
+        peakDayKey: '',
+        peakDayVolume: 0
+    };
 
     private cache: {
         [key: string]: {
@@ -212,10 +255,13 @@ export class StatsComponent implements OnInit, OnDestroy {
         console.log('agencySummaries length:', this.agencySummaries.length);
         
         const filters = this.filterForm.value;
+        const startDate = filters.startDate ? this.getStartOfDay(filters.startDate) : null;
+        const endDate = filters.endDate ? this.getEndOfDay(filters.endDate) : null;
+
         this.filteredData = this.agencySummaries.filter(summary => {
             const summaryDate = new Date(summary.date);
-            const afterStart = !filters.startDate || summaryDate >= new Date(filters.startDate);
-            const beforeEnd = !filters.endDate || summaryDate <= new Date(filters.endDate);
+            const afterStart = !startDate || summaryDate >= startDate;
+            const beforeEnd = !endDate || summaryDate <= endDate;
             const agencyMatch = !filters.agency || filters.agency.length === 0 || filters.agency.includes(summary.agency);
             const serviceMatch = !filters.service || filters.service.length === 0 || filters.service.includes(summary.service);
             const countryMatch = !filters.country || filters.country.length === 0 || filters.country.includes(summary.country);
@@ -237,10 +283,50 @@ export class StatsComponent implements OnInit, OnDestroy {
         
         // Trier par date décroissante (du plus récent au plus ancien)
         this.filteredData.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+        this.statsPage = 1;
+        this.rebuildDerivedData();
         
         console.log('Données après filtrage et tri:', this.filteredData.length);
         console.log('Sample des données filtrées:', this.filteredData.slice(0, 3));
         // totalPages est maintenant un getter, pas besoin de l'assigner manuellement
+    }
+
+    private getStartOfDay(dateValue: string): Date {
+        const date = new Date(dateValue);
+        date.setHours(0, 0, 0, 0);
+        return date;
+    }
+
+    private getEndOfDay(dateValue: string): Date {
+        const date = new Date(dateValue);
+        date.setHours(23, 59, 59, 999);
+        return date;
+    }
+
+    private toDateKey(dateValue: string | Date | null | undefined): string | null {
+        if (!dateValue) {
+            return null;
+        }
+
+        const date = new Date(dateValue);
+        if (isNaN(date.getTime())) {
+            return null;
+        }
+
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    }
+
+    private rebuildDerivedData(): void {
+        this.aggregatedStatsCache = this.buildAggregatedStats();
+        this.buildAgencyReport();
+        this.updateVisibleReportData();
+
+        if (this.statsPage > this.totalPages) {
+            this.statsPage = this.totalPages || 1;
+        }
     }
 
     // Méthode appelée lors d'un changement de filtre
@@ -318,11 +404,7 @@ export class StatsComponent implements OnInit, OnDestroy {
     /**
      * Agrège les statistiques en soustrayant les annulations des types d'origine
      */
-    getAggregatedStats() {
-        console.log('getAggregatedStats() appelé');
-        console.log('filteredData length:', this.filteredData.length);
-        console.log('filteredData sample:', this.filteredData.slice(0, 3));
-        
+    private buildAggregatedStats(): AggregatedStatRow[] {
         // Map: { [type]: { volume: number, count: number, agency, service, country, date }[] }
         const aggregation: { [key: string]: any[] } = {};
         // On regroupe par type/service/pays/agence/date
@@ -344,19 +426,15 @@ export class StatsComponent implements OnInit, OnDestroy {
             });
         }
         
-        console.log('Nombre de groupes d\'agrégation:', Object.keys(aggregation).length);
-        
         // Calculer les totaux corrigés
-        const result: any[] = [];
+        const result: AggregatedStatRow[] = [];
         for (const key in aggregation) {
             const group = aggregation[key];
             const type = group[0].service;
             // Exclure toutes les annulations sauf annulation_bo
             if (type && type.startsWith('annulation_') && type !== 'annulation_bo') {
-                console.log('Type exclu:', type);
                 continue;
             }
-            
 
             // On additionne les volumes et nombres, puis on soustrait les annulations
             let totalVolume = 0;
@@ -375,12 +453,11 @@ export class StatsComponent implements OnInit, OnDestroy {
                     totalVolume += item.totalVolume;
                     recordCount += item.recordCount;
                 }
-                // Collecter l'ID si disponible
                 if (item.id) {
                     ids.push(item.id);
                 }
             }
-            // On n'affiche que si le total est positif ou non nul
+
             if (recordCount !== 0 || totalVolume !== 0) {
                 result.push({ 
                     agency, 
@@ -389,18 +466,446 @@ export class StatsComponent implements OnInit, OnDestroy {
                     date, 
                     totalVolume, 
                     recordCount,
-                    ids: ids // Inclure les IDs pour la suppression
+                    ids
                 });
-            } else {
-                console.log('Groupe exclu car total nul:', { service, agency, country, date, totalVolume, recordCount });
             }
         }
-        
-        console.log('Nombre de résultats après agrégation:', result.length);
-        console.log('Résultats sample:', result.slice(0, 3));
-        
-        // Trier par date décroissante
+
         return result.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    }
+
+    getAggregatedStats(): AggregatedStatRow[] {
+        return this.aggregatedStatsCache;
+    }
+
+    private getReportDateRangeKeys(dataDateKeys: Set<string>): string[] {
+        const startDate = this.filterForm.value.startDate;
+        const endDate = this.filterForm.value.endDate;
+
+        if (startDate && endDate) {
+            const start = this.getStartOfDay(startDate);
+            const end = this.getStartOfDay(endDate);
+            const keys: string[] = [];
+            const cursor = new Date(start);
+
+            while (cursor <= end) {
+                const key = this.toDateKey(cursor);
+                if (key) {
+                    keys.push(key);
+                }
+                cursor.setDate(cursor.getDate() + 1);
+            }
+
+            return keys;
+        }
+
+        return Array.from(dataDateKeys).sort();
+    }
+
+    private buildAgencyReport(): void {
+        const dateKeySet = new Set<string>();
+        const rowMap = new Map<string, AgencyReportRow>();
+
+        for (const summary of this.aggregatedStatsCache) {
+            const dateKey = this.toDateKey(summary.date);
+            if (!dateKey) {
+                continue;
+            }
+
+            dateKeySet.add(dateKey);
+
+            if (!rowMap.has(summary.agency)) {
+                rowMap.set(summary.agency, {
+                    agency: summary.agency,
+                    totalVolume: 0,
+                    totalCount: 0,
+                    activeDays: 0,
+                    daily: {}
+                });
+            }
+
+            const row = rowMap.get(summary.agency)!;
+            if (!row.daily[dateKey]) {
+                row.daily[dateKey] = { volume: 0, count: 0 };
+            }
+
+            row.daily[dateKey].volume += Number(summary.totalVolume) || 0;
+            row.daily[dateKey].count += Number(summary.recordCount) || 0;
+            row.totalVolume += Number(summary.totalVolume) || 0;
+            row.totalCount += Number(summary.recordCount) || 0;
+        }
+
+        this.reportDateKeys = this.getReportDateRangeKeys(dateKeySet);
+        this.reportRows = Array.from(rowMap.values())
+            .map(row => ({
+                ...row,
+                activeDays: this.reportDateKeys.filter(dateKey => {
+                    const cell = row.daily[dateKey];
+                    return !!cell && (cell.volume !== 0 || cell.count !== 0);
+                }).length
+            }))
+            .sort((a, b) => {
+                if (b.totalVolume !== a.totalVolume) {
+                    return b.totalVolume - a.totalVolume;
+                }
+                return a.agency.localeCompare(b.agency);
+            });
+
+        this.reportAgencyOptions = this.reportRows.map(row => row.agency);
+        if (this.reportSelectedAgency !== 'all' && !this.reportAgencyOptions.includes(this.reportSelectedAgency)) {
+            this.reportSelectedAgency = 'all';
+        }
+    }
+
+    private updateVisibleReportData(): void {
+        const search = this.reportSearchTerm.trim().toLowerCase();
+        this.visibleReportRows = this.reportRows.filter(row => {
+            const matchesAgency = this.reportSelectedAgency === 'all' || row.agency === this.reportSelectedAgency;
+            const matchesSearch = !search || row.agency.toLowerCase().includes(search);
+            return matchesAgency && matchesSearch;
+        });
+
+        const totalsByDate: { [dateKey: string]: AgencyReportCell } = {};
+        this.reportDateKeys.forEach(dateKey => {
+            totalsByDate[dateKey] = { volume: 0, count: 0 };
+        });
+
+        this.visibleReportRows.forEach(row => {
+            this.reportDateKeys.forEach(dateKey => {
+                const cell = row.daily[dateKey];
+                if (!cell) {
+                    return;
+                }
+                totalsByDate[dateKey].volume += cell.volume;
+                totalsByDate[dateKey].count += cell.count;
+            });
+        });
+
+        this.visibleReportTotalsByDate = totalsByDate;
+
+        let peakDayKey = '';
+        let peakDayVolume = 0;
+        Object.entries(totalsByDate).forEach(([dateKey, totals]) => {
+            if (totals.volume > peakDayVolume) {
+                peakDayVolume = totals.volume;
+                peakDayKey = dateKey;
+            }
+        });
+
+        const totalVolume = this.visibleReportRows.reduce((sum, row) => sum + row.totalVolume, 0);
+        const totalCount = this.visibleReportRows.reduce((sum, row) => sum + row.totalCount, 0);
+        this.visibleReportSummary = {
+            totalVolume,
+            totalCount,
+            activeAgencies: this.visibleReportRows.filter(row => row.activeDays > 0).length,
+            avgVolumePerDay: this.reportDateKeys.length ? totalVolume / this.reportDateKeys.length : 0,
+            peakDayKey,
+            peakDayVolume
+        };
+    }
+
+    toggleAgencyReport(): void {
+        this.showAgencyReport = !this.showAgencyReport;
+
+        if (this.showAgencyReport) {
+            setTimeout(() => {
+                document.getElementById('agency-report-section')?.scrollIntoView({
+                    behavior: 'smooth',
+                    block: 'start'
+                });
+            }, 50);
+        }
+    }
+
+    openAgencyReportPage(): void {
+        const filters = this.filterForm.value;
+        const queryParams = {
+            agency: JSON.stringify(filters.agency || []),
+            service: JSON.stringify(filters.service || []),
+            country: JSON.stringify(filters.country || []),
+            startDate: filters.startDate || '',
+            endDate: filters.endDate || ''
+        };
+
+        this.router.navigate(['/stats-report'], { queryParams }).catch(error => {
+            console.error('Navigation vers /stats-report impossible', error);
+        });
+    }
+
+    onReportAgencyChange(event: Event): void {
+        const value = (event.target as HTMLSelectElement).value;
+        this.reportSelectedAgency = value || 'all';
+        this.updateVisibleReportData();
+    }
+
+    onReportModeChange(event: Event): void {
+        const value = (event.target as HTMLSelectElement).value as 'both' | 'vol' | 'trx';
+        this.reportMode = value || 'both';
+    }
+
+    onReportSearchChange(event: Event): void {
+        this.reportSearchTerm = (event.target as HTMLInputElement).value || '';
+        this.updateVisibleReportData();
+    }
+
+    formatReportDateLabel(dateKey: string): string {
+        const [year, month, day] = dateKey.split('-');
+        if (!year || !month || !day) {
+            return dateKey;
+        }
+        return `${day}/${month}`;
+    }
+
+    formatReportPeriodLabel(): string {
+        if (!this.reportDateKeys.length) {
+            return 'Aucune période disponible';
+        }
+
+        if (this.reportDateKeys.length === 1) {
+            return `Période : ${this.reportDateKeys[0].split('-').reverse().join('/')}`;
+        }
+
+        const start = this.reportDateKeys[0].split('-').reverse().join('/');
+        const end = this.reportDateKeys[this.reportDateKeys.length - 1].split('-').reverse().join('/');
+        return `Période du ${start} au ${end}`;
+    }
+
+    isTodayReportDate(dateKey: string): boolean {
+        return this.toDateKey(new Date()) === dateKey;
+    }
+
+    private buildAgencyReportExportRows(): any[] {
+        return this.visibleReportRows.map(row => {
+            const exportRow: any = {
+                Agence: row.agency,
+                'Jours actifs': row.activeDays,
+                'Volume période': row.totalVolume,
+                'Nb période': row.totalCount
+            };
+
+            this.reportDateKeys.forEach(dateKey => {
+                const label = this.formatReportDateLabel(dateKey);
+                const cell = row.daily[dateKey] || { volume: 0, count: 0 };
+
+                if (this.reportMode !== 'trx') {
+                    exportRow[`${label} Volume`] = cell.volume;
+                }
+
+                if (this.reportMode !== 'vol') {
+                    exportRow[`${label} Trx`] = cell.count;
+                }
+            });
+
+            return exportRow;
+        });
+    }
+
+    private async promptCustomFileName(defaultBaseName: string, extension: 'xlsx' | 'pdf'): Promise<string | null> {
+        const fileName = prompt(`Entrez le nom du fichier (sans l'extension .${extension}) :`, defaultBaseName);
+
+        if (fileName === null) {
+            return null;
+        }
+
+        const trimmed = fileName.trim() || defaultBaseName;
+        return `${trimmed}.${extension}`;
+    }
+
+    private getAgencyReportBaseFileName(): string {
+        const period = this.reportDateKeys.length
+            ? `${this.reportDateKeys[0].replace(/-/g, '')}${this.reportDateKeys.length > 1 ? '_' + this.reportDateKeys[this.reportDateKeys.length - 1].replace(/-/g, '') : ''}`
+            : new Date().toISOString().slice(0, 10).replace(/-/g, '');
+        return `rapport_agences_${period}`;
+    }
+
+    async exportAgencyReportExcel(): Promise<void> {
+        if (!this.visibleReportRows.length) {
+            await this.showErrorMessage('Aucune donnée disponible pour exporter le rapport agence en Excel');
+            return;
+        }
+
+        this.isLoading = true;
+
+        try {
+            const fileName = await this.promptCustomFileName(this.getAgencyReportBaseFileName(), 'xlsx');
+            if (!fileName) {
+                return;
+            }
+
+            const workbook = new ExcelJS.Workbook();
+            const worksheet = workbook.addWorksheet('Rapport agences');
+
+            const rows = this.buildAgencyReportExportRows();
+            const headers = Object.keys(rows[0]);
+
+            worksheet.columns = headers.map(header => ({
+                header,
+                key: header,
+                width: header.length > 18 ? 18 : 16
+            }));
+
+            worksheet.getRow(1).eachCell(cell => {
+                cell.fill = {
+                    type: 'pattern',
+                    pattern: 'solid',
+                    fgColor: { argb: 'FF1A2535' }
+                };
+                cell.font = { color: { argb: 'FFFFFFFF' }, bold: true };
+                cell.alignment = { vertical: 'middle', horizontal: 'center' };
+            });
+
+            rows.forEach((row, index) => {
+                const excelRow = worksheet.addRow(row);
+                if (index % 2 === 1) {
+                    excelRow.eachCell(cell => {
+                        cell.fill = {
+                            type: 'pattern',
+                            pattern: 'solid',
+                            fgColor: { argb: 'FFF7F9FC' }
+                        };
+                    });
+                }
+            });
+
+            const totalRowData: any = {
+                Agence: 'TOTAL',
+                'Jours actifs': this.visibleReportSummary.activeAgencies,
+                'Volume période': this.visibleReportSummary.totalVolume,
+                'Nb période': this.visibleReportSummary.totalCount
+            };
+
+            this.reportDateKeys.forEach(dateKey => {
+                const label = this.formatReportDateLabel(dateKey);
+                const totals = this.visibleReportTotalsByDate[dateKey] || { volume: 0, count: 0 };
+
+                if (this.reportMode !== 'trx') {
+                    totalRowData[`${label} Volume`] = totals.volume;
+                }
+
+                if (this.reportMode !== 'vol') {
+                    totalRowData[`${label} Trx`] = totals.count;
+                }
+            });
+
+            const totalRow = worksheet.addRow(totalRowData);
+            totalRow.eachCell(cell => {
+                cell.font = { bold: true };
+                cell.fill = {
+                    type: 'pattern',
+                    pattern: 'solid',
+                    fgColor: { argb: 'FFE8F0FB' }
+                };
+            });
+
+            worksheet.columns.forEach(column => {
+                column.eachCell?.({ includeEmpty: true }, cell => {
+                    if (typeof cell.value === 'number') {
+                        cell.numFmt = '#,##0';
+                    }
+                });
+            });
+
+            const buffer = await workbook.xlsx.writeBuffer();
+            const blob = new Blob([buffer], {
+                type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+            });
+            FileSaver.saveAs(blob, fileName);
+
+            await this.showSuccessMessage(`Le fichier ${fileName} a été téléchargé.`);
+        } catch (error) {
+            console.error('Erreur lors de l\'export Excel du rapport agence:', error);
+            await this.showErrorMessage('Erreur lors de l\'export Excel du rapport agence');
+        } finally {
+            this.isLoading = false;
+        }
+    }
+
+    async exportAgencyReportPdf(): Promise<void> {
+        const element = document.getElementById('agency-report-section') as HTMLElement | null;
+        if (!element || !this.visibleReportRows.length) {
+            await this.showErrorMessage('Aucune donnée disponible pour exporter le rapport agence en PDF');
+            return;
+        }
+
+        this.isLoading = true;
+
+        const originalOverflow = element.style.overflow;
+        const tableScroll = element.querySelector('.agency-report-table-scroll') as HTMLElement | null;
+        const tableScrollOverflow = tableScroll?.style.overflow ?? '';
+        const tableScrollMaxHeight = tableScroll?.style.maxHeight ?? '';
+
+        try {
+            const fileName = await this.promptCustomFileName(this.getAgencyReportBaseFileName(), 'pdf');
+            if (!fileName) {
+                return;
+            }
+
+            element.style.overflow = 'visible';
+            if (tableScroll) {
+                tableScroll.style.overflow = 'visible';
+                tableScroll.style.maxHeight = 'none';
+            }
+
+            await new Promise(resolve => setTimeout(resolve, 200));
+
+            const canvas = await html2canvas(element, {
+                scale: 2,
+                useCORS: true,
+                logging: false,
+                backgroundColor: '#ffffff'
+            });
+
+            const pdf = new jsPDF({
+                orientation: 'landscape',
+                unit: 'mm',
+                format: 'a4'
+            });
+
+            const pdfW = pdf.internal.pageSize.getWidth();
+            const pdfH = pdf.internal.pageSize.getHeight();
+            const margin = 8;
+            const pageW = pdfW - 2 * margin;
+            const pageH = pdfH - 2 * margin;
+            const imgW = canvas.width;
+            const imgH = canvas.height;
+            const ratio = pageW / imgW;
+            const pageImgHeight = pageH / ratio;
+
+            const pageCanvas = document.createElement('canvas');
+            const pageCtx = pageCanvas.getContext('2d');
+            pageCanvas.width = imgW;
+
+            const totalPages = Math.ceil(imgH / pageImgHeight);
+            for (let page = 0; page < totalPages; page++) {
+                const sourceY = page * pageImgHeight;
+                const sliceHeight = Math.min(pageImgHeight, imgH - sourceY);
+                pageCanvas.height = sliceHeight;
+
+                if (pageCtx) {
+                    pageCtx.clearRect(0, 0, imgW, sliceHeight);
+                    pageCtx.drawImage(canvas, 0, sourceY, imgW, sliceHeight, 0, 0, imgW, sliceHeight);
+                }
+
+                const pageData = pageCanvas.toDataURL('image/png');
+                if (page > 0) {
+                    pdf.addPage();
+                }
+                pdf.addImage(pageData, 'PNG', margin, margin, pageW, sliceHeight * ratio);
+            }
+
+            pdf.save(fileName);
+            await this.showSuccessMessage(`Le fichier ${fileName} a été téléchargé.`);
+        } catch (error) {
+            console.error('Erreur lors de l\'export PDF du rapport agence:', error);
+            await this.showErrorMessage('Erreur lors de l\'export PDF du rapport agence');
+        } finally {
+            element.style.overflow = originalOverflow;
+            if (tableScroll) {
+                tableScroll.style.overflow = tableScrollOverflow;
+                tableScroll.style.maxHeight = tableScrollMaxHeight;
+            }
+            this.isLoading = false;
+        }
     }
 
     // Remplacer pagedStats par l'agrégation intelligente

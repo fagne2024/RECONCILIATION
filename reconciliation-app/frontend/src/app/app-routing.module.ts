@@ -29,6 +29,8 @@ import { ComptabiliteComponent } from './components/comptabilite/comptabilite.co
 import { UserLogComponent } from './components/user-log/user-log.component';
 import { PredictionsComponent } from './components/predictions/predictions.component';
 import { PredictionsNewComponent } from './components/predictions/predictions-new.component';
+import { StatsReportComponent } from './components/stats-report/stats-report.component';
+import { StatsReportGraphComponent } from './components/stats-report-graph/stats-report-graph.component';
 
 
 import { AutoProcessingModelsComponent } from './components/auto-processing-models/auto-processing-models.component';
@@ -88,6 +90,18 @@ const routes: Routes = [
   {
     path: 'stats',
     component: StatsComponent,
+    canActivate: [AuthGuard, ModuleAccessGuard],
+    data: { module: 'Statistiques', permissions: ['consulter'] }
+  },
+  {
+    path: 'stats-report',
+    component: StatsReportComponent,
+    canActivate: [AuthGuard, ModuleAccessGuard],
+    data: { module: 'Statistiques', permissions: ['consulter'] }
+  },
+  {
+    path: 'stats-report-graph',
+    component: StatsReportGraphComponent,
     canActivate: [AuthGuard, ModuleAccessGuard],
     data: { module: 'Statistiques', permissions: ['consulter'] }
   },

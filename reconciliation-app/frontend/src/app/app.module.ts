@@ -95,6 +95,8 @@ import { SuiviDesEcartsComponent } from './components/suivi-des-ecarts/suivi-des
 import { EcartBoSummaryComponent } from './components/ecart-bo-summary/ecart-bo-summary.component';
 import { RedevanceLoterieComponent } from './components/redevance-loterie/redevance-loterie.component';
 import { RapportReconciliationBoPartenaireComponent } from './components/rapport-reconciliation-bo-partenaire/rapport-reconciliation-bo-partenaire.component';
+import { StatsReportComponent } from './components/stats-report/stats-report.component';
+import { StatsReportGraphComponent } from './components/stats-report-graph/stats-report-graph.component';
 
 @NgModule({
     declarations: [
@@ -156,7 +158,9 @@ import { RapportReconciliationBoPartenaireComponent } from './components/rapport
                 SuiviDesEcartsComponent,
                 EcartBoSummaryComponent,
                 RedevanceLoterieComponent,
-                RapportReconciliationBoPartenaireComponent
+                RapportReconciliationBoPartenaireComponent,
+                StatsReportComponent,
+                StatsReportGraphComponent
     ],
     imports: [
         BrowserModule,

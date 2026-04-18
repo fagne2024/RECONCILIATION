@@ -1,0 +1,282 @@
+<div class="stats-report-page">
+  <nav class="topnav">
+    <div class="nav-brand">
+      <div class="nav-brand-dot"></div>
+      ReconciliApp
+    </div>
+    <div class="nav-sep"></div>
+    <div class="nav-path">
+      Statistiques
+      <i class="fas fa-chevron-right"></i>
+      <strong>Rapport Agences</strong>
+    </div>
+    <div class="nav-spacer"></div>
+    <div class="nav-actions">
+      <button type="button" class="nav-btn secondary" (click)="goBack()" [disabled]="isLoading">
+        <i class="fas fa-arrow-left"></i> Retour
+      </button>
+      <button type="button" class="nav-btn graph" (click)="openGraphPage()" [disabled]="!visibleReportRows.length || isLoading">
+        <i class="fas fa-chart-line"></i> Graph
+      </button>
+      <button type="button" class="nav-btn excel" (click)="exportAgencyReportExcel()" [disabled]="!visibleReportRows.length || isLoading">
+        <i class="fas fa-file-excel"></i> Excel
+      </button>
+      <button type="button" class="nav-btn pdf" (click)="exportAgencyReportPdf()" [disabled]="!visibleReportRows.length || isLoading">
+        <i class="fas fa-file-pdf"></i> PDF
+      </button>
+    </div>
+  </nav>
+
+  <div class="page">
+    <div class="page-head">
+      <div>
+        <div class="ph-eyebrow"><span></span>Rapport journalier</div>
+        <h1 class="ph-title">Suivi <em>Volume & Transactions</em> par agence</h1>
+        <div class="ph-sub">{{ formatReportPeriodLabel() }}</div>
+      </div>
+    </div>
+
+    <div *ngIf="isLoading" class="info-state">Chargement des données...</div>
+    <div *ngIf="!isLoading && errorMessage" class="info-state error">{{ errorMessage }}</div>
+
+    <ng-container *ngIf="!isLoading && !errorMessage">
+      <div class="filters-section">
+        <form [formGroup]="filterForm" class="filter-form">
+          <div class="filter-group">
+            <mat-form-field appearance="fill" class="filter-select">
+              <mat-label>Agence</mat-label>
+              <mat-select #agenceSelect formControlName="agency" multiple (selectionChange)="onFilterChange()">
+                <mat-option>
+                  <ngx-mat-select-search [formControl]="agenceSearchCtrl" placeholderLabel="Rechercher une agence..." noEntriesFoundLabel="Aucune agence trouvée"></ngx-mat-select-search>
+                </mat-option>
+                <mat-option *ngFor="let agency of filteredAgencies" [value]="agency">
+                  {{ agency }}
+                </mat-option>
+              </mat-select>
+            </mat-form-field>
+          </div>
+
+          <div class="filter-group">
+            <mat-form-field appearance="fill" class="filter-select">
+              <mat-label>Service</mat-label>
+              <mat-select #serviceSelect formControlName="service" multiple (selectionChange)="onFilterChange()">
+                <mat-option>
+                  <ngx-mat-select-search [formControl]="serviceSearchCtrl" placeholderLabel="Rechercher un service..." noEntriesFoundLabel="Aucun service trouvé"></ngx-mat-select-search>
+                </mat-option>
+                <mat-option *ngFor="let service of filteredServices" [value]="service">
+                  {{ service }}
+                </mat-option>
+              </mat-select>
+            </mat-form-field>
+          </div>
+
+          <div class="filter-group">
+            <mat-form-field appearance="fill" class="filter-select">
+              <mat-label>Pays</mat-label>
+              <mat-select #paysSelect formControlName="country" multiple (selectionChange)="onFilterChange()">
+                <mat-option>
+                  <ngx-mat-select-search [formControl]="paysSearchCtrl" placeholderLabel="Rechercher un pays..." noEntriesFoundLabel="Aucun pays trouvé"></ngx-mat-select-search>
+                </mat-option>
+                <mat-option *ngFor="let country of filteredCountries" [value]="country">
+                  {{ country }}
+                </mat-option>
+              </mat-select>
+            </mat-form-field>
+          </div>
+
+          <div class="filter-group">
+            <label>Période</label>
+            <select formControlName="periodType" (change)="onPeriodTypeChange()">
+              <option value="week">Semaine</option>
+              <option value="month">Mois</option>
+            </select>
+          </div>
+
+          <div class="filter-group">
+            <label>Date de début</label>
+            <input type="date" formControlName="startDate">
+          </div>
+
+          <div class="filter-group">
+            <label>Date de fin</label>
+            <input type="date" formControlName="endDate">
+          </div>
+
+          <div class="filter-group">
+            <label>Afficher</label>
+            <select [value]="reportMode" (change)="onReportModeChange($event)">
+              <option value="both">Volume + Trx</option>
+              <option value="vol">Volume seul</option>
+              <option value="trx">Trx seul</option>
+            </select>
+          </div>
+
+          <button type="button" class="apply-btn" (click)="onFilterChange()" [disabled]="isLoading">
+            Appliquer les filtres
+          </button>
+        </form>
+      </div>
+
+      <div class="report-toolbar">
+        <div class="report-search-group">
+          <label>Recherche agence</label>
+          <input
+            type="text"
+            class="report-search-input"
+            [value]="reportSearchTerm"
+            (input)="onReportSearchChange($event)"
+            placeholder="Rechercher une agence..."
+          >
+        </div>
+        <div class="report-filter-group">
+          <label>Affichage agence</label>
+          <select [value]="reportSelectedAgency" (change)="onReportAgencyChange($event)">
+            <option value="all">Toutes</option>
+            <option *ngFor="let agency of reportAgencyOptions" [value]="agency">{{ agency }}</option>
+          </select>
+        </div>
+          <div class="report-filter-group">
+            <label>Éléments / page</label>
+            <select [value]="reportPageSize" (change)="onReportPageSizeChange($event)">
+              <option [value]="10">10</option>
+              <option [value]="20">20</option>
+              <option [value]="50">50</option>
+            </select>
+          </div>
+        <div class="report-chip">{{ visibleReportRows.length }} agence(s)</div>
+        <div class="density-toggle">
+          <button type="button" [class.active]="tableDensity === 'compact'" (click)="setTableDensity('compact')">Compact</button>
+          <button type="button" [class.active]="tableDensity === 'large'" (click)="setTableDensity('large')">Large</button>
+        </div>
+      </div>
+
+      <div id="agency-report-export-area" [class.export-mode]="isExportingPdf">
+        <div class="kpi-strip">
+          <div class="kpi">
+            <div class="kpi-l">Volume global (période)</div>
+            <div class="kpi-v blue">{{ visibleReportSummary.totalVolume | number:'1.0-0' }}</div>
+            <div class="kpi-s">XOF · {{ reportDateKeys.length }} jour(s)</div>
+          </div>
+          <div class="kpi">
+            <div class="kpi-l">Nb Trx total</div>
+            <div class="kpi-v blue">{{ visibleReportSummary.totalCount | number:'1.0-0' }}</div>
+            <div class="kpi-s">transactions</div>
+          </div>
+          <div class="kpi">
+            <div class="kpi-l">Agences actives</div>
+            <div class="kpi-v green">{{ visibleReportSummary.activeAgencies | number:'1.0-0' }}</div>
+            <div class="kpi-s">sur la période</div>
+          </div>
+          <div class="kpi">
+            <div class="kpi-l">Volume moy / jour</div>
+            <div class="kpi-v amber">{{ visibleReportSummary.avgVolumePerDay | number:'1.0-0' }}</div>
+            <div class="kpi-s">XOF</div>
+          </div>
+          <div class="kpi">
+            <div class="kpi-l">Pic journalier</div>
+            <div class="kpi-v green">{{ visibleReportSummary.peakDayVolume | number:'1.0-0' }}</div>
+            <div class="kpi-s">{{ visibleReportSummary.peakDayKey ? formatReportDateLabel(visibleReportSummary.peakDayKey) : 'Aucune donnée' }}</div>
+          </div>
+        </div>
+
+        <div *ngIf="visibleReportRows.length > 0; else noReportRows" class="table-card" [class.table-compact]="tableDensity === 'compact' || isExportingPdf" [class.table-large]="tableDensity === 'large' && !isExportingPdf">
+          <div class="table-scroll agency-report-table-scroll">
+            <table class="agency-report-table">
+              <thead>
+                <tr>
+                  <th class="sticky report-col-index">#</th>
+                  <th class="sticky report-col-agency">Agence</th>
+                  <th class="sticky report-col-total report-col-volume">Volume période</th>
+                  <th class="sticky report-col-total report-col-count">Nb période</th>
+                  <th *ngFor="let dayKey of reportDateKeys" [class.today-head]="isTodayReportDate(dayKey)">
+                    {{ formatReportDateLabel(dayKey) }}
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr *ngFor="let row of displayedReportRows; let i = index">
+                  <td class="sticky report-col-index">{{ isExportingPdf ? i + 1 : ((reportPage - 1) * reportPageSize) + i + 1 }}</td>
+                  <td class="sticky report-col-agency">
+                    <span class="report-agency-name">{{ row.agency }}</span>
+                    <span class="report-agency-meta">{{ row.activeDays }} jour(s) actif(s)</span>
+                  </td>
+                  <td class="sticky report-col-total report-col-volume">{{ row.totalVolume | number:'1.0-0' }}</td>
+                  <td class="sticky report-col-total report-col-count">{{ row.totalCount | number:'1.0-0' }}</td>
+                  <td *ngFor="let dayKey of reportDateKeys" class="report-day-cell" [class.today-col]="isTodayReportDate(dayKey)">
+                    <ng-container [ngSwitch]="reportMode">
+                      <span *ngSwitchCase="'vol'" class="report-vol" [class.has-data]="(row.daily[dayKey]?.volume || 0) > 0">
+                        {{ (row.daily[dayKey]?.volume || 0) ? (row.daily[dayKey]?.volume | number:'1.0-0') : '—' }}
+                      </span>
+                      <span *ngSwitchCase="'trx'" class="report-trx" [class.has-data]="(row.daily[dayKey]?.count || 0) > 0">
+                        {{ (row.daily[dayKey]?.count || 0) ? (row.daily[dayKey]?.count | number:'1.0-0') : '—' }}
+                      </span>
+                      <div *ngSwitchDefault class="report-both">
+                        <span class="report-vol" [class.has-data]="(row.daily[dayKey]?.volume || 0) > 0">
+                          {{ (row.daily[dayKey]?.volume || 0) ? (row.daily[dayKey]?.volume | number:'1.0-0') : '—' }}
+                        </span>
+                        <span class="report-trx" [class.has-data]="(row.daily[dayKey]?.count || 0) > 0">
+                          {{ (row.daily[dayKey]?.count || 0) ? (row.daily[dayKey]?.count | number:'1.0-0') : '—' }}
+                        </span>
+                      </div>
+                    </ng-container>
+                  </td>
+                </tr>
+              </tbody>
+              <tfoot>
+                <tr>
+                  <td class="sticky report-col-index"></td>
+                  <td class="sticky report-col-agency report-footer-label">TOTAL</td>
+                  <td class="sticky report-col-total report-col-volume">{{ visibleReportSummary.totalVolume | number:'1.0-0' }}</td>
+                  <td class="sticky report-col-total report-col-count">{{ visibleReportSummary.totalCount | number:'1.0-0' }}</td>
+                  <td *ngFor="let dayKey of reportDateKeys" class="report-day-cell report-footer-cell" [class.today-col]="isTodayReportDate(dayKey)">
+                    <ng-container [ngSwitch]="reportMode">
+                      <span *ngSwitchCase="'vol'" class="report-vol has-data">
+                        {{ (visibleReportTotalsByDate[dayKey]?.volume || 0) ? (visibleReportTotalsByDate[dayKey]?.volume | number:'1.0-0') : '—' }}
+                      </span>
+                      <span *ngSwitchCase="'trx'" class="report-trx has-data">
+                        {{ (visibleReportTotalsByDate[dayKey]?.count || 0) ? (visibleReportTotalsByDate[dayKey]?.count | number:'1.0-0') : '—' }}
+                      </span>
+                      <div *ngSwitchDefault class="report-both">
+                        <span class="report-vol has-data">
+                          {{ (visibleReportTotalsByDate[dayKey]?.volume || 0) ? (visibleReportTotalsByDate[dayKey]?.volume | number:'1.0-0') : '—' }}
+                        </span>
+                        <span class="report-trx has-data">
+                          {{ (visibleReportTotalsByDate[dayKey]?.count || 0) ? (visibleReportTotalsByDate[dayKey]?.count | number:'1.0-0') : '—' }}
+                        </span>
+                      </div>
+                    </ng-container>
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+          <div class="pagination-bar" *ngIf="!isExportingPdf && visibleReportRows.length > reportPageSize">
+            <div class="pagination-info">
+              Page {{ reportPage }} sur {{ totalReportPages }} · {{ visibleReportRows.length }} agence(s)
+            </div>
+            <div class="pagination-controls">
+              <button type="button" (click)="previousReportPage()" [disabled]="reportPage === 1">
+                <i class="fas fa-chevron-left"></i> Précédent
+              </button>
+              <div class="pagination-indicators">
+                <span *ngFor="let page of getVisibleReportPages()"
+                      class="page-indicator"
+                      [class.active]="reportPage === page"
+                      (click)="goToReportPage(page)">
+                  {{ page }}
+                </span>
+              </div>
+              <button type="button" (click)="nextReportPage()" [disabled]="reportPage === totalReportPages">
+                Suivant <i class="fas fa-chevron-right"></i>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <ng-template #noReportRows>
+          <div class="info-state">Aucune donnée disponible pour le rapport avec les filtres actuels.</div>
+        </ng-template>
+      </div>
+    </ng-container>
+  </div>
+</div>
