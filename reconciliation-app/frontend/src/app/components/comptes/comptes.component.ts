@@ -2901,6 +2901,17 @@ export class ComptesComponent implements OnInit, OnDestroy {
         return val ?? '';
     }
 
+    formatClosingBalance(val: any): string {
+        const numericValue = typeof val === 'number' ? val : Number(val);
+        if (Number.isFinite(numericValue)) {
+            return numericValue.toLocaleString('fr-FR', {
+                minimumFractionDigits: 0,
+                maximumFractionDigits: 20
+            });
+        }
+        return val ?? '';
+    }
+
     // Ajout de la fonction utilitaire pour calculer le débit/crédit d'une opération
     getDebitCreditForOperation(op: Operation): { debit: number, credit: number } {
         let debit = 0;

@@ -63,6 +63,8 @@ export class EcartBoTableComponent implements OnInit, OnDestroy {
   isSavingEcartBo = false;
   isSavingEcartBoToTrxSf = false;
   isSavingEcartBoToImpactOP = false;
+  selectedBoEcartSoldeDate: string | null = null;
+  selectedBoTrxSfDate: string | null = null;
   selectedBoImportOpDate: string | null = null;
   
   // Chargement progressif
@@ -459,11 +461,41 @@ export class EcartBoTableComponent implements OnInit, OnDestroy {
 
   getBoRecordsForAction(): Record<string, string>[] {
     const dataset = this.getBoSelectionDataset();
-    if (this.selectedBoOnlyKeys.length === 0) {
-      return dataset;
-    }
     const keySet = new Set(this.selectedBoOnlyKeys);
     return dataset.filter(record => keySet.has(this.getBoOnlyKey(record)));
+  }
+
+  private deduplicateItems<T>(items: T[], keyBuilder: (item: T) => string): { unique: T[]; duplicates: number } {
+    const seen = new Set<string>();
+    const unique: T[] = [];
+    let duplicates = 0;
+
+    for (const item of items) {
+      const key = keyBuilder(item);
+      if (!key) {
+        unique.push(item);
+        continue;
+      }
+      if (seen.has(key)) {
+        duplicates++;
+        continue;
+      }
+      seen.add(key);
+      unique.push(item);
+    }
+
+    return { unique, duplicates };
+  }
+
+  private buildImpactOpDedupKey(impact: ImpactOP): string {
+    return [
+      (impact.codeProprietaire || '').trim().toLowerCase(),
+      (impact.numeroTransGU || '').trim().toLowerCase(),
+      (impact.dateOperation || '').trim(),
+      Number(impact.montant || 0).toFixed(2),
+      (impact.typeOperation || '').trim().toLowerCase(),
+      (impact.groupeReseau || '').trim().toLowerCase()
+    ].join('|');
   }
 
   getBoOnlyAgencyAndService(record: Record<string, string>): { agency: string; service: string; volume: number; date: string; country: string } {
@@ -598,22 +630,44 @@ export class EcartBoTableComponent implements OnInit, OnDestroy {
   }
 
   async saveEcartBoToEcartSolde(): Promise<void> {
-    // Toujours sauvegarder TOUTES les lignes (pas de filtre par sélection)
-    const sourceRecords: Record<string, string>[] =
-      (this.filteredBoOnly && this.filteredBoOnly.length > 0)
-        ? [...this.filteredBoOnly]
-        : this.getBoSelectionDataset();
+    const sourceRecords = this.getBoRecordsForAction();
 
     if (sourceRecords.length === 0) {
-      this.popupService.showWarning('❌ Aucune donnée ECART BO à sauvegarder.');
+      this.popupService.showWarning('❌ Aucune ligne cochée à sauvegarder.');
       return;
     }
 
     this.isSavingEcartBo = true;
+    this.cdr.markForCheck();
 
     try {
-      console.log('🔄 Début de la sauvegarde des ECART BO (toutes les lignes)...');
+      console.log('🔄 Début de la sauvegarde des ECART BO (lignes cochées)...');
       console.log('DEBUG: Nombre d\'enregistrements ECART BO à sauvegarder:', sourceRecords.length);
+
+      const defaultDateCandidate = this.selectedBoEcartSoldeDate
+        || this.extractIsoDay(this.getFromRecord(sourceRecords[0], ['Date opération', 'Date', 'dateOperation', 'date_operation']))
+        || this.extractIsoDay(this.getBoOnlyAgencyAndService(sourceRecords[0]).date)
+        || this.toIsoLocalDate(new Date().toISOString());
+
+      const dateInput = await this.popupService.showDateInput(
+        'Sélectionnez la date d\'opération à appliquer pour les enregistrements Ecart Solde générés.',
+        'Date Ecart Solde',
+        defaultDateCandidate
+      );
+
+      if (dateInput === null) {
+        await this.popupService.showInfo('Sauvegarde Ecart Solde annulée.');
+        return;
+      }
+
+      const normalizedDateInput = this.toIsoLocalDate(dateInput || defaultDateCandidate);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(normalizedDateInput)) {
+        await this.popupService.showWarning('Date d\'opération invalide. Sauvegarde annulée.');
+        return;
+      }
+
+      this.selectedBoEcartSoldeDate = normalizedDateInput;
+      const overrideDateIso = this.makeIsoDateTime(normalizedDateInput);
 
       // Convertir les données ECART BO en format EcartSolde
       const ecartSoldeData: EcartSolde[] = sourceRecords.map((record, index) => {
@@ -673,7 +727,7 @@ export class EcartBoTableComponent implements OnInit, OnDestroy {
           montant: parseFloat(getValueWithFallback(['montant', 'Montant', 'MONTANT', 'amount', 'Amount', 'volume', 'Volume'])) || 0,
           service: agencyInfo.service,
           agence: agencyInfo.agency,
-          dateTransaction: formatDateForBackend(agencyInfo.date),
+          dateTransaction: overrideDateIso || formatDateForBackend(agencyInfo.date),
           numeroTransGu: getValueWithFallback(['Numero Trans GU', 'Numéro Trans GU', 'numero_trans_gu', 'NUMERO_TRANS_GU', 'transaction_number', 'TransactionNumber']),
           pays: agencyInfo.country,
           statut: 'EN_ATTENTE', // Statut par défaut
@@ -694,9 +748,15 @@ export class EcartBoTableComponent implements OnInit, OnDestroy {
         record.agence.trim() !== ''
       );
 
-      console.log('DEBUG: Nombre d\'enregistrements valides après filtrage:', validRecords.length);
+      const deduplicatedRecords = this.deduplicateItems(
+        validRecords,
+        record => (record.idTransaction || '').trim().toLowerCase()
+      );
 
-      if (validRecords.length === 0) {
+      console.log('DEBUG: Nombre d\'enregistrements valides après filtrage:', validRecords.length);
+      console.log('DEBUG: Doublons locaux ignorés avant envoi:', deduplicatedRecords.duplicates);
+
+      if (deduplicatedRecords.unique.length === 0) {
         console.error('DEBUG: Aucun enregistrement valide trouvé. Raisons possibles:');
         console.error('- idTransaction manquant ou vide');
         console.error('- agence manquante ou vide');
@@ -708,8 +768,9 @@ export class EcartBoTableComponent implements OnInit, OnDestroy {
       // Afficher un message de confirmation avec les détails
       const message = `📋 RÉSUMÉ DES DONNÉES À SAUVEGARDER:\n\n` +
         `📊 Total des enregistrements ECART BO: ${sourceRecords.length}\n` +
-        `✅ Enregistrements valides: ${validRecords.length}\n` +
-        `❌ Enregistrements invalides: ${ecartSoldeData.length - validRecords.length}\n\n` +
+        `✅ Enregistrements valides: ${deduplicatedRecords.unique.length}\n` +
+        `❌ Enregistrements invalides: ${ecartSoldeData.length - validRecords.length}\n` +
+        `⚠️ Doublons dans la sélection: ${deduplicatedRecords.duplicates}\n\n` +
         `📝 Commentaire par défaut: "IMPACT J+1"\n` +
         `🔄 Les doublons seront automatiquement ignorés.\n\n` +
         `Voulez-vous continuer avec la sauvegarde ?`;
@@ -723,7 +784,7 @@ export class EcartBoTableComponent implements OnInit, OnDestroy {
       console.log('✅ Confirmation utilisateur reçue, début de la sauvegarde...');
       
       // Sauvegarder les données via le service
-      const result = await this.ecartSoldeService.createMultipleEcartSoldes(validRecords);
+      const result = await this.ecartSoldeService.createMultipleEcartSoldes(deduplicatedRecords.unique);
       
       console.log('=== RÉSULTATS DE LA SAUVEGARDE ===');
       console.log('DEBUG: Enregistrements reçus:', result.totalReceived);
@@ -734,9 +795,10 @@ export class EcartBoTableComponent implements OnInit, OnDestroy {
       // Afficher un message de succès détaillé
       let successMessage = `✅ SAUVEGARDE TERMINÉE AVEC SUCCÈS!\n\n`;
       successMessage += `📊 RÉSUMÉ:\n`;
-      successMessage += `• Enregistrements traités: ${result.totalReceived}\n`;
+      successMessage += `• Enregistrements envoyés: ${deduplicatedRecords.unique.length}\n`;
       successMessage += `• Nouveaux enregistrements créés: ${result.count}\n`;
-      successMessage += `• Doublons ignorés: ${result.duplicates}\n\n`;
+      successMessage += `• Doublons ignorés dans la sélection: ${deduplicatedRecords.duplicates}\n`;
+      successMessage += `• Doublons déjà en base: ${result.duplicates}\n\n`;
       successMessage += `💾 Les données ont été sauvegardées dans la table Ecart Solde.`;
       
       this.popupService.showSuccess(successMessage);
@@ -761,22 +823,44 @@ export class EcartBoTableComponent implements OnInit, OnDestroy {
   }
 
   async saveEcartBoToTrxSf(): Promise<void> {
-    // Toujours sauvegarder TOUTES les lignes (pas de filtre par sélection)
-    const sourceRecords: Record<string, string>[] =
-      (this.filteredBoOnly && this.filteredBoOnly.length > 0)
-        ? [...this.filteredBoOnly]
-        : this.getBoSelectionDataset();
+    const sourceRecords = this.getBoRecordsForAction();
 
     if (sourceRecords.length === 0) {
-      this.popupService.showWarning('❌ Aucune donnée ECART BO à sauvegarder dans TRX SF.');
+      this.popupService.showWarning('❌ Aucune ligne cochée à sauvegarder dans TRX SF.');
       return;
     }
 
     this.isSavingEcartBoToTrxSf = true;
+    this.cdr.markForCheck();
 
     try {
-      console.log('🔄 Début de la sauvegarde des ECART BO dans TRX SF (toutes les lignes)...');
+      console.log('🔄 Début de la sauvegarde des ECART BO dans TRX SF (lignes cochées)...');
       console.log('DEBUG: Nombre d\'enregistrements ECART BO à sauvegarder:', sourceRecords.length);
+
+      const defaultDateCandidate = this.selectedBoTrxSfDate
+        || this.extractIsoDay(this.getFromRecord(sourceRecords[0], ['Date opération', 'Date', 'dateOperation', 'date_operation']))
+        || this.extractIsoDay(this.getBoOnlyAgencyAndService(sourceRecords[0]).date)
+        || this.toIsoLocalDate(new Date().toISOString());
+
+      const dateInput = await this.popupService.showDateInput(
+        'Sélectionnez la date d\'opération à appliquer pour les enregistrements TRX SF générés.',
+        'Date TRX SF',
+        defaultDateCandidate
+      );
+
+      if (dateInput === null) {
+        await this.popupService.showInfo('Sauvegarde TRX SF annulée.');
+        return;
+      }
+
+      const normalizedDateInput = this.toIsoLocalDate(dateInput || defaultDateCandidate);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(normalizedDateInput)) {
+        await this.popupService.showWarning('Date d\'opération invalide. Sauvegarde annulée.');
+        return;
+      }
+
+      this.selectedBoTrxSfDate = normalizedDateInput;
+      const overrideDateIso = this.makeIsoDateTime(normalizedDateInput);
 
       // Convertir les données ECART BO en format TrxSfData avec récupération des frais
       const trxSfDataPromises = sourceRecords.map(async (record, index) => {
@@ -869,7 +953,7 @@ export class EcartBoTableComponent implements OnInit, OnDestroy {
           montant: parseFloat(getValueWithFallback(['montant', 'Montant', 'MONTANT', 'amount', 'Amount', 'volume', 'Volume'])) || 0,
           service: agencyInfo.service,
           agence: agencyInfo.agency,
-          dateTransaction: formatDateForBackend(agencyInfo.date),
+          dateTransaction: overrideDateIso || formatDateForBackend(agencyInfo.date),
           numeroTransGu: getValueWithFallback(['Numéro Trans GU', 'numero_trans_gu', 'NUMERO_TRANS_GU', 'transaction_number', 'TransactionNumber', 'numeroTransGu', 'NumeroTransGu']),
           pays: agencyInfo.country,
           statut: 'EN_ATTENTE',
@@ -903,9 +987,15 @@ export class EcartBoTableComponent implements OnInit, OnDestroy {
         record.agence.trim() !== ''
       );
 
-      console.log('DEBUG: Nombre d\'enregistrements valides après filtrage:', validRecords.length);
+      const deduplicatedRecords = this.deduplicateItems(
+        validRecords,
+        record => (record.idTransaction || '').trim().toLowerCase()
+      );
 
-      if (validRecords.length === 0) {
+      console.log('DEBUG: Nombre d\'enregistrements valides après filtrage:', validRecords.length);
+      console.log('DEBUG: Doublons locaux ignorés avant envoi:', deduplicatedRecords.duplicates);
+
+      if (deduplicatedRecords.unique.length === 0) {
         this.popupService.showWarning('❌ Aucun enregistrement valide trouvé pour la sauvegarde dans TRX SF.');
         return;
       }
@@ -914,12 +1004,12 @@ export class EcartBoTableComponent implements OnInit, OnDestroy {
       console.log('🔄 Sauvegarde des données dans TRX SF avec frais TSOP...');
       
       // Appeler le service pour sauvegarder les données
-      const result = await this.trxSfService.createMultipleTrxSf(validRecords).toPromise();
+      const result = await this.trxSfService.createMultipleTrxSf(deduplicatedRecords.unique).toPromise();
       
       console.log('✅ Sauvegarde dans TRX SF terminée avec succès:', result);
       
       // Afficher un message de succès
-      this.popupService.showSuccess(`✅ ${validRecords.length} enregistrements ECART BO ont été sauvegardés dans TRX SF avec frais TSOP !`);
+      this.popupService.showSuccess(`✅ ${deduplicatedRecords.unique.length} enregistrements ECART BO ont été sauvegardés dans TRX SF avec frais TSOP.\n\n⚠️ Doublons ignorés dans la sélection: ${deduplicatedRecords.duplicates}`);
       this.cdr.markForCheck();
     } catch (error) {
       console.error('❌ Erreur lors de la sauvegarde dans TRX SF:', error);
@@ -969,16 +1059,10 @@ export class EcartBoTableComponent implements OnInit, OnDestroy {
   }
 
   async saveEcartBoToImpactOP(): Promise<void> {
-    const mismatches = this.response?.mismatches || [];
-    const boOnly = this.response?.boOnly || [];
-    const allFromResponse = [...mismatches, ...boOnly];
-    const sourceRecords: Record<string, string>[] =
-      (this.filteredBoOnly && this.filteredBoOnly.length > 0)
-        ? [...this.filteredBoOnly]
-        : [...allFromResponse];
+    const sourceRecords = this.getBoRecordsForAction();
 
     if (sourceRecords.length === 0) {
-      this.popupService.showWarning('❌ Aucune donnée ECART BO à sauvegarder dans Import OP.');
+      this.popupService.showWarning('❌ Aucune ligne cochée à sauvegarder dans Import OP.');
       return;
     }
 
@@ -986,7 +1070,7 @@ export class EcartBoTableComponent implements OnInit, OnDestroy {
     this.cdr.markForCheck();
 
     try {
-      console.log('🔄 Début de la sauvegarde des ECART BO dans Import OP (toutes les lignes)...');
+      console.log('🔄 Début de la sauvegarde des ECART BO dans Import OP (lignes cochées)...');
       console.log('DEBUG: Nombre d\'enregistrements ECART BO à sauvegarder:', sourceRecords.length);
 
       const defaultDateCandidate = this.selectedBoImportOpDate
@@ -1061,8 +1145,13 @@ export class EcartBoTableComponent implements OnInit, OnDestroy {
         } as ImpactOP;
       });
 
+      const deduplicatedImpacts = this.deduplicateItems(
+        impactOPData,
+        impact => this.buildImpactOpDedupKey(impact)
+      );
+
       console.log('DEBUG: Envoi batch ECART BO vers Import OP...');
-      const batchResult = await firstValueFrom(this.impactOPService.createImpactOPBatch(impactOPData));
+      const batchResult = await firstValueFrom(this.impactOPService.createImpactOPBatch(deduplicatedImpacts.unique));
       const successCount = batchResult.successCount ?? 0;
       const errorCount = batchResult.errorCount ?? 0;
 
@@ -1071,7 +1160,7 @@ export class EcartBoTableComponent implements OnInit, OnDestroy {
       }
 
       if (successCount > 0) {
-        this.popupService.showSuccess(`✅ Sauvegarde réussie !\n\n📊 Résumé:\n• ${successCount} Import OP créés avec succès\n• ${errorCount} erreurs\n• ${sourceRecords.length} ligne(s) traitées\n\n💾 Les données ECART BO ont été sauvegardées dans Import OP.`);
+        this.popupService.showSuccess(`✅ Sauvegarde réussie !\n\n📊 Résumé:\n• ${successCount} Import OP créés avec succès\n• ${errorCount} erreurs\n• ${deduplicatedImpacts.duplicates} doublon(s) ignoré(s) dans la sélection\n• ${deduplicatedImpacts.unique.length} ligne(s) envoyée(s)\n\n💾 Les données ECART BO ont été sauvegardées dans Import OP.`);
       } else {
         this.popupService.showError(`❌ Échec de la sauvegarde !\n\nAucun Import OP n'a pu être créé.\n${batchResult.errors?.length ? 'Détails: ' + batchResult.errors.slice(0, 3).join(' ; ') : 'Veuillez vérifier les logs.'}`);
       }

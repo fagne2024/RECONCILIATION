@@ -12,16 +12,16 @@
     </div>
     <div class="nav-spacer"></div>
     <div class="nav-actions">
-      <button type="button" class="nav-btn secondary" (click)="goBack()" [disabled]="isLoading">
+      <button type="button" class="nav-btn secondary" (click)="goBack()" [disabled]="isLoading || isExportingPdf">
         <i class="fas fa-arrow-left"></i> Retour
       </button>
-      <button type="button" class="nav-btn graph" (click)="openGraphPage()" [disabled]="!visibleReportRows.length || isLoading">
+      <button type="button" class="nav-btn graph" (click)="openGraphPage()" [disabled]="!visibleReportRows.length || isLoading || isExportingPdf">
         <i class="fas fa-chart-line"></i> Graph
       </button>
-      <button type="button" class="nav-btn excel" (click)="exportAgencyReportExcel()" [disabled]="!visibleReportRows.length || isLoading">
+      <button type="button" class="nav-btn excel" (click)="exportAgencyReportExcel()" [disabled]="!visibleReportRows.length || isLoading || isExportingPdf">
         <i class="fas fa-file-excel"></i> Excel
       </button>
-      <button type="button" class="nav-btn pdf" (click)="exportAgencyReportPdf()" [disabled]="!visibleReportRows.length || isLoading">
+      <button type="button" class="nav-btn pdf" (click)="exportAgencyReportPdf()" [disabled]="!visibleReportRows.length || isLoading || isExportingPdf">
         <i class="fas fa-file-pdf"></i> PDF
       </button>
     </div>
@@ -111,7 +111,7 @@
             </select>
           </div>
 
-          <button type="button" class="apply-btn" (click)="onFilterChange()" [disabled]="isLoading">
+          <button type="button" class="apply-btn" (click)="onFilterChange()" [disabled]="isLoading || isExportingPdf">
             Appliquer les filtres
           </button>
         </form>

@@ -43,6 +43,7 @@ export class StatsReportGraphComponent implements OnInit {
   filteredData: any[] = [];
   aggregatedStatsCache: AggregatedStatRow[] = [];
   isLoading = false;
+  isExporting = false;
   errorMessage: string | null = null;
 
   graphView: 'global' | 'agency' | 'market' = 'global';
@@ -630,21 +631,33 @@ export class StatsReportGraphComponent implements OnInit {
 
   async exportGraphsPdf(): Promise<void> {
     const sourceElement = document.getElementById('stats-graph-export-area') as HTMLElement | null;
-    if (!sourceElement || this.isLoading) {
+    if (!sourceElement || this.isLoading || this.isExporting) {
       return;
     }
 
-    this.isLoading = true;
-    const exportClone = this.createExportClone(sourceElement);
+    this.isExporting = true;
 
     try {
       await new Promise(resolve => setTimeout(resolve, 200));
 
-      const canvas = await html2canvas(exportClone.content, {
+      const canvas = await html2canvas(sourceElement, {
         scale: 2,
         useCORS: true,
         logging: false,
-        backgroundColor: '#f2f0eb'
+        backgroundColor: '#f2f0eb',
+        windowWidth: Math.max(document.documentElement.clientWidth, sourceElement.scrollWidth),
+        onclone: (clonedDocument) => {
+          const clonedElement = clonedDocument.getElementById('stats-graph-export-area') as HTMLElement | null;
+          if (!clonedElement) {
+            return;
+          }
+
+          clonedElement.style.overflow = 'visible';
+          clonedElement.style.overflowX = 'visible';
+          clonedElement.style.overflowY = 'visible';
+          clonedElement.style.maxHeight = 'none';
+          clonedElement.style.height = 'auto';
+        }
       });
 
       const pdf = new jsPDF({
@@ -693,28 +706,39 @@ export class StatsReportGraphComponent implements OnInit {
       console.error('Erreur lors de l\'export PDF des graphes:', error);
       await this.showErrorMessage('Erreur lors de l\'export PDF des graphes');
     } finally {
-      exportClone.container.remove();
-      this.isLoading = false;
+      this.isExporting = false;
     }
   }
 
   async exportGraphsPng(): Promise<void> {
     const sourceElement = document.getElementById('stats-graph-export-area') as HTMLElement | null;
-    if (!sourceElement || this.isLoading) {
+    if (!sourceElement || this.isLoading || this.isExporting) {
       return;
     }
 
-    this.isLoading = true;
-    const exportClone = this.createExportClone(sourceElement);
+    this.isExporting = true;
 
     try {
       await new Promise(resolve => setTimeout(resolve, 200));
 
-      const canvas = await html2canvas(exportClone.content, {
+      const canvas = await html2canvas(sourceElement, {
         scale: 2,
         useCORS: true,
         logging: false,
-        backgroundColor: '#f2f0eb'
+        backgroundColor: '#f2f0eb',
+        windowWidth: Math.max(document.documentElement.clientWidth, sourceElement.scrollWidth),
+        onclone: (clonedDocument) => {
+          const clonedElement = clonedDocument.getElementById('stats-graph-export-area') as HTMLElement | null;
+          if (!clonedElement) {
+            return;
+          }
+
+          clonedElement.style.overflow = 'visible';
+          clonedElement.style.overflowX = 'visible';
+          clonedElement.style.overflowY = 'visible';
+          clonedElement.style.maxHeight = 'none';
+          clonedElement.style.height = 'auto';
+        }
       });
 
       const fileName = `${this.getGraphsExportBaseFileName()}.png`;
@@ -730,8 +754,7 @@ export class StatsReportGraphComponent implements OnInit {
       console.error('Erreur lors de l\'export PNG des graphes:', error);
       await this.showErrorMessage('Erreur lors de l\'export PNG des graphes');
     } finally {
-      exportClone.container.remove();
-      this.isLoading = false;
+      this.isExporting = false;
     }
   }
 
@@ -754,60 +777,6 @@ export class StatsReportGraphComponent implements OnInit {
       .replace(/-+/g, '-')
       .replace(/^[-_]+|[-_]+$/g, '')
       .toLowerCase();
-  }
-
-  private createExportClone(sourceElement: HTMLElement, minWidth: number = 0): { container: HTMLDivElement; content: HTMLElement } {
-    const container = document.createElement('div');
-    const content = sourceElement.cloneNode(true) as HTMLElement;
-    const sourceWidth = Math.ceil(sourceElement.getBoundingClientRect().width);
-    const exportWidth = Math.max(minWidth, sourceElement.scrollWidth, sourceWidth, 1200);
-
-    container.style.position = 'fixed';
-    container.style.left = '-100000px';
-    container.style.top = '0';
-    container.style.width = `${exportWidth}px`;
-    container.style.pointerEvents = 'none';
-    container.style.opacity = '1';
-    container.style.zIndex = '-1';
-    container.style.background = '#f2f0eb';
-
-    content.removeAttribute('id');
-    content.style.width = `${exportWidth}px`;
-    content.style.maxHeight = 'none';
-    content.style.height = 'auto';
-    content.style.overflow = 'visible';
-    content.style.overflowX = 'visible';
-    content.style.overflowY = 'visible';
-
-    const allNodes = [content, ...Array.from(content.querySelectorAll<HTMLElement>('*'))];
-    allNodes.forEach(node => {
-      const computedStyle = window.getComputedStyle(node);
-
-      if (computedStyle.position === 'sticky') {
-        node.style.position = 'static';
-        node.style.top = 'auto';
-        node.style.right = 'auto';
-        node.style.bottom = 'auto';
-        node.style.left = 'auto';
-      }
-
-      if (computedStyle.overflowX !== 'visible') {
-        node.style.overflowX = 'visible';
-      }
-
-      if (computedStyle.overflowY !== 'visible') {
-        node.style.overflowY = 'visible';
-      }
-
-      if (computedStyle.maxHeight !== 'none') {
-        node.style.maxHeight = 'none';
-      }
-    });
-
-    container.appendChild(content);
-    document.body.appendChild(container);
-
-    return { container, content };
   }
 
   private getExportViewSlug(): string {

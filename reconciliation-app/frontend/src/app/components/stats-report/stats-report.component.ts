@@ -1062,60 +1062,6 @@ export class StatsReportComponent implements OnInit, OnDestroy {
       .toLowerCase();
   }
 
-  private createExportClone(sourceElement: HTMLElement, minWidth: number = 0): { container: HTMLDivElement; content: HTMLElement } {
-    const container = document.createElement('div');
-    const content = sourceElement.cloneNode(true) as HTMLElement;
-    const sourceWidth = Math.ceil(sourceElement.getBoundingClientRect().width);
-    const exportWidth = Math.max(minWidth, sourceElement.scrollWidth, sourceWidth, 1200);
-
-    container.style.position = 'fixed';
-    container.style.left = '-100000px';
-    container.style.top = '0';
-    container.style.width = `${exportWidth}px`;
-    container.style.pointerEvents = 'none';
-    container.style.opacity = '1';
-    container.style.zIndex = '-1';
-    container.style.background = '#ffffff';
-
-    content.removeAttribute('id');
-    content.style.width = `${exportWidth}px`;
-    content.style.maxHeight = 'none';
-    content.style.height = 'auto';
-    content.style.overflow = 'visible';
-    content.style.overflowX = 'visible';
-    content.style.overflowY = 'visible';
-
-    const allNodes = [content, ...Array.from(content.querySelectorAll<HTMLElement>('*'))];
-    allNodes.forEach(node => {
-      const computedStyle = window.getComputedStyle(node);
-
-      if (computedStyle.position === 'sticky') {
-        node.style.position = 'static';
-        node.style.top = 'auto';
-        node.style.right = 'auto';
-        node.style.bottom = 'auto';
-        node.style.left = 'auto';
-      }
-
-      if (computedStyle.overflowX !== 'visible') {
-        node.style.overflowX = 'visible';
-      }
-
-      if (computedStyle.overflowY !== 'visible') {
-        node.style.overflowY = 'visible';
-      }
-
-      if (computedStyle.maxHeight !== 'none') {
-        node.style.maxHeight = 'none';
-      }
-    });
-
-    container.appendChild(content);
-    document.body.appendChild(container);
-
-    return { container, content };
-  }
-
   private getReportModeSlug(): string {
     switch (this.reportMode) {
       case 'vol':
@@ -1240,16 +1186,13 @@ export class StatsReportComponent implements OnInit, OnDestroy {
   }
 
   async exportAgencyReportPdf(): Promise<void> {
-    if (!this.visibleReportRows.length) {
+    if (!this.visibleReportRows.length || this.isLoading || this.isExportingPdf) {
       await this.showErrorMessage('Aucune donnée disponible pour exporter le rapport agence en PDF');
       return;
     }
 
-    this.isLoading = true;
     this.isExportingPdf = true;
     this.cdr.detectChanges();
-
-    let exportClone: { container: HTMLDivElement; content: HTMLElement } | null = null;
 
     try {
       const fileName = await this.promptCustomFileName(this.getAgencyReportBaseFileName(), 'pdf');
@@ -1265,20 +1208,74 @@ export class StatsReportComponent implements OnInit, OnDestroy {
       }
 
       const sourceTableScroll = sourceElement.querySelector('.agency-report-table-scroll') as HTMLElement | null;
-      exportClone = this.createExportClone(sourceElement, sourceTableScroll?.scrollWidth ?? 0);
-
-      const canvas = await html2canvas(exportClone.content, {
+      const canvas = await html2canvas(sourceElement, {
         scale: 2,
         useCORS: true,
         logging: false,
-        backgroundColor: '#ffffff'
+        backgroundColor: '#ffffff',
+        windowWidth: Math.max(document.documentElement.clientWidth, sourceTableScroll?.scrollWidth ?? sourceElement.scrollWidth),
+        onclone: (clonedDocument) => {
+          const clonedElement = clonedDocument.getElementById('agency-report-export-area') as HTMLElement | null;
+          if (!clonedElement) {
+            return;
+          }
+
+          clonedElement.classList.add('export-mode');
+          clonedElement.style.overflow = 'visible';
+          clonedElement.style.overflowX = 'visible';
+          clonedElement.style.overflowY = 'visible';
+          clonedElement.style.maxHeight = 'none';
+          clonedElement.style.height = 'auto';
+
+          const clonedTableScroll = clonedElement.querySelector('.agency-report-table-scroll') as HTMLElement | null;
+          if (clonedTableScroll) {
+            clonedTableScroll.style.overflow = 'visible';
+            clonedTableScroll.style.overflowX = 'visible';
+            clonedTableScroll.style.overflowY = 'visible';
+            clonedTableScroll.style.maxHeight = 'none';
+            clonedTableScroll.style.height = 'auto';
+          }
+        }
       });
 
-      const pdfW = canvas.width;
-      const pdfH = canvas.height;
-      const imgData = canvas.toDataURL('image/png');
-      const pdf = new jsPDF('l', 'px', [pdfW, pdfH]);
-      pdf.addImage(imgData, 'PNG', 0, 0, pdfW, pdfH);
+      const pdf = new jsPDF({
+        orientation: 'landscape',
+        unit: 'mm',
+        format: 'a4'
+      });
+
+      const pdfW = pdf.internal.pageSize.getWidth();
+      const pdfH = pdf.internal.pageSize.getHeight();
+      const margin = 8;
+      const pageW = pdfW - 2 * margin;
+      const pageH = pdfH - 2 * margin;
+      const imgW = canvas.width;
+      const imgH = canvas.height;
+      const ratio = pageW / imgW;
+      const pageImgHeight = pageH / ratio;
+
+      const pageCanvas = document.createElement('canvas');
+      const pageCtx = pageCanvas.getContext('2d');
+      pageCanvas.width = imgW;
+
+      const totalPages = Math.ceil(imgH / pageImgHeight);
+      for (let page = 0; page < totalPages; page++) {
+        const sourceY = page * pageImgHeight;
+        const sliceHeight = Math.min(pageImgHeight, imgH - sourceY);
+        pageCanvas.height = sliceHeight;
+
+        if (pageCtx) {
+          pageCtx.clearRect(0, 0, imgW, sliceHeight);
+          pageCtx.drawImage(canvas, 0, sourceY, imgW, sliceHeight, 0, 0, imgW, sliceHeight);
+        }
+
+        const pageData = pageCanvas.toDataURL('image/png');
+        const renderHeight = sliceHeight * ratio;
+        if (page > 0) {
+          pdf.addPage();
+        }
+        pdf.addImage(pageData, 'PNG', margin, margin, pageW, renderHeight);
+      }
 
       pdf.save(fileName);
       await this.showSuccessMessage(`Le fichier ${fileName} a été téléchargé.`);
@@ -1286,10 +1283,8 @@ export class StatsReportComponent implements OnInit, OnDestroy {
       console.error('Erreur lors de l\'export PDF du rapport agence:', error);
       await this.showErrorMessage('Erreur lors de l\'export PDF du rapport agence');
     } finally {
-      exportClone?.container.remove();
       this.isExportingPdf = false;
       this.cdr.detectChanges();
-      this.isLoading = false;
     }
   }
 

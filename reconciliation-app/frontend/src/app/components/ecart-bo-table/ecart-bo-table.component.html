@@ -118,26 +118,26 @@
             <button 
               (click)="saveEcartBoToEcartSolde()" 
               class="menu-option-button save-button"
-              [disabled]="isSavingEcartBo || filteredBoOnly.length === 0"
+              [disabled]="isSavingEcartBo || selectedBoOnlyKeys.length === 0"
             >
               {{ isSavingEcartBo ? '💾 Sauvegarde...' : '💾 Sauvegarder dans Ecart Solde' }}
             </button>
             <button 
               (click)="saveEcartBoToTrxSf()" 
               class="menu-option-button save-button"
-              [disabled]="isSavingEcartBoToTrxSf || filteredBoOnly.length === 0"
+              [disabled]="isSavingEcartBoToTrxSf || selectedBoOnlyKeys.length === 0"
             >
               {{ isSavingEcartBoToTrxSf ? '💾 Sauvegarde...' : '💾 Sauvegarder dans TRX SF' }}
             </button>
             <button 
               (click)="saveEcartBoToImpactOP()" 
               class="menu-option-button save-button"
-              [disabled]="isSavingEcartBoToImpactOP || filteredBoOnly.length === 0"
+              [disabled]="isSavingEcartBoToImpactOP || selectedBoOnlyKeys.length === 0"
             >
               {{ isSavingEcartBoToImpactOP ? '💾 Sauvegarde...' : '💾 Sauvegarder dans Import OP' }}
             </button>
             <span class="menu-info">
-              Toutes les lignes seront sauvegardées ({{filteredBoOnly.length}} ligne(s))
+              Seules les lignes cochées seront sauvegardées ({{selectedBoOnlyKeys.length}} ligne(s))
             </span>
           </div>
         </div>

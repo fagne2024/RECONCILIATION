@@ -745,7 +745,7 @@
                                             <td>{{ operation.nomBordereau || '-' }}</td>
                                         </tr>
                                         <tr *ngIf="shouldShowClosingBalance(operation, i)" class="solde-cloture">
-                                            <td colspan="8" style="text-align: right;"><b style="color: #388e3c;">Solde de clôture ({{ getOpDate(operation) }}) : {{ getDailyBalances(releveOperations)[getOpDate(operation)].closing | number:'1.2-2' }}</b></td>
+                                            <td colspan="8" style="text-align: right;"><b style="color: #388e3c;">Solde de clôture ({{ getOpDate(operation) }}) : {{ formatClosingBalance(getDailyBalances(releveOperations)[getOpDate(operation)].closing) }}</b></td>
                                         </tr>
                                     </ng-container>
                                 </tbody>
@@ -782,7 +782,7 @@
                                             {{ group.variation | number:'1.2-2' }}
                                         </td>
                                         <td style="color: #1976d2;">{{ group.opening | number:'1.2-2' }}</td>
-                                        <td style="color: #1976d2; font-weight: 600;">{{ group.closing | number:'1.2-2' }}</td>
+                                        <td style="color: #1976d2; font-weight: 600;">{{ formatClosingBalance(group.closing) }}</td>
                                     </tr>
                                     <tr *ngIf="pagedReleveOperationsGrouped.length === 0">
                                         <td colspan="7" style="text-align: center; color: #999;">Aucune donnée</td>
@@ -832,7 +832,7 @@
                                             <div class="closing-cell">
                                                 <div class="closing-value">
                                                     <span [ngClass]="hasManualClosingOverrideRow(row) ? 'manual-closing-value' : ''">
-                                                        {{ getEffectiveClosingFromRow(row) | number:'1.2-2' }}
+                                                        {{ formatClosingBalance(getEffectiveClosingFromRow(row)) }}
                                                     </span>
                                                     <span *ngIf="hasManualClosingOverrideRow(row)" class="manual-badge">manuel</span>
                                                 </div>
@@ -853,7 +853,7 @@
                                                     ? 'solde-green'
                                                     : (row.closingBo !== undefined && (round2(row.closingBo) !== round2(getEffectiveClosingFromRow(row))) ? 'solde-red' : '')
                                               ">
-                                                {{ row.closingBo !== undefined ? (row.closingBo | number:'1.2-2') : '-' }}
+                                                {{ row.closingBo !== undefined ? formatClosingBalance(row.closingBo) : '-' }}
                                             </span>
                                         </td>
                                         <td [ngClass]="getEcartClass(row.ecartRef)" 
@@ -894,7 +894,7 @@
                         </div>
                     </div>
                     <div style="text-align: right; font-weight: bold; color: #388e3c; margin-top: 8px;">
-                        Solde de clôture global ({{ getGlobalClosingBalanceDate() }}): {{ getGlobalClosingBalance() | number:'1.2-2' }}
+                        Solde de clôture global ({{ getGlobalClosingBalanceDate() }}): {{ formatClosingBalance(getGlobalClosingBalance()) }}
                     </div>
                 </div>
 
