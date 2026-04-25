@@ -40,6 +40,7 @@ export interface ProgressUpdate {
     providedIn: 'root'
 })
 export class ReconciliationService implements OnInit, OnDestroy {
+    private static readonly MAX_429_RETRIES = 4;
     private apiUrl = '/api/reconciliation';
     private memoryResults = new Map<string, any>(); // Stockage en mémoire pour les gros fichiers
     
@@ -62,6 +63,22 @@ export class ReconciliationService implements OnInit, OnDestroy {
     
     constructor(private http: HttpClient, private appStateService: AppStateService) {
         console.log('🚀 ReconciliationService initialisé - Mode HTTP classique');
+    }
+
+    private with429Retry<T>(factory: () => Observable<T>, attempt = 0): Observable<T> {
+        return factory().pipe(
+            catchError((error: HttpErrorResponse | any) => {
+                if (error?.status === 429 && attempt < ReconciliationService.MAX_429_RETRIES) {
+                    const delayMs = Math.min(3000 * Math.pow(2, attempt), 30000);
+                    console.warn(`⏳ 429 sur le flux de réconciliation, retry dans ${delayMs}ms (tentative ${attempt + 1}/${ReconciliationService.MAX_429_RETRIES})`);
+                    return timer(delayMs).pipe(
+                        switchMap(() => this.with429Retry(factory, attempt + 1))
+                    );
+                }
+
+                return throwError(() => error);
+            })
+        );
     }
 
     ngOnInit(): void {
@@ -112,7 +129,7 @@ export class ReconciliationService implements OnInit, OnDestroy {
             estimatedTimeRemaining: 30000
         });
 
-        return this.http.post<{ jobId: string; status: string }>(`${this.apiUrl}/upload-and-prepare`, formData)
+        return this.with429Retry(() => this.http.post<{ jobId: string; status: string }>(`${this.apiUrl}/upload-and-prepare`, formData))
             .pipe(
                 tap(response => {
                     console.log('✅ Job créé:', response);
@@ -167,7 +184,7 @@ export class ReconciliationService implements OnInit, OnDestroy {
             estimatedTimeRemaining: 60000
         });
 
-        return this.http.post<{ jobId: string; status: string }>(`${this.apiUrl}/upload-and-prepare-chunked`, formData)
+        return this.with429Retry(() => this.http.post<{ jobId: string; status: string }>(`${this.apiUrl}/upload-and-prepare-chunked`, formData))
             .pipe(
                 tap(response => {
                     console.log('✅ Job par chunks créé:', response);
@@ -239,19 +256,18 @@ export class ReconciliationService implements OnInit, OnDestroy {
                 totalBoRecords: boData.length,
                 totalPartnerRecords: partnerData.length
             };
+            const partnerIndex = this.buildPartnerIndex(partnerData, config.partnerReconciliationKey);
             
             // Traiter les données par chunks
             for (let i = 0; i < boData.length; i += chunkSize) {
                 const boChunk = boData.slice(i, i + chunkSize);
-                const partnerChunk = partnerData.slice(i, i + chunkSize);
                 
-                // Traitement du chunk (logique de réconciliation simplifiée)
-                const chunkResults = this.processReconciliationChunk(boChunk, partnerChunk, config);
+                // Traitement du chunk contre l'index partenaire global.
+                const chunkResults = this.processReconciliationChunk(boChunk, partnerIndex, config);
                 
                 // Fusionner les résultats
                 results.matchedRecords.push(...chunkResults.matchedRecords);
                 results.unmatchedBoRecords.push(...chunkResults.unmatchedBoRecords);
-                results.unmatchedPartnerRecords.push(...chunkResults.unmatchedPartnerRecords);
                 
                 // Mettre à jour la progression
                 const progress = Math.min(90, (i / boData.length) * 100);
@@ -268,6 +284,7 @@ export class ReconciliationService implements OnInit, OnDestroy {
                     await new Promise(resolve => setTimeout(resolve, 10));
                 }
             }
+            results.unmatchedPartnerRecords.push(...this.collectRemainingPartnerRecords(partnerIndex));
             
             // Sauvegarder les résultats
             this.saveChunkedResults(jobId, results, config);
@@ -343,49 +360,59 @@ export class ReconciliationService implements OnInit, OnDestroy {
     /**
      * Traite un chunk de réconciliation
      */
-    private processReconciliationChunk(boChunk: any[], partnerChunk: any[], config: ChunkProcessingConfig): any {
+    private processReconciliationChunk(boChunk: any[], partnerIndex: Map<string, any[]>, config: ChunkProcessingConfig): any {
         const matchedRecords: any[] = [];
         const unmatchedBoRecords: any[] = [];
         const unmatchedPartnerRecords: any[] = [];
-        
-        // Créer un index des clés partenaires pour une recherche plus rapide
-        const partnerIndex = new Map();
-        partnerChunk.forEach(partner => {
-            const key = partner[config.partnerReconciliationKey];
-            if (key) {
-                if (!partnerIndex.has(key)) {
-                    partnerIndex.set(key, []);
-                }
-                partnerIndex.get(key).push(partner);
-            }
-        });
         
         // Traiter les enregistrements BO
         for (const boRecord of boChunk) {
             const boKey = boRecord[config.boReconciliationKey];
             if (boKey && partnerIndex.has(boKey)) {
                 const matchingPartners = partnerIndex.get(boKey);
-                // Prendre le premier partenaire correspondant
-                const partnerRecord = matchingPartners.shift();
-                matchedRecords.push({ bo: boRecord, partner: partnerRecord });
-                
-                // Marquer les autres partenaires comme non matchés si nécessaire
-                if (matchingPartners.length > 0) {
-                    unmatchedPartnerRecords.push(...matchingPartners);
+                if (matchingPartners && matchingPartners.length > 0) {
+                    const consumedPartners = matchingPartners.splice(0, Math.min(2, matchingPartners.length));
+                    matchedRecords.push({
+                        bo: boRecord,
+                        partner: consumedPartners[0],
+                        partnerDataList: consumedPartners
+                    });
+                    if (matchingPartners.length === 0) {
+                        partnerIndex.delete(boKey);
+                    }
+                } else {
+                    unmatchedBoRecords.push(boRecord);
                 }
             } else {
                 unmatchedBoRecords.push(boRecord);
             }
         }
-        
-        // Ajouter les partenaires non matchés
-        partnerIndex.forEach((partners, key) => {
-            if (partners.length > 0) {
-                unmatchedPartnerRecords.push(...partners);
+
+        return { matchedRecords, unmatchedBoRecords, unmatchedPartnerRecords };
+    }
+
+    private buildPartnerIndex(partnerData: any[], partnerReconciliationKey: string): Map<string, any[]> {
+        const partnerIndex = new Map<string, any[]>();
+        partnerData.forEach(partner => {
+            const key = partner[partnerReconciliationKey];
+            if (key) {
+                if (!partnerIndex.has(key)) {
+                    partnerIndex.set(key, []);
+                }
+                partnerIndex.get(key)!.push(partner);
             }
         });
-        
-        return { matchedRecords, unmatchedBoRecords, unmatchedPartnerRecords };
+        return partnerIndex;
+    }
+
+    private collectRemainingPartnerRecords(partnerIndex: Map<string, any[]>): any[] {
+        const remainingPartnerRecords: any[] = [];
+        partnerIndex.forEach(partners => {
+            if (partners.length > 0) {
+                remainingPartnerRecords.push(...partners);
+            }
+        });
+        return remainingPartnerRecords;
     }
 
     /**
@@ -588,7 +615,7 @@ export class ReconciliationService implements OnInit, OnDestroy {
      * Obtient le statut d'un job de réconciliation
      */
     getJobStatus(jobId: string): Observable<any> {
-        return this.http.get(`${this.apiUrl}/status/${jobId}`)
+        return this.http.get(`${this.apiUrl}/progress/${jobId}`)
             .pipe(
                 tap((status: any) => {
                     console.log('📊 Statut du job:', status);
@@ -749,6 +776,7 @@ export class ReconciliationService implements OnInit, OnDestroy {
                             key: match.bo[results.boReconciliationKey] || '',
                             boData: match.bo,
                             partnerData: match.partner,
+                            partnerDataList: match.partnerDataList,
                             differences: []
                         })),
                         boOnly: results.unmatchedBoRecords,
@@ -793,6 +821,7 @@ export class ReconciliationService implements OnInit, OnDestroy {
                                 key: match.bo[results.boReconciliationKey] || '',
                                 boData: match.bo,
                                 partnerData: match.partner,
+                                partnerDataList: match.partnerDataList,
                                 differences: []
                             })),
                             boOnly: allBoOnly,
@@ -818,6 +847,7 @@ export class ReconciliationService implements OnInit, OnDestroy {
                                 key: match.bo[results.boReconciliationKey] || '',
                                 boData: match.bo,
                                 partnerData: match.partner,
+                                partnerDataList: match.partnerDataList,
                                 differences: []
                             })),
                             boOnly: results.unmatchedBoRecords || [],
@@ -953,11 +983,11 @@ export class ReconciliationService implements OnInit, OnDestroy {
         // Timeout de 60 minutes (3600000ms) pour les très gros fichiers (augmenté de 30 à 60 minutes)
         const RECONCILIATION_TIMEOUT = 3600000; // 60 minutes
         
-        return this.http.post<ReconciliationResponse>(`${this.apiUrl}/reconcile`, request, {
+        return this.with429Retry(() => this.http.post<ReconciliationResponse>(`${this.apiUrl}/reconcile`, request, {
             headers: new HttpHeaders({
                 'Content-Type': 'application/json'
             })
-        }).pipe(
+        })).pipe(
             timeout(RECONCILIATION_TIMEOUT),
             tap(response => {
                 console.log('✅ Réconciliation terminée:', response);
@@ -972,6 +1002,79 @@ export class ReconciliationService implements OnInit, OnDestroy {
             }),
             catchError(this.handleError)
         );
+    }
+
+    /**
+     * Agrège, par clé de réconciliation partenaire, le nombre de lignes OPPART consommées par les matches
+     * d'un chunk (supporte le format fusionné TRXBO/OPPART avec colonnes suffixées _PARTNER_1 / _PARTNER_2).
+     */
+    private buildMatchedPartnerKeyCountsFromChunkResponse(
+        matches: any[] | undefined,
+        boKeyColumn: string,
+        partnerKeyColumn: string
+    ): Map<string, number> {
+        const counts = new Map<string, number>();
+        if (!matches || matches.length === 0) {
+            return counts;
+        }
+        for (const match of matches) {
+            for (const [key, n] of this.getConsumedPartnerKeyCountsForMatch(match, boKeyColumn, partnerKeyColumn)) {
+                counts.set(key, (counts.get(key) || 0) + n);
+            }
+        }
+        return counts;
+    }
+
+    /**
+     * Pour un match, retourne les paires (clé partenaire, nombre de lignes à retirer du pool partenaire).
+     */
+    private getConsumedPartnerKeyCountsForMatch(
+        match: any,
+        boKeyColumn: string,
+        partnerKeyColumn: string
+    ): Array<[string, number]> {
+        const list = match?.partnerDataList;
+        if (Array.isArray(list) && list.length > 0) {
+            const perKey = new Map<string, number>();
+            for (const row of list) {
+                const raw = row?.[partnerKeyColumn];
+                if (raw === null || raw === undefined) {
+                    continue;
+                }
+                const key = String(raw).trim();
+                if (!key) {
+                    continue;
+                }
+                perKey.set(key, (perKey.get(key) || 0) + 1);
+            }
+            return Array.from(perKey.entries());
+        }
+
+        const pd = match?.partnerData;
+        if (pd && typeof pd === 'object' && !Array.isArray(pd)) {
+            const keys = Object.keys(pd);
+            const isCombined = keys.some(k => k.includes('_PARTNER_'));
+            if (isCombined) {
+                const k1 = pd[`${partnerKeyColumn}_PARTNER_1`];
+                if (k1 !== null && k1 !== undefined && String(k1).trim() !== '') {
+                    const key = String(k1).trim();
+                    const k2 = pd[`${partnerKeyColumn}_PARTNER_2`];
+                    const count =
+                        k2 !== null && k2 !== undefined && String(k2).trim() !== '' ? 2 : 1;
+                    return [[key, count]];
+                }
+            }
+            const direct = pd[partnerKeyColumn];
+            if (direct !== null && direct !== undefined && String(direct).trim() !== '') {
+                return [[String(direct).trim(), 1]];
+            }
+        }
+
+        const boVal = match?.boData?.[boKeyColumn] ?? match?.key;
+        if (boVal !== null && boVal !== undefined && String(boVal).trim() !== '') {
+            return [[String(boVal).trim(), 1]];
+        }
+        return [];
     }
 
     /**
@@ -1270,17 +1373,14 @@ export class ReconciliationService implements OnInit, OnDestroy {
                                 console.log(`✅ Chunk BO ${chunkIndex + 1} traité: ${response.matches?.length || 0} matches`);
                                 
                                 // Stocker les résultats pour traitement séquentiel
-                                // IMPORTANT: gérer les doublons -> on compte les occurrences matchées par clé
-                                const matchedKeyCounts = new Map<string, number>();
-                                if (response.matches && response.matches.length > 0) {
-                                    response.matches.forEach(match => {
-                                        const rawKey = match?.partnerData?.[originalRequest.partnerKeyColumn];
-                                        if (rawKey === null || rawKey === undefined) return;
-                                        const key = String(rawKey).trim();
-                                        if (!key) return;
-                                        matchedKeyCounts.set(key, (matchedKeyCounts.get(key) || 0) + 1);
-                                    });
-                                }
+                                // IMPORTANT: gérer les doublons -> on compte les occurrences Partner retirées par clé.
+                                // TRXBO/OPPART (SPECIAL_RATIO): partnerData est un map fusionné avec suffixes _PARTNER_1 / _PARTNER_2,
+                                // donc partnerData[colonne] est absent — il faut dériver la clé et compter 2 lignes consommées.
+                                const matchedKeyCounts = this.buildMatchedPartnerKeyCountsFromChunkResponse(
+                                    response.matches,
+                                    originalRequest.boKeyColumn,
+                                    originalRequest.partnerKeyColumn
+                                );
                                 
                                 chunkResults.set(chunkIndex, {
                                     matches: response.matches || [],
@@ -1411,7 +1511,14 @@ export class ReconciliationService implements OnInit, OnDestroy {
                     // Vérifier si tous les chunks sont terminés
                     if (completedChunks >= boChunks.length) {
                         console.log('✅ Tous les chunks BO traités, finalisation des résultats...');
-                        this.finalizeOptimizedResults(allMatches, allBoOnly, remainingPartnerData, observer, startTime);
+                        this.finalizeOptimizedResults(
+                            allMatches,
+                            allBoOnly,
+                            remainingPartnerData,
+                            observer,
+                            startTime,
+                            allPartnerData.length
+                        );
                     }
                 }
             } finally {
@@ -1471,7 +1578,8 @@ export class ReconciliationService implements OnInit, OnDestroy {
         allBoOnly: any[], 
         remainingPartnerData: any[], 
         observer: any,
-        startTime?: number
+        startTime?: number,
+        initialPartnerRowCount?: number
     ): void {
         try {
             console.log('📊 Finalisation des résultats optimisés:', {
@@ -1490,7 +1598,9 @@ export class ReconciliationService implements OnInit, OnDestroy {
                 partnerOnly: remainingPartnerData,
                 mismatches: [],
                 totalBoRecords: allMatches.length + allBoOnly.length,
-                totalPartnerRecords: allMatches.length + remainingPartnerData.length,
+                totalPartnerRecords:
+                    initialPartnerRowCount ??
+                    allMatches.length + remainingPartnerData.length,
                 totalMatches: allMatches.length,
                 totalMismatches: 0,
                 totalBoOnly: allBoOnly.length,
@@ -1662,14 +1772,14 @@ export class ReconciliationService implements OnInit, OnDestroy {
                 totalBoRecords: boData.length,
                 totalPartnerRecords: partnerData.length
             };
+            const partnerIndex = this.buildPartnerIndex(partnerData, request.partnerKeyColumn);
             
             // Traiter les données par chunks
             for (let i = 0; i < boData.length; i += chunkSize) {
                 const boChunk = boData.slice(i, i + chunkSize);
-                const partnerChunk = partnerData.slice(i, i + chunkSize);
                 
                 // Traitement du chunk
-                const chunkResults = this.processReconciliationChunk(boChunk, partnerChunk, {
+                const chunkResults = this.processReconciliationChunk(boChunk, partnerIndex, {
                     boReconciliationKey: request.boKeyColumn,
                     partnerReconciliationKey: request.partnerKeyColumn
                 } as ChunkProcessingConfig);
@@ -1677,7 +1787,6 @@ export class ReconciliationService implements OnInit, OnDestroy {
                 // Fusionner les résultats
                 results.matchedRecords.push(...chunkResults.matchedRecords);
                 results.unmatchedBoRecords.push(...chunkResults.unmatchedBoRecords);
-                results.unmatchedPartnerRecords.push(...chunkResults.unmatchedPartnerRecords);
                 
                 // Mettre à jour la progression
                 const progress = Math.min(90, (i / boData.length) * 100);
@@ -1694,6 +1803,7 @@ export class ReconciliationService implements OnInit, OnDestroy {
                     await new Promise(resolve => setTimeout(resolve, 10));
                 }
             }
+            results.unmatchedPartnerRecords.push(...this.collectRemainingPartnerRecords(partnerIndex));
             
             // Sauvegarder les résultats
             this.saveChunkedResults(jobId, results, {
@@ -1729,7 +1839,7 @@ export class ReconciliationService implements OnInit, OnDestroy {
      * Analyse les clés de réconciliation
      */
     analyzeReconciliationKeys(formData: FormData): Observable<any> {
-        return this.http.post(`${this.apiUrl}/analyze-keys`, formData)
+        return this.with429Retry(() => this.http.post(`${this.apiUrl}/analyze-keys`, formData))
             .pipe(
                 catchError(this.handleError)
             );
@@ -1822,6 +1932,8 @@ export class ReconciliationService implements OnInit, OnDestroy {
             if (error.status === 504 || error.status === 408) {
                 errorMessage = 'Le serveur a mis trop de temps à répondre. ' +
                               'Veuillez réessayer ou diviser les fichiers en plus petits lots.';
+            } else if (error.status === 429) {
+                errorMessage = 'Trop de requêtes. Le client a automatiquement réessayé, mais le serveur refuse encore la réconciliation. Veuillez patienter quelques instants puis relancer.';
             } else {
                 errorMessage = `Erreur ${error.status}: ${error.message || 'Erreur serveur'}`;
             }

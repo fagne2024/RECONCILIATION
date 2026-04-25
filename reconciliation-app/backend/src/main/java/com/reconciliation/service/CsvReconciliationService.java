@@ -642,6 +642,7 @@ public class CsvReconciliationService implements DisposableBean {
         
         // Traiter chaque enregistrement TRXBO
         Set<String> processedPartnerKeys = new HashSet<>();
+        Set<Map<String, String>> usedPartnerRecords = Collections.newSetFromMap(new IdentityHashMap<>());
         int processedCount = 0;
         int boKeysWithNull = 0;
         int boKeysNotFound = 0;
@@ -707,6 +708,9 @@ public class CsvReconciliationService implements DisposableBean {
                 if (partnerType != null && partnerType.toUpperCase().contains("FRAIS_TRANSACTION")) {
                     action = "MARK_AS_ECART_RGFRAIS"; // BO -> Ecart, Partenaire -> RGFRAIS
                 }
+            }
+            if (matchingPartnerRecords != null && partnerMatchCount > 0) {
+                usedPartnerRecords.addAll(matchingPartnerRecords);
             }
             
             switch (action) {
@@ -833,12 +837,13 @@ public class CsvReconciliationService implements DisposableBean {
         }
         
         // Classifier les OPPART non utilisés: Ecart (2 lignes IMPACT+FRAIS, 0 BO), RGFRAIS (1 ligne FRAIS, 0 BO), sinon Ecart
-        // Grouper par clé les enregistrements partenaire dont la clé n'est pas dans processedPartnerKeys (0 BO pour cette clé)
+        // On exclut les lignes partenaire déjà consommées par une clé BO. C'est plus fiable que la clé seule
+        // pour le ratio TRXBO/OPPART, où une correspondance BO consomme deux lignes partenaire.
         Map<String, List<Map<String, String>>> partnerOnlyByKey = new HashMap<>();
         for (Map<String, String> partnerRecord : request.getPartnerFileContent()) {
             String partnerKeyComposite = buildCompositeKey(partnerRecord, request.getPartnerKeyColumn(),
                     request.getAdditionalKeys(), false);
-            if (partnerKeyComposite != null && !processedPartnerKeys.contains(partnerKeyComposite)) {
+            if (partnerKeyComposite != null && !usedPartnerRecords.contains(partnerRecord)) {
                 partnerOnlyByKey.computeIfAbsent(partnerKeyComposite, k -> new ArrayList<>()).add(partnerRecord);
             }
         }
@@ -857,7 +862,7 @@ public class CsvReconciliationService implements DisposableBean {
         logger.info("  - Clés BO null: {}", boKeysWithNull);
         logger.info("  - Clés BO non trouvées dans l'index Partner: {}", boKeysNotFound);
         double matchRate = processedCount > 0 ? (100.0 * (processedCount - boKeysNotFound) / processedCount) : 0.0;
-        logger.info("  - Taux de correspondance: {:.2f}%", String.format("%.2f", matchRate));
+        logger.info("  - Taux de correspondance: {}%", String.format("%.2f", matchRate));
         logger.info("  - Matches trouvés: {}", response.getMatches().size());
         logger.info("  - BO Only: {}", response.getBoOnly().size());
         logger.info("  - Partner Only: {}", response.getPartnerOnly().size());
