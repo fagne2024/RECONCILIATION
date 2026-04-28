@@ -532,6 +532,133 @@
   color: #4b5563;
 }
 
+.rrbp-table .col-audit-expand,
+.rrbp-table .col-expand {
+  width: 38px;
+  min-width: 38px;
+  max-width: 44px;
+  text-align: center;
+  vertical-align: middle;
+  padding: 4px 2px;
+}
+
+.rrbp-expand-placeholder {
+  display: inline-block;
+  width: 28px;
+  height: 1px;
+}
+
+.btn-rrbp-audit {
+  border: none;
+  background: #e5e7eb;
+  color: #374151;
+  border-radius: 4px;
+  width: 28px;
+  height: 28px;
+  cursor: pointer;
+  font-size: 11px;
+  line-height: 1;
+  padding: 0;
+}
+.btn-rrbp-audit:hover {
+  background: #d1d5db;
+}
+.btn-rrbp-audit.open {
+  background: #bfdbfe;
+  color: #1e3a8a;
+}
+
+.rrbp-row-audit-detail td.rrbp-audit-detail-cell {
+  padding: 0 12px 14px !important;
+  background: linear-gradient(to bottom, #eef2f7 0%, #f8fafc 100%);
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.rrbp-audit-inner {
+  padding: 8px 4px 6px;
+  font-size: 0.82rem;
+  color: #475569;
+}
+
+.rrbp-audit-empty {
+  font-style: italic;
+  max-width: 840px;
+}
+
+.rrbp-audit-mini-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.rrbp-audit-mini-table th {
+  background: #e9ecef;
+  padding: 8px 10px;
+  text-align: left;
+  font-weight: 600;
+  position: static;
+}
+
+.rrbp-audit-mini-table td {
+  padding: 8px 10px;
+  border-top: 1px solid #f1f5f9;
+  vertical-align: top;
+}
+
+.rrbp-audit-mini-table td.wrap {
+  word-break: break-word;
+  max-width: 280px;
+}
+
+.rrbp-audit-mini-table td.nowrap {
+  white-space: nowrap;
+  font-family: 'Courier New', monospace;
+  font-size: 0.78rem;
+}
+
+.rrbp-audit-by-service {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.rrbp-audit-service-block {
+  padding: 0 2px;
+}
+
+.rrbp-audit-service-title {
+  font-weight: 700;
+  font-size: 0.88rem;
+  color: #1e3a5f;
+  margin: 0 0 10px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid #cbd5e1;
+}
+
+.rrbp-audit-ligne-block {
+  margin: 0 0 12px 10px;
+  padding-left: 8px;
+  border-left: 3px solid #94a3b8;
+}
+
+.rrbp-audit-ligne-subtitle {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #475569;
+  margin-bottom: 6px;
+}
+
+.rrbp-audit-ligne-empty {
+  margin: 4px 0 8px;
+  font-size: 0.78rem;
+  font-style: italic;
+  color: #64748b;
+}
+
 .rrbp-table .col-service {
   text-align: left;
   min-width: 200px;

@@ -27,6 +27,17 @@ import * as XLSX from 'xlsx';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 
+/** Ligne renvoyée par GET /api/result8rec/{id}/audit-history */
+export interface Result8RecAuditEntry {
+    id: number;
+    actionType: string;
+    username?: string;
+    traitementSnapshot?: string;
+    statusSnapshot?: string;
+    detail?: string;
+    createdAt?: string;
+}
+
 export interface ReconciliationReportData {
     id?: number;
     date: string;
@@ -397,6 +408,7 @@ export interface ReconciliationReportData {
                 <table class="report-table">
                     <thead>
                         <tr>
+                            <th class="col-expand" title="Historique (sauvegarde, statut, validation)"></th>
                             <th class="col-checkbox">
                                 <input 
                                     type="checkbox" 
@@ -438,7 +450,20 @@ export interface ReconciliationReportData {
                         </tr>
                     </thead>
                     <tbody>
-                        <tr *ngFor="let item of paginatedData; trackBy: trackByItem" [class.editing-row]="editingRow === item" [class.row-selected]="isRowSelected(item)" [class.row-traitement-termine]="isTraitementTermine(item)">
+                        <ng-container *ngFor="let item of paginatedData; trackBy: trackByItem">
+                        <tr [class.editing-row]="editingRow === item" [class.row-selected]="isRowSelected(item)" [class.row-traitement-termine]="isTraitementTermine(item)" [class.row-audit-open]="isAuditExpanded(item)">
+                            <td class="expand-cell">
+                                <button type="button"
+                                        *ngIf="item.id"
+                                        class="btn-row-expand"
+                                        [class.open]="isAuditExpanded(item)"
+                                        [attr.aria-expanded]="isAuditExpanded(item)"
+                                        (click)="toggleAuditRow(item, $event)"
+                                        title="Voir l&apos;historique des sauvegardes et validations">
+                                    {{ isAuditExpanded(item) ? '▼' : '▶' }}
+                                </button>
+                                <span *ngIf="!item.id" class="expand-placeholder" title="Enregistrez la ligne pour afficher l&apos;historique"></span>
+                            </td>
                             <td class="checkbox-cell">
                                 <input 
                                     type="checkbox" 
@@ -683,6 +708,37 @@ export interface ReconciliationReportData {
                                 </ng-template>
                             </td>
                         </tr>
+                        <tr *ngIf="item.id && isAuditExpanded(item)" class="audit-detail-row">
+                            <td [attr.colspan]="auditHistoryColspan()" class="audit-detail-cell">
+                                <div class="audit-detail-inner" *ngIf="isAuditLoading(item.id!)">Chargement de l&apos;historique...</div>
+                                <div class="audit-detail-inner audit-empty" *ngIf="!isAuditLoading(item.id!) && !getAuditRows(item.id!).length">
+                                    Aucun historique détaillé en base pour cette ligne. Les prochaines modifications (sauvegarde, statut OK, validation « Terminé ») apparaîtront ici après enregistrement.
+                                </div>
+                                <table *ngIf="!isAuditLoading(item.id!) && getAuditRows(item.id!).length" class="audit-mini-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Date</th>
+                                            <th>Événement</th>
+                                            <th>Utilisateur</th>
+                                            <th>Niveau de traitement</th>
+                                            <th>Statut (à l&apos;étape)</th>
+                                            <th>Détail</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr *ngFor="let row of getAuditRows(item.id!)">
+                                            <td class="audit-td-date">{{ formatAuditInstant(row.createdAt) }}</td>
+                                            <td>{{ formatAuditActionLabel(row.actionType) }}</td>
+                                            <td>{{ row.username || '—' }}</td>
+                                            <td>{{ row.traitementSnapshot || '—' }}</td>
+                                            <td>{{ row.statusSnapshot || '—' }}</td>
+                                            <td class="audit-td-detail">{{ row.detail || '—' }}</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </td>
+                        </tr>
+                        </ng-container>
                     </tbody>
                 </table>
             </div>
@@ -1861,6 +1917,55 @@ export interface ReconciliationReportData {
         .col-date { text-align: left; }
 
         /* Column widths to keep alignment stable */
+        .col-expand { width: 36px; min-width: 36px; text-align: center; padding: 6px 2px; }
+        .expand-cell { text-align: center; vertical-align: middle; }
+        .btn-row-expand {
+            border: none;
+            background: #e9ecef;
+            color: #495057;
+            border-radius: 4px;
+            width: 28px;
+            height: 28px;
+            cursor: pointer;
+            font-size: 11px;
+            line-height: 1;
+            padding: 0;
+        }
+        .btn-row-expand:hover { background: #dee2e6; }
+        .btn-row-expand.open { background: #cce5ff; color: #004085; }
+        .expand-placeholder { display: inline-block; width: 28px; }
+        .row-audit-open { box-shadow: inset 3px 0 0 #1e4a7a; }
+        .audit-detail-row td.audit-detail-cell {
+            padding: 0 12px 12px 12px !important;
+            background: linear-gradient(to bottom, #eef2f7 0%, #f8f9fa 100%);
+            border-bottom: 1px solid #ced4da;
+        }
+        .audit-detail-inner { padding: 10px 4px 4px 4px; font-size: 0.82rem; color: #495057; }
+        .audit-empty { font-style: italic; max-width: 900px; }
+        .audit-mini-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.82rem;
+            background: #fff;
+            border: 1px solid #dee2e6;
+            border-radius: 6px;
+            overflow: hidden;
+        }
+        .audit-mini-table th {
+            background: #e9ecef;
+            padding: 8px 10px;
+            text-align: left;
+            font-weight: 600;
+            position: static;
+        }
+        .audit-mini-table td {
+            padding: 8px 10px;
+            border-top: 1px solid #eee;
+            vertical-align: top;
+        }
+        .audit-td-date { white-space: nowrap; font-family: 'Courier New', monospace; }
+        .audit-td-detail { word-break: break-word; max-width: 320px; }
+
         .col-checkbox { width: 40px; text-align: center; }
         .checkbox-cell { text-align: center; padding: 8px; }
         .checkbox-cell input[type="checkbox"] {
@@ -3022,6 +3127,12 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
     
     // Propriété pour contrôler l'affichage de la colonne Actions
     showActionsColumn = false;
+
+    /** Lignes avec panneau « historique » déplié */
+    private readonly expandedAuditRowIds = new Set<number>();
+    /** Cache historique audit par id result8rec */
+    readonly auditHistoryCache = new Map<number, Result8RecAuditEntry[]>();
+    private readonly auditHistoryLoadingIds = new Set<number>();
 
     /** Affiche Nouvelle ligne, Tableau de bord et Remboursement (masqués par défaut). */
     showExtendedReportActions = false;
@@ -5334,6 +5445,87 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         return `${item.agency}-${item.service}-${item.date}`;
     }
 
+    /** Nombre de colonnes du tableau incluant Historique et Actions opt. */
+    auditHistoryColspan(): number {
+        return 19 + (this.showActionsColumn ? 1 : 0);
+    }
+
+    private clearAuditHistoryUiState(): void {
+        this.expandedAuditRowIds.clear();
+        this.auditHistoryCache.clear();
+        this.auditHistoryLoadingIds.clear();
+    }
+
+    isAuditExpanded(item: ReconciliationReportData): boolean {
+        return item.id != null && this.expandedAuditRowIds.has(item.id);
+    }
+
+    toggleAuditRow(item: ReconciliationReportData, ev?: Event): void {
+        ev?.stopPropagation?.();
+        if (!item.id) {
+            return;
+        }
+        if (this.expandedAuditRowIds.has(item.id)) {
+            this.expandedAuditRowIds.delete(item.id);
+        } else {
+            this.expandedAuditRowIds.add(item.id);
+            this.fetchAuditHistoryIfNeeded(item.id);
+        }
+    }
+
+    private fetchAuditHistoryIfNeeded(id: number): void {
+        if (this.auditHistoryCache.has(id)) {
+            return;
+        }
+        this.auditHistoryLoadingIds.add(id);
+        this.http
+            .get<Result8RecAuditEntry[]>(`/api/result8rec/${id}/audit-history`, { headers: this.buildResultsHeaders() })
+            .subscribe({
+                next: (rows) => {
+                    this.auditHistoryLoadingIds.delete(id);
+                    this.auditHistoryCache.set(id, Array.isArray(rows) ? rows : []);
+                },
+                error: () => {
+                    this.auditHistoryLoadingIds.delete(id);
+                    this.auditHistoryCache.set(id, []);
+                }
+            });
+    }
+
+    isAuditLoading(id: number): boolean {
+        return this.auditHistoryLoadingIds.has(id);
+    }
+
+    getAuditRows(id: number): Result8RecAuditEntry[] {
+        return this.auditHistoryCache.get(id) ?? [];
+    }
+
+    formatAuditActionLabel(actionType?: string): string {
+        if (!actionType) {
+            return '—';
+        }
+        const m: Record<string, string> = {
+            CREATION: 'Création de la ligne',
+            SAUVEGARDE_RESULTAT: 'Sauvegarde des résultats',
+            STATUT_OK: 'Passage au statut OK',
+            CHANGEMENT_STATUT: 'Changement de statut',
+            VALIDATION_TERMINÉ: 'Validation (traitement terminé)',
+            CHANGEMENT_TRAITEMENT: 'Modification du niveau de traitement',
+        };
+        return m[actionType] || actionType;
+    }
+
+    formatAuditInstant(iso?: string | null): string {
+        if (!iso) {
+            return '—';
+        }
+        const d = new Date(iso as string);
+        if (Number.isNaN(d.getTime())) {
+            return String(iso);
+        }
+        return d.toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' });
+    }
+
     async exportToExcel() {
         const rowsSource = this.filteredReportData.length > 0 ? this.filteredReportData : this.reportData;
         
@@ -6045,6 +6237,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         this.http.get<any[]>(url, { headers })
         .subscribe({
             next: (rows: any[]) => {
+                this.clearAuditHistoryUiState();
                 if (!Array.isArray(rows) || rows.length === 0) {
                     return;
                 }
@@ -9435,11 +9628,22 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             return raw.slice(0, 10);
         }
 
-        const frMatch = raw.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})$/);
+        const frMatch = raw.match(
+            /^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/
+        );
         if (frMatch) {
             const day = String(frMatch[1]).padStart(2, '0');
             const month = String(frMatch[2]).padStart(2, '0');
-            return `${frMatch[3]}-${month}-${day}`;
+            const year = frMatch[3];
+            if (frMatch[4] !== undefined) {
+                const h = parseInt(frMatch[4], 10);
+                const min = parseInt(frMatch[5], 10);
+                const sec = frMatch[6] !== undefined ? parseInt(frMatch[6], 10) : 0;
+                if (h < 0 || h > 23 || min < 0 || min > 59 || sec < 0 || sec > 59) {
+                    return null;
+                }
+            }
+            return `${year}-${month}-${day}`;
         }
 
         const parsed = new Date(raw);

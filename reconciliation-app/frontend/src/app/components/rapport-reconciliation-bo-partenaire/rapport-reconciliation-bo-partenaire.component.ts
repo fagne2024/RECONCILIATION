@@ -23,6 +23,27 @@ import { PopupService } from '../../services/popup.service';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 
+/** Entrées GET /api/result8rec/{id}/audit-history (même modèle que le rapport réconciliation détaillé). */
+interface Result8RecAuditEntry {
+  id: number;
+  actionType: string;
+  username?: string;
+  traitementSnapshot?: string;
+  statusSnapshot?: string;
+  detail?: string;
+  createdAt?: string;
+}
+
+/** Historique affiché sous le tableau : regroupement par service rapport, puis par ligne result8rec. */
+export interface AuditSectionByService {
+  serviceName: string;
+  lignes: Array<{
+    id: number;
+    subtitle: string;
+    entries: Result8RecAuditEntry[];
+  }>;
+}
+
 interface Result8Row {
   id?: number;
   date: string;
@@ -61,6 +82,11 @@ export interface BoPartenaireRow {
   /** Écarts plateforme Partenaire, date du rapport (relevé J+1). */
   decalageJp1Nombre: number;
   decalageJp1Volume: number;
+  /**
+   * Ids result8rec du périmètre courant pour ce service (plusieurs lignes si multi-agences / dates).
+   * Utilisés pour charger l’historique d’audit.
+   */
+  result8recIds?: number[];
 }
 
 /** Regroupement tableau (même pays / ENV filtre : services liés par une sous-chaîne commune). */
@@ -122,6 +148,18 @@ export class RapportReconciliationBoPartenaireComponent implements OnInit, OnDes
   displayLines: BoPartenaireDisplayLine[] = [];
   /** Identifiants de groupes multi-services dont le détail est affiché. */
   expandedGroupIds = new Set<string>();
+
+  /** Lignes du tableau avec panneau historique déplié (clés d’affichage uniques). */
+  private readonly expandedAuditKeys = new Set<string>();
+  /** Une entrée par id result8rec après chargement (sans fusion chronologique inter-lignes). */
+  private readonly auditHistoryByRecId = new Map<number, Result8RecAuditEntry[]>();
+  /** Empreinte d’ensemble d’ids → chargement terminé avec succès. */
+  private readonly auditLoadedFingerprints = new Set<string>();
+  private readonly auditLoadingFingerprints = new Set<string>();
+  /** Métadonnées rapport pour libellés (service, agence, date) par id result8rec. */
+  private readonly metaByResult8RecId = new Map<number, { service: string; agency: string; date: string; env?: string }>();
+
+  readonly auditHistoryColspan = 15;
 
   /**
    * Tokens de regroupement (plus long d’abord) : le libellé affiché est exactement celui de la constante
@@ -544,11 +582,20 @@ export class RapportReconciliationBoPartenaireComponent implements OnInit, OnDes
     envNorm: string | null,
     servicesToUse: string[]
   ): void {
+    this.clearAuditState();
+    this.rebuildResult8RecMetaFromFiltered(filtered);
     const rows: BoPartenaireRow[] = [];
     for (const svc of servicesToUse) {
       const agg = this.aggregatesPourService(svc, filtered, dateStart, dateEnd, envNorm);
       const repLines = this.ligneRapportPourService(filtered, svc, envNorm);
       const traitement = this.dominantTraitementLabel(repLines.map((l) => l.traitement));
+      const result8recIds = [
+        ...new Set(
+          repLines
+            .map((l) => l.id)
+            .filter((id): id is number => typeof id === 'number' && id > 0)
+        )
+      ].sort((a, b) => a - b);
       const ecN =
         agg.boNombre -
         agg.partenaireNombre -
@@ -578,7 +625,8 @@ export class RapportReconciliationBoPartenaireComponent implements OnInit, OnDes
         decalageJm1Nombre: agg.decalageJm1Nombre,
         decalageJm1Volume: agg.decalageJm1Volume,
         decalageJp1Nombre: agg.decalageJp1Nombre,
-        decalageJp1Volume: agg.decalageJp1Volume
+        decalageJp1Volume: agg.decalageJp1Volume,
+        result8recIds
       });
     }
 
@@ -620,6 +668,7 @@ export class RapportReconciliationBoPartenaireComponent implements OnInit, OnDes
     this.tableDisplayBlocks = [];
     this.displayLines = [];
     this.expandedGroupIds.clear();
+    this.clearAuditState();
   }
 
   /** Classes badge alignées sur le rapport de réconciliation (traitement-*) */
@@ -764,6 +813,220 @@ export class RapportReconciliationBoPartenaireComponent implements OnInit, OnDes
     this.cdr.markForCheck();
   }
 
+  private clearAuditState(): void {
+    this.expandedAuditKeys.clear();
+    this.auditHistoryByRecId.clear();
+    this.auditLoadedFingerprints.clear();
+    this.auditLoadingFingerprints.clear();
+    this.metaByResult8RecId.clear();
+  }
+
+  /** Alimente les libellés pour le regroupement par service (colonnes du rapport). */
+  private rebuildResult8RecMetaFromFiltered(filtered: Result8Row[]): void {
+    this.metaByResult8RecId.clear();
+    for (const r of filtered) {
+      if (r.id != null && r.id > 0) {
+        this.metaByResult8RecId.set(r.id, {
+          service: ((r.service ?? '') as string).trim() || '—',
+          agency: ((r.agency ?? '') as string).trim() || '—',
+          date: ((r.date ?? '') as string).trim(),
+          env: r.env
+        });
+      }
+    }
+  }
+
+  private buildAuditHeaders(): HttpHeaders {
+    return new HttpHeaders({
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      Pragma: 'no-cache',
+      Expires: '0',
+      'X-Permission-Module': 'Résultats'
+    });
+  }
+
+  private auditFingerprint(ids: readonly number[]): string {
+    return [...ids]
+      .filter((n) => n > 0)
+      .sort((a, b) => a - b)
+      .join(',');
+  }
+
+  auditKeySingle(service: string): string {
+    return `s:${service}`;
+  }
+
+  auditKeyGroupAggregate(blockId: string): string {
+    return `agg:${blockId}`;
+  }
+
+  auditKeyGroupDetail(groupId: string, service: string): string {
+    return `d:${groupId}:${service}`;
+  }
+
+  isAuditExpandedRow(key: string): boolean {
+    return this.expandedAuditKeys.has(key);
+  }
+
+  toggleAuditRow(key: string, ids: number[] | undefined | null, ev?: Event): void {
+    ev?.stopPropagation?.();
+    const normalized = [...new Set((ids || []).filter((n) => typeof n === 'number' && n > 0))].sort(
+      (a, b) => a - b
+    );
+    if (!normalized.length) {
+      return;
+    }
+    const fp = this.auditFingerprint(normalized);
+    if (this.expandedAuditKeys.has(key)) {
+      this.expandedAuditKeys.delete(key);
+    } else {
+      this.expandedAuditKeys.add(key);
+      this.ensureAuditLoaded(fp, normalized);
+    }
+    this.cdr.markForCheck();
+  }
+
+  private ensureAuditLoaded(fingerprint: string, ids: number[]): void {
+    if (this.auditLoadedFingerprints.has(fingerprint)) {
+      return;
+    }
+    if (this.auditLoadingFingerprints.has(fingerprint)) {
+      return;
+    }
+    this.auditLoadingFingerprints.add(fingerprint);
+    const headers = this.buildAuditHeaders();
+    forkJoin(
+      ids.map((id) =>
+        this.http
+          .get<Result8RecAuditEntry[]>(`/api/result8rec/${id}/audit-history`, { headers })
+          .pipe(catchError(() => of([] as Result8RecAuditEntry[])))
+      )
+    ).subscribe({
+      next: (chunks) => {
+        ids.forEach((id, i) => {
+          const raw = chunks[i];
+          const arr = Array.isArray(raw) ? raw : [];
+          this.auditHistoryByRecId.set(
+            id,
+            [...arr].sort((a, b) => {
+              const ta = a.createdAt || '';
+              const tb = b.createdAt || '';
+              if (ta !== tb) {
+                return ta < tb ? -1 : 1;
+              }
+              return (a.id ?? 0) - (b.id ?? 0);
+            })
+          );
+        });
+        this.auditLoadedFingerprints.add(fingerprint);
+        this.auditLoadingFingerprints.delete(fingerprint);
+        this.cdr.markForCheck();
+      },
+      error: () => {
+        for (const id of ids) {
+          if (!this.auditHistoryByRecId.has(id)) {
+            this.auditHistoryByRecId.set(id, []);
+          }
+        }
+        this.auditLoadedFingerprints.add(fingerprint);
+        this.auditLoadingFingerprints.delete(fingerprint);
+        this.cdr.markForCheck();
+      }
+    });
+  }
+
+  /** Sections prêtes après chargement : d’abord par **service** (nom BO), puis sous-lignes par id result8rec. */
+  getAuditSectionsGroupedByService(ids: number[] | undefined | null): AuditSectionByService[] {
+    const fp = this.auditFingerprint(ids || []);
+    if (!this.auditLoadedFingerprints.has(fp)) {
+      return [];
+    }
+    const idList = [...new Set((ids || []).filter((n) => typeof n === 'number' && n > 0))];
+    if (!idList.length) {
+      return [];
+    }
+    const bySvc = new Map<string, number[]>();
+    for (const rid of idList) {
+      const meta = this.metaByResult8RecId.get(rid);
+      const svc = (meta?.service || '—').trim() || '—';
+      if (!bySvc.has(svc)) {
+        bySvc.set(svc, []);
+      }
+      bySvc.get(svc)!.push(rid);
+    }
+    const serviceNames = [...bySvc.keys()].sort((a, b) => a.localeCompare(b, 'fr'));
+    return serviceNames.map((serviceName) => {
+      const ligneIds = (bySvc.get(serviceName) || []).sort((a, b) => this.compareAuditLineIds(a, b));
+      return {
+        serviceName,
+        lignes: ligneIds.map((id) => ({
+          id,
+          subtitle: this.buildAuditLigneSubtitle(id),
+          entries: [...(this.auditHistoryByRecId.get(id) ?? [])]
+        }))
+      };
+    });
+  }
+
+  private compareAuditLineIds(a: number, b: number): number {
+    const ma = this.metaByResult8RecId.get(a);
+    const mb = this.metaByResult8RecId.get(b);
+    const da = (ma?.date || '').localeCompare(mb?.date || '');
+    if (da !== 0) {
+      return da;
+    }
+    const ag = (ma?.agency || '').localeCompare(mb?.agency || '', 'fr');
+    if (ag !== 0) {
+      return ag;
+    }
+    return a - b;
+  }
+
+  buildAuditLigneSubtitle(result8recId: number): string {
+    const m = this.metaByResult8RecId.get(result8recId);
+    if (!m) {
+      return `Ligne #${result8recId}`;
+    }
+    const dateStr = m.date ? this.formatFrShort(m.date) : '—';
+    const ag = m.agency && m.agency !== '—' ? m.agency : '—';
+    return `Id ${result8recId} · ${ag} · ${dateStr}`;
+  }
+
+  isAuditBatchLoaded(ids: number[] | undefined | null): boolean {
+    return this.auditLoadedFingerprints.has(this.auditFingerprint(ids || []));
+  }
+
+  isAuditFingerprintLoading(ids: number[] | undefined | null): boolean {
+    const fp = this.auditFingerprint(ids || []);
+    return this.auditLoadingFingerprints.has(fp);
+  }
+
+  formatAuditActionLabel(actionType?: string): string {
+    if (!actionType) {
+      return '—';
+    }
+    const m: Record<string, string> = {
+      CREATION: 'Création de la ligne',
+      SAUVEGARDE_RESULTAT: 'Sauvegarde des résultats',
+      STATUT_OK: 'Passage au statut OK',
+      CHANGEMENT_STATUT: 'Changement de statut',
+      VALIDATION_TERMINÉ: 'Validation (traitement terminé)',
+      CHANGEMENT_TRAITEMENT: 'Modification du niveau de traitement'
+    };
+    return m[actionType] || actionType;
+  }
+
+  formatAuditInstant(iso?: string | null): string {
+    if (!iso) {
+      return '—';
+    }
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) {
+      return String(iso);
+    }
+    return d.toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' });
+  }
+
   /**
    * Regroupe par tokens explicites (liste `BO_PARTENAIRE_SERVICE_GROUP_TOKENS`) pour le périmètre pays/ENV courant.
    * Libellé = token (ex. CASHINOM), pas un morceau de nom type CASHINOMCM2. Sans token → une ligne par service.
@@ -867,6 +1130,7 @@ export class RapportReconciliationBoPartenaireComponent implements OnInit, OnDes
         : partenaireVolume !== 0
           ? null
           : 0;
+    const mergedDbIds = this.mergeResult8RecIdsFromMembers(members);
     return {
       service: '',
       traitement: this.dominantTraitementLabel(members.map((m) => m.traitement)),
@@ -880,8 +1144,22 @@ export class RapportReconciliationBoPartenaireComponent implements OnInit, OnDes
       decalageJm1Nombre: decJm1Nombre,
       decalageJm1Volume: decJm1Volume,
       decalageJp1Nombre: decJp1Nombre,
-      decalageJp1Volume: decJp1Volume
+      decalageJp1Volume: decJp1Volume,
+      result8recIds: mergedDbIds
     };
+  }
+
+  /** Union des ids result8rec des lignes membres (groupe agrégé). */
+  private mergeResult8RecIdsFromMembers(members: BoPartenaireRow[]): number[] {
+    const s = new Set<number>();
+    for (const m of members) {
+      for (const id of m.result8recIds || []) {
+        if (typeof id === 'number' && id > 0) {
+          s.add(id);
+        }
+      }
+    }
+    return Array.from(s).sort((a, b) => a - b);
   }
 
   private aggregatesPourService(

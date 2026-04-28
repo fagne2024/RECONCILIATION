@@ -1,9 +1,11 @@
 package com.reconciliation.controller;
 
 import com.reconciliation.dto.Result8RecBulkSaveResponse;
+import com.reconciliation.dto.Result8RecAuditDto;
 import com.reconciliation.entity.Result8RecEntity;
 import com.reconciliation.repository.Result8RecRepository;
 import com.reconciliation.service.PaysFilterService;
+import com.reconciliation.service.Result8RecAuditService;
 import com.reconciliation.util.RequestContextUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -28,6 +30,7 @@ public class Result8RecController {
     private final Result8RecRepository repository;
     private final JdbcTemplate jdbcTemplate;
     private final PaysFilterService paysFilterService;
+    private final Result8RecAuditService result8RecAuditService;
 
     /**
      * Détermine le traitement par défaut selon la présence d'écarts
@@ -73,6 +76,7 @@ public class Result8RecController {
         body.setCreatedAt(Instant.now().toString());
         Result8RecEntity saved = repository.save(body);
         log.info("✅ result8rec sauvegardé id={}", saved.getId());
+        result8RecAuditService.logCreation(saved, RequestContextUtil.getUsernameFromRequest());
         return ResponseEntity.ok(saved);
     }
 
@@ -256,6 +260,7 @@ public class Result8RecController {
 
             r.setCreatedAt(Instant.now().toString());
             Result8RecEntity saved = repository.save(r);
+            result8RecAuditService.logCreation(saved, username);
             response.results.add(new Result8RecBulkSaveResponse.RowResult("CREATED", saved));
             created++;
         }
@@ -375,10 +380,21 @@ public class Result8RecController {
         return ResponseEntity.noContent().build();
     }
 
+    @GetMapping("/{id}/audit-history")
+    public ResponseEntity<List<Result8RecAuditDto>> getAuditHistory(@PathVariable Long id) {
+        if (!repository.existsById(id)) {
+            return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity.ok(result8RecAuditService.listHistory(id));
+    }
+
     @PutMapping("/{id}")
     public ResponseEntity<?> update(@PathVariable Long id, @RequestBody Result8RecEntity body) {
         return repository.findById(id)
                 .map(existing -> {
+                    Result8RecAuditService.Result8RecSnapshot snapshotBefore =
+                            Result8RecAuditService.Result8RecSnapshot.fromEntity(existing);
+
                     // Mettre à jour tous les champs modifiables
                     if (body.getDate() != null) existing.setDate(body.getDate());
                     if (body.getAgency() != null) existing.setAgency(body.getAgency());
@@ -421,7 +437,13 @@ public class Result8RecController {
                     if (username != null && !username.isEmpty()) {
                         existing.setUsername(username);
                     }
-                    
+
+                    try {
+                        result8RecAuditService.appendFromDiff(snapshotBefore, existing, username);
+                    } catch (Exception ex) {
+                        log.warn("⚠️ Journalisation audit ignorée pour result8rec {}: {}", id, ex.getMessage());
+                    }
+
                     Result8RecEntity saved = repository.save(existing);
                     log.info("✅ result8rec mis à jour id={} - Date: {}, Agency: {}, Service: {}, Country: {}, Env: {}, Transactions: {}, Volume: {}, Matches: {}, BoOnly: {}, PartnerOnly: {}, Mismatches: {}, MatchRate: {}, Comment: '{}'", 
                             saved.getId(), saved.getDate(), saved.getAgency(), saved.getService(), 

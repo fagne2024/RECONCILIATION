@@ -159,10 +159,48 @@
       </p>
 
       <div class="rrbp-table-section" *ngIf="!loading && selectedCountry && !error">
+        <!-- Historique audit : regroupement par service (nom rapport), puis par ligne result8rec -->
+        <ng-template #rrbpAuditGroupedTpl let-ids="ids">
+          <div class="rrbp-audit-inner" *ngIf="isAuditFingerprintLoading(ids)">Chargement de l&apos;historique…</div>
+          <ng-container *ngIf="!isAuditFingerprintLoading(ids) && isAuditBatchLoaded(ids)">
+            <div class="rrbp-audit-by-service" *ngIf="getAuditSectionsGroupedByService(ids).length">
+              <div *ngFor="let sec of getAuditSectionsGroupedByService(ids)" class="rrbp-audit-service-block">
+                <div class="rrbp-audit-service-title">Service — {{ sec.serviceName }}</div>
+                <div *ngFor="let lg of sec.lignes" class="rrbp-audit-ligne-block">
+                  <div class="rrbp-audit-ligne-subtitle">{{ lg.subtitle }}</div>
+                  <table *ngIf="lg.entries.length" class="rrbp-audit-mini-table">
+                    <thead>
+                      <tr>
+                        <th>Date</th>
+                        <th>Événement</th>
+                        <th>Utilisateur</th>
+                        <th>Niveau de traitement</th>
+                        <th>Statut (à l&apos;étape)</th>
+                        <th>Détail</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr *ngFor="let ar of lg.entries">
+                        <td class="nowrap">{{ formatAuditInstant(ar.createdAt) }}</td>
+                        <td>{{ formatAuditActionLabel(ar.actionType) }}</td>
+                        <td>{{ ar.username || '—' }}</td>
+                        <td>{{ ar.traitementSnapshot || '—' }}</td>
+                        <td>{{ ar.statusSnapshot || '—' }}</td>
+                        <td class="wrap">{{ ar.detail || '—' }}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                  <p *ngIf="!lg.entries.length" class="rrbp-audit-ligne-empty">Aucune entrée pour cette ligne en base.</p>
+                </div>
+              </div>
+            </div>
+          </ng-container>
+        </ng-template>
         <div class="rrbp-table-wrap">
           <table class="rrbp-table">
             <thead>
               <tr>
+                <th rowspan="3" class="col-audit-expand" title="Historique sauvegardes / statuts">Hist.</th>
                 <th rowspan="3" class="col-service">Service</th>
                 <th rowspan="3" class="col-traitement">Traitement</th>
                 <th rowspan="3" class="col-statut rrbp-th-statut">Statut</th>
@@ -201,12 +239,27 @@
             </thead>
             <tbody>
               <tr *ngIf="!serviceRows.length">
-                <td colspan="14" class="rrbp-empty">
+                <td colspan="15" class="rrbp-empty">
                   Aucune ligne pour ce pays, cette date, cet ENV ou cette sélection de services.
                 </td>
               </tr>
               <ng-container *ngFor="let line of displayLines">
-                <tr *ngIf="line.type === 'single'" class="rrbp-row-single">
+                <ng-container *ngIf="line.type === 'single'">
+                <tr class="rrbp-row-single">
+                  <td class="col-expand">
+                    <button
+                      type="button"
+                      *ngIf="line.row.result8recIds?.length"
+                      class="btn-rrbp-audit"
+                      [class.open]="isAuditExpandedRow(auditKeySingle(line.row.service))"
+                      (click)="toggleAuditRow(auditKeySingle(line.row.service), line.row.result8recIds, $event)"
+                      [attr.aria-expanded]="isAuditExpandedRow(auditKeySingle(line.row.service))"
+                      title="Historique des actions (sauvegarde, statut, validation)"
+                    >
+                      {{ isAuditExpandedRow(auditKeySingle(line.row.service)) ? '▼' : '▶' }}
+                    </button>
+                    <span *ngIf="!line.row.result8recIds?.length" class="rrbp-expand-placeholder" title="Aucune ligne result8rec pour ce périmètre"></span>
+                  </td>
                   <td class="col-service">
                     <div class="svc-main">{{ line.row.service }}</div>
                   </td>
@@ -241,11 +294,39 @@
                   <td class="num rrbp-col-ecart" [ngClass]="classeTaux(line.row)">{{ libelleTaux(line.row) }}</td>
                 </tr>
                 <tr
+                  *ngIf="
+                    line.row.result8recIds?.length &&
+                    isAuditExpandedRow(auditKeySingle(line.row.service))
+                  "
+                  class="rrbp-row-audit-detail"
+                >
+                  <td [attr.colspan]="auditHistoryColspan" class="rrbp-audit-detail-cell">
+                    <ng-container
+                      *ngTemplateOutlet="rrbpAuditGroupedTpl; context: { ids: line.row.result8recIds }"
+                    ></ng-container>
+                  </td>
+                </tr>
+                </ng-container>
+                <tr
                   *ngIf="line.type === 'group-header'"
                   class="rrbp-row-group"
                   (click)="toggleServiceGroup(line.id)"
                   [title]="'Cliquer pour afficher ou masquer le détail par service'"
                 >
+                  <td class="col-expand" (click)="$event.stopPropagation()">
+                    <button
+                      type="button"
+                      *ngIf="line.aggregate.result8recIds?.length"
+                      class="btn-rrbp-audit"
+                      [class.open]="isAuditExpandedRow(auditKeyGroupAggregate(line.id))"
+                      (click)="toggleAuditRow(auditKeyGroupAggregate(line.id), line.aggregate.result8recIds, $event)"
+                      [attr.aria-expanded]="isAuditExpandedRow(auditKeyGroupAggregate(line.id))"
+                      title="Historique du groupe, regroupé par service puis par ligne (agence / date)"
+                    >
+                      {{ isAuditExpandedRow(auditKeyGroupAggregate(line.id)) ? '▼' : '▶' }}
+                    </button>
+                    <span *ngIf="!line.aggregate.result8recIds?.length" class="rrbp-expand-placeholder"></span>
+                  </td>
                   <td class="col-service">
                     <button
                       type="button"
@@ -288,7 +369,36 @@
                   </td>
                   <td class="num rrbp-col-ecart" [ngClass]="classeTaux(line.aggregate)">{{ libelleTaux(line.aggregate) }}</td>
                 </tr>
+                <tr
+                  *ngIf="
+                    line.type === 'group-header' &&
+                    line.aggregate.result8recIds?.length &&
+                    isAuditExpandedRow(auditKeyGroupAggregate(line.id))
+                  "
+                  class="rrbp-row-audit-detail"
+                  (click)="$event.stopPropagation()"
+                >
+                  <td [attr.colspan]="auditHistoryColspan" class="rrbp-audit-detail-cell">
+                    <ng-container
+                      *ngTemplateOutlet="rrbpAuditGroupedTpl; context: { ids: line.aggregate.result8recIds }"
+                    ></ng-container>
+                  </td>
+                </tr>
                 <tr *ngIf="line.type === 'group-detail' && isGroupExpanded(line.groupId)" class="rrbp-row-detail">
+                  <td class="col-expand">
+                    <button
+                      type="button"
+                      *ngIf="line.row.result8recIds?.length"
+                      class="btn-rrbp-audit"
+                      [class.open]="isAuditExpandedRow(auditKeyGroupDetail(line.groupId, line.row.service))"
+                      (click)="toggleAuditRow(auditKeyGroupDetail(line.groupId, line.row.service), line.row.result8recIds, $event)"
+                      [attr.aria-expanded]="isAuditExpandedRow(auditKeyGroupDetail(line.groupId, line.row.service))"
+                      title="Historique pour ce service"
+                    >
+                      {{ isAuditExpandedRow(auditKeyGroupDetail(line.groupId, line.row.service)) ? '▼' : '▶' }}
+                    </button>
+                    <span *ngIf="!line.row.result8recIds?.length" class="rrbp-expand-placeholder"></span>
+                  </td>
                   <td class="col-service">
                     <div class="svc-main rrbp-detail-indent">{{ line.row.service }}</div>
                   </td>
@@ -322,10 +432,26 @@
                   </td>
                   <td class="num rrbp-col-ecart" [ngClass]="classeTaux(line.row)">{{ libelleTaux(line.row) }}</td>
                 </tr>
+                <tr
+                  *ngIf="
+                    line.type === 'group-detail' &&
+                    isGroupExpanded(line.groupId) &&
+                    line.row.result8recIds?.length &&
+                    isAuditExpandedRow(auditKeyGroupDetail(line.groupId, line.row.service))
+                  "
+                  class="rrbp-row-audit-detail"
+                >
+                  <td [attr.colspan]="auditHistoryColspan" class="rrbp-audit-detail-cell">
+                    <ng-container
+                      *ngTemplateOutlet="rrbpAuditGroupedTpl; context: { ids: line.row.result8recIds }"
+                    ></ng-container>
+                  </td>
+                </tr>
               </ng-container>
             </tbody>
             <tfoot *ngIf="serviceRows.length">
               <tr>
+                <td class="col-expand"></td>
                 <td>Total</td>
                 <td class="col-traitement">—</td>
                 <td [class]="classeStatutCell('')">
