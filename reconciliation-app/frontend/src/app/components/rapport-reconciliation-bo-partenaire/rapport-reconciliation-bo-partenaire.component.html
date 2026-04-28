@@ -168,28 +168,35 @@
                 <div class="rrbp-audit-service-title">Service — {{ sec.serviceName }}</div>
                 <div *ngFor="let lg of sec.lignes" class="rrbp-audit-ligne-block">
                   <div class="rrbp-audit-ligne-subtitle">{{ lg.subtitle }}</div>
-                  <table *ngIf="lg.entries.length" class="rrbp-audit-mini-table">
-                    <thead>
-                      <tr>
-                        <th>Date</th>
-                        <th>Événement</th>
-                        <th>Utilisateur</th>
-                        <th>Niveau de traitement</th>
-                        <th>Statut (à l&apos;étape)</th>
-                        <th>Détail</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr *ngFor="let ar of lg.entries">
-                        <td class="nowrap">{{ formatAuditInstant(ar.createdAt) }}</td>
-                        <td>{{ formatAuditActionLabel(ar.actionType) }}</td>
-                        <td>{{ ar.username || '—' }}</td>
-                        <td>{{ ar.traitementSnapshot || '—' }}</td>
-                        <td>{{ ar.statusSnapshot || '—' }}</td>
-                        <td class="wrap">{{ ar.detail || '—' }}</td>
-                      </tr>
-                    </tbody>
-                  </table>
+                  <div *ngIf="lg.entries.length" class="rrbp-audit-panel-card">
+                    <div class="rrbp-audit-panel-head">Historique des actions</div>
+                    <table class="rrbp-audit-mini-table rrbp-audit-mini-table--enhanced">
+                      <thead>
+                        <tr>
+                          <th class="rrbp-audit-th-date">Date</th>
+                          <th>Événement</th>
+                          <th>Utilisateur</th>
+                          <th class="rrbp-audit-th-pill">Niveau</th>
+                          <th class="rrbp-audit-th-pill">Statut</th>
+                          <th>Détail</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr *ngFor="let ar of lg.entries">
+                          <td class="nowrap">{{ formatAuditInstant(ar.createdAt) }}</td>
+                          <td class="rrbp-audit-td-event">{{ formatAuditActionLabel(ar.actionType) }}</td>
+                          <td class="rrbp-audit-td-user">{{ ar.username || '—' }}</td>
+                          <td>
+                            <span [class]="auditSnapshotTraitementClass(ar.traitementSnapshot)">{{ ar.traitementSnapshot || '—' }}</span>
+                          </td>
+                          <td>
+                            <span [class]="auditSnapshotStatutClass(ar.statusSnapshot)">{{ ar.statusSnapshot || '—' }}</span>
+                          </td>
+                          <td class="wrap">{{ ar.detail || '—' }}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
                   <p *ngIf="!lg.entries.length" class="rrbp-audit-ligne-empty">Aucune entrée pour cette ligne en base.</p>
                 </div>
               </div>

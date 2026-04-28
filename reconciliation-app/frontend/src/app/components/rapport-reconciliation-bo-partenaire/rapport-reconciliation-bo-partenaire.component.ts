@@ -20,6 +20,10 @@ import {
 } from '../../constants/reconciliation-env-options';
 import { BO_PARTENAIRE_SERVICE_GROUP_TOKENS } from '../../constants/bo-partenaire-service-group-tokens';
 import { PopupService } from '../../services/popup.service';
+import {
+  auditSnapshotStatutClass as statutAuditPillClassFn,
+  auditSnapshotTraitementClass as traitementAuditPillClassFn
+} from '../../shared/result8rec-audit-display';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 
@@ -160,6 +164,9 @@ export class RapportReconciliationBoPartenaireComponent implements OnInit, OnDes
   private readonly metaByResult8RecId = new Map<number, { service: string; agency: string; date: string; env?: string }>();
 
   readonly auditHistoryColspan = 15;
+
+  readonly auditSnapshotTraitementClass = traitementAuditPillClassFn;
+  readonly auditSnapshotStatutClass = statutAuditPillClassFn;
 
   /**
    * Tokens de regroupement (plus long d’abord) : le libellé affiché est exactement celui de la constante

@@ -20,6 +20,10 @@ import {
 } from '../../constants/reconciliation-env-options';
 import { LoggerService } from '../../services/logger.service';
 import { fixGarbledCharacters } from '../../utils/encoding-fixer';
+import {
+    auditSnapshotStatutClass as statutAuditPillClassFn,
+    auditSnapshotTraitementClass as traitementAuditPillClassFn
+} from '../../shared/result8rec-audit-display';
 import * as ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
 import * as Papa from 'papaparse';
@@ -714,28 +718,35 @@ export interface ReconciliationReportData {
                                 <div class="audit-detail-inner audit-empty" *ngIf="!isAuditLoading(item.id!) && !getAuditRows(item.id!).length">
                                     Aucun historique détaillé en base pour cette ligne. Les prochaines modifications (sauvegarde, statut OK, validation « Terminé ») apparaîtront ici après enregistrement.
                                 </div>
-                                <table *ngIf="!isAuditLoading(item.id!) && getAuditRows(item.id!).length" class="audit-mini-table">
-                                    <thead>
-                                        <tr>
-                                            <th>Date</th>
-                                            <th>Événement</th>
-                                            <th>Utilisateur</th>
-                                            <th>Niveau de traitement</th>
-                                            <th>Statut (à l&apos;étape)</th>
-                                            <th>Détail</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        <tr *ngFor="let row of getAuditRows(item.id!)">
-                                            <td class="audit-td-date">{{ formatAuditInstant(row.createdAt) }}</td>
-                                            <td>{{ formatAuditActionLabel(row.actionType) }}</td>
-                                            <td>{{ row.username || '—' }}</td>
-                                            <td>{{ row.traitementSnapshot || '—' }}</td>
-                                            <td>{{ row.statusSnapshot || '—' }}</td>
-                                            <td class="audit-td-detail">{{ row.detail || '—' }}</td>
-                                        </tr>
-                                    </tbody>
-                                </table>
+                                <div *ngIf="!isAuditLoading(item.id!) && getAuditRows(item.id!).length" class="audit-panel-card">
+                                    <div class="audit-panel-head">Historique des actions</div>
+                                    <table class="audit-mini-table audit-mini-table--enhanced">
+                                        <thead>
+                                            <tr>
+                                                <th class="audit-th-date">Date</th>
+                                                <th>Événement</th>
+                                                <th>Utilisateur</th>
+                                                <th class="audit-th-pill">Niveau</th>
+                                                <th class="audit-th-pill">Statut</th>
+                                                <th>Détail</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <tr *ngFor="let row of getAuditRows(item.id!)">
+                                                <td class="audit-td-date">{{ formatAuditInstant(row.createdAt) }}</td>
+                                                <td class="audit-td-event">{{ formatAuditActionLabel(row.actionType) }}</td>
+                                                <td class="audit-td-user">{{ row.username || '—' }}</td>
+                                                <td>
+                                                    <span [class]="auditSnapshotTraitementClass(row.traitementSnapshot)">{{ row.traitementSnapshot || '—' }}</span>
+                                                </td>
+                                                <td>
+                                                    <span [class]="auditSnapshotStatutClass(row.statusSnapshot)">{{ row.statusSnapshot || '—' }}</span>
+                                                </td>
+                                                <td class="audit-td-detail">{{ row.detail || '—' }}</td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
                             </td>
                         </tr>
                         </ng-container>
@@ -1099,6 +1110,7 @@ export interface ReconciliationReportData {
             </div>
         </div>
     `,
+    styleUrls: ['../../shared/result8rec-audit-pills.scss'],
     styles: [`
         :host {
             display: block;
@@ -1963,8 +1975,40 @@ export interface ReconciliationReportData {
             border-top: 1px solid #eee;
             vertical-align: top;
         }
-        .audit-td-date { white-space: nowrap; font-family: 'Courier New', monospace; }
-        .audit-td-detail { word-break: break-word; max-width: 320px; }
+        .audit-td-date { white-space: nowrap; font-family: 'Courier New', monospace; font-size: 0.8rem; }
+        .audit-td-detail { word-break: break-word; max-width: 320px; color: #343a40; }
+        .audit-td-event { color: #212529; }
+        .audit-td-user { font-weight: 500; color: #1e4a7a; }
+        .audit-panel-card {
+            border: 1px solid #ced4da;
+            border-radius: 8px;
+            background: #fff;
+            box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+            overflow: hidden;
+            max-width: 100%;
+        }
+        .audit-panel-head {
+            padding: 10px 12px;
+            background: linear-gradient(180deg, #f8f9fb 0%, #eef1f5 100%);
+            border-bottom: 1px solid #dee2e6;
+            font-size: 0.72rem;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: #495057;
+        }
+        .audit-mini-table--enhanced { border-radius: 0; border: none; box-shadow: none; }
+        .audit-mini-table--enhanced th {
+            font-size: 0.68rem;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: #495057;
+            background: #f1f3f5;
+        }
+        .audit-th-date { min-width: 8.5rem; }
+        .audit-th-pill { text-align: center; }
+        .audit-mini-table--enhanced td:nth-child(4),
+        .audit-mini-table--enhanced td:nth-child(5) { text-align: center; vertical-align: middle; }
 
         .col-checkbox { width: 40px; text-align: center; }
         .checkbox-cell { text-align: center; padding: 8px; }
@@ -3133,6 +3177,9 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
     /** Cache historique audit par id result8rec */
     readonly auditHistoryCache = new Map<number, Result8RecAuditEntry[]>();
     private readonly auditHistoryLoadingIds = new Set<number>();
+
+    readonly auditSnapshotTraitementClass = traitementAuditPillClassFn;
+    readonly auditSnapshotStatutClass = statutAuditPillClassFn;
 
     /** Affiche Nouvelle ligne, Tableau de bord et Remboursement (masqués par défaut). */
     showExtendedReportActions = false;

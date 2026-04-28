@@ -1,0 +1,66 @@
+/* Pastilles niveau / statut — partagé rapport réconciliation + BO vs partenaire */
+
+.audit-pill-label {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 0.74rem;
+  font-weight: 600;
+  line-height: 1.35;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.audit-pill--muted {
+  background: #e9ecef;
+  color: #6c757d;
+  border: 1px solid #dee2e6;
+}
+
+.audit-pill--traitement-support {
+  background: #fff3e0;
+  color: #bf360c;
+  border: 1px solid #ffcc80;
+}
+
+.audit-pill--traitement-group {
+  background: #e3f2fd;
+  color: #0d47a1;
+  border: 1px solid #90caf9;
+}
+
+.audit-pill--traitement-termine {
+  background: #ede7f6;
+  color: #4527a0;
+  border: 1px solid #b39ddb;
+}
+
+.audit-pill--traitement-default {
+  background: #f3e5f5;
+  color: #6a1b9a;
+  border: 1px solid #ce93d8;
+}
+
+.audit-pill--statut-ok {
+  background: #e8f5e9;
+  color: #1b5e20;
+  border: 1px solid #a5d6a7;
+}
+
+.audit-pill--statut-encours {
+  background: #e3f2fd;
+  color: #0d47a1;
+  border: 1px solid #90caf9;
+}
+
+.audit-pill--statut-ko {
+  background: #ffebee;
+  color: #b71c1c;
+  border: 1px solid #ef9a9a;
+}
+
+.audit-pill--statut-default {
+  background: #eceff1;
+  color: #37474f;
+  border: 1px solid #b0bec5;
+}
