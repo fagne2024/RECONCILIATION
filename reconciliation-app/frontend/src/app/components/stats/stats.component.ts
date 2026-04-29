@@ -36,6 +36,20 @@ interface AgencyReportRow {
     daily: { [dateKey: string]: AgencyReportCell };
 }
 
+type VariationFilter = 'all' | 'up' | 'dn' | 'eq' | 'na';
+
+interface VariationViewModel {
+    cls: 'up' | 'dn' | 'eq' | 'na';
+    icon: string;
+    label: string;
+    pct: number | null;
+    barWidth: number;
+    hint: string;
+    captionDash: boolean;
+    volJ1Fmt: string;
+    deltaFmt: string | null;
+}
+
 @Component({
     selector: 'app-stats',
     templateUrl: './stats.component.html',
@@ -50,6 +64,7 @@ export class StatsComponent implements OnInit, OnDestroy {
     agencySummaries: any[] = [];
     filteredData: any[] = [];
     aggregatedStatsCache: AggregatedStatRow[] = [];
+    visibleAggregatedStatsCache: AggregatedStatRow[] = [];
     statsPage: number = 1;
     statsPageSize: number = 10;
     isLoading: boolean = false;
@@ -95,6 +110,11 @@ export class StatsComponent implements OnInit, OnDestroy {
     allSelected: boolean = false;
     selectedSummaryIds: Set<string> = new Set(); // Pour identifier les statistiques sélectionnées par leur clé unique
 
+    showVariation: boolean = true;
+    /** Largeur minimale de la colonne « variation » (curseur px, 100–360). */
+    variationColumnWidthPx = 100;
+    private aggregatedIndexByDateKey: Map<string, AggregatedStatRow> = new Map();
+
     @ViewChild('agenceSelect') agenceSelect!: MatSelect;
     @ViewChild('serviceSelect') serviceSelect!: MatSelect;
     @ViewChild('paysSelect') paysSelect!: MatSelect;
@@ -111,7 +131,9 @@ export class StatsComponent implements OnInit, OnDestroy {
             service: [[]],
             country: [[]],
             startDate: [''],
-            endDate: ['']
+            endDate: [''],
+            referenceDate: [''],
+            variationFilter: ['all' as VariationFilter]
         });
     }
 
@@ -122,7 +144,9 @@ export class StatsComponent implements OnInit, OnDestroy {
             service: [[]],
             country: [[]],
             startDate: [''],
-            endDate: ['']
+            endDate: [''],
+            referenceDate: [''],
+            variationFilter: ['all' as VariationFilter]
         });
 
         // Ajouter des listeners pour les changements de filtres
@@ -291,6 +315,143 @@ export class StatsComponent implements OnInit, OnDestroy {
         // totalPages est maintenant un getter, pas besoin de l'assigner manuellement
     }
 
+    toggleVariationColumn(): void {
+        this.showVariation = !this.showVariation;
+    }
+
+    private getReferenceDateKeyForRow(row: AggregatedStatRow): string | null {
+        // Si l'utilisateur force une date de référence, on l'utilise
+        const ref = this.filterForm?.value?.referenceDate;
+        if (ref) {
+            return this.toDateKey(ref);
+        }
+
+        // Sinon: "date précédente" = J-1 de la date de la ligne
+        const rowKey = this.toDateKey(row.date);
+        if (!rowKey) {
+            return null;
+        }
+
+        const rowDate = new Date(rowKey);
+        if (isNaN(rowDate.getTime())) {
+            return null;
+        }
+        rowDate.setDate(rowDate.getDate() - 1);
+        return this.toDateKey(rowDate);
+    }
+
+    private buildAggregatedIndexByDateKey(rows: AggregatedStatRow[]): Map<string, AggregatedStatRow> {
+        const idx = new Map<string, AggregatedStatRow>();
+        rows.forEach(r => {
+            const dk = this.toDateKey(r.date);
+            if (!dk) {
+                return;
+            }
+            idx.set(`${r.agency}|${r.service}|${r.country}|${dk}`, r);
+        });
+        return idx;
+    }
+
+    getVariationForRow(row: AggregatedStatRow): VariationViewModel {
+        const refKey = this.getReferenceDateKeyForRow(row);
+        const currKey = this.toDateKey(row.date);
+
+        if (!refKey || !currKey) {
+            return {
+                cls: 'na',
+                icon: '•',
+                label: 'Nouveau',
+                pct: null,
+                barWidth: 0,
+                hint: 'Aucune date de référence',
+                captionDash: true,
+                volJ1Fmt: '',
+                deltaFmt: null
+            };
+        }
+
+        const refRow = this.aggregatedIndexByDateKey.get(`${row.agency}|${row.service}|${row.country}|${refKey}`);
+        const prev = refRow ? Number(refRow.totalVolume) || 0 : 0;
+        const curr = Number(row.totalVolume) || 0;
+
+        const pct = this.pct(curr, prev);
+        const cls = this.varClass(pct);
+        const icon = this.varIcon(cls);
+        const bw = this.barWidth(pct);
+        const delta = curr - prev;
+
+        const captionDash = pct === null;
+
+        const hint = captionDash
+            ? `Vol. J-1 : —`
+            : `Vol. J-1 : ${this.fmtN(prev)} ${(delta >= 0 ? '+' : '')}${this.fmtN(delta)}`;
+
+        const label = pct === null ? 'Nouveau' : (pct === 0 ? 'Stable' : this.fmtP(pct));
+
+        const volJ1Fmt = captionDash ? '' : this.fmtN(prev);
+        const deltaFmt =
+            captionDash
+                ? null
+                : `${delta >= 0 ? '+' : '-'}${this.fmtN(Math.abs(delta))}`;
+
+        return {
+            cls,
+            icon,
+            label,
+            pct,
+            barWidth: bw,
+            hint,
+            captionDash,
+            volJ1Fmt,
+            deltaFmt
+        };
+    }
+
+    private pct(curr: number, prev: number): number | null {
+        if (prev === 0 && curr > 0) return null;
+        if (prev === 0 && curr === 0) return 0;
+        return ((curr - prev) / prev * 100);
+    }
+
+    private varClass(p: number | null): 'up' | 'dn' | 'eq' | 'na' {
+        if (p === null) return 'na';
+        if (p > 0.5) return 'up';
+        if (p < -0.5) return 'dn';
+        return 'eq';
+    }
+
+    private varIcon(cls: 'up' | 'dn' | 'eq' | 'na'): string {
+        if (cls === 'up') return '↑';
+        if (cls === 'dn') return '↓';
+        if (cls === 'na') return '•';
+        return '→';
+    }
+
+    private barWidth(p: number | null): number {
+        if (p === null) return 0;
+        return Math.min(100, Math.abs(p) * 2);
+    }
+
+    private fmtN(v: number): string {
+        // En "fr-FR", le séparateur de milliers peut être un espace insécable fine (U+202F).
+        // Pour coller au rendu attendu (ex: "14 200 000"), on normalise en espace simple.
+        return (Number(v) || 0)
+            .toLocaleString('fr-FR')
+            .replace(/\u202F/g, ' ')
+            .replace(/\u00A0/g, ' ');
+    }
+
+    private fmtP(v: number): string {
+        const s = (v >= 0 ? '+' : '') + v.toFixed(1) + '%';
+        return s.replace('.', ',');
+    }
+
+    private formatDateKeyForUi(dateKey: string): string {
+        const [y, m, d] = dateKey.split('-');
+        if (!y || !m || !d) return dateKey;
+        return `${d}/${m}/${y}`;
+    }
+
     private getStartOfDay(dateValue: string): Date {
         const date = new Date(dateValue);
         date.setHours(0, 0, 0, 0);
@@ -321,6 +482,8 @@ export class StatsComponent implements OnInit, OnDestroy {
 
     private rebuildDerivedData(): void {
         this.aggregatedStatsCache = this.buildAggregatedStats();
+        this.aggregatedIndexByDateKey = this.buildAggregatedIndexByDateKey(this.aggregatedStatsCache);
+        this.visibleAggregatedStatsCache = this.applyVariationFilter(this.aggregatedStatsCache);
         this.buildAgencyReport();
         this.updateVisibleReportData();
 
@@ -475,7 +638,15 @@ export class StatsComponent implements OnInit, OnDestroy {
     }
 
     getAggregatedStats(): AggregatedStatRow[] {
-        return this.aggregatedStatsCache;
+        return this.visibleAggregatedStatsCache;
+    }
+
+    private applyVariationFilter(rows: AggregatedStatRow[]): AggregatedStatRow[] {
+        const filter: VariationFilter = (this.filterForm?.value?.variationFilter || 'all') as VariationFilter;
+        if (filter === 'all') {
+            return rows;
+        }
+        return rows.filter(r => this.getVariationForRow(r).cls === filter);
     }
 
     private getReportDateRangeKeys(dataDateKeys: Set<string>): string[] {
@@ -1158,6 +1329,23 @@ export class StatsComponent implements OnInit, OnDestroy {
         } catch (error) {
             console.error('Erreur lors du formatage de la date:', error);
             return date; // Retourne la date originale en cas d'erreur
+        }
+    }
+
+    formatDateOnly(date: string): string {
+        try {
+            const dateObj = new Date(date);
+            if (isNaN(dateObj.getTime())) {
+                return date;
+            }
+            return dateObj.toLocaleDateString('fr-FR', {
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit'
+            });
+        } catch (error) {
+            console.error('Erreur lors du formatage de la date:', error);
+            return date;
         }
     }
 

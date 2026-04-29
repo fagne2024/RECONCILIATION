@@ -114,6 +114,20 @@
                     <label>Date de fin</label>
                     <input type="date" formControlName="endDate">
                 </div>
+                <div class="filter-group ref-date-group">
+                    <label>Date J-1 (référence)</label>
+                    <input type="date" formControlName="referenceDate" class="ref-date-input">
+                </div>
+                <div class="filter-group">
+                    <label>Variation</label>
+                    <select formControlName="variationFilter">
+                        <option value="all">Toutes</option>
+                        <option value="up">Hausses</option>
+                        <option value="dn">Baisses</option>
+                        <option value="eq">Stables</option>
+                        <option value="na">Nouveaux</option>
+                    </select>
+                </div>
                 <button type="button" (click)="applyFilters()" class="apply-btn" [disabled]="isLoading">
                     {{isLoading ? 'Traitement en cours...' : 'Appliquer les filtres'}}
                 </button>
@@ -159,6 +173,23 @@
                 </button>
                 <div class="selection-info" *ngIf="hasSelectedItems()">
                     <span class="selection-count">{{getSelectedCount()}} élément(s) sélectionné(s)</span>
+                </div>
+
+                <div class="var-toggle" style="margin-left:auto">
+                    <label>
+                        <span class="toggle-sw">
+                            <input type="checkbox" [checked]="showVariation" (change)="toggleVariationColumn()">
+                            <span class="toggle-track"></span>
+                        </span>
+                        Afficher variation J vs J-1
+                    </label>
+                </div>
+                <div class="var-width-ctl" *ngIf="showVariation">
+                    <label class="var-width-label" for="variationWidthRange">Largeur colonne</label>
+                    <input id="variationWidthRange" type="range" class="var-width-range" min="100" max="360" step="10"
+                           [value]="variationColumnWidthPx"
+                           (input)="variationColumnWidthPx = +(($any($event.target)).value)">
+                    <span class="var-width-val">{{ variationColumnWidthPx }} px</span>
                 </div>
             </div>
 
@@ -336,6 +367,14 @@
                             <th>Date</th>
                             <th>Volume Total</th>
                             <th>Nombres de Transactions</th>
+                            <th *ngIf="showVariation" class="th-var">
+                                <div class="var-col-head">
+                                    <span class="var-col-title">Variation J vs J-1</span>
+                                    <button type="button" class="var-col-more" tabindex="-1" aria-hidden="true" title="">
+                                        <i class="fas fa-ellipsis-v" aria-hidden="true"></i>
+                                    </button>
+                                </div>
+                            </th>
                             <th>Actions</th>
                         </tr>
                     </thead>
@@ -348,9 +387,34 @@
                             <td>{{summary.agency}}</td>
                             <td>{{summary.service}}</td>
                             <td>{{summary.country}}</td>
-                            <td>{{formatDateWithTime(summary.date)}}</td>
+                            <td>{{ formatDateOnly(summary.date) }}</td>
                             <td>{{summary.totalVolume | number:'1.0-0'}}</td>
                             <td>{{summary.recordCount}}</td>
+                            <td *ngIf="showVariation" class="td-var"
+                                [style.minWidth.px]="variationColumnWidthPx">
+                                <ng-container *ngIf="getVariationForRow(summary) as v">
+                                    <div class="var-dash-card" [attr.title]="v.hint">
+                                        <div class="var-badge" [ngClass]="v.cls">
+                                            <span class="var-pct">{{ v.label }}</span>
+                                        </div>
+                                        <div class="var-dash-body">
+                                            <div class="var-bar-track">
+                                                <div class="var-bar-fill" [ngClass]="v.cls" [style.width.%]="v.barWidth"></div>
+                                            </div>
+                                            <div class="var-caption">
+                                                <span class="cap-muted">Vol. J-1&nbsp;:&nbsp;</span>
+                                                <ng-container *ngIf="v.captionDash">
+                                                    <span class="cap-dash">—</span>
+                                                </ng-container>
+                                                <ng-container *ngIf="!v.captionDash">
+                                                    <span class="cap-base">{{ v.volJ1Fmt }}</span>
+                                                    <span *ngIf="v.deltaFmt != null" class="cap-delta" [ngClass]="v.cls">{{ v.deltaFmt }}</span>
+                                                </ng-container>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </ng-container>
+                            </td>
                             <td>
                                 <button class="delete-btn" (click)="deleteSummary(summary)" [disabled]="isLoading" title="Supprimer cette statistique">
                                     🗑️
