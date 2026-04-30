@@ -900,7 +900,7 @@
             </label>
             <mat-form-field appearance="outline" class="extract-select">
               <mat-label>Sélectionner une colonne</mat-label>
-              <mat-select [(ngModel)]="extractCol">
+              <mat-select [(ngModel)]="extractCol" (selectionChange)="closeMatSelectPanelAfterSelection($event)">
                 <mat-option *ngFor="let col of columns" [value]="col">
                   {{ col }}
                 </mat-option>
@@ -916,7 +916,7 @@
             </label>
             <mat-form-field appearance="outline" class="extract-select">
               <mat-label>Choisir le type d'extraction</mat-label>
-              <mat-select [(ngModel)]="extractType">
+              <mat-select [(ngModel)]="extractType" (selectionChange)="closeMatSelectPanelAfterSelection($event)">
                 <mat-option value="emailDomain">
                   <span class="option-content">
                     <i class="fas fa-envelope"></i>
@@ -1090,7 +1090,7 @@
               <label>Valeurs à garder :</label>
               <mat-form-field appearance="fill" class="filter-select">
                 <mat-label>Sélectionner des valeurs</mat-label>
-                <mat-select [(ngModel)]="filter.selectedValues" multiple>
+                <mat-select [(ngModel)]="filter.selectedValues" multiple (selectionChange)="closeMatSelectPanelAfterSelection($event)">
                   <mat-option value="__TOUS__" (click)="selectAllMultipleFilterValues(filter)">
                     <strong>📋 Tous</strong>
                   </mat-option>
@@ -1138,7 +1138,7 @@
         <label>Valeur à garder :</label>
         <mat-form-field appearance="fill" class="filter-select">
           <mat-label>Sélectionner des valeurs</mat-label>
-          <mat-select #filterValueSelect [(ngModel)]="selectedFilterValues" multiple>
+          <mat-select #filterValueSelect [(ngModel)]="selectedFilterValues" multiple (selectionChange)="closeMatSelectPanelAfterSelection($event)">
             <mat-option>
               <ngx-mat-select-search [formControl]="filterValueSearchCtrl" placeholderLabel="Rechercher une valeur..." noEntriesFoundLabel="Aucune valeur trouvée"></ngx-mat-select-search>
             </mat-option>
@@ -1188,7 +1188,7 @@
         <div *ngIf="!concatOrderMode">
           <mat-form-field appearance="fill" class="filter-select">
             <mat-label>Sélectionner des colonnes</mat-label>
-            <mat-select [(ngModel)]="concatCols" multiple>
+            <mat-select [(ngModel)]="concatCols" multiple (selectionChange)="closeMatSelectPanelAfterSelection($event)">
               <mat-option *ngFor="let col of columns" [value]="col">
                 {{ col }}
               </mat-option>
@@ -1275,7 +1275,7 @@
         <label>Colonne de tri :</label>
         <mat-form-field appearance="fill" class="filter-select">
           <mat-label>Sélectionner une colonne</mat-label>
-          <mat-select [(ngModel)]="exportTypeCol" (selectionChange)="onExportTypeColChange()">
+          <mat-select [(ngModel)]="exportTypeCol" (selectionChange)="onExportTypeColChange(); closeMatSelectPanelAfterSelection($event)">
             <mat-option *ngFor="let col of columns" [value]="col">
               {{ col }}
             </mat-option>
@@ -1388,7 +1388,7 @@
         <label>Colonne de date :</label>
         <mat-form-field appearance="fill" class="filter-select">
           <mat-label>Sélectionner une colonne de date</mat-label>
-          <mat-select [(ngModel)]="exportDateCol" (selectionChange)="onExportDateColChange()">
+          <mat-select [(ngModel)]="exportDateCol" (selectionChange)="onExportDateColChange(); closeMatSelectPanelAfterSelection($event)">
             <mat-option *ngFor="let col of columns" [value]="col">
               {{ col }}
             </mat-option>

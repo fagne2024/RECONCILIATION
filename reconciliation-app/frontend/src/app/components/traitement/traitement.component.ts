@@ -1,6 +1,6 @@
 import { Component, OnInit, ChangeDetectorRef, AfterViewInit, ViewChild } from '@angular/core';
 import { FormBuilder, FormGroup, FormControl } from '@angular/forms';
-import { MatSelect } from '@angular/material/select';
+import { MatSelect, MatSelectChange } from '@angular/material/select';
 import { OrangeMoneyUtilsService } from '../../services/orange-money-utils.service';
 import { FieldTypeDetectionService, ColumnAnalysis } from '../../services/field-type-detection.service';
 import { DataProcessingService } from '../../services/data-processing.service';
@@ -3831,6 +3831,11 @@ End Sub`;
     if (this.selectedDateFormat !== 'custom') {
       this.formatOptions.dateFormat = this.selectedDateFormat;
     }
+  }
+
+  /** Ferme le panneau après un choix (les multi-select Material restent ouverts par défaut). */
+  closeMatSelectPanelAfterSelection(event: MatSelectChange): void {
+    setTimeout(() => event.source.close(), 0);
   }
 
   onExportTypeColChange() {
