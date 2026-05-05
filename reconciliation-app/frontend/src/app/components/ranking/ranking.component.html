@@ -11,12 +11,26 @@
     </div>
     <div class="nav-spacer"></div>
     <div class="nav-actions">
+      <button
+        type="button"
+        class="nav-btn secondary"
+        (click)="exportAgencyPdf()"
+        [disabled]="loadingAgencies || !agencyRankings.length || isExportingAgencyPdf">
+        <i class="fas fa-file-pdf"></i> PDF Clients
+      </button>
       <button 
         type="button" 
         class="nav-btn secondary" 
         (click)="exportAgencyExcel()" 
         [disabled]="loadingAgencies || !agencyRankings.length">
         <i class="fas fa-file-excel"></i> Export Clients
+      </button>
+      <button
+        type="button"
+        class="nav-btn primary"
+        (click)="exportServicePdf()"
+        [disabled]="loadingServices || !serviceRankings.length || isExportingServicePdf">
+        <i class="fas fa-file-pdf"></i> PDF Services
       </button>
       <button 
         type="button" 
@@ -39,12 +53,12 @@
       <div class="hero-kpi-strip">
         <div class="hk-strip-item">
           <span class="hk-strip-label">Clients classés</span>
-          <span class="hk-strip-value">{{ agencyRankings.length | number:'1.0-0' }}</span>
+          <span class="hk-strip-value">{{ formatNumber(agencyRankings.length) }}</span>
         </div>
         <div class="hk-strip-sep"></div>
         <div class="hk-strip-item">
           <span class="hk-strip-label">Services classés</span>
-          <span class="hk-strip-value">{{ serviceRankings.length | number:'1.0-0' }}</span>
+          <span class="hk-strip-value">{{ formatNumber(serviceRankings.length) }}</span>
         </div>
       </div>
     </div>
@@ -130,7 +144,7 @@
 
   <div class="ranking-content">
     <!-- Classement des Clients -->
-    <div class="ranking-section">
+    <div class="ranking-section" #agencyPdfContent>
       <div class="section-header">
         <h2 class="section-title">🏢 {{ getAgencyRankingTitle() }}</h2>
         <div style="text-align: center; margin-top: 5px; font-size: 0.9rem; opacity: 0.9;">
@@ -149,6 +163,12 @@
           </select>
           <button (click)="exportAgencyCSV()" class="export-btn control-same-width">Exporter CSV</button>
           <button (click)="exportAgencyExcel()" class="export-btn control-same-width">Exporter Excel</button>
+          <button
+            (click)="exportAgencyPdf()"
+            class="export-btn control-same-width"
+            [disabled]="loadingAgencies || !agencyRankings.length || isExportingAgencyPdf">
+            {{ isExportingAgencyPdf ? 'Export...' : 'Exporter PDF' }}
+          </button>
         </div>
       </div>
 
@@ -214,7 +234,7 @@
     </div>
 
     <!-- Classement des Services -->
-    <div class="ranking-section">
+    <div class="ranking-section" #servicePdfContent>
       <div class="section-header">
         <h2 class="section-title">🔧 {{ getServiceRankingTitle() }}</h2>
         <div style="text-align: center; margin-top: 5px; font-size: 0.9rem; opacity: 0.9;">
@@ -233,6 +253,12 @@
           </select>
           <button (click)="exportServiceCSV()" class="export-btn control-same-width">Exporter CSV</button>
           <button (click)="exportServiceExcel()" class="export-btn control-same-width">Exporter Excel</button>
+          <button
+            (click)="exportServicePdf()"
+            class="export-btn control-same-width"
+            [disabled]="loadingServices || !serviceRankings.length || isExportingServicePdf">
+            {{ isExportingServicePdf ? 'Export...' : 'Exporter PDF' }}
+          </button>
         </div>
       </div>
 

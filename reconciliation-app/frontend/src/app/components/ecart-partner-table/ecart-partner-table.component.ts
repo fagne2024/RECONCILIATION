@@ -437,11 +437,41 @@ export class EcartPartnerTableComponent implements OnInit, OnDestroy {
 
   getPartnerRecordsForAction(): Record<string, string>[] {
     const dataset = this.getPartnerSelectionDataset();
-    if (this.selectedPartnerOnlyKeys.length === 0) {
-      return dataset;
-    }
     const keySet = new Set(this.selectedPartnerOnlyKeys);
     return dataset.filter(record => keySet.has(this.getPartnerOnlyKey(record)));
+  }
+
+  private deduplicateItems<T>(items: T[], keyBuilder: (item: T) => string): { unique: T[]; duplicates: number } {
+    const seen = new Set<string>();
+    const unique: T[] = [];
+    let duplicates = 0;
+
+    for (const item of items) {
+      const key = keyBuilder(item);
+      if (!key) {
+        unique.push(item);
+        continue;
+      }
+      if (seen.has(key)) {
+        duplicates++;
+        continue;
+      }
+      seen.add(key);
+      unique.push(item);
+    }
+
+    return { unique, duplicates };
+  }
+
+  private buildImpactOpDedupKey(impact: ImpactOP): string {
+    return [
+      (impact.codeProprietaire || '').trim().toLowerCase(),
+      (impact.numeroTransGU || '').trim().toLowerCase(),
+      (impact.dateOperation || '').trim(),
+      Number(impact.montant || 0).toFixed(2),
+      (impact.typeOperation || '').trim().toLowerCase(),
+      (impact.groupeReseau || '').trim().toLowerCase()
+    ].join('|');
   }
 
   getPartnerOnlyAgencyAndService(record: Record<string, string>): { agency: string; service: string; volume: number; date: string } {
@@ -733,8 +763,9 @@ export class EcartPartnerTableComponent implements OnInit, OnDestroy {
   }
 
   async saveEcartPartnerToImpactOP(): Promise<void> {
-    if (!this.response?.partnerOnly || this.response.partnerOnly.length === 0) {
-      this.popupService.showWarning('❌ Aucune donnée ECART Partenaire à sauvegarder dans Import OP.');
+    const sourceRecords = this.getPartnerRecordsForAction();
+    if (sourceRecords.length === 0) {
+      this.popupService.showWarning('❌ Aucune ligne cochée à sauvegarder dans Import OP.');
       return;
     }
 
@@ -743,20 +774,7 @@ export class EcartPartnerTableComponent implements OnInit, OnDestroy {
 
     try {
       console.log('🔄 Début de la sauvegarde des ECART Partenaire dans Import OP...');
-      console.log('DEBUG: Nombre d\'enregistrements ECART Partenaire (total):', this.response.partnerOnly.length);
-
-      // Toujours sauvegarder TOUTES les lignes (pas de filtre par sélection)
-      const sourceRecords: Record<string, string>[] =
-        (this.filteredPartnerOnly && this.filteredPartnerOnly.length > 0)
-          ? [...this.filteredPartnerOnly]
-          : [...(this.response.partnerOnly || [])];
-
-      if (sourceRecords.length === 0) {
-        this.popupService.showWarning('❌ Aucune donnée ECART Partenaire à sauvegarder.');
-        return;
-      }
-
-      console.log('DEBUG: Nombre d\'enregistrements à sauvegarder (toutes les lignes):', sourceRecords.length);
+      console.log('DEBUG: Nombre d\'enregistrements ECART Partenaire à sauvegarder (lignes cochées):', sourceRecords.length);
 
       const defaultDateCandidate = this.selectedPartnerImportOpDate
         || this.extractIsoDay(this.getFromRecord(sourceRecords[0], ['Date opération', 'Date', 'dateOperation', 'date_operation']))
@@ -877,11 +895,16 @@ export class EcartPartnerTableComponent implements OnInit, OnDestroy {
         } as ImpactOP;
       });
 
+      const deduplicatedImpacts = this.deduplicateItems(
+        impactOPData,
+        impact => this.buildImpactOpDedupKey(impact)
+      );
+
       console.log('DEBUG: Données converties pour Import OP (échantillon):', impactOPData.slice(0, 2));
       console.log('DEBUG: Envoi en une requête batch pour éviter 429 Too Many Requests...');
 
       // Sauvegarder en une requête batch (évite le rate limiting 429)
-      const batchResult = await firstValueFrom(this.impactOPService.createImpactOPBatch(impactOPData));
+      const batchResult = await firstValueFrom(this.impactOPService.createImpactOPBatch(deduplicatedImpacts.unique));
       const successCount = batchResult.successCount ?? 0;
       const errorCount = batchResult.errorCount ?? 0;
 
@@ -890,7 +913,7 @@ export class EcartPartnerTableComponent implements OnInit, OnDestroy {
       }
 
       if (successCount > 0) {
-        this.popupService.showSuccess(`✅ Sauvegarde réussie !\n\n📊 Résumé:\n• ${successCount} Import OP créés avec succès\n• ${errorCount} erreurs\n• ${sourceRecords.length} ligne(s) traitées\n\n💾 Les données ECART Partenaire ont été sauvegardées dans Import OP.`);
+        this.popupService.showSuccess(`✅ Sauvegarde réussie !\n\n📊 Résumé:\n• ${successCount} Import OP créés avec succès\n• ${errorCount} erreurs\n• ${deduplicatedImpacts.duplicates} doublon(s) ignoré(s) dans la sélection\n• ${deduplicatedImpacts.unique.length} ligne(s) envoyée(s)\n\n💾 Les données ECART Partenaire ont été sauvegardées dans Import OP.`);
       } else {
         this.popupService.showError(`❌ Échec de la sauvegarde !\n\nAucun Import OP n'a pu être créé.\n${batchResult.errors?.length ? 'Détails: ' + batchResult.errors.slice(0, 3).join(' ; ') : 'Veuillez vérifier les logs.'}`);
       }

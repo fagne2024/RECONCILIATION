@@ -94,6 +94,9 @@
           (Total volume: {{getTotalVolume() | number:'1.0-0'}})
         </span>
       </span>
+      <span class="total-count" *ngIf="selectedSavableCount > 0">
+        {{ selectedSavableCount }} ligne(s) cochée(s) seront enregistrées
+      </span>
       <button 
         (click)="saveData()" 
         class="save-button" 
@@ -127,13 +130,13 @@
       <button 
         (click)="deleteSelected()" 
         class="delete-selection-button"
-        [disabled]="isBulkDeleting || selectedIds.size === 0"
+        [disabled]="isBulkDeleting || selectedDeletableCount === 0"
         title="Supprimer les lignes sélectionnées"
       >
-        {{ isBulkDeleting ? '⏳ Suppression...' : '🗑️ Supprimer la sélection' }}{{ selectedIds.size > 0 ? ' (' + selectedIds.size + ')' : '' }}
+        {{ isBulkDeleting ? '⏳ Suppression...' : '🗑️ Supprimer la sélection' }}{{ selectedDeletableCount > 0 ? ' (' + selectedDeletableCount + ')' : '' }}
       </button>
       <button 
-        *ngIf="selectedIds.size > 0"
+        *ngIf="selectedRowKeys.size > 0"
         (click)="clearSelection()" 
         class="clear-selection-button"
         [disabled]="isBulkDeleting"
@@ -260,7 +263,7 @@
                 [checked]="getSelectableItemsFiltered().length > 0 && isAllSelectedFiltered" 
                 [indeterminate]="isSomeSelectedFiltered"
                 (change)="toggleSelectAllFiltered()"
-                title="Tout sélectionner / désélectionner (toutes les pages affichées)"
+                title="Tout sélectionner / désélectionner les lignes actionnables"
               >
             </th>
             <th>Date</th>
@@ -280,13 +283,13 @@
           <tr *ngFor="let item of getPagedItems()" [class.manual-row]="item.isManual" [class.linked-row]="item.linkedId" [class.row-selected]="isSelected(item)">
             <td class="td-checkbox">
               <input 
-                *ngIf="item.id"
+                *ngIf="item.id || item.statut === 'en cours'"
                 type="checkbox" 
                 [checked]="isSelected(item)"
                 (change)="toggleSelection(item)"
-                title="Sélectionner pour suppression"
+                [title]="item.id ? 'Sélectionner pour suppression' : 'Sélectionner pour sauvegarde'"
               >
-              <span *ngIf="!item.id" class="no-checkbox">—</span>
+              <span *ngIf="!item.id && item.statut !== 'en cours'" class="no-checkbox">—</span>
             </td>
             <td>{{ item.date || '-' }}</td>
             <td>{{ item.agence || '-' }}</td>

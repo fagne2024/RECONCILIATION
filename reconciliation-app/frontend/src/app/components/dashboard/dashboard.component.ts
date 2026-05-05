@@ -3866,7 +3866,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
     }
 
     getGlpiTicketUrlFromDashboard(ticketId: string): string {
-      return `https://glpi.intouchgroup.net/glpi/front/ticket.form.php?id=${ticketId}`;
+      return `https://glpi.intouchgroup.net/glpi/public/front/ticket.form.php?id=${ticketId}`;
     }
 
     getBometierTicketUrlFromDashboard(ticketId: string): string {

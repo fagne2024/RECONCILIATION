@@ -11,6 +11,9 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.lang.NonNull;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
@@ -113,6 +116,14 @@ public class RateLimitingFilter extends OncePerRequestFilter {
             return;
         }
 
+        // Le flux de reconciliation enchaine analyse, traitement, polling et lecture
+        // des resultats. On l'exclut du rate limiting global pour eviter les 429
+        // sur des usages legitimes pendant les traitements longs.
+        if (isReconciliationFlowPath(path)) {
+            filterChain.doFilter(request, response);
+            return;
+        }
+
         // Import référentiel : remplace N POST unitaires (évite 429 lors des gros fichiers)
         if (path.equals("/api/service-references/import-batch")) {
             filterChain.doFilter(request, response);
@@ -161,6 +172,17 @@ public class RateLimitingFilter extends OncePerRequestFilter {
         return false;
     }
 
+    private boolean isReconciliationFlowPath(String path) {
+        return path.equals("/api/reconciliation/analyze-keys")
+            || path.equals("/api/reconciliation/reconcile")
+            || path.equals("/api/reconciliation/upload")
+            || path.equals("/api/reconciliation/start")
+            || path.equals("/api/reconciliation/execute-magic")
+            || path.equals("/api/reconciliation/save-summary")
+            || path.startsWith("/api/reconciliation/progress")
+            || path.startsWith("/api/reconciliation/results");
+    }
+
     /**
      * Obtient la clé de rate limiting (IP ou utilisateur)
      */
@@ -170,11 +192,38 @@ public class RateLimitingFilter extends OncePerRequestFilter {
             String ip = getClientIpAddress(request);
             return "ip:" + ip;
         } else {
-            // Utiliser l'utilisateur authentifié (si disponible)
-            // Pour l'instant, on utilise l'IP comme fallback
+            String username = getAuthenticatedUsername(request);
+            if (username != null && !username.isBlank()) {
+                return "user:" + username.trim().toLowerCase();
+            }
+
+            // Fallback si la requête n'est pas encore authentifiée
             String ip = getClientIpAddress(request);
             return "ip:" + ip;
         }
+    }
+
+    private String getAuthenticatedUsername(HttpServletRequest request) {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication != null && authentication.isAuthenticated()) {
+            Object principal = authentication.getPrincipal();
+            if (principal instanceof UserDetails userDetails) {
+                return userDetails.getUsername();
+            }
+            if (principal instanceof String principalName
+                && principalName != null
+                && !principalName.isBlank()
+                && !"anonymousUser".equalsIgnoreCase(principalName)) {
+                return principalName;
+            }
+        }
+
+        String username = request.getHeader("X-Username");
+        if (username != null && !username.isBlank()) {
+            return username;
+        }
+
+        return null;
     }
 
     /**

@@ -21,6 +21,7 @@ export interface ExportProgress {
 
 export interface ExportOptions {
   chunkSize?: number;
+  /** @deprecated Ignoré : l’export CSV utilise le thread principal (compatible CSP stricte). */
   useWebWorker?: boolean;
   enableCompression?: boolean;
   format?: 'csv' | 'xlsx' | 'xls';
@@ -44,227 +45,6 @@ export class ExportOptimizationService {
   });
 
   public readonly exportProgress$ = this._exportProgress.asObservable();
-  private worker: Worker | null = null;
-
-  constructor() {
-    this.initializeExportWorker();
-  }
-
-  /**
-   * Initialise le Web Worker pour les exports optimisés
-   */
-  private initializeExportWorker(): void {
-    try {
-      if (typeof Worker !== 'undefined') {
-        // Créer un worker inline pour les exports
-        const workerCode = `
-          self.onmessage = function(e) {
-            const { type, data } = e.data;
-            
-            switch (type) {
-              case 'export-csv':
-                exportCSV(data);
-                break;
-              case 'export-excel':
-                exportExcel(data);
-                break;
-              default:
-                self.postMessage({ type: 'error', message: 'Type non supporté' });
-            }
-          };
-
-          function exportCSV({ rows, columns, fileName, chunkSize = 10000 }) {
-            const totalRows = rows.length;
-            let csvContent = '';
-            
-            // En-tête
-            csvContent += columns.join(';') + '\\r\\n';
-            
-            // Traitement par chunks
-            for (let i = 0; i < totalRows; i += chunkSize) {
-              const chunk = rows.slice(i, i + chunkSize);
-              const chunkContent = chunk.map(row => {
-                return columns.map(col => {
-                  let val = row[col] !== undefined && row[col] !== null ? row[col].toString() : '';
-                  if (val.includes('"')) val = val.replace(/"/g, '""');
-                  if (val.includes(';') || val.includes('"') || val.includes('\\n')) {
-                    val = '"' + val + '"';
-                  }
-                  return val;
-                }).join(';');
-              }).join('\\r\\n');
-              
-              csvContent += chunkContent + '\\r\\n';
-              
-              // Progression
-              const progress = Math.min(i + chunkSize, totalRows);
-              self.postMessage({
-                type: 'progress',
-                data: {
-                  current: progress,
-                  total: totalRows,
-                  percentage: (progress / totalRows) * 100,
-                  message: \`Export CSV: \${progress.toLocaleString()}/\${totalRows.toLocaleString()} lignes\`
-                }
-              });
-            }
-            
-            self.postMessage({
-              type: 'complete',
-              data: {
-                content: csvContent,
-                fileName: fileName,
-                type: 'csv'
-              }
-            });
-          }
-
-          function exportExcel({ rows, columns, fileName, chunkSize = 5000 }) {
-            // Charger XLSX uniquement lorsque nécessaire (pour l'export Excel)
-            try {
-              if (typeof XLSX === 'undefined') {
-                importScripts('https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js');
-              }
-            } catch (e) {
-              self.postMessage({ type: 'error', message: 'Bibliothèque XLSX non chargée dans le Worker' });
-              return;
-            }
-            if (typeof XLSX === 'undefined') {
-              self.postMessage({ type: 'error', message: 'Bibliothèque XLSX non chargée dans le Worker' });
-              return;
-            }
-            const totalRows = rows.length;
-            const workbook = XLSX.utils.book_new();
-            const worksheet = XLSX.utils.aoa_to_sheet([columns]);
-            
-            // Traitement par chunks pour éviter les problèmes de mémoire
-            for (let i = 0; i < totalRows; i += chunkSize) {
-              const chunk = rows.slice(i, i + chunkSize);
-              const chunkData = chunk.map(row => 
-                columns.map(col => row[col] !== undefined && row[col] !== null ? row[col] : '')
-              );
-              
-              // Ajouter les données au worksheet
-              XLSX.utils.sheet_add_aoa(worksheet, chunkData, { origin: -1 });
-              
-              // Progression
-              const progress = Math.min(i + chunkSize, totalRows);
-              self.postMessage({
-                type: 'progress',
-                data: {
-                  current: progress,
-                  total: totalRows,
-                  percentage: (progress / totalRows) * 100,
-                  message: \`Export Excel: \${progress.toLocaleString()}/\${totalRows.toLocaleString()} lignes\`
-                }
-              });
-            }
-            
-            XLSX.utils.book_append_sheet(workbook, worksheet, 'Données');
-            
-            // Générer le buffer
-            const buffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
-            
-            self.postMessage({
-              type: 'complete',
-              data: {
-                buffer: buffer,
-                fileName: fileName,
-                type: 'xlsx'
-              }
-            });
-          }
-        `;
-
-        const blob = new Blob([workerCode], { type: 'application/javascript' });
-        this.worker = new Worker(URL.createObjectURL(blob));
-        this.setupWorkerListeners();
-      }
-    } catch (error) {
-      console.warn('⚠️ Web Worker non disponible pour les exports:', error);
-    }
-  }
-
-  /**
-   * Configure les listeners du worker
-   */
-  private setupWorkerListeners(): void {
-    if (!this.worker) return;
-
-    this.worker.onmessage = (event) => {
-      const { type, data } = event.data;
-
-      switch (type) {
-        case 'progress':
-          this._exportProgress.next({
-            ...data,
-            isComplete: false
-          });
-          break;
-
-        case 'complete':
-          this.handleExportComplete(data);
-          break;
-
-        case 'error':
-          this._exportProgress.next({
-            current: 0,
-            total: 0,
-            percentage: 0,
-            message: data.message,
-            isComplete: true
-          });
-          break;
-      }
-    };
-
-    this.worker.onerror = (error) => {
-      console.error('❌ Erreur Web Worker export:', error);
-      this._exportProgress.next({
-        current: 0,
-        total: 0,
-        percentage: 0,
-        message: 'Erreur lors de l\'export',
-        isComplete: true
-      });
-    };
-  }
-
-  /**
-   * Gère la completion de l'export
-   */
-  private handleExportComplete(data: any): void {
-    try {
-      if (data.type === 'csv') {
-        // Télécharger le CSV
-        const blob = new Blob([data.content], { type: 'text/csv;charset=utf-8;' });
-        this.downloadFile(blob, data.fileName);
-      } else if (data.type === 'xlsx') {
-        // Télécharger l'Excel
-        const blob = new Blob([data.buffer], { 
-          type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
-        });
-        this.downloadFile(blob, data.fileName);
-      }
-
-      this._exportProgress.next({
-        current: data.total || 0,
-        total: data.total || 0,
-        percentage: 100,
-        message: `✅ Export terminé: ${data.fileName}`,
-        isComplete: true
-      });
-    } catch (error) {
-      console.error('❌ Erreur lors du téléchargement:', error);
-      this._exportProgress.next({
-        current: 0,
-        total: 0,
-        percentage: 0,
-        message: 'Erreur lors du téléchargement',
-        isComplete: true
-      });
-    }
-  }
 
   /**
    * Télécharge un fichier
@@ -282,7 +62,8 @@ export class ExportOptimizationService {
   }
 
   /**
-   * Export CSV optimisé avec Web Worker
+   * Export CSV par chunks sur le thread principal.
+   * (Les workers via blob: URL sont incompatibles avec une CSP stricte sans worker-src/blob.)
    */
   public async exportCSVOptimized(
     rows: any[], 
@@ -290,23 +71,8 @@ export class ExportOptimizationService {
     fileName: string, 
     options: ExportOptions = {}
   ): Promise<void> {
-    const { chunkSize = 10000, useWebWorker = true } = options;
-
-    if (useWebWorker && this.worker) {
-      // Export avec Web Worker
-      this.worker.postMessage({
-        type: 'export-csv',
-        data: {
-          rows,
-          columns,
-          fileName: fileName.endsWith('.csv') ? fileName : fileName + '.csv',
-          chunkSize
-        }
-      });
-    } else {
-      // Export synchrone optimisé
-      await this.exportCSVSynchronous(rows, columns, fileName, chunkSize);
-    }
+    const { chunkSize = 10000 } = options;
+    await this.exportCSVSynchronous(rows, columns, fileName, chunkSize);
   }
 
   /**
@@ -329,7 +95,19 @@ export class ExportOptimizationService {
       const chunk = rows.slice(i, i + chunkSize);
       const chunkContent = chunk.map(row => {
         return columns.map(col => {
-          let val = row[col] !== undefined && row[col] !== null ? row[col].toString() : '';
+          const raw = row[col];
+          let val = '';
+          if (raw !== undefined && raw !== null) {
+            if (typeof raw === 'object') {
+              try {
+                val = JSON.stringify(raw);
+              } catch {
+                val = String(raw);
+              }
+            } else {
+              val = String(raw);
+            }
+          }
           if (val.includes('"')) val = val.replace(/"/g, '""');
           if (val.includes(';') || val.includes('"') || val.includes('\n')) {
             val = '"' + val + '"';
@@ -370,7 +148,7 @@ export class ExportOptimizationService {
   }
 
   /**
-   * Export Excel optimisé avec Web Worker
+   * Export Excel par chunks sur le thread principal
    */
   public async exportExcelOptimized(
     rows: any[], 
@@ -378,34 +156,22 @@ export class ExportOptimizationService {
     fileName: string, 
     options: ExportOptions = {}
   ): Promise<void> {
-    const { chunkSize = 5000, useWebWorker = true, format = 'xlsx' } = options;
+    const { chunkSize = 5000, format = 'xlsx' } = options;
     const excelFormat = format === 'xls' ? 'xls' : 'xlsx';
 
     // Normaliser les lignes : colonnes montant/volume en nombres pour Excel
     const normalizedRows = rows.map(row => {
       const r: any = {};
       columns.forEach(col => {
-        r[col] = this.cellValueForExcel(col, row[col]);
+        const base = this.serializeCellForExport(row[col]);
+        r[col] = this.cellValueForExcel(col, base);
       });
       return r;
     });
 
-    if (useWebWorker && this.worker) {
-      // Export avec Web Worker
-      this.worker.postMessage({
-        type: 'export-excel',
-        data: {
-          rows: normalizedRows,
-          columns,
-          fileName: fileName.endsWith(`.${excelFormat}`) ? fileName : fileName + `.${excelFormat}`,
-          chunkSize,
-          format: excelFormat
-        }
-      });
-    } else {
-      // Export synchrone optimisé
-      await this.exportExcelSynchronous(normalizedRows, columns, fileName, chunkSize, excelFormat);
-    }
+    // IMPORTANT: le worker inline n'a pas accès au bundle XLSX (importScripts CDN fragile / CSP).
+    // Pour fiabiliser l'export Excel, on reste sur le thread principal.
+    await this.exportExcelSynchronous(normalizedRows, columns, fileName, chunkSize, excelFormat);
   }
 
   /**
@@ -509,6 +275,24 @@ export class ExportOptimizationService {
   }
 
   /**
+   * XLSX attend des valeurs "feuille de calcul" (string/number/boolean/date).
+   * Les objets/tableaux (souvent présents dans boData/partnerData) peuvent faire planter json_to_sheet / writeFile.
+   */
+  private serializeCellForExport(val: any): string | number | boolean | Date {
+    if (val === undefined || val === null) return '';
+    if (typeof val === 'string' || typeof val === 'number' || typeof val === 'boolean') return val;
+    if (val instanceof Date) return val;
+    if (typeof val === 'object') {
+      try {
+        return JSON.stringify(val);
+      } catch {
+        return String(val);
+      }
+    }
+    return String(val);
+  }
+
+  /**
    * Export Excel synchrone optimisé
    */
   private async exportExcelSynchronous(
@@ -525,8 +309,11 @@ export class ExportOptimizationService {
     // Traitement par chunks
     for (let i = 0; i < totalRows; i += chunkSize) {
       const chunk = rows.slice(i, i + chunkSize);
-      const chunkData = chunk.map(row => 
-        columns.map(col => this.cellValueForExcel(col, row[col]))
+      const chunkData = chunk.map(row =>
+        columns.map(col => {
+          const base = this.serializeCellForExport(row[col]);
+          return this.cellValueForExcel(col, base);
+        })
       );
       
       // Ajouter les données au worksheet
@@ -584,7 +371,9 @@ export class ExportOptimizationService {
         columns.join(';'),
         ...rows.map(row => 
           columns.map(col => {
-            let val = row[col] !== undefined && row[col] !== null ? row[col].toString() : '';
+            const raw = row[col];
+            const serialized = this.serializeCellForExport(raw);
+            let val = serialized !== '' ? String(serialized) : '';
             if (val.includes('"')) val = val.replace(/"/g, '""');
             if (val.includes(';') || val.includes('"') || val.includes('\n')) {
               val = '"' + val + '"';
@@ -600,13 +389,20 @@ export class ExportOptimizationService {
       const exportData = rows.map(row => {
         const exportRow: any = {};
         columns.forEach(col => {
-          exportRow[col] = this.cellValueForExcel(col, row[col]);
+          const base = this.serializeCellForExport(row[col]);
+          exportRow[col] = this.cellValueForExcel(col, base);
         });
         return exportRow;
       });
       
       const workbook = XLSX.utils.book_new();
-      const worksheet = XLSX.utils.json_to_sheet(exportData);
+      let worksheet: XLSX.WorkSheet;
+      try {
+        worksheet = XLSX.utils.json_to_sheet(exportData);
+      } catch (e) {
+        console.error('❌ Erreur XLSX (json_to_sheet):', e);
+        throw e;
+      }
       XLSX.utils.book_append_sheet(workbook, worksheet, 'Données');
       
       let finalFileName: string;
@@ -624,10 +420,5 @@ export class ExportOptimizationService {
   /**
    * Nettoie les ressources
    */
-  public destroy(): void {
-    if (this.worker) {
-      this.worker.terminate();
-      this.worker = null;
-    }
-  }
+  public destroy(): void {}
 }

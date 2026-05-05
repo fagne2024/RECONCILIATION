@@ -4,6 +4,20 @@ import { UserLog, UserLogFilter } from '../../models/user-log.model';
 import { UserLogService } from '../../services/user-log.service';
 import { debounceTime, distinctUntilChanged } from 'rxjs/operators';
 
+const USER_COLORS = ['#185FA5', '#3B8A5A', '#8C6A1E', '#7A3A8C', '#1A7A8C', '#C87040', '#4A82C4', '#8B2635'];
+
+export interface DashboardUserAgg {
+  name: string;
+  role: string;
+  color: string;
+  initials: string;
+  online: boolean;
+  total: number;
+  sessions: number;
+  lastSeen: string;
+  modules: Record<string, number>;
+}
+
 @Component({
   selector: 'app-user-log',
   templateUrl: './user-log.component.html',
@@ -16,22 +30,60 @@ export class UserLogComponent implements OnInit {
   currentPage = 1;
   pageSize = 20;
   totalPages = 1;
-  showAllLogs = false; // Indicateur pour savoir si on affiche tous les logs ou seulement le mois
-  
-  // Filtres
+  showAllLogs = false;
+
+  activeView: 'logs' | 'dashboard' = 'logs';
+
   filterForm: FormGroup;
   usernames: string[] = [];
   modules: string[] = [];
   permissions: string[] = [];
-  
+
+  /** Agrégations pour le dashboard (recalculées au chargement des logs + filtres dashboard) */
+  dashboardUsers: DashboardUserAgg[] = [];
+  /** Nombre de logs après filtres dashboard (KPI / sous-titre) */
+  dashboardLogCount = 0;
+  heatmapModules: string[] = [];
+  heatmapMaxCell = 0;
+  topModuleName = '—';
+  topModuleTotal = 0;
+  lastActivityShort = '—';
+  lastActivityUser = '—';
+  /** Timeline complète (triée, avant pagination) */
+  timelineLogsAll: UserLog[] = [];
+
+  /** Filtres additionnels uniquement sur le dashboard (sous-ensemble des logs chargés) */
+  dashboardFilterForm: FormGroup;
+
+  dashUsersPage = 1;
+  dashUsersPageSize = 6;
+  dashTimelinePage = 1;
+  dashTimelinePageSize = 10;
+
+  readonly modColors: Record<string, string> = {
+    Navigation: '#4A82C4',
+    Réconciliation: '#4A9E6A',
+    'Impact OP': '#7A70C8',
+    Opérations: '#3A98A0',
+    Authentification: '#C8783C',
+    Profil: '#3A98A0',
+    Utilisateur: '#C4566A',
+    Résultats: '#5A9E74',
+    Statistiques: '#C87040',
+    'Frais & Com.': '#185FA5',
+    Banque: '#8C4E1A',
+    Comptes: '#4A6EA0',
+    Paramètre: '#8C3A4E',
+    'Log utilisateur': '#7A70C8'
+  };
+
   constructor(
     private userLogService: UserLogService,
     private fb: FormBuilder
   ) {
-    // Initialiser avec les dates du mois en cours par défaut
     const now = new Date();
     const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-    
+
     this.filterForm = this.fb.group({
       username: [''],
       module: [''],
@@ -39,44 +91,50 @@ export class UserLogComponent implements OnInit {
       dateDebut: [this.formatDateForInput(firstDayOfMonth)],
       dateFin: [this.formatDateForInput(now)]
     });
+
+    this.dashboardFilterForm = this.fb.group({
+      searchUser: [''],
+      dashModule: [''],
+      dashPermission: [''],
+      minActions: ['']
+    });
   }
 
   ngOnInit(): void {
     this.loadLogs();
 
-    // Recherche en direct dès que l'utilisateur tape (debounce pour éviter le spam réseau)
     this.filterForm.valueChanges
       .pipe(
         debounceTime(300),
         distinctUntilChanged((prev, curr) => JSON.stringify(prev) === JSON.stringify(curr))
       )
       .subscribe((values) => {
-        // Mettre à jour showAllLogs selon si les dates sont vides ou non
         if (!values.dateDebut && !values.dateFin) {
           this.showAllLogs = true;
         } else {
-          // Vérifier si les dates correspondent au mois en cours
           const now = new Date();
           const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
           const expectedDateDebut = this.formatDateForInput(firstDayOfMonth);
           const expectedDateFin = this.formatDateForInput(now);
-          
-          // Si les dates correspondent exactement au mois en cours, on considère qu'on affiche le mois
+
           if (values.dateDebut === expectedDateDebut && values.dateFin === expectedDateFin) {
             this.showAllLogs = false;
           }
-          // Sinon, on considère qu'on affiche une période personnalisée (pas "tous" ni "mois")
-          // On garde showAllLogs tel quel dans ce cas
         }
-        
+
         this.currentPage = 1;
         this.loadLogs();
       });
   }
 
+  goto(view: 'logs' | 'dashboard'): void {
+    this.activeView = view;
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
   loadLogs(): void {
     this.isLoading = true;
-    
+
     const filter: UserLogFilter = {};
     if (this.filterForm.value.username) {
       filter.username = this.filterForm.value.username;
@@ -93,13 +151,14 @@ export class UserLogComponent implements OnInit {
     if (this.filterForm.value.dateFin) {
       filter.dateFin = this.filterForm.value.dateFin;
     }
-    
+
     this.userLogService.getLogs(filter).subscribe({
       next: (logs) => {
         this.logs = logs;
         this.filteredLogs = logs;
         this.updatePagination();
         this.extractUniqueValues();
+        this.rebuildDashboardAggregates();
         this.isLoading = false;
       },
       error: (error) => {
@@ -115,10 +174,9 @@ export class UserLogComponent implements OnInit {
   }
 
   resetFilters(): void {
-    // Réinitialiser avec les dates du mois en cours
     const now = new Date();
     const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-    
+
     this.filterForm.reset({
       username: '',
       module: '',
@@ -131,37 +189,334 @@ export class UserLogComponent implements OnInit {
     this.loadLogs();
   }
 
-  /**
-   * Basculer entre l'affichage du mois en cours et tous les logs
-   */
   toggleShowAllLogs(): void {
     this.showAllLogs = !this.showAllLogs;
-    
+
     if (this.showAllLogs) {
-      // Afficher tous les logs : supprimer les filtres de date
       this.filterForm.patchValue({
         dateDebut: '',
         dateFin: ''
       });
     } else {
-      // Afficher seulement le mois en cours
       const now = new Date();
       const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-      
+
       this.filterForm.patchValue({
         dateDebut: this.formatDateForInput(firstDayOfMonth),
         dateFin: this.formatDateForInput(now)
       });
     }
-    
+
     this.currentPage = 1;
     this.loadLogs();
   }
 
   extractUniqueValues(): void {
-    this.usernames = [...new Set(this.logs.map(log => log.username))].sort();
-    this.modules = [...new Set(this.logs.map(log => log.module))].sort();
-    this.permissions = [...new Set(this.logs.map(log => log.permission))].sort();
+    this.usernames = [...new Set(this.logs.map((log) => log.username))].sort();
+    this.modules = [...new Set(this.logs.map((log) => log.module))].sort();
+    this.permissions = [...new Set(this.logs.map((log) => log.permission))].sort();
+  }
+
+  /** Filtres texte / seuil sur le jeu déjà chargé (complément des filtres API de l’onglet Logs) */
+  applyDashboardFilters(): void {
+    this.dashUsersPage = 1;
+    this.dashTimelinePage = 1;
+    this.rebuildDashboardAggregates();
+  }
+
+  resetDashboardFilters(): void {
+    this.dashboardFilterForm.reset({
+      searchUser: '',
+      dashModule: '',
+      dashPermission: '',
+      minActions: ''
+    });
+    this.dashUsersPage = 1;
+    this.dashTimelinePage = 1;
+    this.rebuildDashboardAggregates();
+  }
+
+  private applyDashboardLogFilters(logs: UserLog[]): UserLog[] {
+    const v = this.dashboardFilterForm?.value ?? {};
+    let out = logs;
+    const su = String(v.searchUser || '')
+      .trim()
+      .toLowerCase();
+    if (su) {
+      out = out.filter((l) => (l.username || '').toLowerCase().includes(su));
+    }
+    const dm = String(v.dashModule || '')
+      .trim()
+      .toLowerCase();
+    if (dm) {
+      out = out.filter((l) => (l.module || '').toLowerCase().includes(dm));
+    }
+    const dp = String(v.dashPermission || '')
+      .trim()
+      .toLowerCase();
+    if (dp) {
+      out = out.filter((l) => (l.permission || '').toLowerCase().includes(dp));
+    }
+    return out;
+  }
+
+  private computeDashboardFromLogs(logs: UserLog[]): void {
+    this.dashboardLogCount = logs.length;
+    const byUser = new Map<
+      string,
+      { modules: Record<string, number>; days: Set<string> }
+    >();
+    const moduleTotals = new Map<string, number>();
+
+    for (const log of logs) {
+      const u = log.username || '—';
+      if (!byUser.has(u)) {
+        byUser.set(u, { modules: {}, days: new Set<string>() });
+      }
+      const entry = byUser.get(u)!;
+      const mod = log.module || '—';
+      entry.modules[mod] = (entry.modules[mod] || 0) + 1;
+      const d = new Date(log.dateHeure);
+      if (!isNaN(d.getTime())) {
+        entry.days.add(d.toISOString().slice(0, 10));
+      }
+      moduleTotals.set(mod, (moduleTotals.get(mod) || 0) + 1);
+    }
+
+    let bestMod = '—';
+    let bestModCount = 0;
+    moduleTotals.forEach((c, m) => {
+      if (c > bestModCount) {
+        bestModCount = c;
+        bestMod = m;
+      }
+    });
+    this.topModuleName = bestMod;
+    this.topModuleTotal = bestModCount;
+
+    let latest: UserLog | null = null;
+    let latestTs = 0;
+    for (const log of logs) {
+      const t = new Date(log.dateHeure).getTime();
+      if (!isNaN(t) && t >= latestTs) {
+        latestTs = t;
+        latest = log;
+      }
+    }
+    if (latest) {
+      this.lastActivityUser = latest.username;
+      this.lastActivityShort = this.formatDateShort(latest.dateHeure);
+    } else {
+      this.lastActivityUser = '—';
+      this.lastActivityShort = '—';
+    }
+
+    const users: DashboardUserAgg[] = [];
+    let idx = 0;
+    byUser.forEach((data, name) => {
+      const total = Object.values(data.modules).reduce((a, b) => a + b, 0);
+      let lastSeen = '—';
+      let lastTs = 0;
+      for (const log of logs) {
+        if (log.username !== name) continue;
+        const t = new Date(log.dateHeure).getTime();
+        if (!isNaN(t) && t >= lastTs) {
+          lastTs = t;
+          lastSeen = this.formatDate(log.dateHeure);
+        }
+      }
+      users.push({
+        name,
+        role: 'Compte applicatif',
+        color: USER_COLORS[idx % USER_COLORS.length],
+        initials: this.getUserInitials(name),
+        online: false,
+        total,
+        sessions: data.days.size || 1,
+        lastSeen,
+        modules: { ...data.modules }
+      });
+      idx++;
+    });
+    users.sort((a, b) => b.total - a.total);
+    this.dashboardUsers = users;
+
+    const modKeys = [...moduleTotals.keys()].sort(
+      (a, b) => (moduleTotals.get(b) || 0) - (moduleTotals.get(a) || 0)
+    );
+    this.heatmapModules = modKeys.slice(0, 8);
+
+    this.heatmapMaxCell = 0;
+    for (const u of users) {
+      for (const m of this.heatmapModules) {
+        const v = u.modules[m] || 0;
+        if (v > this.heatmapMaxCell) this.heatmapMaxCell = v;
+      }
+    }
+    if (this.heatmapMaxCell === 0) this.heatmapMaxCell = 1;
+
+    this.timelineLogsAll = [...logs].sort(
+      (a, b) => new Date(b.dateHeure).getTime() - new Date(a.dateHeure).getTime()
+    );
+  }
+
+  private rebuildDashboardAggregates(): void {
+    let logs = this.applyDashboardLogFilters([...this.filteredLogs]);
+    this.computeDashboardFromLogs(logs);
+
+    const minRaw = this.dashboardFilterForm?.value?.minActions;
+    const minA = minRaw === '' || minRaw == null ? 0 : Number(minRaw);
+    if (!isNaN(minA) && minA > 0) {
+      const keep = new Set(
+        this.dashboardUsers.filter((u) => u.total >= minA).map((u) => u.name)
+      );
+      logs = logs.filter((l) => keep.has(l.username || '—'));
+      this.computeDashboardFromLogs(logs);
+    }
+
+    this.clampDashPagination();
+  }
+
+  private clampDashPagination(): void {
+    const up = Math.max(1, Math.ceil(this.dashboardUsers.length / this.dashUsersPageSize) || 1);
+    if (this.dashUsersPage > up) this.dashUsersPage = up;
+    if (this.dashUsersPage < 1) this.dashUsersPage = 1;
+
+    const tp = Math.max(1, Math.ceil(this.timelineLogsAll.length / this.dashTimelinePageSize) || 1);
+    if (this.dashTimelinePage > tp) this.dashTimelinePage = tp;
+    if (this.dashTimelinePage < 1) this.dashTimelinePage = 1;
+  }
+
+  get pagedDashboardUsers(): DashboardUserAgg[] {
+    const s = (this.dashUsersPage - 1) * this.dashUsersPageSize;
+    return this.dashboardUsers.slice(s, s + this.dashUsersPageSize);
+  }
+
+  get pagedTimelineLogs(): UserLog[] {
+    const s = (this.dashTimelinePage - 1) * this.dashTimelinePageSize;
+    return this.timelineLogsAll.slice(s, s + this.dashTimelinePageSize);
+  }
+
+  get dashUsersTotalPages(): number {
+    return Math.max(1, Math.ceil(this.dashboardUsers.length / this.dashUsersPageSize) || 1);
+  }
+
+  get dashTimelineTotalPages(): number {
+    return Math.max(1, Math.ceil(this.timelineLogsAll.length / this.dashTimelinePageSize) || 1);
+  }
+
+  prevDashUsersPage(): void {
+    if (this.dashUsersPage > 1) this.dashUsersPage--;
+  }
+
+  nextDashUsersPage(): void {
+    if (this.dashUsersPage < this.dashUsersTotalPages) this.dashUsersPage++;
+  }
+
+  prevDashTimelinePage(): void {
+    if (this.dashTimelinePage > 1) this.dashTimelinePage--;
+  }
+
+  nextDashTimelinePage(): void {
+    if (this.dashTimelinePage < this.dashTimelineTotalPages) this.dashTimelinePage++;
+  }
+
+  heatmapCellOpacity(count: number): number {
+    if (count === 0) return 1;
+    const alpha = count / this.heatmapMaxCell;
+    return 0.15 + alpha * 0.85;
+  }
+
+  heatmapCellBackground(mod: string, count: number): string {
+    if (count === 0) return 'var(--border)';
+    return this.modColors[mod] || '#4A82C4';
+  }
+
+  get periodLabel(): string {
+    const d0 = this.filterForm?.value?.dateDebut;
+    const d1 = this.filterForm?.value?.dateFin;
+    if (!d0 || !d1) {
+      return 'Toutes les périodes';
+    }
+    try {
+      const a = new Date(d0);
+      const b = new Date(d1);
+      const fa = a.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+      const fb = b.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+      return `${fa} → ${fb}`;
+    } catch {
+      return '';
+    }
+  }
+
+  formatCount(n: number): string {
+    return (n || 0).toLocaleString('fr-FR');
+  }
+
+  formatCompact(n: number): string {
+    if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
+    return String(n);
+  }
+
+  modClass(m: string): string {
+    const map: Record<string, string> = {
+      Navigation: 'mod-nav',
+      Réconciliation: 'mod-rec',
+      Authentification: 'mod-auth',
+      'Impact OP': 'mod-op',
+      'Log utilisateur': 'mod-op',
+      Profil: 'mod-profil',
+      Utilisateur: 'mod-user'
+    };
+    return map[m] || 'mod-default';
+  }
+
+  getUserInitials(username: string): string {
+    if (!username) return '?';
+    return username
+      .split('.')
+      .map((p) => (p[0] || '').toUpperCase())
+      .join('')
+      .slice(0, 2);
+  }
+
+  userShortName(username: string): string {
+    const p = (username || '').split('.')[0];
+    return p || username || '—';
+  }
+
+  topModulesForUser(u: DashboardUserAgg, limit: number): { name: string; count: number }[] {
+    return Object.entries(u.modules)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, limit)
+      .map(([name, count]) => ({ name, count }));
+  }
+
+  topModuleMax(entries: { name: string; count: number }[]): number {
+    return entries[0]?.count || 1;
+  }
+
+  barPct(count: number, max: number): number {
+    if (!max) return 0;
+    return Math.round((count / max) * 100);
+  }
+
+  moduleKeysCount(mods: Record<string, number>): number {
+    return Object.keys(mods || {}).length;
+  }
+
+  userColor(username: string): string {
+    const c = this.dashboardUsers.find((x) => x.name === username)?.color;
+    if (c) return c;
+    return USER_COLORS[Math.abs(this.hashString(username || '')) % USER_COLORS.length];
+  }
+
+  private hashString(s: string): number {
+    let h = 0;
+    for (let i = 0; i < s.length; i++) {
+      h = (Math.imul(31, h) + s.charCodeAt(i)) | 0;
+    }
+    return h;
   }
 
   updatePagination(): void {
@@ -202,9 +557,17 @@ export class UserLogComponent implements OnInit {
     });
   }
 
-  /**
-   * Formate une date pour l'input datetime-local (format: YYYY-MM-DDTHH:mm)
-   */
+  formatDateShort(dateString: string): string {
+    if (!dateString) return '';
+    const date = new Date(dateString);
+    return date.toLocaleString('fr-FR', {
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  }
+
   private formatDateForInput(date: Date): string {
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -214,4 +577,3 @@ export class UserLogComponent implements OnInit {
     return `${year}-${month}-${day}T${hours}:${minutes}`;
   }
 }
-

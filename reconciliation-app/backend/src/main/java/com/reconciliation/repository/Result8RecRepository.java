@@ -28,6 +28,95 @@ public interface Result8RecRepository extends JpaRepository<Result8RecEntity, Lo
     // Dernière date de relevé dans result8rec
     @Query("SELECT COALESCE(MAX(r.date), NULL) FROM Result8RecEntity r")
     String findMaxResultDate();
+
+    /**
+     * Agrégation KPI réconciliation par mois (YYYY-MM), basée sur les colonnes result8rec.
+     * NB: r.date est stockée en String ; on s'appuie sur les 7 premiers caractères "YYYY-MM".
+     */
+    @Query("""
+        SELECT substring(r.date, 1, 7) as ym,
+               SUM(r.totalTransactions) as totalTransactions,
+               SUM(r.totalVolume) as totalVolume,
+               SUM(r.matches) as matches
+        FROM Result8RecEntity r
+        WHERE (r.date IS NOT NULL AND length(r.date) >= 7)
+          AND (:startYm IS NULL OR substring(r.date, 1, 7) >= :startYm)
+          AND (:endYm IS NULL OR substring(r.date, 1, 7) <= :endYm)
+          AND (:service IS NULL OR r.service = :service)
+          AND (:env IS NULL OR r.env = :env)
+          AND (:country IS NULL OR LOWER(r.country) = LOWER(:country))
+          AND (:countries IS NULL OR LOWER(r.country) IN :countries)
+        GROUP BY substring(r.date, 1, 7)
+        ORDER BY substring(r.date, 1, 7)
+    """)
+    List<Object[]> aggregateMonthlyKpis(
+            @Param("startYm") String startYm,
+            @Param("endYm") String endYm,
+            @Param("service") String service,
+            @Param("env") String env,
+            @Param("country") String country,
+            @Param("countries") List<String> countries
+    );
+
+    @Query("""
+        SELECT COUNT(DISTINCT r.service)
+        FROM Result8RecEntity r
+        WHERE (r.date IS NOT NULL AND length(r.date) >= 7)
+          AND (:startYm IS NULL OR substring(r.date, 1, 7) >= :startYm)
+          AND (:endYm IS NULL OR substring(r.date, 1, 7) <= :endYm)
+          AND (:service IS NULL OR r.service = :service)
+          AND (:env IS NULL OR r.env = :env)
+          AND (:country IS NULL OR LOWER(r.country) = LOWER(:country))
+          AND (:countries IS NULL OR LOWER(r.country) IN :countries)
+    """)
+    Long countDistinctServices(
+            @Param("startYm") String startYm,
+            @Param("endYm") String endYm,
+            @Param("service") String service,
+            @Param("env") String env,
+            @Param("country") String country,
+            @Param("countries") List<String> countries
+    );
+
+    @Query("""
+        SELECT COUNT(DISTINCT LOWER(r.country))
+        FROM Result8RecEntity r
+        WHERE (r.date IS NOT NULL AND length(r.date) >= 7)
+          AND (:startYm IS NULL OR substring(r.date, 1, 7) >= :startYm)
+          AND (:endYm IS NULL OR substring(r.date, 1, 7) <= :endYm)
+          AND (:service IS NULL OR r.service = :service)
+          AND (:env IS NULL OR r.env = :env)
+          AND (:country IS NULL OR LOWER(r.country) = LOWER(:country))
+          AND (:countries IS NULL OR LOWER(r.country) IN :countries)
+    """)
+    Long countDistinctCountries(
+            @Param("startYm") String startYm,
+            @Param("endYm") String endYm,
+            @Param("service") String service,
+            @Param("env") String env,
+            @Param("country") String country,
+            @Param("countries") List<String> countries
+    );
+
+    @Query("""
+        SELECT COUNT(DISTINCT r.agency)
+        FROM Result8RecEntity r
+        WHERE (r.date IS NOT NULL AND length(r.date) >= 7)
+          AND (:startYm IS NULL OR substring(r.date, 1, 7) >= :startYm)
+          AND (:endYm IS NULL OR substring(r.date, 1, 7) <= :endYm)
+          AND (:service IS NULL OR r.service = :service)
+          AND (:env IS NULL OR r.env = :env)
+          AND (:country IS NULL OR LOWER(r.country) = LOWER(:country))
+          AND (:countries IS NULL OR LOWER(r.country) IN :countries)
+    """)
+    Long countDistinctAgencies(
+            @Param("startYm") String startYm,
+            @Param("endYm") String endYm,
+            @Param("service") String service,
+            @Param("env") String env,
+            @Param("country") String country,
+            @Param("countries") List<String> countries
+    );
 }
 
 

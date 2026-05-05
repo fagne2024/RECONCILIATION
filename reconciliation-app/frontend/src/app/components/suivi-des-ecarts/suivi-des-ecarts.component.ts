@@ -636,12 +636,12 @@ export class SuiviDesEcartsComponent implements OnInit, OnDestroy {
 
   // Fonctions pour gérer les tickets GLPI
   openGlpiCreate() {
-    const glpiCreateUrl = 'https://glpi.intouchgroup.net/glpi/front/ticket.form.php';
+    const glpiCreateUrl = 'https://glpi.intouchgroup.net/glpi/public/front/ticket.form.php';
     window.open(glpiCreateUrl, '_blank');
   }
 
   getGlpiTicketUrl(idGlpi: string): string {
-    return `https://glpi.intouchgroup.net/glpi/front/ticket.form.php?id=${idGlpi}`;
+    return `https://glpi.intouchgroup.net/glpi/public/front/ticket.form.php?id=${idGlpi}`;
   }
 
   getBometierTicketUrl(idGlpi: string): string {

@@ -2575,6 +2575,7 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
         message: '',
         isComplete: false
     };
+    private exportOptimizedProgressSub?: Subscription;
     
     // Propriétés pour la progression de la réconciliation
     showProgress = false;
@@ -4047,6 +4048,8 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
 
     ngOnDestroy() {
         this.subscription.unsubscribe();
+        this.exportOptimizedProgressSub?.unsubscribe();
+        this.exportOptimizedProgressSub = undefined;
     }
 
     private initializeFilteredData() {
@@ -6791,6 +6794,7 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
             const fileName = await this.promptFileName();
             if (!fileName) {
                 console.log('Export annulé par l\'utilisateur');
+                this.isExporting = false;
                 return;
             }
 
@@ -6799,6 +6803,8 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
             
             if (rows.length === 0) {
                 console.log('Aucune donnée à exporter');
+                this.popupService.showWarning('Aucune donnée à exporter avec les filtres actuels.');
+                this.isExporting = false;
                 return;
             }
 
@@ -6808,36 +6814,57 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
             
             if (isLargeDataset) {
                 // Gros volumes : Web Worker pour ne pas bloquer l'UI
+                this.exportOptimizedProgressSub?.unsubscribe();
+                this.exportOptimizedProgressSub = this.exportOptimizationService.exportProgress$.subscribe(progress => {
+                    this.exportProgressOptimized = progress;
+                    this.cdr.detectChanges();
+
+                    if (!progress.isComplete) {
+                        return;
+                    }
+
+                    this.isExporting = false;
+                    if (progress.message.includes('✅')) {
+                        this.popupService.showSuccess('Export réussi !');
+                    } else if (progress.message.toLowerCase().includes('erreur')) {
+                        this.popupService.showError(progress.message || 'Erreur lors de l\'export');
+                    }
+                    this.exportOptimizedProgressSub?.unsubscribe();
+                    this.exportOptimizedProgressSub = undefined;
+                    this.cdr.detectChanges();
+                });
+
                 if (format === 'csv') {
-                    this.exportOptimizationService.exportCSVOptimized(
+                    await this.exportOptimizationService.exportCSVOptimized(
                         rows,
                         columns,
                         fileName,
                         { chunkSize: 5000, useWebWorker: true, enableCompression: true }
                     );
                 } else {
-                    this.exportOptimizationService.exportExcelOptimized(
+                    await this.exportOptimizationService.exportExcelOptimized(
                         rows,
                         columns,
                         fileName,
-                        { chunkSize: 3000, useWebWorker: true, enableCompression: true }
+                        { chunkSize: 3000, useWebWorker: false, enableCompression: true }
                     );
                 }
-                this.exportOptimizationService.exportProgress$.subscribe(progress => {
-                    this.exportProgressOptimized = progress;
-                    if (progress.isComplete) {
-                        this.isExporting = false;
-                        this.cdr.detectChanges();
-                    }
-                });
             } else {
                 // Export rapide pour volumes petits/moyens (priorité vitesse)
-                this.exportOptimizationService.exportQuick(rows, columns, fileName, format);
-                this.isExporting = false;
-                this.cdr.detectChanges();
+                try {
+                    this.exportOptimizationService.exportQuick(rows, columns, fileName, format);
+                    this.popupService.showSuccess('Export réussi !');
+                } catch (e: any) {
+                    console.error('❌ Erreur exportQuick:', e);
+                    this.popupService.showError(e?.message || 'Erreur lors de l\'export');
+                } finally {
+                    this.isExporting = false;
+                    this.cdr.detectChanges();
+                }
             }
         } catch (error) {
             console.error('❌ Erreur lors de l\'export optimisé:', error);
+            this.popupService.showError((error as any)?.message || 'Erreur lors de l\'export optimisé');
             this.isExporting = false;
             this.cdr.detectChanges();
         } finally {

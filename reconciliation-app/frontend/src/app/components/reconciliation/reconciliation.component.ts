@@ -142,12 +142,29 @@ export class ReconciliationComponent implements OnInit, OnDestroy {
         let isCompleted = false; // Flag pour éviter les appels répétés
         let consecutiveErrors = 0; // Compteur d'erreurs consécutives
         let pollInterval = 3000; // Intervalle initial de 3 secondes (plus fréquent au début)
-        let pollIntervalId: any = null;
+        let pollTimeoutId: any = null;
         const maxConsecutiveErrors = 5; // Tolérer plus d'erreurs consécutives avant d'abandonner
         const basePollInterval = 3000; // 3 secondes de base
         const maxPollInterval = 15000; // Maximum 15 secondes entre les polls
         const maxTotalTime = 3600000; // 60 minutes maximum pour la réconciliation complète
         const startTime = Date.now();
+
+        const clearScheduledPoll = () => {
+            if (pollTimeoutId) {
+                clearTimeout(pollTimeoutId);
+                pollTimeoutId = null;
+            }
+        };
+
+        const scheduleNextPoll = () => {
+            if (isCompleted) {
+                return;
+            }
+            clearScheduledPoll();
+            pollTimeoutId = setTimeout(() => {
+                pollProgress();
+            }, pollInterval);
+        };
         
         // Fonction de polling avec retry exponentiel adaptatif
         const pollProgress = () => {
@@ -160,9 +177,7 @@ export class ReconciliationComponent implements OnInit, OnDestroy {
             if (elapsedTime > maxTotalTime) {
                 console.log('⏰ Timeout global atteint (60 minutes), arrêt du polling');
                 isCompleted = true;
-                if (pollIntervalId) {
-                    clearInterval(pollIntervalId);
-                }
+                clearScheduledPoll();
                 this.showProgress = false;
                 this.isLoading = false;
                 this.error = `Délai d'attente dépassé pour la réconciliation (60 minutes). Le processus prend plus de temps que prévu. Veuillez réessayer avec des fichiers plus petits ou contacter le support technique.`;
@@ -189,9 +204,7 @@ export class ReconciliationComponent implements OnInit, OnDestroy {
                         if (progress.progress >= 100 || progress.step.includes('Échec') || progress.step.includes('Terminé')) {
                             console.log('✅ Réconciliation terminée, arrêt du polling');
                             isCompleted = true;
-                            if (pollIntervalId) {
-                                clearInterval(pollIntervalId);
-                            }
+                            clearScheduledPoll();
                             this.showProgress = false;
                             
                             if (progress.step.includes('Échec')) {
@@ -205,6 +218,7 @@ export class ReconciliationComponent implements OnInit, OnDestroy {
                             this.cd.detectChanges();
                         } else {
                             this.cd.detectChanges();
+                            scheduleNextPoll();
                         }
                     }
                 },
@@ -229,9 +243,7 @@ export class ReconciliationComponent implements OnInit, OnDestroy {
                     if (consecutiveErrors >= maxConsecutiveErrors) {
                         console.log(`⚠️ ${maxConsecutiveErrors} erreurs consécutives atteintes, arrêt du processus`);
                         isCompleted = true;
-                        if (pollIntervalId) {
-                            clearInterval(pollIntervalId);
-                        }
+                        clearScheduledPoll();
                         this.showProgress = false;
                         this.isLoading = false;
                         
@@ -250,6 +262,7 @@ export class ReconciliationComponent implements OnInit, OnDestroy {
                     } else {
                         console.log(`⚠️ Erreur ${consecutiveErrors}/${maxConsecutiveErrors}, nouvelle tentative dans ${pollInterval}ms`);
                         this.cd.detectChanges();
+                        scheduleNextPoll();
                     }
                 }
             });
@@ -258,17 +271,10 @@ export class ReconciliationComponent implements OnInit, OnDestroy {
         // Premier appel immédiat
         pollProgress();
         
-        // Démarrer le polling avec intervalle adaptatif
-        pollIntervalId = setInterval(() => {
-            pollProgress();
-        }, pollInterval);
-        
         // Nettoyer l'intervalle lors de la destruction du composant
         this.destroy$.subscribe({
             next: () => {
-                if (pollIntervalId) {
-                    clearInterval(pollIntervalId);
-                }
+                clearScheduledPoll();
             }
         });
     }

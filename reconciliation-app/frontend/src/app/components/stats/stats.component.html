@@ -186,7 +186,7 @@
                 </div>
                 <div class="var-width-ctl" *ngIf="showVariation">
                     <label class="var-width-label" for="variationWidthRange">Largeur colonne</label>
-                    <input id="variationWidthRange" type="range" class="var-width-range" min="100" max="360" step="10"
+                    <input id="variationWidthRange" type="range" class="var-width-range" min="50" max="360" step="10"
                            [value]="variationColumnWidthPx"
                            (input)="variationColumnWidthPx = +(($any($event.target)).value)">
                     <span class="var-width-val">{{ variationColumnWidthPx }} px</span>
@@ -353,8 +353,19 @@
                 </ng-template>
             </section>
 
-            <div class="details-table">
+            <div class="details-table" [class.details-table-stats-grid]="showVariation">
                 <table>
+                    <colgroup *ngIf="showVariation">
+                        <col class="tbl-col-check" />
+                        <col /><col /><col /><col /><col /><col />
+                        <col class="tbl-col-variation" [style.width.px]="variationColumnWidthPx" />
+                        <col class="tbl-col-actions" />
+                    </colgroup>
+                    <colgroup *ngIf="!showVariation">
+                        <col class="tbl-col-check" />
+                        <col /><col /><col /><col /><col /><col />
+                        <col class="tbl-col-actions" />
+                    </colgroup>
                     <thead>
                         <tr>
                             <th>
@@ -367,7 +378,9 @@
                             <th>Date</th>
                             <th>Volume Total</th>
                             <th>Nombres de Transactions</th>
-                            <th *ngIf="showVariation" class="th-var">
+                            <th *ngIf="showVariation" class="th-var"
+                                [style.width.px]="variationColumnWidthPx"
+                                [style.maxWidth.px]="variationColumnWidthPx">
                                 <div class="var-col-head">
                                     <span class="var-col-title">Variation J vs J-1</span>
                                     <button type="button" class="var-col-more" tabindex="-1" aria-hidden="true" title="">
@@ -391,9 +404,14 @@
                             <td>{{summary.totalVolume | number:'1.0-0'}}</td>
                             <td>{{summary.recordCount}}</td>
                             <td *ngIf="showVariation" class="td-var"
+                                [class.td-var--compact]="variationColumnWidthPx < 260"
+                                [style.width.px]="variationColumnWidthPx"
+                                [style.maxWidth.px]="variationColumnWidthPx"
                                 [style.minWidth.px]="variationColumnWidthPx">
                                 <ng-container *ngIf="getVariationForRow(summary) as v">
-                                    <div class="var-dash-card" [attr.title]="v.hint">
+                                    <div class="var-dash-card"
+                                         [class.var-dash-card--stack]="variationColumnWidthPx < 300"
+                                         [attr.title]="v.hint">
                                         <div class="var-badge" [ngClass]="v.cls">
                                             <span class="var-pct">{{ v.label }}</span>
                                         </div>

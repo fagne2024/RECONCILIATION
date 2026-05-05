@@ -15,6 +15,7 @@ import {
 
 export interface EcartBoSummaryItem {
   id?: number; // ID si l'item est sauvegardé
+  selectionKey: string; // Clé locale stable pour la sélection UI
   date: string;
   agence: string;
   service: string;
@@ -83,8 +84,8 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
   deletingItemId: number | null = null;
   isBulkDeleting = false;
   isExporting = false;
-  /** IDs des lignes sélectionnées pour suppression en masse */
-  selectedIds = new Set<number>();
+  /** Clés locales des lignes sélectionnées (sauvegarde ou suppression). */
+  selectedRowKeys = new Set<string>();
   
   // Édition
   showEditModal = false;
@@ -149,6 +150,7 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
   sessionDefaultEnvCode = '';
   private pendingLinesBuffer: EcartBoSummaryPendingLine[] | null = null;
   private prefillBuffer: EcartBoSummaryPrefill | null = null;
+  private selectionKeyCounter = 0;
 
   constructor(
     private appStateService: AppStateService,
@@ -242,9 +244,15 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
     return v || undefined;
   }
 
+  private createSelectionKey(prefix: string): string {
+    this.selectionKeyCounter += 1;
+    return `${prefix}-${this.selectionKeyCounter}`;
+  }
+
   /** Applique les lignes en attente venues de la page écarts BO (aucun enregistrement : l'utilisateur clique sur Sauvegarder pour enregistrer). */
   private applyPendingLinesFromEcartBo(pending: EcartBoSummaryPendingLine[]): void {
     this.summaryItems = pending.map(line => ({
+      selectionKey: this.createSelectionKey('pending'),
       date: line.date || new Date().toISOString().split('T')[0],
       agence: line.agence || '',
       service: line.service || '',
@@ -257,6 +265,8 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
       originalRecords: [],
       token: undefined
     } as EcartBoSummaryItem));
+    this.selectedRowKeys.clear();
+    this.summaryItems.forEach(item => this.selectedRowKeys.add(item.selectionKey));
     this.uniqueAgencies = [...new Set(this.summaryItems.map(i => i.agence).filter(Boolean))].sort();
     this.uniqueServices = [...new Set(this.summaryItems.map(i => i.service).filter(Boolean))].sort();
     this.uniquePays = [...new Set(this.summaryItems.map(i => i.pays).filter(Boolean))].sort();
@@ -301,11 +311,13 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
   }
 
   private applySavedDataToSummary(savedData: any[]): void {
+    this.selectedRowKeys.clear();
     this.summaryItems = savedData.map(item => {
       const commentaire = item.commentaire || '';
       const isManual = commentaire.includes('Ajout manuel') || commentaire.includes('ajout manuel');
       const mapped: any = {
         id: item.id,
+        selectionKey: this.createSelectionKey(`saved-${item.id ?? 'x'}`),
         date: item.dateTransaction || '',
         agence: item.agence || 'Non spécifié',
         service: item.service || 'Non spécifié',
@@ -448,6 +460,7 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
             const montantStr = getValue(record, montantKeys);
             const montant = montantStr ? parseFloat(montantStr.toString().replace(',', '.')) : 0;
             items.push({
+              selectionKey: this.createSelectionKey('generated'),
               date,
               agence,
               service,
@@ -463,6 +476,7 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
           }
         } else {
           items.push({
+            selectionKey: this.createSelectionKey('generated'),
             date: group.date,
             agence: group.agence,
             service: group.service,
@@ -477,6 +491,7 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
           } as EcartBoSummaryItem);
         }
       }
+      this.selectedRowKeys.clear();
       this.summaryItems = items;
 
       // Lier les paires correspondantes (BO/PARTENAIRE) et mettre à jour les statuts
@@ -661,8 +676,8 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
 
   /**
    * Lie les paires de lignes correspondantes (BO et PARTENAIRE) avec les mêmes infos
-   * et un intervalle de date de 1 jour maximum, puis met leur statut à "OK"
-   * Gère aussi les correspondances un-à-plusieurs pour multiAgence
+   * (y compris nombre et volume), un intervalle de date de 1 jour maximum, puis met leur statut à "OK"
+   * Gère aussi les correspondances un-à-plusieurs pour multiAgence (somme des nombres et des volumes).
    */
   linkMatchingPairs(): void {
     const itemsToUpdate: EcartBoSummaryItem[] = [];
@@ -689,11 +704,12 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
           continue;
         }
         
-        // Vérifier si les informations correspondent (agence, service, pays, nombre)
+        // Vérifier si les informations correspondent (agence, service, pays, nombre, volume)
         if (item1.agence === item2.agence &&
             item1.service === item2.service &&
             item1.pays === item2.pays &&
-            item1.nombre === item2.nombre) {
+            item1.nombre === item2.nombre &&
+            this.amountsEqual(item1.montant, item2.montant)) {
           
           // Vérifier l'intervalle de date (1 jour calendaire maximum, pas 24h)
           const date1 = this.parseDate(item1.date);
@@ -745,8 +761,9 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
       
       const matchingBoItems: EcartBoSummaryItem[] = [];
       let totalNombre = 0;
+      let totalMontant = 0;
       
-      console.log(`🔍 Recherche correspondance pour PARTENAIRE: ID=${partenaireItem.id}, Date=${partenaireItem.date}, Service=${partenaireItem.service}, Pays=${partenaireItem.pays}, Nombre=${partenaireItem.nombre}`);
+      console.log(`🔍 Recherche correspondance pour PARTENAIRE: ID=${partenaireItem.id}, Date=${partenaireItem.date}, Service=${partenaireItem.service}, Pays=${partenaireItem.pays}, Nombre=${partenaireItem.nombre}, Montant=${partenaireItem.montant}`);
       
       for (const boItem of this.summaryItems) {
         const boAlreadyUsed = boItem.id ? usedBoItemIds.has(boItem.id) : usedBoItemRefs.has(boItem);
@@ -769,21 +786,24 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
             // La date BO doit être j+1 par rapport à la date PARTENAIRE (BO = PARTENAIRE + 1 jour)
             const diffCalendarDays = boDay - partenaireDay;
             
-            console.log(`  📅 BO candidat: ID=${boItem.id}, Date=${boItem.date}, Nombre=${boItem.nombre}, Diff=${diffCalendarDays} jours (BO - PARTENAIRE)`);
+            console.log(`  📅 BO candidat: ID=${boItem.id}, Date=${boItem.date}, Nombre=${boItem.nombre}, Montant=${boItem.montant}, Diff=${diffCalendarDays} jours (BO - PARTENAIRE)`);
             
             if (diffCalendarDays === 1) {
               // Cette ligne BO est candidate
               matchingBoItems.push(boItem);
               totalNombre += boItem.nombre;
-              console.log(`    ✅ Ajouté comme candidat (Total actuel: ${totalNombre})`);
+              totalMontant += boItem.montant ?? 0;
+              console.log(`    ✅ Ajouté comme candidat (Total nombre: ${totalNombre}, total volume: ${totalMontant})`);
             }
           }
         }
       }
       
-      console.log(`📊 Résultat pour PARTENAIRE ${partenaireItem.id}: ${matchingBoItems.length} ligne(s) BO trouvée(s), Total nombre=${totalNombre}, Attendu=${partenaireItem.nombre}`);
+      console.log(`📊 Résultat pour PARTENAIRE ${partenaireItem.id}: ${matchingBoItems.length} ligne(s) BO trouvée(s), Total nombre=${totalNombre} (attendu ${partenaireItem.nombre}), total volume=${totalMontant} (attendu ${partenaireItem.montant})`);
       
-      if (matchingBoItems.length > 0 && totalNombre === partenaireItem.nombre) {
+      if (matchingBoItems.length > 0 &&
+          totalNombre === partenaireItem.nombre &&
+          this.amountsEqual(totalMontant, partenaireItem.montant)) {
         const boIds = matchingBoItems.map(i => i.id).filter((id): id is number => id != null).join('-') || 'x';
         const existing = partenaireItem.token && matchingBoItems.every(b => b.token === partenaireItem.token)
           ? partenaireItem.token
@@ -807,7 +827,13 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
 
         console.log(`✅ Correspondance un-à-plusieurs: ${partenaireItem.id} (PARTENAIRE) <-> ${matchingBoItems.length} ligne(s) BO (${boIds}) token=${linkToken}`);
       } else if (matchingBoItems.length > 0) {
-        console.log(`⚠️ Correspondance partielle trouvée mais total ne correspond pas: ${totalNombre} ≠ ${partenaireItem.nombre}`);
+        const volOk = this.amountsEqual(totalMontant, partenaireItem.montant);
+        if (totalNombre !== partenaireItem.nombre) {
+          console.log(`⚠️ Correspondance partielle : total nombre ${totalNombre} ≠ ${partenaireItem.nombre}`);
+        }
+        if (!volOk) {
+          console.log(`⚠️ Correspondance partielle : total volume ${totalMontant} ≠ ${partenaireItem.montant}`);
+        }
       }
     }
     
@@ -855,6 +881,12 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
     const normalizedDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
     // Retourner le nombre de jours depuis l'époque (1er janvier 1970)
     return Math.floor(normalizedDate.getTime() / (1000 * 60 * 60 * 24));
+  }
+
+  /** Comparaison stricte des volumes (montants) : égalité après arrondi à 2 décimales (évite les erreurs de flottants / parsing). */
+  private amountsEqual(a: number | undefined, b: number | undefined): boolean {
+    const round2 = (n: number) => Math.round(n * 100) / 100;
+    return round2(a ?? 0) === round2(b ?? 0);
   }
 
   // Debounce pour éviter les appels répétés
@@ -1205,17 +1237,19 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
   }
 
   async saveData(): Promise<void> {
-    // Sauvegarder uniquement les lignes affichées sur la page courante
-    const displayedItems = this.getPagedItems();
-    if (displayedItems.length === 0) {
-      this.popupService.showWarning('❌ Aucune donnée à sauvegarder.');
+    const selectedSavableItems = this.getSelectedSavableItems();
+    const hasSelection = this.selectedRowKeys.size > 0;
+    const currentPageSavableItems = this.getPagedItems().filter(item => !item.id && item.statut === 'en cours');
+    const itemsToSave = selectedSavableItems.length > 0 ? selectedSavableItems : currentPageSavableItems;
+    const saveScopeLabel = selectedSavableItems.length > 0 ? 'sélectionnée(s)' : 'affichée(s) sur la page courante';
+
+    if (hasSelection && selectedSavableItems.length === 0) {
+      this.popupService.showWarning('❌ La sélection en cours ne contient aucune ligne à enregistrer.');
       return;
     }
 
-    const itemsToSave = displayedItems.filter(item => item.statut === 'en cours');
-    
     if (itemsToSave.length === 0) {
-      this.popupService.showWarning('❌ Aucun écart avec statut "en cours" parmi les lignes affichées.');
+      this.popupService.showWarning('❌ Aucune ligne non enregistrée avec statut "en cours" à sauvegarder.');
       return;
     }
 
@@ -1225,7 +1259,7 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
     const defaultDate = yesterday.toISOString().split('T')[0];
     
     const selectedDate = await this.popupService.showDateInput(
-      `Veuillez sélectionner la date à appliquer aux ${itemsToSave.length} ligne(s) affichée(s) (page courante) :`,
+      `Veuillez sélectionner la date à appliquer aux ${itemsToSave.length} ligne(s) ${saveScopeLabel} :`,
       'Sélection de la date pour la sauvegarde',
       defaultDate
     );
@@ -1235,7 +1269,7 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
     }
 
     const confirmed = await this.popupService.showConfirm(
-      `📋 ${itemsToSave.length} ligne(s) affichée(s) (page courante) seront sauvegardées avec la date ${selectedDate}. Continuer ?`,
+      `📋 ${itemsToSave.length} ligne(s) ${saveScopeLabel} seront sauvegardées avec la date ${selectedDate}. Continuer ?`,
       'Confirmation de sauvegarde'
     );
 
@@ -1306,13 +1340,68 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
       }));
 
       const result = await this.ecartBoSummaryService.saveEcartBoSummary(formattedData);
+
+      const toDayKey = (dateStr: string): string => {
+        const normalized = formatDateForBackend(dateStr);
+        if (normalized.includes('T')) {
+          return normalized.split('T')[0];
+        }
+        return normalized.slice(0, 10);
+      };
+
+      const buildSaveIdentity = (payload: {
+        agence: string;
+        service: string;
+        pays: string;
+        date: string;
+        nombreTransactions: number;
+      }): string =>
+        [
+          toDayKey(payload.date),
+          payload.agence || '',
+          payload.service || '',
+          payload.pays || '',
+          String(payload.nombreTransactions ?? 0)
+        ].join('|');
+
+      const duplicateSignatureCounts = new Map<string, number>();
+      (result.duplicateRecords || []).forEach(dup => {
+        const signature = buildSaveIdentity({
+          agence: String(dup.agence || ''),
+          service: String(dup.service || ''),
+          pays: String(dup.pays || ''),
+          date: String(dup.dateTransaction || ''),
+          nombreTransactions: Number(dup.nombreTransactions || 0)
+        });
+        duplicateSignatureCounts.set(signature, (duplicateSignatureCounts.get(signature) || 0) + 1);
+      });
+
+      const savedItems: EcartBoSummaryItem[] = [];
+      itemsToSave.forEach((item, index) => {
+        const signature = buildSaveIdentity({
+          agence: formattedData[index].agence,
+          service: formattedData[index].service,
+          pays: formattedData[index].pays,
+          date: formattedData[index].date,
+          nombreTransactions: formattedData[index].nombreTransactions
+        });
+        const duplicateCount = duplicateSignatureCounts.get(signature) || 0;
+        if (duplicateCount > 0) {
+          duplicateSignatureCounts.set(signature, duplicateCount - 1);
+          return;
+        }
+        savedItems.push(item);
+      });
+      const savedSelectionKeys = new Set(savedItems.map(item => item.selectionKey));
+      const keptDuplicateCount = Math.max(itemsToSave.length - savedItems.length, 0);
       
       // Construire le message de résultat avec les informations sur les doublons
       if (result.duplicates > 0) {
         let message = `⚠️ DOUBLONS DÉTECTÉS LORS DE LA SAUVEGARDE\n\n`;
         message += `📊 Résumé:\n`;
-        message += `  ✅ Enregistrements créés: ${result.count}\n`;
+        message += `  ✅ Enregistrements créés: ${savedItems.length}\n`;
         message += `  ❌ Doublons détectés: ${result.duplicates}\n`;
+        message += `  👁️ Doublons conservés à l'écran: ${keptDuplicateCount}\n`;
         message += `  📥 Total reçu: ${result.totalReceived}\n\n`;
         message += `📋 DÉTAILS DES DOUBLONS:\n`;
         message += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
@@ -1337,10 +1426,17 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
         // Afficher un message d'avertissement avec les détails
         await this.popupService.showWarning(message, '⚠️ Doublons détectés');
       } else {
-        const count = itemsToSave.length;
-        const message = `✅ ${count} ligne(s) affichée(s) (page courante) sauvegardée(s) avec succès !`;
+        const count = savedItems.length;
+        const message = `✅ ${count} ligne(s) ${saveScopeLabel} sauvegardée(s) avec succès !`;
         await this.popupService.showSuccess(message);
       }
+
+      if (savedItems.length > 0) {
+        this.summaryItems = this.summaryItems.filter(item => !savedSelectionKeys.has(item.selectionKey));
+        this.refreshUniqueEnvCodes();
+        this.applyFilters();
+      }
+      savedSelectionKeys.forEach(key => this.selectedRowKeys.delete(key));
       
       // Optionnel: recharger les données sauvegardées après la sauvegarde
       // this.loadSavedSummaryData();
@@ -1510,6 +1606,7 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
       
       // Retirer l'item de la liste locale
       this.summaryItems = this.summaryItems.filter(i => i.id !== item.id);
+      this.selectedRowKeys.delete(item.selectionKey);
       
       // Réappliquer les filtres
       this.applyFilters();
@@ -1525,26 +1622,41 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
     }
   }
 
-  /** Éléments de la page courante qui ont un id (pour affichage checkbox). */
-  getSelectableItemsOnPage(): EcartBoSummaryItem[] {
-    return this.getPagedItems().filter(item => item.id != null);
+  /** Lignes filtrées pouvant être sélectionnées pour une action utilisateur. */
+  getSelectableItemsFiltered(): EcartBoSummaryItem[] {
+    return this.filteredItems.filter(item => item.id != null || (!item.id && item.statut === 'en cours'));
   }
 
-  /** Tous les éléments filtrés (toutes les pages) qui ont un id et sont supprimables. */
-  getSelectableItemsFiltered(): EcartBoSummaryItem[] {
-    return this.filteredItems.filter(item => item.id != null);
+  getSelectedItems(): EcartBoSummaryItem[] {
+    return this.summaryItems.filter(item => this.selectedRowKeys.has(item.selectionKey));
+  }
+
+  getSelectedSavableItems(): EcartBoSummaryItem[] {
+    return this.getSelectedItems().filter(item => !item.id && item.statut === 'en cours');
+  }
+
+  getSelectedDeletableItems(): EcartBoSummaryItem[] {
+    return this.getSelectedItems().filter(item => item.id != null);
+  }
+
+  get selectedSavableCount(): number {
+    return this.getSelectedSavableItems().length;
+  }
+
+  get selectedDeletableCount(): number {
+    return this.getSelectedDeletableItems().length;
   }
 
   isSelected(item: EcartBoSummaryItem): boolean {
-    return item.id != null && this.selectedIds.has(item.id);
+    return this.selectedRowKeys.has(item.selectionKey);
   }
 
   toggleSelection(item: EcartBoSummaryItem): void {
-    if (item.id == null) return;
-    if (this.selectedIds.has(item.id)) {
-      this.selectedIds.delete(item.id);
+    const { selectionKey } = item;
+    if (this.selectedRowKeys.has(selectionKey)) {
+      this.selectedRowKeys.delete(selectionKey);
     } else {
-      this.selectedIds.add(item.id);
+      this.selectedRowKeys.add(selectionKey);
     }
     this.cdr.markForCheck();
   }
@@ -1552,14 +1664,14 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
   /** True si tous les éléments sélectionnables (toutes les pages / filtrés) sont sélectionnés. */
   get isAllSelectedFiltered(): boolean {
     const selectable = this.getSelectableItemsFiltered();
-    return selectable.length > 0 && selectable.every(item => this.selectedIds.has(item.id!));
+    return selectable.length > 0 && selectable.every(item => this.selectedRowKeys.has(item.selectionKey));
   }
 
   /** True si au moins une ligne (et pas toutes) parmi les filtrées est sélectionnée (checkbox indéterminée). */
   get isSomeSelectedFiltered(): boolean {
     const selectable = this.getSelectableItemsFiltered();
     if (selectable.length === 0) return false;
-    const selectedCount = selectable.filter(item => this.selectedIds.has(item.id!)).length;
+    const selectedCount = selectable.filter(item => this.selectedRowKeys.has(item.selectionKey)).length;
     return selectedCount > 0 && selectedCount < selectable.length;
   }
 
@@ -1567,24 +1679,25 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
   toggleSelectAllFiltered(): void {
     const selectable = this.getSelectableItemsFiltered();
     if (this.isAllSelectedFiltered) {
-      selectable.forEach(item => this.selectedIds.delete(item.id!));
+      selectable.forEach(item => this.selectedRowKeys.delete(item.selectionKey));
     } else {
-      selectable.forEach(item => this.selectedIds.add(item.id!));
+      selectable.forEach(item => this.selectedRowKeys.add(item.selectionKey));
     }
     this.cdr.markForCheck();
   }
 
   clearSelection(): void {
-    this.selectedIds.clear();
+    this.selectedRowKeys.clear();
     this.cdr.markForCheck();
   }
 
   async deleteSelected(): Promise<void> {
-    if (this.selectedIds.size === 0) {
+    const itemsToDelete = this.getSelectedDeletableItems();
+    if (itemsToDelete.length === 0) {
       this.popupService.showWarning('Aucune ligne sélectionnée.');
       return;
     }
-    const count = this.selectedIds.size;
+    const count = itemsToDelete.length;
     const confirmed = await ModernPopupComponent.showConfirm(
       `Êtes-vous sûr de vouloir supprimer les ${count} ligne(s) sélectionnée(s) ?`,
       '🗑️ Suppression en masse'
@@ -1593,7 +1706,7 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
 
     this.isBulkDeleting = true;
     this.cdr.markForCheck();
-    const ids = Array.from(this.selectedIds);
+    const ids = itemsToDelete.map(item => item.id!).filter((id): id is number => id != null);
     let successCount = 0;
     let errorCount = 0;
     try {
@@ -1602,7 +1715,9 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
         try {
           await firstValueFrom(this.ecartBoSummaryService.deleteEcartBoSummary(id));
           this.summaryItems = this.summaryItems.filter(item => item.id !== id);
-          this.selectedIds.delete(id);
+          itemsToDelete
+            .filter(item => item.id === id)
+            .forEach(item => this.selectedRowKeys.delete(item.selectionKey));
           successCount++;
         } catch {
           errorCount++;

@@ -87,9 +87,10 @@ public class CompteController {
     }
     
     @PostMapping
-    public ResponseEntity<Compte> createCompte(@RequestBody Compte compte) {
+    public ResponseEntity<?> createCompte(@RequestBody Compte compte) {
         if (compteService.compteExists(compte.getNumeroCompte())) {
-            return ResponseEntity.badRequest().build();
+            return ResponseEntity.badRequest()
+                    .body(Map.of("message", "Ce numero de compte existe deja."));
         }
         Compte savedCompte = compteService.saveCompte(compte);
         return ResponseEntity.ok(savedCompte);

@@ -111,8 +111,8 @@ export class StatsComponent implements OnInit, OnDestroy {
     selectedSummaryIds: Set<string> = new Set(); // Pour identifier les statistiques sélectionnées par leur clé unique
 
     showVariation: boolean = true;
-    /** Largeur minimale de la colonne « variation » (curseur px, 100–360). */
-    variationColumnWidthPx = 100;
+    /** Largeur de la colonne « variation » (curseur px, 50–360). */
+    variationColumnWidthPx = 260;
     private aggregatedIndexByDateKey: Map<string, AggregatedStatRow> = new Map();
 
     @ViewChild('agenceSelect') agenceSelect!: MatSelect;

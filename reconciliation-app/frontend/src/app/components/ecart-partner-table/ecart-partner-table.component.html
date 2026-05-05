@@ -112,12 +112,12 @@
             <button 
               (click)="saveEcartPartnerToImpactOP()" 
               class="menu-option-button save-button"
-              [disabled]="isSavingEcartPartnerToImpactOP || filteredPartnerOnly.length === 0"
+              [disabled]="isSavingEcartPartnerToImpactOP || selectedPartnerOnlyKeys.length === 0"
             >
               {{ isSavingEcartPartnerToImpactOP ? '💾 Sauvegarde...' : '💾 Sauvegarder dans Import OP' }}
             </button>
             <span class="menu-info">
-              Toutes les lignes seront sauvegardées ({{filteredPartnerOnly.length}} ligne(s))
+              Seules les lignes cochées seront sauvegardées ({{selectedPartnerOnlyKeys.length}} ligne(s))
             </span>
           </div>
         </div>

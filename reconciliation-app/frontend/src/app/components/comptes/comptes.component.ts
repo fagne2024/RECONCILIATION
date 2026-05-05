@@ -1,7 +1,8 @@
 import { Component, OnInit, OnDestroy, ViewChild } from '@angular/core';
 import { FormBuilder, FormGroup, Validators, FormControl } from '@angular/forms';
-import { Subscription, timer, from } from 'rxjs';
-import { delay, retryWhen, scan, concatMap, tap } from 'rxjs/operators';
+import { Subscription, timer, from, EMPTY } from 'rxjs';
+import { delay, retryWhen, scan, concatMap, tap, catchError, finalize } from 'rxjs/operators';
+import * as Papa from 'papaparse';
 import { CompteService } from '../../services/compte.service';
 import { Compte, CompteFilter } from '../../models/compte.model';
 import * as ExcelJS from 'exceljs';
@@ -196,6 +197,8 @@ export class ComptesComponent implements OnInit, OnDestroy {
     showSoldeBoModal = false;
     dernierSoldeBo: number | null = null;
     dateSoldeBo: string = '';
+    /** Import masse des soldes BO depuis le modèle CSV / Excel */
+    isImportingSoldeBoBulk = false;
 
     showClosingOverrideModal = false;
     closingOverrideDate: string = '';
@@ -1540,17 +1543,11 @@ export class ComptesComponent implements OnInit, OnDestroy {
             dateDebut = dateDebutObj.toISOString().split('T')[0];
             dateFin = dateFinObj.toISOString().split('T')[0];
         } else {
-            // Par défaut : charger uniquement les données du mois en cours
-            const now = new Date();
-            const year = now.getFullYear();
-            const month = now.getMonth();
-            
-            // Premier jour du mois en cours
-            const dateDebutObj = new Date(year, month, 1);
+            // Par défaut : mois « actif » comme le rapport réconciliation (précédent jusqu’au 1er, puis mois en cours)
+            const { year, monthIndex } = this.getDefaultReleveReportingMonth();
+            const dateDebutObj = new Date(year, monthIndex, 1);
             dateDebut = dateDebutObj.toISOString().split('T')[0];
-            
-            // Dernier jour du mois en cours
-            const dateFinObj = new Date(year, month + 1, 0);
+            const dateFinObj = new Date(year, monthIndex + 1, 0);
             dateFin = dateFinObj.toISOString().split('T')[0];
         }
 
@@ -1720,11 +1717,23 @@ export class ComptesComponent implements OnInit, OnDestroy {
         });
     }
 
-    // Détermine le mois de référence: le mois précédent la date du jour
+    /**
+     * Mois affiché par défaut pour le relevé (aligné rapport réconciliation) :
+     * le 1er du mois courant → mois calendaire précédent ; à partir du 2 → mois courant.
+     */
+    private getDefaultReleveReportingMonth(now = new Date()): { year: number; monthIndex: number } {
+        const y = now.getFullYear();
+        const m = now.getMonth();
+        if (now.getDate() < 2) {
+            const prev = new Date(y, m - 1, 1);
+            return { year: prev.getFullYear(), monthIndex: prev.getMonth() };
+        }
+        return { year: y, monthIndex: m };
+    }
+
+    /** Mois de référence pour les calculs (moyenne mensuelle, etc.) : même ancrage que la période par défaut du relevé */
     private get referenceMonthYear() {
-        const now = new Date();
-        const ref = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-        return { monthIndex: ref.getMonth(), year: ref.getFullYear() };
+        return this.getDefaultReleveReportingMonth();
     }
 
     // Mois/année actuellement utilisés (sélection utilisateur sinon mois de référence)
@@ -2905,8 +2914,8 @@ export class ComptesComponent implements OnInit, OnDestroy {
         const numericValue = typeof val === 'number' ? val : Number(val);
         if (Number.isFinite(numericValue)) {
             return numericValue.toLocaleString('fr-FR', {
-                minimumFractionDigits: 0,
-                maximumFractionDigits: 20
+                minimumFractionDigits: 1,
+                maximumFractionDigits: 1
             });
         }
         return val ?? '';
@@ -3094,6 +3103,243 @@ export class ComptesComponent implements OnInit, OnDestroy {
         });
         this.popupService.showWarning('Veuillez remplir tous les champs requis');
       }
+    }
+
+    /** Télécharge un CSV modèle (UTF-8 BOM, séparateur ;) pour renseigner les soldes BO en masse. */
+    downloadSoldeBoTemplate(): void {
+        const sep = ';';
+        const headers = ['Date', 'Numéro de compte', 'Montant'];
+        const example = [`2026-04-29`, `CASBT0025`, `35386986.54`];
+        const bom = '\ufeff';
+        const csv = bom + [headers.join(sep), example.join(sep)].join('\r\n');
+        saveAs(new Blob([csv], { type: 'text/csv;charset=utf-8' }), `modele_solde_bo_${new Date().toISOString().split('T')[0]}.csv`);
+    }
+
+    onSoldeBoBulkFileSelected(event: Event): void {
+        const input = event.target as HTMLInputElement;
+        const file = input.files?.[0];
+        if (!file) {
+            return;
+        }
+        const name = file.name.toLowerCase();
+        if (name.endsWith('.xlsx') || name.endsWith('.xls')) {
+            this.importSoldeBoBulkFromExcel(file);
+        } else {
+            this.importSoldeBoBulkFromCsv(file);
+        }
+    }
+
+    private normalizeHeaderKey(h: string): string {
+        return h
+            .trim()
+            .toLowerCase()
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .replace(/\s+/g, ' ');
+    }
+
+    private cellToDisplayString(val: unknown): string {
+        if (val == null || val === '') {
+            return '';
+        }
+        if (val instanceof Date) {
+            const y = val.getFullYear();
+            const m = val.getMonth() + 1;
+            const d = val.getDate();
+            return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+        }
+        if (typeof val === 'number') {
+            return String(val);
+        }
+        return String(val).trim();
+    }
+
+    /** Extrait les 3 colonnes attendues (libellés français du modèle). */
+    private extractSoldeBoBulkFields(row: Record<string, unknown>): { dateRaw: string; numero: string; montantRaw: string } | null {
+        let dateRaw = '';
+        let numero = '';
+        let montantRaw = '';
+        for (const [key, val] of Object.entries(row)) {
+            const nk = this.normalizeHeaderKey(key);
+            const s = this.cellToDisplayString(val);
+            if (nk === 'date') {
+                dateRaw = s;
+            } else if (nk === 'numero de compte' || nk === 'numero compte') {
+                numero = s.trim();
+            } else if (nk === 'montant') {
+                montantRaw = s;
+            }
+        }
+        if (!dateRaw && !numero && !montantRaw) {
+            return null;
+        }
+        return { dateRaw, numero, montantRaw };
+    }
+
+    private parseMontantFrancais(raw: string): number | null {
+        if (raw == null || raw === '') {
+            return null;
+        }
+        let t = raw.replace(/\s/g, '').replace(/'/g, '');
+        if (t.includes(',') && t.includes('.')) {
+            if (t.lastIndexOf(',') > t.lastIndexOf('.')) {
+                t = t.replace(/\./g, '').replace(',', '.');
+            } else {
+                t = t.replace(/,/g, '');
+            }
+        } else if (t.includes(',')) {
+            t = t.replace(',', '.');
+        }
+        const n = Number(t);
+        return Number.isFinite(n) ? n : null;
+    }
+
+    /** Retourne une date yyyy-MM-dd pour l’API ou null. */
+    private parseSoldeBoDateToIso(raw: string): string | null {
+        const s = raw.trim();
+        if (!s) {
+            return null;
+        }
+        if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+            return s;
+        }
+        const m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+        if (m) {
+            const d = Number(m[1]);
+            const mo = Number(m[2]);
+            const y = Number(m[3]);
+            const dt = new Date(y, mo - 1, d);
+            if (dt.getFullYear() === y && dt.getMonth() === mo - 1 && dt.getDate() === d) {
+                return `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+            }
+        }
+        return null;
+    }
+
+    private importSoldeBoBulkFromCsv(file: File): void {
+        Papa.parse<Record<string, unknown>>(file, {
+            header: true,
+            skipEmptyLines: 'greedy',
+            encoding: 'UTF-8',
+            delimiter: '', // détection automatique (; ou , selon le fichier / Excel)
+            complete: (results) => {
+                if (results.errors?.length) {
+                    console.warn('Parsing CSV soldes BO:', results.errors);
+                }
+                const rows = (results.data || []) as Record<string, unknown>[];
+                this.processSoldeBoBulkRows(rows);
+            },
+            error: (err: Error) => {
+                console.error(err);
+                this.popupService.showError(`Impossible de lire le fichier CSV : ${err.message || 'erreur inconnue'}`);
+            }
+        });
+    }
+
+    private importSoldeBoBulkFromExcel(file: File): void {
+        const reader = new FileReader();
+        reader.onload = () => {
+            try {
+                const data = new Uint8Array(reader.result as ArrayBuffer);
+                const wb = XLSX.read(data, { type: 'array', cellDates: true });
+                const ws = wb.Sheets[wb.SheetNames[0]];
+                const json = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, { defval: '' });
+                this.processSoldeBoBulkRows(json);
+            } catch (e) {
+                console.error(e);
+                this.popupService.showError('Impossible de lire le fichier Excel (vérifiez le format du modèle).');
+            }
+        };
+        reader.onerror = () => this.popupService.showError('Erreur de lecture du fichier.');
+        reader.readAsArrayBuffer(file);
+    }
+
+    private processSoldeBoBulkRows(rows: Record<string, unknown>[]): void {
+        type ParsedLine = { isoDate: string; numero: string; montant: number; line: number };
+        const parsed: ParsedLine[] = [];
+        const validationErrors: string[] = [];
+
+        rows.forEach((row, i) => {
+            const line = i + 2;
+            const fields = this.extractSoldeBoBulkFields(row);
+            if (!fields) {
+                return;
+            }
+            const { dateRaw, numero, montantRaw } = fields;
+            const allEmpty = !dateRaw && !numero && !montantRaw;
+            if (allEmpty) {
+                return;
+            }
+            const iso = this.parseSoldeBoDateToIso(dateRaw);
+            const montant = this.parseMontantFrancais(montantRaw);
+            const rowErrors: string[] = [];
+            if (!iso) {
+                rowErrors.push(`date invalide (« ${dateRaw} »)`);
+            }
+            if (!numero) {
+                rowErrors.push('numéro de compte manquant');
+            }
+            if (montant === null) {
+                rowErrors.push(`montant invalide (« ${montantRaw} »)`);
+            }
+            if (rowErrors.length) {
+                validationErrors.push(`Ligne ${line} : ${rowErrors.join(', ')}`);
+                return;
+            }
+            parsed.push({ isoDate: iso!, numero, montant: montant!, line });
+        });
+
+        if (!parsed.length) {
+            const hint = validationErrors.length
+                ? validationErrors.slice(0, 8).join('\n')
+                : 'Colonnes attendues : Date, Numéro de compte, Montant (CSV séparateur ; ou Excel).';
+            this.popupService.showError(`Aucune ligne importable.\n${hint}`);
+            return;
+        }
+
+        let ok = 0;
+        let fail = 0;
+        const apiErrors: string[] = [...validationErrors];
+        this.isImportingSoldeBoBulk = true;
+
+        from(parsed)
+            .pipe(
+                concatMap((item) =>
+                    this.compteService.setSoldeBo(item.numero, item.isoDate, item.montant).pipe(
+                        tap(() => ok++),
+                        catchError((err: unknown) => {
+                            fail++;
+                            const httpErr = err as { error?: { message?: string }; message?: string };
+                            const msg =
+                                httpErr?.error?.message ||
+                                httpErr?.message ||
+                                'erreur réseau ou serveur';
+                            apiErrors.push(`Ligne ${item.line} (${item.numero}) : ${msg}`);
+                            return EMPTY;
+                        })
+                    )
+                ),
+                finalize(() => {
+                    this.isImportingSoldeBoBulk = false;
+                    const parts = [`${ok} solde(s) BO enregistré(s)`];
+                    if (fail > 0) {
+                        parts.push(`${fail} échec(s)`);
+                    }
+                    if (validationErrors.length > 0) {
+                        parts.push(`${validationErrors.length} ligne(s) ignorée(s) avant envoi`);
+                    }
+                    if (fail === 0 && validationErrors.length === 0) {
+                        this.popupService.showSuccess(parts.join('. ') + '.');
+                    } else if (ok > 0) {
+                        this.popupService.showWarning(parts.join('. ') + '. Détail dans la console (F12).');
+                        console.warn('[Import soldes BO]', apiErrors);
+                    } else {
+                        this.popupService.showError(parts.join('. ') + '.');
+                        console.warn('[Import soldes BO]', apiErrors);
+                    }
+                })
+            )
+            .subscribe();
     }
 
     openClosingOverrideModal(solde: DailySolde) {

@@ -22,6 +22,7 @@ export class ProfilComponent implements OnInit {
   pagedProfils: Profil[] = [];
   modules: Module[] = [];
   permissions: Permission[] = [];
+  allProfilPermissions: ProfilPermission[] = [];
   profilPermissions: ProfilPermission[] = [];
   selectedProfil: Profil | null = null;
   searchTerm = '';
@@ -115,6 +116,7 @@ export class ProfilComponent implements OnInit {
       next: (p) => {
         this.profils = p;
         this.applyFilters();
+        this.allProfilPermissions = [];
         this.loadAllProfilPermissions();
         this.loadAllProfilPays();
         this.isLoading = false;
@@ -207,16 +209,20 @@ export class ProfilComponent implements OnInit {
       if (profil.id) {
         this.withRetry(this.profilService.getProfilPermissions(profil.id)).subscribe({
           next: (pp) => {
+            this.allProfilPermissions = this.allProfilPermissions.filter(existing =>
+              !(existing.profil && existing.profil.id === profil.id)
+            );
+
             // Ajouter les permissions chargées à la liste globale
             pp.forEach(newPp => {
               // Vérifier si cette permission n'existe pas déjà
-              if (!this.profilPermissions.some(existing => 
+              if (!this.allProfilPermissions.some(existing => 
                 existing.id === newPp.id || 
                 (existing.profil && existing.profil.id === newPp.profil?.id &&
                  existing.module && existing.module.id === newPp.module?.id &&
                  existing.permission && existing.permission.id === newPp.permission?.id)
               )) {
-                this.profilPermissions.push(newPp);
+                this.allProfilPermissions.push(newPp);
               }
             });
             this.cd.detectChanges();
@@ -635,8 +641,7 @@ export class ProfilComponent implements OnInit {
           }
           this.cd.detectChanges();
           console.log(`✅ Permission "${permission.nom}" ajoutée avec succès`);
-          // Recharger toutes les permissions pour mettre à jour les décomptes dans le tableau
-          this.loadAllProfilPermissions();
+          this.refreshAllProfilPermissionsForProfil(this.selectedProfil!.id!);
         },
         error: (error) => {
           console.error(`❌ Erreur lors de l'ajout de la permission:`, error);
@@ -653,8 +658,7 @@ export class ProfilComponent implements OnInit {
           this.profilPermissions = this.profilPermissions.filter(pp => pp.id !== existing.id);
           this.cd.detectChanges();
           console.log(`✅ Permission "${permission.nom}" supprimée avec succès`);
-          // Recharger toutes les permissions pour mettre à jour les décomptes dans le tableau
-          this.loadAllProfilPermissions();
+          this.refreshAllProfilPermissionsForProfil(this.selectedProfil!.id!);
         },
         error: (error) => {
           console.error(`❌ Erreur lors de la suppression de la permission:`, error);
@@ -689,7 +693,7 @@ export class ProfilComponent implements OnInit {
   }
 
   getAssociatedModulesForProfil(profil: Profil): Module[] {
-    const pps = this.profilPermissions.filter(
+    const pps = this.allProfilPermissions.filter(
       pp => pp.profil && pp.profil.id === profil.id && pp.module && pp.module.id
     );
     const associatedModuleIds = new Set(pps.map(pp => pp.module!.id!));
@@ -707,7 +711,7 @@ export class ProfilComponent implements OnInit {
 
   getProfilPermissionsCount(profil: Profil): number {
     // Compter les permissions pour un profil spécifique
-    return this.profilPermissions.filter(pp => pp.profil && pp.profil.id === profil.id).length;
+    return this.allProfilPermissions.filter(pp => pp.profil && pp.profil.id === profil.id).length;
   }
 
   onModuleChange() {
@@ -1337,6 +1341,10 @@ export class ProfilComponent implements OnInit {
       this.withRetry(this.profilService.getProfilPermissions(this.selectedProfil.id!)).subscribe({
         next: (pp) => {
           this.profilPermissions = pp;
+          this.allProfilPermissions = this.allProfilPermissions.filter(existing =>
+            !(existing.profil && existing.profil.id === this.selectedProfil!.id)
+          );
+          this.allProfilPermissions.push(...pp);
           console.log(`✅ ${pp.length} permissions rechargées pour le profil ${this.selectedProfil!.nom}`);
           
           // Forcer la détection des changements
@@ -1351,6 +1359,21 @@ export class ProfilComponent implements OnInit {
     // Recharger les profils et modules
     this.loadProfils();
     this.loadModules();
+  }
+
+  private refreshAllProfilPermissionsForProfil(profilId: number): void {
+    this.withRetry(this.profilService.getProfilPermissions(profilId)).subscribe({
+      next: (pp) => {
+        this.allProfilPermissions = this.allProfilPermissions.filter(existing =>
+          !(existing.profil && existing.profil.id === profilId)
+        );
+        this.allProfilPermissions.push(...pp);
+        this.cd.detectChanges();
+      },
+      error: (error) => {
+        console.error(`Erreur lors du rechargement global des permissions du profil ${profilId}:`, error);
+      }
+    });
   }
 
   // Méthodes pour la gestion des pays

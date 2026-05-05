@@ -142,18 +142,8 @@ export class RankingService {
     if (amount === null || amount === undefined || isNaN(amount)) {
       return '0 FCFA';
     }
-    
-    const formatted = new Intl.NumberFormat('fr-FR', {
-      style: 'currency',
-      currency: 'XOF',
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0,
-      useGrouping: true
-    }).format(amount);
-    
-    // Log pour vérifier que le formatage fonctionne
-    console.log(`[RANKING SERVICE] Formatting ${amount} -> ${formatted}`);
-    return formatted;
+
+    return `${this.groupThousands(Math.round(Number(amount)))} FCFA`;
   }
 
   /**
@@ -163,13 +153,13 @@ export class RankingService {
     if (num === null || num === undefined || isNaN(num)) {
       return '0';
     }
-    
-    const formatted = new Intl.NumberFormat('fr-FR', {
-      useGrouping: true
-    }).format(num);
-    
-    // Log pour vérifier que le formatage fonctionne
-    console.log(`[RANKING SERVICE] Formatting number ${num} -> ${formatted}`);
-    return formatted;
+
+    return this.groupThousands(Math.round(Number(num)));
+  }
+
+  private groupThousands(value: number): string {
+    const sign = value < 0 ? '-' : '';
+    const digits = Math.abs(value).toString();
+    return `${sign}${digits.replace(/\B(?=(\d{3})+(?!\d))/g, ' ')}`;
   }
 } 

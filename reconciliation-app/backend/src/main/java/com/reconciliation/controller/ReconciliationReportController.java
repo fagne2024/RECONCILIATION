@@ -1,8 +1,14 @@
 package com.reconciliation.controller;
 
 import com.reconciliation.dto.ReleveManualDto;
+import com.reconciliation.dto.MonthlyReconciliationKpiDto;
+import com.reconciliation.dto.PilotReportDto;
 import com.reconciliation.entity.ReleveManualEntity;
 import com.reconciliation.repository.ReleveManualRepository;
+import com.reconciliation.repository.Result8RecRepository;
+import com.reconciliation.service.PaysFilterService;
+import com.reconciliation.service.ReconciliationPilotReportService;
+import com.reconciliation.util.RequestContextUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
@@ -24,6 +30,9 @@ import java.util.Optional;
 public class ReconciliationReportController {
 
     private final ReleveManualRepository releveManualRepository;
+    private final Result8RecRepository result8RecRepository;
+    private final PaysFilterService paysFilterService;
+    private final ReconciliationPilotReportService pilotReportService;
 
     @GetMapping("/manual-trx")
     public ResponseEntity<?> getManualTrx(
@@ -186,6 +195,176 @@ public class ReconciliationReportController {
             return ResponseEntity.badRequest().body(Map.of("error", "Invalid date format, expected YYYY-MM-DD"));
         } catch (Exception e) {
             log.error("Error in saveManualTrx", e);
+            return ResponseEntity.internalServerError().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    /**
+     * KPI mensuels de réconciliation (basé sur result8rec), utilisable pour générer un rapport
+     * type "pilote" (Transactions, Volume, Écarts traités, Taux de correspondance).
+     *
+     * Paramètres:
+     * - startYm / endYm: bornes inclusives au format YYYY-MM
+     * - country/service/env: filtres optionnels
+     */
+    @GetMapping("/monthly-kpis")
+    public ResponseEntity<?> getMonthlyKpis(
+            @RequestParam(value = "startYm", required = false) String startYm,
+            @RequestParam(value = "endYm", required = false) String endYm,
+            @RequestParam(value = "country", required = false) String country,
+            @RequestParam(value = "service", required = false) String service,
+            @RequestParam(value = "env", required = false) String env
+    ) {
+        try {
+            String username = RequestContextUtil.getUsernameFromRequest();
+
+            // Cloisonnement pays
+            List<String> allowedCountries = null;
+            if (username != null && !username.isEmpty()) {
+                allowedCountries = paysFilterService.getAllowedPaysCodes(username);
+            }
+            List<String> allowedCountriesLower = null;
+            if (allowedCountries != null) {
+                allowedCountriesLower = allowedCountries.stream()
+                        .filter(c -> c != null && !c.isBlank())
+                        .map(c -> c.trim().toLowerCase())
+                        .distinct()
+                        .toList();
+            }
+            // Aucun pays autorisé => aucune donnée retournée (évite IN () côté JPA)
+            if (allowedCountriesLower != null && allowedCountriesLower.isEmpty()) {
+                return ResponseEntity.ok(List.of());
+            }
+
+            String envNorm = (env == null || env.isBlank()) ? null : env.trim();
+            String serviceNorm = (service == null || service.isBlank()) ? null : service.trim();
+            String countryNorm = (country == null || country.isBlank()) ? null : country.trim();
+
+            // Si un filtre country est fourni et qu'on a une allow-list, on réduit la liste
+            if (countryNorm != null && allowedCountriesLower != null && !allowedCountriesLower.isEmpty()) {
+                String cLower = countryNorm.toLowerCase();
+                if (!allowedCountriesLower.contains(cLower)) {
+                    return ResponseEntity.ok(List.of());
+                }
+                allowedCountriesLower = List.of(cLower);
+            }
+
+            List<Object[]> rows = result8RecRepository.aggregateMonthlyKpis(
+                    startYm, endYm, serviceNorm, envNorm, countryNorm, allowedCountriesLower
+            );
+
+            List<MonthlyReconciliationKpiDto> out = new ArrayList<>();
+            for (Object[] r : rows) {
+                String ym = (String) r[0];
+                long totalTransactions = r[1] == null ? 0L : ((Number) r[1]).longValue();
+                double totalVolume = r[2] == null ? 0.0 : ((Number) r[2]).doubleValue();
+                long matches = r[3] == null ? 0L : ((Number) r[3]).longValue();
+
+                long ecarts = Math.max(0L, totalTransactions - matches);
+                double rate = totalTransactions > 0 ? ((double) matches / (double) totalTransactions) * 100.0 : 0.0;
+
+                out.add(new MonthlyReconciliationKpiDto(ym, totalTransactions, totalVolume, matches, ecarts, rate));
+            }
+
+            return ResponseEntity.ok(out);
+        } catch (Exception e) {
+            log.error("Error in getMonthlyKpis", e);
+            return ResponseEntity.internalServerError().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    /**
+     * Génère un rapport complet inspiré des captures (mais basé sur les données de l'application).
+     * format:
+     * - json (défaut): structure exploitable par le frontend
+     * - markdown: texte copiable dans Word/PPT
+     */
+    @GetMapping("/pilot-report")
+    public ResponseEntity<?> getPilotReport(
+            @RequestParam(value = "startYm", required = false) String startYm,
+            @RequestParam(value = "endYm", required = false) String endYm,
+            @RequestParam(value = "country", required = false) String country,
+            @RequestParam(value = "service", required = false) String service,
+            @RequestParam(value = "env", required = false) String env,
+            @RequestParam(value = "format", required = false, defaultValue = "json") String format
+    ) {
+        try {
+            // Réutiliser la logique monthly-kpis (mêmes règles de cloisonnement)
+            ResponseEntity<?> monthlyResp = getMonthlyKpis(startYm, endYm, country, service, env);
+            Object body = monthlyResp.getBody();
+            if (!(body instanceof List<?> list)) {
+                return ResponseEntity.internalServerError().body(Map.of("error", "Unexpected monthly-kpis response"));
+            }
+
+            List<MonthlyReconciliationKpiDto> monthly = new ArrayList<>();
+            for (Object o : list) {
+                if (o instanceof MonthlyReconciliationKpiDto dto) {
+                    monthly.add(dto);
+                }
+            }
+
+            String username = RequestContextUtil.getUsernameFromRequest();
+            List<String> allowedCountries = null;
+            if (username != null && !username.isEmpty()) {
+                allowedCountries = paysFilterService.getAllowedPaysCodes(username);
+            }
+            List<String> allowedCountriesLower = null;
+            if (allowedCountries != null) {
+                allowedCountriesLower = allowedCountries.stream()
+                        .filter(c -> c != null && !c.isBlank())
+                        .map(c -> c.trim().toLowerCase())
+                        .distinct()
+                        .toList();
+            }
+            // Aucun pays autorisé => rapport vide (évite IN () côté JPA)
+            if (allowedCountriesLower != null && allowedCountriesLower.isEmpty()) {
+                if ("markdown".equalsIgnoreCase(format)) {
+                    return ResponseEntity.ok("");
+                }
+                return ResponseEntity.ok(new PilotReportDto());
+            }
+
+            String envNorm = (env == null || env.isBlank()) ? null : env.trim();
+            String serviceNorm = (service == null || service.isBlank()) ? null : service.trim();
+            String countryNorm = (country == null || country.isBlank()) ? null : country.trim();
+
+            if (countryNorm != null && allowedCountriesLower != null && !allowedCountriesLower.isEmpty()) {
+                String cLower = countryNorm.toLowerCase();
+                if (!allowedCountriesLower.contains(cLower)) {
+                    if ("markdown".equalsIgnoreCase(format)) {
+                        return ResponseEntity.ok("");
+                    }
+                    return ResponseEntity.ok(new PilotReportDto());
+                }
+                allowedCountriesLower = List.of(cLower);
+            }
+
+            Map<String, Integer> distinct = pilotReportService.getDistinctCounts(
+                    startYm, endYm, serviceNorm, envNorm, countryNorm, allowedCountriesLower
+            );
+
+            Map<String, Object> filters = new HashMap<>();
+            if (startYm != null) filters.put("startYm", startYm);
+            if (endYm != null) filters.put("endYm", endYm);
+            if (countryNorm != null) filters.put("country", countryNorm);
+            if (serviceNorm != null) filters.put("service", serviceNorm);
+            if (envNorm != null) filters.put("env", envNorm);
+
+            PilotReportDto report = pilotReportService.buildPilotReport(
+                    monthly,
+                    filters,
+                    distinct.get("services"),
+                    distinct.get("countries"),
+                    distinct.get("agencies")
+            );
+
+            if ("markdown".equalsIgnoreCase(format)) {
+                String md = pilotReportService.toMarkdown(report);
+                return ResponseEntity.ok(md);
+            }
+            return ResponseEntity.ok(report);
+        } catch (Exception e) {
+            log.error("Error in getPilotReport", e);
             return ResponseEntity.internalServerError().body(Map.of("error", e.getMessage()));
         }
     }

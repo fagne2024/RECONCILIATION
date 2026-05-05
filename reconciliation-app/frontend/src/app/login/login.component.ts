@@ -106,15 +106,15 @@ export class LoginComponent implements OnInit {
           
           this.userLogService.logActivity('connexion', 'Authentification', response.username, 'Connexion réussie');
           
-          // Rediriger vers l'URL demandée ou vers le dashboard par défaut
-          let returnUrl = this.route.snapshot.queryParams['returnUrl'] || '/dashboard';
-          
-          // Éviter la boucle : si returnUrl pointe vers /login, rediriger vers /dashboard
+          // Rediriger vers l'URL demandée si elle est accessible, sinon vers
+          // la première page réellement autorisée pour le profil.
+          let returnUrl = this.route.snapshot.queryParams['returnUrl'] || '/reconciliation-launcher';
+
           if (returnUrl.startsWith('/login')) {
-            returnUrl = '/dashboard';
+            returnUrl = '/reconciliation-launcher';
           }
-          
-          this.router.navigateByUrl(returnUrl);
+
+          this.router.navigateByUrl(this.appState.resolveAccessibleRoute(returnUrl));
         },
         error: (err) => {
           this.loading = false;
@@ -143,14 +143,13 @@ export class LoginComponent implements OnInit {
   ngOnInit() {
     // Rediriger si déjà connecté
     if (this.appState.getUserRights() && this.appState.getUsername()) {
-      let returnUrl = this.route.snapshot.queryParams['returnUrl'] || '/dashboard';
-      
-      // Éviter la boucle : si returnUrl pointe vers /login, rediriger vers /dashboard
+      let returnUrl = this.route.snapshot.queryParams['returnUrl'] || '/reconciliation-launcher';
+
       if (returnUrl.startsWith('/login')) {
-        returnUrl = '/dashboard';
+        returnUrl = '/reconciliation-launcher';
       }
-      
-      this.router.navigateByUrl(returnUrl);
+
+      this.router.navigateByUrl(this.appState.resolveAccessibleRoute(returnUrl));
       return;
     }
     // Vérifier si l'utilisateur admin existe
@@ -260,9 +259,12 @@ export class LoginComponent implements OnInit {
         
         this.userLogService.logActivity('connexion', 'Authentification', response.username, 'Connexion réussie (2FA)');
         
-        // Rediriger vers l'URL demandée ou vers le dashboard par défaut
-        const returnUrl = this.route.snapshot.queryParams['returnUrl'] || '/dashboard';
-        this.router.navigate([returnUrl]);
+        // Après 2FA, appliquer la même logique de redirection sécurisée.
+        let returnUrl = this.route.snapshot.queryParams['returnUrl'] || '/reconciliation-launcher';
+        if (returnUrl.startsWith('/login')) {
+          returnUrl = '/reconciliation-launcher';
+        }
+        this.router.navigateByUrl(this.appState.resolveAccessibleRoute(returnUrl));
       },
       error: (err) => {
         this.loading = false;

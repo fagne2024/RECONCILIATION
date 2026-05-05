@@ -74,9 +74,7 @@ public class ProfilService {
         System.out.println("✅ Profil trouvé, suppression des permissions et actions associées...");
 
         // Supprimer d'abord les permissions associées au profil
-        List<ProfilPermissionEntity> permissions = profilPermissionRepository.findAll().stream()
-            .filter(pp -> pp.getProfil().getId().equals(id))
-            .toList();
+        List<ProfilPermissionEntity> permissions = profilPermissionRepository.findByProfilId(id);
 
         System.out.println("🗑️ Suppression de " + permissions.size() + " permissions associées");
         profilPermissionRepository.deleteAll(permissions);
@@ -115,9 +113,7 @@ public class ProfilService {
         System.out.println("✅ Module trouvé, suppression des permissions associées...");
         
         // Supprimer d'abord les permissions associées au module
-        List<ProfilPermissionEntity> permissions = profilPermissionRepository.findAll().stream()
-            .filter(pp -> pp.getModule().getId().equals(id))
-            .toList();
+        List<ProfilPermissionEntity> permissions = profilPermissionRepository.findByModuleId(id);
         
         System.out.println("🗑️ Suppression de " + permissions.size() + " permissions associées");
         profilPermissionRepository.deleteAll(permissions);
@@ -145,17 +141,8 @@ public class ProfilService {
         
         // Vérifier si la permission est utilisée dans des associations profil-permission-module
         // Charger toutes les associations et filtrer celles qui utilisent cette permission
-        List<ProfilPermissionEntity> allAssociations = profilPermissionRepository.findAll();
-        List<ProfilPermissionEntity> associations = allAssociations.stream()
-            .filter(pp -> {
-                // Forcer le chargement de la relation permission si nécessaire
-                if (pp.getPermission() == null) {
-                    return false;
-                }
-                // Comparer les IDs
-                Long permissionId = pp.getPermission().getId();
-                return permissionId != null && permissionId.equals(id);
-            })
+        List<ProfilPermissionEntity> associations = profilPermissionRepository.findByPermissionId(id).stream()
+            .filter(pp -> pp.getPermission() != null && pp.getPermission().getId() != null)
             .toList();
         
         if (!associations.isEmpty()) {
@@ -172,12 +159,8 @@ public class ProfilService {
     // Attribution de permissions à un profil
     @Transactional
     public ProfilPermissionEntity addPermissionToProfil(Long profilId, Long moduleId, Long permissionId) {
-        // Vérifier si l'association existe déjà
-        ProfilPermissionEntity existing = profilPermissionRepository.findAll().stream()
-            .filter(pp -> pp.getProfil() != null && pp.getProfil().getId().equals(profilId) &&
-                         pp.getModule() != null && pp.getModule().getId().equals(moduleId) &&
-                         pp.getPermission() != null && pp.getPermission().getId().equals(permissionId))
-            .findFirst()
+        ProfilPermissionEntity existing = profilPermissionRepository
+            .findByProfilIdAndModuleIdAndPermissionId(profilId, moduleId, permissionId)
             .orElse(null);
         
         if (existing != null) {
@@ -192,7 +175,7 @@ public class ProfilService {
         pp.setProfil(profil);
         pp.setModule(module);
         pp.setPermission(permission);
-        ProfilPermissionEntity saved = profilPermissionRepository.save(pp);
+        ProfilPermissionEntity saved = profilPermissionRepository.saveAndFlush(pp);
         
         // Recharger avec les relations pour s'assurer qu'elles sont disponibles
         return profilPermissionRepository.findById(saved.getId()).orElse(saved);
@@ -213,10 +196,7 @@ public class ProfilService {
         List<ProfilPermissionEntity> result = new ArrayList<>();
         
         // Charger toutes les associations existantes pour ce profil et ce module
-        List<ProfilPermissionEntity> existingPermissions = profilPermissionRepository.findAll().stream()
-            .filter(pp -> pp.getProfil() != null && pp.getProfil().getId().equals(profilId) &&
-                         pp.getModule() != null && pp.getModule().getId().equals(moduleId))
-            .toList();
+        List<ProfilPermissionEntity> existingPermissions = profilPermissionRepository.findByProfilIdAndModuleId(profilId, moduleId);
         
         for (Long permissionId : permissionIds) {
             // Vérifier si l'association existe déjà
@@ -235,7 +215,7 @@ public class ProfilService {
                 pp.setProfil(profil);
                 pp.setModule(module);
                 pp.setPermission(permission);
-                ProfilPermissionEntity saved = profilPermissionRepository.save(pp);
+                ProfilPermissionEntity saved = profilPermissionRepository.saveAndFlush(pp);
                 result.add(saved);
             }
         }
@@ -248,12 +228,9 @@ public class ProfilService {
     }
 
     public List<ProfilPermissionEntity> getPermissionsForProfil(Long profilId) {
-        // Charger toutes les permissions avec leurs relations
-        List<ProfilPermissionEntity> allPermissions = profilPermissionRepository.findAll();
-        // Filtrer par profil et s'assurer que les relations sont chargées
-        return allPermissions.stream()
-            .filter(pp -> pp.getProfil() != null && pp.getProfil().getId() != null && 
-                         pp.getProfil().getId().equals(profilId))
+        return profilPermissionRepository.findByProfilId(profilId).stream()
+            .filter(pp -> pp.getProfil() != null && pp.getProfil().getId() != null
+                         && pp.getProfil().getId().equals(profilId))
             .filter(pp -> pp.getModule() != null && pp.getPermission() != null)
             .toList();
     }
@@ -340,6 +317,7 @@ public class ProfilService {
 
         if ("Résultats".equalsIgnoreCase(module.getNom().trim())) {
             ensureModulePermissionAssociation(module, "modifier");
+            ensureModulePermissionAssociation(module, "bulk");
         }
     }
 

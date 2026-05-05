@@ -52,7 +52,7 @@ export class ModuleAccessGuard implements CanActivate {
   }
 
   private redirectToFallback(blockedUrl: string): void {
-    const fallbackUrl = blockedUrl === '/dashboard' ? '/reconciliation-launcher' : '/dashboard';
-    this.router.navigateByUrl(fallbackUrl);
+    const preferredFallback = blockedUrl === '/dashboard' ? '/reconciliation-launcher' : '/dashboard';
+    this.router.navigateByUrl(this.appState.resolveAccessibleRoute(preferredFallback));
   }
 }

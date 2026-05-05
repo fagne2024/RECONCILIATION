@@ -71,47 +71,23 @@ public class PermissionGeneratorService {
                         if (permInfo.moduleName == null || permInfo.permissionName == null) {
                             continue; // Ignorer si pas de module ou permission associée
                         }
-
-                        // Trouver ou créer le module
-                        ModuleEntity module = moduleRepository.findByNom(permInfo.moduleName);
-                        if (module == null) {
-                            // Créer le module s'il n'existe pas
-                            module = new ModuleEntity();
-                            module.setNom(permInfo.moduleName);
-                            module = moduleRepository.save(module);
-                        }
-
-                        // Vérifier si la permission existe déjà
-                        PermissionEntity permission = permissionRepository.findByNom(permInfo.permissionName);
-                        if (permission == null) {
-                            // Créer la nouvelle permission
-                            PermissionEntity newPermission = new PermissionEntity();
-                            newPermission.setNom(permInfo.permissionName);
-                            permission = permissionRepository.save(newPermission);
+                        boolean created = ensureModulePermissionAssociation(permInfo.moduleName, permInfo.permissionName);
+                        if (created) {
                             createdPermissions.add(permInfo.permissionName + " (Module: " + permInfo.moduleName + ", Path: " + permInfo.path + ")");
                             totalCreated++;
-                        }
-                        
-                        // Utiliser une référence finale pour la lambda
-                        final PermissionEntity finalPermission = permission;
-                        final ModuleEntity finalModule = module;
-                        
-                        // Vérifier si l'association module-permission existe déjà
-                        boolean associationExists = modulePermissionRepository.findByModuleId(finalModule.getId()).stream()
-                            .anyMatch(mp -> mp.getPermission() != null && mp.getPermission().getId().equals(finalPermission.getId()));
-                        
-                        if (!associationExists) {
-                            // Créer l'association module-permission
-                            ModulePermissionEntity modulePermission = new ModulePermissionEntity();
-                            modulePermission.setModule(finalModule);
-                            modulePermission.setPermission(finalPermission);
-                            modulePermissionRepository.save(modulePermission);
                         }
                     }
                 } catch (Exception e) {
                     System.err.println("Erreur lors de l'analyse de la méthode " + method.getName() + ": " + e.getMessage());
                 }
             }
+        }
+
+        // Certains modules purement frontend n'ont pas encore d'endpoint dédié.
+        // On leur associe au minimum "consulter" pour qu'ils apparaissent dans /permissions et /profils.
+        if (ensureModulePermissionAssociation("Traitement", "consulter")) {
+            createdPermissions.add("consulter (Module: Traitement, Source: manuel)");
+            totalCreated++;
         }
 
         result.put("totalCreated", totalCreated);
@@ -185,6 +161,39 @@ public class PermissionGeneratorService {
         return permissions;
     }
 
+    private boolean ensureModulePermissionAssociation(String moduleName, String permissionName) {
+        ModuleEntity module = moduleRepository.findByNom(moduleName);
+        if (module == null) {
+            module = new ModuleEntity();
+            module.setNom(moduleName);
+            module = moduleRepository.save(module);
+        }
+
+        PermissionEntity permission = permissionRepository.findByNom(permissionName);
+        boolean permissionCreated = false;
+        if (permission == null) {
+            PermissionEntity newPermission = new PermissionEntity();
+            newPermission.setNom(permissionName);
+            permission = permissionRepository.save(newPermission);
+            permissionCreated = true;
+        }
+
+        final PermissionEntity finalPermission = permission;
+        final ModuleEntity finalModule = module;
+
+        boolean associationExists = modulePermissionRepository.findByModuleId(finalModule.getId()).stream()
+            .anyMatch(mp -> mp.getPermission() != null && mp.getPermission().getId().equals(finalPermission.getId()));
+
+        if (!associationExists) {
+            ModulePermissionEntity modulePermission = new ModulePermissionEntity();
+            modulePermission.setModule(finalModule);
+            modulePermission.setPermission(finalPermission);
+            modulePermissionRepository.save(modulePermission);
+        }
+
+        return permissionCreated;
+    }
+
     /**
      * Détermine le type d'action basé sur le chemin et le nom de la méthode
      * Cette méthode fait une analyse plus approfondie pour extraire toutes les actions spécifiques
@@ -256,6 +265,10 @@ public class PermissionGeneratorService {
         if (lowerPath.contains("dashboard") || lowerMethodName.contains("dashboard")) {
             return "consulter";
         }
+        if (lowerPath.startsWith("/api/result8rec") && (lowerPath.contains("/bulk") || lowerPath.endsWith("bulk"))) {
+            return "bulk";
+        }
+
         // Patterns d'upload/import
         if (lowerPath.contains("upload") || lowerMethodName.contains("upload")) {
             if (lowerPath.contains("operations")) {
@@ -471,6 +484,7 @@ public class PermissionGeneratorService {
         mapping.put("/api/statistics/detailed-metrics", "Dashboard");
         mapping.put("/api/statistics/transaction-created-stats", "Dashboard");
         mapping.put("/api/result8rec/filters", "Dashboard");
+        mapping.put("/api/result8rec", "Résultats");
         mapping.put("/api/reconciliation-report/manual-trx/range", "Dashboard");
         mapping.put("/api/service-references/dashboard", "Dashboard");
         mapping.put("/api/dashboard", "Dashboard");

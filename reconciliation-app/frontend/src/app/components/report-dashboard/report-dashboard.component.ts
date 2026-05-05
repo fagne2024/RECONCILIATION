@@ -23,6 +23,7 @@ interface ReconciliationReportData {
 import { ReconciliationService } from '../../services/reconciliation.service';
 import { PopupService } from '../../services/popup.service';
 import { ModernExcelExportService, ExcelColumn } from '../../services/modern-excel-export.service';
+import { ReconciliationReportService, PilotReportFilters } from '../../services/reconciliation-report.service';
 
 @Component({
     selector: 'app-report-dashboard',
@@ -132,6 +133,12 @@ import { ModernExcelExportService, ExcelColumn } from '../../services/modern-exc
 
                 <!-- Actions des filtres -->
                 <div class="filter-actions">
+                    <button class="btn btn-report" (click)="generatePilotReport()" [disabled]="isGeneratingReport">
+                        🧾 {{ isGeneratingReport ? 'Génération...' : 'Générer rapport (Markdown)' }}
+                    </button>
+                    <button class="btn btn-report-secondary" (click)="downloadPilotReport()" [disabled]="!pilotReportMarkdown">
+                        ⬇️ Télécharger (.md)
+                    </button>
                     <button class="btn btn-clear" (click)="clearFilters()">
                         🗑️ Effacer les filtres
                     </button>
@@ -139,6 +146,22 @@ import { ModernExcelExportService, ExcelColumn } from '../../services/modern-exc
                         📊 Exporter le rapport
                     </button>
                 </div>
+            
+            <!-- Aperçu du rapport -->
+            <div class="report-preview" *ngIf="pilotReportMarkdown">
+                <div class="preview-header">
+                    <div class="preview-title">🧾 Aperçu rapport généré</div>
+                    <div class="preview-actions">
+                        <button class="btn btn-preview-toggle" (click)="toggleReportPreview()">
+                            {{ showPilotReportPreview ? 'Masquer' : 'Afficher' }}
+                        </button>
+                        <button class="btn btn-preview-copy" (click)="copyPilotReportToClipboard()">
+                            📋 Copier
+                        </button>
+                    </div>
+                </div>
+                <pre class="preview-body" *ngIf="showPilotReportPreview">{{ pilotReportMarkdown }}</pre>
+            </div>
             </div>
 
             <!-- Métriques principales -->
@@ -554,23 +577,23 @@ import { ModernExcelExportService, ExcelColumn } from '../../services/modern-exc
             align-items: center;
             gap: 8px;
             white-space: nowrap;
-            
-            &:hover:not(:disabled) {
-                background: #45a049;
-                transform: translateY(-2px);
-            }
-            
-            &.active {
-                background: #f44336;
-                
-                &:hover:not(:disabled) {
-                    background: #da190b;
-                }
-            }
-            
-            i {
-                margin-right: 4px;
-            }
+        }
+
+        .btn-show-more:hover:not(:disabled) {
+            background: #45a049;
+            transform: translateY(-2px);
+        }
+
+        .btn-show-more.active {
+            background: #f44336;
+        }
+
+        .btn-show-more.active:hover:not(:disabled) {
+            background: #da190b;
+        }
+
+        .btn-show-more i {
+            margin-right: 4px;
         }
 
         .btn-clear {
@@ -600,6 +623,79 @@ import { ModernExcelExportService, ExcelColumn } from '../../services/modern-exc
             color: rgba(255,255,255,0.5);
             cursor: not-allowed;
             transform: none;
+        }
+
+        .btn-report {
+            background: rgba(0,123,255,0.85);
+            color: white;
+            border: 1px solid rgba(0,123,255,0.35);
+        }
+        .btn-report:hover:not(:disabled) {
+            background: rgba(0,123,255,1);
+            transform: translateY(-2px);
+        }
+        .btn-report:disabled {
+            background: rgba(255,255,255,0.1);
+            color: rgba(255,255,255,0.5);
+            cursor: not-allowed;
+            transform: none;
+        }
+        .btn-report-secondary {
+            background: rgba(255,255,255,0.18);
+            color: white;
+            border: 1px solid rgba(255,255,255,0.28);
+        }
+        .btn-report-secondary:hover:not(:disabled) {
+            background: rgba(255,255,255,0.25);
+            transform: translateY(-2px);
+        }
+
+        .report-preview {
+            margin-top: 18px;
+            background: rgba(255,255,255,0.08);
+            border: 1px solid rgba(255,255,255,0.18);
+            border-radius: 12px;
+            overflow: hidden;
+        }
+        .preview-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 14px;
+            background: rgba(0,0,0,0.15);
+        }
+        .preview-title {
+            color: white;
+            font-weight: 700;
+        }
+        .preview-actions {
+            display: flex;
+            gap: 10px;
+        }
+        .btn-preview-toggle, .btn-preview-copy {
+            padding: 8px 12px;
+            background: rgba(255,255,255,0.18);
+            color: white;
+            border: 1px solid rgba(255,255,255,0.25);
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.2s ease;
+        }
+        .btn-preview-toggle:hover, .btn-preview-copy:hover {
+            background: rgba(255,255,255,0.25);
+        }
+        .preview-body {
+            margin: 0;
+            padding: 14px;
+            max-height: 520px;
+            overflow: auto;
+            color: rgba(255,255,255,0.92);
+            font-size: 0.85rem;
+            line-height: 1.35rem;
+            white-space: pre-wrap;
+            word-break: break-word;
         }
 
         .period-indicator {
@@ -1160,13 +1256,19 @@ export class ReportDashboardComponent implements OnInit, OnDestroy {
     totalAgencyPages = 1;
     
     private subscription = new Subscription();
+    
+    // Rapport pilote (Markdown)
+    isGeneratingReport = false;
+    pilotReportMarkdown = '';
+    showPilotReportPreview = true;
 
     constructor(
         private reconciliationService: ReconciliationService,
         private popupService: PopupService,
         private modernExportService: ModernExcelExportService,
         private router: Router,
-        private http: HttpClient
+        private http: HttpClient,
+        private reconciliationReportService: ReconciliationReportService
     ) {}
 
     ngOnInit() {
@@ -1481,6 +1583,7 @@ export class ReportDashboardComponent implements OnInit, OnDestroy {
         this.selectedPeriod = 'month';
         this.customStartDate = '';
         this.customEndDate = '';
+        this.pilotReportMarkdown = '';
         this.applyFilters();
     }
 
@@ -1901,5 +2004,97 @@ export class ReportDashboardComponent implements OnInit, OnDestroy {
 
     goBack() {
         this.router.navigate(['/reconciliation-report']);
+    }
+
+    toggleReportPreview() {
+        this.showPilotReportPreview = !this.showPilotReportPreview;
+    }
+
+    private toYearMonth(dateStr: string): string | null {
+        if (!dateStr) return null;
+        const d = new Date(dateStr);
+        if (isNaN(d.getTime())) return null;
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        return `${y}-${m}`;
+    }
+
+    private buildPilotReportFilters(): PilotReportFilters {
+        // start/end par défaut: borne min/max des données filtrées (si dispo)
+        const dates = this.filteredData
+            .map(x => x.date)
+            .filter(Boolean)
+            .map(s => new Date(s))
+            .filter(d => !isNaN(d.getTime()))
+            .map(d => d.toISOString().slice(0, 10));
+
+        let startYm: string | undefined;
+        let endYm: string | undefined;
+        if (dates.length > 0) {
+            dates.sort();
+            startYm = this.toYearMonth(dates[0]) || undefined;
+            endYm = this.toYearMonth(dates[dates.length - 1]) || undefined;
+        }
+
+        // si période custom, on force startYm/endYm sur la sélection
+        if (this.selectedPeriod === 'custom' && this.customStartDate && this.customEndDate) {
+            startYm = this.toYearMonth(this.customStartDate) || startYm;
+            endYm = this.toYearMonth(this.customEndDate) || endYm;
+        }
+
+        const filters: PilotReportFilters = {
+            startYm,
+            endYm
+        };
+
+        // map UI -> API (service)
+        if (this.selectedService) {
+            filters.service = this.selectedService;
+        }
+        // country/env: non disponibles dans ce dashboard (on peut les ajouter plus tard)
+        return filters;
+    }
+
+    generatePilotReport() {
+        this.isGeneratingReport = true;
+        const filters = this.buildPilotReportFilters();
+        this.reconciliationReportService.getPilotReportMarkdown(filters).subscribe({
+            next: (md: string) => {
+                this.pilotReportMarkdown = md || '';
+                this.showPilotReportPreview = true;
+                this.popupService.showSuccess('Rapport généré', 'Le rapport Markdown a été généré avec succès');
+                this.isGeneratingReport = false;
+            },
+            error: (err: any) => {
+                console.error('Erreur génération rapport:', err);
+                this.popupService.showError('Erreur', 'Impossible de générer le rapport');
+                this.isGeneratingReport = false;
+            }
+        });
+    }
+
+    downloadPilotReport() {
+        if (!this.pilotReportMarkdown) return;
+        const filters = this.buildPilotReportFilters();
+        const suffix = `${filters.startYm || 'debut'}_${filters.endYm || 'fin'}`;
+        const fileName = `rapport_pilote_reconciliation_${suffix}.md`;
+
+        const blob = new Blob([this.pilotReportMarkdown], { type: 'text/markdown;charset=utf-8' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = fileName;
+        a.click();
+        window.URL.revokeObjectURL(url);
+    }
+
+    async copyPilotReportToClipboard() {
+        try {
+            if (!this.pilotReportMarkdown) return;
+            await navigator.clipboard.writeText(this.pilotReportMarkdown);
+            this.popupService.showSuccess('Copié', 'Le rapport a été copié dans le presse-papiers');
+        } catch (e) {
+            this.popupService.showError('Erreur', 'Copie impossible (droits navigateur)');
+        }
     }
 }

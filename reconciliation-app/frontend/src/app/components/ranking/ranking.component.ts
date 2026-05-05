@@ -1,8 +1,10 @@
-import { Component, OnInit, ViewChild } from '@angular/core';
+import { Component, ElementRef, OnInit, ViewChild } from '@angular/core';
 import { RankingService, RankingItem } from '../../services/ranking.service';
 import * as XLSX from 'xlsx';
 import { FormControl } from '@angular/forms';
 import { MatSelect } from '@angular/material/select';
+import html2canvas from 'html2canvas';
+import { jsPDF } from 'jspdf';
 
 @Component({
   selector: 'app-ranking',
@@ -33,6 +35,8 @@ export class RankingComponent implements OnInit {
   // Indicateur de mise à jour
   showUpdateMessage = false;
   updateMessage = '';
+  isExportingAgencyPdf = false;
+  isExportingServicePdf = false;
 
   // Filtre personnalisé
   customStartDate: string = '';
@@ -92,6 +96,8 @@ export class RankingComponent implements OnInit {
   filteredCountries: string[] = [];
 
   @ViewChild('paysSelect') paysSelect!: MatSelect;
+  @ViewChild('agencyPdfContent') agencyPdfContentRef?: ElementRef<HTMLElement>;
+  @ViewChild('servicePdfContent') servicePdfContentRef?: ElementRef<HTMLElement>;
 
   constructor(private rankingService: RankingService) { }
 
@@ -437,7 +443,7 @@ export class RankingComponent implements OnInit {
     const header = Object.keys(data[0]);
     const csv = [
       header.join(','),
-      ...data.map(row => header.map(fieldName => JSON.stringify(row[fieldName], replacer)).join(','))
+      ...data.map(row => header.map(fieldName => JSON.stringify(this.formatExportValue(fieldName, row[fieldName]), replacer)).join(','))
     ].join('\r\n');
     const blob = new Blob([csv], { type: 'text/csv' });
     const link = document.createElement('a');
@@ -460,12 +466,54 @@ export class RankingComponent implements OnInit {
     this.exportExcel(this.serviceRankings, 'classement_services.xlsx', 'Services');
   }
 
+  async exportAgencyPdf(): Promise<void> {
+    if (!this.agencyPdfContentRef?.nativeElement || !this.agencyRankings.length) {
+      return;
+    }
+
+    this.isExportingAgencyPdf = true;
+    const previousShowAll = this.showAllAgencies;
+    const previousPage = this.agencyPage;
+    try {
+      this.showAllAgencies = true;
+      await this.waitForRender();
+      const fileName = `classement_clients_${this.getPeriodFileLabel()}.pdf`;
+      await this.exportSectionToPdf(this.agencyPdfContentRef.nativeElement, fileName);
+    } finally {
+      this.showAllAgencies = previousShowAll;
+      this.agencyPage = previousPage;
+      await this.waitForRender();
+      this.isExportingAgencyPdf = false;
+    }
+  }
+
+  async exportServicePdf(): Promise<void> {
+    if (!this.servicePdfContentRef?.nativeElement || !this.serviceRankings.length) {
+      return;
+    }
+
+    this.isExportingServicePdf = true;
+    const previousShowAll = this.showAllServices;
+    const previousPage = this.servicePage;
+    try {
+      this.showAllServices = true;
+      await this.waitForRender();
+      const fileName = `classement_services_${this.getPeriodFileLabel()}.pdf`;
+      await this.exportSectionToPdf(this.servicePdfContentRef.nativeElement, fileName);
+    } finally {
+      this.showAllServices = previousShowAll;
+      this.servicePage = previousPage;
+      await this.waitForRender();
+      this.isExportingServicePdf = false;
+    }
+  }
+
   exportExcel(data: any[], filename: string, sheetName: string) {
     if (!data || !data.length) return;
     // Colonnes à exporter (dans l'ordre)
     const columns = Object.keys(data[0]);
     const header = ['Position', ...columns.map(col => this.getHeaderLabel(col))];
-    const wsData = [header, ...data.map((row, idx) => [idx + 1, ...columns.map(col => row[col])])];
+    const wsData = [header, ...data.map((row, idx) => [this.formatNumber(idx + 1), ...columns.map(col => this.formatExportValue(col, row[col]))])];
     const ws = XLSX.utils.aoa_to_sheet(wsData);
 
     // Styles
@@ -516,6 +564,122 @@ export class RankingComponent implements OnInit {
       case 'uniqueAgencies': return 'Agences';
       case 'position': return 'Position';
       default: return col;
+    }
+  }
+
+  private async exportSectionToPdf(element: HTMLElement, fileName: string): Promise<void> {
+    const originalOverflow = element.style.overflowY;
+    const originalMaxHeight = element.style.maxHeight;
+    element.style.overflowY = 'visible';
+    element.style.maxHeight = 'none';
+
+    const tableContainer = element.querySelector('.ranking-table-container') as HTMLElement | null;
+    const tableContainerOverflow = tableContainer?.style.overflow ?? '';
+    const tableContainerMaxHeight = tableContainer?.style.maxHeight ?? '';
+    if (tableContainer) {
+      tableContainer.style.overflow = 'visible';
+      tableContainer.style.maxHeight = 'none';
+    }
+
+    try {
+      const canvas = await html2canvas(element, {
+        scale: 2,
+        useCORS: true,
+        logging: false,
+        backgroundColor: '#ffffff'
+      });
+
+      const pdf = new jsPDF({
+        orientation: 'landscape',
+        unit: 'mm',
+        format: 'a4'
+      });
+
+      const pdfW = pdf.internal.pageSize.getWidth();
+      const pdfH = pdf.internal.pageSize.getHeight();
+      const margin = 8;
+      const pageW = pdfW - 2 * margin;
+      const pageH = pdfH - 2 * margin;
+      const imgW = canvas.width;
+      const imgH = canvas.height;
+      const ratio = pageW / imgW;
+      const pageImgHeight = pageH / ratio;
+
+      const pageCanvas = document.createElement('canvas');
+      const pageCtx = pageCanvas.getContext('2d');
+      pageCanvas.width = imgW;
+
+      const totalPages = Math.ceil(imgH / pageImgHeight);
+      for (let page = 0; page < totalPages; page++) {
+        const sourceY = page * pageImgHeight;
+        const sliceHeight = Math.min(pageImgHeight, imgH - sourceY);
+
+        pageCanvas.height = sliceHeight;
+        if (pageCtx) {
+          pageCtx.clearRect(0, 0, imgW, sliceHeight);
+          pageCtx.drawImage(
+            canvas,
+            0,
+            sourceY,
+            imgW,
+            sliceHeight,
+            0,
+            0,
+            imgW,
+            sliceHeight
+          );
+        }
+
+        const pageData = pageCanvas.toDataURL('image/png');
+        const renderHeight = sliceHeight * ratio;
+
+        if (page > 0) {
+          pdf.addPage();
+        }
+        pdf.addImage(pageData, 'PNG', margin, margin, pageW, renderHeight);
+      }
+
+      pdf.save(fileName);
+    } catch (error) {
+      console.error('Erreur export PDF classement:', error);
+    } finally {
+      element.style.overflowY = originalOverflow;
+      element.style.maxHeight = originalMaxHeight;
+      if (tableContainer) {
+        tableContainer.style.overflow = tableContainerOverflow;
+        tableContainer.style.maxHeight = tableContainerMaxHeight;
+      }
+    }
+  }
+
+  private getPeriodFileLabel(): string {
+    if (this.selectedPeriod === 'custom' && this.customStartDate && this.customEndDate) {
+      return `${this.customStartDate.replace(/-/g, '')}_${this.customEndDate.replace(/-/g, '')}`;
+    }
+
+    return this.selectedPeriod;
+  }
+
+  private waitForRender(): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, 100));
+  }
+
+  private formatExportValue(fieldName: string, value: any): any {
+    if (value === null || value === undefined) {
+      return '';
+    }
+
+    switch (fieldName) {
+      case 'transactionCount':
+      case 'uniqueAgencies':
+        return this.formatNumber(Number(value));
+      case 'totalVolume':
+      case 'totalFees':
+      case 'averageVolume':
+      case 'averageFees':
+        return this.formatAmount(Number(value));
+      default:
+        return value;
     }
   }
 

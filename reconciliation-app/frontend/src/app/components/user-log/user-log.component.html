@@ -1,192 +1,367 @@
 <div class="user-log-page">
-  <!-- TOP NAV -->
-  <nav class="topnav">
-    <div class="nav-brand">
-      <div class="nav-brand-dot"></div>
-      ReconciliApp
-    </div>
-    <div class="nav-sep"></div>
-    <div class="nav-path">
-      <strong>Logs utilisateur</strong>
-    </div>
-    <div class="nav-spacer"></div>
-  </nav>
-
-  <!-- PAGE HEADER -->
-  <div class="page-header-user-log">
-    <div class="ph-user-log-left">
-      <div class="ph-eyebrow"><span></span>Traçabilité</div>
-      <h1 class="ph-title-user-log">Suivi des <em>actions utilisateur</em></h1>
-      <p class="ph-subtitle-user-log">
-        Filtrez et analysez les opérations réalisées par les comptes applicatifs.
-      </p>
-    </div>
-    <div class="ph-user-log-metrics">
-      <div class="hero-kpi-strip">
-        <div class="hk-strip-item">
-          <div class="hk-strip-label">Logs filtrés</div>
-          <div class="hk-strip-value">{{ filteredLogs.length }}</div>
-        </div>
+  <!-- VIEW: LOGS -->
+  <div class="view" [class.active]="activeView === 'logs'">
+    <nav class="topnav">
+      <div class="nav-brand" (click)="goto('logs')"><div class="nav-dot"></div>ReconciliApp</div>
+      <div class="nav-sep"></div>
+      <div class="nav-crumb">
+        Traçabilité
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+        <strong>Logs Utilisateur</strong>
       </div>
-    </div>
-  </div>
-
-  <div class="main">
-  <div class="user-log-container">
-  <div class="header">
-    <h2>Logs Utilisateur</h2>
-    <div class="header-actions">
-      <button class="btn btn-primary" (click)="loadLogs()" [disabled]="isLoading">
-        <i class="fas fa-sync-alt"></i> Actualiser
+      <div class="nav-spacer"></div>
+      <span class="nav-pill">LOGS FILTRÉS · {{ formatCount(filteredLogs.length) }}</span>
+      <button type="button" class="nav-btn accent" (click)="goto('dashboard')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+        Dashboard utilisateurs
       </button>
-    </div>
-  </div>
+    </nav>
 
-  <!-- Filtres -->
-  <div class="filters-section">
-    <h3>Filtres</h3>
-    <form [formGroup]="filterForm" (ngSubmit)="applyFilters()">
-      <div class="filter-grid">
-        <div class="form-group">
-          <label>Utilisateur</label>
-          <input 
-            type="text" 
-            formControlName="username" 
-            class="form-control"
-            list="username-list"
-            placeholder="Filtrer par utilisateur">
-          <datalist id="username-list">
-            <option *ngFor="let username of usernames" [value]="username">
-          </datalist>
+    <div class="page">
+      <div class="ph-row">
+        <div>
+          <div class="ph-eyebrow"><span></span>Traçabilité</div>
+          <div class="ph-title">Suivi des <em>actions utilisateur</em></div>
+          <div class="ph-sub">Filtrez et analysez les opérations réalisées par les comptes applicatifs</div>
         </div>
-
-        <div class="form-group">
-          <label>Module</label>
-          <input 
-            type="text" 
-            formControlName="module" 
-            class="form-control"
-            list="module-list"
-            placeholder="Filtrer par module">
-          <datalist id="module-list">
-            <option *ngFor="let module of modules" [value]="module">
-          </datalist>
-        </div>
-
-        <div class="form-group">
-          <label>Permission</label>
-          <input 
-            type="text" 
-            formControlName="permission" 
-            class="form-control"
-            list="permission-list"
-            placeholder="Filtrer par permission">
-          <datalist id="permission-list">
-            <option *ngFor="let permission of permissions" [value]="permission">
-          </datalist>
-        </div>
-
-        <div class="form-group">
-          <label>Date début</label>
-          <input 
-            type="datetime-local" 
-            formControlName="dateDebut" 
-            class="form-control">
-        </div>
-
-        <div class="form-group">
-          <label>Date fin</label>
-          <input 
-            type="datetime-local" 
-            formControlName="dateFin" 
-            class="form-control">
-        </div>
-      </div>
-
-      <div class="filter-actions">
-        <button type="submit" class="btn btn-primary" [disabled]="isLoading">
-          <i class="fas fa-filter"></i> Appliquer les filtres
-        </button>
-        <button type="button" class="btn btn-secondary" (click)="resetFilters()" [disabled]="isLoading">
-          <i class="fas fa-redo"></i> Réinitialiser
+        <button type="button" class="dash-btn" (click)="goto('dashboard')">
+          <span class="new-dot"></span>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+          Voir le dashboard utilisateurs
         </button>
       </div>
-    </form>
+
+      <div class="logs-card">
+        <div class="card-head">
+          <div class="card-head-title">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+            Logs Utilisateur
+          </div>
+          <div class="card-head-actions">
+            <button type="button" class="dash-btn dash-btn--sm" (click)="goto('dashboard')">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+              Dashboard
+            </button>
+            <button type="button" class="refresh-btn" (click)="loadLogs()" [disabled]="isLoading">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
+              Actualiser
+            </button>
+          </div>
+        </div>
+
+        <div class="filter-zone">
+          <div class="filter-title">Filtres</div>
+          <form [formGroup]="filterForm" (ngSubmit)="applyFilters()">
+            <div class="filter-row">
+              <div class="fg">
+                <label>Utilisateur</label>
+                <input class="fi" type="text" formControlName="username" list="username-list" placeholder="Filtrer par utilisateur">
+                <datalist id="username-list">
+                  <option *ngFor="let username of usernames" [value]="username">
+                </datalist>
+              </div>
+              <div class="fg">
+                <label>Module</label>
+                <input class="fi" type="text" formControlName="module" list="module-list" placeholder="Filtrer par module">
+                <datalist id="module-list">
+                  <option *ngFor="let module of modules" [value]="module">
+                </datalist>
+              </div>
+              <div class="fg">
+                <label>Permission</label>
+                <input class="fi" type="text" formControlName="permission" list="permission-list" placeholder="Filtrer par permission">
+                <datalist id="permission-list">
+                  <option *ngFor="let permission of permissions" [value]="permission">
+                </datalist>
+              </div>
+              <div class="fg">
+                <label>Date début</label>
+                <input type="datetime-local" class="fi" formControlName="dateDebut">
+              </div>
+              <div class="fg">
+                <label>Date fin</label>
+                <input type="datetime-local" class="fi" formControlName="dateFin">
+              </div>
+              <div class="filter-btns">
+                <button type="submit" class="apply-btn" [disabled]="isLoading">
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+                  Appliquer les filtres
+                </button>
+                <button type="button" class="reset-btn" (click)="resetFilters()" [disabled]="isLoading">↺ Réinitialiser</button>
+              </div>
+            </div>
+          </form>
+        </div>
+
+        <div class="total-bar">
+          <span class="total-label">Total : <strong>{{ formatCount(filteredLogs.length) }} log(s)</strong></span>
+          <button type="button" class="voir-plus" *ngIf="!showAllLogs" (click)="toggleShowAllLogs()" [disabled]="isLoading">Voir plus</button>
+          <button type="button" class="voir-plus" *ngIf="showAllLogs" (click)="toggleShowAllLogs()" [disabled]="isLoading">Mois en cours</button>
+        </div>
+
+        <div class="tbl-wrap">
+          <table id="logs-table" *ngIf="!isLoading">
+            <thead>
+              <tr>
+                <th>Utilisateur</th>
+                <th>Module</th>
+                <th>Permission</th>
+                <th>Détails</th>
+                <th>Date et Heure</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let log of pagedLogs">
+                <td>
+                  <span class="user-tag">
+                    <span class="user-av">{{ getUserInitials(log.username) }}</span>
+                    {{ log.username }}
+                  </span>
+                </td>
+                <td><span class="mod-pill" [ngClass]="modClass(log.module)">{{ log.module }}</span></td>
+                <td><span class="perm-code">{{ log.permission }}</span></td>
+                <td>
+                  <span class="detail-txt" [title]="log.details || ''">{{ log.details || '—' }}</span>
+                </td>
+                <td><span class="date-txt">{{ formatDate(log.dateHeure) }}</span></td>
+              </tr>
+              <tr *ngIf="pagedLogs.length === 0">
+                <td colspan="5" class="no-data-cell">Aucun log trouvé</td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="loading-block" *ngIf="isLoading">Chargement…</div>
+        </div>
+
+        <div class="pagination-bar" *ngIf="totalPages > 1 && !isLoading">
+          <button type="button" class="page-nav" (click)="previousPage()" [disabled]="currentPage === 1">Précédent</button>
+          <span class="page-meta">Page {{ currentPage }} / {{ totalPages }}</span>
+          <button type="button" class="page-nav" (click)="nextPage()" [disabled]="currentPage === totalPages">Suivant</button>
+        </div>
+      </div>
+    </div>
   </div>
 
-  <!-- Table des logs -->
-  <div class="logs-section">
-    <div class="table-header">
-      <p class="total-count">Total: {{ filteredLogs.length }} log(s)</p>
-      <button 
-        class="btn btn-secondary btn-sm" 
-        (click)="toggleShowAllLogs()" 
-        [disabled]="isLoading"
-        *ngIf="!showAllLogs">
-        <i class="fas fa-eye"></i> Voir plus
+  <!-- VIEW: DASHBOARD -->
+  <div class="view" [class.active]="activeView === 'dashboard'">
+    <nav class="topnav">
+      <div class="nav-brand" (click)="goto('logs')"><div class="nav-dot"></div>ReconciliApp</div>
+      <div class="nav-sep"></div>
+      <div class="nav-crumb">
+        <span class="nav-crumb-link" (click)="goto('logs')">Logs Utilisateur</span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+        <strong>Dashboard Activité</strong>
+      </div>
+      <div class="nav-spacer"></div>
+      <button type="button" class="nav-btn ghost" (click)="goto('logs')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg>
+        Retour aux logs
       </button>
-      <button 
-        class="btn btn-secondary btn-sm" 
-        (click)="toggleShowAllLogs()" 
-        [disabled]="isLoading"
-        *ngIf="showAllLogs">
-        <i class="fas fa-eye-slash"></i> Voir moins (mois en cours)
-      </button>
-    </div>
+    </nav>
 
-    <div class="table-container" *ngIf="!isLoading">
-      <table class="logs-table">
-        <thead>
-          <tr>
-            <th>Utilisateur</th>
-            <th>Module</th>
-            <th>Permission</th>
-            <th>Détails</th>
-            <th>Date et Heure</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr *ngFor="let log of pagedLogs">
-            <td>{{ log.username }}</td>
-            <td>{{ log.module }}</td>
-            <td>{{ log.permission }}</td>
-            <td class="details-cell">
-              <span *ngIf="log.details" [title]="log.details">{{ log.details }}</span>
-              <span *ngIf="!log.details" class="no-details">-</span>
-            </td>
-            <td>{{ formatDate(log.dateHeure) }}</td>
-          </tr>
-          <tr *ngIf="pagedLogs.length === 0">
-            <td colspan="5" class="no-data">Aucun log trouvé</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
+    <div class="page page-dashboard">
+      <div class="ph-row ph-row-dash">
+        <div>
+          <div class="ph-eyebrow"><span></span>Traçabilité · Analyse</div>
+          <div class="ph-title ph-title-dash">Dashboard <em class="em-violet">activité utilisateurs</em></div>
+          <div class="ph-sub">Synthèse des usages par compte · {{ periodLabel }}</div>
+        </div>
+        <div class="dash-period-box">
+          Période analysée<br>
+          <strong>{{ formatCount(dashboardLogCount) }} logs</strong>
+          <span class="dash-hint" *ngIf="dashboardLogCount !== filteredLogs.length">(sur {{ formatCount(filteredLogs.length) }} chargés)</span>
+        </div>
+      </div>
 
-    <div class="loading-spinner" *ngIf="isLoading">
-      <i class="fas fa-spinner fa-spin"></i> Chargement...
-    </div>
+      <div class="filter-zone dash-filter-zone">
+        <div class="filter-title">Filtres dashboard</div>
+        <p class="dash-filter-hint">Affine l’affichage sur les logs déjà chargés (complément des filtres de l’onglet Logs).</p>
+        <form [formGroup]="dashboardFilterForm" (ngSubmit)="applyDashboardFilters()">
+          <div class="filter-row">
+            <div class="fg">
+              <label>Utilisateur</label>
+              <input class="fi" type="text" formControlName="searchUser" list="dash-username-list" placeholder="Contient…">
+              <datalist id="dash-username-list">
+                <option *ngFor="let username of usernames" [value]="username">
+              </datalist>
+            </div>
+            <div class="fg">
+              <label>Module</label>
+              <input class="fi" type="text" formControlName="dashModule" list="dash-module-list" placeholder="Contient…">
+              <datalist id="dash-module-list">
+                <option *ngFor="let module of modules" [value]="module">
+              </datalist>
+            </div>
+            <div class="fg">
+              <label>Permission</label>
+              <input class="fi" type="text" formControlName="dashPermission" list="dash-permission-list" placeholder="Contient…">
+              <datalist id="dash-permission-list">
+                <option *ngFor="let permission of permissions" [value]="permission">
+              </datalist>
+            </div>
+            <div class="fg fg-narrow">
+              <label>Min. actions / utilisateur</label>
+              <input class="fi" type="number" formControlName="minActions" min="0" step="1" placeholder="ex. 10">
+            </div>
+            <div class="filter-btns">
+              <button type="submit" class="apply-btn">Appliquer</button>
+              <button type="button" class="reset-btn" (click)="resetDashboardFilters()">↺ Réinitialiser</button>
+            </div>
+          </div>
+        </form>
+      </div>
 
-    <!-- Pagination -->
-    <div class="pagination" *ngIf="totalPages > 1 && !isLoading">
-      <button 
-        class="btn btn-sm" 
-        (click)="previousPage()" 
-        [disabled]="currentPage === 1">
-        <i class="fas fa-chevron-left"></i> Précédent
-      </button>
-      <span class="page-info">
-        Page {{ currentPage }} sur {{ totalPages }}
-      </span>
-      <button 
-        class="btn btn-sm" 
-        (click)="nextPage()" 
-        [disabled]="currentPage === totalPages">
-        Suivant <i class="fas fa-chevron-right"></i>
-      </button>
+      <div class="dash-kpi-grid">
+        <div class="dkpi b">
+          <div class="dkpi-l">Total actions</div>
+          <div class="dkpi-v b">{{ formatCount(dashboardLogCount) }}</div>
+          <div class="dkpi-s">après filtres dashboard</div>
+        </div>
+        <div class="dkpi g">
+          <div class="dkpi-l">Utilisateurs actifs</div>
+          <div class="dkpi-v g">{{ dashboardUsers.length }}</div>
+          <div class="dkpi-s">comptes distincts</div>
+        </div>
+        <div class="dkpi a">
+          <div class="dkpi-l">Module le + utilisé</div>
+          <div class="dkpi-v a">{{ topModuleName }}</div>
+          <div class="dkpi-s">{{ formatCount(topModuleTotal) }} actions</div>
+        </div>
+        <div class="dkpi v">
+          <div class="dkpi-l">Dernière activité</div>
+          <div class="dkpi-v v dkpi-v--sm">{{ lastActivityShort }}</div>
+          <div class="dkpi-s">{{ lastActivityUser }}</div>
+        </div>
+      </div>
+
+      <div class="sec-head">
+        <span class="sec-label">Utilisation par module et par utilisateur</span>
+        <div class="sec-line"></div>
+      </div>
+      <div class="heatmap-card">
+        <div class="heatmap-head">
+          <div class="heatmap-title">Carte d'activité — Modules × Utilisateurs</div>
+          <div class="heatmap-legend">
+            <span class="leg-swatch leg-low"></span>Faible
+            <span class="leg-swatch leg-mid"></span>Moyen
+            <span class="leg-swatch leg-high"></span>Élevé
+          </div>
+        </div>
+        <div class="hm-grid" *ngIf="heatmapModules.length && dashboardUsers.length">
+          <div class="hm-row hm-row-head">
+            <span class="hm-label hm-label-muted">Module</span>
+            <div class="hm-cells">
+              <span class="hm-user-h" *ngFor="let u of dashboardUsers" [title]="u.name">{{ userShortName(u.name) }}</span>
+            </div>
+            <span class="hm-user-label"></span>
+          </div>
+          <div class="hm-row" *ngFor="let mod of heatmapModules; let ri = index">
+            <span class="hm-label">{{ mod }}</span>
+            <div class="hm-cells">
+              <div
+                class="hm-cell"
+                *ngFor="let u of dashboardUsers"
+                [style.background]="heatmapCellBackground(mod, u.modules[mod] || 0)"
+                [style.opacity]="heatmapCellOpacity(u.modules[mod] || 0)"
+                [title]="u.name + ' · ' + mod + ': ' + (u.modules[mod] || 0) + ' actions'"
+              ></div>
+            </div>
+            <span class="hm-user-label hm-idx">{{ ri + 1 }}</span>
+          </div>
+        </div>
+        <p class="hm-empty" *ngIf="!heatmapModules.length || !dashboardUsers.length">Aucune donnée pour la période sélectionnée.</p>
+      </div>
+
+      <div class="sec-head">
+        <span class="sec-label">Profils utilisateurs</span>
+        <div class="sec-line"></div>
+      </div>
+      <div class="users-grid">
+        <div class="user-card" *ngFor="let u of pagedDashboardUsers; let i = index" [style.animation-delay.s]="0.07 + i * 0.06">
+          <div class="uc-head">
+            <div class="uc-av" [style.background]="u.color">{{ u.initials }}</div>
+            <div class="uc-info">
+              <div class="uc-name">{{ u.name }}</div>
+              <div class="uc-role">{{ u.role }}</div>
+            </div>
+            <div class="uc-status" [class.online]="u.online" [class.offline]="!u.online">
+              <span class="dot"></span>{{ u.online ? 'En ligne' : 'Hors ligne' }}
+            </div>
+          </div>
+          <div class="uc-stats">
+            <div class="uc-stat">
+              <div class="uc-stat-l">Actions</div>
+              <div class="uc-stat-v" [style.color]="u.color">{{ formatCompact(u.total) }}</div>
+            </div>
+            <div class="uc-stat">
+              <div class="uc-stat-l">Sessions</div>
+              <div class="uc-stat-v">{{ u.sessions }}</div>
+            </div>
+            <div class="uc-stat">
+              <div class="uc-stat-l">Modules</div>
+              <div class="uc-stat-v">{{ moduleKeysCount(u.modules) }}</div>
+            </div>
+          </div>
+          <div class="uc-modules">
+            <div class="uc-mod-title">Top modules utilisés</div>
+            <ng-container *ngIf="topModulesForUser(u, 4) as tops">
+              <div class="mod-bar-row" *ngFor="let row of tops">
+                <span class="mbr-name" [title]="row.name">{{ row.name }}</span>
+                <div class="mbr-track">
+                  <div class="mbr-fill" [style.width.%]="barPct(row.count, topModuleMax(tops))" [style.background]="modColors[row.name] || '#4A82C4'"></div>
+                </div>
+                <span class="mbr-count">{{ formatCompact(row.count) }}</span>
+              </div>
+            </ng-container>
+          </div>
+          <div class="uc-footer">
+            <span class="uc-last">Dernière activité<br><strong>{{ u.lastSeen }}</strong></span>
+            <button type="button" class="uc-detail-btn" (click)="goto('logs')">Voir logs →</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="dash-pagination" *ngIf="dashUsersTotalPages > 1">
+        <button type="button" class="page-nav" (click)="prevDashUsersPage()" [disabled]="dashUsersPage === 1">Précédent</button>
+        <span class="page-meta">Profils {{ dashUsersPage }} / {{ dashUsersTotalPages }} · {{ formatCount(dashboardUsers.length) }} utilisateur(s)</span>
+        <button type="button" class="page-nav" (click)="nextDashUsersPage()" [disabled]="dashUsersPage === dashUsersTotalPages">Suivant</button>
+      </div>
+
+      <div class="sec-head">
+        <span class="sec-label">Activité récente</span>
+        <div class="sec-line"></div>
+      </div>
+      <div class="activity-card">
+        <div class="activity-head">
+          <div class="activity-title">Dernières actions — tous utilisateurs</div>
+          <button type="button" class="activity-link" (click)="goto('logs')">Voir tous les logs →</button>
+        </div>
+        <div class="timeline">
+          <div class="tl-item" *ngFor="let l of pagedTimelineLogs; let last = last">
+            <div class="tl-dot-wrap">
+              <div class="tl-dot" [style.background]="userColor(l.username)"></div>
+              <div class="tl-line" *ngIf="!last"></div>
+            </div>
+            <div class="tl-body">
+              <div>
+                <span class="tl-user">{{ l.username }}</span>
+                <span class="tl-action">
+                  · <span class="mod-pill mod-pill--tl" [ngClass]="modClass(l.module)">{{ l.module }}</span>
+                  · <span class="tl-perm">{{ l.permission }}</span>
+                </span>
+              </div>
+              <div class="tl-detail" *ngIf="l.details">{{ l.details }}</div>
+              <div class="tl-time">{{ formatDate(l.dateHeure) }}</div>
+            </div>
+          </div>
+          <p class="tl-empty" *ngIf="!timelineLogsAll.length">Aucune activité récente.</p>
+        </div>
+        <div class="dash-pagination dash-pagination--inset" *ngIf="dashTimelineTotalPages > 1">
+          <button type="button" class="page-nav" (click)="prevDashTimelinePage()" [disabled]="dashTimelinePage === 1">Précédent</button>
+          <span class="page-meta">Page {{ dashTimelinePage }} / {{ dashTimelineTotalPages }} · {{ formatCount(timelineLogsAll.length) }} entrée(s)</span>
+          <button type="button" class="page-nav" (click)="nextDashTimelinePage()" [disabled]="dashTimelinePage === dashTimelineTotalPages">Suivant</button>
+        </div>
+      </div>
     </div>
   </div>
-  </div><!-- .user-log-container -->
-  </div><!-- .main -->
 </div>
-

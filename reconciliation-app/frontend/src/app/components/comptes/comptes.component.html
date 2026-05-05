@@ -296,6 +296,15 @@
                 <div class="form-actions">
                     <button type="submit" class="btn primary">Filtrer</button>
                     <button type="button" (click)="clearFilters()" class="btn">Réinitialiser</button>
+                    <button type="button" class="btn" (click)="downloadSoldeBoTemplate()" title="CSV : Date, Numéro de compte, Montant">
+                        <i class="fas fa-file-download"></i> Modèle solde BO
+                    </button>
+                    <input #soldeBoBulkFileInput type="file" accept=".csv,.txt,.xlsx,.xls,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" style="display:none"
+                           (change)="onSoldeBoBulkFileSelected($event); soldeBoBulkFileInput.value = ''">
+                    <button type="button" class="btn" (click)="soldeBoBulkFileInput.click()" [disabled]="isImportingSoldeBoBulk"
+                            title="Enregistrer les soldes BO ligne par ligne (même format que le modèle)">
+                        <i class="fas fa-file-upload"></i> {{ isImportingSoldeBoBulk ? 'Import…' : 'Importer soldes BO' }}
+                    </button>
                 </div>
             </form>
         </div>
@@ -518,7 +527,7 @@
                         <div class="filter-group">
                             <label>Période:</label>
                             <select [(ngModel)]="releveDateDebut" (change)="onRelevePeriodChange()" [disabled]="showAllDataReleve">
-                                <option value="">Toutes les opérations</option>
+                                <option value="">Mois par défaut (précédent jusqu’au 1er, puis en cours)</option>
                                 <option value="7">7 derniers jours</option>
                                 <option value="30">30 derniers jours</option>
                                 <option value="90">3 derniers mois</option>

@@ -3091,7 +3091,7 @@ export interface ReconciliationReportData {
 })
 export class ReconciliationReportComponent implements OnInit, OnDestroy {
     private readonly resultsModuleName = 'Résultats';
-    glpiBaseUrl = 'https://glpi.intouchgroup.net/glpi/front/ticket.form.php?id='
+    glpiBaseUrl = 'https://glpi.intouchgroup.net/glpi/public/front/ticket.form.php?id='
     
     // Propriétés de pagination
     currentPage = 1;
@@ -5805,7 +5805,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
 
     // Ouvrir GLPI pour créer un nouveau ticket
     openGlpiCreate() {
-        const glpiCreateUrl = 'https://glpi.intouchgroup.net/glpi/front/ticket.form.php';
+        const glpiCreateUrl = 'https://glpi.intouchgroup.net/glpi/public/front/ticket.form.php';
         window.open(glpiCreateUrl, '_blank', 'noopener,noreferrer');
     }
 
@@ -5900,7 +5900,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
 
     // Obtenir l'URL du ticket GLPI avec l'ID
     getGlpiTicketUrl(idGlpi: string): string {
-        return `https://glpi.intouchgroup.net/glpi/front/ticket.form.php?id=${idGlpi}`;
+        return `https://glpi.intouchgroup.net/glpi/public/front/ticket.form.php?id=${idGlpi}`;
     }
 
     getBometierTicketUrl(idGlpi: string): string {
