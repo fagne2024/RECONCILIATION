@@ -215,7 +215,9 @@ public class CsvReconciliationService implements DisposableBean {
             if (request.getAdditionalKeys() != null && !request.getAdditionalKeys().isEmpty()) {
                 logger.info("🔑 Clés supplémentaires utilisées: {} paires", request.getAdditionalKeys().size());
             }
-            Map<String, Map<String, String>> partnerIndex = new HashMap<>();
+            // Une clé composite peut correspondre à plusieurs lignes partenaire (ex. même téléphone + montant).
+            // Index en liste + appariement FIFO avec les lignes BO pour ne pas perdre les doublons ni les écarts part.
+            Map<String, List<Map<String, String>>> partnerIndex = new HashMap<>();
             
             // Vérifier que l'ExecutorService est disponible
             if (executorService.isShutdown()) {
@@ -247,7 +249,7 @@ public class CsvReconciliationService implements DisposableBean {
                                                              request.getAdditionalKeys(), false);
                         if (partnerKey != null) {
                             synchronized (partnerIndex) {
-                                partnerIndex.put(partnerKey, partnerRecord);
+                                partnerIndex.computeIfAbsent(partnerKey, k -> new ArrayList<>()).add(partnerRecord);
                             }
                         }
                     }
@@ -267,7 +269,6 @@ public class CsvReconciliationService implements DisposableBean {
             // Traitement parallèle des enregistrements BO
             logger.info("🔄 Début du traitement parallèle par lots (taille: {})", BATCH_SIZE);
             
-            Set<String> processedBoKeys = Collections.newSetFromMap(new ConcurrentHashMap<>());
             int totalRecords = filteredBoRecords.size();
             int processedRecords = 0;
             
@@ -283,7 +284,7 @@ public class CsvReconciliationService implements DisposableBean {
             
             for (List<Map<String, String>> chunk : boChunks) {
                 CompletableFuture<ReconciliationBatchResult> future = CompletableFuture.supplyAsync(() -> 
-                    processBatchOptimized(chunk, partnerIndex, request, processedBoKeys, normalizedBoKeyColumn), executorService);
+                    processBatchOptimized(chunk, partnerIndex, request, normalizedBoKeyColumn), executorService);
                 batchFutures.add(future);
             }
             
@@ -305,28 +306,24 @@ public class CsvReconciliationService implements DisposableBean {
                     String.format("%.2f", progress), processedRecords, totalRecords, String.format("%.0f", recordsPerSecond), elapsedTime);
             }
 
-            // Recherche optimisée des enregistrements uniquement dans le fichier partenaire
+            // Lignes partenaire non appariées à une ligne BO (reste des listes après consommation FIFO par clé)
             logger.info("🔍 Recherche optimisée des enregistrements uniquement partenaire...");
             int partnerOnlyCount = 0;
-            
-            // Utilisation d'un Set pour une recherche O(1) au lieu de O(n)
-            Set<String> processedBoKeysSet = new HashSet<>(processedBoKeys);
-            
-            // Utiliser processedPartnerData (données transformées) au lieu de request.getPartnerFileContent()
-            for (Map<String, String> partnerRecord : processedPartnerData) {
-                // Construire la clé composite (incluant clés supplémentaires)
-                String partnerKey = buildCompositeKey(partnerRecord, normalizedPartnerKeyColumn, 
-                                                     request.getAdditionalKeys(), false);
-                if (partnerKey != null && !processedBoKeysSet.contains(partnerKey)) {
+            for (List<Map<String, String>> partnersForKey : partnerIndex.values()) {
+                List<Map<String, String>> snapshot;
+                synchronized (partnersForKey) {
+                    snapshot = new ArrayList<>(partnersForKey);
+                }
+                for (Map<String, String> partnerRecord : snapshot) {
                     response.getPartnerOnly().add(partnerRecord);
                     partnerOnlyCount++;
-                    
                     if (partnerOnlyCount <= 10) {
+                        String partnerKey = buildCompositeKey(partnerRecord, normalizedPartnerKeyColumn,
+                                request.getAdditionalKeys(), false);
                         logger.info("Enregistrement uniquement partenaire trouvé: {}", partnerKey);
                     }
                 }
             }
-            
             logger.info("✅ Nombre total d'enregistrements uniquement partenaire: {}", partnerOnlyCount);
 
             // Calcule les totaux (utiliser les données traitées)
@@ -1124,9 +1121,8 @@ public class CsvReconciliationService implements DisposableBean {
     }
 
     private ReconciliationBatchResult processBatchOptimized(List<Map<String, String>> batch, 
-                            Map<String, Map<String, String>> partnerIndex,
+                            Map<String, List<Map<String, String>>> partnerIndex,
                             ReconciliationRequest request,
-                            Set<String> processedBoKeys,
                             String normalizedBoKeyColumn) {
         
         List<ReconciliationResponse.Match> matches = new ArrayList<>();
@@ -1144,8 +1140,15 @@ public class CsvReconciliationService implements DisposableBean {
                 continue;
             }
 
-            processedBoKeys.add(boKey);
-            Map<String, String> partnerRecord = partnerIndex.get(boKey);
+            Map<String, String> partnerRecord = null;
+            List<Map<String, String>> partnersForKey = partnerIndex.get(boKey);
+            if (partnersForKey != null) {
+                synchronized (partnersForKey) {
+                    if (!partnersForKey.isEmpty()) {
+                        partnerRecord = partnersForKey.remove(0);
+                    }
+                }
+            }
 
             if (partnerRecord == null) {
                 boOnly.add(boRecord);
@@ -1182,6 +1185,10 @@ public class CsvReconciliationService implements DisposableBean {
                     matches.add(match);
                 } else {
                     mismatches.add(boRecord);
+                    // Remettre la ligne partenaire : elle n'est pas une correspondance valide mais ne doit pas disparaître.
+                    synchronized (partnersForKey) {
+                        partnersForKey.add(0, partnerRecord);
+                    }
                 }
                 processedCount++;
             }

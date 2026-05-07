@@ -371,7 +371,9 @@ export class ReconciliationService implements OnInit, OnDestroy {
             if (boKey && partnerIndex.has(boKey)) {
                 const matchingPartners = partnerIndex.get(boKey);
                 if (matchingPartners && matchingPartners.length > 0) {
-                    const consumedPartners = matchingPartners.splice(0, Math.min(2, matchingPartners.length));
+                    // Une ligne BO consomme une ligne partenaire (clé identique = file d’attente 1:1).
+                    // Ne pas retirer 2 lignes d’un coup : les doublons partenaire sinon ne remontent pas en écart part.
+                    const consumedPartners = matchingPartners.splice(0, 1);
                     matchedRecords.push({
                         bo: boRecord,
                         partner: consumedPartners[0],
