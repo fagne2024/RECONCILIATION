@@ -706,7 +706,7 @@
                                             Solde d'ouverture global ({{ getGlobalOpeningBalanceDate() }}): {{ getGlobalOpeningBalance() | number:'1.2-2' }}
                                         </td>
                                     </tr>
-                                    <ng-container *ngFor="let operation of pagedReleveOperations; let i = index">
+                                    <ng-container *ngFor="let operation of pagedReleveOperations; let i = index; trackBy: trackByReleveOperation">
                                         <tr *ngIf="shouldShowOpeningBalance(operation, i)" class="solde-ouverture">
                                             <td colspan="3"><b style="color: #1976d2;">Solde d'ouverture ({{ getOpDate(operation) }})</b></td>
                                             <td></td>
@@ -782,7 +782,7 @@
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    <tr *ngFor="let group of pagedReleveOperationsGrouped">
+                                    <tr *ngFor="let group of pagedReleveOperationsGrouped; trackBy: trackByReleveGroup">
                                         <td style="font-weight: 600;">{{ group.periodLabel }}</td>
                                         <td>{{ group.operations.length }}</td>
                                         <td style="color: #e53935;">{{ group.totalDebit | number:'1.2-2' }}</td>
@@ -833,7 +833,7 @@
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    <tr *ngFor="let row of pagedReleveSoldesDisplay; let i = index">
+                                    <tr *ngFor="let row of pagedReleveSoldesDisplay; let i = index; trackBy: trackByReleveSolde">
                                         <td>{{ row.periodLabel }}</td>
                                         <td class="solde-ouverture-val">{{ row.opening | number:'1.2-2' }}</td>
                                         <td class="solde-cloture-val"
@@ -889,7 +889,7 @@
                             </button>
                             
                             <div class="pagination-indicators">
-                                <span *ngFor="let page of getVisibleRelevePages()" 
+                                <span *ngFor="let page of getVisibleRelevePages(); trackBy: trackByNumber"
                                         class="page-indicator"
                                         [class.active]="releveCurrentPage === page"
                                         (click)="goToRelevePage(page)">
@@ -1067,7 +1067,7 @@
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        <tr *ngFor="let revenu of pagedRevenuJournalierData">
+                                        <tr *ngFor="let revenu of pagedRevenuJournalierData; trackBy: trackByRevenuJournalier">
                                             <td>{{ formatDate(revenu.date) }}</td>
                                             <td class="cashin-amount">{{ revenu.totalCashin | number:'1.2-2' }}</td>
                                             <td class="paiement-amount">{{ revenu.totalPaiement | number:'1.2-2' }}</td>
@@ -1091,7 +1091,7 @@
                                 </button>
                                 
                                 <div class="pagination-indicators">
-                                    <span *ngFor="let page of getVisibleRevenuJournalierPages()" 
+                                    <span *ngFor="let page of getVisibleRevenuJournalierPages(); trackBy: trackByNumber"
                                             class="page-indicator"
                                             [class.active]="revenuJournalierCurrentPage === page"
                                             (click)="goToRevenuJournalierPage(page)">
@@ -1233,7 +1233,7 @@
                             </tr>
                           </thead>
                           <tbody>
-                            <tr *ngFor="let it of pagedEcartFraisItems"
+                            <tr *ngFor="let it of pagedEcartFraisItems; trackBy: trackByEcartFrais"
                                 [ngClass]="{
                                   'statut-en-attente': it.statut==='EN_ATTENTE',
                                   'statut-traite': it.statut==='TRAITE',
@@ -1347,7 +1347,7 @@
                         </button>
                         
                         <div class="pagination-indicators">
-                          <span *ngFor="let page of getVisibleEcartFraisPages()" 
+                          <span *ngFor="let page of getVisibleEcartFraisPages(); trackBy: trackByNumber"
                                 class="page-indicator"
                                 [class.active]="ecartFraisCurrentPage === page"
                                 (click)="goToEcartFraisPage(page)">
@@ -1552,7 +1552,7 @@
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        <tr *ngFor="let controle of pagedControlRevenuData" 
+                                        <tr *ngFor="let controle of pagedControlRevenuData; trackBy: trackByControlRevenu"
                                             [ngClass]="getControlRevenuRowClass(controle)">
                                             <td>{{ formatDate(controle.date) }}</td>
                                             <td class="service">{{ controle.service }}</td>
@@ -1597,7 +1597,7 @@
                                 </button>
                                 
                                 <div class="pagination-indicators">
-                                    <span *ngFor="let page of getVisibleControlRevenuPages()" 
+                                    <span *ngFor="let page of getVisibleControlRevenuPages(); trackBy: trackByNumber"
                                             class="page-indicator"
                                             [class.active]="controlRevenuCurrentPage === page"
                                             (click)="goToControlRevenuPage(page)">

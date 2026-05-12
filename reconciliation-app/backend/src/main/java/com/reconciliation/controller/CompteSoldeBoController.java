@@ -6,6 +6,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
@@ -27,5 +28,13 @@ public class CompteSoldeBoController {
     public Double getSoldeBo(@RequestParam String numeroCompte, @RequestParam String dateSolde) {
         Optional<CompteSoldeBoEntity> entity = service.getByNumeroCompteAndDate(numeroCompte, LocalDate.parse(dateSolde));
         return entity.map(CompteSoldeBoEntity::getSoldeBo).orElse(null);
+    }
+
+    @GetMapping("/list")
+    public List<CompteSoldeBoEntity> listSoldesBo(
+            @RequestParam String numeroCompte,
+            @RequestParam String dateDebut,
+            @RequestParam String dateFin) {
+        return service.listByNumeroCompteAndDateRange(numeroCompte, LocalDate.parse(dateDebut), LocalDate.parse(dateFin));
     }
 } 

@@ -184,6 +184,13 @@ export class CompteService {
         return this.http.get<number>('/api/compte-solde-bo/get', { params: { numeroCompte, dateSolde } });
     }
 
+    listSoldesBo(numeroCompte: string, dateDebut?: string, dateFin?: string) {
+        let params = new HttpParams().set('numeroCompte', numeroCompte);
+        if (dateDebut) params = params.set('dateDebut', dateDebut);
+        if (dateFin) params = params.set('dateFin', dateFin);
+        return this.http.get<Array<{ dateSolde: string; soldeBo: number }>>('/api/compte-solde-bo/list', { params });
+    }
+
     // Soldes de clôture manuels
     setSoldeClotureManuel(numeroCompte: string, dateSolde: string, soldeCloture: number) {
         return this.http.post('/api/compte-solde-cloture/set', { numeroCompte, dateSolde, soldeCloture });

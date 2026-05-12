@@ -291,6 +291,11 @@ export class ComptesComponent implements OnInit, OnDestroy {
     controlRevenuType = '';
     controlRevenuSeuil: number | null = null;
     controlRevenuDataFiltered: { date: string; service: string; typeControle: string; revenuAttendu: number; revenuReel: number; ecart: number; statut: string; volume: number; nombreTrx: number; totalFraisTrxSf?: number }[] = [];
+    private releveOperationsFetchKey = '';
+    private revenuJournalierFetchKey = '';
+    private controlRevenuFetchKey = '';
+    private ecartFraisFetchKey = '';
+    private fraisParametresLoaded = false;
     
     // Propriété pour stocker les frais paramétrés
     fraisParametres: FraisTransaction[] = [];
@@ -951,6 +956,100 @@ export class ComptesComponent implements OnInit, OnDestroy {
         return tIndex > 0 ? dateInput.substring(0, tIndex) : dateInput;
     }
 
+    private buildReleveDateFilters(): { dateDebut: string | null; dateFin: string | null } {
+        if (this.showAllDataReleve) {
+            return { dateDebut: null, dateFin: null };
+        }
+
+        if (this.releveDateDebut === 'custom') {
+            return {
+                dateDebut: this.releveDateDebutCustom || null,
+                dateFin: this.releveDateFinCustom || null
+            };
+        }
+
+        if (this.releveDateDebut) {
+            const jours = parseInt(this.releveDateDebut, 10);
+            const dateFinObj = new Date();
+            const dateDebutObj = new Date();
+            dateDebutObj.setDate(dateDebutObj.getDate() - jours);
+            return {
+                dateDebut: dateDebutObj.toISOString().split('T')[0],
+                dateFin: dateFinObj.toISOString().split('T')[0]
+            };
+        }
+
+        const { year, monthIndex } = this.getDefaultReleveReportingMonth();
+        const dateDebutObj = new Date(year, monthIndex, 1);
+        const dateFinObj = new Date(year, monthIndex + 1, 0);
+        return {
+            dateDebut: dateDebutObj.toISOString().split('T')[0],
+            dateFin: dateFinObj.toISOString().split('T')[0]
+        };
+    }
+
+    private buildReleveFetchKey(): string {
+        const { dateDebut, dateFin } = this.buildReleveDateFilters();
+        return [
+            this.selectedCompte?.numeroCompte || '',
+            dateDebut || 'all',
+            dateFin || 'all',
+            this.releveTypeOperation || 'all'
+        ].join('|');
+    }
+
+    private buildControlRevenuDateFilters(): { dateDebut: string | null; dateFin: string | null } {
+        if (this.controlRevenuDateDebut || this.controlRevenuDateFin) {
+            return {
+                dateDebut: this.controlRevenuDateDebut || null,
+                dateFin: this.controlRevenuDateFin || null
+            };
+        }
+        return this.buildReleveDateFilters();
+    }
+
+    private resetReleveTabCaches(): void {
+        this.releveOperationsFetchKey = '';
+        this.revenuJournalierFetchKey = '';
+        this.controlRevenuFetchKey = '';
+        this.ecartFraisFetchKey = '';
+        this.revenuJournalierData = [];
+        this.revenuJournalierDataFiltered = [];
+        this.controlRevenuData = [];
+        this.controlRevenuDataFiltered = [];
+        this.ecartFraisItems = [];
+        this.ecartFraisFilteredItems = [];
+        this.impactOPSums = {};
+    }
+
+    trackByNumber(index: number, value: number): number {
+        return value ?? index;
+    }
+
+    trackByReleveOperation(index: number, operation: Operation): string | number {
+        return operation.id ?? `${operation.dateOperation}|${operation.typeOperation}|${operation.montant}|${index}`;
+    }
+
+    trackByReleveGroup(index: number, group: { periodLabel: string }): string {
+        return group.periodLabel || String(index);
+    }
+
+    trackByReleveSolde(index: number, row: ReleveSoldeDisplayRow): string {
+        return row.periodLabel || row.ecartRef?.date || String(index);
+    }
+
+    trackByRevenuJournalier(index: number, revenu: { date: string }): string {
+        return revenu.date || String(index);
+    }
+
+    trackByControlRevenu(index: number, controle: { date: string; service: string; typeControle: string }): string {
+        return `${controle.date}|${controle.service}|${controle.typeControle}|${index}`;
+    }
+
+    trackByEcartFrais(index: number, item: import('../../services/trx-sf.service').TrxSfData): string | number {
+        return item.id ?? item.idTransaction ?? index;
+    }
+
     async exportComptes() {
         this.isExporting = true;
         try {
@@ -1470,10 +1569,15 @@ export class ComptesComponent implements OnInit, OnDestroy {
 
     // Méthodes pour le relevé de compte
     viewReleve(compte: Compte): void {
+        const isSameCompte = this.selectedCompte?.numeroCompte === compte.numeroCompte;
         this.selectedCompte = compte;
         this.showReleveModal = true;
         this.showRevenuJournalierTab = true; // Activer l'onglet revenu journalier
         this.showControlRevenuTab = true; // Activer l'onglet Control revenu
+        this.activeTab = 'operations';
+        if (!isSameCompte) {
+            this.resetReleveTabCaches();
+        }
         this.loadReleveOperations();
     }
 
@@ -1492,6 +1596,8 @@ export class ComptesComponent implements OnInit, OnDestroy {
         this.releveDateFinCustom = '';
         this.releveCurrentPage = 1;
         this.releveTotalPages = 1;
+        this.activeTab = 'operations';
+        this.resetReleveTabCaches();
     }
 
     onRelevePeriodChange(): void {
@@ -1518,38 +1624,18 @@ export class ComptesComponent implements OnInit, OnDestroy {
     loadReleveOperations(): void {
         if (!this.selectedCompte) return;
 
+        const fetchKey = this.buildReleveFetchKey();
+        if (fetchKey === this.releveOperationsFetchKey && this.releveOperations.length > 0) {
+            this.calculateRelevePagination();
+            return;
+        }
+
         this.isLoadingReleve = true;
         this.releveOperations = [];
         this.releveSoldesJournaliers = [];
         this.invalidateReleveOperationCaches();
-
-        // Construire les paramètres de filtrage
-        let dateDebut: string | null = null;
-        let dateFin: string | null = null;
-
-        // Ajouter les filtres de date
-        // Si showAllDataReleve est activé, ne pas appliquer de filtre de date
-        if (this.showAllDataReleve) {
-            dateDebut = null;
-            dateFin = null;
-        } else if (this.releveDateDebut === 'custom') {
-            dateDebut = this.releveDateDebutCustom || null;
-            dateFin = this.releveDateFinCustom || null;
-        } else if (this.releveDateDebut) {
-            const jours = parseInt(this.releveDateDebut);
-            const dateFinObj = new Date();
-            const dateDebutObj = new Date();
-            dateDebutObj.setDate(dateDebutObj.getDate() - jours);
-            dateDebut = dateDebutObj.toISOString().split('T')[0];
-            dateFin = dateFinObj.toISOString().split('T')[0];
-        } else {
-            // Par défaut : mois « actif » comme le rapport réconciliation (précédent jusqu’au 1er, puis mois en cours)
-            const { year, monthIndex } = this.getDefaultReleveReportingMonth();
-            const dateDebutObj = new Date(year, monthIndex, 1);
-            dateDebut = dateDebutObj.toISOString().split('T')[0];
-            const dateFinObj = new Date(year, monthIndex + 1, 0);
-            dateFin = dateFinObj.toISOString().split('T')[0];
-        }
+        this.resetReleveTabCaches();
+        const { dateDebut, dateFin } = this.buildReleveDateFilters();
 
         this.operationService.getOperationsByCompteForReleve(
             this.selectedCompte.numeroCompte,
@@ -1559,6 +1645,7 @@ export class ComptesComponent implements OnInit, OnDestroy {
         ).subscribe({
             next: (operations: any[]) => {
                 this.releveOperations = operations;
+                this.releveOperationsFetchKey = fetchKey;
                 this.processReleveOperations();
                 this.calculateRelevePagination();
                 this.isLoadingReleve = false;
@@ -1577,40 +1664,26 @@ export class ComptesComponent implements OnInit, OnDestroy {
     loadImpactOPSums(): void {
         if (!this.selectedCompte || this.releveSoldesJournaliers.length === 0) return;
 
-        // Vider le cache
         this.impactOPSums = {};
+        const dates = this.releveSoldesJournaliers.map(solde => solde.date);
+        const dateDebut = dates.reduce((min, current) => current < min ? current : min);
+        const dateFin = dates.reduce((max, current) => current > max ? current : max);
 
-        // Charger les sommes pour chaque date de manière séquentielle avec délai
-        // pour éviter les erreurs 429 (Too Many Requests)
         this.subscription.add(
-            from(this.releveSoldesJournaliers).pipe(
-                concatMap((solde, index) => 
-                    this.impactOPService.getImpactOPSumForDate(solde.date, this.selectedCompte!.numeroCompte).pipe(
-                        delay(index * 150), // Délai progressif de 150ms entre chaque appel
-                        retryWhen(errors => errors.pipe(
-                            scan((retryCount, err) => {
-                                if (retryCount >= 2 || err.status !== 429) {
-                                    throw err;
-                                }
-                                console.log(`Rate limit atteint pour ${solde.date}. Nouvelle tentative (${retryCount + 1}/2)...`);
-                                return retryCount + 1;
-                            }, 0),
-                            delay(1000) // Attendre 1 seconde avant de réessayer
-                        )),
-                        tap(sum => {
-                            this.impactOPSums[solde.date] = sum;
-                        })
-                    )
-                )
-            ).subscribe({
-                next: () => {
-                    // Chaque réponse individuelle est traitée dans le tap ci-dessus
+            this.impactOPService.getImpactOPs({
+                codeProprietaire: this.selectedCompte.numeroCompte,
+                dateDebut,
+                dateFin
+            }).subscribe({
+                next: (impacts) => {
+                    (impacts || []).forEach((impact: any) => {
+                        const date = impact.dateOperation ? this.normalizeToYmd(impact.dateOperation) : '';
+                        if (!date) return;
+                        this.impactOPSums[date] = (this.impactOPSums[date] || 0) + (Number(impact.montant) || 0);
+                    });
                 },
                 error: (error) => {
-                    console.error('Erreur lors du chargement des sommes Impact OP:', error);
-                },
-                complete: () => {
-                    console.log('Chargement des sommes Impact OP terminé');
+                    console.error('Erreur lors du chargement groupé des impacts OP:', error);
                 }
             })
         );
@@ -1634,39 +1707,27 @@ export class ComptesComponent implements OnInit, OnDestroy {
 
         this.loadManualClosingOverrides();
 
-        // Charger les soldes BO de manière séquentielle pour éviter les erreurs 429
-        this.subscription.add(
-            from(this.releveSoldesJournaliers).pipe(
-                concatMap((solde, index) =>
-                    this.compteService.getSoldeBo(this.selectedCompte?.numeroCompte || '', solde.date).pipe(
-                        delay(index * 150), // Délai progressif de 150ms entre chaque appel
-                        retryWhen(errors => errors.pipe(
-                            scan((retryCount, err) => {
-                                if (retryCount >= 2 || err.status !== 429) {
-                                    throw err;
-                                }
-                                console.log(`Rate limit atteint pour le solde BO ${solde.date}. Nouvelle tentative (${retryCount + 1}/2)...`);
-                                return retryCount + 1;
-                            }, 0),
-                            delay(1000)
-                        )),
-                        tap(val => {
-                            if (val !== null && val !== undefined) solde.closingBo = val;
-                        })
-                    )
-                )
-            ).subscribe({
-                next: () => {
-                    // Chaque réponse individuelle est traitée dans le tap ci-dessus
-                },
-                error: (error) => {
-                    console.error('Erreur lors du chargement des soldes BO:', error);
-                },
-                complete: () => {
-                    console.log('Chargement des soldes BO terminé');
-                }
-            })
-        );
+        const dates = this.releveSoldesJournaliers.map(solde => solde.date);
+        if (this.selectedCompte && dates.length > 0) {
+            const minDate = dates.reduce((min, current) => current < min ? current : min);
+            const maxDate = dates.reduce((max, current) => current > max ? current : max);
+            this.subscription.add(
+                this.compteService.listSoldesBo(this.selectedCompte.numeroCompte, minDate, maxDate).subscribe({
+                    next: (soldesBo) => {
+                        const soldeBoMap = new Map(soldesBo.map(item => [item.dateSolde, item.soldeBo]));
+                        this.releveSoldesJournaliers.forEach(solde => {
+                            const val = soldeBoMap.get(solde.date);
+                            if (val !== null && val !== undefined) {
+                                solde.closingBo = val;
+                            }
+                        });
+                    },
+                    error: (error) => {
+                        console.error('Erreur lors du chargement groupé des soldes BO:', error);
+                    }
+                })
+            );
+        }
 
         this.calculateRelevePagination();
         this.isLoadingReleve = false;
@@ -3525,55 +3586,55 @@ export class ComptesComponent implements OnInit, OnDestroy {
     loadRevenuJournalier(): void {
         if (!this.selectedCompte || this.releveOperations.length === 0) return;
 
+        const dates = this.releveOperations
+            .map(op => op.dateOperation ? this.normalizeToYmd(op.dateOperation) : '')
+            .filter(Boolean);
+        const dateDebut = dates.length > 0 ? dates.reduce((min, current) => current < min ? current : min) : '';
+        const dateFin = dates.length > 0 ? dates.reduce((max, current) => current > max ? current : max) : '';
+        const fetchKey = [this.selectedCompte.numeroCompte, dateDebut, dateFin, this.releveOperationsFetchKey].join('|');
+        if (fetchKey === this.revenuJournalierFetchKey && this.revenuJournalierData.length > 0) {
+            this.applyRevenuJournalierFilters();
+            return;
+        }
+
         this.isLoadingRevenuJournalier = true;
         this.revenuJournalierData = [];
+        this.revenuJournalierDataFiltered = [];
 
         // Grouper les opérations par date
         const operationsByDate: { [date: string]: Operation[] } = {};
         this.releveOperations.forEach(op => {
-            const date = op.dateOperation ? op.dateOperation.split('T')[0] : '';
+            const date = op.dateOperation ? this.normalizeToYmd(op.dateOperation) : '';
             if (!operationsByDate[date]) {
                 operationsByDate[date] = [];
             }
             operationsByDate[date].push(op);
         });
 
-        // Calculer les revenus par jour
-        const promises: Promise<void>[] = [];
-        
-        Object.entries(operationsByDate).forEach(([date, operations]) => {
-            let totalCashin = 0;
-            let totalPaiement = 0;
-            let fraisCashin = 0;
-            let fraisPaiement = 0;
+        const agence = this.selectedCompte.numeroCompte || '';
+        const finishWithFraisByDate = (fraisByDate: Map<string, number>) => {
+            Object.entries(operationsByDate).forEach(([date, operations]) => {
+                let totalCashin = 0;
+                let totalPaiement = 0;
+                let fraisCashin = 0;
+                let fraisPaiement = 0;
 
-            operations.forEach(op => {
-                if (op.typeOperation === 'total_cashin') {
-                    totalCashin += op.montant || 0;
-                } else if (op.typeOperation === 'total_paiement') {
-                    totalPaiement += op.montant || 0;
-                } else if (op.typeOperation === 'FRAIS_TRANSACTION') {
-                    // Déterminer si c'est un frais de cashin ou paiement basé sur le service
-                    const service = op.service?.toUpperCase() || '';
-                    if (service.includes('CASHIN')) {
-                        fraisCashin += op.montant || 0;
-                    } else if (service.includes('PAIEMENT')) {
-                        fraisPaiement += op.montant || 0;
+                operations.forEach(op => {
+                    if (op.typeOperation === 'total_cashin') {
+                        totalCashin += op.montant || 0;
+                    } else if (op.typeOperation === 'total_paiement') {
+                        totalPaiement += op.montant || 0;
+                    } else if (op.typeOperation === 'FRAIS_TRANSACTION') {
+                        const service = op.service?.toUpperCase() || '';
+                        if (service.includes('CASHIN')) {
+                            fraisCashin += op.montant || 0;
+                        } else if (service.includes('PAIEMENT')) {
+                            fraisPaiement += op.montant || 0;
+                        }
                     }
-                }
-            });
+                });
 
-            // Calculer le revenu attendu (frais uniquement)
-            const revenuTotal = fraisCashin + fraisPaiement;
-
-            // Récupérer les frais SF pour cette agence et cette date
-            // Utiliser le numeroCompte comme agence (correspondance avec trx_sf)
-            const agence = this.selectedCompte?.numeroCompte || '';
-            console.log(`Recherche des frais SF pour agence: ${agence}, date: ${date}`);
-            
-            // Vérifier que l'agence est définie
-            if (!agence) {
-                console.warn(`Aucune agence définie pour le compte ${this.selectedCompte?.numeroCompte}, impossible de récupérer les frais SF`);
+                const revenuTotal = fraisCashin + fraisPaiement;
                 this.revenuJournalierData.push({
                     date,
                     totalCashin,
@@ -3581,52 +3642,35 @@ export class ComptesComponent implements OnInit, OnDestroy {
                     fraisCashin,
                     fraisPaiement,
                     revenuTotal,
-                    ecartFrais: 0
+                    ecartFrais: fraisByDate.get(date) || 0
                 });
-                // Ajouter une promesse résolue pour maintenir la cohérence
-                promises.push(Promise.resolve());
-            } else {
-                const promise = this.trxSfService.getFraisByAgenceAndDateEnAttente(agence, date).toPromise()
-                    .then((response: any) => {
-                        const fraisSf = response?.frais || 0;
-                        console.log(`Frais SF EN_ATTENTE trouvés pour ${agence} le ${date}: ${fraisSf}`);
-                        
-                        this.revenuJournalierData.push({
-                            date,
-                            totalCashin,
-                            totalPaiement,
-                            fraisCashin,
-                            fraisPaiement,
-                            revenuTotal,
-                            ecartFrais: fraisSf
-                        });
-                    })
-                    .catch((error: any) => {
-                        console.error(`Erreur lors de la récupération des frais SF pour ${agence} le ${date}:`, error);
-                        this.revenuJournalierData.push({
-                            date,
-                            totalCashin,
-                            totalPaiement,
-                            fraisCashin,
-                            fraisPaiement,
-                            revenuTotal,
-                            ecartFrais: 0
-                        });
-                    });
-                
-                promises.push(promise);
-            }
-        });
+            });
 
-        // Attendre que tous les appels soient terminés
-        Promise.all(promises).then(() => {
-            // Trier par date (du plus récent au plus ancien)
             this.revenuJournalierData.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-
-            // Appliquer les filtres
+            this.revenuJournalierFetchKey = fetchKey;
             this.applyRevenuJournalierFilters();
-
             this.isLoadingRevenuJournalier = false;
+        };
+
+        if (!agence || !dateDebut || !dateFin) {
+            finishWithFraisByDate(new Map<string, number>());
+            return;
+        }
+
+        this.trxSfService.getTrxSfs({ agence, dateDebut, dateFin, statut: 'EN_ATTENTE' }).subscribe({
+            next: (rows) => {
+                const fraisByDate = new Map<string, number>();
+                (rows || []).forEach(row => {
+                    const date = row.dateTransaction ? this.normalizeToYmd(row.dateTransaction) : '';
+                    if (!date) return;
+                    fraisByDate.set(date, (fraisByDate.get(date) || 0) + (row.frais || 0));
+                });
+                finishWithFraisByDate(fraisByDate);
+            },
+            error: (error) => {
+                console.error('Erreur lors du chargement groupé des frais SF:', error);
+                finishWithFraisByDate(new Map<string, number>());
+            }
         });
     }
 
@@ -3645,10 +3689,16 @@ export class ComptesComponent implements OnInit, OnDestroy {
     }
 
     private fetchEcartFraisData(agence: string, date: string): void {
+        const day = this.normalizeToYmd(date);
+        const fetchKey = `${agence}|${day}|EN_ATTENTE`;
+        if (fetchKey === this.ecartFraisFetchKey && this.ecartFraisItems.length > 0) {
+            this.calculateEcartFraisPagination();
+            return;
+        }
+
         this.isLoadingEcartFrais = true;
         this.ecartFraisItems = [];
         this.ecartFraisFilteredItems = [];
-        const day = this.normalizeToYmd(date);
         try { console.log('[ECART_FRAIS][REQ] getTrxSfs params =', { agence, dateDebut: day, dateFin: day, statut: 'EN_ATTENTE' }); } catch {}
         this.trxSfService.getTrxSfs({ agence, dateDebut: day, dateFin: day, statut: 'EN_ATTENTE' }).subscribe({
             next: (rows) => {
@@ -3661,6 +3711,7 @@ export class ComptesComponent implements OnInit, OnDestroy {
                 } catch {}
                 this.ecartFraisItems = rows || [];
                 this.ecartFraisFilteredItems = [...this.ecartFraisItems];
+                this.ecartFraisFetchKey = fetchKey;
                 this.isLoadingEcartFrais = false;
                 this.calculateEcartFraisPagination();
             },
@@ -4112,6 +4163,19 @@ export class ComptesComponent implements OnInit, OnDestroy {
 
     // Méthode pour charger les données de contrôle revenu
     loadControlRevenu(): void {
+        if (!this.selectedCompte) return;
+
+        const { dateDebut, dateFin } = this.buildControlRevenuDateFilters();
+        const fetchKey = [
+            this.selectedCompte.numeroCompte,
+            dateDebut || 'all',
+            dateFin || 'all'
+        ].join('|');
+        if (fetchKey === this.controlRevenuFetchKey && this.controlRevenuData.length > 0) {
+            this.applyControlRevenuFilters();
+            return;
+        }
+
         this.isLoadingControlRevenu = true;
         this.showControlRevenuTab = true;
 
@@ -4139,27 +4203,35 @@ export class ComptesComponent implements OnInit, OnDestroy {
             console.log('Aucun compte sélectionné, affichage de toutes les données');
         }
 
-        // Charger les frais paramétrés en premier
+        const loadSummaries = () => this.loadAgencySummaryData(agency, service, dateDebut, dateFin, fetchKey);
+
+        if (this.fraisParametresLoaded) {
+            loadSummaries();
+            return;
+        }
+
         this.fraisTransactionService.getAllFraisTransactionsActifs().subscribe({
             next: (frais) => {
                 this.fraisParametres = frais;
-                console.log('Frais paramétrés chargés:', frais);
-                
-                // Ensuite charger les données AgencySummary
-                this.loadAgencySummaryData(agency, service);
+                this.fraisParametresLoaded = true;
+                loadSummaries();
             },
             error: (error) => {
                 console.error('Erreur lors du chargement des frais paramétrés:', error);
                 this.fraisParametres = [];
-                // Continuer avec les données AgencySummary même sans frais
-                this.loadAgencySummaryData(agency, service);
+                this.fraisParametresLoaded = true;
+                loadSummaries();
             }
         });
     }
 
-    private loadAgencySummaryData(agency: string | undefined, service: string | undefined): void {
-        // Utiliser le service AgencySummary pour récupérer les données directement
-        this.agencySummaryService.getAllSummaries().subscribe({
+    private loadAgencySummaryData(agency: string | undefined, service: string | undefined, dateDebut: string | null, dateFin: string | null, fetchKey: string): void {
+        this.agencySummaryService.getAllSummaries(undefined, {
+            agencies: agency ? [agency] : undefined,
+            services: service ? [service] : undefined,
+            startDate: dateDebut || undefined,
+            endDate: dateFin || undefined
+        }).subscribe({
             next: (allSummaries) => {
                 console.log('Données AgencySummary récupérées:', allSummaries);
                 console.log('Agence recherchée:', agency);
@@ -4190,16 +4262,42 @@ export class ComptesComponent implements OnInit, OnDestroy {
                 });
                 
                 console.log('Statistiques filtrées pour le contrôle revenu:', filteredSummaries);
-                
-                // Transformer les données de statistiques en format Control Revenu (maintenant asynchrone)
-                this.transformStatisticsToControlRevenu(filteredSummaries, service || '').then(controlRevenuData => {
-                    this.controlRevenuData = controlRevenuData;
+
+                if (filteredSummaries.length === 0 || !agency) {
+                    this.controlRevenuData = [];
                     this.controlRevenuDataFiltered = [...this.controlRevenuData];
                     this.calculateControlRevenuPagination();
+                    this.controlRevenuFetchKey = fetchKey;
                     this.isLoadingControlRevenu = false;
-                }).catch(error => {
-                    console.error('Erreur lors de la transformation des données:', error);
-                    this.isLoadingControlRevenu = false;
+                    return;
+                }
+
+                const summaryDates = filteredSummaries.map(summary => summary.date).filter(Boolean);
+                const minDate = dateDebut || summaryDates.reduce((min, current) => current < min ? current : min);
+                const maxDate = dateFin || summaryDates.reduce((max, current) => current > max ? current : max);
+
+                this.trxSfService.getTrxSfs({ agence: agency, dateDebut: minDate, dateFin: maxDate, statut: 'EN_ATTENTE' }).subscribe({
+                    next: (trxRows) => {
+                        const fraisByDateService = new Map<string, number>();
+                        (trxRows || []).forEach(row => {
+                            const trxDate = row.dateTransaction ? this.normalizeToYmd(row.dateTransaction) : '';
+                            const key = `${trxDate}|${row.service || ''}`;
+                            fraisByDateService.set(key, (fraisByDateService.get(key) || 0) + (row.frais || 0));
+                        });
+                        this.controlRevenuData = this.transformStatisticsToControlRevenu(filteredSummaries, fraisByDateService);
+                        this.controlRevenuDataFiltered = [...this.controlRevenuData];
+                        this.calculateControlRevenuPagination();
+                        this.controlRevenuFetchKey = fetchKey;
+                        this.isLoadingControlRevenu = false;
+                    },
+                    error: (error) => {
+                        console.error('Erreur lors du chargement groupé des frais TRX SF:', error);
+                        this.controlRevenuData = this.transformStatisticsToControlRevenu(filteredSummaries, new Map<string, number>());
+                        this.controlRevenuDataFiltered = [...this.controlRevenuData];
+                        this.calculateControlRevenuPagination();
+                        this.controlRevenuFetchKey = fetchKey;
+                        this.isLoadingControlRevenu = false;
+                    }
                 });
             },
             error: (error) => {
@@ -4212,7 +4310,7 @@ export class ComptesComponent implements OnInit, OnDestroy {
         });
     }
 
-    private async transformStatisticsToControlRevenu(statistics: Statistics[], service: string): Promise<any[]> {
+    private transformStatisticsToControlRevenu(statistics: Statistics[], fraisByDateService: Map<string, number>): any[] {
         const data: any[] = [];
         
         // Traiter chaque enregistrement de statistiques
@@ -4224,16 +4322,7 @@ export class ComptesComponent implements OnInit, OnDestroy {
             // Calculer le revenu attendu basé sur les frais paramétrés
             const revenuAttendu = this.calculateRevenuAttendu(stat.service, stat.agency, volume, nombreTrx);
             
-            // Récupérer les frais TRX SF pour cette agence, date et service (uniquement EN_ATTENTE)
-            let totalFraisTrxSf = 0;
-            try {
-                const fraisResponse = await this.trxSfService.getFraisByAgenceAndDateAndServiceEnAttente(stat.agency, stat.date, stat.service).toPromise();
-                totalFraisTrxSf = fraisResponse?.frais || 0;
-                console.log(`Frais TRX SF (EN_ATTENTE) pour ${stat.agency} le ${stat.date} service ${stat.service}: ${totalFraisTrxSf}`);
-            } catch (error) {
-                console.warn(`Erreur lors de la récupération des frais TRX SF (EN_ATTENTE) pour ${stat.agency} le ${stat.date} service ${stat.service}:`, error);
-                totalFraisTrxSf = 0;
-            }
+            const totalFraisTrxSf = fraisByDateService.get(`${stat.date}|${stat.service}`) || 0;
             
             // Calculer le revenu réel selon la formule : Revenu attendu - Total frais TRX SF
             const revenuReel = revenuAttendu - totalFraisTrxSf;
@@ -4548,7 +4637,7 @@ export class ComptesComponent implements OnInit, OnDestroy {
     }
 
     onControlRevenuFiltersChange(): void {
-        this.applyControlRevenuFilters();
+        this.loadControlRevenu();
     }
 
     clearControlRevenuFilters(): void {
@@ -4557,7 +4646,7 @@ export class ComptesComponent implements OnInit, OnDestroy {
         this.controlRevenuService = '';
         this.controlRevenuType = '';
         this.controlRevenuSeuil = null;
-        this.applyControlRevenuFilters();
+        this.loadControlRevenu();
     }
 
     // Méthodes d'affichage pour le control revenu

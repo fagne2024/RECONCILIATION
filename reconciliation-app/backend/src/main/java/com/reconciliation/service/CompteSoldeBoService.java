@@ -6,6 +6,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
+import java.util.List;
 import java.util.Optional;
 
 @Service
@@ -24,5 +25,9 @@ public class CompteSoldeBoService {
 
     public Optional<CompteSoldeBoEntity> getByNumeroCompteAndDate(String numeroCompte, LocalDate dateSolde) {
         return repository.findByNumeroCompteAndDateSolde(numeroCompte, dateSolde);
+    }
+
+    public List<CompteSoldeBoEntity> listByNumeroCompteAndDateRange(String numeroCompte, LocalDate dateDebut, LocalDate dateFin) {
+        return repository.findByNumeroCompteAndDateSoldeBetweenOrderByDateSoldeAsc(numeroCompte, dateDebut, dateFin);
     }
 } 
