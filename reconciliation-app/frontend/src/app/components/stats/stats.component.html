@@ -23,6 +23,9 @@
       <button type="button" class="nav-btn secondary" (click)="openAgencyReportPage()" [disabled]="!getAggregatedStats().length || isLoading">
         <i class="fas fa-chart-bar"></i> Rapport
       </button>
+      <button type="button" class="nav-btn secondary" (click)="toggleStatsHistoryScope()" [disabled]="isLoading">
+        <i class="fas fa-calendar-alt"></i> {{ showAllStatsHistory ? 'Mois courant' : 'Tout historique' }}
+      </button>
       <button type="button" class="nav-btn primary" (click)="exportStats()" [disabled]="!agencySummaries.length || isLoading">
         <i class="fas fa-file-excel"></i> Exporter
       </button>
@@ -74,7 +77,7 @@
                             <mat-option>
                                 <ngx-mat-select-search [formControl]="agenceSearchCtrl" placeholderLabel="Rechercher un client..." noEntriesFoundLabel="Aucun client trouvé"></ngx-mat-select-search>
                             </mat-option>
-                            <mat-option *ngFor="let agency of filteredAgencies" [value]="agency">
+                            <mat-option *ngFor="let agency of filteredAgencies; trackBy: trackByString" [value]="agency">
                                 {{ agency }}
                             </mat-option>
                         </mat-select>
@@ -87,7 +90,7 @@
                             <mat-option>
                                 <ngx-mat-select-search [formControl]="serviceSearchCtrl" placeholderLabel="Rechercher un service..." noEntriesFoundLabel="Aucun service trouvé"></ngx-mat-select-search>
                             </mat-option>
-                            <mat-option *ngFor="let service of filteredServices" [value]="service">
+                            <mat-option *ngFor="let service of filteredServices; trackBy: trackByString" [value]="service">
                                 {{ service }}
                             </mat-option>
                         </mat-select>
@@ -100,7 +103,7 @@
                             <mat-option>
                                 <ngx-mat-select-search [formControl]="paysSearchCtrl" placeholderLabel="Rechercher un pays..." noEntriesFoundLabel="Aucun pays trouvé"></ngx-mat-select-search>
                             </mat-option>
-                            <mat-option *ngFor="let country of filteredCountries" [value]="country">
+                            <mat-option *ngFor="let country of filteredCountries; trackBy: trackByString" [value]="country">
                                 {{ country }}
                             </mat-option>
                         </mat-select>
@@ -237,7 +240,7 @@
                         <label>Agence</label>
                         <select [value]="reportSelectedAgency" (change)="onReportAgencyChange($event)">
                             <option value="all">Toutes</option>
-                            <option *ngFor="let agency of reportAgencyOptions" [value]="agency">{{ agency }}</option>
+                            <option *ngFor="let agency of reportAgencyOptions; trackBy: trackByString" [value]="agency">{{ agency }}</option>
                         </select>
                     </div>
 
@@ -392,7 +395,7 @@
                         </tr>
                     </thead>
                     <tbody>
-                        <tr *ngFor="let summary of pagedStats" [class.selected-row]="isSelected(summary)">
+                        <tr *ngFor="let summary of pagedStats; trackBy: trackByAggregatedStat" [class.selected-row]="isSelected(summary)">
                             <td>
                                 <input type="checkbox" [checked]="isSelected(summary)" (change)="toggleSelection(summary, $event)"
                                        title="Sélectionner cette statistique">
@@ -447,7 +450,7 @@
                     </button>
                     
                     <div class="pagination-indicators">
-                        <span *ngFor="let page of getVisibleStatsPages()" 
+                        <span *ngFor="let page of getVisibleStatsPages(); trackBy: trackByNumber" 
                               class="page-indicator"
                               [class.active]="statsPage === page"
                               (click)="goToStatsPage(page)">

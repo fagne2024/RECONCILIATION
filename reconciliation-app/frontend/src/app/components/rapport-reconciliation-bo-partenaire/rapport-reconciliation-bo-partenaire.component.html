@@ -50,7 +50,7 @@
             <span>Pays</span>
             <select [(ngModel)]="selectedCountry" (ngModelChange)="appliquerFiltres()">
               <option value="">— Choisir —</option>
-              <option *ngFor="let c of countries" [value]="c">{{ c }}</option>
+              <option *ngFor="let c of countries; trackBy: trackByString" [value]="c">{{ c }}</option>
             </select>
           </label>
           <label class="rrbp-date-range">
@@ -64,7 +64,7 @@
           <label>
             <span>ENV</span>
             <select [(ngModel)]="selectedEnv" (ngModelChange)="appliquerFiltres()">
-              <option *ngFor="let e of envOptions" [value]="e">{{ e }}</option>
+              <option *ngFor="let e of envOptions; trackBy: trackByString" [value]="e">{{ e }}</option>
             </select>
           </label>
           <div class="rrbp-service-field-wrap">
@@ -85,7 +85,7 @@
                       noEntriesFoundLabel="Aucun service trouvé"
                     ></ngx-mat-select-search>
                   </mat-option>
-                  <mat-option *ngFor="let s of filteredServicesForSelect" [value]="s">{{ s }}</mat-option>
+                  <mat-option *ngFor="let s of filteredServicesForSelect; trackBy: trackByString" [value]="s">{{ s }}</mat-option>
                 </mat-select>
               </mat-form-field>
             </div>
@@ -164,9 +164,9 @@
           <div class="rrbp-audit-inner" *ngIf="isAuditFingerprintLoading(ids)">Chargement de l&apos;historique…</div>
           <ng-container *ngIf="!isAuditFingerprintLoading(ids) && isAuditBatchLoaded(ids)">
             <div class="rrbp-audit-by-service" *ngIf="getAuditSectionsGroupedByService(ids).length">
-              <div *ngFor="let sec of getAuditSectionsGroupedByService(ids)" class="rrbp-audit-service-block">
+              <div *ngFor="let sec of getAuditSectionsGroupedByService(ids); trackBy: trackByAuditServiceSection" class="rrbp-audit-service-block">
                 <div class="rrbp-audit-service-title">Service — {{ sec.serviceName }}</div>
-                <div *ngFor="let lg of sec.lignes" class="rrbp-audit-ligne-block">
+                <div *ngFor="let lg of sec.lignes; trackBy: trackByAuditLine" class="rrbp-audit-ligne-block">
                   <div class="rrbp-audit-ligne-subtitle">{{ lg.subtitle }}</div>
                   <div *ngIf="lg.entries.length" class="rrbp-audit-panel-card">
                     <div class="rrbp-audit-panel-head">Historique des actions</div>
@@ -182,7 +182,7 @@
                         </tr>
                       </thead>
                       <tbody>
-                        <tr *ngFor="let ar of lg.entries">
+                        <tr *ngFor="let ar of lg.entries; trackBy: trackByAuditEntry">
                           <td class="nowrap">{{ formatAuditInstant(ar.createdAt) }}</td>
                           <td class="rrbp-audit-td-event">{{ formatAuditActionLabel(ar.actionType) }}</td>
                           <td class="rrbp-audit-td-user">{{ ar.username || '—' }}</td>
@@ -250,7 +250,7 @@
                   Aucune ligne pour ce pays, cette date, cet ENV ou cette sélection de services.
                 </td>
               </tr>
-              <ng-container *ngFor="let line of displayLines">
+              <ng-container *ngFor="let line of displayLines; trackBy: trackByDisplayLine">
                 <ng-container *ngIf="line.type === 'single'">
                 <tr class="rrbp-row-single">
                   <td class="col-expand">

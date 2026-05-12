@@ -81,7 +81,11 @@ public class Result8RecController {
     }
 
     @GetMapping
-    public ResponseEntity<List<Result8RecEntity>> list() {
+    public ResponseEntity<List<Result8RecEntity>> list(
+            @RequestParam(required = false) String startDate,
+            @RequestParam(required = false) String endDate,
+            @RequestParam(required = false) String country,
+            @RequestParam(required = false) String env) {
         // Récupérer le username pour le filtrage par pays
         String username = RequestContextUtil.getUsernameFromRequest();
         
@@ -95,7 +99,13 @@ public class Result8RecController {
         // Variable finale pour utilisation dans lambda
         final List<String> allowedCountries = allowedCountriesTemp;
         
-        List<Result8RecEntity> all = repository.findAll();
+        String start = blankToNull(startDate);
+        String end = blankToNull(endDate);
+        String countryFilter = blankToNull(country);
+        String envFilter = normalizeEnvForQuery(env);
+        List<Result8RecEntity> all = (start == null && end == null && countryFilter == null && envFilter == null)
+                ? repository.findAll()
+                : repository.findForReport(start, end, countryFilter, envFilter);
         
         // Filtrer par pays autorisés si nécessaire
         if (allowedCountries == null) {
@@ -131,6 +141,23 @@ public class Result8RecController {
             log.info("🌍 Cloisonnement Result8Rec: Total enregistrements après filtrage: {}", filtered.size());
             return ResponseEntity.ok(filtered);
         }
+    }
+
+    private static String blankToNull(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private static String normalizeEnvForQuery(String env) {
+        String trimmed = blankToNull(env);
+        if (trimmed == null || "ALL".equalsIgnoreCase(trimmed)) {
+            return null;
+        }
+        String upper = trimmed.toUpperCase();
+        return "TOTAL".equals(upper) ? "T-E" : upper;
     }
     
     /**
@@ -277,7 +304,7 @@ public class Result8RecController {
     @GetMapping("/filters")
     public ResponseEntity<java.util.Map<String, Object>> getDistinctCountriesAndServices() {
         // On réutilise la méthode list() pour bénéficier du cloisonnement par pays
-        ResponseEntity<List<Result8RecEntity>> listResponse = list();
+        ResponseEntity<List<Result8RecEntity>> listResponse = list(null, null, null, null);
         List<Result8RecEntity> data = listResponse.getBody();
         if (data == null) {
             data = java.util.Collections.emptyList();

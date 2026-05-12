@@ -37,4 +37,31 @@ public interface EcartBoSummaryRepository extends JpaRepository<EcartBoSummaryEn
     List<EcartBoSummaryEntity> findAllOrderByDateImportDesc();
 
     List<EcartBoSummaryEntity> findByToken(String token);
+
+    @Query("""
+        SELECT e FROM EcartBoSummaryEntity e
+        WHERE (:agence IS NULL OR e.agence = :agence)
+          AND (:service IS NULL OR e.service = :service)
+          AND (:pays IS NULL OR LOWER(e.pays) = LOWER(:pays))
+          AND (:statut IS NULL OR e.statut = :statut)
+          AND (:platform IS NULL OR UPPER(e.env) = UPPER(:platform))
+          AND (:startDate IS NULL OR e.dateTransaction >= :startDate)
+          AND (:endDate IS NULL OR e.dateTransaction <= :endDate)
+          AND (
+              :env IS NULL
+              OR UPPER(COALESCE(e.envCode, '')) = UPPER(:env)
+              OR (:env = 'T-E' AND (e.envCode IS NULL OR TRIM(e.envCode) = '' OR UPPER(e.envCode) = 'TOTAL'))
+          )
+        ORDER BY e.dateImport DESC
+    """)
+    List<EcartBoSummaryEntity> findByFilters(
+            @Param("agence") String agence,
+            @Param("service") String service,
+            @Param("pays") String pays,
+            @Param("statut") String statut,
+            @Param("platform") String platform,
+            @Param("startDate") LocalDateTime startDate,
+            @Param("endDate") LocalDateTime endDate,
+            @Param("env") String env
+    );
 }

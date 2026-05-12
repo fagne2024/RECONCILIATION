@@ -121,6 +121,23 @@ public interface AgencySummaryRepository extends JpaRepository<AgencySummaryEnti
         @Param("agency") String agency
     );
 
+    @Query("""
+        SELECT a FROM AgencySummaryEntity a
+        WHERE (:agencies IS NULL OR a.agency IN :agencies)
+          AND (:services IS NULL OR a.service IN :services)
+          AND (:countries IS NULL OR a.country IN :countries)
+          AND (:startDate IS NULL OR a.date >= :startDate)
+          AND (:endDate IS NULL OR a.date <= :endDate)
+        ORDER BY a.date DESC, a.agency ASC, a.service ASC
+    """)
+    List<AgencySummaryEntity> findByStatsFilters(
+        @Param("agencies") List<String> agencies,
+        @Param("services") List<String> services,
+        @Param("countries") List<String> countries,
+        @Param("startDate") String startDate,
+        @Param("endDate") String endDate
+    );
+
     boolean existsByService(String service);
 
     @Query("SELECT CASE WHEN COUNT(a) > 0 THEN TRUE ELSE FALSE END FROM AgencySummaryEntity a WHERE LOWER(a.service) = LOWER(:service)")

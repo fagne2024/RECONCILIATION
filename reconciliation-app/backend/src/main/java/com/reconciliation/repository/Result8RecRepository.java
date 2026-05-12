@@ -17,6 +17,25 @@ public interface Result8RecRepository extends JpaRepository<Result8RecEntity, Lo
     @Query("SELECT r FROM Result8RecEntity r WHERE LOWER(r.country) IN :countries")
     List<Result8RecEntity> findByCountryCodes(@Param("countries") List<String> countries);
 
+    @Query("""
+        SELECT r FROM Result8RecEntity r
+        WHERE (:startDate IS NULL OR r.date >= :startDate)
+          AND (:endDate IS NULL OR r.date <= :endDate)
+          AND (:country IS NULL OR LOWER(r.country) = LOWER(:country))
+          AND (
+              :env IS NULL
+              OR UPPER(COALESCE(r.env, '')) = UPPER(:env)
+              OR (:env = 'T-E' AND (r.env IS NULL OR TRIM(r.env) = '' OR UPPER(r.env) = 'TOTAL'))
+          )
+        ORDER BY r.date DESC, r.country ASC, r.service ASC, r.agency ASC
+    """)
+    List<Result8RecEntity> findForReport(
+            @Param("startDate") String startDate,
+            @Param("endDate") String endDate,
+            @Param("country") String country,
+            @Param("env") String env
+    );
+
     // Nombre total de relevés distincts (date + service + pays)
     @Query("SELECT COUNT(DISTINCT CONCAT(r.date, '|', r.service, '|', r.country)) FROM Result8RecEntity r")
     long countDistinctReconciliations();

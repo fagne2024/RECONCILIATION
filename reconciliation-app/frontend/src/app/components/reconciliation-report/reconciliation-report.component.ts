@@ -5,7 +5,7 @@ import { filter } from 'rxjs/operators';
 import { Observable, Subscription, firstValueFrom } from 'rxjs';
 import { take } from 'rxjs/operators';
 import { FormControl } from '@angular/forms';
-import { MatSelect, MatSelectChange } from '@angular/material/select';
+import { MatSelect } from '@angular/material/select';
 import { ReconciliationResponse, Match } from '../../models/reconciliation-response.model';
 import { AppStateService } from '../../services/app-state.service';
 import { ReconciliationSummaryService, AgencySummaryData } from '../../services/reconciliation-summary.service';
@@ -196,6 +196,16 @@ export interface ReconciliationReportData {
                 </div>
                 <div class="filter-group" *ngIf="!hasSelectedRows()">
                     <mat-form-field appearance="fill" class="filter-mat-select">
+                        <mat-label>ENV</mat-label>
+                        <mat-select #envSelect [(ngModel)]="selectedEnvs" multiple (ngModelChange)="onEnvNgModelChange($event)">
+                            <mat-option *ngFor="let env of uniqueEnvs" [value]="env">
+                                {{ formatEnvFilterLabel(env) }}
+                            </mat-option>
+                        </mat-select>
+                    </mat-form-field>
+                </div>
+                <div class="filter-group" *ngIf="!hasSelectedRows()">
+                    <mat-form-field appearance="fill" class="filter-mat-select">
                         <mat-label>Service</mat-label>
                         <mat-select #serviceSelect [(ngModel)]="selectedServices" multiple (selectionChange)="onServiceSelectionChange()">
                             <mat-option>
@@ -250,16 +260,6 @@ export interface ReconciliationReportData {
                         <mat-select #traitementSelect [(ngModel)]="selectedTraitements" multiple (selectionChange)="onTraitementSelectionChange()">
                             <mat-option *ngFor="let traitement of traitementOptions" [value]="traitement">
                                 {{ traitement }}
-                            </mat-option>
-                        </mat-select>
-                    </mat-form-field>
-                </div>
-                <div class="filter-group" *ngIf="!hasSelectedRows()">
-                    <mat-form-field appearance="fill" class="filter-mat-select">
-                        <mat-label>ENV</mat-label>
-                        <mat-select #envSelect [(ngModel)]="selectedEnvs" multiple (selectionChange)="onEnvSelectionChange($event)">
-                            <mat-option *ngFor="let env of uniqueEnvs" [value]="env">
-                                {{ formatEnvFilterLabel(env) }}
                             </mat-option>
                         </mat-select>
                     </mat-form-field>
@@ -365,7 +365,7 @@ export interface ReconciliationReportData {
                         <div class="card-icon">⚙️</div>
                         <div class="card-content">
                             <div class="card-title">Services</div>
-                            <div class="card-value">{{uniqueServices.length}}</div>
+                            <div class="card-value">{{ filteredServices.length }}</div>
                         </div>
                     </div>
                     <div class="summary-card">
@@ -3101,6 +3101,8 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
     response: ReconciliationResponse | null = null;
     private subscription = new Subscription();
     private loadedFromDb = false;
+    private isLoadingDbReport = false;
+    private lastDbReportFetchKey = '';
     currentSource: 'live' | 'db' = 'db';
     private hasSummary = false;
 
@@ -3149,8 +3151,9 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
     uniqueDates: string[] = [];
     uniqueStatuses: string[] = [];
     uniqueEnvs: string[] = [];
-    filteredAgencies: string[] = []; // Agences filtrées selon le pays sélectionné
-    filteredServices: string[] = []; // Services filtrés selon l'agence/pays sélectionnés
+    filteredAgencies: string[] = []; // Agences filtrées selon le pays / ENV sélectionnés
+    filteredServices: string[] = []; // Services filtrés selon pays, agence et ENV
+    filteredCountries: string[] = []; // Pays proposés selon agences / ENV (dropdown cloisonné)
 
     statusOptions: string[] = ['OK', 'NOK', 'REPORTING INCOMPLET', 'REPORTING INDISPONIBLE', 'EN COURS.....'];
     commentOptions: string[] = ['ECARTS TRANSMIS', "PAS D'ECARTS CONSTATES", 'NOK'];
@@ -4655,32 +4658,67 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         
         this.filteredAgencies = [...this.uniqueAgencies];
         this.filteredServices = [...this.uniqueServices];
+        this.filteredCountries = [...this.uniqueCountries];
         this.updateFilteredAgencies();
+        this.updateFilteredCountries();
         this.updateFilteredServices();
         this.refreshDropdownLists();
     }
 
     /**
-     * Met à jour la liste des agences filtrées selon le pays sélectionné
+     * Met à jour la liste des agences filtrées selon le pays et l’ENV sélectionnés.
      */
-    private updateFilteredAgencies(): void {
-        if (this.selectedCountries.length === 0) {
+    private updateFilteredAgencies(envOverride?: string[] | null): void {
+        const envsForFilter =
+            envOverride !== undefined && envOverride !== null ? envOverride : this.selectedEnvs;
+        const noCountry = this.selectedCountries.length === 0;
+
+        if (noCountry && (!envsForFilter || envsForFilter.length === 0)) {
             this.filteredAgencies = [...this.uniqueAgencies];
             return;
         }
 
-        const agenciesForCountry = new Set<string>();
+        const agenciesFor = new Set<string>();
         this.reportData
-            .filter(item => this.selectedCountries.includes(item.country))
-            .forEach(item => agenciesForCountry.add(item.agency));
-        
-        this.filteredAgencies = Array.from(agenciesForCountry).sort();
+            .filter(item => {
+                const matchesCountry = noCountry || this.selectedCountries.includes(item.country);
+                return matchesCountry && this.itemMatchesEnvFilter(item.env, envsForFilter);
+            })
+            .forEach(item => agenciesFor.add(item.agency));
+
+        this.filteredAgencies = Array.from(agenciesFor).sort();
+    }
+
+    /**
+     * Met à jour la liste des pays proposés selon les agences et l’ENV (cohérent avec le cloisonnement service).
+     */
+    private updateFilteredCountries(envOverride?: string[] | null): void {
+        const envsForFilter =
+            envOverride !== undefined && envOverride !== null ? envOverride : this.selectedEnvs;
+        const noAgency = this.selectedAgencies.length === 0;
+
+        if (noAgency && (!envsForFilter || envsForFilter.length === 0)) {
+            this.filteredCountries = [...this.uniqueCountries];
+            return;
+        }
+
+        const countries = new Set<string>();
+        this.reportData
+            .filter(item => {
+                const matchesAgency = noAgency || this.selectedAgencies.includes(item.agency);
+                return matchesAgency && this.itemMatchesEnvFilter(item.env, envsForFilter);
+            })
+            .forEach(item => {
+                if (item.country && item.country.trim()) {
+                    countries.add(item.country);
+                }
+            });
+        this.filteredCountries = Array.from(countries).sort();
     }
 
     /**
      * Met à jour la liste des services filtrés selon pays, agence et ENV sélectionnés (ENV cloisonne les services proposés).
-     * @param envSelectionOverride Valeur ENV à appliquer tout de suite (ex. issue de MatSelectChange) : le [(ngModel)]
-     *   n’est pas toujours à jour dans le callback selectionChange, ce qui affichait tous les services.
+     * @param envSelectionOverride Valeur ENV à appliquer tout de suite (ex. depuis ngModelChange du filtre ENV).
      */
     private updateFilteredServices(envSelectionOverride?: string[] | null): void {
         const envsForFilter =
@@ -4689,9 +4727,8 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                 : this.selectedEnvs;
         const noCountry = this.selectedCountries.length === 0;
         const noAgency = this.selectedAgencies.length === 0;
-        const noEnv = !envsForFilter || envsForFilter.length === 0;
 
-        if (noCountry && noAgency && noEnv) {
+        if (noCountry && noAgency && (!envsForFilter || envsForFilter.length === 0)) {
             this.filteredServices = [...this.uniqueServices];
             return;
         }
@@ -4701,11 +4738,11 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             .filter(item => {
                 const matchesCountry = noCountry || this.selectedCountries.includes(item.country);
                 const matchesAgency = noAgency || this.selectedAgencies.includes(item.agency);
-                const itemEnvNorm = this.normalizeReleveEnvKey(item.env);
-                const matchesEnv =
-                    noEnv ||
-                    envsForFilter.some(sel => this.normalizeReleveEnvKey(sel) === itemEnvNorm);
-                return matchesCountry && matchesAgency && matchesEnv;
+                return (
+                    matchesCountry &&
+                    matchesAgency &&
+                    this.itemMatchesEnvFilter(item.env, envsForFilter)
+                );
             })
             .forEach(item => servicesForSelection.add(item.service));
 
@@ -4730,17 +4767,17 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         });
         this.paysSearchCtrl.valueChanges.subscribe((search: string | null) => {
             const s = (search || '').toLowerCase();
-            this.filteredCountriesDropdown = this.uniqueCountries.filter(a => a.toLowerCase().includes(s));
+            this.filteredCountriesDropdown = this.filteredCountries.filter(a => a.toLowerCase().includes(s));
         });
     }
 
     private refreshDropdownLists(): void {
         this.filteredAgenciesDropdown = [...this.filteredAgencies];
         this.filteredServicesDropdown = [...this.filteredServices];
-        this.filteredCountriesDropdown = [...this.uniqueCountries];
-        this.agenceSearchCtrl.setValue('');
-        this.serviceSearchCtrl.setValue('');
-        this.paysSearchCtrl.setValue('');
+        this.filteredCountriesDropdown = [...this.filteredCountries];
+        this.agenceSearchCtrl.setValue('', { emitEvent: false });
+        this.serviceSearchCtrl.setValue('', { emitEvent: false });
+        this.paysSearchCtrl.setValue('', { emitEvent: false });
     }
 
     /** Ferme le panneau du mat-select (multi) après un clic : évite la liste « figée » ouverte. */
@@ -4749,6 +4786,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
     }
 
     onAgencySelectionChange(): void {
+        this.updateFilteredCountries();
         this.updateFilteredServices();
         this.refreshDropdownLists();
         this.filterReport();
@@ -4760,6 +4798,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         this.selectedAgencies = this.selectedAgencies.filter(a =>
             this.filteredAgencies.includes(a)
         );
+        this.updateFilteredCountries();
         this.updateFilteredServices();
         this.selectedServices = this.selectedServices.filter(s =>
             this.filteredServices.includes(s)
@@ -4784,14 +4823,25 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         this.closeFilterMatSelectPanel(this.traitementSelect);
     }
 
-    onEnvSelectionChange(event: MatSelectChange): void {
-        const raw = event?.value ?? event?.source?.value;
-        const envs: string[] = Array.isArray(raw) ? (raw as string[]) : raw != null && raw !== '' ? [String(raw)] : [];
-        this.updateFilteredServices(envs);
-        this.selectedServices = this.selectedServices.filter(s => this.filteredServices.includes(s));
-        this.refreshDropdownLists();
+    /**
+     * Filtre ENV : utiliser ngModelChange (valeur à jour) plutôt que selectionChange (souvent vide avec mat-select multiple).
+     */
+    onEnvNgModelChange(envs: string[] | null | undefined): void {
+        const snapshot = Array.isArray(envs) ? [...envs] : [];
+        this.applyEnvDependentDropdowns(snapshot);
         this.filterReport();
         this.closeFilterMatSelectPanel(this.envSelect);
+    }
+
+    /** Recalcule agences / pays / services proposés pour les listes déroulantes selon la sélection ENV courante. */
+    private applyEnvDependentDropdowns(envsSnapshot: string[]): void {
+        this.updateFilteredAgencies(envsSnapshot);
+        this.selectedAgencies = this.selectedAgencies.filter(a => this.filteredAgencies.includes(a));
+        this.updateFilteredCountries(envsSnapshot);
+        this.selectedCountries = this.selectedCountries.filter(c => this.filteredCountries.includes(c));
+        this.updateFilteredServices(envsSnapshot);
+        this.selectedServices = this.selectedServices.filter(s => this.filteredServices.includes(s));
+        this.refreshDropdownLists();
     }
 
     onTicketIdFilterChange(value: string): void {
@@ -4812,6 +4862,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
 
     clearAgencyFilter(): void {
         this.selectedAgencies = [];
+        this.updateFilteredCountries();
         this.updateFilteredServices();
         this.refreshDropdownLists();
         this.filterReport();
@@ -4826,6 +4877,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
     clearCountryFilter(): void {
         this.selectedCountries = [];
         this.updateFilteredAgencies();
+        this.updateFilteredCountries();
         this.updateFilteredServices();
         this.refreshDropdownLists();
         this.filterReport();
@@ -4839,6 +4891,10 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
     toggleShowAllMonths(): void {
         this.showAllMonths = !this.showAllMonths;
         this.currentPage = 1; // Toujours revenir à la page 1 pour afficher les données cohérentes
+        if (this.loadedFromDb && this.shouldReloadSavedReportForCurrentScope()) {
+            this.loadSavedReportFromDatabase();
+            return;
+        }
         this.filterReport(); // filterReport() appelle updatePagination() en fin
     }
 
@@ -4902,11 +4958,58 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         return d.getFullYear() === currentYear && d.getMonth() === currentMonth;
     }
 
+    private hasExplicitDateFilter(): boolean {
+        return !!(this.selectedDateDebut || this.selectedDateFin);
+    }
+
+    private toYmdLocal(d: Date): string {
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${y}-${m}-${day}`;
+    }
+
+    private currentMonthDateRange(): { startDate: string; endDate: string } {
+        const now = new Date();
+        const first = new Date(now.getFullYear(), now.getMonth(), 1);
+        const last = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+        return { startDate: this.toYmdLocal(first), endDate: this.toYmdLocal(last) };
+    }
+
+    private getDbReportFetchScope(): { startDate?: string; endDate?: string; key: string } {
+        const start = (this.selectedDateDebut || '').trim();
+        const end = (this.selectedDateFin || '').trim();
+        if (start || end) {
+            return {
+                startDate: start || undefined,
+                endDate: end || undefined,
+                key: `range:${start || '*'}:${end || '*'}`
+            };
+        }
+        if (!this.showAllMonths) {
+            const month = this.currentMonthDateRange();
+            return { ...month, key: `month:${month.startDate}:${month.endDate}` };
+        }
+        return { key: 'all' };
+    }
+
+    private shouldReloadSavedReportForCurrentScope(): boolean {
+        if (this.currentSource === 'live' || this.isLoadingDbReport) {
+            return false;
+        }
+        return this.getDbReportFetchScope().key !== this.lastDbReportFetchKey;
+    }
+
     filterReport() {
+        if (this.loadedFromDb && this.shouldReloadSavedReportForCurrentScope()) {
+            this.loadSavedReportFromDatabase();
+            return;
+        }
+
         this.filteredReportData = this.reportData.filter(item => {
             // Données en cours (live) : toujours tout afficher, pas de filtre par mois
             // Base sauvegardée : afficher uniquement le mois en cours sauf si "Voir plus"
-            if (this.currentSource !== 'live' && !this.showAllMonths && item.date) {
+            if (this.currentSource !== 'live' && !this.showAllMonths && !this.hasExplicitDateFilter() && item.date) {
                 if (!this.isItemInCurrentMonth(item.date)) return false;
             }
 
@@ -4925,10 +5028,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             const countryFilterMatch = this.selectedCountries.length === 0 || this.selectedCountries.includes(item.country);
             const statusMatch = this.selectedStatuses.length === 0 || this.selectedStatuses.includes(item.status);
             const traitementMatch = this.selectedTraitements.length === 0 || this.selectedTraitements.includes(item.traitement || '');
-            const itemEnvNorm = this.normalizeReleveEnvKey(item.env);
-            const envMatch =
-                this.selectedEnvs.length === 0 ||
-                this.selectedEnvs.some(sel => this.normalizeReleveEnvKey(sel) === itemEnvNorm);
+            const envMatch = this.itemMatchesEnvFilter(item.env, this.selectedEnvs);
             const ticketFilter = (this.ticketIdFilter || '').trim().toLowerCase();
             const ticketMatch = !ticketFilter || (item.glpiId || '').toLowerCase().includes(ticketFilter);
             
@@ -6267,6 +6367,8 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         }
         
         this.loadedFromDb = true;
+        this.isLoadingDbReport = true;
+        const scope = this.getDbReportFetchScope();
         
         // Headers pour désactiver le cache du navigateur
         const headers = this.buildResultsHeaders({
@@ -6277,15 +6379,29 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         
         // Paramètre de cache-busting pour forcer le rechargement
         const cacheBuster = new Date().getTime();
-        const url = `/api/result8rec?_t=${cacheBuster}`;
+        let params = new HttpParams().set('_t', String(cacheBuster));
+        if (scope.startDate) {
+            params = params.set('startDate', scope.startDate);
+        }
+        if (scope.endDate) {
+            params = params.set('endDate', scope.endDate);
+        }
         
-        console.log('🔄 Chargement des données depuis la base avec cache-busting:', cacheBuster);
+        console.log('🔄 Chargement des données depuis la base:', scope.key, 'cache-busting:', cacheBuster);
         
-        this.http.get<any[]>(url, { headers })
+        this.http.get<any[]>('/api/result8rec', { headers, params })
         .subscribe({
             next: (rows: any[]) => {
                 this.clearAuditHistoryUiState();
                 if (!Array.isArray(rows) || rows.length === 0) {
+                    this.reportData = [];
+                    this.filteredReportData = [];
+                    this.paginatedData = [];
+                    this.extractUniqueValues();
+                    this.currentSource = 'db';
+                    this.lastDbReportFetchKey = scope.key;
+                    this.isLoadingDbReport = false;
+                    this.updatePagination();
                     return;
                 }
                 
@@ -6389,13 +6505,16 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                         // else: ligne avec ID mais commentaire vide - garder le commentaire vide
                     }
                     
+                    const rawEnv = r.env ?? r.env_code ?? r.envCode;
                     const mappedItem = {
                         id: r.id,
                         date: r.date,
                         agency: r.agency,
                         service: r.service,
                         country: r.country,
-                        env: r.env,
+                        env: rawEnv != null && String(rawEnv).trim() !== ''
+                            ? this.normalizeReleveEnvKey(String(rawEnv))
+                            : undefined,
                         glpiId: r.glpiId || r.glpi_id || '',
                         totalTransactions: r.totalTransactions || r.recordCount || 0,
                         totalVolume: r.totalVolume || 0,
@@ -6537,9 +6656,12 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                 });
                 
                 this.currentSource = 'db';
+                this.lastDbReportFetchKey = scope.key;
+                this.isLoadingDbReport = false;
                 this.updatePagination();
             },
             error: (err: HttpErrorResponse) => {
+                this.isLoadingDbReport = false;
                 // Si 404, le backend n'est probablement pas démarré - c'est normal en développement
                 if (err.status === 404) {
                     console.log('ℹ️ Backend non disponible - les données sauvegardées ne seront pas chargées');
@@ -8948,6 +9070,19 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
 
     goToSuiviEcarts() {
         this.router.navigate(['/suivi-des-ecarts']);
+    }
+
+    /** True si aucun filtre ENV actif ou si l’ENV de la ligne est parmi les sélectionnés (casse ignorée). */
+    private itemMatchesEnvFilter(
+        itemEnv: string | undefined | null,
+        envsForFilter: string[] | undefined | null
+    ): boolean {
+        const list = envsForFilter ?? this.selectedEnvs;
+        if (!list || list.length === 0) {
+            return true;
+        }
+        const itemKey = this.normalizeReleveEnvKey(itemEnv).toUpperCase();
+        return list.some(sel => this.normalizeReleveEnvKey(sel).toUpperCase() === itemKey);
     }
 
     /** Clé ENV rapport : vide ou ancien TOTAL → T-E (liste BET, HT, T-E, HUBAO, TOP20, GU3). */

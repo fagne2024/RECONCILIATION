@@ -7,7 +7,7 @@ import {
   ViewChild
 } from '@angular/core';
 import { Router } from '@angular/router';
-import { HttpClient, HttpHeaders } from '@angular/common/http';
+import { HttpClient, HttpHeaders, HttpParams } from '@angular/common/http';
 import { FormControl } from '@angular/forms';
 import { forkJoin, of, Subscription } from 'rxjs';
 import { catchError } from 'rxjs/operators';
@@ -202,9 +202,12 @@ export class RapportReconciliationBoPartenaireComponent implements OnInit, OnDes
   private rawReport: Result8Row[] = [];
   private ecartAll: EcartBoSummary[] = [];
   private manualRows: ReleveManualRangeRow[] = [];
+  private readonly numberFormatter = new Intl.NumberFormat('fr-FR');
 
   /** Dernier périmètre chargé pour /manual-trx/range (évite un appel HTTP à chaque frappe). */
   private lastManualFetchKey = '';
+  /** Dernier périmètre chargé pour result8rec + écarts (évite de charger toute la table à chaque affichage). */
+  private lastReportFetchKey = '';
   /** Contexte du dernier filtre rapport (recalcul tableau sans HTTP si seule la recherche change). */
   private lastFilteredRows: Result8Row[] = [];
   private lastEnvNorm: string | null = null;
@@ -248,6 +251,32 @@ export class RapportReconciliationBoPartenaireComponent implements OnInit, OnDes
     return String(v1 ?? '').trim() === String(v2 ?? '').trim();
   }
 
+  trackByString(_: number, value: string): string {
+    return value;
+  }
+
+  trackByDisplayLine(_: number, line: BoPartenaireDisplayLine): string {
+    if (line.type === 'single') {
+      return `single:${line.row.service}`;
+    }
+    if (line.type === 'group-header') {
+      return `group:${line.id}`;
+    }
+    return `detail:${line.groupId}:${line.row.service}`;
+  }
+
+  trackByAuditServiceSection(_: number, section: AuditSectionByService): string {
+    return section.serviceName;
+  }
+
+  trackByAuditLine(_: number, line: { id: number }): number {
+    return line.id;
+  }
+
+  trackByAuditEntry(_: number, entry: Result8RecAuditEntry): number {
+    return entry.id;
+  }
+
   get subtitle(): string {
     const pays = this.selectedCountry || '—';
     const env = this.selectedEnv === 'ALL' ? 'tous ENV' : this.selectedEnv;
@@ -282,12 +311,28 @@ export class RapportReconciliationBoPartenaireComponent implements OnInit, OnDes
   }
 
   appliquerFiltres(): void {
+    if (this.shouldReloadRemoteData()) {
+      this.loadDonnees();
+      return;
+    }
     this.rebuildTable();
   }
 
   private buildManualFetchKey(dateStart: string, dateEnd: string): string {
     const svc = [...this.availableServices].sort().join('\u001e');
     return `${dateStart}|${dateEnd}|${this.selectedCountry}|${this.selectedEnv}|${svc}`;
+  }
+
+  private buildReportFetchKey(dateStart: string, dateEnd: string): string {
+    return `${dateStart}|${dateEnd}`;
+  }
+
+  private shouldReloadRemoteData(): boolean {
+    const range = this.getNormalizedDateRange();
+    if (!range) {
+      return false;
+    }
+    return this.buildReportFetchKey(range.start, range.end) !== this.lastReportFetchKey;
   }
 
   /** Période normalisée (inclusive) ; échange début/fin si besoin. */
@@ -407,18 +452,34 @@ export class RapportReconciliationBoPartenaireComponent implements OnInit, OnDes
   private loadDonnees(): void {
     this.loading = true;
     this.error = null;
+    const range = this.getNormalizedDateRange();
+    if (!range) {
+      this.rawReport = [];
+      this.ecartAll = [];
+      this.lastReportFetchKey = '';
+      this.rebuildTable();
+      this.loading = false;
+      return;
+    }
     const headers = new HttpHeaders({
       'Cache-Control': 'no-cache, no-store, must-revalidate',
       Pragma: 'no-cache',
       Expires: '0',
       'X-Permission-Module': 'Résultats'
     });
-    const url = `/api/result8rec?_t=${Date.now()}`;
+    let params = new HttpParams()
+      .set('startDate', range.start)
+      .set('endDate', range.end)
+      .set('_t', String(Date.now()));
+    const ecartStart = this.subtractCalendarDaysFromYmd(range.start, 1);
 
     this.subs.add(
       forkJoin({
-        report: this.http.get<any[]>(url, { headers }),
-        ecarts: this.ecartBoSummaryService.getEcartBoSummaries().pipe(
+        report: this.http.get<any[]>('/api/result8rec', { headers, params }),
+        ecarts: this.ecartBoSummaryService.getEcartBoSummaries({
+          startDate: ecartStart,
+          endDate: range.end
+        }).pipe(
           catchError((err) => {
             console.warn('Écarts BO summary indisponibles, suite sans écarts partenaire J±1', err);
             return of([] as EcartBoSummary[]);
@@ -461,6 +522,7 @@ export class RapportReconciliationBoPartenaireComponent implements OnInit, OnDes
               })
             : [];
           this.ecartAll = Array.isArray(ecarts) ? ecarts : [];
+          this.lastReportFetchKey = this.buildReportFetchKey(range.start, range.end);
           const set = new Set<string>();
           this.rawReport.forEach((row) => {
             const c = (row.country || '').trim();
@@ -1506,7 +1568,7 @@ export class RapportReconciliationBoPartenaireComponent implements OnInit, OnDes
   }
 
   formatNombre(n: number): string {
-    return new Intl.NumberFormat('fr-FR').format(Math.round(n));
+    return this.numberFormatter.format(Math.round(n));
   }
 
   formatDecalageCell(nombre: number, volume: number): string {

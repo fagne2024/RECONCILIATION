@@ -26,6 +26,10 @@ export interface EcartBoSummaryFilter {
   pays?: string;
   statut?: string;
   token?: string;
+  startDate?: string;
+  endDate?: string;
+  env?: string;
+  platform?: string;
 }
 
 /** Données préremplies depuis la page /matches pour le formulaire "Ajouter une nouvelle ligne" */
@@ -141,6 +145,18 @@ export class EcartBoSummaryService {
       }
       if (filter.token) {
         params = params.set('token', filter.token);
+      }
+      if (filter.startDate) {
+        params = params.set('startDate', filter.startDate);
+      }
+      if (filter.endDate) {
+        params = params.set('endDate', filter.endDate);
+      }
+      if (filter.env && filter.env !== 'ALL') {
+        params = params.set('env', filter.env);
+      }
+      if (filter.platform) {
+        params = params.set('platform', filter.platform);
       }
     }
 

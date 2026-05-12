@@ -65,9 +65,13 @@ export class StatsComponent implements OnInit, OnDestroy {
     filteredData: any[] = [];
     aggregatedStatsCache: AggregatedStatRow[] = [];
     visibleAggregatedStatsCache: AggregatedStatRow[] = [];
+    pagedStatsCache: AggregatedStatRow[] = [];
+    totalRecordsCache: number = 0;
+    totalVolumeCache: number = 0;
     statsPage: number = 1;
     statsPageSize: number = 10;
     isLoading: boolean = false;
+    showAllStatsHistory: boolean = false;
     errorMessage: string | null = null;
     showAgencyReport: boolean = false;
     reportMode: 'both' | 'vol' | 'trx' = 'both';
@@ -95,6 +99,7 @@ export class StatsComponent implements OnInit, OnDestroy {
     } = {};
 
     private subscription: Subscription = new Subscription();
+    private lastStatsFetchKey = '';
 
     // Ajout des contrôles de recherche et des variables de sélection
     agenceSearchCtrl = new FormControl('');
@@ -148,6 +153,15 @@ export class StatsComponent implements OnInit, OnDestroy {
             referenceDate: [''],
             variationFilter: ['all' as VariationFilter]
         });
+
+        const initialRange = this.currentMonthDateRange();
+        this.filterForm.patchValue(
+            {
+                startDate: initialRange.startDate,
+                endDate: initialRange.endDate
+            },
+            { emitEvent: false }
+        );
 
         // Ajouter des listeners pour les changements de filtres
         this.filterForm.valueChanges.subscribe(() => {
@@ -210,11 +224,25 @@ export class StatsComponent implements OnInit, OnDestroy {
         this.subscription.unsubscribe();
     }
 
+    trackByString(_: number, value: string): string {
+        return value;
+    }
+
+    trackByNumber(_: number, value: number): number {
+        return value;
+    }
+
+    trackByAggregatedStat(_: number, row: AggregatedStatRow): string {
+        return `${row.agency}|${row.service}|${row.country}|${row.date}`;
+    }
+
     private loadData() {
         this.isLoading = true;
-        this.agencySummaryService.getAllSummaries('Statistiques').subscribe({
+        const { filters, key } = this.buildStatsFetchScope();
+        this.lastStatsFetchKey = key;
+        this.agencySummaryService.getAllSummaries('Statistiques', filters).subscribe({
             next: (data) => {
-                console.log('Données reçues de l\'API agency-summary:', data);
+                console.log('Données reçues de l\'API agency-summary:', key, data);
                 this.agencySummaries = data;
                 // Initialiser les listes filtrées avec cloisonnement
                 this.updateFilteredLists();
@@ -228,6 +256,101 @@ export class StatsComponent implements OnInit, OnDestroy {
                 await this.showErrorMessage('Erreur lors du chargement des données');
             }
         });
+    }
+
+    private toYmdLocal(d: Date): string {
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${y}-${m}-${day}`;
+    }
+
+    private currentMonthDateRange(): { startDate: string; endDate: string } {
+        const now = new Date();
+        const first = new Date(now.getFullYear(), now.getMonth(), 1);
+        const last = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+        return { startDate: this.toYmdLocal(first), endDate: this.toYmdLocal(last) };
+    }
+
+    private buildStatsFetchScope(): {
+        filters: {
+            agencies?: string[];
+            services?: string[];
+            countries?: string[];
+            startDate?: string;
+            endDate?: string;
+        };
+        key: string;
+    } {
+        const form = this.filterForm.value || {};
+        const filters: {
+            agencies?: string[];
+            services?: string[];
+            countries?: string[];
+            startDate?: string;
+            endDate?: string;
+        } = {};
+        const agencies = Array.isArray(form.agency) ? form.agency.filter(Boolean) : [];
+        const services = Array.isArray(form.service) ? form.service.filter(Boolean) : [];
+        const countries = Array.isArray(form.country) ? form.country.filter(Boolean) : [];
+        if (agencies.length) {
+            filters.agencies = agencies;
+        }
+        if (services.length) {
+            filters.services = services;
+        }
+        if (countries.length) {
+            filters.countries = countries;
+        }
+        if (form.startDate) {
+            filters.startDate = form.startDate;
+        }
+        if (form.endDate) {
+            filters.endDate = form.endDate;
+        }
+        if (!filters.startDate && !filters.endDate && !this.showAllStatsHistory) {
+            const month = this.currentMonthDateRange();
+            filters.startDate = month.startDate;
+            filters.endDate = month.endDate;
+        }
+
+        const key = JSON.stringify({
+            agencies: filters.agencies || [],
+            services: filters.services || [],
+            countries: filters.countries || [],
+            startDate: filters.startDate || '',
+            endDate: filters.endDate || '',
+            all: this.showAllStatsHistory
+        });
+
+        return { filters, key };
+    }
+
+    private shouldReloadStatsForCurrentScope(): boolean {
+        return !this.isLoading && this.buildStatsFetchScope().key !== this.lastStatsFetchKey;
+    }
+
+    toggleStatsHistoryScope(): void {
+        this.showAllStatsHistory = !this.showAllStatsHistory;
+        if (!this.showAllStatsHistory) {
+            const month = this.currentMonthDateRange();
+            this.filterForm.patchValue(
+                {
+                    startDate: month.startDate,
+                    endDate: month.endDate
+                },
+                { emitEvent: false }
+            );
+        } else if (this.filterForm.value.startDate || this.filterForm.value.endDate) {
+            this.filterForm.patchValue(
+                {
+                    startDate: '',
+                    endDate: ''
+                },
+                { emitEvent: false }
+            );
+        }
+        this.loadData();
     }
 
     getFilteredAgencies(): string[] {
@@ -277,6 +400,11 @@ export class StatsComponent implements OnInit, OnDestroy {
         console.log('applyFilters() appelé');
         console.log('Filtres actuels:', this.filterForm.value);
         console.log('agencySummaries length:', this.agencySummaries.length);
+
+        if (this.shouldReloadStatsForCurrentScope()) {
+            this.loadData();
+            return;
+        }
         
         const filters = this.filterForm.value;
         const startDate = filters.startDate ? this.getStartOfDay(filters.startDate) : null;
@@ -484,12 +612,15 @@ export class StatsComponent implements OnInit, OnDestroy {
         this.aggregatedStatsCache = this.buildAggregatedStats();
         this.aggregatedIndexByDateKey = this.buildAggregatedIndexByDateKey(this.aggregatedStatsCache);
         this.visibleAggregatedStatsCache = this.applyVariationFilter(this.aggregatedStatsCache);
+        this.totalRecordsCache = this.visibleAggregatedStatsCache.reduce((total, summary) => total + summary.recordCount, 0);
+        this.totalVolumeCache = this.visibleAggregatedStatsCache.reduce((total, summary) => total + summary.totalVolume, 0);
         this.buildAgencyReport();
         this.updateVisibleReportData();
 
         if (this.statsPage > this.totalPages) {
             this.statsPage = this.totalPages || 1;
         }
+        this.updatePagedStatsCache();
     }
 
     // Méthode appelée lors d'un changement de filtre
@@ -1081,42 +1212,55 @@ export class StatsComponent implements OnInit, OnDestroy {
 
     // Remplacer pagedStats par l'agrégation intelligente
     get pagedStats() {
-        const aggregated = this.getAggregatedStats();
-        const start = (this.statsPage - 1) * this.statsPageSize;
-        const end = start + this.statsPageSize;
-        return aggregated.slice(start, end);
+        return this.pagedStatsCache;
     }
 
     // Calculer le nombre total de pages
     get totalPages(): number {
         const aggregated = this.getAggregatedStats();
-        return Math.ceil(aggregated.length / this.statsPageSize);
+        return Math.max(1, Math.ceil(aggregated.length / this.statsPageSize));
     }
 
     // Adapter les totaux globaux
     getTotalRecords(): number {
-        return this.getAggregatedStats().reduce((total, summary) => total + summary.recordCount, 0);
+        return this.totalRecordsCache;
     }
 
     getTotalVolume(): number {
-        return this.getAggregatedStats().reduce((total, summary) => total + summary.totalVolume, 0);
+        return this.totalVolumeCache;
+    }
+
+    private updatePagedStatsCache(): void {
+        const aggregated = this.getAggregatedStats();
+        if (this.statsPage > this.totalPages) {
+            this.statsPage = this.totalPages;
+        }
+        if (this.statsPage < 1) {
+            this.statsPage = 1;
+        }
+        const start = (this.statsPage - 1) * this.statsPageSize;
+        const end = start + this.statsPageSize;
+        this.pagedStatsCache = aggregated.slice(start, end);
     }
 
     nextStatsPage() {
         if (this.statsPage < this.totalPages) {
             this.statsPage++;
+            this.updatePagedStatsCache();
         }
     }
 
     prevStatsPage() {
         if (this.statsPage > 1) {
             this.statsPage--;
+            this.updatePagedStatsCache();
         }
     }
 
     goToStatsPage(page: number) {
         if (page >= 1 && page <= this.totalPages) {
             this.statsPage = page;
+            this.updatePagedStatsCache();
         }
     }
 

@@ -66,7 +66,12 @@ public class AgencySummaryController {
     }
 
     @GetMapping("/all")
-    public List<AgencySummary> getAllSummaries() {
+    public List<AgencySummary> getAllSummaries(
+            @RequestParam(required = false, name = "agency") List<String> agencies,
+            @RequestParam(required = false, name = "service") List<String> services,
+            @RequestParam(required = false, name = "country") List<String> countries,
+            @RequestParam(required = false) String startDate,
+            @RequestParam(required = false) String endDate) {
         // Récupérer le username pour le filtrage par pays
         String username = com.reconciliation.util.RequestContextUtil.getUsernameFromRequest();
         
@@ -80,11 +85,19 @@ public class AgencySummaryController {
         // Variable finale pour utilisation dans lambda
         final List<String> allowedCountries = allowedCountriesTemp;
         
-        // Récupérer toutes les données agency_summary
+        List<String> agencyFilter = cleanListParam(agencies);
+        List<String> serviceFilter = cleanListParam(services);
+        List<String> countryFilter = cleanListParam(countries);
+        String start = blankToNull(startDate);
+        String end = blankToNull(endDate);
+
+        // Récupérer les données agency_summary sur le périmètre demandé
         List<AgencySummaryEntity> allSummaries;
         if (allowedCountries == null) {
             // GNL ou admin : tous les pays
-            allSummaries = repository.findAll();
+            allSummaries = hasStatsFilters(agencyFilter, serviceFilter, countryFilter, start, end)
+                    ? repository.findByStatsFilters(agencyFilter, serviceFilter, countryFilter, start, end)
+                    : repository.findAll();
             System.out.println("🌍 Cloisonnement: Admin/GNL détecté, retour de " + allSummaries.size() + " enregistrements");
         } else if (allowedCountries.isEmpty()) {
             // Aucun pays autorisé
@@ -92,7 +105,9 @@ public class AgencySummaryController {
             return new ArrayList<>();
         } else {
             // Filtrer par pays autorisés
-            List<AgencySummaryEntity> allEntities = repository.findAll();
+            List<AgencySummaryEntity> allEntities = hasStatsFilters(agencyFilter, serviceFilter, countryFilter, start, end)
+                    ? repository.findByStatsFilters(agencyFilter, serviceFilter, countryFilter, start, end)
+                    : repository.findAll();
             System.out.println("🌍 Cloisonnement: Filtrage pour utilisateur " + username + " - Pays autorisés: " + allowedCountries);
             System.out.println("🌍 Cloisonnement: Total enregistrements avant filtrage: " + allEntities.size());
             
@@ -164,6 +179,34 @@ public class AgencySummaryController {
                 return dto;
             })
             .collect(Collectors.toList());
+    }
+
+    private static String blankToNull(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private static List<String> cleanListParam(List<String> values) {
+        if (values == null) {
+            return null;
+        }
+        List<String> cleaned = values.stream()
+                .filter(v -> v != null && !v.trim().isEmpty())
+                .map(String::trim)
+                .collect(Collectors.toList());
+        return cleaned.isEmpty() ? null : cleaned;
+    }
+
+    private static boolean hasStatsFilters(
+            List<String> agencies,
+            List<String> services,
+            List<String> countries,
+            String startDate,
+            String endDate) {
+        return agencies != null || services != null || countries != null || startDate != null || endDate != null;
     }
     
     /**

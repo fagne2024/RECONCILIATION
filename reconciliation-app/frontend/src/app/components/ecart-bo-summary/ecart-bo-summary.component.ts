@@ -4,7 +4,12 @@ import { Subscription, firstValueFrom } from 'rxjs';
 import { finalize } from 'rxjs/operators';
 import { ReconciliationResponse } from '../../models/reconciliation-response.model';
 import { AppStateService } from '../../services/app-state.service';
-import { EcartBoSummaryService, EcartBoSummaryPrefill, EcartBoSummaryPendingLine } from '../../services/ecart-bo-summary.service';
+import {
+  EcartBoSummaryFilter,
+  EcartBoSummaryService,
+  EcartBoSummaryPrefill,
+  EcartBoSummaryPendingLine
+} from '../../services/ecart-bo-summary.service';
 import { PopupService } from '../../services/popup.service';
 import { fixGarbledCharacters } from '../../utils/encoding-fixer';
 import { ModernPopupComponent } from '../modern-popup/modern-popup.component';
@@ -43,7 +48,10 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
   response: ReconciliationResponse | null = null;
   summaryItems: EcartBoSummaryItem[] = [];
   filteredItems: EcartBoSummaryItem[] = [];
+  pagedItems: EcartBoSummaryItem[] = [];
   private subscription = new Subscription();
+  private savedDataMode = false;
+  private lastSavedFetchKey = '';
   
   // Pagination
   currentPage = 1;
@@ -65,6 +73,8 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
   selectedDateFrom: string = '';
   selectedDateTo: string = '';
   selectedToken: string = '';
+  /** Par défaut, les données sauvegardées sont limitées au mois courant pour accélérer l’affichage. */
+  showAllSavedHistory = false;
 
   // Liste des valeurs uniques pour les filtres
   uniqueAgencies: string[] = [];
@@ -251,6 +261,8 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
 
   /** Applique les lignes en attente venues de la page écarts BO (aucun enregistrement : l'utilisateur clique sur Sauvegarder pour enregistrer). */
   private applyPendingLinesFromEcartBo(pending: EcartBoSummaryPendingLine[]): void {
+    this.savedDataMode = false;
+    this.lastSavedFetchKey = '';
     this.summaryItems = pending.map(line => ({
       selectionKey: this.createSelectionKey('pending'),
       date: line.date || new Date().toISOString().split('T')[0],
@@ -282,6 +294,95 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
     this.uniqueEnvCodes = [...new Set([...this.envCodePresetOptions, ...fromItems])].sort((a, b) =>
       a.localeCompare(b, 'fr')
     );
+  }
+
+  trackBySelectionKey(_: number, item: EcartBoSummaryItem): string {
+    return item.selectionKey;
+  }
+
+  trackByString(_: number, value: string): string {
+    return value;
+  }
+
+  trackByNumber(_: number, value: number): number {
+    return value;
+  }
+
+  private toYmdLocal(d: Date): string {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  }
+
+  private currentMonthDateRange(): { startDate: string; endDate: string } {
+    const now = new Date();
+    const first = new Date(now.getFullYear(), now.getMonth(), 1);
+    const last = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    return { startDate: this.toYmdLocal(first), endDate: this.toYmdLocal(last) };
+  }
+
+  private normalizeStatusForApi(statut: string): string | undefined {
+    if (statut === 'ok') {
+      return 'OK';
+    }
+    if (statut === 'en cours') {
+      return 'EN_COURS';
+    }
+    return undefined;
+  }
+
+  private buildSavedSummaryFilter(): { filter: EcartBoSummaryFilter; key: string } {
+    const filter: EcartBoSummaryFilter = {};
+    if (this.selectedAgence) {
+      filter.agence = this.selectedAgence;
+    }
+    if (this.selectedService) {
+      filter.service = this.selectedService;
+    }
+    if (this.selectedPays) {
+      filter.pays = this.selectedPays;
+    }
+    const statut = this.normalizeStatusForApi(this.selectedStatut);
+    if (statut) {
+      filter.statut = statut;
+    }
+    if (this.selectedEnv) {
+      filter.platform = this.selectedEnv;
+    }
+    if (this.selectedEnvCode) {
+      filter.env = normalizeReconciliationReportEnv(this.selectedEnvCode);
+    }
+
+    if (this.selectedDateFrom || this.selectedDateTo) {
+      if (this.selectedDateFrom) {
+        filter.startDate = this.selectedDateFrom;
+      }
+      if (this.selectedDateTo) {
+        filter.endDate = this.selectedDateTo;
+      }
+    } else if (!this.showAllSavedHistory) {
+      const month = this.currentMonthDateRange();
+      filter.startDate = month.startDate;
+      filter.endDate = month.endDate;
+    }
+
+    const key = JSON.stringify({
+      agence: filter.agence || '',
+      service: filter.service || '',
+      pays: filter.pays || '',
+      statut: filter.statut || '',
+      platform: filter.platform || '',
+      env: filter.env || '',
+      startDate: filter.startDate || '',
+      endDate: filter.endDate || '',
+      all: this.showAllSavedHistory
+    });
+    return { filter, key };
+  }
+
+  private shouldReloadSavedDataForFilters(): boolean {
+    return this.savedDataMode && this.buildSavedSummaryFilter().key !== this.lastSavedFetchKey;
   }
 
   loadByToken(): void {
@@ -350,10 +451,13 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
     this.prefillBuffer = null;
     this.isLoading = true;
     this.cdr.markForCheck();
+    const { filter, key } = this.buildSavedSummaryFilter();
 
-    this.ecartBoSummaryService.getEcartBoSummaries().subscribe({
+    this.ecartBoSummaryService.getEcartBoSummaries(filter).subscribe({
       next: (savedData) => {
-        console.log('Données sauvegardées chargées:', savedData);
+        console.log('Données sauvegardées chargées:', key, savedData);
+        this.savedDataMode = true;
+        this.lastSavedFetchKey = key;
         this.applySavedDataToSummary(savedData);
         this.applyFilters();
         this.isLoading = false;
@@ -383,6 +487,8 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
   }
 
   private loadSummaryData(): void {
+    this.savedDataMode = false;
+    this.lastSavedFetchKey = '';
     this.isLoading = true;
     this.cdr.markForCheck();
     
@@ -511,6 +617,15 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
   }
 
   onSearch(): void {
+    this.applyFilters();
+  }
+
+  toggleSavedHistoryScope(): void {
+    this.showAllSavedHistory = !this.showAllSavedHistory;
+    if (this.savedDataMode) {
+      this.loadSavedSummaryData();
+      return;
+    }
     this.applyFilters();
   }
 
@@ -652,6 +767,10 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
   }
 
   applyFilters(): void {
+    if (this.shouldReloadSavedDataForFilters()) {
+      this.loadSavedSummaryData();
+      return;
+    }
     this.sanitizeCascadeSelections();
     this.rebuildFilterOptionLists();
     this.filteredItems = this.summaryItems.filter(item => this.itemMatchesFilters(item));
@@ -983,17 +1102,25 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
   }
 
   getPagedItems(): EcartBoSummaryItem[] {
-    const start = (this.currentPage - 1) * this.pageSize;
-    return this.filteredItems.slice(start, start + this.pageSize);
+    return this.pagedItems;
   }
 
   updatePagination(): void {
     this.totalPages = Math.max(1, Math.ceil(this.filteredItems.length / this.pageSize));
+    if (this.currentPage > this.totalPages) {
+      this.currentPage = this.totalPages;
+    }
+    if (this.currentPage < 1) {
+      this.currentPage = 1;
+    }
+    const start = (this.currentPage - 1) * this.pageSize;
+    this.pagedItems = this.filteredItems.slice(start, start + this.pageSize);
   }
 
   prevPage(): void {
     if (this.currentPage > 1) {
       this.currentPage--;
+      this.updatePagination();
       this.cdr.markForCheck();
     }
   }
@@ -1001,6 +1128,7 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
   nextPage(): void {
     if (this.currentPage < this.totalPages) {
       this.currentPage++;
+      this.updatePagination();
       this.cdr.markForCheck();
     }
   }
@@ -1008,6 +1136,7 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
   goToPage(page: number): void {
     if (page >= 1 && page <= this.totalPages) {
       this.currentPage = page;
+      this.updatePagination();
       this.cdr.markForCheck();
     }
   }

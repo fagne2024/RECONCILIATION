@@ -8,6 +8,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
@@ -33,11 +34,31 @@ public class EcartBoSummaryService {
                 .map(this::convertToModel);
     }
     
-    public List<EcartBoSummary> getEcartBoSummaries(String agence, String service, String pays, String statut, String token) {
+    public List<EcartBoSummary> getEcartBoSummaries(
+            String agence,
+            String service,
+            String pays,
+            String statut,
+            String token,
+            String startDate,
+            String endDate,
+            String env,
+            String platform) {
         List<EcartBoSummaryEntity> entities;
 
         if (token != null && !token.trim().isEmpty()) {
             entities = ecartBoSummaryRepository.findByToken(token.trim());
+        } else if (hasAdvancedFilter(agence, service, pays, statut, startDate, endDate, env, platform)) {
+            entities = ecartBoSummaryRepository.findByFilters(
+                    blankToNull(agence),
+                    blankToNull(service),
+                    blankToNull(pays),
+                    blankToNull(statut),
+                    normalizePlatformForQuery(platform),
+                    parseDateStart(startDate),
+                    parseDateEnd(endDate),
+                    normalizeEnvForQuery(env)
+            );
         } else if (agence != null && service != null && pays != null) {
             entities = ecartBoSummaryRepository.findByAgenceAndServiceAndPays(agence, service, pays);
         } else if (agence != null) {
@@ -62,6 +83,61 @@ public class EcartBoSummaryService {
         return entities.stream()
                 .map(this::convertToModel)
                 .collect(Collectors.toList());
+    }
+
+    private static boolean hasAdvancedFilter(
+            String agence,
+            String service,
+            String pays,
+            String statut,
+            String startDate,
+            String endDate,
+            String env,
+            String platform) {
+        return blankToNull(agence) != null
+                || blankToNull(service) != null
+                || blankToNull(pays) != null
+                || blankToNull(statut) != null
+                || blankToNull(startDate) != null
+                || blankToNull(endDate) != null
+                || normalizeEnvForQuery(env) != null
+                || normalizePlatformForQuery(platform) != null;
+    }
+
+    private static String blankToNull(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private static String normalizeEnvForQuery(String env) {
+        String trimmed = blankToNull(env);
+        if (trimmed == null || "ALL".equalsIgnoreCase(trimmed)) {
+            return null;
+        }
+        String upper = trimmed.toUpperCase();
+        return "TOTAL".equals(upper) ? "T-E" : upper;
+    }
+
+    private static String normalizePlatformForQuery(String platform) {
+        String trimmed = blankToNull(platform);
+        if (trimmed == null || "ALL".equalsIgnoreCase(trimmed)) {
+            return null;
+        }
+        String upper = trimmed.toUpperCase();
+        return ("BO".equals(upper) || "PARTENAIRE".equals(upper)) ? upper : null;
+    }
+
+    private static LocalDateTime parseDateStart(String value) {
+        String trimmed = blankToNull(value);
+        return trimmed == null ? null : LocalDate.parse(trimmed).atStartOfDay();
+    }
+
+    private static LocalDateTime parseDateEnd(String value) {
+        String trimmed = blankToNull(value);
+        return trimmed == null ? null : LocalDate.parse(trimmed).atTime(23, 59, 59);
     }
     
     @Transactional

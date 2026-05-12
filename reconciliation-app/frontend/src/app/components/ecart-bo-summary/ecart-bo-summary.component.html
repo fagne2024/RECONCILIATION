@@ -20,6 +20,9 @@
       <button type="button" class="nav-btn secondary" (click)="loadSavedSummaryData()" title="Charger les données déjà sauvegardées">
         <i class="fas fa-database"></i> Données sauvegardées
       </button>
+      <button type="button" class="nav-btn secondary" (click)="toggleSavedHistoryScope()" [disabled]="isLoading" title="Changer le périmètre des données sauvegardées">
+        <i class="fas fa-calendar-alt"></i> {{ showAllSavedHistory ? 'Mois courant' : 'Tout historique' }}
+      </button>
       <button type="button" class="nav-btn secondary" (click)="openAddModal()" title="Ajouter une nouvelle ligne">
         <i class="fas fa-plus"></i> Ajouter
       </button>
@@ -41,7 +44,7 @@
         <label for="pendingEnvSelect">ENV</label>
         <select id="pendingEnvSelect" [(ngModel)]="pendingEnvSelection" class="env-preload-select">
           <option value="">T-E (agrégat / non renseigné)</option>
-          <option *ngFor="let code of envCodePresetOptions" [value]="code">{{ code }}</option>
+          <option *ngFor="let code of envCodePresetOptions; trackBy: trackByString" [value]="code">{{ code }}</option>
         </select>
         <button type="button" class="env-preload-btn primary" (click)="confirmEnvAndLoadData()">
           Afficher les données
@@ -172,21 +175,21 @@
         <label>Agence</label>
         <select [(ngModel)]="selectedAgence" (change)="applyFilters()" class="filter-select">
           <option value="">Toutes</option>
-          <option *ngFor="let agence of uniqueAgencies" [value]="agence">{{agence}}</option>
+          <option *ngFor="let agence of uniqueAgencies; trackBy: trackByString" [value]="agence">{{agence}}</option>
         </select>
       </div>
       <div class="filter-item">
         <label>Service</label>
         <select [(ngModel)]="selectedService" (change)="applyFilters()" class="filter-select">
           <option value="">Tous</option>
-          <option *ngFor="let service of filterOptionsServices" [value]="service">{{service}}</option>
+          <option *ngFor="let service of filterOptionsServices; trackBy: trackByString" [value]="service">{{service}}</option>
         </select>
       </div>
       <div class="filter-item">
         <label>Pays</label>
         <select [(ngModel)]="selectedPays" (change)="applyFilters()" class="filter-select">
           <option value="">Tous</option>
-          <option *ngFor="let pays of filterOptionsPays" [value]="pays">{{pays}}</option>
+          <option *ngFor="let pays of filterOptionsPays; trackBy: trackByString" [value]="pays">{{pays}}</option>
         </select>
       </div>
       <div class="filter-item">
@@ -201,7 +204,7 @@
         <label>ENV</label>
         <select [(ngModel)]="selectedEnvCode" (change)="applyFilters()" class="filter-select" title="Environnement technique (BET, HT, T-E agrégat, …)">
           <option value="">Tous</option>
-          <option *ngFor="let code of filterOptionsEnvCodes" [value]="code">{{ code }}</option>
+          <option *ngFor="let code of filterOptionsEnvCodes; trackBy: trackByString" [value]="code">{{ code }}</option>
         </select>
       </div>
       <div class="filter-item">
@@ -280,7 +283,7 @@
           </tr>
         </thead>
         <tbody>
-          <tr *ngFor="let item of getPagedItems()" [class.manual-row]="item.isManual" [class.linked-row]="item.linkedId" [class.row-selected]="isSelected(item)">
+          <tr *ngFor="let item of pagedItems; trackBy: trackBySelectionKey" [class.manual-row]="item.isManual" [class.linked-row]="item.linkedId" [class.row-selected]="isSelected(item)">
             <td class="td-checkbox">
               <input 
                 *ngIf="item.id || item.statut === 'en cours'"
@@ -334,7 +337,7 @@
               </div>
             </td>
           </tr>
-          <tr *ngIf="getPagedItems().length === 0">
+          <tr *ngIf="pagedItems.length === 0">
             <td colspan="12" class="no-data">Aucun écart BO trouvé</td>
           </tr>
         </tbody>
@@ -372,7 +375,7 @@
       </button>
       <div class="page-numbers">
         <button 
-          *ngFor="let page of getPageNumbers()" 
+          *ngFor="let page of getPageNumbers(); trackBy: trackByNumber" 
           (click)="goToPage(page)"
           [class.active]="page === currentPage"
           class="page-number-btn"

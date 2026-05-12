@@ -25,9 +25,14 @@ public class EcartBoSummaryController {
             @RequestParam(required = false) String service,
             @RequestParam(required = false) String pays,
             @RequestParam(required = false) String statut,
-            @RequestParam(required = false) String token) {
+            @RequestParam(required = false) String token,
+            @RequestParam(required = false) String startDate,
+            @RequestParam(required = false) String endDate,
+            @RequestParam(required = false) String env,
+            @RequestParam(required = false) String platform) {
         try {
-            List<EcartBoSummary> summaries = ecartBoSummaryService.getEcartBoSummaries(agence, service, pays, statut, token);
+            List<EcartBoSummary> summaries = ecartBoSummaryService.getEcartBoSummaries(
+                    agence, service, pays, statut, token, startDate, endDate, env, platform);
             return ResponseEntity.ok(summaries);
         } catch (Exception e) {
             System.err.println("=== ERREUR getEcartBoSummaries (Controller) ===");
