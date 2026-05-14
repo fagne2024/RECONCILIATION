@@ -70,6 +70,8 @@ export class StatsComponent implements OnInit, OnDestroy {
     totalVolumeCache: number = 0;
     statsPage: number = 1;
     statsPageSize: number = 10;
+    /** Affiche toutes les lignes agrégées du tableau sans pagination (bouton « Voir plus »). */
+    showAllStatsTableRows = false;
     isLoading: boolean = false;
     showAllStatsHistory: boolean = false;
     errorMessage: string | null = null;
@@ -436,6 +438,7 @@ export class StatsComponent implements OnInit, OnDestroy {
         // Trier par date décroissante (du plus récent au plus ancien)
         this.filteredData.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
         this.statsPage = 1;
+        this.showAllStatsTableRows = false;
         this.rebuildDerivedData();
         
         console.log('Données après filtrage et tri:', this.filteredData.length);
@@ -1218,7 +1221,20 @@ export class StatsComponent implements OnInit, OnDestroy {
     // Calculer le nombre total de pages
     get totalPages(): number {
         const aggregated = this.getAggregatedStats();
+        if (this.showAllStatsTableRows) {
+            return 1;
+        }
         return Math.max(1, Math.ceil(aggregated.length / this.statsPageSize));
+    }
+
+    get canToggleStatsTableExpand(): boolean {
+        return this.getAggregatedStats().length > this.statsPageSize;
+    }
+
+    toggleShowAllStatsTableRows(): void {
+        this.showAllStatsTableRows = !this.showAllStatsTableRows;
+        this.statsPage = 1;
+        this.updatePagedStatsCache();
     }
 
     // Adapter les totaux globaux
@@ -1232,6 +1248,10 @@ export class StatsComponent implements OnInit, OnDestroy {
 
     private updatePagedStatsCache(): void {
         const aggregated = this.getAggregatedStats();
+        if (this.showAllStatsTableRows) {
+            this.pagedStatsCache = aggregated.slice();
+            return;
+        }
         if (this.statsPage > this.totalPages) {
             this.statsPage = this.totalPages;
         }

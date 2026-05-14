@@ -898,16 +898,29 @@ export class MatchesTableComponent implements OnInit, OnDestroy {
 
   /**
    * Extrait une valeur d'un match par noms de colonnes possibles (agence, service, pays, date).
-   * Cherche dans boData puis partnerData.
+   * Utilise la même tolérance que l'affichage du tableau ({@link getValueByFlexibleKey}) et parcourt
+   * boData, partnerData et partnerDataList (correspondances 1-n).
    */
   private getValueFromMatch(match: Match, possibleKeys: string[]): string {
-    const sources = [match.boData, match.partnerData].filter(Boolean) as Record<string, string>[];
+    const sources: Record<string, any>[] = [];
+    if (match.boData) {
+      sources.push(match.boData);
+    }
+    if (match.partnerData) {
+      sources.push(match.partnerData);
+    }
+    if (match.partnerDataList?.length) {
+      for (const pr of match.partnerDataList) {
+        if (pr) {
+          sources.push(pr);
+        }
+      }
+    }
     for (const record of sources) {
       for (const key of possibleKeys) {
-        const originalKey = this.getOriginalKey(record, key);
-        const value = record[originalKey];
-        if (value !== undefined && value !== null && String(value).trim() !== '') {
-          return String(value).trim();
+        const v = this.getValueByFlexibleKey(record, key);
+        if (v) {
+          return v;
         }
       }
     }
@@ -923,9 +936,48 @@ export class MatchesTableComponent implements OnInit, OnDestroy {
     if (!matches || matches.length === 0) {
       return null;
     }
-    const agenceKeys = ['Agence', 'agence', 'AGENCE', 'agency', 'Agency'];
-    const serviceKeys = ['Service', 'service', 'SERVICE', 'serv', 'Serv'];
-    const paysKeys = ['Pays', 'pays', 'PAYS', 'country', 'Country', 'GRX', 'grx'];
+    const agenceKeys = [
+      'Agence',
+      'agence',
+      'AGENCY',
+      'Agency',
+      'Zone',
+      'zone',
+      'Agence zone',
+      'Agence/Zone',
+      'Agence BO',
+      'BO agence',
+      'BO agence/zone'
+    ];
+    const serviceKeys = [
+      'Service',
+      'service',
+      'SERVICE',
+      'serv',
+      'Serv',
+      'Type Opération',
+      'Type Operation',
+      'Type operation',
+      'type operation',
+      'Type service',
+      'Operation',
+      'Opération',
+      'Service BO'
+    ];
+    const paysKeys = [
+      'Pays',
+      'pays',
+      'PAYS',
+      'country',
+      'Country',
+      'GRX',
+      'grx',
+      'Destination',
+      'destination',
+      'Code pays',
+      'Pays destination',
+      'Country code'
+    ];
     const dateKeys = ['Date', 'date', 'DATE', 'jour', 'Jour', 'JOUR', 'dateTransaction', 'DateTransaction'];
 
     const agencies = new Set<string>();

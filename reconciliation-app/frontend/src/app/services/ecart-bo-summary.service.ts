@@ -160,7 +160,9 @@ export class EcartBoSummaryService {
       }
     }
 
-    return this.http.get<EcartBoSummary[]>(this.apiUrl, { params, headers: this.resultsHeaders });
+    return this.with429Retry(() =>
+      this.http.get<EcartBoSummary[]>(this.apiUrl, { params, headers: this.resultsHeaders })
+    );
   }
 
   getEcartBoSummaryById(id: number): Observable<EcartBoSummary> {

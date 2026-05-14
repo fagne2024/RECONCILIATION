@@ -11,6 +11,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.HashMap;
@@ -333,6 +334,79 @@ public class EcartBoSummaryService {
 
         entity = ecartBoSummaryRepository.save(entity);
         return convertToModel(entity);
+    }
+
+    @Transactional
+    public Map<String, Object> updateStatusLinks(List<Map<String, Object>> updates) {
+        List<Long> ids = updates.stream()
+                .map(update -> toLong(update.get("id")))
+                .filter(id -> id != null && id > 0)
+                .distinct()
+                .collect(Collectors.toList());
+
+        Map<Long, EcartBoSummaryEntity> entitiesById = new HashMap<>();
+        ecartBoSummaryRepository.findAllById(ids)
+                .forEach(entity -> entitiesById.put(entity.getId(), entity));
+
+        List<EcartBoSummaryEntity> entitiesToSave = new ArrayList<>();
+        int skipped = 0;
+
+        for (Map<String, Object> update : updates) {
+            Long id = toLong(update.get("id"));
+            if (id == null || id <= 0) {
+                skipped++;
+                continue;
+            }
+
+            EcartBoSummaryEntity entity = entitiesById.get(id);
+            if (entity == null) {
+                skipped++;
+                continue;
+            }
+
+            Object statut = update.get("statut");
+            if (statut != null) {
+                entity.setStatut(String.valueOf(statut));
+            }
+
+            Object env = update.get("env");
+            if (env != null && !String.valueOf(env).trim().isEmpty()) {
+                entity.setEnv(String.valueOf(env).trim());
+            }
+
+            if (update.containsKey("envCode")) {
+                Object envCode = update.get("envCode");
+                String code = envCode == null ? "" : String.valueOf(envCode).trim();
+                entity.setEnvCode(code.isEmpty() ? null : code);
+            }
+
+            if (update.containsKey("token")) {
+                Object token = update.get("token");
+                String tokenValue = token == null ? "" : String.valueOf(token).trim();
+                entity.setToken(tokenValue.isEmpty() ? null : tokenValue);
+            }
+
+            entitiesToSave.add(entity);
+        }
+
+        ecartBoSummaryRepository.saveAll(entitiesToSave);
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("updated", entitiesToSave.size());
+        result.put("skipped", skipped);
+        return result;
+    }
+
+    private Long toLong(Object value) {
+        if (value == null) return null;
+        if (value instanceof Number) {
+            return ((Number) value).longValue();
+        }
+        try {
+            return Long.parseLong(String.valueOf(value));
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
     
     @Transactional

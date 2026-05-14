@@ -477,7 +477,17 @@ export class ComptesComponent implements OnInit, OnDestroy {
                     
                     // Mettre à jour les listes filtrées avec cloisonnement après chargement des comptes
                     this.updateFilteredLists();
-                    
+
+                    // Par défaut : n'afficher que les comptes Client (sauf lien avec ?filterCategorie=…)
+                    const routeCategorie = this.route.snapshot.queryParamMap.get('filterCategorie');
+                    if (!routeCategorie) {
+                        this.selectedCategories = ['Client'];
+                        this.filterForm.controls['categorie'].setValue(['Client'], { emitEvent: false });
+                        this.updateFilteredLists();
+                        this.applyFilters();
+                        return;
+                    }
+
                     this.updatePagedComptes();
                     this.calculateStats();
                     this.isLoading = false;

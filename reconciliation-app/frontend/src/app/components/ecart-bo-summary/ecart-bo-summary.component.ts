@@ -1,7 +1,7 @@
 import { Component, OnInit, OnDestroy, ChangeDetectorRef } from '@angular/core';
 import { Router } from '@angular/router';
 import { Subscription, firstValueFrom } from 'rxjs';
-import { finalize } from 'rxjs/operators';
+import { finalize, take } from 'rxjs/operators';
 import { ReconciliationResponse } from '../../models/reconciliation-response.model';
 import { AppStateService } from '../../services/app-state.service';
 import {
@@ -176,7 +176,7 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
     const prefill = this.ecartBoSummaryService.getAndClearPrefillFromMatches();
 
     this.subscription.add(
-      this.appStateService.getReconciliationResults().subscribe((response: ReconciliationResponse | null) => {
+      this.appStateService.getReconciliationResults().pipe(take(1)).subscribe((response: ReconciliationResponse | null) => {
         if (pendingLines && pendingLines.length > 0) {
           this.pendingLinesBuffer = pendingLines;
           this.prefillBuffer = prefill;
@@ -453,37 +453,32 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
     this.cdr.markForCheck();
     const { filter, key } = this.buildSavedSummaryFilter();
 
-    this.ecartBoSummaryService.getEcartBoSummaries(filter).subscribe({
-      next: (savedData) => {
-        console.log('Données sauvegardées chargées:', key, savedData);
-        this.savedDataMode = true;
-        this.lastSavedFetchKey = key;
-        this.applySavedDataToSummary(savedData);
-        this.applyFilters();
-        this.isLoading = false;
-        this.cdr.markForCheck();
-      },
-      error: (error) => {
-        console.error('Erreur lors du chargement des données sauvegardées:', error);
-        this.isLoading = false;
-        this.cdr.markForCheck();
-        // En cas d'erreur, essayer de charger depuis les données de réconciliation
-        if (this.response) {
-          this.loadSummaryData();
+    this.ecartBoSummaryService
+      .getEcartBoSummaries(filter)
+      .pipe(
+        finalize(() => {
+          this.isLoading = false;
+          this.cdr.markForCheck();
+        })
+      )
+      .subscribe({
+        next: (savedData) => {
+          this.savedDataMode = true;
+          this.lastSavedFetchKey = key;
+          this.applySavedDataToSummary(savedData);
+          this.applyFilters();
+        },
+        error: (error) => {
+          console.error('Erreur lors du chargement des données sauvegardées:', error);
+          if (this.response) {
+            this.loadSummaryData();
+          }
         }
-      }
-    });
+      });
   }
 
   ngOnDestroy(): void {
     this.subscription.unsubscribe();
-    // Nettoyer le timer de debounce
-    if (this.updateLinkedItemsStatusDebounceTimer) {
-      clearTimeout(this.updateLinkedItemsStatusDebounceTimer);
-      this.updateLinkedItemsStatusDebounceTimer = null;
-    }
-    // Vider la liste des mises à jour en attente
-    this.pendingStatusUpdates = [];
   }
 
   private loadSummaryData(): void {
@@ -800,74 +795,85 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
    */
   linkMatchingPairs(): void {
     const itemsToUpdate: EcartBoSummaryItem[] = [];
-    
-    // Étape 1: Correspondance un-à-un (logique existante)
-    for (let i = 0; i < this.summaryItems.length; i++) {
-      const item1 = this.summaryItems[i];
-      
-      // Ignorer si déjà lié ou pas d'ENV (autoriser sans id pour affichage en mémoire)
-      if (item1.linkedId || !item1.env) {
+
+    // Étape 1 : paires BO/PARTENAIRE (même clé métier + dates à ≤1 jour) — index par bucket pour éviter O(n²) global
+    type IndexedItem = { item: EcartBoSummaryItem; index: number };
+    const bucketKey = (item: EcartBoSummaryItem): string => {
+      const montantKey = Math.round((item.montant ?? 0) * 100);
+      return `${item.agence}|${item.service}|${item.pays}|${item.nombre}|${montantKey}`;
+    };
+    const buckets = new Map<string, IndexedItem[]>();
+    for (let idx = 0; idx < this.summaryItems.length; idx++) {
+      const item = this.summaryItems[idx];
+      if (item.linkedId || !item.env) {
         continue;
       }
-      
-      for (let j = i + 1; j < this.summaryItems.length; j++) {
-        const item2 = this.summaryItems[j];
-        
-        // Ignorer si déjà lié ou pas d'ENV
-        if (item2.linkedId || !item2.env) {
+      const key = bucketKey(item);
+      if (!buckets.has(key)) {
+        buckets.set(key, []);
+      }
+      buckets.get(key)!.push({ item, index: idx });
+    }
+
+    for (const group of buckets.values()) {
+      if (group.length < 2) {
+        continue;
+      }
+      group.sort((a, b) => a.index - b.index);
+      for (let a = 0; a < group.length; a++) {
+        const item1 = group[a].item;
+        if (item1.linkedId || !item1.env) {
           continue;
         }
-        
-        // Vérifier si les deux lignes ont des ENV différents
-        if (item1.env === item2.env) {
-          continue;
-        }
-        
-        // Vérifier si les informations correspondent (agence, service, pays, nombre, volume)
-        if (item1.agence === item2.agence &&
+        for (let b = a + 1; b < group.length; b++) {
+          const item2 = group[b].item;
+          if (item2.linkedId || !item2.env) {
+            continue;
+          }
+          if (item1.env === item2.env) {
+            continue;
+          }
+          if (
+            item1.agence === item2.agence &&
             item1.service === item2.service &&
             item1.pays === item2.pays &&
             item1.nombre === item2.nombre &&
-            this.amountsEqual(item1.montant, item2.montant)) {
-          
-          // Vérifier l'intervalle de date (1 jour calendaire maximum, pas 24h)
-          const date1 = this.parseDate(item1.date);
-          const date2 = this.parseDate(item2.date);
-          
-          if (date1 && date2) {
-            // Extraire les jours calendaires (ignorer l'heure)
-            const day1 = this.getCalendarDay(date1);
-            const day2 = this.getCalendarDay(date2);
-            
-            // Calculer la différence en jours calendaires
-            const diffCalendarDays = Math.abs(day1 - day2);
-            
-            if (diffCalendarDays <= 1) {
-              item1.linkedId = item2.id;
-              item2.linkedId = item1.id;
-              const linkToken = (item1.token && item2.token && item1.token === item2.token)
-                ? item1.token
-                : `LINK-${Date.now()}-${item1.id ?? 'A'}-${item2.id ?? 'B'}`;
-              item1.token = linkToken;
-              item2.token = linkToken;
+            this.amountsEqual(item1.montant, item2.montant)
+          ) {
+            const date1 = this.parseDate(item1.date);
+            const date2 = this.parseDate(item2.date);
+            if (date1 && date2) {
+              const day1 = this.getCalendarDay(date1);
+              const day2 = this.getCalendarDay(date2);
+              const diffCalendarDays = Math.abs(day1 - day2);
+              if (diffCalendarDays <= 1) {
+                item1.linkedId = item2.id;
+                item2.linkedId = item1.id;
+                const linkToken =
+                  item1.token && item2.token && item1.token === item2.token
+                    ? item1.token
+                    : `LINK-${Date.now()}-${item1.id ?? 'A'}-${item2.id ?? 'B'}`;
+                item1.token = linkToken;
+                item2.token = linkToken;
 
-              if (item1.statut !== 'ok') item1.statut = 'ok';
-              if (item2.statut !== 'ok') item2.statut = 'ok';
-              const item1Any: any = item1 as any;
-              const item2Any: any = item2 as any;
-              const item1Changed = item1Any.__originalStatut !== item1.statut || item1Any.__originalToken !== item1.token;
-              const item2Changed = item2Any.__originalStatut !== item2.statut || item2Any.__originalToken !== item2.token;
-              if (item1Changed && item1.id) itemsToUpdate.push(item1);
-              if (item2Changed && item2.id) itemsToUpdate.push(item2);
-
-              console.log(`✅ Lignes liées: ${item1.id} (${item1.env}) <-> ${item2.id} (${item2.env}) token=${linkToken}`);
-              break;
+                if (item1.statut !== 'ok') item1.statut = 'ok';
+                if (item2.statut !== 'ok') item2.statut = 'ok';
+                const item1Any: any = item1 as any;
+                const item2Any: any = item2 as any;
+                const item1Changed =
+                  item1Any.__originalStatut !== item1.statut || item1Any.__originalToken !== item1.token;
+                const item2Changed =
+                  item2Any.__originalStatut !== item2.statut || item2Any.__originalToken !== item2.token;
+                if (item1Changed && item1.id) itemsToUpdate.push(item1);
+                if (item2Changed && item2.id) itemsToUpdate.push(item2);
+                break;
+              }
             }
           }
         }
       }
     }
-    
+
     // Étape 2: Correspondance un-à-plusieurs pour multiAgence
     // Une ligne PARTENAIRE (multiAgence) peut correspondre à plusieurs lignes BO
     const usedBoItemIds = new Set<number>();
@@ -877,52 +883,43 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
       if (partenaireItem.linkedId || partenaireItem.env !== 'PARTENAIRE') {
         continue;
       }
-      
+
       const matchingBoItems: EcartBoSummaryItem[] = [];
       let totalNombre = 0;
       let totalMontant = 0;
-      
-      console.log(`🔍 Recherche correspondance pour PARTENAIRE: ID=${partenaireItem.id}, Date=${partenaireItem.date}, Service=${partenaireItem.service}, Pays=${partenaireItem.pays}, Nombre=${partenaireItem.nombre}, Montant=${partenaireItem.montant}`);
-      
+
       for (const boItem of this.summaryItems) {
         const boAlreadyUsed = boItem.id ? usedBoItemIds.has(boItem.id) : usedBoItemRefs.has(boItem);
         if (boItem.linkedId || boItem.env !== 'BO' || boAlreadyUsed) {
           continue;
         }
-        
+
         // Vérifier service et pays
-        if (boItem.service === partenaireItem.service && 
-            boItem.pays === partenaireItem.pays) {
-          
+        if (boItem.service === partenaireItem.service && boItem.pays === partenaireItem.pays) {
           // Vérifier la date (j+1 : la date BO doit être exactement 1 jour après la date PARTENAIRE)
           const partenaireDate = this.parseDate(partenaireItem.date);
           const boDate = this.parseDate(boItem.date);
-          
+
           if (partenaireDate && boDate) {
             const partenaireDay = this.getCalendarDay(partenaireDate);
             const boDay = this.getCalendarDay(boDate);
-            
-            // La date BO doit être j+1 par rapport à la date PARTENAIRE (BO = PARTENAIRE + 1 jour)
+
             const diffCalendarDays = boDay - partenaireDay;
-            
-            console.log(`  📅 BO candidat: ID=${boItem.id}, Date=${boItem.date}, Nombre=${boItem.nombre}, Montant=${boItem.montant}, Diff=${diffCalendarDays} jours (BO - PARTENAIRE)`);
-            
+
             if (diffCalendarDays === 1) {
-              // Cette ligne BO est candidate
               matchingBoItems.push(boItem);
               totalNombre += boItem.nombre;
               totalMontant += boItem.montant ?? 0;
-              console.log(`    ✅ Ajouté comme candidat (Total nombre: ${totalNombre}, total volume: ${totalMontant})`);
             }
           }
         }
       }
-      
-      console.log(`📊 Résultat pour PARTENAIRE ${partenaireItem.id}: ${matchingBoItems.length} ligne(s) BO trouvée(s), Total nombre=${totalNombre} (attendu ${partenaireItem.nombre}), total volume=${totalMontant} (attendu ${partenaireItem.montant})`);
-      
-      if (matchingBoItems.length > 0 &&
-          totalNombre === partenaireItem.nombre &&
-          this.amountsEqual(totalMontant, partenaireItem.montant)) {
+
+      if (
+        matchingBoItems.length > 0 &&
+        totalNombre === partenaireItem.nombre &&
+        this.amountsEqual(totalMontant, partenaireItem.montant)
+      ) {
         const boIds = matchingBoItems.map(i => i.id).filter((id): id is number => id != null).join('-') || 'x';
         const existing = partenaireItem.token && matchingBoItems.every(b => b.token === partenaireItem.token)
           ? partenaireItem.token
@@ -943,22 +940,17 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
           if (boItem.id) usedBoItemIds.add(boItem.id);
           else usedBoItemRefs.add(boItem);
         }
-
-        console.log(`✅ Correspondance un-à-plusieurs: ${partenaireItem.id} (PARTENAIRE) <-> ${matchingBoItems.length} ligne(s) BO (${boIds}) token=${linkToken}`);
-      } else if (matchingBoItems.length > 0) {
-        const volOk = this.amountsEqual(totalMontant, partenaireItem.montant);
-        if (totalNombre !== partenaireItem.nombre) {
-          console.log(`⚠️ Correspondance partielle : total nombre ${totalNombre} ≠ ${partenaireItem.nombre}`);
-        }
-        if (!volOk) {
-          console.log(`⚠️ Correspondance partielle : total volume ${totalMontant} ≠ ${partenaireItem.montant}`);
-        }
       }
     }
     
-    // Sauvegarder les changements de statut en base de données
+    // Les liaisons automatiques restent locales au chargement pour éviter des appels réseau
+    // sur des lignes potentiellement obsolètes. Les actions utilisateur gardent leurs sauvegardes dédiées.
     if (itemsToUpdate.length > 0) {
-      this.updateLinkedItemsStatus(itemsToUpdate);
+      itemsToUpdate.forEach(item => {
+        const itemAny: any = item as any;
+        itemAny.__originalStatut = item.statut;
+        itemAny.__originalToken = item.token;
+      });
     }
   }
 
@@ -1006,99 +998,6 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
   private amountsEqual(a: number | undefined, b: number | undefined): boolean {
     const round2 = (n: number) => Math.round(n * 100) / 100;
     return round2(a ?? 0) === round2(b ?? 0);
-  }
-
-  // Debounce pour éviter les appels répétés
-  private updateLinkedItemsStatusDebounceTimer: any = null;
-  private pendingStatusUpdates: EcartBoSummaryItem[] = [];
-
-  /**
-   * Met à jour le statut des lignes liées en base de données
-   * Avec debounce et gestion du rate limiting
-   */
-  private async updateLinkedItemsStatus(items: EcartBoSummaryItem[]): Promise<void> {
-    const validItems = items.filter(item => item.id && item.id > 0);
-    
-    if (validItems.length === 0) {
-      return; // Aucun item valide à mettre à jour
-    }
-
-    // Ajouter les items à la liste des mises à jour en attente
-    this.pendingStatusUpdates.push(...validItems);
-    
-    // Débouncer les appels pour éviter les requêtes excessives
-    if (this.updateLinkedItemsStatusDebounceTimer) {
-      clearTimeout(this.updateLinkedItemsStatusDebounceTimer);
-    }
-    
-    this.updateLinkedItemsStatusDebounceTimer = setTimeout(async () => {
-      await this.processPendingStatusUpdates();
-    }, 900); // Laisser retomber les rafales avant les PUT
-  }
-
-  /**
-   * Traite les mises à jour de statut en attente avec gestion du rate limiting
-   */
-  private async processPendingStatusUpdates(): Promise<void> {
-    if (this.pendingStatusUpdates.length === 0) {
-      return;
-    }
-
-    // Dédupliquer les items par ID
-    const uniqueItems = new Map<number, EcartBoSummaryItem>();
-    for (const item of this.pendingStatusUpdates) {
-      if (item.id && !uniqueItems.has(item.id)) {
-        uniqueItems.set(item.id, item);
-      }
-    }
-    
-    const itemsToUpdate = Array.from(uniqueItems.values());
-    this.pendingStatusUpdates = []; // Vider la liste des mises à jour en attente
-
-    // Un PUT à la fois + pause (évite 429 : le filtre backend compte chaque requête)
-    const throttleMs = 350;
-    for (let i = 0; i < itemsToUpdate.length; i++) {
-      await this.updateSingleItemStatus(itemsToUpdate[i]);
-      if (i < itemsToUpdate.length - 1) {
-        await new Promise(resolve => setTimeout(resolve, throttleMs));
-      }
-    }
-  }
-
-  /**
-   * Met à jour le statut d'un seul item (retry 429 géré dans EcartBoSummaryService).
-   */
-  private async updateSingleItemStatus(item: EcartBoSummaryItem): Promise<void> {
-    if (!item.id || item.id <= 0) {
-      return;
-    }
-
-    try {
-      const updateData: any = {
-        statut: 'OK',
-        env: item.env || 'BO'
-      };
-      if (item.envCode != null && String(item.envCode).trim() !== '') {
-        updateData.envCode = String(item.envCode).trim();
-      }
-      if (item.token) {
-        updateData.token = item.token;
-      }
-
-      await firstValueFrom(
-        this.ecartBoSummaryService.updateEcartBoSummary(item.id, updateData)
-      );
-
-      const itemAny = item as any;
-      itemAny.__originalStatut = item.statut;
-      itemAny.__originalToken = item.token;
-      console.log(`✅ Statut${item.token ? ' et token' : ''} mis à jour pour la ligne ${item.id}`);
-    } catch (error: any) {
-      if (error.status === 404) {
-        return;
-      }
-      console.error(`❌ Erreur lors de la mise à jour du statut pour la ligne ${item.id}:`, error);
-    }
   }
 
   getPagedItems(): EcartBoSummaryItem[] {
@@ -1368,7 +1267,7 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
   async saveData(): Promise<void> {
     const selectedSavableItems = this.getSelectedSavableItems();
     const hasSelection = this.selectedRowKeys.size > 0;
-    const currentPageSavableItems = this.getPagedItems().filter(item => !item.id && item.statut === 'en cours');
+    const currentPageSavableItems = this.getPagedItems().filter(item => !item.id);
     const itemsToSave = selectedSavableItems.length > 0 ? selectedSavableItems : currentPageSavableItems;
     const saveScopeLabel = selectedSavableItems.length > 0 ? 'sélectionnée(s)' : 'affichée(s) sur la page courante';
 
@@ -1378,7 +1277,7 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
     }
 
     if (itemsToSave.length === 0) {
-      this.popupService.showWarning('❌ Aucune ligne non enregistrée avec statut "en cours" à sauvegarder.');
+      this.popupService.showWarning('❌ Aucune ligne non enregistrée à sauvegarder.');
       return;
     }
 
@@ -1418,6 +1317,9 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
         statut: item.statut === 'ok' ? 'OK' : 'EN_COURS',
         nombreTransactions: item.nombre, // Nombre de lignes/transactions
         env: item.env || 'BO',
+        ...(item.token != null && String(item.token).trim() !== ''
+          ? { token: String(item.token).trim() }
+          : {}),
         ...(item.envCode != null && String(item.envCode).trim() !== ''
           ? { envCode: String(item.envCode).trim() }
           : {})
@@ -1564,12 +1466,10 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
         this.summaryItems = this.summaryItems.filter(item => !savedSelectionKeys.has(item.selectionKey));
         this.refreshUniqueEnvCodes();
         this.applyFilters();
+        this.loadSavedSummaryData();
       }
       savedSelectionKeys.forEach(key => this.selectedRowKeys.delete(key));
-      
-      // Optionnel: recharger les données sauvegardées après la sauvegarde
-      // this.loadSavedSummaryData();
-      
+
       this.cdr.markForCheck();
     } catch (error: any) {
       console.error('Erreur lors de la sauvegarde:', error);
@@ -1753,7 +1653,7 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
 
   /** Lignes filtrées pouvant être sélectionnées pour une action utilisateur. */
   getSelectableItemsFiltered(): EcartBoSummaryItem[] {
-    return this.filteredItems.filter(item => item.id != null || (!item.id && item.statut === 'en cours'));
+    return this.filteredItems.filter(item => item.id != null || !item.id);
   }
 
   getSelectedItems(): EcartBoSummaryItem[] {
@@ -1761,7 +1661,7 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
   }
 
   getSelectedSavableItems(): EcartBoSummaryItem[] {
-    return this.getSelectedItems().filter(item => !item.id && item.statut === 'en cours');
+    return this.getSelectedItems().filter(item => !item.id);
   }
 
   getSelectedDeletableItems(): EcartBoSummaryItem[] {

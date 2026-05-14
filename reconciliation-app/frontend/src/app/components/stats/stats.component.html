@@ -445,7 +445,21 @@
                     </tbody>
                 </table>
                 <div class="pagination-controls">
-                    <button (click)="prevStatsPage()" [disabled]="statsPage === 1 || isLoading">
+                    <button
+                        type="button"
+                        class="stats-view-more-btn"
+                        *ngIf="showAllStatsTableRows || canToggleStatsTableExpand"
+                        (click)="toggleShowAllStatsTableRows()"
+                        [disabled]="isLoading">
+                        {{ showAllStatsTableRows ? 'Voir moins' : 'Voir plus' }}
+                    </button>
+                    <span class="pagination-rows-hint" *ngIf="getAggregatedStats().length && !showAllStatsTableRows">
+                        {{ pagedStats.length }} / {{ getAggregatedStats().length }} ligne(s)
+                    </span>
+                    <span class="pagination-rows-hint" *ngIf="showAllStatsTableRows">
+                        {{ getAggregatedStats().length }} ligne(s) affichée(s)
+                    </span>
+                    <button (click)="prevStatsPage()" [disabled]="statsPage === 1 || isLoading || showAllStatsTableRows">
                         <i class="fas fa-chevron-left"></i> Précédent
                     </button>
                     
@@ -458,7 +472,7 @@
                         </span>
                     </div>
                     
-                    <button (click)="nextStatsPage()" [disabled]="statsPage === totalPages || isLoading">
+                    <button (click)="nextStatsPage()" [disabled]="statsPage === totalPages || isLoading || showAllStatsTableRows">
                         Suivant <i class="fas fa-chevron-right"></i>
                     </button>
                 </div>

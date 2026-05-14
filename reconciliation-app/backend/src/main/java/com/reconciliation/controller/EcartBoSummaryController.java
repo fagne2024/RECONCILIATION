@@ -106,7 +106,7 @@ public class EcartBoSummaryController {
         }
     }
     
-    @PutMapping("/{id}")
+    @PutMapping("/{id:[0-9]+}")
     public ResponseEntity<EcartBoSummary> updateEcartBoSummary(@PathVariable Long id, @RequestBody EcartBoSummary ecartBoSummary) {
         try {
             EcartBoSummary updated = ecartBoSummaryService.updateEcartBoSummary(id, ecartBoSummary);
@@ -114,6 +114,12 @@ public class EcartBoSummaryController {
         } catch (RuntimeException e) {
             return ResponseEntity.notFound().build();
         }
+    }
+
+    @PostMapping("/batch/status-links/apply")
+    public ResponseEntity<Map<String, Object>> updateStatusLinks(@RequestBody List<Map<String, Object>> updates) {
+        Map<String, Object> result = ecartBoSummaryService.updateStatusLinks(updates);
+        return ResponseEntity.ok(result);
     }
     
     @DeleteMapping("/{id}")

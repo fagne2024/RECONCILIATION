@@ -12,13 +12,15 @@ const resolveApiUrl = (): string => {
 
     const { protocol, hostname, port } = window.location;
 
+    // En dev, préférer toujours une URL relative pour passer par le proxy Angular (/api -> backend).
+    // Ça évite les soucis de TLS, CORS, et les timeouts quand :8443 n'est pas exposé sur le réseau.
     if (hostname === 'localhost' || hostname === '127.0.0.1') {
-        return `http://localhost:${DEFAULT_API_PORT}/api`;
+        return `/api`;
     }
 
     if (port && port !== '80' && port !== '443') {
         if (port === '4200') {
-            return `${protocol}//${hostname}:${DEFAULT_API_PORT}/api`;
+            return `/api`;
         }
         return `${protocol}//${hostname}:${port}/api`;
     }
