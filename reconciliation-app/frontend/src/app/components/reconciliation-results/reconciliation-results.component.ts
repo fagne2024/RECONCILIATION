@@ -20,6 +20,12 @@ import { CompteService } from '../../services/compte.service';
 import { OperationService } from '../../services/operation.service';
 import { OperationCreateRequest } from '../../models/operation.model';
 import { fixGarbledCharacters } from '../../utils/encoding-fixer';
+import {
+    formatSpreadsheetDateValue,
+    isDateColumnName,
+    normalizeRecordDateFields,
+    normalizeRecordsDateFields
+} from '../../utils/date-format.util';
 
 interface ApiError {
     error?: {
@@ -3894,7 +3900,7 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                     const initDataStartTime = performance.now();
                     console.log('✅ [NGONINIT] Données valides reçues, initialisation...', `[${(performance.now() - dataReceiveStartTime).toFixed(2)}ms depuis réception]`);
                     
-                    this.response = response;
+                    this.response = this.normalizeReconciliationResponseDates(response);
                     
                     // S'assurer que l'onglet actif est bien défini pour afficher les résultats
                     if (!this.activeTab || this.activeTab === 'matches') {
@@ -7177,6 +7183,21 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
         }, 0);
     }
 
+    /** Corrige les dates stockées en numéros de série Excel dans la réponse */
+    private normalizeReconciliationResponseDates(response: ReconciliationResponse): ReconciliationResponse {
+        return {
+            ...response,
+            matches: response.matches?.map(m => ({
+                ...m,
+                boData: normalizeRecordDateFields(m.boData as Record<string, unknown>) as Record<string, string>,
+                partnerData: normalizeRecordDateFields(m.partnerData as Record<string, unknown>) as Record<string, string>
+            })),
+            boOnly: normalizeRecordsDateFields(response.boOnly as Record<string, unknown>[]) as Record<string, string>[],
+            partnerOnly: normalizeRecordsDateFields(response.partnerOnly as Record<string, unknown>[]) as Record<string, string>[],
+            mismatches: normalizeRecordsDateFields(response.mismatches as Record<string, unknown>[]) as Record<string, string>[]
+        };
+    }
+
     /** Indique si une colonne est une colonne montant/volume pour l'export Excel (à écrire en nombre) */
     private isAmountColumnForExport(key: string): boolean {
         const lower = (key || '').toLowerCase();
@@ -7189,12 +7210,17 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
         return amountKeys.some(k => lower === k || lower.includes(k));
     }
 
-    /** Pour l'export Excel : retourne un nombre pour les colonnes montant, sinon la valeur telle quelle */
+    /** Pour l'export Excel : montants en nombre, dates en texte lisible, sinon valeur brute */
     private exportAmountValue(key: string, val: any): any {
         if (val === undefined || val === null || val === '') return '';
-        if (!this.isAmountColumnForExport(key)) return val;
-        const num = typeof val === 'number' ? val : parseFloat(String(val).replace(/\s/g, '').replace(',', '.'));
-        return !isNaN(num) ? num : val;
+        if (this.isAmountColumnForExport(key)) {
+            const num = typeof val === 'number' ? val : parseFloat(String(val).replace(/\s/g, '').replace(',', '.'));
+            return !isNaN(num) ? num : val;
+        }
+        if (isDateColumnName(key)) {
+            return formatSpreadsheetDateValue(val);
+        }
+        return val;
     }
 
     private findAmountColumn(type: 'bo' | 'partner'): string | null {
@@ -8544,26 +8570,7 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
      */
     private formatDateForReport(dateValue: string): string {
         if (!dateValue) return '';
-        
-        try {
-            // Si c'est déjà au format DD/MM/YYYY
-            if (/^\d{2}\/\d{2}\/\d{4}$/.test(dateValue)) {
-                return dateValue;
-            }
-            
-            // Si c'est au format ISO ou autre, convertir
-            const date = new Date(dateValue);
-            if (!isNaN(date.getTime())) {
-                const day = String(date.getDate()).padStart(2, '0');
-                const month = String(date.getMonth() + 1).padStart(2, '0');
-                const year = date.getFullYear();
-                return `${day}/${month}/${year}`;
-            }
-        } catch (error) {
-            console.warn('Erreur de formatage de date:', error);
-        }
-        
-        return dateValue; // Retourner la valeur originale si le formatage échoue
+        return formatSpreadsheetDateValue(dateValue);
     }
 
     /**

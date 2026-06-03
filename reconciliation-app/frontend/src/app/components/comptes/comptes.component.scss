@@ -108,6 +108,12 @@
             color: white;
             &:hover { background-color: var(--rd-navy); }
         }
+
+        &.refresh-btn {
+            background-color: #17a2b8;
+            color: white;
+            &:hover:not(:disabled) { background-color: #138496; }
+        }
         
         &.primary {
             background-color: var(--rd-green-m);
@@ -907,6 +913,13 @@
     border: 1px solid var(--rd-border);
     flex-wrap: wrap;
 
+    .export-interval-hint {
+        font-size: 11px;
+        font-weight: 500;
+        opacity: 0.85;
+        margin-left: 4px;
+    }
+
     .filter-group {
         display: flex;
         align-items: center;
@@ -931,6 +944,13 @@
                 border-color: var(--rd-blue-m);
                 box-shadow: 0 0 0 3px rgba(90, 136, 184, 0.15);
             }
+        }
+
+        &.export-interval-filters {
+            padding: 6px 10px;
+            border-radius: 8px;
+            background: var(--rd-bg);
+            border: 1px dashed var(--rd-border2);
         }
 
         &.custom-date-filters {

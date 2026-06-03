@@ -3,6 +3,12 @@ import { ReconciliationService } from '../../services/reconciliation.service';
 import { AutoProcessingService, ProcessingResult } from '../../services/auto-processing.service';
 import { OrangeMoneyUtilsService } from '../../services/orange-money-utils.service';
 import { fixGarbledCharacters } from '../../utils/encoding-fixer';
+import {
+    formatSpreadsheetCellValue,
+    formatSpreadsheetDateValue,
+    isDateColumnName,
+    isExcelSerialDateValue
+} from '../../utils/date-format.util';
 import * as Papa from 'papaparse';
 import * as XLSX from 'xlsx';
 import { Router } from '@angular/router';
@@ -1292,26 +1298,43 @@ export class FileUploadComponent implements OnDestroy {
         return data.map(row => {
             const cleanedRow: Record<string, string> = {};
             for (const [key, value] of Object.entries(row)) {
+                const cell = value as unknown;
                 // Convertir toutes les valeurs en chaînes de caractères valides
-                if (value === null || value === undefined) {
+                if (cell === null || cell === undefined) {
                     cleanedRow[key] = '';
-                } else if (typeof value === 'object') {
-                    // Si c'est un objet (Date, etc.), le convertir en chaîne
+                } else if (cell instanceof Date) {
+                    cleanedRow[key] = formatSpreadsheetDateValue(cell);
+                } else if (typeof cell === 'object') {
                     try {
-                        cleanedRow[key] = JSON.stringify(value);
+                        cleanedRow[key] = JSON.stringify(cell);
                     } catch (e) {
-                        cleanedRow[key] = String(value);
+                        cleanedRow[key] = String(cell);
                     }
-                } else if (typeof value === 'number') {
-                    // Préserver les nombres en les convertissant en chaîne
-                    cleanedRow[key] = isNaN(value) || !isFinite(value) ? '' : String(value);
+                } else if (typeof cell === 'number') {
+                    if (isNaN(cell) || !isFinite(cell)) {
+                        cleanedRow[key] = '';
+                    } else if (isDateColumnName(key) && isExcelSerialDateValue(cell)) {
+                        cleanedRow[key] = formatSpreadsheetDateValue(cell);
+                    } else {
+                        cleanedRow[key] = String(cell);
+                    }
                 } else {
-                    // Pour les autres types, convertir en chaîne
-                    cleanedRow[key] = String(value);
+                    const str = String(cell);
+                    if (isDateColumnName(key) && isExcelSerialDateValue(str)) {
+                        cleanedRow[key] = formatSpreadsheetDateValue(str);
+                    } else {
+                        cleanedRow[key] = str;
+                    }
                 }
             }
             return cleanedRow;
         });
+    }
+
+    /** Affecte une valeur de cellule Excel en formatant les colonnes date */
+    private assignExcelCellValue(row: Record<string, unknown>, header: string, value: unknown): void {
+        const formatted = formatSpreadsheetCellValue(header, value);
+        row[header] = formatted !== undefined && formatted !== null ? formatted : '';
     }
 
     /**
@@ -1745,7 +1768,7 @@ export class FileUploadComponent implements OnDestroy {
                         const row: any = {};
                         correctedHeaders.forEach((header: string, index: number) => {
                             const value = rowData[index];
-                            row[header] = value !== undefined && value !== null ? value : '';
+                            this.assignExcelCellValue(row, header, value);
                         });
                         rows.push(row);
                     }
@@ -1802,7 +1825,7 @@ export class FileUploadComponent implements OnDestroy {
                         const row: any = {};
                         correctedHeaders.forEach((header: string, index: number) => {
                             const value = rowData[index];
-                            row[header] = value !== undefined && value !== null ? value : '';
+                            this.assignExcelCellValue(row, header, value);
                         });
                         rows.push(row);
                     }
@@ -3780,8 +3803,7 @@ export class FileUploadComponent implements OnDestroy {
                             
                             const row: any = {};
                             correctedHeaders.forEach((header: string, index: number) => {
-                                const value = rowData[index];
-                                row[header] = value !== undefined && value !== null ? value : '';
+                                this.assignExcelCellValue(row, header, rowData[index]);
                             });
                             rows.push(row);
                         }
@@ -3829,7 +3851,7 @@ export class FileUploadComponent implements OnDestroy {
                             const row: any = {};
                             correctedHeaders.forEach((header: string, index: number) => {
                                 const value = rowData[index];
-                                row[header] = value !== undefined && value !== null ? value : '';
+                                this.assignExcelCellValue(row, header, value);
                             });
                             rows.push(row);
                         }
@@ -4022,7 +4044,7 @@ export class FileUploadComponent implements OnDestroy {
                     const row: any = {};
                     correctedHeaders.forEach((header: string, index: number) => {
                         const value = rowData[index];
-                        row[header] = value !== undefined && value !== null ? value : '';
+                                this.assignExcelCellValue(row, header, value);
                     });
                     rows.push(row);
                 }
@@ -4044,16 +4066,15 @@ export class FileUploadComponent implements OnDestroy {
                     if (!rowData || rowData.length === 0) continue;
                     
                     const row: any = {};
-                    correctedHeaders.forEach((header: string, index: number) => {
-                        const value = rowData[index];
-                        row[header] = value !== undefined && value !== null ? value : '';
-                    });
-                    rows.push(row);
-                }
-                
-                if (isBo) {
-                    this.autoBoData = rows;
-                    if (this.detectTRXBOAndExtractServices(this.autoBoData)) {
+                        correctedHeaders.forEach((header: string, index: number) => {
+                            this.assignExcelCellValue(row, header, rowData[index]);
+                        });
+                        rows.push(row);
+                    }
+                    
+                    if (isBo) {
+                        this.autoBoData = rows;
+                        if (this.detectTRXBOAndExtractServices(this.autoBoData)) {
                         this.showServiceSelectionStep();
                     }
                 } else {
@@ -4138,7 +4159,7 @@ export class FileUploadComponent implements OnDestroy {
                                 const row: any = {};
                                 correctedHeaders.forEach((header: string, index: number) => {
                                     const value = rowData[index];
-                                    row[header] = value !== undefined && value !== null ? value : '';
+                                    this.assignExcelCellValue(row, header, value);
                                 });
                                 rows.push(row);
                             }
@@ -4284,7 +4305,7 @@ export class FileUploadComponent implements OnDestroy {
                                     const row: any = {};
                                     correctedHeaders.forEach((header: string, index: number) => {
                                         const value = rowData[index];
-                                        row[header] = value !== undefined && value !== null ? value : '';
+                                        this.assignExcelCellValue(row, header, value);
                                     });
                                     rows.push(row);
                                 }

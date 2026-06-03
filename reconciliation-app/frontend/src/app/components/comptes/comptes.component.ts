@@ -684,6 +684,43 @@ export class ComptesComponent implements OnInit, OnDestroy {
         this.loadComptes();
     }
 
+    /** Recharge les comptes depuis le serveur sans réinitialiser les filtres actifs. */
+    refreshComptes(): void {
+        if (this.isLoading) {
+            return;
+        }
+
+        const reloadReleve = this.showReleveModal && !!this.selectedCompte;
+        const numeroReleve = this.selectedCompte?.numeroCompte;
+
+        this.isLoading = true;
+        this.subscription.add(
+            this.compteService.getAllComptes().subscribe({
+                next: (comptes) => {
+                    this.allComptes = comptes;
+                    this.updateFilteredLists();
+                    this.loadFilterLists();
+
+                    if (reloadReleve && numeroReleve) {
+                        this.selectedCompte = comptes.find(c => c.numeroCompte === numeroReleve) ?? this.selectedCompte;
+                    }
+
+                    this.applyFilters();
+
+                    if (reloadReleve) {
+                        this.releveOperationsFetchKey = '';
+                        this.loadReleveOperations();
+                    }
+                },
+                error: (error) => {
+                    console.error('Erreur lors de l\'actualisation des comptes:', error);
+                    this.isLoading = false;
+                    this.popupService.showError('Erreur lors de l\'actualisation des comptes.');
+                }
+            })
+        );
+    }
+
     updatePagedComptes() {
         const start = (this.currentPage - 1) * this.pageSize;
         const end = start + this.pageSize;
@@ -970,23 +1007,29 @@ export class ComptesComponent implements OnInit, OnDestroy {
         if (this.showAllDataReleve) {
             return { dateDebut: null, dateFin: null };
         }
+        return this.resolveReleveIntervalDates();
+    }
 
-        if (this.releveDateDebut === 'custom') {
+    /** Intervalle effectif (présélection, personnalisé ou mois par défaut) */
+    private resolveReleveIntervalDates(): { dateDebut: string | null; dateFin: string | null } {
+        if (this.releveDateDebutCustom || this.releveDateFinCustom) {
             return {
                 dateDebut: this.releveDateDebutCustom || null,
                 dateFin: this.releveDateFinCustom || null
             };
         }
 
-        if (this.releveDateDebut) {
+        if (this.releveDateDebut && this.releveDateDebut !== 'custom') {
             const jours = parseInt(this.releveDateDebut, 10);
-            const dateFinObj = new Date();
-            const dateDebutObj = new Date();
-            dateDebutObj.setDate(dateDebutObj.getDate() - jours);
-            return {
-                dateDebut: dateDebutObj.toISOString().split('T')[0],
-                dateFin: dateFinObj.toISOString().split('T')[0]
-            };
+            if (!isNaN(jours) && jours > 0) {
+                const dateFinObj = new Date();
+                const dateDebutObj = new Date();
+                dateDebutObj.setDate(dateDebutObj.getDate() - jours);
+                return {
+                    dateDebut: dateDebutObj.toISOString().split('T')[0],
+                    dateFin: dateFinObj.toISOString().split('T')[0]
+                };
+            }
         }
 
         const { year, monthIndex } = this.getDefaultReleveReportingMonth();
@@ -996,6 +1039,117 @@ export class ComptesComponent implements OnInit, OnDestroy {
             dateDebut: dateDebutObj.toISOString().split('T')[0],
             dateFin: dateFinObj.toISOString().split('T')[0]
         };
+    }
+
+    /** Intervalle utilisé pour l'export (priorité aux champs Du/Au) */
+    getExportDateFilters(): { dateDebut: string | null; dateFin: string | null } {
+        if (this.releveDateDebutCustom || this.releveDateFinCustom) {
+            return {
+                dateDebut: this.releveDateDebutCustom || null,
+                dateFin: this.releveDateFinCustom || null
+            };
+        }
+        if (this.showAllDataReleve) {
+            return { dateDebut: null, dateFin: null };
+        }
+        return this.resolveReleveIntervalDates();
+    }
+
+    getReleveExportIntervalLabel(): string {
+        const { dateDebut, dateFin } = this.getExportDateFilters();
+        if (!dateDebut && !dateFin) return '';
+        if (dateDebut && dateFin) return `${dateDebut} → ${dateFin}`;
+        if (dateDebut) return `à partir du ${dateDebut}`;
+        return `jusqu'au ${dateFin}`;
+    }
+
+    private getReleveExportFileSuffix(): string {
+        const { dateDebut, dateFin } = this.getExportDateFilters();
+        if (dateDebut && dateFin) return `${dateDebut}_${dateFin}`;
+        if (dateDebut) return `depuis_${dateDebut}`;
+        if (dateFin) return `jusquau_${dateFin}`;
+        return new Date().toISOString().split('T')[0];
+    }
+
+    private syncReleveIntervalFromPeriodPreset(): void {
+        const interval = this.resolveReleveIntervalDates();
+        this.releveDateDebutCustom = interval.dateDebut || '';
+        this.releveDateFinCustom = interval.dateFin || '';
+    }
+
+    onReleveCustomDateChange(): void {
+        if (this.showAllDataReleve) return;
+        if (this.releveDateDebutCustom || this.releveDateFinCustom) {
+            this.releveDateDebut = 'custom';
+        }
+        this.loadReleveOperations();
+    }
+
+    applyReleveDateInterval(): void {
+        if (this.showAllDataReleve) {
+            this.popupService.showWarning(
+                'Désactivez « Voir plus » pour filtrer l\'affichage par intervalle, ou renseignez Du/Au pour limiter l\'export uniquement.',
+                'Intervalle de dates'
+            );
+            return;
+        }
+        if (!this.releveDateDebutCustom && !this.releveDateFinCustom) {
+            this.popupService.showWarning('Indiquez au moins une date de début ou de fin.', 'Intervalle de dates');
+            return;
+        }
+        if (this.releveDateDebutCustom && this.releveDateFinCustom && this.releveDateDebutCustom > this.releveDateFinCustom) {
+            this.popupService.showWarning('La date de début doit être antérieure ou égale à la date de fin.', 'Intervalle invalide');
+            return;
+        }
+        this.releveDateDebut = 'custom';
+        this.loadReleveOperations();
+    }
+
+    private operationMatchesDateRange(op: Operation, dateDebut: string | null, dateFin: string | null): boolean {
+        if (!dateDebut && !dateFin) return true;
+        const ymd = this.normalizeToYmd(op.dateOperation);
+        if (!ymd) return false;
+        if (dateDebut && ymd < dateDebut) return false;
+        if (dateFin && ymd > dateFin) return false;
+        return true;
+    }
+
+    private getReleveOperationsForExport(): Operation[] {
+        const { dateDebut, dateFin } = this.getExportDateFilters();
+        if (!dateDebut && !dateFin) {
+            return [...this.releveOperations];
+        }
+        return this.releveOperations.filter(op => this.operationMatchesDateRange(op, dateDebut, dateFin));
+    }
+
+    private getReleveSoldesForExport(): DailySolde[] {
+        const { dateDebut, dateFin } = this.getExportDateFilters();
+        if (!dateDebut && !dateFin) {
+            return [...this.releveSoldesJournaliers];
+        }
+        return this.releveSoldesJournaliers.filter(solde => {
+            const ymd = this.normalizeToYmd(solde.date);
+            if (!ymd) return false;
+            if (dateDebut && ymd < dateDebut) return false;
+            if (dateFin && ymd > dateFin) return false;
+            return true;
+        });
+    }
+
+    private getFlattenedReleveOperationsForExport(): Operation[] {
+        const ops = this.getReleveOperationsForExport();
+        if (ops.length === 0) return [];
+        const grouped = this.buildGroupedReleveOperationsFrom(ops);
+        return grouped.flatMap(group => [group.main, ...group.frais]);
+    }
+
+    private getReleveExportFilterInfo(): string {
+        const interval = this.getReleveExportIntervalLabel();
+        let filterInfo = interval ? `Période: ${interval}` : 'Historique complet';
+        if (this.releveTypeOperation) {
+            filterInfo += ` | Type: ${this.getOperationTypeLabel(this.releveTypeOperation)}`;
+        }
+        return filterInfo;
     }
 
     private buildReleveFetchKey(): string {
@@ -1587,6 +1741,7 @@ export class ComptesComponent implements OnInit, OnDestroy {
         this.activeTab = 'operations';
         if (!isSameCompte) {
             this.resetReleveTabCaches();
+            this.syncReleveIntervalFromPeriodPreset();
         }
         this.loadReleveOperations();
     }
@@ -1611,22 +1766,19 @@ export class ComptesComponent implements OnInit, OnDestroy {
     }
 
     onRelevePeriodChange(): void {
-        // Réinitialiser les dates personnalisées si on change de période
+        this.showAllDataReleve = false;
         if (this.releveDateDebut !== 'custom') {
-            this.releveDateDebutCustom = '';
-            this.releveDateFinCustom = '';
+            this.syncReleveIntervalFromPeriodPreset();
         }
-        this.showAllDataReleve = false; // Réinitialiser le flag "Voir plus" quand on change la période
         this.loadReleveOperations();
     }
     
     toggleShowAllDataReleve(): void {
         this.showAllDataReleve = !this.showAllDataReleve;
         if (this.showAllDataReleve) {
-            // Désactiver les filtres de date
             this.releveDateDebut = '';
-            this.releveDateDebutCustom = '';
-            this.releveDateFinCustom = '';
+        } else {
+            this.syncReleveIntervalFromPeriodPreset();
         }
         this.loadReleveOperations();
     }
@@ -1960,10 +2112,14 @@ export class ComptesComponent implements OnInit, OnDestroy {
     }
 
     private buildGroupedReleveOperations(): Array<{main: Operation, frais: Operation[]}> {
+        return this.buildGroupedReleveOperationsFrom(this.releveOperations);
+    }
+
+    private buildGroupedReleveOperationsFrom(operations: Operation[]): Array<{main: Operation, frais: Operation[]}> {
         const grouped: Array<{main: Operation, frais: Operation[]}> = [];
         const operationsMap = new Map<number, {main: Operation | null, frais: Operation[]}>();
 
-        this.releveOperations.forEach(op => {
+        operations.forEach(op => {
             if (op.typeOperation === 'FRAIS_TRANSACTION') {
                 const parentId = op.parentOperationId;
                 if (parentId) {
@@ -2243,14 +2399,34 @@ export class ComptesComponent implements OnInit, OnDestroy {
         return classes[type] || '';
     }
 
-    exportReleve(): void {
+    async exportReleve(): Promise<void> {
         if (!this.selectedCompte) return;
-        if (this.showSoldesSeulement && this.releveSoldesJournaliers.length === 0) {
-            console.log('Export annulé : aucun solde à exporter.');
+
+        const exportOps = this.getReleveOperationsForExport();
+        const exportSoldes = this.getReleveSoldesForExport();
+
+        if (this.showSoldesSeulement && exportSoldes.length === 0) {
+            await this.popupService.showWarning('Aucun solde à exporter pour cet intervalle.', 'Export impossible');
             return;
         }
-        if (!this.showSoldesSeulement && this.releveOperations.length === 0) {
-            console.log('Export annulé : aucune opération à exporter.');
+        if (!this.showSoldesSeulement && exportOps.length === 0) {
+            const hint = this.getReleveExportIntervalLabel()
+                ? `Aucune opération entre ${this.getReleveExportIntervalLabel()}.`
+                : 'Aucune opération à exporter.';
+            await this.popupService.showWarning(hint, 'Export impossible');
+            return;
+        }
+
+        if (this.showAllDataReleve && !this.releveDateDebutCustom && !this.releveDateFinCustom) {
+            const confirmAll = await this.popupService.showConfirm(
+                'Aucun intervalle Du/Au n\'est défini : l\'export inclura toutes les opérations chargées. Renseignez Du et Au pour limiter l\'export à une période.',
+                'Exporter tout l\'historique ?'
+            );
+            if (!confirmAll) return;
+        }
+
+        if (this.releveDateDebutCustom && this.releveDateFinCustom && this.releveDateDebutCustom > this.releveDateFinCustom) {
+            await this.popupService.showWarning('La date de début doit être antérieure ou égale à la date de fin.', 'Intervalle invalide');
             return;
         }
 
@@ -2265,6 +2441,7 @@ export class ComptesComponent implements OnInit, OnDestroy {
             }
         } catch (error) {
             console.error("Erreur lors de l'export du relevé :", error);
+            await this.popupService.showError('Une erreur est survenue lors de l\'export du relevé.', 'Erreur d\'export');
         } finally {
             this.isExporting = false;
         }
@@ -2274,7 +2451,17 @@ export class ComptesComponent implements OnInit, OnDestroy {
         if (!this.selectedCompte) return;
 
         const viewLabel = this.releveSoldeViewMode === 'day' ? 'Journaliers' : (this.releveSoldeViewMode === 'week' ? 'Hebdomadaires' : 'Mensuels');
-        const rows = this.releveSoldesDisplayRows;
+        const soldesForExport = this.getReleveSoldesForExport();
+        const rows = this.releveSoldesDisplayRows.filter(row => {
+                const { dateDebut, dateFin } = this.getExportDateFilters();
+                if (!dateDebut && !dateFin) return true;
+                const ref = row.ecartRef?.date || row.periodLabel;
+                const ymd = this.normalizeToYmd(ref);
+                if (!ymd) return true;
+                if (dateDebut && ymd < dateDebut) return false;
+                if (dateFin && ymd > dateFin) return false;
+                return true;
+            });
 
         if (rows.length > 0 && this.releveSoldeViewMode !== 'day') {
             this.exportReleveSoldesGrouped(rows, viewLabel);
@@ -2284,11 +2471,10 @@ export class ComptesComponent implements OnInit, OnDestroy {
         const workbook = new ExcelJS.Workbook();
         const worksheet = workbook.addWorksheet(`Soldes ${viewLabel}`);
 
-        // En-tête
         worksheet.addRow(['Numéro de compte', 'Date', 'Solde d\'ouverture', 'Solde de clôture', 'Variation', 'Solde de Clôture BO', 'Ecart de solde', 'Ecart régularisé']);
+        worksheet.addRow(['Intervalle', this.getReleveExportIntervalLabel() || 'Complet', '', '', '', '', '', '']);
 
-        // Données
-        this.releveSoldesJournaliers.forEach(solde => {
+        soldesForExport.forEach(solde => {
           const closingValue = this.getEffectiveClosingValue(solde);
           const variation = closingValue - solde.opening;
           const ecart = this.getEcartValue(solde);
@@ -2400,7 +2586,7 @@ export class ComptesComponent implements OnInit, OnDestroy {
           const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
           saveAs(
             blob,
-            `releve_soldes_${this.selectedCompte?.numeroCompte || 'compte'}_${new Date().toISOString().split('T')[0]}.xlsx`
+            `releve_soldes_${this.selectedCompte?.numeroCompte || 'compte'}_${this.getReleveExportFileSuffix()}.xlsx`
           );
         });
     }
@@ -2468,14 +2654,15 @@ export class ComptesComponent implements OnInit, OnDestroy {
         const suffix = this.releveSoldeViewMode === 'week' ? 'hebdomadaires' : 'mensuels';
         workbook.xlsx.writeBuffer().then(buffer => {
             const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-            saveAs(blob, `releve_soldes_${suffix}_${this.selectedCompte?.numeroCompte || 'compte'}_${new Date().toISOString().split('T')[0]}.xlsx`);
+            saveAs(blob, `releve_soldes_${suffix}_${this.selectedCompte?.numeroCompte || 'compte'}_${this.getReleveExportFileSuffix()}.xlsx`);
         });
     }
 
     private exportReleveOperationsGrouped(): void {
-        if (!this.selectedCompte || this.releveOperations.length === 0) return;
+        const exportOps = this.getReleveOperationsForExport();
+        if (!this.selectedCompte || exportOps.length === 0) return;
 
-        const groups = this.releveOperationsGroupedSummary;
+        const groups = this.buildReleveOperationsGroupedSummaryFrom(exportOps);
         const modeLabel = this.releveOperationsViewMode === 'week' ? 'Hebdomadaire' : 'Mensuel';
         const suffix = this.releveOperationsViewMode === 'week' ? 'hebdomadaire' : 'mensuel';
 
@@ -2486,6 +2673,7 @@ export class ComptesComponent implements OnInit, OnDestroy {
         worksheet.addRow([`RELEVÉ DE COMPTE — VUE ${modeLabel.toUpperCase()}`]);
         worksheet.addRow([]);
         worksheet.addRow(['Numéro de compte:', this.selectedCompte.numeroCompte, '', 'Solde actuel:', this.selectedCompte.solde]);
+        worksheet.addRow(['Intervalle:', this.getReleveExportIntervalLabel() || 'Complet', '', '', '']);
         worksheet.addRow([]);
 
         // En-tête tableau
@@ -2522,7 +2710,7 @@ export class ComptesComponent implements OnInit, OnDestroy {
         worksheet.addRow([]);
         const totalRow = worksheet.addRow([
             'TOTAL',
-            this.releveOperations.length,
+            exportOps.length,
             grandTotalDebit,
             grandTotalCredit,
             Math.round((grandTotalCredit - grandTotalDebit) * 100) / 100,
@@ -2540,12 +2728,13 @@ export class ComptesComponent implements OnInit, OnDestroy {
 
         workbook.xlsx.writeBuffer().then(buffer => {
             const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-            saveAs(blob, `releve_operations_${suffix}_${this.selectedCompte?.numeroCompte || 'compte'}_${new Date().toISOString().split('T')[0]}.xlsx`);
+            saveAs(blob, `releve_operations_${suffix}_${this.selectedCompte?.numeroCompte || 'compte'}_${this.getReleveExportFileSuffix()}.xlsx`);
         });
     }
 
     private exportReleveComplet(): void {
-        if (!this.selectedCompte || this.releveOperations.length === 0) return;
+        const exportOps = this.getReleveOperationsForExport();
+        if (!this.selectedCompte || exportOps.length === 0) return;
 
         // Créer un tableau complet avec en-tête et données
         const tableData = [];
@@ -2556,18 +2745,7 @@ export class ComptesComponent implements OnInit, OnDestroy {
         tableData.push(['Pays:', this.selectedCompte.pays, '', 'Code propriétaire:', this.selectedCompte.codeProprietaire || '-', '', '']);
         tableData.push(['Dernière mise à jour:', this.formatDate(this.selectedCompte.dateDerniereMaj), '', '', '', '', '']);
         tableData.push(['', '', '', '', '', '', '']);
-        // Informations sur les filtres appliqués
-        let filterInfo = 'Historique complet';
-        if (this.releveDateDebut === 'custom' && (this.releveDateDebutCustom || this.releveDateFinCustom)) {
-            filterInfo = `Période: ${this.releveDateDebutCustom || 'Début'} à ${this.releveDateFinCustom || 'Fin'}`;
-        } else if (this.releveDateDebut) {
-            const jours = parseInt(this.releveDateDebut);
-            filterInfo = `Derniers ${jours} jours`;
-        }
-        if (this.releveTypeOperation) {
-            filterInfo += ` | Type: ${this.getOperationTypeLabel(this.releveTypeOperation)}`;
-        }
-        tableData.push([filterInfo, '', '', '', '', '', '']);
+        tableData.push([this.getReleveExportFilterInfo(), '', '', '', '', '', '']);
         tableData.push(['', '', '', '', '', '', '']);
         // En-tête du tableau des opérations
         tableData.push([
@@ -2579,11 +2757,8 @@ export class ComptesComponent implements OnInit, OnDestroy {
             'Solde après',
             'Service'
         ]);
-        // Utiliser la même logique que l'affichage : opérations groupées puis aplaties
-        const allOperations = this.getFlattenedReleveOperations();
-        
-        // Ajout d'une méthode utilitaire pour grouper les opérations par date et calculer les soldes d'ouverture/clôture
-        const dailyBalances = this.getDailyBalances(this.releveOperations);
+        const allOperations = this.getFlattenedReleveOperationsForExport();
+        const dailyBalances = this.getDailyBalances(exportOps);
         let lastDate = '';
         allOperations.forEach((op, idx) => {
             const date = op.dateOperation ? op.dateOperation.split('T')[0] : '';
@@ -2676,23 +2851,31 @@ export class ComptesComponent implements OnInit, OnDestroy {
         tableData.push(['Total Débit:', this.formatMontant(totalDebit), '', '', '', '', '']);
         tableData.push(['Total Crédit:', this.formatMontant(totalCredit), '', '', '', '', '']);
         tableData.push(['Différence (Débit - Crédit):', this.formatMontant(Math.abs(totalDebit - totalCredit)), '', '', '', '', '']);
-        // Ajouter solde d'ouverture et solde final de la période choisie
-        if (this.releveOperations.length > 0) {
+        if (exportOps.length > 0) {
+            const exportDaily = this.getDailyBalances(exportOps);
+            const exportDates = Object.keys(exportDaily).filter(d => d !== '_globalOpening').sort();
+            const exportFirstDate = exportDates[0];
+            const exportLastDate = exportDates[exportDates.length - 1];
+            const exportOpening = exportFirstDate ? (exportDaily[exportFirstDate]?.opening ?? 0) : 0;
+            let exportClosing = exportLastDate ? (exportDaily[exportLastDate]?.closing ?? 0) : 0;
+            if (exportLastDate) {
+                const solde = this.getReleveSoldesForExport().find(s => this.normalizeToYmd(s.date) === exportLastDate);
+                if (solde) exportClosing = this.getEffectiveClosingValue(solde);
+            }
             tableData.push(['', '', '', '', '', '', '']);
             tableData.push([
-                `Solde d'ouverture global (${this.getGlobalOpeningBalanceDate()}):`,
-                this.formatMontant(this.getGlobalOpeningBalance()), '', '', '', '', ''
+                `Solde d'ouverture global (${exportFirstDate || '-'}):`,
+                this.formatMontant(exportOpening), '', '', '', '', ''
             ]);
             tableData.push([
-                `Solde de clôture global (${this.getGlobalClosingBalanceDate()}):`,
-                this.formatMontant(this.getGlobalClosingBalance()), '', '', '', '', ''
+                `Solde de clôture global (${exportLastDate || '-'}):`,
+                this.formatMontant(exportClosing), '', '', '', '', ''
             ]);
             tableData.push([
                 'Différence solde ouverture/clôture:',
-                this.formatMontant(Math.abs(this.getGlobalClosingBalance() - this.getGlobalOpeningBalance())), '', '', '', '', ''
+                this.formatMontant(Math.abs(exportClosing - exportOpening)), '', '', '', '', ''
             ]);
-            // Calcul de l'écart (après toutes les autres lignes)
-            let ecart = Math.abs(totalDebit - totalCredit) - Math.abs(this.getGlobalClosingBalance() - this.getGlobalOpeningBalance());
+            const ecart = Math.abs(totalDebit - totalCredit) - Math.abs(exportClosing - exportOpening);
             tableData.push(['ECART:', this.formatMontant(ecart), '', '', '', '', '']);
         }
         // Formater toutes les lignes du tableau
@@ -2715,7 +2898,7 @@ export class ComptesComponent implements OnInit, OnDestroy {
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, 'Relevé de compte');
         // Sauvegarder le fichier
-        const fileName = `releve_compte_${this.selectedCompte.numeroCompte}_${new Date().toISOString().split('T')[0]}.xlsx`;
+        const fileName = `releve_compte_${this.selectedCompte.numeroCompte}_${this.getReleveExportFileSuffix()}.xlsx`;
         XLSX.writeFile(wb, fileName);
     }
 
@@ -3044,7 +3227,12 @@ export class ComptesComponent implements OnInit, OnDestroy {
 
     /** Résumé groupé des opérations par jour/semaine/mois pour la vue "Historique" */
     get releveOperationsGroupedSummary(): Array<{periodLabel: string; operations: Operation[]; totalDebit: number; totalCredit: number; variation: number; opening: number; closing: number}> {
-        const ops = this.getFlattenedReleveOperations();
+        return this.buildReleveOperationsGroupedSummaryFrom(this.getFlattenedReleveOperations());
+    }
+
+    private buildReleveOperationsGroupedSummaryFrom(
+        ops: Operation[]
+    ): Array<{periodLabel: string; operations: Operation[]; totalDebit: number; totalCredit: number; variation: number; opening: number; closing: number}> {
         if (ops.length === 0) return [];
 
         const groupKey = (op: Operation): string => {

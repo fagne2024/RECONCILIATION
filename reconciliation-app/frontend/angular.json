@@ -34,7 +34,13 @@
                         "allowedCommonJsDependencies": [
                             "papaparse",
                             "exceljs",
-                            "file-saver"
+                            "file-saver",
+                            "html2canvas",
+                            "jszip",
+                            "canvg",
+                            "raf",
+                            "rgbcolor",
+                            "core-js"
                         ],
                         "webWorkerTsConfig": "tsconfig.worker.json",
                         "customWebpackConfig": {
@@ -110,8 +116,8 @@
                         "port": 4200,
                         "proxyConfig": "proxy.conf.js",
                         "ssl": true,
-                        "sslCert": "../../Certs/reconciliation/reconciliation.intouchgroup.net-crt.pem",
-                        "sslKey": "../../Certs/reconciliation/reconciliation.intouchgroup.net-key.pem",
+                        "sslCert": "../../../Certs/reconciliation/reconciliation.intouchgroup.net-crt.pem",
+                        "sslKey": "../../../Certs/reconciliation/reconciliation.intouchgroup.net-key.pem",
                         // Désactiver Live Reload pour éviter les problèmes de WebSocket avec SSL
                         "liveReload": false,
                         "hmr": false

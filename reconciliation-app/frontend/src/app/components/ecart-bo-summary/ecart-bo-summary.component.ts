@@ -624,6 +624,20 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
     this.applyFilters();
   }
 
+  /** Recharge les données sans réinitialiser les filtres (Du/Au, agence, service, etc.). */
+  refreshSummaryData(): void {
+    if (this.isLoading || this.awaitingEnvChoice) {
+      return;
+    }
+
+    if (this.response && !this.savedDataMode) {
+      this.loadSummaryData();
+      return;
+    }
+
+    this.loadSavedSummaryData();
+  }
+
   /**
    * Indique si une ligne passe les critères actifs. Les skips servent au cloisonnement des listes déroulantes (pays → service → ENV).
    */

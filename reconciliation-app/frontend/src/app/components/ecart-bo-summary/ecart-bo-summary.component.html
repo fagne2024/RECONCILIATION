@@ -17,6 +17,9 @@
       <button type="button" class="nav-btn secondary" (click)="saveData()" [disabled]="isSaving || filteredItems.length === 0">
         <i class="fas fa-save"></i> {{ isSaving ? 'Sauvegarde...' : 'Sauvegarder' }}
       </button>
+      <button type="button" class="nav-btn secondary" (click)="refreshSummaryData()" [disabled]="isLoading || awaitingEnvChoice" title="Actualiser les données en conservant les filtres">
+        <i class="fas" [ngClass]="isLoading ? 'fa-spinner fa-spin' : 'fa-sync-alt'"></i> Actualiser
+      </button>
       <button type="button" class="nav-btn secondary" (click)="loadSavedSummaryData()" title="Charger les données déjà sauvegardées">
         <i class="fas fa-database"></i> Données sauvegardées
       </button>

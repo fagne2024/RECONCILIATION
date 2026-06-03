@@ -14,6 +14,9 @@
             <button (click)="goToPredictions()" class="btn predictions-btn">
                 <i class="fas fa-crystal-ball"></i> Prédictions
             </button>
+            <button (click)="refreshComptes()" class="btn refresh-btn" [disabled]="isLoading" title="Actualiser la liste en conservant les filtres">
+                <i class="fas" [ngClass]="isLoading ? 'fa-spinner fa-spin' : 'fa-sync-alt'"></i> Actualiser
+            </button>
             <button (click)="exportComptes()" class="btn export-btn" [disabled]="isExporting">
                 <i class="fas fa-file-excel"></i> {{ isExporting ? 'Exportation...' : 'Exporter en Excel' }}
             </button>
@@ -540,17 +543,20 @@
                                 {{ showAllDataReleve ? 'Voir moins' : 'Voir plus' }}
                             </button>
                         </div>
-                        
-                        <!-- Filtres de date personnalisés -->
-                        <div class="filter-group custom-date-filters" *ngIf="releveDateDebut === 'custom'">
+
+                        <!-- Intervalle de dates (affichage et export) -->
+                        <div class="filter-group custom-date-filters export-interval-filters">
                             <div class="date-input-group">
-                                <label>Date début:</label>
-                                <input type="date" [(ngModel)]="releveDateDebutCustom" (change)="loadReleveOperations()">
+                                <label>Du:</label>
+                                <input type="date" [(ngModel)]="releveDateDebutCustom" (change)="onReleveCustomDateChange()" [disabled]="showAllDataReleve">
                             </div>
                             <div class="date-input-group">
-                                <label>Date fin:</label>
-                                <input type="date" [(ngModel)]="releveDateFinCustom" (change)="loadReleveOperations()">
+                                <label>Au:</label>
+                                <input type="date" [(ngModel)]="releveDateFinCustom" (change)="onReleveCustomDateChange()" [disabled]="showAllDataReleve">
                             </div>
+                            <button type="button" class="btn btn-sm" (click)="applyReleveDateInterval()" [disabled]="showAllDataReleve" title="Recharger l'historique sur cet intervalle">
+                                <i class="fas fa-filter"></i> Appliquer
+                            </button>
                         </div>
                         
                         <div class="filter-group">
@@ -564,8 +570,10 @@
                             <i class="fas" [ngClass]="showSoldesSeulement ? 'fa-list-alt' : 'fa-coins'"></i> 
                             {{ showSoldesSeulement ? 'Afficher Opérations' : 'Afficher Soldes Seuls' }}
                         </button>
-                        <button class="btn export-btn" (click)="exportReleve()" [disabled]="isExporting">
+                        <button class="btn export-btn" (click)="exportReleve()" [disabled]="isExporting"
+                                [title]="getReleveExportIntervalLabel() ? 'Exporter sur l\'intervalle : ' + getReleveExportIntervalLabel() : 'Exporter le relevé (toutes les données chargées)'">
                             <i class="fas fa-file-excel"></i> Exporter le relevé
+                            <span class="export-interval-hint" *ngIf="getReleveExportIntervalLabel()">({{ getReleveExportIntervalLabel() }})</span>
                         </button>
                         <button class="btn" (click)="toggleReleveSummary()">
                             <i class="fas" [ngClass]="showReleveSummary ? 'fa-eye-slash' : 'fa-eye'"></i>
