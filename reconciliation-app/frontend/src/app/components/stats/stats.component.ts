@@ -1343,108 +1343,245 @@ export class StatsComponent implements OnInit, OnDestroy {
         });
     }
 
-    async exportStats() {
+    async exportStats(): Promise<void> {
+        await this.exportStatsWorkbook(['detail'], 'statistiques_detail');
+    }
+
+    async exportStatsByWeek(): Promise<void> {
+        await this.exportStatsWorkbook(['week'], 'statistiques_par_semaine');
+    }
+
+    async exportStatsByMonth(): Promise<void> {
+        await this.exportStatsWorkbook(['month'], 'statistiques_par_mois');
+    }
+
+    /** Export Excel : détail journalier + agrégation par semaine et par mois (3 feuilles). */
+    async exportStatsComplete(): Promise<void> {
+        await this.exportStatsWorkbook(['detail', 'week', 'month'], 'statistiques_complet');
+    }
+
+    private getIsoWeekInfo(dateValue: string | Date): { sortKey: string; label: string } | null {
+        const date = new Date(dateValue);
+        if (isNaN(date.getTime())) {
+            return null;
+        }
+        const utc = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+        const dayNum = utc.getUTCDay() || 7;
+        utc.setUTCDate(utc.getUTCDate() + 4 - dayNum);
+        const year = utc.getUTCFullYear();
+        const yearStart = new Date(Date.UTC(year, 0, 1));
+        const week = Math.ceil((((utc.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
+        const sortKey = `${year}-W${String(week).padStart(2, '0')}`;
+        return { sortKey, label: `Semaine ${week} (${year})` };
+    }
+
+    private getMonthInfo(dateValue: string | Date): { sortKey: string; label: string } | null {
+        const dateKey = this.toDateKey(dateValue);
+        if (!dateKey) {
+            return null;
+        }
+        const [year, month] = dateKey.split('-');
+        const monthIndex = Number(month) - 1;
+        const monthNames = [
+            'Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin',
+            'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'
+        ];
+        const label = monthIndex >= 0 && monthIndex < 12
+            ? `${monthNames[monthIndex]} ${year}`
+            : dateKey;
+        return { sortKey: `${year}-${month}`, label };
+    }
+
+    private buildDailyExportRows(): Record<string, string | number>[] {
+        return this.getAggregatedStats().map(item => ({
+            Client: item.agency,
+            Service: item.service,
+            Pays: item.country,
+            Période: this.formatDateOnly(item.date),
+            Volume: Number(item.totalVolume),
+            Transactions: Number(item.recordCount)
+        }));
+    }
+
+    private buildPeriodExportRows(mode: 'week' | 'month'): Record<string, string | number>[] {
+        const bucket = new Map<string, {
+            agency: string;
+            service: string;
+            country: string;
+            periodSort: string;
+            periodLabel: string;
+            volume: number;
+            count: number;
+        }>();
+
+        for (const item of this.getAggregatedStats()) {
+            const period = mode === 'week'
+                ? this.getIsoWeekInfo(item.date)
+                : this.getMonthInfo(item.date);
+            if (!period) {
+                continue;
+            }
+            const key = `${item.agency}|${item.service}|${item.country}|${period.sortKey}`;
+            const existing = bucket.get(key);
+            if (existing) {
+                existing.volume += Number(item.totalVolume) || 0;
+                existing.count += Number(item.recordCount) || 0;
+            } else {
+                bucket.set(key, {
+                    agency: item.agency,
+                    service: item.service,
+                    country: item.country,
+                    periodSort: period.sortKey,
+                    periodLabel: period.label,
+                    volume: Number(item.totalVolume) || 0,
+                    count: Number(item.recordCount) || 0
+                });
+            }
+        }
+
+        return Array.from(bucket.values())
+            .sort((a, b) => {
+                if (b.periodSort !== a.periodSort) {
+                    return b.periodSort.localeCompare(a.periodSort);
+                }
+                return a.agency.localeCompare(b.agency)
+                    || a.service.localeCompare(b.service)
+                    || a.country.localeCompare(b.country);
+            })
+            .map(row => ({
+                Client: row.agency,
+                Service: row.service,
+                Pays: row.country,
+                Période: row.periodLabel,
+                Volume: row.volume,
+                Transactions: row.count
+            }));
+    }
+
+    private writeStatsSheet(
+        worksheet: ExcelJS.Worksheet,
+        rows: Record<string, string | number>[],
+        periodHeader: string
+    ): void {
+        worksheet.columns = [
+            { header: 'Client', key: 'Client', width: 22 },
+            { header: 'Service', key: 'Service', width: 22 },
+            { header: 'Pays', key: 'Pays', width: 14 },
+            { header: periodHeader, key: 'Période', width: 24 },
+            { header: 'Volume', key: 'Volume', width: 16, style: { numFmt: '#,##0' } },
+            { header: 'Transactions', key: 'Transactions', width: 16, style: { numFmt: '#,##0' } }
+        ];
+
+        worksheet.getRow(1).eachCell(cell => {
+            cell.fill = {
+                type: 'pattern',
+                pattern: 'solid',
+                fgColor: { argb: 'FF1976D2' }
+            };
+            cell.font = { color: { argb: 'FFFFFFFF' }, bold: true };
+            cell.alignment = { vertical: 'middle', horizontal: 'center' };
+        });
+
+        rows.forEach((row, idx) => {
+            const excelRow = worksheet.addRow(row);
+            if (idx % 2 === 1) {
+                excelRow.eachCell(cell => {
+                    cell.fill = {
+                        type: 'pattern',
+                        pattern: 'solid',
+                        fgColor: { argb: 'FFE3F2FD' }
+                    };
+                });
+            }
+        });
+
+        const totalVolume = rows.reduce((sum, row) => sum + Number(row.Volume), 0);
+        const totalTransactions = rows.reduce((sum, row) => sum + Number(row.Transactions), 0);
+        const totalRow = worksheet.addRow({
+            Client: 'TOTAL',
+            Service: '',
+            Pays: '',
+            Période: '',
+            Volume: totalVolume,
+            Transactions: totalTransactions
+        });
+        totalRow.eachCell((cell, colNumber) => {
+            cell.font = { bold: true };
+            if (colNumber === 1 || colNumber === 5 || colNumber === 6) {
+                cell.fill = {
+                    type: 'pattern',
+                    pattern: 'solid',
+                    fgColor: { argb: 'FFB3E5FC' }
+                };
+            }
+        });
+
+        worksheet.columns.forEach(column => {
+            column.eachCell?.({ includeEmpty: true }, cell => {
+                if (typeof cell.value === 'number') {
+                    cell.numFmt = '#,##0';
+                }
+            });
+        });
+    }
+
+    private async exportStatsWorkbook(
+        sheets: Array<'detail' | 'week' | 'month'>,
+        defaultBaseName: string
+    ): Promise<void> {
         this.isLoading = true;
         try {
-            // Utiliser les données agrégées au lieu de filteredData
-            const aggregatedData = this.getAggregatedStats();
-            const data = aggregatedData.map(item => ({
-                Client: item.agency,
-                Service: item.service,
-                Pays: item.country,
-                Date: this.formatDateWithTime(item.date),
-                Volume: Number(item.totalVolume),
-                Transactions: Number(item.recordCount)
-            }));
-
-            if (data.length === 0) {
+            const hasData = this.getAggregatedStats().length > 0;
+            if (!hasData) {
                 await this.showErrorMessage('Aucune donnée à exporter');
                 return;
             }
 
-            // Demander le nom du fichier à l'utilisateur
-            const fileName = await this.promptFileName();
+            const fileName = await this.promptExportFileName(defaultBaseName);
             if (!fileName) {
-                console.log('Export annulé par l\'utilisateur');
                 return;
             }
 
             const workbook = new ExcelJS.Workbook();
-            const worksheet = workbook.addWorksheet('Statistiques');
 
-            worksheet.columns = [
-                { header: 'Client', key: 'Client', width: 20 },
-                { header: 'Service', key: 'Service', width: 20 },
-                { header: 'Pays', key: 'Pays', width: 20 },
-                { header: 'Date', key: 'Date', width: 20 },
-                { header: 'Volume', key: 'Volume', width: 15, style: { numFmt: '#,##0' } },
-                { header: 'Transactions', key: 'Transactions', width: 18, style: { numFmt: '#,##0' } }
-            ];
-
-            worksheet.getRow(1).eachCell(cell => {
-                cell.fill = {
-                    type: 'pattern',
-                    pattern: 'solid',
-                    fgColor: { argb: 'FF1976D2' }
-                };
-                cell.font = { color: { argb: 'FFFFFFFF' }, bold: true };
-            });
-
-            data.forEach((row, idx) => {
-                const excelRow = worksheet.addRow(row);
-                if (idx % 2 === 1) {
-                    excelRow.eachCell(cell => {
-                        cell.fill = {
-                            type: 'pattern',
-                            pattern: 'solid',
-                            fgColor: { argb: 'FFE3F2FD' }
-                        };
-                    });
+            if (sheets.includes('detail')) {
+                const ws = workbook.addWorksheet('Par jour');
+                this.writeStatsSheet(ws, this.buildDailyExportRows(), 'Date');
+            }
+            if (sheets.includes('week')) {
+                const weekRows = this.buildPeriodExportRows('week');
+                if (sheets.length === 1 && !weekRows.length) {
+                    await this.showErrorMessage('Aucune donnée à exporter par semaine');
+                    return;
                 }
-            });
-
-            // Calcul des totaux
-            const totalVolume = data.reduce((sum, row) => sum + Number(row.Volume), 0);
-            const totalTransactions = data.reduce((sum, row) => sum + Number(row.Transactions), 0);
-
-            // Ajoute la ligne de totaux
-            const totalRow = worksheet.addRow({
-                Client: 'TOTAL',
-                Service: '',
-                Pays: '',
-                Date: '',
-                Volume: totalVolume,
-                Transactions: totalTransactions
-            });
-            totalRow.eachCell((cell, colNumber) => {
-                cell.font = { bold: true };
-                if (colNumber === 1 || colNumber === 5 || colNumber === 6) {
-                    cell.fill = {
-                        type: 'pattern',
-                        pattern: 'solid',
-                        fgColor: { argb: 'FFB3E5FC' }
-                    };
+                if (weekRows.length) {
+                    const ws = workbook.addWorksheet('Par semaine');
+                    this.writeStatsSheet(ws, weekRows, 'Semaine');
                 }
-            });
+            }
+            if (sheets.includes('month')) {
+                const monthRows = this.buildPeriodExportRows('month');
+                if (sheets.length === 1 && !monthRows.length) {
+                    await this.showErrorMessage('Aucune donnée à exporter par mois');
+                    return;
+                }
+                if (monthRows.length) {
+                    const ws = workbook.addWorksheet('Par mois');
+                    this.writeStatsSheet(ws, monthRows, 'Mois');
+                }
+            }
+
+            if (workbook.worksheets.length === 0) {
+                await this.showErrorMessage('Aucune feuille à exporter');
+                return;
+            }
 
             const buffer = await workbook.xlsx.writeBuffer();
-            const blob = new Blob([buffer], { 
-                type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
+            const blob = new Blob([buffer], {
+                type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
             });
-            
-            const url = window.URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = fileName;
-            a.style.display = 'none';
-            document.body.appendChild(a);
-            a.click();
-            await new Promise(resolve => setTimeout(resolve, 1000));
-            document.body.removeChild(a);
-            window.URL.revokeObjectURL(url);
-            
-            console.log(`Fichier téléchargé avec succès : ${fileName}`);
-            await this.showSuccessMessage(`Fichier exporté avec succès : ${fileName}`);
+            FileSaver.saveAs(blob, fileName);
+            await this.showSuccessMessage(`Fichier exporté : ${fileName}`);
         } catch (error) {
             console.error('Erreur lors de l\'export:', error);
             await this.showErrorMessage('Erreur lors de l\'export des données');
@@ -1453,21 +1590,19 @@ export class StatsComponent implements OnInit, OnDestroy {
         }
     }
 
-    private async promptFileName(): Promise<string | null> {
-        const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
-        const defaultFileName = `statistiques_${timestamp}.xlsx`;
-        
-        const fileName = prompt(`Entrez le nom du fichier (sans l'extension .xlsx):`, defaultFileName.replace('.xlsx', ''));
-        
+    private async promptExportFileName(defaultBase: string): Promise<string | null> {
+        const timestamp = new Date().toISOString().slice(0, 10);
+        const defaultFileName = `${defaultBase}_${timestamp}`;
+        const fileName = prompt(`Nom du fichier (sans .xlsx) :`, defaultFileName);
         if (fileName === null) {
-            return null; // Utilisateur a annulé
+            return null;
         }
-        
-        if (fileName.trim() === '') {
-            return defaultFileName;
-        }
-        
-        return fileName.trim() + '.xlsx';
+        const trimmed = (fileName || defaultFileName).trim();
+        return trimmed.endsWith('.xlsx') ? trimmed : `${trimmed}.xlsx`;
+    }
+
+    private async promptFileName(): Promise<string | null> {
+        return this.promptExportFileName('statistiques');
     }
 
     formatDateWithTime(date: string): string {

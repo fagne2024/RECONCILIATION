@@ -38,6 +38,9 @@ public interface EcartBoSummaryRepository extends JpaRepository<EcartBoSummaryEn
 
     List<EcartBoSummaryEntity> findByToken(String token);
 
+    @Query("SELECT e FROM EcartBoSummaryEntity e WHERE e.token IS NOT NULL AND LOWER(e.token) LIKE LOWER(CONCAT('%', :token, '%')) ORDER BY e.dateImport DESC")
+    List<EcartBoSummaryEntity> findByTokenContaining(@Param("token") String token);
+
     @Query("""
         SELECT e FROM EcartBoSummaryEntity e
         WHERE (:agence IS NULL OR e.agence = :agence)

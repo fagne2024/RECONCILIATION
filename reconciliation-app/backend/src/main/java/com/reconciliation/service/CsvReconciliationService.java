@@ -50,7 +50,7 @@ public class CsvReconciliationService implements DisposableBean {
         this.configurableReconciliationService = configurableReconciliationService;
         this.columnProcessingService = columnProcessingService;
     }
-    private static final int PARALLEL_THREADS = Runtime.getRuntime().availableProcessors(); // Utilise tous les CPU
+    private static final int PARALLEL_THREADS = Math.max(1, Math.min(2, Runtime.getRuntime().availableProcessors()));
     private final ConcurrentHashMap<String, Integer> progressMap = new ConcurrentHashMap<>();
     // Créer un ExecutorService réutilisable au lieu de le fermer après chaque utilisation
     private final ExecutorService executorService = Executors.newFixedThreadPool(PARALLEL_THREADS, r -> {
@@ -157,6 +157,9 @@ public class CsvReconciliationService implements DisposableBean {
             logger.info("🔍 Vérification de la détection TRXBO/OPPART...");
             boolean isTRXBOOPPART = configurableReconciliationService.detectTRXBOOPPARTContent(request);
             logger.info("🔍 Résultat de la détection TRXBO/OPPART: {}", isTRXBOOPPART);
+
+            // Libérer les données brutes JSON une fois la détection terminée (processed* conservé en mémoire)
+            releaseRequestFileContent(request);
             
             if (isTRXBOOPPART) {
                 // Pour TRXBO/OPPART, utiliser la logique SPECIAL_RATIO (1:2)
@@ -266,37 +269,22 @@ public class CsvReconciliationService implements DisposableBean {
                 logger.info("✅ Index partenaire optimisé créé avec {} clés", partnerIndex.size());
             }
 
-            // Traitement parallèle des enregistrements BO
-            logger.info("🔄 Début du traitement parallèle par lots (taille: {})", BATCH_SIZE);
+            // Traitement séquentiel par lots (évite la file de CompletableFuture et réduit le pic mémoire)
+            logger.info("🔄 Début du traitement par lots (taille: {})", BATCH_SIZE);
             
             int totalRecords = filteredBoRecords.size();
             int processedRecords = 0;
             
-            // Diviser les données BO en chunks pour traitement parallèle
-            List<List<Map<String, String>>> boChunks = new ArrayList<>();
             for (int i = 0; i < filteredBoRecords.size(); i += BATCH_SIZE) {
                 int endIndex = Math.min(i + BATCH_SIZE, filteredBoRecords.size());
-                boChunks.add(filteredBoRecords.subList(i, endIndex));
-            }
-            
-            // Traitement parallèle des chunks
-            List<CompletableFuture<ReconciliationBatchResult>> batchFutures = new ArrayList<>();
-            
-            for (List<Map<String, String>> chunk : boChunks) {
-                CompletableFuture<ReconciliationBatchResult> future = CompletableFuture.supplyAsync(() -> 
-                    processBatchOptimized(chunk, partnerIndex, request, normalizedBoKeyColumn), executorService);
-                batchFutures.add(future);
-            }
-            
-            // Collecter les résultats
-            for (CompletableFuture<ReconciliationBatchResult> future : batchFutures) {
-                ReconciliationBatchResult result = future.get();
+                List<Map<String, String>> chunk = filteredBoRecords.subList(i, endIndex);
+                ReconciliationBatchResult result = processBatchOptimized(
+                    chunk, partnerIndex, request, normalizedBoKeyColumn);
                 response.getMatches().addAll(result.getMatches());
                 response.getBoOnly().addAll(result.getBoOnly());
                 response.getMismatches().addAll(result.getMismatches());
                 processedRecords += result.getProcessedCount();
                 
-                // Log de progression
                 long currentTime = System.currentTimeMillis();
                 long elapsedTime = currentTime - startTime;
                 double progress = (double) processedRecords / totalRecords * 100;
@@ -310,20 +298,19 @@ public class CsvReconciliationService implements DisposableBean {
             logger.info("🔍 Recherche optimisée des enregistrements uniquement partenaire...");
             int partnerOnlyCount = 0;
             for (List<Map<String, String>> partnersForKey : partnerIndex.values()) {
-                List<Map<String, String>> snapshot;
                 synchronized (partnersForKey) {
-                    snapshot = new ArrayList<>(partnersForKey);
-                }
-                for (Map<String, String> partnerRecord : snapshot) {
-                    response.getPartnerOnly().add(partnerRecord);
-                    partnerOnlyCount++;
-                    if (partnerOnlyCount <= 10) {
-                        String partnerKey = buildCompositeKey(partnerRecord, normalizedPartnerKeyColumn,
-                                request.getAdditionalKeys(), false);
-                        logger.info("Enregistrement uniquement partenaire trouvé: {}", partnerKey);
+                    for (Map<String, String> partnerRecord : partnersForKey) {
+                        response.getPartnerOnly().add(partnerRecord);
+                        partnerOnlyCount++;
+                        if (partnerOnlyCount <= 10) {
+                            String partnerKey = buildCompositeKey(partnerRecord, normalizedPartnerKeyColumn,
+                                    request.getAdditionalKeys(), false);
+                            logger.info("Enregistrement uniquement partenaire trouvé: {}", partnerKey);
+                        }
                     }
                 }
             }
+            partnerIndex.clear();
             logger.info("✅ Nombre total d'enregistrements uniquement partenaire: {}", partnerOnlyCount);
 
             // Calcule les totaux (utiliser les données traitées)
@@ -353,8 +340,7 @@ public class CsvReconciliationService implements DisposableBean {
             logger.info("⚡ Performance: {} enregistrements/seconde", String.format("%.0f", recordsPerSecond));
             logger.info("⏱️  Temps total d'exécution: {} ms ({} secondes)", totalTime, String.format("%.2f", totalTime / 1000.0));
 
-            // Ne pas fermer l'ExecutorService pour permettre la réutilisation
-            // executorService.shutdown();
+            releaseReconciliationWorkingSets(processedPartnerData);
             
             return response;
 
@@ -1117,6 +1103,21 @@ public class CsvReconciliationService implements DisposableBean {
             case "1-4": return 4;
             case "1-5": return 5;
             default: return 1; // Par défaut 1-1
+        }
+    }
+
+    private void releaseRequestFileContent(ReconciliationRequest request) {
+        if (request == null) {
+            return;
+        }
+        request.setBoFileContent(null);
+        request.setPartnerFileContent(null);
+    }
+
+    /** Libère les jeux de données intermédiaires une fois les résultats construits. */
+    private void releaseReconciliationWorkingSets(List<Map<String, String>> processedPartnerData) {
+        if (processedPartnerData != null) {
+            processedPartnerData.clear();
         }
     }
 

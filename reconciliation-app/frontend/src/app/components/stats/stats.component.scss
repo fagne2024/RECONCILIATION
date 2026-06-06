@@ -585,6 +585,16 @@ h2 {
     background: #1565C0;
 }
 
+.export-btn.secondary {
+    background: #fff;
+    color: #1976D2;
+    border: 1.5px solid #1976D2;
+}
+
+.export-btn.secondary:hover:not(:disabled) {
+    background: #e3f2fd;
+}
+
 .bulk-delete-btn {
     background: #dc3545;
     color: white;

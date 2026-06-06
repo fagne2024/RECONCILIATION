@@ -93,55 +93,31 @@ export class CompteService {
     filterComptes(filter: CompteFilter, moduleContext?: string): Observable<Compte[]> {
         let params = new HttpParams();
 
-        // pays: string | string[]
-        if (filter.pays) {
-            if (Array.isArray(filter.pays)) {
-                filter.pays.forEach((p: string) => {
-                    params = params.append('pays', p);
-                });
-            } else {
-                params = params.set('pays', filter.pays);
+        const appendArrayParam = (key: string, values: string[] | string | undefined) => {
+            if (!values) {
+                return;
             }
-        }
+            if (Array.isArray(values)) {
+                values
+                    .filter((v) => v != null && String(v).trim() !== '')
+                    .forEach((v) => {
+                        params = params.append(key, v);
+                    });
+            } else if (String(values).trim() !== '') {
+                params = params.set(key, values);
+            }
+        };
 
-        // codeProprietaire: string | string[]
-        if (filter.codeProprietaire) {
-            if (Array.isArray(filter.codeProprietaire)) {
-                filter.codeProprietaire.forEach((c: string) => {
-                    params = params.append('codeProprietaire', c);
-                });
-            } else {
-                params = params.set('codeProprietaire', filter.codeProprietaire);
-            }
-        }
+        appendArrayParam('pays', filter.pays);
+        appendArrayParam('codeProprietaire', filter.codeProprietaire);
+        appendArrayParam('categorie', filter.categorie);
+        appendArrayParam('type', filter.type);
 
         if (filter.dateDebut) {
             params = params.set('dateDebut', filter.dateDebut);
         }
         if (filter.dateFin) {
             params = params.set('dateFin', filter.dateFin);
-        }
-
-        // categorie: string | string[]
-        if (filter.categorie) {
-            if (Array.isArray(filter.categorie)) {
-                filter.categorie.forEach((c: string) => {
-                    params = params.append('categorie', c);
-                });
-            } else {
-                params = params.set('categorie', filter.categorie);
-            }
-        }
-
-        // type: string | string[]
-        if (filter.type) {
-            if (Array.isArray(filter.type)) {
-                filter.type.forEach((t: string) => {
-                    params = params.append('type', t);
-                });
-            } else {
-                params = params.set('type', filter.type);
-            }
         }
 
         return this.http.get<Compte[]>(`${this.apiUrl}/filter`, {

@@ -283,6 +283,8 @@ public class ReconciliationController {
                 
                 log.info("🔄 Début du traitement de la réconciliation...");
                 ReconciliationResponse response = reconciliationService.reconcile(request);
+                request.setBoFileContent(null);
+                request.setPartnerFileContent(null);
                 
                 long totalTime = System.currentTimeMillis() - startTime;
                 log.info("✅ Réconciliation terminée avec succès en {} ms ({} secondes)", totalTime, String.format("%.2f", totalTime / 1000.0));

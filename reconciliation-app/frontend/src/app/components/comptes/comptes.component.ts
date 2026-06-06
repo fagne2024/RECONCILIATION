@@ -340,13 +340,13 @@ export class ComptesComponent implements OnInit, OnDestroy {
         });
 
         this.filterForm = this.fb.group({
-            pays: [''],
+            pays: [[]],
             soldeMin: [''],
             dateDebut: [''],
             dateFin: [''],
-            codeProprietaire: [''],
-            categorie: [''],
-            type: ['']
+            codeProprietaire: [[]],
+            categorie: [[]],
+            type: [[]]
         });
     }
 
@@ -651,6 +651,7 @@ export class ComptesComponent implements OnInit, OnDestroy {
             type: this.selectedTypes
         };
         console.log('Filtres appliqués:', filter);
+        this.currentPage = 1;
         this.isLoading = true;
         
         this.subscription.add(
@@ -676,7 +677,16 @@ export class ComptesComponent implements OnInit, OnDestroy {
     }
 
     clearFilters() {
-        this.filterForm.reset();
+        this.currentPage = 1;
+        this.filterForm.reset({
+            pays: [],
+            codeProprietaire: [],
+            categorie: [],
+            type: [],
+            soldeMin: '',
+            dateDebut: '',
+            dateFin: ''
+        });
         this.selectedPays = [];
         this.selectedCodesProprietaire = [];
         this.selectedCategories = [];
@@ -722,10 +732,23 @@ export class ComptesComponent implements OnInit, OnDestroy {
     }
 
     updatePagedComptes() {
+        this.totalPages = this.comptes.length > 0
+            ? Math.ceil(this.comptes.length / this.pageSize)
+            : 0;
+        if (this.totalPages === 0) {
+            this.currentPage = 1;
+            this.pagedComptes = [];
+            return;
+        }
+        if (this.currentPage > this.totalPages) {
+            this.currentPage = 1;
+        }
+        if (this.currentPage < 1) {
+            this.currentPage = 1;
+        }
         const start = (this.currentPage - 1) * this.pageSize;
         const end = start + this.pageSize;
         this.pagedComptes = this.comptes.slice(start, end);
-        this.totalPages = Math.ceil(this.comptes.length / this.pageSize);
     }
 
     nextPage() {

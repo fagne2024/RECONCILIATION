@@ -161,6 +161,7 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
   private pendingLinesBuffer: EcartBoSummaryPendingLine[] | null = null;
   private prefillBuffer: EcartBoSummaryPrefill | null = null;
   private selectionKeyCounter = 0;
+  private isPersistingLinks = false;
 
   constructor(
     private appStateService: AppStateService,
@@ -419,14 +420,14 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
       const mapped: any = {
         id: item.id,
         selectionKey: this.createSelectionKey(`saved-${item.id ?? 'x'}`),
-        date: item.dateTransaction || '',
+        date: this.formatSummaryDate(item.dateTransaction || ''),
         agence: item.agence || 'Non spécifié',
         service: item.service || 'Non spécifié',
         pays: item.pays || 'Non spécifié',
         nombre: item.nombreTransactions || 0,
         montant: item.montantTotal || 0,
-        statut: (item.statut === 'OK' ? 'ok' : 'en cours') as 'ok' | 'en cours',
-        env: (item.env === 'BO' ? 'BO' : (item.env === 'PARTENAIRE' ? 'PARTENAIRE' : 'BO')) as 'BO' | 'PARTENAIRE',
+        statut: this.normalizeSummaryStatut(item.statut),
+        env: this.normalizeSummaryEnv(item.env),
         envCode: item.envCode != null && String(item.envCode).trim() !== '' ? String(item.envCode).trim() : undefined,
         originalRecords: [],
         isManual,
@@ -442,7 +443,7 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
     this.uniqueServices = [...new Set(this.summaryItems.map(i => i.service).filter(Boolean))].sort();
     this.uniquePays = [...new Set(this.summaryItems.map(i => i.pays).filter(Boolean))].sort();
     this.refreshUniqueEnvCodes();
-    this.linkMatchingPairs();
+    this.linkMatchingPairs(true);
   }
 
   loadSavedSummaryData(): void {
@@ -596,7 +597,7 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
       this.summaryItems = items;
 
       // Lier les paires correspondantes (BO/PARTENAIRE) et mettre à jour les statuts
-      this.linkMatchingPairs();
+      this.linkMatchingPairs(false);
 
       // Extraire les valeurs uniques pour les filtres
       this.uniqueAgencies = [...new Set(this.summaryItems.map(item => item.agence).filter(a => a))].sort();
@@ -665,8 +666,7 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
     }
 
     if (this.selectedToken && this.selectedToken.trim()) {
-      const tokenTerm = this.selectedToken.trim().toLowerCase();
-      if (!(item.token || '').toLowerCase().includes(tokenTerm)) return false;
+      if (!this.itemMatchesTokenFilter(item, this.selectedToken.trim())) return false;
     }
 
     if (this.selectedAgence && item.agence !== this.selectedAgence) return false;
@@ -802,24 +802,361 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
     // Ici vous pouvez ajouter une logique pour sauvegarder le changement si nécessaire
   }
 
+  private normalizeSummaryEnv(env: string | undefined): 'BO' | 'PARTENAIRE' {
+    const normalized = (env || '').trim().toUpperCase();
+    if (normalized === 'PARTENAIRE' || normalized === 'PARTNER') {
+      return 'PARTENAIRE';
+    }
+    return 'BO';
+  }
+
+  private normalizeSummaryStatut(statut: string | undefined): 'ok' | 'en cours' {
+    return (statut || '').trim().toUpperCase() === 'OK' ? 'ok' : 'en cours';
+  }
+
+  private normalizeMatchText(value: string | undefined): string {
+    return (value || '').trim().toUpperCase();
+  }
+
+  private isMultiAgenceAgence(agence: string | undefined): boolean {
+    return this.normalizeMatchText(agence) === 'MULTIAGENCE';
+  }
+
+  private formatSummaryDate(value: string | undefined): string {
+    if (!value) {
+      return '';
+    }
+    const parsed = this.parseDate(String(value));
+    if (!parsed) {
+      return String(value);
+    }
+    const y = parsed.getFullYear();
+    const m = String(parsed.getMonth() + 1).padStart(2, '0');
+    const d = String(parsed.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+
+  private datesWithinLinkWindow(dateA: string, dateB: string): boolean {
+    const parsedA = this.parseDate(dateA);
+    const parsedB = this.parseDate(dateB);
+    if (!parsedA || !parsedB) {
+      return false;
+    }
+    const diff = Math.abs(this.getCalendarDay(parsedA) - this.getCalendarDay(parsedB));
+    return diff <= 1;
+  }
+
+  /** Agrégat multiAgence : la date BO est le jour Partenaire ou J+1 (pas J-1). */
+  private boDateMatchesPartenaireAggregate(partenaireDate: string, boDate: string): boolean {
+    const parsedPartner = this.parseDate(partenaireDate);
+    const parsedBo = this.parseDate(boDate);
+    if (!parsedPartner || !parsedBo) {
+      return false;
+    }
+    const diff = this.getCalendarDay(parsedBo) - this.getCalendarDay(parsedPartner);
+    return diff >= 0 && diff <= 1;
+  }
+
+  private envCodesMatch(itemA: EcartBoSummaryItem, itemB: EcartBoSummaryItem): boolean {
+    const codeA = (itemA.envCode || '').trim();
+    const codeB = (itemB.envCode || '').trim();
+    if (!codeA || !codeB) {
+      return true;
+    }
+    return normalizeReconciliationReportEnv(codeA) === normalizeReconciliationReportEnv(codeB);
+  }
+
+  private findSubsetMatchingMontant(
+    candidates: EcartBoSummaryItem[],
+    targetMontant: number
+  ): EcartBoSummaryItem[] | null {
+    if (candidates.length === 0) {
+      return null;
+    }
+    const target = Math.round((targetMontant ?? 0) * 100);
+    const amounts = candidates.map(c => Math.round((c.montant ?? 0) * 100));
+
+    if (candidates.length <= 22) {
+      const totalMasks = 1 << candidates.length;
+      for (let mask = 1; mask < totalMasks; mask++) {
+        let sum = 0;
+        const subset: EcartBoSummaryItem[] = [];
+        for (let i = 0; i < candidates.length; i++) {
+          if (mask & (1 << i)) {
+            sum += amounts[i];
+            subset.push(candidates[i]);
+          }
+        }
+        if (sum === target) {
+          return subset;
+        }
+      }
+      return null;
+    }
+
+    const fullSum = amounts.reduce((acc, value) => acc + value, 0);
+    return fullSum === target ? candidates : null;
+  }
+
+  private linkMultiAgenceAggregate(
+    partenaireItem: EcartBoSummaryItem,
+    matchingBoItems: EcartBoSummaryItem[],
+    itemsToUpdate: EcartBoSummaryItem[],
+    linkedPartners: Set<EcartBoSummaryItem>,
+    linkedBos: Set<EcartBoSummaryItem>,
+    usedBoItemIds: Set<number>,
+    usedBoItemRefs: Set<EcartBoSummaryItem>
+  ): void {
+    const linkToken = this.resolveLinkToken(partenaireItem, ...matchingBoItems);
+    partenaireItem.token = linkToken;
+    if (partenaireItem.statut !== 'ok') {
+      partenaireItem.statut = 'ok';
+    }
+    this.markItemLinkChange(partenaireItem, itemsToUpdate, true);
+    linkedPartners.add(partenaireItem);
+
+    for (const boItem of matchingBoItems) {
+      boItem.token = linkToken;
+      boItem.linkedId = partenaireItem.id;
+      if (boItem.statut !== 'ok') {
+        boItem.statut = 'ok';
+      }
+      this.markItemLinkChange(boItem, itemsToUpdate, true);
+      linkedBos.add(boItem);
+      if (boItem.id) {
+        usedBoItemIds.add(boItem.id);
+      } else {
+        usedBoItemRefs.add(boItem);
+      }
+    }
+    partenaireItem.linkedId = matchingBoItems.find(b => b.id)?.id;
+  }
+
+  private servicePaysMatch(itemA: EcartBoSummaryItem, itemB: EcartBoSummaryItem): boolean {
+    return (
+      this.normalizeMatchText(itemA.service) === this.normalizeMatchText(itemB.service) &&
+      this.normalizeMatchText(itemA.pays) === this.normalizeMatchText(itemB.pays)
+    );
+  }
+
+  private businessKeysMatch(itemA: EcartBoSummaryItem, itemB: EcartBoSummaryItem): boolean {
+    return (
+      this.servicePaysMatch(itemA, itemB) &&
+      itemA.nombre === itemB.nombre &&
+      this.amountsEqual(itemA.montant, itemB.montant)
+    );
+  }
+
+  private agencesCompatible(itemA: EcartBoSummaryItem, itemB: EcartBoSummaryItem): boolean {
+    if (this.normalizeMatchText(itemA.agence) === this.normalizeMatchText(itemB.agence)) {
+      return true;
+    }
+    return this.isMultiAgenceAgence(itemA.agence) || this.isMultiAgenceAgence(itemB.agence);
+  }
+
+  private resolveLinkToken(...items: EcartBoSummaryItem[]): string {
+    const tokens = items
+      .map(item => (item.token || '').trim())
+      .filter(token => token.length > 0);
+    if (tokens.length > 0) {
+      const stableToken = tokens.find(token => !token.startsWith('LINK-'));
+      return stableToken || tokens[0];
+    }
+    const ids = items.map(item => item.id ?? 'x').join('-');
+    return `LINK-${Date.now()}-${ids}`;
+  }
+
+  private markItemLinkChange(
+    item: EcartBoSummaryItem,
+    itemsToUpdate: EcartBoSummaryItem[],
+    force = false
+  ): void {
+    if (!item.id) {
+      return;
+    }
+    const itemAny: any = item as any;
+    const changed =
+      itemAny.__originalStatut !== item.statut || itemAny.__originalToken !== item.token;
+    if (!force && !changed) {
+      return;
+    }
+    if (!itemsToUpdate.some(row => row.id === item.id)) {
+      itemsToUpdate.push(item);
+    }
+  }
+
+  /** Si une correspondance BO/Partenaire existe, les deux lignes doivent être à OK. */
+  private ensureOkStatusWhenCorrespondenceExists(itemsToUpdate: EcartBoSummaryItem[]): void {
+    const promote = (item: EcartBoSummaryItem, force = false) => {
+      if (item.statut !== 'ok') {
+        item.statut = 'ok';
+      }
+      this.markItemLinkChange(item, itemsToUpdate, force);
+    };
+
+    for (const item of this.summaryItems) {
+      if (item.linkedId) {
+        const linked = this.summaryItems.find(row => row.id === item.linkedId);
+        if (linked) {
+          promote(item, true);
+          promote(linked, true);
+        }
+      }
+    }
+
+    for (let i = 0; i < this.summaryItems.length; i++) {
+      for (let j = i + 1; j < this.summaryItems.length; j++) {
+        const itemA = this.summaryItems[i];
+        const itemB = this.summaryItems[j];
+        if (this.areLinkedCounterparts(itemA, itemB)) {
+          promote(itemA, true);
+          promote(itemB, true);
+        }
+      }
+    }
+
+    const tokenGroups = new Map<string, EcartBoSummaryItem[]>();
+    for (const item of this.summaryItems) {
+      const token = (item.token || '').trim();
+      if (!token) {
+        continue;
+      }
+      if (!tokenGroups.has(token)) {
+        tokenGroups.set(token, []);
+      }
+      tokenGroups.get(token)!.push(item);
+    }
+
+    for (const group of tokenGroups.values()) {
+      const hasBo = group.some(row => this.normalizeSummaryEnv(row.env) === 'BO');
+      const hasPartner = group.some(row => this.normalizeSummaryEnv(row.env) === 'PARTENAIRE');
+      if (hasBo && hasPartner) {
+        group.forEach(row => promote(row, true));
+      }
+    }
+  }
+
+  private applyLinkToPair(
+    itemA: EcartBoSummaryItem,
+    itemB: EcartBoSummaryItem,
+    linkToken: string,
+    itemsToUpdate: EcartBoSummaryItem[]
+  ): void {
+    itemA.linkedId = itemB.id;
+    itemB.linkedId = itemA.id;
+    itemA.token = linkToken;
+    itemB.token = linkToken;
+    if (itemA.statut !== 'ok') {
+      itemA.statut = 'ok';
+    }
+    if (itemB.statut !== 'ok') {
+      itemB.statut = 'ok';
+    }
+    this.markItemLinkChange(itemA, itemsToUpdate, true);
+    this.markItemLinkChange(itemB, itemsToUpdate, true);
+  }
+
+  private itemMatchesTokenFilter(item: EcartBoSummaryItem, tokenTerm: string): boolean {
+    const term = tokenTerm.toLowerCase();
+    if ((item.token || '').toLowerCase().includes(term)) {
+      return true;
+    }
+    const carriers = this.summaryItems.filter(row => (row.token || '').toLowerCase().includes(term));
+    return carriers.some(carrier => this.areLinkedCounterparts(carrier, item));
+  }
+
+  private areLinkedCounterparts(itemA: EcartBoSummaryItem, itemB: EcartBoSummaryItem): boolean {
+    if (itemA === itemB) {
+      return true;
+    }
+    if (itemA.id && itemB.linkedId === itemA.id) {
+      return true;
+    }
+    if (itemB.id && itemA.linkedId === itemB.id) {
+      return true;
+    }
+    const envA = this.normalizeSummaryEnv(itemA.env);
+    const envB = this.normalizeSummaryEnv(itemB.env);
+    if (envA === envB) {
+      return false;
+    }
+    return (
+      this.businessKeysMatch(itemA, itemB) &&
+      this.agencesCompatible(itemA, itemB) &&
+      this.datesWithinLinkWindow(itemA.date, itemB.date)
+    );
+  }
+
+  private persistStatusLinkUpdates(items: EcartBoSummaryItem[]): void {
+    if (!this.savedDataMode || this.isPersistingLinks) {
+      return;
+    }
+    const uniqueById = new Map<number, EcartBoSummaryItem>();
+    for (const item of items) {
+      if (item.id) {
+        uniqueById.set(item.id, item);
+      }
+    }
+    if (uniqueById.size === 0) {
+      return;
+    }
+
+    const payload = [...uniqueById.values()].map(item => ({
+      id: item.id!,
+      statut: item.statut === 'ok' ? 'OK' : 'EN_COURS',
+      token: item.token ?? null,
+      env: item.env || 'BO'
+    }));
+
+    this.isPersistingLinks = true;
+    this.subscription.add(
+      this.ecartBoSummaryService.applyStatusLinkUpdates(payload).pipe(
+        finalize(() => {
+          this.isPersistingLinks = false;
+          this.cdr.markForCheck();
+        })
+      ).subscribe({
+        next: () => {
+          uniqueById.forEach(item => {
+            const itemAny: any = item as any;
+            itemAny.__originalStatut = item.statut;
+            itemAny.__originalToken = item.token;
+          });
+        },
+        error: (err) => {
+          console.error('Erreur lors de la persistance des liaisons BO/Partenaire:', err);
+        }
+      })
+    );
+  }
+
   /**
-   * Lie les paires de lignes correspondantes (BO et PARTENAIRE) avec les mêmes infos
-   * (y compris nombre et volume), un intervalle de date de 1 jour maximum, puis met leur statut à "OK"
-   * Gère aussi les correspondances un-à-plusieurs pour multiAgence (somme des nombres et des volumes).
+   * Lie les paires BO/Partenaire (même service/pays/nombre/volume, dates à ≤1 jour),
+   * propage le token existant côté BO et passe le statut à OK.
    */
-  linkMatchingPairs(): void {
+  linkMatchingPairs(persist = false): void {
     const itemsToUpdate: EcartBoSummaryItem[] = [];
 
-    // Étape 1 : paires BO/PARTENAIRE (même clé métier + dates à ≤1 jour) — index par bucket pour éviter O(n²) global
+    // Réinitialiser les liens mémoire avant recalcul
+    for (const item of this.summaryItems) {
+      item.linkedId = undefined;
+    }
+
+    // Étape 1 : paires 1-1 (même agence ou multiAgence impliqué)
     type IndexedItem = { item: EcartBoSummaryItem; index: number };
     const bucketKey = (item: EcartBoSummaryItem): string => {
       const montantKey = Math.round((item.montant ?? 0) * 100);
-      return `${item.agence}|${item.service}|${item.pays}|${item.nombre}|${montantKey}`;
+      const core = `${this.normalizeMatchText(item.service)}|${this.normalizeMatchText(item.pays)}|${item.nombre}|${montantKey}`;
+      if (this.isMultiAgenceAgence(item.agence)) {
+        return `multi|${core}`;
+      }
+      return `${this.normalizeMatchText(item.agence)}|${core}`;
     };
+
     const buckets = new Map<string, IndexedItem[]>();
     for (let idx = 0; idx < this.summaryItems.length; idx++) {
       const item = this.summaryItems[idx];
-      if (item.linkedId || !item.env) {
+      if (!item.env) {
         continue;
       }
       const key = bucketKey(item);
@@ -829,6 +1166,9 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
       buckets.get(key)!.push({ item, index: idx });
     }
 
+    const linkedPartners = new Set<EcartBoSummaryItem>();
+    const linkedBos = new Set<EcartBoSummaryItem>();
+
     for (const group of buckets.values()) {
       if (group.length < 2) {
         continue;
@@ -836,136 +1176,118 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
       group.sort((a, b) => a.index - b.index);
       for (let a = 0; a < group.length; a++) {
         const item1 = group[a].item;
-        if (item1.linkedId || !item1.env) {
+        if (linkedPartners.has(item1) || linkedBos.has(item1)) {
           continue;
         }
+        const env1 = this.normalizeSummaryEnv(item1.env);
         for (let b = a + 1; b < group.length; b++) {
           const item2 = group[b].item;
-          if (item2.linkedId || !item2.env) {
+          if (linkedPartners.has(item2) || linkedBos.has(item2)) {
             continue;
           }
-          if (item1.env === item2.env) {
+          const env2 = this.normalizeSummaryEnv(item2.env);
+          if (env1 === env2) {
             continue;
           }
+          const boItem = env1 === 'BO' ? item1 : item2;
+          const partnerItem = env1 === 'PARTENAIRE' ? item1 : item2;
           if (
-            item1.agence === item2.agence &&
-            item1.service === item2.service &&
-            item1.pays === item2.pays &&
-            item1.nombre === item2.nombre &&
-            this.amountsEqual(item1.montant, item2.montant)
+            this.businessKeysMatch(item1, item2) &&
+            this.agencesCompatible(item1, item2) &&
+            this.datesWithinLinkWindow(item1.date, item2.date)
           ) {
-            const date1 = this.parseDate(item1.date);
-            const date2 = this.parseDate(item2.date);
-            if (date1 && date2) {
-              const day1 = this.getCalendarDay(date1);
-              const day2 = this.getCalendarDay(date2);
-              const diffCalendarDays = Math.abs(day1 - day2);
-              if (diffCalendarDays <= 1) {
-                item1.linkedId = item2.id;
-                item2.linkedId = item1.id;
-                const linkToken =
-                  item1.token && item2.token && item1.token === item2.token
-                    ? item1.token
-                    : `LINK-${Date.now()}-${item1.id ?? 'A'}-${item2.id ?? 'B'}`;
-                item1.token = linkToken;
-                item2.token = linkToken;
-
-                if (item1.statut !== 'ok') item1.statut = 'ok';
-                if (item2.statut !== 'ok') item2.statut = 'ok';
-                const item1Any: any = item1 as any;
-                const item2Any: any = item2 as any;
-                const item1Changed =
-                  item1Any.__originalStatut !== item1.statut || item1Any.__originalToken !== item1.token;
-                const item2Changed =
-                  item2Any.__originalStatut !== item2.statut || item2Any.__originalToken !== item2.token;
-                if (item1Changed && item1.id) itemsToUpdate.push(item1);
-                if (item2Changed && item2.id) itemsToUpdate.push(item2);
-                break;
-              }
-            }
+            const linkToken = this.resolveLinkToken(boItem, partnerItem);
+            this.applyLinkToPair(item1, item2, linkToken, itemsToUpdate);
+            linkedPartners.add(partnerItem);
+            linkedBos.add(boItem);
+            break;
           }
         }
       }
     }
 
-    // Étape 2: Correspondance un-à-plusieurs pour multiAgence
-    // Une ligne PARTENAIRE (multiAgence) peut correspondre à plusieurs lignes BO
+    // Étape 2 : multiAgence — une ligne Partenaire peut correspondre à plusieurs lignes BO
     const usedBoItemIds = new Set<number>();
-    const usedBoItemRefs = new Set<EcartBoSummaryItem>(); // pour les lignes sans id (affichage en mémoire)
-    
+    const usedBoItemRefs = new Set<EcartBoSummaryItem>();
+
     for (const partenaireItem of this.summaryItems) {
-      if (partenaireItem.linkedId || partenaireItem.env !== 'PARTENAIRE') {
+      if (linkedPartners.has(partenaireItem) || this.normalizeSummaryEnv(partenaireItem.env) !== 'PARTENAIRE') {
         continue;
       }
 
-      const matchingBoItems: EcartBoSummaryItem[] = [];
-      let totalNombre = 0;
-      let totalMontant = 0;
+      const isMultiAgence = this.isMultiAgenceAgence(partenaireItem.agence);
+      const candidates: EcartBoSummaryItem[] = [];
 
       for (const boItem of this.summaryItems) {
         const boAlreadyUsed = boItem.id ? usedBoItemIds.has(boItem.id) : usedBoItemRefs.has(boItem);
-        if (boItem.linkedId || boItem.env !== 'BO' || boAlreadyUsed) {
+        if (
+          linkedBos.has(boItem) ||
+          this.normalizeSummaryEnv(boItem.env) !== 'BO' ||
+          boAlreadyUsed
+        ) {
           continue;
         }
 
-        // Vérifier service et pays
-        if (boItem.service === partenaireItem.service && boItem.pays === partenaireItem.pays) {
-          // Vérifier la date (j+1 : la date BO doit être exactement 1 jour après la date PARTENAIRE)
-          const partenaireDate = this.parseDate(partenaireItem.date);
-          const boDate = this.parseDate(boItem.date);
+        if (!this.servicePaysMatch(boItem, partenaireItem) || !this.envCodesMatch(boItem, partenaireItem)) {
+          continue;
+        }
 
-          if (partenaireDate && boDate) {
-            const partenaireDay = this.getCalendarDay(partenaireDate);
-            const boDay = this.getCalendarDay(boDate);
+        const dateMatches = isMultiAgence
+          ? this.boDateMatchesPartenaireAggregate(partenaireItem.date, boItem.date)
+          : this.datesWithinLinkWindow(partenaireItem.date, boItem.date);
 
-            const diffCalendarDays = boDay - partenaireDay;
-
-            if (diffCalendarDays === 1) {
-              matchingBoItems.push(boItem);
-              totalNombre += boItem.nombre;
-              totalMontant += boItem.montant ?? 0;
-            }
-          }
+        if (dateMatches) {
+          candidates.push(boItem);
         }
       }
 
-      if (
-        matchingBoItems.length > 0 &&
-        totalNombre === partenaireItem.nombre &&
-        this.amountsEqual(totalMontant, partenaireItem.montant)
-      ) {
-        const boIds = matchingBoItems.map(i => i.id).filter((id): id is number => id != null).join('-') || 'x';
-        const existing = partenaireItem.token && matchingBoItems.every(b => b.token === partenaireItem.token)
-          ? partenaireItem.token
-          : null;
-        const linkToken = existing || `LINK-${Date.now()}-P${partenaireItem.id ?? 'x'}-B${boIds}`;
-        partenaireItem.token = linkToken;
-        if (partenaireItem.statut !== 'ok') partenaireItem.statut = 'ok';
-        const partenaireAny: any = partenaireItem as any;
-        const partenaireChanged = partenaireAny.__originalStatut !== partenaireItem.statut || partenaireAny.__originalToken !== partenaireItem.token;
-        if (partenaireChanged && partenaireItem.id) itemsToUpdate.push(partenaireItem);
+      let matchingBoItems: EcartBoSummaryItem[] | null = null;
 
-        for (const boItem of matchingBoItems) {
-          boItem.token = linkToken;
-          if (boItem.statut !== 'ok') boItem.statut = 'ok';
-          const boAny: any = boItem as any;
-          const boChanged = boAny.__originalStatut !== boItem.statut || boAny.__originalToken !== boItem.token;
-          if (boChanged && boItem.id) itemsToUpdate.push(boItem);
-          if (boItem.id) usedBoItemIds.add(boItem.id);
-          else usedBoItemRefs.add(boItem);
+      if (isMultiAgence) {
+        const candidatesSum = candidates.reduce((sum, row) => sum + (row.montant ?? 0), 0);
+        if (candidates.length > 0 && this.amountsEqual(candidatesSum, partenaireItem.montant)) {
+          matchingBoItems = candidates;
+        } else {
+          matchingBoItems = this.findSubsetMatchingMontant(candidates, partenaireItem.montant);
         }
+      } else if (candidates.length === 1) {
+        const bo = candidates[0];
+        if (
+          bo.nombre === partenaireItem.nombre &&
+          this.amountsEqual(bo.montant, partenaireItem.montant)
+        ) {
+          matchingBoItems = candidates;
+        }
+      }
+
+      if (matchingBoItems && matchingBoItems.length > 0) {
+        this.linkMultiAgenceAggregate(
+          partenaireItem,
+          matchingBoItems,
+          itemsToUpdate,
+          linkedPartners,
+          linkedBos,
+          usedBoItemIds,
+          usedBoItemRefs
+        );
       }
     }
-    
-    // Les liaisons automatiques restent locales au chargement pour éviter des appels réseau
-    // sur des lignes potentiellement obsolètes. Les actions utilisateur gardent leurs sauvegardes dédiées.
+
+    this.ensureOkStatusWhenCorrespondenceExists(itemsToUpdate);
+
     if (itemsToUpdate.length > 0) {
       itemsToUpdate.forEach(item => {
         const itemAny: any = item as any;
-        itemAny.__originalStatut = item.statut;
-        itemAny.__originalToken = item.token;
+        if (!persist) {
+          itemAny.__originalStatut = item.statut;
+          itemAny.__originalToken = item.token;
+        }
       });
+      if (persist) {
+        this.persistStatusLinkUpdates(itemsToUpdate);
+      }
     }
+    this.cdr.markForCheck();
   }
 
   /**
@@ -1231,7 +1553,7 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
         }
         
         // Vérifier si la ligne modifiée peut être liée à une autre
-        this.linkMatchingPairs();
+        this.linkMatchingPairs(this.savedDataMode);
         this.refreshUniqueEnvCodes();
       } else {
         // Si c'est un item non sauvegardé (données de réconciliation), mettre à jour localement
@@ -1249,7 +1571,7 @@ export class EcartBoSummaryComponent implements OnInit, OnDestroy {
             : undefined;
         
         // Vérifier si la ligne modifiée peut être liée à une autre
-        this.linkMatchingPairs();
+        this.linkMatchingPairs(false);
         
         // Mettre à jour aussi dans summaryItems
         const index = this.summaryItems.findIndex(item => 

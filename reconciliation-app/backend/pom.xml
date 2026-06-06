@@ -180,6 +180,8 @@
                     <!-- Configuration pour le rechargement automatique -->
                     <fork>true</fork>
                     <addResources>true</addResources>
+                    <!-- Limite heap explicite (une seule ligne — requis pour que Maven applique les arguments) -->
+                    <jvmArguments>-Xms256m -Xmx3072m -XX:MaxMetaspaceSize=384m -XX:MaxDirectMemorySize=256m -XX:+UseG1GC -XX:+UseStringDeduplication -XX:+ExitOnOutOfMemoryError -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=./logs/heap-dump.hprof</jvmArguments>
                 </configuration>
             </plugin>
         </plugins>

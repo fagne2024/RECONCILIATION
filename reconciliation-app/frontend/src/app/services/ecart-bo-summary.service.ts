@@ -222,6 +222,19 @@ export class EcartBoSummaryService {
     );
   }
 
+  /** Met à jour en lot token/statut/env des liaisons BO/Partenaire. */
+  applyStatusLinkUpdates(
+    updates: Array<{ id: number; statut?: string; token?: string | null; env?: string; envCode?: string | null }>
+  ): Observable<{ updated: number; skipped: number }> {
+    return this.with429Retry(() =>
+      this.http.post<{ updated: number; skipped: number }>(
+        `${this.apiUrl}/batch/status-links/apply`,
+        updates,
+        { headers: this.resultsHeaders }
+      )
+    );
+  }
+
   deleteEcartBoSummary(id: number): Observable<void> {
     return this.with429Retry(() => this.http.delete<void>(`${this.apiUrl}/${id}`, { headers: this.resultsHeaders }));
   }

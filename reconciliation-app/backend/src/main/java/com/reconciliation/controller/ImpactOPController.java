@@ -67,10 +67,12 @@ public class ImpactOPController {
      * Créer un nouvel impact OP
      */
     @PostMapping
-    public ResponseEntity<ImpactOPEntity> createImpactOP(@RequestBody ImpactOPEntity impactOP) {
+    public ResponseEntity<?> createImpactOP(@RequestBody ImpactOPEntity impactOP) {
         try {
             ImpactOPEntity created = impactOPService.createImpactOP(impactOP);
             return ResponseEntity.ok(created);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
         } catch (Exception e) {
             return ResponseEntity.internalServerError().build();
         }

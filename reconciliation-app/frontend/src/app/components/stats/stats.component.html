@@ -26,8 +26,14 @@
       <button type="button" class="nav-btn secondary" (click)="toggleStatsHistoryScope()" [disabled]="isLoading">
         <i class="fas fa-calendar-alt"></i> {{ showAllStatsHistory ? 'Mois courant' : 'Tout historique' }}
       </button>
-      <button type="button" class="nav-btn primary" (click)="exportStats()" [disabled]="!agencySummaries.length || isLoading">
-        <i class="fas fa-file-excel"></i> Exporter
+      <button type="button" class="nav-btn secondary" (click)="exportStatsByWeek()" [disabled]="!getAggregatedStats().length || isLoading" title="Agrégation par semaine ISO">
+        <i class="fas fa-file-excel"></i> Par semaine
+      </button>
+      <button type="button" class="nav-btn secondary" (click)="exportStatsByMonth()" [disabled]="!getAggregatedStats().length || isLoading" title="Agrégation par mois calendaire">
+        <i class="fas fa-file-excel"></i> Par mois
+      </button>
+      <button type="button" class="nav-btn primary" (click)="exportStatsComplete()" [disabled]="!getAggregatedStats().length || isLoading" title="3 feuilles : jour, semaine, mois">
+        <i class="fas fa-file-excel"></i> Export complet
       </button>
     </div>
   </nav>
@@ -158,8 +164,17 @@
                 <button class="report-btn" (click)="openAgencyReportPage()" [disabled]="!getAggregatedStats().length || isLoading">
                     📊 Rapport
                 </button>
-                <button class="export-btn" (click)="exportStats()" [disabled]="!agencySummaries.length || isLoading">
-                    📥 Exporter le résumé
+                <button class="export-btn" (click)="exportStats()" [disabled]="!getAggregatedStats().length || isLoading">
+                    📥 Par jour
+                </button>
+                <button class="export-btn secondary" (click)="exportStatsByWeek()" [disabled]="!getAggregatedStats().length || isLoading">
+                    📅 Par semaine
+                </button>
+                <button class="export-btn secondary" (click)="exportStatsByMonth()" [disabled]="!getAggregatedStats().length || isLoading">
+                    📆 Par mois
+                </button>
+                <button class="export-btn" (click)="exportStatsComplete()" [disabled]="!getAggregatedStats().length || isLoading">
+                    📥 Export complet
                 </button>
                 <button class="export-btn secondary" (click)="goToServiceReferences()" [disabled]="isLoading">
                     📚 Référentiel Services

@@ -713,11 +713,12 @@ export class ModernPopupComponent implements OnInit, OnDestroy {
           z-index: 9999; animation: fadeIn .3s ease-out;
         }
         .modern-popup { background: #fff; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,.3); max-width: 420px; width: 92%; animation: slideIn .3s ease-out; }
+        .autocomplete-popup { overflow: visible; }
         .popup-header { display: flex; justify-content: space-between; align-items: center; padding: 20px 20px 0 20px; }
         .popup-title { margin: 0; font-size: 18px; font-weight: 600; color: #333; }
         .popup-close { background: none; border: none; font-size: 24px; cursor: pointer; color: #999; padding: 0; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; border-radius: 50%; transition: all .2s; }
         .popup-close:hover { background: #f5f5f5; color: #666; }
-        .popup-content { padding: 20px; }
+        .popup-content { padding: 20px; overflow: visible; }
         .popup-message { margin: 0 0 10px 0; color: #555; line-height: 1.5; }
         .popup-actions { display: flex; justify-content: flex-end; gap: 10px; padding: 0 20px 20px 20px; }
         .popup-btn { padding: 10px 20px; border: none; border-radius: 6px; cursor: pointer; font-weight: 500; transition: all .2s; min-width: 80px; }
@@ -728,7 +729,7 @@ export class ModernPopupComponent implements OnInit, OnDestroy {
         .autocomplete-wrapper { position: relative; }
         .autocomplete-input { width: 100%; padding: 10px 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px; box-sizing: border-box; }
         .autocomplete-input:focus { outline: none; border-color: #3498db; box-shadow: 0 0 0 2px rgba(52,152,219,.2); }
-        .autocomplete-list { position: absolute; top: 100%; left: 0; right: 0; background: white; border: 1px solid #ddd; border-top: none; border-radius: 0 0 6px 6px; max-height: 200px; overflow-y: auto; z-index: 1000; margin: 0; padding: 0; list-style: none; box-shadow: 0 4px 6px rgba(0,0,0,.1); }
+        .autocomplete-list { position: relative; margin: 6px 0 0 0; background: white; border: 1px solid #ddd; border-radius: 6px; max-height: 200px; overflow-y: auto; z-index: 2; padding: 0; list-style: none; box-shadow: 0 4px 6px rgba(0,0,0,.1); }
         .autocomplete-list li { padding: 10px 12px; cursor: pointer; border-bottom: 1px solid #f0f0f0; }
         .autocomplete-list li:hover { background: #f5f5f5; }
         .autocomplete-list li.selected { background: #e3f2fd; }

@@ -405,23 +405,23 @@ export class EcartPartnerTableComponent implements OnInit, OnDestroy {
     }
   }
 
-  get allPartnerSelectedOnPage(): boolean {
-    const pageRecords = this.getPagedPartnerOnly();
-    return pageRecords.length > 0 && pageRecords.every(r => this.isPartnerRecordSelected(r));
+  get allPartnerSelected(): boolean {
+    const allRecords = this.displayedPartnerOnly;
+    return allRecords.length > 0 && allRecords.every(r => this.isPartnerRecordSelected(r));
   }
 
-  toggleSelectAllPartnerOnPage(event: any): void {
-    const pageRecords = this.getPagedPartnerOnly();
+  toggleSelectAllPartner(event: any): void {
+    const allRecords = this.displayedPartnerOnly;
     if (event.target.checked) {
-      pageRecords.forEach(record => {
+      allRecords.forEach(record => {
         const key = this.getPartnerOnlyKey(record);
         if (!this.selectedPartnerOnlyKeys.includes(key)) {
           this.selectedPartnerOnlyKeys.push(key);
         }
       });
     } else {
-      const pageKeys = pageRecords.map(r => this.getPartnerOnlyKey(r));
-      this.selectedPartnerOnlyKeys = this.selectedPartnerOnlyKeys.filter(k => !pageKeys.includes(k));
+      const allKeys = new Set(allRecords.map(r => this.getPartnerOnlyKey(r)));
+      this.selectedPartnerOnlyKeys = this.selectedPartnerOnlyKeys.filter(k => !allKeys.has(k));
     }
   }
 

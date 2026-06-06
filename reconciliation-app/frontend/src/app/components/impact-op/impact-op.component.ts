@@ -714,42 +714,54 @@ export class ImpactOPComponent implements OnInit, OnDestroy {
     );
   }
 
-  deleteImpactOP(id: number) {
-    if (confirm('Êtes-vous sûr de vouloir supprimer cet impact OP ?')) {
-      this.subscription.add(
-        this.impactOPService.deleteImpactOP(id).subscribe({
-          next: (success) => {
-            if (success) {
-              this.impactOPs = this.impactOPs.filter(op => op.id !== id);
-              this.filteredImpactOPs = this.filteredImpactOPs.filter(op => op.id !== id);
-              this.calculatePagination();
-              this.loadStats();
+  async deleteImpactOP(id: number): Promise<void> {
+    const confirmed = await this.popupService.showConfirmDialog(
+      'Êtes-vous sûr de vouloir supprimer définitivement cet impact OP ?',
+      'Confirmation de suppression'
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    this.subscription.add(
+      this.impactOPService.deleteImpactOP(id).subscribe({
+        next: (success) => {
+          if (success) {
+            this.impactOPs = this.impactOPs.filter(op => op.id !== id);
+            this.filteredImpactOPs = this.filteredImpactOPs.filter(op => op.id !== id);
+            this.calculatePagination();
+            this.loadStats();
             this.recalculateFilteredStats();
-              this.showTemporaryMessage('success', 'Impact OP supprimé avec succès');
-            } else {
-              this.showTemporaryMessage('error', 'Erreur lors de la suppression');
-            }
-          },
-          error: (error) => {
-            console.error('Erreur lors de la suppression:', error);
+            this.showTemporaryMessage('success', 'Impact OP supprimé avec succès');
+          } else {
             this.showTemporaryMessage('error', 'Erreur lors de la suppression');
           }
-        })
-      );
-    }
+        },
+        error: (error) => {
+          console.error('Erreur lors de la suppression:', error);
+          this.showTemporaryMessage('error', 'Erreur lors de la suppression');
+        }
+      })
+    );
   }
 
-  saveImpactOP(impactOP: ImpactOP) {
+  async saveImpactOP(impactOP: ImpactOP): Promise<void> {
+    if (!impactOP.id) {
+      const duplicateInfo = this.findDuplicateImpactOP(impactOP);
+      if (duplicateInfo) {
+        await this.popupService.showWarning(duplicateInfo, 'Doublon détecté');
+        return;
+      }
+    }
+
     this.isLoading = true;
-    
+
     if (impactOP.id) {
-      // Mise à jour d'un impact existant
-      // Appliquer la logique de commentaire avant envoi
       const updated: ImpactOP = { ...impactOP };
       updated.commentaire = this.computeCommentForSingle(updated, this.impactOPs);
       this.subscription.add(
         this.impactOPService.updateImpactOP(updated.id!, updated).subscribe({
-          next: (updatedImpact) => {
+          next: () => {
             this.showTemporaryMessage('success', 'Impact OP mis à jour avec succès');
             this.loadImpactOPs();
             this.loadStats();
@@ -764,21 +776,23 @@ export class ImpactOPComponent implements OnInit, OnDestroy {
         })
       );
     } else {
-      // Création d'un nouvel impact
       const { id, ...impactWithoutId } = impactOP;
       const toCreate: ImpactOP = { ...impactWithoutId } as ImpactOP;
-      // Inclure les éléments déjà en mémoire pour que le groupe soit cohérent
       toCreate.commentaire = this.computeCommentForSingle(toCreate, [...this.impactOPs, toCreate]);
       this.subscription.add(
         this.impactOPService.createImpactOP(toCreate).subscribe({
-          next: (newImpact) => {
+          next: () => {
             this.showTemporaryMessage('success', 'Impact OP créé avec succès');
             this.loadImpactOPs();
             this.loadStats();
           },
           error: (error) => {
             console.error('Erreur lors de la création:', error);
-            this.showTemporaryMessage('error', 'Erreur lors de la création');
+            const msg =
+              error?.error?.message ||
+              error?.message ||
+              'Erreur lors de la création';
+            this.popupService.showWarning(msg, 'Enregistrement refusé');
           },
           complete: () => {
             this.isLoading = false;
@@ -786,6 +800,62 @@ export class ImpactOPComponent implements OnInit, OnDestroy {
         })
       );
     }
+  }
+
+  /**
+   * Détecte un doublon local (même règles que le serveur : max 2 / numéro Trans GU ou ligne identique).
+   */
+  private findDuplicateImpactOP(impact: ImpactOP, excludeId?: number): string | null {
+    const numero = (impact.numeroTransGU || '').trim();
+    if (!numero) {
+      return null;
+    }
+
+    const others = this.impactOPs.filter(
+      op => (op.numeroTransGU || '').trim() === numero && (!excludeId || op.id !== excludeId)
+    );
+
+    if (others.length >= 2) {
+      return `Le numéro Trans GU « ${numero} » a déjà 2 impacts enregistrés. Impossible d'en ajouter un troisième.`;
+    }
+
+    const dateNorm = this.normalizeImpactDateForCompare(impact.dateOperation);
+    const montant = this.roundAmount(impact.montant);
+    const soldeAvant = this.roundAmount(impact.soldeAvant);
+    const soldeApres = this.roundAmount(impact.soldeApres);
+    const comment = (impact.commentaire || '').trim();
+
+    const exact = others.find(op =>
+      (op.codeProprietaire || '').trim() === (impact.codeProprietaire || '').trim() &&
+      this.normalizeImpactDateForCompare(op.dateOperation) === dateNorm &&
+      this.roundAmount(op.montant) === montant &&
+      this.roundAmount(op.soldeAvant) === soldeAvant &&
+      this.roundAmount(op.soldeApres) === soldeApres &&
+      (op.typeOperation || '').trim() === (impact.typeOperation || '').trim() &&
+      (op.groupeReseau || '').trim() === (impact.groupeReseau || '').trim() &&
+      (op.commentaire || '').trim() === comment
+    );
+
+    if (exact) {
+      return `Cet impact OP existe déjà (numéro Trans GU « ${numero} », même date, montant et type).`;
+    }
+
+    return null;
+  }
+
+  private normalizeImpactDateForCompare(dateStr: string): string {
+    if (!dateStr) {
+      return '';
+    }
+    const parsed = new Date(dateStr);
+    if (!isNaN(parsed.getTime())) {
+      return parsed.toISOString().slice(0, 19);
+    }
+    return dateStr.trim().replace(' ', 'T').slice(0, 19);
+  }
+
+  private roundAmount(value: number): number {
+    return Math.round((Number(value) || 0) * 1000) / 1000;
   }
 
   formatDate(dateString: string): string {
@@ -1169,15 +1239,20 @@ export class ImpactOPComponent implements OnInit, OnDestroy {
     processNextId(0);
   }
 
-  deleteSelected(): void {
+  async deleteSelected(): Promise<void> {
     if (this.selectedItems.size === 0) {
       this.popupService.showWarning('Veuillez sélectionner au moins un impact OP.', 'Sélection Requise');
       return;
     }
 
     const count = this.selectedItems.size;
-    const confirmDelete = confirm(`Supprimer définitivement ${count} impact(s) OP sélectionné(s) ?`);
-    if (!confirmDelete) return;
+    const confirmed = await this.popupService.showConfirmDialog(
+      `Supprimer définitivement ${count} impact(s) OP sélectionné(s) ?\n\nCette action est irréversible.`,
+      'Confirmation de suppression'
+    );
+    if (!confirmed) {
+      return;
+    }
 
     const ids = Array.from(this.selectedItems);
     this.isLoading = true;

@@ -175,8 +175,9 @@
             <th style="width: 40px;">
               <input 
                 type="checkbox" 
-                [checked]="allPartnerSelectedOnPage" 
-                (change)="toggleSelectAllPartnerOnPage($event)"
+                [checked]="allPartnerSelected" 
+                (change)="toggleSelectAllPartner($event)"
+                title="Sélectionner toutes les lignes (toutes les pages)"
               >
             </th>
             <th *ngFor="let col of displayedColumns">{{col}}</th>

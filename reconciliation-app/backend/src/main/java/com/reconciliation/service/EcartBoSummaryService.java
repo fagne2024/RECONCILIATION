@@ -48,7 +48,8 @@ public class EcartBoSummaryService {
         List<EcartBoSummaryEntity> entities;
 
         if (token != null && !token.trim().isEmpty()) {
-            entities = ecartBoSummaryRepository.findByToken(token.trim());
+            String tokenQuery = token.trim();
+            entities = ecartBoSummaryRepository.findByTokenContaining(tokenQuery);
         } else if (hasAdvancedFilter(agence, service, pays, statut, startDate, endDate, env, platform)) {
             entities = ecartBoSummaryRepository.findByFilters(
                     blankToNull(agence),

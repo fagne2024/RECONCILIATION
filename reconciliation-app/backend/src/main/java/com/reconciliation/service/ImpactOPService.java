@@ -97,9 +97,13 @@ public class ImpactOPService {
     }
 
     /**
-     * Créer un nouvel impact OP
+     * Créer un nouvel impact OP (refuse les doublons).
      */
     public ImpactOPEntity createImpactOP(ImpactOPEntity impactOP) {
+        if (isDuplicateImpactOP(impactOP, null)) {
+            throw new IllegalArgumentException(
+                "Doublon : cet impact OP existe déjà (même transaction ou limite de 2 lignes par numéro Trans GU).");
+        }
         return impactOPRepository.save(impactOP);
     }
 
@@ -115,6 +119,10 @@ public class ImpactOPService {
         for (ImpactOPEntity impact : impacts != null ? impacts : List.<ImpactOPEntity>of()) {
             index++;
             try {
+                if (isDuplicateImpactOP(impact, null)) {
+                    errors.add("Ligne " + index + ": Doublon détecté (même transaction ou limite Trans GU).");
+                    continue;
+                }
                 ImpactOPEntity saved = impactOPRepository.save(impact);
                 created.add(saved);
             } catch (Exception e) {
@@ -884,7 +892,53 @@ public class ImpactOPService {
     }
 
     /**
-     * Vérifier si un impact est un doublon
+     * Vérifie si un impact OP est un doublon (limite 2 / numéro Trans GU ou ligne identique).
+     *
+     * @param excludeId ID à ignorer (mise à jour), null pour une création.
+     */
+    public boolean isDuplicateImpactOP(ImpactOPEntity impact, Long excludeId) {
+        if (impact == null || impact.getNumeroTransGU() == null || impact.getNumeroTransGU().trim().isEmpty()) {
+            return false;
+        }
+        String numeroTransGU = impact.getNumeroTransGU().trim();
+        List<ImpactOPEntity> existingByNumeroTransGU = impactOPRepository.findByNumeroTransGU(numeroTransGU);
+        List<ImpactOPEntity> candidates = new ArrayList<>();
+        for (ImpactOPEntity e : existingByNumeroTransGU) {
+            if (excludeId != null && excludeId.equals(e.getId())) {
+                continue;
+            }
+            candidates.add(e);
+        }
+        if (candidates.size() >= 2) {
+            return true;
+        }
+        for (ImpactOPEntity existing : candidates) {
+            if (isExactDuplicate(impact, existing)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean isExactDuplicate(ImpactOPEntity a, ImpactOPEntity b) {
+        if (a == null || b == null) {
+            return false;
+        }
+        String commentA = a.getCommentaire() == null ? "" : a.getCommentaire();
+        String commentB = b.getCommentaire() == null ? "" : b.getCommentaire();
+        return Objects.equals(a.getCodeProprietaire(), b.getCodeProprietaire())
+                && Objects.equals(a.getNumeroTransGU(), b.getNumeroTransGU())
+                && Objects.equals(a.getDateOperation(), b.getDateOperation())
+                && a.getMontant().compareTo(b.getMontant()) == 0
+                && a.getSoldeAvant().compareTo(b.getSoldeAvant()) == 0
+                && a.getSoldeApres().compareTo(b.getSoldeApres()) == 0
+                && Objects.equals(a.getTypeOperation(), b.getTypeOperation())
+                && Objects.equals(a.getGroupeReseau(), b.getGroupeReseau())
+                && commentA.equals(commentB);
+    }
+
+    /**
+     * Vérifier si un impact est un doublon (import fichier)
      */
     private boolean isDuplicate(Map<String, String> row) {
         try {
@@ -920,51 +974,24 @@ public class ImpactOPService {
                 dateOperation = LocalDateTime.parse(dateStr, DATE_FORMATTER); // Format avec espace
             }
             
-            // 1. Vérifier la limite de 2 enregistrements par numéro de transaction GU
-            List<ImpactOPEntity> existingByNumeroTransGU = impactOPRepository.findByNumeroTransGU(numeroTransGU);
-            if (existingByNumeroTransGU.size() >= 2) {
-                System.out.println("❌ DOUBLON DÉTECTÉ - Limite de 2 enregistrements atteinte pour le numéro de transaction GU: " + numeroTransGU);
-                System.out.println("   → Déjà " + existingByNumeroTransGU.size() + " enregistrements existants avec ce numéro");
-                return true;
+            ImpactOPEntity probe = new ImpactOPEntity();
+            probe.setTypeOperation(typeOperation);
+            probe.setMontant(new BigDecimal(montantStr.replace(",", "")));
+            probe.setSoldeAvant(new BigDecimal(soldeAvantStr.replace(",", "")));
+            probe.setSoldeApres(new BigDecimal(soldeApresStr.replace(",", "")));
+            probe.setCodeProprietaire(codeProprietaire);
+            probe.setDateOperation(dateOperation);
+            probe.setNumeroTransGU(numeroTransGU);
+            probe.setGroupeReseau(groupeReseau);
+            probe.setCommentaire(commentaire);
+
+            boolean duplicate = isDuplicateImpactOP(probe, null);
+            if (duplicate) {
+                System.out.println("❌ DOUBLON DÉTECTÉ - Numéro Trans GU: " + numeroTransGU);
+            } else {
+                System.out.println("✅ ENREGISTREMENT AUTORISÉ - Numéro Trans GU: " + numeroTransGU);
             }
-            
-            // 2. Vérifier si un enregistrement avec TOUTES les mêmes valeurs existe (vrai doublon)
-            List<ImpactOPEntity> existing = impactOPRepository.findByCodeProprietaire(codeProprietaire);
-            existing = existing.stream()
-                .filter(e -> e.getNumeroTransGU().equals(numeroTransGU) && 
-                           e.getDateOperation().equals(dateOperation))
-                .toList();
-            
-            if (!existing.isEmpty()) {
-                BigDecimal newMontant = new BigDecimal(montantStr.replace(",", ""));
-                BigDecimal newSoldeAvant = new BigDecimal(soldeAvantStr.replace(",", ""));
-                BigDecimal newSoldeApres = new BigDecimal(soldeApresStr.replace(",", ""));
-                
-                for (ImpactOPEntity existingEntity : existing) {
-                    boolean isExactDuplicate = existingEntity.getMontant().equals(newMontant) &&
-                                             existingEntity.getSoldeAvant().equals(newSoldeAvant) &&
-                                             existingEntity.getSoldeApres().equals(newSoldeApres) &&
-                                             existingEntity.getTypeOperation().equals(typeOperation) &&
-                                             existingEntity.getGroupeReseau().equals(groupeReseau) &&
-                                             (existingEntity.getCommentaire() == null ? "" : existingEntity.getCommentaire()).equals(commentaire);
-                    
-                    if (isExactDuplicate) {
-                        System.out.println("❌ DOUBLON EXACT DÉTECTÉ - Toutes les valeurs sont identiques");
-                        System.out.println("   → Numéro Trans GU: " + numeroTransGU);
-                        System.out.println("   → Code propriétaire: " + codeProprietaire);
-                        System.out.println("   → Date: " + dateStr);
-                        System.out.println("   → Montant: " + montantStr);
-                        System.out.println("   → Type opération: " + typeOperation);
-                        System.out.println("   → Groupe réseau: " + groupeReseau);
-                        System.out.println("   → Commentaire: " + commentaire);
-                        return true;
-                    }
-                }
-            }
-            
-            System.out.println("✅ ENREGISTREMENT AUTORISÉ - Pas de doublon détecté");
-            System.out.println("   → Numéro Trans GU: " + numeroTransGU + " (enregistrements existants: " + existingByNumeroTransGU.size() + ")");
-            return false;
+            return duplicate;
         } catch (Exception e) {
             System.out.println("❌ ERREUR lors de la vérification doublon: " + e.getMessage());
             return false;
