@@ -162,6 +162,9 @@ export interface ReconciliationReportData {
                     <span class="report-display-mode" *ngIf="!hasSelectedRows() && currentSource !== 'live'">
                         ({{ showAllMonths ? 'Toutes' : 'Mois en cours' }} : {{ kpiSummary.lineCount }} ligne(s))
                     </span>
+                    <span class="report-loading-more" *ngIf="isLoadingMoreDbReport">
+                        ⏳ Chargement des dates précédentes...
+                    </span>
                     <button class="btn btn-add" *ngIf="showExtendedReportActions" (click)="addNewRow()" title="Ajouter une nouvelle ligne">
                         ➕ Nouvelle ligne
                     </button>
@@ -3121,6 +3124,8 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
     private subscription = new Subscription();
     private loadedFromDb = false;
     private isLoadingDbReport = false;
+    isLoadingMoreDbReport = false;
+    private dbLoadToken = 0;
     private lastDbReportFetchKey = '';
     currentSource: 'live' | 'db' = 'db';
     private hasSummary = false;
@@ -5057,7 +5062,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
     }
 
     private shouldReloadSavedReportForCurrentScope(): boolean {
-        if (this.currentSource === 'live' || this.isLoadingDbReport) {
+        if (this.currentSource === 'live' || this.isLoadingDbReport || this.isLoadingMoreDbReport) {
             return false;
         }
         return this.getDbReportFetchScope().key !== this.lastDbReportFetchKey;
@@ -6404,320 +6409,347 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         };
     }
 
-    private loadSavedReportFromDatabase(preserveComments: Map<number, string> = new Map()) {
-        // Ne pas charger depuis la base si on a déjà des données en cours disponibles
-        if (this.currentSource === 'live') {
-            console.log('ℹ️ Données en cours disponibles, chargement depuis la base ignoré');
-            return;
+    private shouldUseProgressiveDbLoad(scope: { startDate?: string; endDate?: string; key: string }): boolean {
+        if (scope.startDate && scope.endDate && scope.startDate === scope.endDate) {
+            return false;
         }
-        
-        this.loadedFromDb = true;
-        this.isLoadingDbReport = true;
-        const scope = this.getDbReportFetchScope();
-        
-        // Headers pour désactiver le cache du navigateur
-        const headers = this.buildResultsHeaders({
+        return true;
+    }
+
+    private buildDbReportHttpParams(
+        scope: { startDate?: string; endDate?: string },
+        dateOverride?: string
+    ): HttpParams {
+        const cacheBuster = new Date().getTime();
+        let params = new HttpParams().set('_t', String(cacheBuster));
+        const startDate = dateOverride ?? scope.startDate;
+        const endDate = dateOverride ?? scope.endDate;
+        if (startDate) {
+            params = params.set('startDate', startDate);
+        }
+        if (endDate) {
+            params = params.set('endDate', endDate);
+        }
+        return params;
+    }
+
+    private buildDbReportFetchHeaders(): HttpHeaders {
+        return this.buildResultsHeaders({
             'Cache-Control': 'no-cache, no-store, must-revalidate',
             'Pragma': 'no-cache',
             'Expires': '0'
         });
-        
-        // Paramètre de cache-busting pour forcer le rechargement
-        const cacheBuster = new Date().getTime();
-        let params = new HttpParams().set('_t', String(cacheBuster));
-        if (scope.startDate) {
-            params = params.set('startDate', scope.startDate);
-        }
-        if (scope.endDate) {
-            params = params.set('endDate', scope.endDate);
-        }
-        
-        console.log('🔄 Chargement des données depuis la base:', scope.key, 'cache-busting:', cacheBuster);
-        
-        this.http.get<any[]>('/api/result8rec', { headers, params })
-        .subscribe({
-            next: (rows: any[]) => {
-                this.clearAuditHistoryUiState();
-                if (!Array.isArray(rows) || rows.length === 0) {
-                    this.reportData = [];
-                    this.filteredReportData = [];
-                    this.kpiScopeData = [];
-                    this.refreshKpiSummary();
-                    this.paginatedData = [];
-                    this.extractUniqueValues();
-                    this.currentSource = 'db';
-                    this.lastDbReportFetchKey = scope.key;
-                    this.isLoadingDbReport = false;
-                    this.updatePagination();
-                    return;
-                }
-                
-                // Log pour déboguer les données reçues du backend
-                if (rows.length > 0) {
-                    console.log('🔄 loadSavedReportFromDatabase - Première ligne reçue du backend:', rows[0]);
-                    console.log('🔄 loadSavedReportFromDatabase - Clés disponibles dans la première ligne:', Object.keys(rows[0]));
-                    
-                    // Chercher la ligne XBTCM8057/CASHINMTNCMPART pour déboguer
-                    const targetLine = rows.find(r => r.agency === 'XBTCM8057' && r.service === 'CASHINMTNCMPART');
-                    if (targetLine) {
-                        console.log('🔄 loadSavedReportFromDatabase - Ligne XBTCM8057/CASHINMTNCMPART trouvée:', targetLine);
-                        console.log('🔄 loadSavedReportFromDatabase - partnerOnly dans la ligne brute:', targetLine.partnerOnly, 'partner_only:', targetLine.partner_only);
-                    }
-                }
-                
-                this.reportData = rows.map(r => {
-                    // Calculer les écarts - vérifier les deux formats possibles (camelCase et snake_case)
-                    const boOnly = Number(r.boOnly || r.bo_only) || 0;
-                    const partnerOnly = Number(r.partnerOnly || r.partner_only) || 0;
-                    const mismatches = Number(r.mismatches) || 0;
-                    const totalEcarts = boOnly + partnerOnly + mismatches;
-                    
-                    // Préserver le traitement depuis la base de données
-                    // IMPORTANT: Ne jamais écraser un traitement "Terminé" même si le statut est OK
-                    let traitement = r.traitement;
-                    
-                    // Si le traitement est "Terminé", le préserver absolument
-                    if (traitement && traitement.trim() === 'Terminé') {
-                        // Conserver "Terminé" tel quel, même si le statut est OK
-                        traitement = 'Terminé';
-                        if (r.status === 'OK') {
-                            console.log(`✅ loadSavedReportFromDatabase: Traitement "Terminé" préservé pour ${r.agency}/${r.service} (ID: ${r.id}, statut: OK)`);
-                        }
-                    } else if (r.status === 'OK') {
-                        // Pour les lignes avec statut OK et traitement non "Terminé", utiliser "Niveau Group"
-                        traitement = 'Niveau Group';
-                    } else if (!traitement || traitement.trim() === '') {
-                        // Si pas de traitement, déterminer selon les écarts
-                        traitement = totalEcarts > 0 ? 'Niveau Support' : 'Niveau Group';
-                    } else {
-                        // Vérifier si le traitement actuel correspond aux écarts réels
-                        const traitementAttendu = totalEcarts > 0 ? 'Niveau Support' : 'Niveau Group';
-                        // Si le traitement ne correspond pas aux écarts, le corriger (sauf si "Terminé")
-                        if (traitement !== 'Terminé' && traitement !== traitementAttendu) {
-                            traitement = traitementAttendu;
-                        }
-                    }
-                    
-                    // Initialiser le commentaire
-                    let comment = r.comment || '';
-                    
-                    // Si un commentaire préservé existe pour cet ID, l'utiliser en priorité et ne pas le modifier
-                    if (preserveComments.has(r.id)) {
-                        comment = preserveComments.get(r.id)!;
-                        // Ne pas modifier le commentaire si il est préservé
-                    } else {
-                        // Vérifier si la ligne est "sété" (a un ID, statut OK ou traitement Terminé)
-                        const isSete = (r.id || r.status === 'OK' || (r.traitement && r.traitement.trim() === 'Terminé'));
+    }
 
-                        // Si la ligne a un ID (déjà sauvegardée), préserver TOUJOURS son commentaire
-                        if (r.id && comment && comment.trim() !== '') {
-                            // Préserver le commentaire existant pour les lignes sauvegardées
-                            console.log('🔒 Commentaire préservé pour ligne sauvegardée id=' + r.id, 'commentaire:', comment);
-                        } else if (isSete && comment && comment.trim() !== '') {
-                            // Si la ligne est "sété" (statut OK ou traitement Terminé), préserver le commentaire existant
-                            // Préserver le commentaire existant
-                        } else if (r.status === 'OK') {
-                            // PROTECTION ABSOLUE : Pour le statut OK, le commentaire ne doit JAMAIS être modifié
-                            // Préserver TOUJOURS le commentaire existant, même si tous les écarts sont à 0
-                            // Le commentaire ne doit pas être changé quand le statut passe à OK
-                            console.log(`🔒 loadSavedReportFromDatabase: Commentaire préservé pour ligne avec statut OK id=${r.id}, commentaire: "${comment}"`);
-                            // Ne rien faire - le commentaire est déjà initialisé avec r.comment || ''
-                        } else if (!r.id) {
-                            // Seulement pour les nouvelles lignes (sans ID), recalculer le commentaire
-                            const totalTransactions = r.totalTransactions || r.recordCount || 0;
-                            if (!comment || comment.trim() === '') {
-                                // Si le commentaire est vide, le générer
-                                if (totalEcarts === 0) {
-                                    comment = "PAS D'ECARTS CONSTATES";
-                                } else {
-                                    comment = this.buildCommentForCounts(
-                                        r.matches || 0,
-                                        boOnly,
-                                        partnerOnly,
-                                        mismatches,
-                                        totalTransactions
-                                    );
-                                }
-                            } else {
-                                // Si le commentaire existe, le recalculer pour qu'il corresponde aux valeurs
-                                comment = this.buildCommentForCounts(
-                                    r.matches || 0,
-                                    boOnly,
-                                    partnerOnly,
-                                    mismatches,
-                                    totalTransactions
-                                );
-                            }
-                        }
-                        // else: ligne avec ID mais commentaire vide - garder le commentaire vide
-                    }
-                    
-                    const rawEnv = r.env ?? r.env_code ?? r.envCode;
-                    const mappedItem = {
-                        id: r.id,
-                        date: r.date,
-                        agency: r.agency,
-                        service: r.service,
-                        country: r.country,
-                        env: rawEnv != null && String(rawEnv).trim() !== ''
-                            ? this.normalizeReleveEnvKey(String(rawEnv))
-                            : undefined,
-                        glpiId: r.glpiId || r.glpi_id || '',
-                        totalTransactions: r.totalTransactions || r.recordCount || 0,
-                        totalVolume: r.totalVolume || 0,
-                        matches: r.matches || 0,
-                        boOnly: boOnly,
-                        partnerOnly: partnerOnly,
-                        mismatches: mismatches,
-                        matchRate: r.matchRate || 0,
-                        status: r.status || '',
-                        comment: comment,
-                        traitement: traitement,
-                        username: r.username || ''
-                    };
-                    
-                    // Log pour déboguer les écarts partenaires lors du chargement
-                    // Toujours logger pour XBTCM8057/CASHINMTNCMPART, sinon seulement si partnerOnly > 0
-                    const shouldLog = (mappedItem.agency === 'XBTCM8057' && mappedItem.service === 'CASHINMTNCMPART') || 
-                                     (partnerOnly > 0 || r.partnerOnly || r.partner_only);
-                    if (shouldLog) {
-                        console.log(`🔄 loadSavedReportFromDatabase - Ligne mappée ${mappedItem.agency}/${mappedItem.service}:`, {
-                            'r.partnerOnly': r.partnerOnly,
-                            'r.partner_only': r.partner_only,
-                            'partnerOnly mappé': partnerOnly,
-                            'r.comment': r.comment,
-                            'mappedItem.partnerOnly': mappedItem.partnerOnly,
-                            'r.id': r.id
-                        });
-                    }
-                    
-                    return mappedItem;
-                });
-                // IMPORTANT: Lors du chargement depuis la base de données, on ne doit PAS regrouper les écarts partenaires
-                // car les données sont déjà sauvegardées avec les bonnes valeurs (soit sur la ligne d'agence, soit sur une ligne spéciale).
-                // La logique de regroupement multi-agences ne doit s'appliquer QUE lors de la génération initiale du rapport.
-                // 
-                // On préserve simplement les valeurs telles qu'elles sont sauvegardées en base.
-                console.log('📊 Chargement depuis DB: Préservation des valeurs partnerOnly telles quelles (pas de regroupement)');
-                
-                // Log pour vérifier les valeurs partnerOnly chargées
-                this.reportData.forEach(item => {
-                    if (item.agency && item.agency.trim() !== '' && item.partnerOnly > 0) {
-                        console.log(`✅ Ligne chargée avec partnerOnly: ${item.agency}/${item.service} (ID: ${item.id}, date: ${item.date}) - partnerOnly=${item.partnerOnly}`);
-                    } else if (item.agency && item.agency.trim() !== '' && item.comment && item.comment.includes('écart(s) Partenaire')) {
-                        // Log spécial pour les lignes avec commentaire mais partnerOnly=0
-                        if (item.agency === 'XBTCM8057' && item.service === 'CASHINMTNCMPART') {
-                            console.warn(`⚠️ XBTCM8057/CASHINMTNCMPART: partnerOnly=${item.partnerOnly} mais commentaire contient "écart(s) Partenaire" - ID: ${item.id}`);
-                        }
-                    }
-                });
-                
-                // Protection finale: restaurer les valeurs de la ligne spéciale si elles ont été modifiées
-                this.reportData.forEach(item => {
-                    if (this.isPartnerOnlySpecialLine(item)) {
-                        this.enforcePartnerOnlyLineValues(item);
-                    }
-                });
-                
-                this.enforceDefaultStatusForReportData();
+    private async fetchResult8RecRows(
+        scope: { startDate?: string; endDate?: string },
+        dateOverride?: string
+    ): Promise<any[]> {
+        const rows = await firstValueFrom(
+            this.http.get<any[]>('/api/result8rec', {
+                headers: this.buildDbReportFetchHeaders(),
+                params: this.buildDbReportHttpParams(scope, dateOverride)
+            })
+        );
+        return Array.isArray(rows) ? rows : [];
+    }
 
-                // Appliquer la logique de recalcul sur les données chargées depuis la base
-                this.reportData.forEach(item => {
-                    // Si un commentaire préservé existe, ne pas le modifier
-                    const hasPreservedComment = preserveComments.has(item.id!);
-                    const preservedComment = hasPreservedComment ? preserveComments.get(item.id!)! : null;
-                    
-                    if (hasPreservedComment && preservedComment) {
-                        console.log('🔒 loadSavedReportFromDatabase: Commentaire préservé pour item', item.id, item.agency, item.service, 'commentaire:', preservedComment);
-                        // Sauvegarder le commentaire préservé AVANT tout recalcul
-                        item.comment = preservedComment;
-                    }
-                    
-                    // Log avant recalculateMatchRate
-                    const partnerOnlyBeforeRecalc = item.partnerOnly;
-                    
-                    // Recalculer le taux sans modifier le commentaire si préservé
-                    this.recalculateMatchRate(item, hasPreservedComment);
-                    
-                    // Log après recalculateMatchRate pour voir si partnerOnly a été modifié
-                    if (partnerOnlyBeforeRecalc > 0 && item.partnerOnly !== partnerOnlyBeforeRecalc) {
-                        console.warn(`⚠️ loadSavedReportFromDatabase: partnerOnly modifié par recalculateMatchRate pour ${item.agency}/${item.service} - avant: ${partnerOnlyBeforeRecalc}, après: ${item.partnerOnly}`);
-                    } else if (partnerOnlyBeforeRecalc > 0) {
-                        console.log(`✅ loadSavedReportFromDatabase: partnerOnly préservé par recalculateMatchRate pour ${item.agency}/${item.service} - partnerOnly=${item.partnerOnly}`);
-                    }
-                    
-                    // Synchroniser le commentaire avec les valeurs réelles seulement si pas de commentaire préservé
-                    // Passer preserveComment=true pour les lignes avec commentaire préservé
-                    this.syncCommentWithValues(item, hasPreservedComment);
-                    
-                    // Log après syncCommentWithValues pour voir si partnerOnly a été modifié
-                    if (partnerOnlyBeforeRecalc > 0 && item.partnerOnly !== partnerOnlyBeforeRecalc) {
-                        console.warn(`⚠️ loadSavedReportFromDatabase: partnerOnly modifié par syncCommentWithValues pour ${item.agency}/${item.service} - avant: ${partnerOnlyBeforeRecalc}, après: ${item.partnerOnly}`);
-                    }
-                    
-                    // Si un commentaire préservé existe, le restaurer après syncCommentWithValues (sécurité supplémentaire)
-                    if (hasPreservedComment && preservedComment) {
-                        const commentBeforeRestore = item.comment;
-                        item.comment = preservedComment;
-                        if (commentBeforeRestore !== preservedComment) {
-                            console.log('⚠️ loadSavedReportFromDatabase: Commentaire modifié détecté et restauré pour item', item.id, 'avant:', commentBeforeRestore, 'après:', preservedComment);
-                        }
-                    }
-                });
-                
-                this.syncLastSavedGlpiValues(this.reportData);
-                
-                // FORCER toutes les lignes avec statut OK à avoir traitement = "Niveau Group"
-                this.enforceTraitementForOkStatus();
-                
-                // Trier par date décroissante (les plus récentes en premier)
-                this.reportData.sort((a, b) => {
-                    const dateA = new Date(a.date).getTime();
-                    const dateB = new Date(b.date).getTime();
-                    return dateB - dateA; // Décroissant (plus récent en premier)
-                });
-                
-                // Restaurer les commentaires préservés APRÈS le tri (sécurité supplémentaire)
-                preserveComments.forEach((preservedComment, itemId) => {
-                    const item = this.reportData.find(r => r.id === itemId);
-                    if (item) {
-                        item.comment = preservedComment;
-                        console.log('🔒 Commentaire restauré après tri pour item', itemId, item.agency, item.service, 'commentaire:', preservedComment);
-                    }
-                });
-                
-                this.extractUniqueValues();
-                this.filterReport();
-                
-                // Restaurer les commentaires préservés APRÈS filterReport (sécurité supplémentaire)
-                preserveComments.forEach((preservedComment, itemId) => {
-                    const item = this.reportData.find(r => r.id === itemId);
-                    const filteredItem = this.filteredReportData.find(r => r.id === itemId);
-                    if (item) {
-                        item.comment = preservedComment;
-                    }
-                    if (filteredItem) {
-                        filteredItem.comment = preservedComment;
-                    }
-                    console.log('🔒 Commentaire restauré après filterReport pour item', itemId, 'commentaire:', preservedComment);
-                });
-                
-                this.currentSource = 'db';
-                this.lastDbReportFetchKey = scope.key;
-                this.isLoadingDbReport = false;
-                this.updatePagination();
-            },
-            error: (err: HttpErrorResponse) => {
-                this.isLoadingDbReport = false;
-                // Si 404, le backend n'est probablement pas démarré - c'est normal en développement
-                if (err.status === 404) {
-                    console.log('ℹ️ Backend non disponible - les données sauvegardées ne seront pas chargées');
+    private async fetchReportDates(scope: { startDate?: string; endDate?: string }): Promise<string[]> {
+        const dates = await firstValueFrom(
+            this.http.get<string[]>('/api/result8rec/dates', {
+                headers: this.buildDbReportFetchHeaders(),
+                params: this.buildDbReportHttpParams(scope)
+            })
+        );
+        return Array.isArray(dates) ? dates.filter(d => !!d) : [];
+    }
+
+    private finishEmptyDbLoad(scope: { key: string }): void {
+        this.reportData = [];
+        this.filteredReportData = [];
+        this.kpiScopeData = [];
+        this.refreshKpiSummary();
+        this.paginatedData = [];
+        this.extractUniqueValues();
+        this.currentSource = 'db';
+        this.lastDbReportFetchKey = scope.key;
+        this.isLoadingDbReport = false;
+        this.isLoadingMoreDbReport = false;
+        this.updatePagination();
+    }
+
+    private mergeReportDataById(
+        existing: ReconciliationReportData[],
+        incoming: ReconciliationReportData[]
+    ): ReconciliationReportData[] {
+        const byId = new Map<number, ReconciliationReportData>();
+        const withoutId: ReconciliationReportData[] = [];
+
+        for (const item of existing) {
+            if (item.id != null) {
+                byId.set(item.id, item);
+            } else {
+                withoutId.push(item);
+            }
+        }
+
+        for (const item of incoming) {
+            if (item.id != null) {
+                byId.set(item.id, item);
+            } else {
+                withoutId.push(item);
+            }
+        }
+
+        return [...byId.values(), ...withoutId];
+    }
+
+    private mapResult8RecRows(
+        rows: any[],
+        preserveComments: Map<number, string>
+    ): ReconciliationReportData[] {
+        return rows.map(r => {
+            const boOnly = Number(r.boOnly || r.bo_only) || 0;
+            const partnerOnly = Number(r.partnerOnly || r.partner_only) || 0;
+            const mismatches = Number(r.mismatches) || 0;
+            const totalEcarts = boOnly + partnerOnly + mismatches;
+
+            let traitement = r.traitement;
+            if (traitement && traitement.trim() === 'Terminé') {
+                traitement = 'Terminé';
+            } else if (r.status === 'OK') {
+                traitement = 'Niveau Group';
+            } else if (!traitement || traitement.trim() === '') {
+                traitement = totalEcarts > 0 ? 'Niveau Support' : 'Niveau Group';
+            } else {
+                const traitementAttendu = totalEcarts > 0 ? 'Niveau Support' : 'Niveau Group';
+                if (traitement !== 'Terminé' && traitement !== traitementAttendu) {
+                    traitement = traitementAttendu;
                 }
-                // Ignorer silencieusement en cas d'erreur réseau (backend non démarré)
-                // Ne pas afficher d'erreur dans la console pour éviter le bruit
+            }
+
+            let comment = r.comment || '';
+            if (preserveComments.has(r.id)) {
+                comment = preserveComments.get(r.id)!;
+            } else if (!r.id && r.status !== 'OK') {
+                const totalTransactions = r.totalTransactions || r.recordCount || 0;
+                if (!comment || comment.trim() === '') {
+                    comment = totalEcarts === 0
+                        ? "PAS D'ECARTS CONSTATES"
+                        : this.buildCommentForCounts(
+                            r.matches || 0,
+                            boOnly,
+                            partnerOnly,
+                            mismatches,
+                            totalTransactions
+                        );
+                } else {
+                    comment = this.buildCommentForCounts(
+                        r.matches || 0,
+                        boOnly,
+                        partnerOnly,
+                        mismatches,
+                        totalTransactions
+                    );
+                }
+            }
+
+            const rawEnv = r.env ?? r.env_code ?? r.envCode;
+            return {
+                id: r.id,
+                date: r.date,
+                agency: r.agency,
+                service: r.service,
+                country: r.country,
+                env: rawEnv != null && String(rawEnv).trim() !== ''
+                    ? this.normalizeReleveEnvKey(String(rawEnv))
+                    : undefined,
+                glpiId: r.glpiId || r.glpi_id || '',
+                totalTransactions: r.totalTransactions || r.recordCount || 0,
+                totalVolume: r.totalVolume || 0,
+                matches: r.matches || 0,
+                boOnly,
+                partnerOnly,
+                mismatches,
+                matchRate: r.matchRate || 0,
+                status: r.status || '',
+                comment,
+                traitement,
+                username: r.username || ''
+            };
+        });
+    }
+
+    private finalizeLoadedReportData(preserveComments: Map<number, string>): void {
+        this.reportData.forEach(item => {
+            if (this.isPartnerOnlySpecialLine(item)) {
+                this.enforcePartnerOnlyLineValues(item);
+            }
+        });
+
+        this.enforceDefaultStatusForReportData();
+
+        this.reportData.forEach(item => {
+            const hasPreservedComment = preserveComments.has(item.id!);
+            const preservedComment = hasPreservedComment ? preserveComments.get(item.id!)! : null;
+
+            if (hasPreservedComment && preservedComment) {
+                item.comment = preservedComment;
+            }
+
+            this.recalculateMatchRate(item, hasPreservedComment);
+            this.syncCommentWithValues(item, hasPreservedComment);
+
+            if (hasPreservedComment && preservedComment) {
+                item.comment = preservedComment;
+            }
+        });
+
+        this.syncLastSavedGlpiValues(this.reportData);
+        this.enforceTraitementForOkStatus();
+
+        this.reportData.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+        preserveComments.forEach((preservedComment, itemId) => {
+            const item = this.reportData.find(r => r.id === itemId);
+            if (item) {
+                item.comment = preservedComment;
             }
         });
     }
+
+    private applyLoadedReportToView(preserveComments: Map<number, string>): void {
+        this.extractUniqueValues();
+        this.filterReport();
+
+        preserveComments.forEach((preservedComment, itemId) => {
+            const item = this.reportData.find(r => r.id === itemId);
+            const filteredItem = this.filteredReportData.find(r => r.id === itemId);
+            if (item) {
+                item.comment = preservedComment;
+            }
+            if (filteredItem) {
+                filteredItem.comment = preservedComment;
+            }
+        });
+
+        this.updatePagination();
+    }
+
+    private async processDbReportRows(
+        rows: any[],
+        preserveComments: Map<number, string>,
+        scope: { key: string },
+        token: number,
+        finalizeLoad: boolean
+    ): Promise<void> {
+        this.clearAuditHistoryUiState();
+
+        if (!rows.length) {
+            this.finishEmptyDbLoad(scope);
+            return;
+        }
+
+        if (token !== this.dbLoadToken) {
+            return;
+        }
+
+        this.reportData = this.mapResult8RecRows(rows, preserveComments);
+        this.finalizeLoadedReportData(preserveComments);
+
+        if (finalizeLoad) {
+            this.currentSource = 'db';
+            this.lastDbReportFetchKey = scope.key;
+            this.isLoadingDbReport = false;
+            this.isLoadingMoreDbReport = false;
+            this.applyLoadedReportToView(preserveComments);
+        }
+    }
+
+    private async loadSavedReportFromDatabase(preserveComments: Map<number, string> = new Map()): Promise<void> {
+        if (this.currentSource === 'live') {
+            return;
+        }
+
+        const scope = this.getDbReportFetchScope();
+        const token = ++this.dbLoadToken;
+
+        this.loadedFromDb = true;
+        this.isLoadingDbReport = true;
+        this.isLoadingMoreDbReport = false;
+        this.reportData = [];
+        this.filteredReportData = [];
+        this.kpiScopeData = [];
+        this.refreshKpiSummary();
+        this.paginatedData = [];
+
+        try {
+            if (!this.shouldUseProgressiveDbLoad(scope)) {
+                const rows = await this.fetchResult8RecRows(scope);
+                if (token !== this.dbLoadToken) {
+                    return;
+                }
+                await this.processDbReportRows(rows, preserveComments, scope, token, true);
+                return;
+            }
+
+            const dates = await this.fetchReportDates(scope);
+            if (token !== this.dbLoadToken) {
+                return;
+            }
+
+            if (!dates.length) {
+                this.clearAuditHistoryUiState();
+                this.finishEmptyDbLoad(scope);
+                return;
+            }
+
+            this.clearAuditHistoryUiState();
+
+            for (let i = 0; i < dates.length; i++) {
+                if (token !== this.dbLoadToken) {
+                    return;
+                }
+
+                const date = dates[i];
+                const rows = await this.fetchResult8RecRows(scope, date);
+                if (token !== this.dbLoadToken) {
+                    return;
+                }
+
+                const mapped = this.mapResult8RecRows(rows, preserveComments);
+                if (i === 0) {
+                    this.reportData = mapped;
+                    this.finalizeLoadedReportData(preserveComments);
+                    this.currentSource = 'db';
+                    this.lastDbReportFetchKey = scope.key;
+                    this.isLoadingDbReport = false;
+                    this.isLoadingMoreDbReport = dates.length > 1;
+                    this.applyLoadedReportToView(preserveComments);
+                } else {
+                    this.reportData = this.mergeReportDataById(this.reportData, mapped);
+                    this.reportData.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+                    this.isLoadingMoreDbReport = i < dates.length - 1;
+                    this.applyLoadedReportToView(preserveComments);
+                }
+            }
+
+            this.finalizeLoadedReportData(preserveComments);
+            this.isLoadingMoreDbReport = false;
+            this.applyLoadedReportToView(preserveComments);
+        } catch (err: unknown) {
+            if (token !== this.dbLoadToken) {
+                return;
+            }
+            this.isLoadingDbReport = false;
+            this.isLoadingMoreDbReport = false;
+            const httpErr = err as HttpErrorResponse;
+            if (httpErr?.status === 404) {
+                console.log('Backend non disponible - les donnees sauvegardees ne seront pas chargees');
+            }
+        }
+    }
+
     saveRow(item: ReconciliationReportData) {
         // Obsolète: remplacé par confirmAndSave
         this.confirmAndSave(item);
@@ -9098,13 +9130,14 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
     // Méthode pour basculer entre les données en cours et les données en base
     /** Recharge les données sans réinitialiser les filtres (agence, pays, ENV, dates, etc.). */
     refreshReportData(): void {
-        if (this.isLoadingDbReport) {
+        if (this.isLoadingDbReport || this.isLoadingMoreDbReport) {
             return;
         }
         if (this.currentSource === 'live') {
             this.loadLiveData();
             return;
         }
+        this.dbLoadToken++;
         this.lastDbReportFetchKey = '';
         this.loadSavedReportFromDatabase();
     }

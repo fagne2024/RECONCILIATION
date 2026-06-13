@@ -134,14 +134,17 @@
                 </div>
             </div>
 
-            <div *ngIf="reconciliationSummaryLoading" class="reco-loading">
+            <div *ngIf="reconciliationSummaryLoading && !reconciliationSummaryRows.length" class="reco-loading">
                 Chargement de l’état des réconciliations...
+            </div>
+            <div *ngIf="reconciliationSummaryLoadingMore" class="reco-loading-more">
+                Chargement des dates précédentes...
             </div>
             <div *ngIf="!reconciliationSummaryLoading && reconciliationSummaryError" class="reco-error">
                 {{ reconciliationSummaryError }}
             </div>
 
-            <div *ngIf="!reconciliationSummaryLoading && !reconciliationSummaryError" class="reco-table-wrapper">
+            <div *ngIf="(!reconciliationSummaryLoading || reconciliationSummaryRows.length) && !reconciliationSummaryError" class="reco-table-wrapper">
                 <table class="reco-table">
                     <thead>
                         <tr>
@@ -212,7 +215,7 @@
                 </table>
             </div>
             <div
-                *ngIf="!reconciliationSummaryLoading && !reconciliationSummaryError && reconciliationSummaryRows.length"
+                *ngIf="(!reconciliationSummaryLoading || reconciliationSummaryRows.length) && !reconciliationSummaryError && reconciliationSummaryRows.length"
                 class="reco-stats-row"
             >
                 <div class="reco-stat-item">
@@ -239,7 +242,7 @@
                 </div>
             </div>
             <div
-                *ngIf="!reconciliationSummaryLoading && !reconciliationSummaryError && reconciliationSummaryRows.length > reconciliationPageSize"
+                *ngIf="(!reconciliationSummaryLoading || reconciliationSummaryRows.length) && !reconciliationSummaryError && reconciliationSummaryRows.length > reconciliationPageSize"
                 class="reco-pagination"
             >
                 <button
@@ -319,7 +322,7 @@
             </div>
 
             <!-- Graphiques état des réconciliations (donut + évolution par jour) -->
-            <div *ngIf="!reconciliationSummaryLoading && !reconciliationSummaryError && reconciliationSummaryRows.length && recoStats.total > 0" class="reco-charts-row">
+            <div *ngIf="(!reconciliationSummaryLoading || reconciliationSummaryRows.length) && !reconciliationSummaryError && reconciliationSummaryRows.length && recoStats.total > 0" class="reco-charts-row">
                 <div class="reco-chart-block reco-chart-donut">
                     <div class="reco-chart-legend-top">
                         <span class="reco-legend-dot ok"></span> Réconcilié

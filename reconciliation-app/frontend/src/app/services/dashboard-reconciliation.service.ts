@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
-import { HttpClient, HttpHeaders } from '@angular/common/http';
-import { Observable } from 'rxjs';
+import { HttpClient, HttpHeaders, HttpParams } from '@angular/common/http';
+import { Observable, firstValueFrom } from 'rxjs';
 import { map } from 'rxjs/operators';
 
 export interface Result8RecData {
@@ -59,6 +59,110 @@ export class DashboardReconciliationService {
 
     private buildContextHeaders(moduleContext?: string): HttpHeaders | undefined {
         return moduleContext ? new HttpHeaders({ 'X-Permission-Module': moduleContext }) : undefined;
+    }
+
+    private buildScopedParams(startDate?: string, endDate?: string): HttpParams {
+        let params = new HttpParams().set('_t', String(Date.now()));
+        if (startDate) {
+            params = params.set('startDate', startDate);
+        }
+        if (endDate) {
+            params = params.set('endDate', endDate);
+        }
+        return params;
+    }
+
+    /**
+     * Récupère les données result8rec sur une plage de dates (inclusif).
+     */
+    getResult8RecDataScoped(
+        startDate?: string,
+        endDate?: string,
+        moduleContext?: string
+    ): Observable<Result8RecData[]> {
+        return this.http.get<Result8RecData[]>('/api/result8rec', {
+            headers: this.buildContextHeaders(moduleContext),
+            params: this.buildScopedParams(startDate, endDate)
+        });
+    }
+
+    /**
+     * Récupère les données result8rec pour une date unique.
+     */
+    getResult8RecDataForDate(date: string, moduleContext?: string): Observable<Result8RecData[]> {
+        return this.getResult8RecDataScoped(date, date, moduleContext);
+    }
+
+    /**
+     * Dates distinctes triées DESC dans une plage (inclusif).
+     */
+    getResult8RecDates(
+        startDate?: string,
+        endDate?: string,
+        moduleContext?: string
+    ): Observable<string[]> {
+        return this.http.get<string[]>('/api/result8rec/dates', {
+            headers: this.buildContextHeaders(moduleContext),
+            params: this.buildScopedParams(startDate, endDate)
+        });
+    }
+
+    /**
+     * Charge result8rec date par date (plus récente en premier) pour un affichage progressif.
+     */
+    async loadResult8RecProgressive(
+        startDate: string,
+        endDate: string,
+        onBatch: (accumulated: Result8RecData[], isFirst: boolean, isComplete: boolean) => void,
+        moduleContext?: string,
+        isCancelled?: () => boolean
+    ): Promise<Result8RecData[]> {
+        if (startDate === endDate) {
+            const rows = await firstValueFrom(this.getResult8RecDataForDate(startDate, moduleContext));
+            const data = Array.isArray(rows) ? rows : [];
+            if (!isCancelled?.()) {
+                onBatch(data, true, true);
+            }
+            return data;
+        }
+
+        const datesRaw = await firstValueFrom(this.getResult8RecDates(startDate, endDate, moduleContext));
+        const dates = Array.isArray(datesRaw) ? datesRaw.filter(d => !!d) : [];
+        if (!dates.length) {
+            if (!isCancelled?.()) {
+                onBatch([], true, true);
+            }
+            return [];
+        }
+
+        const byId = new Map<number, Result8RecData>();
+        const withoutId: Result8RecData[] = [];
+
+        const mergeRows = (rows: Result8RecData[]) => {
+            for (const row of rows) {
+                if (row?.id != null) {
+                    byId.set(row.id, row);
+                } else if (row) {
+                    withoutId.push(row);
+                }
+            }
+        };
+
+        const snapshot = (): Result8RecData[] => [...byId.values(), ...withoutId];
+
+        for (let i = 0; i < dates.length; i++) {
+            if (isCancelled?.()) {
+                return snapshot();
+            }
+            const date = dates[i];
+            const rows = await firstValueFrom(this.getResult8RecDataForDate(date, moduleContext));
+            mergeRows(Array.isArray(rows) ? rows : []);
+            if (!isCancelled?.()) {
+                onBatch(snapshot(), i === 0, i === dates.length - 1);
+            }
+        }
+
+        return snapshot();
     }
 
     /**

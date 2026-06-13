@@ -103,9 +103,7 @@ public class Result8RecController {
         String end = blankToNull(endDate);
         String countryFilter = blankToNull(country);
         String envFilter = normalizeEnvForQuery(env);
-        List<Result8RecEntity> all = (start == null && end == null && countryFilter == null && envFilter == null)
-                ? repository.findAll()
-                : repository.findForReport(start, end, countryFilter, envFilter);
+        List<Result8RecEntity> all = repository.findForReport(start, end, countryFilter, envFilter);
         
         // Filtrer par pays autorisés si nécessaire
         if (allowedCountries == null) {
@@ -301,50 +299,104 @@ public class Result8RecController {
      * ainsi qu'une map pays -> liste de services, après application éventuelle
      * du cloisonnement par pays.
      */
+    /**
+     * Dates distinctes du rapport, triées de la plus récente à la plus ancienne,
+     * avec le même cloisonnement par pays que {@link #list}.
+     */
+    @GetMapping("/dates")
+    public ResponseEntity<List<String>> listDistinctDates(
+            @RequestParam(required = false) String startDate,
+            @RequestParam(required = false) String endDate) {
+        String username = RequestContextUtil.getUsernameFromRequest();
+        List<String> allowedCountriesTemp = null;
+        if (username != null && !username.isEmpty()) {
+            allowedCountriesTemp = paysFilterService.getAllowedPaysCodes(username);
+        }
+        final List<String> allowedCountries = allowedCountriesTemp;
+
+        String start = blankToNull(startDate);
+        String end = blankToNull(endDate);
+        List<Object[]> pairs = repository.findDistinctDateCountryPairsForReport(start, end);
+
+        if (allowedCountries == null) {
+            java.util.LinkedHashSet<String> dates = new java.util.LinkedHashSet<>();
+            for (Object[] pair : pairs) {
+                if (pair[0] != null) {
+                    dates.add(pair[0].toString());
+                }
+            }
+            return ResponseEntity.ok(new ArrayList<>(dates));
+        }
+        if (allowedCountries.isEmpty()) {
+            return ResponseEntity.ok(new ArrayList<>());
+        }
+
+        java.util.Map<String, Boolean> dateVisible = new java.util.LinkedHashMap<>();
+        for (Object[] pair : pairs) {
+            if (pair[0] == null) {
+                continue;
+            }
+            String date = pair[0].toString();
+            String countryName = pair[1] != null ? pair[1].toString() : "";
+            String countryCode = getCountryCode(countryName);
+            boolean allowed = allowedCountries.contains(countryCode);
+            dateVisible.merge(date, allowed, (prev, next) -> prev || next);
+        }
+
+        List<String> result = dateVisible.entrySet().stream()
+                .filter(java.util.Map.Entry::getValue)
+                .map(java.util.Map.Entry::getKey)
+                .collect(Collectors.toList());
+        return ResponseEntity.ok(result);
+    }
+
     @GetMapping("/filters")
     public ResponseEntity<java.util.Map<String, Object>> getDistinctCountriesAndServices() {
-        // On réutilise la méthode list() pour bénéficier du cloisonnement par pays
-        ResponseEntity<List<Result8RecEntity>> listResponse = list(null, null, null, null);
-        List<Result8RecEntity> data = listResponse.getBody();
-        if (data == null) {
-            data = java.util.Collections.emptyList();
+        String username = RequestContextUtil.getUsernameFromRequest();
+        List<String> allowedCountriesTemp = null;
+        if (username != null && !username.isEmpty()) {
+            allowedCountriesTemp = paysFilterService.getAllowedPaysCodes(username);
         }
+        final List<String> allowedCountries = allowedCountriesTemp;
+
+        List<Object[]> rows = repository.findDistinctCountryServiceEnvRows();
 
         java.util.Set<String> countries = new java.util.HashSet<>();
         java.util.Set<String> services = new java.util.HashSet<>();
         java.util.Map<String, java.util.Set<String>> countryServiceMap = new java.util.HashMap<>();
-        // Pays -> clé ENV stricte (BET, HT, T-E, …) -> services présents pour cet ENV
         java.util.Map<String, java.util.Map<String, java.util.Set<String>>> countryEnvServiceMap = new java.util.HashMap<>();
 
-        for (Result8RecEntity e : data) {
-            String country = e.getCountry();
-            String service = e.getService();
-            if (country != null) {
-                country = country.trim();
+        for (Object[] row : rows) {
+            String country = row[0] != null ? row[0].toString().trim() : "";
+            String service = row[1] != null ? row[1].toString().trim() : "";
+            String envRaw = row[2] != null ? row[2].toString() : "";
+
+            if (country.isEmpty()) {
+                continue;
             }
-            if (service != null) {
-                service = service.trim();
+            if (allowedCountries != null) {
+                if (allowedCountries.isEmpty()) {
+                    continue;
+                }
+                String countryCode = getCountryCode(country);
+                if (!allowedCountries.contains(countryCode)) {
+                    continue;
+                }
             }
 
-            // Ignorer les valeurs de type "agence" dans la liste des services (ex: AUCATxxxxx)
-            boolean isAgencyLike = service != null && service.toUpperCase().startsWith("AUCAT");
+            boolean isAgencyLike = !service.isEmpty() && service.toUpperCase().startsWith("AUCAT");
             if (isAgencyLike) {
-                service = null;
+                service = "";
             }
 
-            if (country != null && !country.isEmpty()) {
-                countries.add(country);
-            }
-            if (service != null && !service.isEmpty()) {
+            countries.add(country);
+            if (!service.isEmpty()) {
                 services.add(service);
-            }
-
-            if (country != null && !country.isEmpty() && service != null && !service.isEmpty()) {
                 countryServiceMap
                     .computeIfAbsent(country, k -> new java.util.HashSet<>())
                     .add(service);
 
-                String envKey = envStrictKeyForResult8RecFilters(e.getEnv());
+                String envKey = envStrictKeyForResult8RecFilters(envRaw);
                 countryEnvServiceMap
                     .computeIfAbsent(country, k -> new java.util.HashMap<>())
                     .computeIfAbsent(envKey, k -> new java.util.HashSet<>())

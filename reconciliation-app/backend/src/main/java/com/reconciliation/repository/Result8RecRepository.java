@@ -190,6 +190,25 @@ public interface Result8RecRepository extends JpaRepository<Result8RecEntity, Lo
             @Param("startDate") String startDate,
             @Param("endDate") String endDate
     );
+
+    @Query("""
+        SELECT DISTINCT r.date, r.country FROM Result8RecEntity r
+        WHERE (:startDate IS NULL OR r.date >= :startDate)
+          AND (:endDate IS NULL OR r.date <= :endDate)
+        ORDER BY r.date DESC
+    """)
+    List<Object[]> findDistinctDateCountryPairsForReport(
+            @Param("startDate") String startDate,
+            @Param("endDate") String endDate
+    );
+
+    @Query("""
+        SELECT DISTINCT r.country, r.service, COALESCE(r.env, '')
+        FROM Result8RecEntity r
+        WHERE r.country IS NOT NULL AND TRIM(r.country) <> ''
+          AND r.service IS NOT NULL AND TRIM(r.service) <> ''
+    """)
+    List<Object[]> findDistinctCountryServiceEnvRows();
 }
 
 

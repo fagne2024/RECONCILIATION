@@ -1008,9 +1008,15 @@
 }
 
 .reco-loading,
+.reco-loading-more,
 .reco-error {
   font-size: 0.85rem;
   color: #666;
+}
+
+.reco-loading-more {
+  margin-top: 0.35rem;
+  font-style: italic;
 }
 
 .reco-error {
