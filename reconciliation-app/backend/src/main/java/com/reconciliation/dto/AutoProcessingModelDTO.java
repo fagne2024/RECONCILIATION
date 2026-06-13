@@ -49,6 +49,9 @@ public class AutoProcessingModelDTO {
     @JsonProperty("columnProcessingRules")
     private List<ColumnProcessingRuleDTO> columnProcessingRules;
     
+    @JsonProperty("preProcessingConfig")
+    private Map<String, Object> preProcessingConfig;
+    
     // Constructeurs
     public AutoProcessingModelDTO() {}
     
@@ -66,6 +69,7 @@ public class AutoProcessingModelDTO {
         this.reconciliationLogic = entity.getReconciliationLogic();
         this.correspondenceRules = entity.getCorrespondenceRules();
         this.comparisonColumns = entity.getComparisonColumns();
+        this.preProcessingConfig = entity.getPreProcessingConfig();
         
         // Convertir les règles de traitement des colonnes
         if (entity.getColumnProcessingRules() != null) {
@@ -203,6 +207,14 @@ public class AutoProcessingModelDTO {
     
     public void setColumnProcessingRules(List<ColumnProcessingRuleDTO> columnProcessingRules) {
         this.columnProcessingRules = columnProcessingRules;
+    }
+    
+    public Map<String, Object> getPreProcessingConfig() {
+        return preProcessingConfig;
+    }
+    
+    public void setPreProcessingConfig(Map<String, Object> preProcessingConfig) {
+        this.preProcessingConfig = preProcessingConfig;
     }
     
     @Override

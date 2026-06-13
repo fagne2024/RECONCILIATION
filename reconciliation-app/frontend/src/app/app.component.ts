@@ -17,6 +17,7 @@ export class AppComponent implements OnInit {
   private readonly routeLabels: { [path: string]: string } = {
     '/reconciliation-launcher': 'Lanceur de Réconciliation',
     '/reconciliation': 'Réconciliation',
+    '/upload-assisted': 'Mode Assisté — Upload',
     '/upload': 'Upload de fichiers',
     '/column-selection': 'Sélection de colonnes',
     '/stats': 'Statistiques',

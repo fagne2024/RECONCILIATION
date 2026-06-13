@@ -61,6 +61,10 @@ public class AutoProcessingModel {
     @Column(name = "comparison_columns", columnDefinition = "TEXT")
     private Map<String, Object> comparisonColumns;
     
+    @Convert(converter = JsonConverter.class)
+    @Column(name = "pre_processing_config", columnDefinition = "TEXT")
+    private Map<String, Object> preProcessingConfig;
+    
     @OneToMany(mappedBy = "autoProcessingModel", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     @JsonManagedReference
     @OrderBy("ruleOrder ASC")
@@ -203,6 +207,14 @@ public class AutoProcessingModel {
     
     public void setComparisonColumns(Map<String, Object> comparisonColumns) {
         this.comparisonColumns = comparisonColumns;
+    }
+    
+    public Map<String, Object> getPreProcessingConfig() {
+        return preProcessingConfig;
+    }
+    
+    public void setPreProcessingConfig(Map<String, Object> preProcessingConfig) {
+        this.preProcessingConfig = preProcessingConfig;
     }
     
     public List<ColumnProcessingRule> getColumnProcessingRules() {

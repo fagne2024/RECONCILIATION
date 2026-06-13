@@ -23,6 +23,64 @@ export interface ColumnProcessingRule {
   ruleOrder?: number;
 }
 
+export interface ModelRowFilter {
+  id: string;
+  column: string;
+  selectedValues: string[];
+  enabled: boolean;
+}
+
+export type ModelFormatActionType =
+  | 'removeSpecialStrings'
+  | 'removeCharacters'
+  | 'removeNumbers'
+  | 'removeIndicatif'
+  | 'removeDecimals'
+  | 'keepLastDigits'
+  | 'removeZeroDecimals'
+  | 'removeSpaces';
+
+export interface ModelFormatAction {
+  type: ModelFormatActionType;
+  enabled: boolean;
+  columns: string[];
+  specialStringToRemove?: string;
+  specialStringRemovalMode?: 'all' | 'start' | 'end';
+  removeCharMode?: 'remove' | 'keep';
+  removeCharPosition?: 'start' | 'end' | 'specific';
+  removeCharCount?: number;
+  removeCharSpecificPosition?: number;
+  removeSpacesType?: 'all' | 'leading' | 'trailing' | 'multiple';
+  keepLastDigitsCount?: number;
+  indicatifType?: 'international' | 'national' | 'custom';
+  customIndicatif?: string;
+  decimalSeparator?: ',' | '.';
+  keepTrailingZeros?: boolean;
+}
+
+export interface ModelPreProcessingConfig {
+  rowFilters?: ModelRowFilter[];
+  formatActions?: ModelFormatAction[];
+  columnConcatRules?: ModelColumnConcatRule[];
+  valueMappings?: ModelColumnValueMapping[];
+}
+
+export interface ModelColumnConcatRule {
+  id: string;
+  sourceColumns: string[];
+  targetColumn: string;
+  separator: string;
+  enabled: boolean;
+}
+
+export interface ModelColumnValueMapping {
+  id: string;
+  column: string;
+  fromValue: string;
+  toValue: string;
+  enabled: boolean;
+}
+
 export interface AutoProcessingModel {
   id?: string; // Optionnel pour la création
   modelId?: string; // ID retourné par le backend
@@ -43,6 +101,7 @@ export interface AutoProcessingModel {
   };
   boColumnFilters?: BOColumnFilter[]; // Filtres BO appliqués
   columnProcessingRules?: ColumnProcessingRule[]; // Règles de traitement des colonnes
+  preProcessingConfig?: ModelPreProcessingConfig; // Filtres lignes + formatage (page /traitement)
   
   // Nouvelles propriétés pour la configuration autonome
   reconciliationLogic?: {

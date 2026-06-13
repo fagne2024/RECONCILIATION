@@ -1,6 +1,8 @@
-import { Component, EventEmitter, Output, ChangeDetectorRef, OnDestroy, ViewChild, ElementRef } from '@angular/core';
+import { Component, EventEmitter, Output, ChangeDetectorRef, OnDestroy, OnInit, ViewChild, ElementRef } from '@angular/core';
 import { ReconciliationService } from '../../services/reconciliation.service';
-import { AutoProcessingService, ProcessingResult } from '../../services/auto-processing.service';
+import { AutoProcessingService, AutoProcessingModel, ProcessingResult } from '../../services/auto-processing.service';
+import { ModelPreProcessingService } from '../../services/model-preprocessing.service';
+import { ExportOptimizationService } from '../../services/export-optimization.service';
 import { OrangeMoneyUtilsService } from '../../services/orange-money-utils.service';
 import { fixGarbledCharacters } from '../../utils/encoding-fixer';
 import {
@@ -11,7 +13,7 @@ import {
 } from '../../utils/date-format.util';
 import * as Papa from 'papaparse';
 import * as XLSX from 'xlsx';
-import { Router } from '@angular/router';
+import { Router, ActivatedRoute } from '@angular/router';
 import { AppStateService } from '../../services/app-state.service';
 import { ReconciliationTabsService } from '../../services/reconciliation-tabs.service';
 import { forkJoin, Subscription } from 'rxjs';
@@ -23,16 +25,20 @@ import { ProgressIndicatorService } from '../../services/progress-indicator.serv
     templateUrl: './file-upload.component.html',
     styleUrls: ['./file-upload.component.scss']
 })
-export class FileUploadComponent implements OnDestroy {
+export class FileUploadComponent implements OnInit, OnDestroy {
     @ViewChild('boFileInput') boFileInputRef?: ElementRef<HTMLInputElement>;
     @ViewChild('partnerFileInput') partnerFileInputRef?: ElementRef<HTMLInputElement>;
     @ViewChild('autoBoFileInput') autoBoFileInputRef?: ElementRef<HTMLInputElement>;
     @ViewChild('autoPartnerFileInput') autoPartnerFileInputRef?: ElementRef<HTMLInputElement>;
+    @ViewChild('traitementFileInput') traitementFileInputRef?: ElementRef<HTMLInputElement>;
 
     @Output() filesLoaded = new EventEmitter<{
         boData: Record<string, string>[];
         partnerData: Record<string, string>[];
     }>();
+
+    /** Page /upload-assisted : Option 2 uniquement (mode assisté). */
+    assistedOnly = false;
 
     reconciliationMode: 'manual' | 'automatic' = 'manual'; // 'super-auto' commenté
     reconciliationType: '1-1' = '1-1'; // Autres types commentés: '1-2' | '1-3' | '1-4' | '1-5'
@@ -50,6 +56,22 @@ export class FileUploadComponent implements OnDestroy {
     autoPartnerFileName: string = '';
     autoBoData: Record<string, string>[] = [];
     autoPartnerData: Record<string, string>[] = [];
+
+    /** Modal « Traitement de fichier » (mode assisté). */
+    showTraitementModal = false;
+    traitementFiles: File[] = [];
+    traitementModels: AutoProcessingModel[] = [];
+    selectedTraitementModelId = '';
+    traitementModelSearch = '';
+    traitementOutputDate = '';
+    traitementModelsLoading = false;
+    traitementProcessing = false;
+    traitementProgressMessage = '';
+    traitementAutoSelectedModelHint = '';
+
+    /** Modèle partenaire mémorisé après traitement assisté (évite la re-détection par nom de fichier). */
+    assistedPartnerReconciliationModelId: string | null = null;
+    assistedBoTreatmentModelId: string | null = null;
 
     // Fichiers pour le mode super auto - COMMENTÉ
     // superAutoBoFile: File | null = null;
@@ -187,16 +209,900 @@ export class FileUploadComponent implements OnDestroy {
         private reconciliationService: ReconciliationService, 
         private autoProcessingService: AutoProcessingService,
         private orangeMoneyUtilsService: OrangeMoneyUtilsService,
-        private router: Router, 
+        private router: Router,
+        private route: ActivatedRoute,
         private appStateService: AppStateService,
         private reconciliationTabsService: ReconciliationTabsService,
         private popupService: PopupService,
         private progressIndicatorService: ProgressIndicatorService,
+        private exportOptimizationService: ExportOptimizationService,
+        private modelPreProcessingService: ModelPreProcessingService,
         private cd: ChangeDetectorRef
     ) {
         // Initialiser le type de réconciliation depuis le service (forcé à 1-1)
         const serviceType = this.appStateService.getReconciliationType();
         this.reconciliationType = serviceType === '1-1' ? '1-1' : '1-1'; // Forcer à 1-1
+    }
+
+    ngOnInit(): void {
+        this.assistedOnly = this.route.snapshot.data['assistedOnly'] === true;
+        if (this.assistedOnly) {
+            this.reconciliationMode = 'automatic';
+        }
+    }
+
+    goBackToLauncher(): void {
+        this.router.navigate(['/reconciliation-launcher'], { queryParams: { mode: 'assisted' } });
+    }
+
+    /** Ouvre le modal de traitement de fichier (mode assisté). */
+    async onTraitementFichier(): Promise<void> {
+        this.showTraitementModal = true;
+        this.traitementFiles = [];
+        this.selectedTraitementModelId = '';
+        this.traitementModelSearch = '';
+        this.traitementOutputDate = this.formatDateForInput(this.getDefaultTraitementOutputDate());
+        this.traitementProgressMessage = '';
+        this.traitementAutoSelectedModelHint = '';
+        await this.loadTraitementModels();
+        this.cd.detectChanges();
+    }
+
+    closeTraitementModal(force = false): void {
+        if (this.traitementProcessing && !force) {
+            return;
+        }
+        this.showTraitementModal = false;
+        this.traitementFiles = [];
+        this.selectedTraitementModelId = '';
+        this.traitementModelSearch = '';
+        this.traitementOutputDate = '';
+        this.traitementProgressMessage = '';
+        this.traitementAutoSelectedModelHint = '';
+        this.traitementProcessing = false;
+        this.resetFileInput(this.traitementFileInputRef);
+        this.cd.detectChanges();
+    }
+
+    get filteredTraitementModels(): AutoProcessingModel[] {
+        const query = this.traitementModelSearch.trim().toLowerCase();
+        if (!query) {
+            return this.traitementModels;
+        }
+        return this.traitementModels.filter(model => {
+            const name = (model.name || '').toLowerCase();
+            const pattern = (model.filePattern || '').toLowerCase();
+            const type = model.fileType === 'bo'
+                ? 'bo back office'
+                : model.fileType === 'partner'
+                    ? 'partenaire partner'
+                    : 'bo partenaire';
+            return name.includes(query) || pattern.includes(query) || type.includes(query);
+        });
+    }
+
+    getTraitementOutputPreview(): string {
+        const model = this.traitementModels.find(m => m.id === this.selectedTraitementModelId);
+        if (!model || !this.traitementOutputDate) {
+            return '';
+        }
+        const sampleFile = this.traitementFiles[0] || new File([''], 'fichier.csv');
+        return this.buildProcessedOutputFileName(model, sampleFile);
+    }
+
+    private getDefaultTraitementOutputDate(): Date {
+        const date = new Date();
+        date.setDate(date.getDate() - 1);
+        return date;
+    }
+
+    private formatDateForInput(date: Date): string {
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    }
+
+    private formatDateForFileName(dateInput: string): string {
+        if (!dateInput) {
+            return this.formatDateForInput(this.getDefaultTraitementOutputDate()).replace(/-/g, '');
+        }
+        return dateInput.replace(/-/g, '');
+    }
+
+    async loadTraitementModels(): Promise<void> {
+        this.traitementModelsLoading = true;
+        try {
+            this.traitementModels = await this.autoProcessingService.getAllModels('Réconciliation');
+            if (this.traitementFiles.length > 0) {
+                this.suggestTraitementModelFromFiles();
+            } else if (this.traitementModels.length === 1 && this.traitementModels[0].id) {
+                this.selectedTraitementModelId = this.traitementModels[0].id;
+            }
+        } catch (error) {
+            console.error('Erreur chargement modèles de traitement:', error);
+            await this.popupService.showError(
+                'Impossible de charger les modèles de traitement.',
+                'Erreur'
+            );
+        } finally {
+            this.traitementModelsLoading = false;
+            this.cd.detectChanges();
+        }
+    }
+
+    onTraitementFilesSelected(event: Event): void {
+        const input = event.target as HTMLInputElement;
+        if (!input.files?.length) {
+            return;
+        }
+        const newFiles = Array.from(input.files);
+        this.traitementFiles = [...this.traitementFiles, ...newFiles];
+        this.resetFileInput(this.traitementFileInputRef);
+        this.suggestTraitementModelFromFiles();
+        this.cd.detectChanges();
+    }
+
+    removeTraitementFile(index: number, event?: Event): void {
+        event?.stopPropagation();
+        this.traitementFiles.splice(index, 1);
+        this.traitementFiles = [...this.traitementFiles];
+        if (this.traitementFiles.length) {
+            this.suggestTraitementModelFromFiles();
+        } else {
+            this.traitementAutoSelectedModelHint = '';
+        }
+        this.cd.detectChanges();
+    }
+
+    /** Détecte et sélectionne le modèle dont le pattern correspond aux fichiers uploadés. */
+    private suggestTraitementModelFromFiles(): void {
+        const detected = this.detectTraitementModelFromFiles(this.traitementFiles);
+        if (!detected?.id) {
+            this.traitementAutoSelectedModelHint = this.traitementFiles.length
+                ? 'Aucun modèle ne correspond au nom des fichiers sélectionnés — choisissez-le manuellement.'
+                : '';
+            return;
+        }
+
+        this.selectedTraitementModelId = detected.id;
+        const searchToken = (detected.filePattern || detected.name || '')
+            .replace(/\*/g, '')
+            .trim();
+        if (searchToken) {
+            this.traitementModelSearch = searchToken;
+        }
+
+        const preSummary = this.modelPreProcessingService.getPreProcessingSummary(detected.preProcessingConfig);
+        let hint = `Modèle détecté automatiquement : ${detected.name} (pattern ${detected.filePattern})`;
+        if (preSummary.summaryText) {
+            hint += ` — ${preSummary.summaryText} configurés`;
+        }
+        this.traitementAutoSelectedModelHint = hint;
+    }
+
+    private detectTraitementModelFromFiles(files: File[]): AutoProcessingModel | null {
+        if (!files.length || !this.traitementModels.length) {
+            return null;
+        }
+
+        const candidates: Array<{ model: AutoProcessingModel; score: number }> = [];
+
+        for (const model of this.traitementModels) {
+            if (!model.id || !model.filePattern) {
+                continue;
+            }
+
+            let matchedFiles = 0;
+            for (const file of files) {
+                if (this.matchesFilePattern(file.name, model.filePattern)) {
+                    matchedFiles++;
+                }
+            }
+
+            if (matchedFiles === 0) {
+                continue;
+            }
+
+            const patternSpecificity = model.filePattern.replace(/[*?]/g, '').length;
+            const score = matchedFiles * 1000 + patternSpecificity;
+            candidates.push({ model, score });
+        }
+
+        if (!candidates.length) {
+            return null;
+        }
+
+        const allFilesMatched = candidates.filter(
+            candidate => this.countTraitementModelFileMatches(candidate.model, files) === files.length
+        );
+        const pool = allFilesMatched.length ? allFilesMatched : candidates;
+        pool.sort((a, b) => b.score - a.score);
+        return pool[0].model;
+    }
+
+    private countTraitementModelFileMatches(model: AutoProcessingModel, files: File[]): number {
+        if (!model.filePattern) {
+            return 0;
+        }
+
+        return files.filter(file => this.matchesFilePattern(file.name, model.filePattern)).length;
+    }
+
+    getTraitementModelLabel(model: AutoProcessingModel): string {
+        const typeLabel = model.fileType === 'bo'
+            ? 'BO'
+            : model.fileType === 'partner'
+                ? 'Partenaire'
+                : 'BO / Partenaire';
+        return `${model.name} — pattern: ${model.filePattern} (${typeLabel})`;
+    }
+
+    canApplyTraitement(): boolean {
+        return !this.traitementProcessing
+            && this.traitementFiles.length > 0
+            && !!this.selectedTraitementModelId
+            && !!this.traitementOutputDate;
+    }
+
+    async applyAssistedFileTreatment(): Promise<void> {
+        if (!this.canApplyTraitement()) {
+            return;
+        }
+
+        const model = this.traitementModels.find(m => m.id === this.selectedTraitementModelId);
+        if (!model?.id) {
+            await this.popupService.showError('Veuillez sélectionner un modèle de traitement.', 'Modèle requis');
+            return;
+        }
+
+        this.traitementProcessing = true;
+
+        try {
+            const compiled = await this.compileAssistedTreatmentFileRows(this.traitementFiles);
+            if (!compiled.rows.length) {
+                await this.popupService.showWarning(
+                    'Aucune donnée lisible dans les fichiers sélectionnés.',
+                    'Fichiers vides'
+                );
+                return;
+            }
+
+            this.traitementProgressMessage =
+                `Traitement de ${compiled.rows.length} ligne(s) compilées (${this.traitementFiles.length} fichier(s))...`;
+            this.cd.detectChanges();
+
+            const processed = await this.autoProcessingService.processDataWithRules(model.id, compiled.rows);
+            if (!processed?.length) {
+                await this.popupService.showWarning(
+                    'Aucun résultat après traitement du fichier compilé.',
+                    'Traitement'
+                );
+                return;
+            }
+
+            let normalizedProcessed = this.normalizeData(processed) as Record<string, string>[];
+            let preProcessingResultMessage = '';
+
+            if (this.modelPreProcessingService.hasPreProcessing(model.preProcessingConfig)) {
+                const rowsBeforePreProcessing = normalizedProcessed.length;
+                this.traitementProgressMessage = 'Application des filtres et formatage du modèle...';
+                this.cd.detectChanges();
+                normalizedProcessed = this.modelPreProcessingService.applyPreProcessing(
+                    normalizedProcessed,
+                    model.preProcessingConfig
+                );
+                preProcessingResultMessage = this.modelPreProcessingService.buildApplicationResult(
+                    rowsBeforePreProcessing,
+                    normalizedProcessed.length,
+                    model.preProcessingConfig
+                );
+
+                if (!normalizedProcessed.length) {
+                    await this.popupService.showWarning(
+                        'Aucune ligne restante après filtres/formatage configurés dans le modèle.\n\n' +
+                        (preProcessingResultMessage || ''),
+                        'Traitement'
+                    );
+                    return;
+                }
+            }
+
+            const dedupResult = this.removeDuplicateTreatmentRows(normalizedProcessed);
+            const uniqueProcessed = dedupResult.uniqueRows;
+
+            if (!uniqueProcessed.length) {
+                await this.popupService.showWarning(
+                    'Aucune ligne unique après suppression des doublons.',
+                    'Traitement'
+                );
+                return;
+            }
+
+            const outputName = this.buildProcessedOutputFileName(model, compiled.referenceFile);
+
+            this.traitementProgressMessage = `Téléchargement du fichier compilé : ${outputName}`;
+            this.cd.detectChanges();
+            await this.downloadProcessedTreatmentFile(uniqueProcessed, outputName);
+
+            const defaultSide = model.fileType === 'partner'
+                ? 'Partenaire'
+                : 'BO (Back Office)';
+            const duplicateInfo = dedupResult.duplicatesRemoved > 0
+                ? `\n${dedupResult.duplicatesRemoved} doublon(s) ignoré(s).`
+                : '';
+            const compileInfo = this.traitementFiles.length > 1
+                ? `\n${this.traitementFiles.length} fichiers compilés : ${compiled.sourceSummary}`
+                : '';
+            const preProcessingInfo = preProcessingResultMessage
+                ? `\n\nPré-traitement du modèle ${model.name} :\n${preProcessingResultMessage}`
+                : '';
+            const sideChoice = await this.popupService.showSelectInput(
+                `${this.traitementFiles.length} fichier(s) compilé(s) en un seul résultat.\n` +
+                `${uniqueProcessed.length} ligne(s) unique(s).${duplicateInfo}${compileInfo}${preProcessingInfo}\n` +
+                `Fichier produit téléchargé : ${outputName}.\n` +
+                `Assigner ce fichier à quel emplacement pour la réconciliation ?`,
+                'Destination BO ou Partenaire',
+                ['BO (Back Office)', 'Partenaire'],
+                defaultSide
+            );
+
+            if (!sideChoice) {
+                return;
+            }
+
+            const side: 'bo' | 'partner' = sideChoice.startsWith('BO') ? 'bo' : 'partner';
+            this.assignProcessedTreatmentData(uniqueProcessed, outputName, side, model.id);
+
+            const bothReady = this.canProceedAuto();
+            const duplicateSummary = dedupResult.duplicatesRemoved > 0
+                ? ` ${dedupResult.duplicatesRemoved} doublon(s) ignoré(s).`
+                : '';
+            this.traitementProcessing = false;
+            this.closeTraitementModal(true);
+            const preProcessingSuccess = preProcessingResultMessage
+                ? `\n\n${preProcessingResultMessage}`
+                : '';
+            await this.popupService.showSuccess(
+                `Fichier compilé traité et téléchargé (${outputName}).${duplicateSummary}${preProcessingSuccess}` +
+                (bothReady
+                    ? '\n\nBO et Partenaire sont prêts : vous pouvez lancer la réconciliation.'
+                    : '\n\nChargez ou traitez l\'autre fichier (BO ou Partenaire) puis lancez la réconciliation.'),
+                'Traitement terminé'
+            );
+        } catch (error: any) {
+            console.error('Erreur traitement assisté:', error);
+            this.traitementProcessing = false;
+            this.closeTraitementModal(true);
+            await this.popupService.showError(
+                `Erreur lors du traitement : ${error?.message || error}`,
+                'Erreur'
+            );
+        } finally {
+            this.traitementProcessing = false;
+            this.traitementProgressMessage = '';
+            this.cd.detectChanges();
+        }
+    }
+
+    /** Lit et fusionne plusieurs fichiers en un seul jeu de lignes. */
+    private async compileAssistedTreatmentFileRows(files: File[]): Promise<{
+        rows: Record<string, string>[];
+        sourceSummary: string;
+        referenceFile: File;
+    }> {
+        const compiled: Record<string, string>[] = [];
+        const loadedNames: string[] = [];
+
+        for (let i = 0; i < files.length; i++) {
+            const file = files[i];
+            this.traitementProgressMessage = `Compilation ${i + 1}/${files.length} : ${file.name}`;
+            this.cd.detectChanges();
+
+            const parsed = await this.readAssistedTreatmentFileRows(file);
+            if (parsed.rows.length) {
+                compiled.push(...parsed.rows);
+                const headerInfo = parsed.headerLine >= 0
+                    ? `, en-tête ligne ${parsed.headerLine + 1}`
+                    : '';
+                const removedInfo = parsed.removedLines > 0
+                    ? `, ${parsed.removedLines} ligne(s) ignorée(s)`
+                    : '';
+                loadedNames.push(`${file.name} (${parsed.rows.length}${headerInfo}${removedInfo})`);
+            }
+        }
+
+        return {
+            rows: compiled,
+            sourceSummary: loadedNames.join(', '),
+            referenceFile: files[0]
+        };
+    }
+
+    /**
+     * Détecte la ligne d'en-tête, ignore les lignes avant l'en-tête et filtre les lignes inutiles.
+     */
+    private parseAssistedTreatmentGrid(jsonData: any[][]): {
+        rows: Record<string, string>[];
+        headerLine: number;
+        removedLines: number;
+    } {
+        if (!jsonData?.length) {
+            return { rows: [], headerLine: 0, removedLines: 0 };
+        }
+
+        const normalizedGrid = this.normalizeAssistedTreatmentGrid(jsonData);
+        const assistedHeader = this.detectAssistedTreatmentHeader(normalizedGrid);
+        const headerLine = assistedHeader.headerRowIndex;
+        const headerRow = assistedHeader.headerRow;
+        const hasDetectedHeaders = headerRow.some(h => h && String(h).trim());
+        const headers = (hasDetectedHeaders ? headerRow : normalizedGrid[0] || [])
+            .map((header: any, index: number) => this.normalizeColumnName(header || `Col${index + 1}`));
+        const startIndex = hasDetectedHeaders ? headerLine + 1 : 1;
+        const skippedBeforeHeader = hasDetectedHeaders ? headerLine : 0;
+
+        const rows: Record<string, string>[] = [];
+        let skippedUselessRows = 0;
+
+        for (let i = startIndex; i < normalizedGrid.length; i++) {
+            const rowData = normalizedGrid[i] as any[];
+            if (!rowData || rowData.length === 0) {
+                skippedUselessRows++;
+                continue;
+            }
+
+            const row: Record<string, string> = {};
+            headers.forEach((header, index) => {
+                this.assignExcelCellValue(row, header, rowData[index]);
+            });
+
+            if (!this.isUsefulAssistedTreatmentRow(row, headers)) {
+                skippedUselessRows++;
+                continue;
+            }
+
+            rows.push(row);
+        }
+
+        console.log(
+            `📋 Traitement assisté (${assistedHeader.source}) — en-tête ligne ${headerLine + 1}, ` +
+            `${skippedBeforeHeader} ligne(s) avant en-tête ignorée(s), ` +
+            `${skippedUselessRows} ligne(s) inutile(s) filtrée(s), ${rows.length} ligne(s) conservée(s)`
+        );
+
+        return {
+            rows,
+            headerLine,
+            removedLines: skippedBeforeHeader + skippedUselessRows
+        };
+    }
+
+    /**
+     * Détecte la ligne d'en-tête (Airtel User Transaction Report, puis heuristique générale).
+     */
+    private detectAssistedTreatmentHeader(jsonData: any[][]): {
+        headerRowIndex: number;
+        headerRow: string[];
+        source: string;
+    } {
+        const airtelHeaderIndex = this.detectAirtelUserTransactionReportHeaderIndex(jsonData);
+        if (airtelHeaderIndex !== null) {
+            const headerRow = this.extractAssistedGridRowStrings(jsonData[airtelHeaderIndex]);
+            return {
+                headerRowIndex: airtelHeaderIndex,
+                headerRow,
+                source: 'Airtel User Transaction Report'
+            };
+        }
+
+        const generic = this.detectExcelHeadersImproved(jsonData);
+        return {
+            headerRowIndex: generic.headerRowIndex,
+            headerRow: generic.headerRow,
+            source: 'détection générique'
+        };
+    }
+
+    /**
+     * Rapport Airtel : métadonnées sur les ~5 premières lignes, en-têtes réels ensuite
+     * (ex. S. No., Transaction ID, Sender Msisdn…).
+     */
+    private detectAirtelUserTransactionReportHeaderIndex(jsonData: any[][]): number | null {
+        const scanLimit = Math.min(12, jsonData.length);
+        let isAirtelReport = false;
+
+        for (let i = 0; i < scanLimit; i++) {
+            const rowText = this.getAssistedGridRowText(jsonData[i]).toLowerCase();
+            if (
+                rowText.includes('user_transaction_report') ||
+                rowText.includes('user transaction report')
+            ) {
+                isAirtelReport = true;
+                break;
+            }
+            if (
+                rowText.includes('selection criteria') &&
+                (rowText.includes('from date') || rowText.includes('to date'))
+            ) {
+                isAirtelReport = true;
+                break;
+            }
+        }
+
+        if (!isAirtelReport) {
+            return null;
+        }
+
+        for (let i = 0; i < Math.min(15, jsonData.length); i++) {
+            const rowText = this.getAssistedGridRowText(jsonData[i]).toLowerCase();
+            const hasTransactionId = rowText.includes('transaction id') || rowText.includes('transaction_id');
+            const hasSerialOrSender =
+                rowText.includes('s. no') ||
+                rowText.includes('s.no') ||
+                rowText.includes('sender msisdn') ||
+                rowText.includes('sender_msisdn');
+            if (hasTransactionId && hasSerialOrSender) {
+                return i;
+            }
+        }
+
+        // Fallback Airtel : ignorer les 5 premières lignes (ligne 6 = en-têtes)
+        return jsonData.length > 5 ? 5 : null;
+    }
+
+    /** Répartit les lignes CSV lues en une seule colonne (export Excel). */
+    private normalizeAssistedTreatmentGrid(jsonData: any[][]): any[][] {
+        return jsonData.map(row => {
+            if (!Array.isArray(row) || row.length === 0) {
+                return row;
+            }
+
+            const nonEmptyCells = row.filter(
+                cell => cell !== null && cell !== undefined && String(cell).trim() !== ''
+            );
+
+            if (nonEmptyCells.length !== 1) {
+                return row;
+            }
+
+            const cellValue = String(nonEmptyCells[0]);
+            const commaCount = (cellValue.match(/,/g) || []).length;
+            const semicolonCount = (cellValue.match(/;/g) || []).length;
+
+            if (commaCount + semicolonCount < 2) {
+                return row;
+            }
+
+            const delimiter = semicolonCount > commaCount ? ';' : ',';
+            const parsed = Papa.parse(cellValue, {
+                header: false,
+                delimiter,
+                skipEmptyLines: false
+            });
+
+            const splitRow = parsed.data?.[0] as any[] | undefined;
+            if (splitRow && splitRow.length > 1) {
+                return splitRow;
+            }
+
+            return row;
+        });
+    }
+
+    private getAssistedGridRowText(row: any[] | undefined): string {
+        if (!row || !row.length) {
+            return '';
+        }
+        return row
+            .map(cell => (cell !== null && cell !== undefined ? String(cell).trim() : ''))
+            .filter(v => v !== '')
+            .join(' ');
+    }
+
+    private extractAssistedGridRowStrings(row: any[] | undefined): string[] {
+        if (!row || !row.length) {
+            return [];
+        }
+        return row.map(cell => (cell !== null && cell !== undefined ? String(cell).trim() : ''));
+    }
+
+    /** Préambule Airtel : ne garder que les lignes à partir de l'en-tête transactionnel. */
+    private stripAirtelReportPreambleFromText(text: string): string {
+        const lower = text.toLowerCase();
+        const isAirtel =
+            lower.includes('user_transaction_report') ||
+            lower.includes('user transaction report') ||
+            (lower.includes('selection criteria') && lower.includes('from date'));
+
+        if (!isAirtel) {
+            return text;
+        }
+
+        const lines = text.split(/\r?\n/);
+        for (let i = 0; i < Math.min(15, lines.length); i++) {
+            const line = lines[i].toLowerCase();
+            const hasTransactionId = line.includes('transaction id') || line.includes('transaction_id');
+            const hasSerialOrSender =
+                line.includes('s. no') ||
+                line.includes('s.no') ||
+                line.includes('sender msisdn');
+            if (hasTransactionId && hasSerialOrSender) {
+                return lines.slice(i).join('\n');
+            }
+        }
+
+        return lines.length > 5 ? lines.slice(5).join('\n') : text;
+    }
+
+    /** Filtre les lignes vides, répétitions d'en-tête, totaux et lignes trop pauvres. */
+    private isUsefulAssistedTreatmentRow(row: Record<string, string>, headers: string[]): boolean {
+        const values = headers
+            .map(h => (row[h] ?? '').toString().trim())
+            .filter(v => v !== '');
+
+        if (values.length === 0) {
+            return false;
+        }
+
+        const headerMatches = headers.filter(h => {
+            const cell = (row[h] ?? '').toString().trim().toLowerCase();
+            const header = h.toLowerCase();
+            return cell !== '' && cell === header;
+        }).length;
+        if (headerMatches >= Math.min(3, headers.length)) {
+            return false;
+        }
+
+        const joined = values.join(' ').toLowerCase();
+        const metadataPatterns = [
+            /user_transaction_report/,
+            /user transaction report/,
+            /^selection criteria/,
+            /^from date\s*:/,
+            /^to date\s*:/
+        ];
+        if (metadataPatterns.some(pattern => pattern.test(joined))) {
+            return false;
+        }
+
+        const footerPatterns = [
+            /^total\b/,
+            /^totaux\b/,
+            /^sous[- ]?total/,
+            /^grand total/,
+            /^nombre de lignes/,
+            /^nb de lignes/,
+            /^report generated/,
+            /^généré le/,
+            /^genere le/,
+            /^page \d+\s*\/\s*\d+$/,
+            /^fin du rapport/,
+            /^---+$/
+        ];
+        if (footerPatterns.some(pattern => pattern.test(joined))) {
+            return false;
+        }
+
+        if (headers.length >= 4 && values.length < 2) {
+            return false;
+        }
+
+        return true;
+    }
+
+    private buildProcessedOutputFileName(model: AutoProcessingModel, originalFile: File): string {
+        const pattern = (model.filePattern || model.name || 'modele').trim();
+        const patternDotIndex = pattern.lastIndexOf('.');
+        const rawBase = patternDotIndex > 0 ? pattern.substring(0, patternDotIndex) : pattern;
+        const base = this.sanitizePatternBaseForFileName(rawBase);
+        const ext = patternDotIndex > 0
+            ? pattern.substring(patternDotIndex).replace(/[*?]/g, '')
+            : (() => {
+                const originalDotIndex = originalFile.name.lastIndexOf('.');
+                return originalDotIndex > 0 ? originalFile.name.substring(originalDotIndex) : '.csv';
+            })();
+        const dateSuffix = this.formatDateForFileName(this.traitementOutputDate);
+        return `${base}_${dateSuffix}${ext}`;
+    }
+
+    /** Retire les wildcards du pattern (*, ?) pour produire un nom de fichier réel. */
+    private sanitizePatternBaseForFileName(patternBase: string): string {
+        const cleaned = patternBase
+            .replace(/[*?]/g, '')
+            .replace(/[_\-.]{2,}/g, '_')
+            .replace(/^[_\-.]+|[_\-.]+$/g, '')
+            .trim();
+        return cleaned || 'modele';
+    }
+
+    private removeDuplicateTreatmentRows(rows: Record<string, string>[]): {
+        uniqueRows: Record<string, string>[];
+        duplicatesRemoved: number;
+    } {
+        const seen = new Set<string>();
+        const uniqueRows: Record<string, string>[] = [];
+        let duplicatesRemoved = 0;
+
+        for (const row of rows) {
+            const key = JSON.stringify(row);
+            if (seen.has(key)) {
+                duplicatesRemoved++;
+                continue;
+            }
+            seen.add(key);
+            uniqueRows.push(row);
+        }
+
+        if (duplicatesRemoved > 0) {
+            console.log(`🧹 ${duplicatesRemoved} doublon(s) ignoré(s) sur ${rows.length} ligne(s) traitées`);
+        }
+
+        return { uniqueRows, duplicatesRemoved };
+    }
+
+    private getResolvedAutoBoFileName(): string {
+        return this.autoBoFile?.name || this.autoBoFileName || '';
+    }
+
+    private getResolvedAutoPartnerFileName(): string {
+        return this.autoPartnerFile?.name || this.autoPartnerFileName || '';
+    }
+
+    private async rememberPartnerModelFromFileName(fileName: string): Promise<void> {
+        if (!fileName) {
+            return;
+        }
+        try {
+            const models = await this.autoProcessingService.getAllModels('Réconciliation');
+            const match = models.find(m =>
+                (m.fileType === 'partner' || m.fileType === 'both') &&
+                this.matchesFilePattern(fileName, m.filePattern)
+            );
+            const matchId = match?.id || match?.modelId;
+            if (matchId) {
+                this.assistedPartnerReconciliationModelId = matchId;
+            }
+        } catch (error) {
+            console.warn('Impossible de mémoriser le modèle partenaire:', error);
+        }
+    }
+
+    private async downloadProcessedTreatmentFile(
+        data: Record<string, string>[],
+        outputBaseName: string
+    ): Promise<void> {
+        const columns = this.getColumnsFromData(data);
+        const lowerName = outputBaseName.toLowerCase();
+
+        if (this.isExcelFile(lowerName)) {
+            const format = lowerName.endsWith('.xls') ? 'xls' : 'xlsx';
+            await this.exportOptimizationService.exportExcelOptimized(
+                data,
+                columns,
+                outputBaseName,
+                { format }
+            );
+        } else {
+            await this.exportOptimizationService.exportCSVOptimized(data, columns, outputBaseName);
+        }
+    }
+
+    private assignProcessedTreatmentData(
+        data: Record<string, string>[],
+        fileName: string,
+        side: 'bo' | 'partner',
+        modelId?: string
+    ): void {
+        if (side === 'bo') {
+            this.autoBoData = data;
+            this.autoBoFile = null;
+            this.autoBoFileName = fileName;
+            if (modelId) {
+                this.assistedBoTreatmentModelId = modelId;
+            }
+
+            if (this.detectTRXBOAndExtractServices(this.autoBoData)) {
+                if (this.availableAgencies.length > 0) {
+                    this.showAgencySelectionStep();
+                } else {
+                    this.showServiceSelectionStep();
+                }
+            }
+        } else {
+            this.autoPartnerData = this.convertDebitCreditToNumber(data);
+            this.autoPartnerFile = null;
+            this.autoPartnerFileName = fileName;
+            if (modelId) {
+                this.assistedPartnerReconciliationModelId = modelId;
+            }
+            this.handleAutoPartnerSelectionFlow();
+        }
+
+        this._canProceedCache = null;
+        this.cd.detectChanges();
+    }
+
+    private readAssistedTreatmentFileRows(file: File): Promise<{
+        rows: Record<string, string>[];
+        headerLine: number;
+        removedLines: number;
+    }> {
+        const fileName = file.name.toLowerCase();
+
+        if (fileName.endsWith('.csv')) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = (e: ProgressEvent<FileReader>) => {
+                    let text = e.target?.result as string;
+                    if (text.charCodeAt(0) === 0xFEFF) {
+                        text = text.slice(1);
+                    }
+                    text = this.stripAirtelReportPreambleFromText(text);
+
+                    const lines = text.split('\n').filter(line => line.trim());
+                    const firstLine = lines[0] || '';
+                    const delimiter = (firstLine.match(/;/g) || []).length > (firstLine.match(/,/g) || []).length
+                        ? ';'
+                        : ',';
+
+                    Papa.parse(text, {
+                        header: false,
+                        delimiter,
+                        skipEmptyLines: false,
+                        complete: (results) => {
+                            const grid = (results.data as any[][]).filter(
+                                row => Array.isArray(row) && row.some(cell => cell !== null && cell !== undefined && String(cell).trim() !== '')
+                            );
+                            resolve(this.parseAssistedTreatmentGrid(grid));
+                        },
+                        error: (error: any) => reject(error)
+                    });
+                };
+                reader.onerror = () => reject(new Error('Erreur lors de la lecture du fichier CSV'));
+                reader.readAsText(file, 'utf-8');
+            });
+        }
+
+        if (this.isExcelFile(fileName)) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = (e: ProgressEvent<FileReader>) => {
+                    try {
+                        const data = new Uint8Array(e.target?.result as ArrayBuffer);
+                        const workbook = XLSX.read(data, {
+                            type: 'array',
+                            cellDates: true,
+                            raw: false
+                        });
+                        const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+                        if (!worksheet) {
+                            reject(new Error('Feuille Excel introuvable'));
+                            return;
+                        }
+
+                        const jsonData = XLSX.utils.sheet_to_json(worksheet, {
+                            header: 1,
+                            defval: '',
+                            raw: false,
+                            blankrows: false
+                        }) as any[][];
+
+                        if (!jsonData.length) {
+                            reject(new Error('Fichier Excel vide'));
+                            return;
+                        }
+
+                        resolve(this.parseAssistedTreatmentGrid(jsonData));
+                    } catch (error) {
+                        reject(error);
+                    }
+                };
+                reader.onerror = () => reject(new Error('Erreur lors de la lecture du fichier Excel'));
+                reader.readAsArrayBuffer(file);
+            });
+        }
+
+        return Promise.reject(new Error('Format non supporté. Utilisez CSV ou Excel.'));
     }
 
     // onReconciliationTypeChange - COMMENTÉ (seul le type 1-1 est conservé)
@@ -308,6 +1214,7 @@ export class FileUploadComponent implements OnDestroy {
         this.autoBoFile = null;
         this.autoBoData = [];
         this.autoBoFileName = '';
+        this.assistedBoTreatmentModelId = null;
         this.clearCachesOnFileRemoval('bo');
         this.resetFileInput(this.autoBoFileInputRef);
     }
@@ -318,6 +1225,7 @@ export class FileUploadComponent implements OnDestroy {
         this.autoPartnerFile = null;
         this.autoPartnerData = [];
         this.autoPartnerFileName = '';
+        this.assistedPartnerReconciliationModelId = null;
         this.clearCachesOnFileRemoval('partner');
         this.resetFileInput(this.autoPartnerFileInputRef);
     }
@@ -1989,7 +2897,9 @@ export class FileUploadComponent implements OnDestroy {
             'N°', 'Date', 'Heure', 'Référence', 'Service', 'Paiement', 'Statut', 'Mode',
             'Compte', 'Wallet', 'Pseudo', 'Débit', 'Crédit', 'Montant', 'Commissions',
             'Opération', 'Agent', 'Correspondant', 'Sous-réseau', 'Transaction',
-            'ID', 'External', 'Reference', 'Amount', 'Status', 'Phone', 'Email'
+            'ID', 'External', 'Reference', 'Amount', 'Status', 'Phone', 'Email',
+            'Transaction ID', 'Sender Msisdn', 'Receiver Msisdn', 'Post Balance', 'Previous Balance',
+            'S. No', 'Service Name', 'Transaction Status', 'external_transaction'
         ];
         
         for (const cell of rowStrings) {
@@ -2172,8 +3082,9 @@ export class FileUploadComponent implements OnDestroy {
         const input = event.target as HTMLInputElement;
         if (input.files?.length) {
             this.autoPartnerFile = input.files[0];
-            this.autoPartnerFileName = this.autoPartnerFile.name; // Conserver le nom du fichier
-            this.cd.detectChanges(); // Forcer la mise à jour de la vue
+            this.autoPartnerFileName = this.autoPartnerFile.name;
+            void this.rememberPartnerModelFromFileName(this.autoPartnerFileName);
+            this.cd.detectChanges();
             this.parseAutoFile(this.autoPartnerFile, false);
         }
     }
@@ -4364,7 +5275,69 @@ export class FileUploadComponent implements OnDestroy {
 
 
     /**
-     * Détecte les clés de réconciliation en priorisant les modèles (SANS FALLBACK)
+     * Tente d'extraire les clés de réconciliation à partir d'un modèle partenaire.
+     */
+    private resolveKeysFromPartnerModel(
+        model: AutoProcessingModel,
+        boData: Record<string, string>[],
+        partnerData: Record<string, string>[]
+    ): {
+        boKeyColumn: string;
+        partnerKeyColumn: string;
+        source: 'model';
+        confidence: number;
+        modelId?: string;
+    } | null {
+        if (!model.reconciliationKeys?.partnerKeys?.length) {
+            return null;
+        }
+
+        let boKeyColumn = '';
+        let partnerKeyColumn = '';
+
+        const boKeys = model.reconciliationKeys.boKeys || [];
+        const partnerKeys = model.reconciliationKeys.partnerKeys || [];
+
+        if (boKeys.length > 0 && partnerKeys.length > 0) {
+            const foundBoKey = this.findExistingColumn(boData, boKeys);
+            const foundPartnerKey = this.findExistingColumn(partnerData, partnerKeys);
+            if (foundBoKey && foundPartnerKey) {
+                boKeyColumn = foundBoKey;
+                partnerKeyColumn = foundPartnerKey;
+            }
+        }
+
+        if (!boKeyColumn || !partnerKeyColumn) {
+            const boModels = model.reconciliationKeys.boModels || [];
+            for (const boModelId of boModels) {
+                const boModelKeys = model.reconciliationKeys.boModelKeys?.[boModelId];
+                if (boModelKeys?.length && partnerKeys.length) {
+                    const foundBoKey = this.findExistingColumn(boData, boModelKeys);
+                    const foundPartnerKey = this.findExistingColumn(partnerData, partnerKeys);
+                    if (foundBoKey && foundPartnerKey) {
+                        boKeyColumn = foundBoKey;
+                        partnerKeyColumn = foundPartnerKey;
+                        break;
+                    }
+                }
+            }
+        }
+
+        if (!boKeyColumn || !partnerKeyColumn) {
+            return null;
+        }
+
+        return {
+            boKeyColumn,
+            partnerKeyColumn,
+            source: 'model',
+            confidence: 1.0,
+            modelId: model.modelId || model.id
+        };
+    }
+
+    /**
+     * Détecte les clés de réconciliation en priorisant les modèles.
      */
     private async detectReconciliationKeys(
         boData: Record<string, string>[], 
@@ -4378,140 +5351,74 @@ export class FileUploadComponent implements OnDestroy {
         confidence: number;
         modelId?: string;
     }> {
-        console.log('🔍 Début de la détection des clés de réconciliation (MODÈLES UNIQUEMENT)');
+        boFileName = (boFileName || this.getResolvedAutoBoFileName()).trim();
+        partnerFileName = (partnerFileName || this.getResolvedAutoPartnerFileName()).trim();
+
+        console.log('🔍 Début de la détection des clés de réconciliation');
         console.log('📄 Fichiers:', { boFileName, partnerFileName });
 
-        // PRIORITÉ UNIQUE : Chercher un modèle partenaire qui correspond au fichier partenaire
         try {
             const models = await this.autoProcessingService.getAllModels('Réconciliation');
             console.log(`📋 ${models.length} modèles disponibles`);
-            console.log('📋 Modèles disponibles:', models.map(m => ({ name: m.name, fileType: m.fileType, filePattern: m.filePattern })));
 
-            // Chercher les modèles partenaires qui correspondent au partnerFileName
-            const partnerModels = models.filter(model => 
-                model.fileType === 'partner' && 
-                this.matchesFilePattern(partnerFileName, model.filePattern)
-            );
-
-            console.log(`🔍 ${partnerModels.length} modèles partenaires trouvés pour ${partnerFileName}`);
-            console.log('🔍 Modèles partenaires trouvés:', partnerModels.map(m => ({ name: m.name, filePattern: m.filePattern })));
-
-            for (const model of partnerModels) {
-                console.log(`🔍 Test du modèle partenaire: ${model.name}`);
-                console.log('🔍 Modèle complet:', model);
-                
-                // Vérifier si le modèle a des clés de réconciliation
-                if (!model.reconciliationKeys) {
-                    console.log(`⚠️ Modèle ${model.name} sans reconciliationKeys`);
-                    continue;
-                }
-                
-                console.log('🔍 reconciliationKeys du modèle:', model.reconciliationKeys);
-                
-                // Vérifier si le modèle a des clés partenaires
-                if (!model.reconciliationKeys.partnerKeys || model.reconciliationKeys.partnerKeys.length === 0) {
-                    console.log(`⚠️ Modèle ${model.name} sans partnerKeys`);
-                    continue;
-                }
-                
-                console.log(`✅ Modèle partenaire avec clés trouvé: ${model.name}`);
-                    console.log('🔑 Clés du modèle:', model.reconciliationKeys);
-
-                let boKeyColumn = '';
-                let partnerKeyColumn = '';
-
-                // PRIORITÉ 1: Essayer d'abord les clés génériques (plus simple et plus fiable)
-                console.log('🔍 PRIORITÉ 1: Test des clés génériques');
-                    const boKeys = model.reconciliationKeys.boKeys || [];
-                    const partnerKeys = model.reconciliationKeys.partnerKeys || [];
-
-                console.log('🔍 Clés génériques:', { boKeys, partnerKeys });
-                
-                if (boKeys.length > 0 && partnerKeys.length > 0) {
-                    console.log('🔍 Recherche des clés génériques dans les données...');
-                    
-                    const foundBoKey = this.findExistingColumn(boData, boKeys);
-                    const foundPartnerKey = this.findExistingColumn(partnerData, partnerKeys);
-                    
-                    console.log(`🔍 Résultats de recherche génériques:`, { foundBoKey, foundPartnerKey });
-                    
-                    if (foundBoKey && foundPartnerKey) {
-                        boKeyColumn = foundBoKey;
-                        partnerKeyColumn = foundPartnerKey;
-                        console.log(`✅ Clés génériques trouvées:`, { boKeyColumn, partnerKeyColumn });
-                    } else {
-                        console.log(`❌ Clés génériques non trouvées`);
+            // Priorité 0 : modèle partenaire mémorisé lors du traitement assisté
+            if (this.assistedPartnerReconciliationModelId) {
+                const preselected = models.find(m =>
+                    (m.id || m.modelId) === this.assistedPartnerReconciliationModelId
+                );
+                if (preselected) {
+                    const fromTreatment = this.resolveKeysFromPartnerModel(preselected, boData, partnerData);
+                    if (fromTreatment) {
+                        console.log(`✅ Modèle partenaire (traitement assisté): ${preselected.name}`);
+                        return fromTreatment;
                     }
-                } else {
-                    console.log(`⚠️ Clés génériques manquantes:`, { boKeys, partnerKeys });
-                }
-
-                // PRIORITÉ 2: Si les clés génériques n'ont pas fonctionné, essayer les boModels spécifiques
-                if (!boKeyColumn || !partnerKeyColumn) {
-                    if (model.reconciliationKeys.boModels && model.reconciliationKeys.boModels.length > 0) {
-                        console.log('🔍 PRIORITÉ 2: Test des boModels spécifiques');
-                        console.log('🔍 boModels:', model.reconciliationKeys.boModels);
-                        console.log('🔍 boModelKeys:', model.reconciliationKeys.boModelKeys);
-                        
-                        // Pour chaque modèle BO, essayer de trouver les clés correspondantes
-                        for (const boModelId of model.reconciliationKeys.boModels) {
-                            const boModelKeys = model.reconciliationKeys.boModelKeys?.[boModelId];
-                            const partnerKeys = model.reconciliationKeys.partnerKeys;
-                            
-                            console.log(`🔍 Test pour boModelId ${boModelId}:`, { boModelKeys, partnerKeys });
-                            
-                            if (boModelKeys && boModelKeys.length > 0 && partnerKeys && partnerKeys.length > 0) {
-                                console.log(`🔍 Test des clés pour le modèle BO ${boModelId}:`, { boModelKeys, partnerKeys });
-                                
-                                // Vérifier si ces clés existent dans les données
-                                const foundBoKey = this.findExistingColumn(boData, boModelKeys);
-                                const foundPartnerKey = this.findExistingColumn(partnerData, partnerKeys);
-                                
-                                console.log(`🔍 Résultats de recherche:`, { foundBoKey, foundPartnerKey });
-                                
-                                if (foundBoKey && foundPartnerKey) {
-                                    boKeyColumn = foundBoKey;
-                                    partnerKeyColumn = foundPartnerKey;
-                                    console.log(`✅ Clés trouvées pour le modèle BO ${boModelId}:`, { boKeyColumn, partnerKeyColumn });
-                                    break;
-                                } else {
-                                    console.log(`❌ Clés non trouvées pour le modèle BO ${boModelId}`);
-                    }
-                } else {
-                                console.log(`⚠️ Clés manquantes pour le modèle BO ${boModelId}:`, { boModelKeys, partnerKeys });
-                            }
-                        }
-                    } else {
-                        console.log('🔍 Aucun boModel spécifique configuré');
-                    }
-                }
-
-                // Si des clés valides ont été trouvées, les utiliser
-                if (boKeyColumn && partnerKeyColumn) {
-                    console.log(`🎉 Modèle partenaire sélectionné: ${model.name}`);
-                    console.log(`🔑 Clés sélectionnées: BO='${boKeyColumn}', Partner='${partnerKeyColumn}'`);
-                
-                return {
-                        boKeyColumn: boKeyColumn,
-                        partnerKeyColumn: partnerKeyColumn,
-                    source: 'model',
-                        confidence: 1.0,
-                        modelId: model.modelId || model.id
-                };
-                } else {
-                    console.log(`⚠️ Modèle ${model.name} trouvé mais clés non disponibles dans les données`);
                 }
             }
-            
+
+            // Priorité 1 : correspondance par nom de fichier partenaire
+            let partnerModels = models.filter(model =>
+                (model.fileType === 'partner' || model.fileType === 'both') &&
+                partnerFileName &&
+                this.matchesFilePattern(partnerFileName, model.filePattern)
+            );
+            console.log(`🔍 ${partnerModels.length} modèle(s) partenaire(s) pour ${partnerFileName || '(nom vide)'}`);
+
+            // Priorité 2 : correspondance par nom de fichier BO (ex. TRXBO lié au modèle partenaire)
+            if (partnerModels.length === 0 && boFileName) {
+                partnerModels = models.filter(model =>
+                    (model.fileType === 'partner' || model.fileType === 'both') &&
+                    this.matchesFilePattern(boFileName, model.filePattern)
+                );
+                console.log(`🔍 ${partnerModels.length} modèle(s) via fichier BO ${boFileName}`);
+            }
+
+            // Priorité 3 : fallback par présence des clés dans les données
+            if (partnerModels.length === 0) {
+                partnerModels = models.filter(m =>
+                    (m.fileType === 'partner' || m.fileType === 'both') &&
+                    !!m.reconciliationKeys?.partnerKeys?.length
+                );
+                console.log(`🔍 Fallback: test de ${partnerModels.length} modèle(s) partenaire(s) par clés`);
+            }
+
+            for (const model of partnerModels) {
+                const resolved = this.resolveKeysFromPartnerModel(model, boData, partnerData);
+                if (resolved) {
+                    console.log(`🎉 Modèle partenaire sélectionné: ${model.name}`);
+                    return resolved;
+                }
+            }
+
             console.log('❌ Aucun modèle partenaire valide trouvé');
         } catch (error) {
             console.warn('⚠️ Erreur lors de la recherche de modèles:', error);
-            console.error('❌ Détails de l\'erreur:', error);
         }
 
-        // AUCUN FALLBACK - Lancer une erreur si aucun modèle n'est trouvé
         console.log('🚫 AUCUN MODÈLE TROUVÉ - RÉCONCILIATION IMPOSSIBLE');
-        throw new Error(`Aucun modèle de réconciliation trouvé pour les fichiers ${boFileName} et ${partnerFileName}. Veuillez configurer un modèle de traitement automatique dans la section "Modèles de Traitement".`);
+        throw new Error(
+            `Aucun modèle de réconciliation trouvé pour les fichiers ${boFileName || 'BO'} et ${partnerFileName || 'Partenaire'}. ` +
+            `Veuillez configurer un modèle de traitement automatique dans la section "Modèles de Traitement".`
+        );
     }
 
     /**
@@ -5041,9 +5948,9 @@ export class FileUploadComponent implements OnDestroy {
             console.log('📊 Données BO:', this.autoBoData.length, 'lignes');
             console.log('📊 Données Partenaire:', this.autoPartnerData.length, 'lignes');
 
-            // Récupérer les noms de fichiers
-            const boFileName = this.autoBoFile?.name || '';
-            const partnerFileName = this.autoPartnerFile?.name || '';
+            // Récupérer les noms de fichiers (upload direct ou via traitement assisté)
+            const boFileName = this.getResolvedAutoBoFileName();
+            const partnerFileName = this.getResolvedAutoPartnerFileName();
 
             console.log('🔍 Vérification des modèles de traitement automatique...');
             console.log('📄 Fichier BO:', boFileName);
@@ -5271,16 +6178,19 @@ export class FileUploadComponent implements OnDestroy {
                         }
                     });
 
-            } catch (error) {
+            } catch (error: any) {
                 this.loading = false;
                 console.error('❌ Erreur lors de la détection des clés:', error);
-                
-                // Message d'erreur personnalisé pour le cas où aucun modèle n'est trouvé
-                if (error.message.includes('Aucun modèle de réconciliation trouvé')) {
-                    this.errorMessage = `🚫 Réconciliation impossible : ${error.message}\n\n💡 Solution : Configurez un modèle de traitement automatique dans la section "Modèles de Traitement" pour les fichiers ${boFileName} et ${partnerFileName}.`;
-                } else {
-                this.errorMessage = `Erreur lors de la détection des clés: ${error.message}`;
-                }
+                this.errorMessage = '';
+
+                const bo = this.getResolvedAutoBoFileName() || 'BO';
+                const partner = this.getResolvedAutoPartnerFileName() || 'Partenaire';
+                const message = error?.message?.includes('Aucun modèle de réconciliation trouvé')
+                    ? `Réconciliation impossible : aucun modèle trouvé pour ${bo} et ${partner}.\n\n` +
+                      `Configurez un modèle dans « Modèles de Traitement » ou utilisez « Traitement de fichier » pour assigner le bon modèle.`
+                    : (error?.message || 'Erreur lors de la détection des clés de réconciliation.');
+
+                await this.popupService.showError(message, 'Réconciliation impossible');
             }
         }
     }

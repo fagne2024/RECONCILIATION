@@ -82,6 +82,12 @@ const routes: Routes = [
     data: { module: 'Réconciliation', permissions: ['consulter'] }
   },
   {
+    path: 'upload-assisted',
+    component: FileUploadComponent,
+    canActivate: [AuthGuard, ModuleAccessGuard],
+    data: { module: 'Réconciliation', permissions: ['consulter'], assistedOnly: true }
+  },
+  {
     path: 'column-selection',
     component: ColumnSelectionComponent,
     canActivate: [AuthGuard, ModuleAccessGuard],

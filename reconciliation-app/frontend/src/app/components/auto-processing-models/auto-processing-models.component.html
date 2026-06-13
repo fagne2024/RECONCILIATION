@@ -385,7 +385,9 @@
             <i class="fas fa-tools"></i> {{ showColumnProcessingSection ? 'Masquer' : 'Afficher' }}
           </button>
         </h4>
-        <p class="section-description">Configurez les règles de nettoyage des données avant la réconciliation.</p>
+        <p class="section-description">
+          Configurez le nettoyage des colonnes, les filtres, le formatage, la concaténation et le renommage des valeurs avant la réconciliation.
+        </p>
         
         <div *ngIf="showColumnProcessingSection" class="processing-config-container">
           <!-- Liste des règles existantes -->
@@ -451,7 +453,335 @@
             <button type="button" class="btn btn-success" (click)="addColumnProcessingRule()">
               <i class="fas fa-plus"></i> Ajouter une règle de nettoyage
             </button>
-                 </div>
+          </div>
+
+          <!-- Filtres de lignes (comme /traitement) -->
+          <div class="preprocessing-subsection">
+            <h5>
+              <i class="fas fa-filter"></i> Filtrer les lignes
+              <button type="button" class="btn btn-sm btn-outline-info" (click)="toggleRowFiltersSection()">
+                {{ showRowFiltersSection ? 'Masquer' : 'Afficher' }}
+              </button>
+            </h5>
+            <p class="section-description">
+              Conserve uniquement les lignes dont la colonne correspond aux valeurs indiquées (appliqué avant réconciliation).
+            </p>
+
+            <div *ngIf="showRowFiltersSection">
+              <div *ngIf="modelRowFilters.length === 0" class="alert alert-light">
+                Aucun filtre configuré. Ajoutez un filtre pour reproduire la section « Filtrer les lignes » de la page Traitement.
+              </div>
+
+              <div *ngFor="let filter of modelRowFilters; let i = index" class="preprocessing-filter-item">
+                <div class="form-row">
+                  <div class="form-group col-md-3">
+                    <label>Colonne</label>
+                    <select class="form-control" [(ngModel)]="filter.column" [ngModelOptions]="{standalone: true}">
+                      <option value="">-- Choisir --</option>
+                      <option *ngFor="let col of getPreProcessingColumns()" [value]="col">{{ col }}</option>
+                    </select>
+                  </div>
+                  <div class="form-group col-md-6">
+                    <label>Valeurs à conserver (séparées par virgule ou retour ligne)</label>
+                    <textarea class="form-control" rows="2"
+                              [value]="getFilterValuesInput(filter)"
+                              (input)="updateFilterValuesInput(filter, $any($event.target).value)"
+                              placeholder="Ex: SUCCESS, VALIDATED"></textarea>
+                  </div>
+                  <div class="form-group col-md-2">
+                    <label>
+                      <input type="checkbox" [(ngModel)]="filter.enabled" [ngModelOptions]="{standalone: true}">
+                      Actif
+                    </label>
+                  </div>
+                  <div class="form-group col-md-1">
+                    <label>&nbsp;</label>
+                    <button type="button" class="btn btn-sm btn-outline-danger btn-block" (click)="removeModelRowFilter(i)">
+                      <i class="fas fa-trash"></i>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <button type="button" class="btn btn-outline-primary btn-sm" (click)="addModelRowFilter()">
+                <i class="fas fa-plus"></i> Ajouter un filtre
+              </button>
+            </div>
+          </div>
+
+          <!-- Formatage automatique (comme /traitement) -->
+          <div class="preprocessing-subsection">
+            <h5>
+              <i class="fas fa-magic"></i> Formatage automatique
+              <button type="button" class="btn btn-sm btn-outline-info" (click)="toggleFormatActionsSection()">
+                {{ showFormatActionsSection ? 'Masquer' : 'Afficher' }}
+              </button>
+            </h5>
+            <p class="section-description">
+              Actions de formatage appliquées sur les colonnes sélectionnées après les règles de nettoyage.
+            </p>
+
+            <div *ngIf="showFormatActionsSection">
+              <div class="preprocessing-format-item" *ngFor="let item of formatActionTypes">
+                <ng-container *ngIf="getFormatActionByType(item.type) as action">
+                  <div class="format-action-header">
+                    <label>
+                      <input type="checkbox" [(ngModel)]="action.enabled" [ngModelOptions]="{standalone: true}">
+                      {{ item.label }}
+                    </label>
+                  </div>
+
+                  <div *ngIf="action.enabled" class="format-action-body">
+                    <div class="form-group">
+                      <label>Colonnes concernées</label>
+                      <div class="columns-checkboxes">
+                        <label *ngFor="let col of getPreProcessingColumns()" class="column-checkbox">
+                          <input type="checkbox"
+                                 [checked]="isFormatActionColumnSelected(action, col)"
+                                 (change)="toggleFormatActionColumn(action, col, $any($event.target).checked)">
+                          {{ col }}
+                        </label>
+                        <small *ngIf="getPreProcessingColumns().length === 0" class="text-muted">
+                          Chargez d'abord un fichier modèle pour lister les colonnes.
+                        </small>
+                      </div>
+                    </div>
+
+                    <div *ngIf="action.type === 'removeSpecialStrings'" class="form-row">
+                      <div class="form-group col-md-6">
+                        <label>Chaîne à supprimer</label>
+                        <input type="text" class="form-control" [(ngModel)]="action.specialStringToRemove" [ngModelOptions]="{standalone: true}">
+                      </div>
+                      <div class="form-group col-md-6">
+                        <label>Mode</label>
+                        <select class="form-control" [(ngModel)]="action.specialStringRemovalMode" [ngModelOptions]="{standalone: true}">
+                          <option value="all">Toutes les occurrences</option>
+                          <option value="start">Début uniquement</option>
+                          <option value="end">Fin uniquement</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div *ngIf="action.type === 'removeCharacters'" class="form-row">
+                      <div class="form-group col-md-3">
+                        <label>Action</label>
+                        <select class="form-control" [(ngModel)]="action.removeCharMode" [ngModelOptions]="{standalone: true}">
+                          <option value="remove">Supprimer</option>
+                          <option value="keep">Conserver</option>
+                        </select>
+                      </div>
+                      <div class="form-group col-md-3">
+                        <label>Position</label>
+                        <select class="form-control" [(ngModel)]="action.removeCharPosition" [ngModelOptions]="{standalone: true}">
+                          <option value="start">Début</option>
+                          <option value="end">Fin</option>
+                          <option value="specific">Position spécifique</option>
+                        </select>
+                      </div>
+                      <div class="form-group col-md-3">
+                        <label>Nombre de caractères</label>
+                        <input type="number" min="1" class="form-control" [(ngModel)]="action.removeCharCount" [ngModelOptions]="{standalone: true}">
+                      </div>
+                      <div class="form-group col-md-3" *ngIf="action.removeCharPosition === 'specific'">
+                        <label>Position (1-based)</label>
+                        <input type="number" min="1" class="form-control" [(ngModel)]="action.removeCharSpecificPosition" [ngModelOptions]="{standalone: true}">
+                      </div>
+                    </div>
+
+                    <div *ngIf="action.type === 'removeIndicatif'" class="form-row">
+                      <div class="form-group col-md-4">
+                        <label>Type d'indicatif</label>
+                        <select class="form-control" [(ngModel)]="action.indicatifType" [ngModelOptions]="{standalone: true}">
+                          <option value="international">International (+XX)</option>
+                          <option value="national">National (0X...)</option>
+                          <option value="custom">Personnalisé</option>
+                        </select>
+                      </div>
+                      <div class="form-group col-md-4" *ngIf="action.indicatifType === 'custom'">
+                        <label>Indicatif personnalisé</label>
+                        <input type="text" class="form-control" [(ngModel)]="action.customIndicatif" [ngModelOptions]="{standalone: true}">
+                      </div>
+                    </div>
+
+                    <div *ngIf="action.type === 'removeDecimals'" class="form-row">
+                      <div class="form-group col-md-4">
+                        <label>Séparateur décimal</label>
+                        <select class="form-control" [(ngModel)]="action.decimalSeparator" [ngModelOptions]="{standalone: true}">
+                          <option value=",">Virgule (français)</option>
+                          <option value=".">Point (anglais)</option>
+                        </select>
+                      </div>
+                      <div class="form-group col-md-4">
+                        <label>
+                          <input type="checkbox" [(ngModel)]="action.keepTrailingZeros" [ngModelOptions]="{standalone: true}">
+                          Conserver si décimales non nulles
+                        </label>
+                      </div>
+                    </div>
+
+                    <div *ngIf="action.type === 'keepLastDigits'" class="form-row">
+                      <div class="form-group col-md-4">
+                        <label>Nombre de chiffres à garder</label>
+                        <input type="number" min="1" class="form-control" [(ngModel)]="action.keepLastDigitsCount" [ngModelOptions]="{standalone: true}">
+                      </div>
+                    </div>
+
+                    <div *ngIf="action.type === 'removeSpaces'" class="form-row">
+                      <div class="form-group col-md-4">
+                        <label>Type de suppression</label>
+                        <select class="form-control" [(ngModel)]="action.removeSpacesType" [ngModelOptions]="{standalone: true}">
+                          <option value="all">Tous les espaces</option>
+                          <option value="leading">Début uniquement</option>
+                          <option value="trailing">Fin uniquement</option>
+                          <option value="multiple">Espaces multiples → un seul</option>
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+                </ng-container>
+              </div>
+            </div>
+          </div>
+
+          <!-- Concaténer plusieurs colonnes -->
+          <div class="preprocessing-subsection">
+            <h5>
+              <i class="fas fa-link"></i> Concaténer plusieurs colonnes
+              <button type="button" class="btn btn-sm btn-outline-info" (click)="toggleColumnConcatSection()">
+                {{ showColumnConcatSection ? 'Masquer' : 'Afficher' }}
+              </button>
+            </h5>
+            <p class="section-description">
+              Fusionne plusieurs colonnes en une nouvelle colonne (comme sur la page Traitement).
+              Appliqué après le formatage et avant le renommage des valeurs.
+            </p>
+
+            <div *ngIf="showColumnConcatSection">
+              <div *ngIf="modelColumnConcatRules.length === 0" class="alert alert-light">
+                Aucune concaténation configurée. Ajoutez une règle pour créer une colonne à partir de plusieurs colonnes sources.
+              </div>
+
+              <div *ngFor="let rule of modelColumnConcatRules; let i = index" class="preprocessing-filter-item">
+                <div class="form-row">
+                  <div class="form-group col-md-4">
+                    <label>Nouvelle colonne</label>
+                    <input type="text" class="form-control" [(ngModel)]="rule.targetColumn" [ngModelOptions]="{standalone: true}"
+                           placeholder="Ex: DATE, REF_COMPLETE">
+                  </div>
+                  <div class="form-group col-md-4">
+                    <label>Séparateur</label>
+                    <input type="text" class="form-control" [(ngModel)]="rule.separator" [ngModelOptions]="{standalone: true}"
+                           placeholder="Ex: espace, -, /">
+                  </div>
+                  <div class="form-group col-md-2">
+                    <label>
+                      <input type="checkbox" [(ngModel)]="rule.enabled" [ngModelOptions]="{standalone: true}">
+                      Actif
+                    </label>
+                  </div>
+                  <div class="form-group col-md-2">
+                    <label>&nbsp;</label>
+                    <button type="button" class="btn btn-sm btn-outline-danger btn-block" (click)="removeModelColumnConcatRule(i)">
+                      <i class="fas fa-trash"></i> Supprimer
+                    </button>
+                  </div>
+                </div>
+
+                <div class="form-group">
+                  <label>Colonnes sources (minimum 2)</label>
+                  <div class="columns-checkboxes">
+                    <label *ngFor="let col of getPreProcessingColumns()" class="column-checkbox">
+                      <input type="checkbox"
+                             [checked]="isConcatSourceColumnSelected(rule, col)"
+                             (change)="toggleConcatSourceColumn(rule, col, $any($event.target).checked)">
+                      {{ col }}
+                    </label>
+                    <small *ngIf="getPreProcessingColumns().length === 0" class="text-muted">
+                      Chargez d'abord un fichier modèle pour lister les colonnes.
+                    </small>
+                  </div>
+                </div>
+
+                <div class="concat-order-list" *ngIf="rule.sourceColumns.length > 0">
+                  <label>Ordre de concaténation</label>
+                  <div *ngFor="let col of rule.sourceColumns; let colIndex = index" class="concat-order-item">
+                    <span class="concat-order-index">{{ colIndex + 1 }}.</span>
+                    <span class="concat-order-name">{{ col }}</span>
+                    <button type="button" class="btn btn-sm btn-outline-secondary"
+                            (click)="moveConcatSourceColumnUp(rule, colIndex)" [disabled]="colIndex === 0">
+                      <i class="fas fa-arrow-up"></i>
+                    </button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary"
+                            (click)="moveConcatSourceColumnDown(rule, colIndex)" [disabled]="colIndex === rule.sourceColumns.length - 1">
+                      <i class="fas fa-arrow-down"></i>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <button type="button" class="btn btn-outline-primary btn-sm" (click)="addModelColumnConcatRule()">
+                <i class="fas fa-plus"></i> Ajouter une concaténation
+              </button>
+            </div>
+          </div>
+
+          <!-- Renommage des valeurs de colonnes -->
+          <div class="preprocessing-subsection">
+            <h5>
+              <i class="fas fa-exchange-alt"></i> Renommer les valeurs de colonnes
+              <button type="button" class="btn btn-sm btn-outline-info" (click)="toggleValueMappingsSection()">
+                {{ showValueMappingsSection ? 'Masquer' : 'Afficher' }}
+              </button>
+            </h5>
+            <p class="section-description">
+              Remplace un libellé par un autre dans une colonne (ex. sur « Transaction Type », afficher « Cashin » au lieu de « MP »).
+              Appliqué après les filtres et le formatage.
+            </p>
+
+            <div *ngIf="showValueMappingsSection">
+              <div *ngIf="modelValueMappings.length === 0" class="alert alert-light">
+                Aucun renommage configuré. Ajoutez une correspondance valeur actuelle → nouveau libellé.
+              </div>
+
+              <div *ngFor="let mapping of modelValueMappings; let i = index" class="preprocessing-filter-item">
+                <div class="form-row">
+                  <div class="form-group col-md-3">
+                    <label>Colonne</label>
+                    <select class="form-control" [(ngModel)]="mapping.column" [ngModelOptions]="{standalone: true}">
+                      <option value="">-- Choisir --</option>
+                      <option *ngFor="let col of getPreProcessingColumns()" [value]="col">{{ col }}</option>
+                    </select>
+                  </div>
+                  <div class="form-group col-md-3">
+                    <label>Valeur actuelle</label>
+                    <input type="text" class="form-control" [(ngModel)]="mapping.fromValue" [ngModelOptions]="{standalone: true}"
+                           placeholder="Ex: MP">
+                  </div>
+                  <div class="form-group col-md-3">
+                    <label>Nouveau libellé</label>
+                    <input type="text" class="form-control" [(ngModel)]="mapping.toValue" [ngModelOptions]="{standalone: true}"
+                           placeholder="Ex: Cashin">
+                  </div>
+                  <div class="form-group col-md-2">
+                    <label>
+                      <input type="checkbox" [(ngModel)]="mapping.enabled" [ngModelOptions]="{standalone: true}">
+                      Actif
+                    </label>
+                  </div>
+                  <div class="form-group col-md-1">
+                    <label>&nbsp;</label>
+                    <button type="button" class="btn btn-sm btn-outline-danger btn-block" (click)="removeModelValueMapping(i)">
+                      <i class="fas fa-trash"></i>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <button type="button" class="btn btn-outline-primary btn-sm" (click)="addModelValueMapping()">
+                <i class="fas fa-plus"></i> Ajouter un renommage
+              </button>
+            </div>
+          </div>
                  
           <!-- Formulaire d'ajout/édition de règle de traitement -->
           <div *ngIf="editingColumnProcessingRule !== null" class="processing-rule-form">

@@ -126,6 +126,7 @@ public class AutoProcessingService {
             existing.setReconciliationLogic(model.getReconciliationLogic());
             existing.setCorrespondenceRules(model.getCorrespondenceRules());
             existing.setComparisonColumns(model.getComparisonColumns());
+            existing.setPreProcessingConfig(model.getPreProcessingConfig());
             existing.setUpdatedAt(LocalDateTime.now());
             
             AutoProcessingModel savedModel = autoProcessingModelRepository.save(existing);
@@ -158,6 +159,7 @@ public class AutoProcessingService {
             existing.setReconciliationLogic(model.getReconciliationLogic());
             existing.setCorrespondenceRules(model.getCorrespondenceRules());
             existing.setComparisonColumns(model.getComparisonColumns());
+            existing.setPreProcessingConfig(model.getPreProcessingConfig());
             existing.setUpdatedAt(LocalDateTime.now());
             
             AutoProcessingModel savedModel = autoProcessingModelRepository.save(existing);

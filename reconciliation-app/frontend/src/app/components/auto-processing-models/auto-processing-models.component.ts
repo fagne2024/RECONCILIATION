@@ -1,6 +1,6 @@
 import { Component, OnInit, ChangeDetectorRef } from '@angular/core';
 import { FormBuilder, FormGroup, Validators, FormArray } from '@angular/forms';
-import { AutoProcessingService, AutoProcessingModel } from '../../services/auto-processing.service';
+import { AutoProcessingService, AutoProcessingModel, ModelFormatAction, ModelFormatActionType, ModelPreProcessingConfig, ModelRowFilter, ModelColumnValueMapping, ModelColumnConcatRule } from '../../services/auto-processing.service';
 import { FileWatcherService } from '../../services/file-watcher.service';
 import { ModelManagementService } from '../../services/model-management.service';
 import { PopupService } from '../../services/popup.service';
@@ -57,6 +57,27 @@ export class AutoProcessingModelsComponent implements OnInit {
   showCorrespondenceRulesSection = false;
   showComparisonColumnsSection = false;
   showColumnProcessingSection = false;
+  showRowFiltersSection = false;
+  showFormatActionsSection = false;
+  showColumnConcatSection = false;
+  showValueMappingsSection = false;
+  modelRowFilters: ModelRowFilter[] = [];
+  modelFormatActions: ModelFormatAction[] = [];
+  modelColumnConcatRules: ModelColumnConcatRule[] = [];
+  modelValueMappings: ModelColumnValueMapping[] = [];
+  nextModelFilterId = 1;
+  nextModelConcatRuleId = 1;
+  nextModelValueMappingId = 1;
+  readonly formatActionTypes: Array<{ type: ModelFormatActionType; label: string }> = [
+    { type: 'removeSpecialStrings', label: 'Supprimer une chaîne spécifique' },
+    { type: 'removeCharacters', label: 'Supprimer / conserver des caractères' },
+    { type: 'removeNumbers', label: 'Supprimer les chiffres' },
+    { type: 'removeIndicatif', label: 'Supprimer l\'indicatif téléphonique' },
+    { type: 'removeDecimals', label: 'Supprimer les décimales' },
+    { type: 'keepLastDigits', label: 'Garder les N derniers chiffres' },
+    { type: 'removeZeroDecimals', label: 'Supprimer .0 sur les dates' },
+    { type: 'removeSpaces', label: 'Supprimer les espaces' }
+  ];
   
   // États d'édition
   editingReconciliationLogic = false;
@@ -878,7 +899,8 @@ export class AutoProcessingModelsComponent implements OnInit {
         },
         comparisonColumns: {
           columns: this.comparisonColumns
-        }
+        },
+        preProcessingConfig: this.buildPreProcessingConfig()
       };
 
       // 🔧 SOLUTION: Ne pas inclure les champs de base de données pour la création
@@ -1085,6 +1107,7 @@ export class AutoProcessingModelsComponent implements OnInit {
     
     // Charger les règles de traitement des colonnes du modèle
     this.loadColumnProcessingRules(model.id);
+    this.loadPreProcessingConfig(model.preProcessingConfig);
     
     // Charger les configurations autonomes
     this.correspondenceRules = model.correspondenceRules?.rules || [];
@@ -2677,11 +2700,15 @@ export class AutoProcessingModelsComponent implements OnInit {
     this.showCorrespondenceRulesSection = false;
     this.showComparisonColumnsSection = false;
     this.showColumnProcessingSection = false;
+    this.showRowFiltersSection = false;
+    this.showFormatActionsSection = false;
+    this.showValueMappingsSection = false;
     
     // Réinitialiser les données
     this.correspondenceRules = [];
     this.comparisonColumns = [];
     this.columnProcessingRules = [];
+    this.resetPreProcessingConfig();
     this.selectedPartnerKeys = [];
     this.selectedBOModels = [];
     this.selectedBOKeys = [];
@@ -2859,4 +2886,307 @@ export class AutoProcessingModelsComponent implements OnInit {
         return 'fas fa-cog';
     }
   }
-} 
+
+  // ===== PRÉ-TRAITEMENT (filtres lignes + formatage /traitement) =====
+
+  toggleRowFiltersSection(): void {
+    this.showRowFiltersSection = !this.showRowFiltersSection;
+  }
+
+  toggleFormatActionsSection(): void {
+    this.showFormatActionsSection = !this.showFormatActionsSection;
+    if (this.showFormatActionsSection && !this.modelFormatActions.length) {
+      this.initDefaultFormatActions();
+    }
+  }
+
+  toggleValueMappingsSection(): void {
+    this.showValueMappingsSection = !this.showValueMappingsSection;
+  }
+
+  toggleColumnConcatSection(): void {
+    this.showColumnConcatSection = !this.showColumnConcatSection;
+  }
+
+  addModelColumnConcatRule(): void {
+    this.modelColumnConcatRules.push({
+      id: `concat-${this.nextModelConcatRuleId++}`,
+      sourceColumns: [],
+      targetColumn: '',
+      separator: ' ',
+      enabled: true
+    });
+  }
+
+  removeModelColumnConcatRule(index: number): void {
+    this.modelColumnConcatRules.splice(index, 1);
+  }
+
+  isConcatSourceColumnSelected(rule: ModelColumnConcatRule, column: string): boolean {
+    return (rule.sourceColumns || []).includes(column);
+  }
+
+  toggleConcatSourceColumn(rule: ModelColumnConcatRule, column: string, checked: boolean): void {
+    if (!rule.sourceColumns) {
+      rule.sourceColumns = [];
+    }
+
+    if (checked) {
+      if (!rule.sourceColumns.includes(column)) {
+        rule.sourceColumns.push(column);
+      }
+    } else {
+      rule.sourceColumns = rule.sourceColumns.filter(col => col !== column);
+    }
+  }
+
+  moveConcatSourceColumnUp(rule: ModelColumnConcatRule, index: number): void {
+    if (index <= 0 || index >= rule.sourceColumns.length) {
+      return;
+    }
+
+    const columns = [...rule.sourceColumns];
+    [columns[index - 1], columns[index]] = [columns[index], columns[index - 1]];
+    rule.sourceColumns = columns;
+  }
+
+  moveConcatSourceColumnDown(rule: ModelColumnConcatRule, index: number): void {
+    if (index < 0 || index >= rule.sourceColumns.length - 1) {
+      return;
+    }
+
+    const columns = [...rule.sourceColumns];
+    [columns[index + 1], columns[index]] = [columns[index], columns[index + 1]];
+    rule.sourceColumns = columns;
+  }
+
+  addModelValueMapping(): void {
+    const columns = this.getPreProcessingColumns();
+    this.modelValueMappings.push({
+      id: `mapping-${this.nextModelValueMappingId++}`,
+      column: columns[0] || '',
+      fromValue: '',
+      toValue: '',
+      enabled: true
+    });
+  }
+
+  removeModelValueMapping(index: number): void {
+    this.modelValueMappings.splice(index, 1);
+  }
+
+  getPreProcessingColumns(): string[] {
+    const columns = [
+      ...this.availableTemplateColumns,
+      ...this.availableColumnsForTemplate,
+      ...this.availableColumns
+    ];
+    return [...new Set(columns.filter(column => !!column))];
+  }
+
+  addModelRowFilter(): void {
+    const columns = this.getPreProcessingColumns();
+    this.modelRowFilters.push({
+      id: `filter-${this.nextModelFilterId++}`,
+      column: columns[0] || '',
+      selectedValues: [],
+      enabled: true
+    });
+  }
+
+  removeModelRowFilter(index: number): void {
+    this.modelRowFilters.splice(index, 1);
+  }
+
+  parseFilterValuesInput(input: string): string[] {
+    if (!input?.trim()) {
+      return [];
+    }
+
+    return input
+      .split(/[\n,;]+/)
+      .map(value => value.trim())
+      .filter(value => value.length > 0);
+  }
+
+  getFilterValuesInput(filter: ModelRowFilter): string {
+    return (filter.selectedValues || []).join(', ');
+  }
+
+  updateFilterValuesInput(filter: ModelRowFilter, input: string): void {
+    filter.selectedValues = this.parseFilterValuesInput(input);
+  }
+
+  toggleFormatActionColumn(action: ModelFormatAction, column: string, checked: boolean): void {
+    if (!action.columns) {
+      action.columns = [];
+    }
+
+    if (checked) {
+      if (!action.columns.includes(column)) {
+        action.columns.push(column);
+      }
+    } else {
+      action.columns = action.columns.filter(col => col !== column);
+    }
+  }
+
+  isFormatActionColumnSelected(action: ModelFormatAction, column: string): boolean {
+    return (action.columns || []).includes(column);
+  }
+
+  getFormatActionByType(type: ModelFormatActionType): ModelFormatAction {
+    let action = this.modelFormatActions.find(item => item.type === type);
+    if (!action) {
+      action = this.createDefaultFormatAction(type);
+      this.modelFormatActions.push(action);
+    }
+    return action;
+  }
+
+  private initDefaultFormatActions(): void {
+    this.formatActionTypes.forEach(item => {
+      if (!this.modelFormatActions.some(action => action.type === item.type)) {
+        this.modelFormatActions.push(this.createDefaultFormatAction(item.type));
+      }
+    });
+  }
+
+  private createDefaultFormatAction(type: ModelFormatActionType): ModelFormatAction {
+    return {
+      type,
+      enabled: false,
+      columns: [],
+      specialStringToRemove: '',
+      specialStringRemovalMode: 'all',
+      removeCharMode: 'remove',
+      removeCharPosition: 'start',
+      removeCharCount: 1,
+      removeCharSpecificPosition: 1,
+      removeSpacesType: 'all',
+      keepLastDigitsCount: 3,
+      indicatifType: 'international',
+      customIndicatif: '+33',
+      decimalSeparator: ',',
+      keepTrailingZeros: false
+    };
+  }
+
+  buildPreProcessingConfig(): ModelPreProcessingConfig {
+    const rowFilters = this.modelRowFilters
+      .filter(filter => filter.column && filter.selectedValues?.length)
+      .map(filter => ({
+        id: filter.id,
+        column: filter.column,
+        selectedValues: [...filter.selectedValues],
+        enabled: filter.enabled !== false
+      }));
+
+    const formatActions = this.modelFormatActions
+      .filter(action => action.enabled && action.columns?.length)
+      .map(action => ({ ...action, columns: [...action.columns] }));
+
+    const valueMappings = this.modelValueMappings
+      .filter(mapping => mapping.column && mapping.fromValue?.trim())
+      .map(mapping => ({
+        id: mapping.id,
+        column: mapping.column,
+        fromValue: mapping.fromValue.trim(),
+        toValue: mapping.toValue ?? '',
+        enabled: mapping.enabled !== false
+      }));
+
+    const columnConcatRules = this.modelColumnConcatRules
+      .filter(rule => rule.targetColumn?.trim() && rule.sourceColumns?.length >= 2)
+      .map(rule => ({
+        id: rule.id,
+        sourceColumns: [...rule.sourceColumns],
+        targetColumn: rule.targetColumn.trim(),
+        separator: rule.separator ?? ' ',
+        enabled: rule.enabled !== false
+      }));
+
+    if (!rowFilters.length && !formatActions.length && !columnConcatRules.length && !valueMappings.length) {
+      return { rowFilters: [], formatActions: [], columnConcatRules: [], valueMappings: [] };
+    }
+
+    return { rowFilters, formatActions, columnConcatRules, valueMappings };
+  }
+
+  loadPreProcessingConfig(config?: ModelPreProcessingConfig | null): void {
+    this.modelRowFilters = [];
+    this.modelFormatActions = [];
+    this.modelColumnConcatRules = [];
+    this.modelValueMappings = [];
+    this.nextModelFilterId = 1;
+    this.nextModelConcatRuleId = 1;
+    this.nextModelValueMappingId = 1;
+
+    if (!config) {
+      return;
+    }
+
+    this.modelRowFilters = (config.rowFilters || []).map(filter => ({
+      id: filter.id || `filter-${this.nextModelFilterId++}`,
+      column: filter.column || '',
+      selectedValues: [...(filter.selectedValues || [])],
+      enabled: filter.enabled !== false
+    }));
+
+    this.modelFormatActions = (config.formatActions || []).map(action => ({
+      ...this.createDefaultFormatAction(action.type),
+      ...action,
+      columns: [...(action.columns || [])]
+    }));
+
+    this.modelValueMappings = (config.valueMappings || []).map(mapping => ({
+      id: mapping.id || `mapping-${this.nextModelValueMappingId++}`,
+      column: mapping.column || '',
+      fromValue: mapping.fromValue || '',
+      toValue: mapping.toValue || '',
+      enabled: mapping.enabled !== false
+    }));
+
+    this.modelColumnConcatRules = (config.columnConcatRules || []).map(rule => ({
+      id: rule.id || `concat-${this.nextModelConcatRuleId++}`,
+      sourceColumns: [...(rule.sourceColumns || [])],
+      targetColumn: rule.targetColumn || '',
+      separator: rule.separator ?? ' ',
+      enabled: rule.enabled !== false
+    }));
+
+    if (this.modelRowFilters.length) {
+      this.showRowFiltersSection = true;
+    }
+
+    if (this.modelFormatActions.some(action => action.enabled)) {
+      this.showFormatActionsSection = true;
+    }
+
+    if (this.modelColumnConcatRules.length) {
+      this.showColumnConcatSection = true;
+    }
+
+    if (this.modelValueMappings.length) {
+      this.showValueMappingsSection = true;
+    }
+
+    if (this.showFormatActionsSection && !this.modelFormatActions.length) {
+      this.initDefaultFormatActions();
+    }
+  }
+
+  resetPreProcessingConfig(): void {
+    this.modelRowFilters = [];
+    this.modelFormatActions = [];
+    this.modelColumnConcatRules = [];
+    this.modelValueMappings = [];
+    this.nextModelFilterId = 1;
+    this.nextModelConcatRuleId = 1;
+    this.nextModelValueMappingId = 1;
+    this.showRowFiltersSection = false;
+    this.showFormatActionsSection = false;
+    this.showColumnConcatSection = false;
+    this.showValueMappingsSection = false;
+  }
+}

@@ -1,7 +1,7 @@
 import { Component, OnInit, OnDestroy, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { Router } from '@angular/router';
+import { Router, ActivatedRoute } from '@angular/router';
 import { AppStateService } from '../../services/app-state.service';
 import { ReconciliationTabsService } from '../../services/reconciliation-tabs.service';
 import { ReconciliationService } from '../../services/reconciliation.service';
@@ -34,19 +34,6 @@ import * as XLSX from 'xlsx';
           <div class="ph-eyebrow"><span></span>Réconciliation</div>
           <h1 class="ph-title-launcher">Réconciliation de <em>Données</em></h1>
         </div>
-        <div class="ph-right">
-          <div class="hero-kpi-strip">
-            <div class="hk-strip-item">
-              <span class="hk-strip-label">Fichier BO</span>
-              <span class="hk-strip-value">{{ boFile ? "1" : "0" }}</span>
-            </div>
-            <div class="hk-strip-sep"></div>
-            <div class="hk-strip-item">
-              <span class="hk-strip-label">Fichier Partenaire</span>
-              <span class="hk-strip-value">{{ partnerFile ? "1" : "0" }}</span>
-            </div>
-          </div>
-        </div>
       </div>
 
       <div class="main">
@@ -55,59 +42,6 @@ import * as XLSX from 'xlsx';
             <h2>🔄 Réconciliation de Données</h2>
             <p class="description">Choisissez votre mode de réconciliation préféré</p>
           </div>
-
-      <!-- Zone de téléversement des fichiers -->
-      <div class="file-upload-section">
-        <div class="file-zone bo-file">
-          <h3>📁 Fichier BO</h3>
-          <div class="file-drop-zone" 
-               [class.has-file]="boFile"
-               (click)="selectBoFile()"
-               (dragover)="onDragOver($event)"
-               (drop)="onDrop($event, 'bo')">
-            <div *ngIf="!boFile" class="upload-placeholder">
-              <i class="fas fa-cloud-upload-alt"></i>
-              <p>Cliquez ou glissez-déposez votre fichier BO</p>
-            </div>
-            <div *ngIf="boFile" class="file-info">
-              <i class="fas fa-file-csv"></i>
-              <p>{{ boFile.name }}</p>
-              <button class="remove-file-btn" (click)="removeFile('bo')">
-                <i class="fas fa-times"></i>
-              </button>
-            </div>
-          </div>
-          <input id="boFileInput" type="file" 
-                 accept=".csv,.xlsx,.xls" 
-                 (change)="onFileSelected($event, 'bo')" 
-                 style="display: none;">
-        </div>
-
-        <div class="file-zone partner-file">
-          <h3>📁 Fichier Partenaire</h3>
-          <div class="file-drop-zone" 
-               [class.has-file]="partnerFile"
-               (click)="selectPartnerFile()"
-               (dragover)="onDragOver($event)"
-               (drop)="onDrop($event, 'partner')">
-            <div *ngIf="!partnerFile" class="upload-placeholder">
-              <i class="fas fa-cloud-upload-alt"></i>
-              <p>Cliquez ou glissez-déposez votre fichier Partenaire</p>
-            </div>
-            <div *ngIf="partnerFile" class="file-info">
-              <i class="fas fa-file-csv"></i>
-              <p>{{ partnerFile.name }}</p>
-              <button class="remove-file-btn" (click)="removeFile('partner')">
-                <i class="fas fa-times"></i>
-              </button>
-            </div>
-          </div>
-          <input id="partnerFileInput" type="file" 
-                 accept=".csv,.xlsx,.xls" 
-                 (change)="onFileSelected($event, 'partner')" 
-                 style="display: none;">
-        </div>
-      </div>
 
       <!-- Options de réconciliation -->
       <div class="reconciliation-options">
@@ -144,15 +78,15 @@ import * as XLSX from 'xlsx';
               <h4>Mode Assisté</h4>
             </div>
             <div class="option-description">
-              <p>Le système analyse vos fichiers et suggère les meilleures clés de réconciliation.</p>
+              <p>Uploadez vos fichiers BO et Partenaire : le système applique les patterns des modèles de traitement et lance la réconciliation automatiquement.</p>
               <ul>
-                <li>Analyse automatique des correspondances</li>
-                <li>Suggestions intelligentes</li>
-                <li>Validation avant exécution</li>
+                <li>Reconnaissance des modèles et lancement auto de la réconciliation</li>
+                <li>Bouton « Traitement de fichier » si les fichiers ne sont pas encore normalisés</li>
+                <li>Formatage, upload automatique puis réconciliation</li>
               </ul>
             </div>
             <button class="select-option-btn" 
-                    [disabled]="!canProceed"
+                    [class.active]="selectedMode === 'assisted'"
                     (click)="selectMode('assisted')">
               Choisir ce mode
             </button>
@@ -173,7 +107,6 @@ import * as XLSX from 'xlsx';
               </ul>
             </div>
             <button class="select-option-btn magic-btn" 
-                    [disabled]="!canProceed"
                     (click)="selectMode('magic')">
               🚀 Lancer la Réconciliation Magique
             </button>
@@ -184,7 +117,7 @@ import * as XLSX from 'xlsx';
       <!-- Bouton de progression -->
       <div class="proceed-section" *ngIf="selectedMode && selectedMode !== 'magic'">
         <button class="proceed-btn" 
-                [disabled]="selectedMode !== 'manual' && !canProceed"
+                [disabled]="!selectedMode"
                 (click)="proceedWithSelectedMode()">
           <i class="fas fa-arrow-right"></i>
           Continuer avec le mode {{ getModeDisplayName(selectedMode) }}
@@ -196,7 +129,7 @@ import * as XLSX from 'xlsx';
         <button class="reset-btn" 
                 [disabled]="!hasDataToReset"
                 (click)="resetData()"
-                title="Réinitialiser tous les fichiers et données">
+                title="Réinitialiser le mode sélectionné et les données en mémoire">
           <i class="fas fa-trash-alt"></i>
           Réinitialiser les données
         </button>
@@ -472,6 +405,7 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
 
   constructor(
     private router: Router,
+    private route: ActivatedRoute,
     private appStateService: AppStateService,
     private reconciliationTabsService: ReconciliationTabsService,
     private reconciliationService: ReconciliationService,
@@ -481,13 +415,10 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
   ) {}
 
   ngOnInit(): void {
-    // Vérifier s'il y a des fichiers déjà chargés dans l'état
-    const existingFiles = this.appStateService.getUploadedFiles();
-    if (existingFiles.boFile) {
-      this.boFile = existingFiles.boFile;
-    }
-    if (existingFiles.partnerFile) {
-      this.partnerFile = existingFiles.partnerFile;
+    this.refreshFilesFromState();
+    const mode = this.route.snapshot.queryParamMap.get('mode');
+    if (mode === 'assisted' || mode === 'manual') {
+      this.selectedMode = mode;
     }
   }
 
@@ -495,11 +426,26 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
     this.subscriptions.forEach(sub => sub.unsubscribe());
   }
 
+  private refreshFilesFromState(): void {
+    const existingFiles = this.appStateService.getUploadedFiles();
+    this.boFile = existingFiles.boFile;
+    this.partnerFile = existingFiles.partnerFile;
+  }
+
   get canProceed(): boolean {
     return !!(this.boFile && this.partnerFile);
   }
 
-  // Méthodes de gestion des fichiers
+  private ensureFilesOrRedirectToUpload(mode?: string): boolean {
+    this.refreshFilesFromState();
+    if (this.canProceed) {
+      return true;
+    }
+    this.router.navigate(['/upload'], mode ? { queryParams: { mode } } : undefined);
+    return false;
+  }
+
+  // Méthodes de gestion des fichiers (conservées pour compatibilité état / flux magique)
   selectBoFile(): void {
     const input = document.querySelector('#boFileInput') as HTMLInputElement;
     if (input) input.click();
@@ -608,8 +554,10 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
     console.log('🎯 Mode sélectionné:', mode);
     this.selectedMode = mode;
 
-    // Si le mode magique est sélectionné, lancer immédiatement
     if (mode === 'magic') {
+      if (!this.ensureFilesOrRedirectToUpload('magic')) {
+        return;
+      }
       this.launchMagicReconciliation();
     }
   }
@@ -627,35 +575,20 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
   proceedWithSelectedMode(): void {
     if (!this.selectedMode) return;
 
-    if (this.boFile && this.partnerFile) {
-      this.appStateService.setUploadedFiles({ boFile: this.boFile, partnerFile: this.partnerFile });
-    }
-
-    // Si les données sont parsées, les passer via appStateService
-    if (this.boData.length > 0 && this.partnerData.length > 0) {
-      this.appStateService.setReconciliationData(this.boData, this.partnerData);
-    }
-
     if (this.selectedMode === 'manual') {
       this.router.navigate(['/column-selection'], { queryParams: { mode: 'manual' } });
       return;
     }
 
-    if (!this.canProceed) return;
-
-    switch (this.selectedMode) {
-      case 'assisted':
-        this.router.navigate(['/column-selection'], { queryParams: { mode: 'assisted' } });
-        break;
-      default:
-        break;
+    if (this.selectedMode === 'assisted') {
+      this.router.navigate(['/upload-assisted']);
+      return;
     }
   }
 
   // Méthode pour la réconciliation magique
   private async launchMagicReconciliation(): Promise<void> {
-    if (!this.canProceed) {
-      this.popupService.showWarning('Veuillez sélectionner les deux fichiers avant de lancer la réconciliation magique.');
+    if (!this.ensureFilesOrRedirectToUpload('magic')) {
       return;
     }
 
@@ -2037,7 +1970,7 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
     * Vérifie s'il y a des données à réinitialiser
     */
    get hasDataToReset(): boolean {
-     return !!(this.boFile || this.partnerFile || this.selectedMode);
+     return !!this.selectedMode;
    }
 
      /**
@@ -2053,15 +1986,9 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
     if (confirmed) {
       console.log('🔄 Réinitialisation des données...');
       
-      // Réinitialiser les fichiers
-      this.boFile = null;
-      this.partnerFile = null;
-      
       // Réinitialiser le mode sélectionné
       this.selectedMode = null;
-      
 
-      
       // Réinitialiser l'état de l'application
       this.appStateService.clearUploadedFiles();
       this.appStateService.clearReconciliationData();
@@ -2069,16 +1996,12 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
       // Réinitialiser les données de réconciliation
       this.reconciliationService.clearData();
       
-      // Réinitialiser les inputs de fichiers
-      const boFileInput = document.getElementById('boFileInput') as HTMLInputElement;
-      const partnerFileInput = document.getElementById('partnerFileInput') as HTMLInputElement;
-      
-      if (boFileInput) {
-        boFileInput.value = '';
-      }
-      if (partnerFileInput) {
-        partnerFileInput.value = '';
-      }
+      this.boFile = null;
+      this.partnerFile = null;
+      this.boData = [];
+      this.partnerData = [];
+      this.clearBoSelections();
+      this.clearPartnerSelections();
       
       console.log('✅ Données réinitialisées avec succès');
       

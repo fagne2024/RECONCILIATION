@@ -1,6 +1,15 @@
-<div class="file-upload-container">
-    <!-- Mode de réconciliation -->
-    <div class="reconciliation-mode-selector">
+<div class="file-upload-container" [class.assisted-upload-page]="assistedOnly">
+    <div class="assisted-page-header" *ngIf="assistedOnly">
+        <button type="button" class="back-btn" (click)="goBackToLauncher()">
+            <i class="fas fa-arrow-left"></i>
+            Retour au lanceur
+        </button>
+        <h2>Mode Assisté</h2>
+        <p>Chargez vos fichiers BO et Partenaire, appliquez les modèles de traitement si besoin, puis lancez la réconciliation.</p>
+    </div>
+
+    <!-- Mode de réconciliation (masqué en mode assisté) -->
+    <div class="reconciliation-mode-selector" *ngIf="!assistedOnly">
         <h3>🔄 Mode de Réconciliation</h3>
         <div class="mode-options">
             <label class="mode-option">
@@ -28,6 +37,14 @@
                 </span>
             </button>
             -->
+        </div>
+    </div>
+
+    <div class="assisted-option-banner" *ngIf="assistedOnly">
+        <i class="fas fa-magic"></i>
+        <div>
+            <strong>Option 2</strong>
+            <span>Les fichiers sont traités via les patterns des modèles configurés. Utilisez « Traitement de fichier » pour normaliser et formater les fichiers non conformes, puis « Lancer la réconciliation » une fois prêts.</span>
         </div>
     </div>
 
@@ -672,11 +689,19 @@
         </div>
 
         <!-- Boutons pour le mode automatique -->
-        <div class="button-container" *ngIf="reconciliationMode === 'automatic'">
-            <button class="btn proceed-btn" [disabled]="!canProceedAuto()" (click)="onAutoProceed()">
-                🔄 Lancer la Réconciliation Automatique
+        <div class="button-container" [class.assisted-actions]="assistedOnly" *ngIf="reconciliationMode === 'automatic'">
+            <button class="btn proceed-btn" [class.reconciliation-launch-btn]="assistedOnly" [disabled]="!canProceedAuto()" (click)="onAutoProceed()">
+                {{ assistedOnly ? 'Lancer la réconciliation' : '🔄 Lancer la Réconciliation Automatique' }}
             </button>
-            <div class="action-buttons">
+            <button
+                *ngIf="assistedOnly"
+                type="button"
+                class="btn file-traitement-btn"
+                [disabled]="traitementProcessing"
+                (click)="onTraitementFichier()">
+                Traitement de fichier
+            </button>
+            <div class="action-buttons" *ngIf="!assistedOnly">
                 <button class="btn dashboard-btn" (click)="goToDashboard()">
                     📈 Dashboard
                 </button>
@@ -1302,6 +1327,123 @@
             </button>
             <button class="btn stats-btn" (click)="goToStats()">
                 📊 Statistiques
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Modal traitement de fichier (mode assisté) -->
+<div class="traitement-modal-overlay" *ngIf="showTraitementModal && assistedOnly" (click)="closeTraitementModal()">
+    <div class="traitement-modal" (click)="$event.stopPropagation()">
+        <div class="traitement-modal-header">
+            <h3><i class="fas fa-file-medical"></i> Traitement de fichier</h3>
+            <button type="button" class="close-modal-btn" [disabled]="traitementProcessing" (click)="closeTraitementModal()">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+
+        <p class="traitement-modal-intro">
+            Chargez un ou plusieurs fichiers non normalisés : détection automatique de la ligne d'en-tête,
+            suppression des lignes inutiles, compilation en un seul fichier, traitement via le modèle choisi puis téléchargement.
+        </p>
+
+        <div class="traitement-section">
+            <label class="traitement-section-title">1. Fichiers à traiter</label>
+            <div class="traitement-upload-zone" (click)="traitementFileInput.click()">
+                <i class="fas fa-cloud-upload-alt"></i>
+                <span>Cliquez pour ajouter un ou plusieurs fichiers — ils seront fusionnés (CSV, XLS, XLSX)</span>
+                <input
+                    #traitementFileInput
+                    type="file"
+                    multiple
+                    accept=".csv,.xls,.xlsx,.xlsm,.xlsb"
+                    style="display: none"
+                    (change)="onTraitementFilesSelected($event)">
+            </div>
+            <ul class="traitement-file-list" *ngIf="traitementFiles.length > 0">
+                <li *ngFor="let f of traitementFiles; let i = index">
+                    <span><i class="fas fa-file-alt"></i> {{ f.name }} ({{ (f.size / 1024) | number:'1.0-0' }} Ko)</span>
+                    <button type="button" class="remove-traitement-file-btn" [disabled]="traitementProcessing" (click)="removeTraitementFile(i, $event)">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </li>
+            </ul>
+        </div>
+
+        <div class="traitement-section">
+            <label class="traitement-section-title">2. Modèle de traitement (pattern)</label>
+            <div class="traitement-models-loading" *ngIf="traitementModelsLoading">
+                <i class="fas fa-spinner fa-spin"></i> Chargement des modèles...
+            </div>
+            <div class="traitement-models-empty" *ngIf="!traitementModelsLoading && traitementModels.length === 0">
+                Aucun modèle de traitement configuré pour la réconciliation.
+            </div>
+            <ng-container *ngIf="!traitementModelsLoading && traitementModels.length > 0">
+                <div class="traitement-search-box">
+                    <i class="fas fa-search"></i>
+                    <input
+                        type="text"
+                        [(ngModel)]="traitementModelSearch"
+                        placeholder="Rechercher par nom, pattern ou type (BO / Partenaire)..."
+                        [disabled]="traitementProcessing">
+                </div>
+                <div class="traitement-models-empty" *ngIf="filteredTraitementModels.length === 0">
+                    Aucun modèle ne correspond à « {{ traitementModelSearch }} ».
+                </div>
+                <div class="traitement-models-list" *ngIf="filteredTraitementModels.length > 0">
+                    <label
+                        class="traitement-model-option"
+                        *ngFor="let model of filteredTraitementModels"
+                        [class.selected]="selectedTraitementModelId === model.id">
+                        <input
+                            type="radio"
+                            name="traitementModel"
+                            [value]="model.id"
+                            [(ngModel)]="selectedTraitementModelId">
+                        <span class="model-info">
+                            <strong>{{ model.name }}</strong>
+                            <small>Pattern : {{ model.filePattern }} — {{ model.fileType === 'bo' ? 'BO' : model.fileType === 'partner' ? 'Partenaire' : 'BO / Partenaire' }}</small>
+                        </span>
+                    </label>
+                </div>
+                <div
+                    class="traitement-auto-model-hint"
+                    *ngIf="traitementAutoSelectedModelHint"
+                    [class.traitement-auto-model-hint-warning]="traitementAutoSelectedModelHint.startsWith('Aucun modèle')">
+                    <i class="fas" [ngClass]="traitementAutoSelectedModelHint.startsWith('Aucun modèle') ? 'fa-exclamation-triangle' : 'fa-magic'"></i>
+                    {{ traitementAutoSelectedModelHint }}
+                </div>
+            </ng-container>
+        </div>
+
+        <div class="traitement-section">
+            <label class="traitement-section-title" for="traitementOutputDate">3. Date du fichier produit</label>
+            <div class="traitement-date-row">
+                <input
+                    id="traitementOutputDate"
+                    type="date"
+                    class="traitement-date-input"
+                    [(ngModel)]="traitementOutputDate"
+                    [disabled]="traitementProcessing">
+                <span class="traitement-date-hint">Le fichier sera nommé : <strong>{{ getTraitementOutputPreview() || 'pattern_YYYYMMDD.ext' }}</strong></span>
+            </div>
+        </div>
+
+        <div class="traitement-progress" *ngIf="traitementProcessing && traitementProgressMessage">
+            <i class="fas fa-spinner fa-spin"></i> {{ traitementProgressMessage }}
+        </div>
+
+        <div class="traitement-modal-actions">
+            <button type="button" class="btn cancel-traitement-btn" [disabled]="traitementProcessing" (click)="closeTraitementModal()">
+                Annuler
+            </button>
+            <button
+                type="button"
+                class="btn apply-traitement-btn"
+                [disabled]="!canApplyTraitement()"
+                (click)="applyAssistedFileTreatment()">
+                <i class="fas fa-cogs"></i>
+                Compiler et appliquer le traitement
             </button>
         </div>
     </div>

@@ -518,6 +518,7 @@ public class AutoProcessingController {
         entity.setReconciliationLogic(dto.getReconciliationLogic());
         entity.setCorrespondenceRules(dto.getCorrespondenceRules());
         entity.setComparisonColumns(dto.getComparisonColumns());
+        entity.setPreProcessingConfig(dto.getPreProcessingConfig());
         
         // Convertir les règles de traitement des colonnes
         if (dto.getColumnProcessingRules() != null) {
