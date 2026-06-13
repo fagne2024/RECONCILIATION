@@ -70,12 +70,12 @@ interface ApiError {
                 <div class="ph-results-right">
                     <div class="hero-kpi-strip">
                         <div class="hk-strip-item">
-                            <span class="hk-strip-label">Transactions</span>
+                            <span class="hk-strip-label">Transactions BO</span>
                             <span class="hk-strip-value">{{ totalTransactions | number:'1.0-0' }}</span>
                         </div>
                         <div class="hk-strip-sep"></div>
                         <div class="hk-strip-item">
-                            <span class="hk-strip-label">Correspondances</span>
+                            <span class="hk-strip-label">Correspondances BO</span>
                             <span class="hk-strip-value">{{ filteredMatchesCount | number:'1.0-0' }}</span>
                         </div>
                         <div class="hk-strip-sep"></div>
@@ -140,12 +140,12 @@ interface ApiError {
                     <div class="stat-card stat-card-total">
                         <div class="stat-icon">📊</div>
                         <div class="stat-value">{{totalTransactions}}</div>
-                        <div class="stat-label">Nombres de Transactions</div>
+                        <div class="stat-label">Nombres de Transactions BO</div>
                     </div>
                     <div class="stat-card stat-card-matched">
                         <div class="stat-icon">✅</div>
                         <div class="stat-value">{{filteredMatchesCount}}</div>
-                        <div class="stat-label">Transactions correspondantes</div>
+                        <div class="stat-label">Transactions correspondantes BO</div>
                     </div>
                     <div class="stat-card stat-card-bo">
                         <div class="stat-icon">⚠️</div>
@@ -210,7 +210,7 @@ interface ApiError {
                             </div>
                             <div class="summary-stats">
                                 <div class="stat-item">
-                                    <span class="label">Nombres de Transactions:</span>
+                                    <span class="label">Nombres de Transactions BO:</span>
                                     <span class="value">{{getTotalRecords() | number:'1.0-0'}}</span>
                                 </div>
                                 <div class="stat-item">
@@ -230,7 +230,7 @@ interface ApiError {
                                             <th>Service</th>
                                             <th>Pays</th>
                                             <th>Volume Total</th>
-                                            <th>Nombres de Transactions</th>
+                                            <th>Nombres de Transactions BO</th>
                                         </tr>
                                     </thead>
                                     <tbody>

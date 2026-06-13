@@ -178,6 +178,7 @@ export class RapportReconciliationBoPartenaireComponent implements OnInit, OnDes
 
   totalBoNombre = 0;
   totalBoVolume = 0;
+  totalMatchesBo = 0;
   totalPartNombre = 0;
   totalPartVolume = 0;
   totalDecJm1Nombre = 0;
@@ -715,6 +716,7 @@ export class RapportReconciliationBoPartenaireComponent implements OnInit, OnDes
 
     this.totalBoNombre = rows.reduce((s, r) => s + r.boNombre, 0);
     this.totalBoVolume = rows.reduce((s, r) => s + r.boVolume, 0);
+    this.totalMatchesBo = this.sumMatchesBo(filtered, servicesToUse, envNorm);
     this.totalPartNombre = rows.reduce((s, r) => s + r.partenaireNombre, 0);
     this.totalPartVolume = rows.reduce((s, r) => s + r.partenaireVolume, 0);
     this.totalDecJm1Nombre = rows.reduce((s, r) => s + r.decalageJm1Nombre, 0);
@@ -734,6 +736,7 @@ export class RapportReconciliationBoPartenaireComponent implements OnInit, OnDes
   private resetTotals(): void {
     this.totalBoNombre = 0;
     this.totalBoVolume = 0;
+    this.totalMatchesBo = 0;
     this.totalPartNombre = 0;
     this.totalPartVolume = 0;
     this.totalDecJm1Nombre = 0;
@@ -763,7 +766,7 @@ export class RapportReconciliationBoPartenaireComponent implements OnInit, OnDes
   /** Catégorie affichée dans la colonne Statut (couleurs + libellé). */
   private resolveStatutKind(
     traitement: string
-  ): 'support' | 'group' | 'termine' | 'none' {
+  ): 'support' | 'cdo' | 'group' | 'termine' | 'none' {
     const raw = (traitement || '').trim();
     if (!raw || raw === '—') {
       return 'none';
@@ -775,27 +778,32 @@ export class RapportReconciliationBoPartenaireComponent implements OnInit, OnDes
     if (t.includes('support')) {
       return 'support';
     }
+    if (t.includes('termine')) {
+      return 'termine';
+    }
     if (t.includes('group')) {
       return 'group';
     }
-    if (t.includes('termine')) {
-      return 'termine';
+    if (t.includes('cdo') || t.includes('responsable')) {
+      return 'cdo';
     }
     return 'none';
   }
 
   /**
    * Libellé lisible côté métier à partir du traitement (result8rec).
-   * Support → en cours de traitement ; Group → en cours de validation ; Terminé → validé & clôturé.
+   * Support → en cours ; CDO → validé ; GROUP → en cours de clôture ; Terminé → validé et clôturé.
    */
   libelleStatutFromTraitement(traitement: string): string {
     switch (this.resolveStatutKind(traitement)) {
       case 'support':
         return 'En cours de traitement';
+      case 'cdo':
+        return 'Validé';
       case 'group':
-        return 'En cours de validation';
+        return 'En cours de clôture';
       case 'termine':
-        return 'Validé & Clôturé';
+        return 'Validé et clôturé';
       default:
         return '—';
     }
@@ -849,14 +857,40 @@ export class RapportReconciliationBoPartenaireComponent implements OnInit, OnDes
     return n > 0 ? `${n} en cours` : 'Effectif';
   }
 
+  private sumMatchesBo(
+    filtered: Result8Row[],
+    servicesToUse: string[],
+    envNorm: string | null
+  ): number {
+    const set = new Set(servicesToUse.map((s) => s.trim().toLowerCase()));
+    return filtered.reduce((sum, row) => {
+      if (!set.has((row.service || '').trim().toLowerCase())) {
+        return sum;
+      }
+      if (envNorm != null && normalizeReconciliationReportEnv(row.env) !== envNorm) {
+        return sum;
+      }
+      return sum + (Number(row.matches) || 0);
+    }, 0);
+  }
+
+  displayTraitementLabel(traitement: string): string {
+    const value = (traitement || '').trim();
+    if (value === 'Niveau Group') {
+      return 'Niveau GROUP';
+    }
+    return value;
+  }
+
   /**
    * Libellé de traitement agrégé (plusieurs agences / dates pour le même service).
-   * Même vocabulaire que le rapport : Niveau Support, Niveau Group, Terminé.
+   * Même vocabulaire que le rapport : Niveau Support, Responsable CDO, Niveau GROUP, Terminé.
    */
   private dominantTraitementLabel(values: (string | undefined | null)[]): string {
     const cleaned = values
-      .map((v) => (v ?? '').trim())
-      .filter((v) => v.length > 0);
+      .map((v) => this.displayTraitementLabel(v ?? ''))
+      .map((v) => v.trim())
+      .filter((v) => v.length > 0 && v !== '—');
     if (!cleaned.length) {
       return '—';
     }
@@ -864,8 +898,22 @@ export class RapportReconciliationBoPartenaireComponent implements OnInit, OnDes
     for (const v of cleaned) {
       freq.set(v, (freq.get(v) || 0) + 1);
     }
-    const rank = (t: string) =>
-      t === 'Niveau Support' ? 3 : t === 'Niveau Group' ? 2 : t === 'Terminé' ? 1 : 0;
+    const rank = (t: string) => {
+      const n = t.trim();
+      if (n === 'Niveau Support') {
+        return 4;
+      }
+      if (n === 'Responsable CDO') {
+        return 3;
+      }
+      if (n === 'Niveau GROUP') {
+        return 2;
+      }
+      if (n === 'Terminé') {
+        return 1;
+      }
+      return 0;
+    };
     let best = cleaned[0];
     for (const t of freq.keys()) {
       const bt = best;

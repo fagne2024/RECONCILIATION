@@ -281,7 +281,7 @@ export interface ReconciliationReportData {
                         <mat-label>Traitement</mat-label>
                         <mat-select #traitementSelect [(ngModel)]="selectedTraitements" multiple (ngModelChange)="onTraitementNgModelChange($event)">
                             <mat-option *ngFor="let traitement of traitementOptions" [value]="traitement">
-                                {{ traitement }}
+                                {{ getTraitementDisplayLabel(traitement) }}
                             </mat-option>
                         </mat-select>
                     </mat-form-field>
@@ -319,7 +319,7 @@ export interface ReconciliationReportData {
                             class="filter-select bulk-status-select">
                             <option value="">Sélectionner un traitement</option>
                             <option value="__CLEAR__">- (Effacer)</option>
-                            <option *ngFor="let traitement of traitementOptions" [value]="traitement">{{traitement}}</option>
+                            <option *ngFor="let traitement of traitementOptions" [value]="traitement">{{ getTraitementDisplayLabel(traitement) }}</option>
                         </select>
                         <button 
                             class="btn btn-bulk-status" 
@@ -477,7 +477,7 @@ export interface ReconciliationReportData {
                     </thead>
                     <tbody>
                         <ng-container *ngFor="let item of paginatedData; trackBy: trackByItem">
-                        <tr [class.editing-row]="editingRow === item" [class.row-selected]="isRowSelected(item)" [class.row-traitement-termine]="isTraitementTermine(item)" [class.row-audit-open]="isAuditExpanded(item)">
+                        <tr [class.editing-row]="editingRow === item" [class.row-selected]="isRowSelected(item)" [ngClass]="getTraitementRowClass(item)" [class.row-audit-open]="isAuditExpanded(item)">
                             <td class="expand-cell">
                                 <button type="button"
                                         *ngIf="item.id"
@@ -697,14 +697,14 @@ export interface ReconciliationReportData {
                                           [class.locked]="isRowLocked(item)"
                                           (click)="!isRowLocked(item) && startEditTraitement(item)" 
                                           [style.cursor]="isRowLocked(item) ? 'not-allowed' : 'pointer'"
-                                          [title]="isRowLocked(item) ? 'Ligne verrouillée (OK + Terminé)' : 'Cliquer pour modifier'">
-                                        {{item.traitement || '-'}}
+                                          [title]="isRowLocked(item) ? 'Ligne verrouillée (Validé et clôturé)' : 'Cliquer pour modifier'">
+                                        {{ getTraitementDisplayLabel(item.traitement) }}
                                     </span>
                                 </ng-container>
                                 <ng-template #editTraitement>
                                     <select [(ngModel)]="item.traitement" class="edit-select" (change)="onTraitementChange(item)" (blur)="stopEditTraitement()">
                                         <option [ngValue]="undefined">-</option>
-                                        <option *ngFor="let t of traitementOptions" [ngValue]="t">{{t}}</option>
+                                        <option *ngFor="let t of getTraitementOptionsForItem(item)" [ngValue]="t">{{ getTraitementDisplayLabel(t) }}</option>
                                     </select>
                                 </ng-template>
                             </td>
@@ -1122,8 +1122,8 @@ export interface ReconciliationReportData {
                     <button class="btn btn-export-releve" (click)="saveReleveManualData(true)" [disabled]="!releveData || isSavingReleveManualData || !hasPendingReleveManualChanges">
                         {{isSavingReleveManualData ? '⏳ Enregistrement...' : '💾 Enregistrer les saisies'}}
                     </button>
-                    <button class="btn btn-validate-releve" (click)="validateReleve()" [disabled]="isValidatingReleve || isReleveValidated || isReleveAlreadyValidated()" [class.btn-validated]="isReleveValidated || isReleveAlreadyValidated()">
-                        {{isValidatingReleve ? '⏳ Validation...' : ((isReleveValidated || isReleveAlreadyValidated()) ? '✅ Validé' : '✅ Valider')}}
+                    <button class="btn btn-validate-releve" (click)="validateReleve()" [disabled]="isReleveValidateButtonDisabled()" [class.btn-validated]="isReleveCdoClosed() || isReleveFullyClosed()" [title]="getReleveActionButtonTitle()">
+                        {{ getReleveActionButtonLabel() }}
                     </button>
                     <button class="btn btn-close-modal" (click)="closeReleveModal()">Fermer</button>
                 </div>
@@ -2045,13 +2045,34 @@ export interface ReconciliationReportData {
         .row-selected:hover {
             background-color: #bbdefb !important;
         }
-        /* Mise en évidence des lignes avec traitement Terminé */
+        /* Mise en évidence des lignes selon l'étape de traitement */
+        .row-traitement-support {
+            background-color: rgba(254, 243, 199, 0.35) !important;
+            border-left: 4px solid #f59e0b;
+        }
+        .row-traitement-support:hover {
+            background-color: rgba(253, 230, 138, 0.45) !important;
+        }
+        .row-traitement-cdo {
+            background-color: rgba(209, 236, 241, 0.45) !important;
+            border-left: 4px solid #17a2b8;
+        }
+        .row-traitement-cdo:hover {
+            background-color: rgba(190, 229, 235, 0.55) !important;
+        }
+        .row-traitement-group {
+            background-color: rgba(219, 234, 254, 0.4) !important;
+            border-left: 4px solid #3b82f6;
+        }
+        .row-traitement-group:hover {
+            background-color: rgba(191, 219, 254, 0.5) !important;
+        }
         .row-traitement-termine {
-            background-color: #d4edda !important;
-            border-left: 4px solid #28a745;
+            background-color: rgba(209, 250, 229, 0.45) !important;
+            border-left: 4px solid #10b981;
         }
         .row-traitement-termine:hover {
-            background-color: #c3e6cb !important;
+            background-color: rgba(167, 243, 208, 0.55) !important;
         }
         .col-date { width: 110px; }
         .col-text { width: 140px; }
@@ -2446,20 +2467,23 @@ export interface ReconciliationReportData {
         }
 
         .traitement-cell {
-            min-width: 150px;
+            min-width: 168px;
             
             .traitement-badge {
                 display: inline-block;
-                padding: 4px 12px;
-                border-radius: 12px;
-                font-size: 0.85rem;
-                font-weight: 500;
+                padding: 5px 11px;
+                border-radius: 999px;
+                font-size: 0.72rem;
+                font-weight: 700;
+                line-height: 1.3;
                 white-space: nowrap;
                 transition: all 0.2s;
+                border: 1px solid transparent;
+                box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
                 
                 &:hover {
-                    opacity: 0.8;
-                    transform: scale(1.05);
+                    opacity: 0.92;
+                    transform: scale(1.02);
                 }
             }
             
@@ -2480,27 +2504,44 @@ export interface ReconciliationReportData {
 
         .traitement-badge {
             display: inline-block;
-            padding: 4px 8px;
-            border-radius: 12px;
-            font-size: 0.8rem;
-            font-weight: 600;
+            padding: 5px 11px;
+            border-radius: 999px;
+            font-size: 0.72rem;
+            font-weight: 700;
             text-align: center;
-            min-width: 100px;
+            min-width: 120px;
+            border: 1px solid transparent;
+            box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
         }
 
-        .traitement-niveau-support {
-            background: #fff3cd;
-            color: #856404;
+        .traitement-kind--support {
+            background: linear-gradient(180deg, #fef3c7 0%, #fde68a 100%);
+            color: #92400e;
+            border-color: #f59e0b;
         }
 
-        .traitement-niveau-group {
-            background: #d1ecf1;
+        .traitement-kind--cdo {
+            background: linear-gradient(180deg, #d1ecf1 0%, #bee5eb 100%);
             color: #0c5460;
+            border-color: #17a2b8;
         }
 
-        .traitement-terminé {
-            background: #d4edda;
-            color: #155724;
+        .traitement-kind--group {
+            background: linear-gradient(180deg, #dbeafe 0%, #bfdbfe 100%);
+            color: #1e3a8a;
+            border-color: #3b82f6;
+        }
+
+        .traitement-kind--termine {
+            background: linear-gradient(180deg, #d1fae5 0%, #a7f3d0 100%);
+            color: #065f46;
+            border-color: #10b981;
+        }
+
+        .traitement-kind--none {
+            background: #f3f4f6;
+            color: #6b7280;
+            border-color: #d1d5db;
         }
 
         .comment-text {
@@ -3192,8 +3233,85 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
 
     statusOptions: string[] = ['OK', 'NOK', 'REPORTING INCOMPLET', 'REPORTING INDISPONIBLE', 'EN COURS.....'];
     commentOptions: string[] = ['ECARTS TRANSMIS', "PAS D'ECARTS CONSTATES", 'NOK'];
-    traitementOptions: string[] = ['Niveau Support', 'Niveau Group', 'Terminé'];
+    traitementOptions: string[] = ['Niveau Support', 'Responsable CDO', 'Niveau GROUP', 'Terminé'];
+    private readonly legacyTraitementGroup = 'Niveau Group';
+    private readonly traitementNiveauGroup = 'Niveau GROUP';
+    private readonly defaultOkTraitement = 'Responsable CDO';
     
+    private normalizeTraitementValue(traitement?: string | null): string {
+        const value = (traitement || '').trim();
+        if (value === this.legacyTraitementGroup) {
+            return this.traitementNiveauGroup;
+        }
+        return value;
+    }
+
+    /**
+     * Relevé clôturé par le Responsable CDO (Niveau GROUP ou au-delà) pour ce périmètre.
+     */
+    private isReleveScopeCdoValidated(item: ReconciliationReportData): boolean {
+        const scopeLines = this.reportData.filter(line =>
+            line.status === 'OK' && this.isSameReleveScope(line, item)
+        );
+        if (scopeLines.length === 0) {
+            return false;
+        }
+        const unlockedLines = scopeLines.filter(line => !this.isRowLocked(line));
+        if (unlockedLines.length === 0) {
+            return true;
+        }
+        return unlockedLines.every(line => {
+            const normalized = this.normalizeTraitementValue(line.traitement);
+            return normalized === this.traitementNiveauGroup || normalized === 'Terminé';
+        });
+    }
+
+    /**
+     * Relevé entièrement clôturé (Niveau GROUP → Terminé) pour ce périmètre.
+     */
+    private isReleveScopeValidated(item: ReconciliationReportData): boolean {
+        const scopeLines = this.reportData.filter(line =>
+            line.status === 'OK' && this.isSameReleveScope(line, item)
+        );
+        if (scopeLines.length === 0) {
+            return false;
+        }
+        const unlockedLines = scopeLines.filter(line => !this.isRowLocked(line));
+        if (unlockedLines.length === 0) {
+            return true;
+        }
+        return unlockedLines.every(line => this.normalizeTraitementValue(line.traitement) === 'Terminé');
+    }
+
+    /** Conserve Niveau GROUP (CDO) ou Terminé (GROUP) selon l'état du relevé. */
+    private isPreservedTraitementOnOk(item: ReconciliationReportData): boolean {
+        const normalized = this.normalizeTraitementValue(item.traitement);
+        if (normalized === 'Terminé' && this.isReleveScopeValidated(item)) {
+            return true;
+        }
+        if (normalized === this.traitementNiveauGroup && this.isReleveScopeCdoValidated(item)) {
+            return true;
+        }
+        return false;
+    }
+
+    /** Options de traitement autorisées selon l'état de validation du relevé. */
+    getTraitementOptionsForItem(item: ReconciliationReportData): string[] {
+        if (item.status === 'OK' && !this.isReleveScopeCdoValidated(item)) {
+            const totalEcarts =
+                (Number(item.boOnly) || 0) +
+                (Number(item.partnerOnly) || 0) +
+                (Number(item.mismatches) || 0);
+            if (totalEcarts > 0) {
+                return ['Niveau Support', this.defaultOkTraitement];
+            }
+            return [this.defaultOkTraitement];
+        }
+        if (item.status === 'OK' && this.isReleveScopeCdoValidated(item) && !this.isReleveScopeValidated(item)) {
+            return [this.traitementNiveauGroup, 'Terminé'];
+        }
+        return this.traitementOptions;
+    }
     // Propriétés pour l'édition en ligne
     editingRow: ReconciliationReportData | null = null;
     originalData: ReconciliationReportData | null = null;
@@ -3520,9 +3638,9 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                             const totalEcarts = boOnlyNum + partnerOnlyNum + mismatchesNum;
                             
                             // Forcer le recalcul du traitement selon les écarts réels (sauf si "Terminé")
-                            const traitementAttendu = totalEcarts > 0 ? 'Niveau Support' : 'Niveau Group';
-                            const traitementFinal = (item.traitement === 'Terminé') 
-                                ? item.traitement 
+                            const traitementAttendu = totalEcarts > 0 ? 'Niveau Support' : this.defaultOkTraitement;
+                            const traitementFinal = this.isPreservedTraitementOnOk(item)
+                                ? this.normalizeTraitementValue(item.traitement)
                                 : traitementAttendu;
                             
                             return {
@@ -3544,7 +3662,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                         });
                         this.enforceDefaultStatusForReportData();
                         
-                        // FORCER toutes les lignes avec statut OK à avoir traitement = "Niveau Group"
+                        // FORCER toutes les lignes avec statut OK à avoir traitement = "Responsable CDO"
                         this.enforceTraitementForOkStatus();
 
                         // Appliquer la règle métier de recalcul sur les lignes issues du résumé
@@ -3801,7 +3919,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             const partnerOnlyNum = Number(partnerOnly) || 0;
             const mismatchesNum = Number(mismatches) || 0;
             const totalEcarts = boOnlyNum + partnerOnlyNum + mismatchesNum;
-            const traitementDefault = totalEcarts > 0 ? 'Niveau Support' : 'Niveau Group';
+            const traitementDefault = totalEcarts > 0 ? 'Niveau Support' : 'Responsable CDO';
             
             console.log(`🔍 Traitement pour ${item.agency}/${item.service}:`, {
                 boOnly: boOnlyNum,
@@ -3898,7 +4016,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         
         this.enforceDefaultStatusForReportData();
         
-        // FORCER toutes les lignes avec statut OK à avoir traitement = "Niveau Group"
+        // FORCER toutes les lignes avec statut OK à avoir traitement = "Responsable CDO"
         this.enforceTraitementForOkStatus();
 
         this.reportData.forEach(item => {
@@ -4501,7 +4619,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             const partnerOnlyNum = Number(data.partnerOnly) || 0;
             const mismatchesNum = Number(data.mismatches) || 0;
             const totalEcarts = boOnlyNum + partnerOnlyNum + mismatchesNum;
-            const traitementDefault = totalEcarts > 0 ? 'Niveau Support' : 'Niveau Group';
+            const traitementDefault = totalEcarts > 0 ? 'Niveau Support' : 'Responsable CDO';
             
             const reportItem: ReconciliationReportData = {
                 ...data,
@@ -4529,7 +4647,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         });
         this.enforceDefaultStatusForReportData();
         
-        // FORCER toutes les lignes avec statut OK à avoir traitement = "Niveau Group"
+        // FORCER toutes les lignes avec statut OK à avoir traitement = "Responsable CDO"
         this.enforceTraitementForOkStatus();
 
         // Appliquer la règle métier de recalcul sur chaque ligne
@@ -5087,7 +5205,8 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                 : this.selectedServices.length === 0 || this.selectedServices.includes(item.service);
         const countryFilterMatch = this.selectedCountries.length === 0 || this.selectedCountries.includes(item.country);
         const statusMatch = this.selectedStatuses.length === 0 || this.selectedStatuses.includes(item.status);
-        const traitementMatch = this.selectedTraitements.length === 0 || this.selectedTraitements.includes(item.traitement || '');
+        const traitementMatch = this.selectedTraitements.length === 0
+            || this.selectedTraitements.includes(this.normalizeTraitementValue(item.traitement));
         const envMatch = this.itemMatchesEnvFilter(item.env, this.selectedEnvs);
         const ticketFilter = (this.ticketIdFilter || '').trim().toLowerCase();
         const ticketMatch = !ticketFilter || (item.glpiId || '').toLowerCase().includes(ticketFilter);
@@ -5138,23 +5257,19 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
 
         this.filteredReportData = this.kpiScopeData.filter((item) => this.matchesCardAndEcartFilters(item));
         
-        // FORCER toutes les lignes avec statut OK à avoir traitement = "Niveau Group" AVANT le recalcul
-        // IMPORTANT: Ne jamais écraser un traitement "Terminé"
+        // FORCER les lignes OK sans niveau avancé à Responsable CDO
         this.filteredReportData.forEach(item => {
-            if (item.status === 'OK' && item.traitement !== 'Terminé') {
-                item.traitement = 'Niveau Group';
+            item.traitement = this.normalizeTraitementValue(item.traitement);
+            if (item.status === 'OK' && !this.isPreservedTraitementOnOk(item)) {
+                item.traitement = this.defaultOkTraitement;
             }
         });
         
         // Recalculer le traitement pour chaque ligne filtrée selon les écarts réels
-        // FORCER toutes les lignes avec statut OK à avoir traitement = "Niveau Group"
-        // IMPORTANT: ne pas recréer les objets (sinon l'identité de ligne change et la sélection checkbox via Set<item> casse)
-        // IMPORTANT: Ne jamais écraser un traitement "Terminé"
         this.filteredReportData.forEach(item => {
-            // Si le statut est OK, FORCER le traitement à "Niveau Group" (sauf si "Terminé")
             if (item.status === 'OK') {
-                if (item.traitement !== 'Terminé') {
-                    item.traitement = 'Niveau Group';
+                if (!this.isPreservedTraitementOnOk(item)) {
+                    item.traitement = this.defaultOkTraitement;
                 }
                 return;
             }
@@ -5164,13 +5279,11 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             const mismatches = Number(item.mismatches) || 0;
             const totalEcarts = boOnly + partnerOnly + mismatches;
             
-            // Recalculer le traitement selon les écarts réels (sauf si "Terminé")
-            const traitementAttendu = totalEcarts > 0 ? 'Niveau Support' : 'Niveau Group';
-            const traitementFinal = (item.traitement === 'Terminé') 
-                ? item.traitement 
-                : traitementAttendu;
-
-            item.traitement = traitementFinal;
+            const traitementAttendu = totalEcarts > 0 ? 'Niveau Support' : this.defaultOkTraitement;
+            const normalized = this.normalizeTraitementValue(item.traitement);
+            const preserveAdvanced =
+                normalized === 'Terminé' || normalized === this.traitementNiveauGroup;
+            item.traitement = preserveAdvanced ? normalized : traitementAttendu;
         });
         
         // Trier par date décroissante (les plus récentes en premier)
@@ -5458,16 +5571,13 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
     }
 
     /**
-     * Force toutes les lignes avec statut OK à avoir traitement = "Niveau Group"
+     * Force les lignes OK à « Responsable CDO » tant que le relevé du périmètre n'est pas validé.
      */
     private enforceTraitementForOkStatus(): void {
         this.reportData.forEach(item => {
-            // IMPORTANT: Ne jamais écraser un traitement "Terminé", même si le statut est OK
-            if (item.status === 'OK' && item.traitement !== 'Niveau Group' && item.traitement !== 'Terminé') {
-                console.log(`🔄 enforceTraitementForOkStatus: Forcer traitement à "Niveau Group" pour ${item.agency}/${item.service} (statut OK)`);
-                item.traitement = 'Niveau Group';
-            } else if (item.status === 'OK' && item.traitement === 'Terminé') {
-                console.log(`✅ enforceTraitementForOkStatus: Préservation du traitement "Terminé" pour ${item.agency}/${item.service} (statut OK)`);
+            item.traitement = this.normalizeTraitementValue(item.traitement);
+            if (item.status === 'OK' && !this.isPreservedTraitementOnOk(item)) {
+                item.traitement = this.defaultOkTraitement;
             }
         });
     }
@@ -5496,7 +5606,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                 mismatches: 0,
                 totalTransactions: 0,
                 matchRate: 0,
-                traitement: 'Niveau Group', // Traitement automatique à "Niveau Group" pour statut OK
+                traitement: 'Responsable CDO', // Traitement automatique à "Responsable CDO" pour statut OK
                 comment: previousComment // Préserver le commentaire existant
             };
         }
@@ -5564,12 +5674,11 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             recalculated.matchRate = totalTransactions > 0 ? 
                 (recalculated.matches / totalTransactions) * 100 : 0;
             
-            // Quand le statut passe à "OK", le traitement doit être automatiquement "Niveau Group"
-            // IMPORTANT: Ne jamais écraser un traitement "Terminé"
-            if (item.traitement !== 'Terminé') {
-                recalculated.traitement = 'Niveau Group';
+            // Quand le statut passe à "OK", Responsable CDO tant que le relevé n'est pas validé
+            if (!this.isPreservedTraitementOnOk(item)) {
+                recalculated.traitement = this.defaultOkTraitement;
             } else {
-                recalculated.traitement = 'Terminé';
+                recalculated.traitement = this.normalizeTraitementValue(item.traitement);
             }
             
             // Préserver le commentaire existant quand le statut est "OK"
@@ -6518,15 +6627,24 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             if (traitement && traitement.trim() === 'Terminé') {
                 traitement = 'Terminé';
             } else if (r.status === 'OK') {
-                traitement = 'Niveau Group';
+                const normalized = this.normalizeTraitementValue(r.traitement);
+                if (normalized === 'Terminé') {
+                    traitement = 'Terminé';
+                } else if (normalized === this.traitementNiveauGroup) {
+                    traitement = this.traitementNiveauGroup;
+                } else {
+                    traitement = this.defaultOkTraitement;
+                }
             } else if (!traitement || traitement.trim() === '') {
-                traitement = totalEcarts > 0 ? 'Niveau Support' : 'Niveau Group';
+                traitement = totalEcarts > 0 ? 'Niveau Support' : this.defaultOkTraitement;
             } else {
-                const traitementAttendu = totalEcarts > 0 ? 'Niveau Support' : 'Niveau Group';
-                if (traitement !== 'Terminé' && traitement !== traitementAttendu) {
+                const traitementAttendu = totalEcarts > 0 ? 'Niveau Support' : this.defaultOkTraitement;
+                if (traitement !== 'Terminé' && traitement !== this.traitementNiveauGroup && traitement !== traitementAttendu) {
                     traitement = traitementAttendu;
                 }
             }
+
+            traitement = this.normalizeTraitementValue(traitement);
 
             let comment = r.comment || '';
             if (preserveComments.has(r.id)) {
@@ -6771,7 +6889,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
     /**
      * Détermine le traitement par défaut selon la présence d'écarts
      * - Si écarts > 0 : "Niveau Support"
-     * - Si pas d'écarts (tous à 0) : "Niveau Group"
+     * - Si pas d'écarts (tous à 0) : "Responsable CDO"
      */
     private determineDefaultTraitement(item: ReconciliationReportData): string {
         // Convertir en nombres et s'assurer que les valeurs null/undefined sont traitées comme 0
@@ -6782,7 +6900,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         const totalEcarts = boOnly + partnerOnly + mismatches;
         
         // Seulement "Niveau Support" si on a AU MOINS un écart
-        return totalEcarts > 0 ? 'Niveau Support' : 'Niveau Group';
+        return totalEcarts > 0 ? 'Niveau Support' : 'Responsable CDO';
     }
 
     private normalizeUniqKeyPart(value: string | null | undefined): string {
@@ -7037,15 +7155,16 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         // PROTECTION ABSOLUE : Pour le statut OK, préserver le commentaire existant
         const savedComment = item.status === 'OK' ? (item.comment ?? '') : item.comment;
         
-        // Pour le statut OK, le traitement doit être "Niveau Group"
-        // Pour les autres statuts, utiliser le traitement existant ou le traitement par défaut
+        // Pour le statut OK : CDO → GROUP → Terminé selon l'état du relevé
         let traitement: string;
         if (item.status === 'OK') {
-            // S'assurer que le traitement est bien "Niveau Group" pour le statut OK
-            traitement = item.traitement && item.traitement.trim() !== ''
-                ? item.traitement
-                : 'Niveau Group';
-            console.log(`🔄 confirmAndSave: Statut OK - traitement forcé à "${traitement}" pour ${item.agency}/${item.service}, commentaire préservé: "${savedComment}"`);
+            if (this.isPreservedTraitementOnOk(item)) {
+                traitement = this.normalizeTraitementValue(item.traitement);
+            } else {
+                traitement = this.defaultOkTraitement;
+                item.traitement = traitement;
+            }
+            console.log(`🔄 confirmAndSave: Statut OK - traitement="${traitement}" pour ${item.agency}/${item.service}, commentaire préservé: "${savedComment}"`);
         } else {
             // Pour les autres statuts, utiliser le traitement existant ou le traitement par défaut
             traitement = item.traitement && item.traitement.trim() !== ''
@@ -7166,14 +7285,14 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         recalculatedData.comment = savedComment;
         item.comment = savedComment;
 
-        // Pour le statut OK, le traitement doit être "Niveau Group" (déjà défini dans recalculateDataBasedOnStatus)
+        // Pour le statut OK, le traitement doit être "Responsable CDO" (déjà défini dans recalculateDataBasedOnStatus)
         // Pour les autres statuts, utiliser le traitement existant ou le traitement par défaut
         let traitement: string;
         if (item.status === 'OK') {
-            // S'assurer que le traitement est bien "Niveau Group" pour le statut OK
+            // S'assurer que le traitement est bien "Responsable CDO" pour le statut OK
             traitement = recalculatedData.traitement && recalculatedData.traitement.trim() !== ''
                 ? recalculatedData.traitement
-                : 'Niveau Group';
+                : 'Responsable CDO';
             console.log(`🔄 updateRow: Statut OK - traitement forcé à "${traitement}" pour ${item.agency}/${item.service}, commentaire préservé: "${savedComment}"`);
         } else {
             // Pour les autres statuts, utiliser le traitement existant ou le traitement par défaut
@@ -8560,15 +8679,60 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         return `status-badge status-${cleanStatus}`;
     }
 
-    getTraitementClass(traitement?: string): string {
-        if (!traitement) return 'traitement-badge';
-        const cleanTraitement = traitement.toLowerCase().replace(/\s+/g, '-');
-        return `traitement-badge traitement-${cleanTraitement}`;
+    /** Catégorie métier du traitement (alignée avec le rapport BO vs Partenaire). */
+    resolveTraitementKind(traitement?: string | null): 'support' | 'cdo' | 'group' | 'termine' | 'none' {
+        const normalized = this.normalizeTraitementValue(traitement);
+        if (!normalized || normalized === '—') {
+            return 'none';
+        }
+        const t = normalized
+            .toLowerCase()
+            .normalize('NFD')
+            .replace(/\p{M}/gu, '');
+        if (t.includes('support')) {
+            return 'support';
+        }
+        if (t.includes('termine')) {
+            return 'termine';
+        }
+        if (t.includes('group')) {
+            return 'group';
+        }
+        if (t.includes('cdo') || t.includes('responsable')) {
+            return 'cdo';
+        }
+        return 'none';
     }
 
-    /** Indique si le traitement de la ligne est "Terminé" (pour mise en évidence de la ligne) */
+    /** Libellé affiché dans la colonne Traitement. */
+    getTraitementDisplayLabel(traitement?: string | null): string {
+        switch (this.resolveTraitementKind(traitement)) {
+            case 'support':
+                return 'En cours de traitement';
+            case 'cdo':
+                return 'Validé';
+            case 'group':
+                return 'En cours de clôture';
+            case 'termine':
+                return 'Validé et clôturé';
+            default:
+                return (traitement || '').trim() || '—';
+        }
+    }
+
+    getTraitementRowClass(item: ReconciliationReportData): string {
+        const kind = this.resolveTraitementKind(item?.traitement);
+        return kind !== 'none' ? `row-traitement-${kind}` : '';
+    }
+
+    getTraitementClass(traitement?: string): string {
+        const kind = this.resolveTraitementKind(traitement);
+        return `traitement-badge traitement-kind--${kind}`;
+    }
+
+    /** Indique si le traitement de la ligne est « Terminé » (Validé et clôturé). */
     isTraitementTermine(item: ReconciliationReportData): boolean {
-        return !!item?.traitement && item.traitement.trim().toLowerCase() === 'terminé';
+        return this.resolveTraitementKind(item?.traitement) === 'termine';
     }
 
     // Vérifier si une ligne est verrouillée (statut OK + traitement Terminé)
@@ -8608,6 +8772,28 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
     }
 
     async onTraitementChange(item: ReconciliationReportData) {
+        item.traitement = this.normalizeTraitementValue(item.traitement);
+
+        if (item.status === 'OK' && !this.isReleveScopeCdoValidated(item)) {
+            const allowed = this.getTraitementOptionsForItem(item);
+            if (!item.traitement || !allowed.includes(item.traitement)) {
+                item.traitement = this.defaultOkTraitement;
+                this.popupService.showWarning(
+                    'Traitement non autorisé',
+                    'Le relevé du service n\'est pas encore validé : le traitement doit rester à « Responsable CDO ».'
+                );
+            }
+        } else if (item.status === 'OK' && this.isReleveScopeCdoValidated(item) && !this.isReleveScopeValidated(item)) {
+            const allowed = this.getTraitementOptionsForItem(item);
+            if (!item.traitement || !allowed.includes(item.traitement)) {
+                item.traitement = this.traitementNiveauGroup;
+                this.popupService.showWarning(
+                    'Traitement non autorisé',
+                    'Après validation CDO, seuls « Niveau GROUP » et « Terminé » sont autorisés.'
+                );
+            }
+        }
+
         if (!item.id) {
             // Si la ligne n'a pas d'ID, elle n'est pas encore sauvegardée
             // On peut juste mettre à jour localement
@@ -8793,6 +8979,35 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         // Déterminer la valeur du traitement (undefined si __CLEAR__, sinon la valeur sélectionnée)
         const traitementValue = this.bulkTraitementSelection === '__CLEAR__' ? undefined : this.bulkTraitementSelection;
         const traitementDisplay = traitementValue || '-';
+
+        const blockedOkLines = unlockedItems.filter(item =>
+            item.status === 'OK' &&
+            !this.isReleveScopeCdoValidated(item) &&
+            traitementValue !== this.defaultOkTraitement &&
+            traitementValue !== 'Niveau Support'
+        );
+        if (blockedOkLines.length > 0) {
+            this.popupService.showWarning(
+                'Traitement non autorisé',
+                'Le relevé n\'est pas encore validé par le CDO : seul « Responsable CDO » est autorisé.'
+            );
+            return;
+        }
+
+        const blockedGroupLines = unlockedItems.filter(item =>
+            item.status === 'OK' &&
+            this.isReleveScopeCdoValidated(item) &&
+            !this.isReleveScopeValidated(item) &&
+            traitementValue !== this.traitementNiveauGroup &&
+            traitementValue !== 'Terminé'
+        );
+        if (blockedGroupLines.length > 0) {
+            this.popupService.showWarning(
+                'Traitement non autorisé',
+                'Après validation CDO, seuls « Niveau GROUP » et « Terminé » sont autorisés.'
+            );
+            return;
+        }
 
         // Confirmer le changement avec popup moderne
         const confirmMessage = `Voulez-vous changer le traitement de ${unlockedItems.length} ligne(s) en "${traitementDisplay}" ?`;
@@ -9350,7 +9565,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         } finally {
             this.isLoadingReleve = false;
             // Vérifier si toutes les lignes ont déjà le traitement à "Terminé"
-            this.isReleveValidated = this.isReleveAlreadyValidated();
+            this.isReleveValidated = this.isReleveCdoClosed();
         }
     }
 
@@ -9407,7 +9622,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         };
 
         this.loadReleveManualData();
-        this.isReleveValidated = this.isReleveAlreadyValidated();
+        this.isReleveValidated = this.isReleveCdoClosed();
 
         this.isLoadingReleve = true;
         this.loadReleveEcartBoSummariesForCurrentReleve()
@@ -9458,28 +9673,62 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
     }
 
     /**
-     * Vérifie si toutes les lignes non verrouillées du relevé ont déjà le traitement à "Terminé"
+     * Relevé clôturé par le Responsable CDO (traitement Niveau GROUP sur le périmètre).
      */
-    isReleveAlreadyValidated(): boolean {
+    isReleveCdoClosed(): boolean {
         if (!this.releveData) {
             return false;
         }
+        return this.isReleveScopeCdoValidated(this.releveData);
+    }
 
-        const matchingLines = this.filteredReportData.filter(line =>
-            this.isSameReleveScope(line, this.releveData!)
-        );
-
-        if (matchingLines.length === 0) {
+    /**
+     * Relevé entièrement terminé (Niveau GROUP a clôturé → Terminé).
+     */
+    isReleveFullyClosed(): boolean {
+        if (!this.releveData) {
             return false;
         }
+        return this.isReleveScopeValidated(this.releveData);
+    }
 
-        const unlockedLines = matchingLines.filter(line => !this.isRowLocked(line));
+    /** @deprecated Utiliser isReleveCdoClosed() ou isReleveFullyClosed() */
+    isReleveAlreadyValidated(): boolean {
+        return this.isReleveCdoClosed();
+    }
 
-        if (unlockedLines.length === 0) {
+    getReleveActionButtonLabel(): string {
+        if (this.isValidatingReleve) {
+            return '⏳ Validation...';
+        }
+        if (this.isReleveFullyClosed()) {
+            return '✅ Terminé';
+        }
+        if (this.isReleveCdoClosed()) {
+            return '✅ Clôturé';
+        }
+        return '✅ Valider';
+    }
+
+    isReleveValidateButtonDisabled(): boolean {
+        if (this.isValidatingReleve) {
             return true;
         }
+        if (this.isReleveFullyClosed()) {
+            return true;
+        }
+        // Après validation CDO : bouton « Clôturé » cliquable pour la clôture GROUP
+        return false;
+    }
 
-        return unlockedLines.every(line => line.traitement === 'Terminé');
+    getReleveActionButtonTitle(): string {
+        if (this.isReleveFullyClosed()) {
+            return 'Relevé terminé (Niveau GROUP)';
+        }
+        if (this.isReleveCdoClosed()) {
+            return 'Relevé clôturé par le CDO — cliquer pour terminer au niveau GROUP';
+        }
+        return 'Valider le relevé (Responsable CDO)';
     }
 
     /**
@@ -10457,11 +10706,31 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
     }
 
     /**
-     * Valide le relevé en mettant le traitement à "Terminé" pour toutes les lignes du service et de la date
+     * Validation relevé : CDO → Niveau GROUP (bouton « Clôturé »), puis GROUP → Terminé (bouton « Terminé »).
      */
     async validateReleve(): Promise<void> {
         if (!this.releveData) {
             this.popupService.showWarning('❌ Aucune donnée de relevé disponible.');
+            return;
+        }
+
+        if (this.isReleveFullyClosed()) {
+            return;
+        }
+
+        if (this.isReleveCdoClosed()) {
+            await this.closeReleveAtGroupLevel();
+            return;
+        }
+
+        await this.validateReleveAsCdo();
+    }
+
+    /**
+     * Validation Responsable CDO : passe le traitement à « Niveau GROUP ».
+     */
+    private async validateReleveAsCdo(): Promise<void> {
+        if (!this.releveData) {
             return;
         }
 
@@ -10475,11 +10744,9 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         );
 
         if (!selectedEnv) {
-            // L'utilisateur a annulé la sélection → on annule la validation
             return;
         }
 
-        // Mémoriser l'environnement choisi pour ce relevé
         this.releveEnv = selectedEnv;
         this.releveEnvLastValid = this.normalizeReleveEnvKey(selectedEnv);
 
@@ -10500,100 +10767,108 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         }
 
         const envLabelConfirm = this.normalizeReleveEnvKey(this.releveEnv);
-        const confirmMessage = `Voulez-vous mettre le traitement à "Terminé" pour ${unlockedLines.length} ligne(s) du service « ${this.releveData.service} », date « ${this.formatDate(this.releveData.date)} », pays « ${this.releveData.country} », ENV « ${this.formatEnvFilterLabel(envLabelConfirm)} » ?`;
-        const confirmed = await this.popupService.showConfirm(confirmMessage, 'Confirmation de validation');
-        
+        const confirmMessage = `Voulez-vous valider le relevé (Responsable CDO) et passer ${unlockedLines.length} ligne(s) à « Niveau GROUP » pour le service « ${this.releveData.service} », date « ${this.formatDate(this.releveData.date)} », pays « ${this.releveData.country} », ENV « ${this.formatEnvFilterLabel(envLabelConfirm)} » ?`;
+        const confirmed = await this.popupService.showConfirm(confirmMessage, 'Validation Responsable CDO');
+
         if (!confirmed) {
             return;
         }
 
-        // Persister les valeurs manuelles avant de passer les lignes à "Terminé".
         const manualSaveOk = await this.saveReleveManualData();
         if (!manualSaveOk) {
             return;
         }
 
+        await this.applyReleveTraitementToScope(unlockedLines, this.traitementNiveauGroup, 'Validation CDO réussie');
+    }
+
+    /**
+     * Clôture Niveau GROUP : passe le traitement à « Terminé ».
+     */
+    private async closeReleveAtGroupLevel(): Promise<void> {
+        if (!this.releveData) {
+            return;
+        }
+
+        const matchingLines = this.filteredReportData.filter(line =>
+            this.isSameReleveScope(line, this.releveData!)
+        );
+
+        if (matchingLines.length === 0) {
+            this.popupService.showWarning('❌ Aucune ligne trouvée pour ce périmètre (service, date, pays, ENV).');
+            return;
+        }
+
+        const unlockedLines = matchingLines.filter(line => !this.isRowLocked(line));
+
+        if (unlockedLines.length === 0) {
+            this.popupService.showWarning('❌ Toutes les lignes sont déjà verrouillées (OK + Terminé).');
+            return;
+        }
+
+        const envLabelConfirm = this.normalizeReleveEnvKey(this.releveEnv);
+        const confirmMessage = `Voulez-vous clôturer au niveau GROUP et passer ${unlockedLines.length} ligne(s) à « Terminé » pour le service « ${this.releveData.service} », date « ${this.formatDate(this.releveData.date)} », pays « ${this.releveData.country} », ENV « ${this.formatEnvFilterLabel(envLabelConfirm)} » ?`;
+        const confirmed = await this.popupService.showConfirm(confirmMessage, 'Clôture Niveau GROUP');
+
+        if (!confirmed) {
+            return;
+        }
+
+        await this.applyReleveTraitementToScope(unlockedLines, 'Terminé', 'Clôture GROUP réussie');
+    }
+
+    private async applyReleveTraitementToScope(
+        unlockedLines: ReconciliationReportData[],
+        targetTraitement: string,
+        successTitle: string
+    ): Promise<void> {
         this.isValidatingReleve = true;
         let successCount = 0;
         let errorCount = 0;
 
         try {
-            // Mettre à jour le traitement pour toutes les lignes
             const updatePromises = unlockedLines.map(async (item) => {
                 const oldTraitement = item.traitement;
-                // S'assurer que le traitement est bien défini à "Terminé"
-                item.traitement = 'Terminé';
-                
-                // Vérification avant l'appel
-                if (item.traitement !== 'Terminé') {
-                    console.error(`❌ Erreur: traitement non défini correctement avant sauvegarde pour ligne ID=${item.id}`);
-                    errorCount++;
-                    return;
-                }
-                
+                item.traitement = targetTraitement;
+
                 try {
-                    this.debugLog(`🔄 Validation: Mise à jour traitement pour ligne ID=${item.id}, service=${item.service}, date=${item.date}, traitement="${item.traitement}"`);
+                    this.debugLog(`🔄 Relevé: Mise à jour traitement pour ligne ID=${item.id}, traitement="${item.traitement}"`);
                     await this.saveItemTraitement(item);
-                    
-                    // Vérifier que le traitement a bien été sauvegardé
-                    // Attendre un court délai pour permettre la mise à jour
                     await new Promise(resolve => setTimeout(resolve, 100));
-                    
-                    if (item.traitement === 'Terminé') {
-                        this.debugLog(`✅ Validation réussie pour ligne ID=${item.id}, traitement confirmé: "${item.traitement}"`);
+
+                    if (this.normalizeTraitementValue(item.traitement) === targetTraitement) {
                         successCount++;
                     } else {
-                        const traitementActuel: string | undefined = item.traitement;
-                        console.warn(`⚠️ Traitement non confirmé pour ligne ID=${item.id}, traitement actuel: "${traitementActuel}" (attendu: "Terminé")`);
-                        // Vérifier si le traitement a été partiellement mis à jour
-                        if (traitementActuel && traitementActuel.trim()) {
-                            this.debugLog(`⚠️ Traitement différent reçu: "${traitementActuel}" au lieu de "Terminé"`);
-                        } else {
-                            this.debugLog(`⚠️ Traitement vide ou null après sauvegarde`);
-                        }
-                        successCount++; // On compte quand même comme succès si l'appel API a réussi
+                        successCount++;
                     }
                 } catch (error: any) {
                     errorCount++;
-                    // Revenir à l'ancien traitement en cas d'erreur
                     item.traitement = oldTraitement;
-                    console.error(`❌ Erreur lors de la validation pour ligne ID=${item.id}:`, error);
-                    this.debugLog(`❌ Erreur détaillée:`, error);
+                    console.error(`❌ Erreur lors de la mise à jour pour ligne ID=${item.id}:`, error);
                 }
             });
 
             await Promise.all(updatePromises);
-
-            // Attendre un court délai pour s'assurer que la base de données a bien enregistré les changements
             await new Promise(resolve => setTimeout(resolve, 500));
 
-            // Rafraîchir les données après la sauvegarde
             if (this.currentSource === 'db') {
                 await this.loadSavedReportFromDatabase();
-                // Vérifier que les traitements ont bien été mis à jour après le rechargement
-                const updatedItems = this.filteredReportData.filter(item => 
-                    item.service === this.releveData?.service && 
-                    item.date === this.releveData?.date &&
-                    item.traitement === 'Terminé'
-                );
-                this.debugLog(`✅ Après rechargement: ${updatedItems.length} ligne(s) avec traitement="Terminé" pour service=${this.releveData?.service}, date=${this.releveData?.date}`);
             } else {
                 this.filterReport();
                 this.updatePagination();
             }
 
-            // Mettre à jour l'état de validation basé sur l'état réel des données
-            this.isReleveValidated = this.isReleveAlreadyValidated();
+            this.isReleveValidated = this.isReleveCdoClosed();
 
-            // Afficher les résultats
             if (successCount > 0) {
-                this.popupService.showSuccess(`✅ Traitement mis à "Terminé" pour ${successCount} ligne(s)`, 'Validation réussie');
+                this.popupService.showSuccess(
+                    `✅ Traitement mis à « ${targetTraitement} » pour ${successCount} ligne(s)`,
+                    successTitle
+                );
             }
             if (errorCount > 0) {
-                this.popupService.showError(`❌ Erreur lors de la validation de ${errorCount} ligne(s)`, 'Certaines validations ont échoué');
+                this.popupService.showError(`❌ Erreur lors de la mise à jour de ${errorCount} ligne(s)`, 'Certaines opérations ont échoué');
             }
-
-            // Le modal reste ouvert - l'utilisateur doit cliquer sur "Fermer" pour le fermer
         } catch (error: any) {
             console.error('Erreur lors de la validation:', error);
             this.popupService.showError(`❌ Erreur lors de la validation: ${error.message || 'Erreur inconnue'}`);

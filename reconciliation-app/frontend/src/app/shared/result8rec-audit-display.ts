@@ -9,6 +9,9 @@ export function auditSnapshotTraitementClass(value?: string | null): string {
   if (low.includes('support')) {
     return 'audit-pill-label audit-pill--traitement-support';
   }
+  if (low.includes('cdo') || low.includes('responsable')) {
+    return 'audit-pill-label audit-pill--traitement-cdo';
+  }
   if (low.includes('group')) {
     return 'audit-pill-label audit-pill--traitement-group';
   }

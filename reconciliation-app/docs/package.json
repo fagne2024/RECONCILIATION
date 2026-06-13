@@ -1,7 +1,14 @@
 {
-  "name": "budgetsync-docs-pdf",
+  "name": "reconciliapp-docs-pdf",
   "private": true,
-  "description": "Génération ponctuelle PDF (aperçu UI)",
+  "description": "Génération PDF documentation ReconciliApp",
+  "scripts": {
+    "screenshots": "node capture-screenshots.mjs",
+    "pdf:guide": "node generate-guide-utilisation-pdf.mjs",
+    "pdf:guide:full": "node capture-screenshots.mjs && node generate-guide-utilisation-pdf.mjs",
+    "pdf:cdc": "node generate-cahier-des-charges-pdf.mjs",
+    "pdf:budgetsync": "node generate-apercu-pdf.mjs"
+  },
   "dependencies": {
     "pdfkit": "^0.15.0"
   }

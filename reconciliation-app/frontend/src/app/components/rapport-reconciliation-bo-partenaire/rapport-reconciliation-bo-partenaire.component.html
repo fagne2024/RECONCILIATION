@@ -115,10 +115,16 @@
         <div class="rrbp-kpis">
           <div class="rrbp-kpi">
             <span class="rrbp-kpi-line">
-              <span class="rrbp-kpi-label">Total BO</span>
+              <span class="rrbp-kpi-label">Nombres de Transactions BO</span>
               <span class="rrbp-kpi-vals"
                 >{{ formatNombre(totalBoNombre) }} <span class="sep">·</span> vol {{ formatNombre(totalBoVolume) }}</span
               >
+            </span>
+          </div>
+          <div class="rrbp-kpi">
+            <span class="rrbp-kpi-line">
+              <span class="rrbp-kpi-label">Transactions correspondantes BO</span>
+              <span class="rrbp-kpi-vals">{{ formatNombre(totalMatchesBo) }}</span>
             </span>
           </div>
           <div class="rrbp-kpi">
@@ -236,7 +242,7 @@
                 <th colspan="3" class="grp ecart">Écart</th>
               </tr>
               <tr>
-                <th rowspan="2" class="sub bo">Nombre</th>
+                <th rowspan="2" class="sub bo">Transactions BO</th>
                 <th rowspan="2" class="sub bo">Volume</th>
                 <th rowspan="2" class="sub part">Nombre</th>
                 <th rowspan="2" class="sub part">Volume</th>
@@ -280,7 +286,7 @@
                     <div class="svc-main">{{ line.row.service }}</div>
                   </td>
                   <td class="col-traitement">
-                    <span [class]="getTraitementClass(line.row.traitement)">{{ line.row.traitement }}</span>
+                    <span [class]="getTraitementClass(line.row.traitement)">{{ displayTraitementLabel(line.row.traitement) }}</span>
                   </td>
                   <td [class]="classeStatutCell(line.row.traitement)">
                     <span class="rrbp-statut-pill">{{ libelleStatutFromTraitement(line.row.traitement) }}</span>
@@ -356,7 +362,7 @@
                     <span class="rrbp-group-meta">{{ line.count }} services · total groupe</span>
                   </td>
                   <td class="col-traitement">
-                    <span [class]="getTraitementClass(line.aggregate.traitement)">{{ line.aggregate.traitement }}</span>
+                    <span [class]="getTraitementClass(line.aggregate.traitement)">{{ displayTraitementLabel(line.aggregate.traitement) }}</span>
                   </td>
                   <td [class]="classeStatutCell(line.aggregate.traitement)">
                     <span class="rrbp-statut-pill">{{ libelleStatutFromTraitement(line.aggregate.traitement) }}</span>
@@ -419,7 +425,7 @@
                     <div class="svc-main rrbp-detail-indent">{{ line.row.service }}</div>
                   </td>
                   <td class="col-traitement">
-                    <span [class]="getTraitementClass(line.row.traitement)">{{ line.row.traitement }}</span>
+                    <span [class]="getTraitementClass(line.row.traitement)">{{ displayTraitementLabel(line.row.traitement) }}</span>
                   </td>
                   <td [class]="classeStatutCell(line.row.traitement)">
                     <span class="rrbp-statut-pill">{{ libelleStatutFromTraitement(line.row.traitement) }}</span>

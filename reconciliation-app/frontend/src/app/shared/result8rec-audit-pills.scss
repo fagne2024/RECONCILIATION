@@ -18,21 +18,27 @@
 }
 
 .audit-pill--traitement-support {
-  background: #fff3e0;
-  color: #bf360c;
-  border: 1px solid #ffcc80;
+  background: linear-gradient(180deg, #fef3c7 0%, #fde68a 100%);
+  color: #92400e;
+  border: 1px solid #f59e0b;
+}
+
+.audit-pill--traitement-cdo {
+  background: linear-gradient(180deg, #d1ecf1 0%, #bee5eb 100%);
+  color: #0c5460;
+  border: 1px solid #17a2b8;
 }
 
 .audit-pill--traitement-group {
-  background: #e3f2fd;
-  color: #0d47a1;
-  border: 1px solid #90caf9;
+  background: linear-gradient(180deg, #dbeafe 0%, #bfdbfe 100%);
+  color: #1e3a8a;
+  border: 1px solid #3b82f6;
 }
 
 .audit-pill--traitement-termine {
-  background: #ede7f6;
-  color: #4527a0;
-  border: 1px solid #b39ddb;
+  background: linear-gradient(180deg, #d1fae5 0%, #a7f3d0 100%);
+  color: #065f46;
+  border: 1px solid #10b981;
 }
 
 .audit-pill--traitement-default {

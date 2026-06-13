@@ -767,6 +767,15 @@
   border: 1px solid #f59e0b;
 }
 
+.rrbp-statut-cell.rrbp-statut--cdo {
+  background: rgba(209, 236, 241, 0.55);
+}
+.rrbp-statut-cell.rrbp-statut--cdo .rrbp-statut-pill {
+  background: linear-gradient(180deg, #d1ecf1 0%, #bee5eb 100%);
+  color: #0c5460;
+  border: 1px solid #17a2b8;
+}
+
 .rrbp-statut-cell.rrbp-statut--group {
   background: rgba(219, 234, 254, 0.45);
 }
@@ -826,6 +835,9 @@
 .rrbp-table tbody tr.rrbp-row-group .rrbp-statut-cell.rrbp-statut--support {
   background: rgba(254, 243, 199, 0.55);
 }
+.rrbp-table tbody tr.rrbp-row-group .rrbp-statut-cell.rrbp-statut--cdo {
+  background: rgba(209, 236, 241, 0.55);
+}
 .rrbp-table tbody tr.rrbp-row-group .rrbp-statut-cell.rrbp-statut--group {
   background: rgba(219, 234, 254, 0.55);
 }
@@ -851,9 +863,14 @@
   color: #856404;
 }
 
-.rrbp-traitement-niveau-group {
+.rrbp-traitement-responsable-cdo {
   background: #d1ecf1;
   color: #0c5460;
+}
+
+.rrbp-traitement-niveau-group {
+  background: #cfe2ff;
+  color: #084298;
 }
 
 .rrbp-traitement-terminé {

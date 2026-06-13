@@ -35,7 +35,7 @@ public class Result8RecController {
     /**
      * Détermine le traitement par défaut selon la présence d'écarts
      * - Si écarts > 0 (au moins un écart) : "Niveau Support"
-     * - Si pas d'écarts (tous à 0) : "Niveau Group"
+     * - Si pas d'écarts (tous à 0) : "Responsable CDO"
      */
     private String determineDefaultTraitement(Result8RecEntity entity) {
         // Calculer le total des écarts (boOnly + partnerOnly + mismatches)
@@ -43,7 +43,7 @@ public class Result8RecController {
         int totalEcarts = entity.getBoOnly() + entity.getPartnerOnly() + entity.getMismatches();
         
         // Seulement "Niveau Support" si on a AU MOINS un écart
-        return totalEcarts > 0 ? "Niveau Support" : "Niveau Group";
+        return totalEcarts > 0 ? "Niveau Support" : "Responsable CDO";
     }
 
     @PostMapping
