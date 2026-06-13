@@ -14,6 +14,15 @@
       <button
         type="button"
         class="nav-btn secondary"
+        (click)="refreshRankingData()"
+        [disabled]="loadingAgencies || loadingServices"
+        title="Actualiser les données en conservant les filtres"
+      >
+        <i class="fas" [ngClass]="(loadingAgencies || loadingServices) ? 'fa-spinner fa-spin' : 'fa-sync-alt'"></i> Actualiser
+      </button>
+      <button
+        type="button"
+        class="nav-btn secondary"
         (click)="exportAgencyPdf()"
         [disabled]="loadingAgencies || !agencyRankings.length || isExportingAgencyPdf">
         <i class="fas fa-file-pdf"></i> PDF Clients

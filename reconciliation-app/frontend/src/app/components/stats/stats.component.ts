@@ -332,6 +332,15 @@ export class StatsComponent implements OnInit, OnDestroy {
         return !this.isLoading && this.buildStatsFetchScope().key !== this.lastStatsFetchKey;
     }
 
+    /** Recharge les données sans réinitialiser les filtres (client, service, pays, dates, variation, rapport). */
+    refreshStatsData(): void {
+        if (this.isLoading) {
+            return;
+        }
+        this.lastStatsFetchKey = '';
+        this.loadData();
+    }
+
     toggleStatsHistoryScope(): void {
         this.showAllStatsHistory = !this.showAllStatsHistory;
         if (!this.showAllStatsHistory) {

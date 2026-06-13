@@ -9,6 +9,7 @@ import * as ExcelJS from 'exceljs';
 import { ServiceReference, ServiceReferencePayload } from '../../models/service-reference.model';
 import { ServiceReferenceService } from '../../services/service-reference.service';
 import { ModernPopupComponent, PopupConfig } from '../modern-popup/modern-popup.component';
+import { ServiceReferencesDashboardPanelComponent } from './service-references-dashboard-panel.component';
 
 type ImportPayload = ServiceReferencePayload & { rowNumber: number };
 
@@ -21,18 +22,6 @@ type ServiceRefFilterDimension =
     | 'codeService'
     | 'status'
     | 'reconciliable';
-
-interface ServiceRefDashboardOperatorGroup {
-    operateurLabel: string;
-    items: ServiceReference[];
-}
-
-interface ServiceRefDashboardGroup {
-    serviceTypeLabel: string;
-    operators: ServiceRefDashboardOperatorGroup[];
-}
-
-type DashboardFilterDimension = 'pays' | 'serviceType' | 'operateur' | 'reseau';
 
 @Component({
     selector: 'app-service-references',
@@ -47,6 +36,7 @@ export class ServiceReferencesComponent implements OnInit, OnDestroy {
     isLoading = false;
     isSaving = false;
     isImporting = false;
+    isExporting = false;
     errorMessage: string | null = null;
     successMessage: string | null = null;
     errorDetails: string[] = [];
@@ -56,14 +46,10 @@ export class ServiceReferencesComponent implements OnInit, OnDestroy {
     referenceForm: FormGroup;
     editingReference: ServiceReference | null = null;
     filterForm: FormGroup;
-    /** Filtres du dashboard (Pays / Type / Opérateur / Réseau) — cloisonnement des listes. */
-    dashboardFilterForm: FormGroup;
-    dashboardPaysOptions: string[] = [];
-    dashboardServiceTypeOptions: string[] = [];
-    dashboardOperateurOptions: string[] = [];
-    dashboardReseauOptions: string[] = [];
 
     @ViewChild('fileInput') fileInput!: ElementRef<HTMLInputElement>;
+    @ViewChild('formPanel') formPanel?: ElementRef<HTMLElement>;
+    @ViewChild('dashboardPanel') dashboardPanel?: ServiceReferencesDashboardPanelComponent;
 
     private readonly templateHeaders = [
         'Pays',
@@ -91,6 +77,8 @@ export class ServiceReferencesComponent implements OnInit, OnDestroy {
     selectedReferences: Set<number> = new Set();
     allSelected = false;
     isDashboardVisible = false;
+    dashboardPeriodMonths = 3;
+    private activeInAgencyKeys = new Set<string>();
 
     constructor(
         private serviceReferenceService: ServiceReferenceService,
@@ -121,13 +109,6 @@ export class ServiceReferencesComponent implements OnInit, OnDestroy {
             status: [''],
             reconciliable: ['all']
         });
-
-        this.dashboardFilterForm = this.fb.group({
-            pays: [''],
-            serviceType: [''],
-            operateur: [''],
-            reseau: ['']
-        });
     }
 
     ngOnInit(): void {
@@ -138,13 +119,6 @@ export class ServiceReferencesComponent implements OnInit, OnDestroy {
                 takeUntil(this.destroy$)
             )
             .subscribe(() => this.applyFilters());
-        this.dashboardFilterForm.valueChanges
-            .pipe(
-                debounceTime(200),
-                distinctUntilChanged((a, b) => JSON.stringify(a) === JSON.stringify(b)),
-                takeUntil(this.destroy$)
-            )
-            .subscribe(() => this.updateDashboardFilterOptions());
 
         this.route.queryParamMap.pipe(takeUntil(this.destroy$)).subscribe((params) => {
             const d = params.get('dashboard');
@@ -153,12 +127,56 @@ export class ServiceReferencesComponent implements OnInit, OnDestroy {
                 d === 'true' ||
                 params.get('view') === 'dashboard';
             this.isDashboardVisible = show;
-            if (show) {
-                this.updateDashboardFilterOptions();
-            }
         });
 
         this.loadReferences();
+        this.loadActiveInAgencyKeys();
+
+        this.referenceForm.valueChanges
+            .pipe(debounceTime(150), takeUntil(this.destroy$))
+            .subscribe(() => this.refreshFormComputedStatus());
+    }
+
+    private loadActiveInAgencyKeys(): void {
+        this.serviceReferenceService.getActiveInAgencyKeys(this.dashboardPeriodMonths).subscribe({
+            next: (keys) => {
+                this.activeInAgencyKeys = new Set(keys || []);
+                this.refreshFormComputedStatus();
+            },
+            error: () => {
+                this.activeInAgencyKeys = new Set();
+            }
+        });
+    }
+
+    private agencyStatusKey(pays: string, codeService: string): string {
+        const paysNorm = (pays || '').trim().toUpperCase();
+        const codeNorm = this.normalizeImportCodeService(codeService).toLowerCase();
+        return `${paysNorm}|${codeNorm}`;
+    }
+
+    private isActiveInReconciliationReport(
+        pays: string,
+        codeService: string,
+        serviceLabel?: string | null,
+        codeReco?: string | null
+    ): boolean {
+        const aliases = [codeService, serviceLabel, codeReco]
+            .filter((value): value is string => !!value && String(value).trim().length > 0);
+        return aliases.some((alias) => this.activeInAgencyKeys.has(this.agencyStatusKey(pays, alias)));
+    }
+
+    private refreshFormComputedStatus(): void {
+        if (!this.referenceForm) {
+            return;
+        }
+        const { pays, codeService, serviceLabel, codeReco } = this.referenceForm.value;
+        const status = this.isActiveInReconciliationReport(pays, codeService, serviceLabel, codeReco)
+            ? 'ACTIF'
+            : 'INACTIF';
+        if (this.referenceForm.get('status')?.value !== status) {
+            this.referenceForm.patchValue({ status }, { emitEvent: false });
+        }
     }
 
     ngOnDestroy(): void {
@@ -168,20 +186,19 @@ export class ServiceReferencesComponent implements OnInit, OnDestroy {
 
     toggleDashboard(): void {
         this.isDashboardVisible = !this.isDashboardVisible;
-        if (this.isDashboardVisible) {
-            this.updateDashboardFilterOptions();
+        if (this.isDashboardVisible && this.showForm) {
+            this.cancelEdit();
         }
+        this.syncDashboardQueryParam(this.isDashboardVisible);
     }
 
-    /** Import assoupli : vue dashboard (?dashboard=1 ou bascule Dashboard). */
-    private isRelaxedImportMode(): boolean {
-        return this.isDashboardVisible;
+    onDashboardPeriodChange(periodMonths: number): void {
+        this.dashboardPeriodMonths = periodMonths;
+        this.loadActiveInAgencyKeys();
     }
 
     get importFileAccept(): string {
-        return this.isDashboardVisible
-            ? '.xlsx,.xls,.xlsm,.csv,.tsv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv,text/tab-separated-values'
-            : '.xlsx,.xls,.csv';
+        return '.xlsx,.xls,.xlsm,.csv,.tsv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv,text/tab-separated-values';
     }
 
     loadReferences(): void {
@@ -192,9 +209,9 @@ export class ServiceReferencesComponent implements OnInit, OnDestroy {
             next: (refs) => {
                 this.references = refs.sort((a, b) => a.pays.localeCompare(b.pays));
                 this.applyFilters();
-                this.updateDashboardFilterOptions();
                 this.isLoading = false;
                 this.errorDetails = [];
+                this.loadActiveInAgencyKeys();
             },
             error: (error) => {
                 console.error('Erreur lors du chargement des références', error);
@@ -318,143 +335,6 @@ export class ServiceReferencesComponent implements OnInit, OnDestroy {
         return (s ?? '').trim().toLowerCase();
     }
 
-    private matchesDashboardFilter(ref: ServiceReference, exclude: DashboardFilterDimension | null): boolean {
-        const { pays, serviceType, operateur, reseau } = this.dashboardFilterForm.value;
-        if (exclude !== 'pays' && pays) {
-            if (this.norm(ref.pays) !== this.norm(pays)) {
-                return false;
-            }
-        }
-        if (exclude !== 'serviceType' && serviceType) {
-            if (this.norm(ref.serviceType) !== this.norm(serviceType)) {
-                return false;
-            }
-        }
-        if (exclude !== 'operateur' && operateur) {
-            if (this.norm(ref.operateur) !== this.norm(operateur)) {
-                return false;
-            }
-        }
-        if (exclude !== 'reseau' && reseau) {
-            if (this.norm(ref.reseau) !== this.norm(reseau)) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    updateDashboardFilterOptions(): void {
-        const uniqueSorted = <T>(arr: T[]) =>
-            [...new Set(arr)].sort((a, b) => String(a).localeCompare(String(b), 'fr'));
-
-        this.dashboardPaysOptions = uniqueSorted(
-            this.references.filter((r) => this.matchesDashboardFilter(r, 'pays')).map((r) => r.pays)
-        );
-        this.dashboardServiceTypeOptions = uniqueSorted(
-            this.references
-                .filter((r) => this.matchesDashboardFilter(r, 'serviceType'))
-                .map((r) => r.serviceType)
-                .filter((st): st is string => !!st && String(st).trim().length > 0)
-        );
-        this.dashboardOperateurOptions = uniqueSorted(
-            this.references
-                .filter((r) => this.matchesDashboardFilter(r, 'operateur'))
-                .map((r) => r.operateur)
-                .filter((op): op is string => !!op && String(op).trim().length > 0)
-        );
-        this.dashboardReseauOptions = uniqueSorted(
-            this.references
-                .filter((r) => this.matchesDashboardFilter(r, 'reseau'))
-                .map((r) => r.reseau)
-                .filter((rs): rs is string => !!rs && String(rs).trim().length > 0)
-        );
-    }
-
-    get dashboardFilteredRefs(): ServiceReference[] {
-        return this.references.filter((r) => this.matchesDashboardFilter(r, null));
-    }
-
-    get dashboardTotalCount(): number {
-        return this.dashboardFilteredRefs.length;
-    }
-
-    get dashboardReconciliableCount(): number {
-        return this.dashboardFilteredRefs.filter((r) => r.reconciliable).length;
-    }
-
-    get dashboardNonReconciliableCount(): number {
-        return this.dashboardFilteredRefs.filter((r) => !r.reconciliable).length;
-    }
-
-    get dashboardReconciliablePercent(): number {
-        const t = this.dashboardTotalCount;
-        return t ? Math.round((100 * this.dashboardReconciliableCount) / t) : 0;
-    }
-
-    get dashboardNonReconciliablePercent(): number {
-        const t = this.dashboardTotalCount;
-        return t ? Math.round((100 * this.dashboardNonReconciliableCount) / t) : 0;
-    }
-
-    get dashboardTotalCardSubtitle(): string {
-        const p = (this.dashboardFilterForm.get('pays')?.value || '').trim();
-        return p ? `Pays : ${p}` : 'Tous pays';
-    }
-
-    get groupedDashboardReconciliable(): ServiceRefDashboardGroup[] {
-        return this.buildServiceRefGroups(this.dashboardFilteredRefs.filter((r) => r.reconciliable));
-    }
-
-    get groupedDashboardNonReconciliable(): ServiceRefDashboardGroup[] {
-        return this.buildServiceRefGroups(this.dashboardFilteredRefs.filter((r) => !r.reconciliable));
-    }
-
-    private buildServiceRefGroups(refs: ServiceReference[]): ServiceRefDashboardGroup[] {
-        const byType = new Map<string, Map<string, ServiceReference[]>>();
-        for (const ref of refs) {
-            const typeKey = (ref.serviceType || '').trim().toUpperCase() || '(SANS TYPE)';
-            const opKey = (ref.operateur || '').trim().toUpperCase() || '(SANS OPÉRATEUR)';
-            if (!byType.has(typeKey)) {
-                byType.set(typeKey, new Map());
-            }
-            const opMap = byType.get(typeKey)!;
-            if (!opMap.has(opKey)) {
-                opMap.set(opKey, []);
-            }
-            opMap.get(opKey)!.push(ref);
-        }
-        const types = [...byType.keys()].sort((a, b) => a.localeCompare(b, 'fr'));
-        return types.map((serviceTypeLabel) => {
-            const opMap = byType.get(serviceTypeLabel)!;
-            const ops = [...opMap.keys()].sort((a, b) => a.localeCompare(b, 'fr'));
-            return {
-                serviceTypeLabel,
-                operators: ops.map((operateurLabel) => ({
-                    operateurLabel,
-                    items: (opMap.get(operateurLabel) || []).sort((a, b) =>
-                        a.codeService.localeCompare(b.codeService, undefined, { sensitivity: 'base' })
-                    )
-                }))
-            };
-        });
-    }
-
-    isReferenceActive(ref: ServiceReference): boolean {
-        return String(ref.status || 'ACTIF').toUpperCase() !== 'INACTIF';
-    }
-
-    trackDashboardGroup(_index: number, g: ServiceRefDashboardGroup): string {
-        return g.serviceTypeLabel;
-    }
-
-    trackDashboardOp(_index: number, o: ServiceRefDashboardOperatorGroup): string {
-        return o.operateurLabel;
-    }
-
-    trackDashboardRef(_index: number, r: ServiceReference): string {
-        return r.id != null ? String(r.id) : `${r.pays}|${r.codeService}|${r.codeReco}`;
-    }
-
     get pagedReferences(): ServiceReference[] {
         const start = (this.pageIndex - 1) * this.pageSize;
         return this.filteredReferences.slice(start, start + this.pageSize);
@@ -502,19 +382,44 @@ export class ServiceReferencesComponent implements OnInit, OnDestroy {
             reconciliable: true,
             motif: '',
             retenuOperateur: '',
-            status: 'ACTIF'
+            status: 'INACTIF'
         });
+        this.refreshFormComputedStatus();
     }
 
     openCreateForm(): void {
+        if (this.isDashboardVisible) {
+            this.isDashboardVisible = false;
+            this.syncDashboardQueryParam(false);
+        }
         this.showForm = true;
         this.startCreate();
+        this.focusFormPanel();
     }
 
     editReference(reference: ServiceReference): void {
+        if (this.isDashboardVisible) {
+            this.isDashboardVisible = false;
+            this.syncDashboardQueryParam(false);
+        }
         this.showForm = true;
         this.editingReference = reference;
         this.referenceForm.patchValue(reference);
+        this.refreshFormComputedStatus();
+        this.focusFormPanel();
+    }
+
+    private syncDashboardQueryParam(showDashboard: boolean): void {
+        this.router.navigate([], {
+            relativeTo: this.route,
+            queryParams: { dashboard: showDashboard ? '1' : null },
+            queryParamsHandling: 'merge',
+            replaceUrl: true
+        });
+    }
+
+    private focusFormPanel(): void {
+        setTimeout(() => this.formPanel?.nativeElement?.scrollIntoView({ block: 'center', behavior: 'smooth' }), 0);
     }
 
     async saveReference(): Promise<void> {
@@ -539,8 +444,20 @@ export class ServiceReferencesComponent implements OnInit, OnDestroy {
                 );
                 this.successMessage = 'Référence mise à jour avec succès.';
             } else {
-                await firstValueFrom(this.serviceReferenceService.create(this.normalizePayload(payload)));
-                this.successMessage = 'Référence ajoutée avec succès.';
+                const normalized = this.normalizePayload(payload);
+                const existing = this.findReferenceByPaysAndCodeService(
+                    normalized.pays,
+                    normalized.codeService
+                );
+                if (existing?.id) {
+                    await firstValueFrom(
+                        this.serviceReferenceService.update(existing.id, normalized)
+                    );
+                    this.successMessage = 'Référence mise à jour avec succès.';
+                } else {
+                    await firstValueFrom(this.serviceReferenceService.create(normalized));
+                    this.successMessage = 'Référence ajoutée avec succès.';
+                }
             }
             await this.showSuccessPopup(this.successMessage || 'Opération réussie');
             this.startCreate();
@@ -642,6 +559,80 @@ export class ServiceReferencesComponent implements OnInit, OnDestroy {
         }
     }
 
+    /** Jeu de données à exporter selon la vue active (référentiel ou dashboard). */
+    get referencesToExport(): ServiceReference[] {
+        return this.isDashboardVisible
+            ? (this.dashboardPanel?.dashboardFilteredRefs ?? this.references)
+            : this.filteredReferences;
+    }
+
+    async exportReferences(): Promise<void> {
+        const rows = this.referencesToExport;
+        if (!rows.length) {
+            await this.showErrorPopup('Aucune référence à exporter avec les filtres actuels.');
+            return;
+        }
+
+        this.isExporting = true;
+        this.errorMessage = null;
+
+        try {
+            const workbook = new ExcelJS.Workbook();
+            const sheet = workbook.addWorksheet('Référentiel Services');
+            const exportHeaders = [...this.templateHeaders, 'Statut'];
+            sheet.addRow(exportHeaders);
+
+            const headerRow = sheet.getRow(1);
+            headerRow.font = { bold: true };
+            headerRow.fill = {
+                type: 'pattern',
+                pattern: 'solid',
+                fgColor: { argb: 'FFE8EEF7' }
+            };
+
+            for (const ref of rows) {
+                sheet.addRow([
+                    ref.pays,
+                    ref.codeService,
+                    ref.serviceLabel,
+                    ref.codeReco,
+                    ref.serviceType || '',
+                    ref.operateur || '',
+                    ref.reseau || '',
+                    ref.reconciliable ? 'OUI' : 'NON',
+                    ref.motif || '',
+                    ref.retenuOperateur || '',
+                    String(ref.status || 'ACTIF').toUpperCase()
+                ]);
+            }
+
+            sheet.columns?.forEach((column) => {
+                column.width = 20;
+            });
+
+            const buffer = await workbook.xlsx.writeBuffer();
+            const blob = new Blob([buffer], {
+                type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+            });
+            const url = window.URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            const stamp = new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-');
+            link.href = url;
+            link.download = `referentiel_services_export_${stamp}.xlsx`;
+            link.click();
+            window.URL.revokeObjectURL(url);
+
+            this.successMessage = `${rows.length} référence(s) exportée(s).`;
+            await this.showSuccessPopup(this.successMessage);
+        } catch (error) {
+            console.error('Erreur lors de l\'export', error);
+            this.errorMessage = 'Impossible d\'exporter le référentiel.';
+            await this.showErrorPopup(this.errorMessage);
+        } finally {
+            this.isExporting = false;
+        }
+    }
+
     downloadTemplate(): void {
         const workbook = new ExcelJS.Workbook();
         const sheet = workbook.addWorksheet('Référentiel Services');
@@ -687,38 +678,14 @@ export class ServiceReferencesComponent implements OnInit, OnDestroy {
         this.errorDetails = [];
 
         try {
-            const relaxed = this.isRelaxedImportMode();
-            const payloads = await this.parseFile(file, relaxed);
+            const payloads = await this.parseFile(file);
             if (!payloads.length) {
                 this.errorMessage = 'Le fichier ne contient aucune ligne valide.';
                 await this.showErrorPopup(this.errorMessage);
                 return;
             }
 
-            const globalUsedCodeServices = new Set<string>();
-            if (!relaxed) {
-                try {
-                    const used = await firstValueFrom(this.serviceReferenceService.getUsedCodeServices());
-                    for (const c of used || []) {
-                        const u = (c || '').trim().toUpperCase();
-                        if (u) {
-                            globalUsedCodeServices.add(u);
-                        }
-                    }
-                } catch {
-                    // Fallback : filtre basé sur la liste chargée uniquement
-                }
-
-                if (this.references.length === 0) {
-                    this.references = await firstValueFrom(this.serviceReferenceService.listAll());
-                }
-            }
-
-            const { toImport, skippedDuplicates } = this.filterImportablePayloads(
-                payloads,
-                globalUsedCodeServices,
-                relaxed
-            );
+            const { toImport, skippedDuplicates } = this.filterImportablePayloads(payloads);
 
             const batchItems = toImport.map((payload) => {
                 const { rowNumber, ...data } = payload;
@@ -730,12 +697,12 @@ export class ServiceReferencesComponent implements OnInit, OnDestroy {
 
             let successCount = 0;
             const failures: string[] = [];
-            const IMPORT_CHUNK = relaxed ? 600 : 400;
+            const IMPORT_CHUNK = 600;
 
             for (let offset = 0; offset < batchItems.length; offset += IMPORT_CHUNK) {
                 const slice = batchItems.slice(offset, offset + IMPORT_CHUNK);
                 try {
-                    const result = await firstValueFrom(this.serviceReferenceService.importBatch(slice, relaxed));
+                    const result = await firstValueFrom(this.serviceReferenceService.importBatch(slice, true));
                     successCount += result.successCount;
                     if (result.errors?.length) {
                         failures.push(...result.errors);
@@ -759,14 +726,10 @@ export class ServiceReferencesComponent implements OnInit, OnDestroy {
                 ];
                 if (skippedDuplicates.length) {
                     parts.push(
-                        relaxed
-                            ? `${skippedDuplicates.length} ignorée(s) avant envoi (ex. code service vide ou doublon dans le fichier — dernière ligne conservée).`
-                            : `${skippedDuplicates.length} ignorée(s) avant envoi (même code service dans le fichier ou code service déjà en base).`
+                        `${skippedDuplicates.length} ignorée(s) avant envoi (code service vide).`
                     );
                 }
-                if (relaxed && successCount > 0) {
-                    parts.push('Mode dashboard : mises à jour possibles pour un même pays + code service déjà en base.');
-                }
+                parts.push('Même pays + code service : mise à jour si la référence existe déjà.');
                 if (failures.length) {
                     parts.push(
                         `${failures.length} ligne(s) ou paquet(s) en échec (voir le détail : doublon, validation, droits, etc.).`
@@ -780,7 +743,7 @@ export class ServiceReferencesComponent implements OnInit, OnDestroy {
                 this.loadReferences();
             } else if (skippedDuplicates.length || failures.length) {
                 this.errorMessage = skippedDuplicates.length && !failures.length
-                    ? 'Aucune nouvelle référence : chaque code service du fichier existe déjà en base ou est en doublon dans le fichier.'
+                    ? 'Aucune référence importée : toutes les lignes ont un code service vide.'
                     : `Import impossible ou partiel : ${failures.length} erreur(s).`;
                 await this.showErrorPopup(this.errorMessage);
             }
@@ -801,50 +764,19 @@ export class ServiceReferencesComponent implements OnInit, OnDestroy {
     }
 
     /**
-     * Filtre d’import : mode strict = une ligne par code service (première), pas d’envoi si code service déjà en base.
-     * Mode dashboard (relaxed) = dernière occurrence par code service dans le fichier ; envoi même si déjà en base (upsert API).
+     * Prépare l’import : seules les lignes sans code service sont exclues.
+     * Les doublons (même pays + code service) sont gérés en upsert côté API.
      */
-    private filterImportablePayloads(
-        payloads: ImportPayload[],
-        globalUsedCodeServices: Set<string> = new Set(),
-        relaxed = false
-    ): {
+    private filterImportablePayloads(payloads: ImportPayload[]): {
         toImport: ImportPayload[];
         skippedDuplicates: string[];
     } {
-        if (relaxed) {
-            const byCode = new Map<string, ImportPayload>();
-            const skippedDuplicates: string[] = [];
-            for (const payload of payloads) {
-                const normalizedPayload = this.normalizePayload(payload);
-                const csNorm = this.normalizeImportCodeService(normalizedPayload.codeService);
-                if (!csNorm) {
-                    skippedDuplicates.push(
-                        `Ligne ${payload.rowNumber ?? '?'} : Ignorée — code service vide`
-                    );
-                    continue;
-                }
-                byCode.set(csNorm, payload);
-            }
-            return { toImport: [...byCode.values()], skippedDuplicates };
-        }
-
-        const existingCodeServices = new Set<string>(globalUsedCodeServices);
-        for (const ref of this.references) {
-            const cs = this.normalizeImportCodeService(ref.codeService);
-            if (cs) {
-                existingCodeServices.add(cs);
-            }
-        }
-
-        const seenCodeServiceInFile = new Set<string>();
         const toImport: ImportPayload[] = [];
         const skippedDuplicates: string[] = [];
 
         for (const payload of payloads) {
             const normalizedPayload = this.normalizePayload(payload);
             const csNorm = this.normalizeImportCodeService(normalizedPayload.codeService);
-            const detail = `Code service « ${csNorm || 'N/A'} »`;
 
             if (!csNorm) {
                 skippedDuplicates.push(
@@ -853,28 +785,29 @@ export class ServiceReferencesComponent implements OnInit, OnDestroy {
                 continue;
             }
 
-            if (seenCodeServiceInFile.has(csNorm)) {
-                skippedDuplicates.push(
-                    `Ligne ${payload.rowNumber ?? '?'} : Ignorée — doublon dans le fichier (${detail})`
-                );
-                continue;
-            }
-
-            if (existingCodeServices.has(csNorm)) {
-                skippedDuplicates.push(
-                    `Ligne ${payload.rowNumber ?? '?'} : Ignorée — code service déjà présent en base (${detail})`
-                );
-                continue;
-            }
-
-            seenCodeServiceInFile.add(csNorm);
             toImport.push(payload);
         }
 
         return { toImport, skippedDuplicates };
     }
 
-    private async parseFile(file: File, relaxed: boolean): Promise<ImportPayload[]> {
+    private findReferenceByPaysAndCodeService(
+        pays: string,
+        codeService: string
+    ): ServiceReference | undefined {
+        const paysNorm = (pays || '').trim().toUpperCase();
+        const csNorm = this.normalizeImportCodeService(codeService);
+        if (!paysNorm || !csNorm) {
+            return undefined;
+        }
+        return this.references.find(
+            (ref) =>
+                (ref.pays || '').trim().toUpperCase() === paysNorm &&
+                this.normalizeImportCodeService(ref.codeService) === csNorm
+        );
+    }
+
+    private async parseFile(file: File): Promise<ImportPayload[]> {
         const name = file.name.toLowerCase();
         let workbook: XLSX.WorkBook;
         if (name.endsWith('.csv')) {
@@ -892,7 +825,7 @@ export class ServiceReferencesComponent implements OnInit, OnDestroy {
         const rows: any[] = XLSX.utils.sheet_to_json(sheet, { defval: '' });
 
         return rows
-            .map((row, index) => this.rowToPayload(row, index + 2, relaxed))
+            .map((row, index) => this.rowToPayload(row, index + 2))
             .filter((payload): payload is ImportPayload => !!payload);
     }
 
@@ -907,7 +840,7 @@ export class ServiceReferencesComponent implements OnInit, OnDestroy {
         return '';
     }
 
-    private rowToPayload(row: any, rowNumber: number, relaxed: boolean): ImportPayload | null {
+    private rowToPayload(row: any, rowNumber: number): ImportPayload | null {
         const r = row as Record<string, unknown>;
         const pays = this.cell(r, 'Pays', 'PAYS', 'Country', 'COUNTRY', 'country', 'pays', 'PAY');
         const codeService = this.cell(
@@ -935,20 +868,16 @@ export class ServiceReferencesComponent implements OnInit, OnDestroy {
             return null;
         }
 
-        if (relaxed) {
-            if (!serviceLabel) {
-                serviceLabel = codeService;
-            }
-            if (!codeReco) {
-                codeReco = codeService;
-            }
-        } else if (!serviceLabel || !codeReco) {
-            return null;
+        if (!serviceLabel) {
+            serviceLabel = codeService;
+        }
+        if (!codeReco) {
+            codeReco = codeService;
         }
 
         const reconciliableRaw = this.cell(r, 'Réconciliable', 'RECONCILIABLE', 'Reconciliable', 'reconciliable').toLowerCase();
         let reconciliable = reconciliableRaw === 'oui' || reconciliableRaw === 'true' || reconciliableRaw === '1';
-        if (relaxed && !reconciliableRaw) {
+        if (!reconciliableRaw) {
             reconciliable = true;
         }
 
@@ -963,7 +892,6 @@ export class ServiceReferencesComponent implements OnInit, OnDestroy {
             reconciliable,
             motif: this.cell(r, 'Motif', 'MOTIF', 'motif'),
             retenuOperateur: this.cell(r, 'Retenu Opérateur', 'RETENU OPERATEUR', 'Retenu operateur'),
-            status: (this.cell(r, 'Statut', 'STATUT', 'Status', 'STATUS', 'status') || 'ACTIF').toUpperCase(),
             rowNumber
         };
     }
@@ -1001,7 +929,6 @@ export class ServiceReferencesComponent implements OnInit, OnDestroy {
         };
 
         return {
-            ...payload,
             pays: sanitize(payload.pays, true) || '',
             codeService: sanitize(payload.codeService, true) || '',
             serviceLabel: sanitize(payload.serviceLabel) || '',
@@ -1009,9 +936,9 @@ export class ServiceReferencesComponent implements OnInit, OnDestroy {
             serviceType: sanitize(payload.serviceType || undefined) || undefined,
             operateur: sanitize(payload.operateur || undefined) || undefined,
             reseau: sanitize(payload.reseau || undefined) || undefined,
+            reconciliable: payload.reconciliable ?? true,
             motif: sanitize(payload.motif || undefined) || undefined,
-            retenuOperateur: sanitize(payload.retenuOperateur || undefined) || undefined,
-            status: sanitize(payload.status || 'ACTIF', true) || 'ACTIF'
+            retenuOperateur: sanitize(payload.retenuOperateur || undefined) || undefined
         };
     }
 

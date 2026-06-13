@@ -147,20 +147,73 @@ public interface AgencySummaryRepository extends JpaRepository<AgencySummaryEnti
     List<String> findExistingServicesIgnoreCase(@Param("services") List<String> services);
 
     @Query("""
+        SELECT CASE WHEN COUNT(a) > 0 THEN TRUE ELSE FALSE END
+        FROM AgencySummaryEntity a
+        WHERE UPPER(TRIM(a.country)) = UPPER(TRIM(:country))
+          AND LOWER(TRIM(a.service)) = LOWER(TRIM(:service))
+          AND (:startDate IS NULL OR :startDate = '' OR a.date >= :startDate)
+          AND (:endDate IS NULL OR :endDate = '' OR a.date <= :endDate)
+        """)
+    boolean existsByCountryAndServiceIgnoreCase(
+        @Param("country") String country,
+        @Param("service") String service,
+        @Param("startDate") String startDate,
+        @Param("endDate") String endDate
+    );
+
+    @Query("""
+        SELECT DISTINCT UPPER(TRIM(a.country)), LOWER(TRIM(a.service))
+        FROM AgencySummaryEntity a
+        WHERE LOWER(TRIM(a.service)) IN :services
+          AND (:startDate IS NULL OR :startDate = '' OR a.date >= :startDate)
+          AND (:endDate IS NULL OR :endDate = '' OR a.date <= :endDate)
+        """)
+    List<Object[]> findDistinctCountryServiceByServices(
+        @Param("services") List<String> services,
+        @Param("startDate") String startDate,
+        @Param("endDate") String endDate
+    );
+
+    @Query("""
+        SELECT DISTINCT UPPER(TRIM(a.country)), LOWER(TRIM(a.service))
+        FROM AgencySummaryEntity a
+        WHERE (:countries IS NULL OR UPPER(TRIM(a.country)) IN :countries)
+          AND (:startDate IS NULL OR :startDate = '' OR a.date >= :startDate)
+          AND (:endDate IS NULL OR :endDate = '' OR a.date <= :endDate)
+        """)
+    List<Object[]> findDistinctCountryService(
+        @Param("countries") List<String> countries,
+        @Param("startDate") String startDate,
+        @Param("endDate") String endDate
+    );
+
+    @Query("""
         SELECT UPPER(a.country) as country, LOWER(a.service) as service, SUM(a.totalVolume) as totalVolume, SUM(a.recordCount) as totalTransactions
         FROM AgencySummaryEntity a
         WHERE (:countries IS NULL OR UPPER(a.country) IN :countries)
+          AND (:startDate IS NULL OR :startDate = '' OR a.date >= :startDate)
+          AND (:endDate IS NULL OR :endDate = '' OR a.date <= :endDate)
         GROUP BY UPPER(a.country), LOWER(a.service)
-    """)
-    List<Object[]> aggregateByCountryAndService(@Param("countries") List<String> countries);
+        """)
+    List<Object[]> aggregateByCountryAndService(
+        @Param("countries") List<String> countries,
+        @Param("startDate") String startDate,
+        @Param("endDate") String endDate
+    );
 
     @Query("""
         SELECT UPPER(a.country) as country, SUM(a.totalVolume) as totalVolume, SUM(a.recordCount) as totalTransactions
         FROM AgencySummaryEntity a
         WHERE (:countries IS NULL OR UPPER(a.country) IN :countries)
+          AND (:startDate IS NULL OR :startDate = '' OR a.date >= :startDate)
+          AND (:endDate IS NULL OR :endDate = '' OR a.date <= :endDate)
         GROUP BY UPPER(a.country)
-    """)
-    List<Object[]> aggregateByCountry(@Param("countries") List<String> countries);
+        """)
+    List<Object[]> aggregateByCountry(
+        @Param("countries") List<String> countries,
+        @Param("startDate") String startDate,
+        @Param("endDate") String endDate
+    );
 
     @Query("SELECT a FROM AgencySummaryEntity a WHERE " +
            "(:agency IS NULL OR :agency = '' OR a.agency = :agency) AND " +

@@ -79,6 +79,15 @@ export interface ReconciliationReportData {
                 </div>
                 <div class="nav-spacer"></div>
                 <div class="nav-actions">
+                    <button
+                        type="button"
+                        class="nav-btn secondary"
+                        (click)="refreshReportData()"
+                        [disabled]="isLoadingDbReport"
+                        title="Actualiser les données en conservant les filtres"
+                    >
+                        <i class="fas" [ngClass]="isLoadingDbReport ? 'fa-spinner fa-spin' : 'fa-sync-alt'"></i> Actualiser
+                    </button>
                     <button type="button" class="nav-btn secondary" (click)="goBack()">
                         <i class="fas fa-arrow-left"></i> Retour
                     </button>
@@ -113,17 +122,27 @@ export interface ReconciliationReportData {
                     <div class="hero-kpi-strip">
                         <div class="hk-strip-item">
                             <span class="hk-strip-label">Lignes</span>
-                            <span class="hk-strip-value">{{ (filteredReportData?.length || 0) | number:'1.0-0' }}</span>
+                            <span class="hk-strip-value">{{ kpiSummary.lineCount | number:'1.0-0' }}</span>
                         </div>
                         <div class="hk-strip-sep"></div>
                         <div class="hk-strip-item">
                             <span class="hk-strip-label">Agences</span>
-                            <span class="hk-strip-value">{{ (uniqueAgencies?.length || 0) | number:'1.0-0' }}</span>
+                            <span class="hk-strip-value">{{ kpiSummary.agencies | number:'1.0-0' }}</span>
                         </div>
                         <div class="hk-strip-sep"></div>
                         <div class="hk-strip-item">
                             <span class="hk-strip-label">Taux moyen</span>
-                            <span class="hk-strip-value">{{ averageMatchRate }}%</span>
+                            <span class="hk-strip-value">{{ kpiSummary.averageMatchRate }}%</span>
+                        </div>
+                        <div class="hk-strip-sep"></div>
+                        <div class="hk-strip-item">
+                            <span class="hk-strip-label">Nbre TRX</span>
+                            <span class="hk-strip-value">{{ kpiSummary.totalTransactions | number:'1.0-0' }}</span>
+                        </div>
+                        <div class="hk-strip-sep"></div>
+                        <div class="hk-strip-item">
+                            <span class="hk-strip-label">Volume</span>
+                            <span class="hk-strip-value">{{ kpiSummary.totalVolume | number:'1.0-0' }}</span>
                         </div>
                     </div>
                 </div>
@@ -141,7 +160,7 @@ export interface ReconciliationReportData {
                         {{ showAllMonths ? '📅 Mois en cours' : '📋 Voir plus' }}
                     </button>
                     <span class="report-display-mode" *ngIf="!hasSelectedRows() && currentSource !== 'live'">
-                        ({{ showAllMonths ? 'Toutes' : 'Mois en cours' }} : {{ filteredReportData.length }} ligne(s))
+                        ({{ showAllMonths ? 'Toutes' : 'Mois en cours' }} : {{ kpiSummary.lineCount }} ligne(s))
                     </span>
                     <button class="btn btn-add" *ngIf="showExtendedReportActions" (click)="addNewRow()" title="Ajouter une nouvelle ligne">
                         ➕ Nouvelle ligne
@@ -171,7 +190,7 @@ export interface ReconciliationReportData {
                 <div class="filter-group" *ngIf="!hasSelectedRows()">
                     <mat-form-field appearance="fill" class="filter-mat-select">
                         <mat-label>Agence</mat-label>
-                        <mat-select #agenceSelect [(ngModel)]="selectedAgencies" multiple (selectionChange)="onAgencySelectionChange()">
+                        <mat-select #agenceSelect [(ngModel)]="selectedAgencies" multiple (ngModelChange)="onAgencyNgModelChange($event)">
                             <mat-option>
                                 <ngx-mat-select-search [formControl]="agenceSearchCtrl" placeholderLabel="Rechercher une agence..." noEntriesFoundLabel="Aucune agence trouvée"></ngx-mat-select-search>
                             </mat-option>
@@ -184,7 +203,7 @@ export interface ReconciliationReportData {
                 <div class="filter-group" *ngIf="!hasSelectedRows()">
                     <mat-form-field appearance="fill" class="filter-mat-select">
                         <mat-label>Pays</mat-label>
-                        <mat-select #paysSelect [(ngModel)]="selectedCountries" multiple (selectionChange)="onCountrySelectionChange()">
+                        <mat-select #paysSelect [(ngModel)]="selectedCountries" multiple (ngModelChange)="onCountryNgModelChange($event)">
                             <mat-option>
                                 <ngx-mat-select-search [formControl]="paysSearchCtrl" placeholderLabel="Rechercher un pays..." noEntriesFoundLabel="Aucun pays trouvé"></ngx-mat-select-search>
                             </mat-option>
@@ -207,7 +226,7 @@ export interface ReconciliationReportData {
                 <div class="filter-group" *ngIf="!hasSelectedRows()">
                     <mat-form-field appearance="fill" class="filter-mat-select">
                         <mat-label>Service</mat-label>
-                        <mat-select #serviceSelect [(ngModel)]="selectedServices" multiple (selectionChange)="onServiceSelectionChange()">
+                        <mat-select #serviceSelect [(ngModel)]="selectedServices" multiple (ngModelChange)="onServiceNgModelChange($event)">
                             <mat-option>
                                 <ngx-mat-select-search [formControl]="serviceSearchCtrl" [clearSearchInput]="false" placeholderLabel="Rechercher un service..." noEntriesFoundLabel="Aucun service trouvé"></ngx-mat-select-search>
                             </mat-option>
@@ -247,7 +266,7 @@ export interface ReconciliationReportData {
                 <div class="filter-group" *ngIf="!hasSelectedRows()">
                     <mat-form-field appearance="fill" class="filter-mat-select">
                         <mat-label>Statut</mat-label>
-                        <mat-select #statusSelect [(ngModel)]="selectedStatuses" multiple (selectionChange)="onStatusSelectionChange()">
+                        <mat-select #statusSelect [(ngModel)]="selectedStatuses" multiple (ngModelChange)="onStatusNgModelChange($event)">
                             <mat-option *ngFor="let status of uniqueStatuses" [value]="status">
                                 {{ status }}
                             </mat-option>
@@ -257,7 +276,7 @@ export interface ReconciliationReportData {
                 <div class="filter-group" *ngIf="!hasSelectedRows()">
                     <mat-form-field appearance="fill" class="filter-mat-select">
                         <mat-label>Traitement</mat-label>
-                        <mat-select #traitementSelect [(ngModel)]="selectedTraitements" multiple (selectionChange)="onTraitementSelectionChange()">
+                        <mat-select #traitementSelect [(ngModel)]="selectedTraitements" multiple (ngModelChange)="onTraitementNgModelChange($event)">
                             <mat-option *ngFor="let traitement of traitementOptions" [value]="traitement">
                                 {{ traitement }}
                             </mat-option>
@@ -358,21 +377,21 @@ export interface ReconciliationReportData {
                         <div class="card-icon">🏢</div>
                         <div class="card-content">
                             <div class="card-title">Agences</div>
-                            <div class="card-value">{{uniqueAgencies.length}}</div>
+                            <div class="card-value">{{ kpiSummary.agencies }}</div>
                         </div>
                     </div>
                     <div class="summary-card">
                         <div class="card-icon">⚙️</div>
                         <div class="card-content">
                             <div class="card-title">Services</div>
-                            <div class="card-value">{{ filteredServices.length }}</div>
+                            <div class="card-value">{{ kpiSummary.services }}</div>
                         </div>
                     </div>
                     <div class="summary-card">
                         <div class="card-icon">📊</div>
                         <div class="card-content">
                             <div class="card-title">Taux Moyen</div>
-                            <div class="card-value">{{averageMatchRate}}%</div>
+                            <div class="card-value">{{ kpiSummary.averageMatchRate }}%</div>
                         </div>
                     </div>
                     <div class="summary-card clickable-card" 
@@ -382,7 +401,7 @@ export interface ReconciliationReportData {
                         <div class="card-icon">⏳</div>
                         <div class="card-content">
                             <div class="card-title">Écarts en cours</div>
-                            <div class="card-value">{{inProgressDiscrepancies | number}}</div>
+                            <div class="card-value">{{ kpiSummary.inProgressDiscrepancies | number }}</div>
                         </div>
                     </div>
                     <div class="summary-card clickable-card" 
@@ -392,7 +411,7 @@ export interface ReconciliationReportData {
                         <div class="card-icon">📊</div>
                         <div class="card-content">
                             <div class="card-title">Nbre TRX</div>
-                            <div class="card-value">{{totalTransactions | number}}</div>
+                            <div class="card-value">{{ kpiSummary.totalTransactions | number }}</div>
                         </div>
                     </div>
                     <div class="summary-card clickable-card" 
@@ -402,7 +421,7 @@ export interface ReconciliationReportData {
                         <div class="card-icon">💰</div>
                         <div class="card-content">
                             <div class="card-title">Volume</div>
-                            <div class="card-value">{{totalVolume | number}}</div>
+                            <div class="card-value">{{ kpiSummary.totalVolume | number }}</div>
                         </div>
                     </div>
                 </div>
@@ -3108,6 +3127,17 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
 
     reportData: ReconciliationReportData[] = [];
     filteredReportData: ReconciliationReportData[] = [];
+    /** Lignes retenues pour les KPI (mois en cours / filtres), hors filtres « carte » ou colonne écarts. */
+    kpiScopeData: ReconciliationReportData[] = [];
+    kpiSummary = {
+        lineCount: 0,
+        agencies: 0,
+        services: 0,
+        averageMatchRate: 0,
+        inProgressDiscrepancies: 0,
+        totalTransactions: 0,
+        totalVolume: 0
+    };
     
     selectedAgencies: string[] = [];
     selectedServices: string[] = [];
@@ -3254,6 +3284,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
     ) {
         // Initialiser filteredReportData pour éviter les erreurs
         this.filteredReportData = [];
+        this.kpiScopeData = [];
         // Charger les pays autorisés
         this.loadAllowedCountries();
     }
@@ -3353,6 +3384,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         // Réinitialiser les données pour éviter le cache du navigateur
         this.reportData = [];
         this.filteredReportData = [];
+        this.kpiScopeData = [];
         this.resetSelectionForAuto(); // sélection contrôlée automatiquement en mode live
         this.loadedFromDb = false;
         this.currentSource = null;
@@ -4785,7 +4817,8 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         setTimeout(() => select?.close(), 0);
     }
 
-    onAgencySelectionChange(): void {
+    onAgencyNgModelChange(agencies: string[] | null | undefined): void {
+        this.selectedAgencies = Array.isArray(agencies) ? [...agencies] : [];
         this.updateFilteredCountries();
         this.updateFilteredServices();
         this.refreshDropdownLists();
@@ -4793,7 +4826,8 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         this.closeFilterMatSelectPanel(this.agenceSelect);
     }
 
-    onCountrySelectionChange(): void {
+    onCountryNgModelChange(countries: string[] | null | undefined): void {
+        this.selectedCountries = Array.isArray(countries) ? [...countries] : [];
         this.updateFilteredAgencies();
         this.selectedAgencies = this.selectedAgencies.filter(a =>
             this.filteredAgencies.includes(a)
@@ -4808,26 +4842,55 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         this.closeFilterMatSelectPanel(this.paysSelect);
     }
 
-    onServiceSelectionChange(): void {
+    onServiceNgModelChange(services: string[] | null | undefined): void {
+        this.selectedServices = Array.isArray(services) ? [...services] : [];
         this.filterReport();
         this.closeFilterMatSelectPanel(this.serviceSelect);
     }
 
-    onStatusSelectionChange(): void {
+    onStatusNgModelChange(statuses: string[] | null | undefined): void {
+        this.selectedStatuses = Array.isArray(statuses) ? [...statuses] : [];
         this.filterReport();
         this.closeFilterMatSelectPanel(this.statusSelect);
     }
 
-    onTraitementSelectionChange(): void {
+    onTraitementNgModelChange(traitements: string[] | null | undefined): void {
+        this.selectedTraitements = Array.isArray(traitements) ? [...traitements] : [];
         this.filterReport();
         this.closeFilterMatSelectPanel(this.traitementSelect);
+    }
+
+    /** @deprecated Utiliser onAgencyNgModelChange — conservé pour compatibilité interne. */
+    onAgencySelectionChange(): void {
+        this.onAgencyNgModelChange(this.selectedAgencies);
+    }
+
+    /** @deprecated Utiliser onCountryNgModelChange */
+    onCountrySelectionChange(): void {
+        this.onCountryNgModelChange(this.selectedCountries);
+    }
+
+    /** @deprecated Utiliser onServiceNgModelChange */
+    onServiceSelectionChange(): void {
+        this.onServiceNgModelChange(this.selectedServices);
+    }
+
+    /** @deprecated Utiliser onStatusNgModelChange */
+    onStatusSelectionChange(): void {
+        this.onStatusNgModelChange(this.selectedStatuses);
+    }
+
+    /** @deprecated Utiliser onTraitementNgModelChange */
+    onTraitementSelectionChange(): void {
+        this.onTraitementNgModelChange(this.selectedTraitements);
     }
 
     /**
      * Filtre ENV : utiliser ngModelChange (valeur à jour) plutôt que selectionChange (souvent vide avec mat-select multiple).
      */
     onEnvNgModelChange(envs: string[] | null | undefined): void {
-        const snapshot = Array.isArray(envs) ? [...envs] : [];
+        this.selectedEnvs = Array.isArray(envs) ? [...envs] : [];
+        const snapshot = [...this.selectedEnvs];
         this.applyEnvDependentDropdowns(snapshot);
         this.filterReport();
         this.closeFilterMatSelectPanel(this.envSelect);
@@ -5000,80 +5063,75 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         return this.getDbReportFetchScope().key !== this.lastDbReportFetchKey;
     }
 
+    private matchesBaseReportFilters(item: ReconciliationReportData): boolean {
+        if (this.currentSource !== 'live' && !this.showAllMonths && !this.hasExplicitDateFilter() && item.date) {
+            if (!this.isItemInCurrentMonth(item.date)) {
+                return false;
+            }
+        }
+
+        if (!this.shouldIncludeCountry(item.country || '')) {
+            return false;
+        }
+
+        const agencyMatch = this.selectedAgencies.length === 0 || this.selectedAgencies.includes(item.agency);
+        const qSvc = (this.serviceSearchCtrl.value || '').trim();
+        const serviceMatch =
+            qSvc.length > 0
+                ? this.selectedServices.includes(item.service)
+                : this.selectedServices.length === 0 || this.selectedServices.includes(item.service);
+        const countryFilterMatch = this.selectedCountries.length === 0 || this.selectedCountries.includes(item.country);
+        const statusMatch = this.selectedStatuses.length === 0 || this.selectedStatuses.includes(item.status);
+        const traitementMatch = this.selectedTraitements.length === 0 || this.selectedTraitements.includes(item.traitement || '');
+        const envMatch = this.itemMatchesEnvFilter(item.env, this.selectedEnvs);
+        const ticketFilter = (this.ticketIdFilter || '').trim().toLowerCase();
+        const ticketMatch = !ticketFilter || (item.glpiId || '').toLowerCase().includes(ticketFilter);
+
+        if (this.selectedDateDebut || this.selectedDateFin) {
+            const itemYmd = this.formatDateForSearch(item.date);
+            if (this.selectedDateDebut && itemYmd < this.selectedDateDebut) {
+                return false;
+            }
+            if (this.selectedDateFin && itemYmd > this.selectedDateFin) {
+                return false;
+            }
+        }
+
+        return agencyMatch && serviceMatch && countryFilterMatch && statusMatch && traitementMatch && envMatch && ticketMatch;
+    }
+
+    private matchesCardAndEcartFilters(item: ReconciliationReportData): boolean {
+        if (this.activeCardFilter === 'inProgress') {
+            const status = (item.status || '').trim().toUpperCase();
+            const isOk = status === 'OK';
+            const boOnly = Number(item.boOnly) || 0;
+            const partnerOnly = Number(item.partnerOnly) || 0;
+            const mismatches = Number(item.mismatches) || 0;
+            const totalEcarts = boOnly + partnerOnly + mismatches;
+            if (isOk || totalEcarts <= 0) {
+                return false;
+            }
+        }
+
+        if (this.activeEcartColumnFilter === 'boOnly') {
+            return (Number(item.boOnly) || 0) > 0;
+        }
+        if (this.activeEcartColumnFilter === 'partnerOnly') {
+            return this.getDisplayPartnerOnly(item) > 0;
+        }
+
+        return true;
+    }
+
     filterReport() {
         if (this.loadedFromDb && this.shouldReloadSavedReportForCurrentScope()) {
             this.loadSavedReportFromDatabase();
             return;
         }
 
-        this.filteredReportData = this.reportData.filter(item => {
-            // Données en cours (live) : toujours tout afficher, pas de filtre par mois
-            // Base sauvegardée : afficher uniquement le mois en cours sauf si "Voir plus"
-            if (this.currentSource !== 'live' && !this.showAllMonths && !this.hasExplicitDateFilter() && item.date) {
-                if (!this.isItemInCurrentMonth(item.date)) return false;
-            }
+        this.kpiScopeData = this.reportData.filter((item) => this.matchesBaseReportFilters(item));
 
-            // Filtrage par pays autorisés (cloisonnement)
-            const countryMatch = this.shouldIncludeCountry(item.country || '');
-            if (!countryMatch) {
-                return false;
-            }
-
-            const agencyMatch = this.selectedAgencies.length === 0 || this.selectedAgencies.includes(item.agency);
-            const qSvc = (this.serviceSearchCtrl.value || '').trim();
-            const serviceMatch =
-                qSvc.length > 0
-                    ? this.selectedServices.includes(item.service)
-                    : this.selectedServices.length === 0 || this.selectedServices.includes(item.service);
-            const countryFilterMatch = this.selectedCountries.length === 0 || this.selectedCountries.includes(item.country);
-            const statusMatch = this.selectedStatuses.length === 0 || this.selectedStatuses.includes(item.status);
-            const traitementMatch = this.selectedTraitements.length === 0 || this.selectedTraitements.includes(item.traitement || '');
-            const envMatch = this.itemMatchesEnvFilter(item.env, this.selectedEnvs);
-            const ticketFilter = (this.ticketIdFilter || '').trim().toLowerCase();
-            const ticketMatch = !ticketFilter || (item.glpiId || '').toLowerCase().includes(ticketFilter);
-            
-            // Filtrage par plage de dates
-            let dateMatch = true;
-            if (this.selectedDateDebut || this.selectedDateFin) {
-                const itemDateObj = new Date(item.date);
-                
-                // Si date de début spécifiée
-                if (this.selectedDateDebut) {
-                    const dateDebutObj = new Date(this.selectedDateDebut);
-                    dateMatch = dateMatch && itemDateObj >= dateDebutObj;
-                }
-                
-                // Si date de fin spécifiée
-                if (this.selectedDateFin) {
-                    const dateFinObj = new Date(this.selectedDateFin);
-                    // Ajouter 1 jour à la date de fin pour inclure toute la journée
-                    dateFinObj.setDate(dateFinObj.getDate() + 1);
-                    dateMatch = dateMatch && itemDateObj < dateFinObj;
-                }
-            }
-            
-            const baseMatch = agencyMatch && serviceMatch && countryFilterMatch && dateMatch && statusMatch && traitementMatch && envMatch && ticketMatch;
-
-            let passesCard = true;
-            if (this.activeCardFilter === 'inProgress') {
-                const status = (item.status || '').trim().toUpperCase();
-                const isOk = status === 'OK';
-                const boOnly = Number(item.boOnly) || 0;
-                const partnerOnly = Number(item.partnerOnly) || 0;
-                const mismatches = Number(item.mismatches) || 0;
-                const totalEcarts = boOnly + partnerOnly + mismatches;
-                passesCard = !isOk && totalEcarts > 0;
-            }
-
-            let passesEcartColumn = true;
-            if (this.activeEcartColumnFilter === 'boOnly') {
-                passesEcartColumn = (Number(item.boOnly) || 0) > 0;
-            } else if (this.activeEcartColumnFilter === 'partnerOnly') {
-                passesEcartColumn = this.getDisplayPartnerOnly(item) > 0;
-            }
-
-            return baseMatch && passesCard && passesEcartColumn;
-        });
+        this.filteredReportData = this.kpiScopeData.filter((item) => this.matchesCardAndEcartFilters(item));
         
         // FORCER toutes les lignes avec statut OK à avoir traitement = "Niveau Group" AVANT le recalcul
         // IMPORTANT: Ne jamais écraser un traitement "Terminé"
@@ -5116,7 +5174,8 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             const dateB = new Date(b.date).getTime();
             return dateB - dateA; // Décroissant (plus récent en premier)
         });
-        
+
+        this.refreshKpiSummary();
         
         // Réinitialiser à la première page et mettre à jour la pagination
         this.currentPage = 1;
@@ -5156,6 +5215,42 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             this.showReleveModal(matchingItem);
             this.pendingReleveFromDashboard = null;
         }
+    }
+
+    private refreshKpiSummary(): void {
+        const rows = this.kpiScopeData || [];
+        let totalTransactions = 0;
+        let totalVolume = 0;
+        let inProgressDiscrepancies = 0;
+
+        for (const item of rows) {
+            if (!this.isPartnerOnlySpecialLine(item)) {
+                totalTransactions += Number(item.totalTransactions) || 0;
+                totalVolume += Number(item.totalVolume) || 0;
+            }
+            const status = (item.status || '').trim().toUpperCase();
+            if (status !== 'OK') {
+                inProgressDiscrepancies +=
+                    (Number(item.boOnly) || 0) +
+                    (Number(item.partnerOnly) || 0) +
+                    (Number(item.mismatches) || 0);
+            }
+        }
+
+        const averageMatchRate =
+            rows.length === 0
+                ? 0
+                : Math.round((rows.reduce((sum, item) => sum + (Number(item.matchRate) || 0), 0) / rows.length) * 100) / 100;
+
+        this.kpiSummary = {
+            lineCount: rows.length,
+            agencies: new Set(rows.map((item) => item.agency).filter(Boolean)).size,
+            services: new Set(rows.map((item) => item.service).filter(Boolean)).size,
+            averageMatchRate,
+            inProgressDiscrepancies,
+            totalTransactions,
+            totalVolume
+        };
     }
 
     formatDate(dateStr: string): string {
@@ -5514,29 +5609,6 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         return recalculated;
     }
 
-    get averageMatchRate(): number {
-        if (!this.filteredReportData || this.filteredReportData.length === 0) return 0;
-        const total = this.filteredReportData.reduce((sum, item) => sum + item.matchRate, 0);
-        return Math.round(total / this.filteredReportData.length * 100) / 100;
-    }
-
-
-    // Compteurs d'écarts
-    get inProgressDiscrepancies(): number {
-        if (!this.filteredReportData) return 0;
-        // Somme des écarts (BO + Partenaire + incohérences) pour les lignes dont le statut n'est pas OK
-        return this.filteredReportData.reduce((sum, item) => {
-            const status = (item.status || '').trim().toUpperCase();
-            if (status === 'OK') {
-                return sum;
-            }
-            const boOnly = Number(item.boOnly) || 0;
-            const partnerOnly = Number(item.partnerOnly) || 0;
-            const mismatches = Number(item.mismatches) || 0;
-            return sum + boOnly + partnerOnly + mismatches;
-        }, 0);
-    }
-
     /**
      * Extrait les écarts BO et Partenaire depuis le commentaire
      * Format attendu: "206 correspondances • 4 écart(s) BO • 5 écart(s) Partenaire"
@@ -5559,33 +5631,6 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         const partnerCount = partnerMatch ? parseInt(partnerMatch[1], 10) : 0;
 
         return { boCount, partnerCount };
-    }
-
-    get totalTransactions(): number {
-        if (!this.filteredReportData) return 0;
-        // Somme de la colonne Transactions (totalTransactions)
-        // Exclure les lignes spéciales où agence === service
-        return this.filteredReportData.reduce((sum, item) => {
-            // Ne pas compter les lignes spéciales (agence === service)
-            if (this.isPartnerOnlySpecialLine(item)) {
-                return sum;
-            }
-            return sum + (item.totalTransactions || 0);
-        }, 0);
-    }
-
-    // Somme de la colonne Volume
-    get totalVolume(): number {
-        if (!this.filteredReportData) return 0;
-        // Somme de la colonne Volume (totalVolume)
-        // Exclure les lignes spéciales où agence === service
-        return this.filteredReportData.reduce((sum, item) => {
-            // Ne pas compter les lignes spéciales (agence === service)
-            if (this.isPartnerOnlySpecialLine(item)) {
-                return sum;
-            }
-            return sum + (item.totalVolume || 0);
-        }, 0);
     }
 
     trackByItem(index: number, item: ReconciliationReportData): string {
@@ -6396,6 +6441,8 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                 if (!Array.isArray(rows) || rows.length === 0) {
                     this.reportData = [];
                     this.filteredReportData = [];
+                    this.kpiScopeData = [];
+                    this.refreshKpiSummary();
                     this.paginatedData = [];
                     this.extractUniqueValues();
                     this.currentSource = 'db';
@@ -9049,6 +9096,19 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
     }
 
     // Méthode pour basculer entre les données en cours et les données en base
+    /** Recharge les données sans réinitialiser les filtres (agence, pays, ENV, dates, etc.). */
+    refreshReportData(): void {
+        if (this.isLoadingDbReport) {
+            return;
+        }
+        if (this.currentSource === 'live') {
+            this.loadLiveData();
+            return;
+        }
+        this.lastDbReportFetchKey = '';
+        this.loadSavedReportFromDatabase();
+    }
+
     toggleDataSource() {
         if (this.currentSource === 'live') {
             // Basculer vers les données en base
@@ -10518,6 +10578,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         // Réinitialiser les données
         this.reportData = [];
         this.filteredReportData = [];
+        this.kpiScopeData = [];
         this.resetSelectionForAuto();
         
         // Recharger depuis les services

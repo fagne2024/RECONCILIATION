@@ -208,6 +208,33 @@ export class RankingComponent implements OnInit {
   }
 
   /**
+   * Recharge les classements sans réinitialiser pays, période, types de tri ni pagination.
+   */
+  refreshRankingData(): void {
+    if (this.loadingAgencies || this.loadingServices) {
+      return;
+    }
+    if (this.selectedPeriod === 'custom') {
+      if (!this.customStartDate || !this.customEndDate || this.customDateError) {
+        return;
+      }
+    }
+
+    this.showUpdateMessage = true;
+    this.updateMessage = `Actualisation des classements : ${
+      this.selectedPeriod === 'custom' ? this.formatCustomPeriod() : this.getPeriodDescription()
+    }`;
+
+    this.loadAgencyRankings();
+    this.loadServiceRankings();
+
+    setTimeout(() => {
+      this.showUpdateMessage = false;
+      this.updateMessage = '';
+    }, 3000);
+  }
+
+  /**
    * Changer le type de classement des agences
    */
   onAgencyRankingTypeChange(): void {

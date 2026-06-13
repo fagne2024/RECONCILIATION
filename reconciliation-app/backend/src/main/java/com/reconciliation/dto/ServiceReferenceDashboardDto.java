@@ -10,6 +10,9 @@ public class ServiceReferenceDashboardDto {
     private long totalTransactions;
     private long reconcilableTransactions;
     private long nonReconcilableTransactions;
+    /** Nombre de services distincts (agency_summary), un service = une seule fois par pays. */
+    private long totalServiceCount;
+    private long reconcilableServiceCount;
 
     public String getCountry() {
         return country;
@@ -81,6 +84,22 @@ public class ServiceReferenceDashboardDto {
 
     public void setNonReconcilableTransactions(long nonReconcilableTransactions) {
         this.nonReconcilableTransactions = nonReconcilableTransactions;
+    }
+
+    public long getTotalServiceCount() {
+        return totalServiceCount;
+    }
+
+    public void setTotalServiceCount(long totalServiceCount) {
+        this.totalServiceCount = totalServiceCount;
+    }
+
+    public long getReconcilableServiceCount() {
+        return reconcilableServiceCount;
+    }
+
+    public void setReconcilableServiceCount(long reconcilableServiceCount) {
+        this.reconcilableServiceCount = reconcilableServiceCount;
     }
 }
 

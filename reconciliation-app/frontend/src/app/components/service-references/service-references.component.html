@@ -17,11 +17,17 @@
       <button type="button" class="nav-btn secondary" (click)="toggleDashboard()">
         {{ isDashboardVisible ? '📋 Vue Référentiel' : '📊 Dashboard' }}
       </button>
-      <button type="button" class="nav-btn secondary" (click)="downloadTemplate()" [disabled]="isImporting || isLoading">
+      <button type="button" class="nav-btn secondary" (click)="downloadTemplate()" [disabled]="isImporting || isExporting || isLoading">
         <i class="fas fa-file-download"></i> Modèle
       </button>
-      <button type="button" class="nav-btn secondary" (click)="triggerFileUpload()" [disabled]="isImporting || isLoading">
+      <button type="button" class="nav-btn secondary" (click)="exportReferences()" [disabled]="isImporting || isExporting || isLoading || !referencesToExport.length">
+        <i class="fas fa-file-excel"></i> {{ isExporting ? 'Export…' : 'Exporter' }}
+      </button>
+      <button type="button" class="nav-btn secondary" (click)="triggerFileUpload()" [disabled]="isImporting || isExporting || isLoading">
         <i class="fas fa-file-upload"></i> Importer
+      </button>
+      <button type="button" class="nav-btn secondary" *ngIf="showForm" (click)="cancelEdit()">
+        <i class="fas fa-times"></i> Fermer le formulaire
       </button>
       <button type="button" class="nav-btn primary" *ngIf="!showForm" (click)="openCreateForm()">
         <i class="fas fa-plus"></i> Nouvelle référence
@@ -62,10 +68,13 @@
             </button>
             <button class="btn primary" *ngIf="!showForm" (click)="openCreateForm()">➕ Nouvelle référence</button>
             <button class="btn secondary" *ngIf="showForm" (click)="cancelEdit()">➖ Masquer le formulaire</button>
-            <button class="btn outline" (click)="downloadTemplate()" [disabled]="isImporting || isLoading">
+            <button class="btn outline" (click)="downloadTemplate()" [disabled]="isImporting || isExporting || isLoading">
                 📄 Télécharger le modèle
             </button>
-            <button class="btn outline" (click)="triggerFileUpload()" [disabled]="isImporting || isLoading">
+            <button class="btn outline" (click)="exportReferences()" [disabled]="isImporting || isExporting || isLoading || !referencesToExport.length">
+                {{ isExporting ? '⏳ Export…' : '📥 Exporter' }}
+            </button>
+            <button class="btn outline" (click)="triggerFileUpload()" [disabled]="isImporting || isExporting || isLoading">
                 ⬆️ Importer un fichier
             </button>
             <input #fileInput type="file" [attr.accept]="importFileAccept" (change)="handleFileInput($event)" hidden>
@@ -85,7 +94,7 @@
     </div>
 
     <ng-container *ngIf="!isDashboardVisible; else dashboardView">
-        <div class="content-grid" [class.single-column]="!showForm">
+        <div class="content-grid">
         <div class="table-card">
             <div class="table-header">
                 <div>
@@ -238,214 +247,90 @@
                 </div>
             </div>
         </div>
-
-        <div class="form-card" *ngIf="showForm">
-            <div class="form-header">
-                <h3>{{ editingReference ? 'Modifier une référence' : 'Nouvelle référence' }}</h3>
-                <button class="link-btn" (click)="cancelEdit()">Fermer</button>
-            </div>
-            <form [formGroup]="referenceForm" (ngSubmit)="saveReference()">
-                <div class="form-row">
-                    <label>Pays *</label>
-                    <input type="text" formControlName="pays" placeholder="BF">
-                </div>
-                <div class="form-row">
-                    <label>Code Service *</label>
-                    <input type="text" formControlName="codeService" placeholder="DEBIT">
-                </div>
-                <div class="form-row">
-                    <label>Service *</label>
-                    <input type="text" formControlName="serviceLabel" placeholder="CI_TUV_CASHIN_ORANGE_HT">
-                </div>
-                <div class="form-row">
-                    <label>Code RECO *</label>
-                    <input type="text" formControlName="codeReco" placeholder="BF_TUV_CASHIN_ORANGE_HT">
-                </div>
-                <div class="form-row">
-                    <label>Service Type</label>
-                    <input type="text" formControlName="serviceType" placeholder="MOMO CASHIN">
-                </div>
-                <div class="form-row">
-                    <label>Opérateur</label>
-                    <input type="text" formControlName="operateur" placeholder="ORANGE">
-                </div>
-                <div class="form-row">
-                    <label>Réseau</label>
-                    <input type="text" formControlName="reseau" placeholder="HT">
-                </div>
-                <div class="form-row toggle">
-                    <label>Réconciliable</label>
-                    <label class="switch">
-                        <input type="checkbox" formControlName="reconciliable">
-                        <span class="slider"></span>
-                    </label>
-                </div>
-                <div class="form-row">
-                    <label>Motif</label>
-                    <textarea formControlName="motif" rows="2"></textarea>
-                </div>
-                <div class="form-row">
-                    <label>Retenu Opérateur</label>
-                    <textarea formControlName="retenuOperateur" rows="2"></textarea>
-                </div>
-                <div class="form-row">
-                    <label>Statut (calculé automatiquement)</label>
-                    <select formControlName="status" disabled>
-                        <option value="ACTIF">Actif</option>
-                        <option value="INACTIF">Inactif</option>
-                    </select>
-                    <small>Actif si le code service existe dans les statistiques (Agency Summary).</small>
-                </div>
-
-                <button type="submit" class="btn primary" [disabled]="isSaving || referenceForm.invalid">
-                    {{ editingReference ? '💾 Mettre à jour' : '➕ Ajouter' }}
-                </button>
-            </form>
-        </div>
         </div>
     </ng-container>
 </div>
   </div><!-- .main -->
+
+  <div
+    class="sr-form-overlay"
+    *ngIf="showForm"
+    role="dialog"
+    aria-modal="true"
+    [attr.aria-label]="editingReference ? 'Modifier une référence' : 'Nouvelle référence'"
+    (click)="cancelEdit()">
+    <div class="form-card sr-form-dialog" #formPanel (click)="$event.stopPropagation()">
+      <div class="form-header">
+        <h3>{{ editingReference ? 'Modifier une référence' : 'Nouvelle référence' }}</h3>
+        <button type="button" class="link-btn" (click)="cancelEdit()">Fermer</button>
+      </div>
+      <form [formGroup]="referenceForm" (ngSubmit)="saveReference()">
+        <div class="form-row">
+          <label>Pays *</label>
+          <input type="text" formControlName="pays" placeholder="BF">
+        </div>
+        <div class="form-row">
+          <label>Code Service *</label>
+          <input type="text" formControlName="codeService" placeholder="DEBIT">
+        </div>
+        <div class="form-row">
+          <label>Service *</label>
+          <input type="text" formControlName="serviceLabel" placeholder="CI_TUV_CASHIN_ORANGE_HT">
+        </div>
+        <div class="form-row">
+          <label>Code RECO *</label>
+          <input type="text" formControlName="codeReco" placeholder="BF_TUV_CASHIN_ORANGE_HT">
+        </div>
+        <div class="form-row">
+          <label>Service Type</label>
+          <input type="text" formControlName="serviceType" placeholder="MOMO CASHIN">
+        </div>
+        <div class="form-row">
+          <label>Opérateur</label>
+          <input type="text" formControlName="operateur" placeholder="ORANGE">
+        </div>
+        <div class="form-row">
+          <label>Réseau</label>
+          <input type="text" formControlName="reseau" placeholder="HT">
+        </div>
+        <div class="form-row toggle">
+          <label>Réconciliable</label>
+          <label class="switch">
+            <input type="checkbox" formControlName="reconciliable">
+            <span class="slider"></span>
+          </label>
+        </div>
+        <div class="form-row">
+          <label>Motif</label>
+          <textarea formControlName="motif" rows="2"></textarea>
+        </div>
+        <div class="form-row">
+          <label>Retenu Opérateur</label>
+          <textarea formControlName="retenuOperateur" rows="2"></textarea>
+        </div>
+        <div class="form-row">
+          <label>Statut (calculé automatiquement)</label>
+          <select formControlName="status" disabled>
+            <option value="ACTIF">Actif</option>
+            <option value="INACTIF">Inactif</option>
+          </select>
+                    <small>Actif si le couple Pays + Code service est présent dans les statistiques (Agency Summary).</small>
+        </div>
+
+        <button type="submit" class="btn primary" [disabled]="isSaving || referenceForm.invalid">
+          {{ editingReference ? '💾 Mettre à jour' : '➕ Ajouter' }}
+        </button>
+      </form>
+    </div>
+  </div>
 </div><!-- .service-ref-page -->
 
 <ng-template #dashboardView>
-    <div class="sr-dash">
-        <div class="sr-dash-cards">
-            <div class="sr-dash-card sr-dash-card--green">
-                <span class="sr-dash-card-title">Services réconciliables</span>
-                <strong class="sr-dash-card-value">{{ dashboardReconciliableCount | number:'1.0-0' }}</strong>
-                <span class="sr-dash-card-sub">{{ dashboardReconciliablePercent }}% du total</span>
-            </div>
-            <div class="sr-dash-card sr-dash-card--red">
-                <span class="sr-dash-card-title">Services non réconciliables</span>
-                <strong class="sr-dash-card-value">{{ dashboardNonReconciliableCount | number:'1.0-0' }}</strong>
-                <span class="sr-dash-card-sub">{{ dashboardNonReconciliablePercent }}% du total</span>
-            </div>
-            <div class="sr-dash-card sr-dash-card--neutral">
-                <button type="button" class="sr-dash-card-menu" title="Plus d'options" aria-label="Plus d'options">
-                    <i class="fas fa-ellipsis-v"></i>
-                </button>
-                <span class="sr-dash-card-title">Total services</span>
-                <strong class="sr-dash-card-value">{{ dashboardTotalCount | number:'1.0-0' }}</strong>
-                <span class="sr-dash-card-sub">{{ dashboardTotalCardSubtitle }}</span>
-            </div>
-        </div>
-        <p class="sr-dash-import-hint">
-            Import (bouton du haut) : fichiers <strong>.csv</strong> / <strong>.tsv</strong> autorisés ; colonnes
-            <strong>Pays</strong> + <strong>Code Service</strong> suffisent (Service et Code RECO = code service si absents).
-            Les références déjà présentes (même pays + code service) sont <strong>mises à jour</strong>.
-        </p>
-
-        <form class="sr-dash-filters" [formGroup]="dashboardFilterForm">
-            <div class="sr-dash-filter-field">
-                <label for="sr-dash-pays">Pays</label>
-                <select id="sr-dash-pays" formControlName="pays">
-                    <option value="">Tous</option>
-                    <option *ngFor="let p of dashboardPaysOptions" [value]="p">{{ p }}</option>
-                </select>
-            </div>
-            <div class="sr-dash-filter-field">
-                <label for="sr-dash-type">Type de service</label>
-                <select id="sr-dash-type" formControlName="serviceType">
-                    <option value="">Tous</option>
-                    <option *ngFor="let t of dashboardServiceTypeOptions" [value]="t">{{ t }}</option>
-                </select>
-            </div>
-            <div class="sr-dash-filter-field">
-                <label for="sr-dash-op">Opérateur</label>
-                <select id="sr-dash-op" formControlName="operateur">
-                    <option value="">Tous</option>
-                    <option *ngFor="let o of dashboardOperateurOptions" [value]="o">{{ o }}</option>
-                </select>
-            </div>
-            <div class="sr-dash-filter-field">
-                <label for="sr-dash-reseau">Réseau</label>
-                <select id="sr-dash-reseau" formControlName="reseau">
-                    <option value="">Tous</option>
-                    <option *ngFor="let rs of dashboardReseauOptions" [value]="rs">{{ rs }}</option>
-                </select>
-            </div>
-        </form>
-
-        <div *ngIf="isLoading" class="sr-dash-loading">Chargement du référentiel…</div>
-
-        <div class="sr-dash-columns" *ngIf="!isLoading">
-            <div class="sr-dash-col sr-dash-col--rec">
-                <header class="sr-dash-col-head">
-                    <div class="sr-dash-col-head-left">
-                        <span class="sr-dash-col-icon sr-dash-col-icon--ok"><i class="fas fa-check"></i></span>
-                        <div>
-                            <h3 class="sr-dash-col-title">Réconciliables</h3>
-                            <p class="sr-dash-col-meta">{{ dashboardReconciliableCount }} service(s)</p>
-                        </div>
-                    </div>
-                    <span class="sr-dash-col-badge sr-dash-col-badge--green">{{ dashboardReconciliablePercent }}%</span>
-                </header>
-                <div class="sr-dash-body">
-                    <ng-container *ngIf="groupedDashboardReconciliable.length; else emptyRec">
-                        <section class="sr-dash-group" *ngFor="let g of groupedDashboardReconciliable; trackBy: trackDashboardGroup">
-                            <h4 class="sr-dash-cat">{{ g.serviceTypeLabel }}</h4>
-                            <div class="sr-dash-op-block" *ngFor="let op of g.operators; trackBy: trackDashboardOp">
-                                <h5 class="sr-dash-subcat">{{ op.operateurLabel }}</h5>
-                                <div class="sr-dash-item" *ngFor="let ref of op.items; trackBy: trackDashboardRef">
-                                    <span class="sr-dash-dot" [class.sr-dash-dot--on]="isReferenceActive(ref)" [class.sr-dash-dot--off]="!isReferenceActive(ref)"></span>
-                                    <code class="sr-dash-code">{{ ref.codeService }}</code>
-                                    <span class="sr-dash-item-right">
-                                        <span class="sr-dash-pill">{{ ref.pays }}</span>
-                                        <span class="sr-dash-status" [class.sr-dash-status--on]="isReferenceActive(ref)" [class.sr-dash-status--off]="!isReferenceActive(ref)">
-                                            {{ isReferenceActive(ref) ? 'ACTIF' : 'INACTIF' }}
-                                        </span>
-                                    </span>
-                                </div>
-                            </div>
-                        </section>
-                    </ng-container>
-                    <ng-template #emptyRec>
-                        <p class="sr-dash-empty">Aucun service réconciliable pour ces filtres.</p>
-                    </ng-template>
-                </div>
-            </div>
-
-            <div class="sr-dash-gutter" aria-hidden="true">
-                <div class="sr-dash-gutter-line"></div>
-                <div class="sr-dash-gutter-icon"><i class="fas fa-arrow-down"></i></div>
-            </div>
-
-            <div class="sr-dash-col sr-dash-col--non">
-                <header class="sr-dash-col-head">
-                    <div class="sr-dash-col-head-left">
-                        <span class="sr-dash-col-icon sr-dash-col-icon--ko"><i class="fas fa-times"></i></span>
-                        <div>
-                            <h3 class="sr-dash-col-title">Non réconciliables</h3>
-                            <p class="sr-dash-col-meta">{{ dashboardNonReconciliableCount }} service(s)</p>
-                        </div>
-                    </div>
-                    <span class="sr-dash-col-badge sr-dash-col-badge--red">{{ dashboardNonReconciliablePercent }}%</span>
-                </header>
-                <div class="sr-dash-body">
-                    <ng-container *ngIf="groupedDashboardNonReconciliable.length; else emptyNon">
-                        <section class="sr-dash-group" *ngFor="let g of groupedDashboardNonReconciliable; trackBy: trackDashboardGroup">
-                            <h4 class="sr-dash-cat">{{ g.serviceTypeLabel }}</h4>
-                            <div class="sr-dash-op-block" *ngFor="let op of g.operators; trackBy: trackDashboardOp">
-                                <h5 class="sr-dash-subcat">{{ op.operateurLabel }}</h5>
-                                <div class="sr-dash-item" *ngFor="let ref of op.items; trackBy: trackDashboardRef">
-                                    <span class="sr-dash-dot" [class.sr-dash-dot--on]="isReferenceActive(ref)" [class.sr-dash-dot--off]="!isReferenceActive(ref)"></span>
-                                    <code class="sr-dash-code">{{ ref.codeService }}</code>
-                                    <span class="sr-dash-item-right">
-                                        <span class="sr-dash-pill">{{ ref.pays }}</span>
-                                        <span class="sr-dash-status" [class.sr-dash-status--on]="isReferenceActive(ref)" [class.sr-dash-status--off]="!isReferenceActive(ref)">
-                                            {{ isReferenceActive(ref) ? 'ACTIF' : 'INACTIF' }}
-                                        </span>
-                                    </span>
-                                </div>
-                            </div>
-                        </section>
-                    </ng-container>
-                    <ng-template #emptyNon>
-                        <p class="sr-dash-empty">Aucun service non réconciliable pour ces filtres.</p>
-                    </ng-template>
-                </div>
-            </div>
-        </div>
-    </div>
+    <app-service-references-dashboard-panel
+        #dashboardPanel
+        [references]="references"
+        [isLoading]="isLoading"
+        [showImportHint]="true"
+        (periodMonthsChange)="onDashboardPeriodChange($event)">
+    </app-service-references-dashboard-panel>
 </ng-template>

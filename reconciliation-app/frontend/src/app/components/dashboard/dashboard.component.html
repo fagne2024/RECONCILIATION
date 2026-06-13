@@ -18,67 +18,31 @@
     </div>
   </nav>
 
-  <!-- PAGE HEADER (titre + KPIs) -->
-  <div class="page-header-dashboard">
-    <div class="ph-dashboard-left">
-      <div class="ph-eyebrow"><span></span>Vue d'ensemble</div>
-      <h1 class="ph-title-dashboard">Dashboard <em>réconciliation</em></h1>
-      <p class="ph-subtitle" *ngIf="!loading">Bienvenue dans votre outil de réconciliation de données · Dernière mise à jour : {{ lastActivity }}</p>
-      <p class="ph-subtitle" *ngIf="loading">Mise à jour en cours...</p>
-    </div>
-    <div class="ph-dashboard-right">
-      <div class="hero-kpi-strip">
-        <div class="hk-strip-item">
-          <span class="hk-strip-label">Total réconciliations</span>
-          <span class="hk-strip-value">{{ totalReconciliations | number:'1.0-0' }}</span>
-        </div>
-        <div class="hk-strip-sep"></div>
-        <div class="hk-strip-item">
-          <span class="hk-strip-label">Fichiers traités</span>
-          <span class="hk-strip-value">{{ totalFilesDisplay | number:'1.0-0' }}</span>
-        </div>
-        <div class="hk-strip-sep"></div>
-        <div class="hk-strip-item">
-          <span class="hk-strip-label">Aujourd'hui</span>
-          <span class="hk-strip-value">{{ todayReconciliationsDisplay | number:'1.0-0' }}</span>
-        </div>
-        <div class="hk-strip-sep"></div>
-        <div class="hk-strip-item">
-          <span class="hk-strip-label">Clients / Services / Pays</span>
-          <span class="hk-strip-value">{{ totalClientsCount }} / {{ totalServicesCount }} / {{ totalCountriesCount }}</span>
-        </div>
-      </div>
-    </div>
-  </div>
-
   <div class="main">
   <div class="dashboard-container">
-    <!-- Ancien header retiré : titre et actualiser sont dans topnav + page-header -->
-    <!-- Bande défilante des soldes par compte -->
-    <div class="dashboard-section section-banner" *ngIf="accountBalances && accountBalances.length > 0">
-        <div class="bottom-section-header">
-            <h4>💳 Soldes par compte</h4>
-            <button class="toggle-btn" [class.active]="showBannerSection" (click)="showBannerSection = !showBannerSection">
-                <span class="toggle-icon">▾</span>
-                {{ showBannerSection ? 'Masquer' : 'Afficher' }}
-            </button>
-        </div>
-        <div *ngIf="showBannerSection" class="scrolling-banner-wrapper">
-        <div class="scrolling-banner-header">
-            <span class="banner-title">{{ bannerTitle }}</span>
-            <span class="accounts-count">{{ accountBalances.length / 2 }} comptes</span>
-        </div>
-        <div class="scrolling-banner-container">
-            <div class="scrolling-banner">
-                <div class="scrolling-content" [style.animation-duration]="getScrollDuration() + 's'">
-                    <div *ngFor="let balance of accountBalances" class="balance-item">
-                        <span class="country-flag">{{ balance.flag }}</span>
-                        <span class="account-name">{{ balance.accountName }}</span>
-                        <span class="account-balance">{{ balance.balance | number:'1.0-0' }} FCFA</span>
-                    </div>
-                </div>
+    <!-- Référentiel services RECO — synthèse compacte -->
+    <div class="dashboard-section section-service-ref">
+        <div class="sr-ref-wrap">
+            <div class="sr-ref-hdr">
+                <span class="sr-ref-hdr-title">Référentiel Services RECO</span>
+                <button
+                    type="button"
+                    class="sr-ref-btn-hide"
+                    (click)="showServiceRefSection = !showServiceRefSection"
+                >
+                    {{ showServiceRefSection ? '↑ Masquer' : '↓ Afficher' }}
+                </button>
             </div>
-        </div>
+            <app-service-references-dashboard-panel
+                *ngIf="showServiceRefSection"
+                [loadOwnData]="true"
+                [showImportHint]="false"
+                [showDetailColumns]="false"
+                [compactLayout]="true"
+                [showOpenDetailsButton]="true"
+                (openDetails)="openServiceReferencesDashboard()"
+            >
+            </app-service-references-dashboard-panel>
         </div>
     </div>
 
@@ -351,14 +315,6 @@
                 </button>
                 <button type="button" class="btn-transact-stats-reconciliation" (click)="openTransactStatsModal()" title="Volumes agrégés depuis les rapports (result8rec)">
                     Statistiques réconciliation
-                </button>
-                <button
-                    type="button"
-                    class="btn-service-references-dash"
-                    (click)="openServiceReferencesDashboard()"
-                    title="Ouvrir le dashboard du référentiel services (réconciliables / non réconciliables)"
-                >
-                    Afficher référentiel
                 </button>
             </div>
 

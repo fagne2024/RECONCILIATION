@@ -349,16 +349,8 @@
 
     .content-grid {
         display: grid;
-        grid-template-columns: 2fr 1fr;
+        grid-template-columns: 1fr;
         gap: 20px;
-
-        &.single-column {
-            grid-template-columns: 1fr;
-        }
-
-        @media (max-width: 1200px) {
-            grid-template-columns: 1fr;
-        }
     }
 
     .table-card,
@@ -728,6 +720,159 @@
                 bottom: 3px;
                 background-color: white;
                 transition: .4s;
+                border-radius: 50%;
+            }
+        }
+
+        input:checked + .slider {
+            background-color: #2563eb;
+        }
+
+        input:checked + .slider:before {
+            transform: translateX(24px);
+        }
+    }
+}
+
+.service-ref-page {
+    .sr-form-overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 1000;
+        background: rgba(26, 37, 53, 0.52);
+        display: flex;
+        align-items: flex-start;
+        justify-content: center;
+        padding: 72px 24px 24px;
+        overflow-y: auto;
+    }
+
+    .sr-form-dialog {
+        width: min(560px, 100%);
+        margin: 0 auto;
+        max-height: calc(100vh - 96px);
+        overflow-y: auto;
+        background: #fff;
+        border-radius: 12px;
+        padding: 20px;
+        box-shadow: 0 24px 64px rgba(15, 23, 42, 0.28);
+    }
+
+    .sr-form-dialog form {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+
+        .form-row {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+
+            label {
+                font-weight: 500;
+                color: #475569;
+            }
+
+            input,
+            textarea,
+            select {
+                border: 1px solid #e2e8f0;
+                border-radius: 8px;
+                padding: 10px 12px;
+                font-size: 14px;
+
+                &:focus {
+                    outline: none;
+                    border-color: #2563eb;
+                    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+                }
+            }
+
+            textarea {
+                resize: vertical;
+            }
+
+            small {
+                color: #64748b;
+                font-size: 12px;
+            }
+
+            &.toggle {
+                flex-direction: row;
+                justify-content: space-between;
+                align-items: center;
+            }
+        }
+    }
+
+    .sr-form-dialog .form-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 10px;
+
+        h3 {
+            margin: 0;
+        }
+    }
+
+    .sr-form-dialog .link-btn {
+        border: none;
+        background: none;
+        color: #2563eb;
+        font-weight: 600;
+        cursor: pointer;
+        padding: 4px 8px;
+    }
+
+    .sr-form-dialog .btn {
+        border: none;
+        border-radius: 8px;
+        padding: 10px 16px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s ease;
+
+        &.primary {
+            background: #2563eb;
+            color: #fff;
+
+            &:disabled {
+                opacity: 0.6;
+                cursor: not-allowed;
+            }
+        }
+    }
+
+    .sr-form-dialog .switch {
+        position: relative;
+        display: inline-block;
+        width: 48px;
+        height: 24px;
+
+        input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            inset: 0;
+            background-color: #cbd5f5;
+            transition: 0.4s;
+            border-radius: 34px;
+
+            &:before {
+                position: absolute;
+                content: '';
+                height: 18px;
+                width: 18px;
+                left: 3px;
+                bottom: 3px;
+                background-color: white;
+                transition: 0.4s;
                 border-radius: 50%;
             }
         }

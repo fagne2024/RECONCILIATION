@@ -1,6 +1,7 @@
 package com.reconciliation.service;
 
 import com.reconciliation.dto.DeleteOperationsResponse;
+import com.reconciliation.dto.ServiceCountryVolumeDto;
 import com.reconciliation.dto.ServiceReferenceImportBatchItem;
 import com.reconciliation.dto.ServiceReferenceImportBatchResponse;
 import com.reconciliation.dto.ServiceReferenceDashboardDto;
@@ -14,6 +15,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -26,6 +29,19 @@ import java.util.stream.Collectors;
 
 @Service
 public class ServiceReferenceService {
+
+    private static final int DEFAULT_DASHBOARD_PERIOD_MONTHS = 3;
+    private static final DateTimeFormatter AGENCY_DATE_FORMAT = DateTimeFormatter.ISO_LOCAL_DATE;
+
+    private static final class DashboardDateRange {
+        private final String startDate;
+        private final String endDate;
+
+        private DashboardDateRange(String startDate, String endDate) {
+            this.startDate = startDate;
+            this.endDate = endDate;
+        }
+    }
 
     @Autowired
     private ServiceReferenceRepository repository;
@@ -86,6 +102,36 @@ public class ServiceReferenceService {
                 .filter(cs -> cs != null && !cs.isBlank())
                 .map(cs -> cs.trim().toUpperCase())
                 .collect(Collectors.toSet());
+    }
+
+    /**
+     * Clés pays|service présentes dans result8rec (rapport de réconciliation, statut ACTIF).
+     * Format : {@code PAYS|service} (pays majuscules, service minuscules).
+     */
+    public Set<String> getActiveCountryServiceKeys(String username) {
+        return getActiveCountryServiceKeys(username, null, null, DEFAULT_DASHBOARD_PERIOD_MONTHS);
+    }
+
+    public Set<String> getActiveCountryServiceKeys(
+            String username,
+            String startDate,
+            String endDate,
+            Integer periodMonths) {
+        List<String> allowedPays = normalizePays(getAllowedPays(username));
+        if (allowedPays != null && allowedPays.isEmpty()) {
+            return Collections.emptySet();
+        }
+        DashboardDateRange range = resolveStatusDateRange(startDate, endDate, periodMonths);
+        List<Object[]> rows = result8RecRepository.findDistinctCountryService(
+                allowedPays, range.startDate, range.endDate);
+        Set<String> keys = new HashSet<>();
+        for (Object[] row : rows) {
+            if (row == null || row.length < 2 || row[0] == null || row[1] == null) {
+                continue;
+            }
+            keys.add(statusKey(String.valueOf(row[0]), String.valueOf(row[1])));
+        }
+        return keys;
     }
 
     public ServiceReferenceEntity create(ServiceReferenceEntity entity, String username) {
@@ -293,17 +339,26 @@ public class ServiceReferenceService {
     }
 
     public List<ServiceReferenceDashboardDto> getDashboardStats(String username) {
+        return getDashboardStats(username, null, null, DEFAULT_DASHBOARD_PERIOD_MONTHS);
+    }
+
+    public List<ServiceReferenceDashboardDto> getDashboardStats(
+            String username,
+            String startDate,
+            String endDate,
+            Integer periodMonths) {
         List<String> allowedPays = normalizePays(getAllowedPays(username));
         if (allowedPays != null && allowedPays.isEmpty()) {
             return Collections.emptyList();
         }
 
-        // Récupérer les données agrégées par pays depuis AgencySummaryEntity pour trx_recon_brut
-        List<Object[]> agencySummaryByCountry = agencySummaryRepository.aggregateByCountry(allowedPays);
-        
-        // Récupérer les données agrégées par pays et service depuis AgencySummaryEntity
-        List<Object[]> agencySummaryByCountryAndService = agencySummaryRepository.aggregateByCountryAndService(allowedPays);
-        
+        DashboardDateRange range = resolveDashboardDateRange(startDate, endDate, periodMonths);
+
+        List<Object[]> agencySummaryByCountry = agencySummaryRepository.aggregateByCountry(
+                allowedPays, range.startDate, range.endDate);
+
+        List<Object[]> agencySummaryByCountryAndService = agencySummaryRepository.aggregateByCountryAndService(
+                allowedPays, range.startDate, range.endDate);
         // Construire la map des services actifs et réconciliables
         Map<String, Boolean> activeReconcilableServices = buildActiveReconcilableServiceMap(allowedPays);
 
@@ -339,16 +394,16 @@ public class ServiceReferenceService {
                 continue;
             }
 
+            DashboardAccumulator accumulator = accumulatorMap.computeIfAbsent(country, c -> new DashboardAccumulator());
+            // Chaque ligne = un service distinct pour ce pays (GROUP BY country, service)
+            accumulator.totalServiceCount++;
+
             // Vérifier si le service est actif et réconciliable (réconciliable = OUI)
             if (!isActiveReconcilableService(service, activeReconcilableServices)) {
                 continue;
             }
 
-            DashboardAccumulator accumulator = accumulatorMap.get(country);
-            if (accumulator == null) {
-                accumulator = new DashboardAccumulator();
-                accumulatorMap.put(country, accumulator);
-            }
+            accumulator.reconcilableServiceCount++;
 
             Double volume = ((Number) row[2]).doubleValue();
             // SUM() peut retourner BigInteger, on convertit en long
@@ -369,6 +424,8 @@ public class ServiceReferenceService {
             dto.setTotalTransactions(accumulator.totalTransactions);
             dto.setReconcilableVolume(round(accumulator.reconcilableVolume));
             dto.setReconcilableTransactions(accumulator.reconcilableTransactions);
+            dto.setTotalServiceCount(accumulator.totalServiceCount);
+            dto.setReconcilableServiceCount(accumulator.reconcilableServiceCount);
             
             // Volume non réconciliable = volume total - volume réconciliable
             double nonReconcilableVolume = accumulator.totalVolume - accumulator.reconcilableVolume;
@@ -389,6 +446,44 @@ public class ServiceReferenceService {
         }
 
         response.sort((a, b) -> a.getCountry().compareToIgnoreCase(b.getCountry()));
+        return response;
+    }
+
+    public List<ServiceCountryVolumeDto> getDashboardServiceVolumes(String username) {
+        return getDashboardServiceVolumes(username, null, null, DEFAULT_DASHBOARD_PERIOD_MONTHS);
+    }
+
+    public List<ServiceCountryVolumeDto> getDashboardServiceVolumes(
+            String username,
+            String startDate,
+            String endDate,
+            Integer periodMonths) {
+        List<String> allowedPays = normalizePays(getAllowedPays(username));
+        if (allowedPays != null && allowedPays.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        DashboardDateRange range = resolveDashboardDateRange(startDate, endDate, periodMonths);
+        List<Object[]> rows = agencySummaryRepository.aggregateByCountryAndService(
+                allowedPays, range.startDate, range.endDate);
+        List<ServiceCountryVolumeDto> response = new ArrayList<>();
+        for (Object[] row : rows) {
+            String country = (String) row[0];
+            String service = (String) row[1];
+            if (country == null || country.isBlank() || service == null || service.isBlank()) {
+                continue;
+            }
+            if (allowedPays != null && !allowedPays.contains(normalizeCountryCode(country))) {
+                continue;
+            }
+            ServiceCountryVolumeDto dto = new ServiceCountryVolumeDto();
+            dto.setCountry(normalizeCountryCode(country));
+            dto.setService(service.trim());
+            dto.setVolume(round(((Number) row[2]).doubleValue()));
+            Number transactionsNumber = (Number) row[3];
+            dto.setTransactions(transactionsNumber != null ? transactionsNumber.longValue() : 0L);
+            response.add(dto);
+        }
         return response;
     }
 
@@ -416,7 +511,7 @@ public class ServiceReferenceService {
     }
 
     private void ensureStatusDefault(ServiceReferenceEntity entity) {
-        entity.setStatus(computeStatusFromAgencySummary(entity.getCodeService()));
+        entity.setStatus(computeStatusFromReconciliationReport(entity));
     }
 
     private List<ServiceReferenceEntity> applyComputedStatus(List<ServiceReferenceEntity> entities) {
@@ -428,7 +523,7 @@ public class ServiceReferenceService {
         if (entity == null) {
             return null;
         }
-        String computedStatus = computeStatusFromAgencySummary(entity.getCodeService());
+        String computedStatus = computeStatusFromReconciliationReport(entity);
         if (!computedStatus.equals(entity.getStatus())) {
             entity.setStatus(computedStatus);
             repository.save(entity);
@@ -440,17 +535,30 @@ public class ServiceReferenceService {
         if (entities == null || entities.isEmpty()) {
             return;
         }
+        java.util.Set<String> normalizedServices = new java.util.HashSet<>();
+        for (ServiceReferenceEntity entity : entities) {
+            collectServiceAliases(entity, normalizedServices);
+        }
+        if (normalizedServices.isEmpty()) {
+            return;
+        }
+        DashboardDateRange range = defaultStatusDateRange();
+        java.util.List<Object[]> countryServices = result8RecRepository.findDistinctCountryServiceByServices(
+                new java.util.ArrayList<>(normalizedServices), range.startDate, range.endDate);
+        java.util.Set<String> activeKeys = new java.util.HashSet<>();
+        for (Object[] row : countryServices) {
+            if (row == null || row.length < 2 || row[0] == null || row[1] == null) {
+                continue;
+            }
+            activeKeys.add(statusKey(String.valueOf(row[0]), String.valueOf(row[1])));
+        }
+
         List<ServiceReferenceEntity> toUpdate = new java.util.ArrayList<>();
-        java.util.Map<String, String> statusByCode = computeStatusesForCodes(entities);
         for (ServiceReferenceEntity entity : entities) {
             if (entity == null) {
                 continue;
             }
-            String normalized = normalizeCode(entity.getCodeService());
-            if (normalized.isEmpty()) {
-                continue;
-            }
-            String computedStatus = statusByCode.getOrDefault(normalized, "INACTIF");
+            String computedStatus = isActiveInReconciliationReport(entity, activeKeys) ? "ACTIF" : "INACTIF";
             if (!computedStatus.equals(entity.getStatus())) {
                 entity.setStatus(computedStatus);
                 toUpdate.add(entity);
@@ -461,38 +569,119 @@ public class ServiceReferenceService {
         }
     }
 
-    private java.util.Map<String, String> computeStatusesForCodes(List<ServiceReferenceEntity> entities) {
-        java.util.Set<String> normalizedCodes = new java.util.HashSet<>();
-        for (ServiceReferenceEntity entity : entities) {
-            String normalized = normalizeCode(entity.getCodeService());
-            if (!normalized.isEmpty()) {
-                normalizedCodes.add(normalized);
-            }
-        }
-        if (normalizedCodes.isEmpty()) {
-            return java.util.Collections.emptyMap();
-        }
-        java.util.List<String> existing = agencySummaryRepository.findExistingServicesIgnoreCase(new java.util.ArrayList<>(normalizedCodes));
-        java.util.Set<String> used = new java.util.HashSet<>();
-        for (String value : existing) {
-            if (value != null) {
-                used.add(value.toLowerCase());
-            }
-        }
-
-        java.util.Map<String, String> statusByCode = new java.util.HashMap<>();
-        for (String code : normalizedCodes) {
-            statusByCode.put(code, used.contains(code) ? "ACTIF" : "INACTIF");
-        }
-        return statusByCode;
-    }
-
-    private String computeStatusFromAgencySummary(String codeService) {
-        if (codeService == null || codeService.isBlank()) {
+    private String computeStatusFromReconciliationReport(ServiceReferenceEntity entity) {
+        if (entity == null) {
             return "INACTIF";
         }
-        boolean exists = agencySummaryRepository.existsByServiceIgnoreCase(codeService);
-        return exists ? "ACTIF" : "INACTIF";
+        DashboardDateRange range = defaultStatusDateRange();
+        for (String alias : serviceAliases(entity)) {
+            if (alias == null || alias.isBlank()) {
+                continue;
+            }
+            if (entity.getPays() == null || entity.getPays().isBlank()) {
+                if (result8RecRepository.existsByServiceIgnoreCase(alias, range.startDate, range.endDate)) {
+                    return "ACTIF";
+                }
+                continue;
+            }
+            if (result8RecRepository.existsByCountryAndServiceIgnoreCase(
+                    entity.getPays(), alias, range.startDate, range.endDate)) {
+                return "ACTIF";
+            }
+        }
+        return "INACTIF";
+    }
+
+    private boolean isActiveInReconciliationReport(ServiceReferenceEntity entity, Set<String> activeKeys) {
+        if (entity == null || activeKeys == null || activeKeys.isEmpty()) {
+            return false;
+        }
+        for (String alias : serviceAliases(entity)) {
+            if (alias == null || alias.isBlank()) {
+                continue;
+            }
+            if (activeKeys.contains(statusKey(entity.getPays(), alias))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private void collectServiceAliases(ServiceReferenceEntity entity, Set<String> target) {
+        if (entity == null || target == null) {
+            return;
+        }
+        for (String alias : serviceAliases(entity)) {
+            String normalized = normalizeCode(alias);
+            if (!normalized.isEmpty()) {
+                target.add(normalized);
+            }
+        }
+    }
+
+    private List<String> serviceAliases(ServiceReferenceEntity entity) {
+        if (entity == null) {
+            return Collections.emptyList();
+        }
+        List<String> aliases = new ArrayList<>(3);
+        aliases.add(entity.getCodeService());
+        aliases.add(entity.getServiceLabel());
+        aliases.add(entity.getCodeReco());
+        return aliases;
+    }
+
+    private DashboardDateRange defaultStatusDateRange() {
+        return resolveStatusDateRange(null, null, DEFAULT_DASHBOARD_PERIOD_MONTHS);
+    }
+
+    private DashboardDateRange resolveStatusDateRange(String startDate, String endDate, Integer periodMonths) {
+        if (startDate != null && !startDate.isBlank() && endDate != null && !endDate.isBlank()) {
+            return new DashboardDateRange(normalizeDateParam(startDate), normalizeDateParam(endDate));
+        }
+        if (periodMonths != null && periodMonths == 0) {
+            return new DashboardDateRange(null, null);
+        }
+        int months = periodMonths != null && periodMonths > 0 ? periodMonths : DEFAULT_DASHBOARD_PERIOD_MONTHS;
+        LocalDate end = parseAgencyDate(result8RecRepository.findMaxResultDate());
+        if (end == null) {
+            end = LocalDate.now();
+        }
+        LocalDate start = end.minusMonths(months);
+        return new DashboardDateRange(start.format(AGENCY_DATE_FORMAT), end.format(AGENCY_DATE_FORMAT));
+    }
+
+    private DashboardDateRange resolveDashboardDateRange(String startDate, String endDate, Integer periodMonths) {
+        if (startDate != null && !startDate.isBlank() && endDate != null && !endDate.isBlank()) {
+            return new DashboardDateRange(normalizeDateParam(startDate), normalizeDateParam(endDate));
+        }
+        if (periodMonths != null && periodMonths == 0) {
+            return new DashboardDateRange(null, null);
+        }
+        int months = periodMonths != null && periodMonths > 0 ? periodMonths : DEFAULT_DASHBOARD_PERIOD_MONTHS;
+        LocalDate end = parseAgencyDate(agencySummaryRepository.findMaxDate());
+        if (end == null) {
+            end = LocalDate.now();
+        }
+        LocalDate start = end.minusMonths(months);
+        return new DashboardDateRange(start.format(AGENCY_DATE_FORMAT), end.format(AGENCY_DATE_FORMAT));
+    }
+
+    private String normalizeDateParam(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        return value.trim().length() >= 10 ? value.trim().substring(0, 10) : value.trim();
+    }
+
+    private LocalDate parseAgencyDate(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        return LocalDate.parse(normalizeDateParam(value), AGENCY_DATE_FORMAT);
+    }
+
+    private String statusKey(String pays, String codeService) {
+        return normalizeCountryCode(pays) + "|" + normalizeCode(codeService);
     }
 
     private String normalizeCode(String code) {
@@ -635,6 +824,8 @@ public class ServiceReferenceService {
         double matchedVolume = 0;
         double reconcilableVolume = 0;
         long reconcilableTransactions = 0;
+        long totalServiceCount = 0;
+        long reconcilableServiceCount = 0;
         double netMatchedVolume = 0;
     }
 }

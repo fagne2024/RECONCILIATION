@@ -532,11 +532,13 @@ export class OperationsComponent implements OnInit, OnDestroy, AfterViewInit {
     }
 
     // Méthode pour charger les opérations avec une plage de dates spécifique
-    loadOperationsByDateRange(dateDebut: string, dateFin: string) {
+    loadOperationsByDateRange(dateDebut: string, dateFin: string, markAsAutoSet = true) {
         this.isLoading = true;
         
-        // Marquer que les dates sont définies automatiquement par le système
-        this.dateFilterAutoSet = true;
+        if (markAsAutoSet) {
+            // Marquer que les dates sont définies automatiquement par le système
+            this.dateFilterAutoSet = true;
+        }
         
         // Synchroniser les dates du formulaire avec les dates chargées
         // IMPORTANT: Utiliser patchValue avec emitEvent: false pour éviter de déclencher onFilterChange
@@ -584,9 +586,22 @@ export class OperationsComponent implements OnInit, OnDestroy, AfterViewInit {
         });
     }
 
-    refreshData() {
+    /** Recharge les opérations depuis le serveur en conservant les filtres actifs. */
+    refreshData(): void {
+        if (this.isLoading) {
+            return;
+        }
+        if (this.showAllData) {
+            this.loadAllOperationsWithoutDateFilter();
+            return;
+        }
+        const dateDebut = this.filterForm.get('dateDebut')?.value;
+        const dateFin = this.filterForm.get('dateFin')?.value;
+        if (dateDebut && dateFin) {
+            this.loadOperationsByDateRange(dateDebut, dateFin, this.dateFilterAutoSet);
+            return;
+        }
         this.loadOperations();
-        this.initializeFilteredLists();
     }
 
     // Méthodes pour les filtres améliorés

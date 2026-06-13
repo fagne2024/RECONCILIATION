@@ -83,6 +83,7 @@ import { TwoFactorAuthComponent } from './components/two-factor-auth/two-factor-
 import { User2FADialogComponent } from './components/users/user-2fa-dialog.component';
 import { UserProfileComponent } from './components/user-profile/user-profile.component';
 import { ServiceReferencesComponent } from './components/service-references/service-references.component';
+import { ServiceReferencesDashboardPanelComponent } from './components/service-references/service-references-dashboard-panel.component';
 import { AideComponent } from './components/aide/aide.component';
 import { SopOperationComponent } from './components/sop-operation/sop-operation.component';
 import { SopReconciliationTrxComponent } from './components/sop-reconciliation-trx/sop-reconciliation-trx.component';
@@ -147,6 +148,7 @@ import { StatsReportGraphComponent } from './components/stats-report-graph/stats
                 User2FADialogComponent,
                 UserProfileComponent,
                 ServiceReferencesComponent,
+                ServiceReferencesDashboardPanelComponent,
                 AideComponent,
                 SopOperationComponent,
                 SopReconciliationTrxComponent,

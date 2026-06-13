@@ -318,6 +318,16 @@ export class RapportReconciliationBoPartenaireComponent implements OnInit, OnDes
     this.rebuildTable();
   }
 
+  /** Recharge result8rec + écarts + relevé manuel sans réinitialiser pays, dates, ENV ni services. */
+  refreshRapportData(): void {
+    if (this.loading) {
+      return;
+    }
+    this.lastReportFetchKey = '';
+    this.lastManualFetchKey = '';
+    this.loadDonnees();
+  }
+
   private buildManualFetchKey(dateStart: string, dateEnd: string): string {
     const svc = [...this.availableServices].sort().join('\u001e');
     return `${dateStart}|${dateEnd}|${this.selectedCountry}|${this.selectedEnv}|${svc}`;

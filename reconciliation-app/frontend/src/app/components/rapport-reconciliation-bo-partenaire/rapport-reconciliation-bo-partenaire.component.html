@@ -13,6 +13,15 @@
       <button
         type="button"
         class="nav-btn secondary"
+        (click)="refreshRapportData()"
+        [disabled]="loading"
+        title="Actualiser les données en conservant les filtres"
+      >
+        <i class="fas" [ngClass]="loading ? 'fa-spinner fa-spin' : 'fa-sync-alt'"></i> Actualiser
+      </button>
+      <button
+        type="button"
+        class="nav-btn secondary"
         (click)="exportToPdf()"
         [disabled]="!canExportPdf || isExportingPdf"
         title="Exporter le rapport affiché en PDF"

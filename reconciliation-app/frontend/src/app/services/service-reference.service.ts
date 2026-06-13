@@ -6,6 +6,7 @@ import {
     ServiceReference,
     ServiceReferencePayload,
     ServiceReferenceDashboard,
+    ServiceCountryVolume,
     ServiceReferenceBatchDeleteResult,
     ServiceReferenceImportBatchResult
 } from '../models/service-reference.model';
@@ -43,6 +44,14 @@ export class ServiceReferenceService {
     /** Codes service déjà en base — filtre d’import (colonne Code Service uniquement). */
     getUsedCodeServices(): Observable<string[]> {
         return this.with429Retry(() => this.http.get<string[]>(`${this.apiUrl}/used-code-services`));
+    }
+
+    /** Clés PAYS|service présentes dans result8rec / rapport de réconciliation (période glissante). */
+    getActiveInAgencyKeys(periodMonths = 3): Observable<string[]> {
+        const params = new HttpParams().set('periodMonths', String(periodMonths));
+        return this.with429Retry(() =>
+            this.http.get<string[]>(`${this.apiUrl}/active-in-agency`, { params })
+        );
     }
 
     getByPays(pays: string): Observable<ServiceReference[]> {
@@ -96,9 +105,17 @@ export class ServiceReferenceService {
         );
     }
 
-    getDashboardStats(): Observable<ServiceReferenceDashboard[]> {
+    getDashboardStats(periodMonths = 3): Observable<ServiceReferenceDashboard[]> {
+        const params = new HttpParams().set('periodMonths', String(periodMonths));
         return this.with429Retry(() =>
-            this.http.get<ServiceReferenceDashboard[]>(`${this.apiUrl}/dashboard`)
+            this.http.get<ServiceReferenceDashboard[]>(`${this.apiUrl}/dashboard`, { params })
+        );
+    }
+
+    getDashboardServiceVolumes(periodMonths = 3): Observable<ServiceCountryVolume[]> {
+        const params = new HttpParams().set('periodMonths', String(periodMonths));
+        return this.with429Retry(() =>
+            this.http.get<ServiceCountryVolume[]>(`${this.apiUrl}/dashboard/service-volumes`, { params })
         );
     }
 }

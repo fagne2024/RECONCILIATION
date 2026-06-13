@@ -101,7 +101,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
     showBottomSection: boolean = false;
 
     // Masquer / afficher les sections du dashboard (comme Transactions créées par service)
-    showBannerSection: boolean = true;
+    showServiceRefSection: boolean = true;
     showReconciliationSection: boolean = true;
     showMetricsSection: boolean = true;
     showSummaryBarSection: boolean = true;
@@ -1311,7 +1311,6 @@ export class DashboardComponent implements OnInit, OnDestroy {
         this.loadFilterOptions();
         this.loadAgencySummaryData();
         this.loadAllOperations();
-        this.loadAccountBalances();
         
         // Charger les métriques détaillées après un court délai pour s'assurer que les autres données sont chargées
         setTimeout(() => {
@@ -3032,9 +3031,6 @@ export class DashboardComponent implements OnInit, OnDestroy {
         // Recharger les métriques détaillées (toujours, même sans filtres)
         this.loadDetailedMetrics();
         this.loadTransactionCreatedStats();
-        
-        // Recharger les soldes pour la bande défilante
-        this.loadAccountBalances();
         
         // Afficher un message de confirmation
         setTimeout(() => {

@@ -5,6 +5,7 @@ import com.reconciliation.dto.DeleteOperationsResponse;
 import com.reconciliation.dto.ServiceReferenceImportBatchRequest;
 import com.reconciliation.dto.ServiceReferenceImportBatchResponse;
 import com.reconciliation.dto.ServiceReferenceDashboardDto;
+import com.reconciliation.dto.ServiceCountryVolumeDto;
 import com.reconciliation.entity.ServiceReferenceEntity;
 import com.reconciliation.service.ServiceReferenceService;
 import com.reconciliation.util.RequestContextUtil;
@@ -45,6 +46,17 @@ public class ServiceReferenceController {
     public ResponseEntity<Set<String>> listUsedCodeServices() {
         RequestContextUtil.getUsernameFromRequest();
         return ResponseEntity.ok(serviceReferenceService.getAllUsedCodeServicesNormalized());
+    }
+
+    /** Paires pays|service présentes dans result8rec / rapport de réconciliation (statut ACTIF). */
+    @GetMapping("/active-in-agency")
+    public ResponseEntity<Set<String>> listActiveInAgency(
+            @RequestParam(required = false) String startDate,
+            @RequestParam(required = false) String endDate,
+            @RequestParam(required = false, defaultValue = "3") Integer periodMonths) {
+        String username = RequestContextUtil.getUsernameFromRequest();
+        return ResponseEntity.ok(serviceReferenceService.getActiveCountryServiceKeys(
+                username, startDate, endDate, periodMonths));
     }
 
     @GetMapping("/{id}")
@@ -117,15 +129,29 @@ public class ServiceReferenceController {
     }
 
     @GetMapping("/dashboard")
-    public ResponseEntity<?> getDashboardStats() {
+    public ResponseEntity<?> getDashboardStats(
+            @RequestParam(required = false) String startDate,
+            @RequestParam(required = false) String endDate,
+            @RequestParam(required = false, defaultValue = "3") Integer periodMonths) {
         String username = RequestContextUtil.getUsernameFromRequest();
         try {
-            List<ServiceReferenceDashboardDto> stats = serviceReferenceService.getDashboardStats(username);
+            List<ServiceReferenceDashboardDto> stats = serviceReferenceService.getDashboardStats(
+                    username, startDate, endDate, periodMonths);
             return ResponseEntity.ok(stats);
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body("Impossible de récupérer le dashboard: " + e.getMessage());
         }
+    }
+
+    @GetMapping("/dashboard/service-volumes")
+    public ResponseEntity<List<ServiceCountryVolumeDto>> getDashboardServiceVolumes(
+            @RequestParam(required = false) String startDate,
+            @RequestParam(required = false) String endDate,
+            @RequestParam(required = false, defaultValue = "3") Integer periodMonths) {
+        String username = RequestContextUtil.getUsernameFromRequest();
+        return ResponseEntity.ok(serviceReferenceService.getDashboardServiceVolumes(
+                username, startDate, endDate, periodMonths));
     }
 }
 

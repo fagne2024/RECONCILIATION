@@ -40,4 +40,16 @@ export interface ServiceReferenceDashboard {
     reconcilableTransactions?: number;
     nonReconcilableVolume?: number;
     nonReconcilableTransactions?: number;
+    /** Services distincts dans agency_summary (1 fois par service et par pays). */
+    totalServiceCount?: number;
+    reconcilableServiceCount?: number;
 }
+
+export interface ServiceCountryVolume {
+    country: string;
+    service: string;
+    volume: number;
+    transactions?: number;
+}
+
+export type ServiceReferenceDashboardDisplayMode = 'nombre' | 'volume' | 'transactions';

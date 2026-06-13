@@ -32,8 +32,8 @@
       <button type="button" class="nav-btn secondary" (click)="openRegularisationSoldePopup()" title="Voir Régularisation Solde">
         <i class="fas fa-calculator"></i> Régularisation Solde
       </button>
-      <button type="button" class="nav-btn secondary" (click)="refreshData()" title="Actualiser les données">
-        <i class="fas fa-sync-alt"></i>
+      <button type="button" class="nav-btn secondary" (click)="refreshData()" [disabled]="isLoading" title="Actualiser les données en conservant les filtres">
+        <i class="fas" [ngClass]="isLoading ? 'fa-spinner fa-spin' : 'fa-sync-alt'"></i> Actualiser
       </button>
       <button type="button" class="nav-btn primary" (click)="showAddForm = true" *ngIf="!showAddForm && !showEditForm">
         <i class="fas fa-plus"></i> Ajouter une opération

@@ -136,6 +136,60 @@ public interface Result8RecRepository extends JpaRepository<Result8RecEntity, Lo
             @Param("country") String country,
             @Param("countries") List<String> countries
     );
+
+    @Query("""
+        SELECT CASE WHEN COUNT(r) > 0 THEN TRUE ELSE FALSE END
+        FROM Result8RecEntity r
+        WHERE LOWER(TRIM(r.service)) = LOWER(TRIM(:service))
+          AND (:startDate IS NULL OR :startDate = '' OR r.date >= :startDate)
+          AND (:endDate IS NULL OR :endDate = '' OR r.date <= :endDate)
+        """)
+    boolean existsByServiceIgnoreCase(
+            @Param("service") String service,
+            @Param("startDate") String startDate,
+            @Param("endDate") String endDate
+    );
+
+    @Query("""
+        SELECT CASE WHEN COUNT(r) > 0 THEN TRUE ELSE FALSE END
+        FROM Result8RecEntity r
+        WHERE UPPER(TRIM(r.country)) = UPPER(TRIM(:country))
+          AND LOWER(TRIM(r.service)) = LOWER(TRIM(:service))
+          AND (:startDate IS NULL OR :startDate = '' OR r.date >= :startDate)
+          AND (:endDate IS NULL OR :endDate = '' OR r.date <= :endDate)
+        """)
+    boolean existsByCountryAndServiceIgnoreCase(
+            @Param("country") String country,
+            @Param("service") String service,
+            @Param("startDate") String startDate,
+            @Param("endDate") String endDate
+    );
+
+    @Query("""
+        SELECT DISTINCT UPPER(TRIM(r.country)), LOWER(TRIM(r.service))
+        FROM Result8RecEntity r
+        WHERE LOWER(TRIM(r.service)) IN :services
+          AND (:startDate IS NULL OR :startDate = '' OR r.date >= :startDate)
+          AND (:endDate IS NULL OR :endDate = '' OR r.date <= :endDate)
+        """)
+    List<Object[]> findDistinctCountryServiceByServices(
+            @Param("services") List<String> services,
+            @Param("startDate") String startDate,
+            @Param("endDate") String endDate
+    );
+
+    @Query("""
+        SELECT DISTINCT UPPER(TRIM(r.country)), LOWER(TRIM(r.service))
+        FROM Result8RecEntity r
+        WHERE (:countries IS NULL OR UPPER(TRIM(r.country)) IN :countries)
+          AND (:startDate IS NULL OR :startDate = '' OR r.date >= :startDate)
+          AND (:endDate IS NULL OR :endDate = '' OR r.date <= :endDate)
+        """)
+    List<Object[]> findDistinctCountryService(
+            @Param("countries") List<String> countries,
+            @Param("startDate") String startDate,
+            @Param("endDate") String endDate
+    );
 }
 
 
