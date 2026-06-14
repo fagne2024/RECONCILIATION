@@ -94,6 +94,7 @@ import { EcartBoTableComponent } from './components/ecart-bo-table/ecart-bo-tabl
 import { EcartPartnerTableComponent } from './components/ecart-partner-table/ecart-partner-table.component';
 import { SuiviDesEcartsComponent } from './components/suivi-des-ecarts/suivi-des-ecarts.component';
 import { EcartBoSummaryComponent } from './components/ecart-bo-summary/ecart-bo-summary.component';
+import { CertificationSoldeComponent } from './components/certification-solde/certification-solde.component';
 import { RedevanceLoterieComponent } from './components/redevance-loterie/redevance-loterie.component';
 import { RapportReconciliationBoPartenaireComponent } from './components/rapport-reconciliation-bo-partenaire/rapport-reconciliation-bo-partenaire.component';
 import { StatsReportComponent } from './components/stats-report/stats-report.component';
@@ -159,6 +160,7 @@ import { StatsReportGraphComponent } from './components/stats-report-graph/stats
                 EcartPartnerTableComponent,
                 SuiviDesEcartsComponent,
                 EcartBoSummaryComponent,
+                CertificationSoldeComponent,
                 RedevanceLoterieComponent,
                 RapportReconciliationBoPartenaireComponent,
                 StatsReportComponent,

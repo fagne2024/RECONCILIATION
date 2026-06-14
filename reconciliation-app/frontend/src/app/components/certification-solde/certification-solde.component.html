@@ -1,0 +1,207 @@
+<div class="certification-page">
+  <nav class="topnav">
+    <div class="nav-brand">
+      <div class="nav-brand-dot"></div>
+      ReconciliApp
+    </div>
+    <div class="nav-sep"></div>
+    <div class="nav-path">
+      <strong>Certification de solde</strong>
+      <span class="nav-badge">TRXBO ↔ OPPART</span>
+    </div>
+    <div class="nav-spacer"></div>
+    <div class="nav-actions">
+      <button type="button" class="nav-btn secondary" (click)="exportToExcel()" [disabled]="!canExport || isExportingExcel || isExportingPdf">
+        <i class="fas fa-file-excel"></i> {{ isExportingExcel ? 'Export…' : 'Exporter Excel' }}
+      </button>
+      <button type="button" class="nav-btn secondary" (click)="exportToPdf()" [disabled]="!canExport || isExportingExcel || isExportingPdf">
+        <i class="fas fa-file-pdf"></i> {{ isExportingPdf ? 'Export…' : 'Exporter PDF' }}
+      </button>
+      <button type="button" class="nav-btn secondary" (click)="startNewCertification()">
+        <i class="fas fa-file-upload"></i> Nouvelle certification
+      </button>
+      <button type="button" class="nav-btn primary" (click)="saveCertification()" [disabled]="isSaving || !hasResults">
+        <i class="fas fa-save"></i> {{ isSaving ? 'Enregistrement...' : 'Enregistrer' }}
+      </button>
+    </div>
+  </nav>
+
+  <div class="empty-state" *ngIf="!hasResults">
+    <div class="empty-card">
+      <i class="fas fa-balance-scale empty-icon"></i>
+      <h2>Aucune réconciliation TRXBO / OPPART</h2>
+      <p>
+        Importez les fichiers TRXBO et OPPART pour lancer une réconciliation, puis certifiez le solde
+        avec les soldes d'ouverture et de clôture.
+      </p>
+      <button type="button" class="cta-btn" (click)="startNewCertification()">
+        <i class="fas fa-play-circle"></i> Lancer une certification
+      </button>
+    </div>
+  </div>
+
+  <ng-container *ngIf="hasResults && computed">
+    <div class="page-header">
+      <div class="ph-left">
+        <div class="ph-eyebrow"><span></span>Réconciliation TRXBO / OPPART</div>
+        <h1>Certification de <em>solde</em></h1>
+      </div>
+      <div class="ph-right">
+        <div class="kpi-strip">
+          <div class="kpi-item">
+            <span class="kpi-label">Correspondances</span>
+            <span class="kpi-value">{{ computed.totals.matches | number:'1.0-0' }}</span>
+          </div>
+          <div class="kpi-sep"></div>
+          <div class="kpi-item">
+            <span class="kpi-label">Écarts BO</span>
+            <span class="kpi-value warn">{{ computed.totals.boOnly | number:'1.0-0' }}</span>
+          </div>
+          <div class="kpi-sep"></div>
+          <div class="kpi-item">
+            <span class="kpi-label">Écarts Partenaire</span>
+            <span class="kpi-value warn">{{ computed.totals.partnerOnly | number:'1.0-0' }}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="content-grid">
+      <section class="panel solde-panel">
+        <div class="panel-header">
+          <h3><i class="fas fa-wallet"></i> Soldes de certification</h3>
+          <button type="button" class="link-btn" (click)="applyOppartSuggestedSoldes()"
+                  *ngIf="computed.soldeOuvertureOppart != null || computed.soldeClotureOppart != null">
+            Reprendre depuis OPPART
+          </button>
+        </div>
+
+        <div class="form-row two-cols">
+          <div class="field">
+            <label for="numeroCompte">Numéro de compte</label>
+            <input id="numeroCompte" type="text" [(ngModel)]="numeroCompte" placeholder="Ex: 77123456789">
+          </div>
+          <div class="field">
+            <label for="dateCertification">Date de certification</label>
+            <input id="dateCertification" type="date" [(ngModel)]="dateCertification">
+          </div>
+        </div>
+
+        <div class="form-row two-cols">
+          <div class="field">
+            <label for="soldeOuverture">Solde d'ouverture</label>
+            <input id="soldeOuverture" type="number" [(ngModel)]="soldeOuverture" (ngModelChange)="onSoldeChange()" placeholder="0">
+            <small *ngIf="computed.soldeOuvertureOppart != null" class="hint">
+              Suggestion OPPART : {{ formatNumber(computed.soldeOuvertureOppart) }}
+            </small>
+          </div>
+          <div class="field">
+            <label for="soldeCloture">Solde de clôture</label>
+            <input id="soldeCloture" type="number" [(ngModel)]="soldeCloture" (ngModelChange)="onSoldeChange()" placeholder="0">
+            <small *ngIf="computed.soldeClotureOppart != null" class="hint">
+              Suggestion OPPART : {{ formatNumber(computed.soldeClotureOppart) }}
+            </small>
+          </div>
+        </div>
+
+        <div class="derived-cards">
+          <div class="derived-card">
+            <span class="derived-label">Variation</span>
+            <span class="derived-value" [class.negative]="variation != null && variation < 0">
+              {{ formatNumber(variation) }}
+            </span>
+            <span class="derived-formula">Clôture − Ouverture</span>
+          </div>
+          <div class="derived-card">
+            <span class="derived-label">Mouvement net OPPART</span>
+            <span class="derived-value">{{ formatNumber(computed.mouvementNetOppart) }}</span>
+            <span class="derived-formula">Σ montants fichier OPPART</span>
+          </div>
+          <div class="derived-card highlight" [class.alert]="ecartCertification != null && ecartCertification !== 0">
+            <span class="derived-label">Écart de certification</span>
+            <span class="derived-value">{{ formatNumber(ecartCertification) }}</span>
+            <span class="derived-formula">Variation − mouvement − écarts</span>
+          </div>
+        </div>
+
+        <div class="panel-actions">
+          <button type="button" class="secondary-btn" (click)="loadSavedSoldes()" [disabled]="isLoadingSoldes">
+            <i class="fas fa-database"></i> Charger soldes enregistrés
+          </button>
+        </div>
+      </section>
+
+      <section class="panel aggregates-panel">
+        <div class="panel-header">
+          <h3><i class="fas fa-chart-pie"></i> Agrégats des écarts</h3>
+        </div>
+
+        <table class="aggregates-table">
+          <thead>
+            <tr>
+              <th>Type</th>
+              <th>Nombre</th>
+              <th>Volume</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let row of computed.aggregates">
+              <td>
+                <span class="type-badge" [attr.data-code]="row.code">{{ row.label }}</span>
+              </td>
+              <td>{{ row.count | number:'1.0-0' }}</td>
+              <td class="volume">{{ row.volume | number:'1.0-0' }}</td>
+            </tr>
+          </tbody>
+          <tfoot>
+            <tr>
+              <td><strong>Volume correspondances</strong></td>
+              <td>{{ computed.totals.matches | number:'1.0-0' }}</td>
+              <td class="volume"><strong>{{ computed.volumeMatches | number:'1.0-0' }}</strong></td>
+            </tr>
+          </tfoot>
+        </table>
+
+        <div class="quick-links">
+          <button type="button" class="link-card" (click)="goToMatches()">
+            <i class="fas fa-check-double"></i> Correspondances
+          </button>
+          <button type="button" class="link-card" (click)="goToEcartBo()">
+            <i class="fas fa-exclamation-circle"></i> Écarts BO
+          </button>
+          <button type="button" class="link-card" (click)="goToEcartPartner()">
+            <i class="fas fa-exclamation-triangle"></i> Écarts Partenaire
+          </button>
+        </div>
+      </section>
+    </div>
+
+    <section class="panel summary-panel">
+      <div class="panel-header">
+        <h3><i class="fas fa-info-circle"></i> Synthèse réconciliation</h3>
+      </div>
+      <div class="summary-grid">
+        <div class="summary-item">
+          <span>Lignes BO (TRXBO)</span>
+          <strong>{{ computed.totals.totalBoRecords | number:'1.0-0' }}</strong>
+        </div>
+        <div class="summary-item">
+          <span>Lignes Partenaire (OPPART)</span>
+          <strong>{{ computed.totals.totalPartnerRecords | number:'1.0-0' }}</strong>
+        </div>
+        <div class="summary-item">
+          <span>Correspondances multiples</span>
+          <strong>{{ computed.totals.mismatches | number:'1.0-0' }}</strong>
+        </div>
+        <div class="summary-item">
+          <span>Volume écarts BO</span>
+          <strong>{{ computed.volumeEcartBo | number:'1.0-0' }}</strong>
+        </div>
+        <div class="summary-item">
+          <span>Volume écarts Partenaire</span>
+          <strong>{{ computed.volumeEcartPartner | number:'1.0-0' }}</strong>
+        </div>
+      </div>
+    </section>
+  </ng-container>
+</div>

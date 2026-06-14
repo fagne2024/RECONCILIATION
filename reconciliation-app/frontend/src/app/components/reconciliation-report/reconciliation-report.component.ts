@@ -22,7 +22,9 @@ import { LoggerService } from '../../services/logger.service';
 import { fixGarbledCharacters } from '../../utils/encoding-fixer';
 import {
     auditSnapshotStatutClass as statutAuditPillClassFn,
-    auditSnapshotTraitementClass as traitementAuditPillClassFn
+    auditSnapshotTraitementClass as traitementAuditPillClassFn,
+    resolveTraitementKind as sharedResolveTraitementKind,
+    traitementDisplayLabel as sharedTraitementDisplayLabel
 } from '../../shared/result8rec-audit-display';
 import * as ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
@@ -690,14 +692,13 @@ export interface ReconciliationReportData {
                                     <textarea [(ngModel)]="item.comment" class="edit-textarea" placeholder="Commentaire" rows="2"></textarea>
                                 </ng-template>
                             </td>
-                            <td class="select-cell traitement-cell">
+                            <td class="select-cell traitement-cell" [ngClass]="'traitement-cell--' + resolveTraitementKind(item.traitement)">
                                 <ng-container *ngIf="editingTraitementRow !== item; else editTraitement">
                                     <span [class]="getTraitementClass(item.traitement)" 
-                                          class="traitement-badge" 
                                           [class.locked]="isRowLocked(item)"
                                           (click)="!isRowLocked(item) && startEditTraitement(item)" 
                                           [style.cursor]="isRowLocked(item) ? 'not-allowed' : 'pointer'"
-                                          [title]="isRowLocked(item) ? 'Ligne verrouillée (Validé et clôturé)' : 'Cliquer pour modifier'">
+                                          [title]="isRowLocked(item) ? 'Ligne verrouillée (Terminé)' : 'Cliquer pour modifier'">
                                         {{ getTraitementDisplayLabel(item.traitement) }}
                                     </span>
                                 </ng-container>
@@ -2468,6 +2469,24 @@ export interface ReconciliationReportData {
 
         .traitement-cell {
             min-width: 168px;
+            text-align: center;
+            vertical-align: middle;
+
+            &.traitement-cell--support {
+                background: rgba(254, 243, 199, 0.45);
+            }
+            &.traitement-cell--cdo {
+                background: rgba(209, 236, 241, 0.55);
+            }
+            &.traitement-cell--group {
+                background: rgba(219, 234, 254, 0.45);
+            }
+            &.traitement-cell--termine {
+                background: rgba(209, 250, 229, 0.45);
+            }
+            &.traitement-cell--none {
+                background: rgba(243, 244, 246, 0.75);
+            }
             
             .traitement-badge {
                 display: inline-block;
@@ -2476,7 +2495,8 @@ export interface ReconciliationReportData {
                 font-size: 0.72rem;
                 font-weight: 700;
                 line-height: 1.3;
-                white-space: nowrap;
+                white-space: normal;
+                max-width: 100%;
                 transition: all 0.2s;
                 border: 1px solid transparent;
                 box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
@@ -5909,7 +5929,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                     glpiId: item.glpiId || '',
                     status: item.status,
                     comment: item.comment,
-                    traitement: item.traitement || ''
+                    traitement: this.getTraitementDisplayLabel(item.traitement)
                 });
 
                 // Couleur de fond pour toute la ligne selon le taux de correspondance
@@ -7925,7 +7945,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             'Taux': `${item.matchRate.toFixed(2)}%`,
             'Statut': item.status,
             'Commentaire': item.comment,
-            'Traitement': item.traitement || '',
+            'Traitement': this.getTraitementDisplayLabel(item.traitement),
             'ID TICKET': item.glpiId
         }));
         
@@ -8682,42 +8702,12 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
     /** Catégorie métier du traitement (alignée avec le rapport BO vs Partenaire). */
     resolveTraitementKind(traitement?: string | null): 'support' | 'cdo' | 'group' | 'termine' | 'none' {
         const normalized = this.normalizeTraitementValue(traitement);
-        if (!normalized || normalized === '—') {
-            return 'none';
-        }
-        const t = normalized
-            .toLowerCase()
-            .normalize('NFD')
-            .replace(/\p{M}/gu, '');
-        if (t.includes('support')) {
-            return 'support';
-        }
-        if (t.includes('termine')) {
-            return 'termine';
-        }
-        if (t.includes('group')) {
-            return 'group';
-        }
-        if (t.includes('cdo') || t.includes('responsable')) {
-            return 'cdo';
-        }
-        return 'none';
+        return sharedResolveTraitementKind(normalized);
     }
 
     /** Libellé affiché dans la colonne Traitement. */
     getTraitementDisplayLabel(traitement?: string | null): string {
-        switch (this.resolveTraitementKind(traitement)) {
-            case 'support':
-                return 'En cours de traitement';
-            case 'cdo':
-                return 'Validé';
-            case 'group':
-                return 'En cours de clôture';
-            case 'termine':
-                return 'Validé et clôturé';
-            default:
-                return (traitement || '').trim() || '—';
-        }
+        return sharedTraitementDisplayLabel(this.normalizeTraitementValue(traitement));
     }
 
     getTraitementRowClass(item: ReconciliationReportData): string {
@@ -8730,7 +8720,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         return `traitement-badge traitement-kind--${kind}`;
     }
 
-    /** Indique si le traitement de la ligne est « Terminé » (Validé et clôturé). */
+    /** Indique si le traitement de la ligne est « Terminé ». */
     isTraitementTermine(item: ReconciliationReportData): boolean {
         return this.resolveTraitementKind(item?.traitement) === 'termine';
     }

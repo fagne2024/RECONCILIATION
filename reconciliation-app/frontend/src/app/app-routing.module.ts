@@ -51,6 +51,7 @@ import { GuideUtilisationComponent } from './components/guide-utilisation/guide-
 import { SuiviDesEcartsComponent } from './components/suivi-des-ecarts/suivi-des-ecarts.component';
 import { RapportReconciliationBoPartenaireComponent } from './components/rapport-reconciliation-bo-partenaire/rapport-reconciliation-bo-partenaire.component';
 import { EcartBoSummaryComponent } from './components/ecart-bo-summary/ecart-bo-summary.component';
+import { CertificationSoldeComponent } from './components/certification-solde/certification-solde.component';
 import { RedevanceLoterieComponent } from './components/redevance-loterie/redevance-loterie.component';
 import { AuthGuard } from './guards/auth.guard';
 import { AdminGuard } from './guards/admin.guard';
@@ -86,6 +87,18 @@ const routes: Routes = [
     component: FileUploadComponent,
     canActivate: [AuthGuard, ModuleAccessGuard],
     data: { module: 'Réconciliation', permissions: ['consulter'], assistedOnly: true }
+  },
+  {
+    path: 'certification-solde/upload',
+    component: FileUploadComponent,
+    canActivate: [AuthGuard, ModuleAccessGuard],
+    data: { module: 'Réconciliation', permissions: ['consulter'], assistedOnly: true, certificationMode: true }
+  },
+  {
+    path: 'certification-solde',
+    component: CertificationSoldeComponent,
+    canActivate: [AuthGuard, ModuleAccessGuard],
+    data: { module: 'Réconciliation', permissions: ['consulter'] }
   },
   {
     path: 'column-selection',

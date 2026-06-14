@@ -61,6 +61,7 @@ export class AppComponent implements OnInit {
     '/guide-utilisation': 'Guide Utilisation',
     '/suivi-des-ecarts': 'Suivi des Écarts',
     '/ecart-bo-summary': 'Résumé Écarts BO',
+    '/certification-solde': 'Certification de solde',
     '/redevance-loterie': 'Redevance Loterie'
   };
 

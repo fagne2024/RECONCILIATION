@@ -724,11 +724,20 @@
   min-width: 200px;
 }
 
-.rrbp-table .col-traitement {
+.rrbp-table .col-traitement,
+.rrbp-table .rrbp-traitement-cell {
   text-align: center;
   vertical-align: middle;
-  min-width: 118px;
-  max-width: 160px;
+  min-width: 148px;
+  max-width: 220px;
+  font-size: 0.8rem;
+  line-height: 1.25;
+}
+
+.rrbp-table thead th.col-traitement {
+  background: linear-gradient(180deg, #f1f5f9 0%, #e8eef5 100%);
+  color: #334155;
+  border-color: #cbd5e1;
 }
 
 .rrbp-table .col-statut,
@@ -850,32 +859,74 @@
 
 .rrbp-traitement-badge {
   display: inline-block;
-  padding: 3px 10px;
+  padding: 5px 11px;
   border-radius: 999px;
   font-size: 0.72rem;
-  font-weight: 600;
-  white-space: nowrap;
-  line-height: 1.25;
+  font-weight: 700;
+  white-space: normal;
+  line-height: 1.3;
+  max-width: 100%;
+  border: 1px solid transparent;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
 }
 
-.rrbp-traitement-niveau-support {
-  background: #fff3cd;
-  color: #856404;
+.rrbp-traitement-cell--support {
+  background: rgba(254, 243, 199, 0.45);
+}
+.rrbp-traitement-kind--support {
+  background: linear-gradient(180deg, #fef3c7 0%, #fde68a 100%);
+  color: #92400e;
+  border-color: #f59e0b;
 }
 
-.rrbp-traitement-responsable-cdo {
-  background: #d1ecf1;
+.rrbp-traitement-cell--cdo {
+  background: rgba(209, 236, 241, 0.55);
+}
+.rrbp-traitement-kind--cdo {
+  background: linear-gradient(180deg, #d1ecf1 0%, #bee5eb 100%);
   color: #0c5460;
+  border-color: #17a2b8;
 }
 
-.rrbp-traitement-niveau-group {
-  background: #cfe2ff;
-  color: #084298;
+.rrbp-traitement-cell--group {
+  background: rgba(219, 234, 254, 0.45);
+}
+.rrbp-traitement-kind--group {
+  background: linear-gradient(180deg, #dbeafe 0%, #bfdbfe 100%);
+  color: #1e3a8a;
+  border-color: #3b82f6;
 }
 
-.rrbp-traitement-terminé {
-  background: #d4edda;
-  color: #155724;
+.rrbp-traitement-cell--termine {
+  background: rgba(209, 250, 229, 0.45);
+}
+.rrbp-traitement-kind--termine {
+  background: linear-gradient(180deg, #d1fae5 0%, #a7f3d0 100%);
+  color: #065f46;
+  border-color: #10b981;
+}
+
+.rrbp-traitement-cell--neutre,
+.rrbp-traitement-kind--none {
+  background: #f3f4f6;
+  color: #6b7280;
+  border-color: #d1d5db;
+}
+
+.rrbp-table tbody tr.rrbp-row-group .rrbp-traitement-cell--support {
+  background: rgba(254, 243, 199, 0.55);
+}
+.rrbp-table tbody tr.rrbp-row-group .rrbp-traitement-cell--cdo {
+  background: rgba(209, 236, 241, 0.6);
+}
+.rrbp-table tbody tr.rrbp-row-group .rrbp-traitement-cell--group {
+  background: rgba(219, 234, 254, 0.55);
+}
+.rrbp-table tbody tr.rrbp-row-group .rrbp-traitement-cell--termine {
+  background: rgba(209, 250, 229, 0.55);
+}
+.rrbp-table tbody tr.rrbp-row-group .rrbp-traitement-cell--neutre {
+  background: rgba(243, 244, 246, 0.75);
 }
 
 .rrbp-table tbody td,

@@ -22,7 +22,10 @@ import { BO_PARTENAIRE_SERVICE_GROUP_TOKENS } from '../../constants/bo-partenair
 import { PopupService } from '../../services/popup.service';
 import {
   auditSnapshotStatutClass as statutAuditPillClassFn,
-  auditSnapshotTraitementClass as traitementAuditPillClassFn
+  auditSnapshotTraitementClass as traitementAuditPillClassFn,
+  resolveTraitementKind,
+  traitementDisplayLabel,
+  statutFromTraitementDisplayLabel
 } from '../../shared/result8rec-audit-display';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
@@ -668,7 +671,7 @@ export class RapportReconciliationBoPartenaireComponent implements OnInit, OnDes
     for (const svc of servicesToUse) {
       const agg = this.aggregatesPourService(svc, filtered, dateStart, dateEnd, envNorm);
       const repLines = this.ligneRapportPourService(filtered, svc, envNorm);
-      const traitement = this.dominantTraitementLabel(repLines.map((l) => l.traitement));
+      const traitement = this.dominantTraitementRawValue(repLines.map((l) => l.traitement));
       const result8recIds = [
         ...new Set(
           repLines
@@ -755,58 +758,32 @@ export class RapportReconciliationBoPartenaireComponent implements OnInit, OnDes
 
   /** Classes badge alignées sur le rapport de réconciliation (traitement-*) */
   getTraitementClass(traitement: string): string {
-    const t = (traitement || '').trim();
-    if (!t || t === '—') {
-      return 'rrbp-traitement-badge';
+    const kind = resolveTraitementKind(traitement);
+    return `rrbp-traitement-badge rrbp-traitement-kind--${kind}`;
+  }
+
+  /** Fond coloré de la cellule Traitement (aligné sur la colonne Statut). */
+  classeTraitementCell(traitement: string): string {
+    const kind = resolveTraitementKind(traitement);
+    const base = 'col-traitement rrbp-traitement-cell';
+    if (kind === 'none') {
+      return `${base} rrbp-traitement-cell--neutre`;
     }
-    const slug = t.toLowerCase().replace(/\s+/g, '-');
-    return `rrbp-traitement-badge rrbp-traitement-${slug}`;
+    return `${base} rrbp-traitement-cell--${kind}`;
   }
 
   /** Catégorie affichée dans la colonne Statut (couleurs + libellé). */
   private resolveStatutKind(
     traitement: string
   ): 'support' | 'cdo' | 'group' | 'termine' | 'none' {
-    const raw = (traitement || '').trim();
-    if (!raw || raw === '—') {
-      return 'none';
-    }
-    const t = raw
-      .toLowerCase()
-      .normalize('NFD')
-      .replace(/\p{M}/gu, '');
-    if (t.includes('support')) {
-      return 'support';
-    }
-    if (t.includes('termine')) {
-      return 'termine';
-    }
-    if (t.includes('group')) {
-      return 'group';
-    }
-    if (t.includes('cdo') || t.includes('responsable')) {
-      return 'cdo';
-    }
-    return 'none';
+    return resolveTraitementKind(traitement);
   }
 
   /**
-   * Libellé lisible côté métier à partir du traitement (result8rec).
-   * Support → en cours ; CDO → validé ; GROUP → en cours de clôture ; Terminé → validé et clôturé.
+   * Libellé métier affiché dans la colonne Statut (distinct du libellé Traitement).
    */
   libelleStatutFromTraitement(traitement: string): string {
-    switch (this.resolveStatutKind(traitement)) {
-      case 'support':
-        return 'En cours de traitement';
-      case 'cdo':
-        return 'Validé';
-      case 'group':
-        return 'En cours de clôture';
-      case 'termine':
-        return 'Validé et clôturé';
-      default:
-        return '—';
-    }
+    return statutFromTraitementDisplayLabel(traitement);
   }
 
   /** Classes pour la cellule Statut (pastille colorée). */
@@ -875,55 +852,50 @@ export class RapportReconciliationBoPartenaireComponent implements OnInit, OnDes
   }
 
   displayTraitementLabel(traitement: string): string {
-    const value = (traitement || '').trim();
-    if (value === 'Niveau Group') {
-      return 'Niveau GROUP';
-    }
-    return value;
+    return traitementDisplayLabel(traitement);
   }
 
   /**
-   * Libellé de traitement agrégé (plusieurs agences / dates pour le même service).
-   * Même vocabulaire que le rapport : Niveau Support, Responsable CDO, Niveau GROUP, Terminé.
+   * Valeur métier dominante (stockée) pour agrégation multi-lignes.
    */
-  private dominantTraitementLabel(values: (string | undefined | null)[]): string {
+  private dominantTraitementRawValue(values: (string | undefined | null)[]): string {
     const cleaned = values
-      .map((v) => this.displayTraitementLabel(v ?? ''))
-      .map((v) => v.trim())
+      .map((v) => (v ?? '').trim())
       .filter((v) => v.length > 0 && v !== '—');
     if (!cleaned.length) {
-      return '—';
+      return '';
     }
+
+    const kindRank: Record<'support' | 'cdo' | 'group' | 'termine' | 'none', number> = {
+      support: 4,
+      cdo: 3,
+      group: 2,
+      termine: 1,
+      none: 0
+    };
+
     const freq = new Map<string, number>();
     for (const v of cleaned) {
       freq.set(v, (freq.get(v) || 0) + 1);
     }
-    const rank = (t: string) => {
-      const n = t.trim();
-      if (n === 'Niveau Support') {
-        return 4;
-      }
-      if (n === 'Responsable CDO') {
-        return 3;
-      }
-      if (n === 'Niveau GROUP') {
-        return 2;
-      }
-      if (n === 'Terminé') {
-        return 1;
-      }
-      return 0;
-    };
+
     let best = cleaned[0];
     for (const t of freq.keys()) {
-      const bt = best;
       const cf = freq.get(t)!;
-      const bf = freq.get(bt)!;
-      if (cf > bf || (cf === bf && rank(t) > rank(bt))) {
+      const bf = freq.get(best)!;
+      const rankT = kindRank[resolveTraitementKind(t)];
+      const rankBest = kindRank[resolveTraitementKind(best)];
+      if (cf > bf || (cf === bf && rankT > rankBest)) {
         best = t;
       }
     }
+
     return best;
+  }
+
+  private dominantTraitementLabel(values: (string | undefined | null)[]): string {
+    const raw = this.dominantTraitementRawValue(values);
+    return raw ? traitementDisplayLabel(raw) : '—';
   }
 
   isGroupExpanded(groupId: string): boolean {
@@ -1260,7 +1232,7 @@ export class RapportReconciliationBoPartenaireComponent implements OnInit, OnDes
     const mergedDbIds = this.mergeResult8RecIdsFromMembers(members);
     return {
       service: '',
-      traitement: this.dominantTraitementLabel(members.map((m) => m.traitement)),
+      traitement: this.dominantTraitementRawValue(members.map((m) => m.traitement)),
       boNombre,
       boVolume,
       partenaireNombre,

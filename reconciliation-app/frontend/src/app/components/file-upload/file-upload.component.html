@@ -1,5 +1,5 @@
-<div class="file-upload-container" [class.assisted-upload-page]="assistedOnly">
-    <div class="assisted-page-header" *ngIf="assistedOnly">
+<div class="file-upload-container" [class.assisted-upload-page]="assistedOnly || certificationMode">
+    <div class="assisted-page-header" *ngIf="assistedOnly && !certificationMode">
         <button type="button" class="back-btn" (click)="goBackToLauncher()">
             <i class="fas fa-arrow-left"></i>
             Retour au lanceur
@@ -7,9 +7,17 @@
         <h2>Mode Assisté</h2>
         <p>Chargez vos fichiers BO et Partenaire, appliquez les modèles de traitement si besoin, puis lancez la réconciliation.</p>
     </div>
+    <div class="assisted-page-header certification-upload-header" *ngIf="certificationMode">
+        <button type="button" class="back-btn" (click)="goBackFromAssistedUpload()">
+            <i class="fas fa-arrow-left"></i>
+            Retour certification
+        </button>
+        <h2>Certification de solde</h2>
+        <p>Importez les fichiers TRXBO et OPPART pour réconcilier et certifier le solde (ouverture, clôture, variation et agrégats d'écarts).</p>
+    </div>
 
     <!-- Mode de réconciliation (masqué en mode assisté) -->
-    <div class="reconciliation-mode-selector" *ngIf="!assistedOnly">
+    <div class="reconciliation-mode-selector" *ngIf="!isAssistedLike">
         <h3>🔄 Mode de Réconciliation</h3>
         <div class="mode-options">
             <label class="mode-option">
@@ -40,7 +48,7 @@
         </div>
     </div>
 
-    <div class="assisted-option-banner" *ngIf="assistedOnly">
+    <div class="assisted-option-banner" *ngIf="isAssistedLike">
         <i class="fas fa-magic"></i>
         <div>
             <strong>Option 2</strong>
@@ -689,19 +697,19 @@
         </div>
 
         <!-- Boutons pour le mode automatique -->
-        <div class="button-container" [class.assisted-actions]="assistedOnly" *ngIf="reconciliationMode === 'automatic'">
-            <button class="btn proceed-btn" [class.reconciliation-launch-btn]="assistedOnly" [disabled]="!canProceedAuto()" (click)="onAutoProceed()">
-                {{ assistedOnly ? 'Lancer la réconciliation' : '🔄 Lancer la Réconciliation Automatique' }}
+        <div class="button-container" [class.assisted-actions]="isAssistedLike" *ngIf="reconciliationMode === 'automatic'">
+            <button class="btn proceed-btn" [class.reconciliation-launch-btn]="isAssistedLike" [disabled]="!canProceedAuto()" (click)="onAutoProceed()">
+                {{ certificationMode ? 'Lancer la certification' : (assistedOnly ? 'Lancer la réconciliation' : '🔄 Lancer la Réconciliation Automatique') }}
             </button>
             <button
-                *ngIf="assistedOnly"
+                *ngIf="isAssistedLike"
                 type="button"
                 class="btn file-traitement-btn"
                 [disabled]="traitementProcessing"
                 (click)="onTraitementFichier()">
                 Traitement de fichier
             </button>
-            <div class="action-buttons" *ngIf="!assistedOnly">
+            <div class="action-buttons" *ngIf="!isAssistedLike">
                 <button class="btn dashboard-btn" (click)="goToDashboard()">
                     📈 Dashboard
                 </button>
@@ -1333,7 +1341,7 @@
 </div>
 
 <!-- Modal traitement de fichier (mode assisté) -->
-<div class="traitement-modal-overlay" *ngIf="showTraitementModal && assistedOnly" (click)="closeTraitementModal()">
+<div class="traitement-modal-overlay" *ngIf="showTraitementModal && isAssistedLike" (click)="closeTraitementModal()">
     <div class="traitement-modal" (click)="$event.stopPropagation()">
         <div class="traitement-modal-header">
             <h3><i class="fas fa-file-medical"></i> Traitement de fichier</h3>

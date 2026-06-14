@@ -285,7 +285,7 @@
                   <td class="col-service">
                     <div class="svc-main">{{ line.row.service }}</div>
                   </td>
-                  <td class="col-traitement">
+                  <td [class]="classeTraitementCell(line.row.traitement)">
                     <span [class]="getTraitementClass(line.row.traitement)">{{ displayTraitementLabel(line.row.traitement) }}</span>
                   </td>
                   <td [class]="classeStatutCell(line.row.traitement)">
@@ -361,7 +361,7 @@
                     <span class="rrbp-group-label">{{ line.label }}</span>
                     <span class="rrbp-group-meta">{{ line.count }} services · total groupe</span>
                   </td>
-                  <td class="col-traitement">
+                  <td [class]="classeTraitementCell(line.aggregate.traitement)">
                     <span [class]="getTraitementClass(line.aggregate.traitement)">{{ displayTraitementLabel(line.aggregate.traitement) }}</span>
                   </td>
                   <td [class]="classeStatutCell(line.aggregate.traitement)">
@@ -424,7 +424,7 @@
                   <td class="col-service">
                     <div class="svc-main rrbp-detail-indent">{{ line.row.service }}</div>
                   </td>
-                  <td class="col-traitement">
+                  <td [class]="classeTraitementCell(line.row.traitement)">
                     <span [class]="getTraitementClass(line.row.traitement)">{{ displayTraitementLabel(line.row.traitement) }}</span>
                   </td>
                   <td [class]="classeStatutCell(line.row.traitement)">

@@ -17,6 +17,7 @@ import { Router, ActivatedRoute } from '@angular/router';
 import { AppStateService } from '../../services/app-state.service';
 import { ReconciliationTabsService } from '../../services/reconciliation-tabs.service';
 import { forkJoin, Subscription } from 'rxjs';
+import { take } from 'rxjs/operators';
 import { PopupService } from '../../services/popup.service';
 import { ProgressIndicatorService } from '../../services/progress-indicator.service';
 
@@ -39,6 +40,8 @@ export class FileUploadComponent implements OnInit, OnDestroy {
 
     /** Page /upload-assisted : Option 2 uniquement (mode assisté). */
     assistedOnly = false;
+    /** Certification de solde TRXBO/OPPART : redirection vers /certification-solde après réconciliation. */
+    certificationMode = false;
 
     reconciliationMode: 'manual' | 'automatic' = 'manual'; // 'super-auto' commenté
     reconciliationType: '1-1' = '1-1'; // Autres types commentés: '1-2' | '1-3' | '1-4' | '1-5'
@@ -224,11 +227,24 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         this.reconciliationType = serviceType === '1-1' ? '1-1' : '1-1'; // Forcer à 1-1
     }
 
+    get isAssistedLike(): boolean {
+        return this.assistedOnly || this.certificationMode;
+    }
+
     ngOnInit(): void {
         this.assistedOnly = this.route.snapshot.data['assistedOnly'] === true;
-        if (this.assistedOnly) {
+        this.certificationMode = this.route.snapshot.data['certificationMode'] === true;
+        if (this.assistedOnly || this.certificationMode) {
             this.reconciliationMode = 'automatic';
         }
+    }
+
+    goBackFromAssistedUpload(): void {
+        if (this.certificationMode) {
+            this.router.navigate(['/certification-solde']);
+            return;
+        }
+        this.goBackToLauncher();
     }
 
     goBackToLauncher(): void {
@@ -6588,19 +6604,24 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         console.log('🔵 [CLIC_SUIVANT] Pourcentage:', this.reconciliationProgress.percentage);
         console.log('🔵 [CLIC_SUIVANT] Résultats disponibles:', !!this.appStateService.getReconciliationResults());
         
-        if (this.reconciliationProgress.percentage === 100 && 
-            this.appStateService.getReconciliationResults()) {
+        if (this.reconciliationProgress.percentage === 100) {
             const navStart = performance.now();
-            console.log('🔵 [CLIC_SUIVANT] Étape 4: Début navigation vers /results...');
-            console.log('🔵 [CLIC_SUIVANT] Router.navigate appelé');
-            this.router.navigate(['/results']).then(() => {
-                const navDuration = performance.now() - navStart;
-                console.log(`🔵 [CLIC_SUIVANT] Navigation réussie: ${navDuration.toFixed(2)}ms`);
-                console.log('🔵 [CLIC_SUIVANT] ============================================');
-            }).catch((error) => {
-                const navDuration = performance.now() - navStart;
-                console.error(`🔵 [CLIC_SUIVANT] Erreur navigation: ${navDuration.toFixed(2)}ms`, error);
-                console.log('🔵 [CLIC_SUIVANT] ============================================');
+            const targetRoute = this.certificationMode ? '/certification-solde' : '/results';
+            console.log(`🔵 [CLIC_SUIVANT] Étape 4: Début navigation vers ${targetRoute}...`);
+            this.appStateService.reconciliationResult$.pipe(take(1)).subscribe(results => {
+                if (!results) {
+                    console.log('🔵 [CLIC_SUIVANT] Pas de résultats, navigation annulée');
+                    return;
+                }
+                this.router.navigate([targetRoute]).then(() => {
+                    const navDuration = performance.now() - navStart;
+                    console.log(`🔵 [CLIC_SUIVANT] Navigation réussie: ${navDuration.toFixed(2)}ms`);
+                    console.log('🔵 [CLIC_SUIVANT] ============================================');
+                }).catch((error) => {
+                    const navDuration = performance.now() - navStart;
+                    console.error(`🔵 [CLIC_SUIVANT] Erreur navigation: ${navDuration.toFixed(2)}ms`, error);
+                    console.log('🔵 [CLIC_SUIVANT] ============================================');
+                });
             });
         } else {
             console.log('🔵 [CLIC_SUIVANT] Conditions non remplies, pas de navigation');
