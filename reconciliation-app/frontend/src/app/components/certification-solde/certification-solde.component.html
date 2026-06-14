@@ -76,27 +76,36 @@
           </button>
         </div>
 
-        <div class="form-row two-cols">
+        <div class="form-row">
           <div class="field">
             <label for="numeroCompte">Numéro de compte</label>
             <input id="numeroCompte" type="text" [(ngModel)]="numeroCompte" placeholder="Ex: 77123456789">
-          </div>
-          <div class="field">
-            <label for="dateCertification">Date de certification</label>
-            <input id="dateCertification" type="date" [(ngModel)]="dateCertification">
           </div>
         </div>
 
         <div class="form-row two-cols">
           <div class="field">
-            <label for="soldeOuverture">Solde d'ouverture</label>
+            <label for="dateCertificationDe">Période — Du</label>
+            <input id="dateCertificationDe" type="date" [(ngModel)]="dateCertificationDe" (change)="onDateRangeChange()">
+            <small class="hint">Solde d'ouverture à 00:00:00</small>
+          </div>
+          <div class="field">
+            <label for="dateCertificationAu">Période — Au</label>
+            <input id="dateCertificationAu" type="date" [(ngModel)]="dateCertificationAu" (change)="onDateRangeChange()">
+            <small class="hint">Solde de clôture à 23:59:59</small>
+          </div>
+        </div>
+
+        <div class="form-row two-cols">
+          <div class="field">
+            <label for="soldeOuverture">Solde d'ouverture ({{ formatDateTimeDe() || '—' }})</label>
             <input id="soldeOuverture" type="number" [(ngModel)]="soldeOuverture" (ngModelChange)="onSoldeChange()" placeholder="0">
             <small *ngIf="computed.soldeOuvertureOppart != null" class="hint">
               Suggestion OPPART : {{ formatNumber(computed.soldeOuvertureOppart) }}
             </small>
           </div>
           <div class="field">
-            <label for="soldeCloture">Solde de clôture</label>
+            <label for="soldeCloture">Solde de clôture ({{ formatDateTimeAu() || '—' }})</label>
             <input id="soldeCloture" type="number" [(ngModel)]="soldeCloture" (ngModelChange)="onSoldeChange()" placeholder="0">
             <small *ngIf="computed.soldeClotureOppart != null" class="hint">
               Suggestion OPPART : {{ formatNumber(computed.soldeClotureOppart) }}
@@ -115,7 +124,7 @@
           <div class="derived-card">
             <span class="derived-label">Mouvement net OPPART</span>
             <span class="derived-value">{{ formatNumber(computed.mouvementNetOppart) }}</span>
-            <span class="derived-formula">Σ montants fichier OPPART</span>
+            <span class="derived-formula">Σ montants fichier OPPART (fichier complet)</span>
           </div>
           <div class="derived-card highlight" [class.alert]="ecartCertification != null && ecartCertification !== 0">
             <span class="derived-label">Écart de certification</span>
@@ -140,7 +149,7 @@
         </div>
 
         <p class="aggregates-hint">
-          TSOP : montant + frais · TRX SF (BO/Partenaire) : frais uniquement · Écart Partenaire : montant OPPART
+          TSOP : montant + frais (écart BO) · Écart : montant OPPART (écart partenaire) · TRX SF : frais uniquement (écart partenaire)
         </p>
 
         <table class="aggregates-table">
@@ -259,7 +268,9 @@
       <section class="pdf-export-section">
         <h2>Informations</h2>
         <table class="pdf-kv-table">
-          <tr><td>Date certification</td><td>{{ dateCertification || '—' }}</td></tr>
+          <tr><td>Période certification (du)</td><td>{{ formatDateTimeDe() || '—' }}</td></tr>
+          <tr><td>Période certification (au)</td><td>{{ formatDateTimeAu() || '—' }}</td></tr>
+          <tr><td>Plage</td><td>{{ formatDateRangeLabel() }}</td></tr>
           <tr><td>Numéro compte</td><td>{{ numeroCompte || '—' }}</td></tr>
         </table>
       </section>
@@ -268,7 +279,9 @@
         <h2>Soldes</h2>
         <table class="pdf-kv-table">
           <tr><td>Solde d'ouverture</td><td>{{ formatNumber(soldeOuverture) }}</td></tr>
+          <tr><td>Horodatage ouverture</td><td>{{ formatDateTimeDe() || '—' }}</td></tr>
           <tr><td>Solde de clôture</td><td>{{ formatNumber(soldeCloture) }}</td></tr>
+          <tr><td>Horodatage clôture</td><td>{{ formatDateTimeAu() || '—' }}</td></tr>
           <tr><td>Suggestion OPPART ouverture</td><td>{{ formatNumber(computed.soldeOuvertureOppart) }}</td></tr>
           <tr><td>Suggestion OPPART clôture</td><td>{{ formatNumber(computed.soldeClotureOppart) }}</td></tr>
           <tr><td>Variation</td><td>{{ formatNumber(variation) }}</td></tr>

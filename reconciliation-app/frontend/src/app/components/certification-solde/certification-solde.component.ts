@@ -33,7 +33,8 @@ export class CertificationSoldeComponent implements OnInit, OnDestroy {
   ecartCertification: number | null = null;
 
   numeroCompte = '';
-  dateCertification = '';
+  dateCertificationDe = '';
+  dateCertificationAu = '';
   commentaire = '';
   isSaving = false;
   isLoadingSoldes = false;
@@ -53,7 +54,9 @@ export class CertificationSoldeComponent implements OnInit, OnDestroy {
   ) {}
 
   ngOnInit(): void {
-    this.dateCertification = this.formatDateInput(new Date());
+    const today = this.formatDateInput(new Date());
+    this.dateCertificationDe = today;
+    this.dateCertificationAu = today;
     this.loadFraisConfigs();
     this.subscription.add(
       this.appState.reconciliationResult$.subscribe(result => {
@@ -114,11 +117,14 @@ export class CertificationSoldeComponent implements OnInit, OnDestroy {
 
       wsCert.addRow([]);
       this.addExcelKeyValueRows(wsCert, [
-        ['Date de certification', this.dateCertification || '—'],
+        ['Période de certification (du)', this.formatDateTimeDe() || '—'],
+        ['Période de certification (au)', this.formatDateTimeAu() || '—'],
         ['Numéro de compte', this.numeroCompte || '—'],
         ['Date export', this.formatExportTimestamp()],
         ['Solde d\'ouverture', this.soldeOuverture],
+        ['Horodatage ouverture', this.formatDateTimeDe() || '—'],
         ['Solde de clôture', this.soldeCloture],
+        ['Horodatage clôture', this.formatDateTimeAu() || '—'],
         ['Suggestion OPPART ouverture', this.computed.soldeOuvertureOppart],
         ['Suggestion OPPART clôture', this.computed.soldeClotureOppart],
         ['Variation', this.variation],
@@ -270,9 +276,10 @@ export class CertificationSoldeComponent implements OnInit, OnDestroy {
 
   private buildExportFileBase(): string {
     const compte = (this.numeroCompte || 'compte').replace(/[^\w-]+/g, '-');
-    const date = (this.dateCertification || new Date().toISOString().slice(0, 10)).replace(/-/g, '');
+    const dateDe = (this.dateCertificationDe || new Date().toISOString().slice(0, 10)).replace(/-/g, '');
+    const dateAu = (this.dateCertificationAu || dateDe).replace(/-/g, '');
     const ts = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14);
-    return `Certification-Solde-${compte}-${date}-${ts}`;
+    return `Certification-Solde-${compte}-${dateDe}-${dateAu}-${ts}`;
   }
 
   private styleExcelHeaderRow(row: ExcelJS.Row): void {
@@ -315,7 +322,9 @@ export class CertificationSoldeComponent implements OnInit, OnDestroy {
       response: this.response,
       partnerData,
       boData,
-      fraisConfigs: this.fraisConfigs
+      fraisConfigs: this.fraisConfigs,
+      dateDe: this.dateCertificationDe,
+      dateAu: this.dateCertificationAu
     });
 
     if (this.soldeOuverture == null && this.computed.soldeOuvertureOppart != null) {
@@ -332,6 +341,21 @@ export class CertificationSoldeComponent implements OnInit, OnDestroy {
     this.recalculateDerived();
   }
 
+  onDateRangeChange(): void {
+    this.normalizeDateRange();
+    this.refreshComputed();
+  }
+
+  private normalizeDateRange(): void {
+    if (this.dateCertificationDe && this.dateCertificationAu && this.dateCertificationDe > this.dateCertificationAu) {
+      this.dateCertificationAu = this.dateCertificationDe;
+    }
+  }
+
+  private isDateRangeValid(): boolean {
+    return !!(this.dateCertificationDe && this.dateCertificationAu && this.dateCertificationDe <= this.dateCertificationAu);
+  }
+
   recalculateDerived(): void {
     this.variation = this.certificationService.computeVariation(this.soldeOuverture, this.soldeCloture);
     if (!this.computed) {
@@ -345,15 +369,15 @@ export class CertificationSoldeComponent implements OnInit, OnDestroy {
   }
 
   async loadSavedSoldes(): Promise<void> {
-    if (!this.numeroCompte?.trim() || !this.dateCertification) {
-      await this.popupService.showWarning('Renseignez le numéro de compte et la date.', 'Champs requis');
+    if (!this.numeroCompte?.trim() || !this.isDateRangeValid()) {
+      await this.popupService.showWarning('Renseignez le numéro de compte et la période (du / au).', 'Champs requis');
       return;
     }
     this.isLoadingSoldes = true;
     try {
       const [ouverture, cloture] = await Promise.all([
-        this.certificationService.loadSoldeOuverture(this.numeroCompte.trim(), this.dateCertification),
-        this.certificationService.loadSoldeCloture(this.numeroCompte.trim(), this.dateCertification)
+        this.certificationService.loadSoldeOuverture(this.numeroCompte.trim(), this.dateCertificationDe),
+        this.certificationService.loadSoldeCloture(this.numeroCompte.trim(), this.dateCertificationAu)
       ]);
       if (ouverture != null) this.soldeOuverture = ouverture;
       if (cloture != null) this.soldeCloture = cloture;
@@ -376,8 +400,8 @@ export class CertificationSoldeComponent implements OnInit, OnDestroy {
   }
 
   async saveCertification(): Promise<void> {
-    if (!this.numeroCompte?.trim() || !this.dateCertification) {
-      await this.popupService.showWarning('Renseignez le numéro de compte et la date pour sauvegarder.', 'Champs requis');
+    if (!this.numeroCompte?.trim() || !this.isDateRangeValid()) {
+      await this.popupService.showWarning('Renseignez le numéro de compte et la période (du / au) pour sauvegarder.', 'Champs requis');
       return;
     }
     if (this.soldeOuverture == null || this.soldeCloture == null) {
@@ -390,12 +414,12 @@ export class CertificationSoldeComponent implements OnInit, OnDestroy {
       await Promise.all([
         firstValueFrom(this.certificationService.saveSoldeOuverture(
           this.numeroCompte.trim(),
-          this.dateCertification,
+          this.dateCertificationDe,
           this.soldeOuverture
         )),
         firstValueFrom(this.certificationService.saveSoldeCloture(
           this.numeroCompte.trim(),
-          this.dateCertification,
+          this.dateCertificationAu,
           this.soldeCloture
         ))
       ]);
@@ -430,6 +454,29 @@ export class CertificationSoldeComponent implements OnInit, OnDestroy {
 
   formatExportTimestamp(): string {
     return new Date().toLocaleString('fr-FR');
+  }
+
+  formatDateFr(date: string): string {
+    if (!date) return '—';
+    const [y, m, d] = date.split('-');
+    if (!y || !m || !d) return date;
+    return `${d}/${m}/${y}`;
+  }
+
+  formatDateTimeDe(): string {
+    return this.dateCertificationDe ? `${this.formatDateFr(this.dateCertificationDe)} 00:00:00` : '';
+  }
+
+  formatDateTimeAu(): string {
+    return this.dateCertificationAu ? `${this.formatDateFr(this.dateCertificationAu)} 23:59:59` : '';
+  }
+
+  formatDateRangeLabel(): string {
+    if (!this.dateCertificationDe || !this.dateCertificationAu) return '—';
+    if (this.dateCertificationDe === this.dateCertificationAu) {
+      return `${this.formatDateTimeDe()} → ${this.formatDateTimeAu()}`;
+    }
+    return `Du ${this.formatDateTimeDe()} au ${this.formatDateTimeAu()}`;
   }
 
   private formatDateInput(date: Date): string {

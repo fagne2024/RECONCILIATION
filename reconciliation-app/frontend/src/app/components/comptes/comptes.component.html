@@ -232,82 +232,111 @@
     <!-- Filtres et Statistiques -->
     <div class="filters-stats-container">
         <div class="card filters">
-            <h2>Filtres</h2>
-            <form [formGroup]="filterForm" (ngSubmit)="applyFilters()" class="form-grid">
-                <div class="form-field">
-                    <mat-form-field appearance="fill" class="filter-select">
-                        <mat-label>Pays</mat-label>
-                        <mat-select #paysSelect formControlName="pays" multiple (selectionChange)="onPaysChange($event)">
-                            <mat-option>
-                                <ngx-mat-select-search [formControl]="paysSearchCtrl" placeholderLabel="Rechercher un pays..." noEntriesFoundLabel="Aucun pays trouvé"></ngx-mat-select-search>
-                            </mat-option>
-                            <mat-option *ngFor="let pays of filteredPaysList" [value]="pays">
-                                {{ pays }}
-                            </mat-option>
-                        </mat-select>
-                    </mat-form-field>
+            <div class="filters-card-header">
+                <h2>Filtres</h2>
+            </div>
+            <form [formGroup]="filterForm" (ngSubmit)="applyFilters()" class="filters-form">
+                <div class="filters-section">
+                    <div class="filters-section-title">Critères compte</div>
+                    <div class="filters-grid filters-grid--criteria">
+                        <div class="form-field">
+                            <mat-form-field appearance="fill" class="filter-select filter-select--full">
+                                <mat-label>Pays</mat-label>
+                                <mat-select #paysSelect formControlName="pays" multiple (selectionChange)="onPaysChange($event)">
+                                    <mat-option>
+                                        <ngx-mat-select-search [formControl]="paysSearchCtrl" placeholderLabel="Rechercher un pays..." noEntriesFoundLabel="Aucun pays trouvé"></ngx-mat-select-search>
+                                    </mat-option>
+                                    <mat-option *ngFor="let pays of filteredPaysList" [value]="pays">
+                                        {{ pays }}
+                                    </mat-option>
+                                </mat-select>
+                            </mat-form-field>
+                        </div>
+                        <div class="form-field">
+                            <mat-form-field appearance="fill" class="filter-select filter-select--full">
+                                <mat-label>Code Propriétaire</mat-label>
+                                <mat-select #codeProprietaireSelect formControlName="codeProprietaire" multiple (selectionChange)="onCodeProprietaireChange($event)">
+                                    <mat-option>
+                                        <ngx-mat-select-search [formControl]="codeProprietaireSearchCtrl" placeholderLabel="Rechercher un code..." noEntriesFoundLabel="Aucun code trouvé"></ngx-mat-select-search>
+                                    </mat-option>
+                                    <mat-option *ngFor="let code of filteredCodeProprietaireList" [value]="code">
+                                        {{ code }}
+                                    </mat-option>
+                                </mat-select>
+                            </mat-form-field>
+                        </div>
+                        <div class="form-field">
+                            <mat-form-field appearance="fill" class="filter-select filter-select--full">
+                                <mat-label>Catégorie</mat-label>
+                                <mat-select #categorieSelect formControlName="categorie" multiple (selectionChange)="onCategorieChange($event)">
+                                    <mat-option>
+                                        <ngx-mat-select-search [formControl]="categorieSearchCtrl" placeholderLabel="Rechercher une catégorie..." noEntriesFoundLabel="Aucune catégorie trouvée"></ngx-mat-select-search>
+                                    </mat-option>
+                                    <mat-option *ngFor="let categorie of filteredCategorieList" [value]="categorie">
+                                        <span class="categorie-badge" [ngClass]="getCategorieClass(categorie)">
+                                            {{ categorie }}
+                                        </span>
+                                    </mat-option>
+                                </mat-select>
+                            </mat-form-field>
+                        </div>
+                        <div class="form-field">
+                            <mat-form-field appearance="fill" class="filter-select filter-select--full">
+                                <mat-label>Type</mat-label>
+                                <mat-select #typeSelect formControlName="type" multiple (selectionChange)="onTypeChange($event)">
+                                    <mat-option>
+                                        <ngx-mat-select-search [formControl]="typeSearchCtrl" placeholderLabel="Rechercher un type..." noEntriesFoundLabel="Aucun type trouvé"></ngx-mat-select-search>
+                                    </mat-option>
+                                    <mat-option *ngFor="let type of filteredTypeList" [value]="type">
+                                        {{ type }}
+                                    </mat-option>
+                                </mat-select>
+                            </mat-form-field>
+                        </div>
+                    </div>
                 </div>
-                <div class="form-field">
-                    <mat-form-field appearance="fill" class="filter-select">
-                        <mat-label>Code Propriétaire</mat-label>
-                        <mat-select #codeProprietaireSelect formControlName="codeProprietaire" multiple (selectionChange)="onCodeProprietaireChange($event)">
-                            <mat-option>
-                                <ngx-mat-select-search [formControl]="codeProprietaireSearchCtrl" placeholderLabel="Rechercher un code..." noEntriesFoundLabel="Aucun code trouvé"></ngx-mat-select-search>
-                            </mat-option>
-                            <mat-option *ngFor="let code of filteredCodeProprietaireList" [value]="code">
-                                {{ code }}
-                            </mat-option>
-                        </mat-select>
-                    </mat-form-field>
+
+                <div class="filters-section filters-section--period">
+                    <div class="filters-section-title">Période</div>
+                    <div class="filters-grid filters-grid--period">
+                        <div class="form-field">
+                            <mat-form-field appearance="fill" class="filter-select filter-select--full">
+                                <mat-label>Date de début</mat-label>
+                                <input matInput type="date" formControlName="dateDebut">
+                            </mat-form-field>
+                        </div>
+                        <div class="form-field filters-period-separator" aria-hidden="true">
+                            <span>→</span>
+                        </div>
+                        <div class="form-field">
+                            <mat-form-field appearance="fill" class="filter-select filter-select--full">
+                                <mat-label>Date de fin</mat-label>
+                                <input matInput type="date" formControlName="dateFin">
+                            </mat-form-field>
+                        </div>
+                    </div>
                 </div>
-                <div class="form-field">
-                    <mat-form-field appearance="fill" class="filter-select">
-                        <mat-label>Catégorie</mat-label>
-                        <mat-select #categorieSelect formControlName="categorie" multiple (selectionChange)="onCategorieChange($event)">
-                            <mat-option>
-                                <ngx-mat-select-search [formControl]="categorieSearchCtrl" placeholderLabel="Rechercher une catégorie..." noEntriesFoundLabel="Aucune catégorie trouvée"></ngx-mat-select-search>
-                            </mat-option>
-                            <mat-option *ngFor="let categorie of filteredCategorieList" [value]="categorie">
-                                <span class="categorie-badge" [ngClass]="getCategorieClass(categorie)">
-                                    {{ categorie }}
-                                </span>
-                            </mat-option>
-                        </mat-select>
-                    </mat-form-field>
-                </div>
-                <div class="form-field">
-                    <mat-form-field appearance="fill" class="filter-select">
-                        <mat-label>Type</mat-label>
-                        <mat-select #typeSelect formControlName="type" multiple (selectionChange)="onTypeChange($event)">
-                            <mat-option>
-                                <ngx-mat-select-search [formControl]="typeSearchCtrl" placeholderLabel="Rechercher un type..." noEntriesFoundLabel="Aucun type trouvé"></ngx-mat-select-search>
-                            </mat-option>
-                            <mat-option *ngFor="let type of filteredTypeList" [value]="type">
-                                {{ type }}
-                            </mat-option>
-                        </mat-select>
-                    </mat-form-field>
-                </div>
-                 <div class="form-field">
-                    <label for="dateDebut">Date de début</label>
-                    <input id="dateDebut" type="date" formControlName="dateDebut" >
-                </div>
-                 <div class="form-field">
-                    <label for="dateFin">Date de fin</label>
-                    <input id="dateFin" type="date" formControlName="dateFin" >
-                </div>
-                <div class="form-actions">
-                    <button type="submit" class="btn primary">Filtrer</button>
-                    <button type="button" (click)="clearFilters()" class="btn">Réinitialiser</button>
-                    <button type="button" class="btn" (click)="downloadSoldeBoTemplate()" title="CSV : Date, Numéro de compte, Montant">
-                        <i class="fas fa-file-download"></i> Modèle solde BO
-                    </button>
-                    <input #soldeBoBulkFileInput type="file" accept=".csv,.txt,.xlsx,.xls,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" style="display:none"
-                           (change)="onSoldeBoBulkFileSelected($event); soldeBoBulkFileInput.value = ''">
-                    <button type="button" class="btn" (click)="soldeBoBulkFileInput.click()" [disabled]="isImportingSoldeBoBulk"
-                            title="Enregistrer les soldes BO ligne par ligne (même format que le modèle)">
-                        <i class="fas fa-file-upload"></i> {{ isImportingSoldeBoBulk ? 'Import…' : 'Importer soldes BO' }}
-                    </button>
+
+                <div class="filters-actions">
+                    <div class="filters-actions-main">
+                        <button type="submit" class="btn primary">
+                            <i class="fas fa-filter"></i> Filtrer
+                        </button>
+                        <button type="button" (click)="clearFilters()" class="btn">
+                            <i class="fas fa-undo"></i> Réinitialiser
+                        </button>
+                    </div>
+                    <div class="filters-actions-tools">
+                        <button type="button" class="btn" (click)="downloadSoldeBoTemplate()" title="CSV : Date, Numéro de compte, Montant">
+                            <i class="fas fa-file-download"></i> Modèle solde BO
+                        </button>
+                        <input #soldeBoBulkFileInput type="file" accept=".csv,.txt,.xlsx,.xls,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" style="display:none"
+                               (change)="onSoldeBoBulkFileSelected($event); soldeBoBulkFileInput.value = ''">
+                        <button type="button" class="btn" (click)="soldeBoBulkFileInput.click()" [disabled]="isImportingSoldeBoBulk"
+                                title="Enregistrer les soldes BO ligne par ligne (même format que le modèle)">
+                            <i class="fas fa-file-upload"></i> {{ isImportingSoldeBoBulk ? 'Import…' : 'Importer soldes BO' }}
+                        </button>
+                    </div>
                 </div>
             </form>
         </div>

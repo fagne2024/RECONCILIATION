@@ -38,6 +38,8 @@ export interface CertificationSoldeContext {
   partnerData: Record<string, string>[];
   boData: Record<string, string>[];
   fraisConfigs?: FraisTransaction[];
+  dateDe?: string;
+  dateAu?: string;
 }
 
 export interface CertificationSoldeComputed {
@@ -68,23 +70,20 @@ export class CertificationSoldeService {
   constructor(private http: HttpClient) {}
 
   compute(context: CertificationSoldeContext): CertificationSoldeComputed {
-    const { response, partnerData, boData, fraisConfigs = [] } = context;
+    const { response, partnerData, boData, fraisConfigs = [], dateDe, dateAu } = context;
     const { aggregates, regularisationDetails } = this.buildAggregates(response, boData, fraisConfigs);
     const volumeMatches = this.sumMatchVolumes(response);
-    const volumeEcartBo = aggregates
-      .filter(a => ['TSOP', 'TRXSF', 'ECART_BO'].includes(a.code))
-      .reduce((s, a) => s + a.volume, 0);
-    const volumeEcartPartner = aggregates
-      .filter(a => ['ECART_PARTNER', 'RGFRAIS', 'TRXSF_PARTNER'].includes(a.code))
-      .reduce((s, a) => s + a.volume, 0);
+    const volumeEcartBo = this.sumVolumeEcartBo(aggregates);
+    const volumeEcartPartner = this.sumVolumeEcartPartner(aggregates);
     const totalRegularisation = regularisationDetails.reduce((s, d) => s + d.montantARegulariser, 0);
 
-    const soldesOppart = this.extractOppartSoldes(partnerData);
+    const mouvementNetOppart = this.extractOppartMouvementNet(partnerData);
+    const soldesPeriode = this.extractOppartSoldesPeriode(partnerData, dateDe, dateAu);
 
     return {
-      soldeOuvertureOppart: soldesOppart.ouverture,
-      soldeClotureOppart: soldesOppart.cloture,
-      mouvementNetOppart: soldesOppart.mouvementNet,
+      soldeOuvertureOppart: soldesPeriode.ouverture,
+      soldeClotureOppart: soldesPeriode.cloture,
+      mouvementNetOppart,
       volumeMatches,
       volumeEcartBo,
       volumeEcartPartner,
@@ -117,7 +116,33 @@ export class CertificationSoldeService {
   }
 
   hasRegularisationDetails(row: EcartAggregateRow): boolean {
-    return ['TSOP', 'TRXSF', 'ECART_PARTNER', 'TRXSF_PARTNER'].includes(row.code) && row.details.length > 0;
+    return ['TSOP', 'ECART_PARTNER', 'TRXSF_PARTNER'].includes(row.code) && row.details.length > 0;
+  }
+
+  /** TSOP → montant à régulariser ; ECART_BO → volume montant TRXBO. */
+  private sumVolumeEcartBo(aggregates: EcartAggregateRow[]): number {
+    return aggregates.reduce((sum, row) => {
+      if (row.code === 'TSOP') {
+        return sum + row.montantARegulariser;
+      }
+      if (row.code === 'ECART_BO') {
+        return sum + row.volume;
+      }
+      return sum;
+    }, 0);
+  }
+
+  /** ECART partenaire → montant OPPART ; TRX SF → frais uniquement ; RGFRAIS → volume. */
+  private sumVolumeEcartPartner(aggregates: EcartAggregateRow[]): number {
+    return aggregates.reduce((sum, row) => {
+      if (row.code === 'ECART_PARTNER' || row.code === 'TRXSF_PARTNER') {
+        return sum + row.montantARegulariser;
+      }
+      if (row.code === 'RGFRAIS') {
+        return sum + row.volume;
+      }
+      return sum;
+    }, 0);
   }
 
   saveSoldeOuverture(numeroCompte: string, dateSolde: string, soldeBo: number): Observable<unknown> {
@@ -212,6 +237,10 @@ export class CertificationSoldeService {
       });
     };
 
+    const buildBoTsopDetail = (record: Record<string, string>, commentaire: string) => {
+      buildBoDetail('TSOP', 'TSOP (sans correspondance OPPART)', record, commentaire);
+    };
+
     for (const match of response.matches ?? []) {
       upsertSimple('MATCHES', 'Correspondances (TRXBO ↔ OPPART)', this.parseAmount(match.boData));
     }
@@ -219,7 +248,14 @@ export class CertificationSoldeService {
     for (const record of response.boOnly ?? []) {
       const comment = this.normalizeComment(record);
       if (comment === 'TRXSF') {
-        buildBoDetail('TRXSF', 'TRXSF (1 OPPART / clé BO)', record, comment);
+        this.pushTrxsfPartnerFeesDetail({
+          boRecord: record,
+          partnerRecord: null,
+          boByTransGu,
+          fraisConfigs,
+          map,
+          regularisationDetails
+        });
         const guKey = this.normalizeTransGuKey(this.extractNumeroTransGu(record));
         if (guKey) {
           trxsfGuKeysFromBo.add(guKey);
@@ -227,7 +263,7 @@ export class CertificationSoldeService {
       } else if (comment === 'ECART' || comment === 'ÉCART') {
         upsertSimple('ECART_BO', 'Écart BO', this.parseAmount(record));
       } else {
-        buildBoDetail('TSOP', 'TSOP (sans correspondance OPPART)', record, comment || 'TSOP');
+        buildBoTsopDetail(record, comment || 'TSOP');
       }
     }
 
@@ -238,7 +274,14 @@ export class CertificationSoldeService {
       if (comment === 'TRXSF') {
         const guKey = this.normalizeTransGuKey(this.extractNumeroTransGu(record));
         if (!guKey || !trxsfGuKeysFromBo.has(guKey)) {
-          this.buildPartnerTrxsfDetail(record, boByTransGu, fraisConfigs, map, regularisationDetails);
+          this.pushTrxsfPartnerFeesDetail({
+            boRecord: null,
+            partnerRecord: record,
+            boByTransGu,
+            fraisConfigs,
+            map,
+            regularisationDetails
+          });
         }
       } else if (comment === 'ECART' || comment === 'ÉCART') {
         this.buildPartnerEcartDetail(record, map, regularisationDetails, 'ECART_PARTNER', 'Écart Partenaire');
@@ -253,7 +296,7 @@ export class CertificationSoldeService {
       upsertSimple('MISMATCH', 'Correspondances multiples (>2 OPPART)', this.parseAmount(record));
     }
 
-    const order = ['MATCHES', 'TSOP', 'TRXSF', 'ECART_BO', 'RGFRAIS', 'TRXSF_PARTNER', 'ECART_PARTNER', 'MISMATCH'];
+    const order = ['MATCHES', 'TSOP', 'ECART_BO', 'RGFRAIS', 'TRXSF_PARTNER', 'ECART_PARTNER', 'MISMATCH'];
     const aggregates = order.filter(code => map.has(code)).map(code => map.get(code)!);
     return { aggregates, regularisationDetails };
   }
@@ -294,42 +337,49 @@ export class CertificationSoldeService {
     map.set(code, row);
   }
 
-  private buildPartnerTrxsfDetail(
-    record: Record<string, string>,
-    boByTransGu: Map<string, Record<string, string>>,
-    fraisConfigs: FraisTransaction[],
-    map: Map<string, EcartAggregateRow>,
-    regularisationDetails: EcartDetailLine[]
-  ): void {
-    const numeroTransGu = this.extractNumeroTransGu(record);
-    const boRecord = this.findBoRecord(boByTransGu, numeroTransGu);
-    const montantPartner = this.parseAmount(record);
-    const montantBo = boRecord ? this.parseAmount(boRecord) : montantPartner;
-    const service = boRecord
-      ? this.extractField(boRecord, ['Service', 'service'])
-      : this.extractField(record, ['Service', 'service', 'Type Opération', 'Type Operation']);
-    const agence = boRecord
-      ? this.extractField(boRecord, ['Agence', 'agence'])
-      : this.extractField(record, ['Agence', 'agence', 'Code proprietaire']);
+  private pushTrxsfPartnerFeesDetail(params: {
+    boRecord: Record<string, string> | null;
+    partnerRecord: Record<string, string> | null;
+    boByTransGu: Map<string, Record<string, string>>;
+    fraisConfigs: FraisTransaction[];
+    map: Map<string, EcartAggregateRow>;
+    regularisationDetails: EcartDetailLine[];
+  }): void {
+    const { boRecord, partnerRecord, boByTransGu, fraisConfigs, map, regularisationDetails } = params;
+    const sourceRecord = partnerRecord ?? boRecord;
+    if (!sourceRecord) {
+      return;
+    }
+
+    const numeroTransGu = this.extractNumeroTransGu(sourceRecord);
+    const resolvedBoRecord = boRecord ?? this.findBoRecord(boByTransGu, numeroTransGu);
+    const montantPartner = partnerRecord ? this.parseAmount(partnerRecord) : this.parseAmount(resolvedBoRecord ?? sourceRecord);
+    const montantBo = resolvedBoRecord ? this.parseAmount(resolvedBoRecord) : montantPartner;
+    const service = resolvedBoRecord
+      ? this.extractField(resolvedBoRecord, ['Service', 'service'])
+      : this.extractField(sourceRecord, ['Service', 'service', 'Type Opération', 'Type Operation']);
+    const agence = resolvedBoRecord
+      ? this.extractField(resolvedBoRecord, ['Agence', 'agence'])
+      : this.extractField(sourceRecord, ['Agence', 'agence', 'Code proprietaire']);
     const frais = this.calculateFrais(fraisConfigs, service, agence, montantBo);
 
     const detail: EcartDetailLine = {
       type: 'TRXSF_PARTNER',
-      source: 'PARTNER',
+      source: partnerRecord ? 'PARTNER' : 'BO',
       service,
       agence,
       montant: montantPartner,
-      montantBo: boRecord ? montantBo : null,
+      montantBo: resolvedBoRecord ? montantBo : null,
       frais,
       montantARegulariser: frais,
-      date: this.extractField(record, ['Date opération', 'Date operation', 'Date', 'date']),
-      idTransaction: this.extractField(record, ['ID Transaction', 'IDTransaction', 'idTransaction']),
+      date: this.extractField(sourceRecord, ['Date opération', 'Date operation', 'Date', 'date']),
+      idTransaction: this.extractField(sourceRecord, ['ID Transaction', 'IDTransaction', 'idTransaction']),
       numeroTransGu,
       commentaire: 'TRXSF'
     };
 
     regularisationDetails.push(detail);
-    const row = map.get('TRXSF_PARTNER') ?? this.emptyAggregate('TRXSF_PARTNER', 'TRXSF Partenaire');
+    const row = map.get('TRXSF_PARTNER') ?? this.emptyAggregate('TRXSF_PARTNER', 'TRX SF (frais → écart partenaire)');
     row.count += 1;
     row.volume += montantPartner;
     row.frais += frais;
@@ -473,24 +523,62 @@ export class CertificationSoldeService {
     return (response.matches ?? []).reduce((sum, m) => sum + this.parseAmount(m.boData), 0);
   }
 
-  private extractOppartSoldes(partnerData: Record<string, string>[]): {
+  private extractOppartMouvementNet(partnerData: Record<string, string>[]): number {
+    if (!partnerData?.length) {
+      return 0;
+    }
+
+    const montantKey = this.findColumn(partnerData[0], ['Montant', 'montant']);
+    if (!montantKey) {
+      return 0;
+    }
+
+    return partnerData.reduce((sum, row) => sum + (this.parseNumeric(row[montantKey]) ?? 0), 0);
+  }
+
+  private extractOppartSoldesPeriode(
+    partnerData: Record<string, string>[],
+    dateDe?: string,
+    dateAu?: string
+  ): {
     ouverture: number | null;
     cloture: number | null;
-    mouvementNet: number;
   } {
     if (!partnerData?.length) {
-      return { ouverture: null, cloture: null, mouvementNet: 0 };
+      return { ouverture: null, cloture: null };
     }
 
     const avantKey = this.findColumn(partnerData[0], ['Solde avant', 'soldeAvant', 'Solde_avant']);
     const apresKey = this.findColumn(partnerData[0], ['Solde aprés', 'Solde apres', 'Solde après', 'soldeApres', 'Solde_apres']);
-    const montantKey = this.findColumn(partnerData[0], ['Montant', 'montant']);
+    const dateOpKey = this.findColumn(partnerData[0], ['Date opération', 'Date operation', 'Date', 'date']);
+
+    const hasDateRange = !!(dateDe && dateAu && dateOpKey);
+    const rowsInRange = hasDateRange
+      ? partnerData.filter(row => this.isRowInDateRange(row, dateOpKey, dateDe!, dateAu!))
+      : partnerData;
+
+    if (!rowsInRange.length) {
+      return { ouverture: null, cloture: null };
+    }
+
+    if (hasDateRange && avantKey && apresKey) {
+      const rowsOpeningDay = rowsInRange.filter(row => this.extractIsoDay(row[dateOpKey!]) === dateDe);
+      const rowsClosingDay = rowsInRange.filter(row => this.extractIsoDay(row[dateOpKey!]) === dateAu);
+
+      const ouverture = rowsOpeningDay.length
+        ? this.parseNumeric(rowsOpeningDay[0][avantKey])
+        : this.parseNumeric(rowsInRange[0][avantKey]);
+
+      const closingSource = rowsClosingDay.length ? rowsClosingDay : rowsInRange;
+      const cloture = this.parseNumeric(closingSource[closingSource.length - 1][apresKey]);
+
+      return { ouverture, cloture };
+    }
 
     let minAvant: number | null = null;
     let maxApres: number | null = null;
-    let mouvementNet = 0;
 
-    for (const row of partnerData) {
+    for (const row of rowsInRange) {
       if (avantKey) {
         const v = this.parseNumeric(row[avantKey]);
         if (v != null && (minAvant == null || v < minAvant)) minAvant = v;
@@ -499,12 +587,48 @@ export class CertificationSoldeService {
         const v = this.parseNumeric(row[apresKey]);
         if (v != null && (maxApres == null || v > maxApres)) maxApres = v;
       }
-      if (montantKey) {
-        mouvementNet += this.parseNumeric(row[montantKey]) ?? 0;
-      }
     }
 
-    return { ouverture: minAvant, cloture: maxApres, mouvementNet };
+    return { ouverture: minAvant, cloture: maxApres };
+  }
+
+  private isRowInDateRange(
+    row: Record<string, string>,
+    dateOpKey: string,
+    dateDe: string,
+    dateAu: string
+  ): boolean {
+    const day = this.extractIsoDay(row[dateOpKey]);
+    return !!day && day >= dateDe && day <= dateAu;
+  }
+
+  private extractIsoDay(value: string | undefined | null): string | null {
+    if (value == null || value === '') return null;
+    const raw = String(value).trim();
+
+    const isoMatch = raw.match(/^(\d{4}-\d{2}-\d{2})/);
+    if (isoMatch) return isoMatch[1];
+
+    const frMatch = raw.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
+    if (frMatch) {
+      const dd = frMatch[1].padStart(2, '0');
+      const mm = frMatch[2].padStart(2, '0');
+      return `${frMatch[3]}-${mm}-${dd}`;
+    }
+
+    const parsed = new Date(raw);
+    if (!Number.isNaN(parsed.getTime())) {
+      return this.formatIsoDate(parsed);
+    }
+
+    return null;
+  }
+
+  private formatIsoDate(date: Date): string {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
   }
 
   private findColumn(row: Record<string, string>, candidates: string[]): string | null {
