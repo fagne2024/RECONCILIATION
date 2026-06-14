@@ -2,18 +2,42 @@ import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable, firstValueFrom } from 'rxjs';
 import { ReconciliationResponse } from '../models/reconciliation-response.model';
+import { FraisTransaction } from '../models/frais-transaction.model';
+
+export type EcartDetailSource = 'BO' | 'PARTNER';
+
+export type EcartRegularisationType = 'TSOP' | 'TRXSF' | 'ECART_PARTNER' | 'TRXSF_PARTNER';
+
+export interface EcartDetailLine {
+  type: EcartRegularisationType;
+  source: EcartDetailSource;
+  service: string;
+  agence: string;
+  montant: number;
+  montantBo: number | null;
+  frais: number;
+  montantARegulariser: number;
+  date: string;
+  idTransaction: string;
+  numeroTransGu: string;
+  commentaire: string;
+}
 
 export interface EcartAggregateRow {
   code: string;
   label: string;
   count: number;
   volume: number;
+  frais: number;
+  montantARegulariser: number;
+  details: EcartDetailLine[];
 }
 
 export interface CertificationSoldeContext {
   response: ReconciliationResponse;
   partnerData: Record<string, string>[];
   boData: Record<string, string>[];
+  fraisConfigs?: FraisTransaction[];
 }
 
 export interface CertificationSoldeComputed {
@@ -23,7 +47,9 @@ export interface CertificationSoldeComputed {
   volumeMatches: number;
   volumeEcartBo: number;
   volumeEcartPartner: number;
+  totalRegularisation: number;
   aggregates: EcartAggregateRow[];
+  regularisationDetails: EcartDetailLine[];
   totals: {
     matches: number;
     boOnly: number;
@@ -42,8 +68,8 @@ export class CertificationSoldeService {
   constructor(private http: HttpClient) {}
 
   compute(context: CertificationSoldeContext): CertificationSoldeComputed {
-    const { response, partnerData } = context;
-    const aggregates = this.buildAggregates(response);
+    const { response, partnerData, boData, fraisConfigs = [] } = context;
+    const { aggregates, regularisationDetails } = this.buildAggregates(response, boData, fraisConfigs);
     const volumeMatches = this.sumMatchVolumes(response);
     const volumeEcartBo = aggregates
       .filter(a => ['TSOP', 'TRXSF', 'ECART_BO'].includes(a.code))
@@ -51,6 +77,7 @@ export class CertificationSoldeService {
     const volumeEcartPartner = aggregates
       .filter(a => ['ECART_PARTNER', 'RGFRAIS', 'TRXSF_PARTNER'].includes(a.code))
       .reduce((s, a) => s + a.volume, 0);
+    const totalRegularisation = regularisationDetails.reduce((s, d) => s + d.montantARegulariser, 0);
 
     const soldesOppart = this.extractOppartSoldes(partnerData);
 
@@ -61,7 +88,9 @@ export class CertificationSoldeService {
       volumeMatches,
       volumeEcartBo,
       volumeEcartPartner,
+      totalRegularisation,
       aggregates,
+      regularisationDetails,
       totals: {
         matches: response.totalMatches ?? response.matches?.length ?? 0,
         boOnly: response.totalBoOnly ?? response.boOnly?.length ?? 0,
@@ -80,17 +109,15 @@ export class CertificationSoldeService {
     return soldeCloture - soldeOuverture;
   }
 
-  computeEcartCertification(
-    variation: number | null,
-    mouvementNetOppart: number,
-    volumeEcartBo: number,
-    volumeEcartPartner: number
-  ): number | null {
+  computeEcartCertification(variation: number | null, mouvementNetOppart: number): number | null {
     if (variation == null) {
       return null;
     }
-    const ecartsNonSoldes = volumeEcartBo + volumeEcartPartner;
-    return variation - mouvementNetOppart - ecartsNonSoldes;
+    return variation - mouvementNetOppart;
+  }
+
+  hasRegularisationDetails(row: EcartAggregateRow): boolean {
+    return ['TSOP', 'TRXSF', 'ECART_PARTNER', 'TRXSF_PARTNER'].includes(row.code) && row.details.length > 0;
   }
 
   saveSoldeOuverture(numeroCompte: string, dateSolde: string, soldeBo: number): Observable<unknown> {
@@ -129,53 +156,317 @@ export class CertificationSoldeService {
     }
   }
 
-  private buildAggregates(response: ReconciliationResponse): EcartAggregateRow[] {
+  private buildAggregates(
+    response: ReconciliationResponse,
+    boData: Record<string, string>[],
+    fraisConfigs: FraisTransaction[]
+  ): { aggregates: EcartAggregateRow[]; regularisationDetails: EcartDetailLine[] } {
     const map = new Map<string, EcartAggregateRow>();
+    const regularisationDetails: EcartDetailLine[] = [];
+    const boByTransGu = this.buildBoIndex(response, boData);
+    const trxsfGuKeysFromBo = new Set<string>();
 
-    const upsert = (code: string, label: string, amount: number) => {
-      const row = map.get(code) ?? { code, label, count: 0, volume: 0 };
+    const upsertSimple = (code: string, label: string, amount: number) => {
+      const row = map.get(code) ?? this.emptyAggregate(code, label);
       row.count += 1;
       row.volume += amount;
       map.set(code, row);
     };
 
+    const pushDetailToAggregate = (code: string, label: string, detail: EcartDetailLine) => {
+      regularisationDetails.push(detail);
+      const row = map.get(code) ?? this.emptyAggregate(code, label);
+      row.count += 1;
+      row.volume += detail.montant;
+      row.frais += detail.frais;
+      row.montantARegulariser += detail.montantARegulariser;
+      row.details.push(detail);
+      map.set(code, row);
+    };
+
+    const buildBoDetail = (
+      code: EcartRegularisationType,
+      label: string,
+      record: Record<string, string>,
+      commentaire: string
+    ) => {
+      const montant = this.parseAmount(record);
+      const service = this.extractField(record, ['Service', 'service']);
+      const agence = this.extractField(record, ['Agence', 'agence', 'Code proprietaire']);
+      const frais = this.calculateFrais(fraisConfigs, service, agence, montant);
+      const montantARegulariser = code === 'TSOP' ? montant + frais : frais;
+
+      pushDetailToAggregate(code, label, {
+        type: code,
+        source: 'BO',
+        service,
+        agence,
+        montant,
+        montantBo: montant,
+        frais,
+        montantARegulariser,
+        date: this.extractField(record, ['Date', 'date', 'Date opération', 'Date operation']),
+        idTransaction: this.extractField(record, ['IDTransaction', 'ID Transaction', 'idTransaction']),
+        numeroTransGu: this.extractNumeroTransGu(record),
+        commentaire
+      });
+    };
+
     for (const match of response.matches ?? []) {
-      upsert('MATCHES', 'Correspondances (TRXBO ↔ OPPART)', this.parseAmount(match.boData));
+      upsertSimple('MATCHES', 'Correspondances (TRXBO ↔ OPPART)', this.parseAmount(match.boData));
     }
 
     for (const record of response.boOnly ?? []) {
       const comment = this.normalizeComment(record);
       if (comment === 'TRXSF') {
-        upsert('TRXSF', 'TRXSF (1 OPPART / clé BO)', this.parseAmount(record));
+        buildBoDetail('TRXSF', 'TRXSF (1 OPPART / clé BO)', record, comment);
+        const guKey = this.normalizeTransGuKey(this.extractNumeroTransGu(record));
+        if (guKey) {
+          trxsfGuKeysFromBo.add(guKey);
+        }
       } else if (comment === 'ECART' || comment === 'ÉCART') {
-        upsert('ECART_BO', 'Écart BO', this.parseAmount(record));
+        upsertSimple('ECART_BO', 'Écart BO', this.parseAmount(record));
       } else {
-        upsert('TSOP', 'TSOP (sans correspondance OPPART)', this.parseAmount(record));
+        buildBoDetail('TSOP', 'TSOP (sans correspondance OPPART)', record, comment || 'TSOP');
       }
     }
 
     for (const record of response.partnerOnly ?? []) {
       const comment = this.normalizeComment(record);
       const typeOp = (record['Type Opération'] || record['Type Operation'] || record['typeOperation'] || '').toUpperCase();
+
       if (comment === 'TRXSF') {
-        upsert('TRXSF_PARTNER', 'TRXSF Partenaire', this.parseAmount(record));
-      } else if (typeOp.includes('FRAIS') || comment === 'RGFRAIS') {
-        upsert('RGFRAIS', 'RGFRAIS / Frais transaction', this.parseAmount(record));
+        const guKey = this.normalizeTransGuKey(this.extractNumeroTransGu(record));
+        if (!guKey || !trxsfGuKeysFromBo.has(guKey)) {
+          this.buildPartnerTrxsfDetail(record, boByTransGu, fraisConfigs, map, regularisationDetails);
+        }
       } else if (comment === 'ECART' || comment === 'ÉCART') {
-        upsert('ECART_PARTNER', 'Écart Partenaire', this.parseAmount(record));
+        this.buildPartnerEcartDetail(record, map, regularisationDetails, 'ECART_PARTNER', 'Écart Partenaire');
+      } else if (typeOp.includes('FRAIS') || comment === 'RGFRAIS') {
+        upsertSimple('RGFRAIS', 'RGFRAIS / Frais transaction', this.parseAmount(record));
       } else {
-        upsert('ECART_PARTNER', 'Écart Partenaire', this.parseAmount(record));
+        this.buildPartnerEcartDetail(record, map, regularisationDetails, 'ECART_PARTNER', 'Écart Partenaire');
       }
     }
 
     for (const record of response.mismatches ?? []) {
-      upsert('MISMATCH', 'Correspondances multiples (>2 OPPART)', this.parseAmount(record));
+      upsertSimple('MISMATCH', 'Correspondances multiples (>2 OPPART)', this.parseAmount(record));
     }
 
     const order = ['MATCHES', 'TSOP', 'TRXSF', 'ECART_BO', 'RGFRAIS', 'TRXSF_PARTNER', 'ECART_PARTNER', 'MISMATCH'];
-    return order
-      .filter(code => map.has(code))
-      .map(code => map.get(code)!);
+    const aggregates = order.filter(code => map.has(code)).map(code => map.get(code)!);
+    return { aggregates, regularisationDetails };
+  }
+
+  private buildPartnerEcartDetail(
+    record: Record<string, string>,
+    map: Map<string, EcartAggregateRow>,
+    regularisationDetails: EcartDetailLine[],
+    code: 'ECART_PARTNER',
+    label: string
+  ): void {
+    const montant = this.parseAmount(record);
+    const service = this.extractField(record, ['Service', 'service', 'Type Opération', 'Type Operation']);
+    const agence = this.extractField(record, ['Agence', 'agence', 'Code proprietaire']);
+    const commentaire = this.normalizeComment(record) || 'Ecart';
+
+    const detail: EcartDetailLine = {
+      type: code,
+      source: 'PARTNER',
+      service,
+      agence,
+      montant,
+      montantBo: null,
+      frais: 0,
+      montantARegulariser: montant,
+      date: this.extractField(record, ['Date opération', 'Date operation', 'Date', 'date']),
+      idTransaction: this.extractField(record, ['ID Transaction', 'IDTransaction', 'idTransaction']),
+      numeroTransGu: this.extractNumeroTransGu(record),
+      commentaire
+    };
+
+    regularisationDetails.push(detail);
+    const row = map.get(code) ?? this.emptyAggregate(code, label);
+    row.count += 1;
+    row.volume += montant;
+    row.montantARegulariser += montant;
+    row.details.push(detail);
+    map.set(code, row);
+  }
+
+  private buildPartnerTrxsfDetail(
+    record: Record<string, string>,
+    boByTransGu: Map<string, Record<string, string>>,
+    fraisConfigs: FraisTransaction[],
+    map: Map<string, EcartAggregateRow>,
+    regularisationDetails: EcartDetailLine[]
+  ): void {
+    const numeroTransGu = this.extractNumeroTransGu(record);
+    const boRecord = this.findBoRecord(boByTransGu, numeroTransGu);
+    const montantPartner = this.parseAmount(record);
+    const montantBo = boRecord ? this.parseAmount(boRecord) : montantPartner;
+    const service = boRecord
+      ? this.extractField(boRecord, ['Service', 'service'])
+      : this.extractField(record, ['Service', 'service', 'Type Opération', 'Type Operation']);
+    const agence = boRecord
+      ? this.extractField(boRecord, ['Agence', 'agence'])
+      : this.extractField(record, ['Agence', 'agence', 'Code proprietaire']);
+    const frais = this.calculateFrais(fraisConfigs, service, agence, montantBo);
+
+    const detail: EcartDetailLine = {
+      type: 'TRXSF_PARTNER',
+      source: 'PARTNER',
+      service,
+      agence,
+      montant: montantPartner,
+      montantBo: boRecord ? montantBo : null,
+      frais,
+      montantARegulariser: frais,
+      date: this.extractField(record, ['Date opération', 'Date operation', 'Date', 'date']),
+      idTransaction: this.extractField(record, ['ID Transaction', 'IDTransaction', 'idTransaction']),
+      numeroTransGu,
+      commentaire: 'TRXSF'
+    };
+
+    regularisationDetails.push(detail);
+    const row = map.get('TRXSF_PARTNER') ?? this.emptyAggregate('TRXSF_PARTNER', 'TRXSF Partenaire');
+    row.count += 1;
+    row.volume += montantPartner;
+    row.frais += frais;
+    row.montantARegulariser += frais;
+    row.details.push(detail);
+    map.set('TRXSF_PARTNER', row);
+  }
+
+  private buildBoIndex(
+    response: ReconciliationResponse,
+    boData: Record<string, string>[]
+  ): Map<string, Record<string, string>> {
+    const index = new Map<string, Record<string, string>>();
+    const allBoRecords: Record<string, string>[] = [
+      ...(response.boOnly ?? []),
+      ...(response.mismatches ?? []),
+      ...(response.matches ?? []).map(m => m.boData),
+      ...(boData ?? [])
+    ];
+
+    for (const record of allBoRecords) {
+      const key = this.normalizeTransGuKey(this.extractNumeroTransGu(record));
+      if (key && !index.has(key)) {
+        index.set(key, record);
+      }
+    }
+    return index;
+  }
+
+  private findBoRecord(
+    boByTransGu: Map<string, Record<string, string>>,
+    numeroTransGu: string
+  ): Record<string, string> | null {
+    const key = this.normalizeTransGuKey(numeroTransGu);
+    if (!key) return null;
+    return boByTransGu.get(key) ?? null;
+  }
+
+  private extractNumeroTransGu(record: Record<string, string>): string {
+    return this.extractField(record, [
+      'Numéro Trans GU',
+      'Numero Trans GU',
+      'numeroTransGU',
+      'numero_trans_gu',
+      'NUMERO_TRANS_GU'
+    ]);
+  }
+
+  private normalizeTransGuKey(value: string): string {
+    return (value || '').trim().toUpperCase().replace(/\s/g, '');
+  }
+
+  private emptyAggregate(code: string, label: string): EcartAggregateRow {
+    return {
+      code,
+      label,
+      count: 0,
+      volume: 0,
+      frais: 0,
+      montantARegulariser: 0,
+      details: []
+    };
+  }
+
+  private calculateFrais(
+    fraisConfigs: FraisTransaction[],
+    service: string,
+    agence: string,
+    montant: number
+  ): number {
+    if (!fraisConfigs?.length) {
+      return 0;
+    }
+
+    const normalizeKey = (s: string) => (s || '')
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]/g, '')
+      .trim();
+
+    const nService = normalizeKey(service);
+    const nAgence = normalizeKey(agence);
+
+    const matchExact = fraisConfigs.find(f =>
+      normalizeKey(f.service) === nService &&
+      normalizeKey(f.agence) === nAgence &&
+      f.actif
+    );
+    const matchServiceOnly = fraisConfigs.find(f =>
+      normalizeKey(f.service) === nService && f.actif
+    );
+    const matchAgenceOnly = fraisConfigs.find(f =>
+      normalizeKey(f.agence) === nAgence && f.actif
+    );
+    const matchServiceContains = fraisConfigs.find(f =>
+      nService.includes(normalizeKey(f.service)) && f.actif
+    );
+
+    const scored = fraisConfigs
+      .filter(f => f.actif)
+      .map(f => {
+        const ns = normalizeKey(f.service);
+        let score = 0;
+        if (nService.includes(ns)) score = ns.length;
+        else if (ns.includes(nService)) score = nService.length - 1;
+        return { f, score };
+      })
+      .filter(x => x.score > 0)
+      .sort((a, b) => b.score - a.score);
+
+    const config = matchExact || matchServiceOnly || matchAgenceOnly || matchServiceContains || scored[0]?.f;
+    if (!config) {
+      return 0;
+    }
+
+    if (config.typeCalcul === 'POURCENTAGE' && config.pourcentage) {
+      return Math.round((montant * (config.pourcentage / 100)) * 100) / 100;
+    }
+    return config.montantFrais || 0;
+  }
+
+  private extractField(record: Record<string, string>, candidates: string[]): string {
+    for (const candidate of candidates) {
+      if (record[candidate] != null && String(record[candidate]).trim()) {
+        return String(record[candidate]).trim();
+      }
+    }
+    const keys = Object.keys(record);
+    for (const candidate of candidates) {
+      const normalized = candidate.toLowerCase().replace(/\s/g, '');
+      const match = keys.find(k => k.toLowerCase().replace(/\s/g, '') === normalized);
+      if (match && String(record[match]).trim()) {
+        return String(record[match]).trim();
+      }
+    }
+    return '';
   }
 
   private sumMatchVolumes(response: ReconciliationResponse): number {

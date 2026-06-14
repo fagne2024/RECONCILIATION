@@ -120,7 +120,7 @@
           <div class="derived-card highlight" [class.alert]="ecartCertification != null && ecartCertification !== 0">
             <span class="derived-label">Écart de certification</span>
             <span class="derived-value">{{ formatNumber(ecartCertification) }}</span>
-            <span class="derived-formula">Variation − mouvement − écarts</span>
+            <span class="derived-formula">Variation − mouvement</span>
           </div>
         </div>
 
@@ -134,7 +134,14 @@
       <section class="panel aggregates-panel">
         <div class="panel-header">
           <h3><i class="fas fa-chart-pie"></i> Agrégats des écarts</h3>
+          <span class="regularisation-total" *ngIf="computed.regularisationDetails.length">
+            Total à régulariser : <strong>{{ computed.totalRegularisation | number:'1.0-0' }}</strong>
+          </span>
         </div>
+
+        <p class="aggregates-hint">
+          TSOP : montant + frais · TRX SF (BO/Partenaire) : frais uniquement · Écart Partenaire : montant OPPART
+        </p>
 
         <table class="aggregates-table">
           <thead>
@@ -142,22 +149,59 @@
               <th>Type</th>
               <th>Nombre</th>
               <th>Volume</th>
+              <th>Frais</th>
+              <th>À régulariser</th>
             </tr>
           </thead>
           <tbody>
-            <tr *ngFor="let row of computed.aggregates">
-              <td>
-                <span class="type-badge" [attr.data-code]="row.code">{{ row.label }}</span>
-              </td>
-              <td>{{ row.count | number:'1.0-0' }}</td>
-              <td class="volume">{{ row.volume | number:'1.0-0' }}</td>
-            </tr>
+            <ng-container *ngFor="let row of computed.aggregates">
+              <tr>
+                <td>
+                  <span class="type-badge" [attr.data-code]="row.code">{{ row.label }}</span>
+                </td>
+                <td>{{ row.count | number:'1.0-0' }}</td>
+                <td class="volume">{{ row.volume | number:'1.0-0' }}</td>
+                <td class="volume">{{ row.frais ? (row.frais | number:'1.0-0') : '—' }}</td>
+                <td class="volume regularisation">
+                  {{ row.montantARegulariser ? (row.montantARegulariser | number:'1.0-0') : '—' }}
+                </td>
+              </tr>
+              <tr *ngIf="hasRegularisationDetails(row)" class="aggregate-details-row">
+                <td colspan="5">
+                  <table class="details-table">
+                    <thead>
+                      <tr>
+                        <th>N° Trans GU</th>
+                        <th>Service</th>
+                        <th>Agence</th>
+                        <th>Montant OPPART</th>
+                        <th>Montant TRXBO</th>
+                        <th>Frais</th>
+                        <th>À régulariser</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr *ngFor="let line of row.details">
+                        <td class="gu-cell">{{ line.numeroTransGu || '—' }}</td>
+                        <td>{{ line.service || '—' }}</td>
+                        <td>{{ line.agence || '—' }}</td>
+                        <td class="volume">{{ line.montant | number:'1.0-0' }}</td>
+                        <td class="volume">{{ line.montantBo != null ? (line.montantBo | number:'1.0-0') : '—' }}</td>
+                        <td class="volume">{{ line.frais ? (line.frais | number:'1.0-0') : '—' }}</td>
+                        <td class="volume regularisation"><strong>{{ line.montantARegulariser | number:'1.0-0' }}</strong></td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </td>
+              </tr>
+            </ng-container>
           </tbody>
           <tfoot>
             <tr>
               <td><strong>Volume correspondances</strong></td>
               <td>{{ computed.totals.matches | number:'1.0-0' }}</td>
               <td class="volume"><strong>{{ computed.volumeMatches | number:'1.0-0' }}</strong></td>
+              <td colspan="2"></td>
             </tr>
           </tfoot>
         </table>
@@ -203,5 +247,97 @@
         </div>
       </div>
     </section>
+
+    <!-- Zone hors écran pour export PDF (html2canvas — accents et nombres FR corrects) -->
+    <div class="pdf-export-root" #pdfExportContent>
+      <div class="pdf-export-header">
+        <h1>Certification de solde</h1>
+        <p>Réconciliation TRXBO ↔ OPPART</p>
+        <p class="pdf-export-meta">Export généré le {{ formatExportTimestamp() }}</p>
+      </div>
+
+      <section class="pdf-export-section">
+        <h2>Informations</h2>
+        <table class="pdf-kv-table">
+          <tr><td>Date certification</td><td>{{ dateCertification || '—' }}</td></tr>
+          <tr><td>Numéro compte</td><td>{{ numeroCompte || '—' }}</td></tr>
+        </table>
+      </section>
+
+      <section class="pdf-export-section">
+        <h2>Soldes</h2>
+        <table class="pdf-kv-table">
+          <tr><td>Solde d'ouverture</td><td>{{ formatNumber(soldeOuverture) }}</td></tr>
+          <tr><td>Solde de clôture</td><td>{{ formatNumber(soldeCloture) }}</td></tr>
+          <tr><td>Suggestion OPPART ouverture</td><td>{{ formatNumber(computed.soldeOuvertureOppart) }}</td></tr>
+          <tr><td>Suggestion OPPART clôture</td><td>{{ formatNumber(computed.soldeClotureOppart) }}</td></tr>
+          <tr><td>Variation</td><td>{{ formatNumber(variation) }}</td></tr>
+          <tr><td>Mouvement net OPPART</td><td>{{ formatNumber(computed.mouvementNetOppart) }}</td></tr>
+          <tr class="pdf-highlight"><td>Écart de certification</td><td>{{ formatNumber(ecartCertification) }}</td></tr>
+        </table>
+      </section>
+
+      <section class="pdf-export-section">
+        <h2>Agrégats des écarts</h2>
+        <table class="pdf-data-table">
+          <thead>
+            <tr><th>Type</th><th>Nombre</th><th>Volume</th><th>Frais</th><th>À régulariser</th></tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let row of computed.aggregates">
+              <td>{{ row.label }}</td>
+              <td>{{ row.count | number:'1.0-0' }}</td>
+              <td>{{ row.volume | number:'1.0-0' }}</td>
+              <td>{{ row.frais ? (row.frais | number:'1.0-0') : '—' }}</td>
+              <td>{{ row.montantARegulariser ? (row.montantARegulariser | number:'1.0-0') : '—' }}</td>
+            </tr>
+          </tbody>
+          <tfoot>
+            <tr>
+              <td><strong>Volume correspondances</strong></td>
+              <td><strong>{{ computed.totals.matches | number:'1.0-0' }}</strong></td>
+              <td><strong>{{ computed.volumeMatches | number:'1.0-0' }}</strong></td>
+              <td colspan="2"></td>
+            </tr>
+          </tfoot>
+        </table>
+      </section>
+
+      <section class="pdf-export-section" *ngIf="computed.regularisationDetails.length">
+        <h2>Détail régularisation (TSOP / TRX SF / Écarts Partenaire)</h2>
+        <table class="pdf-data-table pdf-detail-table">
+          <thead>
+            <tr>
+              <th>Type</th><th>N° Trans GU</th><th>Service</th><th>Mont. OPPART</th><th>Mont. TRXBO</th><th>Frais</th><th>À régulariser</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let line of computed.regularisationDetails">
+              <td>{{ line.type }}</td>
+              <td>{{ line.numeroTransGu || '—' }}</td>
+              <td>{{ line.service || '—' }}</td>
+              <td>{{ line.montant | number:'1.0-0' }}</td>
+              <td>{{ line.montantBo != null ? (line.montantBo | number:'1.0-0') : '—' }}</td>
+              <td>{{ line.frais ? (line.frais | number:'1.0-0') : '—' }}</td>
+              <td><strong>{{ line.montantARegulariser | number:'1.0-0' }}</strong></td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="pdf-export-section">
+        <h2>Synthèse réconciliation</h2>
+        <table class="pdf-kv-table">
+          <tr><td>Lignes BO (TRXBO)</td><td>{{ computed.totals.totalBoRecords | number:'1.0-0' }}</td></tr>
+          <tr><td>Lignes Partenaire (OPPART)</td><td>{{ computed.totals.totalPartnerRecords | number:'1.0-0' }}</td></tr>
+          <tr><td>Correspondances</td><td>{{ computed.totals.matches | number:'1.0-0' }}</td></tr>
+          <tr><td>Écarts BO</td><td>{{ computed.totals.boOnly | number:'1.0-0' }}</td></tr>
+          <tr><td>Écarts Partenaire</td><td>{{ computed.totals.partnerOnly | number:'1.0-0' }}</td></tr>
+          <tr><td>Correspondances multiples</td><td>{{ computed.totals.mismatches | number:'1.0-0' }}</td></tr>
+          <tr><td>Volume écarts BO</td><td>{{ computed.volumeEcartBo | number:'1.0-0' }}</td></tr>
+          <tr><td>Volume écarts Partenaire</td><td>{{ computed.volumeEcartPartner | number:'1.0-0' }}</td></tr>
+        </table>
+      </section>
+    </div>
   </ng-container>
 </div>
