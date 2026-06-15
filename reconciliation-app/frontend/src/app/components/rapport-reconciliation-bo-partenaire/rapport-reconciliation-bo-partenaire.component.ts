@@ -10,7 +10,7 @@ import { Router } from '@angular/router';
 import { HttpClient, HttpHeaders, HttpParams } from '@angular/common/http';
 import { FormControl } from '@angular/forms';
 import { forkJoin, of, Subscription } from 'rxjs';
-import { catchError } from 'rxjs/operators';
+import { catchError, debounceTime } from 'rxjs/operators';
 import { AppStateService } from '../../services/app-state.service';
 import { EcartBoSummary, EcartBoSummaryService } from '../../services/ecart-bo-summary.service';
 import { DashboardService, ReleveManualRangeRow } from '../../services/dashboard.service';
@@ -233,6 +233,15 @@ export class RapportReconciliationBoPartenaireComponent implements OnInit, OnDes
     this.subs.add(
       this.serviceSearchCtrl.valueChanges.subscribe(() => {
         this.onServiceSearchTextChanged();
+      })
+    );
+    this.subs.add(
+      this.appState.dataUpdate$.pipe(debounceTime(500)).subscribe(() => {
+        this.lastReportFetchKey = '';
+        this.lastManualFetchKey = '';
+        if (!this.loading) {
+          this.loadDonnees();
+        }
       })
     );
     this.loadDonnees();
@@ -856,7 +865,7 @@ export class RapportReconciliationBoPartenaireComponent implements OnInit, OnDes
   }
 
   /**
-   * Valeur métier dominante (stockée) pour agrégation multi-lignes.
+   * Valeur métier la moins avancée du périmètre (si une ligne est en validation CDO, le service l'est aussi).
    */
   private dominantTraitementRawValue(values: (string | undefined | null)[]): string {
     const cleaned = values
@@ -874,23 +883,14 @@ export class RapportReconciliationBoPartenaireComponent implements OnInit, OnDes
       none: 0
     };
 
-    const freq = new Map<string, number>();
-    for (const v of cleaned) {
-      freq.set(v, (freq.get(v) || 0) + 1);
-    }
-
-    let best = cleaned[0];
-    for (const t of freq.keys()) {
-      const cf = freq.get(t)!;
-      const bf = freq.get(best)!;
-      const rankT = kindRank[resolveTraitementKind(t)];
-      const rankBest = kindRank[resolveTraitementKind(best)];
-      if (cf > bf || (cf === bf && rankT > rankBest)) {
-        best = t;
+    let leastAdvanced = cleaned[0];
+    for (const t of cleaned) {
+      if (kindRank[resolveTraitementKind(t)] > kindRank[resolveTraitementKind(leastAdvanced)]) {
+        leastAdvanced = t;
       }
     }
 
-    return best;
+    return leastAdvanced;
   }
 
   private dominantTraitementLabel(values: (string | undefined | null)[]): string {

@@ -1,5 +1,4 @@
 const characterMap: { [key: string]: string } = {
-  // Corrections d'encodage UTF-8 mal interprété
   'Ã©': 'é',
   'Ã¨': 'è',
   'Ãª': 'ê',
@@ -15,50 +14,102 @@ const characterMap: { [key: string]: string } = {
   'Ã¼': 'ü',
   'Ã®': 'î',
   'Ã¯': 'ï',
-  'tï¿½lï¿½phone': 'téléphone',
+  'Â°': '°',
+  'NÂ°': 'N°',
+  'nÂ°': 'n°',
+  'NÃ°': 'N°',
+  'nÃ°': 'n°',
+  'SuccÃ¨s': 'Succès',
+  'succÃ¨s': 'succès',
+  'DÃ©bit': 'Débit',
+  'dÃ©bit': 'débit',
+  'CrÃ©dit': 'Crédit',
+  'crÃ©dit': 'crédit',
+  'RÃ©fÃ©rence': 'Référence',
+  'rÃ©fÃ©rence': 'référence',
+  'Sous-rÃ©seau': 'Sous-réseau',
+  'sous-rÃ©seau': 'sous-réseau',
   'Numï¿½ro': 'Numéro',
   'Opï¿½ration': 'Opération',
   'aprï¿½s': 'après',
   'rï¿½fï¿½rence': 'référence',
   'crï¿½dit': 'crédit',
   'dï¿½bit': 'débit',
-  // Corrections pour les caractères manquants (é supprimé)
   'Expditeur': 'Expéditeur',
-  'Expéditeur': 'Expéditeur', // Garder si déjà correct
   'Bnficiaire': 'Bénéficiaire',
-  'Bénéficiaire': 'Bénéficiaire', // Garder si déjà correct
   'Opration': 'Opération',
-  'Opération': 'Opération', // Garder si déjà correct
   'rgularisation': 'régularisation',
-  'régularisation': 'régularisation', // Garder si déjà correct
   'rseau': 'réseau',
-  'réseau': 'réseau', // Garder si déjà correct
   'Sous-rseau': 'Sous-réseau',
-  'Sous-réseau': 'Sous-réseau', // Garder si déjà correct
   'T te de r seau': 'Tête de réseau',
-  'Tête de réseau': 'Tête de réseau', // Garder si déjà correct
-  // Corrections génériques pour les caractères accentués manquants
-  '([A-Za-z])diteur': '$1éditeur', // Expéditeur, Bénéficiaire, etc.
-  '([A-Za-z])nficiaire': '$1énéficiaire',
-  '([A-Za-z])pration': '$1opération',
-  '([A-Za-z])gularisation': '$1égularisation',
-  '([A-Za-z])seau': '$1éseau',
 };
+
+function mojibakeMarkerCount(text: string): number {
+  return (text.match(/Ã.|Â.|ï¿½/g) || []).length;
+}
+
+/**
+ * Répare UTF-8 lu comme Latin-1 / Windows-1252 (ex. « DÃ©bit » → « Débit »).
+ */
+export function fixUtf8Mojibake(text: string): string {
+  if (!text) {
+    return '';
+  }
+
+  if (!/[\u0080-\u00FF]/.test(text)) {
+    return text;
+  }
+
+  if (text.length > 0) {
+    for (let i = 0; i < text.length; i++) {
+      if (text.charCodeAt(i) > 255) {
+        return text;
+      }
+    }
+  }
+
+  try {
+    const bytes = new Uint8Array(text.length);
+    for (let i = 0; i < text.length; i++) {
+      bytes[i] = text.charCodeAt(i);
+    }
+    const decoded = new TextDecoder('utf-8', { fatal: false }).decode(bytes);
+    if (decoded.includes('\uFFFD')) {
+      return text;
+    }
+    if (mojibakeMarkerCount(decoded) < mojibakeMarkerCount(text)) {
+      return decoded;
+    }
+    if (mojibakeMarkerCount(text) > 0 && mojibakeMarkerCount(decoded) === 0) {
+      return decoded;
+    }
+  } catch {
+    // ignore
+  }
+
+  return text;
+}
 
 /**
  * Répare les chaînes de caractères où l'encodage UTF-8 a été mal interprété.
- * @param text La chaîne de caractères à nettoyer.
- * @returns La chaîne de caractères corrigée.
  */
+/** Motifs connus que fixUtf8Mojibake dégrade (ex. NÃ° → Nð). */
+function applyPreMojibakeFixes(text: string): string {
+  let out = text;
+  out = out.replace(/NÃ°/gi, 'N°');
+  out = out.replace(/nÃ°/gi, 'n°');
+  out = out.replace(/(\d)[ÂÃ][\s\u00A0](?=\d)/g, '$1 ');
+  return out;
+}
+
 export function fixGarbledCharacters(text: string | null | undefined): string {
   if (!text) {
     return '';
   }
 
-  let fixedText = text;
-  
-  // D'abord, gérer spécifiquement le caractère Unicode de remplacement (U+FFFD = )
-  // Remplacer les patterns avec ce caractère (doit être fait en premier)
+  let fixedText = applyPreMojibakeFixes(text);
+  fixedText = fixUtf8Mojibake(fixedText);
+
   fixedText = fixedText.replace(/Exp\uFFFD?diteur/gi, 'Expéditeur');
   fixedText = fixedText.replace(/B\uFFFD?n\uFFFD?ficiaire/gi, 'Bénéficiaire');
   fixedText = fixedText.replace(/B\uFFFD?nficiaire/gi, 'Bénéficiaire');
@@ -74,8 +125,7 @@ export function fixGarbledCharacters(text: string | null | undefined): string {
   fixedText = fixedText.replace(/cr\uFFFD?dit/gi, 'crédit');
   fixedText = fixedText.replace(/d\uFFFD?bit/gi, 'débit');
   fixedText = fixedText.replace(/t\uFFFD?l\uFFFD?phone/gi, 'téléphone');
-  
-  // Ensuite, gérer les patterns où le caractère est complètement absent (le plus courant)
+
   fixedText = fixedText.replace(/Expditeur/gi, 'Expéditeur');
   fixedText = fixedText.replace(/Bnficiaire/gi, 'Bénéficiaire');
   fixedText = fixedText.replace(/Opration/gi, 'Opération');
@@ -89,74 +139,51 @@ export function fixGarbledCharacters(text: string | null | undefined): string {
   fixedText = fixedText.replace(/crdit/gi, 'crédit');
   fixedText = fixedText.replace(/dbit/gi, 'débit');
   fixedText = fixedText.replace(/tlphone/gi, 'téléphone');
-  
-  // Pattern générique pour remplacer n'importe quel caractère (y compris U+FFFD) entre B et n dans "Bénéficiaire"
-  // Le caractère peut être présent ou absent
-  fixedText = fixedText.replace(/B[\uFFFD\u0000-\u001F\u007F-\u009F\s]?n[\uFFFD\u0000-\u001F\u007F-\u009F\s]?ficiaire/gi, 'Bénéficiaire');
-  fixedText = fixedText.replace(/B[\uFFFD\u0000-\u001F\u007F-\u009F\s]?nficiaire/gi, 'Bénéficiaire');
-  fixedText = fixedText.replace(/Bn[\uFFFD\u0000-\u001F\u007F-\u009F\s]?ficiaire/gi, 'Bénéficiaire');
-  // Pattern simple pour Bnficiaire (sans caractère)
-  fixedText = fixedText.replace(/Bnficiaire/gi, 'Bénéficiaire');
-  
-  // D'abord, appliquer les corrections exactes
+
   for (const [garbled, correct] of Object.entries(characterMap)) {
-    // Ignorer les patterns regex (qui contiennent des parenthèses et $)
-    if (!garbled.includes('(') && !garbled.includes('$')) {
-      const regex = new RegExp(garbled.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
-      fixedText = fixedText.replace(regex, correct);
-    }
+    const regex = new RegExp(garbled.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+    fixedText = fixedText.replace(regex, correct);
   }
-  
-  // Ensuite, appliquer les corrections génériques avec regex
-  // Expéditeur, Bénéficiaire, etc.
+
   fixedText = fixedText.replace(/([A-Za-z])diteur/gi, '$1éditeur');
   fixedText = fixedText.replace(/([A-Za-z])nficiaire/gi, '$1énéficiaire');
   fixedText = fixedText.replace(/([A-Za-z])pration/gi, '$1opération');
   fixedText = fixedText.replace(/([A-Za-z])gularisation/gi, '$1égularisation');
-  fixedText = fixedText.replace(/([A-Za-z])seau/gi, '$1éseau');
-  
-  // Correction spéciale pour "T te de r seau" -> "Tête de réseau"
   fixedText = fixedText.replace(/T\s+te\s+de\s+r\s+seau/gi, 'Tête de réseau');
   fixedText = fixedText.replace(/T te de r seau/gi, 'Tête de réseau');
-  
-  // Gérer les cas où le "é" est complètement absent (le plus courant)
-  // Patterns spécifiques pour les mots courants
-  fixedText = fixedText.replace(/\bExpditeur\b/gi, 'Expéditeur');
-  fixedText = fixedText.replace(/\bBnficiaire\b/gi, 'Bénéficiaire');
-  fixedText = fixedText.replace(/\bOpration\b/gi, 'Opération');
-  fixedText = fixedText.replace(/\bopration\b/gi, 'opération');
-  fixedText = fixedText.replace(/\brgularisation\b/gi, 'régularisation');
-  fixedText = fixedText.replace(/\brseau\b/gi, 'réseau');
-  fixedText = fixedText.replace(/\brfrence\b/gi, 'référence');
-  fixedText = fixedText.replace(/\bNumro\b/gi, 'Numéro');
-  fixedText = fixedText.replace(/\bnumro\b/gi, 'numéro');
-  fixedText = fixedText.replace(/\baprs\b/gi, 'après');
-  fixedText = fixedText.replace(/\bcrdit\b/gi, 'crédit');
-  fixedText = fixedText.replace(/\bdbit\b/gi, 'débit');
-  fixedText = fixedText.replace(/\btlphone\b/gi, 'téléphone');
-  
-  // Patterns dans des contextes plus larges (avec espaces, etc.)
-  fixedText = fixedText.replace(/Expditeur/gi, 'Expéditeur');
-  fixedText = fixedText.replace(/Bnficiaire/gi, 'Bénéficiaire');
-  fixedText = fixedText.replace(/Opration/gi, 'Opération');
-  fixedText = fixedText.replace(/opration/gi, 'opération');
-  fixedText = fixedText.replace(/rgularisation/gi, 'régularisation');
-  fixedText = fixedText.replace(/rseau/gi, 'réseau');
-  fixedText = fixedText.replace(/rfrence/gi, 'référence');
-  fixedText = fixedText.replace(/Numro/gi, 'Numéro');
-  fixedText = fixedText.replace(/numro/gi, 'numéro');
-  fixedText = fixedText.replace(/aprs/gi, 'après');
-  fixedText = fixedText.replace(/crdit/gi, 'crédit');
-  fixedText = fixedText.replace(/dbit/gi, 'débit');
-  fixedText = fixedText.replace(/tlphone/gi, 'téléphone');
-  
-  // Gérer le caractère de remplacement Unicode () si présent
-  fixedText = fixedText.replace(/Expditeur/gi, 'Expéditeur');
-  fixedText = fixedText.replace(/Bnficiaire/gi, 'Bénéficiaire');
-  fixedText = fixedText.replace(/Opration/gi, 'Opération');
-  fixedText = fixedText.replace(/opration/gi, 'opération');
-  fixedText = fixedText.replace(/rgularisation/gi, 'régularisation');
-  fixedText = fixedText.replace(/rseau/gi, 'réseau');
-  
+
   return fixedText;
+}
+
+/** Corrige l'encodage d'une valeur de cellule (en-têtes et données). */
+export function fixCellEncoding(text: string | null | undefined): string {
+  if (!text) {
+    return '';
+  }
+
+  let fixed = fixGarbledCharacters(text);
+  fixed = fixed.replace(/NÂ°/gi, 'N°');
+  fixed = fixed.replace(/nÂ°/gi, 'n°');
+  fixed = fixed.replace(/(\d)[ÂÃ][\s\u00A0](?=\d)/g, '$1 ');
+  fixed = fixed.replace(/\u00A0/g, ' ');
+  fixed = fixed.replace(/\u00C2\u00A0/g, ' ');
+  return fixed.trim();
+}
+
+/** Corrige toutes les clés et valeurs texte d'un enregistrement. */
+export function fixRecordEncoding<T extends Record<string, unknown>>(record: T): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [key, value] of Object.entries(record)) {
+    const cleanKey = fixCellEncoding(key);
+    if (value === null || value === undefined) {
+      out[cleanKey] = '';
+    } else if (typeof value === 'string') {
+      out[cleanKey] = fixCellEncoding(value);
+    } else if (typeof value === 'number' || typeof value === 'boolean') {
+      out[cleanKey] = String(value);
+    } else {
+      out[cleanKey] = fixCellEncoding(String(value));
+    }
+  }
+  return out;
 }

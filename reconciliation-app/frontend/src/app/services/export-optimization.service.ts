@@ -2,6 +2,7 @@ import { Injectable } from '@angular/core';
 import { BehaviorSubject, Observable } from 'rxjs';
 import * as XLSX from 'xlsx';
 import * as ExcelJS from 'exceljs';
+import { fixCellEncoding } from '../utils/encoding-fixer';
 
 /** Couleurs par type de commentaire pour export écarts (TRXBO/OPPART) - ARGB 8 caractères */
 export const ECART_COMMENT_COLORS: Record<string, string> = {
@@ -87,25 +88,25 @@ export class ExportOptimizationService {
     const totalRows = rows.length;
     let csvContent = '';
     
-    // En-tête
-    csvContent += columns.join(';') + '\r\n';
+    const encodedColumns = columns.map(col => fixCellEncoding(col));
+    csvContent += encodedColumns.join(';') + '\r\n';
     
     // Traitement par chunks avec progression
     for (let i = 0; i < totalRows; i += chunkSize) {
       const chunk = rows.slice(i, i + chunkSize);
       const chunkContent = chunk.map(row => {
-        return columns.map(col => {
-          const raw = row[col];
+        return encodedColumns.map((col, idx) => {
+          const raw = row[columns[idx]];
           let val = '';
           if (raw !== undefined && raw !== null) {
             if (typeof raw === 'object') {
               try {
-                val = JSON.stringify(raw);
+                val = fixCellEncoding(JSON.stringify(raw));
               } catch {
-                val = String(raw);
+                val = fixCellEncoding(String(raw));
               }
             } else {
-              val = String(raw);
+              val = fixCellEncoding(String(raw));
             }
           }
           if (val.includes('"')) val = val.replace(/"/g, '""');
@@ -158,20 +159,22 @@ export class ExportOptimizationService {
   ): Promise<void> {
     const { chunkSize = 5000, format = 'xlsx' } = options;
     const excelFormat = format === 'xls' ? 'xls' : 'xlsx';
+    const encodedColumns = columns.map(col => fixCellEncoding(col));
 
     // Normaliser les lignes : colonnes montant/volume en nombres pour Excel
     const normalizedRows = rows.map(row => {
       const r: any = {};
-      columns.forEach(col => {
+      columns.forEach((col, idx) => {
+        const encodedCol = encodedColumns[idx];
         const base = this.serializeCellForExport(row[col]);
-        r[col] = this.cellValueForExcel(col, base);
+        r[encodedCol] = this.cellValueForExcel(encodedCol, base);
       });
       return r;
     });
 
     // IMPORTANT: le worker inline n'a pas accès au bundle XLSX (importScripts CDN fragile / CSP).
     // Pour fiabiliser l'export Excel, on reste sur le thread principal.
-    await this.exportExcelSynchronous(normalizedRows, columns, fileName, chunkSize, excelFormat);
+    await this.exportExcelSynchronous(normalizedRows, encodedColumns, fileName, chunkSize, excelFormat);
   }
 
   /**
@@ -280,16 +283,17 @@ export class ExportOptimizationService {
    */
   private serializeCellForExport(val: any): string | number | boolean | Date {
     if (val === undefined || val === null) return '';
-    if (typeof val === 'string' || typeof val === 'number' || typeof val === 'boolean') return val;
+    if (typeof val === 'string') return fixCellEncoding(val);
+    if (typeof val === 'number' || typeof val === 'boolean') return val;
     if (val instanceof Date) return val;
     if (typeof val === 'object') {
       try {
-        return JSON.stringify(val);
+        return fixCellEncoding(JSON.stringify(val));
       } catch {
-        return String(val);
+        return fixCellEncoding(String(val));
       }
     }
-    return String(val);
+    return fixCellEncoding(String(val));
   }
 
   /**

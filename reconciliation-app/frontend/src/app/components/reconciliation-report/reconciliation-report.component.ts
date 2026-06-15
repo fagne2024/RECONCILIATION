@@ -3489,6 +3489,11 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         });
     }
 
+    /** Notifie les écrans consommateurs (ex. rapport BO/Partenaire) qu'une ligne result8rec a changé. */
+    private notifyResult8RecUpdated(): void {
+        this.appStateService.notifyDataUpdate();
+    }
+
     private async putResult8RecWithRetry<T>(
         id: number,
         payload: any,
@@ -7355,6 +7360,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
 
         try {
             await this.putResult8RecWithRetry<any>(item.id, payload, { maxRetries: 3, baseDelayMs: 500 });
+            this.notifyResult8RecUpdated();
             await this.popupService.showSuccess('Ligne mise à jour avec succès');
             await this.maybeOfferEcartBoSummaryRedirectForRows([ecartBoRedirectSnapshot]);
             // Mettre à jour localement l'item avec le commentaire préservé
@@ -8817,6 +8823,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                 item.traitement = updated.traitement;
             }
             this.stopEditTraitement();
+            this.notifyResult8RecUpdated();
             console.log('✅ Traitement mis à jour avec succès');
         } catch (err) {
             console.error('❌ Erreur lors de la mise à jour du traitement', err);
@@ -8945,6 +8952,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         
         // Afficher les résultats
         if (successCount > 0) {
+            this.notifyResult8RecUpdated();
             this.popupService.showSuccess(`Statut modifié pour ${successCount} ligne(s)`, 'Changement de statut en masse réussi');
         }
         if (errorCount > 0) {
@@ -9039,6 +9047,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         
         // Afficher les résultats
         if (successCount > 0) {
+            this.notifyResult8RecUpdated();
             this.popupService.showSuccess(`Traitement modifié pour ${successCount} ligne(s)`, 'Changement de traitement en masse réussi');
         }
         if (errorCount > 0) {
@@ -9323,6 +9332,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
                         item.status = updated.status;
                     }
                     this.stopEditStatus();
+                    this.notifyResult8RecUpdated();
                     console.log('✅ Statut mis à jour avec succès (autres colonnes non modifiées)');
                 } catch (err) {
                     console.error('❌ Erreur lors de la mise à jour du statut', err);
@@ -10851,6 +10861,7 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
             this.isReleveValidated = this.isReleveCdoClosed();
 
             if (successCount > 0) {
+                this.notifyResult8RecUpdated();
                 this.popupService.showSuccess(
                     `✅ Traitement mis à « ${targetTraitement} » pour ${successCount} ligne(s)`,
                     successTitle

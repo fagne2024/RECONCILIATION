@@ -4,7 +4,7 @@ import { AutoProcessingService, AutoProcessingModel, ProcessingResult } from '..
 import { ModelPreProcessingService } from '../../services/model-preprocessing.service';
 import { ExportOptimizationService } from '../../services/export-optimization.service';
 import { OrangeMoneyUtilsService } from '../../services/orange-money-utils.service';
-import { fixGarbledCharacters } from '../../utils/encoding-fixer';
+import { fixGarbledCharacters, fixCellEncoding } from '../../utils/encoding-fixer';
 import {
     formatSpreadsheetCellValue,
     formatSpreadsheetDateValue,
@@ -476,6 +476,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
 
         try {
             const compiled = await this.compileAssistedTreatmentFileRows(this.traitementFiles);
+            compiled.rows = this.normalizeData(compiled.rows);
             if (!compiled.rows.length) {
                 await this.popupService.showWarning(
                     'Aucune donnée lisible dans les fichiers sélectionnés.',
@@ -617,7 +618,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
 
             const parsed = await this.readAssistedTreatmentFileRows(file);
             if (parsed.rows.length) {
-                compiled.push(...parsed.rows);
+                this.appendRowsSafely(compiled, parsed.rows);
                 const headerInfo = parsed.headerLine >= 0
                     ? `, en-tête ligne ${parsed.headerLine + 1}`
                     : '';
@@ -635,8 +636,15 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         };
     }
 
+    /** Fusionne des lignes sans spread (évite « Maximum call stack size exceeded » sur gros fichiers). */
+    private appendRowsSafely(target: Record<string, string>[], source: Record<string, string>[]): void {
+        for (let i = 0; i < source.length; i++) {
+            target.push(source[i]);
+        }
+    }
+
     /**
-     * Détecte la ligne d'en-tête, ignore les lignes avant l'en-tête et filtre les lignes inutiles.
+     * Détecte la ligne d'en-tête et ignore les lignes avant l'en-tête et les lignes inutiles.
      */
     private parseAssistedTreatmentGrid(jsonData: any[][]): {
         rows: Record<string, string>[];
@@ -693,6 +701,146 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         };
     }
 
+    /** Lit toutes les feuilles Excel et fusionne les lignes utiles (rapports multi-feuilles Orange Money, etc.). */
+    private parseAssistedTreatmentWorkbook(workbook: XLSX.WorkBook): {
+        rows: Record<string, string>[];
+        headerLine: number;
+        removedLines: number;
+    } {
+        const sheetNames = workbook.SheetNames.filter(name => !!workbook.Sheets[name]);
+        if (!sheetNames.length) {
+            return { rows: [], headerLine: 0, removedLines: 0 };
+        }
+
+        const firstGrid = this.normalizeAssistedTreatmentGrid(
+            this.workbookSheetToGrid(workbook.Sheets[sheetNames[0]])
+        );
+        if (!firstGrid.length) {
+            return { rows: [], headerLine: 0, removedLines: 0 };
+        }
+
+        const firstParse = this.parseAssistedTreatmentGrid(firstGrid);
+        if (sheetNames.length === 1) {
+            return firstParse;
+        }
+
+        const assistedHeader = this.detectAssistedTreatmentHeader(firstGrid);
+        const headerRow = assistedHeader.headerRow.map(h => this.normalizeColumnName(h || ''));
+        const headers = firstParse.rows.length
+            ? Object.keys(firstParse.rows[0])
+            : headerRow.filter(h => h.length > 0);
+        const mergedRows: Record<string, string>[] = [];
+        this.appendRowsSafely(mergedRows, firstParse.rows);
+        let removedLines = firstParse.removedLines;
+
+        console.log(
+            `📊 Mode assisté — ${sheetNames.length} feuille(s) : ` +
+            `${firstParse.rows.length} ligne(s) sur « ${sheetNames[0]} »`
+        );
+
+        for (let i = 1; i < sheetNames.length; i++) {
+            const sheetName = sheetNames[i];
+            const grid = this.normalizeAssistedTreatmentGrid(
+                this.workbookSheetToGrid(workbook.Sheets[sheetName])
+            );
+            if (!grid.length) {
+                continue;
+            }
+
+            const continuation = this.parseAssistedTreatmentContinuationSheet(
+                grid,
+                headers,
+                assistedHeader.headerRow
+            );
+            console.log(
+                `📄 Feuille « ${sheetName} » : ${continuation.rows.length} ligne(s) ajoutée(s), ` +
+                `${continuation.removedLines} ignorée(s)`
+            );
+            this.appendRowsSafely(mergedRows, continuation.rows);
+            removedLines += continuation.removedLines;
+        }
+
+        return {
+            rows: mergedRows,
+            headerLine: firstParse.headerLine,
+            removedLines
+        };
+    }
+
+    private workbookSheetToGrid(worksheet: XLSX.WorkSheet): any[][] {
+        return XLSX.utils.sheet_to_json(worksheet, {
+            header: 1,
+            defval: '',
+            raw: false,
+            blankrows: false
+        }) as any[][];
+    }
+
+    private parseAssistedTreatmentContinuationSheet(
+        jsonData: any[][],
+        headers: string[],
+        referenceHeaderRow: string[]
+    ): { rows: Record<string, string>[]; removedLines: number } {
+        if (!jsonData.length || !headers.length) {
+            return { rows: [], removedLines: 0 };
+        }
+
+        const startIndex = this.findContinuationSheetDataStart(jsonData, referenceHeaderRow);
+        const rows: Record<string, string>[] = [];
+        let removedLines = startIndex;
+
+        for (let i = startIndex; i < jsonData.length; i++) {
+            const rowData = jsonData[i] as any[];
+            if (!rowData || rowData.length === 0) {
+                removedLines++;
+                continue;
+            }
+
+            const row: Record<string, string> = {};
+            headers.forEach((header, index) => {
+                this.assignExcelCellValue(row, header, rowData[index]);
+            });
+
+            if (!this.isUsefulAssistedTreatmentRow(row, headers)) {
+                removedLines++;
+                continue;
+            }
+
+            rows.push(row);
+        }
+
+        return { rows, removedLines };
+    }
+
+    private findContinuationSheetDataStart(grid: any[][], referenceHeaderRow: string[]): number {
+        const refNorm = referenceHeaderRow
+            .map(h => this.normalizeColumnName(h).toLowerCase())
+            .filter(h => h.length > 0);
+
+        if (!refNorm.length) {
+            return 0;
+        }
+
+        for (let i = 0; i < Math.min(grid.length, 35); i++) {
+            const rowCells = this.extractAssistedGridRowStrings(grid[i])
+                .map(h => this.normalizeColumnName(h).toLowerCase())
+                .filter(h => h.length > 0);
+            if (!rowCells.length) {
+                continue;
+            }
+
+            const matches = refNorm.filter(ref =>
+                rowCells.some(cell => cell === ref || cell.includes(ref) || ref.includes(cell))
+            ).length;
+
+            if (matches >= Math.min(3, refNorm.length)) {
+                return i + 1;
+            }
+        }
+
+        return 0;
+    }
+
     /**
      * Détecte la ligne d'en-tête (Airtel User Transaction Report, puis heuristique générale).
      */
@@ -708,6 +856,16 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                 headerRowIndex: airtelHeaderIndex,
                 headerRow,
                 source: 'Airtel User Transaction Report'
+            };
+        }
+
+        const orangeMoneyHeaderIndex = this.detectOrangeMoneyChannelReportHeaderIndex(jsonData);
+        if (orangeMoneyHeaderIndex !== null) {
+            const headerRow = this.extractAssistedGridRowStrings(jsonData[orangeMoneyHeaderIndex]);
+            return {
+                headerRowIndex: orangeMoneyHeaderIndex,
+                headerRow,
+                source: 'Orange Money Channel User Transaction Report'
             };
         }
 
@@ -766,6 +924,34 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         return jsonData.length > 5 ? 5 : null;
     }
 
+    /**
+     * Rapport Orange Money multi-feuilles (Channel User Transaction Report).
+     */
+    private detectOrangeMoneyChannelReportHeaderIndex(jsonData: any[][]): number | null {
+        const scanLimit = Math.min(35, jsonData.length);
+        let isOrangeMoneyReport = false;
+
+        for (let i = 0; i < scanLimit; i++) {
+            const rowText = fixCellEncoding(this.getAssistedGridRowText(jsonData[i])).toLowerCase();
+            if (
+                rowText.includes('channel user transaction') ||
+                rowText.includes('compte orange money') ||
+                rowText.includes('orange money') ||
+                rowText.includes('rapport journalier')
+            ) {
+                isOrangeMoneyReport = true;
+                break;
+            }
+        }
+
+        if (!isOrangeMoneyReport) {
+            return null;
+        }
+
+        const detected = this.detectExcelHeadersImproved(jsonData);
+        return detected.headerRow?.some(h => h && String(h).trim()) ? detected.headerRowIndex : null;
+    }
+
     /** Répartit les lignes CSV lues en une seule colonne (export Excel). */
     private normalizeAssistedTreatmentGrid(jsonData: any[][]): any[][] {
         return jsonData.map(row => {
@@ -819,7 +1005,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         if (!row || !row.length) {
             return [];
         }
-        return row.map(cell => (cell !== null && cell !== undefined ? String(cell).trim() : ''));
+        return row.map(cell => fixCellEncoding(cell !== null && cell !== undefined ? String(cell).trim() : ''));
     }
 
     /** Préambule Airtel : ne garder que les lignes à partir de l'en-tête transactionnel. */
@@ -987,19 +1173,20 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         data: Record<string, string>[],
         outputBaseName: string
     ): Promise<void> {
-        const columns = this.getColumnsFromData(data);
+        const normalizedData = this.normalizeData(data);
+        const columns = this.getColumnsFromData(normalizedData);
         const lowerName = outputBaseName.toLowerCase();
 
         if (this.isExcelFile(lowerName)) {
             const format = lowerName.endsWith('.xls') ? 'xls' : 'xlsx';
             await this.exportOptimizationService.exportExcelOptimized(
-                data,
+                normalizedData,
                 columns,
                 outputBaseName,
                 { format }
             );
         } else {
-            await this.exportOptimizationService.exportCSVOptimized(data, columns, outputBaseName);
+            await this.exportOptimizationService.exportCSVOptimized(normalizedData, columns, outputBaseName);
         }
     }
 
@@ -1090,25 +1277,12 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                             cellDates: true,
                             raw: false
                         });
-                        const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-                        if (!worksheet) {
-                            reject(new Error('Feuille Excel introuvable'));
+                        if (!workbook.SheetNames?.length) {
+                            reject(new Error('Aucune feuille Excel trouvée'));
                             return;
                         }
 
-                        const jsonData = XLSX.utils.sheet_to_json(worksheet, {
-                            header: 1,
-                            defval: '',
-                            raw: false,
-                            blankrows: false
-                        }) as any[][];
-
-                        if (!jsonData.length) {
-                            reject(new Error('Fichier Excel vide'));
-                            return;
-                        }
-
-                        resolve(this.parseAssistedTreatmentGrid(jsonData));
+                        resolve(this.parseAssistedTreatmentWorkbook(workbook));
                     } catch (error) {
                         reject(error);
                     }
@@ -2218,36 +2392,35 @@ export class FileUploadComponent implements OnInit, OnDestroy {
      * Méthode simple qui retourne les données sans modification
      */
     private normalizeData(data: Record<string, string>[]): Record<string, string>[] {
-        // Nettoyer les données pour éviter les erreurs de sérialisation JSON
         return data.map(row => {
             const cleanedRow: Record<string, string> = {};
             for (const [key, value] of Object.entries(row)) {
+                const cleanKey = fixCellEncoding(key);
                 const cell = value as unknown;
-                // Convertir toutes les valeurs en chaînes de caractères valides
                 if (cell === null || cell === undefined) {
-                    cleanedRow[key] = '';
+                    cleanedRow[cleanKey] = '';
                 } else if (cell instanceof Date) {
-                    cleanedRow[key] = formatSpreadsheetDateValue(cell);
+                    cleanedRow[cleanKey] = formatSpreadsheetDateValue(cell);
                 } else if (typeof cell === 'object') {
                     try {
-                        cleanedRow[key] = JSON.stringify(cell);
+                        cleanedRow[cleanKey] = fixCellEncoding(JSON.stringify(cell));
                     } catch (e) {
-                        cleanedRow[key] = String(cell);
+                        cleanedRow[cleanKey] = fixCellEncoding(String(cell));
                     }
                 } else if (typeof cell === 'number') {
                     if (isNaN(cell) || !isFinite(cell)) {
-                        cleanedRow[key] = '';
-                    } else if (isDateColumnName(key) && isExcelSerialDateValue(cell)) {
-                        cleanedRow[key] = formatSpreadsheetDateValue(cell);
+                        cleanedRow[cleanKey] = '';
+                    } else if (isDateColumnName(cleanKey) && isExcelSerialDateValue(cell)) {
+                        cleanedRow[cleanKey] = formatSpreadsheetDateValue(cell);
                     } else {
-                        cleanedRow[key] = String(cell);
+                        cleanedRow[cleanKey] = String(cell);
                     }
                 } else {
                     const str = String(cell);
-                    if (isDateColumnName(key) && isExcelSerialDateValue(str)) {
-                        cleanedRow[key] = formatSpreadsheetDateValue(str);
+                    if (isDateColumnName(cleanKey) && isExcelSerialDateValue(str)) {
+                        cleanedRow[cleanKey] = formatSpreadsheetDateValue(str);
                     } else {
-                        cleanedRow[key] = str;
+                        cleanedRow[cleanKey] = fixCellEncoding(str);
                     }
                 }
             }
@@ -2258,7 +2431,11 @@ export class FileUploadComponent implements OnInit, OnDestroy {
     /** Affecte une valeur de cellule Excel en formatant les colonnes date */
     private assignExcelCellValue(row: Record<string, unknown>, header: string, value: unknown): void {
         const formatted = formatSpreadsheetCellValue(header, value);
-        row[header] = formatted !== undefined && formatted !== null ? formatted : '';
+        if (formatted === undefined || formatted === null || formatted === '') {
+            row[header] = '';
+            return;
+        }
+        row[header] = typeof formatted === 'string' ? fixCellEncoding(formatted) : formatted;
     }
 
     /**
@@ -2280,7 +2457,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         normalized = normalized.replace(/[\u200B-\u200D\uFEFF]/g, '');
         
         // Corriger les caractères mal encodés (é, è, à, etc.) - IMPORTANT: après le nettoyage
-        normalized = fixGarbledCharacters(normalized);
+        normalized = fixCellEncoding(normalized);
         
         // Remplacer les espaces multiples par un seul
         normalized = normalized.replace(/\s+/g, ' ');
