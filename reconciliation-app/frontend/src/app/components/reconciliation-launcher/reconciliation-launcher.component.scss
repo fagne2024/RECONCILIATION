@@ -781,6 +781,83 @@
     color: #667eea;
     text-align: center;
   }
+
+  .magic-partners-block {
+    border: 1px dashed #ced4da;
+    border-radius: 8px;
+    padding: 12px 14px;
+    background: #fafbfc;
+  }
+
+  .magic-partners-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+  }
+
+  .magic-partners-hint {
+    margin: 0;
+    font-size: 0.82rem;
+    color: #6c757d;
+  }
+
+  .magic-partners-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .magic-partners-list li {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 8px 10px;
+    border: 1px solid #dee2e6;
+    border-radius: 6px;
+    background: #fff;
+
+    &.ready {
+      border-color: #27ae60;
+      background: #f8fff9;
+    }
+  }
+
+  .magic-partner-item {
+    min-width: 0;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .magic-partner-name {
+    font-size: 0.85rem;
+    word-break: break-all;
+    color: #343a40;
+  }
+
+  .magic-line-error {
+    color: #c0392b !important;
+  }
+
+  .magic-remove-btn {
+    border: none;
+    background: transparent;
+    color: #adb5bd;
+    font-size: 1.2rem;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0 4px;
+
+    &:hover {
+      color: #c0392b;
+    }
+  }
 }
 
 .magic-progress-overlay {

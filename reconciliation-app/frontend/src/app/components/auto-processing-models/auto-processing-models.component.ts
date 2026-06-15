@@ -2913,7 +2913,7 @@ export class AutoProcessingModelsComponent implements OnInit {
       id: `concat-${this.nextModelConcatRuleId++}`,
       sourceColumns: [],
       targetColumn: '',
-      separator: ' ',
+      separator: '',
       enabled: true
     });
   }
@@ -3102,7 +3102,7 @@ export class AutoProcessingModelsComponent implements OnInit {
         id: rule.id,
         sourceColumns: [...rule.sourceColumns],
         targetColumn: rule.targetColumn.trim(),
-        separator: rule.separator ?? ' ',
+        separator: rule.separator ?? '',
         enabled: rule.enabled !== false
       }));
 
@@ -3151,7 +3151,7 @@ export class AutoProcessingModelsComponent implements OnInit {
       id: rule.id || `concat-${this.nextModelConcatRuleId++}`,
       sourceColumns: [...(rule.sourceColumns || [])],
       targetColumn: rule.targetColumn || '',
-      separator: rule.separator ?? ' ',
+      separator: rule.separator ?? '',
       enabled: rule.enabled !== false
     }));
 

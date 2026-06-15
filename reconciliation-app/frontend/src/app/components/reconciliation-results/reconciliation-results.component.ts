@@ -88,20 +88,39 @@ interface ApiError {
                 </div>
             </div>
 
-            <!-- Sélecteur de service (réconciliation magique) -->
+            <!-- Sélecteur partenaire + service (réconciliation magique) -->
             <div class="magic-services-panel" *ngIf="isMagicServiceView()">
                 <div class="magic-services-head">
                     <div class="magic-services-intro">
-                        <span class="magic-services-badge">{{ magicServiceSummaries.length }}</span>
+                        <span class="magic-services-badge">{{ visibleMagicSummaries.length }}</span>
                         <div>
-                            <h3 class="magic-services-title">Services réconciliés</h3>
-                            <p class="magic-services-sub">Valeurs identiques dans les fichiers BO et Partenaire</p>
+                            <h3 class="magic-services-title">Résultats magiques</h3>
+                            <p class="magic-services-sub" *ngIf="magicPartnerFileNames.length <= 1">
+                                Services communs BO / Partenaire
+                            </p>
+                            <p class="magic-services-sub" *ngIf="magicPartnerFileNames.length > 1">
+                                {{ magicPartnerFileNames.length }} fichiers partenaire — patterns indépendants
+                            </p>
                         </div>
                     </div>
-                    <div class="magic-services-nav" *ngIf="magicServiceSummaries.length > 1">
+                    <div class="magic-services-nav" *ngIf="visibleMagicSummaries.length > 1">
                         <button type="button" class="magic-nav-btn" (click)="selectPreviousMagicService()" [disabled]="!canSelectPreviousMagicService()" title="Service précédent">‹</button>
-                        <span class="magic-nav-counter">{{ getMagicServiceIndex() + 1 }} / {{ magicServiceSummaries.length }}</span>
+                        <span class="magic-nav-counter">{{ getMagicServiceIndex() + 1 }} / {{ visibleMagicSummaries.length }}</span>
                         <button type="button" class="magic-nav-btn" (click)="selectNextMagicService()" [disabled]="!canSelectNextMagicService()" title="Service suivant">›</button>
+                    </div>
+                </div>
+
+                <div class="magic-partners-row" *ngIf="magicPartnerFileNames.length > 1">
+                    <span class="magic-partners-label">Fichier partenaire</span>
+                    <div class="magic-partners-tabs">
+                        <button type="button"
+                                class="magic-partner-tab"
+                                *ngFor="let pf of magicPartnerFileNames"
+                                [class.active]="selectedMagicPartnerFile === pf"
+                                [title]="pf"
+                                (click)="selectMagicPartnerFile(pf)">
+                            {{ pf }}
+                        </button>
                     </div>
                 </div>
 
@@ -109,7 +128,7 @@ interface ApiError {
                     <button type="button"
                             role="tab"
                             class="magic-service-tab"
-                            *ngFor="let summary of magicServiceSummaries; let i = index"
+                            *ngFor="let summary of visibleMagicSummaries; let i = index"
                             [class.active]="selectedMagicService === summary.service"
                             [attr.aria-selected]="selectedMagicService === summary.service"
                             [title]="summary.service"
@@ -180,7 +199,7 @@ interface ApiError {
                 <div class="results-container">
             <div class="summary-section">
                 <div class="summary-header">
-                    <h3>📊 Résumé de la réconciliation<span *ngIf="isMagicServiceView()"> — {{ selectedMagicService }}</span></h3>
+                    <h3>📊 Résumé de la réconciliation<span *ngIf="isMagicServiceView()"> — {{ selectedMagicPartnerFile || 'Partenaire' }} / {{ selectedMagicService }}</span></h3>
                     <button (click)="openColumnSelector()" class="report-button">
                         📋 Rapport des écarts
                     </button>
@@ -1165,6 +1184,54 @@ interface ApiError {
         .magic-service-tab .metric-match .metric-value { color: var(--rd-green); }
         .magic-service-tab .metric-bo .metric-value { color: var(--rd-amber); }
         .magic-service-tab .metric-partner .metric-value { color: var(--rd-blue); }
+
+        .magic-partners-row {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            margin-bottom: 14px;
+        }
+
+        .magic-partners-label {
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            color: var(--rd-text3);
+        }
+
+        .magic-partners-tabs {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .magic-partner-tab {
+            max-width: 280px;
+            padding: 8px 12px;
+            border: 1.5px solid var(--rd-border);
+            border-radius: 8px;
+            background: #fff;
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--rd-text2);
+            cursor: pointer;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            font-family: inherit;
+            transition: border-color 0.15s, background 0.15s;
+        }
+
+        .magic-partner-tab:hover {
+            border-color: var(--rd-blue-m);
+        }
+
+        .magic-partner-tab.active {
+            border-color: var(--rd-blue);
+            background: var(--rd-blue-l);
+            color: var(--rd-blue);
+        }
 
         .main {
             padding: 28px 28px 60px;
@@ -2817,6 +2884,8 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
     readonly agencyPageSize = 10;
     selectedService: string = '';
     magicServiceSummaries: MagicServiceSummary[] = [];
+    magicPartnerFileNames: string[] = [];
+    selectedMagicPartnerFile: string = '';
     selectedMagicService: string = '';
     selectedDate: string = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().split('T')[0];
     
@@ -4112,10 +4181,11 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
         });
 
         this.magicServiceSummaries = this.appStateService.getMagicServiceSummaries();
-        if (this.magicServiceSummaries.length > 0) {
-            this.selectedMagicService = this.magicServiceSummaries[0].service;
-            this.selectedService = this.selectedMagicService;
-        }
+        this.magicPartnerFileNames = this.appStateService.getMagicPartnerFileNames();
+        this.selectedMagicPartnerFile = this.appStateService.getSelectedMagicPartnerFile()
+            || this.magicPartnerFileNames[0]
+            || '';
+        this.initializeMagicSelection();
         
         // Vérifier si les données sont déjà présentes pour éviter une réinitialisation complète
         const hasExistingData = this.response && (
@@ -4168,10 +4238,11 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                     
                     this.response = this.normalizeReconciliationResponseDates(response);
                     this.magicServiceSummaries = this.appStateService.getMagicServiceSummaries();
-                    if (this.magicServiceSummaries.length > 0) {
-                        this.selectedMagicService = this.magicServiceSummaries[0].service;
-                        this.selectedService = this.selectedMagicService;
-                    }
+                    this.magicPartnerFileNames = this.appStateService.getMagicPartnerFileNames();
+                    this.selectedMagicPartnerFile = this.appStateService.getSelectedMagicPartnerFile()
+                        || this.magicPartnerFileNames[0]
+                        || '';
+                    this.initializeMagicSelection();
                     
                     // S'assurer que l'onglet actif est bien défini pour afficher les résultats
                     if (!this.activeTab || this.activeTab === 'matches') {
@@ -7210,15 +7281,30 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
     }
 
     nouvelleReconciliation() {
-        console.log('Navigation vers nouvelle réconciliation');
-        // Vider le cache du rapport et les résultats pour que la prochaine ouverture
-        // du rapport reflète la nouvelle réconciliation, pas l'ancienne.
+        let mode = this.appStateService.getReconciliationLaunchMode();
+        if (mode === 'manual' && this.magicServiceSummaries.length > 0) {
+            mode = 'magic';
+        }
+
+        const entryPath = this.appStateService.getReconciliationEntryPath()
+            || this.appStateService.getDefaultEntryPathForMode(mode);
+
         this.reconciliationSummaryService.clearAgencySummary();
-        this.appStateService.clearReconciliationResults();
-        this.router.navigate(['/upload']).then(() => {
-            console.log('Navigation vers /upload réussie');
-        }).catch(error => {
-            console.error('Erreur lors de la navigation vers /upload:', error);
+        this.appStateService.resetForNewReconciliation();
+        this.reconciliationTabsService.clearAllData();
+        this.reconciliationService.clearData();
+
+        const queryParams: { reset: string; mode?: string } = { reset: '1' };
+        if (mode === 'magic') {
+            queryParams.mode = 'magic';
+        } else if (mode === 'assisted') {
+            queryParams.mode = 'assisted';
+        } else if (entryPath === '/reconciliation-launcher') {
+            queryParams.mode = 'manual';
+        }
+
+        this.router.navigate([entryPath], { queryParams }).catch(error => {
+            console.error('Erreur lors de la navigation vers une nouvelle réconciliation:', error);
         });
     }
 
@@ -8312,7 +8398,7 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
         const step1Duration = performance.now() - step1Start;
         console.log(`🟡 [GET_FILTERED_MATCHES] Étape 1: Récupération matches: ${step1Duration.toFixed(2)}ms (${totalMatches} matches)`);
 
-        if (!this.getActiveServiceFilter()) {
+        if (!this.getActiveServiceFilter() && !this.isMagicServiceView()) {
             const totalDuration = performance.now() - startTime;
             console.log(`🟡 [GET_FILTERED_MATCHES] Pas de filtre service, retour direct: ${totalDuration.toFixed(2)}ms`);
             console.log('🟡 [GET_FILTERED_MATCHES] ============================================');
@@ -8323,10 +8409,7 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
         const step2Start = performance.now();
         console.log(`🟡 [GET_FILTERED_MATCHES] Étape 2: Filtrage par service "${serviceFilter}"...`);
         console.log(`🟡 [GET_FILTERED_MATCHES] Filtrage de ${totalMatches} matches...`);
-        const filtered = matches.filter(match => {
-            const tag = this.getMagicServiceTag(match.boData);
-            return tag === serviceFilter;
-        });
+        const filtered = matches.filter(match => this.recordMatchesMagicFilter(match.boData));
         const step2Duration = performance.now() - step2Start;
         const totalDuration = performance.now() - startTime;
 
@@ -8360,7 +8443,7 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
         const allMismatches = [...mismatches, ...boOnly];
         const combineDuration = performance.now() - combineStartTime;
 
-        if (!this.getActiveServiceFilter()) {
+        if (!this.getActiveServiceFilter() && !this.isMagicServiceView()) {
             const totalDuration = performance.now() - startTime;
             console.log(`🟠 [TEMPLATE] getFilteredBoOnly (pas de filtre): ${totalDuration.toFixed(2)}ms (${allMismatches.length} éléments)`);
             return allMismatches;
@@ -8368,7 +8451,7 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
 
         const serviceFilter = this.getActiveServiceFilter();
         const filterStartTime = performance.now();
-        const filtered = allMismatches.filter(record => this.getMagicServiceTag(record) === serviceFilter);
+        const filtered = allMismatches.filter(record => this.recordMatchesMagicFilter(record));
         const filterDuration = performance.now() - filterStartTime;
         const totalDuration = performance.now() - startTime;
         
@@ -8390,14 +8473,14 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
         const partnerOnly = this.response?.partnerOnly || [];
         const totalPartnerOnly = partnerOnly.length;
         
-        if (!this.getActiveServiceFilter()) {
+        if (!this.getActiveServiceFilter() && !this.isMagicServiceView()) {
             console.log('⏱️ getFilteredPartnerOnly (pas de filtre):', `${(performance.now() - startTime).toFixed(2)}ms`, `(${totalPartnerOnly} éléments)`);
             return partnerOnly;
         }
         
         const serviceFilter = this.getActiveServiceFilter();
         const filterStartTime = performance.now();
-        const filtered = partnerOnly.filter(record => this.getMagicServiceTag(record) === serviceFilter);
+        const filtered = partnerOnly.filter(record => this.recordMatchesMagicFilter(record));
         const filterDuration = performance.now() - filterStartTime;
         const totalDuration = performance.now() - startTime;
         
@@ -8431,12 +8514,7 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
     }
 
     startReconciliation() {
-        console.log('Démarrage d\'une nouvelle réconciliation');
-        this.router.navigate(['/upload']).then(() => {
-            console.log('Navigation vers /upload réussie');
-        }).catch(error => {
-            console.error('Erreur lors de la navigation vers /upload:', error);
-        });
+        this.nouvelleReconciliation();
     }
 
     async saveAgencySummary() {
@@ -8883,21 +8961,43 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
         return '';
     }
 
+    get visibleMagicSummaries(): MagicServiceSummary[] {
+        if (!this.selectedMagicPartnerFile) {
+            return this.magicServiceSummaries.filter(s => s.service !== 'Tous');
+        }
+        return this.magicServiceSummaries.filter(
+            s => s.service !== 'Tous' && s.partnerFileName === this.selectedMagicPartnerFile
+        );
+    }
+
+    private initializeMagicSelection(): void {
+        const visible = this.visibleMagicSummaries;
+        if (visible.length > 0) {
+            this.selectedMagicService = visible[0].service;
+            this.selectedService = this.selectedMagicService;
+        }
+    }
+
     isMagicServiceView(): boolean {
-        return this.magicServiceSummaries.length > 0 &&
-            this.magicServiceSummaries[0].service !== 'Tous' &&
-            !!this.selectedMagicService;
+        return this.visibleMagicSummaries.length > 0 && !!this.selectedMagicService;
     }
 
     get displayBoTransactionTotal(): number {
         if (this.isMagicServiceView()) {
-            const summary = this.magicServiceSummaries.find(s => s.service === this.selectedMagicService);
+            const summary = this.findActiveMagicSummary();
             if (summary) {
                 return summary.totalBoRecords;
             }
             return this.filteredMatchesCount + this.filteredBoOnlyCount;
         }
         return this.totalTransactions;
+    }
+
+    private findActiveMagicSummary(): MagicServiceSummary | undefined {
+        return this.magicServiceSummaries.find(
+            s => s.service === this.selectedMagicService &&
+                (!this.selectedMagicPartnerFile || s.partnerFileName === this.selectedMagicPartnerFile)
+        );
     }
 
     private getActiveServiceFilter(): string {
@@ -8909,6 +9009,33 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
 
     private getMagicServiceTag(record: Record<string, string>): string {
         return (record['_magicService'] || record['Service'] || '').trim();
+    }
+
+    private getMagicPartnerTag(record: Record<string, string>): string {
+        return (record['_magicPartnerFile'] || '').trim();
+    }
+
+    private recordMatchesMagicFilter(record: Record<string, string>): boolean {
+        if (!this.isMagicServiceView()) {
+            return true;
+        }
+        if (this.selectedMagicPartnerFile && this.getMagicPartnerTag(record) !== this.selectedMagicPartnerFile) {
+            return false;
+        }
+        const serviceFilter = this.getActiveServiceFilter();
+        return !serviceFilter || this.getMagicServiceTag(record) === serviceFilter;
+    }
+
+    selectMagicPartnerFile(fileName: string): void {
+        this.selectedMagicPartnerFile = fileName;
+        this.appStateService.setSelectedMagicPartnerFile(fileName);
+        const visible = this.visibleMagicSummaries;
+        if (visible.length) {
+            this.selectMagicService(visible[0].service);
+        } else {
+            this.initializeFilteredData();
+            this.cdr.markForCheck();
+        }
     }
 
     selectMagicService(service: string): void {
@@ -8925,7 +9052,7 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
     }
 
     getMagicServiceIndex(): number {
-        return this.magicServiceSummaries.findIndex(s => s.service === this.selectedMagicService);
+        return this.visibleMagicSummaries.findIndex(s => s.service === this.selectedMagicService);
     }
 
     canSelectPreviousMagicService(): boolean {
@@ -8934,20 +9061,20 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
 
     canSelectNextMagicService(): boolean {
         const idx = this.getMagicServiceIndex();
-        return idx >= 0 && idx < this.magicServiceSummaries.length - 1;
+        return idx >= 0 && idx < this.visibleMagicSummaries.length - 1;
     }
 
     selectPreviousMagicService(): void {
         const idx = this.getMagicServiceIndex();
         if (idx > 0) {
-            this.selectMagicService(this.magicServiceSummaries[idx - 1].service);
+            this.selectMagicService(this.visibleMagicSummaries[idx - 1].service);
         }
     }
 
     selectNextMagicService(): void {
         const idx = this.getMagicServiceIndex();
-        if (idx >= 0 && idx < this.magicServiceSummaries.length - 1) {
-            this.selectMagicService(this.magicServiceSummaries[idx + 1].service);
+        if (idx >= 0 && idx < this.visibleMagicSummaries.length - 1) {
+            this.selectMagicService(this.visibleMagicSummaries[idx + 1].service);
         }
     }
 

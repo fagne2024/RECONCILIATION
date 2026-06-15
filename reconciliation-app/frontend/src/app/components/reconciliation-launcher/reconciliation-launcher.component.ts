@@ -100,11 +100,11 @@ import * as XLSX from 'xlsx';
               <h4>Mode Magique</h4>
             </div>
             <div class="option-description">
-              <p>Chargez BO et Partenaire : patterns des modèles (mode assisté) ou détection auto des clés, puis réconciliation immédiate.</p>
+              <p>Chargez le BO et un ou plusieurs fichiers Partenaire : chaque partenaire est réconcilié avec le BO (patterns ou clés auto).</p>
               <ul>
-                <li>Patterns sur les deux fichiers si configurés</li>
-                <li>Résultats par service si plusieurs services détectés</li>
-                <li>Sinon analyse automatique des colonnes clés</li>
+                <li>Plusieurs fichiers partenaire, patterns différents acceptés</li>
+                <li>Résultats par fichier partenaire et par service</li>
+                <li>Détection automatique des clés si pas de pattern</li>
               </ul>
             </div>
             <button class="select-option-btn magic-btn" 
@@ -336,13 +336,13 @@ import * as XLSX from 'xlsx';
       <div class="selection-overlay" *ngIf="showMagicUploadModal">
         <div class="selection-modal magic-upload-modal">
           <div class="selection-header">
-            <span class="badge-text">Réconciliation magique — chargez les deux fichiers</span>
+            <span class="badge-text">Réconciliation magique — 1 BO + un ou plusieurs Partenaires</span>
           </div>
           <div class="magic-upload-body">
             <input type="file" id="magicBoFileInput" accept=".csv,.xls,.xlsx,.xlsm,.xlsb" hidden
                    (change)="onMagicFileSelected($event, 'bo')">
-            <input type="file" id="magicPartnerFileInput" accept=".csv,.xls,.xlsx,.xlsm,.xlsb" hidden
-                   (change)="onMagicFileSelected($event, 'partner')">
+            <input type="file" id="magicPartnerFileInput" accept=".csv,.xls,.xlsx,.xlsm,.xlsb" multiple hidden
+                   (change)="onMagicPartnerFilesSelected($event)">
 
             <div class="magic-file-row" [class.ready]="!!magicBoFile">
               <div class="magic-file-info">
@@ -353,16 +353,28 @@ import * as XLSX from 'xlsx';
               <button type="button" class="sel-btn" (click)="selectMagicFile('bo')">Choisir</button>
             </div>
 
-            <div class="magic-file-row" [class.ready]="!!magicPartnerFile">
-              <div class="magic-file-info">
-                <strong>Fichier Partenaire</strong>
-                <span>{{ magicPartnerFile?.name || 'Aucun fichier sélectionné' }}</span>
-                <span class="magic-line-count" *ngIf="partnerData.length">({{ partnerData.length }} lignes)</span>
+            <div class="magic-partners-block">
+              <div class="magic-partners-head">
+                <strong>Fichiers Partenaire</strong>
+                <button type="button" class="sel-btn" (click)="selectMagicFile('partner')">Ajouter</button>
               </div>
-              <button type="button" class="sel-btn" (click)="selectMagicFile('partner')">Choisir</button>
+              <p class="magic-partners-hint" *ngIf="!magicPartnerSlots.length">
+                Sélectionnez un ou plusieurs fichiers (patterns différents acceptés).
+              </p>
+              <ul class="magic-partners-list" *ngIf="magicPartnerSlots.length">
+                <li *ngFor="let slot of magicPartnerSlots; let i = index" [class.ready]="!slot.loading && slot.data.length">
+                  <div class="magic-partner-item">
+                    <span class="magic-partner-name" [title]="slot.file.name">{{ slot.file.name }}</span>
+                    <span class="magic-line-count" *ngIf="slot.loading">Lecture...</span>
+                    <span class="magic-line-count" *ngIf="!slot.loading && slot.data.length">({{ slot.data.length }} lignes)</span>
+                    <span class="magic-line-count magic-line-error" *ngIf="!slot.loading && !slot.data.length">Vide</span>
+                  </div>
+                  <button type="button" class="magic-remove-btn" (click)="removeMagicPartnerSlot(i)" title="Retirer">×</button>
+                </li>
+              </ul>
             </div>
 
-            <p class="magic-hint" *ngIf="magicBoFile && magicPartnerFile && (!boData.length || !partnerData.length)">
+            <p class="magic-hint" *ngIf="magicBoFile && magicPartnerSlots.length && !canLaunchMagic">
               Lecture des fichiers en cours...
             </p>
           </div>
@@ -403,11 +415,10 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
   isLoading: boolean = false;
   showMagicUploadModal = false;
   magicBoFile: File | null = null;
-  magicPartnerFile: File | null = null;
+  magicPartnerSlots: Array<{ file: File; data: Record<string, string>[]; loading: boolean }> = [];
   magicPipelineRunning = false;
   magicProgressMessage = '';
   private magicBoParsed = false;
-  private magicPartnerParsed = false;
 
   // Données parsées
   boData: Record<string, string>[] = [];
@@ -482,7 +493,13 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
   ) {}
 
   ngOnInit(): void {
-    this.refreshFilesFromState();
+    const reset = this.route.snapshot.queryParamMap.get('reset') === '1';
+    if (reset) {
+      this.resetLauncherSession();
+    } else {
+      this.refreshFilesFromState();
+    }
+
     const mode = this.route.snapshot.queryParamMap.get('mode');
     if (mode === 'assisted' || mode === 'manual') {
       this.selectedMode = mode;
@@ -491,6 +508,23 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
       this.selectedMode = 'magic';
       this.openMagicReconciliation();
     }
+  }
+
+  private resetLauncherSession(): void {
+    this.boFile = null;
+    this.partnerFile = null;
+    this.boData = [];
+    this.partnerData = [];
+    this.magicBoFile = null;
+    this.magicPartnerSlots = [];
+    this.magicBoParsed = false;
+    this.magicPipelineRunning = false;
+    this.magicProgressMessage = '';
+    this.showMagicUploadModal = false;
+    this.isLoading = false;
+    this.clearBoSelections();
+    this.clearPartnerSelections();
+    this.reconciliationService.clearData();
   }
 
   ngOnDestroy(): void {
@@ -508,30 +542,30 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
   }
 
   get canLaunchMagic(): boolean {
-    return !!(this.magicBoFile && this.magicPartnerFile && this.boData.length && this.partnerData.length);
+    return !!(
+      this.magicBoFile &&
+      this.boData.length &&
+      this.magicPartnerSlots.length > 0 &&
+      this.magicPartnerSlots.every(s => !s.loading && s.data.length > 0)
+    );
   }
 
   openMagicReconciliation(): void {
     this.selectedMode = 'magic';
     this.refreshFilesFromState();
     this.magicBoFile = this.boFile;
-    this.magicPartnerFile = this.partnerFile;
+    this.magicPartnerSlots = [];
     this.magicBoParsed = this.boData.length > 0;
-    this.magicPartnerParsed = this.partnerData.length > 0;
 
     if (this.boFile && !this.boData.length) {
       this.parseFile(this.boFile, true, true);
     }
-    if (this.partnerFile && !this.partnerData.length) {
-      this.parseFile(this.partnerFile, false, true);
+    if (this.partnerFile) {
+      void this.addMagicPartnerFile(this.partnerFile);
     }
 
     this.showMagicUploadModal = true;
     this.cdr.detectChanges();
-
-    if (this.canLaunchMagic) {
-      void this.startMagicReconciliationFromModal();
-    }
   }
 
   cancelMagicUpload(): void {
@@ -546,30 +580,66 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
     input?.click();
   }
 
-  onMagicFileSelected(event: Event, type: 'bo' | 'partner'): void {
+  onMagicFileSelected(event: Event, type: 'bo'): void {
     const file = (event.target as HTMLInputElement).files?.[0];
     if (!file) {
       return;
     }
-    if (type === 'bo') {
-      this.magicBoFile = file;
-      this.boFile = file;
-      this.boData = [];
-      this.magicBoParsed = false;
-      this.clearBoSelections();
-    } else {
-      this.magicPartnerFile = file;
-      this.partnerFile = file;
-      this.partnerData = [];
-      this.magicPartnerParsed = false;
-      this.clearPartnerSelections();
-    }
+    this.magicBoFile = file;
+    this.boFile = file;
+    this.boData = [];
+    this.magicBoParsed = false;
+    this.clearBoSelections();
     this.appStateService.setUploadedFiles({
       boFile: this.boFile,
       partnerFile: this.partnerFile
     });
-    this.parseFile(file, type === 'bo', true);
+    this.parseFile(file, true, true);
     this.cdr.detectChanges();
+  }
+
+  onMagicPartnerFilesSelected(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const files = Array.from(input.files || []);
+    input.value = '';
+    for (const file of files) {
+      void this.addMagicPartnerFile(file);
+    }
+  }
+
+  async addMagicPartnerFile(file: File): Promise<void> {
+    if (this.magicPartnerSlots.some(s => s.file.name === file.name && s.file.size === file.size)) {
+      return;
+    }
+    const slot = { file, data: [] as Record<string, string>[], loading: true };
+    this.magicPartnerSlots.push(slot);
+    this.cdr.detectChanges();
+    try {
+      slot.data = await this.readFileData(file);
+    } catch (error) {
+      console.error('Erreur lecture partenaire:', error);
+      slot.data = [];
+    } finally {
+      slot.loading = false;
+      this.syncPartnerStateFromMagicSlots();
+      this.cdr.detectChanges();
+    }
+  }
+
+  removeMagicPartnerSlot(index: number): void {
+    this.magicPartnerSlots.splice(index, 1);
+    this.syncPartnerStateFromMagicSlots();
+    this.cdr.detectChanges();
+  }
+
+  private syncPartnerStateFromMagicSlots(): void {
+    const first = this.magicPartnerSlots.find(s => s.data.length);
+    this.partnerFile = first?.file ?? null;
+    this.partnerData = first?.data ?? [];
+    this.appStateService.setUploadedFiles({
+      boFile: this.boFile,
+      partnerFile: this.partnerFile
+    });
   }
 
   async startMagicReconciliationFromModal(): Promise<void> {
@@ -697,6 +767,8 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
   selectMode(mode: 'manual' | 'assisted' | 'magic'): void {
     console.log('🎯 Mode sélectionné:', mode);
     this.selectedMode = mode;
+    this.appStateService.setReconciliationLaunchMode(mode);
+    this.appStateService.setReconciliationEntryPath('/reconciliation-launcher');
 
     if (mode === 'magic') {
       this.openMagicReconciliation();
@@ -717,11 +789,15 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
     if (!this.selectedMode) return;
 
     if (this.selectedMode === 'manual') {
+      this.appStateService.setReconciliationLaunchMode('manual');
+      this.appStateService.setReconciliationEntryPath('/reconciliation-launcher');
       this.router.navigate(['/column-selection'], { queryParams: { mode: 'manual' } });
       return;
     }
 
     if (this.selectedMode === 'assisted') {
+      this.appStateService.setReconciliationLaunchMode('assisted');
+      this.appStateService.setReconciliationEntryPath('/upload-assisted');
       this.router.navigate(['/upload-assisted']);
       return;
     }
@@ -729,7 +805,7 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
 
   // Méthode pour la réconciliation magique
   private async launchMagicReconciliation(): Promise<void> {
-    if (!this.boFile || !this.partnerFile || !this.boData.length || !this.partnerData.length) {
+    if (!this.boFile || !this.boData.length || !this.canLaunchMagic) {
       this.showMagicUploadModal = true;
       return;
     }
@@ -739,42 +815,50 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
     this.isLoading = true;
     this.cdr.detectChanges();
 
+    const partners = this.magicPartnerSlots
+      .filter(s => s.data.length)
+      .map(s => ({ fileName: s.file.name, data: s.data }));
+
     this.appStateService.setUploadedFiles({
       boFile: this.boFile,
-      partnerFile: this.partnerFile
+      partnerFile: partners[0] ? this.magicPartnerSlots[0].file : null
     });
-    this.appStateService.setReconciliationData(this.boData, this.partnerData);
+    this.appStateService.setReconciliationData(this.boData, partners[0]?.data ?? []);
 
     try {
-      const result = await this.magicReconciliationService.run(
+      const result = await this.magicReconciliationService.runMultiPartner(
         this.boFile.name,
-        this.partnerFile.name,
         this.boData,
-        this.partnerData,
+        partners,
         progress => {
           this.magicProgressMessage = progress.step;
           this.cdr.detectChanges();
         }
       );
 
-      const modeLabel = result.mode === 'pattern' ? 'patterns modèles' : 'détection automatique des clés';
-      const modelsInfo = result.boModelName || result.partnerModelName
-        ? ` (${[result.boModelName, result.partnerModelName].filter(Boolean).join(' / ')})`
-        : '';
+      const modeLabel = result.mode === 'pattern'
+        ? 'patterns modèles'
+        : result.mode === 'mixed'
+          ? 'patterns et détection auto'
+          : 'détection automatique des clés';
 
       this.reconciliationTabsService.clearAllData();
+      this.appStateService.setReconciliationLaunchMode('magic');
+      this.appStateService.setReconciliationEntryPath('/reconciliation-launcher');
+      this.appStateService.setMagicPartnerFileNames(result.partnerFileNames ?? partners.map(p => p.fileName));
+      this.appStateService.setSelectedMagicPartnerFile((result.partnerFileNames ?? [])[0] ?? '');
       this.appStateService.setMagicServiceSummaries(result.serviceSummaries);
       this.appStateService.setReconciliationResults(result.response);
       this.appStateService.setCurrentStep(4);
 
-      const multiService = result.serviceSummaries.length > 1;
-      await this.popupService.showSuccess(
-        `Réconciliation magique terminée via ${modeLabel}${modelsInfo}.\n` +
-        `Clés : ${result.boKeyColumn} ↔ ${result.partnerKeyColumn}` +
-        (multiService ? `\n${result.serviceSummaries.length} service(s) réconcilié(s).` : ''),
-        'Réconciliation magique'
-      );
+      let successMsg =
+        `Réconciliation magique terminée (${partners.length} fichier(s) partenaire) via ${modeLabel}.\n` +
+        `${result.serviceSummaries.length} périmètre(s) service réconcilié(s).`;
+      if (result.warnings?.length) {
+        successMsg += `\n\nAvertissements :\n${result.warnings.join('\n')}`;
+      }
 
+      await this.popupService.showSuccess(successMsg, 'Réconciliation magique');
       this.router.navigate(['/results']);
     } catch (error) {
       console.error('❌ Erreur réconciliation magique:', error);
@@ -2289,10 +2373,8 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
       }, 100);
     } else {
       this.partnerData = data;
-      this.magicPartnerParsed = forMagic || this.selectedMode === 'magic';
       this.cdr.detectChanges();
       if (forMagic || this.selectedMode === 'magic') {
-        this.checkMagicReadyToLaunch();
         return;
       }
       setTimeout(() => {
@@ -2310,13 +2392,69 @@ export class ReconciliationLauncherComponent implements OnInit, OnDestroy {
     if (this.selectedMode !== 'magic' || this.magicPipelineRunning) {
       return;
     }
-    if (!this.boData.length || !this.partnerData.length) {
-      return;
-    }
     this.cdr.detectChanges();
-    if (this.showMagicUploadModal && this.magicBoFile && this.magicPartnerFile) {
-      void this.startMagicReconciliationFromModal();
-    }
+  }
+
+  private readFileData(file: File): Promise<Record<string, string>[]> {
+    const name = file.name.toLowerCase();
+    return new Promise((resolve, reject) => {
+      if (name.endsWith('.csv')) {
+        const reader = new FileReader();
+        reader.onload = (e: ProgressEvent<FileReader>) => {
+          try {
+            let text = e.target?.result as string;
+            if (text.charCodeAt(0) === 0xFEFF) {
+              text = text.slice(1);
+            }
+            const lines = text.split('\n').filter(l => l.trim());
+            if (!lines.length) {
+              resolve([]);
+              return;
+            }
+            const first = lines[0];
+            const delimiter = (first.match(/;/g) || []).length > (first.match(/,/g) || []).length ? ';' : ',';
+            Papa.parse(text, {
+              header: true,
+              delimiter,
+              skipEmptyLines: true,
+              complete: results => resolve(results.data as Record<string, string>[]),
+              error: err => reject(err)
+            });
+          } catch (err) {
+            reject(err);
+          }
+        };
+        reader.onerror = () => reject(reader.error);
+        reader.readAsText(file, 'UTF-8');
+        return;
+      }
+
+      if (['.xls', '.xlsx', '.xlsm', '.xlsb', '.xlt', '.xltx', '.xltm'].some(ext => name.endsWith(ext))) {
+        const reader = new FileReader();
+        reader.onload = (e: ProgressEvent<FileReader>) => {
+          try {
+            const ab = e.target?.result as ArrayBuffer;
+            const wb = XLSX.read(ab, { type: 'array' });
+            const ws = wb.Sheets[wb.SheetNames[0]];
+            const rows: any[] = XLSX.utils.sheet_to_json(ws, { defval: '' });
+            resolve(rows.map(r => {
+              const row: Record<string, string> = {};
+              Object.keys(r).forEach(k => {
+                row[k] = r[k] !== null && r[k] !== undefined ? String(r[k]) : '';
+              });
+              return row;
+            }));
+          } catch (err) {
+            reject(err);
+          }
+        };
+        reader.onerror = () => reject(reader.error);
+        reader.readAsArrayBuffer(file);
+        return;
+      }
+
+      reject(new Error(`Format non supporté : ${file.name}`));
+    });
   }
 
   // ─── Détection TRXBO ───────────────────────────────────────────────────────

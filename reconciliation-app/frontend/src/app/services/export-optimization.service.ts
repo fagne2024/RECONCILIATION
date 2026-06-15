@@ -3,6 +3,7 @@ import { BehaviorSubject, Observable } from 'rxjs';
 import * as XLSX from 'xlsx';
 import * as ExcelJS from 'exceljs';
 import { fixCellEncoding } from '../utils/encoding-fixer';
+import { stripAllWhitespace } from '../utils/concat.util';
 
 /** Couleurs par type de commentaire pour export écarts (TRXBO/OPPART) - ARGB 8 caractères */
 export const ECART_COMMENT_COLORS: Record<string, string> = {
@@ -254,6 +255,17 @@ export class ExportOptimizationService {
   }
 
   /**
+   * Indique si une colonne est une colonne clé / identifiant (toujours exportée en texte)
+   */
+  private isKeyColumn(col: string): boolean {
+    const lower = (col || '').toLowerCase().normalize('NFD').replace(/\p{M}/gu, '');
+    const keyPatterns = [
+      'cle', 'key', 'reference', 'referenceid', 'idtransaction', 'reconciliation'
+    ];
+    return keyPatterns.some(k => lower === k || lower.includes(k));
+  }
+
+  /**
    * Indique si une colonne est une colonne montant/volume (à exporter en nombre)
    */
   private isAmountColumn(col: string): boolean {
@@ -272,6 +284,9 @@ export class ExportOptimizationService {
    */
   private cellValueForExcel(col: string, val: any): any {
     if (val === undefined || val === null || val === '') return '';
+    if (this.isKeyColumn(col)) {
+      return stripAllWhitespace(val);
+    }
     if (!this.isAmountColumn(col)) return val;
     const num = typeof val === 'number' ? val : parseFloat(String(val).replace(/\s/g, '').replace(',', '.'));
     return !isNaN(num) ? num : val;
@@ -307,6 +322,82 @@ export class ExportOptimizationService {
     format: 'xlsx' | 'xls' = 'xlsx'
   ): Promise<void> {
     const totalRows = rows.length;
+
+    if (format === 'xls') {
+      await this.exportExcelSynchronousXlsxLib(rows, columns, fileName, chunkSize, 'xls');
+      return;
+    }
+
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Données', { views: [{ state: 'frozen', ySplit: 1 }] });
+    const headerRow = worksheet.addRow(columns);
+    headerRow.font = { bold: true };
+
+    columns.forEach((col, idx) => {
+      if (this.isKeyColumn(col)) {
+        worksheet.getColumn(idx + 1).numFmt = '@';
+      }
+    });
+
+    for (let i = 0; i < totalRows; i += chunkSize) {
+      const chunk = rows.slice(i, i + chunkSize);
+      for (const row of chunk) {
+        const rowValues = columns.map(col => {
+          const base = this.serializeCellForExport(row[col]);
+          return this.cellValueForExcel(col, base);
+        });
+        const excelRow = worksheet.addRow(rowValues);
+        excelRow.eachCell((cell, colNumber) => {
+          const col = columns[colNumber - 1];
+          if (!this.isKeyColumn(col)) {
+            return;
+          }
+          const text = stripAllWhitespace(cell.value);
+          cell.value = text;
+          cell.numFmt = '@';
+        });
+      }
+
+      const progress = Math.min(i + chunkSize, totalRows);
+      this._exportProgress.next({
+        current: progress,
+        total: totalRows,
+        percentage: (progress / totalRows) * 100,
+        message: `Export Excel: ${progress.toLocaleString()}/${totalRows.toLocaleString()} lignes`,
+        isComplete: false
+      });
+
+      if (i % (chunkSize * 3) === 0) {
+        await new Promise(resolve => setTimeout(resolve, 0));
+      }
+    }
+
+    columns.forEach((col, idx) => {
+      worksheet.getColumn(idx + 1).width = Math.min(Math.max(String(col).length + 2, 12), 50);
+    });
+
+    const finalFileName = fileName.endsWith('.xlsx') ? fileName : fileName + '.xlsx';
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    this.downloadFile(blob, finalFileName);
+
+    this._exportProgress.next({
+      current: totalRows,
+      total: totalRows,
+      percentage: 100,
+      message: `✅ Export Excel terminé: ${finalFileName}`,
+      isComplete: true
+    });
+  }
+
+  private async exportExcelSynchronousXlsxLib(
+    rows: any[],
+    columns: string[],
+    fileName: string,
+    chunkSize: number,
+    format: 'xlsx' | 'xls' = 'xlsx'
+  ): Promise<void> {
+    const totalRows = rows.length;
     const workbook = XLSX.utils.book_new();
     const worksheet = XLSX.utils.aoa_to_sheet([columns]);
     
@@ -316,7 +407,11 @@ export class ExportOptimizationService {
       const chunkData = chunk.map(row =>
         columns.map(col => {
           const base = this.serializeCellForExport(row[col]);
-          return this.cellValueForExcel(col, base);
+          const val = this.cellValueForExcel(col, base);
+          if (this.isKeyColumn(col) && val !== '') {
+            return { t: 's', v: stripAllWhitespace(val), z: '@' };
+          }
+          return val;
         })
       );
       

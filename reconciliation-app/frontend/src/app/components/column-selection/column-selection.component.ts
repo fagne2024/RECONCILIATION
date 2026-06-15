@@ -1615,7 +1615,7 @@ export class ColumnSelectionComponent implements OnDestroy, OnChanges, OnInit {
                 
                 this.finishReconciliationProgress();
                 
-                // Stocker les résultats dans le service d'état
+                this.rememberReconciliationLaunchContext();
                 this.appStateService.setReconciliationResults(result);
                 
                 // Naviguer vers la page des résultats avec un délai pour voir la progression
@@ -1668,7 +1668,7 @@ export class ColumnSelectionComponent implements OnDestroy, OnChanges, OnInit {
                 
                 this.finishReconciliationProgress();
                 
-                // Stocker les résultats dans le service d'état
+                this.rememberReconciliationLaunchContext();
                 this.appStateService.setReconciliationResults(result);
                 
                 // Naviguer vers la page des résultats avec un délai pour voir la progression
@@ -1803,5 +1803,21 @@ export class ColumnSelectionComponent implements OnDestroy, OnChanges, OnInit {
             this.isReconciliationInProgress = false;
             this.cdr.detectChanges();
         }, 3000);
+    }
+
+    private rememberReconciliationLaunchContext(): void {
+        const urlMode = new URLSearchParams(window.location.search).get('mode');
+        if (urlMode === 'assisted') {
+            this.appStateService.setReconciliationLaunchMode('assisted');
+            this.appStateService.setReconciliationEntryPath('/reconciliation-launcher');
+            return;
+        }
+        if (urlMode === 'manual') {
+            this.appStateService.setReconciliationLaunchMode('manual');
+            this.appStateService.setReconciliationEntryPath('/reconciliation-launcher');
+            return;
+        }
+        this.appStateService.setReconciliationLaunchMode('manual');
+        this.appStateService.setReconciliationEntryPath('/upload');
     }
 } 

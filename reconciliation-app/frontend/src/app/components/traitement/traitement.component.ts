@@ -6,6 +6,7 @@ import { FieldTypeDetectionService, ColumnAnalysis } from '../../services/field-
 import { DataProcessingService } from '../../services/data-processing.service';
 import { ExportOptimizationService, ExportProgress } from '../../services/export-optimization.service';
 import { fixGarbledCharacters } from '../../utils/encoding-fixer';
+import { buildConcatenatedValue } from '../../utils/concat.util';
 import * as Papa from 'papaparse';
 import * as XLSX from 'xlsx';
 import * as ExcelJS from 'exceljs';
@@ -82,7 +83,7 @@ export class TraitementComponent implements OnInit, AfterViewInit {
   // --- CONCATÉNATION DE COLONNES (MULTI) ---
   concatCols: string[] = [];
   concatNewCol: string = '';
-  concatSeparator: string = ' ';
+  concatSeparator: string = '';
   concatOrderMode: boolean = false;
 
   exportTypePrefix: string = '';
@@ -3954,7 +3955,10 @@ End Sub`;
       this.originalRows = this.originalRows.map(row => {
         const newRow = { ...row };
         // Utiliser l'ordre des colonnes tel qu'il est dans concatCols
-        newRow[this.concatNewCol] = this.concatCols.map(col => row[col] ?? '').join(this.concatSeparator ?? '');
+        newRow[this.concatNewCol] = buildConcatenatedValue(
+          this.concatCols.map(col => row[col]),
+          this.concatSeparator ?? ''
+        );
         return newRow;
       });
       // Mettre à jour la liste des colonnes si besoin
@@ -5136,7 +5140,7 @@ End Sub`;
     this.filterApplied = false;
     this.concatCols = [];
     this.concatNewCol = '';
-    this.concatSeparator = ' ';
+    this.concatSeparator = '';
     this.exportTypePrefix = '';
     this.exportTypeSuffix = '';
     this.exportTypeCustomSuffix = '';

@@ -6,6 +6,7 @@ import {
   ModelColumnValueMapping,
   ModelColumnConcatRule
 } from './auto-processing.service';
+import { buildConcatenatedValue } from '../utils/concat.util';
 
 @Injectable({
   providedIn: 'root'
@@ -107,9 +108,10 @@ export class ModelPreProcessingService {
       const newRow = { ...row };
 
       for (const rule of activeRules) {
-        newRow[rule.targetColumn] = rule.sourceColumns
-          .map(column => String(newRow[column] ?? ''))
-          .join(rule.separator ?? '');
+        newRow[rule.targetColumn] = buildConcatenatedValue(
+          rule.sourceColumns.map(column => newRow[column]),
+          rule.separator ?? ''
+        );
       }
 
       return newRow;

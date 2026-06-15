@@ -5,6 +5,11 @@ import { DataNormalizationService } from './data-normalization.service';
 import { ReconciliationResponse } from '../models/reconciliation-response.model';
 import { MagicServiceSummary } from './magic-reconciliation.service';
 
+export type ReconciliationLaunchMode = 'manual' | 'assisted' | 'magic';
+
+const RECONCILIATION_LAUNCH_MODE_KEY = 'reconciliationLaunchMode';
+const RECONCILIATION_ENTRY_PATH_KEY = 'reconciliationEntryPath';
+
 export interface ReconciliationState {
     isActive: boolean;
     lastUpdate: Date | null;
@@ -62,6 +67,12 @@ export class AppStateService {
 
     private magicServiceSummariesSubject = new BehaviorSubject<MagicServiceSummary[]>([]);
     magicServiceSummaries$ = this.magicServiceSummariesSubject.asObservable();
+
+    private magicPartnerFileNamesSubject = new BehaviorSubject<string[]>([]);
+    magicPartnerFileNames$ = this.magicPartnerFileNamesSubject.asObservable();
+
+    private selectedMagicPartnerFileSubject = new BehaviorSubject<string>('');
+    selectedMagicPartnerFile$ = this.selectedMagicPartnerFileSubject.asObservable();
 
     // Gestion de la progression de la réconciliation
     private reconciliationProgressSubject = new BehaviorSubject<boolean>(false);
@@ -197,6 +208,53 @@ export class AppStateService {
         return type || '1-1'; // Par défaut 1-1
     }
 
+    setReconciliationLaunchMode(mode: ReconciliationLaunchMode): void {
+        try {
+            localStorage.setItem(RECONCILIATION_LAUNCH_MODE_KEY, mode);
+        } catch {
+            // ignore quota errors
+        }
+    }
+
+    getReconciliationLaunchMode(): ReconciliationLaunchMode {
+        const stored = localStorage.getItem(RECONCILIATION_LAUNCH_MODE_KEY);
+        if (stored === 'manual' || stored === 'assisted' || stored === 'magic') {
+            return stored;
+        }
+        return 'manual';
+    }
+
+    setReconciliationEntryPath(path: string): void {
+        try {
+            localStorage.setItem(RECONCILIATION_ENTRY_PATH_KEY, path);
+        } catch {
+            // ignore
+        }
+    }
+
+    getReconciliationEntryPath(): string {
+        return localStorage.getItem(RECONCILIATION_ENTRY_PATH_KEY) || '';
+    }
+
+    getDefaultEntryPathForMode(mode: ReconciliationLaunchMode): string {
+        switch (mode) {
+            case 'assisted':
+                return '/upload-assisted';
+            case 'magic':
+                return '/reconciliation-launcher';
+            default:
+                return '/upload';
+        }
+    }
+
+    /** Réinitialise l'état d'une réconciliation terminée (conserve le mode utilisé). */
+    resetForNewReconciliation(): void {
+        this.clearReconciliationResults();
+        this.clearReconciliationData();
+        this.clearUploadedFiles();
+        this.setCurrentStep(1);
+    }
+
     getBoData(): Record<string, string>[] {
         return this.boDataSubject.value;
     }
@@ -233,6 +291,8 @@ export class AppStateService {
     clearReconciliationResults() {
         this.reconciliationResultSubject.next(null);
         this.magicServiceSummariesSubject.next([]);
+        this.magicPartnerFileNamesSubject.next([]);
+        this.selectedMagicPartnerFileSubject.next('');
     }
 
     setMagicServiceSummaries(summaries: MagicServiceSummary[]) {
@@ -241,6 +301,22 @@ export class AppStateService {
 
     getMagicServiceSummaries(): MagicServiceSummary[] {
         return this.magicServiceSummariesSubject.value;
+    }
+
+    setMagicPartnerFileNames(fileNames: string[]) {
+        this.magicPartnerFileNamesSubject.next(fileNames);
+    }
+
+    getMagicPartnerFileNames(): string[] {
+        return this.magicPartnerFileNamesSubject.value;
+    }
+
+    setSelectedMagicPartnerFile(fileName: string) {
+        this.selectedMagicPartnerFileSubject.next(fileName);
+    }
+
+    getSelectedMagicPartnerFile(): string {
+        return this.selectedMagicPartnerFileSubject.value;
     }
 
     // Gestion de la progression de la réconciliation

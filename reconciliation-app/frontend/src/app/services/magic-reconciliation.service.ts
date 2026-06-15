@@ -8,6 +8,7 @@ import { fixCellEncoding } from '../utils/encoding-fixer';
 
 export interface MagicServiceSummary {
   service: string;
+  partnerFileName?: string;
   partnerService?: string;
   boServiceColumn?: string;
   partnerServiceColumn?: string;
@@ -18,6 +19,11 @@ export interface MagicServiceSummary {
   totalPartnerRecords: number;
 }
 
+export interface MagicPartnerInput {
+  fileName: string;
+  data: Record<string, string>[];
+}
+
 export interface MatchedServiceColumns {
   boColumn: string;
   partnerColumn: string;
@@ -26,12 +32,14 @@ export interface MatchedServiceColumns {
 
 export interface MagicReconciliationResult {
   response: ReconciliationResponse;
-  mode: 'pattern' | 'discovery';
+  mode: 'pattern' | 'discovery' | 'mixed';
   serviceSummaries: MagicServiceSummary[];
   boKeyColumn: string;
   partnerKeyColumn: string;
   boModelName?: string;
   partnerModelName?: string;
+  partnerFileNames?: string[];
+  warnings?: string[];
 }
 
 export interface MagicReconciliationProgress {
@@ -49,6 +57,104 @@ export class MagicReconciliationService {
     private keySuggestionService: KeySuggestionService
   ) {}
 
+  async runMultiPartner(
+    boFileName: string,
+    boData: Record<string, string>[],
+    partners: MagicPartnerInput[],
+    onProgress?: (p: MagicReconciliationProgress) => void
+  ): Promise<MagicReconciliationResult> {
+    if (!partners.length) {
+      throw new Error('Aucun fichier partenaire sélectionné.');
+    }
+    if (partners.length === 1) {
+      const single = await this.run(
+        boFileName,
+        partners[0].fileName,
+        boData,
+        partners[0].data,
+        onProgress
+      );
+      return {
+        ...single,
+        partnerFileNames: [partners[0].fileName],
+        serviceSummaries: single.serviceSummaries.map(s => ({
+          ...s,
+          partnerFileName: partners[0].fileName
+        }))
+      };
+    }
+
+    const merged = this.emptyResponse();
+    const allSummaries: MagicServiceSummary[] = [];
+    const warnings: string[] = [];
+    let lastBoKey = '';
+    let lastPartnerKey = '';
+    let lastBoModel: string | undefined;
+    let lastPartnerModel: string | undefined;
+    let usedPattern = false;
+    let usedDiscovery = false;
+
+    for (let i = 0; i < partners.length; i++) {
+      const partner = partners[i];
+      onProgress?.({
+        step: `Fichier partenaire ${i + 1}/${partners.length} : ${partner.fileName}...`,
+        current: i + 1,
+        total: partners.length
+      });
+
+      try {
+        const result = await this.run(
+          boFileName,
+          partner.fileName,
+          boData,
+          partner.data,
+          sub => onProgress?.({ step: `[${partner.fileName}] ${sub.step}` })
+        );
+
+        if (result.mode === 'pattern') {
+          usedPattern = true;
+        } else {
+          usedDiscovery = true;
+        }
+
+        this.mergeResponses(merged, this.tagResponseWithPartnerFile(result.response, partner.fileName));
+        allSummaries.push(
+          ...result.serviceSummaries.map(s => ({
+            ...s,
+            partnerFileName: partner.fileName
+          }))
+        );
+        lastBoKey = result.boKeyColumn;
+        lastPartnerKey = result.partnerKeyColumn;
+        lastBoModel = result.boModelName;
+        lastPartnerModel = result.partnerModelName;
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : String(error);
+        warnings.push(`${partner.fileName} : ${msg}`);
+      }
+    }
+
+    if (!allSummaries.length) {
+      throw new Error(
+        warnings.length
+          ? `Aucune réconciliation réussie.\n${warnings.join('\n')}`
+          : 'Aucune réconciliation réussie.'
+      );
+    }
+
+    return {
+      response: merged,
+      mode: usedPattern && usedDiscovery ? 'mixed' : usedPattern ? 'pattern' : 'discovery',
+      serviceSummaries: allSummaries,
+      boKeyColumn: lastBoKey,
+      partnerKeyColumn: lastPartnerKey,
+      boModelName: lastBoModel,
+      partnerModelName: lastPartnerModel,
+      partnerFileNames: partners.map(p => p.fileName),
+      warnings: warnings.length ? warnings : undefined
+    };
+  }
+
   async run(
     boFileName: string,
     partnerFileName: string,
@@ -56,26 +162,23 @@ export class MagicReconciliationService {
     partnerData: Record<string, string>[],
     onProgress?: (p: MagicReconciliationProgress) => void
   ): Promise<MagicReconciliationResult> {
-    onProgress?.({ step: 'Analyse des patterns de fichiers...' });
+    onProgress?.({ step: `Analyse de ${partnerFileName}...` });
 
     const models = await this.autoProcessingService.getAllModels('Réconciliation');
     const boModel = this.findModelForFile(models, boFileName, 'bo');
     const partnerModel = this.findModelForFile(models, partnerFileName, 'partner');
-    const patternsOnBothFiles = !!boModel && !!partnerModel;
 
     let keyResult: { boKeyColumn: string; partnerKeyColumn: string; modelId?: string; model?: AutoProcessingModel } | null = null;
     let mode: 'pattern' | 'discovery' = 'discovery';
 
-    if (patternsOnBothFiles) {
-      onProgress?.({ step: 'Patterns détectés — résolution des clés via modèles...' });
-      keyResult = this.resolveKeysFromModels(models, boFileName, partnerFileName, boData, partnerData);
-      if (keyResult) {
-        mode = 'pattern';
-      }
+    onProgress?.({ step: `Recherche des clés pour ${partnerFileName}...` });
+    keyResult = this.resolveKeysFromModels(models, boFileName, partnerFileName, boData, partnerData);
+    if (keyResult) {
+      mode = 'pattern';
     }
 
     if (!keyResult) {
-      onProgress?.({ step: 'Aucun pattern complet — recherche automatique de clés...' });
+      onProgress?.({ step: `Détection automatique des clés pour ${partnerFileName}...` });
       keyResult = this.discoverKeysFromColumns(boData, partnerData);
       mode = 'discovery';
     }
@@ -117,12 +220,13 @@ export class MagicReconciliationService {
         serviceColumns.partnerColumn,
         keyResult.boKeyColumn,
         keyResult.partnerKeyColumn,
+        partnerFileName,
         onProgress
       );
       return {
-        response: merged.response,
+        response: this.tagResponseWithPartnerFile(merged.response, partnerFileName),
         mode,
-        serviceSummaries: merged.summaries,
+        serviceSummaries: merged.summaries.map(s => ({ ...s, partnerFileName })),
         boKeyColumn: keyResult.boKeyColumn,
         partnerKeyColumn: keyResult.partnerKeyColumn,
         boModelName: boModel?.name,
@@ -137,11 +241,14 @@ export class MagicReconciliationService {
       );
     }
 
-    const response = await this.reconcileOnce(
-      processedBo,
-      partnerData,
-      keyResult.boKeyColumn,
-      keyResult.partnerKeyColumn
+    const response = this.tagResponseWithPartnerFile(
+      await this.reconcileOnce(
+        processedBo,
+        partnerData,
+        keyResult.boKeyColumn,
+        keyResult.partnerKeyColumn
+      ),
+      partnerFileName
     );
 
     return {
@@ -149,6 +256,7 @@ export class MagicReconciliationService {
       mode,
       serviceSummaries: [{
         service: 'Tous',
+        partnerFileName,
         totalMatches: response.totalMatches,
         totalBoOnly: response.totalBoOnly,
         totalPartnerOnly: response.totalPartnerOnly,
@@ -170,6 +278,7 @@ export class MagicReconciliationService {
     partnerServiceCol: string,
     boKeyColumn: string,
     partnerKeyColumn: string,
+    partnerFileName: string,
     onProgress?: (p: MagicReconciliationProgress) => void
   ): Promise<{ response: ReconciliationResponse; summaries: MagicServiceSummary[] }> {
     const summaries: MagicServiceSummary[] = [];
@@ -201,12 +310,13 @@ export class MagicReconciliationService {
         continue;
       }
 
-      const taggedBo = boSlice.map(r => ({ ...r, _magicService: service }));
-      const taggedPartner = partnerSlice.map(r => ({ ...r, _magicService: service }));
+      const taggedBo = boSlice.map(r => ({ ...r, _magicService: service, _magicPartnerFile: partnerFileName }));
+      const taggedPartner = partnerSlice.map(r => ({ ...r, _magicService: service, _magicPartnerFile: partnerFileName }));
 
       const result = await this.reconcileOnce(taggedBo, taggedPartner, boKeyColumn, partnerKeyColumn);
       summaries.push({
         service,
+        partnerFileName,
         partnerService: service,
         boServiceColumn: boServiceCol,
         partnerServiceColumn: partnerServiceCol,
@@ -219,12 +329,12 @@ export class MagicReconciliationService {
 
       merged.matches.push(...result.matches.map(m => ({
         ...m,
-        boData: { ...m.boData, _magicService: service },
-        partnerData: { ...m.partnerData, _magicService: service }
+        boData: { ...m.boData, _magicService: service, _magicPartnerFile: partnerFileName },
+        partnerData: { ...m.partnerData, _magicService: service, _magicPartnerFile: partnerFileName }
       })));
-      merged.boOnly.push(...result.boOnly.map(r => ({ ...r, _magicService: service })));
-      merged.partnerOnly.push(...result.partnerOnly.map(r => ({ ...r, _magicService: service })));
-      merged.mismatches.push(...(result.mismatches || []).map(r => ({ ...r, _magicService: service })));
+      merged.boOnly.push(...result.boOnly.map(r => ({ ...r, _magicService: service, _magicPartnerFile: partnerFileName })));
+      merged.partnerOnly.push(...result.partnerOnly.map(r => ({ ...r, _magicService: service, _magicPartnerFile: partnerFileName })));
+      merged.mismatches.push(...(result.mismatches || []).map(r => ({ ...r, _magicService: service, _magicPartnerFile: partnerFileName })));
       merged.totalBoRecords += result.totalBoRecords;
       merged.totalPartnerRecords += result.totalPartnerRecords;
       merged.totalMatches += result.totalMatches;
@@ -595,5 +705,52 @@ export class MagicReconciliationService {
       return true;
     }
     return nameNoExt.startsWith(patternNoExt);
+  }
+
+  private emptyResponse(): ReconciliationResponse {
+    return {
+      matches: [],
+      boOnly: [],
+      partnerOnly: [],
+      mismatches: [],
+      totalBoRecords: 0,
+      totalPartnerRecords: 0,
+      totalMatches: 0,
+      totalMismatches: 0,
+      totalBoOnly: 0,
+      totalPartnerOnly: 0
+    };
+  }
+
+  private mergeResponses(target: ReconciliationResponse, source: ReconciliationResponse): void {
+    target.matches.push(...source.matches);
+    target.boOnly.push(...source.boOnly);
+    target.partnerOnly.push(...source.partnerOnly);
+    target.mismatches.push(...(source.mismatches || []));
+    target.totalBoRecords += source.totalBoRecords;
+    target.totalPartnerRecords += source.totalPartnerRecords;
+    target.totalMatches += source.totalMatches;
+    target.totalMismatches += source.totalMismatches;
+    target.totalBoOnly += source.totalBoOnly;
+    target.totalPartnerOnly += source.totalPartnerOnly;
+  }
+
+  private tagResponseWithPartnerFile(
+    response: ReconciliationResponse,
+    partnerFileName: string
+  ): ReconciliationResponse {
+    const tagRow = (row: Record<string, string>) => ({ ...row, _magicPartnerFile: partnerFileName });
+    return {
+      ...response,
+      matches: response.matches.map(m => ({
+        ...m,
+        boData: tagRow(m.boData),
+        partnerData: tagRow(m.partnerData),
+        partnerDataList: m.partnerDataList?.map(tagRow)
+      })),
+      boOnly: response.boOnly.map(tagRow),
+      partnerOnly: response.partnerOnly.map(tagRow),
+      mismatches: (response.mismatches || []).map(tagRow)
+    };
   }
 }

@@ -43,9 +43,6 @@
                 <li><a routerLink="/ecart-bo-summary" routerLinkActive="active" [routerLinkActiveOptions]="{ exact: true }"><i class="fas fa-list-alt menu-icon"></i> Résumé Écarts BO</a></li>
                 <li><a routerLink="/reconciliation-report" routerLinkActive="active" [routerLinkActiveOptions]="{ exact: true }"><i class="fas fa-file-alt menu-icon"></i> Rapport réconciliation</a></li>
                 <li><a routerLink="/rapport-reconciliation-bo-partenaire" routerLinkActive="active" [routerLinkActiveOptions]="{ exact: true }"><i class="fas fa-file-contract menu-icon"></i> Rapport BO vs Partenaire</a></li>
-                <li><a routerLink="/reconciliation-dashboard" routerLinkActive="active" [routerLinkActiveOptions]="{ exact: true }"><i class="fas fa-chart-pie menu-icon"></i> Dashboard réconciliation</a></li>
-                <li><a routerLink="/reconciliation-global-preview" routerLinkActive="active" [routerLinkActiveOptions]="{ exact: true }"><i class="fas fa-globe menu-icon"></i> Aperçu global</a></li>
-                <li *ngIf="isMenuAllowed('Report Dashboard')"><a routerLink="/report-dashboard" routerLinkActive="active" [routerLinkActiveOptions]="{ exact: true }"><i class="fas fa-chart-area menu-icon"></i> Dashboard rapport</a></li>
             </ul>
         </li>
         <li *ngIf="isMenuAllowed('Statistiques')">

@@ -5,6 +5,7 @@ import { ModelPreProcessingService } from '../../services/model-preprocessing.se
 import { ExportOptimizationService } from '../../services/export-optimization.service';
 import { OrangeMoneyUtilsService } from '../../services/orange-money-utils.service';
 import { fixGarbledCharacters, fixCellEncoding } from '../../utils/encoding-fixer';
+import { stripAllWhitespace } from '../../utils/concat.util';
 import {
     formatSpreadsheetCellValue,
     formatSpreadsheetDateValue,
@@ -236,6 +237,10 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         this.certificationMode = this.route.snapshot.data['certificationMode'] === true;
         if (this.assistedOnly || this.certificationMode) {
             this.reconciliationMode = 'automatic';
+        }
+
+        if (this.route.snapshot.queryParamMap.get('reset') === '1') {
+            this.resetUploadSession();
         }
     }
 
@@ -509,6 +514,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                     normalizedProcessed,
                     model.preProcessingConfig
                 );
+                normalizedProcessed = this.stripKeyColumnWhitespace(normalizedProcessed);
                 preProcessingResultMessage = this.modelPreProcessingService.buildApplicationResult(
                     rowsBeforePreProcessing,
                     normalizedProcessed.length,
@@ -771,7 +777,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         return XLSX.utils.sheet_to_json(worksheet, {
             header: 1,
             defval: '',
-            raw: false,
+            raw: true,
             blankrows: false
         }) as any[][];
     }
@@ -1169,6 +1175,24 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         }
     }
 
+    private stripKeyColumnWhitespace(rows: Record<string, string>[]): Record<string, string>[] {
+        const keyPatterns = ['cle', 'key', 'reference', 'referenceid', 'idtransaction', 'reconciliation'];
+        const isKeyColumn = (col: string): boolean => {
+            const lower = col.toLowerCase().normalize('NFD').replace(/\p{M}/gu, '');
+            return keyPatterns.some(k => lower === k || lower.includes(k));
+        };
+
+        return rows.map(row => {
+            const cleaned = { ...row };
+            for (const col of Object.keys(cleaned)) {
+                if (isKeyColumn(col)) {
+                    cleaned[col] = stripAllWhitespace(cleaned[col]);
+                }
+            }
+            return cleaned;
+        });
+    }
+
     private async downloadProcessedTreatmentFile(
         data: Record<string, string>[],
         outputBaseName: string
@@ -1275,7 +1299,7 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                         const workbook = XLSX.read(data, {
                             type: 'array',
                             cellDates: true,
-                            raw: false
+                            raw: true
                         });
                         if (!workbook.SheetNames?.length) {
                             reject(new Error('Aucune feuille Excel trouvée'));
@@ -1427,6 +1451,40 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         if (inputRef?.nativeElement) {
             inputRef.nativeElement.value = '';
         }
+    }
+
+    /** Réinitialise l'écran de chargement (nouvelle réconciliation). */
+    private resetUploadSession(): void {
+        this.boFile = null;
+        this.partnerFile = null;
+        this.boData = [];
+        this.partnerData = [];
+        this.autoBoFile = null;
+        this.autoPartnerFile = null;
+        this.autoBoData = [];
+        this.autoPartnerData = [];
+        this.autoBoFileName = '';
+        this.autoPartnerFileName = '';
+        this.assistedBoTreatmentModelId = null;
+        this.assistedPartnerReconciliationModelId = null;
+        this.estimatedTime = '';
+        this.errorMessage = '';
+        this.successMessage = '';
+        this.loading = false;
+        this.showReconciliationProgress = false;
+        this._canProceedCache = null;
+
+        this.clearCachesOnFileRemoval('bo');
+        this.clearCachesOnFileRemoval('partner');
+
+        this.resetFileInput(this.boFileInputRef);
+        this.resetFileInput(this.partnerFileInputRef);
+        this.resetFileInput(this.autoBoFileInputRef);
+        this.resetFileInput(this.autoPartnerFileInputRef);
+        this.closeTraitementModal(true);
+        this.reconciliationService.clearData();
+        this.reconciliationTabsService.clearAllData();
+        this.cd.detectChanges();
     }
 
     /**
@@ -3201,6 +3259,8 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             console.log('Données Partenaire:', this.partnerData.length, 'lignes');
             
             // Sauvegarder les données dans le service d'état
+            this.appStateService.setReconciliationLaunchMode('manual');
+            this.appStateService.setReconciliationEntryPath('/upload');
             this.appStateService.setReconciliationData(this.boData, this.partnerData);
             this.appStateService.setReconciliationType(this.reconciliationType);
             this.appStateService.setCurrentStep(2);
@@ -6132,6 +6192,8 @@ export class FileUploadComponent implements OnInit, OnDestroy {
 
     async onAutoProceed(): Promise<void> {
         if (this.canProceedAuto()) {
+            this.appStateService.setReconciliationLaunchMode('assisted');
+            this.appStateService.setReconciliationEntryPath('/upload-assisted');
             this.loading = false; // Ne pas utiliser loading pour ne pas masquer la barre de progression
             this.errorMessage = '';
             this.successMessage = '';
