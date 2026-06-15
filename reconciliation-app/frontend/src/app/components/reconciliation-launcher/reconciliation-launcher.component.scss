@@ -731,6 +731,82 @@
   }
 }
 
+.magic-upload-modal {
+  width: 560px;
+
+  .magic-upload-body {
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .magic-file-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 14px 16px;
+    border: 1px dashed #ced4da;
+    border-radius: 8px;
+    background: #f8f9fa;
+
+    &.ready {
+      border-color: #27ae60;
+      background: #f0fff4;
+    }
+  }
+
+  .magic-file-info {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+
+    span {
+      font-size: 0.85rem;
+      color: #6c757d;
+      word-break: break-all;
+    }
+
+    .magic-line-count {
+      color: #27ae60;
+      font-weight: 600;
+    }
+  }
+
+  .magic-hint {
+    margin: 0;
+    font-size: 0.85rem;
+    color: #667eea;
+    text-align: center;
+  }
+}
+
+.magic-progress-overlay {
+  z-index: 1200;
+}
+
+.magic-progress-modal {
+  width: 420px;
+
+  .magic-progress-body {
+    padding: 28px 24px;
+    text-align: center;
+
+    .magic-spinner {
+      font-size: 2rem;
+      color: #667eea;
+      margin-bottom: 12px;
+    }
+
+    p {
+      margin: 0;
+      color: #495057;
+    }
+  }
+}
+
 @keyframes slideInRight {
   from {
     transform: translateX(100%);

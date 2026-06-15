@@ -3,6 +3,7 @@ import { BehaviorSubject, Observable } from 'rxjs';
 import { HttpClient } from '@angular/common/http';
 import { DataNormalizationService } from './data-normalization.service';
 import { ReconciliationResponse } from '../models/reconciliation-response.model';
+import { MagicServiceSummary } from './magic-reconciliation.service';
 
 export interface ReconciliationState {
     isActive: boolean;
@@ -58,6 +59,9 @@ export class AppStateService {
     // Données des résultats de la réconciliation
     private reconciliationResultSubject = new BehaviorSubject<ReconciliationResponse | null>(null);
     reconciliationResult$ = this.reconciliationResultSubject.asObservable();
+
+    private magicServiceSummariesSubject = new BehaviorSubject<MagicServiceSummary[]>([]);
+    magicServiceSummaries$ = this.magicServiceSummariesSubject.asObservable();
 
     // Gestion de la progression de la réconciliation
     private reconciliationProgressSubject = new BehaviorSubject<boolean>(false);
@@ -228,6 +232,15 @@ export class AppStateService {
 
     clearReconciliationResults() {
         this.reconciliationResultSubject.next(null);
+        this.magicServiceSummariesSubject.next([]);
+    }
+
+    setMagicServiceSummaries(summaries: MagicServiceSummary[]) {
+        this.magicServiceSummariesSubject.next(summaries);
+    }
+
+    getMagicServiceSummaries(): MagicServiceSummary[] {
+        return this.magicServiceSummariesSubject.value;
     }
 
     // Gestion de la progression de la réconciliation

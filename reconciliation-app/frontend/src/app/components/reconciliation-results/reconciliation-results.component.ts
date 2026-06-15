@@ -20,6 +20,7 @@ import { CompteService } from '../../services/compte.service';
 import { OperationService } from '../../services/operation.service';
 import { OperationCreateRequest } from '../../models/operation.model';
 import { fixGarbledCharacters } from '../../utils/encoding-fixer';
+import { MagicServiceSummary } from '../../services/magic-reconciliation.service';
 import {
     formatSpreadsheetDateValue,
     isDateColumnName,
@@ -71,7 +72,7 @@ interface ApiError {
                     <div class="hero-kpi-strip">
                         <div class="hk-strip-item">
                             <span class="hk-strip-label">Transactions BO</span>
-                            <span class="hk-strip-value">{{ totalTransactions | number:'1.0-0' }}</span>
+                            <span class="hk-strip-value">{{ displayBoTransactionTotal | number:'1.0-0' }}</span>
                         </div>
                         <div class="hk-strip-sep"></div>
                         <div class="hk-strip-item">
@@ -84,6 +85,54 @@ interface ApiError {
                             <span class="hk-strip-value">{{ (filteredBoOnlyCount + filteredPartnerOnlyCount) | number:'1.0-0' }}</span>
                         </div>
                     </div>
+                </div>
+            </div>
+
+            <!-- Sélecteur de service (réconciliation magique) -->
+            <div class="magic-services-panel" *ngIf="isMagicServiceView()">
+                <div class="magic-services-head">
+                    <div class="magic-services-intro">
+                        <span class="magic-services-badge">{{ magicServiceSummaries.length }}</span>
+                        <div>
+                            <h3 class="magic-services-title">Services réconciliés</h3>
+                            <p class="magic-services-sub">Valeurs identiques dans les fichiers BO et Partenaire</p>
+                        </div>
+                    </div>
+                    <div class="magic-services-nav" *ngIf="magicServiceSummaries.length > 1">
+                        <button type="button" class="magic-nav-btn" (click)="selectPreviousMagicService()" [disabled]="!canSelectPreviousMagicService()" title="Service précédent">‹</button>
+                        <span class="magic-nav-counter">{{ getMagicServiceIndex() + 1 }} / {{ magicServiceSummaries.length }}</span>
+                        <button type="button" class="magic-nav-btn" (click)="selectNextMagicService()" [disabled]="!canSelectNextMagicService()" title="Service suivant">›</button>
+                    </div>
+                </div>
+
+                <div class="magic-services-tabs" role="tablist" aria-label="Services réconciliés">
+                    <button type="button"
+                            role="tab"
+                            class="magic-service-tab"
+                            *ngFor="let summary of magicServiceSummaries; let i = index"
+                            [class.active]="selectedMagicService === summary.service"
+                            [attr.aria-selected]="selectedMagicService === summary.service"
+                            [title]="summary.service"
+                            (click)="selectMagicService(summary.service)">
+                        <span class="tab-rail">
+                            <span class="tab-index">{{ i + 1 }}</span>
+                            <span class="tab-name">{{ summary.service }}</span>
+                        </span>
+                        <span class="tab-metrics">
+                            <span class="metric metric-match">
+                                <span class="metric-label">Match</span>
+                                <span class="metric-value">{{ summary.totalMatches | number:'1.0-0' }}</span>
+                            </span>
+                            <span class="metric metric-bo">
+                                <span class="metric-label">Écart BO</span>
+                                <span class="metric-value">{{ summary.totalBoOnly | number:'1.0-0' }}</span>
+                            </span>
+                            <span class="metric metric-partner">
+                                <span class="metric-label">Écart P</span>
+                                <span class="metric-value">{{ summary.totalPartnerOnly | number:'1.0-0' }}</span>
+                            </span>
+                        </span>
+                    </button>
                 </div>
             </div>
 
@@ -131,7 +180,7 @@ interface ApiError {
                 <div class="results-container">
             <div class="summary-section">
                 <div class="summary-header">
-                    <h3>📊 Résumé de la réconciliation</h3>
+                    <h3>📊 Résumé de la réconciliation<span *ngIf="isMagicServiceView()"> — {{ selectedMagicService }}</span></h3>
                     <button (click)="openColumnSelector()" class="report-button">
                         📋 Rapport des écarts
                     </button>
@@ -139,7 +188,7 @@ interface ApiError {
                 <div class="stats-grid">
                     <div class="stat-card stat-card-total">
                         <div class="stat-icon">📊</div>
-                        <div class="stat-value">{{totalTransactions}}</div>
+                        <div class="stat-value">{{ displayBoTransactionTotal }}</div>
                         <div class="stat-label">Nombres de Transactions BO</div>
                     </div>
                     <div class="stat-card stat-card-matched">
@@ -907,6 +956,215 @@ interface ApiError {
             color: #fff;
             font-family: 'Instrument Serif', serif;
         }
+
+        .magic-services-panel {
+            margin: 0 28px 20px;
+            padding: 18px 20px 16px;
+            background: var(--rd-surface);
+            border: 1px solid var(--rd-border);
+            border-radius: var(--rd-r);
+            box-shadow: var(--rd-shadow);
+        }
+
+        .magic-services-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            margin-bottom: 14px;
+            flex-wrap: wrap;
+        }
+
+        .magic-services-intro {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            min-width: 0;
+        }
+
+        .magic-services-badge {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 32px;
+            height: 32px;
+            padding: 0 10px;
+            border-radius: 999px;
+            background: var(--rd-blue-l);
+            color: var(--rd-blue);
+            font-size: 13px;
+            font-weight: 700;
+            flex-shrink: 0;
+        }
+
+        .magic-services-title {
+            margin: 0;
+            font-size: 15px;
+            font-weight: 700;
+            color: var(--rd-text1);
+            line-height: 1.3;
+        }
+
+        .magic-services-sub {
+            margin: 2px 0 0;
+            font-size: 12px;
+            color: var(--rd-text3);
+        }
+
+        .magic-services-nav {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-shrink: 0;
+        }
+
+        .magic-nav-btn {
+            width: 32px;
+            height: 32px;
+            border: 1px solid var(--rd-border2);
+            border-radius: 8px;
+            background: #fff;
+            color: var(--rd-text2);
+            font-size: 18px;
+            line-height: 1;
+            cursor: pointer;
+            transition: background 0.15s, border-color 0.15s, color 0.15s;
+        }
+
+        .magic-nav-btn:hover:not(:disabled) {
+            background: var(--rd-blue-l);
+            border-color: var(--rd-blue-m);
+            color: var(--rd-blue);
+        }
+
+        .magic-nav-btn:disabled {
+            opacity: 0.35;
+            cursor: not-allowed;
+        }
+
+        .magic-nav-counter {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--rd-text2);
+            min-width: 48px;
+            text-align: center;
+        }
+
+        .magic-services-tabs {
+            display: flex;
+            gap: 12px;
+            overflow-x: auto;
+            padding-bottom: 4px;
+            scrollbar-width: thin;
+        }
+
+        .magic-services-tabs::-webkit-scrollbar {
+            height: 6px;
+        }
+
+        .magic-services-tabs::-webkit-scrollbar-thumb {
+            background: var(--rd-border2);
+            border-radius: 999px;
+        }
+
+        .magic-service-tab {
+            flex: 0 0 auto;
+            min-width: 220px;
+            max-width: 320px;
+            display: flex;
+            flex-direction: column;
+            align-items: stretch;
+            gap: 10px;
+            padding: 14px 16px;
+            border: 1.5px solid var(--rd-border);
+            border-radius: var(--rd-r-sm);
+            background: #fff;
+            cursor: pointer;
+            text-align: left;
+            transition: border-color 0.15s, box-shadow 0.15s, transform 0.15s, background 0.15s;
+            font-family: inherit;
+        }
+
+        .magic-service-tab:hover {
+            border-color: var(--rd-blue-m);
+            box-shadow: 0 4px 14px rgba(30, 74, 122, 0.08);
+        }
+
+        .magic-service-tab.active {
+            border-color: var(--rd-blue);
+            background: linear-gradient(180deg, var(--rd-blue-l) 0%, #fff 100%);
+            box-shadow: 0 6px 20px rgba(30, 74, 122, 0.12);
+        }
+
+        .magic-service-tab .tab-rail {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            min-width: 0;
+        }
+
+        .magic-service-tab .tab-index {
+            flex-shrink: 0;
+            width: 22px;
+            height: 22px;
+            border-radius: 6px;
+            background: var(--rd-border);
+            color: var(--rd-text2);
+            font-size: 11px;
+            font-weight: 700;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .magic-service-tab.active .tab-index {
+            background: var(--rd-blue);
+            color: #fff;
+        }
+
+        .magic-service-tab .tab-name {
+            font-size: 13px;
+            font-weight: 700;
+            color: var(--rd-text1);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .magic-service-tab .tab-metrics {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 8px;
+        }
+
+        .magic-service-tab .metric {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            padding: 6px 8px;
+            border-radius: 8px;
+            background: var(--rd-surface);
+            border: 1px solid var(--rd-border);
+            min-width: 0;
+        }
+
+        .magic-service-tab .metric-label {
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            color: var(--rd-text3);
+        }
+
+        .magic-service-tab .metric-value {
+            font-size: 14px;
+            font-weight: 700;
+            line-height: 1.2;
+        }
+
+        .magic-service-tab .metric-match .metric-value { color: var(--rd-green); }
+        .magic-service-tab .metric-bo .metric-value { color: var(--rd-amber); }
+        .magic-service-tab .metric-partner .metric-value { color: var(--rd-blue); }
 
         .main {
             padding: 28px 28px 60px;
@@ -2558,6 +2816,8 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
     agencyPage = 1;
     readonly agencyPageSize = 10;
     selectedService: string = '';
+    magicServiceSummaries: MagicServiceSummary[] = [];
+    selectedMagicService: string = '';
     selectedDate: string = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().split('T')[0];
     
     // Cache pour optimiser les performances
@@ -3850,6 +4110,12 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
             'hasResponse': !!this.response,
             'activeTab': this.activeTab
         });
+
+        this.magicServiceSummaries = this.appStateService.getMagicServiceSummaries();
+        if (this.magicServiceSummaries.length > 0) {
+            this.selectedMagicService = this.magicServiceSummaries[0].service;
+            this.selectedService = this.selectedMagicService;
+        }
         
         // Vérifier si les données sont déjà présentes pour éviter une réinitialisation complète
         const hasExistingData = this.response && (
@@ -3901,6 +4167,11 @@ export class ReconciliationResultsComponent implements OnInit, OnDestroy {
                     console.log('✅ [NGONINIT] Données valides reçues, initialisation...', `[${(performance.now() - dataReceiveStartTime).toFixed(2)}ms depuis réception]`);
                     
                     this.response = this.normalizeReconciliationResponseDates(response);
+                    this.magicServiceSummaries = this.appStateService.getMagicServiceSummaries();
+                    if (this.magicServiceSummaries.length > 0) {
+                        this.selectedMagicService = this.magicServiceSummaries[0].service;
+                        this.selectedService = this.selectedMagicService;
+                    }
                     
                     // S'assurer que l'onglet actif est bien défini pour afficher les résultats
                     if (!this.activeTab || this.activeTab === 'matches') {
@@ -7914,6 +8185,17 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
         // Nombre de transactions = correspondances + écarts BO
         // CORRECTION: Utiliser directement les données de la réponse au lieu des versions filtrées
         // pour garantir que le nombre total de transactions est toujours correct
+        // Nombre de transactions = correspondances + écarts BO (filtré par service en mode magique)
+        if (this.isMagicServiceView()) {
+            const summary = this.magicServiceSummaries.find(s => s.service === this.selectedMagicService);
+            const result = summary
+                ? summary.totalBoRecords
+                : (this.filteredMatchesCount + this.filteredBoOnlyCount);
+            this.cachedTotalTransactions = result;
+            this.totalTransactions = result;
+            return result;
+        }
+
         const matches = this.response?.matches?.length || 0;
         const boMismatches = this.response?.boOnly?.length || 0;
         const result = matches + boMismatches;
@@ -8030,19 +8312,20 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
         const step1Duration = performance.now() - step1Start;
         console.log(`🟡 [GET_FILTERED_MATCHES] Étape 1: Récupération matches: ${step1Duration.toFixed(2)}ms (${totalMatches} matches)`);
 
-        if (!this.selectedService) {
+        if (!this.getActiveServiceFilter()) {
             const totalDuration = performance.now() - startTime;
             console.log(`🟡 [GET_FILTERED_MATCHES] Pas de filtre service, retour direct: ${totalDuration.toFixed(2)}ms`);
             console.log('🟡 [GET_FILTERED_MATCHES] ============================================');
             return matches;
         }
 
+        const serviceFilter = this.getActiveServiceFilter();
         const step2Start = performance.now();
-        console.log(`🟡 [GET_FILTERED_MATCHES] Étape 2: Filtrage par service "${this.selectedService}"...`);
+        console.log(`🟡 [GET_FILTERED_MATCHES] Étape 2: Filtrage par service "${serviceFilter}"...`);
         console.log(`🟡 [GET_FILTERED_MATCHES] Filtrage de ${totalMatches} matches...`);
         const filtered = matches.filter(match => {
-            const boService = match.boData['Service'] || '';
-            return boService === this.selectedService;
+            const tag = this.getMagicServiceTag(match.boData);
+            return tag === serviceFilter;
         });
         const step2Duration = performance.now() - step2Start;
         const totalDuration = performance.now() - startTime;
@@ -8053,7 +8336,7 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
             'Durée filtrage': `${step2Duration.toFixed(2)}ms`,
             'Total matches': totalMatches,
             'Matches filtrés': filtered.length,
-            'Service sélectionné': this.selectedService,
+            'Service sélectionné': serviceFilter,
             'Taux de filtrage': totalMatches > 0 ? `${((filtered.length / totalMatches) * 100).toFixed(2)}%` : '0%'
         });
         console.log('🟡 [GET_FILTERED_MATCHES] ============================================');
@@ -8077,14 +8360,15 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
         const allMismatches = [...mismatches, ...boOnly];
         const combineDuration = performance.now() - combineStartTime;
 
-        if (!this.selectedService) {
+        if (!this.getActiveServiceFilter()) {
             const totalDuration = performance.now() - startTime;
             console.log(`🟠 [TEMPLATE] getFilteredBoOnly (pas de filtre): ${totalDuration.toFixed(2)}ms (${allMismatches.length} éléments)`);
             return allMismatches;
         }
 
+        const serviceFilter = this.getActiveServiceFilter();
         const filterStartTime = performance.now();
-        const filtered = allMismatches.filter(record => (record['Service'] || '') === this.selectedService);
+        const filtered = allMismatches.filter(record => this.getMagicServiceTag(record) === serviceFilter);
         const filterDuration = performance.now() - filterStartTime;
         const totalDuration = performance.now() - startTime;
         
@@ -8095,7 +8379,7 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
             'Total boOnly': boOnly.length,
             'Total combiné': allMismatches.length,
             'Éléments filtrés': filtered.length,
-            'Service sélectionné': this.selectedService
+            'Service sélectionné': serviceFilter
         });
 
         return filtered;
@@ -8106,13 +8390,14 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
         const partnerOnly = this.response?.partnerOnly || [];
         const totalPartnerOnly = partnerOnly.length;
         
-        if (!this.selectedService) {
+        if (!this.getActiveServiceFilter()) {
             console.log('⏱️ getFilteredPartnerOnly (pas de filtre):', `${(performance.now() - startTime).toFixed(2)}ms`, `(${totalPartnerOnly} éléments)`);
             return partnerOnly;
         }
         
+        const serviceFilter = this.getActiveServiceFilter();
         const filterStartTime = performance.now();
-        const filtered = partnerOnly.filter(record => (record['Service'] || '') === this.selectedService);
+        const filtered = partnerOnly.filter(record => this.getMagicServiceTag(record) === serviceFilter);
         const filterDuration = performance.now() - filterStartTime;
         const totalDuration = performance.now() - startTime;
         
@@ -8121,7 +8406,7 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
             'Durée filtrage': `${filterDuration.toFixed(2)}ms`,
             'Total partnerOnly': totalPartnerOnly,
             'Éléments filtrés': filtered.length,
-            'Service sélectionné': this.selectedService
+            'Service sélectionné': serviceFilter
         });
         
         return filtered;
@@ -8596,6 +8881,74 @@ private async downloadExcelFile(workbooks: ExcelJS.Workbook[], fileName: string)
         }
         
         return '';
+    }
+
+    isMagicServiceView(): boolean {
+        return this.magicServiceSummaries.length > 0 &&
+            this.magicServiceSummaries[0].service !== 'Tous' &&
+            !!this.selectedMagicService;
+    }
+
+    get displayBoTransactionTotal(): number {
+        if (this.isMagicServiceView()) {
+            const summary = this.magicServiceSummaries.find(s => s.service === this.selectedMagicService);
+            if (summary) {
+                return summary.totalBoRecords;
+            }
+            return this.filteredMatchesCount + this.filteredBoOnlyCount;
+        }
+        return this.totalTransactions;
+    }
+
+    private getActiveServiceFilter(): string {
+        if (this.isMagicServiceView()) {
+            return this.selectedMagicService;
+        }
+        return this.selectedService;
+    }
+
+    private getMagicServiceTag(record: Record<string, string>): string {
+        return (record['_magicService'] || record['Service'] || '').trim();
+    }
+
+    selectMagicService(service: string): void {
+        this.selectedMagicService = service;
+        this.selectedService = service;
+        this.cachedTotalTransactions = null;
+        this.cachedMatchRate = null;
+        this.matchesPage = 1;
+        this.boOnlyPage = 1;
+        this.partnerOnlyPage = 1;
+        this.initializeFilteredData();
+        this.invalidateCache();
+        this.cdr.markForCheck();
+    }
+
+    getMagicServiceIndex(): number {
+        return this.magicServiceSummaries.findIndex(s => s.service === this.selectedMagicService);
+    }
+
+    canSelectPreviousMagicService(): boolean {
+        return this.getMagicServiceIndex() > 0;
+    }
+
+    canSelectNextMagicService(): boolean {
+        const idx = this.getMagicServiceIndex();
+        return idx >= 0 && idx < this.magicServiceSummaries.length - 1;
+    }
+
+    selectPreviousMagicService(): void {
+        const idx = this.getMagicServiceIndex();
+        if (idx > 0) {
+            this.selectMagicService(this.magicServiceSummaries[idx - 1].service);
+        }
+    }
+
+    selectNextMagicService(): void {
+        const idx = this.getMagicServiceIndex();
+        if (idx >= 0 && idx < this.magicServiceSummaries.length - 1) {
+            this.selectMagicService(this.magicServiceSummaries[idx + 1].service);
+        }
     }
 
     /**
