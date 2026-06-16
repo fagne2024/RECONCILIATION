@@ -23,6 +23,35 @@ public class EmailService {
     
     private static final String LOGIN_URL = "https://reconciliation.intouchgroup.net:4200/login?returnUrl=%2Freconciliation-launcher";
 
+    public String getLoginUrl() {
+        return LOGIN_URL;
+    }
+
+    /**
+     * Envoie un e-mail de contrôle interne BO vs Partenaire (commentaire + accès application).
+     */
+    public void sendControleInterneCommentEmail(
+        String to,
+        String subject,
+        String body
+    ) {
+        try {
+            if (fromEmail == null || fromEmail.trim().isEmpty()) {
+                throw new RuntimeException("La configuration email n'est pas correcte. spring.mail.username est vide.");
+            }
+            SimpleMailMessage message = new SimpleMailMessage();
+            message.setFrom(fromEmail);
+            message.setTo(to);
+            message.setSubject(subject);
+            message.setText(body);
+            mailSender.send(message);
+            System.out.println("✅ E-mail contrôle interne envoyé à : " + to);
+        } catch (Exception e) {
+            System.err.println("❌ Erreur envoi e-mail contrôle interne à " + to + " : " + e.getMessage());
+            throw new RuntimeException("Erreur lors de l'envoi de l'e-mail : " + e.getMessage(), e);
+        }
+    }
+
     /**
      * Envoie un email avec le mot de passe généré lors de la création d'un utilisateur
      */

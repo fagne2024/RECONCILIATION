@@ -649,7 +649,7 @@ export interface ReconciliationReportData {
                                             <button 
                                                 *ngIf="!item.glpiId || item.glpiId.trim() === ''" 
                                                 class="btn-glpi-create"
-                                                (click)="showTicketCreateOptionsPopup()"
+                                                (click)="showTicketCreateOptionsPopup(item)"
                                                 [disabled]="item.status === 'OK'"
                                                 title="Choisir la plateforme pour créer un ticket">
                                                 <i class="fas fa-plus-circle"></i> Créer
@@ -6087,23 +6087,56 @@ export class ReconciliationReportComponent implements OnInit, OnDestroy {
         this.router.navigate(['/results']);
     }
 
-    // Ouvrir GLPI pour créer un nouveau ticket
-    openGlpiCreate() {
-        const glpiCreateUrl = 'https://glpi.intouchgroup.net/glpi/public/front/ticket.form.php';
+    // Ouvrir GLPI pour créer un nouveau ticket (titre + description préremplis)
+    openGlpiCreate(item: ReconciliationReportData) {
+        const { title, description } = this.buildReconciliationTicketTexts(item);
+        const params = new URLSearchParams();
+        params.set('name', title);
+        params.set('content', description);
+        const glpiCreateUrl = `https://glpi.intouchgroup.net/glpi/public/front/ticket.form.php?${params.toString()}`;
         window.open(glpiCreateUrl, '_blank', 'noopener,noreferrer');
     }
 
-    // Ouvrir BOMETIER pour créer un nouveau ticket
-    openBometierCreate() {
-        const bometierCreateUrl = 'https://bometier.gutouch.net/';
+    // Ouvrir BOMETIER pour créer un nouveau ticket (titre + description préremplis)
+    openBometierCreate(item: ReconciliationReportData) {
+        const { title, description } = this.buildReconciliationTicketTexts(item);
+        const params = new URLSearchParams();
+        params.set('title', title);
+        params.set('description', description);
+        const bometierCreateUrl = `https://bometier.gutouch.net/creation-ticket?${params.toString()}`;
         window.open(bometierCreateUrl, '_blank', 'noopener,noreferrer');
     }
 
+    /** Titre / description ticket : RAPPORT DE RECONCILIATION + ENV + PAYS + DATE + Service */
+    private buildReconciliationTicketTexts(item: ReconciliationReportData): { title: string; description: string } {
+        const env = this.resolveTicketEnvLabel(item);
+        const pays = (item.country || '').trim() || '—';
+        const date = this.formatDate(item.date || '');
+        const service = (item.service || '').trim() || '—';
+        const title = `RAPPORT DE RECONCILIATION - ${env} - ${pays} - ${date} - ${service}`;
+        const description = 'Bonjour,\n\nMerci de prendre en charge les écarts constatés.';
+        return { title, description };
+    }
+
+    private resolveTicketEnvLabel(item: ReconciliationReportData): string {
+        const rowEnv = (item.env || '').trim();
+        if (rowEnv) {
+            return rowEnv;
+        }
+        if (this.selectedEnvs?.length === 1) {
+            return this.selectedEnvs[0];
+        }
+        if (this.selectedEnvs?.length > 1) {
+            return this.selectedEnvs.join(', ');
+        }
+        return 'T-E';
+    }
+
     // Afficher un popup pour choisir où créer un nouveau ticket (GLPI ou BOMETIER)
-    showTicketCreateOptionsPopup(): void {
+    showTicketCreateOptionsPopup(item: ReconciliationReportData): void {
         const message = 'Choisissez la plateforme pour créer un nouveau ticket :';
         const title = 'Créer un ticket';
-        this.showTicketChoiceOverlay(title, message, () => this.openGlpiCreate(), () => this.openBometierCreate());
+        this.showTicketChoiceOverlay(title, message, () => this.openGlpiCreate(item), () => this.openBometierCreate(item));
     }
 
     private showTicketChoiceOverlay(title: string, message: string, onGlpi: () => void, onBometier: () => void): void {

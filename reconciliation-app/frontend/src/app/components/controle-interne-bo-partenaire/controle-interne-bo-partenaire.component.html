@@ -79,38 +79,108 @@
     </div>
 
     <ng-container *ngIf="!loading && !error">
+      <div class="ci-toolbar" *ngIf="monthlyRows.length">
+        <button
+          type="button"
+          class="ci-tool-btn ci-tool-btn--excel"
+          (click)="exportToExcel()"
+          [disabled]="!canExport || isExportingExcel || isExportingPdf"
+        >
+          <i class="fas" [ngClass]="isExportingExcel ? 'fa-spinner fa-spin' : 'fa-file-excel'"></i>
+          Export Excel
+        </button>
+        <button
+          type="button"
+          class="ci-tool-btn ci-tool-btn--pdf"
+          (click)="exportToPdf()"
+          [disabled]="!canExport || isExportingPdf || isExportingExcel"
+        >
+          <i class="fas" [ngClass]="isExportingPdf ? 'fa-spinner fa-spin' : 'fa-file-pdf'"></i>
+          Export PDF
+        </button>
+      </div>
+
+      <div #ciExportRoot class="ci-export-root">
       <div class="ci-section">
         <h2>Vue agrégée par mois et service</h2>
         <p class="ci-hint">
           Données issues du rapport BO vs Partenaire. Statut contrôle interne par défaut :
           <strong>En cours de validation</strong>.
         </p>
+        <div class="ci-section-totals" *ngIf="monthlyRows.length">
+          <div class="ci-total-card ci-total-card--meta">
+            <span class="ci-total-label">Lignes</span>
+            <span class="ci-total-value">{{ monthlySectionTotals.combinaisons | number:'1.0-0' }}</span>
+          </div>
+          <div class="ci-total-card ci-total-card--nombre">
+            <span class="ci-total-label">BO Nombre</span>
+            <span class="ci-total-value">{{ formatCardNombre(monthlySectionTotals.boNombre) }}</span>
+          </div>
+          <div class="ci-total-card ci-total-card--volume">
+            <span class="ci-total-label">BO Volume</span>
+            <span class="ci-total-value">{{ formatCardVolume(monthlySectionTotals.boVolume) }}</span>
+          </div>
+          <div class="ci-total-card ci-total-card--nombre">
+            <span class="ci-total-label">Part. Nombre</span>
+            <span class="ci-total-value">{{ formatCardNombre(monthlySectionTotals.partenaireNombre) }}</span>
+          </div>
+          <div class="ci-total-card ci-total-card--volume">
+            <span class="ci-total-label">Part. Volume</span>
+            <span class="ci-total-value">{{ formatCardVolume(monthlySectionTotals.partenaireVolume) }}</span>
+          </div>
+          <div class="ci-total-card ci-total-card--nombre">
+            <span class="ci-total-label">Écart Nombre</span>
+            <span class="ci-total-value">{{ formatCardNombre(monthlySectionTotals.ecartNombre) }}</span>
+          </div>
+          <div class="ci-total-card ci-total-card--volume">
+            <span class="ci-total-label">Écart Volume</span>
+            <span class="ci-total-value">{{ formatCardVolume(monthlySectionTotals.ecartVolume) }}</span>
+          </div>
+          <div class="ci-total-card ci-total-card--meta">
+            <span class="ci-total-label">Taux volume</span>
+            <span class="ci-total-value">{{ libelleTauxTotal(monthlySectionTotals.tauxVolume) }}</span>
+          </div>
+        </div>
         <div class="ci-table-wrap" *ngIf="monthlyRows.length; else noMonthly">
           <table class="ci-table">
             <thead>
               <tr>
-                <th>Mois</th>
-                <th>Service</th>
-                <th>Statut rapport</th>
-                <th>Statut contrôle interne</th>
-                <th class="num">BO Nbre</th>
-                <th class="num">BO Volume</th>
-                <th class="num">Part. Nbre</th>
-                <th class="num">Part. Volume</th>
-                <th class="num">Écart Nbre</th>
-                <th class="num">Écart Volume</th>
-                <th class="num">Taux</th>
+                <th class="ci-col-month">Mois</th>
+                <th class="ci-col-service">Service</th>
+                <th class="ci-col-tickets">ID Ticket</th>
+                <th class="ci-col-status">Statut rapport</th>
+                <th class="ci-col-status">Statut contrôle interne</th>
+                <th class="num ci-col-num">BO Nbre</th>
+                <th class="num ci-col-num">BO Volume</th>
+                <th class="num ci-col-num">Part. Nbre</th>
+                <th class="num ci-col-num">Part. Volume</th>
+                <th class="num ci-col-num">Écart Nbre</th>
+                <th class="num ci-col-num">Écart Volume</th>
+                <th class="num ci-col-num">Taux</th>
                 <th class="ci-col-action">Action</th>
               </tr>
             </thead>
             <tbody>
               <tr *ngFor="let row of monthlyRows; trackBy: trackByRow">
-                <td>{{ row.monthLabel }}</td>
-                <td class="ci-service">{{ row.service }}</td>
-                <td>
+                <td class="ci-col-month">{{ row.monthLabel }}</td>
+                <td class="ci-col-service ci-service" [title]="row.service">{{ row.service }}</td>
+                <td class="ci-col-tickets ci-tickets-cell">
+                  <div class="ci-tickets-cell-inner">
+                    <ng-container *ngIf="row.ticketIds?.length; else noRowTicket">
+                      <button
+                        type="button"
+                        class="ci-ticket-badge ci-ticket-badge--btn"
+                        (click)="openTicketModal(row.ticketIds, row.monthLabel + ' — ' + row.service)"
+                        [title]="'Voir les ' + row.ticketIds!.length + ' ticket(s)'"
+                      >{{ formatTicketIdsLabel(row.ticketIds) }}</button>
+                    </ng-container>
+                    <ng-template #noRowTicket><span class="ci-ticket-empty">—</span></ng-template>
+                  </div>
+                </td>
+                <td class="ci-col-status">
                   <span [class]="classeStatutRapport(row.traitement)">{{ row.statutRapport }}</span>
                 </td>
-                <td>
+                <td class="ci-col-status">
                   <span [class]="classeStatutControle(row)">{{ row.statutControleInterne }}</span>
                   <div class="ci-valid-meta" *ngIf="row.isControleValide && row.controleInterneValidatedBy">
                     par {{ row.controleInterneValidatedBy }}
@@ -151,11 +221,45 @@
                 </td>
               </tr>
             </tbody>
+            <tfoot>
+              <tr class="ci-table-total-row">
+                <td colspan="5"><strong>Total</strong></td>
+                <td class="num"><strong>{{ formatNumber(monthlySectionTotals.boNombre) }}</strong></td>
+                <td class="num"><strong>{{ formatVolume(monthlySectionTotals.boVolume) }}</strong></td>
+                <td class="num"><strong>{{ formatNumber(monthlySectionTotals.partenaireNombre) }}</strong></td>
+                <td class="num"><strong>{{ formatVolume(monthlySectionTotals.partenaireVolume) }}</strong></td>
+                <td class="num"><strong>{{ formatNumber(monthlySectionTotals.ecartNombre) }}</strong></td>
+                <td class="num"><strong>{{ formatVolume(monthlySectionTotals.ecartVolume) }}</strong></td>
+                <td class="num"><strong>{{ libelleTauxTotal(monthlySectionTotals.tauxVolume) }}</strong></td>
+                <td></td>
+              </tr>
+            </tfoot>
           </table>
         </div>
         <ng-template #noMonthly>
           <p class="ci-empty">Aucune donnée pour ce périmètre.</p>
         </ng-template>
+      </div>
+
+      <div class="ci-section ci-tickets-section" *ngIf="ticketsByMonth.length">
+        <h2>ID tickets par mois</h2>
+        <p class="ci-hint">Cliquez sur le nombre de tickets pour afficher la liste et ouvrir GLPI.</p>
+        <div class="ci-month-tickets-grid">
+          <div class="ci-month-tickets-card" *ngFor="let block of ticketsByMonth">
+            <div class="ci-month-tickets-title">{{ block.monthLabel }}</div>
+            <ng-container *ngIf="block.ticketIds.length; else noTicketsForMonth">
+              <button
+                type="button"
+                class="ci-ticket-badge ci-ticket-badge--btn"
+                (click)="openTicketModal(block.ticketIds, 'Tickets — ' + block.monthLabel)"
+                [title]="'Voir les ' + block.ticketIds.length + ' ticket(s)'"
+              >{{ formatTicketIdsLabel(block.ticketIds) }}</button>
+            </ng-container>
+            <ng-template #noTicketsForMonth>
+              <span class="ci-ticket-empty">Aucun ticket</span>
+            </ng-template>
+          </div>
+        </div>
       </div>
 
       <div class="ci-panels">
@@ -164,7 +268,20 @@
             <i class="fas fa-exclamation-triangle"></i>
             Dates &amp; services non validés &amp; clôturés (rapport)
           </h3>
-          <p class="ci-panel-count">{{ nonValidesClotures.length }} combinaison(s)</p>
+          <div class="ci-section-totals ci-section-totals--compact">
+            <div class="ci-total-card ci-total-card--meta">
+              <span class="ci-total-label">Combinaisons</span>
+              <span class="ci-total-value">{{ nonValidesSectionTotals.combinaisons | number:'1.0-0' }}</span>
+            </div>
+            <div class="ci-total-card ci-total-card--nombre">
+              <span class="ci-total-label">Nombre</span>
+              <span class="ci-total-value">{{ formatCardNombre(nonValidesSectionTotals.rapportNombre) }}</span>
+            </div>
+            <div class="ci-total-card ci-total-card--volume">
+              <span class="ci-total-label">Volume</span>
+              <span class="ci-total-value">{{ formatCardVolume(nonValidesSectionTotals.rapportVolume) }}</span>
+            </div>
+          </div>
           <div class="ci-mini-table-wrap" *ngIf="nonValidesClotures.length; else noNonValides">
             <table class="ci-mini-table">
               <thead>
@@ -172,6 +289,8 @@
                   <th>Date</th>
                   <th>Service</th>
                   <th>Statut rapport</th>
+                  <th class="num">Nbre</th>
+                  <th class="num">Volume</th>
                 </tr>
               </thead>
               <tbody>
@@ -179,8 +298,17 @@
                   <td>{{ formatFrShort(line.date) }}</td>
                   <td>{{ line.service }}</td>
                   <td><span class="ci-pill ci-pill--pending">{{ line.statutRapport }}</span></td>
+                  <td class="num">{{ formatNumber(line.nombre) }}</td>
+                  <td class="num">{{ formatVolume(line.volume) }}</td>
                 </tr>
               </tbody>
+              <tfoot>
+                <tr class="ci-table-total-row">
+                  <td colspan="3"><strong>Total</strong></td>
+                  <td class="num"><strong>{{ formatNumber(nonValidesSectionTotals.rapportNombre) }}</strong></td>
+                  <td class="num"><strong>{{ formatVolume(nonValidesSectionTotals.rapportVolume) }}</strong></td>
+                </tr>
+              </tfoot>
             </table>
           </div>
           <ng-template #noNonValides>
@@ -193,7 +321,20 @@
             <i class="fas fa-check-circle"></i>
             Dates &amp; services validés &amp; clôturés (rapport)
           </h3>
-          <p class="ci-panel-count">{{ validesClotures.length }} combinaison(s)</p>
+          <div class="ci-section-totals ci-section-totals--compact">
+            <div class="ci-total-card ci-total-card--meta">
+              <span class="ci-total-label">Combinaisons</span>
+              <span class="ci-total-value">{{ validesSectionTotals.combinaisons | number:'1.0-0' }}</span>
+            </div>
+            <div class="ci-total-card ci-total-card--nombre">
+              <span class="ci-total-label">Nombre</span>
+              <span class="ci-total-value">{{ formatCardNombre(validesSectionTotals.rapportNombre) }}</span>
+            </div>
+            <div class="ci-total-card ci-total-card--volume">
+              <span class="ci-total-label">Volume</span>
+              <span class="ci-total-value">{{ formatCardVolume(validesSectionTotals.rapportVolume) }}</span>
+            </div>
+          </div>
           <div class="ci-mini-table-wrap" *ngIf="validesClotures.length; else noValides">
             <table class="ci-mini-table">
               <thead>
@@ -201,6 +342,8 @@
                   <th>Date</th>
                   <th>Service</th>
                   <th>Statut rapport</th>
+                  <th class="num">Nbre</th>
+                  <th class="num">Volume</th>
                 </tr>
               </thead>
               <tbody>
@@ -208,8 +351,17 @@
                   <td>{{ formatFrShort(line.date) }}</td>
                   <td>{{ line.service }}</td>
                   <td><span class="ci-pill ci-pill--ok">{{ line.statutRapport }}</span></td>
+                  <td class="num">{{ formatNumber(line.nombre) }}</td>
+                  <td class="num">{{ formatVolume(line.volume) }}</td>
                 </tr>
               </tbody>
+              <tfoot>
+                <tr class="ci-table-total-row">
+                  <td colspan="3"><strong>Total</strong></td>
+                  <td class="num"><strong>{{ formatNumber(validesSectionTotals.rapportNombre) }}</strong></td>
+                  <td class="num"><strong>{{ formatVolume(validesSectionTotals.rapportVolume) }}</strong></td>
+                </tr>
+              </tfoot>
             </table>
           </div>
           <ng-template #noValides>
@@ -217,6 +369,82 @@
           </ng-template>
         </div>
       </div>
+      </div><!-- .ci-export-root -->
+
+      <div class="ci-section ci-comment-section" *ngIf="canValidateControleInterne">
+        <h2>Commentaire &amp; envoi par e-mail</h2>
+        <p class="ci-hint">
+          Rédigez un commentaire sur ce périmètre. L'e-mail inclura la synthèse des totaux et le lien d'accès à ReconciliApp
+          (comme pour l'envoi des identifiants utilisateurs).
+        </p>
+        <label class="ci-comment-label">
+          <span>Destinataires (e-mails séparés par des virgules)</span>
+          <input
+            type="text"
+            [(ngModel)]="destinatairesEmails"
+            placeholder="ex. controle@entreprise.com, audit@entreprise.com"
+            class="ci-comment-input"
+          />
+        </label>
+        <label class="ci-comment-label">
+          <span>Commentaire</span>
+          <textarea
+            rows="4"
+            [(ngModel)]="commentaire"
+            placeholder="Saisir un commentaire sur le contrôle interne de ce mois…"
+            class="ci-comment-textarea"
+          ></textarea>
+        </label>
+        <div class="ci-comment-meta" *ngIf="commentUpdatedAt || commentLastEmailedAt">
+          <span *ngIf="commentUpdatedAt">Enregistré{{ commentUpdatedBy ? ' par ' + commentUpdatedBy : '' }}</span>
+          <span *ngIf="commentLastEmailedAt"> · Dernier envoi{{ commentLastEmailedBy ? ' par ' + commentLastEmailedBy : '' }}</span>
+        </div>
+        <div class="ci-comment-actions">
+          <button
+            type="button"
+            class="ci-btn-save-comment"
+            (click)="enregistrerCommentaire()"
+            [disabled]="savingComment || sendingCommentEmail || !selectedCountry"
+          >
+            <i class="fas" [ngClass]="savingComment ? 'fa-spinner fa-spin' : 'fa-save'"></i>
+            Enregistrer
+          </button>
+          <button
+            type="button"
+            class="ci-btn-send-email"
+            (click)="envoyerCommentaireParMail()"
+            [disabled]="savingComment || sendingCommentEmail || !selectedCountry || !destinatairesEmails.trim()"
+          >
+            <i class="fas" [ngClass]="sendingCommentEmail ? 'fa-spinner fa-spin' : 'fa-envelope'"></i>
+            Envoyer par e-mail
+          </button>
+        </div>
+      </div>
     </ng-container>
+  </div>
+</div>
+
+<div class="ci-modal-overlay" *ngIf="ticketModalOpen" (click)="closeTicketModal()">
+  <div class="ci-modal" (click)="$event.stopPropagation()" role="dialog" aria-labelledby="ci-ticket-modal-title">
+    <div class="ci-modal-header">
+      <h3 id="ci-ticket-modal-title">{{ ticketModalTitle }}</h3>
+      <button type="button" class="ci-modal-close" (click)="closeTicketModal()" aria-label="Fermer">&times;</button>
+    </div>
+    <div class="ci-modal-body">
+      <p class="ci-modal-hint">{{ ticketModalTicketIds.length }} ticket(s) GLPI — cliquez pour ouvrir dans GLPI.</p>
+      <div class="ci-ticket-links ci-ticket-links--modal">
+        <a
+          *ngFor="let ticketId of ticketModalTicketIds"
+          class="ci-ticket-link"
+          [href]="getGlpiTicketUrl(ticketId)"
+          target="_blank"
+          rel="noopener noreferrer"
+          [title]="'Ouvrir le ticket ' + ticketId + ' dans GLPI'"
+        >{{ ticketId }}</a>
+      </div>
+    </div>
+    <div class="ci-modal-footer">
+      <button type="button" class="ci-tool-btn" (click)="closeTicketModal()">Fermer</button>
+    </div>
   </div>
 </div>

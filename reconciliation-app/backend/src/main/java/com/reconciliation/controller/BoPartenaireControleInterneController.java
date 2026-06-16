@@ -1,5 +1,8 @@
 package com.reconciliation.controller;
 
+import com.reconciliation.dto.BoPartenaireControleInterneCommentDto;
+import com.reconciliation.dto.BoPartenaireControleInterneCommentSaveRequest;
+import com.reconciliation.dto.BoPartenaireControleInterneSendEmailRequest;
 import com.reconciliation.dto.BoPartenaireControleInterneDto;
 import com.reconciliation.dto.BoPartenaireControleInterneValidateRequest;
 import com.reconciliation.exception.ControleInterneAccessDeniedException;
@@ -66,6 +69,54 @@ public class BoPartenaireControleInterneController {
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(Map.of("message", "Erreur lors de l'annulation de la validation"));
+        }
+    }
+
+    @GetMapping("/comment")
+    public ResponseEntity<?> getComment(
+        @RequestParam String country,
+        @RequestParam(defaultValue = "ALL") String env,
+        @RequestParam String monthYyyyMm
+    ) {
+        try {
+            return ResponseEntity.ok(service.getComment(country, env, monthYyyyMm));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(Map.of("message", "Impossible de charger le commentaire"));
+        }
+    }
+
+    @PutMapping("/comment")
+    public ResponseEntity<?> saveComment(@RequestBody BoPartenaireControleInterneCommentSaveRequest body) {
+        try {
+            String username = RequestContextUtil.getUsernameFromRequest();
+            return ResponseEntity.ok(service.saveComment(body, username));
+        } catch (IllegalArgumentException ex) {
+            return ResponseEntity.badRequest().body(Map.of("message", ex.getMessage()));
+        } catch (ControleInterneAccessDeniedException ex) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("message", ex.getMessage()));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(Map.of("message", "Erreur lors de l'enregistrement du commentaire"));
+        }
+    }
+
+    @PostMapping("/send-email")
+    public ResponseEntity<?> sendCommentEmail(@RequestBody BoPartenaireControleInterneSendEmailRequest body) {
+        try {
+            String username = RequestContextUtil.getUsernameFromRequest();
+            BoPartenaireControleInterneCommentDto saved = service.sendCommentEmail(body, username);
+            return ResponseEntity.ok(Map.of(
+                "message", "E-mail envoyé avec succès",
+                "comment", saved
+            ));
+        } catch (IllegalArgumentException ex) {
+            return ResponseEntity.badRequest().body(Map.of("message", ex.getMessage()));
+        } catch (ControleInterneAccessDeniedException ex) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("message", ex.getMessage()));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(Map.of("message", e.getMessage() != null ? e.getMessage() : "Erreur lors de l'envoi de l'e-mail"));
         }
     }
 }

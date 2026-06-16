@@ -222,13 +222,99 @@
   font-size: 13px;
 }
 
+.ci-section-totals {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.ci-section-totals--compact {
+  margin-bottom: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+}
+
+.ci-total-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  border: 1px solid var(--rd-border);
+  min-height: 76px;
+  overflow: hidden;
+}
+
+.ci-total-card--volume {
+  min-width: 168px;
+}
+
+.ci-total-card--meta {
+  background: #f8f7f4;
+}
+
+.ci-total-card--nombre {
+  background: #eef4fb;
+  border-color: #c8daf0;
+}
+
+.ci-total-card--volume {
+  background: #fbf3e8;
+  border-color: #ecd9b8;
+}
+
+.ci-total-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--rd-text3);
+}
+
+.ci-total-card--nombre .ci-total-label {
+  color: #1e4a7a;
+}
+
+.ci-total-card--volume .ci-total-label {
+  color: var(--rd-amber);
+}
+
+.ci-total-value {
+  font-size: clamp(15px, 1.5vw, 20px);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--rd-text1);
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.ci-total-card--volume .ci-total-value {
+  font-size: clamp(12px, 1.2vw, 16px);
+  white-space: normal;
+  word-break: normal;
+  overflow-wrap: anywhere;
+}
+
+.ci-section-totals--compact .ci-total-value {
+  font-size: clamp(14px, 1.4vw, 18px);
+}
+
+.ci-table-total-row td {
+  background: #f3f1ec;
+  border-top: 2px solid var(--rd-border);
+}
+
 .ci-table-wrap {
   overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .ci-table {
   width: 100%;
-  border-collapse: collapse;
+  min-width: 1280px;
+  border-collapse: separate;
+  border-spacing: 0;
+  table-layout: fixed;
   font-size: 13px;
 }
 
@@ -237,30 +323,42 @@
   padding: 10px 12px;
   border-bottom: 1px solid var(--rd-border);
   text-align: left;
+  vertical-align: top;
+  overflow: hidden;
 }
 
-.ci-table th {
-  background: #f8f7f4;
-  font-weight: 600;
-  font-size: 12px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--rd-text2);
+.ci-col-month {
+  width: 108px;
+  white-space: nowrap;
 }
 
-.ci-table th.num,
-.ci-table td.num {
-  text-align: right;
-  font-variant-numeric: tabular-nums;
+.ci-col-service {
+  width: 168px;
+}
+
+.ci-col-tickets {
+  width: 152px;
+}
+
+.ci-col-status {
+  width: 128px;
+}
+
+.ci-col-num {
+  width: 96px;
 }
 
 .ci-service {
   font-weight: 600;
-  max-width: 200px;
+  line-height: 1.35;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  display: block;
+  max-width: 100%;
 }
 
 .ci-col-action {
-  width: 150px;
+  width: 130px;
   text-align: center;
   white-space: nowrap;
 }
@@ -421,6 +519,12 @@
   top: 0;
 }
 
+.ci-mini-table th.num,
+.ci-mini-table td.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
 .ci-empty,
 .ci-empty-small {
   color: var(--rd-text3);
@@ -430,4 +534,329 @@
 .ci-empty {
   padding: 24px;
   text-align: center;
+}
+
+.ci-comment-section {
+  margin-top: 8px;
+}
+
+.ci-comment-label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+
+.ci-comment-label span {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--rd-text2);
+}
+
+.ci-comment-input,
+.ci-comment-textarea {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--rd-border);
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 14px;
+  box-sizing: border-box;
+}
+
+.ci-comment-textarea {
+  resize: vertical;
+  min-height: 96px;
+}
+
+.ci-comment-meta {
+  font-size: 12px;
+  color: var(--rd-text3);
+  margin-bottom: 12px;
+}
+
+.ci-comment-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.ci-btn-save-comment,
+.ci-btn-send-email {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border: none;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.ci-btn-save-comment {
+  background: #eef4fb;
+  color: #1e4a7a;
+  border: 1px solid #c8daf0;
+}
+
+.ci-btn-send-email {
+  background: var(--rd-green-m);
+  color: #fff;
+}
+
+.ci-btn-save-comment:disabled,
+.ci-btn-send-email:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.ci-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.ci-tool-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--rd-border);
+  background: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  color: var(--rd-text1);
+}
+
+.ci-tool-btn:hover:not(:disabled) {
+  background: #f8f7f4;
+}
+
+.ci-tool-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.ci-tool-btn--excel {
+  border-color: #b8dfc8;
+  color: var(--rd-green);
+}
+
+.ci-tool-btn--pdf {
+  border-color: #e8b4b8;
+  color: #8b2635;
+}
+
+.ci-export-root {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.ci-table th {
+  background: #f8f7f4;
+  font-weight: 600;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--rd-text2);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.ci-table th.num,
+.ci-table td.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.ci-tickets-cell {
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+
+.ci-tickets-cell-inner {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  align-content: flex-start;
+  max-height: 88px;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.ci-ticket-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: #eef2f6;
+  border: 1px solid #d5dce6;
+  font-size: 11px;
+  font-weight: 600;
+  color: #4a5568;
+  white-space: nowrap;
+  line-height: 1.2;
+}
+
+.ci-ticket-badge--btn {
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.ci-ticket-badge--btn:hover {
+  background: #e3eaf3;
+  border-color: #b8c5d6;
+  color: #1e4a7a;
+}
+
+.ci-ticket-badge--btn:focus-visible {
+  outline: 2px solid #1e4a7a;
+  outline-offset: 2px;
+}
+
+.ci-ticket-link {
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: #eef4fb;
+  border: 1px solid #c8daf0;
+  color: #1e4a7a;
+  font-size: 11px;
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+  line-height: 1.25;
+  max-width: 100%;
+}
+
+.ci-ticket-link:hover {
+  background: #dce9f8;
+}
+
+.ci-ticket-empty {
+  color: var(--rd-text3);
+  font-size: 12px;
+}
+
+.ci-tickets-section {
+  margin-bottom: 24px;
+}
+
+.ci-ticket-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ci-ticket-links--modal {
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 4px 2px;
+}
+
+.ci-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(15, 23, 42, 0.45);
+  backdrop-filter: blur(2px);
+}
+
+.ci-modal {
+  width: min(520px, 100%);
+  max-height: min(80vh, 520px);
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 20px 48px rgba(15, 23, 42, 0.22);
+  overflow: hidden;
+}
+
+.ci-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--rd-border);
+  background: #f8f7f4;
+}
+
+.ci-modal-header h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--rd-text1);
+  line-height: 1.35;
+}
+
+.ci-modal-close {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--rd-text2);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.ci-modal-close:hover {
+  background: #eceae4;
+}
+
+.ci-modal-body {
+  padding: 16px 20px;
+  overflow-y: auto;
+}
+
+.ci-modal-hint {
+  margin: 0 0 12px;
+  font-size: 12px;
+  color: var(--rd-text3);
+}
+
+.ci-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  padding: 12px 20px 16px;
+  border-top: 1px solid var(--rd-border);
+  background: #faf9f7;
+}
+
+.ci-month-tickets-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 12px;
+}
+
+.ci-month-tickets-card {
+  background: #f8f7f4;
+  border: 1px solid var(--rd-border);
+  border-radius: 10px;
+  padding: 14px 16px;
+}
+
+.ci-month-tickets-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--rd-text1);
+  margin-bottom: 10px;
+  text-transform: capitalize;
 }

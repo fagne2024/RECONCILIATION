@@ -17,6 +17,7 @@ export interface BoPartenaireResult8Row {
   totalTransactions: number;
   totalVolume: number;
   traitement?: string;
+  glpiId?: string;
 }
 
 export interface BoPartenaireMonthlyAggregateRow {
@@ -31,6 +32,7 @@ export interface BoPartenaireMonthlyAggregateRow {
   ecartNombre: number;
   ecartVolume: number;
   tauxVolume: number | null;
+  ticketIds: string[];
 }
 
 export interface RapportDateServiceLine {
@@ -38,6 +40,8 @@ export interface RapportDateServiceLine {
   service: string;
   traitement: string;
   statutRapport: string;
+  nombre: number;
+  volume: number;
 }
 
 @Injectable({ providedIn: 'root' })
@@ -125,7 +129,8 @@ export class BoPartenaireAggregationService {
           partenaireVolume: agg.partenaireVolume,
           ecartNombre: ecN,
           ecartVolume: ecV,
-          tauxVolume: taux
+          tauxVolume: taux,
+          ticketIds: this.collectTicketIds(repLines)
         });
       }
     }
@@ -141,7 +146,10 @@ export class BoPartenaireAggregationService {
     endDate: string;
   }): { validesClotures: RapportDateServiceLine[]; nonValidesClotures: RapportDateServiceLine[] } {
     const { rawReport, country, envNorm, startDate, endDate } = params;
-    const byKey = new Map<string, { date: string; service: string; traitements: string[] }>();
+    const byKey = new Map<
+      string,
+      { date: string; service: string; traitements: string[]; nombre: number; volume: number }
+    >();
 
     for (const row of rawReport) {
       if ((row.country || '').trim() !== country.trim()) {
@@ -161,10 +169,14 @@ export class BoPartenaireAggregationService {
       const key = `${date}|${service.toLowerCase()}`;
       const existing = byKey.get(key);
       const traitement = (row.traitement || '').trim();
+      const nombre = Number(row.totalTransactions || 0) || 0;
+      const volume = Number(row.totalVolume || 0) || 0;
       if (existing) {
         existing.traitements.push(traitement);
+        existing.nombre += nombre;
+        existing.volume += volume;
       } else {
-        byKey.set(key, { date, service, traitements: [traitement] });
+        byKey.set(key, { date, service, traitements: [traitement], nombre, volume });
       }
     }
 
@@ -177,7 +189,9 @@ export class BoPartenaireAggregationService {
         date: item.date,
         service: item.service,
         traitement,
-        statutRapport: statutFromTraitementDisplayLabel(traitement)
+        statutRapport: statutFromTraitementDisplayLabel(traitement),
+        nombre: item.nombre,
+        volume: item.volume
       };
       if (resolveTraitementKind(traitement) === 'termine') {
         validesClotures.push(entry);
@@ -209,6 +223,34 @@ export class BoPartenaireAggregationService {
       return `${p[2]}/${p[1]}/${p[0]}`;
     }
     return ymd;
+  }
+
+  collectTicketIds(lines: BoPartenaireResult8Row[]): string[] {
+    const set = new Set<string>();
+    for (const line of lines) {
+      const id = this.normalizeGlpiTicketId(line.glpiId);
+      if (id) {
+        set.add(id);
+      }
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b, 'fr', { numeric: true }));
+  }
+
+  /** Extrait l'identifiant numérique GLPI (évite d'afficher une URL complète). */
+  normalizeGlpiTicketId(raw?: string | null): string {
+    const v = String(raw || '').trim();
+    if (!v) {
+      return '';
+    }
+    const fromUrl = v.match(/[?&]id=(\d+)/i);
+    if (fromUrl) {
+      return fromUrl[1];
+    }
+    if (/^\d+$/.test(v)) {
+      return v;
+    }
+    const embedded = v.match(/(\d{5,})/);
+    return embedded ? embedded[1] : v;
   }
 
   private compareDateService(a: RapportDateServiceLine, b: RapportDateServiceLine): number {

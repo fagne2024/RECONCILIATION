@@ -1,4 +1,4 @@
-import { ChangeDetectorRef, Component, OnDestroy, OnInit } from '@angular/core';
+import { ChangeDetectorRef, Component, ElementRef, HostListener, OnDestroy, OnInit, ViewChild } from '@angular/core';
 
 import { ActivatedRoute, Router } from '@angular/router';
 
@@ -7,6 +7,10 @@ import { HttpClient, HttpHeaders, HttpParams } from '@angular/common/http';
 import { Subscription, forkJoin, of } from 'rxjs';
 
 import { catchError } from 'rxjs/operators';
+
+import html2canvas from 'html2canvas';
+import { jsPDF } from 'jspdf';
+import * as XLSX from 'xlsx';
 
 import { EcartBoSummary, EcartBoSummaryService } from '../../services/ecart-bo-summary.service';
 
@@ -69,6 +73,20 @@ export interface ControleInterneDisplayRow extends BoPartenaireMonthlyAggregateR
 
   monthLabel: string;
 
+}
+
+export interface ControleInterneSectionTotals {
+  combinaisons: number;
+  boNombre: number;
+  boVolume: number;
+  partenaireNombre: number;
+  partenaireVolume: number;
+  ecartNombre: number;
+  ecartVolume: number;
+  tauxVolume: number | null;
+  /** Totaux rapport brut (date × service) pour les panneaux latéraux. */
+  rapportNombre: number;
+  rapportVolume: number;
 }
 
 
@@ -166,6 +184,24 @@ export class ControleInterneBoPartenaireComponent implements OnInit, OnDestroy {
 
   nonValidesClotures: RapportDateServiceLine[] = [];
 
+  commentaire = '';
+  destinatairesEmails = '';
+  commentUpdatedBy = '';
+  commentUpdatedAt = '';
+  commentLastEmailedAt = '';
+  commentLastEmailedBy = '';
+  savingComment = false;
+  sendingCommentEmail = false;
+
+  /** Popup liste des tickets GLPI (ouvert au clic sur le badge). */
+  ticketModalOpen = false;
+  ticketModalTitle = '';
+  ticketModalTicketIds: string[] = [];
+  isExportingPdf = false;
+  isExportingExcel = false;
+
+  @ViewChild('ciExportRoot') ciExportRootRef?: ElementRef<HTMLElement>;
+
 
 
   /** trackBy stable (évite perte de contexte `this` dans ngFor). */
@@ -199,6 +235,15 @@ export class ControleInterneBoPartenaireComponent implements OnInit, OnDestroy {
   private validations = new Map<string, BoPartenaireControleInterneRecord>();
 
   private readonly numberFormatter = new Intl.NumberFormat('fr-FR');
+  private readonly cardCountFormatter = new Intl.NumberFormat('fr-FR', {
+    maximumFractionDigits: 0,
+    useGrouping: true
+  });
+  private readonly cardVolumeFormatter = new Intl.NumberFormat('fr-FR', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+    useGrouping: true
+  });
 
 
 
@@ -454,6 +499,252 @@ export class ControleInterneBoPartenaireComponent implements OnInit, OnDestroy {
 
     return this.numberFormatter.format(Math.round(n * 100) / 100);
 
+  }
+
+  /** Affichage compact sur les cartes (nombre entier groupé). */
+  formatCardNombre(n: number): string {
+    return this.cardCountFormatter.format(Math.round(n || 0));
+  }
+
+  /** Affichage des volumes sur les cartes (entier groupé fr-FR). */
+  formatCardVolume(n: number): string {
+    return this.cardVolumeFormatter.format(Math.round(n || 0));
+  }
+
+  get monthlySectionTotals(): ControleInterneSectionTotals {
+    return this.sumMonthlyRows(this.monthlyRows);
+  }
+
+  get nonValidesSectionTotals(): ControleInterneSectionTotals {
+    return this.sumDateServiceLines(this.nonValidesClotures);
+  }
+
+  get validesSectionTotals(): ControleInterneSectionTotals {
+    return this.sumDateServiceLines(this.validesClotures);
+  }
+
+  get ticketsByMonth(): { monthYyyyMm: string; monthLabel: string; ticketIds: string[] }[] {
+    const map = new Map<string, Set<string>>();
+    for (const row of this.monthlyRows) {
+      if (!map.has(row.monthYyyyMm)) {
+        map.set(row.monthYyyyMm, new Set<string>());
+      }
+      const bucket = map.get(row.monthYyyyMm)!;
+      for (const id of row.ticketIds || []) {
+        bucket.add(id);
+      }
+    }
+    return Array.from(map.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([monthYyyyMm, ids]) => ({
+        monthYyyyMm,
+        monthLabel: this.aggregationService.formatMonthLabel(monthYyyyMm),
+        ticketIds: Array.from(ids).sort((a, b) => a.localeCompare(b, 'fr', { numeric: true }))
+      }));
+  }
+
+  getGlpiTicketUrl(ticketId: string): string {
+    const id = this.resolveTicketNumericId(ticketId);
+    return `https://glpi.intouchgroup.net/glpi/public/front/ticket.form.php?id=${encodeURIComponent(id)}`;
+  }
+
+  resolveTicketNumericId(raw: string): string {
+    return this.aggregationService.normalizeGlpiTicketId(raw);
+  }
+
+  openTicketModal(ticketIds: string[] | undefined, title: string): void {
+    if (!ticketIds?.length) {
+      return;
+    }
+    this.ticketModalTitle = title;
+    this.ticketModalTicketIds = [...ticketIds];
+    this.ticketModalOpen = true;
+    this.cdr.markForCheck();
+  }
+
+  closeTicketModal(): void {
+    if (!this.ticketModalOpen) {
+      return;
+    }
+    this.ticketModalOpen = false;
+    this.ticketModalTicketIds = [];
+    this.cdr.markForCheck();
+  }
+
+  @HostListener('document:keydown.escape')
+  onEscapeKey(): void {
+    this.closeTicketModal();
+  }
+
+  formatTicketIdsLabel(ticketIds: string[] | undefined): string {
+    const count = ticketIds?.length || 0;
+    if (!count) {
+      return '—';
+    }
+    return count === 1 ? '1 ticket' : `${count} tickets`;
+  }
+
+  get canExport(): boolean {
+    return !!this.selectedCountry && !this.loading && !this.error && this.monthlyRows.length > 0;
+  }
+
+  async exportToPdf(): Promise<void> {
+    const el = this.ciExportRootRef?.nativeElement;
+    if (!el || !this.canExport || this.isExportingPdf) {
+      return;
+    }
+    this.isExportingPdf = true;
+    this.cdr.detectChanges();
+    await new Promise<void>((resolve) => setTimeout(resolve, 150));
+
+    const originalOverflow = el.style.overflow;
+    el.style.overflow = 'visible';
+
+    try {
+      const canvas = await html2canvas(el, {
+        scale: 2,
+        useCORS: true,
+        logging: false,
+        backgroundColor: '#f2f0eb'
+      });
+      const imgData = canvas.toDataURL('image/png');
+      const pdf = new jsPDF('l', 'px', [canvas.width, canvas.height]);
+      pdf.addImage(imgData, 'PNG', 0, 0, canvas.width, canvas.height);
+      pdf.save(this.buildExportBaseName() + '.pdf');
+      this.popupService.showSuccess('Export PDF téléchargé.');
+    } catch (e) {
+      console.error('Export PDF contrôle interne:', e);
+      this.popupService.showError('Erreur lors de l\'export PDF.');
+    } finally {
+      el.style.overflow = originalOverflow;
+      this.isExportingPdf = false;
+      this.cdr.markForCheck();
+    }
+  }
+
+  exportToExcel(): void {
+    if (!this.canExport || this.isExportingExcel) {
+      return;
+    }
+    this.isExportingExcel = true;
+    try {
+      const wb = XLSX.utils.book_new();
+
+      const agregationRows = this.monthlyRows.map((row) => ({
+        Mois: row.monthLabel,
+        Service: row.service,
+        'ID Ticket': (row.ticketIds || []).join(', '),
+        'Statut rapport': row.statutRapport,
+        'Statut contrôle interne': row.statutControleInterne,
+        'BO Nbre': row.boNombre,
+        'BO Volume': row.boVolume,
+        'Part. Nbre': row.partenaireNombre,
+        'Part. Volume': row.partenaireVolume,
+        'Écart Nbre': row.ecartNombre,
+        'Écart Volume': row.ecartVolume,
+        Taux: row.tauxVolume != null ? `${row.tauxVolume}%` : '—'
+      }));
+      agregationRows.push({
+        Mois: 'Total',
+        Service: '',
+        'ID Ticket': '',
+        'Statut rapport': '',
+        'Statut contrôle interne': '',
+        'BO Nbre': this.monthlySectionTotals.boNombre,
+        'BO Volume': this.monthlySectionTotals.boVolume,
+        'Part. Nbre': this.monthlySectionTotals.partenaireNombre,
+        'Part. Volume': this.monthlySectionTotals.partenaireVolume,
+        'Écart Nbre': this.monthlySectionTotals.ecartNombre,
+        'Écart Volume': this.monthlySectionTotals.ecartVolume,
+        Taux: this.monthlySectionTotals.tauxVolume != null ? `${this.monthlySectionTotals.tauxVolume}%` : '—'
+      });
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(agregationRows), 'Agrégation');
+
+      const ticketRows = this.ticketsByMonth.map((block) => ({
+        Mois: block.monthLabel,
+        'ID Tickets': block.ticketIds.join(', '),
+        Nombre: block.ticketIds.length
+      }));
+      if (ticketRows.length) {
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(ticketRows), 'Tickets');
+      }
+
+      const meta = [{
+        Périmètre: this.subtitle,
+        Pays: this.selectedCountry,
+        ENV: this.selectedEnv,
+        Service: this.selectedService || 'Tous',
+        Commentaire: this.commentaire || ''
+      }];
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(meta), 'Infos');
+
+      XLSX.writeFile(wb, this.buildExportBaseName() + '.xlsx');
+      this.popupService.showSuccess('Export Excel téléchargé.');
+    } catch (e) {
+      console.error('Export Excel contrôle interne:', e);
+      this.popupService.showError('Erreur lors de l\'export Excel.');
+    } finally {
+      this.isExportingExcel = false;
+      this.cdr.markForCheck();
+    }
+  }
+
+  private buildExportBaseName(): string {
+    const pays = (this.selectedCountry || 'pays').replace(/\s+/g, '-');
+    const env = (this.selectedEnv || 'ENV').replace(/\s+/g, '-');
+    const month = this.selectedMonth || 'tous';
+    return `Controle-interne-${pays}-${env}-${this.selectedYear}-${month}`;
+  }
+
+  libelleTauxTotal(taux: number | null): string {
+    if (taux == null) {
+      return '—';
+    }
+    return `${this.numberFormatter.format(Math.round(taux * 100) / 100)} %`;
+  }
+
+  private sumMonthlyRows(rows: ControleInterneDisplayRow[]): ControleInterneSectionTotals {
+    const boNombre = rows.reduce((s, r) => s + r.boNombre, 0);
+    const boVolume = rows.reduce((s, r) => s + r.boVolume, 0);
+    const partenaireNombre = rows.reduce((s, r) => s + r.partenaireNombre, 0);
+    const partenaireVolume = rows.reduce((s, r) => s + r.partenaireVolume, 0);
+    const ecartNombre = rows.reduce((s, r) => s + r.ecartNombre, 0);
+    const ecartVolume = rows.reduce((s, r) => s + r.ecartVolume, 0);
+    const tauxVolume =
+      boVolume !== 0
+        ? (ecartVolume / boVolume) * 100
+        : partenaireVolume !== 0
+          ? null
+          : 0;
+    return {
+      combinaisons: rows.length,
+      boNombre,
+      boVolume,
+      partenaireNombre,
+      partenaireVolume,
+      ecartNombre,
+      ecartVolume,
+      tauxVolume,
+      rapportNombre: boNombre,
+      rapportVolume: boVolume
+    };
+  }
+
+  private sumDateServiceLines(lines: RapportDateServiceLine[]): ControleInterneSectionTotals {
+    const rapportNombre = lines.reduce((s, l) => s + (l.nombre || 0), 0);
+    const rapportVolume = lines.reduce((s, l) => s + (l.volume || 0), 0);
+    return {
+      combinaisons: lines.length,
+      boNombre: 0,
+      boVolume: 0,
+      partenaireNombre: 0,
+      partenaireVolume: 0,
+      ecartNombre: 0,
+      ecartVolume: 0,
+      tauxVolume: null,
+      rapportNombre,
+      rapportVolume
+    };
   }
 
 
@@ -1118,6 +1409,126 @@ export class ControleInterneBoPartenaireComponent implements OnInit, OnDestroy {
 
     this.refreshAvailableServices(bounds.startDate, bounds.endDate, envNorm);
 
+    this.loadCommentForScope();
+  }
+
+  private getCommentMonthKey(): string {
+    if (this.selectedMonth) {
+      return `${this.selectedYear}-${this.selectedMonth}`;
+    }
+    return `${this.selectedYear}-ALL`;
+  }
+
+  private loadCommentForScope(): void {
+    if (!this.selectedCountry) {
+      this.commentaire = '';
+      return;
+    }
+    const monthYyyyMm = this.getCommentMonthKey();
+    this.controleInterneService
+      .getComment({
+        country: this.selectedCountry,
+        env: this.selectedEnv === 'ALL' ? 'ALL' : this.selectedEnv,
+        monthYyyyMm
+      })
+      .pipe(catchError(() => of(null)))
+      .subscribe((record) => {
+        this.commentaire = record?.commentaire || '';
+        this.commentUpdatedBy = record?.updatedBy || '';
+        this.commentUpdatedAt = record?.updatedAt || '';
+        this.commentLastEmailedAt = record?.lastEmailedAt || '';
+        this.commentLastEmailedBy = record?.lastEmailedBy || '';
+        this.cdr.markForCheck();
+      });
+  }
+
+  enregistrerCommentaire(): void {
+    if (!this.canValidateControleInterne || !this.selectedCountry || this.savingComment) {
+      return;
+    }
+    this.savingComment = true;
+    this.controleInterneService
+      .saveComment({
+        monthYyyyMm: this.getCommentMonthKey(),
+        country: this.selectedCountry,
+        env: this.selectedEnv === 'ALL' ? 'ALL' : this.selectedEnv,
+        commentaire: this.commentaire
+      })
+      .subscribe({
+        next: (saved) => {
+          this.commentUpdatedBy = saved.updatedBy || '';
+          this.commentUpdatedAt = saved.updatedAt || '';
+          this.savingComment = false;
+          this.popupService.showSuccess('Commentaire enregistré.');
+          this.cdr.markForCheck();
+        },
+        error: (err) => {
+          this.savingComment = false;
+          this.popupService.showError(err?.error?.message || 'Impossible d\'enregistrer le commentaire.');
+          this.cdr.markForCheck();
+        }
+      });
+  }
+
+  envoyerCommentaireParMail(): void {
+    if (!this.canValidateControleInterne || !this.selectedCountry || this.sendingCommentEmail) {
+      return;
+    }
+    const recipients = this.destinatairesEmails
+      .split(/[,;\s]+/)
+      .map((e) => e.trim())
+      .filter((e) => e.length > 0 && e.includes('@'));
+    if (!recipients.length) {
+      this.popupService.showWarning('Indiquez au moins une adresse e-mail destinataire.');
+      return;
+    }
+    this.sendingCommentEmail = true;
+    this.controleInterneService
+      .sendCommentEmail({
+        monthYyyyMm: this.getCommentMonthKey(),
+        country: this.selectedCountry,
+        env: this.selectedEnv === 'ALL' ? 'ALL' : this.selectedEnv,
+        commentaire: this.commentaire,
+        recipients,
+        summaryText: this.buildEmailSummaryText()
+      })
+      .subscribe({
+        next: (res) => {
+          this.commentLastEmailedAt = res.comment?.lastEmailedAt || '';
+          this.commentLastEmailedBy = res.comment?.lastEmailedBy || '';
+          this.sendingCommentEmail = false;
+          this.popupService.showSuccess(res.message || 'E-mail envoyé avec succès.');
+          this.cdr.markForCheck();
+        },
+        error: (err) => {
+          this.sendingCommentEmail = false;
+          this.popupService.showError(err?.error?.message || 'Erreur lors de l\'envoi de l\'e-mail.');
+          this.cdr.markForCheck();
+        }
+      });
+  }
+
+  private buildEmailSummaryText(): string {
+    const m = this.monthlySectionTotals;
+    const nv = this.nonValidesSectionTotals;
+    const v = this.validesSectionTotals;
+    const lines = [
+      `Vue agrégée — ${m.combinaisons} ligne(s)`,
+      `BO : ${this.formatCardNombre(m.boNombre)} transactions | volume ${this.formatCardVolume(m.boVolume)}`,
+      `Partenaire : ${this.formatCardNombre(m.partenaireNombre)} transactions | volume ${this.formatCardVolume(m.partenaireVolume)}`,
+      `Écart : ${this.formatCardNombre(m.ecartNombre)} | volume ${this.formatCardVolume(m.ecartVolume)}`,
+      `Non validés/clôturés : ${nv.combinaisons} combinaison(s) | ${this.formatCardNombre(nv.rapportNombre)} | vol. ${this.formatCardVolume(nv.rapportVolume)}`,
+      `Validés/clôturés : ${v.combinaisons} combinaison(s) | ${this.formatCardNombre(v.rapportNombre)} | vol. ${this.formatCardVolume(v.rapportVolume)}`
+    ];
+    for (const block of this.ticketsByMonth) {
+      lines.push(
+        `Tickets ${block.monthLabel} : ${block.ticketIds.length ? block.ticketIds.join(', ') : '—'}`
+      );
+    }
+    if (this.selectedService) {
+      lines.unshift(`Filtre service : ${this.selectedService}`);
+    }
+    return lines.join('\n');
   }
 
   private refreshAvailableServices(
@@ -1408,7 +1819,11 @@ export class ControleInterneBoPartenaireComponent implements OnInit, OnDestroy {
 
             ? String(traitementRaw).trim()
 
-            : ''
+            : '',
+
+        glpiId: this.aggregationService.normalizeGlpiTicketId(
+          String(r.glpiId ?? anyR['glpiId'] ?? anyR['glpi_id'] ?? '')
+        ) || undefined
 
       };
 

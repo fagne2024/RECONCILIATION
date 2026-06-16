@@ -134,6 +134,10 @@ public class PermissionCheckService {
         if (normalizedPath.startsWith("/api/bo-partenaire-controle-interne/revoke")) {
             return canRevokeBoPartenaireControleInterne(username);
         }
+        if (normalizedPath.startsWith("/api/bo-partenaire-controle-interne/comment")
+            || normalizedPath.startsWith("/api/bo-partenaire-controle-interne/send-email")) {
+            return canValidateBoPartenaireControleInterne(username);
+        }
 
         // Consultation / utilisation des modèles dans le flux réconciliation :
         // permissions du module Réconciliation, pas du module Modèles (sauf override explicite Modèles).

@@ -61,7 +61,7 @@ export class AppComponent implements OnInit {
     '/sop-reconciliation-trx': 'Réconciliation SOP TRX',
     '/guide-utilisation': 'Guide Utilisation',
     '/suivi-des-ecarts': 'Suivi des Écarts',
-    '/ecart-bo-summary': 'Résumé Écarts BO',
+    '/ecart-bo-summary': 'Suivi des écarts J-1 & J+1',
     '/certification-solde': 'Certification de solde',
     '/redevance-loterie': 'Redevance Loterie'
   };

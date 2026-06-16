@@ -20,6 +20,26 @@ export interface BoPartenaireControleInterneValidatePayload {
   service: string;
 }
 
+export interface BoPartenaireControleInterneCommentRecord {
+  monthYyyyMm: string;
+  country: string;
+  env: string;
+  commentaire: string;
+  updatedBy?: string;
+  updatedAt?: string;
+  lastEmailedAt?: string;
+  lastEmailedBy?: string;
+}
+
+export interface BoPartenaireControleInterneSendEmailPayload {
+  monthYyyyMm: string;
+  country: string;
+  env: string;
+  commentaire: string;
+  recipients: string[];
+  summaryText: string;
+}
+
 @Injectable({ providedIn: 'root' })
 export class BoPartenaireControleInterneService {
   private readonly baseUrl = '/api/bo-partenaire-controle-interne';
@@ -50,5 +70,38 @@ export class BoPartenaireControleInterneService {
   revoke(payload: BoPartenaireControleInterneValidatePayload): Observable<BoPartenaireControleInterneRecord> {
     const headers = new HttpHeaders({ 'X-Permission-Module': 'Résultats' });
     return this.http.post<BoPartenaireControleInterneRecord>(`${this.baseUrl}/revoke`, payload, { headers });
+  }
+
+  getComment(params: {
+    country: string;
+    env: string;
+    monthYyyyMm: string;
+  }): Observable<BoPartenaireControleInterneCommentRecord> {
+    const headers = new HttpHeaders({ 'X-Permission-Module': 'Résultats' });
+    const q = new URLSearchParams({
+      country: params.country,
+      env: params.env,
+      monthYyyyMm: params.monthYyyyMm
+    });
+    return this.http.get<BoPartenaireControleInterneCommentRecord>(`${this.baseUrl}/comment?${q}`, { headers });
+  }
+
+  saveComment(payload: {
+    monthYyyyMm: string;
+    country: string;
+    env: string;
+    commentaire: string;
+  }): Observable<BoPartenaireControleInterneCommentRecord> {
+    const headers = new HttpHeaders({ 'X-Permission-Module': 'Résultats' });
+    return this.http.put<BoPartenaireControleInterneCommentRecord>(`${this.baseUrl}/comment`, payload, { headers });
+  }
+
+  sendCommentEmail(payload: BoPartenaireControleInterneSendEmailPayload): Observable<{ message: string; comment: BoPartenaireControleInterneCommentRecord }> {
+    const headers = new HttpHeaders({ 'X-Permission-Module': 'Résultats' });
+    return this.http.post<{ message: string; comment: BoPartenaireControleInterneCommentRecord }>(
+      `${this.baseUrl}/send-email`,
+      payload,
+      { headers }
+    );
   }
 }

@@ -69,6 +69,7 @@ interface Result8Row {
   status: string;
   traitement?: string;
   username?: string;
+  glpiId?: string;
 }
 
 /** Une ligne = un service ; montants alignés sur le relevé (rapport + manuel + écarts partenaire J±1). */
@@ -371,7 +372,8 @@ export class RapportReconciliationBoPartenaireComponent implements OnInit, OnDes
       env: r.env,
       totalTransactions: r.totalTransactions,
       totalVolume: r.totalVolume,
-      traitement: r.traitement
+      traitement: r.traitement,
+      glpiId: (r as Result8Row & { glpiId?: string }).glpiId
     }));
   }
 
@@ -592,7 +594,8 @@ export class RapportReconciliationBoPartenaireComponent implements OnInit, OnDes
                   username:
                     usernameRaw != null && String(usernameRaw).trim()
                       ? String(usernameRaw).trim()
-                      : ''
+                      : '',
+                  glpiId: String(r.glpiId ?? anyR['glpiId'] ?? anyR['glpi_id'] ?? '').trim() || undefined
                 };
               })
             : [];
