@@ -200,6 +200,9 @@ export class ControleInterneBoPartenaireComponent implements OnInit, OnDestroy {
   isExportingPdf = false;
   isExportingExcel = false;
 
+  /** Colonnes Écart / Taux masquées par défaut (affichables à la demande). */
+  showEcartColumns = false;
+
   @ViewChild('ciExportRoot') ciExportRootRef?: ElementRef<HTMLElement>;
 
 
@@ -574,6 +577,11 @@ export class ControleInterneBoPartenaireComponent implements OnInit, OnDestroy {
   @HostListener('document:keydown.escape')
   onEscapeKey(): void {
     this.closeTicketModal();
+  }
+
+  toggleShowEcartColumns(): void {
+    this.showEcartColumns = !this.showEcartColumns;
+    this.cdr.markForCheck();
   }
 
   formatTicketIdsLabel(ticketIds: string[] | undefined): string {

@@ -1,5 +1,7 @@
 import { Injectable } from '@angular/core';
 import {
+  AutoProcessingModel,
+  ColumnProcessingRule,
   ModelFormatAction,
   ModelPreProcessingConfig,
   ModelRowFilter,
@@ -512,5 +514,260 @@ export class ModelPreProcessingService {
       default:
         return columns;
     }
+  }
+
+  /** Colonnes nécessaires en entrée / conservées en sortie pour le mode assisté. */
+  buildAssistedColumnPlan(
+    model: AutoProcessingModel,
+    columnRules: ColumnProcessingRule[]
+  ): { inputColumns: string[]; outputColumns: string[] } {
+    const input = new Set<string>();
+    const output: string[] = [];
+    const outputSeen = new Set<string>();
+
+    const addInput = (col?: string | null) => {
+      const trimmed = (col || '').trim();
+      if (trimmed) {
+        input.add(trimmed);
+      }
+    };
+
+    const addOutput = (col?: string | null) => {
+      const trimmed = (col || '').trim();
+      if (trimmed && !outputSeen.has(trimmed)) {
+        outputSeen.add(trimmed);
+        output.push(trimmed);
+      }
+    };
+
+    const sortedRules = [...(columnRules || [])].sort(
+      (a, b) => (a.ruleOrder ?? 0) - (b.ruleOrder ?? 0)
+    );
+
+    for (const rule of sortedRules) {
+      addInput(rule.sourceColumn);
+      if (rule.targetColumn?.trim()) {
+        addOutput(rule.targetColumn.trim());
+      } else {
+        addOutput(rule.sourceColumn);
+      }
+    }
+
+    const cfg = model.preProcessingConfig;
+    if (cfg) {
+      for (const filter of this.getActiveFilters(cfg)) {
+        addInput(filter.column);
+        addOutput(filter.column);
+      }
+      for (const action of this.getActiveFormatActions(cfg)) {
+        for (const column of action.columns || []) {
+          addInput(column);
+          addOutput(column);
+        }
+      }
+      for (const rule of this.getActiveColumnConcatRules(cfg.columnConcatRules)) {
+        for (const column of rule.sourceColumns || []) {
+          addInput(column);
+        }
+        addOutput(rule.targetColumn);
+      }
+      for (const mapping of this.getActiveValueMappings(cfg.valueMappings)) {
+        addInput(mapping.column);
+        addOutput(mapping.column);
+      }
+    }
+
+    const outputColumns = this.applyRenameRulesToOutputColumns(
+      output,
+      this.getActiveColumnRenameRules(cfg?.columnRenameRules)
+    );
+
+    return {
+      inputColumns: [...input],
+      outputColumns
+    };
+  }
+
+  mergeOutputColumns(primary: string[], secondary: string[] = []): string[] {
+    const merged: string[] = [];
+    const seen = new Set<string>();
+    for (const col of [...primary, ...secondary]) {
+      const trimmed = (col || '').trim();
+      if (trimmed && !seen.has(trimmed)) {
+        seen.add(trimmed);
+        merged.push(trimmed);
+      }
+    }
+    return merged;
+  }
+
+  private applyRenameRulesToOutputColumns(
+    columns: string[],
+    renameRules: ModelColumnRenameRule[]
+  ): string[] {
+    if (!renameRules.length) {
+      return [...columns];
+    }
+
+    const renameMap = new Map<string, string>();
+    for (const rule of renameRules) {
+      if (rule.sourceColumn && rule.targetColumn?.trim()) {
+        renameMap.set(rule.sourceColumn, rule.targetColumn.trim());
+      }
+    }
+
+    const seen = new Set<string>();
+    const result: string[] = [];
+    for (const col of columns) {
+      let current = col;
+      let guard = 0;
+      while (renameMap.has(current) && guard < 10) {
+        current = renameMap.get(current)!;
+        guard++;
+      }
+      if (current && !seen.has(current)) {
+        seen.add(current);
+        result.push(current);
+      }
+    }
+    return result;
+  }
+
+  private normalizeColumnKey(columnName: string): string {
+    return (columnName || '')
+      .trim()
+      .normalize('NFD')
+      .replace(/\p{M}/gu, '')
+      .toLowerCase()
+      .replace(/\s+/g, ' ');
+  }
+
+  private resolveRowColumnValue(row: Record<string, string>, column: string): string {
+    if (Object.prototype.hasOwnProperty.call(row, column)) {
+      return row[column] ?? '';
+    }
+
+    const targetKey = this.normalizeColumnKey(column);
+    for (const [key, value] of Object.entries(row)) {
+      if (this.normalizeColumnKey(key) === targetKey) {
+        return value ?? '';
+      }
+    }
+
+    return '';
+  }
+
+  /** Projette les lignes vers les colonnes finales du modèle (avec repli sur colonnes sources). */
+  projectRowsToExportColumns(
+    rows: Record<string, string>[],
+    outputColumns: string[],
+    columnRules: ColumnProcessingRule[],
+    model?: AutoProcessingModel
+  ): Record<string, string>[] {
+    if (!rows.length || !outputColumns.length) {
+      return rows;
+    }
+
+    const aliasesByOutput = this.buildOutputColumnAliases(columnRules, model?.preProcessingConfig);
+    const orderedColumns = outputColumns.map(col => col.trim()).filter(Boolean);
+
+    return rows.map(row => {
+      const projected: Record<string, string> = {};
+      for (const col of orderedColumns) {
+        projected[col] = this.resolveRowColumnValueWithAliases(
+          row,
+          col,
+          aliasesByOutput.get(col) || []
+        );
+      }
+      return projected;
+    });
+  }
+
+  private buildOutputColumnAliases(
+    columnRules: ColumnProcessingRule[],
+    config?: ModelPreProcessingConfig | null
+  ): Map<string, string[]> {
+    const map = new Map<string, string[]>();
+    const renameRules = this.getActiveColumnRenameRules(config?.columnRenameRules);
+
+    for (const rule of columnRules || []) {
+      const source = (rule.sourceColumn || '').trim();
+      const target = (rule.targetColumn || '').trim() || source;
+      if (!target) {
+        continue;
+      }
+
+      const aliases = new Set<string>();
+      if (source && source !== target) {
+        aliases.add(source);
+      }
+
+      for (const rename of renameRules) {
+        const renameSource = (rename.sourceColumn || '').trim();
+        const renameTarget = (rename.targetColumn || '').trim();
+        if (!renameSource || !renameTarget) {
+          continue;
+        }
+        if (renameTarget === target) {
+          aliases.add(renameSource);
+        }
+        if (renameSource === target) {
+          aliases.add(renameTarget);
+        }
+        if (renameSource === source) {
+          aliases.add(renameTarget);
+        }
+      }
+
+      if (aliases.size) {
+        map.set(target, [...aliases]);
+      }
+    }
+
+    return map;
+  }
+
+  private resolveRowColumnValueWithAliases(
+    row: Record<string, string>,
+    column: string,
+    aliases: string[]
+  ): string {
+    const direct = this.resolveRowColumnValue(row, column);
+    if (direct) {
+      return direct;
+    }
+
+    for (const alias of aliases) {
+      const value = this.resolveRowColumnValue(row, alias);
+      if (value) {
+        return value;
+      }
+    }
+
+    return '';
+  }
+
+  /** Ne conserve que les colonnes attendues dans le fichier final (toutes présentes, même vides). */
+  filterRowsToColumns(
+    rows: Record<string, string>[],
+    columns: string[]
+  ): Record<string, string>[] {
+    if (!rows.length || !columns.length) {
+      return rows;
+    }
+
+    const orderedColumns = columns.map(col => col.trim()).filter(Boolean);
+    if (!orderedColumns.length) {
+      return rows;
+    }
+
+    return rows.map(row => {
+      const filtered: Record<string, string> = {};
+      for (const col of orderedColumns) {
+        filtered[col] = this.resolveRowColumnValue(row, col);
+      }
+      return filtered;
+    });
   }
 }

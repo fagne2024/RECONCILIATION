@@ -25,31 +25,17 @@ public class ColumnProcessingService {
             String sourceColumn = rule.getSourceColumn();
             String targetColumn = rule.getTargetColumn();
             
-            // Recherche flexible de la colonne avec normalisation
             String actualColumnKey = findColumnKey(processedData, sourceColumn);
             
             if (actualColumnKey != null) {
                 Object value = processedData.get(actualColumnKey);
-                String originalValueStr = value != null ? value.toString() : null;
-                
                 Object processedValue = applyRule(value, rule);
-                String processedValueStr = processedValue != null ? processedValue.toString() : null;
                 
-                // Si targetColumn est vide ou null, mettre à jour la valeur dans sourceColumn
-                // Sinon, créer une nouvelle colonne targetColumn avec la valeur traitée
                 if (targetColumn == null || targetColumn.trim().isEmpty()) {
                     processedData.put(actualColumnKey, processedValue);
-                    if (originalValueStr != null && !originalValueStr.equals(processedValueStr)) {
-                        System.out.println("✅ [PROCESS] Colonne \"" + actualColumnKey + "\": \"" + originalValueStr + "\" -> \"" + processedValueStr + "\"");
-                    }
                 } else {
                     processedData.put(targetColumn, processedValue);
-                    if (originalValueStr != null && !originalValueStr.equals(processedValueStr)) {
-                        System.out.println("✅ [PROCESS] Colonne \"" + actualColumnKey + "\" -> \"" + targetColumn + "\": \"" + originalValueStr + "\" -> \"" + processedValueStr + "\"");
-                    }
                 }
-            } else {
-                System.out.println("⚠️ [PROCESS] Colonne \"" + sourceColumn + "\" non trouvée dans les données");
             }
         }
         
@@ -64,18 +50,6 @@ public class ColumnProcessingService {
      */
     public Map<String, Object> processDataRow(String modelId, Map<String, Object> data) {
         List<ColumnProcessingRule> rules = columnProcessingRuleService.getRulesByModelId(modelId);
-        
-        // Log pour debug
-        if (!rules.isEmpty()) {
-            System.out.println("🔧 [PROCESS] Application de " + rules.size() + " règle(s) pour le modèle: " + modelId);
-            System.out.println("  📋 Colonnes disponibles dans les données: " + String.join(", ", data.keySet()));
-            rules.forEach(rule -> {
-                System.out.println("  - Règle pour colonne: \"" + rule.getSourceColumn() + "\"" + 
-                                 ", stringToRemove: " + (rule.getStringToRemove() != null ? "\"" + rule.getStringToRemove() + "\"" : "null") +
-                                 ", removeSpecialChars: " + rule.isRemoveSpecialChars());
-            });
-        }
-        
         return processDataRow(rules, data);
     }
     
@@ -96,15 +70,12 @@ public class ColumnProcessingService {
         for (String key : data.keySet()) {
             String normalizedKey = normalizeColumnName(key);
             if (normalizedSource.equalsIgnoreCase(normalizedKey)) {
-                System.out.println("🔍 [PROCESS] Colonne trouvée avec normalisation: \"" + sourceColumn + "\" -> \"" + key + "\"");
                 return key;
             }
         }
         
-        // Recherche partielle (contient)
         for (String key : data.keySet()) {
             if (key.contains(normalizedSource) || normalizedSource.contains(key)) {
-                System.out.println("🔍 [PROCESS] Colonne trouvée avec recherche partielle: \"" + sourceColumn + "\" -> \"" + key + "\"");
                 return key;
             }
         }
@@ -144,24 +115,21 @@ public class ColumnProcessingService {
      * @return La liste des lignes de données traitées
      */
     public List<Map<String, Object>> processDataList(String modelId, List<Map<String, Object>> dataList) {
-        // OPTIMISATION CRITIQUE: Charger les règles une seule fois au lieu de les charger pour chaque ligne
-        // Cela évite des centaines/milliers de requêtes SQL (problème N+1)
         List<ColumnProcessingRule> rules = columnProcessingRuleService.getRulesByModelId(modelId);
-        
-        // Log pour debug (seulement si des règles existent)
-        if (!rules.isEmpty() && !dataList.isEmpty()) {
-            System.out.println("🔧 [PROCESS] Application de " + rules.size() + " règle(s) pour le modèle: " + modelId + " sur " + dataList.size() + " lignes");
-            System.out.println("  📋 Colonnes disponibles dans les données: " + String.join(", ", dataList.get(0).keySet()));
+        if (dataList.isEmpty()) {
+            return new ArrayList<>();
         }
-        
+
+        if (dataList.size() >= 5000) {
+            return dataList.parallelStream()
+                .map(row -> processDataRow(rules, row))
+                .collect(java.util.stream.Collectors.toCollection(() -> new ArrayList<>(dataList.size())));
+        }
+
         List<Map<String, Object>> processedDataList = new ArrayList<>(dataList.size());
-        
-        // Traiter toutes les lignes avec les règles déjà chargées
         for (Map<String, Object> dataRow : dataList) {
-            Map<String, Object> processedRow = processDataRow(rules, dataRow);
-            processedDataList.add(processedRow);
+            processedDataList.add(processDataRow(rules, dataRow));
         }
-        
         return processedDataList;
     }
 
@@ -283,9 +251,6 @@ public class ColumnProcessingService {
     private String applyStringRemoval(String value, ColumnProcessingRule rule) {
         String stringToRemove = rule.getStringToRemove();
         if (stringToRemove != null && !stringToRemove.isEmpty()) {
-            String originalValue = value;
-            // Supprimer toutes les occurrences de la chaîne spécifiée (pas seulement la première)
-            // Échapper les caractères spéciaux pour éviter les problèmes avec les regex
             String escapedString = stringToRemove.replace("\\", "\\\\")
                                                  .replace(".", "\\.")
                                                  .replace("*", "\\*")
@@ -300,16 +265,7 @@ public class ColumnProcessingService {
                                                  .replace("[", "\\[")
                                                  .replace("]", "\\]")
                                                  .replace("|", "\\|");
-            
-            // Remplacer toutes les occurrences (comme le frontend)
             value = value.replaceAll(escapedString, "");
-            
-            // Log pour vérifier l'application de la règle
-            if (!originalValue.equals(value)) {
-                System.out.println("✅ [APPLY] stringToRemove appliqué pour colonne \"" + rule.getSourceColumn() + "\": \"" + stringToRemove + "\" sur \"" + originalValue + "\" -> \"" + value + "\"");
-            } else {
-                System.out.println("⚠️ [APPLY] stringToRemove \"" + stringToRemove + "\" non trouvé dans \"" + originalValue + "\" pour colonne \"" + rule.getSourceColumn() + "\"");
-            }
         }
         return value;
     }

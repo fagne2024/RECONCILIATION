@@ -80,6 +80,10 @@
 
     <ng-container *ngIf="!loading && !error">
       <div class="ci-toolbar" *ngIf="monthlyRows.length">
+        <button type="button" class="ci-tool-btn" (click)="toggleShowEcartColumns()">
+          <i class="fas" [ngClass]="showEcartColumns ? 'fa-compress-alt' : 'fa-chart-bar'"></i>
+          {{ showEcartColumns ? 'Masquer écarts & taux' : 'Afficher écarts & taux' }}
+        </button>
         <button
           type="button"
           class="ci-tool-btn ci-tool-btn--excel"
@@ -102,11 +106,19 @@
 
       <div #ciExportRoot class="ci-export-root">
       <div class="ci-section">
-        <h2>Vue agrégée par mois et service</h2>
-        <p class="ci-hint">
-          Données issues du rapport BO vs Partenaire. Statut contrôle interne par défaut :
-          <strong>En cours de validation</strong>.
-        </p>
+        <div class="ci-section-head">
+          <div>
+            <h2>Vue agrégée par mois et service</h2>
+            <p class="ci-hint">
+              Données issues du rapport BO vs Partenaire. Statut contrôle interne par défaut :
+              <strong>En cours de validation</strong>.
+            </p>
+          </div>
+          <button type="button" class="ci-tool-btn ci-section-toggle" (click)="toggleShowEcartColumns()" *ngIf="monthlyRows.length">
+            <i class="fas" [ngClass]="showEcartColumns ? 'fa-eye-slash' : 'fa-eye'"></i>
+            {{ showEcartColumns ? 'Masquer écarts' : 'Écarts & taux' }}
+          </button>
+        </div>
         <div class="ci-section-totals" *ngIf="monthlyRows.length">
           <div class="ci-total-card ci-total-card--meta">
             <span class="ci-total-label">Lignes</span>
@@ -128,20 +140,26 @@
             <span class="ci-total-label">Part. Volume</span>
             <span class="ci-total-value">{{ formatCardVolume(monthlySectionTotals.partenaireVolume) }}</span>
           </div>
-          <div class="ci-total-card ci-total-card--nombre">
-            <span class="ci-total-label">Écart Nombre</span>
-            <span class="ci-total-value">{{ formatCardNombre(monthlySectionTotals.ecartNombre) }}</span>
-          </div>
-          <div class="ci-total-card ci-total-card--volume">
-            <span class="ci-total-label">Écart Volume</span>
-            <span class="ci-total-value">{{ formatCardVolume(monthlySectionTotals.ecartVolume) }}</span>
-          </div>
-          <div class="ci-total-card ci-total-card--meta">
-            <span class="ci-total-label">Taux volume</span>
-            <span class="ci-total-value">{{ libelleTauxTotal(monthlySectionTotals.tauxVolume) }}</span>
-          </div>
+          <ng-container *ngIf="showEcartColumns">
+            <div class="ci-total-card ci-total-card--nombre ci-total-card--ecart">
+              <span class="ci-total-label">Écart Nombre</span>
+              <span class="ci-total-value">{{ formatCardNombre(monthlySectionTotals.ecartNombre) }}</span>
+            </div>
+            <div class="ci-total-card ci-total-card--volume ci-total-card--ecart">
+              <span class="ci-total-label">Écart Volume</span>
+              <span class="ci-total-value">{{ formatCardVolume(monthlySectionTotals.ecartVolume) }}</span>
+            </div>
+            <div class="ci-total-card ci-total-card--meta ci-total-card--ecart">
+              <span class="ci-total-label">Taux volume</span>
+              <span class="ci-total-value">{{ libelleTauxTotal(monthlySectionTotals.tauxVolume) }}</span>
+            </div>
+          </ng-container>
         </div>
-        <div class="ci-table-wrap" *ngIf="monthlyRows.length; else noMonthly">
+        <div
+          class="ci-table-wrap"
+          [class.ci-table-wrap--wide]="showEcartColumns"
+          *ngIf="monthlyRows.length; else noMonthly"
+        >
           <table class="ci-table">
             <thead>
               <tr>
@@ -154,9 +172,9 @@
                 <th class="num ci-col-num">BO Volume</th>
                 <th class="num ci-col-num">Part. Nbre</th>
                 <th class="num ci-col-num">Part. Volume</th>
-                <th class="num ci-col-num">Écart Nbre</th>
-                <th class="num ci-col-num">Écart Volume</th>
-                <th class="num ci-col-num">Taux</th>
+                <th class="num ci-col-num ci-col-ecart" *ngIf="showEcartColumns">Écart Nbre</th>
+                <th class="num ci-col-num ci-col-ecart" *ngIf="showEcartColumns">Écart Volume</th>
+                <th class="num ci-col-num ci-col-ecart" *ngIf="showEcartColumns">Taux</th>
                 <th class="ci-col-action">Action</th>
               </tr>
             </thead>
@@ -190,9 +208,9 @@
                 <td class="num">{{ formatVolume(row.boVolume) }}</td>
                 <td class="num">{{ formatNumber(row.partenaireNombre) }}</td>
                 <td class="num">{{ formatVolume(row.partenaireVolume) }}</td>
-                <td class="num">{{ formatNumber(row.ecartNombre) }}</td>
-                <td class="num">{{ formatVolume(row.ecartVolume) }}</td>
-                <td class="num">{{ libelleTaux(row) }}</td>
+                <td class="num ci-col-ecart" *ngIf="showEcartColumns">{{ formatNumber(row.ecartNombre) }}</td>
+                <td class="num ci-col-ecart" *ngIf="showEcartColumns">{{ formatVolume(row.ecartVolume) }}</td>
+                <td class="num ci-col-ecart" *ngIf="showEcartColumns">{{ libelleTaux(row) }}</td>
                 <td class="ci-col-action">
                   <button
                     type="button"
@@ -228,9 +246,9 @@
                 <td class="num"><strong>{{ formatVolume(monthlySectionTotals.boVolume) }}</strong></td>
                 <td class="num"><strong>{{ formatNumber(monthlySectionTotals.partenaireNombre) }}</strong></td>
                 <td class="num"><strong>{{ formatVolume(monthlySectionTotals.partenaireVolume) }}</strong></td>
-                <td class="num"><strong>{{ formatNumber(monthlySectionTotals.ecartNombre) }}</strong></td>
-                <td class="num"><strong>{{ formatVolume(monthlySectionTotals.ecartVolume) }}</strong></td>
-                <td class="num"><strong>{{ libelleTauxTotal(monthlySectionTotals.tauxVolume) }}</strong></td>
+                <td class="num ci-col-ecart" *ngIf="showEcartColumns"><strong>{{ formatNumber(monthlySectionTotals.ecartNombre) }}</strong></td>
+                <td class="num ci-col-ecart" *ngIf="showEcartColumns"><strong>{{ formatVolume(monthlySectionTotals.ecartVolume) }}</strong></td>
+                <td class="num ci-col-ecart" *ngIf="showEcartColumns"><strong>{{ libelleTauxTotal(monthlySectionTotals.tauxVolume) }}</strong></td>
                 <td></td>
               </tr>
             </tfoot>

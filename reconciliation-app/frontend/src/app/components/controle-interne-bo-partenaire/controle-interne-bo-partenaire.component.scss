@@ -217,15 +217,33 @@
 }
 
 .ci-hint {
-  margin: 0 0 16px;
+  margin: 0;
   color: var(--rd-text2);
   font-size: 13px;
 }
 
+.ci-section-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.ci-section-head h2 {
+  margin: 0 0 6px;
+}
+
+.ci-section-toggle {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
 .ci-section-totals {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(152px, 1fr));
+  gap: 10px;
   margin-bottom: 16px;
 }
 
@@ -261,6 +279,15 @@
 .ci-total-card--volume {
   background: #fbf3e8;
   border-color: #ecd9b8;
+}
+
+.ci-total-card--ecart {
+  background: #f5f0f8;
+  border-color: #dcc8e8;
+}
+
+.ci-total-card--ecart .ci-total-label {
+  color: #6b4a7a;
 }
 
 .ci-total-label {
@@ -309,12 +336,16 @@
   -webkit-overflow-scrolling: touch;
 }
 
+.ci-table-wrap--wide .ci-table {
+  min-width: 1280px;
+}
+
 .ci-table {
   width: 100%;
-  min-width: 1280px;
+  min-width: 1040px;
   border-collapse: separate;
   border-spacing: 0;
-  table-layout: fixed;
+  table-layout: auto;
   font-size: 13px;
 }
 
@@ -333,7 +364,16 @@
 }
 
 .ci-col-service {
-  width: 168px;
+  width: 1%;
+  min-width: 120px;
+  white-space: nowrap;
+  overflow: visible;
+}
+
+.ci-table th.ci-col-service,
+.ci-table td.ci-col-service {
+  overflow: visible;
+  max-width: none;
 }
 
 .ci-col-tickets {
@@ -345,16 +385,28 @@
 }
 
 .ci-col-num {
-  width: 96px;
+  min-width: 96px;
+  white-space: nowrap;
+}
+
+.ci-col-ecart {
+  width: 92px;
+  background: #faf8fc;
+}
+
+.ci-table thead .ci-col-ecart {
+  background: #f3eef6;
+}
+
+.ci-table tbody tr:hover .ci-col-ecart {
+  background: #f5f0f8;
 }
 
 .ci-service {
   font-weight: 600;
   line-height: 1.35;
-  word-break: break-word;
-  overflow-wrap: anywhere;
-  display: block;
-  max-width: 100%;
+  display: inline-block;
+  white-space: nowrap;
 }
 
 .ci-col-action {

@@ -22,6 +22,7 @@ import { forkJoin, Subscription } from 'rxjs';
 import { take } from 'rxjs/operators';
 import { PopupService } from '../../services/popup.service';
 import { ProgressIndicatorService } from '../../services/progress-indicator.service';
+import { applyColumnProcessingRulesAsync } from '../../utils/column-processing.util';
 
 @Component({
     selector: 'app-file-upload',
@@ -485,7 +486,6 @@ export class FileUploadComponent implements OnInit, OnDestroy {
         try {
             const compiled = await this.compileAssistedTreatmentFileRows(this.traitementFiles);
             await this.yieldToMainThread();
-            compiled.rows = this.normalizeData(compiled.rows);
             if (!compiled.rows.length) {
                 await this.popupService.showWarning(
                     'Aucune donnée lisible dans les fichiers sélectionnés.',
@@ -495,10 +495,23 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             }
 
             this.traitementProgressMessage =
-                `Traitement de ${compiled.rows.length} ligne(s) compilées (${this.traitementFiles.length} fichier(s))...`;
+                `Application des règles sur ${compiled.rows.length} ligne(s) (${this.traitementFiles.length} fichier(s))...`;
             this.cd.detectChanges();
 
-            const processed = await this.autoProcessingService.processDataWithRules(model.id, compiled.rows);
+            const columnRules = await this.autoProcessingService.getColumnProcessingRules(model.id);
+            const processed = columnRules.length
+                ? await applyColumnProcessingRulesAsync(
+                    compiled.rows,
+                    columnRules,
+                    2500,
+                    async (done, total) => {
+                        this.traitementProgressMessage = `Règles appliquées : ${done.toLocaleString('fr-FR')} / ${total.toLocaleString('fr-FR')} ligne(s)...`;
+                        this.cd.detectChanges();
+                        await this.yieldToMainThread();
+                    }
+                )
+                : compiled.rows;
+
             if (!processed?.length) {
                 await this.popupService.showWarning(
                     'Aucun résultat après traitement du fichier compilé.',
@@ -507,7 +520,11 @@ export class FileUploadComponent implements OnInit, OnDestroy {
                 return;
             }
 
-            let normalizedProcessed = this.normalizeData(processed) as Record<string, string>[];
+            let normalizedProcessed = await this.normalizeDataAsync(processed, (done, total) => {
+                this.traitementProgressMessage =
+                    `Normalisation : ${done.toLocaleString('fr-FR')} / ${total.toLocaleString('fr-FR')} ligne(s)...`;
+                this.cd.detectChanges();
+            });
             let preProcessingResultMessage = '';
 
             if (this.modelPreProcessingService.hasPreProcessing(model.preProcessingConfig)) {
@@ -1348,7 +1365,9 @@ export class FileUploadComponent implements OnInit, OnDestroy {
     }
 
     private yieldToMainThread(): Promise<void> {
-        return new Promise(resolve => setTimeout(resolve, 0));
+        return new Promise(resolve => {
+            requestAnimationFrame(() => setTimeout(resolve, 0));
+        });
     }
 
     /** Laisse l'UI afficher la progression avant l'appel synchrone XLSX.read. */
@@ -1476,30 +1495,39 @@ export class FileUploadComponent implements OnInit, OnDestroy {
             return new Promise((resolve, reject) => {
                 const reader = new FileReader();
                 reader.onload = (e: ProgressEvent<FileReader>) => {
-                    let text = e.target?.result as string;
-                    if (text.charCodeAt(0) === 0xFEFF) {
-                        text = text.slice(1);
-                    }
-                    text = this.stripAirtelReportPreambleFromText(text);
+                    void (async () => {
+                        try {
+                            let text = e.target?.result as string;
+                            if (text.charCodeAt(0) === 0xFEFF) {
+                                text = text.slice(1);
+                            }
+                            text = this.stripAirtelReportPreambleFromText(text);
 
-                    const lines = text.split('\n').filter(line => line.trim());
-                    const firstLine = lines[0] || '';
-                    const delimiter = (firstLine.match(/;/g) || []).length > (firstLine.match(/,/g) || []).length
-                        ? ';'
-                        : ',';
+                            const sampleLine = text.slice(0, 8192).split('\n').find(line => line.trim()) || '';
+                            const delimiter = (sampleLine.match(/;/g) || []).length > (sampleLine.match(/,/g) || []).length
+                                ? ';'
+                                : ',';
 
-                    Papa.parse(text, {
-                        header: false,
-                        delimiter,
-                        skipEmptyLines: false,
-                        complete: (results) => {
-                            const grid = (results.data as any[][]).filter(
-                                row => Array.isArray(row) && row.some(cell => cell !== null && cell !== undefined && String(cell).trim() !== '')
-                            );
-                            resolve(this.parseAssistedTreatmentGrid(grid));
-                        },
-                        error: (error: any) => reject(error)
-                    });
+                            Papa.parse(text, {
+                                header: false,
+                                delimiter,
+                                skipEmptyLines: false,
+                                complete: async (results) => {
+                                    try {
+                                        const grid = (results.data as any[][]).filter(
+                                            row => Array.isArray(row) && row.some(cell => cell !== null && cell !== undefined && String(cell).trim() !== '')
+                                        );
+                                        resolve(await this.parseAssistedTreatmentGridAsync(grid));
+                                    } catch (error) {
+                                        reject(error);
+                                    }
+                                },
+                                error: (error: any) => reject(error)
+                            });
+                        } catch (error) {
+                            reject(error);
+                        }
+                    })();
                 };
                 reader.onerror = () => reject(new Error('Erreur lors de la lecture du fichier CSV'));
                 reader.readAsText(file, 'utf-8');
@@ -2677,40 +2705,63 @@ export class FileUploadComponent implements OnInit, OnDestroy {
      * Méthode simple qui retourne les données sans modification
      */
     private normalizeData(data: Record<string, string>[]): Record<string, string>[] {
-        return data.map(row => {
-            const cleanedRow: Record<string, string> = {};
-            for (const [key, value] of Object.entries(row)) {
-                const cleanKey = fixCellEncoding(key);
-                const cell = value as unknown;
-                if (cell === null || cell === undefined) {
+        return data.map(row => this.normalizeDataRow(row));
+    }
+
+    private normalizeDataRow(row: Record<string, string>): Record<string, string> {
+        const cleanedRow: Record<string, string> = {};
+        for (const [key, value] of Object.entries(row)) {
+            const cleanKey = fixCellEncoding(key);
+            const cell = value as unknown;
+            if (cell === null || cell === undefined) {
+                cleanedRow[cleanKey] = '';
+            } else if (cell instanceof Date) {
+                cleanedRow[cleanKey] = formatSpreadsheetDateValue(cell);
+            } else if (typeof cell === 'object') {
+                try {
+                    cleanedRow[cleanKey] = fixCellEncoding(JSON.stringify(cell));
+                } catch (e) {
+                    cleanedRow[cleanKey] = fixCellEncoding(String(cell));
+                }
+            } else if (typeof cell === 'number') {
+                if (isNaN(cell) || !isFinite(cell)) {
                     cleanedRow[cleanKey] = '';
-                } else if (cell instanceof Date) {
+                } else if (isDateColumnName(cleanKey) && isExcelSerialDateValue(cell)) {
                     cleanedRow[cleanKey] = formatSpreadsheetDateValue(cell);
-                } else if (typeof cell === 'object') {
-                    try {
-                        cleanedRow[cleanKey] = fixCellEncoding(JSON.stringify(cell));
-                    } catch (e) {
-                        cleanedRow[cleanKey] = fixCellEncoding(String(cell));
-                    }
-                } else if (typeof cell === 'number') {
-                    if (isNaN(cell) || !isFinite(cell)) {
-                        cleanedRow[cleanKey] = '';
-                    } else if (isDateColumnName(cleanKey) && isExcelSerialDateValue(cell)) {
-                        cleanedRow[cleanKey] = formatSpreadsheetDateValue(cell);
-                    } else {
-                        cleanedRow[cleanKey] = String(cell);
-                    }
                 } else {
-                    const str = String(cell);
-                    if (isDateColumnName(cleanKey) && isExcelSerialDateValue(str)) {
-                        cleanedRow[cleanKey] = formatSpreadsheetDateValue(str);
-                    } else {
-                        cleanedRow[cleanKey] = fixCellEncoding(str);
-                    }
+                    cleanedRow[cleanKey] = String(cell);
+                }
+            } else {
+                const str = String(cell);
+                if (isDateColumnName(cleanKey) && isExcelSerialDateValue(str)) {
+                    cleanedRow[cleanKey] = formatSpreadsheetDateValue(str);
+                } else {
+                    cleanedRow[cleanKey] = fixCellEncoding(str);
                 }
             }
-            return cleanedRow;
-        });
+        }
+        return cleanedRow;
+    }
+
+    private async normalizeDataAsync(
+        data: Record<string, string>[],
+        onProgress?: (done: number, total: number) => void
+    ): Promise<Record<string, string>[]> {
+        if (data.length <= 3000) {
+            return this.normalizeData(data);
+        }
+
+        const batchSize = 3000;
+        const result: Record<string, string>[] = new Array(data.length);
+        for (let start = 0; start < data.length; start += batchSize) {
+            const end = Math.min(start + batchSize, data.length);
+            for (let i = start; i < end; i++) {
+                result[i] = this.normalizeDataRow(data[i]);
+            }
+            onProgress?.(end, data.length);
+            await this.yieldToMainThread();
+        }
+        return result;
     }
 
     /** Affecte une valeur de cellule Excel en formatant les colonnes date */
